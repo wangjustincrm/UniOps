@@ -468,7 +468,7 @@ Budget plans, NC actuals and the over-budget modes used for PRs are specified in
 
 ### 10.2 OA Task Inbox
 
-Lists what the user must do in OA, from the expense service (independent of, and consistent with, the platform Task Inbox in EPMS.md §3.7).
+Lists what the user must do in OA, from the expense service (independent of, and consistent with, Portal's unified Task Inbox, PORTAL.md §3.3). OA tasks are not shown in the EPMS Task Inbox (EPMS.md DSH-023).
 
 | Task type | When | Label |
 |-----------|------|-------|

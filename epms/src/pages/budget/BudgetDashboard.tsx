@@ -14,7 +14,8 @@
 import { useState, useMemo, Fragment } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, TrendingUp, Building2, ChevronRight } from 'lucide-react'
-import { cn, formatAmount, formatCADCompact } from '@/lib/utils'
+import { cn, formatAmount } from '@/lib/utils'
+import { CompactAmount } from '@/components/ui/CompactAmount'
 import { Card, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useActualsSummary, useMonthlyActualsSummary, useAvailableFiscalYears, useNcActualsMonthly, useNcPartnerMonthly, useNcPartnerVouchers, useActualsScope } from '@/hooks/useBudget'
@@ -63,6 +64,9 @@ export default function BudgetDashboard() {
   const [includeUnposted, setIncludeUnposted] = useState(true)
   const ncLabel = includeUnposted ? 'NC incl. unposted' : 'NC posted'
   const [exporting, setExporting] = useState(false)
+  // Export only: follow each budget account with its vendor rows (the inline
+  // drill, for every account at once). Does not change what the grid shows.
+  const [exportByVendor, setExportByVendor] = useState(false)
   const handleExport = async () => {
     setExporting(true)
     try {
@@ -72,8 +76,9 @@ export default function BudgetDashboard() {
           fiscal_year: fiscalYear,
           ...(ccId !== 'all' ? { cost_center_id: ccId } : {}),
           ...(includeUnposted ? { include_unposted: true } : {}),
+          ...(exportByVendor ? { expand_vendor: true } : {}),
         },
-        `budget-actual-FY${fiscalYear}.xlsx`,
+        `budget-actual-FY${fiscalYear}${exportByVendor ? '-by-vendor' : ''}.xlsx`,
       )
     } catch {
       alert('Export failed. Please try again.')
@@ -248,14 +253,14 @@ export default function BudgetDashboard() {
       ) : (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           {[
-            { label: 'Total Annual Budget', value: formatCADCompact(totalBudget), sub: 'Approved plan' },
-            { label: 'Total Committed',     value: formatCADCompact(totalCommitted), sub: 'PA in-flight' },
-            { label: 'Total Actual Spent',  value: formatCADCompact(totalNcSpent), sub: ncLabel },
-            { label: 'Total Available',     value: formatCADCompact(totalAvailable), sub: `${totalPct}% utilised`, alert: totalAvailable < 0 },
+            { label: 'Total Annual Budget', value: totalBudget, sub: 'Approved plan' },
+            { label: 'Total Committed',     value: totalCommitted, sub: 'PA in-flight' },
+            { label: 'Total Actual Spent',  value: totalNcSpent, sub: ncLabel },
+            { label: 'Total Available',     value: totalAvailable, sub: `${totalPct}% utilised`, alert: totalAvailable < 0 },
           ].map((s) => (
             <Card key={s.label} className={cn('p-4', s.alert && 'ring-1 ring-danger-200')}>
               <p className="text-xs text-neutral-500">{s.label}</p>
-              <p className={cn('text-xl font-bold mt-1 font-mono', s.alert ? 'text-danger-600' : 'text-neutral-900')}>{s.value}</p>
+              <p className={cn('text-xl font-bold mt-1 font-mono', s.alert ? 'text-danger-600' : 'text-neutral-900')}><CompactAmount value={s.value} /></p>
               <p className="text-xs text-neutral-400 mt-0.5">{s.sub}</p>
             </Card>
           ))}
@@ -319,6 +324,13 @@ export default function BudgetDashboard() {
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-base font-semibold text-neutral-900">Monthly Plan vs Actual</h2>
             <div className="flex items-center gap-2 text-xs">
+              <label className="inline-flex cursor-pointer select-none items-center gap-1 text-neutral-600"
+                     title="In the exported file, list each budget account's NC actual by vendor under the account row">
+                <input type="checkbox" checked={exportByVendor} disabled={exporting}
+                       onChange={(e) => setExportByVendor(e.target.checked)}
+                       className="h-3.5 w-3.5 cursor-pointer rounded border-neutral-300 accent-primary-600" />
+                Expand vendor
+              </label>
               <button type="button" onClick={handleExport} disabled={exporting}
                 className="rounded-md border border-primary-300 bg-white px-2.5 py-1 font-medium text-primary-700 hover:bg-primary-50 disabled:opacity-50">
                 {exporting ? 'Exporting…' : 'Export XLSX'}
@@ -413,15 +425,15 @@ function PlanActualCell({ plan, nc, strong }: { plan: number; nc?: number; stron
   return (
     <div className="flex flex-col items-end leading-tight font-mono">
       <span className={cn('text-[11px] whitespace-nowrap text-neutral-500', strong && 'font-semibold text-neutral-600')}>
-        {plan ? formatCADCompact(plan) : '–'}
+        {plan ? <CompactAmount value={plan} hint="Plan" /> : '–'}
       </span>
       {nc !== undefined && (
         <span className={cn(
           'text-[11px] whitespace-nowrap',
           over ? 'text-danger-600 font-bold' : 'text-emerald-700',
           strong && 'font-semibold',
-        )} title="NC posted actual (red = over budget)">
-          {nc ? formatCADCompact(nc) : '–'}
+        )}>
+          {nc ? <CompactAmount value={nc} hint="NC actual (red = over budget)" /> : '–'}
         </span>
       )}
     </div>
@@ -575,13 +587,13 @@ function PartnerRows({ account, fiscalYear, costCenterId, includeUnposted }: {
                       <button className={cn('font-mono text-[11px] hover:underline',
                         voucherKey === key ? 'font-semibold text-emerald-900' : 'text-emerald-700')}
                         onClick={() => setVoucherKey((k) => (k === key ? null : key))}>
-                        {formatCADCompact(v)}
+                        <CompactAmount value={v} />
                       </button>
                     ) : <span className="text-[11px] text-neutral-300">–</span>}
                   </td>
                 )
               })}
-              <td className="py-1.5 px-2 text-right font-mono text-[11px] font-semibold bg-emerald-100">{formatCADCompact(Number(p.year_total))}</td>
+              <td className="py-1.5 px-2 text-right font-mono text-[11px] font-semibold bg-emerald-100"><CompactAmount value={Number(p.year_total)} /></td>
             </tr>
             {voucherKey && voucherKey.startsWith(`${pid}:`) && (
               <VoucherRow account={account} fiscalYear={fiscalYear} costCenterId={costCenterId}
@@ -646,7 +658,7 @@ function VoucherRow({ account, fiscalYear, costCenterId, includeUnposted, partne
                   </td>
                   <td className="px-2 py-1 font-mono text-neutral-600">{r.account_code}</td>
                   <td className="px-2 py-1 text-neutral-700">{r.summary || '—'}</td>
-                  <td className="px-2 py-1 text-right font-mono">{formatCADCompact(Number(r.local_debit))}</td>
+                  <td className="px-2 py-1 text-right font-mono"><CompactAmount value={Number(r.local_debit)} /></td>
                 </tr>
               ))}
             </tbody>

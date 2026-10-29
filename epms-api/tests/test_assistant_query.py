@@ -272,9 +272,11 @@ async def test_a_bare_aggregate_reports_how_many_rows_it_matched(
     assert r.status_code == 200
     body = r.json()
     assert body["matched_rows"] == 0
-    assert body["rows"][0]["amount"] is None
+    # Split by currency (ISS-0035), an aggregate over nothing has no rows at
+    # all; matched_rows 0 is what tells "none" from "an empty amount".
+    assert body["rows"] == []
     # The bookkeeping column must not leak into the answer.
-    assert "__matched_rows" not in body["rows"][0]
+    assert all("__matched_rows" not in row for row in body["rows"])
 
 
 async def test_matched_rows_counts_real_matches(test_engine, admin_client):
@@ -568,8 +570,8 @@ async def test_a_grouped_query_carries_its_own_total(test_engine, admin_client):
         "where": [{"field": "number", "op": "like", "value": f"PO-TOT-{tag}"}],
     })).json()
 
-    assert body["totals"]["amount"] == "30.00"
-    assert body["totals"]["count"] == 3
+    # Money totals come per currency (ISS-0035): one CAD entry here.
+    assert body["totals"] == [{"currency": "CAD", "amount": "30.00", "count": 3}]
 
 
 async def test_the_total_covers_everything_not_just_the_returned_page(
@@ -590,7 +592,7 @@ async def test_the_total_covers_everything_not_just_the_returned_page(
     })).json()
 
     assert len(body["rows"]) == 2, "the page is capped"
-    assert body["totals"]["amount"] == "50.00", "the total is not"
+    assert body["totals"] == [{"currency": "CAD", "amount": "50.00"}], "the total is not"
 
 
 async def test_totals_respect_the_row_scope(test_engine, admin_client, requester_client):
@@ -605,7 +607,8 @@ async def test_totals_respect_the_row_scope(test_engine, admin_client, requester
         "entity": "purchase_order", "group_by": ["number"], "metrics": ["amount"],
         "where": [{"field": "number", "op": "like", "value": f"PO-TS-{tag}"}],
     })).json()
-    assert body["totals"]["amount"] == "10.00", "a total must not sum invisible rows"
+    assert body["totals"] == [{"currency": "CAD", "amount": "10.00"}], (
+        "a total must not sum invisible rows")
 
 
 async def test_a_detail_query_has_no_totals(test_engine, admin_client):

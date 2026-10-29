@@ -14,7 +14,7 @@ vi.mock('@/stores/auth.store', () => ({
   useAuthStore: { getState: () => ({ token: null, refreshToken: null, user: null }) },
 }))
 
-import { TASK_TYPE_LABELS, taskHref } from './taskTypes'
+import { EPMS_INBOX_DOC_TYPES, EPMS_PAGE_DOC_TYPES, TASK_TYPE_LABELS, isEpmsInboxTask, taskHref } from './taskTypes'
 import { VMS_URL } from './api'
 
 const VISIT_ID = '11111111-1111-4111-8111-111111111111'
@@ -159,5 +159,38 @@ describe('taskHref — duplicate NC invoices', () => {
 
   it('labels the type', () => {
     expect(TASK_TYPE_LABELS.resolve_ap_duplicate_invoice).toBe('Resolve Duplicate NC Invoices')
+  })
+})
+
+describe('isEpmsInboxTask — EPMS inbox shows EPMS work only', () => {
+  it('keeps every EPMS document type', () => {
+    for (const docType of ['pr', 'po', 'gr', 'invoice', 'pa', 'agr', 'posign', 'nc_sync']) {
+      expect(isEpmsInboxTask({ document_type: docType })).toBe(true)
+    }
+  })
+
+  it("drops other modules' tasks — they live in Portal's inbox", () => {
+    // OA (claims, mileage, travel expense, travel application, custom forms,
+    // retired Direct PA), Finance, VMS. The OA ones are what reached a Finance
+    // Manager's EPMS inbox (approve_tra etc., no label, dead link).
+    for (const docType of [
+      'exp', 'mil', 'trv', 'tra', 'cfm', 'cfm_travel_advance', 'pa_dir',
+      'budget_plan', 'jv_validation', 'ap_duplicate_invoice',
+      'vms_visit', 'vms_train', 'vms_ppe',
+    ]) {
+      expect(isEpmsInboxTask({ document_type: docType })).toBe(false)
+    }
+  })
+
+  it('drops an unknown document type by default', () => {
+    expect(isEpmsInboxTask({ document_type: 'some_future_module' })).toBe(false)
+  })
+
+  it('still lets EPMS pages read budget_plan tasks (embedded plan editor Approve gate)', () => {
+    expect(EPMS_PAGE_DOC_TYPES.has('budget_plan')).toBe(true)
+    for (const docType of EPMS_INBOX_DOC_TYPES) expect(EPMS_PAGE_DOC_TYPES.has(docType)).toBe(true)
+    for (const docType of ['exp', 'tra', 'trv', 'mil', 'vms_visit', 'pa_dir']) {
+      expect(EPMS_PAGE_DOC_TYPES.has(docType)).toBe(false)
+    }
   })
 })

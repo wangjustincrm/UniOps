@@ -31,8 +31,10 @@ values:
       When you buy from the same vendor repeatedly in small, unplanned amounts
       and raising a PR each time would be pure overhead.
     notes:
-      - Purchases are charged against an open purchase order rather than a new
-        one per transaction.
+      - >-
+        No PR or PO is raised. Each purchase is recorded as an agreement
+        receipt, and the vendor's invoices are matched straight to the
+        agreement, with no purchase order in between.
       - >-
         Each purchase is backed by an agreement receipt (a delivery note or
         slip) recorded on the agreement. When the vendor's invoice is matched to
@@ -88,37 +90,4 @@ values:
       - Milestones can only be attached to this type; supplying them on any
         other kind is rejected.
 
-# ── Rules people ask about ───────────────────────────────────────────────────
-rules:
-  - id: agreement_numbering
-    asked_as:
-      - how are agreement numbers generated
-    answer: >
-      AGR-YYYYMM-NNNN: the year and month it was created (UTC), then a 4-digit
-      sequence that restarts each month.
-    enforced_in: "epms-api app/crud/agreement.py _next_number"
-  - id: active_is_not_in_force
-    asked_as:
-      - which agreements are still valid
-      - has this agreement expired
-    answer: >
-      Status Active means the agreement was approved; it does not mean it is
-      still in force. Nothing moves an agreement to Expired when its Valid To
-      date passes, so whether it is in force is read from Valid From / Valid To
-      (plus its grace days for invoices).
-    enforced_in: "epms-api app/crud/agreement.py (no write of expired/closed anywhere)"
-  - id: who_attaches_house_account_receipts
-    asked_as:
-      - who can attach receipts to an agreement invoice
-      - why can the agreement owner not see the receipts on the invoice
-      - 谁可以给协议发票挂收货凭证
-    answer: >
-      AP, the person who uploaded the invoice, whoever holds the invoice's
-      Match Invoice or Attach Invoice Receipts task, and the agreement's owner.
-      When an invoice is matched to a house account agreement without any
-      receipt attached, an "Attach Invoice Receipts" task goes to the
-      agreement's owner (no owner: a manager of the agreement's department;
-      neither: the AP pool). It closes on its own once receipts are attached or
-      the invoice is settled without receipt evidence, and it moves with the
-      agreement if the owner changes.
-    enforced_in: "epms-api app/api/v1/invoices.py _require_invoice_receipt_access; app/crud/attach_receipts_task.py; PRD EPMS AGR-032"
+# The rules people ask about live in rules/agreement.yaml (app/services/rule_registry.py).

@@ -14,6 +14,7 @@ import { usePr, usePrAction, usePrEvents, usePrWorkflowSteps } from '@/hooks/use
 import { useApprovalReminder } from '@/hooks/useApprovalReminder'
 import { prService } from '@/services/pr'
 import type { ApiEvent } from '@/services/pr'
+import { historyLine, isSkipped } from '@/lib/approvalHistory'
 import { useTasks } from '@/hooks/useTasks'
 import { useBudgetOverview, useFactors } from '@/hooks/useBudget'
 import { usePrAttachments, useUploadAttachment, useDeleteAttachment, useRegeneratePrPdf } from '@/hooks/usePrAttachments'
@@ -70,10 +71,10 @@ function buildWorkflowSteps(
       s = i < stepIdx ? 'completed' : i === stepIdx ? 'current' : 'pending'
     }
     const evt = approveEventByStep[i]
-    if (evt?.comment?.includes('Auto-skipped')) {
+    if (isSkipped(evt)) {
       s = 'skipped'
     }
-    return { id: node.id, role: node.label, actorName: evt?.comment?.includes('Auto-skipped') ? undefined : evt?.actor_name ?? undefined, status: s }
+    return { id: node.id, role: node.label, actorName: isSkipped(evt) ? undefined : evt?.actor_name ?? undefined, status: s }
   })
   return [created, ...approvalNodes]
 }
@@ -578,17 +579,20 @@ export default function PrDetailPage() {
               </h2>
               {events && events.length > 0 ? (
                 <ul className="flex flex-col gap-3">
-                  {events.map((ev) => (
-                    <li key={ev.id} className="flex gap-3 text-sm">
-                      <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDate(ev.created_at)}</span>
-                      <div>
-                        <span className="font-medium text-neutral-800 capitalize">{ev.action.replace(/_/g, ' ')}</span>
-                        <span className="text-neutral-500 ml-1">by {ev.actor_role.replace(/_/g, ' ')}</span>
-                        {ev.actor_name && <span className="text-neutral-400 ml-1">— {ev.actor_name}</span>}
-                        {ev.comment && <p className="text-neutral-400 text-xs mt-0.5 italic">{ev.comment}</p>}
-                      </div>
-                    </li>
-                  ))}
+                  {events.map((ev) => {
+                    const line = historyLine(ev)
+                    return (
+                      <li key={ev.id} className="flex gap-3 text-sm">
+                        <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDate(ev.created_at)}</span>
+                        <div>
+                          <span className="font-medium text-neutral-800 capitalize">{line.action}</span>
+                          <span className="text-neutral-500 ml-1">{line.role}</span>
+                          {line.actorName && <span className="text-neutral-400 ml-1">— {line.actorName}</span>}
+                          {line.note && <p className="text-neutral-400 text-xs mt-0.5 italic">{line.note}</p>}
+                        </div>
+                      </li>
+                    )
+                  })}
                 </ul>
               ) : (
                 <div className="text-sm text-neutral-400 text-center py-8">No history yet</div>

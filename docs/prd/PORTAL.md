@@ -222,7 +222,7 @@ Home shows **My Task Inbox**, with a count badge that caps at "99+".
 
 | Source | Content |
 |---|---|
-| EPMS API Task Inbox (open tasks) | Every task in the shared task table that the user can act on: EPMS tasks, approval-engine tasks for OA, Finance (budget plans) and VMS documents, and NC-sync and Finance finding tasks. The same rules as EPMS.md §3.7.1 apply: personal plus role-pool tasks for all of the user's roles, plus the approval tasks of anyone who has delegated to them today. |
+| EPMS API Task Inbox (open tasks) | Every task in the shared task table that the user can act on: EPMS tasks, approval-engine tasks for OA, Finance (budget plans) and VMS documents, and NC-sync and Finance finding tasks. This is the only inbox that gathers every module (the EPMS Task Inbox shows EPMS tasks only, EPMS.md DSH-023). The visibility rules of EPMS.md §3.7.1 (DSH-008) apply: personal plus role-pool tasks for all of the user's roles, plus the approval tasks of anyone who has delegated to them today. |
 | OA "my actions" | OA claims and Travel Applications needing the user's action (OA.md) |
 
 | FR ID | Requirement |

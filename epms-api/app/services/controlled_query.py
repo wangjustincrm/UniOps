@@ -19,18 +19,24 @@ The whole statement additionally runs inside a READ ONLY transaction, so a
 future bug here cannot write even if it tried to.
 """
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import doc_numbers
+from app.core.delegation import PLANT_TIMEZONE
 from app.core.ontology import (
     BOOL, DATE, DATETIME, ENUM, INT, MONEY, REGISTRY, TEXT, Entity, get_entity,
     may_view,
 )
+
+_PLANT_TZ = ZoneInfo(PLANT_TIMEZONE)
+_BARE_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 # Row caps. A planner asking for "all of them" gets this many, and the response
 # says so — silent truncation would read as a complete answer when it is not.
@@ -60,7 +66,13 @@ _OPS_BY_KIND: dict[str, frozenset[str]] = {
 }
 
 _AGG_FN = {"sum": func.sum, "count": func.count, "avg": func.avg,
-           "min": func.min, "max": func.max}
+           "min": func.min, "max": func.max,
+           # "How many vendors have orders": counting order rows gave 7,067 and
+           # grouping then counting groups gave 593 (ISS-0054).
+           "count_distinct": lambda col: func.count(sa.distinct(col))}
+
+# Grains a date can be grouped by, as `<field>:<grain>` (ISS-0033).
+_GRAINS = frozenset({"day", "week", "month", "quarter", "year"})
 
 
 class QueryRejected(Exception):
@@ -69,6 +81,34 @@ class QueryRejected(Exception):
     Carries a message meant to be read by the planner on a retry, so it says
     what was wrong and what is available instead.
     """
+
+
+class QueryTimedOut(Exception):
+    """The statement ran past STATEMENT_TIMEOUT_MS and Postgres cancelled it.
+
+    Raised instead of the database error so a caller can answer "that took too
+    long" rather than fail the request. Unhandled, it became a 500 — and a 500
+    the browser could not read, shown as "Failed to fetch" (ISS-0052). The
+    caller's transaction is aborted by then and must be rolled back before the
+    session is used again.
+    """
+
+
+# Postgres query_canceled — what statement_timeout raises.
+_QUERY_CANCELED = "57014"
+
+
+def _is_statement_timeout(exc: BaseException) -> bool:
+    """Whether a DBAPIError is Postgres cancelling the statement. asyncpg's
+    error sits under SQLAlchemy's adapter, which may or may not copy the code
+    up, so look at each layer."""
+    seen = exc
+    while seen is not None:
+        for attr in ("sqlstate", "pgcode"):
+            if getattr(seen, attr, None) == _QUERY_CANCELED:
+                return True
+        seen = getattr(seen, "orig", None) or seen.__cause__
+    return False
 
 
 def _reject(msg: str) -> None:
@@ -148,6 +188,142 @@ def _field_of(entity: Entity, name: str):
     return current.fields.get(parts[-1])
 
 
+def _group_expr(entity: Entity, name: str):
+    """A group_by entry as (expression, path): a field, or `<date field>:<grain>`.
+
+    Grouping by a timestamp made one group per document — "purchases per month"
+    came back as 200 single-order groups (ISS-0033). A date field is grouped by
+    the calendar unit asked for, in the plant's time, and a timestamp without a
+    grain is refused rather than silently grouped to the microsecond.
+    """
+    field, _, grain = name.partition(":")
+    col, path = _resolve(entity, field)
+    kind = _kind_of(entity, field)
+    if grain:
+        if grain not in _GRAINS:
+            _reject(f"Unknown grain '{grain}' in '{name}'. Use one of: "
+                    f"{', '.join(sorted(_GRAINS))}")
+        if kind not in (DATE, DATETIME):
+            _reject(f"'{field}' is not a date, so it cannot be grouped by {grain}")
+        # Literals, not bound parameters: the SELECT and the GROUP BY copies of
+        # this expression must be textually identical for Postgres to accept
+        # them as one, and two binds of the same value are not. Both values
+        # come from a fixed list (_GRAINS, PLANT_TIMEZONE), never from input.
+        local = (func.timezone(sa.literal_column(f"'{PLANT_TIMEZONE}'"), col)
+                 if kind == DATETIME else col)
+        return sa.cast(func.date_trunc(sa.literal_column(f"'{grain}'"), local),
+                       sa.Date), path
+    if kind == DATETIME:
+        _reject(f"Grouping by the timestamp '{field}' gives one group per record. "
+                f"Group by a calendar unit instead, e.g. '{field}:month' "
+                f"(grains: {', '.join(sorted(_GRAINS))}).")
+    return col, path
+
+
+def _normalize_numbers(entity: Entity, clauses: list[dict]) -> tuple[list, list]:
+    """Rewrite typed document numbers into their stored form (ISS-0024).
+
+    Only exact comparisons on a field declared as a document number; a `like`
+    is a fragment search and is left alone. Returns the clauses and what was
+    changed, so the answer can say which number it looked up.
+    """
+    out, changed = [], []
+    for clause in clauses:
+        op = (clause.get("op") or "eq").lower()
+        field = _field_of(entity, clause.get("field") or "")
+        if field is None or not field.doc_number or op not in ("eq", "ne", "in", "not_in"):
+            out.append(clause)
+            continue
+        value = clause.get("value")
+        values = value if isinstance(value, list) else [value]
+        fixed = [doc_numbers.normalize(field.doc_number, v) if v is not None else v
+                 for v in values]
+        for before, after in zip(values, fixed):
+            if before is not None and str(before) != after:
+                changed.append({"field": clause["field"], "asked": before, "used": after})
+        out.append({**clause, "value": fixed if isinstance(value, list) else fixed[0]})
+    return out, changed
+
+
+def _many_link(path):
+    """The first one-to-many link on a resolved path, or None."""
+    return next((link for _, link, _ in path if link.cardinality == "one_to_many"), None)
+
+
+def _refuse_many(entity: Entity, name: str, path, use: str) -> None:
+    """A select / group_by / order_by / period across a one-to-many link.
+
+    Joined, it repeats the row once per child: a PO with three invoices is
+    listed three times, and every count and sum over the result grows with it
+    (1,104 "purchase orders" out of 535, ISS-0060). There is no correct way to
+    show one value of a many-valued link per row, so it is refused with what to
+    do instead.
+    """
+    link = _many_link(path)
+    if link is None:
+        return
+    _reject(
+        f"'{name}' cannot be used in {use}: it goes through '{link.name}', and "
+        f"one {entity.name} has many {link.target} rows, so every {entity.name} "
+        f"would be repeated once per {link.target}. Query {link.target} itself "
+        f"(reach {entity.name}'s fields through its link), or use the field in "
+        f"`where`, where it means \"has at least one {link.target} that ...\"."
+    )
+
+
+def _split_many(entity: Entity, clauses: list[dict]) -> tuple[list, list]:
+    """Separate the `where` clauses that cross a one-to-many link.
+
+    Those become EXISTS sub-queries (_apply_many) instead of joins, grouped by
+    path so that several conditions on the same link describe the SAME child
+    row: "an invoice that is matched and over 1,000", not "a matched invoice
+    and some invoice over 1,000".
+    """
+    local, groups = [], {}
+    for clause in clauses:
+        name = clause.get("field") or ""
+        _, path = _resolve(entity, name)
+        if _many_link(path) is None:
+            local.append(clause)
+            continue
+        key = tuple(link.name for _, link, _ in path)
+        groups.setdefault(key, (path, []))[1].append(clause)
+    return local, list(groups.values())
+
+
+async def _apply_many(db: AsyncSession, stmt, entity: Entity, groups: list,
+                      scope: dict):
+    """Filter on child rows without multiplying the parent: EXISTS / NOT EXISTS.
+
+    `invoices.status eq matched` keeps the POs that have at least one matched
+    invoice, each once. A clause asking for the child field to be empty
+    (`eq` null) asks for the opposite — "POs with no invoice" — so it becomes
+    NOT EXISTS over the remaining conditions of the group. Every table on the
+    path is scoped as its own entity, exactly as _apply_hops does for joins.
+    """
+    for path, clauses in groups:
+        src, link, target = path[0]
+        visible = await target.apply_scope(select(target.model.id), scope, db)
+        sub = select(sa.literal(1)).select_from(target.model).where(
+            getattr(entity.model, link.local) == getattr(target.model, link.remote),
+            target.model.id.in_(visible),
+        )
+        for src, link, target in path[1:]:
+            visible = await target.apply_scope(select(target.model.id), scope, db)
+            sub = sub.join(target.model, sa.and_(
+                getattr(src.model, link.local) == getattr(target.model, link.remote),
+                target.model.id.in_(visible),
+            ))
+        absent = [c for c in clauses
+                  if (c.get("op") or "eq").lower() == "eq" and c.get("value") is None]
+        present = [c for c in clauses if c not in absent]
+        local = [{**c, "field": c["field"].rsplit(".", 1)[1]} for c in present]
+        sub = _apply_where(sub, target, local, [])
+        exists = sub.exists()
+        stmt = stmt.where(~exists if absent else exists)
+    return stmt
+
+
 def _column(entity: Entity, name: str):
     if name not in entity.fields:
         _reject(
@@ -193,6 +369,51 @@ def _coerce(kind: str, raw: Any) -> Any:
         _reject(f"Value {raw!r} is not a valid {kind}")
 
 
+def _day_bounds(raw: Any) -> tuple[datetime, datetime] | None:
+    """A bare date against a DATETIME column, as the plant's whole day.
+
+    "2026-10-19" used to become 2026-10-19 00:00 — so `received_at <= to`
+    dropped the last day of every range and a one-day question always found
+    nothing (ISS-0074) — and the day began at midnight UTC, which is 20:00 the
+    evening before in Toronto. A day someone names is a local day: it runs from
+    their midnight to the next, half-open so the next midnight is not in it.
+
+    None for anything that is not a bare date: a full timestamp means what it
+    says and is compared as given.
+    """
+    if isinstance(raw, datetime):
+        return None
+    if isinstance(raw, date):
+        day = raw
+    elif isinstance(raw, str) and _BARE_DATE.match(raw.strip()):
+        day = date.fromisoformat(raw.strip())
+    else:
+        return None
+    return (datetime.combine(day, time.min, tzinfo=_PLANT_TZ),
+            datetime.combine(day + timedelta(days=1), time.min, tzinfo=_PLANT_TZ))
+
+
+def _datetime_day_clause(col, op: str, value: Any):
+    """The clause for a DATETIME compared with bare date(s), or None."""
+    if op == "between":
+        lo, hi = _day_bounds(value[0]), _day_bounds(value[1])
+        if lo is None or hi is None:
+            return None
+        return sa.and_(col >= lo[0], col < hi[1])
+    bounds = _day_bounds(value)
+    if bounds is None:
+        return None
+    start, end = bounds
+    return {
+        "eq": lambda: sa.and_(col >= start, col < end),
+        "ne": lambda: sa.or_(col < start, col >= end),
+        "gt": lambda: col >= end,
+        "gte": lambda: col >= start,
+        "lt": lambda: col < start,
+        "lte": lambda: col < end,
+    }[op]()
+
+
 def _apply_default_filter(stmt, entity: Entity, clauses: list[dict], hops: list,
                           request: dict) -> tuple:
     """Apply the entity's safe default, unless the caller is asking about it.
@@ -228,6 +449,32 @@ def _apply_default_filter(stmt, entity: Entity, clauses: list[dict], hops: list,
     col, path = _resolve(entity, field)
     hops.extend(path)
     return stmt.where(col.is_(True) if value is True else col == value), True
+
+
+def _apply_amount_excludes(stmt, entity: Entity, clauses: list[dict], hops: list,
+                           request: dict) -> tuple:
+    """Leave cancelled / rejected / draft documents out of an amount.
+
+    Only when the query asks for an amount (a metric with a currency) and does
+    not itself mention the status field — "how much did we spend with X" is
+    not a question about cancelled orders; "how much was cancelled" is, and is
+    answered as asked. The answer says it was applied (`assumption`).
+    """
+    ax = entity.amount_excludes
+    metrics = request.get("metrics") or []
+    if not ax or not any(entity.metrics[k].currency for k in metrics
+                         if k in entity.metrics):
+        return stmt, False
+    field, values, _ = ax
+    referenced = {c.get("field") for c in clauses}
+    referenced |= {g.partition(":")[0] for g in request.get("group_by") or []}
+    referenced |= set(request.get("select") or [])
+    referenced.add((request.get("order_by") or {}).get("field"))
+    if field in referenced:
+        return stmt, False
+    col, path = _resolve(entity, field)
+    hops.extend(path)
+    return stmt.where(sa.or_(col.is_(None), col.notin_(values))), True
 
 
 def _refuse_column_as_value(entity: Entity, name: str, kind: str, value: Any) -> None:
@@ -279,6 +526,14 @@ def _apply_where(stmt, entity: Entity, clauses: list[dict], hops: list):
             stmt = stmt.where(col.in_(items) if op == "in" else col.notin_(items))
             continue
 
+        if kind == DATETIME and op in ("eq", "ne", "gt", "gte", "lt", "lte", "between"):
+            if op == "between" and (not isinstance(value, list) or len(value) != 2):
+                _reject(f"Operator 'between' needs exactly two values for '{name}'")
+            day_clause = _datetime_day_clause(col, op, value)
+            if day_clause is not None:
+                stmt = stmt.where(day_clause)
+                continue
+
         if op == "between":
             if not isinstance(value, list) or len(value) != 2:
                 _reject(f"Operator 'between' needs exactly two values for '{name}'")
@@ -309,6 +564,83 @@ def _apply_where(stmt, entity: Entity, clauses: list[dict], hops: list):
     return stmt
 
 
+# Calendar periods the planner may name (ISS-0020). "This month" was read as
+# the calendar month one time and as the last 31 days the next, so the same
+# question gave 125 and 201; "this year" became the last 12 months. The
+# planner now names the period and the server works out its dates.
+CALENDAR_PERIODS = ("today", "yesterday", "this_week", "last_week", "this_month",
+                    "last_month", "this_quarter", "last_quarter", "this_year",
+                    "last_year")
+
+
+def _shift_years(day: date, years: int) -> date:
+    try:
+        return day.replace(year=day.year + years)
+    except ValueError:  # 29 February into a year without one
+        return day.replace(year=day.year + years, day=28)
+
+
+def calendar_range(name: str, shift_years: int = 0,
+                   today: date | None = None) -> tuple[date, date]:
+    """(first day, last day) of a named calendar period, in plant-local dates.
+
+    Weeks start on Monday. A current period ("this_month") runs to today, as
+    the dashboard's "this month" does. shift_years moves the whole range, so
+    this_quarter with -1 is the same quarter-to-date a year earlier.
+    """
+    today = today or datetime.now(_PLANT_TZ).date()
+    if name == "today":
+        frm = to = today
+    elif name == "yesterday":
+        frm = to = today - timedelta(days=1)
+    elif name in ("this_week", "last_week"):
+        monday = today - timedelta(days=today.weekday())
+        if name == "this_week":
+            frm, to = monday, today
+        else:
+            frm, to = monday - timedelta(days=7), monday - timedelta(days=1)
+    elif name in ("this_month", "last_month"):
+        first = today.replace(day=1)
+        if name == "this_month":
+            frm, to = first, today
+        else:
+            to = first - timedelta(days=1)
+            frm = to.replace(day=1)
+    elif name in ("this_quarter", "last_quarter"):
+        first = date(today.year, 3 * ((today.month - 1) // 3) + 1, 1)
+        if name == "this_quarter":
+            frm, to = first, today
+        else:
+            to = first - timedelta(days=1)
+            frm = date(to.year, 3 * ((to.month - 1) // 3) + 1, 1)
+    elif name in ("this_year", "last_year"):
+        if name == "this_year":
+            frm, to = date(today.year, 1, 1), today
+        else:
+            frm, to = date(today.year - 1, 1, 1), date(today.year - 1, 12, 31)
+    else:
+        _reject(f"Unknown calendar period '{name}'. Use one of: "
+                f"{', '.join(CALENDAR_PERIODS)}")
+    if shift_years:
+        frm, to = _shift_years(frm, shift_years), _shift_years(to, shift_years)
+    return frm, to
+
+
+def resolved_period(period: dict | None) -> dict | None:
+    """The plant-local dates a period covered, for the answer to state."""
+    if not period:
+        return None
+    if period.get("calendar"):
+        frm, to = calendar_range(period["calendar"], int(period.get("shift_years") or 0))
+        return {"from": frm.isoformat(), "to": to.isoformat(),
+                "calendar": period["calendar"],
+                **({"shift_years": int(period["shift_years"])}
+                   if period.get("shift_years") else {})}
+    if period.get("from") or period.get("to"):
+        return {"from": period.get("from"), "to": period.get("to")}
+    return None
+
+
 def _apply_period(stmt, entity: Entity, period: dict | None, hops: list):
     """Relative time windows, resolved server-side.
 
@@ -320,10 +652,20 @@ def _apply_period(stmt, entity: Entity, period: dict | None, hops: list):
         return stmt
     name = period.get("field") or entity.date_field
     col, path = _resolve(entity, name)
+    _refuse_many(entity, name, path, "period")
     hops.extend(path)
+
+    if period.get("calendar"):
+        frm, to = calendar_range(period["calendar"], int(period.get("shift_years") or 0))
+        period = {**period, "from": frm.isoformat(), "to": to.isoformat()}
+    elif period.get("shift_years"):
+        _reject("shift_years goes with calendar, e.g. {calendar: this_quarter, "
+                "shift_years: -1} for the same quarter last year")
 
     months = period.get("last_n_months")
     days = period.get("last_n_days")
+    if period.get("calendar"):
+        months = days = None
     if months is not None:
         months = int(months)
         if not 1 <= months <= 60:
@@ -338,9 +680,13 @@ def _apply_period(stmt, entity: Entity, period: dict | None, hops: list):
         frm, to = period.get("from"), period.get("to")
         kind = _kind_of(entity, name)
         if frm:
-            stmt = stmt.where(col >= _coerce(kind, frm))
+            day = _day_bounds(frm) if kind == DATETIME else None
+            stmt = stmt.where(col >= (day[0] if day else _coerce(kind, frm)))
         if to:
-            stmt = stmt.where(col <= _coerce(kind, to))
+            day = _day_bounds(to) if kind == DATETIME else None
+            # The whole of the last day is in the range: up to, not including,
+            # the next local midnight.
+            stmt = stmt.where(col < day[1] if day else col <= _coerce(kind, to))
         return stmt
 
     if _kind_of(entity, name) == DATE:
@@ -357,6 +703,10 @@ def _serialise(value: Any) -> Any:
     """
     if isinstance(value, Decimal):
         return str(value)
+    if isinstance(value, datetime) and value.tzinfo is not None:
+        # In the plant's time, offset included. Sent as UTC, an invoice
+        # uploaded at 17:39 was reported as uploaded at 21:39 (ISS-0053).
+        return value.astimezone(_PLANT_TZ).isoformat()
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     if value is None or isinstance(value, (str, int, float, bool)):
@@ -396,11 +746,22 @@ async def _apply_hops(db: AsyncSession, stmt, hops: list, scope: dict):
 
 async def execute(db: AsyncSession, request: dict, scope: dict,
                   for_export: bool = False) -> dict:
-    """Run one controlled query. Raises QueryRejected on anything unrecognised.
+    """Run one controlled query. Raises QueryRejected on anything unrecognised,
+    and QueryTimedOut when Postgres cancels it for running too long.
 
     `scope` is build_scope()'s output; both gates are read from it and neither is
     optional.
     """
+    try:
+        return await _execute(db, request, scope, for_export)
+    except sa.exc.DBAPIError as exc:
+        if _is_statement_timeout(exc):
+            raise QueryTimedOut(str(exc.orig)) from exc
+        raise
+
+
+async def _execute(db: AsyncSession, request: dict, scope: dict,
+                   for_export: bool) -> dict:
     entity = get_entity(request.get("entity") or "")
     if entity is None:
         _reject(f"Unknown entity. Available: {', '.join(sorted(REGISTRY))}")
@@ -413,9 +774,20 @@ async def execute(db: AsyncSession, request: dict, scope: dict,
     if entity.apply_scope is None:  # pragma: no cover — registry invariant
         raise RuntimeError(f"Entity {entity.name} has no scope function")
 
-    group_by = request.get("group_by") or []
+    group_by = list(request.get("group_by") or [])
     metrics = request.get("metrics") or []
     grouped = bool(group_by or metrics)
+
+    # Money is split by currency, always. A sum of CAD, USD, EUR and CNY amounts
+    # is not an amount of anything (ISS-0035), and saying "include the currency"
+    # in the prompt did nothing: a grouped row had no currency column to show.
+    asked_group_by = list(group_by)
+    currency_split = next(
+        (entity.metrics[k].currency for k in metrics
+         if k in entity.metrics and entity.metrics[k].currency
+         and entity.metrics[k].fn in ("sum", "avg", "min", "max")), None)
+    if currency_split and currency_split not in group_by:
+        group_by.append(currency_split)
 
     # Hops needed by any part of the request, collected before the statement is
     # built so each relationship is joined exactly once.
@@ -424,7 +796,8 @@ async def execute(db: AsyncSession, request: dict, scope: dict,
     if grouped:
         selected, labels = [], []
         for name in group_by:
-            col, path = _resolve(entity, name)
+            col, path = _group_expr(entity, name)
+            _refuse_many(entity, name, path, "group_by")
             hops.extend(path)
             selected.append(col)
             labels.append(name)
@@ -440,6 +813,7 @@ async def execute(db: AsyncSession, request: dict, scope: dict,
                 target = sa.literal_column("*")
             else:
                 target, path = _resolve(entity, metric.field)
+                _refuse_many(entity, metric.field, path, f"metric '{key}'")
                 hops.extend(path)
             selected.append(agg(target).label(key))
             labels.append(key)
@@ -450,7 +824,7 @@ async def execute(db: AsyncSession, request: dict, scope: dict,
         # count alongside any real column hid this; asking for it by itself did
         # not.
         stmt = select(*selected).select_from(entity.model)
-        if not group_by:
+        if not asked_group_by:
             # A bare aggregate over zero rows returns NULL, which reads exactly
             # like "there were rows but the value was empty" — the caller cannot
             # tell "no draft PAs exist" from "drafts exist with no amount", and a
@@ -465,6 +839,7 @@ async def execute(db: AsyncSession, request: dict, scope: dict,
         cols = []
         for f in fields:
             col, path = _resolve(entity, f)
+            _refuse_many(entity, f, path, "select")
             hops.extend(path)
             cols.append(col)
         stmt = select(*cols).select_from(entity.model)
@@ -472,10 +847,13 @@ async def execute(db: AsyncSession, request: dict, scope: dict,
     # Gate 2 — the row filter. Unconditional, and applied before any caller
     # supplied predicate so nothing can be OR-ed around it.
     stmt = await entity.apply_scope(stmt, scope, db)
-    clauses = list(request.get("where") or [])
+    clauses, numbers_read_as = _normalize_numbers(entity, list(request.get("where") or []))
     stmt, applied_default = _apply_default_filter(
         stmt, entity, clauses, hops, request)
-    stmt = _apply_where(stmt, entity, clauses, hops)
+    stmt, applied_excludes = _apply_amount_excludes(stmt, entity, clauses, hops, request)
+    local_clauses, many_groups = _split_many(entity, clauses)
+    stmt = _apply_where(stmt, entity, local_clauses, hops)
+    stmt = await _apply_many(db, stmt, entity, many_groups, scope)
     stmt = _apply_period(stmt, entity, request.get("period"), hops)
 
     # Resolve grouping and ordering BEFORE the joins are built, because
@@ -489,7 +867,7 @@ async def execute(db: AsyncSession, request: dict, scope: dict,
     group_cols = []
     if grouped and group_by:
         for n in group_by:
-            col, path = _resolve(entity, n)
+            col, path = _group_expr(entity, n)
             hops.extend(path)
             group_cols.append(col)
 
@@ -499,8 +877,11 @@ async def execute(db: AsyncSession, request: dict, scope: dict,
         name = order.get("field")
         if name in entity.metrics and grouped:
             order_col = sa.literal_column(f'"{name}"')
+        elif grouped and name in group_by and ":" in name:
+            order_col = _group_expr(entity, name)[0]
         else:
             order_col, path = _resolve(entity, name)
+            _refuse_many(entity, name, path, "order_by")
             hops.extend(path)
 
     stmt = await _apply_hops(db, stmt, hops, scope)
@@ -519,8 +900,8 @@ async def execute(db: AsyncSession, request: dict, scope: dict,
     # arithmetic does not stop it; having the answer already there does. Run over
     # the whole result, not the returned page, or a capped list would total only
     # what happened to fit.
-    totals: dict | None = None
-    if grouped and group_by:
+    totals: dict | list | None = None
+    if grouped and asked_group_by:
         total_cols = []
         total_labels = []
         for key in metrics:
@@ -533,14 +914,27 @@ async def execute(db: AsyncSession, request: dict, scope: dict,
             total_cols.append(agg(target).label(key))
             total_labels.append(key)
         if total_cols:
-            t_stmt = select(*total_cols).select_from(entity.model)
+            cur_col = _resolve(entity, currency_split)[0] if currency_split else None
+            t_stmt = select(*([cur_col] if cur_col is not None else []),
+                            *total_cols).select_from(entity.model)
             t_stmt = await entity.apply_scope(t_stmt, scope, db)
-            t_stmt = _apply_where(t_stmt, entity, request.get("where") or [], [])
+            # The same default as the grouped rows, or the total covers rows
+            # the groups do not (every BOM version, every budget plan version).
+            t_stmt, _ = _apply_default_filter(t_stmt, entity, clauses, [], request)
+            t_stmt, _ = _apply_amount_excludes(t_stmt, entity, clauses, [], request)
+            t_stmt = _apply_where(t_stmt, entity, local_clauses, [])
+            t_stmt = await _apply_many(db, t_stmt, entity, many_groups, scope)
             t_stmt = _apply_period(t_stmt, entity, request.get("period"), [])
             t_stmt = await _apply_hops(db, t_stmt, hops, scope)
-            t_row = (await db.execute(t_stmt)).first()
-            if t_row is not None:
-                totals = {k: _serialise(v) for k, v in zip(total_labels, t_row)}
+            if cur_col is not None:
+                t_rows = (await db.execute(t_stmt.group_by(cur_col))).all()
+                totals = [{currency_split: _serialise(r[0]),
+                           **{k: _serialise(v) for k, v in zip(total_labels, r[1:])}}
+                          for r in t_rows]
+            else:
+                t_row = (await db.execute(t_stmt)).first()
+                if t_row is not None:
+                    totals = {k: _serialise(v) for k, v in zip(total_labels, t_row)}
 
     if for_export:
         # The planner's own limit is ignored here: it was chosen for a chat
@@ -574,9 +968,33 @@ async def execute(db: AsyncSession, request: dict, scope: dict,
                 stmt.order_by(None).limit(None).subquery()))).scalar_one()
 
     matched = None
-    if grouped and not group_by:
-        matched = rows[0].pop(_MATCHED, None) if rows else 0
-        matched = int(matched) if matched is not None else 0
+    if grouped and not asked_group_by:
+        # One row per currency when the aggregate was split; the match count is
+        # theirs added up.
+        matched = sum(int(r.pop(_MATCHED, None) or 0) for r in rows)
+
+    # The total of the groups actually listed, when they are not all of them.
+    # `totals` is every group the query matched; asked for "the top 10 and
+    # their total", the model gave that figure as the top-10 total — 15.8M
+    # against 8.8M for the ten it listed (ISS-0032). Added up here from the
+    # unrounded values, per currency, for additive metrics only.
+    totals_shown = None
+    if truncated and asked_group_by and totals is not None:
+        additive = [k for k in metrics if entity.metrics[k].fn in ("sum", "count")]
+        if additive:
+            by_cur: dict = {}
+            for row in raw[:limit]:
+                values = dict(zip(labels, row))
+                key = values.get(currency_split) if currency_split else None
+                acc = by_cur.setdefault(key, {k: 0 for k in additive})
+                for k in additive:
+                    acc[k] += values.get(k) or 0
+            if currency_split:
+                totals_shown = [{currency_split: _serialise(c),
+                                 **{k: _serialise(v) for k, v in acc.items()}}
+                                for c, acc in by_cur.items()]
+            else:
+                totals_shown = {k: _serialise(v) for k, v in by_cur.get(None, {}).items()}
 
     out = {"entity": entity.name, "rows": rows, "row_count": len(rows),
            "truncated": truncated, "denied": False,
@@ -586,26 +1004,55 @@ async def execute(db: AsyncSession, request: dict, scope: dict,
 
     # Say so when a default narrowed the question. A result that quietly shows
     # one version of six is not wrong, but a reply that does not mention it is.
+    notes = []
     if applied_default and entity.default_filter_note:
-        out["assumption"] = entity.default_filter_note
+        notes.append(entity.default_filter_note)
+    if applied_excludes:
+        notes.append(entity.amount_excludes[2])
+    if notes:
+        out["assumption"] = " ".join(notes)
 
     # Codes that stand for something, for the columns actually returned. The
     # schema block carries these too, but only the planner sees that; whatever
     # writes the reply sees this result and nothing else, and without the
     # mapping it reports "type 2" — a number the reader cannot act on.
-    coded = {}
+    coded, notes = {}, {}
     for label in labels:
         f = _field_of(entity, label)
         if f is not None and f.value_labels:
             coded[label] = {k: v for k, v in f.value_labels}
+        if f is not None and f.value_notes:
+            # For the narrator's understanding only, never to be shown
+            # (ISS-0013); value_labels is the name the page shows.
+            notes[label] = {k: v for k, v in f.value_notes}
     if coded:
         out["value_labels"] = coded
+    if notes:
+        out["value_notes"] = notes
+    # A sentence the reply must carry whenever these values are listed — added
+    # under the reply by the chat layer, not left to the narrator (ISS-0008).
+    listed = []
+    for name in asked_group_by:
+        f = _field_of(entity, name.partition(":")[0])
+        if f is not None and f.when_listed and f.when_listed not in listed:
+            listed.append(f.when_listed)
+    if listed:
+        out["said_with_this_list"] = listed
     if matched is not None:
         out["matched_rows"] = matched
     if total_rows is not None:
         out["total_rows"] = total_rows
+    if numbers_read_as:
+        out["numbers_read_as"] = numbers_read_as
+    covered = resolved_period(request.get("period"))
+    if covered:
+        out["resolved_period"] = covered
     if totals is not None:
         out["totals"] = totals
+    if totals_shown is not None:
+        out["totals_shown"] = totals_shown
+    if currency_split:
+        out["currency_split"] = currency_split
 
     if not rows and not grouped:
         near = await _near_misses(db, entity, scope, clauses, hops)
@@ -654,6 +1101,26 @@ async def _near_misses(db: AsyncSession, entity, scope: dict,
     """
     suggestions: dict[str, list[str]] = {}
     for clause in clauses:
+        numbered = _field_of(entity, clause.get("field") or "")
+        if (clause.get("op") or "eq") == "eq" and numbered is not None and numbered.doc_number:
+            # An exact document number that matched nothing: offer the numbers
+            # that share its digits, in order, so "did you mean …" can be asked
+            # instead of "not found" (ISS-0024).
+            groups = doc_numbers.digit_groups(clause.get("value") or "")
+            if groups:
+                try:
+                    col, path = _resolve(entity, clause["field"])
+                    stmt = select(col).select_from(entity.model).distinct()
+                    stmt = await entity.apply_scope(stmt, scope, db)
+                    stmt = await _apply_hops(db, stmt, list(path), scope)
+                    stmt = stmt.where(col.ilike("%" + "%".join(groups) + "%"))
+                    found = [r[0] for r in (await db.execute(
+                        stmt.limit(_MAX_SUGGESTIONS))).all() if r[0]]
+                except Exception:  # noqa: BLE001 — best effort, as below
+                    found = []
+                if found:
+                    suggestions[clause["field"]] = found
+            continue
         if clause.get("op") != "like":
             continue
         name = clause.get("field")

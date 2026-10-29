@@ -1398,6 +1398,10 @@ _POST_APPROVE: dict[str, Any] = {
 #
 # Kept next to the rules it describes, and test_workflow_conditional_roles
 # asserts the two do not drift apart.
+# Statuses a submitter may recall a document from (back to draft, starting
+# over). A constant so engine_rules.py states the same tuple the branch checks.
+RECALLABLE_STATUSES = ("submitted", "in_review")
+
 CONDITIONAL_ROLES: dict[str, str] = {
     "director": "Only runs when the department has a Director configured.",
     "supervisor": "Only runs when a Supervisor is assigned.",
@@ -1405,6 +1409,21 @@ CONDITIONAL_ROLES: dict[str, str] = {
                      "managers configured."),
     "quality_manager": ("Only runs when the visit's access zone has zone "
                         "managers configured."),
+}
+
+
+# The payment-application half of the same annotation: on a PA the department
+# steps also step aside when the payment spans several departments (first
+# branch of _should_skip_step). Keyed by role, read only for doc_type "pa";
+# test_workflow_conditional_roles holds it to the skip rule.
+CROSS_DEPT_PA_CONDITIONS: dict[str, str] = {
+    "dept_manager": ("Only runs when all the payment's purchase orders come from one "
+                     "department; a payment covering several departments skips it "
+                     "and is approved at GM/OPM level instead."),
+    "director": ("Only runs when the department has a Director configured and all "
+                 "the payment's purchase orders come from one department; a payment "
+                 "covering several departments skips it and is approved at GM/OPM "
+                 "level instead."),
 }
 
 
@@ -1907,7 +1926,7 @@ async def execute_action(
         _set_status(meta, doc, "cancelled" if doc_type in ("pa", "pa_dir") else "rejected")
 
     elif act == "recall":
-        if _status_of(meta, doc) not in ("submitted", "in_review"):
+        if _status_of(meta, doc) not in RECALLABLE_STATUSES:
             raise ValueError(f"Cannot recall {doc_type.upper()} in status '{_status_of(meta, doc)}'")
         if actor_role != "system_admin" and actor_id != doc.created_by:
             raise ValueError(f"Only the submitter can recall this {doc_type.upper()}")

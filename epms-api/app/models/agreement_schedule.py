@@ -12,7 +12,8 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, Numeric, String, Text, select
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -56,3 +57,17 @@ class AgreementPaymentSchedule(UUIDPrimaryKey, TimestampMixin, Base):
     accepted_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Who confirmed the period, by name — for the Assistant's agreement_period
+    # (query side only). "协议这个月的服务确认了吗？" is answered from this row
+    # (ISS-0022 #1); without the name it could only say "a user id".
+    @hybrid_property
+    def confirmed_by_name(self) -> str | None:
+        return None
+
+    @confirmed_by_name.inplace.expression
+    @classmethod
+    def _confirmed_by_name_expression(cls):
+        from app.models.user import User
+        return (select(User.full_name).where(User.id == cls.accepted_by)
+                .correlate_except(User).scalar_subquery())

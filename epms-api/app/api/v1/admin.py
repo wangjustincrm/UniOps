@@ -10,7 +10,7 @@ from app.admin import service
 from app.admin.registry import REGISTRY
 from app.admin.resolvers import get_resolver, resolver_sources
 from app.core.deps import BearerToken, SessionDep, require_permission
-from app.services import approval_client, finance_client
+from app.services import approval_client, finance_client, finance_sync
 
 router = APIRouter(prefix="/admin", tags=["data-maintenance"])
 
@@ -206,13 +206,17 @@ async def edit_approval_state(entity: str, record_id: uuid.UUID, db: SessionDep,
 
 @router.delete("/{entity}/{record_id}")
 async def delete_record(entity: str, record_id: uuid.UUID, db: SessionDep, user: AdminUser,
-                        preview: int = Query(0)):
+                        token: BearerToken, preview: int = Query(0)):
     actor_id, email = _actor(user)
     try:
         if preview:
             summary = await service.delete_preview(db, entity, record_id)
             return {"preview": True, "cascade": summary}
         summary = await service.delete_record(db, entity, record_id, actor_id=actor_id, actor_email=email)
+        # Every invoice this removed (itself, or in a PO/agreement cascade) is
+        # voided in Finance before anything commits. This path used to tell
+        # Finance nothing — the source of all five 2026-10 AP orphans.
+        await finance_sync.void_deleted_invoices(db, token)
         await db.commit()
         return {"preview": False, "cascade": summary}
     except ValueError as e:
@@ -221,13 +225,18 @@ async def delete_record(entity: str, record_id: uuid.UUID, db: SessionDep, user:
     except IntegrityError as e:
         await db.rollback()
         raise _constraint_error(e)
+    except finance_sync.FinanceVoidFailed as e:
+        await db.rollback()
+        raise HTTPException(502, str(e))
 
 
 @router.post("/{entity}/bulk-delete")
-async def bulk_delete(entity: str, db: SessionDep, user: AdminUser, body: BulkDeleteRequest):
+async def bulk_delete(entity: str, db: SessionDep, user: AdminUser, body: BulkDeleteRequest,
+                      token: BearerToken):
     actor_id, email = _actor(user)
     try:
         summary = await service.bulk_delete(db, entity, body.ids, actor_id=actor_id, actor_email=email)
+        await finance_sync.void_deleted_invoices(db, token)   # see delete_record
         await db.commit()
         return {"deleted": len(body.ids), "cascade": summary}
     except ValueError as e:
@@ -236,3 +245,6 @@ async def bulk_delete(entity: str, db: SessionDep, user: AdminUser, body: BulkDe
     except IntegrityError as e:
         await db.rollback()
         raise _constraint_error(e)
+    except finance_sync.FinanceVoidFailed as e:
+        await db.rollback()
+        raise HTTPException(502, str(e))

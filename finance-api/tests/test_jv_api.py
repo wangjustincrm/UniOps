@@ -49,14 +49,22 @@ async def _draft_jv(db):
         JournalVoucher.posting_event_id == ev_id))).scalar_one()
 
 
+async def _nc_jv(db):
+    """A voucher the list shows: the list is NC's mirror (nc_source_pk set)."""
+    jv = await _draft_jv(db)
+    jv.nc_source_pk = jv.id.hex[:20]
+    await db.flush()
+    return jv
+
+
 async def test_debit_column_sorts_by_the_CAD_amount_it_displays(client, db_session):
     """The list's "Debit (CAD)" column shows total_local_debit; sorting it must
     order by that same column, not the original-currency total_debit — else a
     multi-currency book's visible column is non-monotonic. Craft two vouchers
     whose original and CAD totals rank oppositely and assert CAD order wins."""
     from sqlalchemy import update
-    a = await _draft_jv(db_session)
-    b = await _draft_jv(db_session)
+    a = await _nc_jv(db_session)
+    b = await _nc_jv(db_session)
     # a: orig 200 / CAD 100 ; b: orig 100 / CAD 150 -> opposite rankings
     await db_session.execute(update(JournalVoucher).where(JournalVoucher.id == a.id)
         .values(total_debit=Decimal("200.00"), total_local_debit=Decimal("100.00")))
@@ -70,7 +78,7 @@ async def test_debit_column_sorts_by_the_CAD_amount_it_displays(client, db_sessi
 
 
 async def test_list_and_get_detail(client, db_session):
-    jv = await _draft_jv(db_session)
+    jv = await _nc_jv(db_session)
     r = await client.get("/finance/v1/journal-vouchers", headers=_h())
     assert r.status_code == 200
     assert any(row["id"] == str(jv.id) for row in r.json()["items"])
@@ -117,8 +125,8 @@ async def test_post_batch_endpoint(client, db_session):
 
 
 async def test_list_pagination_and_search(client, db_session):
-    a = await _draft_jv(db_session)
-    b = await _draft_jv(db_session)
+    a = await _nc_jv(db_session)
+    b = await _nc_jv(db_session)
     # paginated envelope
     r = await client.get("/finance/v1/journal-vouchers?limit=1&offset=0", headers=_h())
     assert r.status_code == 200
@@ -135,8 +143,8 @@ async def test_list_pagination_and_search(client, db_session):
 
 
 async def test_list_sort_by_jv_number_asc(client, db_session):
-    a = await _draft_jv(db_session)
-    b = await _draft_jv(db_session)
+    a = await _nc_jv(db_session)
+    b = await _nc_jv(db_session)
     r = await client.get("/finance/v1/journal-vouchers?sort=jv_number&dir=asc", headers=_h())
     assert r.status_code == 200
     nums = [row["jv_number"] for row in r.json()["items"]]
@@ -194,3 +202,17 @@ async def test_detail_resolves_names_and_dims(client, db_session):
     assert ln["department_name"] == "Production"
     assert {"dim_code": "income_expense_item", "value_text": "CRM004"} in [
         {"dim_code": d["dim_code"], "value_text": d["value_text"]} for d in ln["dims"]]
+
+
+async def test_list_hides_internal_drafts_that_never_reach_nc(client, db_session):
+    """generate_from_event drafts are UniOps-internal and share NC's JV number
+    space; listing them showed a 'JV-202609-0601' finance could not find in NC."""
+    internal = await _draft_jv(db_session)
+    nc = await _nc_jv(db_session)
+    r = await client.get("/finance/v1/journal-vouchers?limit=200", headers=_h())
+    ids = [row["id"] for row in r.json()["items"]]
+    assert str(nc.id) in ids
+    assert str(internal.id) not in ids
+    # still reachable by id (AP / payment pages link to it)
+    r2 = await client.get(f"/finance/v1/journal-vouchers/{internal.id}", headers=_h())
+    assert r2.status_code == 200

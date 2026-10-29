@@ -1,0 +1,100 @@
+area: nc_sync
+label: Orders from NC (raw materials, packaging, milk)
+covers: >
+  How purchase orders come over from NC, how often, why one is missing, the
+  -2 suffix, what changes after an invoice, the Milk / NC statuses, who
+  raises their payment applications.
+rules:
+  - id: nc_sync_schedule
+    asked_as:
+      - NC 订单多久同步一次？
+      - NC 里刚批准的采购订单，多久能在 EPMS 里看到？你能马上查到吗？
+      - how often are NC orders synced
+    answer: >
+      The NC purchase sync runs {schedule}. A PO approved in NC appears in
+      EPMS after the next run, and this assistant can find it only from
+      then. The Sync NC button on the PO list runs it at once (System
+      Admins, Procurement Officers and ERP PA Officers see it). The interval
+      is set by a System Admin in Portal → Admin → NC Sync, from 0 (off) to
+      {max_minutes} minutes.
+    provenance: derived
+    derive: nc_sync_schedule
+    enforced_in: "epms-api app/tasks/nc_purchase_sync_scheduler.py resolve_interval_minutes / is_due; app/api/v1/nc_purchase_sync.py _SYNC_ROLES, interval route"
+    test:
+      - "tests/test_nc_purchase_sync_scheduler.py::test_zero_is_the_off_switch"
+      - "tests/test_nc_purchase_sync_scheduler.py::test_status_defaults_the_interval_when_nobody_has_chosen"
+      - "tests/test_rule_registry.py::test_nc_schedule_is_read_from_config"
+  - id: why_an_nc_order_is_missing
+    asked_as:
+      - NC 里的订单为什么在 EPMS 里找不到？
+      - why can't I find an NC order in EPMS
+    answer: >
+      The usual reasons: (1) it was approved in NC after the last sync run
+      (see nc_sync_schedule); (2) its supplier has no vendor in EPMS with
+      that ERP code — the order is skipped and an Import ERP Vendor task goes
+      to the System Admins naming the supplier (Vendors → From ERP); every
+      run retries it and it comes over once the vendor exists; (3) it was
+      pending in NC and NC stopped listing it — the PO already mirrored is
+      then cancelled and tagged [NC Pending Withdrawn]; (4) its number
+      collided with an existing EPMS PO, so it was given a suffix such as -2
+      (see nc_number_suffix).
+    enforced_in: "epms-api app/services/nc_purchase_sync/transform.py (vendor_gaps), error_tasks.py VENDOR_TASK, service.py clamp_watermark_for_skipped, writer.py reconcile_pending _WITHDRAWN_TAG"
+    provenance: pinned
+    test:
+      - "tests/test_nc_purchase_error_tasks.py::test_vendor_gap_raises_an_admin_task_naming_the_supplier"
+      - "tests/test_nc_purchase_error_tasks.py::test_task_closes_once_the_order_reaches_epms"
+      - "tests/test_rule_registry.py::test_withdrawn_pending_orders_are_tagged"
+  - id: nc_number_suffix
+    asked_as:
+      - PO 单号后面带 -2 是什么意思？
+      - what does -2 after a PO number mean
+    answer: >
+      An NC order whose number is already used by another PO in EPMS is
+      mirrored under the same number with the next free suffix: -2, -3 and
+      so on up to -50. If none up to -50 is free the order is not mirrored
+      and a Resolve NC Sync Error task goes to the System Admins.
+    enforced_in: "epms-api app/services/nc_purchase_sync/writer.py _free_number (_MAX_NUMBER_SUFFIX = 50)"
+    provenance: pinned
+    test:
+      - "tests/test_nc_purchase_number_collision.py::test_both_orders_sharing_a_number_are_mirrored"
+      - "tests/test_nc_purchase_error_tasks.py::test_number_collision_raises_its_own_task"
+      - "tests/test_rule_registry.py::test_number_suffix_limit"
+  - id: nc_stops_updating_an_invoiced_po
+    asked_as:
+      - 有发票之后 NC 还会更新这张 PO 吗？
+      - does NC still update a PO once it has an invoice
+    answer: >
+      No. Once an invoice is recorded against a PO mirrored from NC, the
+      sync stops rewriting it — its header, lines and receipts stay as they
+      are, and changes made in NC after that do not come through.
+    enforced_in: "epms-api app/services/nc_purchase_sync/writer.py _po_consumed / upsert (skipped_consumed)"
+    provenance: pinned
+    test:
+      - "tests/test_nc_purchase_writer.py::test_upsert_skips_consumed_po"
+      - "tests/test_nc_purchase_writer.py::test_full_reload_preserves_invoice_linked_po"
+  - id: who_raises_pas_for_nc_orders
+    asked_as:
+      - NC 导入的 PO 由谁来建付款申请？
+      - who raises PAs for NC-imported POs
+    answer: >
+      The ERP PA Officer. An NC order has no PR in EPMS, so when an invoice
+      is matched to it the Create PA task goes to the ERP PA Officer role
+      (an additional role holding PA write), not to a requester.
+    enforced_in: "epms-api app/api/v1/invoices.py create_pa task (pr is None and source nc → erp_pa_officer); app/crud/task.py _backfill_create_pa_tasks"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_nc_create_pa_tasks_go_to_the_erp_pa_officer"
+  - id: milk_and_nc_statuses
+    asked_as:
+      - Milk / NC 状态是什么意思？
+      - what does nc_milk mean
+    answer: >
+      nc_milk — {nc_milk}. nc_pending — {nc_pending}. A milk order cannot
+      take a goods receipt in EPMS (its receipts are booked in NC), is not
+      offered for invoice matching, and the PO page offers no Create PA; it
+      can be signed off.
+    provenance: derived
+    derive: nc_statuses
+    enforced_in: "epms-api app/ontology/epms.yaml purchase_order.status value_labels; app/api/v1/gr.py GR statuses; app/api/v1/invoices.py _MATCHABLE_PO_STATUSES; epms/src/pages/po/PoDetailPage.tsx canCreatePa"
+    test:
+      - "tests/test_rule_registry.py::test_milk_orders_are_kept_out_of_receipts_and_matching"

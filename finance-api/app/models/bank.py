@@ -10,7 +10,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
-    Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint,
+    Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -94,3 +94,25 @@ class ExchangeRate(UUIDPrimaryKey, TimestampMixin, Base):
     rate: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
     effective_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # boc = Bank of Canada daily average (services/fx_rates.py); manual = typed in
+    # by finance (an override, or a currency BoC does not publish). The daily
+    # fetch never overwrites a manual row.
+    source: Mapped[str] = mapped_column(String(10), nullable=False, default="manual",
+                                        server_default="manual")
+    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+
+class FxFetchRun(UUIDPrimaryKey, Base):
+    """One Bank of Canada fetch (scheduled, backfill or a button press)."""
+    __tablename__ = "fx_fetch_runs"
+
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    trigger: Mapped[str] = mapped_column(String(20), nullable=False)   # schedule | manual
+    date_from: Mapped[date] = mapped_column(Date, nullable=False)
+    date_to: Mapped[date] = mapped_column(Date, nullable=False)
+    ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    rows_upserted: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

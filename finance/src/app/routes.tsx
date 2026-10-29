@@ -17,6 +17,7 @@ import BankStatementCsvPage from '@/pages/finance/BankStatementCsvPage'
 import CoaConfigPage from '@/pages/finance/CoaConfigPage'
 import TaxSettingsPage from '@/pages/finance/TaxSettingsPage'
 import BankSettingsPage from '@/pages/finance/BankSettingsPage'
+import ExchangeRatesPage from '@/pages/finance/ExchangeRatesPage'
 import QboMirrorPage from '@/pages/finance/QboMirrorPage'
 import QboCreditImportPage from '@/pages/finance/QboCreditImportPage'
 import BudgetConfigPage from '@/pages/budget/BudgetConfigPage'
@@ -65,6 +66,7 @@ export const financeRoutes: RouteDef[] = [
   { path: '/finance/coa', element: <CoaConfigPage />, tab: { title: 'Chart of Accounts', icon: 'FolderTree', keyStrategy: 'static' } },
   { path: '/finance/tax', element: <TaxSettingsPage />, tab: { title: 'Tax Settings', icon: 'Percent', keyStrategy: 'static' } },
   { path: '/finance/bank-settings', element: <BankSettingsPage />, tab: { title: 'Bank Settings', icon: 'Settings', keyStrategy: 'static' } },
+  { path: '/finance/fx-rates', element: <ExchangeRatesPage />, tab: { title: 'Exchange Rates', icon: 'Coins', keyStrategy: 'static' } },
 
   // AI Financial Analysis (finance.analysis.view — not view_finance).
   { path: '/finance/analysis/anomalies', element: <CostAnomaliesPage />, tab: { title: 'Cost Anomalies', icon: 'Activity', keyStrategy: 'static' } },

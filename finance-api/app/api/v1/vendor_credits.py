@@ -27,6 +27,8 @@ from app.core.read_authz import authorize_finance_read
 from app.crud import vendor_credit as crud
 from app.db.base import get_db
 from app.models.mirrors import User
+from app.models.payment import PaymentRecord
+from app.models.payment_batch import PaymentBatch
 from app.models.pa import PaymentApplication
 from app.models.vendor_credit import VendorCreditApplication
 from app.schemas.vendor_credit import (
@@ -189,10 +191,36 @@ async def list_vendor_credit_applications(credit_id: uuid.UUID, user: CurrentUse
         )).scalars().all():
             names[u.id] = u.full_name or u.email
 
+    # What the payment itself looked like — the cash that actually left the
+    # bank alongside this credit, and the batch it went out in — so the
+    # drawer reads as "PA X: 25.14 netted, 502.33 paid, batch BP-…" without
+    # sending AP to the Payments hub for each row.
+    payments: dict[uuid.UUID, PaymentRecord] = {}
+    batch_numbers: dict[uuid.UUID, str] = {}
+    if rows:
+        for p in (await db.execute(
+            select(PaymentRecord)
+            .where(PaymentRecord.id.in_({r.payment_record_id for r in rows}))
+        )).scalars().all():
+            payments[p.id] = p
+        batch_ids = {r.batch_id for r in rows if r.batch_id}
+        if batch_ids:
+            for b_id, b_no in (await db.execute(
+                select(PaymentBatch.id, PaymentBatch.batch_number)
+                .where(PaymentBatch.id.in_(batch_ids))
+            )).all():
+                batch_numbers[b_id] = b_no
+
     items = []
     for r in rows:
         row = VendorCreditApplicationRow.model_validate(r)
         row.applied_by_name = names.get(r.applied_by)
+        row.batch_number = batch_numbers.get(r.batch_id) if r.batch_id else None
+        p = payments.get(r.payment_record_id)
+        if p is not None:
+            row.payment_date = p.payment_date
+            row.cash_paid = p.amount
+            row.payment_status = p.status
         items.append(row)
     return VendorCreditApplicationListResponse(
         items=items, total=len(items), total_applied=total_applied)

@@ -1,0 +1,30 @@
+area: vendor
+label: Vendors
+covers: >
+  Inactive vendors, vendor change history, whether a vendor can be prepaid.
+rules:
+  - id: inactive_vendors
+    asked_as:
+      - 停用后还能下单吗？
+      - can an inactive vendor still be ordered from
+    answer: >
+      An inactive vendor cannot be picked on a new PR, PO or agreement — the
+      vendor pickers list active vendors only. Documents that already name
+      the vendor keep it and still show it. The pickers enforce this; the
+      server does not check it separately.
+    enforced_in: "epms/src/pages/pr/PrCreatePage.tsx, PrEditPage.tsx, po/PoCreatePage.tsx, PoEditPage.tsx, agreements/AgreementCreatePage.tsx useVendors({ active_only: true })"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_vendor_pickers_list_active_vendors_only"
+  - id: no_vendor_change_history
+    asked_as:
+      - 谁改过供应商的信息？
+      - who changed this vendor
+    answer: >
+      That cannot be looked up: EPMS keeps no history of changes to a
+      vendor's details — no record of who changed what, or when — so there
+      is no change record for anyone to check.
+    enforced_in: "epms-api app/api/v1/vendors.py update forwards to mdm-api (no audit); app/admin/registry.py audit covers no vendor entity"
+    provenance: not_built
+    test:
+      - "tests/test_rule_registry.py::test_vendor_edits_leave_no_history"

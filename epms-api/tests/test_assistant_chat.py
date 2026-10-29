@@ -143,17 +143,40 @@ async def test_the_planner_is_only_shown_entities_the_caller_may_view(
 
 async def test_cannot_answer_comes_back_as_an_answer(admin_client, monkeypatch):
     _stub(monkeypatch, plans=[{
-        "kind": "cannot", "reason": "not_a_data_question",
-        "explanation": "That is about why something is blocked, not a data question.",
+        "kind": "cannot", "reason": "not_in_schema",
+        "explanation": "Remittance records are not something I can see.",
     }])
-    r = await admin_client.post(CHAT, json={"message": "why can't I submit PR-1?"})
+
+    async def no_rule(message, history=None):
+        return {"areas": [], "usage": {}}
+
+    monkeypatch.setattr(assistant_llm, "pick_rule_areas", no_rule)
+    r = await admin_client.post(CHAT, json={"message": "was the remittance sent?"})
 
     assert r.status_code == 200, "a refusal is not a server error"
     body = r.json()
     assert body["kind"] == "cannot_answer"
-    assert body["reason"] == "not_a_data_question"
+    assert body["reason"] == "not_in_schema"
     assert body["query"] is None
-    assert "blocked" in body["answer"]
+    assert "Remittance" in body["answer"]
+
+
+async def test_a_not_a_data_question_refusal_is_written_by_the_code(admin_client, monkeypatch):
+    """ISS-0022: the model's own refusal text ("not in my data, ask the System
+    Admin", once a non-existent "Vendor Manager") is no longer shown; when no
+    rule applies the reply says what can be answered instead."""
+    _stub(monkeypatch, plans=[{
+        "kind": "cannot", "reason": "not_a_data_question",
+        "explanation": "Ask your System Admin.",
+    }])
+
+    async def no_rule(message, history=None):
+        return {"areas": [], "usage": {}}
+
+    monkeypatch.setattr(assistant_llm, "pick_rule_areas", no_rule)
+    body = (await admin_client.post(CHAT, json={"message": "why can't I submit PR-1?"})).json()
+    assert body["kind"] == "cannot_answer" and body["reason"] == "no_rule"
+    assert "System Admin" not in body["answer"]
 
 
 # ── recovery ──────────────────────────────────────────────────────────────────
@@ -373,13 +396,17 @@ async def test_no_number_and_no_context_asks_instead_of_guessing(
     assert "which document" in body["answer"].lower()
 
 
-async def test_an_unsupported_doc_type_says_so_plainly(admin_client, monkeypatch):
-    _stub(monkeypatch, plans=[{
+async def test_a_po_action_without_a_gate_check_gets_the_po_rules(admin_client, monkeypatch):
+    """It used to answer "I can only check purchase requests, not POs" — about
+    a document the assistant can read (ISS-0017). A PO action without its own
+    check (create_pa / create_gr / submit_signoff have one) gets the PO rules."""
+    calls = _stub(monkeypatch, plans=[{
         "kind": "check", "doc_type": "po", "doc_number": "PO-1", "action": "submit"}])
     body = (await admin_client.post(CHAT, json={"message": "why can't I submit PO-1?"})).json()
 
-    assert body["kind"] == "cannot_answer"
-    assert body["reason"] == "not_supported"
+    assert body["kind"] == "rules"
+    assert "only check purchase requests" not in body["answer"]
+    assert calls["guide"][0]["payload"]["areas"][0]["area"] == "po"
 
 
 # ── approval progress: the data was always there ─────────────────────────────
@@ -514,11 +541,13 @@ async def test_the_planner_is_told_what_day_it_is(admin_client, monkeypatch):
     and nothing in the answer hinted the year had been invented. The only fix is
     to tell it the date; it cannot know otherwise.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
     from app.services.assistant_llm import _today_note
 
     note = _today_note()
-    today = datetime.now(timezone.utc)
+    # The plant's date (ISS-0048), not UTC's.
+    today = datetime.now(ZoneInfo("America/Toronto"))
     assert f"{today:%Y-%m-%d}" in note
     assert str(today.year) in note
     # And it must say what to do with it, not just state it.
@@ -542,6 +571,28 @@ async def test_conversation_history_reaches_the_planner(admin_client, monkeypatc
     assert history and len(history) == 2
     assert "PO-400-2608-10" in history[0]["content"]
     assert history[0]["role"] == "user" and history[1]["role"] == "assistant"
+
+
+async def test_unanswered_questions_never_reach_the_planner(admin_client, monkeypatch):
+    """ISS-0071: two failed requests left their questions in the history with
+    no answer after them; three user turns in a row read as one request, and a
+    PO question was planned as the earlier goods-receipt question."""
+    calls = _stub(monkeypatch, plans=[{"kind": "cannot", "reason": "too_ambiguous",
+                                       "explanation": "n/a"}])
+    await admin_client.post(CHAT, json={
+        "message": "PO-079-2605-03 发给供应商了吗？",
+        "history": [
+            {"role": "assistant", "text": "orphan answer at the start"},
+            {"role": "user", "text": "PO-400 的状态？"},
+            {"role": "assistant", "text": "Issued"},
+            {"role": "user", "text": "今天收了哪些货？"},
+            {"role": "user", "text": "今天收了哪些货？"},
+        ],
+    })
+    history = calls["plan"][0]["history"]
+    assert [t["role"] for t in history] == ["user", "assistant"]
+    assert "PO-400" in history[0]["content"]
+    assert all("收了哪些货" not in t["content"] for t in history)
 
 
 async def test_history_is_capped(admin_client, monkeypatch):

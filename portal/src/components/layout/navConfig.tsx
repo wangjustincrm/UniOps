@@ -122,6 +122,25 @@ export function isNavItemVisible(
   return true
 }
 
+/** The ADMIN entries that are pages of their own, not the Admin Panel itself
+ *  (Access Control, Approval Routing, Approval Delegation, Data Maintenance).
+ *
+ *  The Admin Panel at /admin draws its own sidebar, and an admin who goes
+ *  "Portal → Admin" — as the PRD words it — lands there and never sees this
+ *  sidebar again, so the three approval/access pages read as missing from
+ *  production (ISS-0027). The panel lists these as links. They are read from
+ *  the ADMIN section above, under the same visibility rule, so the two menus
+ *  cannot drift apart. */
+export function adminPageLinks(
+  userRole: string | null,
+  perms: Record<string, boolean> | undefined,
+): NavItemDef[] {
+  const admin = PORTAL_NAV_SECTIONS.find((s) => s.title === 'ADMIN')
+  return (admin?.items ?? []).filter(
+    (item) => item.href.startsWith('portal:/admin/') && isNavItemVisible(item, userRole, perms),
+  )
+}
+
 export interface HrefContext {
   epmsHref: string
   oaHref: string

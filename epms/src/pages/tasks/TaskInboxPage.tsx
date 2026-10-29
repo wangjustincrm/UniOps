@@ -5,7 +5,7 @@ import { AlertCircle, Clock, ArrowRight, Check, Inbox, RefreshCw } from 'lucide-
 import { cn, formatCAD, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { useTasks } from '@/hooks/useTasks'
-import { TASK_TYPE_LABELS, taskHref } from '@/lib/taskTypes'
+import { TASK_TYPE_LABELS, isEpmsInboxTask, taskHref } from '@/lib/taskTypes'
 import type { TaskType } from '@/lib/taskTypes'
 import type { ApiTask } from '@/services/tasks'
 import { groupTasks } from '@/lib/groupTasks'
@@ -221,9 +221,10 @@ export default function TaskInboxPage() {
   // Fetch all tasks (open + completed today)
   const { data: openData } = useTasks({ is_completed: false })
   const { data: completedData } = useTasks({ is_completed: true })
-  const openTasks = openData?.items ?? []
+  // EPMS work only — other modules' tasks are in Portal's inbox (isEpmsInboxTask).
+  const openTasks = (openData?.items ?? []).filter(isEpmsInboxTask)
   const completedTasks = (completedData?.items ?? []).filter(
-    (t) => t.completed_at && t.completed_at.startsWith(todayPrefix)
+    (t) => isEpmsInboxTask(t) && t.completed_at && t.completed_at.startsWith(todayPrefix)
   )
   const allTasks = [...openTasks, ...completedTasks]
 

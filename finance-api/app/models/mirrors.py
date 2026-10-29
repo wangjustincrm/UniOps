@@ -110,6 +110,9 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     # "po" | "agreement" | "freight" — a courier invoice (epms-api fr01_freight)
     # is split by cost centre in its FreightInvoiceLine rows.
     match_route: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # set for match_route='agreement' (epms-api); the AP push reads the
+    # agreement number + title for the NC summary.
+    agreement_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 
 class FreightInvoiceLine(UUIDPrimaryKey, TimestampMixin, Base):
@@ -170,6 +173,9 @@ class User(UUIDPrimaryKey, Base):
 
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # NC person-file code (bd_psndoc.code), maintained as "ERP ID" on the user.
+    # The AP push resolves it to the NC user who becomes the bill maker.
+    erp_person_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
 
 class ExpenseApprovalEvent(UUIDPrimaryKey, Base):
@@ -267,3 +273,27 @@ class PurchaseRequest(UUIDPrimaryKey, TimestampMixin, Base):
     budget_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
     department_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+
+
+class PurchaseOrder(UUIDPrimaryKey, Base):
+    """Read-only mirror subset (epms-api owns schema) — number + title for the
+    NC payable summary (AP push, 2026-10-27)."""
+    __tablename__ = "purchase_orders"
+
+    number: Mapped[str] = mapped_column(String(40), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    # "nc" = imported from NC (raw material / packaging). Its payable is made
+    # in NC from the purchase invoice (D1), so the AP push must not add an F1.
+    source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+
+class PurchaseAgreement(UUIDPrimaryKey, Base):
+    """Read-only mirror subset (epms-api owns schema) — number + title for the
+    NC payable summary (AP push, 2026-10-27)."""
+    __tablename__ = "purchase_agreements"
+
+    number: Mapped[str] = mapped_column(String(40), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    budget_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    cost_center_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    department_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

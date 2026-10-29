@@ -138,6 +138,29 @@ async def upsert_ap_invoice(*, payload: dict, bearer_token: str) -> dict | None:
                      payload.get("source"), payload.get("source_invoice_id"), e)
         return None
 
+class FinanceSyncError(Exception):
+    """finance-api did not accept a write that must not fail open."""
+
+
+async def upsert_ap_invoice_strict(*, payload: dict, bearer_token: str) -> dict | None:
+    """upsert_ap_invoice, but an error is raised, not swallowed. For writes whose
+    loss leaves Finance wrong with nothing to repair it — voiding a deleted
+    invoice. A JSON null body is success (Finance had no row to void)."""
+    url = f"{settings.FINANCE_API_URL}/finance/v1/ap/invoices"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            resp = await client.post(
+                url, json=payload,
+                headers={"Authorization": f"Bearer {bearer_token}"},
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as e:
+        raise FinanceSyncError(f"finance-api answered {e.response.status_code}") from e
+    except httpx.HTTPError as e:
+        raise FinanceSyncError(f"finance-api unreachable: {type(e).__name__}") from e
+
+
 async def resync_pa_writeback(*, pa_id: uuid.UUID, bearer_token: str) -> dict | None:
     """Ask finance-api to replay a PAID PA's invoice + AP writeback against the
     PA's current invoice_ids.
@@ -187,7 +210,8 @@ async def budget_actual_lineage(*, bearer_token: str | None) -> dict | None:
 
 
 async def nc_actuals_by_cost_center(*, bearer_token: str | None, fiscal_year: int,
-                                    through_month: int) -> dict | None:
+                                    through_month: int,
+                                    include_unposted: bool = True) -> dict | None:
     """NC posted actual per cost centre for a year, through a month.
 
     The actual half of a plan-vs-actual comparison. Asked of finance-api rather
@@ -203,7 +227,10 @@ async def nc_actuals_by_cost_center(*, bearer_token: str | None, fiscal_year: in
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             r = await client.get(
-                url, params={"fiscal_year": fiscal_year, "through_month": through_month},
+                url, params={"fiscal_year": fiscal_year, "through_month": through_month,
+                             # The Budget Dashboard's default and the PR budget
+                             # widget's basis (ISS-0014).
+                             "include_unposted": str(include_unposted).lower()},
                 headers={"Authorization": f"Bearer {bearer_token}"} if bearer_token else {})
             r.raise_for_status()
             return r.json()

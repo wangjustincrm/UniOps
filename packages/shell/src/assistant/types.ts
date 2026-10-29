@@ -42,6 +42,8 @@ export interface AssistantSources {
   mapping_rules?: number | null
   /** Recipe levels walked for a "how many can we make" answer. */
   levels_deep?: number
+  /** Documents a requisition-to-payment chain answer names. */
+  documents?: number
   row_count?: number
   truncated?: boolean
   /** When truncated: how many rows the query really matched. */
@@ -62,6 +64,10 @@ export type AssistantKind =
   | 'modules'
   | 'report_lineage'
   | 'producible'
+  | 'document_chain'
+  | 'recall'
+  | 'me'
+  | 'parts'
   | 'cannot_answer'
   | 'denied'
 
@@ -77,8 +83,11 @@ export interface AssistantWorkflowEvent {
   step_idx: number | null
   action: string | null
   actor_name: string | null
+  /** The role the person acted in — for a return or reject, the step's role. */
   actor_role: string | null
   comment: string | null
+  /** Carried over from PMS when the document was migrated (not a comment). */
+  imported?: boolean
   at: string | null
 }
 
@@ -108,6 +117,18 @@ export interface AssistantReply {
   preflight?: AssistantPreflight | null
   workflow?: AssistantWorkflow | null
   sources?: AssistantSources | null
+  /**
+   * A message that asked several things is answered part by part; `answer`
+   * holds all of them, and each part keeps its own query and evidence.
+   */
+  parts?: AssistantReplyPart[] | null
+  /** Parts of the message beyond the ones answered — not looked up. */
+  not_looked_up?: string[] | null
+}
+
+/** One question of a message that asked several. */
+export interface AssistantReplyPart extends AssistantReply {
+  question: string
 }
 
 /** Where the person is, so "this PO" has a referent. */

@@ -16,6 +16,7 @@ from app.crud import po as po_crud
 from app.crud._list_order import sort_clauses
 from app.crud import vendor as vendor_crud
 from app.crud import gr as gr_crud
+from app.crud import po_fee as po_fee_crud
 from app.crud.current_step import enrich_current_step
 from app.crud.pr_owner import get_pr_owner_id
 from app.models.admin_audit_log import AdminAuditLog
@@ -71,6 +72,7 @@ async def list_pos(
     # Resolved here in batch because pr_requester_id is not a column on the PO.
     pr_requester_map: dict[uuid.UUID, uuid.UUID] = {}
     pr_department_map: dict[uuid.UUID, uuid.UUID | None] = {}
+    fee_status_map: dict[uuid.UUID, str] = {}
     if items:
         listed_ids = [po.id for po in items]
         # "Has an invoice a new payment could actually settle" — unpaid AND not
@@ -80,6 +82,7 @@ async def list_pos(
         # the PA create page's PO picker and the PO page's Create PA button both
         # gate on this flag, and they must not be able to disagree.
         unpaid_invoice_po_ids = await po_crud.payable_invoice_po_ids(db, listed_ids)
+        fee_status_map = await po_fee_crud.fee_status_for_pos(db, items)
 
         pr_ids = [po.pr_id for po in items if po.pr_id is not None]
         if pr_ids:
@@ -96,6 +99,7 @@ async def list_pos(
     for po in items:
         data = PoResponse.model_validate(po).model_dump()
         data["has_unpaid_invoice"] = po.id in unpaid_invoice_po_ids
+        data["fee_status"] = fee_status_map.get(po.id)
         data["pr_requester_id"] = pr_requester_map.get(po.pr_id) if po.pr_id else None
         data["pr_department_id"] = pr_department_map.get(po.pr_id) if po.pr_id else None
         po_responses.append(data)
@@ -141,7 +145,19 @@ async def get_po(po_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
     # PO's invoices — which drifted the moment the list-side rule changed.
     data["has_unpaid_invoice"] = po_id in await po_crud.payable_invoice_po_ids(db, [po_id])
     data["has_invoice"] = await po_crud.has_any_invoice(db, po_id)
+    data["fee_status"] = (await po_fee_crud.fee_status_for_pos(db, [po])).get(po_id)
     return data
+
+
+@router.get("/{po_id}/fee-status")
+async def get_po_fee_status(po_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+    """The Freight & Customs panel: per arrival, which freight / customs
+    invoices are linked, against what the PO's Incoterms say is expected."""
+    from app.core.access_scope import is_po_visible
+    po = await po_crud.get_by_id(db, po_id)
+    if po is None or not await is_po_visible(db, po_id, await build_scope(db, user)):
+        raise HTTPException(status_code=404, detail="PO not found")
+    return await po_fee_crud.fee_detail_for_po(db, po)
 
 
 @router.patch("/{po_id}", response_model=PoResponse)
@@ -215,6 +231,28 @@ async def update_imported_details(
             detail=f"{what} cannot be changed once an invoice has been raised "
                    "against this PO. Every other field is still editable.",
         )
+
+    # Incoterms: a code must exist in Incoterms Settings and be active (an
+    # inactive one may stay on a PO that already has it), and a raw-material
+    # order cannot be saved without one — it decides whether the PO expects
+    # freight / customs invoices (crud.po_fee).
+    if "incoterms_code" in _fields:
+        body.incoterms_code = (body.incoterms_code or "").strip().upper() or None
+        if body.incoterms_code is not None and body.incoterms_code != po.incoterms_code:
+            from app.crud import config as config_crud
+            term = po_fee_crud.term_for(
+                body.incoterms_code,
+                po_fee_crud.effective_terms(await config_crud.get_or_create(db)))
+            if term is None or not term.get("active", True):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Incoterms {body.incoterms_code} is not an active code in Incoterms Settings.")
+    final_code = body.incoterms_code if "incoterms_code" in _fields else po.incoterms_code
+    if final_code is None and po_fee_crud.is_raw_material_po(po):
+        raise HTTPException(
+            status_code=422,
+            detail="Incoterms is required on a raw-material / packaging order — it decides "
+                   "whether freight and customs invoices are expected.")
 
     try:
         po, before, after = await po_crud.update_imported_details(db, po, body)

@@ -201,6 +201,10 @@ services:
       NC_SERVICE: ${NC65_SERVICE:-}
       NC_USER: ${NC65_USER:-}
       NC_PASSWORD: ${NC65_PASSWORD:-}
+      # Push to NC (FIN-AP-05): NC XChange servlet on the NC app server, e.g.
+      # http://10.10.95.66/service/XChangeServlet. Empty = Push to NC answers
+      # "not configured". Must be the same NC as NC65_* above.
+      NC_XCHANGE_URL: ${NC_XCHANGE_URL:-}
       # Where the client reads QBO creds inside the container (see the volume below).
       QBO_CONN_ENV: /run/qbo_conn.env
       # Bank Reconciliation v2: statement/advice PDFs live in file-api, and the

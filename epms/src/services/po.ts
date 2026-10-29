@@ -1,4 +1,5 @@
 import { api, fetchAllPages } from '@/lib/api'
+import type { FeeStatus } from './poFee'
 import type { ApiEvent } from './pr'
 import type { WorkflowNodeDef, CurrentStep } from '@/types'
 import type { ReminderResponse } from './reminder'
@@ -84,8 +85,14 @@ export interface ApiPo {
   // contain internal [NC Paid] / [NC Closed] markers — never show it as
   // buyer text on an NC PO.
   buyer_notes?: string | null
+  // Incoterms = code (picked from Incoterms Settings; required on a raw-material
+  // NC PO's Edit Details) + named place. `incoterms` is the PLACE.
+  incoterms_code?: string | null
   incoterms?: string | null
   buyer_edited_at?: string | null
+  // Raw-material NC POs only (null otherwise) — are the freight / customs
+  // invoices in? See services/poFee.ts FeeStatus.
+  fee_status?: FeeStatus | null
   pr_id?: string
   pr_number?: string
   pr_requester_id?: string | null
@@ -153,6 +160,7 @@ export interface ImportedDetailsLineBody {
 export interface ImportedDetailsBody {
   expected_delivery?: string | null
   delivery_address?: string | null
+  incoterms_code?: string | null
   incoterms?: string | null
   tax_code?: string | null
   tax_rate?: number | null

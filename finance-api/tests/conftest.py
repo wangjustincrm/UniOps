@@ -58,7 +58,8 @@ def _migrate():
     from app.models.mirrors import (  # noqa: F401
         BudgetAccount, BusinessPartner, CompanyConfig, CostCenter, Department, ErpSupplier, ExpenseApprovalEvent,
         ExpenseClaim, ExpenseInvoice, ExpenseLineItem, ExpenseTripItem, FreightInvoiceLine, Invoice,
-        InvoicePoAllocation, InvoiceTaxLine, PurchaseRequest, SodRule, Task, User,
+        InvoicePoAllocation, InvoiceTaxLine, PurchaseAgreement, PurchaseOrder, PurchaseRequest,
+        SodRule, Task, User,
     )
     from app.models.pa import PaymentApplication
     from app.models.pa_po_link import PaPoLink
@@ -73,6 +74,7 @@ def _migrate():
         Department.__table__, BudgetAccount.__table__, ErpSupplier.__table__,
         ExpenseInvoice.__table__, InvoicePoAllocation.__table__, PurchaseRequest.__table__,
         BusinessPartner.__table__, FreightInvoiceLine.__table__,
+        PurchaseOrder.__table__, PurchaseAgreement.__table__,
     ])
     # company_config is epms-owned; its physical table carries the shared
     # smtp_*/po_smtp_* columns (epms-api migrations e5f6a7b8c9d0 /

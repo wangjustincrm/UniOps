@@ -292,7 +292,8 @@ async def nc_actuals_monthly(user: CurrentUser, db: AsyncSession = Depends(get_d
 async def nc_actuals_by_cost_center(user: CurrentUser, db: AsyncSession = Depends(get_db),
                                     fiscal_year: int = Query(...),
                                     through_month: int = Query(default=12, ge=1, le=12),
-                                    cost_center_id: uuid.UUID | None = Query(default=None)):
+                                    cost_center_id: uuid.UUID | None = Query(default=None),
+                                    include_unposted: bool = Query(default=False)):
     """NC posted actual per cost centre, year to date through a month.
 
     The dashboard's own figure summed by cost centre instead of by budget
@@ -304,7 +305,8 @@ async def nc_actuals_by_cost_center(user: CurrentUser, db: AsyncSession = Depend
     if kw.get("cost_center_id") is not None:
         cc_ids = [kw["cost_center_id"]]
     return await crud.nc_actuals_by_cost_center(
-        db, fiscal_year, through_month=through_month, cc_ids=cc_ids)
+        db, fiscal_year, through_month=through_month, cc_ids=cc_ids,
+        include_unposted=include_unposted)
 
 
 @router.get("/nc-partner-monthly")
@@ -356,10 +358,12 @@ async def budget_actual_partner_export(
     fiscal_year: int = Query(...),
     cost_center_id: uuid.UUID | None = Query(default=None),
     include_unposted: bool = Query(default=False),
+    expand_vendor: bool = Query(default=False),
 ):
     """Budget Dashboard export: one .xlsx with a row per predreal budget account
     and two columns per month — Plan (budget-api) and NC-posted actual — plus a
-    Year pair. cost_center_id omitted => aggregated across all cost centers (or,
+    Year pair. `expand_vendor` follows each account with its vendor breakdown
+    (the dashboard's per-account drill, all accounts at once). cost_center_id omitted => aggregated across all cost centers (or,
     for a non-full-access caller, their department — see `_cc_scope`). Fail-open
     to plan=0 if budget-api is unreachable (mirrors /budget-actual-grid)."""
     import logging
@@ -396,6 +400,11 @@ async def budget_actual_partner_export(
     nc = (await crud.nc_actuals_monthly(db, fiscal_year, **kw,
                                         include_unposted=include_unposted))["accounts"]
 
+    partners = None
+    if expand_vendor:
+        partners = await crud.nc_partner_monthly_all(
+            db, fiscal_year=fiscal_year, **kw, include_unposted=include_unposted)
+
     if cost_center_id is not None:
         cc_name = (await db.execute(
             _select(CostCenter.name).where(CostCenter.id == cost_center_id))).scalar_one_or_none()
@@ -406,9 +415,10 @@ async def budget_actual_partner_export(
     data = build_budget_actual_xlsx(
         accounts=accounts, nc_monthly=nc,
         fiscal_year=fiscal_year, cost_center_label=cc_label,
-        include_unposted=include_unposted)
+        include_unposted=include_unposted, partners=partners)
     fname = (f"budget-actual-FY{fiscal_year}"
-             f"{'-incl-unposted' if include_unposted else ''}.xlsx")
+             f"{'-incl-unposted' if include_unposted else ''}"
+             f"{'-by-vendor' if expand_vendor else ''}.xlsx")
     return Response(
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

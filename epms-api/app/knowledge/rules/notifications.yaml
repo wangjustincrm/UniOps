@@ -1,0 +1,71 @@
+area: notifications
+label: Notifications, reminders and emails
+covers: >
+  Which tasks send emails, the daily digest, chasing an approver with Send
+  reminder, why an approval email did not arrive, editing email templates.
+rules:
+  - id: send_reminder
+    asked_as:
+      - 怎么催审批人？
+      - 我能连续催审批人两次吗？PA 能催办吗？
+      - how do I chase an approver
+    answer: >
+      On {documents} waiting for approval, the Approval Timeline shows Send
+      reminder under the current step. It emails the current approver(s) at
+      once — including whoever is covering for them — and can be used once
+      every {hours} hours per approval step; a second press inside that time
+      is refused. Payment applications have no Send reminder.
+    provenance: derived
+    derive: reminder_rules
+    enforced_in: "epms-api app/services/manual_reminder.py COOLDOWN_HOURS / APPROVAL_TASK_TYPES; app/api/v1/pr.py and po.py /remind (none on pa)"
+    test:
+      - "tests/test_manual_reminder.py::test_reminder_emails_the_pending_approver"
+      - "tests/test_manual_reminder.py::test_second_reminder_inside_the_cooldown_is_refused"
+      - "tests/test_manual_reminder.py::test_reminder_reaches_the_stand_in_while_the_approver_is_away"
+      - "tests/test_rule_registry.py::test_payment_applications_have_no_reminder"
+  - id: which_tasks_send_email
+    asked_as:
+      - 为什么我没有收到 PA 审批的邮件？
+      - why didn't I get the approval email
+    answer: >
+      Whether a new task emails the person who holds it is set per kind of
+      task by an admin in Portal → Admin → Notification Settings → Task
+      Notifications: an email at once, a line in the daily digest, or no
+      email. Right now approving a payment application sends {approve_pa};
+      approving a purchase request sends {approve_pr}; approving a purchase
+      order sends {approve_po}. Approving a payment application is {approve_pa_default}
+      by default. Each person's own choice in My Profile (Teams only, Email
+      only, Both, None) also applies — None means no emails.
+    provenance: derived
+    derive: approval_email_policy
+    enforced_in: "epms-api app/services/task_notify_policy.py effective_policy / DEFAULT_IMMEDIATE; app/services/notification.py (personal channel)"
+    test:
+      - "tests/test_task_notifications.py::test_default_off_type_is_stamped_without_sending"
+      - "tests/test_task_notifications.py::test_admin_turns_a_new_type_on"
+      - "tests/test_rule_registry.py::test_approval_email_policy_is_read_from_config"
+  - id: daily_digest_time
+    asked_as:
+      - 每日摘要邮件什么时候发？
+      - when is the daily digest sent
+    answer: >
+      The daily digest goes out once a day at {time} UTC (Portal → Admin →
+      Notification Settings → Daily Digest Time). It lists each person's
+      open tasks of the kinds an admin set to "digest".
+    provenance: derived
+    derive: digest_time
+    enforced_in: "epms-api app/tasks/daily_followup.py _load_schedule (notification_settings.followup_time, UTC, default 08:00)"
+    test:
+      - "tests/test_task_notifications.py::test_digest_bundles_one_email_per_person"
+      - "tests/test_rule_registry.py::test_digest_time_is_read_from_config"
+  - id: email_templates_are_not_editable
+    asked_as:
+      - 能在邮件里修改通知模板吗？
+      - can I edit the notification email templates
+    answer: >
+      No. The notification email templates are the system's defaults; no
+      admin screen edits them. (What can be set is the email to suppliers
+      for purchase orders, in EPMS Admin → Email Settings.)
+    enforced_in: "epms/src/pages/admin/AdminPanel.tsx (notifications section → MovedToPortal; template editor never rendered); portal has no email_templates editor"
+    provenance: not_built
+    test:
+      - "tests/test_rule_registry.py::test_no_screen_edits_email_templates"

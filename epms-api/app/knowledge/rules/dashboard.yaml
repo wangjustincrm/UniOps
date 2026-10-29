@@ -1,0 +1,39 @@
+area: dashboard
+label: Dashboards
+covers: >
+  What the dashboard cards mean — System Health, Total Committed, Overdue
+  Tasks.
+rules:
+  - id: system_health_is_a_fixed_label
+    asked_as:
+      - System Health 显示 Healthy，系统真的健康吗？
+      - is the system really healthy
+    answer: >
+      The System Health card on the System Admin dashboard always says
+      "Healthy": it is a fixed label, not a measurement. Nothing behind it
+      checks response times, the database, notifications or backups, so it
+      says nothing about whether the system is actually healthy.
+    enforced_in: "epms-api app/crud/dashboard.py build_system_admin KpiCard(title='System Health', value='Healthy'); epms SystemAdminDashboard.tsx"
+    provenance: not_built
+    test:
+      - "tests/test_rule_registry.py::test_system_health_is_a_constant"
+  - id: total_committed
+    also_in: [budget]
+    asked_as:
+      - Dashboard 上的 Total Committed 是什么意思？
+      - what does Total Committed mean
+    answer: >
+      Three different figures are called Total Committed. (1) On the
+      Approver and Procurement dashboards, "Total Committed (FY)" is the sum
+      of the totals (tax included) of every PO that is not cancelled, closed
+      or draft — purchase requests are not in it, paid POs still count until
+      they are closed, there is no fiscal-year filter despite the label, and
+      amounts in different currencies are added together as if CAD. (2) On
+      the CFO dashboard, Total Committed is not calculated yet and always
+      shows 0. (3) On the Budget Dashboard, and as "committed" on the PR
+      form's budget figures, it is commitments booked in the budget ledger;
+      nothing in the purchasing process books any, so it is 0.
+    enforced_in: "epms-api app/crud/dashboard.py build_approver / build_procurement (SUM PurchaseOrder.total, status not in cancelled/closed/draft), build_cfo (_budget_overview stub); budget-api crud/balance.py get_committed (budget_ledger commit, no writers)"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_the_three_committed_figures"

@@ -316,15 +316,17 @@ async def delete_invoice(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUse
     inv = await _freight_invoice(db, invoice_id)
     if inv.status != "unmatched":
         raise HTTPException(status_code=409, detail="Reopen the invoice before deleting it")
-    await finance_sync.sync_ap_invoice(db, inv, token, void=True)
     # An assignment to match a deleted invoice can never be done — close it
     # in the same commit as the delete.
     from app.api.v1.invoices import _close_open_match_tasks
     await _close_open_match_tasks(db, inv.id, uuid.UUID(user["sub"]))
     try:
         await crud.delete_invoice(db, inv)
+        await finance_sync.void_deleted_invoices(db, token)   # or nothing is deleted
     except FreightError as e:
         raise _err(e)
+    except finance_sync.FinanceVoidFailed as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 # ── Freight PA ────────────────────────────────────────────────────────────────

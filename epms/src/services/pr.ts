@@ -143,6 +143,14 @@ export interface PrListResponse {
   total: number
 }
 
+/** What an approval event really was (epms-api app/core/approval_event_kind.py).
+ *  `skipped`: the engine skipped the step — stored as an "approve" by whoever
+ *  triggered the skip, so the actor is NOT the approver (ISS-0077).
+ *  `imported`: an approval backfilled by the PMS import account.
+ *  `same_approver`: auto-approved for the person holding both steps (a real
+ *  decision). `manual`: everything else. */
+export type ApprovalEventKind = 'manual' | 'skipped' | 'imported' | 'same_approver'
+
 export interface ApiEvent {
   id: string
   step_idx: number
@@ -152,6 +160,9 @@ export interface ApiEvent {
   actor_name?: string | null
   comment?: string | null
   created_at: string
+  kind: ApprovalEventKind
+  /** Why the step was skipped, marker stripped; set only when kind is skipped. */
+  skip_reason?: string | null
 }
 
 export const prService = {

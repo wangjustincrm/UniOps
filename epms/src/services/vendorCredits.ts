@@ -91,6 +91,36 @@ export const vendorCreditsService = {
     financeApi.post<VendorCredit>(`/vendor-credits/${id}/reject`, { note }),
   void:    (id: string, note: string) =>
     financeApi.post<VendorCredit>(`/vendor-credits/${id}/void`, { note }),
+  /** Where the credit went — one row per payment it was netted against.
+   * Finance-read gated (payment data): 403 for viewers without a finance role. */
+  applications: (id: string) =>
+    financeApi.get<VendorCreditApplicationList>(`/vendor-credits/${id}/applications`),
+}
+
+export interface VendorCreditApplication {
+  id: string
+  payment_record_id: string
+  batch_id: string | null
+  batch_number: string | null
+  /** 'pa' | 'pa_dir' — both are EPMS payment applications (/pa/:id). */
+  doc_kind: string
+  doc_id: string
+  doc_number: string | null
+  /** Decimal-as-string. */
+  applied_amount: string
+  applied_at: string
+  applied_by_name: string | null
+  payment_date: string | null
+  /** Decimal-as-string — the cash that actually left the bank on that payment. */
+  cash_paid: string | null
+  payment_status: string | null
+}
+
+export interface VendorCreditApplicationList {
+  items: VendorCreditApplication[]
+  total: number
+  /** Decimal-as-string. */
+  total_applied: string
 }
 
 // ── Evidence files ───────────────────────────────────────────────────────────
