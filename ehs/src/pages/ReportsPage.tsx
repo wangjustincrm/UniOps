@@ -22,7 +22,7 @@ import { ChevronRight, TrendingDown, TrendingUp, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/formatDate'
 import {
-  inputSized, LoadFailedNote, PageHeader, SectionTitle,
+  LoadFailedNote, PageHeader, SectionTitle,
 } from '@/components/ui'
 
 interface Entity { key: string; label: string; dimensions: string[]; listable: boolean }
@@ -35,11 +35,6 @@ interface GroupRow { value: string | null; label: string | null; count: number }
 interface CompareRow {
   value: string | null; label: string | null
   period_a: number; period_b: number; change: number; change_percent: number | null
-}
-interface Rates {
-  recordable: number; lost_time: number; dart_cases: number
-  hours_worked: number | null; trir: number | null
-  lost_time_rate: number | null; dart_rate: number | null; note: string | null
 }
 
 const inputClass =
@@ -87,7 +82,6 @@ export default function ReportsPage() {
   const [entity, setEntity] = useState('incident')
   const [dimension, setDimension] = useState('incident_type')
   const [compare, setCompare] = useState(false)
-  const [hours, setHours] = useState('')
   const [filters, setFilters] = useState<Filter[]>([])
   const [period, setPeriod] = useState<Period>('all')
   const [from, setFrom] = useState('')
@@ -162,12 +156,6 @@ export default function ReportsPage() {
     if (regroup) setDimension(regroup)
   }
 
-  const rates = useQuery({
-    queryKey: ['report-rates', hours],
-    queryFn: () => api.get<Rates>(
-      `/api/v1/reports/injury-rates${hours ? `?hours_worked=${hours}` : ''}`),
-  })
-
   const max = useMemo(
     () => Math.max(1, ...(group.data ?? []).map((r) => r.count)),
     [group.data])
@@ -176,35 +164,14 @@ export default function ReportsPage() {
     <div className="p-4">
       <PageHeader title="Reports" />
 
-      {/* ── Injury rates ─────────────────────────────────────────────────── */}
-      <section className="mb-6 rounded-xl border border-neutral-200 bg-white p-4">
-        <SectionTitle className="mb-3">Injury rates</SectionTitle>
-        <div className="grid grid-cols-3 gap-3">
-          {([['TRIR', rates.data?.trir], ['Lost time', rates.data?.lost_time_rate],
-             ['DART', rates.data?.dart_rate]] as const).map(([label, value]) => (
-            <div key={label} className="rounded-lg bg-neutral-50 p-3">
-              <p className="text-xs text-neutral-500">{label}</p>
-              <p className="mt-0.5 text-xl font-bold tabular-nums text-neutral-900">
-                {value ?? '—'}
-              </p>
-            </div>
-          ))}
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <label className="text-xs text-neutral-600">Hours worked this year</label>
-          <input className={inputSized('w-32')} inputMode="numeric" value={hours}
-                 onChange={(e) => setHours(e.target.value.replace(/[^0-9]/g, ''))}
-                 placeholder="from payroll" />
-          <span className="text-xs text-neutral-500">
-            {rates.data?.recordable ?? 0} recordable · {rates.data?.lost_time ?? 0} lost time
-          </span>
-        </div>
-        {rates.data?.note && (
-          <p className="mt-2 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700">
-            {rates.data.note}
-          </p>
-        )}
-      </section>
+      {/* ── Injury rates ─────────────────────────────────────────────────
+          Round 9: "move the injury rate graph to the dashboard near the top."
+          Moved, not copied — one place for the figure, worked out by the same
+          function either way. */}
+      <p className="mb-4 text-xs text-neutral-500">
+        The recordable, lost-time and DART rates are on the{' '}
+        <TabLink to="/dashboard" className="font-medium text-primary-700 hover:underline">dashboard</TabLink>.
+      </p>
 
       {/* ── Builder ──────────────────────────────────────────────────────── */}
       <section className="rounded-xl border border-neutral-200 bg-white p-4">
