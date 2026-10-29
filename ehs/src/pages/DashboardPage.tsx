@@ -276,7 +276,7 @@ function SupervisorPanel() {
 
 export default function DashboardPage() {
   const [hours, setHours] = useState('')
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['dashboard', hours],
     queryFn: () => api.get<Dashboard>(
       `/api/v1/dashboard${hours ? `?hours_worked=${hours}` : ''}`),
@@ -314,7 +314,22 @@ export default function DashboardPage() {
 
   // ★ Every hook above the two early returns below.
   if (isLoading) return <p className="p-4 text-sm text-neutral-500">Loading…</p>
-  if (!data) return null
+  // ★ A failure is said, not drawn as an empty page — an empty dashboard and
+  // one that never arrived look the same otherwise.
+  if (isError || !data) {
+    return (
+      <div className="p-4">
+        <PageHeader title="HSE dashboard" />
+        <div role="alert" className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2.5">
+          <p className="min-w-0 flex-1 text-sm text-danger-800">Could not load the dashboard.</p>
+          <button type="button" onClick={() => refetch()} disabled={isFetching}
+                  className="min-h-[36px] rounded-md bg-white px-3 text-sm font-semibold text-danger-800 ring-1 ring-danger-300 hover:bg-danger-100 disabled:opacity-50">
+            {isFetching ? 'Trying…' : 'Try again'}
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   const h = data.headline
   const year = h.year
@@ -578,6 +593,12 @@ export default function DashboardPage() {
                  placeholder="hours worked"
                  className="min-h-[36px] w-32 rounded-lg border border-warning-200 bg-white px-2.5 text-sm focus:outline-none" />
         </div>
+      )}
+
+      {settings.isError && (
+        <p className="mb-2 text-[11px] text-neutral-500">
+          The colour rules could not be loaded, so the boxes do not say what their colours mean.
+        </p>
       )}
 
       <div className="mb-2 flex flex-wrap items-center justify-end gap-3">

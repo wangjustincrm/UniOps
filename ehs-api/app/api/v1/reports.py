@@ -165,6 +165,12 @@ async def injury_rates(
     hours_worked: float | None = Query(default=None, ge=0),
     date_from: date | None = None, date_to: date | None = None,
 ):
-    """TRIR, lost-time and DART rates. Hours worked come from payroll."""
+    """TRIR, lost-time and DART rates. Hours worked come from payroll.
+
+    No screen calls this since round 10 batch 4 — the rates moved to the
+    dashboard, whose headline gets them from the same `per_base_hours`. Kept
+    for anyone reading the API directly; the arithmetic is shared, so the two
+    cannot disagree.
+    """
     return await reporting.injury_rates(
         db, hours_worked=hours_worked, date_from=date_from, date_to=date_to)
