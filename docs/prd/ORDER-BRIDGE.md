@@ -1,7 +1,8 @@
 # Order Bridge — Product Requirements Document
 
 - **Version:** 1.2
-- **Date:** 2026-10-28
+- **Date:** 2026-10-29
+- **Module:** Sales (folders `sales` / `sales-api`, prefix `sales_`); Order Bridge is its first part (orders, fulfilment, invoicing, transfers). Renamed 2026-10-29 (D23); requirement IDs (FR-OB, AC-OB, OB-OI) and this file's name are unchanged.
 - **Status:** Proposed — decisions applied, awaiting approval
 - **Scope:** Rebuild the Zoho Creator "Order Bridge" order hub (Shopify and retailer EDI orders, Radiant 3PL EDI including transfers, retailer invoicing; shipment lots, expiry dates and transfer receipts recorded, with the inventory ledger in the next version) as a new UniOps module, and retire Zoho One.
 - **Source:** Order Bridge PRD (English edition of the trilingual PRD issued 2026-10-09, based on the complete exported Zoho application script), the 39 team review comments collected on the PRD review board (2026-10-13 to 2026-10-15), the earlier SDM PRD (2026-10-01, reference only), and the product owner's decisions of 2026-10-20.
@@ -21,6 +22,7 @@
 - 945 validation checks (notify only): over-shipment, extra or substituted item, expiry and minimum shelf life per partner, order state, mismatch with the 940, ship date; an extra item matching no 940 line also goes to review; a 945 before any 997 records ACK status Accepted by 945 (FR-OB-25d, AC-OB-56 to AC-OB-62).
 - **Review fixes (2026-10-21):** delivery worklist requires shipment and requested date (FR-OB-31); Shopify lines to ship (FR-OB-11b); UniOps status model with Zoho mapping (section 9.1); notification gate before the channel switch (section 11); permissions updated; acceptance criteria AC-OB-70 to AC-OB-72; no duplicate Shopify fulfillment for orders migrated from Zoho (FR-OB-11); acceptance criteria listed in numeric order; decisions D17–D20 (On Hold principle, one 945 per order, no NC interface, 940 delay from the paid time).
 - **Open items resolved (2026-10-22):** selling units (Shopify Case / 2-Pack / Each, FR-OB-02, FR-OB-14); one 944 per transfer, repeated W07 lines summed (FR-OB-83); 945 ship date from DTM, else G62 (FR-OB-25b); carriers (FR-OB-11); one-letter suffix rule (FR-OB-28); envelope values kept on evidence (Appendix A.2); real 943/944 samples in Appendix A.4/A.7, including the CF0093/CF0103 discrepancy; acceptance criteria AC-OB-75 to AC-OB-79; OB-OI-10, 14, 15, 16, 17, 18 and 26 closed.
+- **Module renamed Sales (2026-10-29, D23):** Order Bridge becomes the first part of the Sales module; permission keys are `sales.*` (FR-OB-60 to FR-OB-66). Requirement IDs are unchanged.
 - **Single user at go-live (2026-10-23, D21):** one user holds all permissions and receives all notifications and Action Required tasks (section 10.7, FR-OB-56); OB-OI-37 closed.
 - **Document store (2026-10-23, D22):** raw documents are kept in Order Bridge's own document store rather than the shared file service (FR-OB-05, section 11 step 1).
 - **Fresh build, not SDM:** Order Bridge is built as a new module; the earlier SDM code is not continued and its documents are reference material only. Completing our data from Radiant is planned for the next version (FR-OB-01, section 1.3).
@@ -334,7 +336,7 @@ Business behaviour follows sections 4–9 1:1 except where a requirement below f
 
 | ID | Requirement |
 | --- | --- |
-| FR-OB-01 | Order Bridge is a **new standalone UniOps module**, built fresh, with its own back-end service and database schema and its own front end, reachable from the Portal (PORTAL.md). The earlier SDM implementation (`sdm`, `sdm-api`) is **not continued or reused**; its documents may be cited as reference material only. |
+| FR-OB-01 | Order Bridge is built as a **new standalone UniOps module** — named **Sales** (D23), of which Order Bridge is the first part — built fresh, with its own back-end service and database schema and its own front end, reachable from the Portal (PORTAL.md). The earlier SDM implementation (`sdm`, `sdm-api`) is **not continued or reused**; its documents may be cited as reference material only. |
 | FR-OB-02 | Order Bridge keeps an **Item Master table** that authorised users can add to and edit in the UI (SKU, UPC, GTIN, buyer part numbers per partner, case pack, gross weight per can, unit-of-measure conversions) (#32). A buyer part number matches only lines from the partner it belongs to. Every item has an EA conversion of exactly 1. **Selling units:** retailers order in cases; Shopify sells **Case, 2-Pack and Each**. Each unit is converted to EA through the item's conversions in the Item Master (today Case = 6 EA, 2-Pack = 2 EA, Each = 1 EA). The Shopify variant-title rule (Appendix A.11) is only a migration and matching hint; a line whose unit has no conversion goes to review (FR-OB-15). The **Item Master is authoritative for case pack**: if an 850 line's `ofInnerPacks` differs from the Item Master, the order goes to review and a user is notified; the 850 value is never used silently, because Radiant ships EA exactly as told. Alignment with UniOps master data (EPMS.md, MRP.md) is a later step. |
 | FR-OB-03 | Trading partners, DC routing and warehouses are configuration tables that authorised users can add to and edit in the UI (#3). DC routing references the partner directly (no fuzzy name matching). Each partner has a **settlement mode**: PREPAID (Shopify — payment must be received before a 940) or INVOICE (retailers — billed after delivery, no payment check). Each partner has an optional **minimum remaining shelf life** (days at ship date; empty = no check) used by FR-OB-25d. Each partner has a "DC routing required" flag: **on for Walmart** — a Walmart order with no DC match goes to review and notifies a user; off for others — a missing DC is ignored and the LO reference is left empty (#33). |
 | FR-OB-03a | Each partner has a **940 delay in minutes**, set by authorised users in the partner configuration (FR-OB-03) together with the sending mode (FR-OB-03b). This document does not fix the values: they are configured at go-live. Today's intent is Shopify 3 hours; retailer delays are set per partner (review comment #1 suggests 1 hour; the September decision used 0 — whichever is configured applies) (#1). |
@@ -430,13 +432,13 @@ Inventory recalculation and the ledger are **postponed to the next version** (#2
 
 | ID | Permission | Covers | Suggested holders |
 | --- | --- | --- | --- |
-| FR-OB-60 | Read (`order_bridge.read`) | View orders, transfers, files, dashboards, logs | Sales, logistics, finance |
-| FR-OB-61 | Order operate (`order_bridge.order.operate`) | Release holds, Send 940 now, confirm delivery and delivered quantity, create and submit manual orders, resolve review items (map an item, confirm a case pack), record cancellations/returns, cancel orders | Order operations |
-| FR-OB-62 | File retry (`order_bridge.file.retry`) | Resend or re-parse files, mark as ignored | Order operations, IT |
-| FR-OB-63 | Transfer manage (`order_bridge.transfer.manage`) | Create, send and cancel transfers (943) and review 944 receipts | Logistics |
-| FR-OB-64 | Inventory adjust (`order_bridge.inventory.adjust`) — **next version** | Adjustments, posting, reversal, inventory re-evaluation (section 10.5) | Logistics supervisor |
-| FR-OB-65 | Invoice manage (`order_bridge.invoice.manage`) | Edit invoices, invoicing, resending invoice emails | Finance AR |
-| FR-OB-66 | Configuration (`order_bridge.config`) | Partners, items, DC routing, connections, folders, schedule, notifications | IT / system administrator |
+| FR-OB-60 | Read (`sales.read`) | View orders, transfers, files, dashboards, logs | Sales, logistics, finance |
+| FR-OB-61 | Order operate (`sales.order.operate`) | Release holds, Send 940 now, confirm delivery and delivered quantity, create and submit manual orders, resolve review items (map an item, confirm a case pack), record cancellations/returns, cancel orders | Order operations |
+| FR-OB-62 | File retry (`sales.file.retry`) | Resend or re-parse files, mark as ignored | Order operations, IT |
+| FR-OB-63 | Transfer manage (`sales.transfer.manage`) | Create, send and cancel transfers (943) and review 944 receipts | Logistics |
+| FR-OB-64 | Inventory adjust (`sales.inventory.adjust`) — **next version** | Adjustments, posting, reversal, inventory re-evaluation (section 10.5) | Logistics supervisor |
+| FR-OB-65 | Invoice manage (`sales.invoice.manage`) | Edit invoices, invoicing, resending invoice emails | Finance AR |
+| FR-OB-66 | Configuration (`sales.config`) | Partners, items, DC routing, connections, folders, schedule, notifications | IT / system administrator |
 
 ### 10.8 File intake and document store
 
@@ -654,6 +656,7 @@ The product owner decided the review points below on 2026-10-20 (D1–D16), 2026
 | D20 (2026-10-21) | The 940 delay runs from the paid time (PREPAID) or the receipt time (INVOICE); source updates do not restart it | FR-OB-03d, FR-OB-12 |
 | D21 (2026-10-23) | Single user at go-live: one user holds all seven permissions and receives every notification and Action Required task; permissions stay separate so more users can be added later by assignment only | Section 10.7, FR-OB-56, OB-OI-37 |
 | D22 (2026-10-23) | Raw documents (inbound and outbound files) are kept in Order Bridge's own document store — raw bytes with a content hash, nothing deleted — instead of the shared file service, so a document is stored and committed before any after-read action in one step (FR-OB-70 to FR-OB-72) | FR-OB-05, section 11 step 1 |
+| D23 (2026-10-29) | The module is named **Sales** (folders `sales` / `sales-api`, table prefix `sales_`, permissions `sales.*`, role `sales_operator`, host names `sales.canadaroyalmilk.com` / `sales-api.canadaroyalmilk.com`). Order Bridge stays the name of its first part — orders, fulfilment, invoicing and transfers — and of this PRD and its requirement IDs. Inventory stays a separate module; Sales reads stock from it. Transfers (943 / 944) stay in Sales for now | FR-OB-01, FR-OB-60 to FR-OB-66, design §1 X4 |
 
 ## Appendix A. Interface specification (as built in Zoho)
 

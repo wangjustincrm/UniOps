@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scope check for Order Bridge work (design §14.3).
+# Scope check for Sales module work (Order Bridge is its first part) (design §14.3).
 #
 #   tools/check-scope.sh [BASE]
 #
@@ -14,20 +14,20 @@
 #      allow-list (§14.2);
 #   2. an allow-listed configuration file loses or changes an existing line
 #      in any of HEAD, the index or the working tree (additions only);
-#   3. any lock file other than order-bridge/package-lock.json changes —
+#   3. any lock file other than sales/package-lock.json changes —
 #      including the root package-lock.json;
 #   4. anything under packages/ changes or appears;
 #   5. a platform folder is missing, or imports business code (the two
-#      one-way-dependency checks of §13: orders-api/app/platform and
-#      order-bridge/src/platform-ui).
-# For order-bridge it also confirms that a deliberate type error inside
+#      one-way-dependency checks of §13: sales-api/app/platform and
+#      sales/src/platform-ui).
+# For sales it also confirms that a deliberate type error inside
 # src/platform-ui is reported by tsc (the TS5101 "diagnostics skipped" trap),
 # that the ESLint import rule fires on a planted business import, and that
 # both a library class and a shell-only class reach the built CSS (§13.15).
 #
 # Steps 5+ run in throwaway containers (python:3.12-slim, node:20-alpine) on a
 # temporary copy; nothing is installed into the working tree.
-#   SKIP_FRONTEND=1   skip the order-bridge install/typecheck/build checks
+#   SKIP_FRONTEND=1   skip the sales install/typecheck/build checks
 #                     (printed as SKIPPED; the result says so)
 set -uo pipefail
 
@@ -60,11 +60,24 @@ mapfile -d '' -t CHANGED < <({
   git diff --no-renames --name-only -z "$BASE"        # the working tree
   git ls-files --others --exclude-standard -z         # untracked
 } | sort -zu)
-echo "changed paths vs base: ${#CHANGED[@]}"
+# A path the branch added after the base and has since removed again (e.g. a
+# folder committed, then renamed) is no change against the base: it is in the
+# committed diff but in neither the base, the index nor the working tree.
+declare -a KEPT=()
+NETZERO=0
+for p in "${CHANGED[@]}"; do
+  if ! git cat-file -e "$BASE:$p" 2>/dev/null && ! git ls-files --error-unmatch -- "$p" >/dev/null 2>&1 && [[ ! -e $p ]]; then
+    NETZERO=$((NETZERO + 1))
+  else
+    KEPT+=("$p")
+  fi
+done
+CHANGED=("${KEPT[@]}")
+echo "changed paths vs base: ${#CHANGED[@]} (plus $NETZERO added and removed again since the base)"
 
 # §14.1 code allow-list
-CODE_RE='^(orders-api/|order-bridge/|tools/new-module/|tools/check-scope\.sh$)'
-# Order Bridge documentation (not code; listed so it is visible)
+CODE_RE='^(sales-api/|sales/|tools/new-module/|tools/check-scope\.sh$)'
+# Sales / Order Bridge documentation (history file names kept; not code; listed so it is visible)
 DOCS_RE='^(docs/prd/ORDER-BRIDGE\.md|docs/prd/README\.md|docs/superpowers/specs/2026-10-23-order-bridge-design\.md)$'
 # §14.2 configuration allow-list — additions only
 CONFIG_FILES=(
@@ -73,7 +86,7 @@ CONFIG_FILES=(
   make-stack-env.sh migrate-prod.sh check-health.sh reset-db.sh run_tests.sh DEPLOYMENT.md
   portal/src/components/layout/navConfig.tsx portal/src/pages/PortalHome.tsx
   portal/src/lib/api.ts portal/src/pages/admin/AdminPanel.tsx
-  identity-api/alembic/versions/0023_order_bridge_perms.py
+  identity-api/alembic/versions/0023_sales_perms.py
   epms/src/lib/taskTypes.ts epms/src/services/tasks.ts epms-api/app/crud/task.py
   epms-api/app/knowledge/modules.yaml epms-api/tests/test_module_guide.py
 )
@@ -89,7 +102,7 @@ is_config() {
 
 declare -a CONFIG_TOUCHED=()
 for p in "${CHANGED[@]}"; do
-  if [[ $p =~ $LOCK_RE && $p != order-bridge/package-lock.json ]]; then
+  if [[ $p =~ $LOCK_RE && $p != sales/package-lock.json ]]; then
     fail "lock file changed: $p"
   elif [[ $p =~ ^packages/ ]]; then
     top=$(echo "$p" | cut -d/ -f1-2)
@@ -130,12 +143,12 @@ done
 [[ $FAIL == 0 ]] && ok "paths, lock files and packages/ within scope"
 
 # ── one-way dependency: back end ─────────────────────────────────────────────
-if [[ ! -d orders-api/app/platform ]]; then
-  fail "orders-api/app/platform is missing: the one-way dependency check cannot run"
+if [[ ! -d sales-api/app/platform ]]; then
+  fail "sales-api/app/platform is missing: the one-way dependency check cannot run"
 else
   # -i: the checker arrives on stdin; without it python reads nothing and exits 0.
   if docker run -i --rm --network none -e PYTHONDONTWRITEBYTECODE=1 \
-      -v "$ROOT/orders-api:/w:ro" -w /w python:3.12-slim \
+      -v "$ROOT/sales-api:/w:ro" -w /w python:3.12-slim \
       python - <<'PY'
 import ast, sys, pathlib
 sys.path.insert(0, "tests/platform")
@@ -146,7 +159,7 @@ exec(compile(src, "test_one_way_dependency.py", "exec"), ns)
 failures = 0
 for name in ("test_platform_imports_no_business_code",
              "test_checker_catches_absolute_and_relative_business_imports",
-             "test_no_order_bridge_names_in_platform_code"):
+             "test_no_sales_names_in_platform_code"):
     try:
         ns[name]()
         print(f"  {name}: passed")
@@ -156,36 +169,36 @@ for name in ("test_platform_imports_no_business_code",
 print(f"  checks run: 3, failed: {failures}")
 sys.exit(1 if failures else 0)
 PY
-  then ok "orders-api/app/platform imports no business code"
-  else fail "orders-api/app/platform one-way dependency"
+  then ok "sales-api/app/platform imports no business code"
+  else fail "sales-api/app/platform one-way dependency"
   fi
 fi
 
-# ── order-bridge: import rule, TS5101 trap, CSS ──────────────────────────────
+# ── sales: import rule, TS5101 trap, CSS ──────────────────────────────
 # A class that only packages/shell uses (the primary Button's hover): if it is
 # in the built CSS, Tailwind scanned the shell source (§13.15).
 SHELL_SENTINEL='hover:bg-primary-700'
-if [[ ! -d order-bridge/src/platform-ui ]]; then
-  fail "order-bridge/src/platform-ui is missing: the front-end checks cannot run"
+if [[ ! -d sales/src/platform-ui ]]; then
+  fail "sales/src/platform-ui is missing: the front-end checks cannot run"
 elif [[ ${SKIP_FRONTEND:-0} == 1 ]]; then
-  skip "order-bridge install / tsc probe / import rule / ESLint probe / build / CSS (SKIP_FRONTEND=1)"
+  skip "sales install / tsc probe / import rule / ESLint probe / build / CSS (SKIP_FRONTEND=1)"
 else
-  if grep -rqF -- "$SHELL_SENTINEL" order-bridge/src; then
-    fail "shell CSS sentinel '$SHELL_SENTINEL' is used in order-bridge/src; pick another shell-only class"
+  if grep -rqF -- "$SHELL_SENTINEL" sales/src; then
+    fail "shell CSS sentinel '$SHELL_SENTINEL' is used in sales/src; pick another shell-only class"
   fi
   TMP=$(mktemp -d)
   trap 'docker run --rm -v "$TMP:/t" alpine rm -rf /t/repo >/dev/null 2>&1; rm -rf "$TMP"' EXIT
   mkdir -p "$TMP/repo/packages"
   cp -r packages/shell "$TMP/repo/packages/shell"
-  rsync -a --exclude node_modules --exclude dist order-bridge/ "$TMP/repo/order-bridge/"
+  rsync -a --exclude node_modules --exclude dist sales/ "$TMP/repo/sales/"
   # A deliberate type error inside the library, in a separate copy of src.
-  cat > "$TMP/repo/order-bridge/src/platform-ui/__scope_probe__.ts" <<'TS'
+  cat > "$TMP/repo/sales/src/platform-ui/__scope_probe__.ts" <<'TS'
 // written by tools/check-scope.sh: tsc must report this
 export const probe: number = 'not a number'
 TS
   docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_cache=/tmp/npmcache \
     -e SHELL_SENTINEL="$SHELL_SENTINEL" -e SHELL_SELECTOR="${SHELL_SENTINEL//:/\\:}" \
-    -v "$TMP/repo:/repo" -w /repo/order-bridge node:20-alpine sh -c '
+    -v "$TMP/repo:/repo" -w /repo/sales node:20-alpine sh -c '
       npm ci --install-links --no-audit --no-fund >/tmp/i.log 2>&1 || { echo "install failed"; tail -5 /tmp/i.log; exit 10; }
       npx tsc -p tsconfig.app.json --noEmit >/tmp/t.log 2>&1
       if grep -qE "TS5101|TS5107|TS5108" /tmp/t.log; then echo "deprecation config error: diagnostics may be skipped"; exit 11; fi
@@ -207,7 +220,7 @@ TS
       echo "probe reported; 0 other type errors; import rule + ESLint (planted import caught) pass; library and shell classes in CSS"
     '
   rc=$?
-  if [[ $rc == 0 ]]; then ok "order-bridge: TS5101 trap, import rule, ESLint probe, library + shell CSS"; else fail "order-bridge checks (code $rc)"; fi
+  if [[ $rc == 0 ]]; then ok "sales: TS5101 trap, import rule, ESLint probe, library + shell CSS"; else fail "sales checks (code $rc)"; fi
 fi
 
 echo

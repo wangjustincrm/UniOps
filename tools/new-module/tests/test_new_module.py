@@ -31,25 +31,25 @@ def _files(root: Path) -> dict[str, str]:
 def test_inplace_refused_for_any_other_target(tmp_path, capsys):
     rc = nm.main(_args("demo-api", "demo", "inplace", tmp_path))
     assert rc == 2
-    assert "only for orders-api / order-bridge" in capsys.readouterr().err
+    assert "only for sales-api / sales" in capsys.readouterr().err
     assert list(tmp_path.iterdir()) == []
 
 
-@pytest.mark.parametrize("service,frontend", [("orders-api", "demo"), ("demo-api", "order-bridge")])
+@pytest.mark.parametrize("service,frontend", [("sales-api", "demo"), ("demo-api", "sales")])
 def test_inplace_refused_for_half_matching_target(tmp_path, service, frontend):
     assert nm.main(_args(service, frontend, "inplace", tmp_path)) == 2
     assert list(tmp_path.iterdir()) == []
 
 
-def test_inplace_accepted_for_order_bridge(tmp_path):
-    assert nm.main(_args("orders-api", "order-bridge", "inplace", tmp_path)) == 0
+def test_inplace_accepted_for_sales(tmp_path):
+    assert nm.main(_args("sales-api", "sales", "inplace", tmp_path)) == 0
     files = _files(tmp_path)
-    assert "from app.platform.errors import install_error_handlers" in files["orders-api/app/main.py"]
-    assert "from '@/platform-ui'" in files["order-bridge/src/App.tsx"]
-    assert "src/platform-ui/**" in files["order-bridge/eslint.config.js"]
+    assert "from app.platform.errors import install_error_handlers" in files["sales-api/app/main.py"]
+    assert "from '@/platform-ui'" in files["sales/src/App.tsx"]
+    assert "src/platform-ui/**" in files["sales/eslint.config.js"]
     # The template carries no platform code: the folders are written by hand.
-    assert not (tmp_path / "orders-api/app/platform").exists()
-    assert not (tmp_path / "order-bridge/src/platform-ui").exists()
+    assert not (tmp_path / "sales-api/app/platform").exists()
+    assert not (tmp_path / "sales/src/platform-ui").exists()
 
 
 def test_none_is_the_default_and_has_no_platform_references(tmp_path):

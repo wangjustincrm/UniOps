@@ -2,10 +2,10 @@
 """Generate a new UniOps module: a FastAPI service and a Vite/React front end.
 
     python3 tools/new-module/new_module.py \\
-        --service orders-api --frontend order-bridge \\
-        --module-key order_bridge --label "Order Bridge" \\
-        --api-port 8014 --web-port 5182 --env-prefix ORDERS --table-prefix obr_ \\
-        --perms order_bridge.read,order_bridge.config \\
+        --service sales-api --frontend sales \\
+        --module-key sales --label "Sales" \\
+        --api-port 8014 --web-port 5182 --env-prefix SALES --table-prefix sales_ \\
+        --perms sales.read,sales.config \\
         --platform inplace
 
 It writes only the two new folders (refusing if either exists) and never edits
@@ -16,10 +16,10 @@ printed as a checklist with snippets, to be applied by hand.
 The template contains no platform code (design §13.16). --platform decides
 what the skeleton expects:
   none     (default) no platform imports. The only value allowed for any
-           module other than orders-api / order-bridge until the platform is
+           module other than sales-api / sales until the platform is
            extracted into shared packages (design §14.7).
   inplace  the skeleton imports app.platform / @/platform-ui, which are
-           written into orders-api / order-bridge by hand. Refused for any
+           written into sales-api / sales by hand. Refused for any
            other target. Nothing is ever copied.
 """
 from __future__ import annotations
@@ -34,7 +34,7 @@ TEMPLATES = HERE / "templates"
 REPO = HERE.parent.parent
 
 # The only targets that may be generated with --platform=inplace (design §13.16).
-INPLACE_TARGETS = {("orders-api", "order-bridge")}
+INPLACE_TARGETS = {("sales-api", "sales")}
 
 # vitest must support the template's vite major (8). Held at 4.0.x: every
 # 4.1.x crashes npm 10 (the npm of node:20, used by the Dockerfile and the dev
@@ -188,14 +188,14 @@ Wiring checklist for {v['label']} (design §2 / §14.2 — additions only, by ha
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--service", required=True, type=_kebab, help="back-end folder, e.g. orders-api")
-    ap.add_argument("--frontend", required=True, type=_kebab, help="front-end folder, e.g. order-bridge")
-    ap.add_argument("--module-key", required=True, help="permission/branding module key, e.g. order_bridge")
-    ap.add_argument("--label", required=True, help='display name, e.g. "Order Bridge"')
+    ap.add_argument("--service", required=True, type=_kebab, help="back-end folder, e.g. sales-api")
+    ap.add_argument("--frontend", required=True, type=_kebab, help="front-end folder, e.g. sales")
+    ap.add_argument("--module-key", required=True, help="permission/branding module key, e.g. sales")
+    ap.add_argument("--label", required=True, help='display name, e.g. "Sales"')
     ap.add_argument("--api-port", required=True, type=int)
     ap.add_argument("--web-port", required=True, type=int)
-    ap.add_argument("--env-prefix", required=True, help="settings prefix, e.g. ORDERS")
-    ap.add_argument("--table-prefix", required=True, help="table prefix, e.g. obr_")
+    ap.add_argument("--env-prefix", required=True, help="settings prefix, e.g. SALES")
+    ap.add_argument("--table-prefix", required=True, help="table prefix, e.g. sales_")
     ap.add_argument("--perms", required=True, help="comma-separated permission keys; the first gates Home")
     ap.add_argument("--platform", choices=("none", "inplace"), default="none")
     ap.add_argument("--repo", type=Path, default=REPO, help=argparse.SUPPRESS)
@@ -203,8 +203,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if a.platform == "inplace" and (a.service, a.frontend) not in INPLACE_TARGETS:
         print(
-            f"error: --platform=inplace is only for orders-api / order-bridge (got {a.service} / {a.frontend}). "
-            "The platform is used by Order Bridge only until the extraction decision (design §14.7); "
+            f"error: --platform=inplace is only for sales-api / sales (got {a.service} / {a.frontend}). "
+            "The platform is used by the Sales module only until the extraction decision (design §14.7); "
             "use --platform=none.",
             file=sys.stderr,
         )
