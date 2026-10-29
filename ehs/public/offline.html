@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0A7C7C">
+<title>Safety — offline</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif; background: #fff; color: #1f2937; }
+  main { max-width: 22rem; padding: 1.5rem; text-align: center; }
+  h1 { font-size: 1.125rem; margin: 1rem 0 .5rem; }
+  p { font-size: .9rem; line-height: 1.5; color: #4b5563; margin: 0 0 1.25rem; }
+  button { min-height: 44px; padding: 0 1.25rem; border: 0; border-radius: .5rem;
+           background: #0A7C7C; color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+  button:focus-visible { outline: 3px solid #64A6A6; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<main>
+  <!-- Inline: nothing but this page is kept for offline, so it cannot load an image. -->
+  <svg width="64" height="64" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="112" fill="#0A7C7C"/><path fill="#fff" d="M256 92 386 140v112c0 86-56 146-130 176-74-30-130-90-130-176V140z"/><path fill="none" stroke="#0A7C7C" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" d="M196 262l44 44 80-88"/></svg>
+  <h1>Safety can't be reached</h1>
+  <p>This phone is not connected to the network, or the plant network is down.
+     To report an emergency, call your supervisor or 911.</p>
+  <button type="button" onclick="location.reload()">Try again</button>
+</main>
+</body>
+</html>

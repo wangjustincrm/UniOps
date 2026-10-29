@@ -56,6 +56,17 @@ function decodeUtf8Base64(b64: string): string {
   history.replaceState(null, '', window.location.pathname + window.location.search)
 })()
 
+// ── Installable as an app (round 10, q10-app) ─────────────────────────────────
+// Only where the browser allows a service worker at all: https, or localhost.
+// The test server is plain http, so there it stays a website — production is
+// where "Add to Home Screen" gives a full-screen app. public/sw.js says what
+// the worker does (offline notice only, nothing cached) and how to withdraw it.
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => { /* a website still */ })
+  })
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
