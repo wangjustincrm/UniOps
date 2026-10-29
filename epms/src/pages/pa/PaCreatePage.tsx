@@ -237,7 +237,7 @@ function PoPaCreate() {
     user?.role === 'requester' &&
     !myAuthz?.roles?.some((r) => ON_BEHALF_ROLES.includes(r))
   const eligiblePos = allPos.filter((p) =>
-    ['approved', 'issued', 'partially_received', 'fully_received', 'closed'].includes(p.status) &&
+    ['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_milk'].includes(p.status) &&
     (p.is_prepaid || p.has_unpaid_invoice) &&
     (!requesterScoped || p.pr_requester_id === user?.id)
   )

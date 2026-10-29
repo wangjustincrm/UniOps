@@ -25,7 +25,7 @@ ACTIONS = ("create_pa", "create_gr", "submit_signoff")
 # The PO page offers Create PA only in these statuses (epms/src/pages/po/
 # PoDetailPage.tsx canCreatePa); create_pa itself has no status gate.
 # tests/test_rule_registry.py holds the two together.
-PA_PAGE_PO_STATUSES = ("issued", "partially_received", "fully_received")
+PA_PAGE_PO_STATUSES = ("issued", "partially_received", "fully_received", "nc_milk")
 
 
 def _check(id_: str, passed: bool, message: str | None = None, *,
@@ -84,7 +84,7 @@ async def _create_pa(db, user: dict, po) -> tuple[list[dict], list[str]]:
                "(epms.pa.write); the PO page does not show Create PA without it."),
         _check("page_offers_create_pa", po.status in PA_PAGE_PO_STATUSES,
                f"The PO is '{po.status}'. The PO page offers Create PA only once "
-               f"the order is issued, partially received or fully received."),
+               f"the order is issued, partially received, fully received or a milk order."),
         _check("an_invoice_to_pay", bool(po.is_prepaid) or payable,
                ("No invoice has been recorded against this PO yet. A payment "
                 "application pays invoices, so the vendor's invoice has to be "

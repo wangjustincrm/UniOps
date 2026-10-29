@@ -1272,7 +1272,9 @@ async def match_invoice(
 
 # 发票可匹配的 PO 状态(与前端 MATCHABLE_PO_STATUSES 一致)。
 # closed 不在其中:已关闭(含 PMS 导入按 PAID 收口)的 PO 不再进入候选(2026-07-10)。
-_MATCHABLE_PO_STATUSES = ("issued", "approved", "partially_received", "fully_received")
+# nc_milk 在其中(2026-10-29):奶单的发票也要在 UniOps 匹配付款;它的 NC 到货照样
+# 镜像成 GR,所以三单匹配、create_pa 都走得通。nc_pending(NC 未审批)仍不在。
+_MATCHABLE_PO_STATUSES = ("issued", "approved", "partially_received", "fully_received", "nc_milk")
 
 
 @router.get("/{invoice_id}/match-candidates", response_model=PoListResponse)
