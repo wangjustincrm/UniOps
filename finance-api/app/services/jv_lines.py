@@ -8,13 +8,15 @@ master (cost centre, project) shows as the code alone rather than a guess.
 """
 import csv
 import io
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import date
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.list_sort import lower, order_by
 from app.models.coa import ChartOfAccount
 from app.models.journal_voucher import JournalVoucher, JournalVoucherLine, JvLineDimension
 from app.models.mirrors import BudgetAccount, Department, Material
@@ -125,6 +127,38 @@ class LineFilters:
     aux_code: str | None = None
     aux_value: str | None = None
     q: str | None = None
+    # Click-to-sort (the shared sort + dir contract); None = the default order.
+    sort: str | None = None
+    dir: str = "asc"
+
+
+# Sortable columns of the JV Detail list, by the key the page sends. The
+# whitelist is the SQL boundary (app.core.list_sort). Amounts sort with 0 as
+# empty: the page shows a credit line's debit as blank, so blanks go last.
+_SORTABLE = {
+    "voucher_date": JournalVoucher.voucher_date,
+    "jv_number": JournalVoucher.jv_number,
+    "line_no": JournalVoucherLine.line_no,
+    "account_code": JournalVoucherLine.account_code,
+    "summary": lower(JournalVoucherLine.summary),
+    "currency": JournalVoucherLine.currency,
+    "local_debit": func.nullif(JournalVoucherLine.local_debit, 0),
+    "local_credit": func.nullif(JournalVoucherLine.local_credit, 0),
+}
+# One auxiliary column: `aux:<dim_code>`, sorted by the code it starts with.
+# The dim code reaches SQL as a bound parameter, never as text.
+_AUX_SORT = re.compile(r"aux:([a-z0-9_]{1,40})")
+
+
+def _sortable(sort: str | None) -> dict:
+    m = _AUX_SORT.fullmatch(sort or "")
+    if not m:
+        return _SORTABLE
+    value = (select(JvLineDimension.value_text)
+             .where(JvLineDimension.jv_line_id == JournalVoucherLine.id,
+                    JvLineDimension.dim_code == m.group(1))
+             .limit(1).scalar_subquery())
+    return {**_SORTABLE, sort: lower(value)}
 
 
 def line_query(f: LineFilters):
@@ -161,6 +195,11 @@ def line_query(f: LineFilters):
         like = f"%{f.q}%"
         stmt = stmt.where(or_(JournalVoucher.jv_number.ilike(like),
                               JournalVoucherLine.summary.ilike(like)))
+    clauses = order_by(f.sort, f.dir, _sortable(f.sort),          # type: ignore[arg-type]
+                       tiebreak=(JournalVoucher.jv_number, JournalVoucherLine.line_no,
+                                 JournalVoucherLine.id))
+    if clauses:
+        return stmt.order_by(*clauses)
     return stmt.order_by(JournalVoucher.voucher_date.desc(), JournalVoucher.jv_number.desc(),
                          JournalVoucherLine.line_no, JournalVoucherLine.id)
 

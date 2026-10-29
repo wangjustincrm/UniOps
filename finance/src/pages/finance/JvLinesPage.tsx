@@ -3,15 +3,21 @@
  * in its own column, with a CSV export laid out the same way so finance can
  * pivot on department / income-expense item / cost centre etc. (user,
  * 2026-10-29). A row opens the shared JvDetailModal.
+ *
+ * The standard list parts: SortTh headers (server-sorted — the API pages the
+ * list), ListPager, and a header row locked at the top of the scrolling box
+ * (the table is wide, so it scrolls both ways inside the box).
  */
 import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight, Download, Loader2, Search, X } from 'lucide-react'
+import { Download, Loader2, Search, X } from 'lucide-react'
+import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, financeDownload } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
+import { ListPager } from '@/components/ListPager'
 import { JvDetailModal } from './JvDetailModal'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
@@ -60,6 +66,8 @@ export default function JvLinesPage() {
   const [detailId, setDetailId] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [err, setErr] = useState<string | null>(null)
+  // Keys are the API's sort whitelist; an auxiliary column sorts as `aux:<code>`.
+  const [sort, onSort] = useSort<string>(null, () => setPage(0))
 
   const { data: perms } = useQuery({
     queryKey: ['jv-permissions'],
@@ -90,8 +98,11 @@ export default function JvLinesPage() {
       if (auxValue) p.set('aux_value', auxValue)
     }
     if (q) p.set('q', q)
+    // The export follows the screen's order too.
+    const { sort: sortKey, dir } = sortParams(sort)
+    if (sortKey && dir) { p.set('sort', sortKey); p.set('dir', dir) }
     return p
-  }, [periodFrom, periodTo, subsystem, account, currency, auxCode, auxValue, q])
+  }, [periodFrom, periodTo, subsystem, account, currency, auxCode, auxValue, q, sort])
 
   const list = useQuery({
     queryKey: ['jv-lines', filters.toString(), page],
@@ -105,7 +116,6 @@ export default function JvLinesPage() {
   const total = list.data?.total ?? 0
   const dimCols = list.data?.dim_columns ?? []
   const dimLabel = (code: string) => dimCols.find((c) => c.code === code)?.label ?? code
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const reset = () => setPage(0)
 
   const exportCsv = async () => {
@@ -185,20 +195,21 @@ export default function JvLinesPage() {
           <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
         ) : (
           <>
-            <div className="overflow-x-auto rounded-lg border border-neutral-200">
+            <div className="max-h-[calc(100vh-15rem)] min-h-[16rem] overflow-auto rounded-lg border border-neutral-200">
               <table className="w-full text-sm">
-                <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+                <thead className="sticky top-0 z-10 bg-neutral-50 text-left text-xs text-neutral-500 shadow-[0_1px_0_#e5e5e5]">
                   <tr>
-                    <th className="px-3 py-2 whitespace-nowrap">Date</th>
-                    <th className="px-3 py-2 whitespace-nowrap">Voucher No.</th>
-                    <th className="px-3 py-2 whitespace-nowrap">#</th>
-                    <th className="px-3 py-2 whitespace-nowrap">Account</th>
-                    <th className="px-3 py-2 min-w-[16rem]">Summary</th>
-                    <th className="px-3 py-2 whitespace-nowrap">Currency</th>
-                    <th className="px-3 py-2 text-right whitespace-nowrap">Debit (CAD)</th>
-                    <th className="px-3 py-2 text-right whitespace-nowrap">Credit (CAD)</th>
+                    <SortTh label="Date" sortKey="voucher_date" sort={sort} onSort={onSort} className="px-3 py-2 whitespace-nowrap" />
+                    <SortTh label="Voucher No." sortKey="jv_number" sort={sort} onSort={onSort} className="px-3 py-2 whitespace-nowrap" />
+                    <SortTh label="#" sortKey="line_no" sort={sort} onSort={onSort} className="px-3 py-2 whitespace-nowrap" title="Sort by line number" />
+                    <SortTh label="Account" sortKey="account_code" sort={sort} onSort={onSort} className="px-3 py-2 whitespace-nowrap" />
+                    <SortTh label="Summary" sortKey="summary" sort={sort} onSort={onSort} className="px-3 py-2 min-w-[16rem]" />
+                    <SortTh label="Currency" sortKey="currency" sort={sort} onSort={onSort} className="px-3 py-2 whitespace-nowrap" />
+                    <SortTh label="Debit (CAD)" sortKey="local_debit" sort={sort} onSort={onSort} align="right" className="px-3 py-2 whitespace-nowrap" />
+                    <SortTh label="Credit (CAD)" sortKey="local_credit" sort={sort} onSort={onSort} align="right" className="px-3 py-2 whitespace-nowrap" />
                     {dimCols.map((c) => (
-                      <th key={c.code} className="px-3 py-2 whitespace-nowrap">{c.label}</th>
+                      <SortTh key={c.code} label={c.label} sortKey={`aux:${c.code}`} sort={sort} onSort={onSort}
+                              className="px-3 py-2 whitespace-nowrap" />
                     ))}
                   </tr>
                 </thead>
@@ -230,18 +241,8 @@ export default function JvLinesPage() {
               </table>
             </div>
 
-            <div className="mt-3 flex items-center justify-between text-sm text-neutral-500">
-              <span>{total.toLocaleString()} line{total === 1 ? '' : 's'}</span>
-              <div className="flex items-center gap-2">
-                <button onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0} className={secondaryBtn}>
-                  <ChevronLeft className="h-4 w-4" /> Prev
-                </button>
-                <span>Page {page + 1} / {pageCount}</span>
-                <button onClick={() => setPage(Math.min(pageCount - 1, page + 1))} disabled={page >= pageCount - 1} className={secondaryBtn}>
-                  Next <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
+            <ListPager page={page + 1} pageSize={PAGE_SIZE} total={total} noun={total === 1 ? 'line' : 'lines'}
+                       onPage={(n) => setPage(n - 1)} />
           </>
         )}
       </div>

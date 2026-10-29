@@ -155,3 +155,31 @@ async def test_export_csv_expands_auxiliaries(client, book):
     assert rec[0]["Debit (CAD)"] == "181783.06" and rec[0]["Account Name"] == "制造费用(fix)"
     assert rec[1]["Supplier"] == "0000119/Process and Steam"
     assert rec[1]["Summary"] == "'=SUM(A1)"            # never a formula in Excel
+
+
+async def test_lines_sort_by_column_and_auxiliary(client, book):
+    def order(r):
+        assert r.status_code == 200, r.text
+        return [(i["jv_number"], i["line_no"]) for i in r.json()["items"]]
+
+    r = await client.get(f"{BASE}/lines", params={"sort": "local_debit", "dir": "desc"},
+                         headers=_h())
+    # the credit line shows a blank debit, so it sorts last in both directions
+    assert order(r) == [("JV-202610-0001", 1), ("JV-202609-0002", 1), ("JV-202610-0001", 2)]
+    r = await client.get(f"{BASE}/lines", params={"sort": "local_debit", "dir": "asc"},
+                         headers=_h())
+    assert order(r)[-1] == ("JV-202610-0001", 2)
+    r = await client.get(f"{BASE}/lines", params={"sort": "aux:supplier"}, headers=_h())
+    assert order(r)[0] == ("JV-202610-0001", 2)          # the only line with a supplier
+    r = await client.get(f"{BASE}/lines", params={"sort": "account_code"}, headers=_h())
+    assert [i["account_code"] for i in r.json()["items"]] == ["140301", "220201", "510101"]
+    # the export follows the screen's order
+    r = await client.get(f"{BASE}/lines/export", params={"sort": "account_code"}, headers=_h())
+    rows = list(csv.reader(io.StringIO(r.content.decode("utf-8-sig"))))
+    assert [row[rows[0].index("Account Code")] for row in rows[1:]] == ["140301", "220201", "510101"]
+
+
+async def test_lines_unknown_sort_is_refused(client, book):
+    for bad in ("nope", "aux:Bad;drop", "aux:"):
+        r = await client.get(f"{BASE}/lines", params={"sort": bad}, headers=_h())
+        assert r.status_code == 422, (bad, r.text)

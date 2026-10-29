@@ -286,12 +286,14 @@ def _line_filters(period_from: str | None = Query(default=None),
                   currency: str | None = Query(default=None),
                   aux_code: str | None = Query(default=None),
                   aux_value: str | None = Query(default=None),
-                  q: str | None = Query(default=None)) -> jv_lines.LineFilters:
+                  q: str | None = Query(default=None),
+                  sort: str | None = Query(default=None),
+                  dir: SortDir = Query(default="asc")) -> jv_lines.LineFilters:
     return jv_lines.LineFilters(
         period_from=period_from, period_to=period_to, date_from=date_from, date_to=date_to,
         status=status, source_subsystem=source_subsystem, account_code=account_code,
         currency=currency, aux_code=aux_code, aux_value=aux_value if aux_code else None,
-        q=q)
+        q=q, sort=sort, dir=dir)
 
 
 @router.get("/lines")
