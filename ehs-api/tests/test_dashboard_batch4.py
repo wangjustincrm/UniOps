@@ -208,6 +208,18 @@ async def test_a_date_edge_is_the_plants_day(db_session, hse_manager):
     assert after["lost_time"] == before["lost_time"] + 1
 
 
+async def test_only_an_end_date_means_that_years_start(db_session, hse_manager):
+    _, hse = hse_manager
+    y = TODAY.year - 1
+    params = {"hours_worked": 200000, "date_to": f"{y}-07-01"}
+    before = (await hse.get("/api/v1/reports/injury-rates", params=params)).json()
+    _incident(db_session, injury="lost_time", occurred=_at(date(y, 3, 3)))
+    _incident(db_session, injury="lost_time", occurred=_at(date(y - 1, 12, 3)))
+    await db_session.flush()
+    after = (await hse.get("/api/v1/reports/injury-rates", params=params)).json()
+    assert after["lost_time"] == before["lost_time"] + 1
+
+
 # ── Monthly scorecards ──────────────────────────────────────────────────────
 
 async def test_resolution_averages_the_closed_and_counts_the_open(db_session, hse_manager):

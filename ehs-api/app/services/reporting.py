@@ -359,6 +359,11 @@ async def injury_rates(
     number without editing the record — but it is no longer the only source,
     which is what made these rates permanently blank.
 
+    ★ The two windows agree to the month, not the day. Incidents are counted
+    to the end of today; hours are by month, and the current month counts with
+    whatever figure has been entered for it — a whole month entered on the
+    15th makes the rate read low until the month is out.
+
     When months inside the period have no figure the rates are still returned,
     with a note naming them. A short divisor makes an injury rate read *higher*
     than it is, and there is nothing in the number itself to reveal that.
@@ -372,9 +377,11 @@ async def injury_rates(
     # instant, which Postgres reads in UTC, so the window's edges sat four or
     # five hours off the plant's day. Both corrected in round 10, batch 4.
     today = plant_today()
-    window_from = date_from or date(today.year, 1, 1)
     # `date_to` stays exclusive, as callers have always passed it.
     window_to = date_to or (today + timedelta(days=1))
+    # With only an end, the year that end falls in — not this year, which for
+    # an end last year would be an empty window reading as "nothing happened".
+    window_from = date_from or date((window_to - timedelta(days=1)).year, 1, 1)
     start, _ = day_bounds(window_from, None)
     end, _ = day_bounds(window_to, None)
 
