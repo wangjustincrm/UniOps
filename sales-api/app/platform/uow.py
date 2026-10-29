@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.platform.actors import Actor
 from app.platform.audit import AuditTrail
+from app.platform.authorization import PermissionChecker
 from app.platform.events import EventBuffer, HandlerRegistry
 
 
@@ -39,8 +40,10 @@ class SqlAlchemyUnitOfWork:
         handlers: HandlerRegistry | None = None,
         audit: AuditTrail | None = None,
         reason: str | None = None,
+        permissions: PermissionChecker | None = None,
     ) -> None:
         self._session_factory = session_factory
+        self.permissions = permissions
         self.actor = actor
         self.handlers = handlers or HandlerRegistry()
         self.audit = audit
@@ -92,12 +95,15 @@ class UnitOfWorkFactory:
         *,
         handlers: HandlerRegistry | None = None,
         audit: AuditTrail | None = None,
+        permissions: PermissionChecker | None = None,
     ) -> None:
         self.session_factory = session_factory
         self.handlers = handlers or HandlerRegistry()
         self.audit = audit
+        self.permissions = permissions
 
     def __call__(self, actor: Actor, *, reason: str | None = None) -> SqlAlchemyUnitOfWork:
         return SqlAlchemyUnitOfWork(
             self.session_factory, actor, handlers=self.handlers, audit=self.audit, reason=reason,
+            permissions=self.permissions,
         )

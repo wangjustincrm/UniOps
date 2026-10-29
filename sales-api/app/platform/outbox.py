@@ -49,7 +49,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.errors import BusinessError, NotFound
-from app.platform.gateways.guard import Suppressed
+from app.platform.guard import Suppressed
 
 logger = logging.getLogger(__name__)
 

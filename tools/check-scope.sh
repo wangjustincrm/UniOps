@@ -157,20 +157,23 @@ src = pathlib.Path("tests/platform/test_one_way_dependency.py").read_text()
 ns = {"__file__": "/w/tests/platform/test_one_way_dependency.py", "__name__": "scope_check"}
 exec(compile(src, "test_one_way_dependency.py", "exec"), ns)
 failures = 0
-for name in ("test_platform_imports_no_business_code",
-             "test_checker_catches_absolute_and_relative_business_imports",
-             "test_no_sales_names_in_platform_code"):
+NAMES = ("test_platform_imports_no_business_code",
+         "test_checker_catches_absolute_and_relative_business_imports",
+         "test_integrations_import_only_platform_and_themselves",
+         "test_integration_checker_flags_upper_layers_and_allows_platform",
+         "test_no_sales_names_in_platform_code")
+for name in NAMES:
     try:
         ns[name]()
         print(f"  {name}: passed")
     except AssertionError as e:
         failures += 1
         print(f"  {name}: FAILED {e}")
-print(f"  checks run: 3, failed: {failures}")
+print(f"  checks run: {len(NAMES)}, failed: {failures}")
 sys.exit(1 if failures else 0)
 PY
-  then ok "sales-api/app/platform imports no business code"
-  else fail "sales-api/app/platform one-way dependency"
+  then ok "sales-api layers: platform imports no business code; integrations import no domain/services/api"
+  else fail "sales-api one-way dependency (platform / integrations)"
   fi
 fi
 
@@ -208,19 +211,29 @@ TS
       rm src/platform-ui/__scope_probe__.ts
       npx vitest run src/platform-ui/importRule.test.ts >/tmp/v.log 2>&1 || { echo "import rule failed"; tail -20 /tmp/v.log; exit 14; }
       npx eslint src/platform-ui >/tmp/e.log 2>&1 || { echo "eslint failed"; tail -20 /tmp/e.log; exit 15; }
-      # The ESLint rule must fire on a planted business import.
-      printf "import { api } from \"@/lib/api\"\nexport const planted = api\n" > src/platform-ui/__eslint_probe__.ts
-      npx eslint src/platform-ui/__eslint_probe__.ts >/tmp/p.log 2>&1
-      grep -q "no-restricted-imports" /tmp/p.log || { echo "the ESLint import rule did NOT fire on a planted business import"; tail -10 /tmp/p.log; exit 18; }
-      rm src/platform-ui/__eslint_probe__.ts
+      # Each ESLint layer rule must fire on a planted violation.
+      probe() {  # file, import line
+        mkdir -p "$(dirname "$1")"
+        printf "%s\nexport const planted = 1\n" "$2" > "$1"
+        npx eslint "$1" >/tmp/p.log 2>&1
+        grep -q "no-restricted-imports" /tmp/p.log || { echo "ESLint did NOT fire: $1 <- $2"; tail -10 /tmp/p.log; exit 18; }
+        rm "$1"
+      }
+      probe src/platform-ui/__eslint_probe__.ts "import { api } from \"@/lib/api\""
+      probe src/platform-ui/primitives/__eslint_probe__.ts "import { useCan } from \"../patterns/permissions\""
+      probe src/platform-ui/primitives/__eslint_probe__.ts "import { useQuery } from \"@tanstack/react-query\""
+      probe src/platform-ui/resource/__eslint_probe__.ts "import { Dialog } from \"../primitives/Dialog\""
+      probe src/platform-ui/patterns/__eslint_probe__.ts "import { Button } from \"@uniops/shell\""
+      probe src/features/__eslint_probe__.ts "import { Button } from \"@uniops/shell\""
+      probe src/pages/__eslint_probe__.ts "import { Badge } from \"@uniops/shell\""
       npx vite build >/tmp/b.log 2>&1 || { echo "build failed"; tail -10 /tmp/b.log; exit 16; }
       grep -q "radix-popover-trigger-width" dist/assets/*.css || { echo "platform-ui classes missing from the built CSS"; exit 17; }
       # As written in CSS: hover:x → .hover\:x
       grep -qF "$SHELL_SELECTOR" dist/assets/*.css || { echo "shell-only class $SHELL_SENTINEL missing from the built CSS"; exit 19; }
-      echo "probe reported; 0 other type errors; import rule + ESLint (planted import caught) pass; library and shell classes in CSS"
+      echo "probe reported; 0 other type errors; import + layer rules pass; 7 planted ESLint violations caught; library and shell classes in CSS"
     '
   rc=$?
-  if [[ $rc == 0 ]]; then ok "sales: TS5101 trap, import rule, ESLint probe, library + shell CSS"; else fail "sales checks (code $rc)"; fi
+  if [[ $rc == 0 ]]; then ok "sales: TS5101 trap, import + layer rules, ESLint probes, library + shell CSS"; else fail "sales checks (code $rc)"; fi
 fi
 
 echo

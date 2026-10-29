@@ -146,6 +146,7 @@ class ThingRepository(Repository[Thing]):
 class Finish(CommandService[Thing]):
     repo_cls = ThingRepository
     machine = MACHINE
+    permission = "pt.operate"
 
     def target(self, agg, cmd):
         return "done"
@@ -160,13 +161,14 @@ class FinishCmd(Command):
     refuse: bool = False
 
 
-async def test_command_locks_transitions_raises_event_and_commits(uow_factory, person):
+async def test_command_locks_transitions_raises_event_and_the_caller_commits(uow_factory, person):
     async with uow_factory(person) as uow:
         t = Thing(status="open")
         uow.session.add(t)
         await uow.commit()
     async with uow_factory(person) as uow:
         await Finish(uow).execute(FinishCmd(aggregate_id=t.id, reason="all good"))
+        await uow.commit()  # the outermost caller
         assert [e.new for e in uow.events.dispatched] == ["done"]
     async with uow_factory(person) as uow:
         assert (await uow.session.get(Thing, t.id)).status == "done"

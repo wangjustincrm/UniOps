@@ -5,10 +5,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { useState } from 'react'
 import {
-  ActionButton, ConfirmDialog, DataTable, PermissionProvider, SchemaForm, clampPageSize, clearFilter, getFilter,
+  ActionButton, ConfirmAction, QueryTable, PermissionProvider, SchemaForm, clampPageSize, clearFilter, getFilter,
   setFilter, type ColumnDef, type QuerySpec,
 } from './index'
-import { zodResolver } from './forms/zodResolver'
+import { zodResolver } from './patterns/zodResolver'
 
 describe('zodResolver', () => {
   it('nests errors by path and puts object-level issues under root', async () => {
@@ -77,7 +77,7 @@ describe('double-fire guards', () => {
 
     let done!: () => void
     const onConfirm = vi.fn(() => new Promise<void>((r) => { done = r }))
-    render(<ConfirmDialog open onOpenChange={() => {}} title="Sure?" confirmLabel="Yes" onConfirm={onConfirm} />)
+    render(<ConfirmAction open onOpenChange={() => {}} title="Sure?" confirmLabel="Yes" onConfirm={onConfirm} />)
     const yes = screen.getByText('Yes').closest('button')!
     act(() => { yes.click(); yes.click() })
     expect(onConfirm).toHaveBeenCalledTimes(1)
@@ -93,7 +93,7 @@ function Table({ initial, onSpec }: { initial: QuerySpec; onSpec?: (s: QuerySpec
   return (
     <>
       <button type="button" onClick={() => setSpec({ ...spec, search: 'from outside' })}>external</button>
-      <DataTable<Row>
+      <QueryTable<Row>
         columns={columns} rows={[{ id: 1, code: 'A' }]} total={500} spec={spec} searchable rowKey={(r) => r.id}
         filters={[
           { field: 'status', label: 'Status', options: [{ value: 'Open', label: 'Open' }, { value: 'Closed', label: 'Closed' }] },
@@ -105,7 +105,7 @@ function Table({ initial, onSpec }: { initial: QuerySpec; onSpec?: (s: QuerySpec
   )
 }
 
-describe('DataTable (review)', () => {
+describe('QueryTable (review)', () => {
   it('the search box is controlled: it follows a spec changed from outside', () => {
     render(<Table initial={{ page: 1, pageSize: 20, search: 'abc' }} />)
     expect(screen.getByLabelText('Search')).toHaveValue('abc')

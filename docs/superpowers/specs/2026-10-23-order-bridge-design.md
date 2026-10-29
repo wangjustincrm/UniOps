@@ -319,12 +319,26 @@ Approved 2026-10-23: an ABP-inspired foundation in the back end and a UI library
 
 | Part | Folder | Used by |
 | --- | --- | --- |
-| Back-end foundation | `sales-api/app/platform/` | `sales-api/app/domain/…`, `app/flows/…`, `app/api/…` |
+| Back-end foundation | `sales-api/app/platform/` | `sales-api/app/services/…`, `app/domain/…`, `app/integrations/…`, `app/api/…` |
 | UI library | `sales/src/platform-ui/` | `sales/src/pages/…`, `src/features/…` |
+
+**Layers (STEP 1, product owner 2026-10-29 — a restructure, no new capability).** Back end, the UniOps layout:
+
+| Folder | Holds | May import |
+| --- | --- | --- |
+| `app/api` | thin HTTP endpoints; a write endpoint commits exactly once, at the end | everything below |
+| `app/services` | application services (use cases); each declares and checks its permission (§13.5) | schemas, domain, models, integrations, platform |
+| `app/schemas` | DTOs (pydantic): shape only — types, lengths, required fields; no business rule | platform |
+| `app/domain` | business rules, the 9.1 status machines | platform |
+| `app/models` | SQLAlchemy models (`sales_*`) | platform |
+| `app/integrations` | outside systems: `sftp`, `email` (protocols, fakes, guarded/read lists), `x12/`, `epms_tasks` (the shared Task Inbox table) | platform only — never domain, services, api |
+| `app/platform` | generic bases (entities, values, query, repository, uow, events, outbox, audit, state, services bases, crud_router, registry, guard, pipeline, jobs, settings_registry, errors, actors, authorization, container helpers) | nothing else of `app` |
+
+Front end: `src/platform-ui` in three layers (§13.15), `src/features/<area>/` (orders, fulfillment, invoices, transfers, configuration) and `src/pages` built on `@/platform-ui` only.
 
 **Extraction-ready rules (both folders):**
 
-- **One-way dependency:** the platform folder never imports business code. Back end: a test walks the AST of every module under `app/platform/` and fails on any import of `app.` outside `app.platform` (import-linter style, no new dependency). Front end: an ESLint `no-restricted-imports` rule for `src/platform-ui/**` forbids `@/…` paths outside `@/platform-ui`; if the module ships without ESLint, the same check runs as a vitest test that scans the import statements.
+- **One-way dependency:** the platform folder never imports business code. Back end: a test walks the AST of every module under `app/platform/` and fails on any import of `app.` outside `app.platform` (import-linter style, no new dependency); a second walk fails on any import of `app.domain`, `app.services` or `app.api` from `app/integrations/`; each rule has a positive half and a planted-import proof. Front end: ESLint `no-restricted-imports` rules per layer (business code outside `@/platform-ui`; primitives → patterns/resource/`@tanstack/react-query`; resource → primitives/patterns/`@uniops/shell`; patterns → `@uniops/shell`; `@uniops/shell` anywhere in Sales except `platform-ui/primitives` and the app shell), and a vitest test that resolves every relative import against the same rules; `tools/check-scope.sh` plants a violation for each ESLint rule.
 - **No Order Bridge names** inside the platform code: no partner, order, 940 or Radiant identifiers. Domain enums, status maps and permission keys are passed in by the business code (e.g. `StatusBadge` takes a map; `useCan` takes a key).
 - **Own README and tests:** `app/platform/README.md` and `src/platform-ui/README.md` describe the public interface; tests live next to them (`tests/platform/…`, `src/platform-ui/**/*.test.tsx`).
 - **Own dependency list documented:** each README lists the third-party packages the folder needs (back end: SQLAlchemy, pydantic, asyncssh, httpx, aiosmtplib; UI: Radix, `@tanstack/react-table`, `react-hook-form`, `zod`), so extraction knows exactly what moves.
@@ -448,6 +462,13 @@ class UnitOfWork(Protocol):
 
 One unit of work per HTTP request (FastAPI dependency `get_uow`) and one per scheduler unit (one connection, one document, one order — §4.2). Nothing is committed unless `commit()` is called — unlike the skeleton's `get_session`, which commits at the end of every request; `get_uow` never goes through it (tested).
 
+**Transaction contract — one transaction per operation (STEP 1, 2026-10-29).**
+
+- Only the **outermost caller** commits: the HTTP endpoint — "an endpoint that writes calls `uow.commit()` exactly once, at the end" — or a job's unit (`isolated`, §13.11).
+- Services, `CommandService.execute` and the step functions a job runs **never commit**; they flush at most. A service that calls another passes its unit of work along, so the whole operation is one transaction: if the second service fails, nothing of the first is kept — no row, no audit row, no outbox row (tested, both orders).
+- The one exception is the outbox worker (§13.7), which commits its claim (IN_FLIGHT) and the outcome in two transactions of its own, for at-most-once.
+- A static test walks every `post/put/patch/delete` endpoint (`app/api/**`, `crud_router`) and fails unless it contains exactly one `.commit()`.
+
 ### 13.5 Services (template method)
 
 ```python
@@ -484,23 +505,28 @@ class CommandService(Generic[T]):
         async with self.uow:
             agg = await self.repo.get(cmd.aggregate_id, for_update=True)   # SELECT … FOR UPDATE
             self.check(agg, cmd)                                           # re-check the rule
-            self.machine.transition(agg, cmd.target, actor=cmd.actor)      # §13.6
-            self.audit(agg, cmd)
-            await self.uow.commit()
+            self.machine.transition(agg, cmd.target, actor=cmd.actor, events=self.uow.events)  # §13.6
+            await self.uow.session.flush()                                 # audit rows written; no commit
 ```
+
+(`execute` first checks the command's `permission`; the endpoint or job that opened the unit of work commits — §13.4.)
+
+**Authorization at the service (STEP 1, 2026-10-29).** Every application service (`app/services/`) declares the permission each operation needs — `read_permission` / `write_permission` on CRUD services, `permission` on a `CommandService`, `@requires("sales.…")` on any other method — and checks it itself, **before it reads or writes anything** for the operation (a denied call never flushes; tested). So a job or another service calling it is gated exactly like an HTTP request. The check goes through the unit of work's permission checker; `app/core/deps.py` wires the UniOps role matrix there (`uniops_authz.has_permission`, the same admission rule as `require_permission`: `system_admin` passes, otherwise the user's role union must grant the key; `Actor` carries the token's base role). The system actor passes only where `system_allowed = True` / `@requires(key, system=True)` declares it, and is refused everywhere else. A refusal is `PermissionDenied` → 403 `{"error": {"code": "auth.forbidden", …}}`. `crud_router` enforces nothing of its own — it carries no permission list.
 
 Example command: `SendNow940(order_id, confirm_replacement: bool)` — locks the order, re-checks FR-OB-03c (no live 940 unless a confirmed replacement; never for historical orders), transitions fulfillment `Pending → 940 Generated`, raises `Order940Requested`, audits the user.
 
 Example config resource (whole wiring for one table):
 
 ```python
-class PartnerService(CrudService[Partner, PartnerRead, PartnerCreate, PartnerUpdate]):
+class PartnerService(CrudService[Partner, PartnerRead, PartnerCreate, PartnerUpdate]):   # app/services
     repo_cls = PartnerRepository             # search_fields=("code", "name")
+    read_permission = "sales.read"
+    write_permission = "sales.config"        # every config CRUD uses the coarse key
     async def validate_create(self, data):
         if data.invoice_method == InvoiceMethod.EMAIL and not data.invoice_email:
             raise BusinessError("partner.invoice_email_required")   # FR-OB-33
 
-router = crud_router("/config/partners", PartnerService)   # list/get/create/update/deactivate/export/import
+router = crud_router("/config/partners", PartnerService, uow=get_uow)   # list/get/create/update/deactivate/export/import
 ```
 
 ### 13.6 State machine
@@ -578,11 +604,11 @@ class DocumentStore(Protocol):
     async def get(self, id: int) -> StoredDocument: ...
 ```
 
-Each has a real implementation (asyncssh, httpx, aiosmtplib, `sales_documents`) and a fake (in-memory, records calls) for tests. **Timing:** P0a delivers the Protocols, the in-memory fakes, `GuardedGateway` and the outbox with its per-kind retry policy (tested through fakes that raise `NotAccepted` / `AcceptedThenFailed`); the real SFTP gateway (asyncssh) comes with P2, the real Shopify gateway (httpx) with P3, the real email gateway (aiosmtplib) with P6/P8 where it is first used, and `DbDocumentStore` with `sales02` (P2). `SftpGateway` and `EmailGateway` are generic and live in `app/platform/gateways`; `ShopifyGateway` is business code (`app/integrations/shopify`). `GuardedGateway` wraps SFTP, Shopify and Email and is the **only** place that reads `SALES_EXTERNAL_EMAIL_ENABLED` and `SALES_PARTNER_WRITES_ENABLED` to decide a send (§5.5). It is an allow-list: the composition root names the guarded writes and the pass-through reads; any other method, private attribute or the wrapped client is an AttributeError. A refused call is logged, handed to `on_refused` — the composition root's refusal sink, which writes the `sales_log` "would have sent / written" row (email: recipients, subject, body hash; SFTP: connection, folder, name, size, hash; the sink is wired with `sales_log` in P0) — and raises `Suppressed`. One further reader: the composition root passes `notify = (SALES_EXTERNAL_EMAIL_ENABLED is true)` to the TaskService (§3.5, product owner 2026-10-28).
+Each has a real implementation (asyncssh, httpx, aiosmtplib, `sales_documents`) and a fake (in-memory, records calls) for tests. **Timing:** P0a delivers the Protocols, the in-memory fakes, `GuardedGateway` and the outbox with its per-kind retry policy (tested through fakes that raise `NotAccepted` / `AcceptedThenFailed`); the real SFTP gateway (asyncssh) comes with P2, the real Shopify gateway (httpx) with P3, the real email gateway (aiosmtplib) with P6/P8 where it is first used, and `DbDocumentStore` with `sales02` (P2). `SftpGateway` and `EmailGateway`, their fakes, and each one's guarded-write and read lists and "would have …" summary live in `app/integrations/sftp.py` and `app/integrations/email.py` (STEP 1, 2026-10-29); `ShopifyGateway` will be `app/integrations/shopify`. `GuardedGateway` itself stays generic in `app/platform/guard.py` — it knows no integration: each integration module hands it its lists. It wraps SFTP, Shopify and Email and is the **only** place that reads `SALES_EXTERNAL_EMAIL_ENABLED` and `SALES_PARTNER_WRITES_ENABLED` to decide a send (§5.5). It is an allow-list: the composition root names the guarded writes and the pass-through reads; any other method, private attribute or the wrapped client is an AttributeError. A refused call is logged, handed to `on_refused` — the composition root's refusal sink, which writes the `sales_log` "would have sent / written" row (email: recipients, subject, body hash; SFTP: connection, folder, name, size, hash; the sink is wired with `sales_log` in P0) — and raises `Suppressed`. One further reader: the composition root passes `notify = (SALES_EXTERNAL_EMAIL_ENABLED is true)` to the TaskService (§3.5, product owner 2026-10-28).
 
 ### 13.10 X12 toolkit
 
-`x12.Envelope` (ISA/GS/ST/SE/GE/IEA with the A.2 values), `x12.read(raw) -> Interchange` (separators read from the ISA, FR-OB-26), `x12.Segment` builder with element escaping, control numbers from `sales_x12_control_seq` (D10), zero-padding helpers used by both building and matching (FR-OB-22a / 28). Separator characters are cleaned with the envelope's own separators. Output is strict ASCII (product owner, 2026-10-28): accented and common letters are transliterated (é → e, ß → ss, curly quotes, dashes, no-break spaces) and each change is noted for the document's log; a character with no ASCII equivalent raises `UnmappableCharacter` naming the element (e.g. `N102`) and the character, so the builder's validation fails and the order goes to Review with a task the person can act on (edit the address). "?" is never written.
+`app/integrations/x12/` (moved out of the platform, STEP 1): `x12.Envelope` (ISA/GS/ST/SE/GE/IEA with the A.2 values), `x12.read(raw) -> Interchange` (separators read from the ISA, FR-OB-26), `x12.Segment` builder with element escaping, control numbers from `sales_x12_control_seq` (D10), zero-padding helpers used by both building and matching (FR-OB-22a / 28). Separator characters are cleaned with the envelope's own separators. Output is strict ASCII (product owner, 2026-10-28): accented and common letters are transliterated (é → e, ß → ss, curly quotes, dashes, no-break spaces) and each change is noted for the document's log; a character with no ASCII equivalent raises `UnmappableCharacter` naming the element (e.g. `N102`) and the character, so the builder's validation fails and the order goes to Review with a task the person can act on (edit the address). "?" is never written.
 
 ### 13.11 Pipeline
 
@@ -597,7 +623,7 @@ async def isolated(unit_name: str, fn, *, uow_factory, log) -> UnitOutcome:
     (FR-OB-50)."""
 ```
 
-The intake chain (list → identity check → stability → download → hash/store → commit → after-read → classify, FR-OB-70..76) and the cycle (fetch → apply → time rules → build → outbox → write-back) are lists of `Step`s; each unit inside a step goes through `isolated`.
+The intake chain (list → identity check → stability → download → hash/store → commit → after-read → classify, FR-OB-70..76) and the cycle (fetch → apply → time rules → build → outbox → write-back) are lists of `Step`s; each unit inside a step goes through `isolated`. `isolated` is the job's unit boundary and the only place in a cycle that commits (once per unit, FR-OB-50); the function it runs, and every service that function calls, only flushes (§13.4).
 
 ### 13.12 Scheduled job
 
@@ -616,11 +642,11 @@ Started with `spawn()` in the lifespan, stopped with `drain()` before `engine.di
 ### 13.13 Cross-cutting
 
 - **Audit:** an SQLAlchemy `before_flush` listener writes `sales_audit` for every change to an `Audited` entity (who, what, before/after); commands add their reason.
-- **Actors:** `Actor(user_id, name)`; scheduler work runs as `SYSTEM_ACTOR`, recorded as such (never as a person).
+- **Actors:** `Actor(user_id, name, role)` (role = the token's base role, for the permission check); scheduler work runs as `SYSTEM_ACTOR`, recorded as such (never as a person), and passes a permission check only where it is declared (§13.5).
 - **Settings registry:** typed `Setting[T](key, default, validator, safe)` declarations; values in `sales_settings`; read through one cached accessor, emptied when a change commits. A stored value that no longer parses is **safe-off** (product owner, 2026-10-28): the read returns the setting's `safe` value — never a default that may be "on" (booleans: False; every other setting declares one; `None` = off, e.g. a paused schedule) — and `on_invalid` raises a task.
 - **Feature flags:** e.g. `shopify_writeback_enabled`, `shadow_mode` — settings with an audit trail.
 - **Errors:** `BusinessError(code, message, details)` → one JSON shape `{ "error": { "code", "message", "details" } }` with HTTP 409/422; unexpected errors → 500 with a correlation id.
-- **TaskService:** `raise_problem(event, entity, context)` (problem key `<prefix>:<event>:<entity>`, one open task, refresh if open), `resolve_problem(event, entity)` (auto-complete) — §3.5. The prefix (`SALES`), `document_type` (`sales`, ≤ 10), the `notify()` callable (D-b, §3.5) and task-type names are supplied by business code; the guard decorator (§13.9) likewise receives its switch names (`SALES_EXTERNAL_EMAIL_ENABLED`, `SALES_PARTNER_WRITES_ENABLED`) from the composition root, so no Order Bridge name appears inside `app/platform/`.
+- **TaskService** (`app/integrations/epms_tasks.py` — it writes the shared EPMS table, so it is an integration, not platform): `raise_problem(event, entity, context)` (problem key `<prefix>:<event>:<entity>`, one open task, refresh if open), `resolve_problem(event, entity)` (auto-complete) — §3.5. The prefix (`SALES`), `document_type` (`sales`, ≤ 10), the `notify()` callable (D-b, §3.5) and task-type names are supplied by business code; the guard decorator (§13.9) likewise receives its switch names (`SALES_EXTERNAL_EMAIL_ENABLED`, `SALES_PARTNER_WRITES_ENABLED`) from the composition root, so no Sales or Order Bridge name appears inside `app/platform/`.
 
 ### 13.14 Dependency injection
 
@@ -639,8 +665,11 @@ The scheduler and the API use the same factories. No DI framework.
 ### 13.15 UI library
 
 - **Location:** `sales/src/platform-ui/` (product owner, 2026-10-27; `packages/ui` and `libs/ui` are dropped). It is **not** under `packages/` and **not** in the root npm workspace, so the root `package-lock.json` never changes. It sits inside `src/` rather than beside it (`sales/platform-ui/`) because there it is covered with no extra configuration by sales's own `tsconfig.app.json` (typecheck), Vite (build and an `@/platform-ui` alias) and Tailwind's source scanning, so nothing outside `src/` has to be wired and nothing can silently drop out of the typecheck or the CSS. The folder rules of §13 keep it separable.
-- Builds **on top of `@uniops/shell`**: reuses its Button, Badge, Card, Input, Label, FormField, Pagination, Skeleton and tokens. No second Button or any duplicate of a shell component; `packages/shell` is not modified.
-- Adds: Radix-based Dialog, Sheet, Popover, Tabs, Combobox, Toast, Confirm; `DataTable<T>` on TanStack Table with a backend adapter (sort/filter/page → `QuerySpec`); `CrudPage<T>` (list + form + CSV import with dry-run preview); `SchemaForm` from zod (config forms only); `ResourceClient<T>` / `useCrudResource` working on types generated from the sales-api OpenAPI schema (the generated types live in business code, `src/api/generated`, and are passed in); `StatusBadge` taking a status → style map (the 9.1 map is supplied by business code); `ActionButton` (disabled while pending, checks a permission passed in); `PermissionGate` / `useCan`; error display by `BusinessError` code; Empty / Error states (Skeleton from the shell). Light theme only; tokens dark-ready. No TreeView.
+- Builds **on top of `@uniops/shell`**: reuses its Button, Badge, Card, Input, Label, FormField, Pagination, Skeleton and tokens. No second Button or any duplicate of a shell component; `packages/shell` is not modified. **One place for every component** (STEP 1, 2026-10-29): `platform-ui/primitives/shell.ts` re-exports them (thin re-exports with their prop types — never copies), so Sales imports every component from `@/platform-ui`; ESLint bans `@uniops/shell` anywhere else in Sales except the app shell (`src/main.tsx`, `src/components/layout/`, `src/app/`, which wire the shell's tabs and routes). A variant Sales needs is a wrapper in `primitives/`, never a fork.
+- **Three layers** (STEP 1, 2026-10-29), one way: `primitives/` — visual only (Dialog, Sheet, Popover, Combobox, Tabs, Toast, StatusBadge, States, the `DataTable` view, the shell re-exports); may import primitives, `lib` and `@uniops/shell`, never API, permission or query code. `resource/` — `ResourceClient`, `useCrudResource`, `querySpec`, `businessError`; may import resource and `lib`. `patterns/` — composes the two: `ActionButton`, `ConfirmAction`, `SchemaForm`, `QueryTable` (the `DataTable` view adapted to `QuerySpec`), `CrudPage`, `PermissionGate` / `useCan`, `ErrorMessage` / `ErrorView`; may import patterns, primitives, resource and `lib`. The library never imports features, pages or app code. Enforced by ESLint and the vitest import scan, each proved by planted violations.
+- **Features:** `src/features/{orders, fulfillment, invoices, transfers, configuration}/` hold the screens of each area as they are built (each starts with a README); they and `src/pages` use `@/platform-ui` only.
+- **shadcn CLI:** `sales/components.json` points it at `@/platform-ui/primitives` (css `src/index.css`); it has not been run. After any use, `tools/check-scope.sh` must still show the repository root, `packages/shell` and the root lock file unchanged.
+- Adds: Radix-based Dialog, Sheet, Popover, Tabs, Combobox, Toast, `ConfirmAction`; `DataTable<T>` on TanStack Table (the view) and `QueryTable<T>`, its backend adapter (sort/filter/page → `QuerySpec`); `CrudPage<T>` (list + form + CSV import with dry-run preview); `SchemaForm` from zod (config forms only); `ResourceClient<T>` / `useCrudResource` working on types generated from the sales-api OpenAPI schema (the generated types live in business code, `src/api/generated`, and are passed in); `StatusBadge` taking a status → style map (the 9.1 map is supplied by business code); `ActionButton` (disabled while pending, checks a permission passed in); `PermissionGate` / `useCan`; error display by `BusinessError` code; Empty / Error states (Skeleton from the shell). Light theme only; tokens dark-ready. No TreeView.
 - Build facts: `sales/Dockerfile` copies `packages/shell` and `sales` as inventory's does — **no extra COPY**, the library is part of `sales`; `sales/src/index.css` keeps only the `@source` line for `packages/shell` (the library is inside `src/` and is scanned automatically; a build check confirms its classes are present in the output CSS); Radix, `@tanstack/react-table`, `react-hook-form` and `zod` are pinned in `sales/package.json` only; typecheck runs with sales's own `tsc` and `tsconfig.app.json` (TypeScript ~6.0), and the check verifies that a deliberate type error inside `src/platform-ui` is reported (guards against the TS5101 "diagnostics skipped" trap). Found in P0a (2026-10-27): `@hookform/resolvers` is not used — its optional peer `ajv@8` leaves a lock file npm 10's `npm ci` rejects — so the library has a small zod resolver of its own; vitest is held at `~4.0.18` because every 4.1.x crashes npm 10 (the npm of `node:20`) while resolving peers, and 4.0 runs on its own nested vite 7, so `vitest.config.ts` has no React plugin (automatic JSX only).
 
 ### 13.16 Module template
@@ -652,7 +681,7 @@ The scheduler and the API use the same factories. No DI framework.
 - `none` — the default, and the only value allowed for any other module until the §14.7 decision: the skeleton has no platform imports.
 - `inplace` — for `sales-api` / `sales` only (any other target is refused with an error): the skeleton imports `app.platform` / `@/platform-ui`, and the platform folders are written into it by hand (P0a). Nothing is ever copied.
 
-P0a generates the bare `sales-api` and `sales` skeletons with it, so the template is proven before P0 wires them.
+P0a generates the bare `sales-api` and `sales` skeletons with it, so the template is proven before P0 wires them. The STEP 1 layers (§13: `app/services`, `app/schemas`, `app/integrations`; `src/platform-ui/{primitives,patterns,resource}`, `src/features`) are written into `sales-api` / `sales` by hand; the template is unchanged by them — a `--platform=none` module has no platform layers to split.
 
 ### 13.17 Decisions on the platform design (product owner, 2026-10-27 — all closed)
 

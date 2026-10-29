@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { useState } from 'react'
 import {
-  ActionButton, Combobox, ConfirmDialog, DataTable, PermissionGate, PermissionProvider, SchemaForm,
+  ActionButton, Combobox, ConfirmAction, QueryTable, PermissionGate, PermissionProvider, SchemaForm,
   StatusBadge, ToastProvider, useToast, type ColumnDef, type QuerySpec,
 } from './index'
 
@@ -73,14 +73,14 @@ function Table({ onSpec, rows = [{ id: 1, code: 'A' }], total = 1, error }: {
 }) {
   const [spec, setSpec] = useState<QuerySpec>({ page: 1, pageSize: 20 })
   return (
-    <DataTable<Thing>
+    <QueryTable<Thing>
       columns={columns} rows={rows} total={total} spec={spec} sortable={['code']} searchable error={error}
       onSpecChange={(s) => { setSpec(s); onSpec(s) }} rowKey={(r) => r.id}
     />
   )
 }
 
-describe('DataTable', () => {
+describe('QueryTable', () => {
   it('turns header clicks into spec.sort, only on sortable columns', () => {
     const onSpec = vi.fn()
     render(<Table onSpec={onSpec} />)
@@ -141,17 +141,17 @@ describe('SchemaForm', () => {
   })
 })
 
-describe('ConfirmDialog', () => {
+describe('ConfirmAction', () => {
   it('stays open with the error when the action fails, closes on success', async () => {
     const onOpenChange = vi.fn()
     const failing = vi.fn(async () => { throw { body: { error: { code: 'c', message: 'Refused', details: {} } } } })
     const { rerender } = render(
-      <ConfirmDialog open onOpenChange={onOpenChange} title="Sure?" confirmLabel="Do it" onConfirm={failing} />,
+      <ConfirmAction open onOpenChange={onOpenChange} title="Sure?" confirmLabel="Do it" onConfirm={failing} />,
     )
     fireEvent.click(screen.getByText('Do it'))
     expect(await screen.findByText('Refused')).toBeInTheDocument()
     expect(onOpenChange).not.toHaveBeenCalledWith(false)
-    rerender(<ConfirmDialog open onOpenChange={onOpenChange} title="Sure?" confirmLabel="Do it" onConfirm={async () => {}} />)
+    rerender(<ConfirmAction open onOpenChange={onOpenChange} title="Sure?" confirmLabel="Do it" onConfirm={async () => {}} />)
     fireEvent.click(screen.getByText('Do it'))
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
   })

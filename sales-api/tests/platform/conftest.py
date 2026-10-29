@@ -22,7 +22,7 @@ from app.platform.query import FilterRule
 from app.platform.repository import Repository, parse_bool
 from app.platform.services import CrudService
 from app.platform.settings_registry import SettingRecordMixin
-from app.platform.tasks import shared_tasks_table
+from app.integrations.epms_tasks import shared_tasks_table
 from app.platform.uow import UnitOfWorkFactory
 from tests.conftest import SYNC_URL
 
@@ -119,7 +119,7 @@ class WidgetUpdate(BaseModel):
     active: bool | None = None
 
 
-class WidgetService(CrudService[Widget, WidgetRead, WidgetCreate, WidgetUpdate]):
+class WidgetService(CrudService[Widget, WidgetRead, WidgetCreate, WidgetUpdate]):  # an application service
     repo_cls = WidgetRepository
     read_schema = WidgetRead
     create_schema = WidgetCreate
@@ -160,12 +160,35 @@ def session_factory(db_engine, clean):
     return async_sessionmaker(db_engine, expire_on_commit=False)
 
 
+# The permission checker the services consult: grants per actor (the real one
+# is the UniOps role matrix, wired in app/core/deps.py).
+GRANTS: dict[uuid.UUID, set[str]] = {}
+PT_KEYS = {"pt.read", "pt.config", "pt.operate"}
+
+
+async def fake_permissions(session, actor, key: str) -> bool:
+    return key in GRANTS.get(actor.user_id, set())
+
+
+def actor_with(*keys: str, name: str = "Someone"):
+    from app.platform.actors import Actor
+    a = Actor(uuid.uuid4(), name, role="pt_role")
+    GRANTS[a.user_id] = set(keys)
+    return a
+
+
 @pytest.fixture
 def uow_factory(session_factory):
-    return UnitOfWorkFactory(session_factory, audit=AuditTrail(AuditRow))
+    return UnitOfWorkFactory(session_factory, audit=AuditTrail(AuditRow), permissions=fake_permissions)
 
 
 @pytest.fixture
 def person():
-    from app.platform.actors import Actor
-    return Actor(uuid.uuid4(), "Pat Person")
+    """Holds every pt.* key."""
+    return actor_with(*PT_KEYS, name="Pat Person")
+
+
+@pytest.fixture
+def stranger():
+    """Authenticated, holds no key."""
+    return actor_with(name="Sam Stranger")

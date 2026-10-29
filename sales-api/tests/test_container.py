@@ -6,7 +6,9 @@ import pytest
 
 from app.container import EXTERNAL_EMAIL_SWITCH, PARTNER_WRITES_SWITCH, build_container
 from app.core.config import Settings
-from app.platform.gateways import ExternalEmail, FakeEmail, FakeSftp, GuardedGateway, Suppressed
+from app.integrations.email import ExternalEmail, FakeEmail
+from app.integrations.sftp import FakeSftp
+from app.platform.guard import GuardedGateway, Suppressed
 
 MSG = ExternalEmail(to=("a@partner.example",), cc=("b@partner.example",), subject="PO 123", body_text="hello")
 

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 from app.platform.actors import SYSTEM_ACTOR
-from app.platform.gateways import ExternalEmail, FakeEmail
+from app.integrations.email import ExternalEmail, FakeEmail
 from app.platform.outbox import (
     CANCELLED, DONE, FAILED, IN_FLIGHT, ONCE, PENDING, SUPPRESSED, AcceptedThenFailed, NotAccepted, Outbox,
     OutboxKind, OutboxWorker, retry_while_not_accepted,
@@ -371,7 +371,7 @@ async def test_pre_check_skips_an_effect_the_entity_no_longer_wants(uow_factory)
 
 
 def _guarded_email(settings, inner):
-    from app.platform.gateways import GuardedGateway
+    from app.platform.guard import GuardedGateway
     return GuardedGateway(inner, settings=settings, guarded={"send_external": "MAIL"})
 
 

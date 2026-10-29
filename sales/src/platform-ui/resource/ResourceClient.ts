@@ -1,4 +1,4 @@
-import { toSearchParams, type Page, type QuerySpec } from '../lib/querySpec'
+import { toSearchParams, type Page, type QuerySpec } from './querySpec'
 
 /** What the business API client provides. Paths are relative to its base. */
 export interface HttpClient {

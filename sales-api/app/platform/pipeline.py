@@ -3,6 +3,10 @@
 A cycle is a list of `Step`s; each unit of work inside a step (one
 connection, one document, one order) goes through `isolated`, so one bad unit
 is rolled back, logged and reported while the rest of the cycle carries on.
+
+Transactions: `isolated` is the job's unit boundary — it opens the unit of
+work and commits it once. The function it runs (and every service that
+function calls) only flushes; it never commits (FR-OB-50, STEP 1).
 """
 from __future__ import annotations
 

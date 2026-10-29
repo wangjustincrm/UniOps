@@ -1,11 +1,16 @@
-"""Services (design §13.5): template methods with hooks.
+"""Service base classes (design §13.5): template methods with hooks. The
+application services built on them live in app/services/.
 
-Services work inside the caller's unit of work and do not commit — the router
-or job that opened the unit commits it — except `CommandService.execute`,
-which is one whole state change and commits itself.
+Transactions: one per operation. Services work inside the caller's unit of
+work and never commit — they flush at most. Only the outermost caller commits:
+the HTTP endpoint (exactly once, at the end) or a job's unit (`isolated`).
+A service calling another service shares the caller's unit of work.
 
-Permission keys are not set here: the business subclass names them
-(`read_permission`, `write_permission`), and the router enforces them.
+Authorization: each service declares its keys (`read_permission`,
+`write_permission`, `CommandService.permission`, or `@requires` on a method)
+and checks them itself at the start of the operation, before anything is
+written (app/platform/authorization.py). `system_allowed` lets the system
+actor through; otherwise it is refused like a person without the key.
 """
 from __future__ import annotations
 
@@ -22,6 +27,7 @@ from sqlalchemy.orm.exc import StaleDataError
 
 from app.platform.actors import Actor
 from app.platform.audit import jsonable
+from app.platform.authorization import authorize
 from app.platform.entities import Deactivatable, Versioned
 from app.platform.errors import BusinessError, InvalidInput
 from app.platform.query import Page, QuerySpec
@@ -46,18 +52,25 @@ class ReadOnlyService(Generic[T, R]):
     repo_cls: ClassVar[type[Repository]]
     read_schema: ClassVar[type[BaseModel]]
     read_permission: ClassVar[str]
+    # The system actor (jobs) may use this service's operations.
+    system_allowed: ClassVar[bool] = False
 
     def __init__(self, uow) -> None:
         self.uow = uow
         self.repo = self.repo_cls(uow)
 
+    async def _authorize(self, key: str) -> None:
+        await authorize(self.uow, key, system=self.system_allowed)
+
     def to_read(self, entity: T) -> R:
         return self.read_schema.model_validate(entity, from_attributes=True)
 
     async def get(self, id: int) -> R:
+        await self._authorize(self.read_permission)
         return self.to_read(await self.repo.get(id))
 
     async def list(self, spec: QuerySpec) -> Page[R]:
+        await self._authorize(self.read_permission)
         page = await self.repo.list(spec)
         return Page[Any](items=[self.to_read(e) for e in page.items], total=page.total)
 
@@ -120,12 +133,14 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
 
     # ── writes ───────────────────────────────────────────────────────────────
     async def create(self, data: C) -> R:
+        await self._authorize(self.write_permission)
         await self.validate_create(data)
         entity = self.model(**data.model_dump())
         await self.repo.add(entity)
         return self.to_read(entity)
 
     async def update(self, id: int, data: U, version: int | None = None) -> R:
+        await self._authorize(self.write_permission)
         entity = await self.repo.get(id, for_update=True)
         if isinstance(entity, Versioned):
             if version is None:
@@ -147,6 +162,7 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
         return self.to_read(entity)
 
     async def deactivate(self, id: int) -> R:
+        await self._authorize(self.write_permission)
         entity = await self.repo.get(id, for_update=True)
         if not isinstance(entity, Deactivatable):
             raise TypeError(f"{type(entity).__name__} is not Deactivatable")
@@ -156,6 +172,7 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
 
     # ── CSV ──────────────────────────────────────────────────────────────────
     async def export_csv(self, spec: QuerySpec) -> bytes:
+        await self._authorize(self.read_permission)
         out = io.StringIO()
         w = csv.writer(out, lineterminator="\n")
         columns = self._csv_export_columns()
@@ -176,6 +193,7 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
         caller commits once). `dry_run` returns the per-row plan only."""
         if not self.csv_key or not self.csv_columns:
             raise TypeError(f"{type(self).__name__} declares no CSV columns/key")
+        await self._authorize(self.write_permission)
         report = ImportReport(ok=False, dry_run=dry_run, written=False)
         if len(file) > MAX_IMPORT_BYTES:
             report.errors.append(RowIssue(0, None, "csv.too_large",
@@ -350,14 +368,19 @@ class Command:
 
 class CommandService(Generic[T]):
     """A state change on one aggregate. Aggregates are never edited by a
-    generic PUT: each change is a command that locks the row, re-checks its
-    rule, transitions through the machine, audits and commits.
+    generic PUT: each change is a command that checks its permission, locks
+    the row, re-checks its rule, transitions through the machine and flushes
+    (the audit rows are written then). It does not commit: the caller that
+    opened the unit of work does, once.
 
-    Subclasses set `repo_cls` and `machine` and implement `target`; `check`
-    and `apply` are hooks. Runs inside an entered unit of work."""
+    Subclasses set `repo_cls`, `machine` and `permission` and implement
+    `target`; `check` and `apply` are hooks. Runs inside an entered unit of
+    work."""
 
     repo_cls: ClassVar[type[Repository]]
     machine: ClassVar[StateMachine]
+    permission: ClassVar[str]
+    system_allowed: ClassVar[bool] = False
 
     def __init__(self, uow) -> None:
         self.uow = uow
@@ -377,6 +400,7 @@ class CommandService(Generic[T]):
         return self.uow.actor
 
     async def execute(self, cmd: Command) -> T:
+        await authorize(self.uow, self.permission, system=self.system_allowed)
         agg = await self.repo.get(cmd.aggregate_id, for_update=True)  # SELECT … FOR UPDATE
         self.check(agg, cmd)
         self.uow.set_reason(cmd.reason or type(cmd).__name__)
@@ -385,7 +409,6 @@ class CommandService(Generic[T]):
         )
         await self.apply(agg, cmd)
         await self.uow.session.flush()
-        await self.uow.commit()
         return agg
 
 

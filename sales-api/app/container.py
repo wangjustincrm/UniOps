@@ -14,56 +14,18 @@ writes `sales_log`; it is wired by P0, which creates that table.
 """
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.integrations import email, sftp
+from app.integrations.email import FakeEmail
+from app.integrations.sftp import FakeSftp
 from app.platform.container import gateway, is_test
-from app.platform.gateways import ExternalEmail, FakeEmail, FakeSftp, Refused
+from app.platform.guard import Refused
 
 EXTERNAL_EMAIL_SWITCH = "SALES_EXTERNAL_EMAIL_ENABLED"
 PARTNER_WRITES_SWITCH = "SALES_PARTNER_WRITES_ENABLED"
-
-SFTP_WRITES = {"put": PARTNER_WRITES_SWITCH, "move": PARTNER_WRITES_SWITCH, "delete": PARTNER_WRITES_SWITCH}
-SFTP_READS = ("list", "get")
-EMAIL_SENDS = {"send_external": EXTERNAL_EMAIL_SWITCH}
-
-
-def sftp_live_only(method: str, args: tuple, kwargs: dict) -> str | None:  # noqa: ARG001
-    """SFTP writes also need the connection in LIVE mode (design §5.4)."""
-    conn = args[0] if args else kwargs.get("conn")
-    return None if getattr(conn, "mode", None) == "LIVE" else "connection not LIVE"
-
-
-def _sha256(data: bytes | str | None) -> str | None:
-    if data is None:
-        return None
-    return hashlib.sha256(data.encode() if isinstance(data, str) else bytes(data)).hexdigest()
-
-
-def email_summary(method: str, args: tuple, kwargs: dict) -> dict[str, Any]:  # noqa: ARG001
-    msg: ExternalEmail = args[0] if args else kwargs["msg"]
-    return {
-        "recipients": [*msg.to, *msg.cc],
-        "subject": msg.subject,
-        "body_sha256": _sha256(msg.body_text),
-        "body_html_sha256": _sha256(msg.body_html),
-        "attachments": [{"name": n, "size": len(d), "sha256": _sha256(d)} for n, d, _ in msg.attachments],
-    }
-
-
-def sftp_summary(method: str, args: tuple, kwargs: dict) -> dict[str, Any]:
-    names = {"put": ("conn", "folder", "name", "data"), "move": ("conn", "src", "dst"), "delete": ("conn", "path")}
-    a = dict(zip(names[method], args)) | kwargs
-    conn = a.pop("conn", None)
-    out: dict[str, Any] = {"connection": getattr(conn, "id", None), "mode": getattr(conn, "mode", None)}
-    data = a.pop("data", None)
-    if data is not None:
-        out |= {"size": len(data), "sha256": _sha256(data)}
-    return out | {k: str(v) for k, v in a.items()}
-
-
 @dataclass(frozen=True)
 class RefusalRecord:
     """One "would have sent / written" log row (§5.5)."""
@@ -108,12 +70,13 @@ def build_container(settings: Any, *, real_sftp=None, real_email=None, refusal_s
     return Container(
         sftp=gateway(
             settings, real=real_sftp or _not_built_yet("SFTP", "P2"), fake=FakeSftp,
-            guarded=SFTP_WRITES, reads=SFTP_READS, allow=sftp_live_only, name="sftp",
-            summarise=sftp_summary, on_refused=on_refused,
+            guarded=sftp.guarded(PARTNER_WRITES_SWITCH), reads=sftp.READS, allow=sftp.live_only, name="sftp",
+            summarise=sftp.summary, on_refused=on_refused,
         ),
         email=gateway(
             settings, real=real_email or _not_built_yet("email", "P6/P8"), fake=FakeEmail,
-            guarded=EMAIL_SENDS, name="email", summarise=email_summary, on_refused=on_refused,
+            guarded=email.guarded(EXTERNAL_EMAIL_SWITCH), reads=email.READS, name="email",
+            summarise=email.summary, on_refused=on_refused,
         ),
         notify_tasks=lambda: getattr(settings, EXTERNAL_EMAIL_SWITCH, False) is True,
     )

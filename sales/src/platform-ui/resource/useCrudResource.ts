@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { QuerySpec } from '../lib/querySpec'
+import type { QuerySpec } from './querySpec'
 import type { ResourceClient } from './ResourceClient'
 
 /** List query plus create / update / deactivate mutations that refresh it. */

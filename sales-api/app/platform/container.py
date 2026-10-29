@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any, TypeVar
 
-from app.platform.gateways.guard import GuardedGateway
+from app.platform.guard import GuardedGateway
 
 G = TypeVar("G")
 

@@ -1,29 +1,24 @@
-"""crud_router and the error shape, through HTTP."""
+"""crud_router and the error shape, through HTTP. The router has no
+permission check of its own: the service's declared keys decide (the
+X-Perms header stands in for the role matrix)."""
 import pytest_asyncio
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header
 from httpx import ASGITransport, AsyncClient
 
 from app.platform.crud_router import crud_router
 from app.platform.errors import BusinessError, install_error_handlers
-from tests.platform.conftest import WidgetService
-
-
-def require(key: str):
-    async def check(x_perms: str = Header(default="")):
-        if key not in x_perms.split(","):
-            raise HTTPException(403, "Insufficient permissions")
-    return check
+from tests.platform.conftest import WidgetService, actor_with
 
 
 @pytest_asyncio.fixture
-async def http(uow_factory, person):
-    async def uow():
-        async with uow_factory(person) as u:
+async def http(uow_factory):
+    async def uow(x_perms: str = Header(default="")):
+        async with uow_factory(actor_with(*[k for k in x_perms.split(",") if k])) as u:
             yield u
 
     app = FastAPI()
     install_error_handlers(app)
-    app.include_router(crud_router("/widgets", WidgetService, uow=uow, require=require))
+    app.include_router(crud_router("/widgets", WidgetService, uow=uow))
 
     @app.get("/boom")
     async def boom():
@@ -56,9 +51,15 @@ async def test_crud_round_trip(http):
 
 
 async def test_write_needs_the_write_permission_and_read_the_read_one(http):
-    assert (await http.post("/widgets", json={"code": "A", "name": "a"}, headers=RO)).status_code == 403
+    r = await http.post("/widgets", json={"code": "A", "name": "a"}, headers=RO)
+    assert r.status_code == 403 and r.json()["error"] == {
+        "code": "auth.forbidden", "message": "you may not do this (needs pt.config)",
+        "details": {"permission": "pt.config"}}
     assert (await http.get("/widgets", headers={"X-Perms": "pt.config"})).status_code == 403
+    for path in ("/widgets/1", "/widgets/export.csv"):
+        assert (await http.get(path, headers={})).status_code == 403
     assert (await http.get("/widgets", headers=RO)).status_code == 200  # the positive half
+    assert (await http.get("/widgets", headers=RO)).json()["total"] == 0  # the denied POST wrote nothing
 
 
 async def test_import_dry_run_then_write(http):

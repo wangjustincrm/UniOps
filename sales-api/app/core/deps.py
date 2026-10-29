@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_token
 from app.db.session import AsyncSessionLocal, get_session
-from app.platform.actors import actor_from_token
+from uniops_authz import has_permission
+
+from app.platform.actors import Actor, actor_from_token
 from app.platform.uow import SqlAlchemyUnitOfWork, UnitOfWorkFactory
 
 bearer_scheme = HTTPBearer()
@@ -39,9 +41,20 @@ CurrentUserPayload = Annotated[dict, Depends(get_current_user_payload)]
 
 # ── unit of work per request (design §13.4) ──────────────────────────────────
 # Unlike get_session above (which commits when the request ends), a unit of
-# work commits only when the endpoint calls `uow.commit()`: leaving without it
-# rolls back. Audit trail and event handlers are attached with the business
-# tables (P0).
+# work commits only when the endpoint calls `uow.commit()` — exactly once, at
+# the end of a write endpoint; leaving without it rolls back. Audit trail and
+# event handlers are attached with the business tables (P0).
+#
+# Permissions are checked by the services (app/platform/authorization.py)
+# through this checker: the UniOps role matrix, the same admission rule as
+# packages/authz require_permission (system_admin passes; otherwise the
+# user's role union must grant the key).
+
+
+async def check_permission(session: AsyncSession, actor: Actor, key: str) -> bool:
+    if actor.user_id is None or not actor.role:
+        return False
+    return await has_permission(session, actor.user_id, actor.role, key)
 
 
 def make_get_uow(factory: UnitOfWorkFactory):
@@ -51,5 +64,5 @@ def make_get_uow(factory: UnitOfWorkFactory):
     return get_uow
 
 
-get_uow = make_get_uow(UnitOfWorkFactory(AsyncSessionLocal))
+get_uow = make_get_uow(UnitOfWorkFactory(AsyncSessionLocal, permissions=check_permission))
 UoWDep = Annotated[SqlAlchemyUnitOfWork, Depends(get_uow)]
