@@ -121,6 +121,9 @@ class InvoiceOut(BaseModel):
     nc_docs: list[dict] = []
     # On a PO imported from NC: NC makes this payable itself; never pushed.
     nc_flow: bool = False
+    # Budget account code(s) of the invoice's PO(s); None until it is on a PO.
+    # Filled by the list endpoint only.
+    gl_code: str | None = None
 
     @field_validator("amount", "tax_amount", "total_amount", "paid_amount", mode="before")
     @classmethod
@@ -189,6 +192,7 @@ async def list_invoices(_: CurrentUser, db: AsyncSession = Depends(get_db),
     from app.services.nc_push import nc_docs_for
     docs = await nc_docs_for(db, rows)
     nc_flow = await crud.nc_flow_ids(db, [r.id for r in rows])
+    gl = await crud.gl_codes(db, rows)
     items = []
     for r in rows:
         out = InvoiceOut.model_validate(r)
@@ -201,6 +205,7 @@ async def list_invoices(_: CurrentUser, db: AsyncSession = Depends(get_db),
                       "hyphen_match": False, "nc_invoice_no": None}] + found
         out.nc_docs = found
         out.nc_flow = r.id in nc_flow
+        out.gl_code = gl.get(r.id)
         items.append(out)
     return {"total": total, "items": items}
 
