@@ -1,9 +1,14 @@
 # Finance — Product Requirements Document
 
-**Version:** 2.12
+**Version:** 2.13
 **Date:** 2026-10-29
 **Status:** Current. Describes the system as built on the main line, under the 2026-09-20 positioning decision.
 **Scope:** The UniOps Finance module: Finance web app and finance service. Covers the NC65 data mirror, the checks and reports built on it, AP handoff to NC, payments, remittance, vendor credits, bank reconciliation and the remaining finance-held records.
+
+**What changed in version 2.13** (2026-10-29)
+
+- Journal voucher detail (FIN-JV-03): a new **Aux. Acctg** column shows each line's NC auxiliaries the way NC's voucher screen does — 【Department: 0106/Engineering】【Income/Expense Item: CRM004/…】 — in NC's order, with names.
+- New page **Finance → JV Detail** (FIN-JV-06…08): every NC voucher line rather than every voucher, each auxiliary in its own column, with **Export CSV** laid out the same way.
 
 **What changed in version 2.12** (2026-10-29)
 
@@ -189,7 +194,7 @@ The permission matrix and role assignment are managed in Portal → Admin → Ac
 | AP | Accounts Payable · AP Reconciliation · AP Subledger Health · AP Duplicate Invoices · AP Cash Flow · Payments · Payment Batches |
 | AR | Accounts Receivable |
 | General | General Ledger · Account Balance |
-| Voucher | Journal Vouchers · JV Validation |
+| Voucher | Journal Vouchers · JV Detail · JV Validation |
 | Budget | Budget Dashboard · Budget Plans · Budget Actual · Account Catalog · Factor Library · Budget Config (see BUDGET.md; Budget Dashboard, Budget Plans and Account Catalog are EPMS pages embedded in a frame) |
 | Banking | Bank Reconciliation · Bank Settings (plus Statement Import (CSV), reached from the workbench) |
 | AI Financial Analysis | Separate PRD: AI-FINANCIAL-ANALYSIS.md |
@@ -278,9 +283,12 @@ A failed permission load shows "Couldn't load your Finance permissions" with a r
 |---|---|
 | FIN-JV-01 | The list shows **NC vouchers only** — the ones mirrored from NC, including NC vouchers not yet tallied — and what NC's voucher list shows for them: number, date, period, summary, preparer / checker / tallier, NC system, voucher kind, status, NC state, amounts. Columns sort on the server. |
 | FIN-JV-02 | Query filters: period or period range, date range, number range, status, NC voucher state, voucher kind, preparer, checker, manager, account, contra account, currency, amount range, auxiliary type + value, source document type, source subsystem, free text. |
-| FIN-JV-03 | The detail modal shows lines with account, debit / credit (original and CAD), currency, rate and resolved dimension names. |
+| FIN-JV-03 | The detail modal shows lines with account, debit / credit (original and CAD), currency and rate, and an **Aux. Acctg** column with the line's NC auxiliaries as NC prints them: 【Department: 0106/Engineering】, in the order department, income-expense item, cost centre, project, parties, item, bank account. The sync stores each auxiliary as its code; the name is read from the masters UniOps holds (departments, budget account catalog, materials, NC customers, NC bank accounts; for supplier / customer / 客商 the party name the sync put on the line). A code with no local master — cost centre, project — shows as the code alone. 客商 shows the party name alone (its stored code is NC's internal key). The UniOps cost-centre / department / party tags show only on lines that have no NC auxiliaries. |
 | FIN-JV-04 | **NC-mirrored vouchers are read-only.** Their status follows NC. Review, post and reverse are refused for them, including in batch actions. |
 | FIN-JV-05 | UniOps-originated vouchers (from the internal posting records, §14) are **not listed** in the Journal Voucher Center: they never reach NC, and their numbers are drawn from the same JV-YYYYMM- sequence NC fills later, so the same number can name a different NC voucher. They open only by link from other pages. They follow draft → reviewed → posted, with unreview, unpost and red-entry reversal. The reversal is a new negative voucher; the original is marked reversed. All of these need `finance.jv.post` and an open period. If the SoD rule *jv_self_review* is enabled, the preparer cannot review their own voucher. Batch review and post are available. |
+| FIN-JV-06 | **JV Detail page** (Finance → JV Detail): one row per NC voucher line — date, voucher number, line, account (code and name), line summary, currency, debit / credit in CAD — then **one column per auxiliary** the book uses (the same set on every page, so columns do not shift while paging). Each cell is the auxiliary as FIN-JV-03 names it. A row opens the voucher detail. NC vouchers only, as FIN-JV-01; internal drafts are not listed. Default: the current month. |
+| FIN-JV-07 | Filters: period range, date range (API), NC system, account code (prefix, on the line itself), currency, one auxiliary and optionally its code, and free text on the voucher number or the line summary. Unlike the voucher list, line-level filters select lines, not vouchers that have such a line. |
+| FIN-JV-08 | **Export CSV** writes every line the filters match (all pages), UTF-8 with BOM: voucher date, period, voucher number, NC number, voucher type, status, system, preparer, line, account code and name, summary, currency, rate, debit / credit in original currency and CAD, quantity, unit, price, contra account, then one column per auxiliary as on screen. A text cell starting with = + - @ is prefixed with ' so Excel does not treat it as a formula. A year of the book (about 37,000 lines) exports in a few seconds. |
 
 ### 6.2 Account Balance (NC 科目余额表 parity)
 
