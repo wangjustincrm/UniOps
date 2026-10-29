@@ -602,7 +602,7 @@ export default function PoDetailPage() {
   // moment "unpaid" stopped being sufficient.
   const canCreatePa =
     po &&
-    ['issued', 'partially_received', 'fully_received'].includes(po.status) &&
+    ['issued', 'partially_received', 'fully_received', 'nc_milk'].includes(po.status) &&
     (po.is_prepaid || po.has_unpaid_invoice) &&
     (user?.role === 'system_admin' || !!paPerms?.['epms.pa.write'])
   // Types 4 (Service) and 6 (Project-Related) both run the service GR flow —

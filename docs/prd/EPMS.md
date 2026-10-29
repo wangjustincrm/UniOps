@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.41
-**Date:** 2026-10-26
+**Version:** 2.42
+**Date:** 2026-10-29
 **Status:** In Production
+
+> **v2.42 (2026-10-29)** — Milk orders (`nc_milk`) are now **invoice-matchable and payable** (INV-MATCH-002, §NC mirror status table): the Match panel and the upload form offer them as PO candidates, and PO Detail's *Create PA* and the PA form's PO picker accept them. Their NC arrivals are already mirrored as goods receipts, so the three-way match and the Create PA task work as for any open NC order. `nc_pending` and `closed` stay out of matching.
 
 > **v2.41 (2026-10-26)** — Vendor credit usage history (§3.18.2, VC-006): the credit detail drawer lists every payment a credit was netted against — PA, payment date, batch, amount netted and cash paid — with the total; shown to finance roles.
 
@@ -1572,7 +1574,7 @@ Raw-material and packaging purchasing (Type 1) is done in the company ERP, Yonyo
 | NC condition | EPMS PO status | Meaning |
 |---|---|---|
 | Not yet approved in NC (free or in approval) | `nc_pending` ("NC Pending Approval") | Overrides every row below. PDF and sign-off are available. Not payable, receivable or invoice-matchable. |
-| Raw-milk trade type | `nc_milk` ("Milk / NC") | Receipts are booked in NC. Not payable, receivable or invoice-matchable. PDF and sign-off are available. |
+| Raw-milk trade type | `nc_milk` ("Milk / NC") | Receipts are booked in NC (and mirrored as GRs); no GR can be created in EPMS. Open for invoice matching and payment like `issued`. PDF and sign-off are available. |
 | Finally closed in NC, or every line payment-closed | `closed` | Archive only |
 | Otherwise | `issued` | Open for invoice matching and payment |
 
@@ -1881,7 +1883,7 @@ A separate, Finance-owned duplicate check runs on the NC side (Finance → AP Du
 | FR ID | Requirement |
 |-------|-------------|
 | **INV-MATCH-001** | An invoice is matched on one of two routes: **PO route** (allocate to purchase orders) or **Agreement route** (§3.17.4). |
-| **INV-MATCH-002** | PO route: each invoice line is allocated to a PO line (or PO header) on one or more POs of the **same vendor** in status `issued`, `approved`, `partially_received` or `fully_received`. Pre-tax allocations + non-PO fee lines must equal the invoice pre-tax amount (±0.01) or the match is refused. The candidate list shows, per PO line, what other invoices have already allocated. A PO can carry many invoices. |
+| **INV-MATCH-002** | PO route: each invoice line is allocated to a PO line (or PO header) on one or more POs of the **same vendor** in status `issued`, `approved`, `partially_received`, `fully_received` or `nc_milk` (milk orders, since v2.42). `nc_pending` and `closed` POs are not offered. Pre-tax allocations + non-PO fee lines must equal the invoice pre-tax amount (±0.01) or the match is refused. The candidate list shows, per PO line, what other invoices have already allocated. A PO can carry many invoices. |
 | **INV-MATCH-003** | **Non-PO fee lines.** A line (freight, surcharge, handling) can be marked *Non-PO fee* (right-click). It is excluded from PO matching and variance, counted in the balance check, and paid with the invoice. A line cannot be both allocated and marked as a fee. |
 | **INV-MATCH-004** | **Fee-only invoice.** An invoice whose lines are all fees must be linked to a *reference PO* of the same vendor; it matches with zero variance and does not raise a Create-PA task. |
 | **INV-MATCH-005** | **Match by total.** For invoices without unit prices, the whole pre-tax amount can be matched to one PO in a single step. |
