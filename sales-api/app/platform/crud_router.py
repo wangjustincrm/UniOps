@@ -18,7 +18,33 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 
 from app.platform.query import QuerySpec, query_spec
-from app.platform.services import MAX_IMPORT_BYTES, CrudService
+from app.platform.services import MAX_IMPORT_BYTES, CrudService, ReadOnlyService
+
+
+def read_router(
+    prefix: str,
+    service_cls: type[ReadOnlyService],
+    *,
+    uow: Callable[..., Any],
+    tags: list[str] | None = None,
+) -> APIRouter:
+    """The read half of `crud_router` (list · get) for a ReadOnlyService:
+    registers, logs, runs. The service checks its read permission."""
+    r = APIRouter(prefix=prefix, tags=tags or [prefix.strip("/")])
+    Read = service_cls.read_schema
+    UoW = Annotated[Any, Depends(uow)]
+    Spec = Annotated[QuerySpec, Depends(query_spec)]
+
+    @r.get("")
+    async def list_(u: UoW, spec: Spec) -> dict:
+        page = await service_cls(u).list(spec)
+        return {"items": [i.model_dump(mode="json") for i in page.items], "total": page.total}
+
+    @r.get("/{id}", response_model=Read)
+    async def get(u: UoW, id: int):
+        return await service_cls(u).get(id)
+
+    return r
 
 
 def crud_router(

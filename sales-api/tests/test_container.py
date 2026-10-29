@@ -27,9 +27,29 @@ async def _sink_noop(record):
     pass
 
 
-def test_outside_tests_real_gateways_are_not_built_yet():
-    with pytest.raises(NotImplementedError, match="P2"):
-        build_container(SimpleNamespace(ENVIRONMENT="development"), refusal_sink=_sink_noop)
+async def test_outside_tests_a_gateway_not_built_yet_fails_on_first_use():
+    """The app starts (it did not, on dev2, while this raised at build time);
+    using a gateway a later phase builds fails loudly, before anything goes out."""
+    c = build_container(SimpleNamespace(ENVIRONMENT="development", **{EXTERNAL_EMAIL_SWITCH: True}),
+                        refusal_sink=_sink_noop)
+    with pytest.raises(NotImplementedError, match="SFTP gateway arrives in P2"):
+        await c.sftp.list(None, "/in")
+    with pytest.raises(NotImplementedError, match="email gateway arrives in P6/P8"):
+        await c.email.send_external(None)
+
+
+async def test_the_runtime_builds_outside_tests_with_the_real_sftp_gateway():
+    """What the lifespan does on a dev or prod stack."""
+    from app.integrations.sftp import SftpRefused
+    from app.runtime import build_runtime
+    s = SimpleNamespace(ENVIRONMENT="development", SALES_PARTNER_WRITES_ENABLED=False,
+                        SALES_EXTERNAL_EMAIL_ENABLED=False, sftp_allowed_hosts=frozenset({"sftp-test"}))
+    rt = build_runtime(s, uow_factory=None)
+    assert repr(rt.container.sftp) == "<GuardedGateway sftp>"
+    assert rt.intake.sftp is rt.container.sftp and rt.cycle.intake is rt.intake
+    # The real gateway with this stack's host list, refusing before any traffic:
+    with pytest.raises(SftpRefused, match="not in SALES_SFTP_ALLOWED_HOSTS"):
+        await rt.container.sftp.list(SimpleNamespace(host="sftp.truecommerce.com", host_key="k"), "/in")
 
 
 def test_outside_tests_a_refusal_sink_is_required():

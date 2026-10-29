@@ -557,7 +557,15 @@ the first Sales release:
    (sales-api runs last); **do not remove it from the list** — a deploy
    without it has a healthy `/health` and no tables.
 
-4. **Grant access** — Portal → Admin → Access Control: assign `sales_operator`
+4. **SFTP (when intake is turned on)** — `SALES_SFTP_ALLOWED_HOSTS` in `.env`
+   lists the partner hosts explicitly (empty = no SFTP connection at all,
+   fail closed); each connection's password is an env var named by its
+   `secret_name` (e.g. `SALES_SECRET_RADIANT_SFTP`), passed to `sales-api`
+   in `docker-compose.prod.yml` at that release. On Configuration →
+   Connections, run **Test connection**, compare the SHA256 fingerprint with
+   the partner's and **Pin this key** — an unpinned connection never logs in.
+
+5. **Grant access** — Portal → Admin → Access Control: assign `sales_operator`
    (or single `sales.*` keys) to the people who need them. The Sales card and
    nav entry stay invisible until then.
 

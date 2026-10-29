@@ -31,7 +31,7 @@ const { default: PartnersPage } = await import('./PartnersPage')
 
 function renderAs(keys: string[]) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  return { qc, ...render(
     <QueryClientProvider client={qc}>
       <ToastProvider>
         <PermissionProvider can={(k) => keys.includes(k)}>
@@ -39,7 +39,7 @@ function renderAs(keys: string[]) {
         </PermissionProvider>
       </ToastProvider>
     </QueryClientProvider>,
-  )
+  ) }
 }
 
 async function openPartner() {
@@ -75,5 +75,39 @@ describe('Partners page', () => {
     expect(within(sheet).getByLabelText(/^Code/)).toBeDisabled()  // immutable after creation
     expect(within(sheet).getByRole('button', { name: 'Save' })).toBeInTheDocument()
     expect(within(sheet).getByRole('button', { name: 'Deactivate' })).toBeInTheDocument()
+  })
+})
+
+describe('CrudPage keeps the open record current', () => {
+  it('a save after the record changed underneath uses its current version', async () => {
+    const mod = await import('./partnersApi')
+    const list = vi.mocked(mod.partnersClient.list)
+    const update = vi.mocked(mod.partnersClient.update)
+    update.mockResolvedValue({ ...partner, name: 'X', version: 4 })
+    const { qc } = renderAs(['sales.read', 'sales.config'])
+    const sheet = await openPartner()
+    list.mockResolvedValue({ items: [{ ...partner, version: 3, payment_terms: 'Net 30' }], total: 1 })
+    await qc.invalidateQueries()
+    await waitFor(() => expect(within(sheet).getByLabelText(/^Payment terms/)).toHaveValue('Net 30'))
+    fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(/^Name/), { target: { value: 'X' } })
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(update).toHaveBeenCalledWith(1, { name: 'X' }, 3))
+  })
+})
+
+describe('the dev2 partners (regression, 2026-10-29)', () => {
+  it('lists all seven and opens one whose updated_at is null', async () => {
+    const { DEV2_PARTNERS } = await import('./dev2Partners.fixture')
+    const mod = await import('./partnersApi')
+    vi.mocked(mod.partnersClient.list).mockResolvedValue({ items: DEV2_PARTNERS, total: DEV2_PARTNERS.length })
+    renderAs(['sales.read', 'sales.config'])
+    for (const p of DEV2_PARTNERS) expect((await screen.findAllByText(p.code)).length).toBeGreaterThan(0)  // Manual / Shopify: code = name
+    expect(screen.getAllByRole('row')).toHaveLength(DEV2_PARTNERS.length + 1)
+    const walmart = DEV2_PARTNERS.find((p) => p.code === 'Walmart')!
+    expect(walmart.updated_at).toBeNull()
+    fireEvent.click(screen.getAllByText('Walmart')[0])
+    const sheet = await screen.findByRole('dialog')
+    expect(within(sheet).getByLabelText(/^Name/)).toHaveValue('Walmart')
+    expect(within(sheet).getByLabelText(/^Channel/)).toHaveValue('TRUECOMMERCE')
   })
 })

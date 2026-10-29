@@ -550,6 +550,13 @@ services:
       SALES_SCHEDULER_ENABLED: "false"
       SALES_EXTERNAL_EMAIL_ENABLED: "false"
       SALES_PARTNER_WRITES_ENABLED: "false"
+      # Fail closed (design §5.1): this stack's only SFTP host is its own test
+      # container below — never a partner's server, whatever a connection row says.
+      SALES_SFTP_ALLOWED_HOSTS: sftp-test
+      # The test container's password, under the name its connection row uses
+      # (secret_name = SALES_SECRET_SFTP_TEST). A throwaway container on the
+      # stack's own network: no port is published.
+      SALES_SECRET_SFTP_TEST: ${SALES_SFTP_TEST_PASSWORD:-sftp-test-only}
     command: uvicorn app.main:app --host 0.0.0.0 --port 8014 --reload
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8014/health').status==200 else 1)"]
@@ -921,6 +928,19 @@ services:
       retries: 5
       start_period: 30s
 
+  # Sales: a throwaway SFTP server standing in for Radiant / TrueCommerce on
+  # dev stacks (P2). Reachable only on the stack's network as `sftp-test`;
+  # user radiant with the folders in, processed and error. Host keys are kept
+  # in a volume, so a key pinned on the Connections page survives a recreate.
+  sftp-test:
+    image: atmoz/sftp:alpine
+    container_name: ${STACK_PREFIX:-uniops}_sftp_test
+    restart: unless-stopped
+    command: "radiant:${SALES_SFTP_TEST_PASSWORD:-sftp-test-only}:1001::in,processed,error"
+    volumes:
+      - sales_sftp_test_keys:/etc/ssh
+      - sales_sftp_test_home:/home/radiant
+
   # ── MailHog: 拦下所有外发邮件 ──────────────────────────────────────────────
   # dev 栈默认 SMTP_HOST=localhost:1025 且无人覆盖, 所以邮件本来就发不出去 ——
   # 好处是同事测试不会真发给全公司和供应商, 坏处是通知类功能完全测不动。
@@ -947,3 +967,5 @@ volumes:
   mrp_node_modules:
   inventory_node_modules:
   sales_node_modules:
+  sales_sftp_test_keys:
+  sales_sftp_test_home:

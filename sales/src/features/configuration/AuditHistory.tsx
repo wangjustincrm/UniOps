@@ -1,6 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
 import { EmptyState, ErrorView, Skeleton } from '@/platform-ui'
-import { fetchPartnerAudit, type AuditEntry } from './partnersApi'
+
+/** One entry of a record's audit history (sales-api schemas/audit.py). */
+export interface AuditEntry {
+  id: number
+  at: string
+  user_name: string
+  action: 'create' | 'update' | 'delete'
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+  reason: string | null
+}
 
 const show = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v))
 
@@ -10,15 +20,21 @@ function Changes({ e }: { e: AuditEntry }) {
   return (
     <ul className="text-neutral-600">
       {keys.map((k) => (
-        <li key={k}><span className="font-medium">{k}</span>: {show(e.before?.[k])} → {show(e.after?.[k])}</li>
+        <li key={k} className="break-all"><span className="font-medium">{k}</span>: {show(e.before?.[k])} → {show(e.after?.[k])}</li>
       ))}
     </ul>
   )
 }
 
-/** Who changed what and when (FR-OB-53), newest first. `version` refreshes it after a save. */
-export function AuditHistory({ id, version }: { id: number; version?: number }) {
-  const q = useQuery({ queryKey: ['partner-audit', id, version], queryFn: () => fetchPartnerAudit(id) })
+/** Who changed what and when (FR-OB-53), newest first, for one configuration
+ *  record. `version` in the key refreshes it after a save. */
+export function AuditHistory({ resource, id, version, load }: {
+  resource: string
+  id: number
+  version?: number
+  load: (id: number) => Promise<AuditEntry[]>
+}) {
+  const q = useQuery({ queryKey: ['audit', resource, id, version], queryFn: () => load(id) })
   return (
     <section aria-label="History" className="flex flex-col gap-2">
       <h3 className="text-sm font-semibold text-neutral-800">History</h3>

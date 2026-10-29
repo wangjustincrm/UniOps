@@ -108,6 +108,14 @@ describe('QueryTable', () => {
   })
 })
 
+describe('error text', () => {
+  it('an unreachable server reads as such, not as "Failed to fetch"', async () => {
+    const { errorText } = await import('./resource/businessError')
+    expect(errorText(new TypeError('Failed to fetch'))).toMatch(/could not be reached/)
+    expect(errorText(new Error('boom'))).toBe('boom')  // other errors unchanged
+  })
+})
+
 describe('SchemaForm', () => {
   const schema = z.object({ code: z.string().min(1, 'Required'), email: z.string().nullable().optional() })
   const fields = [{ name: 'code', label: 'Code', required: true }, { name: 'email', label: 'Email' }]

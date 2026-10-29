@@ -59,7 +59,11 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
   const [importError, setImportError] = useState<unknown>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
-  const editRow = editing && editing !== 'new' ? editing : null
+  // The open record as the list now has it: an action in the detail panel
+  // (or another user) may have changed it, and a save needs its current version.
+  const editRow = editing && editing !== 'new'
+    ? (list.data?.items.find((r) => r.id === editing.id) ?? editing)
+    : null
   const viewOnly = editRow !== null && !canWrite
   const singular = props.singular ?? props.title
   const fields = editRow

@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react'
 import { NavLink, useLocation, Routes, Route, Navigate } from 'react-router-dom'
-import { TabStoreProvider, TabBar, TabHost, TabRouterSync } from '@uniops/shell'
+import { TabStoreProvider, TabBar, TabHost, TabRouterSync, useTabStore } from '@uniops/shell'
 import { moduleRoutes } from '@/app/routes'
 import {
-  Home, Building2,
+  Home, Building2, Plug, FileText, Activity,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -12,6 +12,7 @@ import { signOut } from '@/lib/signOut'
 import { useBranding } from '@/hooks/useBranding'
 import { usePermissions, MODULE_PERMS } from '@/hooks/usePermissions'
 import { PermissionProvider } from '@/platform-ui'
+import { useRecoverFailedQueries } from '@/app/recoverFailedQueries'
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 
@@ -36,7 +37,10 @@ interface NavItem { label: string; href: string; icon: typeof Home; perm: string
 
 const NAV: NavItem[] = [
   { label: 'Home', href: '/home', icon: Home, perm: MODULE_PERMS[0], section: 'Sales' },
+  { label: 'Documents', href: '/documents', icon: FileText, perm: 'sales.read', section: 'Operations' },
+  { label: 'Runs and log', href: '/runs', icon: Activity, perm: 'sales.read', section: 'Operations' },
   { label: 'Partners', href: '/config/partners', icon: Building2, perm: 'sales.read', section: 'Configuration' },
+  { label: 'Connections', href: '/config/connections', icon: Plug, perm: 'sales.read', section: 'Configuration' },
 ]
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -229,6 +233,12 @@ function Header({ onMobileMenuToggle }: { onMobileMenuToggle: () => void }) {
   )
 }
 
+/** Inside the tab store: a tab that becomes active retries what failed in it. */
+function RecoverFailedQueries() {
+  useRecoverFailedQueries(useTabStore((s) => s.activeKey))
+  return null
+}
+
 // ── AppLayout ─────────────────────────────────────────────────────────────────
 
 // True when rendered inside an iframe (a drill-down tab from another module):
@@ -358,6 +368,7 @@ export default function AppLayout() {
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
           <Header onMobileMenuToggle={() => setMobileOpen(v => !v)} />
           <TabRouterSync routes={moduleRoutes} />
+          <RecoverFailedQueries />
           <TabBar />
           <main className="relative flex-1 overflow-hidden">
             <TabHost routes={moduleRoutes} pageClassName="mx-auto max-w-[1440px] p-6" />

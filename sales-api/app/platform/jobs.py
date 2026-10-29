@@ -161,13 +161,23 @@ class ScheduledJob(ABC):
         paused, or another run holds the job. Never raises an Exception; on
         cancellation (shutdown) the run is closed as FAILED "interrupted" so a
         restart is not blocked until the run goes stale."""
+        run_id = await self.claim(trigger=trigger, force=force)
+        if run_id is None:
+            return None
+        return await self.execute(run_id)
+
+    async def claim(self, *, trigger: str = "MANUAL", force: bool = True) -> int | None:
+        """The single-flight claim alone (a "Run now" claims in the request and
+        runs `execute` in the background): the new RUNNING run's id, or None
+        when another run holds the job (or, unforced, when not due)."""
         try:
-            run_id = await self._claim(trigger, force)
+            return await self._claim(trigger, force)
         except Exception:  # noqa: BLE001
             logger.exception("%s: could not claim a run", self.name)
             return None
-        if run_id is None:
-            return None
+
+    async def execute(self, run_id: int) -> Any | None:
+        """Runs a claimed run to its end and closes it (see `tick`)."""
         beat = asyncio.ensure_future(self._beat(run_id))
         summary, status, error = None, FAILED, None
         try:

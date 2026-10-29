@@ -4,13 +4,14 @@ same objects are handed to the API and the scheduler.
 In the test environment every gateway is an in-memory fake. Elsewhere the
 real gateway sits behind the platform guard with the two prod-only switches
 (design §5.5). Real gateways arrive with the phases that use them — SFTP in
-P2, email in P6/P8 — until then building a container outside tests fails
-loudly instead of sending anything.
+P2 (app/runtime.py passes it in), email in P6/P8. Until then the app starts
+with a stand-in for each missing one that fails loudly on its first use, so
+nothing is ever sent by a gateway that does not exist yet.
 
 A refused write raises `Suppressed` (the outbox row ends SUPPRESSED) and is
 handed to the refusal sink as a `RefusalRecord`: the "would have sent /
 written" row of §5.5 (recipients, subject and body hash for email). The sink
-writes `sales_log`; it is wired by P0, which creates that table.
+(app/runtime.py) writes it to `sales_log`.
 """
 from __future__ import annotations
 
@@ -44,10 +45,23 @@ def refusal_record(r: Refused) -> RefusalRecord:
 RefusalSink = Callable[[RefusalRecord], Awaitable[None]]
 
 
+class _NotBuiltYet:
+    """Stands in for a real gateway a later phase builds: every call raises."""
+
+    def __init__(self, name: str, phase: str) -> None:
+        self._name, self._phase = name, phase
+
+    def __getattr__(self, method: str) -> Any:
+        if method.startswith("_"):
+            raise AttributeError(method)
+
+        async def refuse(*args: Any, **kwargs: Any) -> Any:
+            raise NotImplementedError(f"the real {self._name} gateway arrives in {self._phase} ({method})")
+        return refuse
+
+
 def _not_built_yet(name: str, phase: str):
-    def factory() -> Any:
-        raise NotImplementedError(f"the real {name} gateway arrives in {phase}")
-    return factory
+    return lambda: _NotBuiltYet(name, phase)
 
 
 @dataclass

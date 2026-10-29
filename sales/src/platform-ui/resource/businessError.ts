@@ -33,6 +33,8 @@ export function businessErrorOf(err: unknown): BusinessError | null {
 export function errorText(err: unknown, messages: Record<string, string> = {}): string {
   const be = businessErrorOf(err)
   if (be) return messages[be.code] ?? be.message
+  // fetch() rejects with a TypeError when the server cannot be reached at all.
+  if (err instanceof TypeError) return 'The server could not be reached (it may be restarting). Try again in a moment.'
   if (err instanceof Error) return err.message
   return 'Something went wrong.'
 }

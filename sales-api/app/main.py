@@ -20,8 +20,16 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
         "Starting up %s v%s [%s]",
         settings.APP_NAME, settings.APP_VERSION, settings.ENVIRONMENT,
     )
+    from app.runtime import get_runtime
+    runtime = get_runtime()
+    if settings.SALES_SCHEDULER_ENABLED:
+        runtime.background.spawn(runtime.cycle.loop(runtime.background.stop), name="sales-cycle")
+        logger.info("scheduler started")
+    else:
+        logger.info("scheduler disabled (SALES_SCHEDULER_ENABLED=false); Run now still works")
     yield
-    logger.info("Shutting down — closing engine")
+    logger.info("Shutting down — draining background tasks, then closing the engine")
+    await runtime.background.drain(timeout=10)
     await engine.dispose()
 
 

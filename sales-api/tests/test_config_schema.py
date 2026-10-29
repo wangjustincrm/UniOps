@@ -82,9 +82,9 @@ def test_partner_channel_is_a_closed_set(conn):
 def test_connection_stable_seconds_defaults_to_60(conn):
     conn.execute(sa.text(
         "INSERT INTO sales_connections (name, kind, after_read, mode, version, created_by_name) "
-        "VALUES ('radiant', 'SFTP', 'LEAVE', 'TEST', 1, 'test')"))
+        "VALUES ('schema-test-connection', 'SFTP', 'LEAVE', 'TEST', 1, 'test')"))  # a name no other test uses
     assert conn.execute(sa.text(
-        "SELECT stable_seconds FROM sales_connections WHERE name = 'radiant'")).scalar() == 60
+        "SELECT stable_seconds FROM sales_connections WHERE name = 'schema-test-connection'")).scalar() == 60
 
 
 def test_downgrade_removes_the_tables_and_upgrade_restores_them(migrated_db):

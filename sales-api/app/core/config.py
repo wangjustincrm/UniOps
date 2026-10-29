@@ -62,6 +62,17 @@ class Settings(BaseSettings):
     SALES_EXTERNAL_EMAIL_ENABLED: bool = False
     SALES_PARTNER_WRITES_ENABLED: bool = False
 
+    # ── SFTP hosts this stack may connect to (fail closed, every environment) ─
+    # Comma-separated host names. Empty or unset: no SFTP connection at all —
+    # also in production, which lists its partner hosts explicitly (product
+    # owner, 2026-10-29). Not keyed on ENVIRONMENT, so a mis-set ENVIRONMENT
+    # cannot open it; dev stacks list only their test container.
+    SALES_SFTP_ALLOWED_HOSTS: str = ""
+
+    @property
+    def sftp_allowed_hosts(self) -> frozenset[str]:
+        return frozenset(h.strip().lower() for h in self.SALES_SFTP_ALLOWED_HOSTS.split(",") if h.strip())
+
 
 @lru_cache
 def get_settings() -> Settings:

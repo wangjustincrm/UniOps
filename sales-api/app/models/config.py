@@ -155,6 +155,9 @@ class Connection(Audited, Versioned, Deactivatable, Base):
     auth_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     auth_failed_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     secret_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # The server's public host key ("ssh-ed25519 AAAA…"), pinned by an admin (§5.1;
+    # sales03). No pin, no connection: the gateway never trusts a first key.
+    host_key: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class Setting(Audited, SettingRecordMixin, Base):

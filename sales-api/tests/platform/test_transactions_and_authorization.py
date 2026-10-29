@@ -154,11 +154,20 @@ def endpoint_commit_counts(source: str) -> dict[str, int]:
     return out
 
 
+# POST endpoints that write nothing through the request's unit of work, each
+# with its reason. They must commit exactly zero times.
+NO_REQUEST_WRITE = {
+    "api/v1/operations.py:connection_test": "reads only: lists folders, never writes (FR-OB-74)",
+    "api/v1/operations.py:run_now": "the run is claimed in a unit of its own (ScheduledJob.claim)",
+}
+
+
 def test_every_write_endpoint_commits_exactly_once():
     files = [APP / "platform" / "crud_router.py", *sorted((APP / "api").rglob("*.py"))]
     counts = {f"{p.relative_to(APP)}:{name}": n for p in files for name, n in endpoint_commit_counts(p.read_text()).items()}
     assert len(counts) >= 4, counts  # crud_router's import, create, update, deactivate
-    assert {k: n for k, n in counts.items() if n != 1} == {}
+    assert {k: n for k, n in counts.items() if n != 1 and k not in NO_REQUEST_WRITE} == {}
+    assert {k: counts.get(k) for k in NO_REQUEST_WRITE} == dict.fromkeys(NO_REQUEST_WRITE, 0)
 
 
 def test_the_endpoint_check_flags_missing_and_double_commits():

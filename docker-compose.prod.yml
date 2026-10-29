@@ -370,6 +370,8 @@ services:
       SALES_SCHEDULER_ENABLED: ${SALES_SCHEDULER_ENABLED:-false}
       SALES_EXTERNAL_EMAIL_ENABLED: ${SALES_EXTERNAL_EMAIL_ENABLED:-false}
       SALES_PARTNER_WRITES_ENABLED: ${SALES_PARTNER_WRITES_ENABLED:-false}
+      # SFTP hosts this server may connect to; empty = none (fail closed, §5.1).
+      SALES_SFTP_ALLOWED_HOSTS: ${SALES_SFTP_ALLOWED_HOSTS:-}
     ports: ["8014:8014"]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8014
     healthcheck:

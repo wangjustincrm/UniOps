@@ -1,0 +1,70 @@
+"""The scheduled cycle (design §4.1 / §4.2, FR-OB-07, FR-OB-50).
+
+P2 runs step 1 — fetch every active SFTP connection (intake) — and then the
+outbox worker; the later steps join in their phases. Single flight, the stale
+closure (AC-OB-46) and the run record are the platform's `ScheduledJob`; the
+interval and pause are read from the settings on every tick. One connection's
+failure never stops the others (AC-OB-47); a latched connection is skipped
+quietly — it was reported when it latched (AC-OB-48).
+"""
+from __future__ import annotations
+
+from dataclasses import asdict
+from datetime import timedelta
+
+from sqlalchemy import select
+
+from app.models.config import Connection
+from app.platform.actors import SYSTEM_ACTOR
+from app.platform.jobs import RunSummary, Schedule, ScheduledJob
+from app.services import oplog
+from app.services.intake import ConnectionSnapshot, Intake, PassReport
+from app.services.settings import SCHEDULER_INTERVAL_MINUTES, SCHEDULER_PAUSED, SETTINGS
+
+# pg advisory lock key of the cycle; unique across the shared database.
+CYCLE_LOCK_KEY = 0x5A1E5001
+STALE_AFTER = timedelta(minutes=30)
+
+
+def settings_schedule(uow_factory):
+    async def schedule() -> Schedule:
+        async with uow_factory(SYSTEM_ACTOR) as uow:
+            minutes = await SETTINGS.get(uow.session, SCHEDULER_INTERVAL_MINUTES)
+            paused = await SETTINGS.get(uow.session, SCHEDULER_PAUSED)
+        if minutes is None:  # a bad stored interval is safe-off: paused
+            return Schedule(timedelta(minutes=5), paused=True)
+        return Schedule(timedelta(minutes=minutes), paused=paused)
+    return schedule
+
+
+class SalesCycle(ScheduledJob):
+    name = "sales_cycle"
+    lock_key = CYCLE_LOCK_KEY
+
+    def __init__(self, *, intake: Intake, outbox_worker, **kw) -> None:
+        super().__init__(stale_after=STALE_AFTER, **kw)
+        self.intake = intake
+        self.outbox_worker = outbox_worker
+
+    async def run_once(self, run) -> RunSummary:
+        async with self.uow_factory(SYSTEM_ACTOR) as uow:
+            conns = [ConnectionSnapshot.of(c) for c in (await uow.session.execute(
+                select(Connection).where(Connection.active.is_(True), Connection.kind == "SFTP").order_by(Connection.name)
+            )).scalars()]
+        await oplog.write_alone(self.uow_factory, "INFO", "cycle", f"cycle started ({run.trigger}): "
+                                f"{len(conns)} SFTP connection(s)", run_id=run.id)
+        per: dict[str, dict] = {}
+        trouble = 0
+        for c in conns:
+            try:
+                r = await self.intake.run_pass(c, run_id=run.id)
+            except Exception as e:  # noqa: BLE001 — never expected; the pass catches its own failures
+                await oplog.write_alone(self.uow_factory, "ERROR", "cycle", f"{c.name}: pass failed: {e}",
+                                        run_id=run.id, connection_id=c.id)
+                r = PassReport(status="list_failed")
+            per[c.name] = r.as_dict()
+            trouble += r.failed + (r.status == "list_failed")
+        outbox = asdict(await self.outbox_worker.run_once())
+        counts = {"connections": per, "outbox": outbox}
+        await oplog.write_alone(self.uow_factory, "INFO", "cycle", "cycle finished", run_id=run.id, context=counts)
+        return RunSummary(counts=counts, partial=trouble > 0)

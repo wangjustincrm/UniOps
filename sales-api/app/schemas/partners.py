@@ -8,7 +8,9 @@ import json
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints
+
+from app.schemas.common import not_excel_number
 
 Channel = Literal["SHOPIFY", "TRUECOMMERCE", "MANUAL"]
 SettlementMode = Literal["PREPAID", "INVOICE"]
@@ -30,9 +32,10 @@ def _json_object(v: Any) -> Any:
     return v
 
 
-Code = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
+Code = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50), AfterValidator(not_excel_number)]
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
 Short = Annotated[str, StringConstraints(strip_whitespace=True, max_length=50)]
+LabelCode = Annotated[str, StringConstraints(strip_whitespace=True, max_length=50), AfterValidator(not_excel_number)]
 Terms = Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)]
 Email = Annotated[str, StringConstraints(strip_whitespace=True, max_length=255, pattern=EMAIL_PATTERN)]
 Text = Annotated[str, StringConstraints(strip_whitespace=True)]
@@ -56,7 +59,7 @@ class PartnerCreate(BaseModel):
     payment_terms: Terms | None = None
     dc_routing_required: bool
     min_shelf_life_days: Count | None = None
-    label_code: Short | None = None
+    label_code: LabelCode | None = None
     carrier_defaults: JsonObject = None
     active: bool = True
 
@@ -81,7 +84,7 @@ class PartnerUpdate(BaseModel):
     payment_terms: Terms | None = None
     dc_routing_required: bool = None  # type: ignore[assignment]
     min_shelf_life_days: Count | None = None
-    label_code: Short | None = None
+    label_code: LabelCode | None = None
     carrier_defaults: JsonObject = None
     active: bool = None  # type: ignore[assignment]
 
