@@ -13,7 +13,9 @@
 #   1. a path is outside the code allow-list (§14.1) and the configuration
 #      allow-list (§14.2);
 #   2. an allow-listed configuration file loses or changes an existing line
-#      in any of HEAD, the index or the working tree (additions only);
+#      in any of HEAD, the index or the working tree (additions only) —
+#      except the lines named in LINE_EDITS, each of which may gain exactly
+#      its listed text and nothing else;
 #   3. any lock file other than sales/package-lock.json changes —
 #      including the root package-lock.json;
 #   4. anything under packages/ changes or appears;
@@ -91,6 +93,75 @@ CONFIG_FILES=(
   epms-api/app/knowledge/modules.yaml epms-api/tests/test_module_guide.py
 )
 SERVICE_CONFIG_RE='^(approval-api|booking-api|budget-api|epms-api|expense-api|file-api|finance-api|identity-api|inventory-api|mdm-api|mrp-api|vms-api)/app/core/config\.py$'
+# Listed line edits (P0, 2026-10-29). A few existing lines hold a whole list on
+# one line (CORS origin strings, import lists); the Sales entry can only be
+# appended to them. Each such line is named here with the exact text it may
+# gain, inserted right before the LAST occurrence of the anchor in the base
+# line. Any other change to these lines, and any change to any other existing
+# line, still fails; an entry whose anchor no longer matches its base line
+# fails too (the line moved — re-check it by hand).
+#   path <TAB> line number in the base <TAB> anchor <TAB> inserted text
+LINE_EDITS=$(cat <<'EOF'
+docker-compose.dev.yml	111	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	165	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	193	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	245	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	284	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	328	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	360	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	398	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	432	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	494	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	547	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	589	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+.env.prod.example	52	]	,"https://sales.canadaroyalmilk.com"
+.env.lan.example	38	]	,"http://10.10.50.65:5182"
+epms-api/.env.example	10	]	,"http://localhost:5182"
+epms-api/tests/test_module_guide.py	70	))	, "sales"
+portal/src/components/layout/navConfig.tsx	26	 }	, SALES_URL
+portal/src/lib/api.ts	391	]	, SALES_URL
+portal/src/pages/PortalHome.tsx	9	, encodeSession }	, SALES_URL
+portal/src/pages/PortalHome.tsx	15	, MRP_URL }	, SALES_ACCESS_PERMS
+EOF
+)
+# Compares a base file with a new one: unchanged and added lines pass; a base
+# line that is gone or changed passes only as its listed edit (stdlib only).
+read -r -d '' LINE_EDIT_CHECK <<'PY'
+import difflib, os, sys
+path, base_f, new_f = sys.argv[1:4]
+edits = {}
+for row in os.environ["LINE_EDITS"].splitlines():
+    if row.strip():
+        p, n, anchor, ins = row.split("\t")
+        if p == path:
+            edits[int(n)] = (anchor, ins)
+# Line endings are normalised, as git diff does under core.autocrlf.
+read = lambda f: open(f, encoding="utf-8", newline="").read().replace("\r\n", "\n").split("\n")
+base, new = read(base_f), read(new_f)
+bad, expect = [], {}
+for n, (anchor, ins) in sorted(edits.items()):
+    line = base[n - 1] if 0 < n <= len(base) else ""
+    if anchor not in line:
+        bad.append(f"listed line {n} no longer matches the base (anchor {anchor!r})")
+        continue
+    k = line.rindex(anchor)
+    expect[n - 1] = line[:k] + ins + line[k:]
+for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, base, new, autojunk=False).get_opcodes():
+    if tag in ("equal", "insert"):
+        continue
+    rest = iter(new[j1:j2])
+    for i in range(i1, i2):
+        want = expect.get(i)
+        if want is None:
+            bad.append(f"line {i + 1} removed or changed: {base[i][:100]!r}")
+        elif not any(x == want for x in rest):
+            bad.append(f"line {i + 1} changed other than its listed edit: {base[i][:100]!r}")
+for b in bad:
+    print(b)
+sys.exit(1 if bad else 0)
+PY
+export LINE_EDITS
+has_line_edits() { grep -q "^$1	" <<<"$LINE_EDITS"; }
 LOCK_RE='(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|npm-shrinkwrap\.json)$'
 
 is_config() {
@@ -125,8 +196,26 @@ done
 deleted_lines() {  # $@ = git diff arguments before "--"
   git diff --no-renames --numstat "$@" -- "$P" | awk '{ s += ($2 == "-") ? 1 : $2 } END { print s + 0 }'
 }
+line_edits_in() {  # $1 = label, $2 = file holding that state's content
+  local out
+  if ! out=$(python3 -I -c "$LINE_EDIT_CHECK" "$P" "$BASE_COPY" "$2"); then
+    fail "$P ($1): $(head -1 <<<"$out")"
+    tail -n +2 <<<"$out" | head -4 | sed 's/^/        /'
+    return 1
+  fi
+}
+SCRATCH=$(mktemp -d)
 for P in "${CONFIG_TOUCHED[@]}"; do
-  if git cat-file -e "$BASE:$P" 2>/dev/null; then
+  if git cat-file -e "$BASE:$P" 2>/dev/null && has_line_edits "$P"; then
+    BASE_COPY=$SCRATCH/base; git show "$BASE:$P" > "$BASE_COPY"
+    git show "HEAD:$P" > "$SCRATCH/head" 2>/dev/null || : > "$SCRATCH/head"
+    git show ":$P" > "$SCRATCH/index" 2>/dev/null || : > "$SCRATCH/index"
+    if [[ -e $P ]]; then cp "$P" "$SCRATCH/tree"; else : > "$SCRATCH/tree"; fi
+    n=$(grep -c "^$P	" <<<"$LINE_EDITS")
+    line_edits_in committed "$SCRATCH/head" && line_edits_in staged "$SCRATCH/index" \
+      && line_edits_in "working tree" "$SCRATCH/tree" \
+      && ok "$P: additions only, plus its $n listed line edit(s)"
+  elif git cat-file -e "$BASE:$P" 2>/dev/null; then
     d_head=$(deleted_lines "$BASE" HEAD)
     d_index=$(deleted_lines --cached "$BASE")
     d_tree=$( [[ -e $P ]] && deleted_lines "$BASE" || wc -l < <(git show "$BASE:$P") )
@@ -140,6 +229,7 @@ for P in "${CONFIG_TOUCHED[@]}"; do
     ok "$P: new file"
   fi
 done
+rm -rf "$SCRATCH"
 [[ $FAIL == 0 ]] && ok "paths, lock files and packages/ within scope"
 
 # ── one-way dependency: back end ─────────────────────────────────────────────

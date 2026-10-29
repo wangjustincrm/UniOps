@@ -70,6 +70,21 @@ if [ "$SMOKE_ONLY" -eq 0 ]; then
       cd "$ROOT"
     fi
   done
+
+  # sales-api: its conftest reads TEST_PG_* / TEST_SALES_DB (never the .env)
+  # and refuses any database whose name does not end in _test.
+  section "sales-api — pytest"
+  PYTHON=$(find_python "$ROOT/sales-api")
+  if [ -z "$PYTHON" ]; then
+    warn "No .venv found in sales-api/. Run: cd sales-api && python -m venv .venv && pip install -r requirements.txt -r requirements-dev.txt"
+    warn "Skipping pytest."
+  else
+    cd "$ROOT/sales-api"
+    TEST_PG_HOST=localhost TEST_SALES_DB=sales_test "$PYTHON" -m pytest tests/ -q --tb=short 2>&1 \
+      && pass "sales-api pytest: all tests passed" \
+      || fail "sales-api pytest: tests failed"
+    cd "$ROOT"
+  fi
 fi
 
 # ── Smoke Tests (requires all services running) ────────────────────────────

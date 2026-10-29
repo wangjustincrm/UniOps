@@ -67,7 +67,7 @@ def test_the_overview_says_what_it_is():
     assert set(GUIDE["deeper_available_for"]) == set(doc_type_guide.SUPPORTED)
 
 
-@pytest.mark.parametrize("key", ("procurement", "oa", "vms", "finance", "mrp"))
+@pytest.mark.parametrize("key", ("procurement", "oa", "vms", "finance", "mrp", "sales"))
 def test_the_modules_people_actually_use_are_present(key):
     """Mirrors Portal's navigation. If a module is dropped from the overview,
     someone asking "where do I do X" gets told it does not exist."""

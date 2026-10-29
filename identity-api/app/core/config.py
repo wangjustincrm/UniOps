@@ -27,6 +27,7 @@ class Settings(BaseSettings):
         "http://localhost:5175", "http://localhost:5176", "http://localhost:3000",
         "http://localhost:5177",  # Finance frontend
         "http://localhost:5178",  # Booking frontend
+        "http://localhost:5182",  # Sales frontend
     ]
 
     REDIS_HOST: str = "localhost"

@@ -7,4 +7,4 @@ Use cases live here (STEP 1, 2026-10-29). Each service:
 - takes and returns DTOs from `app/schemas`; business rules come from `app/domain` or live in the service, never in a schema;
 - calls outside systems only through `app/integrations` (and external writes only through the outbox).
 
-Empty until P0 brings the first configuration services.
+First services (P1, 2026-10-29): `partners.py` (`PartnerService` on the platform's `CrudService`; read `sales.read`, write `sales.config`) and `audit.py` (a record's history from `sales_audit`, read with the record's own read permission).

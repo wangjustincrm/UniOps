@@ -14,6 +14,7 @@
 import {
   Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark, CalendarClock, ShieldCheck, GitBranch,
   Network, Repeat, Warehouse,
+  Store,
 } from 'lucide-react'
 
 // MRP has no single landing tile like the other modules — Portal links
@@ -23,7 +24,7 @@ import {
 // PortalSidebar/PortalPageLayout/PortalHome) and re-exported here so existing
 // importers keep working; lib/api is where every module origin now lives, so
 // the returnUrl allow-list sees this one too.
-import { MRP_URL, INVENTORY_URL } from '@/lib/api'
+import { MRP_URL, INVENTORY_URL, SALES_URL } from '@/lib/api'
 export { MRP_URL }
 
 export interface NavItemDef {
@@ -51,6 +52,14 @@ export const FINANCE_ACCESS_PERMS = ['view_finance', 'view_budget_dashboard', 'v
 
 /** Permissions that grant access to the Booking module. */
 export const BOOKING_ACCESS_PERMS = ['view_booking', 'manage_meeting_rooms']
+
+/** Permissions that grant access to the Sales module — any one of its seven
+ *  keys (design 2026-10-23-order-bridge-design.md §6); the module gates each
+ *  page by its own key. */
+export const SALES_ACCESS_PERMS = [
+  'sales.read', 'sales.order.operate', 'sales.file.retry', 'sales.transfer.manage',
+  'sales.inventory.adjust', 'sales.invoice.manage', 'sales.config',
+]
 
 export interface NavSectionDef {
   title?: string
@@ -90,6 +99,7 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
       // inventory.view; cost columns and Settings writes have their own keys
       // and are gated inside the module.
       { label: 'Inventory',   icon: Warehouse,    href: 'inventory', permission: 'inventory.view' },
+      { label: 'Sales',       icon: Store,        href: 'sales', anyPermission: SALES_ACCESS_PERMS },
     ],
   },
   {
@@ -145,6 +155,7 @@ export function resolveNavHref(key: string, ctx: HrefContext): string {
   // still needed because MRP is a separate origin.
   if (key === 'mrp') return ctx.session ? `${MRP_URL}/#__session=${ctx.session}` : MRP_URL
   if (key === 'inventory') return ctx.session ? `${INVENTORY_URL}/#__session=${ctx.session}` : INVENTORY_URL
+  if (key === 'sales') return ctx.session ? `${SALES_URL}/#__session=${ctx.session}` : SALES_URL
   if (key === 'admin') return '/admin'
   if (key.startsWith('portal:')) return key.slice('portal:'.length)
   if (key.startsWith('epms:')) {

@@ -83,6 +83,10 @@ inventory.canadaroyalmilk.com {
 	import site_tls
 	reverse_proxy inventory-web:80
 }
+sales.canadaroyalmilk.com {
+	import site_tls
+	reverse_proxy sales-web:80
+}
 
 # ── Browser-facing APIs (approval/identity are server-to-server, no subdomain) ─
 epms-api.canadaroyalmilk.com {
@@ -120,6 +124,10 @@ mrp-api.canadaroyalmilk.com {
 inventory-api.canadaroyalmilk.com {
 	import site_tls
 	reverse_proxy inventory-api:8013
+}
+sales-api.canadaroyalmilk.com {
+	import site_tls
+	reverse_proxy sales-api:8014
 }
 
 # ── File server (file-api lives on the File server, not in this compose) ──────

@@ -29,6 +29,9 @@ COMPOSE="docker compose -f docker-compose.prod.yml"
 # release reads in order: identity adds the inventory.* permission keys, then
 # the inventory tables appear.
 SERVICES="finance-api mdm-api epms-api identity-api approval-api budget-api expense-api vms-api booking-api mrp-api inventory-api"
+# sales-api: own alembic_version_sales table, first migration down_revision=None;
+# after identity-api so the sales.* permission keys exist before its tables.
+SERVICES="$SERVICES sales-api"
 
 for svc in $SERVICES; do
   echo ">> alembic upgrade head: ${svc}"

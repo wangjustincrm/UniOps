@@ -259,6 +259,28 @@ modules:
       - Only the plan currently in force is readable. A superseded run is not,
         which is deliberate — summing across runs double-counts.
 
+  # Sales (design docs/superpowers/specs/2026-10-23-order-bridge-design.md).
+  # Every phase that changes what a user can do updates this entry in the same
+  # change. Status names and rules are not copied here; if they are needed they
+  # are derived from sales-api's status module.
+  - key: sales
+    label: Sales
+    covers: >
+      Customer orders from the online store and from retail partners, from the
+      moment an order arrives through the warehouse shipment to the invoice,
+      plus stock transfers between warehouses. It is replacing the order
+      bridge that runs in Zoho today.
+    who: >
+      The sales operations team. Each part — orders, files, transfers,
+      invoices, configuration — has its own permission; reading needs one too.
+    typical:
+      - Open the Sales module from the Portal
+    notes:
+      - >-
+        Sales is being built in phases. Until a part goes live, that work is
+        still done in Zoho, and this module does not show it yet — so if an
+        order is not in Sales, look in Zoho before concluding it is missing.
+
   - key: booking
     label: Meeting Rooms
     covers: Booking meeting rooms.

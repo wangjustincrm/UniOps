@@ -3,7 +3,7 @@ import { NavLink, useLocation, Routes, Route, Navigate } from 'react-router-dom'
 import { TabStoreProvider, TabBar, TabHost, TabRouterSync } from '@uniops/shell'
 import { moduleRoutes } from '@/app/routes'
 import {
-  Home,
+  Home, Building2,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -11,6 +11,7 @@ import { PORTAL_URL } from '@/lib/api'
 import { signOut } from '@/lib/signOut'
 import { useBranding } from '@/hooks/useBranding'
 import { usePermissions, MODULE_PERMS } from '@/hooks/usePermissions'
+import { PermissionProvider } from '@/platform-ui'
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 
@@ -28,9 +29,14 @@ function getStoredSession(): { token: string | null; user: { id?: string; full_n
 // ── Navigation ────────────────────────────────────────────────────────────────
 // Each item carries the permission key that gates it; the sidebar shows only
 // the permitted ones and "/" lands on the first of those (design §7).
+// Configuration is listed for every reader (sales.read, design §6): the pages
+// open read-only without sales.config, which every write needs.
 
-const NAV = [
-  { label: 'Home', href: '/home', icon: Home, perm: MODULE_PERMS[0] as string },
+interface NavItem { label: string; href: string; icon: typeof Home; perm: string; section: string }
+
+const NAV: NavItem[] = [
+  { label: 'Home', href: '/home', icon: Home, perm: MODULE_PERMS[0], section: 'Sales' },
+  { label: 'Partners', href: '/config/partners', icon: Building2, perm: 'sales.read', section: 'Configuration' },
 ]
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -104,15 +110,15 @@ function Sidebar({
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-2 py-4">
-        {!collapsed && (
-          <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-white/40">
-            Sales
-          </p>
-        )}
-        {nav.map(({ label, href, icon: Icon }) => (
+        {nav.map(({ label, href, icon: Icon, section }, i) => (
+          <div key={href}>
+          {!collapsed && section !== nav[i - 1]?.section && (
+            <p className={cn('mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-white/40', i > 0 && 'mt-4')}>
+              {section}
+            </p>
+          )}
           <NavLink
-            key={href}
-            to={href}
+              to={href}
             onClick={onClose}
             title={collapsed ? label : undefined}
             className={({ isActive }) =>
@@ -122,6 +128,7 @@ function Sidebar({
             <Icon className="h-4 w-4 shrink-0" />
             {!collapsed && <span className="truncate">{label}</span>}
           </NavLink>
+          </div>
         ))}
       </nav>
 
@@ -312,6 +319,7 @@ export default function AppLayout() {
   // Embedded (iframe): single page, no chrome/tabs — the host owns navigation.
   if (IS_EMBEDDED) {
     return (
+      <PermissionProvider can={perms.can}>
       <div className="h-screen overflow-y-auto bg-[#FAFBFC]">
         <div className="mx-auto max-w-[1440px] p-4 md:p-6">
           <Routes>
@@ -321,10 +329,12 @@ export default function AppLayout() {
           </Routes>
         </div>
       </div>
+      </PermissionProvider>
     )
   }
 
   return (
+    <PermissionProvider can={perms.can}>
     <TabStoreProvider options={{ initialTabs: [{
       key: visibleNav[0].href, title: visibleNav[0].label, kind: 'page', path: visibleNav[0].href, pinned: true, closable: false,
     }], userId: user?.id }}>
@@ -355,5 +365,6 @@ export default function AppLayout() {
         </div>
       </div>
     </TabStoreProvider>
+    </PermissionProvider>
   )
 }

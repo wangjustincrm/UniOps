@@ -91,3 +91,14 @@ async def test_stale_update_is_409(http):
     await http.put(f"/widgets/{w['id']}?version=1", json={"name": "B"}, headers=RW)
     r = await http.put(f"/widgets/{w['id']}?version=1", json={"name": "C"}, headers=RW)
     assert r.status_code == 409 and r.json()["error"]["code"] == "entity.stale"
+
+
+async def test_a_request_the_schema_refuses_names_its_fields(http):
+    r = await http.post("/widgets", json={"code": "A", "price": "lots"}, headers=RW)
+    assert r.status_code == 422
+    e = r.json()["error"]
+    assert e["code"] == "request.invalid"
+    assert {x["field"] for x in e["details"]["errors"]} == {"name", "price"}
+    assert e["details"]["field"] in {"name", "price"}
+    r = await http.get("/widgets/not-a-number", headers=RO)
+    assert r.status_code == 422 and r.json()["error"]["details"]["field"] == "id"

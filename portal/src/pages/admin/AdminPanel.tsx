@@ -184,6 +184,7 @@ const MODULE_TAGLINE_KEYS: { key: string; label: string }[] = [
   { key: 'vms', label: 'VMS' },
   { key: 'finance', label: 'Finance' },
   { key: 'booking', label: 'Booking' },
+  { key: 'sales', label: 'Sales' },
 ]
 
 function CompanySettings() {

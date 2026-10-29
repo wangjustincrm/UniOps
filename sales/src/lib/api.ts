@@ -22,6 +22,12 @@ function getToken(): string | null {
   } catch { return null }
 }
 
+/** True once a Portal session is stored. Nothing calls an API before that:
+ *  the layout sends the browser to the Portal login instead. */
+export function hasSession(): boolean {
+  return getToken() !== null
+}
+
 // FastAPI `detail` may be a string, a structured dict (e.g. {message, ...}), or a
 // 422 validation array. Coerce any of these to a readable string so callers never
 // surface "[object Object]". The structured payload stays on ApiError.detail.
@@ -77,7 +83,9 @@ async function authFetch(url: string, opts: { method?: string; body?: unknown } 
   const token = getToken()
   if (token) h['Authorization'] = `Bearer ${token}`
   let bodyInit: BodyInit | undefined
-  if (opts.body !== undefined) {
+  if (opts.body instanceof FormData) {
+    bodyInit = opts.body  // multipart: the browser sets Content-Type with its boundary
+  } else if (opts.body !== undefined) {
     h['Content-Type'] = 'application/json'
     bodyInit = JSON.stringify(opts.body)
   }
@@ -99,12 +107,28 @@ async function request<T>(url: string, method: string, body?: unknown): Promise<
   return res.json()
 }
 
+/** Saves an authenticated GET (e.g. a CSV export) as a file: a plain link
+ *  would carry no token. */
+async function download(url: string, fallbackName: string): Promise<void> {
+  const res = await authFetch(url)
+  if (!res.ok) throw await toApiError(res)
+  const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? fallbackName
+  const href = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = href
+  a.download = name
+  a.click()
+  URL.revokeObjectURL(href)
+}
+
 function client(base: string) {
   return {
-    get:    <T>(path: string)                 => request<T>(`${base}${path}`, 'GET'),
-    post:   <T>(path: string, body?: unknown) => request<T>(`${base}${path}`, 'POST', body),
-    put:    <T>(path: string, body: unknown)  => request<T>(`${base}${path}`, 'PUT', body),
-    delete: <T>(path: string)                 => request<T>(`${base}${path}`, 'DELETE'),
+    get:      <T>(path: string)                 => request<T>(`${base}${path}`, 'GET'),
+    post:     <T>(path: string, body?: unknown) => request<T>(`${base}${path}`, 'POST', body),
+    put:      <T>(path: string, body: unknown)  => request<T>(`${base}${path}`, 'PUT', body),
+    delete:   <T>(path: string)                 => request<T>(`${base}${path}`, 'DELETE'),
+    upload:   <T>(path: string, form: FormData) => request<T>(`${base}${path}`, 'POST', form),
+    download: (path: string, fallbackName = 'export.csv') => download(`${base}${path}`, fallbackName),
   }
 }
 

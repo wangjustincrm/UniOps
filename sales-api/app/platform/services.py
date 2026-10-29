@@ -16,13 +16,15 @@ from __future__ import annotations
 
 import csv
 import io
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, ClassVar, Generic, TypeVar
 
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import inspect, select
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.platform.actors import Actor
@@ -116,6 +118,10 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
     # create vs update on import (e.g. "code").
     csv_columns: ClassVar[tuple[str, ...]] = ()
     csv_key: ClassVar[str | None] = None
+    # Database unique constraints / indexes whose violation is a refusal, not
+    # a bug: constraint name → (error code, field). The service's own check
+    # gives the message first; this catches what races past it.
+    unique_constraints: ClassVar[Mapping[str, tuple[str, str]]] = {}
 
     @property
     def model(self) -> type:
@@ -132,15 +138,27 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
         """Only for SoftDeletable entities (none in v1)."""
 
     # ── writes ───────────────────────────────────────────────────────────────
+    def _reason(self, operation: str) -> None:
+        """The audit rows of a CRUD write carry the operation as their reason,
+        unless the caller already gave one."""
+        if not self.uow.session.info.get("audit_reason"):
+            self.uow.set_reason(operation)
+
     async def create(self, data: C) -> R:
         await self._authorize(self.write_permission)
+        self._reason("create")
         await self.validate_create(data)
         entity = self.model(**data.model_dump())
-        await self.repo.add(entity)
+        try:
+            async with self.uow.session.begin_nested():
+                await self.repo.add(entity)
+        except IntegrityError as e:
+            raise self._unique_refusal(e) or e
         return self.to_read(entity)
 
     async def update(self, id: int, data: U, version: int | None = None) -> R:
         await self._authorize(self.write_permission)
+        self._reason("update")
         entity = await self.repo.get(id, for_update=True)
         if isinstance(entity, Versioned):
             if version is None:
@@ -163,6 +181,7 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
 
     async def deactivate(self, id: int) -> R:
         await self._authorize(self.write_permission)
+        self._reason("deactivate")
         entity = await self.repo.get(id, for_update=True)
         if not isinstance(entity, Deactivatable):
             raise TypeError(f"{type(entity).__name__} is not Deactivatable")
@@ -267,9 +286,10 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
                     changes = data.model_dump()
                     planned.append((RowPlan(i, key, "create", None, jsonable(changes)), None, changes))
                 else:
-                    data = self.update_schema.model_validate(values)
+                    # The key identifies the row; it is never an update field.
+                    data = self.update_schema.model_validate(
+                        {k: v for k, v in values.items() if k != self.csv_key})
                     sent = data.model_dump(exclude_unset=True)
-                    sent.pop(self.csv_key, None)
                     changes = {k: v for k, v in sent.items() if getattr(current, k) != v}
                     if changes:
                         await self.before_update(current, changes)
@@ -290,6 +310,7 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
         report.ok = True
         if dry_run:
             return report
+        self._reason("import.csv")
 
         # Row by row in savepoints, so a database constraint (another unique
         # column, a foreign key) is reported against its row. Any such error:
@@ -308,6 +329,10 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
             except DBAPIError as e:  # constraint, value too long, … (not a lost connection)
                 if e.connection_invalidated:
                     raise
+                refusal = self._unique_refusal(e)
+                if refusal is not None:
+                    report.errors.append(RowIssue(plan.row, refusal.details.get("field"), refusal.code, refusal.message))
+                    continue
                 detail = str(getattr(e.orig, "args", [e])[0]).splitlines()[0]
                 report.errors.append(RowIssue(plan.row, None, "csv.rejected_by_database", detail))
             except StaleDataError:
@@ -319,6 +344,13 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
             return report
         report.written = True
         return report
+
+    def _unique_refusal(self, e: DBAPIError) -> BusinessError | None:
+        hit = self.unique_constraints.get(_constraint_name(e) or "")
+        if hit is None:
+            return None
+        code, field = hit
+        return BusinessError(code, f"a record with this {field} already exists", {"field": field})
 
     def _csv_export_columns(self) -> tuple[str, ...]:
         """The declared columns, plus `version` for a Versioned model so an
@@ -334,6 +366,8 @@ def _csv_cell(v: Any) -> str:
     v = jsonable(v)
     if isinstance(v, bool):
         return "true" if v else "false"
+    if isinstance(v, (dict, list)):  # a jsonb column: JSON text, so the import can read it back
+        return json.dumps(v, ensure_ascii=False, sort_keys=True)
     s = str(v)
     if s.startswith(_FORMULA_START) and not _is_number(s):
         return "'" + s
@@ -354,6 +388,17 @@ def _is_number(s: str) -> bool:
     except ArithmeticError:
         return False
     return s.strip() == s
+
+
+def _constraint_name(e: DBAPIError) -> str | None:
+    """The violated constraint's name from the driver error (asyncpg keeps it
+    on the cause, psycopg on `diag`)."""
+    orig = getattr(e, "orig", None)
+    for x in (orig, getattr(orig, "__cause__", None), getattr(orig, "diag", None)):
+        name = getattr(x, "constraint_name", None)
+        if name:
+            return name
+    return None
 
 
 def _norm_key(v: Any) -> str:

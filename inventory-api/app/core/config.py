@@ -23,6 +23,7 @@ class Settings(BaseSettings):
         "http://localhost:5179",  # MRP frontend
         "http://localhost:5181",  # Inventory frontend
         "http://localhost:3000",
+        "http://localhost:5182",  # Sales frontend
     ]
 
     # ── Database ─────────────────────────────────────────────────────────────

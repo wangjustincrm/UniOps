@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import type { FieldValues } from 'react-hook-form'
 import type { z } from 'zod'
 import { Button } from '../primitives/shell'
@@ -23,6 +23,8 @@ interface Row {
 
 export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
   title: string
+  /** One record's name in sheet titles ("New partner"); defaults to `title`. */
+  singular?: string
   description?: string
   client: ResourceClient<T, TCreate, TUpdate>
   columns: ColumnDef<T, unknown>[]
@@ -39,10 +41,13 @@ export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
   onExport?: (path: string) => void
   csvImport?: boolean
   errorMessages?: Record<string, string>
+  /** Shown under the form of an existing record (e.g. its audit history). */
+  renderDetail?: (row: T) => ReactNode
 }
 
 /** List + create/edit form + deactivate + CSV import with a dry-run preview,
- *  for one config table served by the back end's crud_router. */
+ *  for one config table served by the back end's crud_router. A user without
+ *  the write permission opens a record read-only (no save, no deactivate). */
 export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T, TCreate, TUpdate>) {
   const { client, writePermission } = props
   const [spec, setSpec] = useState<QuerySpec>(defaultSpec())
@@ -55,6 +60,8 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
   const fileRef = useRef<HTMLInputElement>(null)
 
   const editRow = editing && editing !== 'new' ? editing : null
+  const viewOnly = editRow !== null && !canWrite
+  const singular = props.singular ?? props.title
   const fields = editRow
     ? props.fields.map((f) => (props.immutableOnEdit?.includes(f.name) ? { ...f, readOnly: true } : f))
     : props.fields
@@ -91,7 +98,7 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
         errorMessages={props.errorMessages}
         onRetry={() => list.refetch()}
         rowKey={(r) => r.id}
-        onRowClick={canWrite ? (r) => setEditing(r) : undefined}
+        onRowClick={(r) => setEditing(r)}
         toolbar={
           <>
             {props.onExport && (
@@ -111,7 +118,7 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
       <Sheet
         open={editing !== null}
         onOpenChange={(o) => { if (!o) setEditing(null) }}
-        title={editRow ? `Edit ${props.title}` : `New ${props.title}`}
+        title={editRow ? `${viewOnly ? '' : 'Edit '}${singular}${viewOnly ? ' (read only)' : ''}` : `New ${singular}`}
       >
         {editing !== null && (
           <SchemaForm
@@ -120,6 +127,7 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
             fields={fields}
             defaultValues={editRow ? props.toFormValues(editRow) : props.emptyValues}
             changesOnly={!!editRow}
+            readOnly={viewOnly}
             errorMessages={props.errorMessages}
             onCancel={() => setEditing(null)}
             onSubmit={async (values) => {
@@ -129,7 +137,8 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
             }}
           />
         )}
-        {editRow && editRow.active !== false && (
+        {editRow && props.renderDetail && <div className="mt-6 border-t border-neutral-100 pt-4">{props.renderDetail(editRow)}</div>}
+        {editRow && !viewOnly && editRow.active !== false && (
           <div className="mt-6 border-t border-neutral-100 pt-4">
             <Button variant="destructive" size="sm" onClick={() => setConfirmDeactivate(true)}>Deactivate</Button>
           </div>

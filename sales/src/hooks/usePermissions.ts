@@ -7,7 +7,7 @@
 // would otherwise see a page hidden that sales-api would happily serve,
 // so `can()` applies the same rule here.
 import { useQuery } from '@tanstack/react-query'
-import { epmsApi } from '@/lib/api'
+import { epmsApi, hasSession } from '@/lib/api'
 import { useModuleAuth } from '@/store/auth'
 
 export interface MyPermissions {
@@ -24,6 +24,9 @@ export function usePermissions() {
   const query = useQuery<MyPermissions>({
     queryKey: ['my-permissions'],
     queryFn: () => epmsApi.get<MyPermissions>('/api/v1/config/me/permissions'),
+    // Logged out there is nothing to ask: the layout is already on its way
+    // to the Portal login (a request without a token is only a 403).
+    enabled: hasSession(),
     staleTime: 60_000,
     retry: 1,
   })

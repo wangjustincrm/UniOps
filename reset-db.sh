@@ -28,6 +28,7 @@ echo "✅ Database recreated"
 echo ""
 echo "── Step 2: Run migrations ───────────────"
 SERVICES="epms-api mdm-api finance-api file-api mrp-api inventory-api"
+SERVICES="$SERVICES sales-api"
 for svc in $SERVICES; do
   echo "   ▶ $svc: alembic upgrade head"
   $COMPOSE run --rm "$svc" alembic upgrade head

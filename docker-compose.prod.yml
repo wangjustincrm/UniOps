@@ -353,6 +353,32 @@ services:
       retries: 5
       start_period: 20s
 
+  # Sales (design 2026-10-23-order-bridge-design.md §2). The three switches stay
+  # false until the cutover decision (§5.5): only .env.prod may set them true.
+  sales-api:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-sales-api:${TAG:-latest}
+    build: { context: ., dockerfile: sales-api/Dockerfile }
+    environment:
+      <<: *db-env
+      APP_NAME: UniOps Sales API
+      APP_VERSION: 0.1.0
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      DEBUG: "false"
+      ENVIRONMENT: production
+      API_V1_PREFIX: /api/v1
+      SALES_SCHEDULER_ENABLED: ${SALES_SCHEDULER_ENABLED:-false}
+      SALES_EXTERNAL_EMAIL_ENABLED: ${SALES_EXTERNAL_EMAIL_ENABLED:-false}
+      SALES_PARTNER_WRITES_ENABLED: ${SALES_PARTNER_WRITES_ENABLED:-false}
+    ports: ["8014:8014"]
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8014
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8014/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   vms-api:
     <<: *api-common
     image: ${REGISTRY}/uniops-vms-api:${TAG:-latest}
@@ -451,6 +477,7 @@ services:
         VITE_BOOKING_URL: ${BOOKING_URL}
         VITE_MRP_URL: ${MRP_URL}
         VITE_INVENTORY_URL: ${INVENTORY_URL}
+        VITE_SALES_URL: ${SALES_URL}
         VITE_EPMS_API_URL: ${EPMS_API_URL}
         VITE_OA_API_URL: ${OA_API_URL}
         VITE_VMS_API_URL: ${VMS_API_URL}
@@ -585,6 +612,24 @@ services:
         VITE_PORTAL_URL: ${PORTAL_URL}
         VITE_EPMS_API_URL: ${EPMS_API_URL}
     ports: ["5181:80"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  sales-web:
+    <<: *api-common
+    image: ${REGISTRY}/uniops-sales-web:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: sales/Dockerfile
+      args:
+        VITE_API_URL: ${SALES_API_URL}
+        VITE_PORTAL_URL: ${PORTAL_URL}
+        VITE_EPMS_API_URL: ${EPMS_API_URL}
+    ports: ["5182:80"]
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost/"]
       interval: 30s

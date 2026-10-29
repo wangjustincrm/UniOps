@@ -38,7 +38,7 @@ Each service declares its keys — `read_permission` / `write_permission` on CRU
 
 | Module | What it gives |
 | --- | --- |
-| `errors` | `BusinessError(code, message, details)` (409), `InvalidInput` (422), `NotFound` (404); `install_error_handlers(app)` → `{"error": {code, message, details}}`, 500 with a correlation id |
+| `errors` | `BusinessError(code, message, details)` (409), `InvalidInput` (422), `NotFound` (404); `install_error_handlers(app)` → `{"error": {code, message, details}}`; a request the schemas refuse → `request.invalid` (422) with `details.errors` = `[{field, message}]` and `details.field`; 500 with a correlation id |
 | `actors` | `Actor(user_id, name, role)`, `SYSTEM_ACTOR`, `actor_from_token(payload)` |
 | `authorization` | `authorize(uow, key, system=)`, `@requires(key, system=)`, `PermissionDenied` (403), `PermissionChecker` |
 | `entities` | mixins `Entity`, `CreationAudited`, `Audited`, `Versioned` (optimistic lock), `SoftDeletable` (available, unused in v1; `partial_unique`), `Deactivatable` |
@@ -49,7 +49,7 @@ Each service declares its keys — `read_permission` / `write_permission` on CRU
 | `events` | `DomainEvent`, `StatusChanged`, `EventBuffer`, `HandlerRegistry` |
 | `audit` | `AuditTrail(model).attach(session)`: fills created/updated by from the actor; writes one row per change of an `Audited` entity (`AuditRecordMixin` columns) |
 | `state` | `StateMachine(table, name, field=, initial=, holds=)`: `can`, `pairs`, `transition` (raises `state.invalid_transition`, emits `StatusChanged`); hold states remember `<field>_before_hold` |
-| `services` | `ReadOnlyService`, `CrudService` (create / update with `exclude_unset` and version / deactivate; hooks `validate_create`, `before_update`, `after_delete`; `export_csv`; `import_csv` validates every row and is then all-or-nothing, with a `dry_run` plan), `CommandService` + `Command` (checks `permission`, locks, transitions, flushes — never commits). All check their declared keys first |
+| `services` | `ReadOnlyService`, `CrudService` (create / update with `exclude_unset` and version / deactivate; hooks `validate_create`, `before_update`, `after_delete`; `export_csv`; `import_csv` validates every row and is then all-or-nothing, with a `dry_run` plan; the key column is never an update field, a jsonb cell exports as JSON; a CRUD write's audit rows carry the operation — `create`, `update`, `deactivate`, `import.csv` — as their reason unless the caller set one), `CommandService` + `Command` (checks `permission`, locks, transitions, flushes — never commits). All check their declared keys first |
 | `crud_router` | `crud_router(prefix, ServiceClass, uow=)` — list, get, create, update, deactivate, export.csv, import.csv; no permission check of its own; each write endpoint commits once |
 | `outbox` | `Outbox(model)`: `add`, `requeue`; `OutboxWorker(outbox, kinds, uow_factory)`; `RetryPolicy`, `ONCE`, `retry_while_not_accepted(n, backoff)`; `NotAccepted`, `AcceptedThenFailed`; `OutboxRecordMixin` |
 | `registry` | `Registry[K, V]` for strategy lookup (parsers, builders, senders) |

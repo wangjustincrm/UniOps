@@ -112,6 +112,31 @@ describe('SchemaForm', () => {
   const schema = z.object({ code: z.string().min(1, 'Required'), email: z.string().nullable().optional() })
   const fields = [{ name: 'code', label: 'Code', required: true }, { name: 'email', label: 'Email' }]
 
+  it('puts each field the server refused next to its input (details.errors)', async () => {
+    const onSubmit = vi.fn(async () => {
+      throw { body: { error: { code: 'request.invalid', message: 'x', details: { field: 'code', errors: [
+        { field: 'code', message: 'Too long' }, { field: 'email', message: 'Not an email' }, { field: 'other', message: 'ignored' },
+      ] } } } }
+    })
+    render(<SchemaForm schema={schema} fields={fields} defaultValues={{ code: 'A', email: 'a' }} onSubmit={onSubmit} />)
+    fireEvent.click(screen.getByText('Save'))
+    expect(await screen.findByText('Too long')).toBeInTheDocument()
+    expect(screen.getByText('Not an email')).toBeInTheDocument()
+    expect(screen.queryByText('ignored')).not.toBeInTheDocument()
+  })
+
+  it('read-only: every input disabled and no save (the editable form has one)', () => {
+    const { unmount } = render(<SchemaForm schema={schema} fields={fields} defaultValues={{ code: 'A' }} readOnly onCancel={() => {}} onSubmit={vi.fn()} />)
+    expect(screen.getByLabelText(/Code/)).toBeDisabled()
+    expect(screen.getByLabelText(/Email/)).toBeDisabled()
+    expect(screen.queryByText('Save')).not.toBeInTheDocument()
+    expect(screen.getByText('Close')).toBeInTheDocument()
+    unmount()
+    render(<SchemaForm schema={schema} fields={fields} defaultValues={{ code: 'A' }} onSubmit={vi.fn()} />)
+    expect(screen.getByLabelText(/Code/)).toBeEnabled()
+    expect(screen.getByText('Save')).toBeInTheDocument()
+  })
+
   it('sends only changed fields, a cleared field as null', async () => {
     const onSubmit = vi.fn()
     render(<SchemaForm schema={schema} fields={fields} defaultValues={{ code: 'A', email: 'a@x.com' }} changesOnly onSubmit={onSubmit} />)

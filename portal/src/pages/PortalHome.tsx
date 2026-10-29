@@ -4,15 +4,16 @@ import {
   UserCheck,
   ArrowRight, CheckCircle2, AlertCircle,
   Briefcase, CreditCard, Activity, Cloud, Landmark, CalendarClock, Network, Warehouse,
+  Store,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
-import { epmsApi, oaApi, EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, BOOKING_URL, INVENTORY_URL, encodeSession } from '@/lib/api'
+import { epmsApi, oaApi, EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, BOOKING_URL, INVENTORY_URL, SALES_URL, encodeSession } from '@/lib/api'
 import { cn, formatAmount, timeAgo } from '@/lib/utils'
 import { groupTasks } from '@/lib/groupTasks'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { PortalSidebar } from '@/components/layout/PortalSidebar'
 import { TopHeader } from '@/components/layout/TopHeader'
-import { FINANCE_ACCESS_PERMS, BOOKING_ACCESS_PERMS, MRP_URL } from '@/components/layout/navConfig'
+import { FINANCE_ACCESS_PERMS, BOOKING_ACCESS_PERMS, SALES_ACCESS_PERMS, MRP_URL } from '@/components/layout/navConfig'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -501,6 +502,10 @@ export default function PortalHome() {
   // Inventory mirrors the sidebar (navConfig: gated on inventory.view).
   const hasInventoryAccess =
     role === 'system_admin' || !!perms?.['inventory.view']
+  // Sales mirrors the sidebar (navConfig: any of the seven sales.* keys).
+  const hasSalesAccess =
+    role === 'system_admin' ||
+    SALES_ACCESS_PERMS.some((p) => !!perms?.[p])
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
 
@@ -520,6 +525,7 @@ export default function PortalHome() {
   // resolveNavHref('mrp'), separate origin so the session fragment rides along.
   const mrpHref = session ? `${MRP_URL}/#__session=${session}` : MRP_URL
   const inventoryHref = session ? `${INVENTORY_URL}/#__session=${session}` : INVENTORY_URL
+  const salesHref = session ? `${SALES_URL}/#__session=${session}` : SALES_URL
 
   const allTasks = useMemo<UnifiedTask[]>(() => {
     const withSession = (url: string) => (session ? `${url}#__session=${session}` : url)
@@ -700,6 +706,15 @@ export default function PortalHome() {
       label: 'Inventory',
       description: 'WMS and NC stock side by side — reconcile, explain differences, trace batches.',
       href: inventoryHref,
+      healthy: undefined,
+      loading: false,
+    }] : []),
+    ...(hasSalesAccess ? [{
+      icon: <Store className="h-5 w-5 text-sky-600" />,
+      iconBg: 'bg-sky-50',
+      label: 'Sales',
+      description: 'Customer orders from Shopify and EDI partners through warehouse shipment to invoice.',
+      href: salesHref,
       healthy: undefined,
       loading: false,
     }] : []),

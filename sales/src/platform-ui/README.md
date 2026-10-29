@@ -40,8 +40,8 @@ Features (`src/features/<area>/`) and pages build on `@/platform-ui` only. Enfor
 | `QuerySpec`, `toSearchParams`, `defaultSpec` | the list contract (`page`, `page_size` ≤ 200, `sort=a,-b`, `search`, `filter=f:op:v`) |
 | `DataTable<T>` (primitive) | the table view: sortable header, controlled search, filter slot, paging, empty / error / loading states — no API knowledge |
 | `QueryTable<T>` (pattern) | `DataTable` adapted to `QuerySpec`: sort / page (clamped to 200) / search / filters (`FilterControl`) / error text; `setFilter`, `getFilter`, `clearFilter`, `clampPageSize` |
-| `CrudPage<T>` | list + create/edit sheet + deactivate + CSV import with dry-run preview, for one config table |
-| `SchemaForm` | config forms from a zod schema and a field list; `changesOnly` sends only changed fields, and a cleared field as `null` |
+| `CrudPage<T>` | list + create/edit sheet + deactivate + CSV import with dry-run preview, for one config table; without the write permission a row opens read-only; `renderDetail(row)` adds a panel under the form (e.g. audit history); `singular` names one record in titles |
+| `SchemaForm` | config forms from a zod schema and a field list; `changesOnly` sends only changed fields, and a cleared field as `null`; a server refusal is shown on the field it names (`details.field`, or each of `details.errors`); `readOnly` disables every input and drops the save button |
 | `StatusBadge` | status shown through a map supplied by the page |
 | `ActionButton` | disabled while its action is pending; checks a permission key passed in |
 | `PermissionProvider`, `PermissionGate`, `useCan` | the module passes in one `can(key)` function |

@@ -32,6 +32,8 @@ export interface SchemaFormProps {
   submitLabel?: string
   onCancel?: () => void
   errorMessages?: Record<string, string>
+  /** View only: every field disabled, no submit (a reader's view of a record). */
+  readOnly?: boolean
 }
 
 /** A config form generated from a zod schema and a field list. Config forms
@@ -41,7 +43,7 @@ export interface SchemaFormProps {
  *  number is null, never 0; a blank optional select is accepted) and a number
  *  input's text becomes a number. */
 export function SchemaForm({
-  schema, fields, defaultValues, onSubmit, changesOnly, submitLabel = 'Save', onCancel, errorMessages,
+  schema, fields, defaultValues, onSubmit, changesOnly, submitLabel = 'Save', onCancel, errorMessages, readOnly,
 }: SchemaFormProps) {
   const resolver = useMemo<Resolver<FieldValues>>(() => {
     const inner = zodResolver(schema)
@@ -62,10 +64,18 @@ export function SchemaForm({
     try {
       await onSubmit(out)
     } catch (e) {
+      // A refusal names its field (details.field), or several
+      // (details.errors: [{field, message}] for a request the server's
+      // schema refused); each message goes next to its input.
       const be = businessErrorOf(e)
-      const field = be?.details?.field
-      if (be && typeof field === 'string' && fields.some((f) => f.name === field)) {
-        form.setError(field, { message: errorMessages?.[be.code] ?? be.message })
+      const known = (f: unknown): f is string => typeof f === 'string' && fields.some((x) => x.name === f)
+      const listed = Array.isArray(be?.details?.errors)
+        ? (be.details.errors as { field?: unknown; message?: unknown }[]).filter((x) => known(x.field))
+        : []
+      if (be && listed.length > 0) {
+        for (const x of listed) form.setError(x.field as string, { message: String(x.message ?? be.message) })
+      } else if (be && known(be.details?.field)) {
+        form.setError(be.details.field, { message: errorMessages?.[be.code] ?? be.message })
       } else {
         setError(e)
       }
@@ -77,7 +87,7 @@ export function SchemaForm({
       {fields.map((f) => {
         const id = `sf-${f.name}`
         const err = errors[f.name]?.message
-        const common = { id, disabled: f.readOnly, 'aria-invalid': err ? true : undefined }
+        const common = { id, disabled: readOnly || f.readOnly, 'aria-invalid': err ? true : undefined }
         let control
         if (f.type === 'checkbox') {
           control = <input type="checkbox" {...common} {...form.register(f.name)} className="h-4 w-4" />
@@ -112,8 +122,10 @@ export function SchemaForm({
       )}
       <ErrorMessage error={error} messages={errorMessages} />
       <div className="flex justify-end gap-2">
-        {onCancel && <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>Cancel</Button>}
-        <Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Saving…' : submitLabel}</Button>
+        {onCancel && (
+          <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>{readOnly ? 'Close' : 'Cancel'}</Button>
+        )}
+        {!readOnly && <Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Saving…' : submitLabel}</Button>}
       </div>
     </form>
   )

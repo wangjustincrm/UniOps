@@ -529,6 +529,43 @@ build/push/deploy pattern as the other services (the release goes from 17 to
 
 ---
 
+## Sales Module Release Steps
+
+`sales-api` (`:8014`, image `uniops-sales-api`) and the `sales` frontend
+(`:5182`, image `uniops-sales-web`) follow the same build/push/deploy pattern
+as the other services (two more images). Design:
+`docs/superpowers/specs/2026-10-23-order-bridge-design.md`. One-time steps for
+the first Sales release:
+
+1. **DNS first** — `sales.canadaroyalmilk.com` and
+   `sales-api.canadaroyalmilk.com` are in the `Caddyfile`. Their public A
+   records (→ `66.102.68.69`) and internal split-DNS entries (→ `10.10.50.65`)
+   must exist **before** the edge is restarted with this Caddyfile, or Caddy
+   keeps retrying both names and burns Let's Encrypt failed-validation quota.
+
+2. **`.env` before the build** — `SALES_URL`, `SALES_API_URL` (baked into the
+   web images), `https://sales.canadaroyalmilk.com` in `ALLOWED_ORIGINS`, and
+   `SALES_SCHEDULER_ENABLED` / `SALES_EXTERNAL_EMAIL_ENABLED` /
+   `SALES_PARTNER_WRITES_ENABLED` — all three **false** until the cutover
+   decision (design §5.5: while false, no partner write and no outside email
+   happens; refused sends end Suppressed).
+
+3. **Migrations, in this order** — identity-api `0023_sales_perms` (the seven
+   `sales.*` keys, granted to `system_admin`; role `sales_operator` with all
+   seven), then sales-api `alembic upgrade head` (own `alembic_version_sales`
+   table, first migration `down_revision=None`). Both are in `migrate-prod.sh`
+   (sales-api runs last); **do not remove it from the list** — a deploy
+   without it has a healthy `/health` and no tables.
+
+4. **Grant access** — Portal → Admin → Access Control: assign `sales_operator`
+   (or single `sales.*` keys) to the people who need them. The Sales card and
+   nav entry stay invisible until then.
+
+Rollback: stop `sales-api` and `sales-web` and leave the permissions
+ungranted; no other service needs a change.
+
+---
+
 ## Security Notes
 
 - PostgreSQL and Redis must only be accessible on the **internal network** (no public port exposure)

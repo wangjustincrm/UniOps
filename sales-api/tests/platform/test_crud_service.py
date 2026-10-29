@@ -253,3 +253,11 @@ async def test_a_database_refusal_is_reported_against_its_row_and_nothing_is_kep
     assert not rep.ok and not rep.written and [(e.row, e.code) for e in rep.errors] == [(2, "csv.rejected_by_database")]
     async with uow_factory(person) as uow:
         assert (await uow.session.execute(select(Widget))).scalars().all() == []
+
+
+def test_a_json_cell_exports_as_json_text():
+    """A jsonb column must read back on import: JSON, not Python's repr."""
+    from app.platform.services import _csv_cell
+    assert _csv_cell({"b": 1, "a": "x"}) == '{"a": "x", "b": 1}'
+    assert _csv_cell(["é"]) == '["é"]'
+    assert _csv_cell(True) == "true" and _csv_cell(None) == ""  # the other kinds are unchanged
