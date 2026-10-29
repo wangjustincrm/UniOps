@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.platform.audit import AuditRecordMixin, AuditTrail
-from app.platform.entities import Audited, Deactivatable, Entity, SoftDeletable, Versioned
+from app.platform.entities import Audited, CreationAudited, Deactivatable, Entity, SoftDeletable, Versioned
 from app.platform.jobs import RunRecordMixin
 from app.platform.outbox import OutboxRecordMixin
 from app.platform.query import FilterRule
@@ -67,6 +67,13 @@ class Thing(Entity, PTBase):
     __tablename__ = "pt_things"
     status: Mapped[str] = mapped_column(String(30))
     status_before_hold: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
+
+class Doc(CreationAudited, PTBase):
+    """A document-like row: creation-audited only, with a status machine."""
+    __tablename__ = "pt_docs"
+    name: Mapped[str] = mapped_column(String(50))
+    file_status: Mapped[str] = mapped_column(String(30))
 
 
 TASKS = shared_tasks_table(PTBase.metadata)

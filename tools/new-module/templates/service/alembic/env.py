@@ -17,13 +17,34 @@ config.set_main_option("sqlalchemy.url", settings.DATABASE_URL_SYNC)
 
 target_metadata = Base.metadata
 
+# The database is shared with every other service: autogenerate must only see
+# this service's tables, or it would propose dropping everyone else's.
+TABLE_PREFIX = "%%table_prefix%%"
+VERSION_TABLE = "%%version_table%%"
+
+
+def include_name(name, type_, parent_names) -> bool:  # noqa: ARG001
+    if type_ == "schema":
+        return name in (None, "public")
+    if type_ == "table":
+        return name == VERSION_TABLE or name.startswith(TABLE_PREFIX)
+    return True
+
+
+def include_object(obj, name, type_, reflected, compare_to) -> bool:  # noqa: ARG001
+    if type_ == "table":
+        return include_name(name, "table", {})
+    table = getattr(obj, "table", None)
+    return table is None or include_name(table.name, "table", {})
+
 
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url, target_metadata=target_metadata,
         literal_binds=True, dialect_opts={"paramstyle": "named"},
-        version_table="%%version_table%%",
+        version_table=VERSION_TABLE,
+        include_name=include_name, include_object=include_object,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -37,7 +58,8 @@ def run_migrations_online() -> None:
     with connectable.connect() as connection:
         context.configure(
             connection=connection, target_metadata=target_metadata,
-            version_table="%%version_table%%",
+            version_table=VERSION_TABLE,
+            include_name=include_name, include_object=include_object,
         )
         with context.begin_transaction():
             context.run_migrations()

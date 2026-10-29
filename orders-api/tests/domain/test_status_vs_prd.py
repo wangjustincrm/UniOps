@@ -1,16 +1,29 @@
-"""The 9.1 machines against the PRD itself (design §13.6): the fulfillment and
-invoice tables are parsed from docs/prd/ORDER-BRIDGE.md and compared pair by
-pair; the only differences allowed are the listed additions and hold entries
-(product owner, 2026-10-27, noted under PRD 9.1)."""
+"""The 9.1 machines against the PRD itself (design §13.6). Every machine is
+compared with the text of docs/prd/ORDER-BRIDGE.md:
+
+- fulfillment and invoice: the 9.1 tables, parsed row by row;
+- transfer, inbound / outbound file and ACK: the prose lines, parsed for their
+  arrow chains; each extra clause ("Failed on 997 rejection", "plus
+  Duplicate", …) is matched VERBATIM and mapped to its edges below, so a
+  reworded PRD fails here until the mapping is reviewed.
+
+The only differences allowed are the listed additions and hold entries
+(product owner, 2026-10-27 / 2026-10-28, noted under PRD 9.1). Each machine is
+then enumerated over every (from, to) pair against that PRD-derived set — not
+against the machine's own tables."""
 import os
 import re
 from pathlib import Path
 
 import pytest
 
+from sqlalchemy import Integer, String
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
 from app.domain import status as st
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.errors import BusinessError
+from app.platform.events import EventBuffer
 
 PRD = Path(os.getenv("PRD_PATH", Path(__file__).resolve().parents[3] / "docs" / "prd" / "ORDER-BRIDGE.md"))
 HELD = "<held before>"
@@ -46,6 +59,17 @@ def prd_present():
         pytest.fail(f"PRD not found at {PRD}; run the tests with the repository mounted")
 
 
+def _enumerate(machine, expected_pairs: set[tuple[str, str]]):
+    """Every (from, to) over the machine's states: allowed exactly when the
+    PRD-derived set says so. Returns from a hold state to the status held
+    before are dynamic and checked separately."""
+    states = {str(s): s for s in machine.states}
+    assert set(states) >= {a for a, _ in expected_pairs} | {b for _, b in expected_pairs}
+    for a, sa in states.items():
+        for b, sb in states.items():
+            assert machine.can(sa, sb) == ((a, b) in expected_pairs), (machine.name, a, b)
+
+
 def _compare(machine, table, additions, holds):
     expected = {}
     for state, targets in table.items():
@@ -56,6 +80,33 @@ def _compare(machine, table, additions, holds):
     assert {s for s, t in table.items() if HELD in t} == {str(h) for h in machine.holds}
     assert {str(h): {str(s) for s in src} for h, src in machine.holds.items()} == {
         str(h): {str(s) for s in src} for h, src in holds.items()}
+    pairs = {(s, t) for s, ts in expected.items() for t in ts}
+    pairs |= {(str(s), str(h)) for h, src in holds.items() for s in src}
+    _enumerate(machine, pairs)
+
+
+def _line(label: str) -> str:
+    text = PRD.read_text(encoding="utf-8")
+    start = text.index(f"**{label}:**") + len(label) + 5
+    return text[start:text.index("\n", start)].strip()
+
+
+def _chain(chain: str) -> tuple[list[str], set[tuple[str, str]]]:
+    """`A → B → C / D` → states in order and the edges between neighbours."""
+    steps = [[s.strip() for s in step.split(" / ")] for step in chain.split(" → ")]
+    edges = {(a, b) for left, right in zip(steps, steps[1:]) for a in left for b in right}
+    return [s for step in steps for s in step], edges
+
+
+def _clauses(found: list[str], meaning: dict[str, set[tuple[str, str]]]) -> set[tuple[str, str]]:
+    """Each clause the PRD has must be one whose meaning is written down here,
+    and each written-down clause must still be in the PRD."""
+    assert sorted(found) == sorted(meaning), "PRD 9.1 wording changed — review the clause mapping"
+    return set().union(*meaning.values()) if meaning else set()
+
+
+def _actual(machine) -> set[tuple[str, str]]:
+    return {(str(s), str(d)) for s, ds in machine.transitions.items() for d in ds}
 
 
 def test_fulfillment_matches_prd_table(prd_present):
@@ -83,42 +134,125 @@ def test_the_listed_additions_are_exactly_the_agreed_ones():
     assert st.INVOICE_HOLD_ENTRIES[Inv.BLOCKED] == set(Inv) - {Inv.NOT_REQUIRED, Inv.BLOCKED}
 
 
-class Order:
-    __tablename__ = "orders_under_test"
+class _Base(DeclarativeBase):
+    pass
 
-    def __init__(self, f, i=st.Invoice.PENDING):
-        self.id = 1
-        self.fulfillment_status, self.fulfillment_status_before_hold = f, None
-        self.invoice_status, self.invoice_status_before_hold = i, None
+
+class Order(_Base):
+    """Never created in a database; only the machines' columns."""
+    __tablename__ = "orders_under_test"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fulfillment_status: Mapped[str] = mapped_column(String(40))
+    fulfillment_status_before_hold: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    invoice_status: Mapped[str] = mapped_column(String(40))
+    invoice_status_before_hold: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+st.FULFILLMENT.bind(Order)
+st.INVOICE.bind(Order)
+
+
+def _order(f, i=st.Invoice.PENDING):
+    return Order(id=1, fulfillment_status=f, invoice_status=i)
+
+
+def _go(machine, entity, dst):
+    machine.transition(entity, dst, actor=SYSTEM_ACTOR, events=EventBuffer())
 
 
 def test_on_hold_returns_to_the_status_it_held_before():
     F = st.Fulfillment
-    o = Order(F.ACCEPTED_940)
-    st.FULFILLMENT.transition(o, F.ON_HOLD, actor=SYSTEM_ACTOR)
+    o = _order(F.ACCEPTED_940)
+    _go(st.FULFILLMENT, o, F.ON_HOLD)
     with pytest.raises(BusinessError):
-        st.FULFILLMENT.transition(o, F.SENT_940, actor=SYSTEM_ACTOR)
-    st.FULFILLMENT.transition(o, F.ACCEPTED_940, actor=SYSTEM_ACTOR)
+        _go(st.FULFILLMENT, o, F.SENT_940)
+    _go(st.FULFILLMENT, o, F.ACCEPTED_940)
     assert o.fulfillment_status == F.ACCEPTED_940 and o.fulfillment_status_before_hold is None
 
 
 def test_blocked_invoice_returns_only_to_the_status_held_before():
     Inv = st.Invoice
-    o = Order(st.Fulfillment.SHIPPED, Inv.READY)
-    st.INVOICE.transition(o, Inv.BLOCKED, actor=SYSTEM_ACTOR)
+    o = _order(st.Fulfillment.SHIPPED, Inv.READY)
+    _go(st.INVOICE, o, Inv.BLOCKED)
     for other in (Inv.SENT, Inv.QUEUED, Inv.PENDING):
         with pytest.raises(BusinessError):
-            st.INVOICE.transition(o, other, actor=SYSTEM_ACTOR)
-    st.INVOICE.transition(o, Inv.READY, actor=SYSTEM_ACTOR)
+            _go(st.INVOICE, o, other)
+    _go(st.INVOICE, o, Inv.READY)
 
 
-def test_every_pair_of_every_machine_is_decided():
-    """Enumerate all (src, dst) pairs: allowed exactly when the table or a hold entry says so."""
-    for m in st.MACHINES:
-        allowed = m.pairs()
-        for s in m.states:
-            for d in m.states:
-                assert m.can(s, d) == ((s, d) in allowed), (m.name, s, d)
+def test_transfer_matches_prd_prose(prd_present):
+    line = _line("Transfer status")
+    chain, *clauses = [c.strip() for c in line.split("; ")]
+    states, edges = _chain(chain)
+    before_sent = states[:states.index("Waiting for 997")]
+    received = ["Received", "Partially Received", "Discrepancy"]
+    edges |= _clauses(clauses, {
+        "Failed on 997 rejection": {("Waiting for 997", "Failed")},
+        "Cancelled before the 943 is sent, or after it was rejected (Failed)":
+            {(s, "Cancelled") for s in before_sent} | {("Failed", "Cancelled")},
+        "On Hold when a second, different 944 arrives (FR-OB-80 to FR-OB-84).": set(),  # a hold entry
+    })
+    holds = {"On Hold": set(received)}
+    assert {str(s) for s in st.Transfer} == set(states) | {"Failed", "Cancelled", "On Hold"}
+    additions = {(str(a), str(b)) for a, bs in st.TRANSFER_ADDITIONS.items() for b in bs}
+    assert _actual(st.TRANSFER) == edges | additions
+    assert {str(h): {str(s) for s in src} for h, src in st.TRANSFER.holds.items()} == holds
+    _enumerate(st.TRANSFER, edges | additions | {(s, "On Hold") for s in received})
+
+
+def _file_parts() -> tuple[str, str, str]:
+    line = _line("File and ACK status")
+    m = re.fullmatch(r"inbound processing (.*?); outbound (.*?)\. ACK: (.*)\.", line)
+    assert m, line
+    return m.group(1), m.group(2), m.group(3)
+
+
+def test_inbound_file_matches_prd_prose(prd_present):
+    inbound, _, _ = _file_parts()
+    chain, plus = inbound.split(", plus ")
+    states, edges = _chain(chain)
+    edges |= _clauses([plus], {"Duplicate (FR-OB-71)": {("Pending", "Duplicate")}})
+    assert {str(s) for s in st.InboundFile} == set(states) | {"Duplicate"}
+    additions = {(str(a), str(b)) for a, bs in st.INBOUND_FILE_ADDITIONS.items() for b in bs}
+    assert _actual(st.INBOUND_FILE) == edges | additions
+    _enumerate(st.INBOUND_FILE, edges | additions)
+
+
+def test_outbound_file_matches_prd_prose(prd_present):
+    _, outbound, _ = _file_parts()
+    chain, rest = outbound.split(", plus ", 1)
+    plus, suppressed = rest.split(". ", 1)
+    states, edges = _chain(chain)
+    edges |= _clauses([plus, suppressed], {
+        "Replaced for a 940 superseded by a confirmed replacement (FR-OB-03c) and Cancelled":
+            {("Sent", "Replaced"), ("Ready To Send", "Cancelled"), ("Failed", "Cancelled")},
+        "Suppressed means the send or write was refused because its environment switch is off (dev and test "
+        "never reach partners; product owner, 2026-10-28): it is never sent automatically, not even when the "
+        "switch is turned on — a person reviews it and resends (Suppressed → Sending) or cancels it":
+            {("Suppressed", "Sending"), ("Suppressed", "Cancelled")},
+    })
+    assert {str(s) for s in st.OutboundFile} == set(states) | {"Replaced", "Cancelled"}
+    assert _actual(st.OUTBOUND_FILE) == edges
+    _enumerate(st.OUTBOUND_FILE, edges)
+
+
+def test_ack_matches_prd_values(prd_present):
+    """9.1 lists the ACK values only. Reading of the list: Not Required and
+    Waiting are where an ACK starts; every later value is an answer to
+    Waiting; plus the listed late-answer additions."""
+    _, _, ack = _file_parts()
+    values = [v.strip() for v in ack.split(",")]
+    assert [str(a) for a in st.Ack] == values
+    answers = values[values.index("Waiting") + 1:]
+    edges = {("Waiting", a) for a in answers}
+    additions = {(str(a), str(b)) for a, bs in st.ACK_ADDITIONS.items() for b in bs}
+    assert _actual(st.ACK) == edges | additions
+    assert {str(s) for s in st.ACK.initial} == {"Not Required", "Waiting"}
+    _enumerate(st.ACK, edges | additions)
+
+
+def test_every_machine_is_compared_with_the_prd():
+    assert {m.name for m in st.MACHINES} == {"fulfillment", "invoice", "transfer", "inbound_file", "outbound_file", "ack"}
 
 
 def test_transfer_chain_from_prd_prose():

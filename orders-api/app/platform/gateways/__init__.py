@@ -11,9 +11,9 @@ from app.platform.gateways.base import (
     SftpGateway,
 )
 from app.platform.gateways.fakes import FakeEmail, FakeSftp
-from app.platform.gateways.guard import GuardedGateway, Refused
+from app.platform.gateways.guard import GuardedGateway, Refused, Suppressed
 
 __all__ = [
     "EmailGateway", "ExternalEmail", "FakeEmail", "FakeSftp", "GuardedGateway",
-    "Refused", "RemoteFile", "SftpGateway",
+    "Refused", "RemoteFile", "SftpGateway", "Suppressed",
 ]

@@ -1,16 +1,25 @@
-import { useMemo, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import {
   flexRender, getCoreRowModel, useReactTable,
   type ColumnDef, type SortingState, type Updater,
 } from '@tanstack/react-table'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import { Input, Pagination, SkeletonRow } from '@uniops/shell'
-import type { QuerySpec } from '../lib/querySpec'
+import { clampPageSize, getFilter, setFilter, type FilterOp, type QuerySpec } from '../lib/querySpec'
 import { cn } from '../lib/cn'
 import { EmptyState, ErrorState } from '../states/States'
 import { specFromSorting } from './sorting'
 
 export type { ColumnDef } from '@tanstack/react-table'
+
+/** A filter shown above the table: a select when `options` are given (op
+ *  `eq`), otherwise a text box (op `contains`, applied on Enter). */
+export interface FilterControl {
+  field: string
+  label: string
+  options?: { value: string; label: string }[]
+  op?: FilterOp
+}
 
 export interface DataTableProps<T> {
   columns: ColumnDef<T, unknown>[]
@@ -29,15 +38,20 @@ export interface DataTableProps<T> {
   onRowClick?: (row: T) => void
   emptyTitle?: string
   toolbar?: ReactNode
+  filters?: FilterControl[]
 }
 
 /** The back-end adapter: TanStack sorting ↔ spec.sort (one key), paging ↔
- *  spec.page / pageSize, search box ↔ spec.search. Every change resets to page 1
- *  except paging itself. */
+ *  spec.page / pageSize (clamped to MAX_PAGE_SIZE), search box ↔ spec.search,
+ *  filter controls ↔ spec.filters. Every change resets to page 1 except paging
+ *  itself. The search box is controlled: it shows what the spec says (also
+ *  when the spec changes from outside) and applies on Enter. */
 export function DataTable<T>({
   columns, rows, total, spec, onSpecChange, sortable = [], searchable, loading, error, onRetry,
-  rowKey, onRowClick, emptyTitle = 'Nothing here yet', toolbar,
+  rowKey, onRowClick, emptyTitle = 'Nothing here yet', toolbar, filters = [],
 }: DataTableProps<T>) {
+  const [searchDraft, setSearchDraft] = useSynced(spec.search ?? '')
+  const pageSize = clampPageSize(spec.pageSize)
   const sorting: SortingState = useMemo(
     () => (spec.sort ?? []).map((s) => ({ id: s.field, desc: !!s.desc })),
     [spec.sort],
@@ -62,19 +76,23 @@ export function DataTable<T>({
 
   return (
     <div className="flex flex-col gap-3">
-      {(searchable || toolbar) && (
+      {(searchable || toolbar || filters.length > 0) && (
         <div className="flex flex-wrap items-center gap-2">
           {searchable && (
             <Input
               aria-label="Search"
               placeholder="Search…"
-              defaultValue={spec.search ?? ''}
+              value={searchDraft}
               className="max-w-xs"
+              onChange={(e) => setSearchDraft(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') onSpecChange({ ...spec, page: 1, search: e.currentTarget.value })
+                if (e.key === 'Enter') onSpecChange({ ...spec, page: 1, search: searchDraft.trim() || undefined })
               }}
             />
           )}
+          {filters.map((fc) => (
+            <FilterInput key={fc.field} control={fc} spec={spec} onSpecChange={onSpecChange} />
+          ))}
           <div className="ml-auto flex gap-2">{toolbar}</div>
         </div>
       )}
@@ -135,12 +153,59 @@ export function DataTable<T>({
       {total > 0 && (
         <Pagination
           page={spec.page}
-          pageSize={spec.pageSize}
+          pageSize={pageSize}
           total={total}
           onPageChange={(page) => onSpecChange({ ...spec, page })}
-          onPageSizeChange={(pageSize) => onSpecChange({ ...spec, page: 1, pageSize })}
+          onPageSizeChange={(size) => onSpecChange({ ...spec, page: 1, pageSize: clampPageSize(size) })}
         />
       )}
     </div>
   )
+}
+
+function FilterInput({ control, spec, onSpecChange }: {
+  control: FilterControl
+  spec: QuerySpec
+  onSpecChange: (spec: QuerySpec) => void
+}) {
+  const current = getFilter(spec, control.field)
+  const value = typeof current?.value === 'string' ? current.value : ''
+  const [draft, setDraft] = useSynced(value)
+  if (control.options) {
+    return (
+      <select
+        aria-label={control.label}
+        value={value}
+        className="h-10 rounded-lg border border-neutral-200 bg-white px-3 text-sm"
+        onChange={(e) => onSpecChange(setFilter(spec, control.field, control.op ?? 'eq', e.target.value))}
+      >
+        <option value="">{control.label}: all</option>
+        {control.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    )
+  }
+  return (
+    <Input
+      aria-label={control.label}
+      placeholder={control.label}
+      value={draft}
+      className="max-w-[12rem]"
+      onChange={(e) => setDraft(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') onSpecChange(setFilter(spec, control.field, control.op ?? 'contains', draft.trim()))
+      }}
+    />
+  )
+}
+
+/** A draft that follows `value` whenever `value` changes from outside (React's
+ *  "adjust state while rendering" pattern — no effect, no extra render pass). */
+function useSynced(value: string): [string, (v: string) => void] {
+  const [draft, setDraft] = useState(value)
+  const [seen, setSeen] = useState(value)
+  if (seen !== value) {
+    setSeen(value)
+    setDraft(value)
+  }
+  return [draft, setDraft]
 }

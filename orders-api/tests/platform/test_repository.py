@@ -98,3 +98,43 @@ async def test_soft_deleted_rows_are_excluded_and_partial_unique_allows_reuse(uo
 
 async def test_repository_has_no_delete():
     assert not hasattr(Repository, "delete")
+
+
+# ── query bounds (review 2026-10-28)
+
+
+def test_filter_cast_follows_the_column_type():
+    from app.platform.query import FilterRule
+    assert FilterRule(Widget.id).convert("42") == 42
+    assert FilterRule(Widget.price).convert("1.5") == Decimal("1.5")
+    assert FilterRule(Widget.active).convert("yes") is True
+    with pytest.raises(ValueError):
+        FilterRule(Widget.id).convert("abc")
+
+
+async def test_bad_value_for_an_untyped_rule_is_a_422_not_a_database_error(uow_factory):
+    from app.platform.query import Filter, FilterRule
+
+    class ById(WidgetRepository):
+        filterable = {"id": FilterRule(Widget.id)}
+
+    async with uow_factory(SYSTEM_ACTOR) as uow:
+        with pytest.raises(InvalidInput) as e:
+            await ById(uow).list(QuerySpec(filters=[Filter(field="id", op="eq", value="abc")]))
+    assert e.value.code == "query.bad_value"
+
+
+def test_limits_on_page_in_lists_and_search():
+    from pydantic import ValidationError
+
+    from app.platform.query import MAX_IN_VALUES, MAX_PAGE, MAX_SEARCH, parse_filter
+    with pytest.raises(ValidationError):
+        QuerySpec(page=MAX_PAGE + 1)
+    with pytest.raises(ValidationError):
+        QuerySpec(search="x" * (MAX_SEARCH + 1))
+    with pytest.raises(InvalidInput) as e:
+        parse_filter("code:in:" + "|".join(str(i) for i in range(MAX_IN_VALUES + 1)))
+    assert e.value.code == "query.too_many_values"
+    assert len(parse_filter("code:in:" + "|".join(str(i) for i in range(MAX_IN_VALUES))).value) == MAX_IN_VALUES
+    with pytest.raises(InvalidInput):
+        parse_filter("code:eq:" + "x" * 201)

@@ -7,7 +7,11 @@
   such a row without an actor is a bug and raises;
 - writes one audit row per inserted / changed / deleted Audited entity with
   the changed fields before and after, the actor and the command's reason
-  (`session.info["audit_reason"]`).
+  (`session.info["audit_reason"]`);
+- for any other model, writes an update row when one of its
+  `__audited_fields__` changes — the fields a state machine registered with
+  `bind` — so every status transition is audited, documents and ACKs too
+  (§13.6).
 
 The audit table is the business code's model with `AuditRecordMixin`'s columns;
 its name is chosen there, not here.
@@ -75,11 +79,11 @@ def _snapshot(obj: Any) -> dict[str, Any]:
     return {k: jsonable(getattr(obj, k)) for k in _columns(obj) if k not in _BOOKKEEPING}
 
 
-def _changes(obj: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+def _changes(obj: Any, only: frozenset[str] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
     state = inspect(obj)
     before, after = {}, {}
     for k in _columns(obj):
-        if k in _BOOKKEEPING:
+        if k in _BOOKKEEPING or (only is not None and k not in only):
             continue
         h = state.attrs[k].history
         if h.has_changes():
@@ -114,7 +118,15 @@ class AuditTrail:
                 pending.append(("create", obj, None))
 
         for obj in list(session.dirty):
-            if not isinstance(obj, Audited) or not session.is_modified(obj, include_collections=False):
+            if not session.is_modified(obj, include_collections=False):
+                continue
+            if not isinstance(obj, Audited):
+                fields = getattr(type(obj), "__audited_fields__", None)
+                if fields:
+                    before, after = _changes(obj, only=fields)
+                    if after:
+                        _require_actor(actor, obj)
+                        pending.append(("update", obj, {"before": before, "after": after}))
                 continue
             before, after = _changes(obj)
             if not after:

@@ -19,24 +19,13 @@ from sqlalchemy import Select, and_, func, or_, select, true
 
 from app.platform.entities import SoftDeletable
 from app.platform.errors import InvalidInput, NotFound
-from app.platform.query import Filter, FilterRule, Page, QuerySpec, parse_sort
+from app.platform.query import Filter, FilterRule, Page, QuerySpec, parse_bool, parse_sort  # noqa: F401 — re-exported
 
 T = TypeVar("T")
 
 
 def _like_escape(s: str) -> str:
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-
-def parse_bool(v: Any) -> bool:
-    if isinstance(v, bool):
-        return v
-    s = str(v).strip().lower()
-    if s in ("true", "1", "yes"):
-        return True
-    if s in ("false", "0", "no"):
-        return False
-    raise ValueError(f"not a boolean: {v!r}")
 
 
 class Repository(Generic[T]):
@@ -125,18 +114,18 @@ class Repository(Generic[T]):
             )
         try:
             if f.op == "eq":
-                return rule.column == rule.cast(f.value)
+                return rule.column == rule.convert(f.value)
             if f.op == "in":
                 values = f.value if isinstance(f.value, list) else [f.value]
-                return rule.column.in_([rule.cast(v) for v in values])
+                return rule.column.in_([rule.convert(v) for v in values])
             if f.op == "contains":
                 return rule.column.ilike(f"%{_like_escape(str(f.value))}%", escape="\\")
             low, high = (list(f.value) + [None, None])[:2]
             parts = []
             if low is not None:
-                parts.append(rule.column >= rule.cast(low))
+                parts.append(rule.column >= rule.convert(low))
             if high is not None:
-                parts.append(rule.column <= rule.cast(high))
+                parts.append(rule.column <= rule.convert(high))
             return and_(*parts) if parts else true()
         except (ValueError, TypeError, ArithmeticError) as e:
             raise InvalidInput(

@@ -35,6 +35,30 @@ export const MAX_PAGE_SIZE = 200
 
 export const defaultSpec = (pageSize = 50): QuerySpec => ({ page: 1, pageSize })
 
+/** A page size the back end accepts (1…MAX_PAGE_SIZE). */
+export const clampPageSize = (n: number): number => Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(n) || 1))
+
+// ── filter adapter: one filter per field; every change goes back to page 1 ──
+
+export function getFilter(spec: QuerySpec, field: string): Filter | undefined {
+  return spec.filters?.find((f) => f.field === field)
+}
+
+function isEmpty(value: FilterValue | null | undefined): boolean {
+  if (value == null) return true
+  if (Array.isArray(value)) return value.every((v) => v == null || v === '')
+  return value === ''
+}
+
+/** Set (or, with an empty value, remove) the filter on `field`. */
+export function setFilter(spec: QuerySpec, field: string, op: FilterOp, value: FilterValue | null | undefined): QuerySpec {
+  const rest = (spec.filters ?? []).filter((f) => f.field !== field)
+  const filters = isEmpty(value) ? rest : [...rest, { field, op, value: value as FilterValue }]
+  return { ...spec, page: 1, filters }
+}
+
+export const clearFilter = (spec: QuerySpec, field: string): QuerySpec => setFilter(spec, field, 'eq', null)
+
 function filterValue(f: Filter): string {
   if (f.op === 'in') return (f.value as string[]).join('|')
   if (f.op === 'range') {

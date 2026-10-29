@@ -2,7 +2,7 @@
 // '@/platform-ui' only; nothing in this folder imports business code.
 
 export { cn } from './lib/cn'
-export { toSearchParams, defaultSpec, MAX_PAGE_SIZE } from './lib/querySpec'
+export { toSearchParams, defaultSpec, MAX_PAGE_SIZE, clampPageSize, getFilter, setFilter, clearFilter } from './lib/querySpec'
 export type { QuerySpec, SortKey, Filter, FilterOp, FilterValue, Page } from './lib/querySpec'
 export { businessErrorOf, errorText } from './lib/businessError'
 export type { BusinessError } from './lib/businessError'
@@ -28,7 +28,7 @@ export type { ComboOption } from './inputs/Combobox'
 
 export { DataTable } from './data/DataTable'
 export { specFromSorting } from './data/sorting'
-export type { ColumnDef, DataTableProps } from './data/DataTable'
+export type { ColumnDef, DataTableProps, FilterControl } from './data/DataTable'
 export { StatusBadge } from './data/StatusBadge'
 export type { StatusStyle, BadgeVariant } from './data/StatusBadge'
 export { ActionButton } from './data/ActionButton'

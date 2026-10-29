@@ -91,7 +91,7 @@ All tables `obr_`. Status values are closed enumerations (PostgreSQL enum types 
 
 ### 3.5 Tasks
 
-Tasks are rows in the shared `tasks` table (owned by epms-api), written directly as finance-api does (`ap_duplicate_invoice_tasks.py`): `type` = `ob_<event>` (≤ 40 chars), `document_type` = `order_bridge` (≤ 20), `document_number` = a **problem key** (`OB:<event>:<entity id>`), `assigned_user_id` = operator (X2), `notified_at` NULL so the Task Inbox outbox emails it when the policy is on. Before inserting, the service looks for an open task with the same `document_type` + `document_number` and refreshes it instead (one open task per problem, FR-OB-06); when the condition clears, the task is completed with `completed_at` (e.g. archived-order task when the order is un-archived — FR-OB-03d). Task writes run in a savepoint so a task failure never fails a run.
+Tasks are rows in the shared `tasks` table (owned by epms-api), written directly as finance-api does (`ap_duplicate_invoice_tasks.py`): `type` = `ob_<event>` (≤ 40 chars), `document_type` = `obr` (the shared column is `String(10)` — epms-api `app/models/task.py`; `order_bridge` is 12 characters and every insert would fail; product owner, 2026-10-28), `document_number` = a **problem key** (`OB:<event>:<entity id>`, ≤ 40), `title` ≤ 255 (longer raises, it is never swallowed), `assigned_user_id` = operator (X2), `notified_at` NULL so the Task Inbox outbox emails it when the policy is on — **except while `ORDERS_EXTERNAL_EMAIL_ENABLED` is false**: then the task is written with `notified_at = now()`, so the epms notifier never mails it from a dev or test stack (product owner, 2026-10-28). Before inserting, the service takes a transaction-scoped advisory lock on (`document_type`, problem key), then looks for an open task with the same `document_type` + `document_number` and refreshes it instead (one open task per problem, FR-OB-06, also when two units raise it at once); when the condition clears, the task is completed with `completed_at` (e.g. archived-order task when the order is un-archived — FR-OB-03d). Task writes run in a savepoint so a task failure never fails a run.
 
 ### 3.6 Migrations
 
@@ -181,10 +181,12 @@ The dev server snapshot contains the real production SMTP credentials, and conne
 
 | Action | Allowed only when | Otherwise |
 | --- | --- | --- |
-| Email to any address outside the company domain(s) (Radiant, retailers) | `ORDERS_EXTERNAL_EMAIL_ENABLED=true` | not sent; logged in `obr_log` with recipients, subject and body hash ("would have sent") |
-| SFTP `put` to a LIVE folder | `ORDERS_PARTNER_WRITES_ENABLED=true` **and** connection mode LIVE | not written; logged as "would have written" |
-| SFTP after-read Move / Delete on a partner server | `ORDERS_PARTNER_WRITES_ENABLED=true` | treated as Leave |
-| Any Shopify write (fulfillment, tracking, archive) | `ORDERS_PARTNER_WRITES_ENABLED=true` | not called; logged |
+| Email to any address outside the company domain(s) (Radiant, retailers) | `ORDERS_EXTERNAL_EMAIL_ENABLED=true` | not sent; status **Suppressed**; logged in `obr_log` with recipients, subject and body hash ("would have sent") |
+| SFTP `put` to a LIVE folder | `ORDERS_PARTNER_WRITES_ENABLED=true` **and** connection mode LIVE | not written; status **Suppressed**; logged as "would have written" |
+| SFTP after-read Move / Delete on a partner server | `ORDERS_PARTNER_WRITES_ENABLED=true` | treated as Leave (the intake step catches `Suppressed`) |
+| Any Shopify write (fulfillment, tracking, archive) | `ORDERS_PARTNER_WRITES_ENABLED=true` | not called; status **Suppressed**; logged |
+
+**Suppressed** (product owner, 2026-10-28): a refused send or write is never reported as done — the outbox row and the outbound document end Suppressed (PRD 9.1). Turning a switch on does not send what was suppressed; a person reviews each one and resends or cancels it. Task Inbox mail follows the same switch: while `ORDERS_EXTERNAL_EMAIL_ENABLED` is false, tasks are written as already notified (§3.5).
 
 Reads (SFTP list/get, Shopify GET) stay possible in dev when credentials are deliberately provided, so replay and connection tests work. The checks sit in the lowest-level clients (`email.send_external`, `sftp.put/move/delete`, `shopify.post/put`), so no flow can bypass them, and the health page shows both switches. Internal email to company addresses goes through the Task Inbox outbox as today.
 
@@ -207,7 +209,7 @@ D21: at go-live the operator's role (`order_bridge_operator`) holds all seven; a
 Endpoint groups under `/api/v1` (all JSON; list endpoints paged with `page`, `page_size` ≤ 200, `sort` from a whitelist, `total`):
 
 - `orders` (list, detail, lines, documents, timeline), `orders/{id}/send-940`, `/release-hold`, `/cancel`, `/record-return`, `/resolve-review`, `orders/manual` (Draft, submit)
-- `worklists/review`, `worklists/delivery-confirmation` (+ bulk confirm), `worklists/action-required` (reads the shared tasks for `document_type = order_bridge`)
+- `worklists/review`, `worklists/delivery-confirmation` (+ bulk confirm), `worklists/action-required` (reads the shared tasks for `document_type = obr`)
 - `shipments`, `invoices` (edit, send, resend, PDF), `transfers` (+ send, cancel), `receipts`
 - `documents` (list, detail, raw download, reparse, resend, ignore)
 - `runs` (list, detail, run now), `health`, `dashboard`
@@ -238,7 +240,7 @@ Reachability is part of done for every page: Portal card and sidebar entry visib
 
 - Event types are the FR-OB-56 list (plus 945 validation, paid order archived, transfer discrepancy). Each event maps to a task type `ob_<event>`; rules in `obr_notification_rules` choose TASK / EMAIL / BOTH and recipients (default: the operator, X2).
 - Internal: tasks in the shared `tasks` table; the epms-api task notifier sends the email when the type's policy is on. New task types default to email OFF in `task_notify_policy.DEFAULT_IMMEDIATE`, so the go-live gate includes turning them on in Portal → Admin → Task Notification Policies.
-- Registrations needed outside orders-api: `epms/src/lib/taskTypes.ts` (`TASK_TYPE_LABELS`, `HREF_MAP` / `taskHref` for `document_type = order_bridge`), `epms/src/services/tasks.ts` (`TaskType`), `portal/src/pages/PortalHome.tsx` (labels, module mapping, heading), and `epms-api/app/crud/task.py` `_TASK_NO_STATUS_INVARIANT` (external types). The Portal deduplicates inbox rows by `document_number`, which is why problem keys are unique per problem.
+- Registrations needed outside orders-api: `epms/src/lib/taskTypes.ts` (`TASK_TYPE_LABELS`, `HREF_MAP` / `taskHref` for `document_type = obr`), `epms/src/services/tasks.ts` (`TaskType`), `portal/src/pages/PortalHome.tsx` (labels, module mapping, heading), and `epms-api/app/crud/task.py` `_TASK_NO_STATUS_INVARIANT` (external types). The Portal deduplicates inbox rows by `document_number`, which is why problem keys are unique per problem.
 - External emails (Radiant cancellation, retailer invoice) are sent by orders-api through an aiosmtplib helper with the X3 account. Every user-supplied value inserted into an HTML email is passed through `html.escape` (the `_render(…, escape=True)` pattern of epms-api); templates are not user-editable in v1.
 
 ## 9. Migration from Zoho
@@ -383,26 +385,35 @@ class Quantity:
     amount: Decimal
     unit: str                                # EA, CASE, 2PACK, …
     def to_ea(self, conversions: UnitTable) -> "Quantity":
-        """Raises MissingConversion when the item has no factor for `unit`.
-        Never defaults to 1: Radiant ships EA exactly as told (PRD FR-OB-02/14).
-        The caller turns MissingConversion into Review + task (FR-OB-15)."""
+        """Raises MissingConversion when the item has no factor for `unit`,
+        FractionalQuantity when the result is not a whole EA (both are
+        ConversionError). Never defaults to 1 and never rounds: Radiant ships
+        EA exactly as told (PRD FR-OB-02/14). The caller turns ConversionError
+        into Review + task (FR-OB-15; fractional EA: product owner, 2026-10-28)."""
 
 @dataclass(frozen=True)
 class Money:
-    amount: Decimal                          # quantised to the currency's minor unit
+    amount: Decimal                          # full precision (unit prices keep 5+ decimals, as in NC)
     currency: str                            # CAD | USD
     def __add__(self, other: "Money") -> "Money": ...   # refuses mixed currencies
+    def rounded(self) -> "Money": ...        # half-up to the minor unit
+
+def line_total(unit_price: Money, qty) -> Money: ...   # price × qty, rounded half-up once
+def total(lines: list[Money], currency: str) -> Money: ...   # invoice total, rounded
 ```
+
+Nothing rounds implicitly (product owner, 2026-10-28): line totals and invoice totals round half-up to the minor unit through `line_total` / `total`. A `float` is refused (TypeError) in `Money`, `Quantity` and as a `*` operand — it has already lost the value.
 
 ### 13.3 Repository and query specification
 
 ```python
 class QuerySpec(BaseModel):
-    page: int = 1
+    page: conint(ge=1, le=10_000) = 1        # no deep offsets
     page_size: conint(le=200) = 50
     sort: list[SortKey] = []                 # multi-column; each key whitelisted
-    search: str | None = None                # over the resource's declared search fields
-    filters: list[Filter] = []               # field + op (eq | in | contains | range), whitelisted
+    search: constr(max_length=100) | None = None   # over the resource's declared search fields
+    filters: list[Filter] = []               # ≤ 20; field + op (eq | in | contains | range), whitelisted;
+                                             # an `in` list ≤ 100 values, each value ≤ 200 characters
     include_historical: bool = False
 
 class Page(BaseModel, Generic[T]):
@@ -421,7 +432,7 @@ class Repository(Generic[T]):
     def base_query(self) -> Select: ...      # applies automatic filters
 ```
 
-Automatic filters in `base_query`: soft-deleted rows are excluded for entities that opt in to `SoftDeletable` (none in v1); on **open-work lists** (dashboard cards, worklists, Warehouse Waiting, Invoice Work) historical orders are excluded (FR-OB-52b); elsewhere they are included only with `include_historical=true`. Unknown sort or filter keys are a `BusinessError("query.unknown_field")`, never passed to SQL.
+Automatic filters in `base_query`: soft-deleted rows are excluded for entities that opt in to `SoftDeletable` (none in v1); on **open-work lists** (dashboard cards, worklists, Warehouse Waiting, Invoice Work) historical orders are excluded (FR-OB-52b); elsewhere they are included only with `include_historical=true`. Unknown sort or filter keys are a `BusinessError("query.unknown_field")`, never passed to SQL. A filter value is converted before it reaches SQL — by the rule's `cast`, or by default from the column's Python type — so a value that does not convert is a 422 (`query.bad_value`), never a database error.
 
 ### 13.4 Unit of work
 
@@ -434,7 +445,7 @@ class UnitOfWork(Protocol):
     async def __aexit__(self, *exc) -> None: ...   # rollback on error
 ```
 
-One unit of work per HTTP request (FastAPI dependency) and one per scheduler unit (one connection, one document, one order — §4.2).
+One unit of work per HTTP request (FastAPI dependency `get_uow`) and one per scheduler unit (one connection, one document, one order — §4.2). Nothing is committed unless `commit()` is called — unlike the skeleton's `get_session`, which commits at the end of every request; `get_uow` never goes through it (tested).
 
 ### 13.5 Services (template method)
 
@@ -461,7 +472,8 @@ class CrudService(ReadOnlyService[T, Read], Generic[T, Read, Create, Update]):
 ```
 
 - `update` applies `data.model_dump(exclude_unset=True)`: a field sent as `null` is cleared, an absent field is untouched. A dedicated test sends `{"invoice_email": null}` and asserts it is cleared, and sends `{}` and asserts nothing changed (the PA tax-clearing lesson).
-- `import_csv` parses and validates **every** row first; any error returns the full error list and writes nothing; otherwise the whole file is written in one transaction. `dry_run=true` returns per-row before / after without writing (FR-OB-09).
+- `import_csv` parses and validates **every** row first; any error returns the full error list and writes nothing; otherwise the whole file is written in one transaction. `dry_run=true` returns per-row before / after without writing (FR-OB-09). Further rules (review 2026-10-28): files over 2 MB are refused; keys match after trimming and case-folding (the stored spelling is kept; a key matching two records is an error); a Versioned model's export carries a `version` column and an edited export of a record changed since is refused for that row (`entity.stale`); rows are locked while the real import runs; each row is written in a savepoint so a database refusal (another unique column, a value too long) is reported against its row and nothing is kept.
+- `export_csv` escapes cells a spreadsheet would run as a formula (starting with `=`, `+`, `-`, `@`, tab or CR, except plain numbers) with a leading apostrophe; import removes that apostrophe again, so an export round-trips.
 - Permissions are the PRD's seven coarse keys only (§6); there are no per-operation keys.
 
 ```python
@@ -494,19 +506,26 @@ router = crud_router("/config/partners", PartnerService)   # list/get/create/upd
 
 ```python
 class StateMachine(Generic[S]):
-    def __init__(self, transitions: Mapping[S, frozenset[S]], name: str): ...
+    def __init__(self, transitions: Mapping[S, frozenset[S]], name: str, *, field: str = "status",
+                 initial=(), holds: Mapping[S, Iterable[S]] | None = None): ...
+    def bind(self, model: type) -> type: ...  # checks `<field>` (+ `<field>_before_hold`) exist
     def can(self, src: S, dst: S) -> bool: ...
-    def transition(self, entity, dst: S, *, actor: Actor, reason: str | None = None) -> None:
+    def transition(self, entity, dst: S, *, actor: Actor, events: EventBuffer, reason: str | None = None) -> StatusChanged:
         """Raises BusinessError('state.invalid_transition') if dst is not allowed;
         sets the field, records old/new in the audit, raises a StatusChanged event."""
 ```
 
-Four machines are declared from the PRD 9.1 tables — fulfillment, invoice, transfer, file/ACK — in business code (`app/domain/status.py`), not in the platform. A unit test enumerates every pair and compares with the PRD table. Order state stays a computed view (D17).
+Review 2026-10-28: `events` is required (a transition nobody hears about is a bug). The machines are declared before the models exist, so the columns are checked by `bind(Model)`, called next to the model: it fails at import when `<field>` or, for a machine with hold states, `<field>_before_hold` is missing, and registers the fields with the audit trail — so every transition writes an `obr_audit` old/new row, also on models that are only `CreationAudited` (documents, ACKs). `transition` refuses an entity whose class was never bound. A table edge into a hold state counts as a hold entry, so the status held before is always stored.
+
+The machines of PRD 9.1 — fulfillment, invoice, transfer, inbound file, outbound file, ACK — are declared in business code (`app/domain/status.py`), not in the platform. A unit test reads the PRD itself: the fulfillment and invoice tables row by row, the transfer, file and ACK lines by their arrow chains, with each further clause matched verbatim against a written-down meaning (a reworded PRD fails until the mapping is reviewed). Every (from, to) pair of every machine is then checked against that PRD-derived set plus the listed additions. Order state stays a computed view (D17).
 
 ### 13.7 Domain events and outbox
 
 - `EventBuffer.raise_(event)` collects events during a unit of work. **Internal handlers** (close the fulfilment, create or complete a task, recompute a worklist entry) run inside the same transaction just before COMMIT.
-- **External effects** (SFTP put, Shopify call, external email) are written as rows to `obr_outbox` in the same transaction and executed by the scheduler after commit, so a crash between commit and the call loses nothing. Each row has kind, payload, attempts, last_error, status (PENDING / DONE / FAILED) and is visible on the health page.
+- **External effects** (SFTP put, Shopify call, external email) are written as rows to `obr_outbox` in the same transaction and executed by the scheduler after commit, so a crash between commit and the call loses nothing. Each row has kind, payload, the entity it acts for, attempts, last_error, status (PENDING / IN_FLIGHT / DONE / FAILED / CANCELLED / SUPPRESSED) and is visible on the health page.
+- **At most once** (review 2026-10-28). Before the effect runs, the row is committed as IN_FLIGHT with its attempt counted and a lease; the outcome is written in a second transaction. If that never happens (crash, lost connection, failed commit, shutdown during the call), the row stays IN_FLIGHT and, after the lease, is closed as FAILED "outcome unknown" with `on_failed` (task) — for every kind, because a lost answer may hide a delivered message. `on_failed` / `on_suppressed` run in a savepoint: a hook that raises loses its own writes, never the row's status.
+- **Cancellation.** `Outbox.cancel_for(entity)` cancels the entity's PENDING rows in the caller's transaction and reports rows already IN_FLIGHT (the business command refuses or holds instead); used for FR-OB-18 (940 Generated → Cancelled) and an invoice Blocked while Queued. A kind's `pre_check(payload, uow)` re-reads the entity under lock just before the effect and cancels the row when the state no longer wants it.
+- **Suppressed** (product owner, 2026-10-28). A call refused by the guard (§5.5, §13.9) raises `Suppressed`; the row ends SUPPRESSED (not DONE) and `on_suppressed` sets the document's status Suppressed (PRD 9.1). Turning the switch on never sends these: a person reviews them and requeues (`Outbox.requeue` takes FAILED and SUPPRESSED rows); requeued while the switch is still off, the row ends SUPPRESSED again.
 - **Retry policy per kind** (product owner, 2026-10-27):
   - **SFTP puts** of 940 / 943 / 810 are attempted **once**. A failure marks the document Failed and raises a task; only a user resends (Send 940 now / file register) — FR-OB-24.
   - **Shopify writes** (fulfillment, tracking, archive) are attempted **once**. A failure marks the outbox row Failed and raises a task; a user retries it from the order or the outbox list. No automatic retry, so a timeout whose request actually succeeded can never create a duplicate fulfillment; the manual retry first reads the order's fulfillments and only writes what is missing.
@@ -558,11 +577,11 @@ class DocumentStore(Protocol):
     async def get(self, id: int) -> StoredDocument: ...
 ```
 
-Each has a real implementation (asyncssh, httpx, aiosmtplib, `obr_documents`) and a fake (in-memory, records calls) for tests. **Timing:** P0a delivers the Protocols, the in-memory fakes, `GuardedGateway` and the outbox with its per-kind retry policy (tested through fakes that raise `NotAccepted` / `AcceptedThenFailed`); the real SFTP gateway (asyncssh) comes with P2, the real Shopify gateway (httpx) with P3, the real email gateway (aiosmtplib) with P6/P8 where it is first used, and `DbDocumentStore` with `obr02` (P2). `SftpGateway` and `EmailGateway` are generic and live in `app/platform/gateways`; `ShopifyGateway` is business code (`app/integrations/shopify`). `GuardedGateway` wraps SFTP, Shopify and Email and is the **only** place that reads `ORDERS_EXTERNAL_EMAIL_ENABLED` and `ORDERS_PARTNER_WRITES_ENABLED` (§5.5): refused calls are logged as "would have sent/written" and return without effect.
+Each has a real implementation (asyncssh, httpx, aiosmtplib, `obr_documents`) and a fake (in-memory, records calls) for tests. **Timing:** P0a delivers the Protocols, the in-memory fakes, `GuardedGateway` and the outbox with its per-kind retry policy (tested through fakes that raise `NotAccepted` / `AcceptedThenFailed`); the real SFTP gateway (asyncssh) comes with P2, the real Shopify gateway (httpx) with P3, the real email gateway (aiosmtplib) with P6/P8 where it is first used, and `DbDocumentStore` with `obr02` (P2). `SftpGateway` and `EmailGateway` are generic and live in `app/platform/gateways`; `ShopifyGateway` is business code (`app/integrations/shopify`). `GuardedGateway` wraps SFTP, Shopify and Email and is the **only** place that reads `ORDERS_EXTERNAL_EMAIL_ENABLED` and `ORDERS_PARTNER_WRITES_ENABLED` to decide a send (§5.5). It is an allow-list: the composition root names the guarded writes and the pass-through reads; any other method, private attribute or the wrapped client is an AttributeError. A refused call is logged, handed to `on_refused` — the composition root's refusal sink, which writes the `obr_log` "would have sent / written" row (email: recipients, subject, body hash; SFTP: connection, folder, name, size, hash; the sink is wired with `obr_log` in P0) — and raises `Suppressed`. One further reader: the composition root passes `notify = (ORDERS_EXTERNAL_EMAIL_ENABLED is true)` to the TaskService (§3.5, product owner 2026-10-28).
 
 ### 13.10 X12 toolkit
 
-`x12.Envelope` (ISA/GS/ST/SE/GE/IEA with the A.2 values), `x12.read(raw) -> Interchange` (separators read from the ISA, FR-OB-26), `x12.Segment` builder with element escaping, control numbers from `obr_x12_control_seq` (D10), zero-padding helpers used by both building and matching (FR-OB-22a / 28).
+`x12.Envelope` (ISA/GS/ST/SE/GE/IEA with the A.2 values), `x12.read(raw) -> Interchange` (separators read from the ISA, FR-OB-26), `x12.Segment` builder with element escaping, control numbers from `obr_x12_control_seq` (D10), zero-padding helpers used by both building and matching (FR-OB-22a / 28). Separator characters are cleaned with the envelope's own separators. Output is strict ASCII (product owner, 2026-10-28): accented and common letters are transliterated (é → e, ß → ss, curly quotes, dashes, no-break spaces) and each change is noted for the document's log; a character with no ASCII equivalent raises `UnmappableCharacter` naming the element (e.g. `N102`) and the character, so the builder's validation fails and the order goes to Review with a task the person can act on (edit the address). "?" is never written.
 
 ### 13.11 Pipeline
 
@@ -591,16 +610,16 @@ class ScheduledJob(ABC):
                                              # open run, heartbeat, run_once, close run
 ```
 
-Started with `spawn()` in the lifespan, stopped with `drain()` before `engine.dispose()` (§4.1). The cycle and the outbox worker are two `ScheduledJob`s sharing the same lock discipline.
+Started with `spawn()` in the lifespan, stopped with `drain()` before `engine.dispose()` (§4.1). The cycle and the outbox worker are two `ScheduledJob`s sharing the same lock discipline. A failing heartbeat is logged and retried, never escapes the tick, and the run is still closed; the heartbeat stops by itself when its run is no longer RUNNING; a run cancelled by shutdown is closed as FAILED "interrupted" so a restart is not blocked for `stale_after`; one failing tick never ends `loop()`.
 
 ### 13.13 Cross-cutting
 
 - **Audit:** an SQLAlchemy `before_flush` listener writes `obr_audit` for every change to an `Audited` entity (who, what, before/after); commands add their reason.
 - **Actors:** `Actor(user_id, name)`; scheduler work runs as `SYSTEM_ACTOR`, recorded as such (never as a person).
-- **Settings registry:** typed `Setting[T](key, default, validator)` declarations; values in `obr_settings`; read through one cached accessor.
+- **Settings registry:** typed `Setting[T](key, default, validator, safe)` declarations; values in `obr_settings`; read through one cached accessor, emptied when a change commits. A stored value that no longer parses is **safe-off** (product owner, 2026-10-28): the read returns the setting's `safe` value — never a default that may be "on" (booleans: False; every other setting declares one; `None` = off, e.g. a paused schedule) — and `on_invalid` raises a task.
 - **Feature flags:** e.g. `shopify_writeback_enabled`, `shadow_mode` — settings with an audit trail.
 - **Errors:** `BusinessError(code, message, details)` → one JSON shape `{ "error": { "code", "message", "details" } }` with HTTP 409/422; unexpected errors → 500 with a correlation id.
-- **TaskService:** `raise_problem(event, entity, context)` (problem key `<prefix>:<event>:<entity>`, one open task, refresh if open), `resolve_problem(event, entity)` (auto-complete) — §3.5. The prefix (`OB`), `document_type` (`order_bridge`) and task-type names are supplied by business code; the guard decorator (§13.9) likewise receives its switch names (`ORDERS_EXTERNAL_EMAIL_ENABLED`, `ORDERS_PARTNER_WRITES_ENABLED`) from the composition root, so no Order Bridge name appears inside `app/platform/`.
+- **TaskService:** `raise_problem(event, entity, context)` (problem key `<prefix>:<event>:<entity>`, one open task, refresh if open), `resolve_problem(event, entity)` (auto-complete) — §3.5. The prefix (`OB`), `document_type` (`obr`, ≤ 10), the `notify()` callable (D-b, §3.5) and task-type names are supplied by business code; the guard decorator (§13.9) likewise receives its switch names (`ORDERS_EXTERNAL_EMAIL_ENABLED`, `ORDERS_PARTNER_WRITES_ENABLED`) from the composition root, so no Order Bridge name appears inside `app/platform/`.
 
 ### 13.14 Dependency injection
 
@@ -665,7 +684,7 @@ New code only in `orders-api/` (including `app/platform/`), `order-bridge/` (inc
 
 ### 14.3 Scope check
 
-`tools/check-scope.sh` compares `git diff --name-only <base>...HEAD` with the two allow-lists and fails on any other path; for allow-listed config files it also fails if a hunk removes or modifies an existing line (additions only). It fails on any changed lock file other than `order-bridge/package-lock.json` — including the root `package-lock.json` — and on any new folder under `packages/`. It also runs the two one-way-dependency checks of §13 (platform folders must not import business code).
+`tools/check-scope.sh` compares `git diff --name-only <base>...HEAD`, the index and untracked files (renames as delete + add) with the two allow-lists; the default base is `merge-base(origin/main, HEAD)` (falling back to `main`), printed at the top and fails on any other path; for allow-listed config files it also fails if a hunk removes or modifies an existing line (additions only). It fails on any changed lock file other than `order-bridge/package-lock.json` — including the root `package-lock.json` — and on any new folder under `packages/`. It also runs the two one-way-dependency checks of §13 (platform folders must not import business code).
 
 ### 14.4 Regression gate (before every phase commit)
 

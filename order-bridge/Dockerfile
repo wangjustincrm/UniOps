@@ -17,7 +17,7 @@ ENV VITE_API_URL=$VITE_API_URL \
 
 COPY order-bridge/package.json order-bridge/package-lock.json ./order-bridge/
 COPY packages/shell ./packages/shell
-RUN cd order-bridge && npm install --install-links --no-audit --no-fund
+RUN cd order-bridge && npm ci --install-links --no-audit --no-fund
 
 COPY order-bridge ./order-bridge
 RUN cd order-bridge && npx vite build

@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useForm, type FieldValues } from 'react-hook-form'
+import { useMemo, useState } from 'react'
+import { useForm, type FieldValues, type Resolver } from 'react-hook-form'
 import type { z } from 'zod'
 import { Button, FormField, Input } from '@uniops/shell'
 import { businessErrorOf } from '../lib/businessError'
@@ -35,12 +35,20 @@ export interface SchemaFormProps {
 }
 
 /** A config form generated from a zod schema and a field list. Config forms
- *  only — order screens are hand-built. */
+ *  only — order screens are hand-built.
+ *
+ *  Before validation, an empty number or select is null (a cleared optional
+ *  number is null, never 0; a blank optional select is accepted) and a number
+ *  input's text becomes a number. */
 export function SchemaForm({
   schema, fields, defaultValues, onSubmit, changesOnly, submitLabel = 'Save', onCancel, errorMessages,
 }: SchemaFormProps) {
+  const resolver = useMemo<Resolver<FieldValues>>(() => {
+    const inner = zodResolver(schema)
+    return (values, ctx, opts) => inner(prepare(values, fields), ctx, opts)
+  }, [schema, fields])
   const form = useForm<FieldValues>({
-    resolver: zodResolver(schema),
+    resolver,
     defaultValues: blankToEmpty(defaultValues),
   })
   const [error, setError] = useState<unknown>(null)
@@ -99,6 +107,9 @@ export function SchemaForm({
           </FormField>
         )
       })}
+      {typeof errors.root?.message === 'string' && (
+        <p role="alert" className="text-sm text-danger-600">{errors.root.message}</p>
+      )}
       <ErrorMessage error={error} messages={errorMessages} />
       <div className="flex justify-end gap-2">
         {onCancel && <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>Cancel</Button>}
@@ -106,6 +117,19 @@ export function SchemaForm({
       </div>
     </form>
   )
+}
+
+function prepare(values: FieldValues, fields: FieldSpec[]): FieldValues {
+  const out: FieldValues = { ...values }
+  for (const f of fields) {
+    const v = out[f.name]
+    if (f.type === 'number') {
+      out[f.name] = v === '' || v === null || v === undefined ? null : typeof v === 'string' ? Number(v) : v
+    } else if (f.type === 'select') {
+      out[f.name] = v === '' || v === undefined ? null : v
+    }
+  }
+  return out
 }
 
 function blankToEmpty(v: Record<string, unknown>): Record<string, unknown> {

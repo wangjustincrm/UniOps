@@ -127,7 +127,7 @@ async def test_export_round_trips(uow_factory, person):
         await uow.commit()
     async with uow_factory(person) as uow:
         data = await WidgetService(uow).export_csv(QuerySpec())
-    assert data.decode() == "code,name,email,price,active\nA,Alpha,,1.50,true\nB,Beta,b@x.com,2.00,true\n"
+    assert data.decode() == "code,name,email,price,active,version\nA,Alpha,,1.50,true,1\nB,Beta,b@x.com,2.00,true,1\n"
     async with uow_factory(person) as uow:
         rep = await WidgetService(uow).import_csv(data, dry_run=True)
     assert rep.ok and rep.counts == {"create": 0, "update": 0, "unchanged": 2}
@@ -136,6 +136,7 @@ async def test_export_round_trips(uow_factory, person):
 # ── CommandService
 
 MACHINE = StateMachine({"open": {"done"}, "done": set()}, "thing")
+MACHINE.bind(Thing)
 
 
 class ThingRepository(Repository[Thing]):
@@ -184,3 +185,69 @@ async def test_command_refused_by_check_changes_nothing(uow_factory, person):
             await Finish(uow).execute(FinishCmd(aggregate_id=t.id, refuse=True))
     async with uow_factory(SYSTEM_ACTOR) as uow:
         assert (await uow.session.get(Thing, t.id)).status == "open"
+
+
+# ── CSV hardening (review 2026-10-28)
+
+
+async def test_export_escapes_formulas_and_import_restores_them(uow_factory, person):
+    await _create(uow_factory, person, code="F", name="=HYPERLINK(\"x\")", email="@evil", price=Decimal("-1.50"))
+    async with uow_factory(person) as uow:
+        data = await WidgetService(uow).export_csv(QuerySpec())
+    line = data.decode().splitlines()[1]
+    assert line == "F,\"'=HYPERLINK(\"\"x\"\")\",'@evil,-1.50,true,1"  # numbers stay numbers
+    async with uow_factory(person) as uow:
+        rep = await WidgetService(uow).import_csv(data, dry_run=True)
+    assert rep.ok and rep.counts == {"create": 0, "update": 0, "unchanged": 1}
+
+
+async def test_oversized_upload_is_refused(uow_factory, person):
+    from app.platform.services import MAX_IMPORT_BYTES
+    big = b"code,name\n" + b"A,x\n" * (MAX_IMPORT_BYTES // 4 + 1)
+    async with uow_factory(person) as uow:
+        rep = await WidgetService(uow).import_csv(big, dry_run=True)
+    assert not rep.ok and [e.code for e in rep.errors] == ["csv.too_large"]
+
+
+async def test_keys_match_after_trimming_and_case_folding(uow_factory, person):
+    await _create(uow_factory, person, code="ABC", name="Alpha")
+    async with uow_factory(person) as uow:
+        rep = await WidgetService(uow).import_csv(b"code,name\n abc ,Renamed\n", dry_run=False)
+        await uow.commit()
+    assert rep.ok and rep.counts == {"create": 0, "update": 1, "unchanged": 0}
+    async with uow_factory(person) as uow:
+        rows = (await uow.session.execute(select(Widget.code, Widget.name))).all()
+    assert [tuple(r) for r in rows] == [("ABC", "Renamed")]  # the stored spelling is kept
+    async with uow_factory(person) as uow:
+        rep = await WidgetService(uow).import_csv(b"code,name\nabc,One\nABC,Two\n", dry_run=True)
+    assert [(e.row, e.code) for e in rep.errors] == [(2, "csv.duplicate_key")]
+
+
+async def test_an_edited_export_of_a_changed_record_is_refused(uow_factory, person):
+    w = await _create(uow_factory, person, code="A", name="Alpha")
+    async with uow_factory(person) as uow:
+        exported = await WidgetService(uow).export_csv(QuerySpec())
+    async with uow_factory(person) as uow:  # someone edits it meanwhile
+        await WidgetService(uow).update(w.id, WidgetUpdate(name="Changed"), w.version)
+        await uow.commit()
+    edited = exported.replace(b"Alpha", b"Mine")
+    async with uow_factory(person) as uow:
+        rep = await WidgetService(uow).import_csv(edited, dry_run=False)
+    assert not rep.ok and [(e.row, e.column, e.code) for e in rep.errors] == [(1, "version", "entity.stale")]
+    # The same edit against a fresh export goes through.
+    async with uow_factory(person) as uow:
+        fresh = (await WidgetService(uow).export_csv(QuerySpec())).replace(b"Changed", b"Mine")
+        rep = await WidgetService(uow).import_csv(fresh, dry_run=False)
+        await uow.commit()
+    assert rep.ok and rep.counts["update"] == 1
+
+
+async def test_a_database_refusal_is_reported_against_its_row_and_nothing_is_kept(uow_factory, person):
+    data = b"code,name\nOK1,Fine\n" + b"X" * 25 + b",Too long for the column\nOK2,Fine\n"
+    async with uow_factory(person) as uow:
+        rep = await WidgetService(uow).import_csv(data, dry_run=False)
+        if rep.ok:
+            await uow.commit()
+    assert not rep.ok and not rep.written and [(e.row, e.code) for e in rep.errors] == [(2, "csv.rejected_by_database")]
+    async with uow_factory(person) as uow:
+        assert (await uow.session.execute(select(Widget))).scalars().all() == []

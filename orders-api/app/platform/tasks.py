@@ -7,8 +7,16 @@ when the condition clears. The prefix, document type and assignee come from
 the business code.
 
 Task writes run in a SAVEPOINT: a task that cannot be written is logged and
-never fails the unit that raised it. `notified_at` stays NULL so the Task
-Inbox notifier picks the task up under its policy.
+never fails the unit that raised it. Wiring errors (a key, type, document type
+or title that cannot fit the shared columns) are raised, never swallowed.
+
+One open task per problem also across concurrent units: the write takes a
+transaction-scoped advisory lock on (document_type, problem key), so a second
+unit raising the same problem waits and then refreshes the first one's task.
+
+`notified_at` stays NULL so the Task Inbox notifier mails the task under its
+policy — unless `notify()` says no: then the task is written as already
+notified and is never mailed (dev and test stacks; product owner, 2026-10-28).
 """
 from __future__ import annotations
 
@@ -19,14 +27,15 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    JSON, Boolean, Column, Date, DateTime, MetaData, Numeric, String, Table, Text, insert, select, update,
+    JSON, Boolean, Column, Date, DateTime, MetaData, Numeric, String, Table, Text, func, insert, select, update,
 )
 from sqlalchemy.dialects.postgresql import UUID
 
 logger = logging.getLogger(__name__)
 
-# document_number / type / document_type widths in the shared table.
-KEY_MAX, TYPE_MAX, DOCTYPE_MAX = 40, 40, 20
+# Widths of the shared table's columns (epms-api app/models/task.py):
+# document_number, type, document_type, title.
+KEY_MAX, TYPE_MAX, DOCTYPE_MAX, TITLE_MAX = 40, 40, 10, 255
 
 # Stable document_id per problem key (the shared table needs a UUID).
 _NAMESPACE = uuid.UUID("6f1d2c1e-7a0b-4d55-9a49-3f1f6b0c2e11")
@@ -47,7 +56,7 @@ def shared_tasks_table(metadata: MetaData | None = None) -> Table:
         Column("document_number", String(KEY_MAX), nullable=False),
         Column("assigned_role", String(50), nullable=False),
         Column("assigned_user_id", UUID(as_uuid=True), nullable=True),
-        Column("title", String(255), nullable=False),
+        Column("title", String(TITLE_MAX), nullable=False),
         Column("description", Text, nullable=True),
         Column("due_date", Date, nullable=True),
         Column("amount", Numeric(15, 2), nullable=True),
@@ -83,6 +92,7 @@ class TaskService:
         document_type: str,
         assigned_role: str,
         assignee: Assignee,
+        notify: Callable[[], bool] = lambda: True,
     ) -> None:
         if len(document_type) > DOCTYPE_MAX:
             raise ValueError(f"document_type {document_type!r} is longer than {DOCTYPE_MAX}")
@@ -91,6 +101,7 @@ class TaskService:
         self.document_type = document_type
         self.assigned_role = assigned_role
         self.assignee = assignee
+        self.notify = notify
 
     def problem_key(self, event: str, entity: object) -> str:
         key = f"{self.prefix}:{event}:{entity}"
@@ -108,9 +119,12 @@ class TaskService:
         key = self.problem_key(event, entity)
         if len(task.task_type) > TYPE_MAX:
             raise ValueError(f"task type {task.task_type!r} is longer than {TYPE_MAX}")
+        if len(task.title) > TITLE_MAX:
+            raise ValueError(f"task title is {len(task.title)} characters; the column holds {TITLE_MAX}")
         t, now = self.t, datetime.now(timezone.utc)
         try:
             async with session.begin_nested():
+                await self._lock(session, key)
                 existing = (await session.execute(
                     select(t.c.id).where(self._open(key)).order_by(t.c.created_at).limit(1).with_for_update()
                 )).scalar_one_or_none()
@@ -126,12 +140,17 @@ class TaskService:
                     document_number=key, assigned_role=self.assigned_role,
                     assigned_user_id=await self.assignee(session),
                     title=task.title, description=task.description,
-                    is_completed=False, notified_at=None, created_at=now, updated_at=now,
+                    is_completed=False, notified_at=None if self.notify() else now,
+                    created_at=now, updated_at=now,
                 ))
                 return task_id
         except Exception:  # noqa: BLE001 — a task failure never fails the unit
             logger.exception("could not raise task %s", key)
             return None
+
+    async def _lock(self, session, key: str) -> None:
+        await session.execute(select(func.pg_advisory_xact_lock(
+            func.hashtextextended(f"tasks:{self.document_type}:{key}", 0))))
 
     async def resolve_problem(self, session, event: str, entity: object, *, by: uuid.UUID | None = None) -> int:
         """Complete the problem's open task(s); returns how many were closed."""

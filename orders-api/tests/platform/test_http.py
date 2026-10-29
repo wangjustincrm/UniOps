@@ -52,7 +52,7 @@ async def test_crud_round_trip(http):
     r = await http.post(f"/widgets/{w['id']}/deactivate", headers=RW)
     assert r.json()["active"] is False
     r = await http.get("/widgets/export.csv", headers=RO)
-    assert r.text.startswith("code,name,email,price,active\nA,Alpha,,0.00,false")
+    assert r.text.startswith("code,name,email,price,active,version\nA,Alpha,,0.00,false,3")
 
 
 async def test_write_needs_the_write_permission_and_read_the_read_one(http):

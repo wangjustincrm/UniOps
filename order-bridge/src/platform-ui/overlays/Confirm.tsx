@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Button } from '@uniops/shell'
 import { Dialog } from './Dialog'
 import { errorText } from '../lib/businessError'
@@ -20,9 +20,12 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // The ref, not the state: two clicks in one tick both see pending=false.
+  const inFlight = useRef(false)
 
   const confirm = async () => {
-    if (pending) return
+    if (inFlight.current) return
+    inFlight.current = true
     setPending(true)
     setError(null)
     try {
@@ -31,6 +34,7 @@ export function ConfirmDialog({
     } catch (e) {
       setError(errorText(e, errorMessages))
     } finally {
+      inFlight.current = false
       setPending(false)
     }
   }
@@ -43,8 +47,8 @@ export function ConfirmDialog({
       description={description}
       footer={
         <>
-          <Button variant="secondary" disabled={pending} onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button variant={destructive ? 'destructive' : 'primary'} disabled={pending} onClick={confirm}>
+          <Button type="button" variant="secondary" disabled={pending} onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button type="button" variant={destructive ? 'destructive' : 'primary'} disabled={pending} onClick={confirm}>
             {pending ? 'Working…' : confirmLabel}
           </Button>
         </>

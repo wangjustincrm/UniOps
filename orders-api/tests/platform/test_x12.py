@@ -90,3 +90,41 @@ async def test_control_sequence_draws_increasing_numbers(uow_factory):
     assert b == a + 1 and a >= 100
     with pytest.raises(ValueError):
         x12.ControlSequence("x'); drop table y; --")
+
+
+# ── review 2026-10-28 ────────────────────────────────────────────────────────
+
+
+def test_envelope_cleans_with_its_own_separators():
+    seps = x12.Separators(element="|", component="^", segment="~")
+    params = x12.EnvelopeParams(sender_qualifier="ZZ", sender_id="CRM|EAST", receiver_qualifier="12",
+                                receiver_id="9055651212", functional_id="OW")
+    body = [x12.Segment("N1", "ST", "Shop|One^Two")]
+    raw = x12.Envelope(params, seps).render([x12.TransactionSet("940", body)], control=1, at=datetime(2026, 1, 2, 3, 4))
+    ic = x12.read(raw)
+    assert ic.separators.element == "|" and ic.sender_id == "CRM EAST"
+    seg = next(iter(ic.transactions())).segments[0]
+    assert seg.tag == "N1" and seg.elements == ["ST", "Shop One Two"]  # one element, not three
+    gs = raw.decode().split("\n")[1]
+    assert gs.split("|")[2] == "CRM EAST"
+
+
+def test_non_ascii_is_transliterated_and_noted_never_a_question_mark():
+    notes: list[str] = []
+    body = [x12.Segment("N1", "ST", "Café Müller — Straße"), x12.Segment("N4", "Montréal", "QC")]
+    raw = x12.Envelope(PARAMS).render([x12.TransactionSet("940", body)], control=5, at=datetime(2026, 1, 2),
+                                      notes=notes)
+    text = raw.decode("ascii")
+    assert "N1*ST*Cafe Muller - Strasse~" in text and "N4*Montreal*QC~" in text and "?" not in text
+    assert notes == ["N102: 'Café Müller — Straße' written as 'Cafe Muller - Strasse'",
+                     "N401: 'Montréal' written as 'Montreal'"]
+
+
+def test_a_character_without_an_ascii_equivalent_names_the_element_and_the_character():
+    with pytest.raises(x12.UnmappableCharacter) as e:
+        x12.Envelope(PARAMS).render([x12.TransactionSet("940", [x12.Segment("N1", "ST", "王小明")])],
+                                    control=6, at=datetime(2026, 1, 2))
+    assert e.value.element == "N102" and e.value.char == "王"
+    assert "N102" in str(e.value) and "U+738B" in str(e.value)
+    with pytest.raises(x12.UnmappableCharacter):
+        x12.Segment("N3", "Unit 4 ✓").render()

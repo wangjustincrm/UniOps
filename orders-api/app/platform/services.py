@@ -12,10 +12,12 @@ from __future__ import annotations
 import csv
 import io
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any, ClassVar, Generic, TypeVar
 
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import inspect, select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm.exc import StaleDataError
 
 from app.platform.actors import Actor
@@ -32,6 +34,12 @@ C = TypeVar("C", bound=BaseModel)
 U = TypeVar("U", bound=BaseModel)
 
 EXPORT_PAGE = 200
+# An import is validated in memory as a whole; bigger files are refused.
+MAX_IMPORT_BYTES = 2 * 1024 * 1024
+# Cells a spreadsheet would run as a formula (CSV injection). On export such a
+# cell gets a leading apostrophe; on import a leading apostrophe before one of
+# them is removed again, so an export round-trips.
+_FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 
 
 class ReadOnlyService(Generic[T, R]):
@@ -150,12 +158,13 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
     async def export_csv(self, spec: QuerySpec) -> bytes:
         out = io.StringIO()
         w = csv.writer(out, lineterminator="\n")
-        w.writerow(self.csv_columns)
+        columns = self._csv_export_columns()
+        w.writerow(columns)
         page_no = 1
         while True:
             page = await self.repo.list(spec.model_copy(update={"page": page_no, "page_size": EXPORT_PAGE}))
             for e in page.items:
-                w.writerow([_csv_cell(getattr(e, c)) for c in self.csv_columns])
+                w.writerow([_csv_cell(getattr(e, c)) for c in columns])
             if page_no * EXPORT_PAGE >= page.total:
                 break
             page_no += 1
@@ -168,6 +177,10 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
         if not self.csv_key or not self.csv_columns:
             raise TypeError(f"{type(self).__name__} declares no CSV columns/key")
         report = ImportReport(ok=False, dry_run=dry_run, written=False)
+        if len(file) > MAX_IMPORT_BYTES:
+            report.errors.append(RowIssue(0, None, "csv.too_large",
+                                          f"the file is larger than {MAX_IMPORT_BYTES // 1024} KB"))
+            return report
         try:
             text = file.decode("utf-8-sig")
         except UnicodeDecodeError:
@@ -175,7 +188,8 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
             return report
         reader = csv.DictReader(io.StringIO(text))
         header = reader.fieldnames or []
-        unknown = [h for h in header if h not in self.csv_columns]
+        versioned = issubclass(self.model, Versioned)
+        unknown = [h for h in header if h not in self._csv_export_columns()]
         for h in unknown:
             report.errors.append(RowIssue(0, h, "csv.unknown_column", f"unknown column {h!r}"))
         if self.csv_key not in header:
@@ -185,10 +199,16 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
         if report.errors:
             return report
 
-        existing = {
-            str(getattr(e, self.csv_key)): e
-            for e in (await self.uow.session.execute(select(self.model))).scalars()
-        }
+        # Keys match after trimming and case-folding ("abc " is "ABC"). Writing
+        # locks the rows, so nothing changes between this read and the flush.
+        q = select(self.model) if dry_run else select(self.model).with_for_update()
+        existing: dict[str, Any] = {}
+        ambiguous: set[str] = set()
+        for e in (await self.uow.session.execute(q)).scalars():
+            k = _norm_key(getattr(e, self.csv_key))
+            if k in existing:
+                ambiguous.add(k)
+            existing[k] = e
         seen: set[str] = set()
         planned: list[tuple[RowPlan, Any, dict[str, Any]]] = []
 
@@ -196,16 +216,32 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
             if None in raw:  # more cells than header columns
                 report.errors.append(RowIssue(i, None, "csv.extra_cells", "the row has more cells than the header"))
                 continue
-            values = {k: (v if v != "" else None) for k, v in raw.items()}
+            values = {k: _csv_in(v) for k, v in raw.items()}
+            sent_version = values.pop("version", None)
             key = values.get(self.csv_key)
-            if key is None:
+            if key is None or not str(key).strip():
                 report.errors.append(RowIssue(i, self.csv_key, "csv.missing_key", "the key is empty"))
                 continue
-            if key in seen:
+            key = values[self.csv_key] = str(key).strip()
+            nkey = _norm_key(key)
+            if nkey in seen:
                 report.errors.append(RowIssue(i, self.csv_key, "csv.duplicate_key", f"{key!r} appears twice"))
                 continue
-            seen.add(key)
-            current = existing.get(key)
+            seen.add(nkey)
+            if nkey in ambiguous:
+                report.errors.append(RowIssue(i, self.csv_key, "csv.ambiguous_key",
+                                              f"{key!r} matches more than one existing record"))
+                continue
+            current = existing.get(nkey)
+            if current is not None and versioned and sent_version is not None:
+                if str(current.version) != str(sent_version).strip():
+                    report.errors.append(RowIssue(
+                        i, "version", "entity.stale",
+                        f"{key!r} was changed since this file was exported (version {current.version}, "
+                        f"file has {sent_version}); export again"))
+                    continue
+            if current is not None:
+                values[self.csv_key] = getattr(current, self.csv_key)  # keep the stored spelling
             try:
                 if current is None:
                     data = self.create_schema.model_validate(values)
@@ -237,15 +273,41 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
         if dry_run:
             return report
 
+        # Row by row in savepoints, so a database constraint (another unique
+        # column, a foreign key) is reported against its row. Any such error:
+        # nothing is kept — the caller only commits an ok report.
         for plan, entity, changes in planned:
-            if plan.action == "create":
-                self.uow.session.add(self.model(**changes))
-            elif plan.action == "update":
-                for k, v in changes.items():
-                    setattr(entity, k, v)
-        await self.uow.session.flush()
+            if plan.action == "unchanged":
+                continue
+            try:
+                async with self.uow.session.begin_nested():
+                    if plan.action == "create":
+                        self.uow.session.add(self.model(**changes))
+                    else:
+                        for k, v in changes.items():
+                            setattr(entity, k, v)
+                    await self.uow.session.flush()
+            except DBAPIError as e:  # constraint, value too long, … (not a lost connection)
+                if e.connection_invalidated:
+                    raise
+                detail = str(getattr(e.orig, "args", [e])[0]).splitlines()[0]
+                report.errors.append(RowIssue(plan.row, None, "csv.rejected_by_database", detail))
+            except StaleDataError:
+                report.errors.append(RowIssue(plan.row, "version", "entity.stale",
+                                              f"{plan.key!r} was changed by someone else; export again"))
+        if report.errors:
+            report.ok = False
+            report.rows = []
+            return report
         report.written = True
         return report
+
+    def _csv_export_columns(self) -> tuple[str, ...]:
+        """The declared columns, plus `version` for a Versioned model so an
+        edited export is refused when the record changed meanwhile."""
+        if issubclass(self.model, Versioned) and "version" not in self.csv_columns:
+            return (*self.csv_columns, "version")
+        return self.csv_columns
 
 
 def _csv_cell(v: Any) -> str:
@@ -254,7 +316,30 @@ def _csv_cell(v: Any) -> str:
     v = jsonable(v)
     if isinstance(v, bool):
         return "true" if v else "false"
-    return str(v)
+    s = str(v)
+    if s.startswith(_FORMULA_START) and not _is_number(s):
+        return "'" + s
+    return s
+
+
+def _csv_in(v: str | None) -> str | None:
+    if v is None or v == "":
+        return None
+    if v.startswith("'") and v[1:].startswith(_FORMULA_START):
+        return v[1:]
+    return v
+
+
+def _is_number(s: str) -> bool:
+    try:
+        Decimal(s)
+    except ArithmeticError:
+        return False
+    return s.strip() == s
+
+
+def _norm_key(v: Any) -> str:
+    return str(v).strip().casefold()
 
 
 @dataclass(kw_only=True)

@@ -122,27 +122,45 @@ class ScheduledJob(ABC):
         return run_id
 
     async def _beat(self, run_id: int) -> None:
+        """Moves the heartbeat while the run is RUNNING. A failed beat is
+        logged and retried on the next one; the beat stops by itself once the
+        run is no longer RUNNING (closed, or closed as stale elsewhere)."""
+        m = self.run_model
         while True:
             await asyncio.sleep(self.heartbeat_every)
-            async with self.uow_factory(SYSTEM_ACTOR) as uow:
-                await uow.session.execute(
-                    update(self.run_model).where(self.run_model.id == run_id).values(heartbeat_at=self.clock())
-                )
-                await uow.commit()
+            try:
+                async with self.uow_factory(SYSTEM_ACTOR) as uow:
+                    res = await uow.session.execute(
+                        update(m).where(m.id == run_id, m.status == RUNNING).values(heartbeat_at=self.clock())
+                    )
+                    await uow.commit()
+                if res.rowcount == 0:
+                    logger.warning("%s: run %s is no longer RUNNING; heartbeat stops", self.name, run_id)
+                    return
+            except Exception:  # noqa: BLE001
+                logger.exception("%s: heartbeat for run %s failed", self.name, run_id)
 
     async def _close(self, run_id: int, status: str, summary: RunSummary | None, error: str | None) -> Any:
-        async with self.uow_factory(SYSTEM_ACTOR) as uow:
-            run = await uow.session.get(self.run_model, run_id)
-            run.status = status
-            run.finished_at = self.clock()
-            run.summary = dict(summary.counts) if summary else None
-            run.error = error
-            await uow.commit()
-            return run
+        """Closes the run; never raises (a run left RUNNING is closed as stale
+        by a later claim)."""
+        try:
+            async with self.uow_factory(SYSTEM_ACTOR) as uow:
+                run = await uow.session.get(self.run_model, run_id)
+                run.status = status
+                run.finished_at = self.clock()
+                run.summary = dict(summary.counts) if summary else None
+                run.error = error
+                await uow.commit()
+                return run
+        except Exception:  # noqa: BLE001
+            logger.exception("%s: could not close run %s as %s", self.name, run_id, status)
+            return None
 
     async def tick(self, *, trigger: str = "SCHEDULE", force: bool = False) -> Any | None:
         """One claim-and-run. Returns the closed run, or None when not due,
-        paused, or another run holds the job. Never raises an Exception."""
+        paused, or another run holds the job. Never raises an Exception; on
+        cancellation (shutdown) the run is closed as FAILED "interrupted" so a
+        restart is not blocked until the run goes stale."""
         try:
             run_id = await self._claim(trigger, force)
         except Exception:  # noqa: BLE001
@@ -151,26 +169,36 @@ class ScheduledJob(ABC):
         if run_id is None:
             return None
         beat = asyncio.ensure_future(self._beat(run_id))
+        summary, status, error = None, FAILED, None
         try:
             async with self.uow_factory(SYSTEM_ACTOR) as uow:
                 run = await uow.session.get(self.run_model, run_id)
             summary = await self.run_once(run)
             status = PARTIAL if summary.partial else SUCCEEDED
-            error = None
+        except asyncio.CancelledError:
+            error = "interrupted: the service stopped during the run"
+            await self._stop_beat(beat)
+            await self._close(run_id, FAILED, None, error)
+            raise
         except Exception as e:  # noqa: BLE001
             logger.exception("%s: run %s failed", self.name, run_id)
-            summary, status, error = None, FAILED, f"{type(e).__name__}: {e}"
-        finally:
-            beat.cancel()
-            try:
-                await beat
-            except asyncio.CancelledError:
-                pass
+            error = f"{type(e).__name__}: {e}"
+        await self._stop_beat(beat)
         return await self._close(run_id, status, summary, error)
 
+    @staticmethod
+    async def _stop_beat(beat: asyncio.Future) -> None:
+        beat.cancel()
+        # The beat's own failure (if it had one) must not escape the tick.
+        await asyncio.gather(beat, return_exceptions=True)
+
     async def loop(self, stop: asyncio.Event, tick_seconds: float = 30.0) -> None:
+        """Ticks until `stop` is set. One failing tick never ends the loop."""
         while not stop.is_set():
-            await self.tick()
+            try:
+                await self.tick()
+            except Exception:  # noqa: BLE001 — tick should not raise; belt and braces
+                logger.exception("%s: tick failed", self.name)
             try:
                 await asyncio.wait_for(stop.wait(), timeout=tick_seconds)
             except TimeoutError:

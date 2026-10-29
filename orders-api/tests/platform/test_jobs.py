@@ -131,3 +131,84 @@ async def test_background_drain_stops_loops():
     n = len(ticks)
     await asyncio.sleep(0.05)
     assert n > 0 and len(ticks) == n
+
+
+# ── review 2026-10-28 ────────────────────────────────────────────────────────
+
+
+class BrokenBeats:
+    """A uow factory whose units cannot commit while `break_beats` is set —
+    switched on only while the job is inside run_once, so only beats fail."""
+
+    def __init__(self, inner):
+        self.inner, self.break_beats = inner, False
+
+    def __call__(self, actor, **kw):
+        uow = self.inner(actor, **kw)
+        if self.break_beats:
+            async def broken():
+                raise ConnectionError("database went away")
+            uow.commit = broken
+        return uow
+
+
+async def test_a_failing_heartbeat_neither_escapes_nor_leaves_the_run_open(uow_factory):
+    gate = asyncio.Event()
+    factory = BrokenBeats(uow_factory)
+    job = _job(factory, interval=timedelta(0), gate=gate, heartbeat_every=0.02)
+    t = asyncio.ensure_future(job.tick())
+    while not job.ran:
+        await asyncio.sleep(0.01)
+    factory.break_beats = True
+    await asyncio.sleep(0.15)  # several beats fail
+    factory.break_beats = False
+    gate.set()
+    run = await t
+    assert run is not None and run.status == SUCCEEDED
+    assert [r.status for r in await _runs(uow_factory)] == [SUCCEEDED]
+
+
+async def test_heartbeat_stops_once_the_run_is_no_longer_running(uow_factory):
+    job = _job(uow_factory, interval=timedelta(0), heartbeat_every=0.02)
+    async with uow_factory(SYSTEM_ACTOR) as uow:
+        now = job.clock()
+        row = RunRow(job="pt_job", trigger="SCHEDULE", status=SUCCEEDED, started_at=now, heartbeat_at=now)
+        uow.session.add(row)
+        await uow.session.flush()
+        rid = row.id
+        await uow.commit()
+    beat = asyncio.ensure_future(job._beat(rid))
+    await asyncio.wait_for(beat, timeout=1)  # returns by itself
+    assert (await _runs(uow_factory))[0].heartbeat_at == now
+
+
+async def test_cancelled_run_is_closed_as_interrupted_and_does_not_block_a_restart(uow_factory):
+    gate = asyncio.Event()
+    job = _job(uow_factory, interval=timedelta(0), gate=gate)
+    t = asyncio.ensure_future(job.tick())
+    while not job.ran:
+        await asyncio.sleep(0.01)
+    t.cancel()
+    try:
+        await t
+    except asyncio.CancelledError:
+        pass
+    runs = await _runs(uow_factory)
+    assert [r.status for r in runs] == [FAILED] and "interrupted" in runs[0].error
+    again = _job(uow_factory, interval=timedelta(0))
+    assert (await again.tick()).status == SUCCEEDED
+
+
+async def test_loop_survives_a_tick_that_raises(uow_factory):
+    stop, calls = asyncio.Event(), []
+
+    class Exploding(Job):
+        async def tick(self, **kw):
+            calls.append(1)
+            if len(calls) == 1:
+                raise RuntimeError("unexpected")
+            stop.set()
+
+    job = Exploding(run_model=RunRow, uow_factory=uow_factory, schedule=None)
+    await asyncio.wait_for(job.loop(stop, tick_seconds=0.01), timeout=2)
+    assert len(calls) == 2

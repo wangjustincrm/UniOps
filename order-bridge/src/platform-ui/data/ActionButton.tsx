@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Button, type ButtonProps } from '@uniops/shell'
 import { useCan } from '../permissions/context'
 
@@ -11,26 +11,33 @@ export interface ActionButtonProps extends Omit<ButtonProps, 'onClick'> {
   pendingLabel?: string
 }
 
-/** A button that cannot fire twice: disabled while its action is pending. */
+/** A button that cannot fire twice: disabled while its action is pending, and
+ *  guarded by a ref too, so two clicks in the same tick (before React has
+ *  re-rendered it disabled) still run the action once. `type="button"` unless
+ *  given, so it never submits a surrounding form. */
 export function ActionButton({
   permission, whenDenied = 'hide', onAction, pendingLabel, disabled, children, ...rest
 }: ActionButtonProps) {
   const allowed = useCan(permission)
   const [pending, setPending] = useState(false)
+  const inFlight = useRef(false)
   if (!allowed && whenDenied === 'hide') return null
 
   const run = async () => {
-    if (pending) return
+    if (inFlight.current) return
+    inFlight.current = true
     setPending(true)
     try {
       await onAction()
     } finally {
+      inFlight.current = false
       setPending(false)
     }
   }
 
   return (
     <Button
+      type="button"
       {...rest}
       disabled={disabled || pending || !allowed}
       aria-busy={pending || undefined}

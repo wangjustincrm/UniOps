@@ -53,6 +53,12 @@ def _migrate() -> None:
         conn.execute(sa.text("CREATE SCHEMA public"))
     eng.dispose()
 
+    run_alembic("upgrade", "head", check=True)
+
+
+def run_alembic(*args: str, check: bool = False) -> subprocess.CompletedProcess:
+    """alembic against the test database (never the host .env)."""
+    _refuse_non_test_db()
     env = dict(os.environ)
     env.update({
         "POSTGRES_HOST": TEST_HOST, "POSTGRES_PORT": TEST_PORT,
@@ -60,9 +66,9 @@ def _migrate() -> None:
         "POSTGRES_DB": TEST_DB,
     })
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head"],
-        cwd=root, env=env, check=True,
+    return subprocess.run(
+        [sys.executable, "-m", "alembic", *args],
+        cwd=root, env=env, check=check, text=True,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
     )
 

@@ -83,7 +83,9 @@ def test_existing_folder_is_never_overwritten(tmp_path):
 def test_values_reach_the_files(tmp_path):
     assert nm.main(_args("demo-api", "demo", "none", tmp_path)) == 0
     f = _files(tmp_path)
-    assert 'version_table="alembic_version_demo"' in f["demo-api/alembic/env.py"]
+    env = f["demo-api/alembic/env.py"]
+    assert 'VERSION_TABLE = "alembic_version_demo"' in env and 'TABLE_PREFIX = "dmo_"' in env
+    assert env.count("include_name=include_name, include_object=include_object") == 2
     assert 'os.getenv("TEST_DEMO_DB", "demo_test")' in f["demo-api/tests/conftest.py"]
     assert "DEMO_SCHEDULER_ENABLED: bool = False" in f["demo-api/app/core/config.py"]
     assert "MODULE_PERMS = ['demo_mod.read', 'demo_mod.config']" in f["demo/src/hooks/usePermissions.ts"]
@@ -115,3 +117,25 @@ def test_bad_names_rejected(tmp_path):
     with pytest.raises(SystemExit):
         nm.main(args)
     assert list(tmp_path.iterdir()) == []
+
+
+def test_service_and_frontend_must_differ(tmp_path):
+    with pytest.raises(SystemExit, match="two folders"):
+        nm.main(_args("demo", "demo", "none", tmp_path))
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("label", ['Demo"; x', "<b>Demo</b>", " Demo", "Demo  X", "", "Démo", "A" * 41])
+def test_label_is_plain_words(tmp_path, label):
+    args = _args("demo-api", "demo", "none", tmp_path)
+    args[args.index("--label") + 1] = label
+    with pytest.raises(SystemExit, match="--label"):
+        nm.main(args)
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("label", ["Demo", "Order Bridge", "R&D", "Plant-2 Ops"])
+def test_plain_labels_are_accepted(tmp_path, label):
+    args = _args("demo-api", "demo", "none", tmp_path)
+    args[args.index("--label") + 1] = label
+    assert nm.main(args) == 0

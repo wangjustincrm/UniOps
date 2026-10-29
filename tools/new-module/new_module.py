@@ -83,7 +83,16 @@ def _kebab(name: str) -> str:
     return name
 
 
+# The label lands in Python strings, TSX text and HTML <title>: plain words only.
+LABEL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 &-]{0,39}")
+
+
 def build_values(a: argparse.Namespace) -> tuple[dict[str, bool], dict[str, str]]:
+    if a.service == a.frontend:
+        raise SystemExit(f"error: --service and --frontend are both {a.service!r}; they must be two folders")
+    if not LABEL_RE.fullmatch(a.label) or a.label != a.label.strip() or "  " in a.label:
+        raise SystemExit(
+            f"error: --label {a.label!r} may use letters, digits, spaces, '&' and '-' only (≤ 40, no edge spaces)")
     if not re.fullmatch(r"[a-z][a-z0-9_]*", a.module_key):
         raise SystemExit(f"error: --module-key {a.module_key!r} must be snake_case")
     if not re.fullmatch(r"[A-Z][A-Z0-9_]*", a.env_prefix):
@@ -201,13 +210,13 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    flags, values = build_values(a)
     repo: Path = a.repo.resolve()
     for folder in (a.service, a.frontend):
         if (repo / folder).exists():
             print(f"error: {repo / folder} already exists; the template never overwrites", file=sys.stderr)
             return 2
 
-    flags, values = build_values(a)
     files = plan(repo, flags, values)
     for path, content in files.items():
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -1,7 +1,12 @@
 """X12 toolkit (design §13.10).
 
 - `Segment` renders one segment; separator characters inside an element are
-  replaced by a space (X12 has no escape sequence).
+  replaced by a space (X12 has no escape sequence). Text is written as ASCII:
+  accented and common letters are transliterated (é → e, ß → ss) and each
+  change is noted; a character with no ASCII equivalent raises
+  `UnmappableCharacter` naming the element and the character, so the caller
+  sends the order to review — "?" is never written (product owner,
+  2026-10-28).
 - `Envelope` wraps transaction sets in ISA/GS/ST…SE/GE/IEA with the values the
   business code supplies (sender/receiver ids, versions, usage indicator).
 - `read(raw)` parses an interchange, taking the separators from the ISA.
@@ -13,6 +18,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -22,6 +28,16 @@ from sqlalchemy import text
 
 class X12Error(ValueError):
     pass
+
+
+class UnmappableCharacter(X12Error):
+    def __init__(self, element: str, char: str, value: str) -> None:
+        super().__init__(
+            f"{element}: character {char!r} (U+{ord(char):04X}) has no ASCII equivalent in {value!r}; "
+            "edit the value and build again")
+        self.element = element
+        self.char = char
+        self.value = value
 
 
 @dataclass(frozen=True)
@@ -39,12 +55,45 @@ class Separators:
 
 DEFAULT = Separators()
 
+# Letters NFKD does not decompose, and punctuation a keyboard or a web shop
+# puts into addresses.
+_TRANSLIT = {
+    "ß": "ss", "æ": "ae", "Æ": "AE", "œ": "oe", "Œ": "OE", "ø": "o", "Ø": "O", "ł": "l", "Ł": "L",
+    "đ": "d", "Đ": "D", "ð": "d", "Ð": "D", "þ": "th", "Þ": "TH", "ı": "i",
+    "‘": "'", "’": "'", "‚": "'", "“": '"', "”": '"', "„": '"', "«": '"', "»": '"',
+    "–": "-", "—": "-", "‐": "-", "‑": "-", "−": "-", "…": "...", "•": "-", "·": ".",
+    "\u00a0": " ", "\u2007": " ", "\u202f": " ", "\u2009": " ", "№": "No",
+}
 
-def clean(value: object, seps: Separators = DEFAULT) -> str:
+
+def to_ascii(value: str, element: str) -> tuple[str, bool]:
+    """(ASCII text, changed?). Raises UnmappableCharacter for anything with no
+    ASCII equivalent."""
+    if value.isascii():
+        return value, False
+    out = []
+    for ch in value:
+        if ch.isascii():
+            out.append(ch)
+            continue
+        rep = _TRANSLIT.get(ch)
+        if rep is None:
+            base = "".join(c for c in unicodedata.normalize("NFKD", ch) if not unicodedata.combining(c))
+            rep = base if base and base.isascii() else None
+        if rep is None:
+            raise UnmappableCharacter(element, ch, value)
+        out.append(rep)
+    return "".join(out), True
+
+
+def clean(value: object, seps: Separators = DEFAULT, *, element: str = "value", notes: list[str] | None = None) -> str:
     s = "" if value is None else str(value)
+    ascii_s, changed = to_ascii(s, element)
+    if changed and notes is not None:
+        notes.append(f"{element}: {s!r} written as {ascii_s!r}")
     for ch in seps.reserved | {"\r", "\n"}:
-        s = s.replace(ch, " ")
-    return s
+        ascii_s = ascii_s.replace(ch, " ")
+    return ascii_s
 
 
 @dataclass(frozen=True)
@@ -58,8 +107,9 @@ class Segment:
         object.__setattr__(self, "tag", tag)
         object.__setattr__(self, "elements", tuple("" if e is None else str(e) for e in elements))
 
-    def render(self, seps: Separators = DEFAULT) -> str:
-        parts = [self.tag, *(clean(e, seps) for e in self.elements)]
+    def render(self, seps: Separators = DEFAULT, notes: list[str] | None = None) -> str:
+        parts = [self.tag, *(clean(e, seps, element=f"{self.tag}{i:02d}", notes=notes)
+                             for i, e in enumerate(self.elements, start=1))]
         while len(parts) > 1 and parts[-1] == "":  # no trailing empty elements
             parts.pop()
         return seps.element.join(parts) + seps.segment
@@ -82,8 +132,8 @@ def same_control(a: str | int | None, b: str | int | None) -> bool:
     return sa == sb
 
 
-def _fixed(value: str, width: int, what: str) -> str:
-    value = clean(value)
+def _fixed(value: str, width: int, what: str, seps: Separators) -> str:
+    value = clean(value, seps, element=what)
     if len(value) > width:
         raise X12Error(f"{what} {value!r} is longer than {width} characters")
     return value.ljust(width)
@@ -125,7 +175,9 @@ class Envelope:
         at: datetime,
         group_control: int | None = None,
         set_controls: Sequence[int] | None = None,
+        notes: list[str] | None = None,
     ) -> bytes:
+        """`notes` (optional) receives one line per transliterated value."""
         if not sets:
             raise X12Error("an interchange needs at least one transaction set")
         p, s = self.p, self.seps
@@ -135,8 +187,8 @@ class Envelope:
             raise X12Error("one ST control number per transaction set")
         isa = Segment(
             "ISA", "00", " " * 10, "00", " " * 10,
-            p.sender_qualifier, _fixed(p.sender_id, 15, "ISA06"),
-            p.receiver_qualifier, _fixed(p.receiver_id, 15, "ISA08"),
+            p.sender_qualifier, _fixed(p.sender_id, 15, "ISA06", s),
+            p.receiver_qualifier, _fixed(p.receiver_id, 15, "ISA08", s),
             at.strftime("%y%m%d"), at.strftime("%H%M"), p.repetition, p.isa_version,
             pad_control(control), p.ack_requested, p.usage, s.component,
         )
@@ -144,17 +196,18 @@ class Envelope:
         # and ISA16 is the component separator itself).
         out = [s.element.join([isa.tag, *isa.elements]) + s.segment]
         out.append(Segment(
-            "GS", p.functional_id, clean(p.sender_id).strip(), clean(p.receiver_id).strip(),
+            "GS", p.functional_id, p.sender_id.strip(), p.receiver_id.strip(),
             at.strftime("%Y%m%d"), at.strftime("%H%M"), pad_control(gctl), "X", p.gs_version,
-        ).render(s))
+        ).render(s, notes))
         for ts, sctl in zip(sets, sctls):
             stc = pad_control(sctl)
             body = [Segment("ST", ts.code, stc), *ts.body]
-            out.extend(seg.render(s) for seg in body)
+            out.extend(seg.render(s, notes) for seg in body)
             out.append(Segment("SE", len(body) + 1, stc).render(s))
         out.append(Segment("GE", len(sets), pad_control(gctl)).render(s))
         out.append(Segment("IEA", 1, pad_control(control)).render(s))
-        return s.newline.join(out).encode("ascii", errors="replace") + s.newline.encode()
+        # Strict: everything above is ASCII already; never a "?".
+        return s.newline.join(out).encode("ascii") + s.newline.encode()
 
 
 # ── reading ──────────────────────────────────────────────────────────────────

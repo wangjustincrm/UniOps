@@ -19,7 +19,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 
 from app.platform.query import QuerySpec, query_spec
-from app.platform.services import CrudService
+from app.platform.services import MAX_IMPORT_BYTES, CrudService
 
 
 def crud_router(
@@ -53,7 +53,9 @@ def crud_router(
 
     @r.post("/import.csv", dependencies=can_write)
     async def import_(u: UoW, file: Annotated[UploadFile, File()], dry_run: bool = True) -> dict:
-        report = await service_cls(u).import_csv(await file.read(), dry_run=dry_run)
+        # Read one byte past the limit: the service refuses an oversized file
+        # without the whole upload ever being held in memory.
+        report = await service_cls(u).import_csv(await file.read(MAX_IMPORT_BYTES + 1), dry_run=dry_run)
         if report.ok and not dry_run:
             await u.commit()
         body = dataclasses.asdict(report)

@@ -52,11 +52,23 @@ function detailToMessage(detail: unknown, fallback: string): string {
   try { return JSON.stringify(detail) } catch { return fallback }
 }
 
-async function toApiError(res: Response): Promise<ApiError> {
-  const body = await res.json().catch(() => ({ detail: res.statusText }))
-  const detail = (body as { detail?: unknown })?.detail
-  const error = (body as { error?: { message?: unknown } })?.error
-  const message = typeof error?.message === 'string' ? error.message : detailToMessage(detail, `HTTP ${res.status}`)
+// The body is read once, as text, and parsed as JSON only if it is JSON: a
+// proxy's HTML error page or an empty 502 must still give a readable message
+// (never "" from an empty statusText), and the raw body is kept on the error.
+export async function toApiError(res: Response): Promise<ApiError> {
+  const fallback = res.statusText?.trim() ? `HTTP ${res.status} ${res.statusText.trim()}` : `HTTP ${res.status}`
+  const text = await res.text().catch(() => '')
+  let body: unknown = text || undefined
+  try {
+    if (text) body = JSON.parse(text)
+  } catch {
+    // not JSON: keep the text
+  }
+  const obj = body && typeof body === 'object' ? (body as { detail?: unknown; error?: { message?: unknown } }) : undefined
+  const detail = obj?.detail
+  const message = typeof obj?.error?.message === 'string' && obj.error.message
+    ? obj.error.message
+    : detailToMessage(detail, fallback)
   return new ApiError(message, res.status, detail, body)
 }
 

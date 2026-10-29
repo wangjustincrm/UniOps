@@ -172,6 +172,9 @@ class OutboundFile(StrEnum):
     SENDING = "Sending"
     SENT = "Sent"
     FAILED = "Failed"
+    # Refused because its switch is off (dev / test; product owner,
+    # 2026-10-28). A person reviews it; switching on sends nothing by itself.
+    SUPPRESSED = "Suppressed"
     REPLACED = "Replaced"
     CANCELLED = "Cancelled"
 
@@ -185,23 +188,37 @@ class Ack(StrEnum):
     TIMEOUT = "Timeout"
 
 
-INBOUND_FILE = StateMachine({
+INBOUND_FILE_TABLE = {
+    # PRD 9.1: "Pending → Processing → Processed / Failed / Skipped, plus Duplicate".
     InboundFile.PENDING: {InboundFile.PROCESSING, InboundFile.DUPLICATE},
     InboundFile.PROCESSING: {InboundFile.PROCESSED, InboundFile.FAILED, InboundFile.SKIPPED},
     InboundFile.PROCESSED: set(),
-    InboundFile.FAILED: {InboundFile.PROCESSING, InboundFile.SKIPPED},  # reparse / ignore
+    InboundFile.FAILED: set(),
     InboundFile.SKIPPED: set(),
     InboundFile.DUPLICATE: set(),
-}, "inbound_file", initial={InboundFile.PENDING})
+}
+INBOUND_FILE_ADDITIONS = {
+    # Design §6 (documents): reparse / ignore a failed file.
+    InboundFile.FAILED: {InboundFile.PROCESSING, InboundFile.SKIPPED},
+}
+INBOUND_FILE = StateMachine(
+    {s: INBOUND_FILE_TABLE[s] | INBOUND_FILE_ADDITIONS.get(s, set()) for s in INBOUND_FILE_TABLE},
+    "inbound_file", field="processing_status", initial={InboundFile.PENDING},
+)
 
-OUTBOUND_FILE = StateMachine({
+OUTBOUND_FILE_TABLE = {
+    # PRD 9.1: "Ready To Send → Sending → Sent / Failed / Suppressed, plus
+    # Replaced … and Cancelled"; Suppressed is resent or cancelled by a person.
     OutboundFile.READY_TO_SEND: {OutboundFile.SENDING, OutboundFile.CANCELLED},
-    OutboundFile.SENDING: {OutboundFile.SENT, OutboundFile.FAILED},
+    OutboundFile.SENDING: {OutboundFile.SENT, OutboundFile.FAILED, OutboundFile.SUPPRESSED},
     OutboundFile.SENT: {OutboundFile.REPLACED},  # superseded by a confirmed replacement (FR-OB-03c)
-    OutboundFile.FAILED: {OutboundFile.CANCELLED},  # a resend builds a new document
+    OutboundFile.FAILED: {OutboundFile.CANCELLED},
+    OutboundFile.SUPPRESSED: {OutboundFile.SENDING, OutboundFile.CANCELLED},
     OutboundFile.REPLACED: set(),
     OutboundFile.CANCELLED: set(),
-}, "outbound_file", initial={OutboundFile.READY_TO_SEND})
+}
+OUTBOUND_FILE = StateMachine(OUTBOUND_FILE_TABLE, "outbound_file", field="file_status",
+                             initial={OutboundFile.READY_TO_SEND})
 
 ACK_TABLE = {
     Ack.NOT_REQUIRED: set(),

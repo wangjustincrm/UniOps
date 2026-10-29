@@ -1,48 +1,71 @@
 #!/usr/bin/env bash
 # Scope check for Order Bridge work (design §14.3).
 #
-#   tools/check-scope.sh [BASE]        BASE defaults to HEAD
+#   tools/check-scope.sh [BASE]
 #
-# Looks at everything that differs from BASE: commits BASE..HEAD, staged and
-# unstaged changes, and untracked files. Fails when
+# BASE defaults to merge-base(origin/main, HEAD) (or merge-base(main, HEAD)
+# when there is no origin/main); a BASE given is also reduced to its merge
+# base with HEAD. The base used is printed first.
+#
+# Looks at everything that differs from the base: commits base..HEAD, the
+# index, the working tree and untracked files — renames count as delete + add.
+# Fails when
 #   1. a path is outside the code allow-list (§14.1) and the configuration
 #      allow-list (§14.2);
 #   2. an allow-listed configuration file loses or changes an existing line
-#      (additions only);
+#      in any of HEAD, the index or the working tree (additions only);
 #   3. any lock file other than order-bridge/package-lock.json changes —
 #      including the root package-lock.json;
-#   4. a new folder appears under packages/;
-#   5. a platform folder imports business code (the two one-way-dependency
-#      checks of §13: orders-api/app/platform and order-bridge/src/platform-ui).
+#   4. anything under packages/ changes or appears;
+#   5. a platform folder is missing, or imports business code (the two
+#      one-way-dependency checks of §13: orders-api/app/platform and
+#      order-bridge/src/platform-ui).
 # For order-bridge it also confirms that a deliberate type error inside
-# src/platform-ui is reported by tsc (the TS5101 "diagnostics skipped" trap)
-# and that the library's classes reach the built CSS (§13.15).
+# src/platform-ui is reported by tsc (the TS5101 "diagnostics skipped" trap),
+# that the ESLint import rule fires on a planted business import, and that
+# both a library class and a shell-only class reach the built CSS (§13.15).
 #
 # Steps 5+ run in throwaway containers (python:3.12-slim, node:20-alpine) on a
 # temporary copy; nothing is installed into the working tree.
 #   SKIP_FRONTEND=1   skip the order-bridge install/typecheck/build checks
+#                     (printed as SKIPPED; the result says so)
 set -uo pipefail
 
 ROOT=$(git rev-parse --show-toplevel)
-BASE=${1:-HEAD}
 cd "$ROOT"
-git rev-parse --verify -q "$BASE^{commit}" >/dev/null || { echo "unknown base: $BASE"; exit 2; }
+git() { command git -c core.quotePath=false "$@"; }
+
+if [[ $# -ge 1 ]]; then
+  REF=$1
+elif command git rev-parse --verify -q origin/main >/dev/null; then
+  REF=origin/main
+else
+  REF=main
+fi
+git rev-parse --verify -q "$REF^{commit}" >/dev/null || { echo "unknown base: $REF"; exit 2; }
+BASE=$(git merge-base "$REF" HEAD) || { echo "no merge base between $REF and HEAD"; exit 2; }
+echo "base: $BASE (merge-base of $REF and HEAD; $(git rev-list --count "$BASE"..HEAD) commit(s) ahead)"
 
 FAIL=0
+SKIPPED=0
 fail() { echo "FAIL: $*"; FAIL=1; }
 ok() { echo "ok:   $*"; }
+skip() { echo "SKIPPED: $*"; SKIPPED=1; }
 
 # ── changed paths ────────────────────────────────────────────────────────────
-mapfile -t CHANGED < <({
-  git diff --name-only "$BASE"            # committed since BASE + working tree
-  git ls-files --others --exclude-standard # untracked
-} | sort -u)
-echo "changed paths vs $BASE: ${#CHANGED[@]}"
+# NUL-separated, so no file name is ever quoted or split.
+mapfile -d '' -t CHANGED < <({
+  git diff --no-renames --name-only -z "$BASE" HEAD   # committed since the base
+  git diff --no-renames --name-only -z --cached "$BASE"   # the index
+  git diff --no-renames --name-only -z "$BASE"        # the working tree
+  git ls-files --others --exclude-standard -z         # untracked
+} | sort -zu)
+echo "changed paths vs base: ${#CHANGED[@]}"
 
 # §14.1 code allow-list
 CODE_RE='^(orders-api/|order-bridge/|tools/new-module/|tools/check-scope\.sh$)'
 # Order Bridge documentation (not code; listed so it is visible)
-DOCS_RE='^(docs/prd/ORDER-BRIDGE\.md|docs/superpowers/specs/2026-10-23-order-bridge-design\.md)$'
+DOCS_RE='^(docs/prd/ORDER-BRIDGE\.md|docs/prd/README\.md|docs/superpowers/specs/2026-10-23-order-bridge-design\.md)$'
 # §14.2 configuration allow-list — additions only
 CONFIG_FILES=(
   docker-compose.dev.yml docker-compose.prod.yml Caddyfile
@@ -84,23 +107,32 @@ for p in "${CHANGED[@]}"; do
   fi
 done
 
-for p in "${CONFIG_TOUCHED[@]}"; do
-  if git cat-file -e "$BASE:$p" 2>/dev/null; then
-    removed=$(git diff -U0 "$BASE" -- "$p" | grep -E '^-' | grep -vE '^--- ' || true)
-    if [[ -n $removed ]]; then
-      fail "$p: existing lines removed or changed (additions only):"
-      echo "$removed" | head -5 | sed 's/^/        /'
+# Deleted lines counted with --numstat: a removed line that itself starts
+# with "-- " (SQL, YAML comments) must not be mistaken for a diff header.
+deleted_lines() {  # $@ = git diff arguments before "--"
+  git diff --no-renames --numstat "$@" -- "$P" | awk '{ s += ($2 == "-") ? 1 : $2 } END { print s + 0 }'
+}
+for P in "${CONFIG_TOUCHED[@]}"; do
+  if git cat-file -e "$BASE:$P" 2>/dev/null; then
+    d_head=$(deleted_lines "$BASE" HEAD)
+    d_index=$(deleted_lines --cached "$BASE")
+    d_tree=$( [[ -e $P ]] && deleted_lines "$BASE" || wc -l < <(git show "$BASE:$P") )
+    if [[ $d_head != 0 || $d_index != 0 || $d_tree != 0 ]]; then
+      fail "$P: existing lines removed or changed (committed $d_head, staged $d_index, working tree $d_tree):"
+      git diff --no-renames -U0 "$BASE" -- "$P" | sed -n '5,$p' | grep -E '^-' | head -5 | sed 's/^/        /'
     else
-      ok "$p: additions only"
+      ok "$P: additions only"
     fi
   else
-    ok "$p: new file"
+    ok "$P: new file"
   fi
 done
 [[ $FAIL == 0 ]] && ok "paths, lock files and packages/ within scope"
 
 # ── one-way dependency: back end ─────────────────────────────────────────────
-if [[ -d orders-api/app/platform ]]; then
+if [[ ! -d orders-api/app/platform ]]; then
+  fail "orders-api/app/platform is missing: the one-way dependency check cannot run"
+else
   # -i: the checker arrives on stdin; without it python reads nothing and exits 0.
   if docker run -i --rm --network none -e PYTHONDONTWRITEBYTECODE=1 \
       -v "$ROOT/orders-api:/w:ro" -w /w python:3.12-slim \
@@ -130,7 +162,17 @@ PY
 fi
 
 # ── order-bridge: import rule, TS5101 trap, CSS ──────────────────────────────
-if [[ -d order-bridge/src/platform-ui && ${SKIP_FRONTEND:-0} != 1 ]]; then
+# A class that only packages/shell uses (the primary Button's hover): if it is
+# in the built CSS, Tailwind scanned the shell source (§13.15).
+SHELL_SENTINEL='hover:bg-primary-700'
+if [[ ! -d order-bridge/src/platform-ui ]]; then
+  fail "order-bridge/src/platform-ui is missing: the front-end checks cannot run"
+elif [[ ${SKIP_FRONTEND:-0} == 1 ]]; then
+  skip "order-bridge install / tsc probe / import rule / ESLint probe / build / CSS (SKIP_FRONTEND=1)"
+else
+  if grep -rqF -- "$SHELL_SENTINEL" order-bridge/src; then
+    fail "shell CSS sentinel '$SHELL_SENTINEL' is used in order-bridge/src; pick another shell-only class"
+  fi
   TMP=$(mktemp -d)
   trap 'docker run --rm -v "$TMP:/t" alpine rm -rf /t/repo >/dev/null 2>&1; rm -rf "$TMP"' EXIT
   mkdir -p "$TMP/repo/packages"
@@ -142,6 +184,7 @@ if [[ -d order-bridge/src/platform-ui && ${SKIP_FRONTEND:-0} != 1 ]]; then
 export const probe: number = 'not a number'
 TS
   docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_cache=/tmp/npmcache \
+    -e SHELL_SENTINEL="$SHELL_SENTINEL" -e SHELL_SELECTOR="${SHELL_SENTINEL//:/\\:}" \
     -v "$TMP/repo:/repo" -w /repo/order-bridge node:20-alpine sh -c '
       npm ci --install-links --no-audit --no-fund >/tmp/i.log 2>&1 || { echo "install failed"; tail -5 /tmp/i.log; exit 10; }
       npx tsc -p tsconfig.app.json --noEmit >/tmp/t.log 2>&1
@@ -152,14 +195,27 @@ TS
       rm src/platform-ui/__scope_probe__.ts
       npx vitest run src/platform-ui/importRule.test.ts >/tmp/v.log 2>&1 || { echo "import rule failed"; tail -20 /tmp/v.log; exit 14; }
       npx eslint src/platform-ui >/tmp/e.log 2>&1 || { echo "eslint failed"; tail -20 /tmp/e.log; exit 15; }
+      # The ESLint rule must fire on a planted business import.
+      printf "import { api } from \"@/lib/api\"\nexport const planted = api\n" > src/platform-ui/__eslint_probe__.ts
+      npx eslint src/platform-ui/__eslint_probe__.ts >/tmp/p.log 2>&1
+      grep -q "no-restricted-imports" /tmp/p.log || { echo "the ESLint import rule did NOT fire on a planted business import"; tail -10 /tmp/p.log; exit 18; }
+      rm src/platform-ui/__eslint_probe__.ts
       npx vite build >/tmp/b.log 2>&1 || { echo "build failed"; tail -10 /tmp/b.log; exit 16; }
       grep -q "radix-popover-trigger-width" dist/assets/*.css || { echo "platform-ui classes missing from the built CSS"; exit 17; }
-      echo "probe reported; 0 other type errors; import rule + eslint pass; library classes in CSS"
+      # As written in CSS: hover:x → .hover\:x
+      grep -qF "$SHELL_SELECTOR" dist/assets/*.css || { echo "shell-only class $SHELL_SENTINEL missing from the built CSS"; exit 19; }
+      echo "probe reported; 0 other type errors; import rule + ESLint (planted import caught) pass; library and shell classes in CSS"
     '
   rc=$?
-  if [[ $rc == 0 ]]; then ok "order-bridge: TS5101 trap, import rule, ESLint, CSS"; else fail "order-bridge checks (code $rc)"; fi
+  if [[ $rc == 0 ]]; then ok "order-bridge: TS5101 trap, import rule, ESLint probe, library + shell CSS"; else fail "order-bridge checks (code $rc)"; fi
 fi
 
 echo
-if [[ $FAIL == 0 ]]; then echo "SCOPE CHECK PASSED"; else echo "SCOPE CHECK FAILED"; fi
+if [[ $FAIL != 0 ]]; then
+  echo "SCOPE CHECK FAILED"
+elif [[ $SKIPPED != 0 ]]; then
+  echo "SCOPE CHECK PASSED (with SKIPPED checks)"
+else
+  echo "SCOPE CHECK PASSED"
+fi
 exit $FAIL

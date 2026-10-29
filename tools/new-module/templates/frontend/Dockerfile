@@ -17,7 +17,7 @@ ENV VITE_API_URL=$VITE_API_URL \
 
 COPY %%frontend%%/package.json %%frontend%%/package-lock.json ./%%frontend%%/
 COPY packages/shell ./packages/shell
-RUN cd %%frontend%% && npm install --install-links --no-audit --no-fund
+RUN cd %%frontend%% && npm ci --install-links --no-audit --no-fund
 
 COPY %%frontend%% ./%%frontend%%
 RUN cd %%frontend%% && npx vite build
