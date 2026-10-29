@@ -185,6 +185,33 @@ async def nc_flow_ids(db: AsyncSession, ids: list[uuid.UUID]) -> set[uuid.UUID]:
         ApInvoice.id.in_(ids), text(f"({NC_FLOW_SQL})")))).scalars().all())
 
 
+async def gl_codes(db: AsyncSession, rows: list[ApInvoice]) -> dict[uuid.UUID, str]:
+    """AP id -> budget account code(s) of the PO(s) its EPMS invoice is on —
+    the invoice's own PO plus multi-PO allocations, distinct, comma-joined.
+    No PO (agreement, Direct, courier, OA) -> absent."""
+    from app.models.mirrors import Invoice, InvoicePoAllocation, PurchaseOrder
+    src = {r.source_invoice_id: r.id for r in rows if r.source == "epms"}
+    if not src:
+        return {}
+    pairs = list((await db.execute(
+        select(Invoice.id, Invoice.po_id)
+        .where(Invoice.id.in_(list(src)), Invoice.po_id.is_not(None)))).all())
+    pairs += list((await db.execute(
+        select(InvoicePoAllocation.invoice_id, InvoicePoAllocation.po_id)
+        .where(InvoicePoAllocation.invoice_id.in_(list(src))))).all())
+    if not pairs:
+        return {}
+    code = dict((await db.execute(
+        select(PurchaseOrder.id, PurchaseOrder.budget_code)
+        .where(PurchaseOrder.id.in_({po for _, po in pairs})))).all())
+    by_ap: dict[uuid.UUID, set[str]] = {}
+    for inv_id, po_id in pairs:
+        c = (code.get(po_id) or "").strip()
+        if c:
+            by_ap.setdefault(src[inv_id], set()).add(c)
+    return {ap: ", ".join(sorted(cs)) for ap, cs in by_ap.items()}
+
+
 async def get(db: AsyncSession, invoice_id: uuid.UUID) -> ApInvoice | None:
     return (await db.execute(select(ApInvoice).where(ApInvoice.id == invoice_id))).scalar_one_or_none()
 

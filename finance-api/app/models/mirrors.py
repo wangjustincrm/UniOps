@@ -285,6 +285,9 @@ class PurchaseOrder(UUIDPrimaryKey, Base):
     # "nc" = imported from NC (raw material / packaging). Its payable is made
     # in NC from the purchase invoice (D1), so the AP push must not add an F1.
     source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Budget account code (pure code since the 2026-09-18 clean-up) — the
+    # AP list's GL Code column.
+    budget_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
 
 class PurchaseAgreement(UUIDPrimaryKey, Base):

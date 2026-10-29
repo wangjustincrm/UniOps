@@ -600,6 +600,27 @@ async def test_list_marks_nc_flow_aps_and_hides_them(client, db_session):
     assert {i["ap_invoice_number"]: i["nc_flow"] for i in r.json()["items"]}["AP-NC"] is True
 
 
+async def test_list_gl_code_is_the_po_budget_code(client, db_session):
+    """User, 2026-10-29: the AP list's GL Code column is the budget account code of
+    the invoice's PO — every PO of a multi-PO invoice — and empty with no PO."""
+    vid = _vendor()
+    _, inv1, *_ = await _ap(db_session, vendor_id=vid, number="AP-ONE", inv_no="G-1")
+    _, inv2, *_ = await _ap(db_session, vendor_id=vid, number="AP-MULTI", inv_no="G-2",
+                            po_titles=(("PO-B", "b"), ("PO-A", "a"), ("PO-A2", "a2")))
+    await _ap(db_session, vendor_id=vid, number="AP-NOPO", inv_no="G-3", route="agreement",
+              po_titles=())
+    codes = {"PO-633-2610-01": "CRM0090201", "PO-B": "CRM00503", "PO-A": "CRM00101",
+             "PO-A2": "CRM00101"}
+    for po in (await db_session.execute(select(PurchaseOrder))).scalars():
+        po.budget_code = codes[po.number]
+    await db_session.flush()
+
+    r = await client.get("/finance/v1/ap/invoices", headers=_h())
+    assert r.status_code == 200, r.text
+    gl = {i["ap_invoice_number"]: i["gl_code"] for i in r.json()["items"]}
+    assert gl == {"AP-ONE": "CRM0090201", "AP-MULTI": "CRM00101, CRM00503", "AP-NOPO": None}
+
+
 async def test_match_ignores_hyphens_and_says_so(client, db_session):
     """User, 2026-10-28: "IN-22-1014797" in UniOps is "IN-221014797" in NC — match it,
     but flag that the hyphens were dropped; an exact match carries no flag."""
