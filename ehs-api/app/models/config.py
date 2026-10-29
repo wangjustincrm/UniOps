@@ -102,6 +102,19 @@ class EhsConfig(TimestampMixin, Base):
         JSONB, nullable=False, default=dict, server_default="{}",
     )
 
+    # ── The dashboard, for everybody (round 10, batch 4) ────────────────────
+    # {metric: {"good": n, "bad": n}}. Which way is better is the metric's own
+    # (services/dashboard_settings.py), not inferred from which number is
+    # larger. The days-since figure starts at Kirk's example; a starting value.
+    dashboard_thresholds: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=lambda: {"days_since": {"good": 15, "bad": 5}},
+        server_default='{"days_since": {"good": 15, "bad": 5}}',
+    )
+    # {chart: "bar" | "circle" | "body"}; a chart not named draws its default.
+    dashboard_chart_styles: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}",
+    )
+
 
 class Holiday(Base):
     """Ontario statutory holidays.

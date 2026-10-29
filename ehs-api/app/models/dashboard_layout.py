@@ -23,6 +23,10 @@ class DashboardLayout(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     panels: Mapped[list] = mapped_column(JSONB, nullable=False, default=list,
                                          server_default="[]")
+    # The panels that existed when this was saved. One added since is appended
+    # for the person rather than hidden by a list that predates it.
+    known: Mapped[list] = mapped_column(JSONB, nullable=False, default=list,
+                                        server_default="[]")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(),
         onupdate=func.now())

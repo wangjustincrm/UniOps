@@ -31,11 +31,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import hours as hours_service
 from app.services import incident_type
-from app.services.day_range import plant_today
+from app.services.day_range import day_bounds, plant_today
 
 # OSHA's constant: 100 employees × 50 weeks × 40 hours. HSE confirmed TRIR and
 # RIR are the same metric under two names, so there is one figure, not two.
 OSHA_BASE_HOURS = 200_000
+
+
+def per_base_hours(n: int, hours: Decimal | float | None) -> float | None:
+    """A count as a rate per 200,000 hours — the one place it is worked out,
+    so the dashboard and Reports cannot disagree about the same year."""
+    if not hours or hours <= 0:
+        return None
+    return round(float(Decimal(n) * OSHA_BASE_HOURS / Decimal(str(hours))), 2)
 
 
 @dataclass(frozen=True)
@@ -356,25 +364,29 @@ async def injury_rates(
     than it is, and there is nothing in the number itself to reveal that.
     """
     # ★ Drafts are not incidents yet; a saved, unsent report must not move TRIR.
-    where = ["status <> 'draft'"]
-    params: dict[str, object] = {}
-    if date_from:
-        where.append("occurred_at >= :date_from")
-        params["date_from"] = date_from
-    if date_to:
-        where.append("occurred_at < :date_to")
-        params["date_to"] = date_to
-    clause = " and ".join(where)
+    #
+    # ★ One window for both halves of the rate. With no dates given the
+    # incidents used to be counted over all time while the hours were this
+    # year's, so every rate on Reports read high by however many earlier
+    # years there were. And the dates were compared as bare dates against an
+    # instant, which Postgres reads in UTC, so the window's edges sat four or
+    # five hours off the plant's day. Both corrected in round 10, batch 4.
+    today = plant_today()
+    window_from = date_from or date(today.year, 1, 1)
+    # `date_to` stays exclusive, as callers have always passed it.
+    window_to = date_to or (today + timedelta(days=1))
+    start, _ = day_bounds(window_from, None)
+    end, _ = day_bounds(window_to, None)
 
-    row = (await db.execute(text(f"""
+    row = (await db.execute(text("""
         select
           count(*) filter (where injury_class in ('medical_aid','lost_time')
                               or mol_reportable) as recordable,
           count(*) filter (where injury_class = 'lost_time')                as lost_time,
           count(*) filter (where injury_class in ('lost_time','medical_aid')) as dart
         from ehs_incidents
-       where {clause}
-    """), params)).one()
+       where status <> 'draft' and occurred_at >= :start and occurred_at < :end
+    """), {"start": start, "end": end})).one()
 
     recordable, lost_time, dart = row
 
@@ -382,20 +394,15 @@ async def injury_rates(
     if hours_worked:
         hours = Decimal(str(hours_worked))
     else:
-        # Default the window to the calendar year so the rates mean something
-        # without the caller having to pass dates as well.
-        today = plant_today()
         entered = await hours_service.hours_for(
             db,
-            date_from=date_from or date(today.year, 1, 1),
+            date_from=window_from,
             date_to=date_to or date(today.year, today.month, 1) + timedelta(days=32),
         )
         hours = entered.usable
 
     def rate(n: int) -> float | None:
-        if not hours or hours <= 0:
-            return None
-        return round(float(Decimal(n) * OSHA_BASE_HOURS / hours), 2)
+        return per_base_hours(n, hours)
 
     return {
         "recordable": recordable,

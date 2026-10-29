@@ -295,6 +295,22 @@ async def _path_for(db: AsyncSession, parent_id: uuid.UUID | None, label: str) -
     return f"{parent.path or parent.label}/{label}"
 
 
+def _check_attrs(vocabulary: str, attrs: dict) -> None:
+    """The one attribute with a fixed set of values: where a body part sits on
+    the dashboard's figure. Anything else would draw nowhere and say nothing."""
+    from app.services import body_map
+
+    region = (attrs or {}).get("body_region")
+    if region is None:
+        return
+    if vocabulary != "body_part":
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Only body parts have a place on the body picture")
+    if not body_map.valid_choice(region):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"{region!r} is not a part of the body picture")
+
+
 async def add_item(db: AsyncSession, code: str, payload: VocabularyItemIn) -> VocabularyItem:
     vocab = await get_vocabulary(db, code)
     if vocab.is_system_locked:
@@ -308,6 +324,7 @@ async def add_item(db: AsyncSession, code: str, payload: VocabularyItemIn) -> Vo
         parent = await _check_parent(db, vocab, payload.parent_id)
         prefix = await trail(db, parent)
     await _check_fits(db, prefix, payload.label, None)
+    _check_attrs(code, payload.attrs)
     item_code = payload.code or await _derive_code(db, code, payload.label)
     clash = (await db.execute(
         select(VocabularyItem).where(
@@ -394,6 +411,7 @@ async def patch_item(
         if payload.is_active is False:
             await _set_active_below(db, item, False)
     if payload.attrs is not None:
+        _check_attrs(item.vocabulary_code, payload.attrs)
         item.attrs = payload.attrs
 
     await db.flush()
