@@ -42,6 +42,7 @@ import PositionsPage from '@/pages/settings/PositionsPage'
 import MyTrainingPage from '@/pages/MyTrainingPage'
 import AreaOwnersPage from '@/pages/settings/AreaOwnersPage'
 import RulesPage from '@/pages/settings/RulesPage'
+import DashboardSettingsPage from '@/pages/settings/DashboardSettingsPage'
 import PermitChecksPage from '@/pages/settings/PermitChecksPage'
 import ExpiryNoticesPage from '@/pages/settings/ExpiryNoticesPage'
 import StaffFilePage, { StaffFilePicker } from '@/pages/StaffFilePage'
@@ -306,6 +307,11 @@ export const ehsRoutes: RouteDef[] = [
     path: '/settings/rules',
     element: <RulesPage />,
     tab: { title: 'Rules', icon: 'Settings', keyStrategy: 'static' },
+  },
+  {
+    path: '/settings/dashboard',
+    element: <DashboardSettingsPage />,
+    tab: { title: 'Dashboard settings', icon: 'BarChart3', keyStrategy: 'static' },
   },
   {
     path: '/settings/permit-checks',

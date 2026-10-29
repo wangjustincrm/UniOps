@@ -365,7 +365,10 @@ async def test_only_a_real_region_on_a_body_part(hse_manager, body_list):
     path = f"/api/v1/settings/vocabularies/body_part/items/{item['id']}"
     assert (await hse.patch(path, json={"attrs": {"body_region": "tail"}})).status_code == 422
     assert (await hse.patch(path, json={"attrs": {"body_region": "none"}})).status_code == 200
-    assert (await hse.patch(path, json={"attrs": {"body_region": "knee"}})).status_code == 200
+    placed = await hse.patch(path, json={"attrs": {"body_region": "knee"}})
+    assert placed.status_code == 200 and placed.json()["body_region"] == "knee"
+    seeded = await _body_part(hse, "Seeded check", code="ankle")
+    assert seeded["body_region"] == "ankle", "the seeded code places it"
     other = await hse.post("/api/v1/settings/vocabularies/hazard/items",
                            json={"label": "Region on a hazard", "attrs": {"body_region": "knee"}})
     assert other.status_code == 422

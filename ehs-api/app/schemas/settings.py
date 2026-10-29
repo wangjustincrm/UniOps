@@ -60,6 +60,16 @@ class VocabularyItemOut(BaseModel):
     path: str | None
     # Labels from the top down, " › "-joined — what a record snapshots.
     trail: str | None = None
+    # Body parts only: where the dashboard's figure draws this entry — its own
+    # choice, or where its seeded code puts it; None when it is not drawn.
+    body_region: str | None = None
+
+    @model_validator(mode="after")
+    def _place_on_body(self):
+        if self.vocabulary_code == "body_part":
+            from app.services.body_map import region_for
+            self.body_region = region_for(self.code, self.attrs)
+        return self
 
 
 class ConfigOut(BaseModel):

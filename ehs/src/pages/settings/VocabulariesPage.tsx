@@ -18,7 +18,12 @@ interface Vocabulary {
 interface Item {
   id: string; code: string; label: string; sort_order: number
   is_active: boolean; parent_id: string | null; path: string | null; trail?: string | null
-  attrs?: { pictogram_file_id?: string; pictogram_filename?: string; severity?: Record<string, string> }
+  attrs?: {
+    pictogram_file_id?: string; pictogram_filename?: string; severity?: Record<string, string>
+    body_region?: string
+  }
+  /** Body parts: where the dashboard's figure draws it now (server-worked). */
+  body_region?: string | null
 }
 
 /**
@@ -280,6 +285,7 @@ export default function VocabulariesPage() {
             )}
             {active === PICTOGRAM_VOCABULARY && <PictogramSlot code={active} item={i} />}
             {active === 'consequence_type' && <SeverityWording code={active} item={i} />}
+            {active === 'body_part' && i.is_active && <BodyRegionSelect code={active} item={i} />}
             <button
               type="button"
               disabled={toggle.isPending || (current?.is_system_locked && i.is_active)}
@@ -493,5 +499,52 @@ function SeverityWording({ code, item }: { code: string; item: Item }) {
         </div>
       )}
     </>
+  )
+}
+
+/**
+ * Where a body part sits on the dashboard's body picture.
+ *
+ * Round 10, q10-body: shade each part "using the body part list under
+ * Settings → Lists". Seeded entries are placed by their code; this places any
+ * entry, moves one, or keeps it off the picture. ★ attrs are replaced whole on
+ * save, so the rest of them travel with the change.
+ */
+function BodyRegionSelect({ code, item }: { code: string; item: Item }) {
+  const queryClient = useQueryClient()
+  const regions = useQuery({
+    queryKey: ['dashboard', 'settings'],
+    queryFn: () => api.get<{ regions: { key: string; label: string }[] }>('/api/v1/dashboard/settings'),
+    staleTime: 10 * 60_000,
+  })
+  const save = useMutation({
+    mutationFn: (region: string) => {
+      const { body_region: _old, ...rest } = item.attrs ?? {}
+      return api.patch(`/api/v1/settings/vocabularies/${code}/items/${item.id}`, {
+        attrs: region ? { ...rest, body_region: region } : rest,
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vocabularies'] })
+      queryClient.invalidateQueries({ queryKey: ['vocabulary'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
+  })
+  // What the select shows is where it is drawn now; "" only when the entry
+  // has never been placed and its code places it nowhere.
+  const value = item.attrs?.body_region === 'none' ? 'none' : (item.body_region ?? '')
+  return (
+    <label className="flex items-center gap-1 text-xs text-neutral-500">
+      On the picture
+      <select value={value} disabled={save.isPending || regions.isPending}
+              aria-label={`Where ${item.label} is on the body picture`}
+              onChange={(e) => save.mutate(e.target.value)}
+              className="min-h-[32px] rounded-md border border-neutral-300 bg-white px-1.5 text-xs text-neutral-800">
+        {value === '' && <option value="">Not placed</option>}
+        <option value="none">Not on the picture</option>
+        {(regions.data?.regions ?? []).map((r) => <option key={r.key} value={r.key}>{r.label}</option>)}
+      </select>
+      {save.isError && <span className="text-danger-700" role="alert">Not saved</span>}
+    </label>
   )
 }

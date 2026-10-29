@@ -177,6 +177,8 @@ const SETTINGS_NAV: NavItem[] = [
   { label: 'Hours Worked', href: '/settings/hours', icon: CalendarClock, permission: 'ehs.settings.manage' },
   { label: 'Who is told', href: '/settings/notify-groups', icon: Mail, permission: 'ehs.settings.manage' },
   { label: 'Rules',       href: '/settings/rules', icon: Settings, permission: 'ehs.settings.manage' },
+  // Round 10: the dashboard's colours and chart styles, for everybody.
+  { label: 'Dashboard colours', href: '/settings/dashboard', icon: BarChart3, permission: 'ehs.settings.manage' },
   // Round 7: what each kind of permit has to have confirmed before it is issued.
   { label: 'Permit checks', href: '/settings/permit-checks', icon: ShieldCheck, permission: 'ehs.settings.manage' },
   // Round 8: an address emailed N days before training certificates expire.
