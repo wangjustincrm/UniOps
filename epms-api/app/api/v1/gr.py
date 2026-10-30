@@ -267,6 +267,19 @@ async def gr_action(
     if body.action.lower() == "resolve_damage" and not await has_permission(
             db, uuid.UUID(user["sub"]), user.get("role", ""), "epms.po.write"):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
+    # Cancel was open to any signed-in user. Same people the GR page offers it
+    # to (documentActions.ts canCancelGr): whoever recorded the receipt, a
+    # warehouse receiver (epms.gr.receive, the key that records one) or a
+    # System Admin.
+    if body.action.lower() == "cancel" and not (
+            user.get("role") == "system_admin"
+            or gr.created_by == uuid.UUID(user["sub"])
+            or await has_permission(db, uuid.UUID(user["sub"]), user.get("role", ""),
+                                    "epms.gr.receive")):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the person who recorded this goods receipt, warehouse receiving staff "
+                   "or a System Admin can cancel it.")
     try:
         result = await gr_crud.action(db, gr, body, actor_id=uuid.UUID(user["sub"]), token=token)
         return result

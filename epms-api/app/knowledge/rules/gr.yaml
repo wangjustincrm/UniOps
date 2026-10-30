@@ -37,16 +37,18 @@ rules:
       - 收货单可以撤销吗
     answer: >
       Yes, while it is Pending Acknowledgement or Collection Pending — Cancel GR
-      on the GR page, offered to whoever recorded the receipt, anyone with the
-      warehouse receive permission, and System Admins. Once the goods are
+      on the GR page, for whoever recorded the receipt, anyone with the
+      warehouse receive permission, and System Admins (the server refuses
+      anyone else). Once the goods are
       collected or the service confirmed it can no longer be cancelled there.
       A cancelled receipt counts nothing as received, its open tasks
       (including a damage report) are closed, and its progress shows nothing
       waiting.
-    enforced_in: "epms-api app/crud/gr.py action cancel (pending_ack / collection_pending); epms/src/lib/documentActions.ts canCancelGr, used by pages/gr/GrDetailPage.tsx"
+    enforced_in: "epms-api app/crud/gr.py action cancel (pending_ack / collection_pending); app/api/v1/gr.py gr_action (creator / epms.gr.receive / system_admin); epms/src/lib/documentActions.ts canCancelGr, used by pages/gr/GrDetailPage.tsx"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_gr_cancel_button_follows_the_server"
+      - "tests/test_gr_create_authz.py::test_cancel_gr_only_by_recorder_receiver_or_admin"
       - "tests/test_gr.py::test_gr_cancel_only_before_collection"
 
   # ── Added 2026-10-21 (issue review batch 3) ───────────────────────────────
