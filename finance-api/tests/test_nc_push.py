@@ -621,6 +621,38 @@ async def test_list_gl_code_is_the_po_budget_code(client, db_session):
     assert gl == {"AP-ONE": "CRM0090201", "AP-MULTI": "CRM00101, CRM00503", "AP-NOPO": None}
 
 
+async def test_list_gl_code_without_po_follows_the_nc_push(client, db_session):
+    """User, 2026-10-30: a courier / Direct / agreement invoice has no PO, yet its
+    budget account is known — show the one the NC push uses."""
+    vid = _vendor()
+    await _ap(db_session, vendor_id=vid, number="AP-FR", inv_no="UPS-1", route="freight",
+              po_titles=())
+    _, inv_d, cc, dep = await _ap(db_session, vendor_id=vid, number="AP-DIR", inv_no="D-1",
+                                  route="direct", po_titles=())
+    db_session.add(PaymentApplication(pa_number="PA-20261020-0004", title="Hydro October",
+                                      pa_type="regular", status="approved", source="direct",
+                                      vendor_id=vid, vendor_name="Hydro", invoice_ids=[str(inv_d.id)],
+                                      payment_amount=Decimal("1"), currency="CAD",
+                                      cost_center_id=cc.id, department_id=dep.id,
+                                      budget_account_code="CRM00301-Hydro", created_by=uuid.uuid4()))
+    _, inv_a, *_ = await _ap(db_session, vendor_id=vid, number="AP-AGR", inv_no="A-1",
+                             route="agreement", po_titles=())
+    agr = PurchaseAgreement(number="AGR-202607-0003", title="Pest control 2026",
+                            budget_code="CRM01114")
+    db_session.add(agr)
+    await db_session.flush()
+    inv_a.agreement_id = agr.id
+    await _ap(db_session, vendor_id=vid, number="AP-DIR-NOPA", inv_no="D-2", route="direct",
+              po_titles=())
+    await db_session.flush()
+
+    r = await client.get("/finance/v1/ap/invoices", headers=_h())
+    assert r.status_code == 200, r.text
+    gl = {i["ap_invoice_number"]: i["gl_code"] for i in r.json()["items"]}
+    assert gl == {"AP-FR": "CRM0150102", "AP-DIR": "CRM00301", "AP-AGR": "CRM01114",
+                  "AP-DIR-NOPA": None}
+
+
 async def test_match_ignores_hyphens_and_says_so(client, db_session):
     """User, 2026-10-28: "IN-22-1014797" in UniOps is "IN-221014797" in NC — match it,
     but flag that the hyphens were dropped; an exact match carries no flag."""

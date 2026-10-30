@@ -186,29 +186,71 @@ async def nc_flow_ids(db: AsyncSession, ids: list[uuid.UUID]) -> set[uuid.UUID]:
 
 
 async def gl_codes(db: AsyncSession, rows: list[ApInvoice]) -> dict[uuid.UUID, str]:
-    """AP id -> budget account code(s) of the PO(s) its EPMS invoice is on —
-    the invoice's own PO plus multi-PO allocations, distinct, comma-joined.
-    No PO (agreement, Direct, courier, OA) -> absent."""
-    from app.models.mirrors import Invoice, InvoicePoAllocation, PurchaseOrder
+    """AP id -> budget account code(s), from the same source the NC push takes
+    its revenue/expense item from (services/nc_push._summary_and_dims):
+    PO route = the PO(s) — own PO plus multi-PO allocations, distinct,
+    comma-joined; courier = the fixed freight item; Direct / OA = the Direct
+    PA's budget account; agreement = the agreement's. Nothing known -> absent."""
+    from app.models.mirrors import (ExpenseInvoice, Invoice, InvoicePoAllocation,
+                                    PurchaseAgreement, PurchaseOrder)
+    from app.models.pa import PaymentApplication
+    from app.services.nc_push import FREIGHT_REVEXP, _leaf_budget
+    by_ap: dict[uuid.UUID, set[str]] = {}
+
+    def put(ap_id, code):
+        c = _leaf_budget(code)
+        if c:
+            by_ap.setdefault(ap_id, set()).add(c)
+
+    # OA: expense invoice -> its Direct PA.
+    oa = {r.source_invoice_id: r.id for r in rows if r.source == "oa"}
+    if oa:
+        pa_of = dict((await db.execute(
+            select(ExpenseInvoice.id, ExpenseInvoice.pa_id)
+            .where(ExpenseInvoice.id.in_(list(oa)), ExpenseInvoice.pa_id.is_not(None)))).all())
+        code = dict((await db.execute(
+            select(PaymentApplication.id, PaymentApplication.budget_account_code)
+            .where(PaymentApplication.id.in_(set(pa_of.values()))))).all()) if pa_of else {}
+        for ei, pa in pa_of.items():
+            put(oa[ei], code.get(pa))
+
     src = {r.source_invoice_id: r.id for r in rows if r.source == "epms"}
     if not src:
-        return {}
-    pairs = list((await db.execute(
-        select(Invoice.id, Invoice.po_id)
-        .where(Invoice.id.in_(list(src)), Invoice.po_id.is_not(None)))).all())
-    pairs += list((await db.execute(
-        select(InvoicePoAllocation.invoice_id, InvoicePoAllocation.po_id)
-        .where(InvoicePoAllocation.invoice_id.in_(list(src))))).all())
-    if not pairs:
-        return {}
-    code = dict((await db.execute(
-        select(PurchaseOrder.id, PurchaseOrder.budget_code)
-        .where(PurchaseOrder.id.in_({po for _, po in pairs})))).all())
-    by_ap: dict[uuid.UUID, set[str]] = {}
-    for inv_id, po_id in pairs:
-        c = (code.get(po_id) or "").strip()
-        if c:
-            by_ap.setdefault(src[inv_id], set()).add(c)
+        return {ap: ", ".join(sorted(cs)) for ap, cs in by_ap.items()}
+    invs = list((await db.execute(
+        select(Invoice.id, Invoice.match_route, Invoice.agreement_id)
+        .where(Invoice.id.in_(list(src))))).all())
+    po_side = [i for i, route, _ in invs if (route or "po") not in ("freight", "direct", "agreement")]
+    for i, route, _ in invs:
+        if route == "freight":
+            put(src[i], FREIGHT_REVEXP)
+    for i, route, _ in invs:
+        if route == "direct":
+            pa = (await db.execute(select(PaymentApplication.budget_account_code).where(
+                PaymentApplication.invoice_ids.contains([str(i)]),
+                PaymentApplication.status != "cancelled").limit(1))).scalars().first()
+            put(src[i], pa)
+    agr_of = {i: a for i, route, a in invs if route == "agreement" and a}
+    if agr_of:
+        code = dict((await db.execute(
+            select(PurchaseAgreement.id, PurchaseAgreement.budget_code)
+            .where(PurchaseAgreement.id.in_(set(agr_of.values()))))).all())
+        for i, a in agr_of.items():
+            put(src[i], code.get(a))
+
+    if po_side:
+        pairs = list((await db.execute(
+            select(Invoice.id, Invoice.po_id)
+            .where(Invoice.id.in_(po_side), Invoice.po_id.is_not(None)))).all())
+        pairs += list((await db.execute(
+            select(InvoicePoAllocation.invoice_id, InvoicePoAllocation.po_id)
+            .where(InvoicePoAllocation.invoice_id.in_(po_side)))).all())
+        if pairs:
+            code = dict((await db.execute(
+                select(PurchaseOrder.id, PurchaseOrder.budget_code)
+                .where(PurchaseOrder.id.in_({po for _, po in pairs})))).all())
+            for inv_id, po_id in pairs:
+                put(src[inv_id], code.get(po_id))
     return {ap: ", ".join(sorted(cs)) for ap, cs in by_ap.items()}
 
 

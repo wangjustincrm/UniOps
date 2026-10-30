@@ -343,7 +343,7 @@ export default function AccountsPayablePage() {
                     <SortTh label="Due" sortKey="due_date" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
                     <SortTh label="Total" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-32" />
                     <SortTh label="Outstanding" sortKey="outstanding" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-32" />
-                    <th className="px-3 py-2 w-28 whitespace-nowrap" title="Budget account code of the invoice's PO">GL Code</th>
+                    <th className="px-3 py-2 w-28 whitespace-nowrap" title="Budget account code — from the PO; for courier / Direct / agreement invoices, the one the NC push uses">GL Code</th>
                     <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-3 py-2 w-28" />
                     <SortTh label="NC AP Doc" sortKey="nc_bill_no" sort={sort} onSort={onSort} className="px-3 py-2 w-48" />
                   </tr>
