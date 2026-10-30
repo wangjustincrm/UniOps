@@ -2,8 +2,7 @@
 effective-date listing, rate-version lookup.
 
 Mirrors test_uom.py: exercises the crud layer via db_session. Write authorization
-(system_admin | finance_manager | ap_clerk) is enforced by the same require_roles
-dependency proven in test_uom / test_auth_roles, not re-tested here.
+(System Admin only, ISS-0164) is tested in test_tax_codes_admin_only.py.
 """
 from datetime import date
 from decimal import Decimal
