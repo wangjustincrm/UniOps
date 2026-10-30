@@ -491,12 +491,13 @@ export default function PaDetailPage() {
   // PA it is created as a draft and submitted from here (no PO edit flow).
   const isDirect = pa.source === 'direct'
   const canSubmitFreight = (isFreight || isDirect) && (['draft', 'returned'] as PaStatus[]).includes(pa.status)
+  // A refusal (e.g. no Department Manager to route to) is shown in the header
+  // with the other header actions' errors, not in a browser pop-up
+  // (ISS-0166 follow-up).
   const handleSubmitFreight = () => {
-    if (paAction.isPending) return
-    paAction.mutate(
-      { action: 'submit' },
-      { onError: (e) => alert(e instanceof Error ? e.message : 'Could not submit the PA') },
-    )
+    if (paHeaderAction.isPending) return
+    paHeaderAction.reset()
+    paHeaderAction.mutate({ action: 'submit' })
   }
 
   // Approval gating is driven solely by the approval engine's task routing — no
@@ -638,9 +639,9 @@ export default function PaDetailPage() {
             </Button>
           )}
           {canSubmitFreight && (
-            <Button onClick={handleSubmitFreight} disabled={paAction.isPending} className="gap-2">
+            <Button onClick={handleSubmitFreight} disabled={paHeaderAction.isPending} className="gap-2">
               <CheckCircle2 className="h-4 w-4" />
-              {paAction.isPending ? 'Submitting…' : 'Submit for Approval'}
+              {paHeaderAction.isPending ? 'Submitting…' : 'Submit for Approval'}
             </Button>
           )}
           {canRecall && (

@@ -30,6 +30,8 @@ export function DirectPaEditForm({ pa }: { pa: ApiPa }) {
   const [costCenterId, setCostCenterId] = useState<string | undefined>(pa.cost_center_id ?? undefined)
   const [budgetCode, setBudgetCode] = useState(pa.budget_account_code ?? '')
   const [submitting, setSubmitting] = useState(false)
+  // A refused submit is shown next to the buttons, not in a pop-up (ISS-0166).
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const busy = updatePa.isPending || submitting
   const complete = !!title.trim() && !!reason.trim() && !!departmentId && !!costCenterId && !!budgetCode
 
@@ -51,10 +53,11 @@ export function DirectPaEditForm({ pa }: { pa: ApiPa }) {
       } })
       if (andSubmit) {
         setSubmitting(true)
+        setSubmitError(null)
         try {
           await paService.action(pa.id, { action: 'submit' })
         } catch (e) {
-          alert(e instanceof Error ? e.message : 'Could not submit the PA')
+          setSubmitError(e instanceof Error ? e.message : 'Could not submit the PA')
           return
         } finally {
           setSubmitting(false)
@@ -129,6 +132,11 @@ export function DirectPaEditForm({ pa }: { pa: ApiPa }) {
           {submitting ? 'Submitting…' : 'Save & Submit'}
         </Button>
       </div>
+      {submitError && (
+        <p role="alert" className="text-right text-sm text-danger-600">
+          Saved as a draft but not submitted: {submitError}
+        </p>
+      )}
     </div>
   )
 }

@@ -257,7 +257,9 @@ export default function AgreementDetailPage() {
   const { data: config } = useConfig()
   const { data: deptData } = useDepartments()
   const departments = deptData?.items ?? []
-  const agreementAction = useAgreementAction(id ?? '')
+  // Submit / Cancel refusals are shown in the banner below, not in a browser
+  // pop-up (ISS-0090 follow-up: the draft page's Submit only alerted).
+  const agreementAction = useAgreementAction(id ?? '', { alertOnError: false })
   // The approval dialog and Recall show the server's refusal on the page
   // instead of in an alert().
   const agreementDecision = useAgreementAction(id ?? '', { alertOnError: false })
@@ -510,7 +512,7 @@ export default function AgreementDetailPage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => agreementAction.mutate({ action: 'submit' })}
+                  onClick={() => { agreementAction.reset(); agreementAction.mutate({ action: 'submit' }) }}
                   disabled={agreementAction.isPending || missingOwner}
                   title={missingOwner ? 'Set an Owner on this agreement before submitting it' : undefined}
                 >
@@ -547,7 +549,7 @@ export default function AgreementDetailPage() {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => agreementAction.mutate({ action: 'cancel' })}
+                onClick={() => { agreementAction.reset(); agreementAction.mutate({ action: 'cancel' }) }}
                 disabled={agreementAction.isPending}
               >
                 <XCircle className="h-3.5 w-3.5" />
@@ -577,9 +579,11 @@ export default function AgreementDetailPage() {
         </div>
       </div>
 
-      {createSubmitError && agreement.status === 'draft' && (
+      {(agreementAction.isError || (createSubmitError && agreement.status === 'draft')) && (
         <p role="alert" className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
-          {createSubmitError}
+          {agreementAction.isError
+            ? (agreementAction.error instanceof Error ? agreementAction.error.message : 'The agreement action failed')
+            : createSubmitError}
         </p>
       )}
 
