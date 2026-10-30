@@ -1084,3 +1084,13 @@ def test_the_budget_panel_is_on_new_and_edit_pr():
         src = _src(f"epms/src/pages/pr/{page}")
         assert "<BudgetBalanceWidget" in src, page
         assert "thisAmount={estimatedAmount}" in src, page
+
+
+def test_new_po_links_a_pr_through_the_create_po_path():
+    """linking_a_po_to_a_pr (ISS-0087): New PO's Linked PR offers approved PRs
+    without a PO and re-opens the form as /po/new?prId=, the Create PO path."""
+    page = _src("epms/src/pages/po/PoCreatePage.tsx")
+    assert "usePrs({ status: 'approved', has_po: false })" in page
+    assert "navigate(e.target.value ? `/po/new?prId=${e.target.value}` : '/po/new')" in page
+    assert "Create PO" in _src("epms/src/pages/pr/PrDetailPage.tsx")
+    assert "pr.status === 'approved' && !pr.po_id" in _src("epms/src/pages/pr/PrDetailPage.tsx")

@@ -45,6 +45,8 @@ async def list_prs(
     department_id: uuid.UUID | None = Query(default=None),
     is_prepaid: bool | None = Query(default=None),
     created_by: uuid.UUID | None = Query(default=None),
+    # false = only PRs no PO has been raised from yet (New PO's Linked PR list).
+    has_po: bool | None = Query(default=None),
     mine: bool = False,
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
@@ -68,6 +70,7 @@ async def list_prs(
         department_id=department_id,
         is_prepaid=is_prepaid,
         created_by=created_by,   # narrows WITHIN the enforced scope — safe
+        has_po=has_po,
         pr_ids_subq=scope["pr_subq"],
         search=search,
         page=page,

@@ -1,7 +1,7 @@
 area: po
 label: Purchase orders
 covers: >
-  Purchase order numbers, editing a PO (raised in EPMS or from NC), Incoterms, placing the order, closing, PO sign-off, and whether a raw-material PO's freight / customs invoices are in.
+  Purchase order numbers, linking a PO to a PR, editing a PO (raised in EPMS or from NC), Incoterms, placing the order, closing, PO sign-off, and whether a raw-material PO's freight / customs invoices are in.
 rules:
   - id: po_numbering
     asked_as:
@@ -177,3 +177,22 @@ rules:
       - "tests/test_po_fee.py::test_raw_material_po_cannot_be_saved_without_incoterms"
       - "tests/test_po_fee.py::test_milk_orders_do_not_require_incoterms"
       - "tests/test_po_fee.py::test_config_serves_the_defaults_and_refuses_removing_a_code"
+  - id: linking_a_po_to_a_pr
+    also_in: [pr]
+    asked_as:
+      - 新建 PO 时怎么关联请购单？
+      - how do I link a PO to a PR
+      - can one PR have two POs
+    answer: >
+      A PO can be linked to one approved PR, and a PR to one PO. Either press
+      Create PO on the approved PR, or pick it in Linked PR on Purchase Orders
+      → New PO, which lists the approved PRs you can see that no PO has been
+      raised from yet. Both pre-fill the PO from the PR — title, vendor, line
+      items, budget code, procurement type, currency, required-by date,
+      delivery address and the prepayment flag — and everything stays
+      editable. Linked PR is optional: choose None for a PO without a PR.
+    enforced_in: "epms/src/pages/po/PoCreatePage.tsx (Linked PR select → /po/new?prId=, pre-fill effect on prId); epms-api app/api/v1/pr.py list_prs has_po; app/crud/po.py create (pr.po_id / po_number set on create)"
+    provenance: pinned
+    test:
+      - "tests/test_pr_has_po_filter.py::test_has_po_false_lists_only_prs_without_a_po"
+      - "tests/test_rule_registry.py::test_new_po_links_a_pr_through_the_create_po_path"
