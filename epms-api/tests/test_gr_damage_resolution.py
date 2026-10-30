@@ -96,25 +96,3 @@ async def test_resolve_damage_refused_on_a_clean_gr(admin_client, test_engine):
     r = await admin_client.post(f"{GR_URL}/{gr['id']}/action", json={
         "action": "resolve_damage", "damage_resolution": "return", "damage_resolution_ref": "RMA-2"})
     assert r.status_code == 409, r.text
-
-
-async def test_replacement_and_other_close_the_task(admin_client, test_engine):
-    """Follow-up to ISS-0099: a replacement (reference optional) or "other"
-    (e.g. minor damage, no claim — note required) also settles it."""
-    gr = await _damaged_gr(admin_client, test_engine, "VND-DMG-05")
-    url = f"{GR_URL}/{gr['id']}/action"
-    r = await admin_client.post(url, json={"action": "resolve_damage", "damage_resolution": "replacement"})
-    assert r.status_code == 200, r.text
-    assert r.json()["damage_resolution"] == "replacement" and r.json()["damage_resolution_ref"] is None
-    assert (await _damage_tasks(test_engine, gr["id"]))[0].is_completed is True
-
-    gr = await _damaged_gr(admin_client, test_engine, "VND-DMG-06")
-    url = f"{GR_URL}/{gr['id']}/action"
-    r = await admin_client.post(url, json={"action": "resolve_damage", "damage_resolution": "other"})
-    assert r.status_code == 409, r.text          # "other" needs a note
-    r = await admin_client.post(url, json={
-        "action": "resolve_damage", "damage_resolution": "other",
-        "damage_resolution_note": "Scuffed box only; goods fine, no claim"})
-    assert r.status_code == 200, r.text
-    assert r.json()["damage_resolution_note"] == "Scuffed box only; goods fine, no claim"
-    assert (await _damage_tasks(test_engine, gr["id"]))[0].is_completed is True

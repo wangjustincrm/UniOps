@@ -21,9 +21,7 @@ from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.po import PoLineItem, PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
-from app.schemas.gr import (
-    DAMAGE_RESOLUTIONS, DAMAGE_RESOLUTIONS_NEEDING_REF, GrCreate, GrActionRequest, is_physical,
-)
+from app.schemas.gr import DAMAGE_RESOLUTIONS, GrCreate, GrActionRequest, is_physical
 from app.services.pdf_gr import generate_gr_pdf
 
 logger = logging.getLogger(__name__)
@@ -782,13 +780,11 @@ async def _create_damage_report_task(db: AsyncSession, gr: GoodsReceipt, damaged
 async def _resolve_damage(
     db: AsyncSession, gr: GoodsReceipt, req: GrActionRequest, actor_id: uuid.UUID,
 ) -> None:
-    """Record what was arranged with the vendor and close the gr_damage_report
-    task (ISS-0099: the task closes on this, not on Collect).
+    """Record the return or credit arranged with the vendor and close the
+    gr_damage_report task (ISS-0099: the task closes on this, not on Collect).
 
     EPMS has no return document and a vendor credit is not tied to one GR, so
-    what is recorded is the arrangement and its reference: return / credit need
-    the vendor's RMA / credit note number, a replacement may carry one, and
-    "other" (e.g. minor damage, no claim) needs a note saying why.
+    what is recorded is the arrangement and the vendor's reference for it.
     """
     if gr.status == "cancelled":
         raise ValueError("Cannot record a vendor resolution on a cancelled GR")
@@ -798,15 +794,12 @@ async def _resolve_damage(
         raise ValueError("A vendor resolution is already recorded on this GR")
     if req.damage_resolution not in DAMAGE_RESOLUTIONS:
         raise ValueError(f"damage_resolution must be one of {', '.join(DAMAGE_RESOLUTIONS)}")
-    ref = (req.damage_resolution_ref or "").strip() or None
-    note = (req.damage_resolution_note or "").strip() or None
-    if req.damage_resolution in DAMAGE_RESOLUTIONS_NEEDING_REF and ref is None:
+    ref = (req.damage_resolution_ref or "").strip()
+    if not ref:
         raise ValueError("Enter the return or credit note reference")
-    if req.damage_resolution == "other" and note is None:
-        raise ValueError("Explain in the note why no return, credit or replacement is needed")
     gr.damage_resolution = req.damage_resolution
     gr.damage_resolution_ref = ref
-    gr.damage_resolution_note = note
+    gr.damage_resolution_note = (req.damage_resolution_note or "").strip() or None
     gr.damage_resolved_at = datetime.now(timezone.utc)
     gr.damage_resolved_by = await _actor_name(db, actor_id)
     tasks = (await db.execute(select(Task).where(
