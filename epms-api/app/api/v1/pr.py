@@ -242,7 +242,7 @@ async def _generate_pr_pdf_background(pr_id: uuid.UUID, pr_number: str, token: s
 
             from app.crud.signatories import approval_signatories
             requester_name, approvals = await approval_signatories(
-                fresh_db, "pr", pr_id, pr_row.created_by
+                fresh_db, "pr", pr_id, pr_row.created_by, token=token
             )
             owner_name = await _owner_display_name(fresh_db, pr_row, requester_name)
 

@@ -989,7 +989,7 @@ async def pa_action(
         company_name = cfg.name if cfg else "EPMS"
         from app.crud.signatories import approval_signatories
         requester_name, approvals = await approval_signatories(
-            db, "pa", pa_id, pa.created_by
+            db, "pa", pa_id, pa.created_by, token=token
         )
         if getattr(pa, "source", None) == "freight":
             from app.crud.freight import cost_allocations as _cost_allocations
