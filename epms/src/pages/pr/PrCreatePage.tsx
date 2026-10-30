@@ -538,12 +538,16 @@ export default function PrCreatePage() {
     e.target.value = ''
   }
 
+  // Applied once. Left set, it re-selected the copied vendor every time the
+  // field was emptied — Backspace and × could never clear it (ISS-0151). The
+  // user editing the field ends it too, even before the vendor was found.
   useEffect(() => {
     if (!copyVendorId || selectedVendor) return
     const match = vendorsData?.items.find((v) => v.id === copyVendorId)
     if (match) {
       setSelectedVendor(match)
       setVendorQuery('')
+      setCopyVendorId(null)
     }
   }, [copyVendorId, vendorsData, selectedVendor])
 
@@ -640,13 +644,13 @@ export default function PrCreatePage() {
                           placeholder="Search vendor by name or POID…"
                           value={selectedVendor ? selectedVendor.name : vendorQuery}
                           onFocus={() => { setVendorOpen(true); if (selectedVendor) setVendorQuery('') }}
-                          onChange={(e) => { setVendorQuery(e.target.value); setSelectedVendor(null); setVendorOpen(true) }}
+                          onChange={(e) => { setVendorQuery(e.target.value); setSelectedVendor(null); setCopyVendorId(null); setVendorOpen(true) }}
                           className={`h-10 w-full rounded-md border bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 ${vendorError && !selectedVendor ? 'border-danger-500' : 'border-neutral-300'}`}
                         />
                         {selectedVendor && (
                           <button
                             type="button"
-                            onClick={() => { setSelectedVendor(null); setVendorQuery('') }}
+                            onClick={() => { setSelectedVendor(null); setVendorQuery(''); setCopyVendorId(null) }}
                             className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
                           >
                             <X className="h-3.5 w-3.5" />

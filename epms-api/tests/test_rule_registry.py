@@ -478,7 +478,12 @@ def test_pr_list_filters():
 
 def test_a_pr_is_copied_from_the_list():
     assert "/pr/new?copyFrom=" in _src("epms/src/pages/pr/PrListPage.tsx")
-    assert "Copy of " in _src("epms/src/pages/pr/PrCreatePage.tsx")
+    page = _src("epms/src/pages/pr/PrCreatePage.tsx")
+    assert "Copy of " in page
+    # The copied vendor is a starting value, applied once: it must not come
+    # back each time the user empties the field (ISS-0151).
+    effect = page.split("const match = vendorsData?.items.find((v) => v.id === copyVendorId)")[1][:200]
+    assert "setCopyVendorId(null)" in effect
 
 
 def test_the_pr_pdf_is_made_on_approval():
