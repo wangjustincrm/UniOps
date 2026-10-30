@@ -615,6 +615,9 @@ async def action(
         if po.status != "approved":
             raise ValueError(f"Cannot issue PO in status '{po.status}'")
         po.status = "issued"
+        # Same catch-up as place_order (ISS-0108).
+        from app.crud.gr import sync_po_receipt_status
+        await sync_po_receipt_status(db, po.id)
 
     elif act == "cancel":
         if po.status not in ("draft", "returned", "submitted"):
@@ -761,6 +764,12 @@ async def place_order(
         po.place_order_email_to = req.to or vendor_email
     elif req.method == "online":
         po.place_order_reference = req.reference
+
+    # A service PO may be confirmed while still approved (GR-S-008); its
+    # receipt status could not move then (PT-008). Catch up now, or a fully
+    # received PO sits at issued forever (ISS-0108).
+    from app.crud.gr import sync_po_receipt_status
+    await sync_po_receipt_status(db, po.id)
 
     await _complete_tasks(db, "po", po.id)
 

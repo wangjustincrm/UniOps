@@ -240,3 +240,42 @@ async def test_gr_pdf_prints_collected_by(test_engine):
         text = _pdf_text(pdf_bytes)
         assert b"Collected By" in text
         assert b"Colleen Collector" in text
+
+
+@pytest.mark.asyncio
+async def test_physical_gr_collect_regenerates_the_pdf_with_collected_by(test_engine):
+    """ISS-0081 / GR-P-007: Collect regenerates the acknowledge-time PDF, so the
+    one auto-PDF carries Collected By without pressing Regenerate PDF."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        requester = await _user(db, "Rita Receiver")
+        vendor = await _vendor(db)
+        pr = await _pr(db, requester.id)
+        po = await _po(db, vendor, requester.id, gr_type_int=2, pr_id=pr.id, pr_number=pr.number)
+        gr = _gr(
+            gr_type="physical", procurement_type=2, po=po, vendor=vendor,
+            created_by=requester.id, status="pending_ack",
+            pr_id=pr.id, pr_number=pr.number,
+        )
+        db.add(gr)
+        await db.commit()
+        await db.refresh(gr)
+
+        gr = await gr_action(db, gr, GrActionRequest(
+            action="acknowledge", acknowledged_by="Rita Receiver"), actor_id=requester.id, token=None)
+        await db.commit()
+        await db.refresh(gr)
+        assert gr.status == "collection_pending"
+        ack_pdf = (await _attachments(db, gr.id, f"{gr.number}.pdf"))[0].file_data
+        assert b"Collected By" not in _pdf_text(ack_pdf)
+
+        gr = await gr_action(db, gr, GrActionRequest(
+            action="collect", collected_by="Cole Collector"), actor_id=requester.id, token=None)
+        await db.commit()
+
+        assert gr.status == "collected"
+        atts = await _attachments(db, gr.id, f"{gr.number}.pdf")
+        assert len(atts) == 1
+        text = _pdf_text(atts[0].file_data)
+        assert b"Collected By" in text
+        assert b"Cole Collector" in text

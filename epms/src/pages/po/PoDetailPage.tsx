@@ -629,11 +629,14 @@ export default function PoDetailPage() {
   const canConfirmService =
     (!!po?.pr_owner_id && po.pr_owner_id === user?.id) ||
     (!!po?.pr_requester_id && po.pr_requester_id === user?.id)
-  const canCreateGr =
+  // A service PO confirmed while still approved keeps that status (PT-008),
+  // so the status alone cannot tell that nothing is left to confirm (ISS-0108).
+  const hasOpenQty = (po?.line_items ?? []).some((li) => Number(li.received_qty ?? 0) < Number(li.qty))
+  const canCreateGr = (!isServicePo || hasOpenQty) && (
     (['warehouse_staff', 'procurement_officer', 'procurement_manager', 'system_admin'].includes(user?.role ?? '') &&
       ['issued', 'partially_received'].includes(po?.status ?? '')) ||
     (isServicePo && canConfirmService &&
-      ['approved', 'issued', 'partially_received'].includes(po?.status ?? ''))
+      ['approved', 'issued', 'partially_received'].includes(po?.status ?? '')))
 
   const handleDownloadPdf = () => {
     if (!po || !config) return

@@ -188,3 +188,23 @@ rules:
       - "tests/test_gr_receiving_report.py::test_nc_mirrored_orders_are_excluded"
       - "tests/test_gr_receiving_report.py::test_service_confirmations_are_excluded"
       - "tests/test_gr_receiving_report.py::test_cancelled_receipts_are_excluded"
+  - id: service_confirmation_outcomes
+    asked_as:
+      - 服务没做好怎么驳回？
+      - how do I reject a service that was not done
+      - does Has Issues notify procurement
+    answer: >
+      On Confirm Service Completion the owner chooses Satisfactory, Has Issues
+      or Reject Service. Satisfactory and Has Issues both confirm the GR and
+      post the received quantities; with Has Issues the issue details are
+      added to the GR's acceptance notes (shown on the GR) and nobody is
+      notified. Reject Service is offered only once the GR has been
+      acknowledged (status Collection Pending): it marks the GR Rejected,
+      closes its tasks, counts nothing as received, and does not notify the
+      Procurement Officer. The GR page has no separate Acknowledge button for
+      service GRs, so a service GR recorded in EPMS normally goes straight
+      from Pending Acknowledgement to Confirmed and cannot be rejected.
+    enforced_in: "epms-api app/crud/gr.py action reject (service GR in collection_pending only) / confirm; epms ServiceGrConfirmPage canReject, GrDetailPage canAcknowledge (physical only)"
+    provenance: pinned
+    test:
+      - "tests/test_gr.py::test_service_gr_reject_only_after_acknowledge"

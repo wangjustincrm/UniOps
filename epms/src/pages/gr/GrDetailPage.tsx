@@ -368,6 +368,10 @@ export default function GrDetailPage() {
                     <MetaRow label="Storage Location" value={gr.storage_location} />
                   )}
                   {gr.notes && <MetaRow label="Notes" value={gr.notes} />}
+                  {/* Where a service GR's Has Issues details are kept (ISS-0179) */}
+                  {gr.collection_notes && (
+                    <MetaRow label={gr.gr_type === 'service' ? 'Acceptance Notes' : 'Collection Notes'} value={gr.collection_notes} />
+                  )}
                   {gr.over_receipt_reason && <MetaRow label="Over-receipt Reason" value={gr.over_receipt_reason} />}
                 </div>
               </div>
