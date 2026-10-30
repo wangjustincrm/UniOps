@@ -57,7 +57,7 @@ interface NcDoc {
   hyphen_match: boolean
   nc_invoice_no: string | null
 }
-interface PushResult { ap_id: string; ap_number: string; ok: boolean; message: string; nc_bill_no: string | null }
+interface PushResult { ap_id: string; ap_number: string; ok: boolean; message: string; nc_bill_no: string | null; warning?: string | null }
 interface ApListResp {
   total: number
   items: ApInvoice[]
@@ -161,7 +161,7 @@ export default function AccountsPayablePage() {
   const qc = useQueryClient()
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [pushing, setPushing] = useState(false)
-  const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string; lines?: string[] } | null>(null)
+  const [banner, setBanner] = useState<{ kind: 'ok' | 'warn' | 'err'; text: string; lines?: string[] } | null>(null)
 
   const resetPage = () => { setPage(0); setSelected(new Set()) }
   // Server-sorted: the API pages this list, so it must also order it.
@@ -186,10 +186,13 @@ export default function AccountsPayablePage() {
       const r = await financeApi.post<{ results: PushResult[] }>('/ap/nc-push', { ap_ids: picked.map((i) => i.id) })
       const ok = r.results.filter((x) => x.ok)
       const bad = r.results.filter((x) => !x.ok)
+      const warned = ok.filter((x) => x.warning)
       setBanner({
-        kind: bad.length ? 'err' : 'ok',
-        text: `${ok.length} pushed to NC${bad.length ? `, ${bad.length} not pushed` : ''}.`,
-        lines: [...ok.map((x) => `${x.ap_number}: ${x.message}`), ...bad.map((x) => `${x.ap_number}: ${x.message}`)],
+        kind: bad.length ? 'err' : warned.length ? 'warn' : 'ok',
+        text: `${ok.length} pushed to NC${bad.length ? `, ${bad.length} not pushed` : ''}.`
+          + (warned.length ? ` ${warned.length} need the tax corrected in NC.` : ''),
+        lines: [...ok.map((x) => `${x.ap_number}: ${x.message}${x.warning ? ` — ${x.warning}` : ''}`),
+                ...bad.map((x) => `${x.ap_number}: ${x.message}`)],
       })
       setSelected(new Set())
       qc.invalidateQueries({ queryKey: ['ap-invoices'] })
@@ -318,7 +321,8 @@ export default function AccountsPayablePage() {
 
             {banner && (
               <div className={cn('mt-3 rounded-md px-3 py-2 text-sm',
-                banner.kind === 'err' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700')}>
+                banner.kind === 'err' ? 'bg-red-50 text-red-700'
+                  : banner.kind === 'warn' ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-700')}>
                 <div>{banner.text}</div>
                 {banner.lines && banner.lines.length > 0 && (
                   <ul className="mt-1 list-disc pl-5 text-xs">

@@ -329,6 +329,35 @@ async def test_plan_mixed_rate_without_tax_lines_infers_the_taxed_part(db_sessio
     assert plan.total == ap.total_amount
 
 
+async def test_plan_without_tax_lines_unfit_rate_goes_as_hst_with_a_warning(db_session):
+    """Ecolab-style 14.54% with no tax line (user, 2026-10-30): not split at 15%;
+    pushed as HST at its own rate, and the clerk is told to fix the tax in NC."""
+    vid = _vendor()
+    ap, *_ = await _ap(db_session, vendor_id=vid, amount="2346.54", tax="341.29", tax_lines=())
+    plan = await svc.plan_bill(db_session, ap, today=date(2026, 10, 27))
+    got = [(str(r.notax), str(r.tax), r.nc_tax_code, str(r.tax_rate)) for r in plan.rows]
+    assert got == [("2346.54", "341.29", "001", "14.54")]
+    [w] = plan.warnings
+    assert "14.54%" in w and "correct it on the NC bill" in w
+
+
+async def test_push_unfit_tax_reports_the_warning(db_session):
+    vid = _vendor()
+    ap, *_ = await _ap(db_session, vendor_id=vid, amount="2346.54", tax="341.29", tax_lines=())
+    uid = await _pusher(db_session)
+    [out] = await svc.push_invoices(db_session, [ap.id], uid, lookup=FakeLookup(), client=FakeClient())
+    assert out.ok and "correct it on the NC bill" in (out.warning or "")
+    [log] = (await db_session.execute(select(NcPushLog))).scalars().all()
+    assert "correct it on the NC bill" in log.message
+
+
+async def test_plan_with_a_fitting_tax_has_no_warning(db_session):
+    vid = _vendor()
+    ap, *_ = await _ap(db_session, vendor_id=vid, amount="197.50", tax="0.98", tax_lines=())
+    plan = await svc.plan_bill(db_session, ap, today=date(2026, 10, 27))
+    assert plan.warnings == []
+
+
 async def test_plan_without_tax_lines_at_a_full_rate_stays_one_row(db_session):
     vid = _vendor()
     ap, *_ = await _ap(db_session, vendor_id=vid, amount="100.00", tax="13.00", tax_lines=())

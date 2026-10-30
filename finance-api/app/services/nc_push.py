@@ -153,25 +153,28 @@ def nc_tax(uniops_code: str | None, base: Decimal, tax: Decimal) -> tuple[str, D
     raise PushRefused(f"Tax {tax} on {base} ({rate}%) has no tax line and no NC tax code fits")
 
 
-# Rates tried, in order, when the taxed part of an invoice must be inferred.
-# HST 13 first: almost every vendor is in Ontario. 5% last — any tax in cents
-# reproduces at 5%, so it would win every time if tried earlier.
-_INFER_RATES = (Decimal("13"), Decimal("15"), Decimal("14"), Decimal("5"))
+# Statutory rates an invoice's overall rate is checked against before its taxed
+# part is inferred.
+_FULL_RATES = (Decimal("13"), Decimal("15"), Decimal("14"), Decimal("5"))
+# The taxed part is inferred at Ontario HST only. Production 2026-10-30: every
+# 13% inference was a clean amount (Culligan 7.54, hotel room 1200.00, fee
+# 5000.00); a 15% one came from rates of 14.5-14.8% — QST or a keying slip,
+# not a partly taxed invoice — so other rates stay refused for a person to fix.
+_INFER_RATE = Decimal("13")
 
 
 def _fits_nominal(base: Decimal, tax: Decimal) -> bool:
     if not base:
         return False
     rate = tax / base * 100
-    return any(abs(rate - t) <= Decimal("0.15") for t in _INFER_RATES)
+    return any(abs(rate - t) <= Decimal("0.15") for t in _FULL_RATES)
 
 
 def _taxed_part(amount: Decimal, tax: Decimal) -> Decimal | None:
-    """The part of `amount` that carries `tax` at a statutory rate, or None."""
-    for r in _INFER_RATES:
-        part = (tax * 100 / r).quantize(_CENT, ROUND_HALF_UP)
-        if _ZERO < part < amount and (part * r / 100).quantize(_CENT, ROUND_HALF_UP) == tax:
-            return part
+    """The part of `amount` that carries `tax` at 13% to the cent, or None."""
+    part = (tax * 100 / _INFER_RATE).quantize(_CENT, ROUND_HALF_UP)
+    if _ZERO < part < amount and (part * _INFER_RATE / 100).quantize(_CENT, ROUND_HALF_UP) == tax:
+        return part
     return None
 
 
@@ -230,6 +233,8 @@ class BillPlan:
     invoice_no: str
     summary: str
     rows: list[BodyRow] = field(default_factory=list)
+    # Pushed anyway, but the clerk must fix something in NC (worded for them).
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def total(self) -> Decimal:
@@ -414,6 +419,7 @@ async def plan_bill(db: AsyncSession, ap: ApInvoice, ref: _Ref | None = None,
     tax_lines = (await db.execute(select(ApInvoiceTaxLine).where(
         ApInvoiceTaxLine.invoice_id == ap.id).order_by(ApInvoiceTaxLine.line_no))).scalars().all()
     rows: list[BodyRow] = []
+    warnings: list[str] = []
     if freight is not None:
         line_code = next((t.tax_code for t in tax_lines if t.tax_code), None)
         for _, (d, amt, tx) in sorted(freight.items(), key=lambda kv: -kv[1][1]):
@@ -432,12 +438,22 @@ async def plan_bill(db: AsyncSession, ap: ApInvoice, ref: _Ref | None = None,
             merged[None] = [ap.amount, ap.tax_amount]
             # Mixed-rate invoice keyed without tax lines (Culligan 64069TP: 0.98 on
             # 197.50 = 0.5%): the tax belongs to part of the amount only. Infer
-            # that part from the first statutory rate that gives the tax back to
-            # the cent; the rest becomes the zero-rated row below (user, 2026-10-30).
+            # that part at 13% when it gives the tax back to the cent; the rest
+            # becomes the zero-rated row below (user, 2026-10-30).
+            # Neither fits (14.5%, 26%, 1.6% ...): push it as HST at the
+            # invoice's own rate — NC keeps the explicit amounts — and tell the
+            # clerk to correct the tax in NC (user, 2026-10-30).
             if ap.tax_amount > _ZERO and not _fits_nominal(ap.amount, ap.tax_amount):
                 part = _taxed_part(ap.amount, ap.tax_amount)
                 if part is not None:
                     merged[None] = [part, ap.tax_amount]
+                else:
+                    merged = {"HST_ON": [ap.amount, ap.tax_amount]}
+                    rate = (ap.tax_amount / ap.amount * 100).quantize(_CENT, ROUND_HALF_UP)
+                    warnings.append(
+                        f"Tax {money(ap.tax_amount)} on {money(ap.amount)} ({rate}%) fits no tax "
+                        f"rate and has no tax line — sent as HST (001) at {rate}%; "
+                        f"check the tax and correct it on the NC bill")
         # A tax line with tax but no taxable base (11 of 642 in production,
         # 2026-10-27) was keyed with the tax only: its base is the invoice's
         # pre-tax amount less what the other lines cover.
@@ -470,7 +486,7 @@ async def plan_bill(db: AsyncSession, ap: ApInvoice, ref: _Ref | None = None,
                     supplier_code=erp_id, currency=currency, rate=hit.rate,
                     rate_date=hit.effective_date,
                     invoice_no=(ap.vendor_invoice_number or ap.ap_invoice_number).strip(),
-                    summary=summary, rows=rows)
+                    summary=summary, rows=rows, warnings=warnings)
 
 
 # ── NC facts (read-only) ─────────────────────────────────────────────────────
@@ -776,6 +792,7 @@ class PushOutcome:
     ok: bool
     message: str
     nc_bill_no: str | None = None
+    warning: str | None = None
 
 
 async def push_invoices(db: AsyncSession, ap_ids: list[uuid.UUID], user_id: uuid.UUID, *,
@@ -827,6 +844,9 @@ async def push_invoices(db: AsyncSession, ap_ids: list[uuid.UUID], user_id: uuid
         msg = res.message
         if not res.ok and res.code == "-32000" and "审核" in msg:
             msg = "Already approved in NC — change it in NC. " + msg
+        warning = "; ".join(plan.warnings) or None
+        if res.ok and warning:
+            msg = f"{msg or 'OK'} — {warning}"
         db.add(NcPushLog(ap_invoice_id=ap.id, pushed_by=user_id, pushed_at=now,
                          external_id=plan.external_id, ok=res.ok, result_code=res.code,
                          nc_bill_pk=res.bill_pk, nc_bill_no=bill_no, message=msg,
@@ -842,6 +862,6 @@ async def push_invoices(db: AsyncSession, ap_ids: list[uuid.UUID], user_id: uuid
             _record_failure(ap, msg)
         outcomes.append(PushOutcome(ap.id, ap.ap_invoice_number, res.ok,
                                     (f"NC bill {bill_no}" if bill_no else "Pushed") if res.ok else msg,
-                                    bill_no))
+                                    bill_no, warning if res.ok else None))
     await db.flush()
     return outcomes

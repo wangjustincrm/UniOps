@@ -227,7 +227,8 @@ async def nc_push(body: NcPushIn, user: CurrentUser, db: AsyncSession = Depends(
     outcomes = await svc.push_invoices(db, body.ap_ids, uuid.UUID(user["sub"]))
     await db.commit()
     return {"results": [{"ap_id": str(o.ap_id), "ap_number": o.ap_number, "ok": o.ok,
-                         "message": o.message, "nc_bill_no": o.nc_bill_no} for o in outcomes]}
+                         "message": o.message, "nc_bill_no": o.nc_bill_no,
+                         "warning": o.warning} for o in outcomes]}
 
 
 @router.get("/invoices/{invoice_id}/nc-push-log")
