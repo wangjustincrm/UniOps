@@ -16,9 +16,10 @@ Shape copied from ``service_gr_due``:
   the list it would chase);
 - the reminder reuses the existing task (no new task type) with its own
   template, every sweep while the task stays open;
-- the escalation goes once, to the Department Manager of the person being
-  reminded, and only after a reminder was actually sent — ``notification_logs``
-  is both the "sent once" mark and that precondition (no migration).
+- the escalation goes once, to the Department Manager of the requester's
+  department with a copy to the requester (PRD GR-N-003), and only after a
+  reminder was actually sent — ``notification_logs`` is both the "sent once"
+  mark and that precondition (no migration).
 
 Single-instance assumption, like the other sweeps.
 """
@@ -114,20 +115,26 @@ async def _has_been_sent(db: AsyncSession, task_id, template_key: str) -> bool:
 
 
 async def _escalate_to_manager(db: AsyncSession, cfg, due: DueAck) -> bool:
-    """Email the Department Manager of the person who was reminded. Once."""
+    """PRD GR-N-003: email the Department Manager of the requester's
+    department, with a copy to the requester. Once."""
     if await _has_been_sent(db, due.task.id, ESCALATION_TEMPLATE):
         return False
 
+    from app.crud.gr import get_pr_requester_id
     from app.crud.pr import _get_dept_manager_id
     from app.services.email import send_email
 
     holder_id = due.task.assigned_user_id
-    manager_id = await _get_dept_manager_id(db, holder_id, "dept_manager")
-    if manager_id is None or manager_id == holder_id:
+    requester_id = await get_pr_requester_id(db, due.gr.pr_id) or holder_id
+    manager_id = await _get_dept_manager_id(db, requester_id, "dept_manager")
+    if manager_id is None or manager_id == requester_id:
         return False
     manager = await db.get(User, manager_id)
     if manager is None or not manager.is_active or not manager.email:
         return False
+    requester = await db.get(User, requester_id)
+    cc = (requester.email if requester is not None and requester.is_active
+          and requester.email and requester.email != manager.email else None)
     tpl = (cfg.email_templates or {}).get(ESCALATION_TEMPLATE)
     if not tpl:
         return False
@@ -146,7 +153,7 @@ async def _escalate_to_manager(db: AsyncSession, cfg, due: DueAck) -> bool:
     html = _build_email_html(_render(tpl["body"], variables, escape=True))
     await _send_with_retry(
         "email", due.task, manager, ESCALATION_TEMPLATE, db,
-        send_fn=lambda: send_email(manager.email, subject, html, **_smtp_kwargs(cfg)),
+        send_fn=lambda: send_email(manager.email, subject, html, cc=cc, **_smtp_kwargs(cfg)),
         max_retries=3,
     )
     return True

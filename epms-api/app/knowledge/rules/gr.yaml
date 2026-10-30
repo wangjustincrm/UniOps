@@ -150,8 +150,9 @@ rules:
       A goods receipt still waiting for acknowledgement more than {reminder_days}
       day(s) after it was recorded is reminded once a day to the person who has
       to acknowledge it (the PR's owner). Once they have been reminded and it
-      has waited {escalation_days} day(s), their Department Manager gets one
-      escalation email. The days come from EPMS → Admin → GR Notification SLA;
+      has waited {escalation_days} day(s), the Department Manager of the
+      requester's department gets one escalation email, copied to the
+      requester. The days come from EPMS → Admin → GR Notification SLA;
       the reminder is {state} (Portal → Admin → Notification Settings → GR
       Acknowledgement Reminder), running daily at {time} UTC. Collecting the
       goods is not chased — the collection timers on Collection Config are not

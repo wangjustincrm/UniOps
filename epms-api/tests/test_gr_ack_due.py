@@ -34,10 +34,12 @@ def sessions(test_engine, monkeypatch):
 
 @pytest.fixture
 def sent(monkeypatch):
-    out = {"emails": [], "admin": []}
+    out = {"emails": [], "admin": [], "cc": []}
 
     async def _send(to, subject, html, **kw):
         out["emails"].append((to, subject))
+        if kw.get("cc"):
+            out["cc"].append((to, kw["cc"]))
 
     async def _admin(subject, body, db=None):
         out["admin"].append(subject)
@@ -122,7 +124,7 @@ async def test_off_and_dry_run_remind_nobody(sessions, sent, settings):
         _, owner, _ = await _waiting_gr(db, days=5)
     await settings(gr_ack_due_enabled=False)
     await mod.run_gr_ack_due()
-    assert sent == {"emails": [], "admin": []}
+    assert sent == {"emails": [], "admin": [], "cc": []}
 
     await settings(gr_ack_due_enabled=True)          # dry run is the default
     await mod.run_gr_ack_due()
@@ -144,6 +146,8 @@ async def test_reminds_then_escalates_once(sessions, sent, settings):
     to = [t for t, _ in sent["emails"]]
     assert to.count(manager.email) == 1
     assert to.count(owner.email) == 3
+    # PRD GR-N-003: the escalation copies the requester.
+    assert sent["cc"].count((manager.email, owner.email)) == 1
 
 
 async def test_acknowledged_gr_is_not_chased(sessions, sent, settings):
