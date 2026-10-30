@@ -228,7 +228,9 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2">
+      {/* No scrollbar of its own (ISS-0182): Chrome on Windows gives it ~15px,
+          narrowing the menu out of line with the logo above; it still scrolls. */}
+      <nav className="flex-1 overflow-y-auto py-3 px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {NAV_SECTIONS.map((section) => {
           if (!isSectionVisible(section)) return null
           return (

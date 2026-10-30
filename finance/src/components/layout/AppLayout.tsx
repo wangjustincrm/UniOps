@@ -171,7 +171,9 @@ function Sidebar({ mobileOpen, onClose, collapsed, onToggleCollapse }: {
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-2 py-4">
+      {/* No scrollbar of its own (ISS-0182): Chrome on Windows gives it ~15px,
+          narrowing the menu out of line with the logo above; it still scrolls. */}
+      <nav className="flex-1 overflow-y-auto px-2 py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {NAV.map((section) => {
           const items = section.items.filter(isVisible)
           if (items.length === 0) return null
