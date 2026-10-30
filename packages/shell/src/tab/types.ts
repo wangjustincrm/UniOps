@@ -20,6 +20,8 @@ export interface TabMeta {
   closable: boolean
   /** Marked by pages with unsaved changes; guards close + eviction. */
   dirty?: boolean
+  /** From TabSpec.reloadOnQuery: the page is remounted when `path` changes. */
+  reloadOnQuery?: boolean
 }
 
 /** How a route's tab identity (key) is computed. */
@@ -32,6 +34,15 @@ export interface TabSpec {
   paramName?: string
   pinned?: boolean
   closable?: boolean
+  /**
+   * The page initialises itself from its query string — a create page reached
+   * by deep link, e.g. `/po/new?prId=…` or `/gr/new?poId=…`. A static key keeps
+   * one tab for the route, so a link carrying a DIFFERENT query used to focus
+   * the open tab with its old query and old form. With this set, such a link
+   * re-points the open tab at the new path and the page is remounted, so it
+   * initialises from the query it was opened with.
+   */
+  reloadOnQuery?: boolean
 }
 
 export interface RouteDef {
