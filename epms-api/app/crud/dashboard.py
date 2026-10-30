@@ -98,6 +98,67 @@ async def _over_budget_count(
     return 0
 
 
+async def _approver_budget(
+    db: AsyncSession, token: str | None, red_threshold: float,
+) -> tuple[BudgetOverview, int]:
+    """Budget Overview and the over-budget count for the Approver dashboard
+    (BUD-OI-11, ISS-0168), from budget-api /actuals/summary with the caller's
+    own token — budget-api scopes it by the caller's budget visibility
+    (all departments, or their own), the same figures as Finance → Budget
+    Dashboard. Grouped by L1. An account counts as over budget once committed +
+    actual reach the red threshold, or it has spend with no budget at all.
+    Empty (never an error) when budget-api cannot be reached.
+    """
+    from sqlalchemy import text
+
+    from app.services import budget_client
+
+    empty = BudgetOverview(total_budget=_ZERO, total_committed=_ZERO,
+                           total_spent=_ZERO, utilisation_pct=0.0, groups=[])
+    if not token:
+        return empty, 0
+    data = await budget_client.get_actuals_summary(token, _today().year)
+    accounts = (data or {}).get("accounts") or []
+    if not accounts:
+        return empty, 0
+    # budget_l1 is budget-api's table in the same database; looked up only if
+    # present (a missing table would abort this transaction), else codes.
+    l1_names: dict[str, str] = {}
+    if (await db.execute(text("SELECT to_regclass('public.budget_l1')"))).scalar() is not None:
+        l1_names = dict((await db.execute(text("SELECT code, name FROM budget_l1"))).all())
+
+    def _d(v) -> Decimal:
+        return Decimal(str(v or 0))
+
+    sums: dict[str, list[Decimal]] = {}
+    over = 0
+    for a in accounts:
+        budget, committed, spent = _d(a.get("annual_budget")), _d(a.get("committed")), _d(a.get("actual_spent"))
+        used = committed + spent
+        if (budget > 0 and used * 100 >= budget * Decimal(str(red_threshold))) or (budget <= 0 and used > 0):
+            over += 1
+        s = sums.setdefault(a.get("l1_code") or "—", [_ZERO, _ZERO, _ZERO])
+        s[0] += budget
+        s[1] += committed
+        s[2] += spent
+
+    def _pct(budget: Decimal, used: Decimal) -> float:
+        return round(float(used / budget * 100), 1) if budget > 0 else 0.0
+
+    groups = [
+        BudgetGroupRow(l1_code=code, l1_name=l1_names.get(code) or code,
+                       annual_budget=b, committed=c, actual_spent=s,
+                       available=b - c - s, utilisation_pct=_pct(b, c + s))
+        for code, (b, c, s) in sorted(sums.items())
+        if b > 0 or c > 0 or s > 0
+    ]
+    tb = sum((g.annual_budget for g in groups), _ZERO)
+    tc = sum((g.committed for g in groups), _ZERO)
+    ts = sum((g.actual_spent for g in groups), _ZERO)
+    return BudgetOverview(total_budget=tb, total_committed=tc, total_spent=ts,
+                          utilisation_pct=_pct(tb, tc + ts), groups=groups), over
+
+
 # ── Pending approvals (PRs + POs + PAs in submitted/in_review) ───────────────
 
 async def _effective_roles(db: AsyncSession, role: str, user_id: uuid.UUID) -> set[str]:
@@ -449,38 +510,51 @@ async def build_requester(db: AsyncSession, user_id: uuid.UUID) -> DashboardResp
     )
 
 
-async def build_approver(db: AsyncSession, user_id: uuid.UUID, role: str) -> DashboardResponse:
+# Approver roles whose Open POs / Total Committed are their own department's
+# (ISS-0168) — the POs they can open on the PO list. GM, OPM, Director and
+# Supervisor keep the company-wide figures.
+_DEPT_SCOPED_APPROVERS = ("dept_manager", "dept_admin")
+
+
+async def build_approver(
+    db: AsyncSession, user_id: uuid.UUID, role: str,
+    user: dict | None = None, token: str | None = None,
+) -> DashboardResponse:
     # Pending approvals count — filtered to this user's assigned tasks only
     pending_items = await _pending_approvals(db, user_id, role)
     pending_count = len(pending_items)
 
+    open_po_where = [PurchaseOrder.status.notin_(["cancelled", "closed", "draft"])]
+    if role in _DEPT_SCOPED_APPROVERS and user is not None:
+        from app.core.access_scope import build_scope
+        scope = await build_scope(db, user)
+        if scope["po_subq"] is not None:   # None = an unrestricted role is also held
+            open_po_where.append(PurchaseOrder.id.in_(scope["po_subq"]))
+
     # Open POs
     po_open = await db.execute(
-        select(func.count()).select_from(PurchaseOrder).where(
-            PurchaseOrder.status.notin_(["cancelled", "closed", "draft"])
-        )
+        select(func.count()).select_from(PurchaseOrder).where(*open_po_where)
     )
     open_pos = po_open.scalar_one()
 
     # Total committed (active POs)
     committed_result = await db.execute(
-        select(func.coalesce(func.sum(PurchaseOrder.total), 0)).where(
-            PurchaseOrder.status.notin_(["cancelled", "closed", "draft"])
-        )
+        select(func.coalesce(func.sum(PurchaseOrder.total), 0)).where(*open_po_where)
     )
     total_committed = Decimal(str(committed_result.scalar_one()))
 
-    yellow_thresh, red_thresh = await _get_budget_thresholds(db)
-    over_budget = await _over_budget_count(db, red_threshold=red_thresh)
-    budget = await _budget_overview(db, yellow_threshold=yellow_thresh, red_threshold=red_thresh)
+    scope_note = "Your department" if len(open_po_where) > 1 else "Company-wide"
+
+    _yellow, red_thresh = await _get_budget_thresholds(db)
+    budget, over_budget = await _approver_budget(db, token, red_thresh)
 
     return DashboardResponse(
         role="approver",
         kpis=[
             KpiCard(title="Pending Approvals", value=str(pending_count), alert=pending_count > 0),
-            KpiCard(title="Open POs", value=str(open_pos)),
-            KpiCard(title="Total Committed (FY)", value=_fmt(total_committed)),
-            KpiCard(title="Over-Budget Depts", value=str(over_budget), alert=over_budget > 0),
+            KpiCard(title="Open POs", value=str(open_pos), subtitle=scope_note),
+            KpiCard(title="Total Committed (FY)", value=_fmt(total_committed), subtitle=scope_note),
+            KpiCard(title="Over-Budget Accounts", value=str(over_budget), alert=over_budget > 0),
         ],
         pending_approvals=pending_items,
         budget_overview=budget,
@@ -875,7 +949,10 @@ _PRIMARY_WITH_DASHBOARD = frozenset({
 })
 
 
-async def build(db: AsyncSession, role: str, user_id: uuid.UUID) -> DashboardResponse:
+async def build(
+    db: AsyncSession, role: str, user_id: uuid.UUID,
+    user: dict | None = None, token: str | None = None,
+) -> DashboardResponse:
     if role not in _PRIMARY_WITH_DASHBOARD:
         # The primary role has no dashboard of its own (requester, or a custom
         # role). An additional role may still carry one — this is what makes
@@ -890,7 +967,7 @@ async def build(db: AsyncSession, role: str, user_id: uuid.UUID) -> DashboardRes
     # through to build_requester here, so their "Pending Approvals" list was
     # structurally empty (the requester payload has no pending_approvals at all).
     if role in ("dept_manager", "gm", "opm", "director", "supervisor", "dept_admin"):
-        return await build_approver(db, user_id, role)
+        return await build_approver(db, user_id, role, user=user, token=token)
     if role in ("procurement_officer", "procurement_manager"):
         return await build_procurement(db)
     if role == "warehouse_staff":

@@ -332,7 +332,7 @@ async def test_my_dashboard_is_the_dashboard_pages_own_figures(admin_client, mon
 
     called = []
 
-    async def fake_build(db, role, user_id):
+    async def fake_build(db, role, user_id, **kw):
         called.append(role)
         return SimpleNamespace(role=role, users_by_role=[], kpis=[
             SimpleNamespace(title="Pending Approvals", value=4, subtitle=None),
@@ -351,7 +351,7 @@ async def test_my_dashboard_is_the_dashboard_pages_own_figures(admin_client, mon
     # What some cards really are travels with the figures.
     assert {r["id"] for r in payload["rules"]} >= {"tasks_have_no_due_date"}
     # The page and the Assistant read one function.
-    assert "dash_crud.build(db, role, user_id)" in inspect.getsource(dash_api)
+    assert "dash_crud.build(db, role, user_id, user=user, token=token)" in inspect.getsource(dash_api)
 
 
 def test_the_pa_check_uses_create_pas_own_queries():

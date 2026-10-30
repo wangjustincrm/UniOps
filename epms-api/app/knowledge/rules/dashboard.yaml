@@ -28,12 +28,17 @@ rules:
       of the totals (tax included) of every PO that is not cancelled, closed
       or draft — purchase requests are not in it, paid POs still count until
       they are closed, there is no fiscal-year filter despite the label, and
-      amounts in different currencies are added together as if CAD. (2) On
+      amounts in different currencies are added together as if CAD. For a
+      Department Manager or Dept Admin it (and Open POs) counts only the POs
+      of their own department — the ones they can open on the PO list; for
+      GM, OPM, Director and Supervisor it is company-wide (the card says
+      which). (2) On
       the CFO dashboard, Total Committed is not calculated yet and always
       shows 0. (3) On the Budget Dashboard, and as "committed" on the PR
       form's budget figures, it is commitments booked in the budget ledger;
       nothing in the purchasing process books any, so it is 0.
-    enforced_in: "epms-api app/crud/dashboard.py build_approver / build_procurement (SUM PurchaseOrder.total, status not in cancelled/closed/draft), build_cfo (_budget_overview stub); budget-api crud/balance.py get_committed (budget_ledger commit, no writers)"
+    enforced_in: "epms-api app/crud/dashboard.py build_approver (_DEPT_SCOPED_APPROVERS → access_scope po_subq) / build_procurement (SUM PurchaseOrder.total, status not in cancelled/closed/draft), build_cfo (_budget_overview stub); budget-api crud/balance.py get_committed (budget_ledger commit, no writers)"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_the_three_committed_figures"
+      - "tests/test_dashboard_dept_scope.py::test_dept_manager_open_pos_are_their_departments"
