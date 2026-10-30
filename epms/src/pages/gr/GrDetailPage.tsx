@@ -11,7 +11,8 @@ import { cn, formatAmount, formatDate, formatDateTime } from '@/lib/utils'
 import { useGr, useGrAction } from '@/hooks/useGrs'
 import { usePo } from '@/hooks/usePos'
 import { useAuthStore } from '@/stores/auth.store'
-import { type GrStatus, type ApiGr, type ApiGrLineItem } from '@/services/gr'
+import { useRolePermissions } from '@/hooks/useConfig'
+import { type GrStatus, type ApiGr, type ApiGrLineItem, type GrDamageResolution } from '@/services/gr'
 import { useGrAttachments, useDeleteGrAttachment, useRegenerateGrPdf } from '@/hooks/useGrAttachments'
 import { grAttachmentService } from '@/services/grAttachments'
 
@@ -381,6 +382,8 @@ export default function GrDetailPage() {
                 </div>
               </div>
 
+              {hasDiscrepancy && <DamageResolutionCard gr={gr} />}
+
               {/* Line Items */}
               <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden sm:col-span-2">
                 <div className="px-5 py-3 border-b border-neutral-200 bg-neutral-50">
@@ -537,6 +540,127 @@ function LineDetailRow({ line, idx, currency }: { line: ApiGrLineItem; idx: numb
         </tr>
       )}
     </>
+  )
+}
+
+// ─── Vendor resolution for damaged / discrepancy lines (ISS-0099) ────────────
+//
+// The Report Goods Damage task stays open until Procurement records here what
+// was arranged with the vendor — a return or a credit, with its reference.
+
+const RESOLUTION_LABELS: Record<GrDamageResolution, string> = {
+  return: 'Return to vendor',
+  credit: 'Credit from vendor',
+}
+
+function DamageResolutionCard({ gr }: { gr: ApiGr }) {
+  const { user } = useAuthStore()
+  const perms = useRolePermissions().data?.permissions
+  // Same matrix key the API checks for action=resolve_damage (Procurement).
+  const canResolve = user?.role === 'system_admin' || !!perms?.['epms.po.write']
+  const grAction = useGrAction(gr.id)
+  const [open, setOpen] = useState(false)
+  const [resolution, setResolution] = useState<GrDamageResolution>('return')
+  const [ref, setRef] = useState('')
+  const [note, setNote] = useState('')
+  const [tried, setTried] = useState(false)
+
+  const submit = () => {
+    setTried(true)
+    if (!ref.trim()) return
+    grAction.mutate(
+      {
+        action: 'resolve_damage',
+        damage_resolution: resolution,
+        damage_resolution_ref: ref.trim(),
+        damage_resolution_note: note.trim() || undefined,
+      },
+      { onSuccess: () => setOpen(false) },
+    )
+  }
+
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white p-5 sm:col-span-2">
+      <div className="flex items-center justify-between gap-4 mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Vendor Resolution</h3>
+        {!gr.damage_resolution && gr.status !== 'cancelled' && canResolve && !open && (
+          <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
+            Record Vendor Resolution
+          </Button>
+        )}
+      </div>
+
+      {gr.damage_resolution ? (
+        <div className="flex flex-col gap-2">
+          <MetaRow label="Resolution" value={RESOLUTION_LABELS[gr.damage_resolution]} />
+          <MetaRow label="Reference" value={gr.damage_resolution_ref ?? '—'} mono />
+          {gr.damage_resolution_note && <MetaRow label="Note" value={gr.damage_resolution_note} />}
+          <MetaRow
+            label="Recorded"
+            value={`${gr.damage_resolved_by ?? '—'} · ${gr.damage_resolved_at ? formatDateTime(gr.damage_resolved_at) : '—'}`}
+          />
+        </div>
+      ) : gr.status === 'cancelled' ? (
+        <p className="text-sm text-neutral-500">This GR was cancelled; no vendor resolution is needed.</p>
+      ) : !open ? (
+        <p className="text-sm text-warning-700">
+          Not recorded yet. The Report Goods Damage task stays open until a return or credit is recorded here.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div className="flex gap-4">
+            {(Object.keys(RESOLUTION_LABELS) as GrDamageResolution[]).map((r) => (
+              <label key={r} className="flex items-center gap-1.5 text-sm text-neutral-700 cursor-pointer">
+                <input
+                  type="radio"
+                  name="damage-resolution"
+                  checked={resolution === r}
+                  onChange={() => setResolution(r)}
+                  className="h-3.5 w-3.5"
+                />
+                {RESOLUTION_LABELS[r]}
+              </label>
+            ))}
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-neutral-700">
+              {resolution === 'return' ? 'Return / RMA number' : 'Credit note number'}{' '}
+              <span className="text-danger-600">*</span>
+            </label>
+            <input
+              type="text"
+              maxLength={100}
+              value={ref}
+              onChange={(e) => setRef(e.target.value)}
+              className={cn(
+                'h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
+                tried && !ref.trim() ? 'border-danger-400' : 'border-neutral-300'
+              )}
+            />
+            {tried && !ref.trim() && <p className="text-xs text-danger-600">Required</p>}
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-neutral-700">Note</label>
+            <textarea
+              rows={2}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Optional — what was agreed with the vendor"
+              className="px-3 py-2 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none"
+            />
+          </div>
+          {grAction.isError && (
+            <p className="text-sm text-danger-600">
+              {grAction.error instanceof Error ? grAction.error.message : 'Could not record the resolution'}
+            </p>
+          )}
+          <div className="flex gap-2 justify-end">
+            <Button size="sm" variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={submit} disabled={grAction.isPending}>Save</Button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 

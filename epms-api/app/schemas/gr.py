@@ -98,6 +98,10 @@ class GrCreate(BaseModel):
     over_receipt_reason: str | None = None
 
 
+# How Procurement settled damaged / discrepancy lines with the vendor.
+DAMAGE_RESOLUTIONS = ("return", "credit")
+
+
 class GrActionRequest(BaseModel):
     action: str = Field(min_length=1, max_length=20)
     # acknowledge: acknowledged_by name
@@ -111,6 +115,10 @@ class GrActionRequest(BaseModel):
     # collect / confirm: asked for when posting this GR goes past the ordered
     # quantity and no reason was given when it was created.
     over_receipt_reason: str | None = None
+    # resolve_damage: return | credit, the vendor's reference, optional note
+    damage_resolution: str | None = None
+    damage_resolution_ref: str | None = Field(default=None, max_length=100)
+    damage_resolution_note: str | None = None
 
 
 class PoLineOpenQty(BaseModel):
@@ -146,6 +154,11 @@ class GrResponse(BaseModel):
     collected_by: str | None
     collection_notes: str | None
     over_receipt_reason: str | None = None
+    damage_resolution: str | None = None
+    damage_resolution_ref: str | None = None
+    damage_resolution_note: str | None = None
+    damage_resolved_at: datetime | None = None
+    damage_resolved_by: str | None = None
     created_by: uuid.UUID
     created_at: datetime
     updated_at: datetime

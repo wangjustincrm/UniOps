@@ -9,7 +9,9 @@ export type GrStatus =
   | 'rejected'
   | 'cancelled'
 
-export type GrAction = 'acknowledge' | 'collect' | 'confirm' | 'reject' | 'discrepancy' | 'cancel'
+export type GrAction = 'acknowledge' | 'collect' | 'confirm' | 'reject' | 'discrepancy' | 'cancel' | 'resolve_damage'
+
+export type GrDamageResolution = 'return' | 'credit'
 
 export type GrLineCondition = 'good' | 'discrepancy' | 'damaged'
 
@@ -50,6 +52,11 @@ export interface ApiGr {
   collected_by?: string
   collection_notes?: string
   over_receipt_reason?: string | null
+  damage_resolution?: GrDamageResolution | null
+  damage_resolution_ref?: string | null
+  damage_resolution_note?: string | null
+  damage_resolved_at?: string | null
+  damage_resolved_by?: string | null
   created_at: string
 }
 
@@ -96,6 +103,9 @@ export interface GrActionBody {
   comment?: string
   collection_notes?: string
   over_receipt_reason?: string
+  damage_resolution?: GrDamageResolution
+  damage_resolution_ref?: string
+  damage_resolution_note?: string
 }
 
 export interface GrFilters {

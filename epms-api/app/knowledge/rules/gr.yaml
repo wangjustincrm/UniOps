@@ -57,11 +57,16 @@ rules:
       Good). Any line received in a condition other than Good raises an
       urgent Report Goods Damage task for the Procurement Officers (anyone
       holding that role), who arrange the return or a credit note with the
-      vendor.
-    enforced_in: "epms-api app/crud/gr.py create (damaged_lines) → _create_damage_report_task (urgent, procurement_officer)"
+      vendor. The task does not close when the goods are acknowledged or
+      collected: it stays open until someone with PO write permission records
+      the outcome on the GR (Record Vendor Resolution — Return or Credit,
+      with the vendor's RMA or credit note number), or the GR is cancelled.
+      EPMS has no return document, so that record is the reference itself.
+    enforced_in: "epms-api app/crud/gr.py create (damaged_lines) → _create_damage_report_task (urgent, procurement_officer); _complete_tasks keeps it open; _resolve_damage (action resolve_damage, epms.po.write) closes it"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_a_damaged_line_raises_an_urgent_task_for_procurement"
+      - "tests/test_gr_damage_resolution.py::test_damage_task_survives_collect_and_closes_on_resolution"
   - id: over_receipt
     asked_as:
       - 收货数量能超过订购数量吗？

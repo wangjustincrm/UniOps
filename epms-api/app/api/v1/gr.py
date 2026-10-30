@@ -261,6 +261,12 @@ async def gr_action(
     gr = await gr_crud.get_by_id(db, gr_id)
     if gr is None:
         raise HTTPException(status_code=404, detail="GR not found")
+    # Recording the return / credit is Procurement's job (the gr_damage_report
+    # task goes to the Procurement Officer pool) — the same matrix key that
+    # lets them write POs.
+    if body.action.lower() == "resolve_damage" and not await has_permission(
+            db, uuid.UUID(user["sub"]), user.get("role", ""), "epms.po.write"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
     try:
         result = await gr_crud.action(db, gr, body, actor_id=uuid.UUID(user["sub"]), token=token)
         return result

@@ -63,6 +63,15 @@ class GoodsReceipt(UUIDPrimaryKey, TimestampMixin, Base):
     # Required when it does — at creation, or at collect/confirm if it was not given then.
     over_receipt_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # What Procurement arranged with the vendor for damaged / discrepancy lines
+    # (ISS-0099). Recording it is what closes the gr_damage_report task.
+    # damage_resolution: return | credit
+    damage_resolution: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    damage_resolution_ref: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    damage_resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    damage_resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    damage_resolved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False, index=True
