@@ -1,4 +1,4 @@
-"""Submit/approve defects found in functional testing.
+"""Two submit/approve defects found in functional testing.
 
 ISS-0079 — a double-click on Approve ran the approval twice: PR-20261022-0005
 got "Approve by dept manager" and the Director auto-skip twice, and two auto-PDFs.
@@ -6,6 +6,11 @@ Both requests read the same status and step before either committed. The engine
 now locks the document row for the action, and a caller may name the step its
 decision is for (`expected_step`) so a late second click cannot approve the next
 step instead.
+
+ISS-0166 — submission checked only the step it landed on. A PR whose over-budget
+Finance Manager step comes first was submitted in a department with no
+Department Manager, then stuck there: every Approve refused with the routing
+error. Every step the chain will route to is now checked at submission.
 """
 import asyncio
 import uuid
@@ -16,10 +21,11 @@ import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.crud.engine import execute_action
+from app.crud.engine import execute_action, preflight_submit
 from app.models.config import CompanyConfig
 from app.models.event import ApprovalEvent
 from app.models.pr import PurchaseRequest
+from app.models.task import Task
 from app.models.user import User
 from tests.conftest import ASYNC_URL
 
@@ -125,3 +131,41 @@ async def test_approve_for_a_step_already_passed_is_refused(engine_db_session):
                          expected_step=2)
     await db.refresh(pr)
     assert pr.status == "approved"
+
+
+# ── ISS-0166 ──────────────────────────────────────────────────────────────────
+
+async def test_over_budget_pr_without_dept_manager_is_refused_at_submit(engine_db_session):
+    db = engine_db_session
+    requester, _fm, _ = await _world(db, with_manager=False)
+    pr = await _draft_pr(db, requester, over_budget=True)
+
+    with pytest.raises(ValueError, match="Cannot route approval: no active Department Manager"):
+        await execute_action(db, "pr", pr.id, "submit", requester.id, "requester")
+
+    await db.refresh(pr)
+    assert pr.status == "draft"
+    tasks = (await db.execute(select(Task).where(Task.document_id == pr.id))).scalars().all()
+    assert tasks == []
+
+
+async def test_preflight_reports_the_later_dept_manager_step(engine_db_session):
+    db = engine_db_session
+    requester, _fm, _ = await _world(db, with_manager=False)
+    pr = await _draft_pr(db, requester, over_budget=True)
+
+    checks = {c.id: c for c in await preflight_submit(db, "pr", pr.id)}
+
+    assert checks["approver_routing"].passed is False
+    assert "Department Manager" in checks["approver_routing"].message
+
+
+async def test_over_budget_pr_with_dept_manager_still_submits(engine_db_session):
+    db = engine_db_session
+    requester, fm, _dm = await _world(db, with_manager=True)
+    pr = await _draft_pr(db, requester, over_budget=True)
+
+    await execute_action(db, "pr", pr.id, "submit", requester.id, "requester")
+
+    await db.refresh(pr)
+    assert pr.status == "submitted" and pr.approval_step_idx == 0

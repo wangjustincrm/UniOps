@@ -1527,6 +1527,31 @@ async def submission_landing(
         start += 1
 
 
+async def check_chain_routable(
+    db: AsyncSession, doc_type: str, ctx: "ActionContext",
+    workflow: list[dict], start: int,
+) -> None:
+    """Raise ValueError when any step from `start` on could not be routed.
+
+    Checking only the step a submission lands on let a PR whose over-budget
+    Finance Manager step comes first be submitted in a department with no
+    Department Manager; it then stuck at that step, every Approve refused with
+    the routing error (ISS-0166). A step that is conditionally skipped (no
+    Director, a multi-department PA) is not asked — it will never be routed.
+    Read-only, so preflight and execution share it."""
+    for idx in range(start, len(workflow)):
+        skip, _ = _step_skip(
+            workflow[idx], doc_type, ctx.doc, ctx.director_uid, ctx.supervisor_uid,
+            ctx.dept_has_director, ctx.dept_has_supervisor, ctx.cross_dept_pa,
+            ctx.cfg_ob_mode or None)
+        if skip:
+            continue
+        await resolve_step_assignment(
+            db, doc_type, ctx.doc, idx, workflow, ctx.rm, ctx.dept_gm_opm,
+            routing_dept_id=ctx.routing_dept_id, director_uid=ctx.director_uid,
+            supervisor_uid=ctx.supervisor_uid, cross_dept_pa=ctx.cross_dept_pa)
+
+
 # ── Main execution entry point ────────────────────────────────────────────────
 
 @dataclass
@@ -1700,10 +1725,7 @@ async def preflight_submit(db: AsyncSession, doc_type: str,
         checks.append(Check(id="approver_routing", layer="config", passed=True))
     else:
         try:
-            await resolve_step_assignment(
-                db, doc_type, ctx.doc, start, sub_workflow, ctx.rm, ctx.dept_gm_opm,
-                routing_dept_id=ctx.routing_dept_id, director_uid=ctx.director_uid,
-                supervisor_uid=ctx.supervisor_uid, cross_dept_pa=ctx.cross_dept_pa)
+            await check_chain_routable(db, doc_type, ctx, sub_workflow, start)
             checks.append(Check(id="approver_routing", layer="config", passed=True))
         except ValueError as exc:
             checks.append(Check(
@@ -1786,6 +1808,7 @@ async def execute_action(
             db, doc_type, ctx, workflow, resume_at)
         if claimant_skipped and start >= len(workflow):
             raise ValueError(MSG_CLAIMANT_HOLDS_EVERY_STEP)
+        await check_chain_routable(db, doc_type, ctx, workflow, start)
         _set_status(meta, doc, "submitted")
         if hasattr(doc, "submitted_at"):
             doc.submitted_at = now
