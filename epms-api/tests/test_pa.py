@@ -630,6 +630,147 @@ async def test_settlement_requires_valid_prepayment_ref(admin_client):
     assert r.status_code == 422
 
 
+# ── Staged prepayments (30% on order, 70% before shipment, one settlement) ───
+
+async def _prepay_pct(client, po_id, pct, subtotal):
+    return await client.post(PA_URL, json=_pa_payload(
+        po_id, pa_type="prepayment", prepayment_pct=pct,
+        expected_settlement_date="2026-12-31", subtotal=subtotal, tax_amount="0.00"))
+
+
+async def _mark_processed(test_engine, *pa_ids):
+    """Payment runs in finance-api — stand in for it by flipping the status."""
+    import uuid as _uuid
+    from sqlalchemy import update
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from app.models.pa import PaymentApplication
+    async with async_sessionmaker(test_engine, class_=AsyncSession)() as db:
+        await db.execute(update(PaymentApplication)
+                         .where(PaymentApplication.id.in_([_uuid.UUID(i) for i in pa_ids]))
+                         .values(status="processed"))
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_staged_prepayments_allowed_up_to_cumulative_cap(admin_client):
+    v = await _make_vendor(admin_client, "VND-PA-STAGE-01")
+    po = await _make_po(admin_client, v["id"])
+    first = await _prepay_pct(admin_client, po["id"], "30", "120.00")
+    assert first.status_code == 201, first.text
+    second = await _prepay_pct(admin_client, po["id"], "70", "280.00")
+    assert second.status_code == 201, second.text
+    # 30 + 70 = 100 → nothing left under the (default 100%) cap
+    third = await _prepay_pct(admin_client, po["id"], "1", "4.00")
+    assert third.status_code == 422, third.text
+    assert "already prepaid 100% on this PO" in third.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_staged_prepayment_cap_is_cumulative(admin_client):
+    v = await _make_vendor(admin_client, "VND-PA-STAGE-02")
+    po = await _make_po(admin_client, v["id"])
+    assert (await _prepay_pct(admin_client, po["id"], "60", "240.00")).status_code == 201
+    r = await _prepay_pct(admin_client, po["id"], "50", "200.00")
+    assert r.status_code == 422, r.text
+    assert "already prepaid 60% on this PO" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_editing_a_stage_pct_respects_the_cumulative_cap(admin_client):
+    v = await _make_vendor(admin_client, "VND-PA-STAGE-03")
+    po = await _make_po(admin_client, v["id"])
+    assert (await _prepay_pct(admin_client, po["id"], "30", "120.00")).status_code == 201
+    second = (await _prepay_pct(admin_client, po["id"], "70", "280.00")).json()
+    r = await admin_client.patch(f"{PA_URL}/{second['id']}", json={"prepayment_pct": "80"})
+    assert r.status_code == 422, r.text
+    r = await admin_client.patch(f"{PA_URL}/{second['id']}", json={"prepayment_pct": "60"})
+    assert r.status_code == 200, r.text
+
+
+@pytest.mark.asyncio
+async def test_one_settlement_reconciles_every_paid_prepayment(admin_client, test_engine):
+    """30% (120) + 70% (280) prepaid, final invoice 450 → the settlement may
+    apply all 400, pays the 50 balance, and settles BOTH prepayments with the
+    variance (+50) recorded once."""
+    import uuid as _uuid
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from app.crud import pa as pa_crud
+
+    v = await _make_vendor(admin_client, "VND-PA-STAGE-04")
+    po = await _make_po(admin_client, v["id"])
+    a = (await _prepay_pct(admin_client, po["id"], "30", "120.00")).json()
+    b = (await _prepay_pct(admin_client, po["id"], "70", "280.00")).json()
+    await _mark_processed(test_engine, a["id"], b["id"])
+
+    over = await admin_client.post(PA_URL, json=_pa_payload(
+        po["id"], pa_type="settlement", prepayment_pa_id=a["id"],
+        subtotal="450.00", tax_amount="0.00", prepayment_applied="400.01",
+        receipt_override=True, receipt_override_reason="settlement test setup"))
+    assert over.status_code == 422, over.text
+
+    s = await admin_client.post(PA_URL, json=_pa_payload(
+        po["id"], pa_type="settlement", prepayment_pa_id=a["id"],
+        subtotal="450.00", tax_amount="0.00", prepayment_applied="400.00",
+        receipt_override=True, receipt_override_reason="settlement test setup"))
+    assert s.status_code == 201, s.text
+    assert float(s.json()["payment_amount"]) == pytest.approx(50.0)
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        spa = await pa_crud.get_by_id(db, _uuid.UUID(s.json()["id"]))
+        await pa_crud.mark_prepayment_settled(db, spa, actor_id=spa.created_by)
+        await db.commit()
+    async with factory() as db:
+        pa_a = await pa_crud.get_by_id(db, _uuid.UUID(a["id"]))
+        pa_b = await pa_crud.get_by_id(db, _uuid.UUID(b["id"]))
+        assert pa_a.settlement_status == pa_b.settlement_status == "settled"
+        assert float(pa_a.settlement_variance) == pytest.approx(50.0)
+        assert float(pa_b.settlement_variance) == pytest.approx(0.0)
+        assert b["pa_number"] in pa_a.settlement_note
+        assert a["pa_number"] in pa_b.settlement_note
+
+    # Once settled, the PO takes no further prepayment.
+    r = await _prepay_pct(admin_client, po["id"], "1", "1.00")
+    assert r.status_code in (409, 422), r.text
+
+
+@pytest.mark.asyncio
+async def test_net_zero_settlement_over_staged_prepayments_auto_reconciles(admin_client, test_engine):
+    import uuid as _uuid
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    from app.crud import pa as pa_crud
+
+    v = await _make_vendor(admin_client, "VND-PA-STAGE-05")
+    po = await _make_po(admin_client, v["id"])
+    a = (await _prepay_pct(admin_client, po["id"], "30", "120.00")).json()
+    b = (await _prepay_pct(admin_client, po["id"], "70", "280.00")).json()
+    await _mark_processed(test_engine, a["id"], b["id"])
+    s = await admin_client.post(PA_URL, json=_pa_payload(
+        po["id"], pa_type="settlement", prepayment_pa_id=b["id"],
+        subtotal="400.00", tax_amount="0.00", prepayment_applied="400.00",
+        receipt_override=True, receipt_override_reason="settlement test setup"))
+    assert s.status_code == 201, s.text
+    assert s.json()["status"] == "processed"  # exact match over the two stages
+    async with async_sessionmaker(test_engine, class_=AsyncSession)() as db:
+        for pid in (a["id"], b["id"]):
+            assert (await pa_crud.get_by_id(db, _uuid.UUID(pid))).settlement_status == "settled"
+
+
+@pytest.mark.asyncio
+async def test_settlement_refused_while_another_stage_is_unpaid(admin_client, test_engine):
+    v = await _make_vendor(admin_client, "VND-PA-STAGE-06")
+    po = await _make_po(admin_client, v["id"])
+    a = (await _prepay_pct(admin_client, po["id"], "30", "120.00")).json()
+    b = (await _prepay_pct(admin_client, po["id"], "70", "280.00")).json()
+    await _mark_processed(test_engine, a["id"])  # second stage still a draft
+    s = await admin_client.post(PA_URL, json=_pa_payload(
+        po["id"], pa_type="settlement", prepayment_pa_id=a["id"],
+        subtotal="400.00", tax_amount="0.00", prepayment_applied="120.00",
+        receipt_override=True, receipt_override_reason="settlement test setup"))
+    assert s.status_code == 409, s.text
+    assert b["pa_number"] in s.json()["detail"]
+
+
 # ── action='process' → finance-api payment executor (vendor credit netting) ───
 #
 # The single-payment path is NOT a second-class citizen of the batch runner:

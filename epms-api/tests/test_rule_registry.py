@@ -686,15 +686,19 @@ def test_an_open_prepayment_blocks_a_regular_pa():
 
     create = inspect.getsource(pa_api.create_pa)
     assert "is still open. Settle or cancel it before creating a regular PA" in create
-    assert "A prepayment PA already exists for this PO" in create
+    # Staged prepayments are allowed; what stops a further one is a settlement.
+    assert "No further prepayment can be raised against it" in create
 
 
 def test_prepayment_cap_reads_the_vendor_then_the_system():
     from app.api.v1 import pa as pa_api
 
     create = inspect.getsource(pa_api.create_pa)
-    assert "vendor.max_prepayment_pct" in create
-    assert "This vendor does not allow prepayment" in create
+    cap = inspect.getsource(pa_api._assert_prepayment_cap)
+    assert "_assert_prepayment_cap(" in create
+    assert "vendor.max_prepayment_pct" in cap
+    assert "This vendor does not allow prepayment" in cap
+    assert "prior_prepayment_pct(" in cap  # cumulative over the PO's stages
     # ISS-0066: the Prepaid flag on PRs/POs plays no part in creating a PA.
     assert "is_prepaid" not in create
 

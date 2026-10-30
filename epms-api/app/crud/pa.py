@@ -479,15 +479,44 @@ def _settlement_variance(pa: PaymentApplication, prepaid: Decimal) -> Decimal:
     return _settlement_gross(pa) - prepaid
 
 
+async def settlement_prepayment_pool(
+    db: AsyncSession, orig: PaymentApplication,
+) -> list[PaymentApplication]:
+    """The prepayments one settlement reconciles: the one it references plus
+    every other PAID, still-pending prepayment on the same PO.
+
+    A PO may be prepaid in stages (e.g. 30% on order, 70% before shipment) and
+    then settled once; the settlement's prepayment_pa_id names just one of them.
+    The referenced one is always included, whatever its status, so a settlement
+    raised the old way (against a single prepayment) behaves as before.
+    """
+    pool = [orig]
+    if orig.po_id is None:
+        return pool
+    siblings = (await db.execute(
+        select(PaymentApplication).where(
+            PaymentApplication.id.in_(pa_ids_for_po(orig.po_id)),
+            PaymentApplication.id != orig.id,
+            PaymentApplication.pa_type == "prepayment",
+            PaymentApplication.status == "processed",
+            PaymentApplication.settlement_status == "pending",
+        ).order_by(PaymentApplication.created_at)
+    )).scalars().all()
+    return pool + list(siblings)
+
+
 async def mark_prepayment_settled(
     db: AsyncSession,
     settlement_pa: PaymentApplication,
     actor_id: uuid.UUID,
 ) -> None:
-    """Reconcile a settlement PA's source prepayment PA.
+    """Reconcile every prepayment a settlement PA covers (see
+    settlement_prepayment_pool).
 
-    Variance = final invoice − prepaid applied (the true over/under, which may be
+    Variance = final invoice − total prepaid (the true over/under, which may be
     negative when overpaid — distinct from payment_amount that is clamped at 0).
+    It is recorded once, on the referenced prepayment; the others in the group
+    carry 0 so summing variances never counts it twice.
     Idempotent: skips if the source prepayment is missing or already settled.
     """
     if settlement_pa.prepayment_pa_id is None:
@@ -497,17 +526,27 @@ async def mark_prepayment_settled(
         return
     if orig.settlement_status == "settled":
         return
-    settler = await db.execute(select(User.full_name).where(User.id == actor_id))
-    variance = _settlement_variance(settlement_pa, orig.payment_amount)
-    orig.settlement_status = "settled"
-    orig.settled_at = datetime.now(timezone.utc)
-    orig.settled_by = actor_id
-    orig.settled_by_name = settler.scalar_one_or_none()
-    orig.settlement_variance = variance
-    note = f"Settled via {settlement_pa.pa_number}"
-    if variance < 0:
-        note += f" — overpaid by {abs(variance)}, credit note expected"
-    orig.settlement_note = note
+    pool = await settlement_prepayment_pool(db, orig)
+    settler = (await db.execute(
+        select(User.full_name).where(User.id == actor_id))).scalar_one_or_none()
+    prepaid = sum((p.payment_amount for p in pool), Decimal("0"))
+    variance = _settlement_variance(settlement_pa, prepaid)
+    now = datetime.now(timezone.utc)
+    for p in pool:
+        p.settlement_status = "settled"
+        p.settled_at = now
+        p.settled_by = actor_id
+        p.settled_by_name = settler
+        p.settlement_variance = variance if p is orig else Decimal("0")
+        note = f"Settled via {settlement_pa.pa_number}"
+        others = [o.pa_number for o in pool if o is not p]
+        if others:
+            note += f" together with {', '.join(others)}"
+        if p is orig and variance < 0:
+            note += f" — overpaid by {abs(variance)}, credit note expected"
+        elif p is not orig:
+            note += f" (variance recorded on {orig.pa_number})"
+        p.settlement_note = note
     await db.flush()
 
 

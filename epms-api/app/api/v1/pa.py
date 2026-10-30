@@ -226,6 +226,44 @@ async def open_prepayment_pa_number(db, po_ids: list[uuid.UUID]) -> str | None:
     )).scalars().first()
 
 
+async def prior_prepayment_pct(db, po_id: uuid.UUID, exclude_id: uuid.UUID | None = None) -> Decimal:
+    """Sum of prepayment_pct over the live (not cancelled/rejected) prepayment
+    PAs on this PO — the part of the cap already used by earlier stages."""
+    q = select(func.coalesce(func.sum(PaymentApplication.prepayment_pct), 0)).where(
+        PaymentApplication.id.in_(pa_ids_for_po(po_id)),
+        PaymentApplication.pa_type == "prepayment",
+        PaymentApplication.status.notin_(["cancelled", "rejected"]),
+    )
+    if exclude_id is not None:
+        q = q.where(PaymentApplication.id != exclude_id)
+    return Decimal(str((await db.execute(q)).scalar_one()))
+
+
+async def live_settlement_pa_number(db, po_id: uuid.UUID) -> str | None:
+    """A settlement/balance PA on this PO that is not cancelled/rejected."""
+    return (await db.execute(
+        select(PaymentApplication.pa_number).where(
+            PaymentApplication.id.in_(pa_ids_for_po(po_id)),
+            PaymentApplication.pa_type.in_(["settlement", "balance"]),
+            PaymentApplication.status.notin_(["cancelled", "rejected"]),
+        )
+    )).scalars().first()
+
+
+async def in_flight_sibling_prepayment_number(
+    db, po_id: uuid.UUID, orig_id: uuid.UUID,
+) -> str | None:
+    """Another prepayment on this PO that is neither paid nor dead."""
+    return (await db.execute(
+        select(PaymentApplication.pa_number).where(
+            PaymentApplication.id.in_(pa_ids_for_po(po_id)),
+            PaymentApplication.id != orig_id,
+            PaymentApplication.pa_type == "prepayment",
+            PaymentApplication.status.notin_(list(PREPAYMENT_CLOSED_STATUSES)),
+        )
+    )).scalars().first()
+
+
 async def _assert_invoice_due_dates_within_window(
     db: SessionDep, invoice_ids: list[uuid.UUID],
 ) -> None:
@@ -283,8 +321,8 @@ async def _assert_pos_coherent(pos: list[PurchaseOrder], pa_type: str) -> None:
                    "currency. Raise a separate payment per currency.",
         )
     # Prepayment / settlement / balance are defined against ONE order: the cap
-    # comes from that PO's vendor, "one open prepayment per PO" is per-PO, and a
-    # settlement reconciles exactly one earlier prepayment against it. None of
+    # comes from that PO's vendor and is cumulative over that PO's prepayments,
+    # and a settlement reconciles that PO's prepayments against it. None of
     # them has a coherent multi-PO reading, so multi-PO is regular-only.
     if len(pos) > 1 and pa_type != "regular":
         raise HTTPException(
@@ -317,6 +355,50 @@ def _not_epms_pa(pa) -> bool:
     from app.models.pa import EPMS_PO_LESS_SOURCES
     return pa is None or (pa.po_id is None and pa.agreement_id is None
                           and pa.source not in EPMS_PO_LESS_SOURCES)
+
+
+async def _assert_prepayment_cap(
+    db, po: PurchaseOrder, pct: Decimal | None, exclude_id: uuid.UUID | None = None,
+) -> None:
+    """PP-001..003 for a prepayment of `pct`% on `po` (create, and a PATCH of
+    the % on a draft — exclude_id is then the PA being edited)."""
+    vendor = await db.get(Vendor, po.vendor_id)
+    pp_cfg = await _get_prepayment_config(db)
+
+    # Effective cap: vendor override takes priority over system-wide cap
+    effective_cap = (
+        float(vendor.max_prepayment_pct)
+        if vendor and vendor.max_prepayment_pct is not None
+        else pp_cfg.max_prepayment_pct
+    )
+
+    # PP-001: vendor must allow prepayment (effective_cap > 0)
+    if not effective_cap or effective_cap <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="This vendor does not allow prepayment. Set Max Prepayment % on the vendor record.",
+        )
+
+    # PP-002/003: the prepayment % is CUMULATIVE per PO. A PO may be prepaid
+    # in stages (30% on order, 70% before shipment, then one settlement), so
+    # the cap bounds the sum of every live prepayment on the PO, not each
+    # one alone — otherwise two 60% prepayments would pass a 100% cap.
+    if pct is None:
+        raise HTTPException(status_code=422, detail="prepayment_pct is required for prepayment PAs.")
+    prior_pct = float(await prior_prepayment_pct(db, po.id, exclude_id))
+    total_pct = prior_pct + float(pct)
+    prior_note = f" (already prepaid {prior_pct:g}% on this PO)" if prior_pct else ""
+    if total_pct > effective_cap:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Prepayment % ({pct}%){prior_note} exceeds the allowed cap of {effective_cap}% for this vendor.",
+        )
+    # PP-003: also enforce system-wide cap independently
+    if total_pct > pp_cfg.max_prepayment_pct:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Prepayment % ({pct}%){prior_note} exceeds the system-wide cap of {pp_cfg.max_prepayment_pct}%.",
+        )
 
 
 @router.get("", response_model=PaListResponse)
@@ -558,50 +640,17 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
 
     # ── Prepayment-specific guards ─────────────────────────────────────────────
     if body.pa_type == "prepayment":
-        vendor = await db.get(Vendor, po.vendor_id)
-        pp_cfg = await _get_prepayment_config(db)
+        await _assert_prepayment_cap(db, po, body.prepayment_pct)
 
-        # Effective cap: vendor override takes priority over system-wide cap
-        effective_cap = (
-            float(vendor.max_prepayment_pct)
-            if vendor and vendor.max_prepayment_pct is not None
-            else pp_cfg.max_prepayment_pct
-        )
-
-        # PP-001: vendor must allow prepayment (effective_cap > 0)
-        if not effective_cap or effective_cap <= 0:
-            raise HTTPException(
-                status_code=422,
-                detail="This vendor does not allow prepayment. Set Max Prepayment % on the vendor record.",
-            )
-
-        # PP-002/003: requested prepayment % must not exceed cap
-        if body.prepayment_pct is None:
-            raise HTTPException(status_code=422, detail="prepayment_pct is required for prepayment PAs.")
-        if float(body.prepayment_pct) > effective_cap:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Prepayment % ({body.prepayment_pct}%) exceeds the allowed cap of {effective_cap}% for this vendor.",
-            )
-        # PP-003: also enforce system-wide cap independently
-        if float(body.prepayment_pct) > pp_cfg.max_prepayment_pct:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Prepayment % ({body.prepayment_pct}%) exceeds the system-wide cap of {pp_cfg.max_prepayment_pct}%.",
-            )
-
-        # PP-004: only one open prepayment PA per PO
-        existing = (await db.execute(
-            select(PaymentApplication.id).where(
-                PaymentApplication.id.in_(pa_ids_for_po(po.id)),
-                PaymentApplication.pa_type == "prepayment",
-                PaymentApplication.status.notin_(["cancelled", "rejected"]),
-            )
-        )).scalar_one_or_none()
-        if existing:
+        # PP-004: a PO may carry several prepayments, but none once it has a
+        # settlement — the settlement reconciles every prepayment on the PO, so
+        # one raised after it would never be reconciled.
+        settled_by = await live_settlement_pa_number(db, po.id)
+        if settled_by:
             raise HTTPException(
                 status_code=409,
-                detail="A prepayment PA already exists for this PO. Settle or cancel it before creating a new one.",
+                detail=f"Settlement PA {settled_by} already exists for this PO. "
+                       "No further prepayment can be raised against it.",
             )
 
     elif body.pa_type in ("settlement", "balance"):
@@ -624,16 +673,31 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
                 detail="Referenced prepayment PA not found or does not belong to this PO.",
             )
 
+        # One settlement reconciles EVERY prepayment on the PO (staged
+        # prepayments are settled together). A sibling prepayment still in
+        # draft/approval would be paid after the settlement and never be
+        # reconciled — finish or cancel it first.
+        in_flight = await in_flight_sibling_prepayment_number(db, po.id, orig.id)
+        if in_flight:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Prepayment PA {in_flight} on this PO is not paid yet. "
+                       "Wait until it is paid, or cancel it, before settling.",
+            )
+        pool = await pa_crud.settlement_prepayment_pool(db, orig)
+
         # Net payable = full charge − prepayment applied. Must be ≥ 0:
         # an overpaid prepayment is a credit-note situation, not a negative payment.
         from decimal import Decimal as _D
         applied = body.prepayment_applied or _D("0")
-        # Cannot apply more prepayment than was actually prepaid on the original PA.
-        if applied > orig.payment_amount:
+        # Cannot apply more prepayment than was actually prepaid on the PO.
+        prepaid_total = sum((p.payment_amount for p in pool), _D("0"))
+        if applied > prepaid_total:
+            numbers = ", ".join(p.pa_number for p in pool)
             raise HTTPException(
                 status_code=422,
                 detail=f"prepayment_applied ({applied}) exceeds the amount actually "
-                       f"prepaid on {orig.pa_number} ({orig.payment_amount}). "
+                       f"prepaid on {numbers} ({prepaid_total}). "
                        "You cannot apply more prepayment than was paid.",
             )
         net = (body.subtotal + body.tax_amount + body.shipping_amount
@@ -713,7 +777,8 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
     #       – variance != 0 (overpaid) → finance confirmation task gates it
     if created.pa_type == "settlement" and created.payment_amount == 0:
         actor = uuid.UUID(user["sub"])
-        prepaid = orig.payment_amount if orig is not None else Decimal("0")
+        prepaid = (sum((p.payment_amount for p in await pa_crud.settlement_prepayment_pool(db, orig)),
+                       Decimal("0")) if orig is not None else Decimal("0"))
         variance = pa_crud._settlement_variance(created, prepaid)
         if variance == 0:
             # exact match → reconcile now, no approval, no task, no cash
@@ -762,6 +827,12 @@ async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: Curr
         raise HTTPException(status_code=403, detail="Insufficient permissions")
     if pa.status not in ("draft", "returned"):
         raise HTTPException(status_code=409, detail=f"Cannot edit PA in status '{pa.status}'")
+    if (pa.pa_type == "prepayment" and pa.po_id is not None
+            and "prepayment_pct" in body.model_fields_set):
+        # The cap is cumulative over the PO's prepayments — editing one stage's
+        # % must not slip past what create_pa would refuse.
+        await _assert_prepayment_cap(db, await db.get(PurchaseOrder, pa.po_id),
+                                     body.prepayment_pct, exclude_id=pa.id)
     _DIRECT_DIMS = {"department_id", "cost_center_id", "budget_account_code"}
     if pa.source != "direct" and body.model_fields_set & _DIRECT_DIMS:
         raise HTTPException(

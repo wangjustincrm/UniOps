@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.42
-**Date:** 2026-10-29
+**Version:** 2.43
+**Date:** 2026-10-30
 **Status:** In Production
+
+> **v2.43 (2026-10-30)** — **Staged prepayments** (§3.15.4): a PO may now be prepaid more than once (e.g. 30% on order, 70% before shipment) and then settled **once**. The vendor/system cap applies to the **sum** of the PO's live prepayments (PP-002/003, also on editing a draft's %); no further prepayment once the PO has a settlement (PP-004); one Settlement PA reconciles every paid, pending prepayment on the PO, may apply up to their total, and is refused while another prepayment on the PO is still unpaid (PP-009, PP-012, PP-016). The variance is recorded on the referenced prepayment only. The New PA form shows earlier stages and the total being reconciled.
 
 > **v2.42 (2026-10-29)** — Milk orders (`nc_milk`) are now **invoice-matchable and payable** (INV-MATCH-002, §NC mirror status table): the Match panel and the upload form offer them as PO candidates, and PO Detail's *Create PA* and the PA form's PO picker accept them. Their NC arrivals are already mirrored as goods receipts, so the three-way match and the Create PA task work as for any open NC order. `nc_pending` and `closed` stay out of matching.
 
@@ -2012,8 +2014,8 @@ AP staff (holders of *Match Invoice*) and admins can reverse a match from Invoic
 | PA Type | Description | Prerequisite | `pa_type` value |
 |---------|-------------|-------------|-----------------|
 | **Standard** | Full or partial payment for delivered and invoiced goods/services | One or more POs **of the same vendor and currency**, each with a three-way matched invoice (or an authorised override, PA-013), **or** an active agreement (§3.15.7) | `regular` |
-| **Prepayment** | Advance payment to vendor before delivery | Vendor Max Prepayment % > 0; no other open Prepayment PA on same PO; exactly one PO | `prepayment` |
-| **Settlement** | Closes out a prepayment PA when actual delivery value differs from prepayment | Open prepayment PA on same PO; `prepayment_pa_id` required; exactly one PO | `settlement` |
+| **Prepayment** | Advance payment to vendor before delivery; a PO may be prepaid in several stages | Vendor Max Prepayment % > 0; the PO's prepayments together within the cap; no settlement on the PO yet; exactly one PO | `prepayment` |
+| **Settlement** | Closes out **all** prepayments on the PO once the actual delivery value is known | Open prepayment PA on same PO; `prepayment_pa_id` required; no other prepayment on the PO still unpaid; exactly one PO | `settlement` |
 | **Balance** | Remaining balance after a prepayment, once goods/services delivered | Prepayment PA settled; `prepayment_pa_id` required; exactly one PO | `balance` |
 
 **PA linkage:** Settlement and Balance PAs carry a `prepayment_pa_id` referencing the original Prepayment PA. The backend validates this linkage at creation time — the referenced PA must be of type `prepayment` and belong to the same PO. Prepayment, Settlement and Balance PAs are always raised against exactly one PO; a regular PA may cover several POs. A PA with an agreement and no PO is an **agreement PA** (§3.15.7) and is always `regular`.
@@ -2127,15 +2129,18 @@ A Prepayment PA allows the Requester to apply for an advance payment to a vendor
 **3-stage prepayment flow:**
 
 ```
-Stage 1 — Prepayment PA
+Stage 1 — Prepayment PA (one or more)
   Requester creates Prepayment PA → Approval Flow → Approved → Payment Officer executes payment
+  A PO may be prepaid in stages (e.g. 30% on order, then 70% before shipment) —
+  each stage is its own Prepayment PA; together they stay within the cap
 
 Stage 2 — Delivery / Service Completion
   Vendor delivers goods (GR Path A/C) or confirms service (GR Path B)
   Invoice received and matched
 
 Stage 3 — Settlement PA
-  Requester creates Settlement PA (Settle button on the prepayment PA) to reconcile prepayment against actual delivery value
+  Requester creates ONE Settlement PA (Settle button on any of the prepayment PAs) to reconcile
+  every prepayment on the PO against the actual delivery value
   If actual < prepayment: vendor issues credit note / refund
   If actual > prepayment: Balance PA created for the difference
 ```
@@ -2154,20 +2159,21 @@ Stage 3 — Settlement PA
 | FR ID | Requirement |
 |-------|-------------|
 | **PP-001** | Prepayment PA can only be created if the vendor's effective prepayment cap is > 0. The effective cap is the vendor's Max Prepayment % if set, otherwise the system cap in Prepayment Config. Enforced in `POST /pa` — returns HTTP 422 if cap ≤ 0. |
-| **PP-002** | The requested `prepayment_pct` cannot exceed the vendor's effective cap (vendor-level override takes priority over system cap). Enforced in `POST /pa`. |
-| **PP-003** | The requested `prepayment_pct` cannot exceed the system-wide cap in Prepayment Config, regardless of vendor override. Enforced in `POST /pa` as a second independent check. |
-| **PP-004** | A PO can have at most one open (non-cancelled, non-rejected) Prepayment PA at a time. `POST /pa` with `pa_type=prepayment` returns HTTP 409 if one exists. |
+| **PP-002** | The requested `prepayment_pct` **plus the `prepayment_pct` of every other live (non-cancelled, non-rejected) Prepayment PA on the same PO** cannot exceed the vendor's effective cap (vendor-level override takes priority over system cap). Enforced in `POST /pa` and when a draft's % is edited (`PATCH /pa/{id}`); the 422 names how much is already prepaid. |
+| **PP-003** | The same cumulative % cannot exceed the system-wide cap in Prepayment Config, regardless of vendor override. Enforced as a second independent check. |
+| **PP-004** | A PO may carry **several** Prepayment PAs (staged prepayment — e.g. 30% on order, 70% before shipment), but none once it has a live (non-cancelled, non-rejected) Settlement or Balance PA: `POST /pa` with `pa_type=prepayment` returns HTTP 409 naming the settlement. *(Before v2.43 a PO could have only one prepayment.)* |
 | **PP-005** | Prepayment PA follows the same approval flow as Standard PA (§3.15.3). All PA types share the same workflow engine. |
 | **PP-006** | On Prepayment PA approval, the system starts the settlement SLA clock (configurable in Prepayment Config). **Not implemented** — see §11. An expected settlement date can be recorded on the PA, but no SLA is enforced. |
 | **PP-007** | If the settlement SLA is exceeded, the system sends a `prepayment_settlement_overdue` notification to the Requester and Department Manager, and creates a `settlement` task if one does not exist. **Not implemented** — see §11 (no scheduled job exists). |
 | **PP-008** | While a Prepayment PA is open (status not `cancelled`, `rejected`, or `processed`), no **regular** PA can be created on the same PO. Enforced in `POST /pa` — returns HTTP 409 with the blocking PA number. Settlement and Balance PAs are exempt (they require the open prepayment). |
-| **PP-009** | Settlement and Balance PAs must supply `prepayment_pa_id` referencing the original Prepayment PA on the same PO. Backend validates the link at creation time (HTTP 422 if missing or mismatched). |
+| **PP-009** | Settlement and Balance PAs must supply `prepayment_pa_id` referencing a Prepayment PA on the same PO. Backend validates the link at creation time (HTTP 422 if missing or mismatched). With staged prepayments any one of them may be referenced — the settlement covers them all (PP-016). |
 | **PP-010** | Balance PA can only be submitted after the Settlement PA is approved. **Not implemented** — see §11 (the prepayment link exists; no submit-time status check). |
 | **PP-011** | All prepayment-related PAs (Prepayment, Settlement, Balance) are linked in the PO Document Tree (§3.12.4) and visible together on the PO Detail page with their PA type label. |
-| **PP-012** | Settlement/Balance: *Prepayment applied* may not exceed the amount actually paid on the referenced prepayment PA, and the net payable may not be negative (a credit note is required instead). |
+| **PP-012** | Settlement/Balance: *Prepayment applied* may not exceed the total actually prepaid on the PO — the referenced prepayment plus every other **processed**, settlement-pending prepayment on the PO — and the net payable may not be negative (a credit note is required instead). The New PA form pre-fills it with that total and lists the prepayments it covers. |
 | **PP-013** | A settlement whose net payable is 0 is a reconciliation, not a payment: if final value equals the prepayment it is processed immediately (invoices paid, prepayment settled, Finance AP mirror settled, no approval, no bank movement); if the prepayment exceeded the final value, a *confirm_settlement* task goes to the Finance BP pool and the reconciliation completes on confirmation (*Create/Edit PA* permission). |
 | **PP-014** | Approving a PO marked prepayment-required creates a *create_prepayment_pa* task for the PR requester (or, without a PR, the PO sign-off submitter / creator). |
 | **PP-015** | A prepayment PA's Detail offers **Settle** (to a primary-role Requester or System Admin), opening New PA pre-filled as a settlement of that prepayment. |
+| **PP-016** | **One settlement reconciles every stage.** A Settlement/Balance PA cannot be created while another Prepayment PA on the PO is still unpaid (not `processed`, `cancelled` or `rejected`) — it would be paid after the settlement and never reconciled (HTTP 409 naming it). When the settlement reconciles (approval, or PP-013), the referenced prepayment **and every other processed, pending prepayment on the PO** become `settled`; the variance (final value − total prepaid) is recorded once, on the referenced prepayment (the others carry 0), and each settlement note names the other stages. |
 
 #### 3.15.5 PA Document Numbering
 
