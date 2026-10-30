@@ -183,6 +183,20 @@ async def get_actuals_summary(
         return None
 
 
+async def get_actuals_scope(bearer_token: str | None) -> dict[str, Any] | None:
+    """budget-api /actuals/scope: the cost centers the caller may see
+    ({full_access, cost_centers: [{id, code, name, department_id}]}), or None."""
+    url = f"{settings.BUDGET_API_URL}/api/v1/actuals/scope"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.get(url, headers=_auth_headers(bearer_token))
+            r.raise_for_status()
+            return r.json()
+    except httpx.HTTPError as e:
+        logger.warning("budget-api /actuals/scope unreachable: %s", e)
+        return None
+
+
 async def get_actuals_lineage(bearer_token: str | None) -> dict[str, Any] | None:
     """What the plan and actual (docs) figures are made of, from budget-api.
 

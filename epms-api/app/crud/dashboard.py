@@ -98,17 +98,32 @@ async def _over_budget_count(
     return 0
 
 
+# Per cost-center summaries are the same for every caller allowed to see that
+# cost center, so they are shared for a short while: a GM's dashboard reads
+# ~20 of them and each one makes budget-api ask finance for NC actuals.
+_CC_SUMMARY_TTL = 120.0
+_cc_summary_cache: dict[tuple[str, int], tuple[float, list]] = {}
+
+
 async def _approver_budget(
     db: AsyncSession, token: str | None, red_threshold: float,
-) -> tuple[BudgetOverview, int]:
-    """Budget Overview and the over-budget count for the Approver dashboard
-    (BUD-OI-11, ISS-0168), from budget-api /actuals/summary with the caller's
-    own token — budget-api scopes it by the caller's budget visibility
-    (all departments, or their own), the same figures as Finance → Budget
-    Dashboard. Grouped by L1. An account counts as over budget once committed +
-    actual reach the red threshold, or it has spend with no budget at all.
-    Empty (never an error) when budget-api cannot be reached.
+) -> tuple[BudgetOverview, int, int]:
+    """Budget Overview, over-budget departments and over-budget accounts for the
+    Approver dashboard (BUD-OI-11, ISS-0168).
+
+    Judged per cost center × account: summing one account over several cost
+    centers first would let one department's overrun hide behind another's
+    unspent budget. The cost centers are the ones budget-api says the caller
+    may see (/actuals/scope) — only those are asked for, because budget-api
+    answers an out-of-scope cost_center_id with the caller's whole department.
+    An account is over budget once committed + actual reach the red threshold,
+    or it has spend with no budget; a department is over budget when any of
+    its cost centers has such an account. The overview groups by L1. Empty,
+    never an error, when budget-api cannot be reached.
     """
+    import asyncio
+    import time
+
     from sqlalchemy import text
 
     from app.services import budget_client
@@ -116,13 +131,29 @@ async def _approver_budget(
     empty = BudgetOverview(total_budget=_ZERO, total_committed=_ZERO,
                            total_spent=_ZERO, utilisation_pct=0.0, groups=[])
     if not token:
-        return empty, 0
-    data = await budget_client.get_actuals_summary(token, _today().year)
-    accounts = (data or {}).get("accounts") or []
-    if not accounts:
-        return empty, 0
-    # budget_l1 is budget-api's table in the same database; looked up only if
-    # present (a missing table would abort this transaction), else codes.
+        return empty, 0, 0
+    scope = await budget_client.get_actuals_scope(token)
+    ccs = [cc for cc in ((scope or {}).get("cost_centers") or []) if cc.get("id")]
+    if not ccs:
+        return empty, 0, 0
+    year = _today().year
+    sem = asyncio.Semaphore(6)
+
+    async def _accounts(cc_id: str) -> list:
+        key = (cc_id, year)
+        hit = _cc_summary_cache.get(key)
+        if hit and time.monotonic() - hit[0] < _CC_SUMMARY_TTL:
+            return hit[1]
+        async with sem:
+            data = await budget_client.get_actuals_summary(token, year, uuid.UUID(cc_id))
+        if data is None:
+            return []
+        accounts = data.get("accounts") or []
+        _cc_summary_cache[key] = (time.monotonic(), accounts)
+        return accounts
+
+    per_cc = await asyncio.gather(*(_accounts(cc["id"]) for cc in ccs))
+
     l1_names: dict[str, str] = {}
     if (await db.execute(text("SELECT to_regclass('public.budget_l1')"))).scalar() is not None:
         l1_names = dict((await db.execute(text("SELECT code, name FROM budget_l1"))).all())
@@ -130,17 +161,21 @@ async def _approver_budget(
     def _d(v) -> Decimal:
         return Decimal(str(v or 0))
 
+    red = Decimal(str(red_threshold))
     sums: dict[str, list[Decimal]] = {}
-    over = 0
-    for a in accounts:
-        budget, committed, spent = _d(a.get("annual_budget")), _d(a.get("committed")), _d(a.get("actual_spent"))
-        used = committed + spent
-        if (budget > 0 and used * 100 >= budget * Decimal(str(red_threshold))) or (budget <= 0 and used > 0):
-            over += 1
-        s = sums.setdefault(a.get("l1_code") or "—", [_ZERO, _ZERO, _ZERO])
-        s[0] += budget
-        s[1] += committed
-        s[2] += spent
+    over_accounts = 0
+    over_depts: set[str] = set()
+    for cc, accounts in zip(ccs, per_cc):
+        for a in accounts:
+            budget, committed, spent = _d(a.get("annual_budget")), _d(a.get("committed")), _d(a.get("actual_spent"))
+            used = committed + spent
+            if (budget > 0 and used * 100 >= budget * red) or (budget <= 0 and used > 0):
+                over_accounts += 1
+                over_depts.add(str(cc.get("department_id") or cc["id"]))
+            s = sums.setdefault(a.get("l1_code") or "—", [_ZERO, _ZERO, _ZERO])
+            s[0] += budget
+            s[1] += committed
+            s[2] += spent
 
     def _pct(budget: Decimal, used: Decimal) -> float:
         return round(float(used / budget * 100), 1) if budget > 0 else 0.0
@@ -155,8 +190,9 @@ async def _approver_budget(
     tb = sum((g.annual_budget for g in groups), _ZERO)
     tc = sum((g.committed for g in groups), _ZERO)
     ts = sum((g.actual_spent for g in groups), _ZERO)
-    return BudgetOverview(total_budget=tb, total_committed=tc, total_spent=ts,
-                          utilisation_pct=_pct(tb, tc + ts), groups=groups), over
+    overview = BudgetOverview(total_budget=tb, total_committed=tc, total_spent=ts,
+                              utilisation_pct=_pct(tb, tc + ts), groups=groups)
+    return overview, len(over_depts), over_accounts
 
 
 # ── Pending approvals (PRs + POs + PAs in submitted/in_review) ───────────────
@@ -546,7 +582,7 @@ async def build_approver(
     scope_note = "Your department" if len(open_po_where) > 1 else "Company-wide"
 
     _yellow, red_thresh = await _get_budget_thresholds(db)
-    budget, over_budget = await _approver_budget(db, token, red_thresh)
+    budget, over_depts, over_accounts = await _approver_budget(db, token, red_thresh)
 
     return DashboardResponse(
         role="approver",
@@ -554,7 +590,8 @@ async def build_approver(
             KpiCard(title="Pending Approvals", value=str(pending_count), alert=pending_count > 0),
             KpiCard(title="Open POs", value=str(open_pos), subtitle=scope_note),
             KpiCard(title="Total Committed (FY)", value=_fmt(total_committed), subtitle=scope_note),
-            KpiCard(title="Over-Budget Accounts", value=str(over_budget), alert=over_budget > 0),
+            KpiCard(title="Over-Budget Depts", value=str(over_depts), alert=over_depts > 0,
+                    subtitle=f"{over_accounts} account{'' if over_accounts == 1 else 's'} over budget"),
         ],
         pending_approvals=pending_items,
         budget_overview=budget,
