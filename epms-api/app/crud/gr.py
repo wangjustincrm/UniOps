@@ -425,6 +425,7 @@ async def action(
         gr.collected_at = now
         gr.collected_by = req.collected_by or await _actor_name(db, actor_id)
         gr.collection_notes = req.collection_notes
+        await _refresh_gr_pdf(db, gr, token=token)
         await _update_po_received_qty(db, gr)
 
     elif act == "confirm":
@@ -1011,6 +1012,21 @@ async def _attach_gr_pdf(
             content_type="application/pdf", file_size=len(pdf_bytes),
             file_data=pdf_bytes,
         ))
+
+
+async def _refresh_gr_pdf(
+    db: AsyncSession, gr: GoodsReceipt, token: str | None = None,
+) -> None:
+    """Regenerate the GR PDF on Collect so it carries Collected By (GR-P-007,
+    ISS-0081). Best-effort, like acknowledge and confirm: collecting must not
+    fail because the file server is down — fall back to inline DB storage."""
+    cfg = await _get_config(db)
+    company_name = cfg.name if cfg else "EPMS"
+    try:
+        await _attach_gr_pdf(db, gr, company_name, token=token, cfg=cfg)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("GR %s collect: PDF upload failed (%s); storing inline", gr.number, exc)
+        await _attach_gr_pdf(db, gr, company_name, token=None, cfg=cfg)
 
 
 async def _complete_tasks(
