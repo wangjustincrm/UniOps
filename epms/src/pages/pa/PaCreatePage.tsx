@@ -378,6 +378,17 @@ function PoPaCreate() {
   )
   const autoSubtotal = selectedPoLines.reduce((s, l) => s + Number(l.line_total), 0)
 
+  // ISS-0133: a prepayment's pre-tax amount is the % of the whole PO's pre-tax
+  // total — computed, not typed (the server recomputes it on save,
+  // api/v1/pa.py::_prepayment_amounts). Tax is pre-filled with the same share
+  // of the PO's tax and stays editable, like freight, as on any PA.
+  const prepayPctNum = parseFloat(prepaymentPct) || 0
+  const prepayBase   = Number(selectedPo?.subtotal ?? 0)
+  const prepayPretax = Math.round(prepayBase * prepayPctNum) / 100
+  const prepayTax    = prepayBase > 0
+    ? Math.round(prepayPretax * Number(selectedPo?.tax_amount ?? 0) / prepayBase * 100) / 100
+    : Math.round(prepayPretax * Number(selectedPo?.tax_rate ?? 0) * 100) / 100
+
   // Selected-invoice aggregates. The PA pays these invoices, so their real
   // pre-tax/tax are the source of truth for the charge breakdown — a PO whose
   // snapshotted tax_rate is 0/null (e.g. a freight vendor set up without a rate)
@@ -510,6 +521,7 @@ function PoPaCreate() {
     if (autoSelectedForPoRef.current === poSelectionKey) return
     // Wait until every list query for this PO has resolved.
     if (invoicesData === undefined || grsData === undefined || poActivePas === undefined) return
+    if (paType === 'prepayment') return
 
     const matchedInvoices = docInvoices.filter(
       (inv) => inv.status === 'matched' && !lockedInvoiceIds.has(inv.id)
@@ -583,9 +595,21 @@ function PoPaCreate() {
     }
   }, [isAgreementMode, poSelectionKey, selectedPo?.id, selectedPos.length, agreement?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A prepayment carries no invoices — the vendor's invoice goes on the
+  // settlement (ISS-0133). The PO's type is set in the same pass the matched
+  // invoices may be ticked, so clear after.
+  useEffect(() => {
+    if (isPrepayment && selectedInvoiceIds.size > 0) setSelectedInvoiceIds(new Set())
+  }, [isPrepayment, selectedInvoiceIds.size])
+
   // Auto-fill pre-tax: prefer the linked invoices' real pre-tax; fall back to the
   // selected PO lines when the PA links no invoice (GR-only / manual payment).
+  // A prepayment's pre-tax is its % of the PO (above), never anything else.
   useEffect(() => {
+    if (isPrepayment) {
+      setSubtotal(prepayPretax > 0 ? prepayPretax.toFixed(2) : '')
+      return
+    }
     const auto = !hasLinkedInvoices ? autoSubtotal
       : derivedLines ? derivedLinesTotal(derivedLines) : invoiceSubtotal
     if (auto > 0) {
@@ -596,7 +620,7 @@ function PoPaCreate() {
       // (ISS-0113).
       setSubtotal('')
     }
-  }, [hasLinkedInvoices, invoiceSubtotal, autoSubtotal, derivedLines ? derivedLinesTotal(derivedLines) : null]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isPrepayment, prepayPretax, hasLinkedInvoices, invoiceSubtotal, autoSubtotal, derivedLines ? derivedLinesTotal(derivedLines) : null]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-fill tax. When invoices are linked, use their real tax — authoritative
   // and survives a PO whose snapshotted tax_rate is 0/null. Otherwise fall back
@@ -611,6 +635,10 @@ function PoPaCreate() {
   const taxCleared = taxAmount === ''
   useEffect(() => {
     if (taxManuallyEdited) return
+    if (isPrepayment) {
+      setTaxAmount(prepayPretax > 0 ? prepayTax.toFixed(2) : '')
+      return
+    }
     if (hasLinkedInvoices) {
       setTaxAmount(invoiceTax.toFixed(2))
     } else if (formCurrency === 'CAD' && subtotalNum > 0) {
@@ -618,7 +646,7 @@ function PoPaCreate() {
     } else {
       setTaxAmount('')
     }
-  }, [hasLinkedInvoices, invoiceTax, subtotalNum, formCurrency, paTaxRate, taxManuallyEdited, taxCleared]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isPrepayment, prepayPretax, prepayTax, hasLinkedInvoices, invoiceTax, subtotalNum, formCurrency, paTaxRate, taxManuallyEdited, taxCleared]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Validation
   const errors: string[] = []
@@ -805,7 +833,8 @@ ${submitError}
     try {
       // Lines from every PO on the payment, each still carrying its own
       // po_line_id so the PA's lines stay traceable to the order they came from.
-      const paLineItems = derivedLines
+      // A prepayment's single line is built by the server from the %.
+      const paLineItems = isPrepayment ? undefined : derivedLines
         ? derivedLines.map(({ line_total: _lt, ...l }) => l)
         : selectedPos.flatMap((p) =>
         p.line_items
@@ -1092,6 +1121,14 @@ ${submitError}
                 Link Invoices & Goods Receipts
               </h2>
 
+              {isPrepayment ? (
+                // ISS-0133: paid before the vendor invoices or delivers — the
+                // invoice and the receipts go on the settlement instead.
+                <p className="text-xs text-neutral-500 px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
+                  A prepayment carries no invoices or receipts — the vendor's invoice is linked
+                  on the settlement PA that settles this prepayment.
+                </p>
+              ) : (<>
               {/* Invoices multi-select */}
               <div className="flex flex-col gap-2">
                 <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
@@ -1267,6 +1304,7 @@ ${submitError}
                 </div>
               </div>
               </>)}
+              </>)}
 
               {/* PA Type — the choices follow the PO's prepayment flag: a prepaid
                   PO can only be paid via prepayment/settlement, a standard PO only
@@ -1379,6 +1417,10 @@ ${submitError}
                         />
                       </div>
                     </div>
+                    <p className="text-[11px] text-info-700">
+                      Pre-tax = {prepayPctNum || 0}% × PO pre-tax {formatAmount(prepayBase, selectedPo.currency)}
+                      {' '}= {formatAmount(prepayPretax, selectedPo.currency)}
+                    </p>
                   </div>
                 )}
               </div>
@@ -1480,12 +1522,17 @@ ${submitError}
                       type="number" min={0} step={0.01}
                       value={subtotal}
                       onChange={(e) => setSubtotal(e.target.value)}
+                      readOnly={isPrepayment}
                       placeholder="0.00"
                       className={cn(
                         'h-10 px-3 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
+                        isPrepayment && 'bg-neutral-50 text-neutral-600',
                         submitted && subtotalNum <= 0 ? 'border-danger-400' : 'border-neutral-300'
                       )}
                     />
+                    {isPrepayment && (
+                      <p className="text-[11px] text-neutral-400">Prepayment % × PO pre-tax — change the % to change it</p>
+                    )}
                     {submitted && subtotalNum <= 0 && (
                       <p className="text-xs text-danger-600">Pre-tax amount is required</p>
                     )}
@@ -1495,10 +1542,13 @@ ${submitError}
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-medium text-neutral-700">
                       Tax Amount <span className="text-danger-600">*</span>
-                      {!taxManuallyEdited && hasLinkedInvoices && (
+                      {isPrepayment && !taxManuallyEdited && (
+                        <span className="ml-1.5 text-[10px] font-normal text-neutral-400">same share of the PO's tax</span>
+                      )}
+                      {!isPrepayment && !taxManuallyEdited && hasLinkedInvoices && (
                         <span className="ml-1.5 text-[10px] font-normal text-neutral-400">from invoice</span>
                       )}
-                      {!taxManuallyEdited && !hasLinkedInvoices && formCurrency === 'CAD' && subtotalNum > 0 && (
+                      {!isPrepayment && !taxManuallyEdited && !hasLinkedInvoices && formCurrency === 'CAD' && subtotalNum > 0 && (
                         <span className="ml-1.5 text-[10px] font-normal text-neutral-400">{`${(paTaxRate * 100).toFixed(0)}% HST`}</span>
                       )}
                     </label>

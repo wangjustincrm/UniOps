@@ -79,7 +79,7 @@ rules:
       Prepayment Config. Whether a vendor can be prepaid is decided by these
       caps alone — never by the Prepaid flag on its past PRs or POs, which
       the payment application does not read.
-    enforced_in: "epms-api app/api/v1/pa.py create (effective_cap = vendor.max_prepayment_pct else Prepayment Config; second check against the system cap)"
+    enforced_in: "epms-api app/api/v1/pa.py _check_prepayment_pct, on create and on edit (effective_cap = vendor.max_prepayment_pct else Prepayment Config; second check against the system cap)"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_prepayment_cap_reads_the_vendor_then_the_system"
@@ -186,6 +186,27 @@ rules:
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_an_open_prepayment_blocks_a_regular_pa"
+  # ISS-0133 (rule question 8): base = the whole PO and no invoices on a
+  # prepayment were the developer's proposal, accepted by the owner 2026-10-30.
+  - id: prepayment_amount
+    asked_as:
+      - 预付 PA 的金额是怎么算的？
+      - 预付款可以挂发票吗？
+      - how is the prepayment amount calculated
+    answer: >
+      A prepayment PA's pre-tax amount is calculated, not typed: Prepayment %
+      × the whole PO's pre-tax total (30% of a PO of 400.00 pre-tax is
+      120.00). Changing the % on a draft recalculates it. Tax is pre-filled
+      with the same share of the PO's tax (15.60 of 52.00 here) and can be
+      changed, and shipping or other charges can be added, as on any PA. A
+      prepayment links no invoices or goods receipts — it is paid before the
+      vendor has invoiced; the vendor's invoice goes on the settlement PA that
+      settles the prepayment. Its single line reads "Prepayment N% of PO-…".
+    enforced_in: "epms-api app/api/v1/pa.py _prepayment_amounts + _refuse_prepayment_invoices, on create_pa and update_pa (server recomputes whatever the client sent); epms/src/pages/pa/PaCreatePage.tsx, PaEditPage.tsx (pre-tax read-only, invoice list hidden)"
+    provenance: pinned
+    test:
+      - "tests/test_pa.py::test_prepayment_amount_follows_the_pct"
+      - "tests/test_pa.py::test_prepayment_carries_no_invoices"
   - id: pa_tax
     asked_as:
       - PA 上的运费要交税吗？
@@ -199,7 +220,8 @@ rules:
       pre-tax amount × the PO's tax rate (the agreement's on an agreement
       PA), for CAD only — 13% is used only for an agreement that has no rate
       recorded; in another currency the tax is left blank. Once you type in
-      the tax field it is no longer filled for you.
+      the tax field it is no longer filled for you. A prepayment's tax is
+      pre-filled with the prepayment's share of the PO's tax instead.
     enforced_in: "epms-api app/admin/recompute.py recompute_pa_header_only ('shipping and other charges are never taxed'); app/crud/pa.py _compute_payment; epms/src/pages/pa/PaCreatePage.tsx tax prefill"
     provenance: pinned
     test:

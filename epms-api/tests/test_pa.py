@@ -407,16 +407,81 @@ async def _approve_pa(client, pa_id):
 
 
 async def _make_prepayment(client, po_id, subtotal="100.00", tax_amount="0.00"):
-    """Create a prepayment PA. Its payment_amount (= subtotal+tax) is the prepaid
-    amount the later settlement reconciles against."""
+    """Create a prepayment PA whose prepaid amount is exactly subtotal + tax.
+
+    Since ISS-0133 the server computes a prepayment's amount from its % of the
+    PO (see test_prepayment_amount_follows_the_pct), so an arbitrary prepaid
+    figure cannot be created through the API any more. The settlement tests
+    that use this need round figures to reason about, so the PA is created
+    normally and its amounts are then set directly — this is fixture setup for
+    the settlement logic, not a statement about how prepayments are priced."""
+    import uuid
+    from decimal import Decimal as _D
+
+    import app.db.session as _sm
+    from app.models.pa import PaymentApplication
+
     pa = await _create_pa(client, po_id,
                           pa_type="prepayment",
                           prepayment_pct="50",
-                          expected_settlement_date="2026-05-01",
-                          subtotal=subtotal, tax_amount=tax_amount)
+                          expected_settlement_date="2026-05-01")
     assert pa["pa_type"] == "prepayment"
     assert pa["settlement_status"] == "pending"
+    async with _sm.AsyncSessionLocal() as db:
+        row = await db.get(PaymentApplication, uuid.UUID(pa["id"]))
+        row.subtotal, row.tax_amount = _D(subtotal), _D(tax_amount)
+        row.payment_amount = _D(subtotal) + _D(tax_amount)
+        await db.commit()
+    pa = (await client.get(f"{PA_URL}/{pa['id']}")).json()
     return pa
+
+
+# ── ISS-0133: a prepayment's amount follows its % ─────────────────────────────
+
+@pytest.mark.asyncio
+async def test_prepayment_amount_follows_the_pct(admin_client):
+    """PO 5 × 80 = 400 + 13% (52). 30% → pre-tax 120.00 whatever the client
+    sent, one line "Prepayment 30% of PO-…"; tax with none sent = the same
+    share of the PO's tax (15.60); freight stays as entered."""
+    v = await _make_vendor(admin_client, "VND-PP-PCT-01")
+    po = await _make_po(admin_client, v["id"])
+    payload = _pa_payload(
+        po["id"], pa_type="prepayment", prepayment_pct="30",
+        expected_settlement_date="2026-05-01", subtotal="400.00", shipping_amount="20.00")
+    del payload["tax_amount"]
+    r = await admin_client.post(PA_URL, json=payload)
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert (body["subtotal"], body["tax_amount"]) == ("120.00", "15.60")
+    assert float(body["shipping_amount"]) == pytest.approx(20.00)
+    assert float(body["payment_amount"]) == pytest.approx(155.60)
+    assert len(body["line_items"]) == 1
+    assert body["line_items"][0]["description"] == f"Prepayment 30% of {po['number']}"
+    assert float(body["line_items"][0]["line_total"]) == pytest.approx(120.00)
+
+    # Editing the % recomputes the pre-tax amount (and the tax, none sent) …
+    r = await admin_client.patch(f"{PA_URL}/{body['id']}", json={"prepayment_pct": "50"})
+    assert r.status_code == 200, r.text
+    assert (r.json()["subtotal"], r.json()["tax_amount"]) == ("200.00", "26.00")
+    assert r.json()["line_items"][0]["description"] == f"Prepayment 50% of {po['number']}"
+    # … a typed pre-tax is ignored, a typed tax is kept (freight taxed, say).
+    r = await admin_client.patch(f"{PA_URL}/{body['id']}",
+                                 json={"subtotal": "999.00", "tax_amount": "28.60"})
+    assert r.status_code == 200, r.text
+    assert (r.json()["subtotal"], r.json()["tax_amount"]) == ("200.00", "28.60")
+
+
+@pytest.mark.asyncio
+async def test_prepayment_carries_no_invoices(admin_client):
+    """Refused before any invoice check runs: the invoice belongs on the settlement."""
+    import uuid
+    v = await _make_vendor(admin_client, "VND-PP-INV-01")
+    po = await _make_po(admin_client, v["id"])
+    r = await admin_client.post(PA_URL, json=_pa_payload(
+        po["id"], pa_type="prepayment", prepayment_pct="30",
+        expected_settlement_date="2026-05-01", invoice_ids=[str(uuid.uuid4())]))
+    assert r.status_code == 422, r.text
+    assert "settlement" in r.json()["detail"]
 
 
 # ── Receipt gate (3-way match required for non-prepayment PAs) ────────────────

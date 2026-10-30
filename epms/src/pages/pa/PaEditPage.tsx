@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { useReplaceTab } from '@uniops/shell'
@@ -177,6 +177,17 @@ function PoPaEditPage() {
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const isMultiPo = poIds.length > 1
+  // ISS-0133: a prepayment's pre-tax amount is its % of the whole PO's pre-tax
+  // total, and it carries no invoices or receipts. Tax is pre-filled with the
+  // same share of the PO's tax and stays editable, like freight. Keyed on the
+  // saved type — the one the server recomputes on.
+  const isPrepayment = pa?.pa_type === 'prepayment'
+  const prepayPctNum = parseFloat(prepaymentPct) || 0
+  const prepayBase   = Number(po?.subtotal ?? 0)
+  const prepayPretax = Math.round(prepayBase * prepayPctNum) / 100
+  const prepayTax    = prepayBase > 0
+    ? Math.round(prepayPretax * Number(po?.tax_amount ?? 0) / prepayBase * 100) / 100
+    : Math.round(prepayPretax * Number(po?.tax_rate ?? 0) * 100) / 100
   const selectedPoLines = pos.flatMap((p) => p.line_items.filter((l) => selectedLineIds.has(l.id)))
   const autoSubtotal    = selectedPoLines.reduce((s, l) => s + l.line_total, 0)
   // Same rule as PaCreatePage: line-matched invoices decide the lines.
@@ -269,6 +280,16 @@ function PoPaEditPage() {
 
   // After a change to the invoice selection, Pre-tax and Tax follow the ticked
   // invoices, as on New PA (PRD §3.15.2). Tax a user types afterwards sticks.
+  // The saved tax is kept until the % changes; then it follows, unless typed.
+  const prepayPctRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!isPrepayment || !initialized) return
+    setSubtotal(prepayPretax > 0 ? prepayPretax.toFixed(2) : '')
+    const pctChanged = prepayPctRef.current !== null && prepayPctRef.current !== prepaymentPct
+    prepayPctRef.current = prepaymentPct
+    if (pctChanged && !taxManuallyEdited) setTaxAmount(prepayPretax > 0 ? prepayTax.toFixed(2) : '')
+  }, [isPrepayment, initialized, prepayPretax, prepayTax]) // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!invoicesTouched) return
     const linked = selectedInvoices.length > 0
@@ -279,7 +300,7 @@ function PoPaEditPage() {
   }, [invoicesTouched, invoiceSubtotal, invoiceTax, derivedTotal, selectedInvoices.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (taxManuallyEdited || (invoicesTouched && selectedInvoices.length > 0)) return
+    if (isPrepayment || taxManuallyEdited || (invoicesTouched && selectedInvoices.length > 0)) return
     if (po?.currency === 'CAD' && subtotalNum > 0) {
       setTaxAmount((subtotalNum * paTaxRate).toFixed(2))
     }
@@ -330,7 +351,8 @@ function PoPaEditPage() {
 
     try {
       // Lines from every PO still on the payment.
-      const paLineItems = derivedLines
+      // A prepayment's single line is rebuilt by the server from the %.
+      const paLineItems = isPrepayment ? undefined : derivedLines
         ? derivedLines.map(({ line_total: _lt, ...l }) => l)
         : pos.flatMap((p) =>
         p.line_items
@@ -361,11 +383,11 @@ function PoPaEditPage() {
           // clearing a charge back to 0 would silently keep the old amount.
           shipping_amount: shippingNum,
           other_charges: otherNum,
-          invoice_ids: Array.from(selectedInvoiceIds),
+          invoice_ids: isPrepayment ? [] : Array.from(selectedInvoiceIds),
           // Omitted entirely on the agreement route rather than sent empty:
           // there is no PO line and no goods receipt to carry, and `[]` is a
           // value — it would overwrite, not skip.
-          gr_ids: isAgreementMode ? undefined : Array.from(selectedGrIds),
+          gr_ids: isAgreementMode ? undefined : isPrepayment ? [] : Array.from(selectedGrIds),
           prepayment_pct: paType === 'prepayment' ? parseFloat(prepaymentPct) : undefined,
           expected_settlement_date: paType === 'prepayment' ? expectedSettlement : undefined,
           line_items: isAgreementMode ? undefined : paLineItems,
@@ -542,6 +564,12 @@ function PoPaEditPage() {
               {isAgreementMode ? 'Link Invoices' : 'Link Invoices & Goods Receipts'}
             </h2>
 
+            {isPrepayment ? (
+              <p className="text-xs text-neutral-500 px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
+                A prepayment carries no invoices or receipts — the vendor's invoice is linked
+                on the settlement PA that settles this prepayment.
+              </p>
+            ) : (<>
             {/* Invoices multi-select */}
             <div className="flex flex-col gap-2">
               <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
@@ -744,6 +772,7 @@ function PoPaEditPage() {
                 </div>
               </div>
             )}
+            </>)}
 
             {/* PA Type — derived from the linked PO, read-only. The agreement
                 route only ever creates pa_type='regular' (POST /pa 422s the
@@ -851,12 +880,19 @@ function PoPaEditPage() {
                     type="number" min={0} step={0.01}
                     value={subtotal}
                     onChange={(e) => setSubtotal(e.target.value)}
+                    readOnly={isPrepayment}
                     placeholder="0.00"
                     className={cn(
                       'h-10 px-3 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
+                      isPrepayment && 'bg-neutral-50 text-neutral-600',
                       submitted && subtotalNum <= 0 ? 'border-danger-400' : 'border-neutral-300'
                     )}
                   />
+                  {isPrepayment && po && (
+                    <p className="text-[11px] text-neutral-400">
+                      {prepayPctNum || 0}% × PO pre-tax {formatAmount(prepayBase, po.currency)} — change the % to change it
+                    </p>
+                  )}
                   {submitted && subtotalNum <= 0 && (
                     <p className="text-xs text-danger-600">Pre-tax amount is required</p>
                   )}
@@ -865,7 +901,10 @@ function PoPaEditPage() {
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-medium text-neutral-700">
                     Tax Amount <span className="text-danger-600">*</span>
-                    {!taxManuallyEdited && po?.currency === 'CAD' && subtotalNum > 0 && (
+                    {isPrepayment && !taxManuallyEdited && (
+                      <span className="ml-1.5 text-[10px] font-normal text-neutral-400">same share of the PO's tax</span>
+                    )}
+                    {!isPrepayment && !taxManuallyEdited && po?.currency === 'CAD' && subtotalNum > 0 && (
                       <span className="ml-1.5 text-[10px] font-normal text-neutral-400">13% HST</span>
                     )}
                   </label>

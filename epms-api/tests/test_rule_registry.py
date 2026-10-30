@@ -718,11 +718,14 @@ def test_an_open_prepayment_blocks_a_regular_pa():
 def test_prepayment_cap_reads_the_vendor_then_the_system():
     from app.api.v1 import pa as pa_api
 
-    create = inspect.getsource(pa_api.create_pa)
-    assert "vendor.max_prepayment_pct" in create
-    assert "This vendor does not allow prepayment" in create
+    check = inspect.getsource(pa_api._check_prepayment_pct)
+    assert "vendor.max_prepayment_pct" in check
+    assert "This vendor does not allow prepayment" in check
+    # Checked on create and, since ISS-0133, on edit too.
+    for route in (pa_api.create_pa, pa_api.update_pa):
+        assert "_check_prepayment_pct(" in inspect.getsource(route)
     # ISS-0066: the Prepaid flag on PRs/POs plays no part in creating a PA.
-    assert "is_prepaid" not in create
+    assert "is_prepaid" not in inspect.getsource(pa_api.create_pa) + check
 
 
 def test_pa_tax_is_on_the_lines_only():
