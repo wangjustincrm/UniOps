@@ -115,7 +115,7 @@ export default function PaymentOfficerDashboard() {
                           one, so it names the primary and counts the rest —
                           showing the primary alone reads as the whole payment. */}
                       <span className="font-mono text-xs text-neutral-600">
-                        {pa.po_number}
+                        {pa.po_number ?? '—'}
                         {(pa.po_numbers?.length ?? 0) > 1 && (
                           <span className="ml-1 text-neutral-400">+{(pa.po_numbers?.length ?? 1) - 1}</span>
                         )}
