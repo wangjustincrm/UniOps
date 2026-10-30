@@ -129,6 +129,10 @@ _DEFAULT_NOTIFICATION_SETTINGS = {
     # 没有这道闸。消费方一律显式回落,老配置行没有这两个键也算「关 + 空跑」。
     "service_gr_due_enabled": False,
     "service_gr_due_dry_run": True,
+    # GR acknowledgement reminder / escalation (app/tasks/gr_ack_due.py,
+    # ISS-0146 ①): same two gates as service_gr_due — off, and dry run first.
+    "gr_ack_due_enabled": False,
+    "gr_ack_due_dry_run": True,
     # 角色 → 共享邮箱。配了地址的角色,其“角色池”任务只发这一个邮箱,
     # 不再逐个通知该角色成员。空 = 维持逐人发送。
     "role_shared_mailboxes": {},
@@ -244,6 +248,24 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
     # 老的键留着不能删:cfg.email_templates 是**数据行**,生产库里那份模板早就
     # 写着 {requester_name},代码这边改名只会让线上渲染出一个空洞。新装库用
     # {owner_name},措辞才和实际收件逻辑对得上。
+    # GR acknowledgement reminder / escalation (app/tasks/gr_ack_due.py,
+    # ISS-0146 ①). Missing keys are backfilled into existing rows by get_or_create.
+    "gr_ack_reminder": _DEFAULT_EMAIL_TEMPLATE(
+        "Reminder: Acknowledge Goods Receipt — {gr_number}",
+        "Hi {recipient_name},\n\nGoods receipt <b>{gr_number}</b> for PO <b>{po_number}</b> "
+        "has been waiting for your acknowledgement for {days_waiting} day(s).\n\n"
+        "Please acknowledge it so the goods can be collected and the vendor paid.\n\n"
+        "<b>Vendor:</b> {vendor}\n\n"
+        "<a href=\"{link}\">Open the Goods Receipt</a>\n\n{company_name}",
+    ),
+    "gr_ack_escalation": _DEFAULT_EMAIL_TEMPLATE(
+        "Overdue: Goods Receipt Not Acknowledged — {gr_number}",
+        "Hi {recipient_name},\n\nGoods receipt <b>{gr_number}</b> for PO <b>{po_number}</b> "
+        "has been waiting {days_waiting} day(s), and <b>{holder_name}</b> has not acknowledged "
+        "it despite a reminder.\n\nPlease follow up.\n\n"
+        "<b>Vendor:</b> {vendor}\n\n"
+        "<a href=\"{link}\">Open the Goods Receipt</a>\n\n{company_name}",
+    ),
     "service_gr_escalation": _DEFAULT_EMAIL_TEMPLATE(
         "Overdue: Service Completion Not Confirmed — {po_number}",
         "Hi {recipient_name},\n\nPO <b>{po_number}</b> was expected to be complete on "

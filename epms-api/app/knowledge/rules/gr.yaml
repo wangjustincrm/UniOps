@@ -135,23 +135,30 @@ rules:
       - "tests/test_collection_gate.py::test_off_by_default_even_with_the_legacy_key_true"
       - "tests/test_collection_gate.py::test_on_waits_for_collection_then_raises_create_pa"
       - "tests/test_collection_gate.py::test_on_does_not_hold_back_service_pos"
-  - id: no_escalation_for_goods_receipts
+  - id: gr_acknowledgement_reminders
     also_in: [notifications]
     asked_as:
       - GR 确认超时会升级给谁？
       - 收货确认超时会升级给经理吗？
       - who is a late GR confirmation escalated to
     answer: >
-      For goods (physical) receipts there are no reminders and no escalation
-      when nobody acknowledges or collects them: the GR Notification SLA
-      setting in Admin is stored, but nothing acts on it. Open receipt tasks
-      only reach people through the normal task notification settings and
-      the daily digest. Service and project POs are different — see
+      A goods receipt still waiting for acknowledgement more than {reminder_days}
+      day(s) after it was recorded is reminded once a day to the person who has
+      to acknowledge it (the PR's owner). Once they have been reminded and it
+      has waited {escalation_days} day(s), their Department Manager gets one
+      escalation email. The days come from EPMS → Admin → GR Notification SLA;
+      the reminder is {state} (Portal → Admin → Notification Settings → GR
+      Acknowledgement Reminder), running daily at {time} UTC. Collecting the
+      goods is not chased — the collection timers on Collection Config are not
+      active. Service and project POs have their own reminder — see
       service_completion_reminders.
-    enforced_in: "epms-api: CompanyConfig.gr_notification_sla has no reader outside config storage"
-    provenance: not_built
+    provenance: derived
+    derive: gr_ack_reminders
+    enforced_in: "epms-api app/tasks/gr_ack_due.py run_gr_ack_due (gr_notification_sla reminder_days / manager_escalation_days; notification_settings gr_ack_due_enabled default off, gr_ack_due_dry_run default on)"
     test:
-      - "tests/test_rule_registry.py::test_nothing_reads_the_gr_notification_sla"
+      - "tests/test_gr_ack_due.py::test_reminds_then_escalates_once"
+      - "tests/test_gr_ack_due.py::test_off_and_dry_run_remind_nobody"
+      - "tests/test_rule_registry.py::test_gr_ack_reminder_facts_are_read_from_config"
   - id: service_completion_reminders
     also_in: [notifications]
     asked_as:

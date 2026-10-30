@@ -648,13 +648,27 @@ def test_a_damaged_line_raises_an_urgent_task_for_procurement():
     assert 'item.condition not in ("good", None)' in inspect.getsource(gr_crud.create)
 
 
-def test_nothing_reads_the_gr_notification_sla():
-    """Stored and editable, acted on by nothing (no_escalation_for_goods_receipts)."""
-    allowed = {"models/config.py", "crud/config.py", "schemas/config.py"}
+def test_only_the_ack_sweep_reads_the_gr_notification_sla():
+    """ISS-0146 ①: the GR Notification SLA is acted on by tasks/gr_ack_due.py
+    (and stated by rule_facts) — nothing else reads it."""
+    allowed = {"models/config.py", "crud/config.py", "schemas/config.py",
+               "tasks/gr_ack_due.py", "services/rule_facts.py"}
     readers = sorted(
         str(p.relative_to(EPMS_API / "app")) for p in (EPMS_API / "app").rglob("*.py")
         if "gr_notification_sla" in p.read_text(encoding="utf-8"))
     assert set(readers) <= allowed, readers
+    assert "tasks/gr_ack_due.py" in readers
+
+
+async def test_gr_ack_reminder_facts_are_read_from_config():
+    off = await rule_facts.gr_ack_reminders(_FakeDb(SimpleNamespace(
+        gr_notification_sla={}, notification_settings={})))
+    assert (off["reminder_days"], off["escalation_days"]) == (1, 3)
+    assert off["state"].startswith("switched off")
+    live = await rule_facts.gr_ack_reminders(_FakeDb(SimpleNamespace(
+        gr_notification_sla={"reminder_days": 2, "manager_escalation_days": 5},
+        notification_settings={"gr_ack_due_enabled": True, "gr_ack_due_dry_run": False})))
+    assert (live["reminder_days"], live["escalation_days"], live["state"]) == (2, 5, "switched on and live")
 
 
 async def test_service_gr_reminder_facts_are_read_from_config():

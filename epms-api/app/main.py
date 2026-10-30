@@ -41,6 +41,10 @@ async def lifespan(app: FastAPI):
     # its expected completion date (PRD GR-S-001a). Gated OFF by default.
     from app.tasks.service_gr_due import service_gr_due_loop
     service_gr_task = asyncio.create_task(service_gr_due_loop())
+    # Reminds the PR owner to acknowledge a waiting GR and escalates to their
+    # manager (GR Notification SLA, ISS-0146 ①). Gated OFF by default.
+    from app.tasks.gr_ack_due import gr_ack_due_loop
+    gr_ack_task = asyncio.create_task(gr_ack_due_loop())
     yield
     logger.info("Shutting down — closing connections")
     followup_task.cancel()
@@ -48,6 +52,7 @@ async def lifespan(app: FastAPI):
     overdue_task.cancel()
     nc_sync_task.cancel()
     service_gr_task.cancel()
+    gr_ack_task.cancel()
     # Settle fire-and-forget work (notification emails, PDF generation, PMS
     # import) BEFORE disposing the engine. Each of those owns its own session;
     # tearing the pool down underneath one leaves it mid-transaction. Brief

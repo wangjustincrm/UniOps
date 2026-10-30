@@ -133,6 +133,28 @@ async def notification_switches(db) -> dict:
     }
 
 
+async def gr_ack_reminders(db) -> dict:
+    """GR acknowledgement reminder (ISS-0146 ①), read the way gr_ack_due reads it."""
+    from app.tasks import gr_ack_due as due
+
+    cfg = await _config(db)
+    sla = getattr(cfg, "gr_notification_sla", None) or {}
+    ns = getattr(cfg, "notification_settings", None) or {}
+    enabled = bool(ns.get("gr_ack_due_enabled", False))
+    dry_run = bool(ns.get("gr_ack_due_dry_run", True))
+    if not enabled:
+        state = "switched off, so no such reminders are being sent"
+    elif dry_run:
+        state = ("switched on in dry run: the list is emailed to the System Admins "
+                 "only, and nobody is reminded yet")
+    else:
+        state = "switched on and live"
+    return {"reminder_days": int(sla.get("reminder_days", due._DEFAULT_REMINDER_DAYS)),
+            "escalation_days": int(sla.get("manager_escalation_days",
+                                           due._DEFAULT_MANAGER_ESCALATION_DAYS)),
+            "state": state, "time": ns.get("followup_time") or "08:00"}
+
+
 async def collection_gate(db) -> dict:
     """Admin → Collection Config "Collection Confirmation Required" (ISS-0146),
     read the way crud.po.collection_gate_on reads it."""

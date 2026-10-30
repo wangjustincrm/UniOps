@@ -60,6 +60,8 @@ interface CompanyConfig {
     service_gr_due_enabled?: boolean
     service_gr_due_dry_run?: boolean
     agreement_overdue_enabled?: boolean
+    gr_ack_due_enabled?: boolean
+    gr_ack_due_dry_run?: boolean
     pa_approved_notify_requester?: boolean
     role_shared_mailboxes?: Record<string, string>
     [key: string]: unknown
@@ -930,6 +932,8 @@ function NotificationSettings() {
   const [followup, setFollowup] = useState('')
   const [serviceGrDue, setServiceGrDue] = useState<boolean | null>(null)
   const [agreementOverdue, setAgreementOverdue] = useState<boolean | null>(null)
+  const [grAckDue, setGrAckDue] = useState<boolean | null>(null)
+  const [grAckDryRun, setGrAckDryRun] = useState<boolean | null>(null)
   const [paApprovedNotify, setPaApprovedNotify] = useState<boolean | null>(null)
   const [serviceGrDryRun, setServiceGrDryRun] = useState<boolean | null>(null)
   const [mailboxes, setMailboxes] = useState<Record<string, string> | null>(null)
@@ -953,6 +957,9 @@ function NotificationSettings() {
   // ISS-0137. Fallbacks mirror crud/config.py: the overdue chase is on unless
   // switched off; the PA-approved email is off unless switched on.
   const agreementOverdueVal = agreementOverdue ?? ns?.agreement_overdue_enabled ?? true
+  // ISS-0146 ①: off, and dry run first — mirrors crud/config.py.
+  const grAckDueVal = grAckDue ?? ns?.gr_ack_due_enabled ?? false
+  const grAckDryRunVal = grAckDryRun ?? ns?.gr_ack_due_dry_run ?? true
   const paApprovedNotifyVal = paApprovedNotify ?? ns?.pa_approved_notify_requester ?? false
   const mailboxesVal = mailboxes ?? ns?.role_shared_mailboxes ?? {}
 
@@ -1000,6 +1007,8 @@ function NotificationSettings() {
           service_gr_due_enabled: serviceGrDueVal,
           service_gr_due_dry_run: serviceGrDryRunVal,
           agreement_overdue_enabled: agreementOverdueVal,
+          gr_ack_due_enabled: grAckDueVal,
+          gr_ack_due_dry_run: grAckDryRunVal,
           pa_approved_notify_requester: paApprovedNotifyVal,
           role_shared_mailboxes: mailboxesVal,
         },
@@ -1137,6 +1146,21 @@ function NotificationSettings() {
                 ? 'Dry run — admins get a preview, requesters are not contacted'
                 : 'Live — requesters and their managers are notified'}
             </span>
+          </div>
+        </Field>
+      )}
+
+      <Field label="GR Acknowledgement Reminder" hint="When on, a goods receipt still waiting for acknowledgement past the GR Notification SLA (EPMS → Admin) is reminded daily to the PR owner, and escalated once to their Department Manager. Runs at the digest time above. Off by default.">
+        <div className="flex items-center gap-2 pt-1.5">
+          <Toggle checked={grAckDueVal} onChange={(v) => setGrAckDue(v)} />
+          <span className="text-xs text-neutral-500">{grAckDueVal ? 'On — waiting receipts are chased' : 'Off — no acknowledgement reminders'}</span>
+        </div>
+      </Field>
+      {grAckDueVal && (
+        <Field label="GR Acknowledgement Reminder — Dry Run" hint="Leave on for the first days: administrators get the list of receipts it would chase, and nobody is reminded. Turn off once the list looks right.">
+          <div className="flex items-center gap-2 pt-1.5">
+            <Toggle checked={grAckDryRunVal} onChange={(v) => setGrAckDryRun(v)} />
+            <span className="text-xs text-neutral-500">{grAckDryRunVal ? 'Dry run — admins get a preview only' : 'Live — owners and their managers are notified'}</span>
           </div>
         </Field>
       )}
