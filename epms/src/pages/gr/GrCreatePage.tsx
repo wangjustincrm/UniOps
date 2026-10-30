@@ -592,8 +592,9 @@ export default function GrCreatePage() {
               <div>
                 <p className="text-sm font-semibold text-warning-700">One or more lines have issues</p>
                 <p className="text-sm text-warning-600 mt-0.5">
-                  Submitting will flag this GR as Discrepancy and notify the Procurement Officer.
-                  Invoice creation will be blocked until the discrepancy is resolved.
+                  Submitting will raise an urgent Report Goods Damage task for the Procurement Officers
+                  to arrange a return, credit or replacement with the vendor. The GR still goes through
+                  acknowledgement and collection as usual, and invoices for this PO are not blocked.
                 </p>
               </div>
             </div>

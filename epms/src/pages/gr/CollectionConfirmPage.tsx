@@ -311,7 +311,9 @@ export default function CollectionConfirmPage() {
               {lines.filter((l) => l.condition !== 'good').length} item(s) with issues
             </p>
             <p className="text-sm text-warning-600 mt-0.5">
-              Submitting will notify the Procurement Officer. Invoice creation will be blocked until issues are resolved.
+              The conditions and line notes marked here are not saved on the GR and do not notify anyone, and
+              invoices for this PO are not blocked. Put what Procurement needs to know in General Notes, which
+              are kept on the GR, and tell them so they can take it up with the vendor.
             </p>
           </div>
         </div>
