@@ -46,6 +46,9 @@ values:
         GR is cancelled, not just until collection.
       - Receiving more than a PO line still has open (ordered less received
         and pending) needs an over-receipt reason, kept on the GR.
+      - If Admin → Collection Config → Collection Confirmation Required is on,
+        a PA for the order (and the Create PA task) waits until the goods are
+        collected; off by default.
       - A short delivery is recorded as a discrepancy rather than being forced
         to match the order.
       - Cancelled and rejected receipts do not count as goods received — they

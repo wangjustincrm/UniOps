@@ -714,15 +714,26 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
             p for p in pos
             if not await po_crud.po_has_three_way_matched_invoice(db, p.id)
         ]
-        if ungated:
-            numbers = ", ".join(p.number for p in ungated)
+        # Admin → Collection Config "Collection Confirmation Required" (ISS-0146):
+        # a physical PO's goods must also have been collected. Same override.
+        uncollected = [
+            p for p in pos
+            if p not in ungated and not await po_crud.po_collection_cleared(db, p)
+        ]
+        if ungated or uncollected:
             if not body.receipt_override:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"No 3-way matched invoice for {numbers} (a matched invoice "
-                           "with a linked goods receipt). Create a goods receipt "
-                           "first, or override with a reason.",
-                )
+                if ungated:
+                    numbers = ", ".join(p.number for p in ungated)
+                    detail = (f"No 3-way matched invoice for {numbers} (a matched invoice "
+                              "with a linked goods receipt). Create a goods receipt "
+                              "first, or override with a reason.")
+                else:
+                    numbers = ", ".join(p.number for p in uncollected)
+                    detail = (f"The goods for {numbers} have not been collected yet — "
+                              "Collection Confirmation is required before a PA. The "
+                              "requester records it on the goods receipt, or override "
+                              "with a reason.")
+                raise HTTPException(status_code=422, detail=detail)
             if not scope["perms"].get("pa_override_receipt", False):
                 raise HTTPException(
                     status_code=403,

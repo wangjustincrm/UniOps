@@ -133,6 +133,16 @@ async def notification_switches(db) -> dict:
     }
 
 
+async def collection_gate(db) -> dict:
+    """Admin → Collection Config "Collection Confirmation Required" (ISS-0146),
+    read the way crud.po.collection_gate_on reads it."""
+    cfg = await _config(db)
+    on = bool((getattr(cfg, "collection_config", None) or {}).get("collection_gate_enabled", False))
+    return {"state": ("switched on: a physical PO's PA waits until its goods are collected"
+                      if on else
+                      "switched off: a PA is allowed as soon as a goods receipt is recorded")}
+
+
 # ── Payment applications and invoices ────────────────────────────────────────
 
 def pa_invoice_window(db) -> dict:

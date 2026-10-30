@@ -329,7 +329,7 @@ async def _on_invoice_matched(db, invoice) -> None:
     crud.po.po_has_three_way_matched_invoice —— 对表头 PO 等价于原来的
     `invoice.gr_id is not None`,对分摊 PO 则要求该 PO 自己有 GR。
     """
-    from app.crud.po import po_has_three_way_matched_invoice
+    from app.crud.po import po_collection_cleared, po_has_three_way_matched_invoice
     from app.models.invoice_allocation import InvoicePoAllocation
     from app.schemas.gr import is_physical
 
@@ -360,7 +360,11 @@ async def _on_invoice_matched(db, invoice) -> None:
         three_way = (invoice.status == "matched"
                      and await po_has_three_way_matched_invoice(db, po.id))
         if three_way:
-            await _create_or_renotify_create_pa(db, po, pr, invoice)   # = 原 create_pa 逻辑抽出
+            # Collection gate (ISS-0146): received but not yet collected → no
+            # create_pa yet; crud.gr raises it when the goods are collected.
+            # No confirm_receipt either — there IS a receipt.
+            if await po_collection_cleared(db, po):
+                await _create_or_renotify_create_pa(db, po, pr, invoice)   # = 原 create_pa 逻辑抽出
         else:
             await _create_or_renotify_confirm_receipt(db, po, pr, invoice, is_physical(po.type))
 

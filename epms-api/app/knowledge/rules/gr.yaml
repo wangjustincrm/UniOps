@@ -92,6 +92,31 @@ rules:
       - "tests/test_gr_over_receipt.py::test_over_receipt_needs_a_reason_on_create"
       - "tests/test_gr_over_receipt.py::test_pending_grs_count_against_the_open_quantity"
       - "tests/test_gr_over_receipt.py::test_collect_asks_for_a_reason_when_it_would_exceed_the_order"
+  - id: collection_confirmation_gate
+    also_in: [pa]
+    asked_as:
+      - 收货后还没领取能建 PA 吗？
+      - 为什么收货了还不能建付款申请？
+      - do the goods have to be collected before a PA
+    answer: >
+      It depends on EPMS → Admin → Collection Config → Collection Confirmation
+      Required, which is currently {state}. When it is on, a payment
+      application for a physical PO (and the Create PA task) waits until goods
+      on that PO have been collected — the PR's requester records the
+      collection on the goods receipt (Confirm Collection); a receipt that is
+      only recorded or acknowledged is not enough. Someone with the
+      receipt-override permission can still override with a reason. Service
+      and project POs, and prepayment PAs, are not affected. When it is off, a
+      PA is allowed as soon as a goods receipt is recorded and matched to an
+      invoice. The collection reminder and escalation timers on that page are
+      stored only — no such reminders are sent yet.
+    provenance: derived
+    derive: collection_gate
+    enforced_in: "epms-api app/crud/po.py collection_gate_on / po_collection_cleared / po_ready_for_pa (collection_config.collection_gate_enabled, default off); app/api/v1/pa.py receipt gate; app/crud/gr.py _on_three_way_reached + _after_receipt_posted; app/api/v1/invoices.py create_pa; app/services/po_action_check.py goods_collected"
+    test:
+      - "tests/test_collection_gate.py::test_off_by_default_even_with_the_legacy_key_true"
+      - "tests/test_collection_gate.py::test_on_waits_for_collection_then_raises_create_pa"
+      - "tests/test_collection_gate.py::test_on_does_not_hold_back_service_pos"
   - id: no_escalation_for_goods_receipts
     also_in: [notifications]
     asked_as:

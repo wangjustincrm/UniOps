@@ -102,7 +102,9 @@ _DEFAULT_BUDGET_ADMIN_CONFIG = {
 }
 
 _DEFAULT_COLLECTION_CONFIG = {
-    "collection_required": True, "reminder_days": 2,
+    # collection_required: legacy, never read. collection_gate_enabled is the
+    # switch crud.po.collection_gate_on reads (ISS-0146) — off by default.
+    "collection_required": True, "collection_gate_enabled": False, "reminder_days": 2,
     "manager_escalation_days": 4, "fm_alert_days": 7,
 }
 

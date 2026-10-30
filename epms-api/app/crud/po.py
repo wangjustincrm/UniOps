@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, exists, func, select
 from sqlalchemy.dialects.postgresql import array as sa_array
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -862,6 +862,48 @@ async def po_has_three_way_matched_invoice(db: AsyncSession, po_id: uuid.UUID) -
     # (core.po_facts) — it used to be three queries here and a guess there.
     from app.core.po_facts import three_way_matched
     return bool((await db.execute(select(three_way_matched(po_id)))).scalar())
+
+
+async def collection_gate_on(db: AsyncSession) -> bool:
+    """Admin → Collection Config → "Collection Confirmation Required" (ISS-0146).
+
+    Read from collection_config.collection_gate_enabled, off unless switched
+    on. Not the older collection_required key: that one was stored (and
+    defaulted to true) for years while nothing read it, so honouring it would
+    switch the gate on everywhere the moment this shipped."""
+    from app.models.config import CompanyConfig
+    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
+    return bool(((cfg.collection_config if cfg else None) or {}).get("collection_gate_enabled", False))
+
+
+async def po_collection_cleared(db: AsyncSession, po) -> bool:
+    """False only while the collection gate is on, the PO is for physical goods
+    and nothing on it has been collected yet: no GR collected / confirmed (or
+    later flagged discrepancy) and no received quantity — quantities reach the
+    PO lines only on collection (GR-P-003). Service / project POs are confirmed,
+    not collected, and are never held back."""
+    from app.crud.gr import COUNTED_GR_STATUSES
+    from app.models.gr import GoodsReceipt
+    from app.schemas.gr import is_physical
+
+    if not is_physical(po.type) or not await collection_gate_on(db):
+        return True
+    collected = await db.execute(select(
+        exists(select(GoodsReceipt.id).where(
+            GoodsReceipt.po_id == po.id, GoodsReceipt.status.in_(COUNTED_GR_STATUSES)))
+        | exists(select(PoLineItem.id).where(
+            PoLineItem.po_id == po.id, PoLineItem.received_qty > 0))
+    ))
+    return bool(collected.scalar())
+
+
+async def po_ready_for_pa(db: AsyncSession, po) -> bool:
+    """The PA receipt gate and the create_pa task: 3-way matched and, when the
+    collection gate is on, collected. The confirm-receipt nudge keeps reading
+    po_has_three_way_matched_invoice alone — a GR that exists but is not yet
+    collected must not be chased as "no receipt"."""
+    return (await po_has_three_way_matched_invoice(db, po.id)
+            and await po_collection_cleared(db, po))
 
 
 async def payable_invoice_po_ids(

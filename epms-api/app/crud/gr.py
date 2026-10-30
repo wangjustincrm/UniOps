@@ -408,6 +408,7 @@ async def action(
             gr.collected_by = req.acknowledged_by or await _actor_name(db, actor_id)
             await _require_over_receipt_reason_on_post(db, gr, req.over_receipt_reason)
             await _update_po_received_qty(db, gr)
+            await _after_receipt_posted(db, gr)
         elif gr.gr_type == "physical":
             gr.status = "collection_pending"
             await _create_collect_task(db, gr)
@@ -426,6 +427,7 @@ async def action(
         gr.collected_by = req.collected_by or await _actor_name(db, actor_id)
         gr.collection_notes = req.collection_notes
         await _update_po_received_qty(db, gr)
+        await _after_receipt_posted(db, gr)
 
     elif act == "confirm":
         allowed = {"collected", "collection_pending"}
@@ -446,6 +448,7 @@ async def action(
         gr.collection_notes = req.collection_notes
         # Update PO line received_qty and PO status
         await _update_po_received_qty(db, gr)
+        await _after_receipt_posted(db, gr)
         # Best-effort: confirming must not fail because the file server is down —
         # fall back to inline DB storage for the PDF. Service GRs collapse
         # acknowledge + confirm into this one step and would otherwise never get
@@ -907,9 +910,24 @@ async def _autofill_gr_to_matched_invoices(
     await db.flush()
 
 
+async def _after_receipt_posted(db: AsyncSession, gr: GoodsReceipt) -> None:
+    """A GR was collected / confirmed: with the collection gate on, this is
+    when the PO becomes ready for a PA, so raise create_pa now (idempotent —
+    nothing happens if it already exists or the PO has a PA). Flushed first:
+    the session does not autoflush and the readiness check is a SELECT on the
+    quantities just posted."""
+    if gr.po_id is None:
+        return
+    await db.flush()
+    await _on_three_way_reached(db, gr.po_id)
+
+
 async def _on_three_way_reached(db: AsyncSession, po_id: uuid.UUID) -> None:
-    """GR 创建使 PO 达成 3-way 后:关掉催收货提醒,补建 create_pa(若尚无 PA/任务)。"""
-    from app.crud.po import po_has_three_way_matched_invoice
+    """GR 创建(或领取)使 PO 达成 3-way 后:关掉催收货提醒,补建 create_pa(若尚无 PA/任务)。
+
+    With the collection gate on (ISS-0146) create_pa waits until the goods are
+    collected, so this also runs after collect / confirm."""
+    from app.crud.po import po_ready_for_pa
     # 1) 关闭 confirm_receipt
     now = datetime.now(timezone.utc)
     rows = (await db.execute(select(Task).where(
@@ -921,8 +939,9 @@ async def _on_three_way_reached(db: AsyncSession, po_id: uuid.UUID) -> None:
     for t in rows:
         t.is_completed = True
         t.completed_at = now
-    # 2) 若已 3-way 且无 PA 且无 open create_pa → 建 create_pa
-    if not await po_has_three_way_matched_invoice(db, po_id):
+    # 2) 若已 3-way(且收货闸门要求时已领取)且无 PA 且无 open create_pa → 建 create_pa
+    po_row = (await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == po_id))).scalar_one_or_none()
+    if po_row is None or not await po_ready_for_pa(db, po_row):
         return
     from app.crud.pa_links import pa_ids_for_po
     has_pa = (await db.execute(

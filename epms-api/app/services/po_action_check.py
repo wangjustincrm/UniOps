@@ -75,6 +75,7 @@ async def _create_pa(db, user: dict, po) -> tuple[list[dict], list[str]]:
     # claimed by another live PA (crud.po.payable_invoice_po_ids).
     payable = po.id in await po_crud.payable_invoice_po_ids(db, [po.id])
     matched = await po_crud.po_has_three_way_matched_invoice(db, po.id)
+    collected = await po_crud.po_collection_cleared(db, po)
     blocking = await open_prepayment_pa_number(db, [po.id])
     may_write = await has_permission(db, uuid.UUID(user["sub"]), user.get("role", ""),
                                      "epms.pa.write")
@@ -99,6 +100,11 @@ async def _create_pa(db, user: dict, po) -> tuple[list[dict], list[str]]:
                "PA needs one — record the receipt first — unless someone with the "
                "receipt-override permission overrides it with a reason. A "
                "prepayment PA is exempt.", fixable_by_user=True),
+        _check("goods_collected", collected,
+               "Admin → Collection Config requires the goods to be collected before "
+               "a PA: nothing on this PO has been collected yet. The PR's requester "
+               "records the collection on the goods receipt (Confirm Collection). "
+               "A prepayment PA is exempt.", owner="the PR's requester"),
         _check("no_open_prepayment", blocking is None,
                f"Prepayment PA {blocking} on this PO is still open; a regular PA "
                f"cannot be created until it is settled or cancelled."),
