@@ -110,8 +110,6 @@ values:
       - The pre-tax amount is calculated — Prepayment % × the whole PO's
         pre-tax total — and cannot be typed. Tax is pre-filled with the same
         share of the PO's tax and can be changed; freight may be added.
-      - Links no invoices or goods receipts; the vendor's invoice goes on the
-        settlement PA.
 
   - value: settlement
     label: Settlement

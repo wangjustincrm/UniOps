@@ -521,7 +521,6 @@ function PoPaCreate() {
     if (autoSelectedForPoRef.current === poSelectionKey) return
     // Wait until every list query for this PO has resolved.
     if (invoicesData === undefined || grsData === undefined || poActivePas === undefined) return
-    if (paType === 'prepayment') return
 
     const matchedInvoices = docInvoices.filter(
       (inv) => inv.status === 'matched' && !lockedInvoiceIds.has(inv.id)
@@ -594,13 +593,6 @@ function PoPaCreate() {
       setTitle(`Payment — ${agreement.vendor_name} ${agreement.number}`)
     }
   }, [isAgreementMode, poSelectionKey, selectedPo?.id, selectedPos.length, agreement?.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // A prepayment carries no invoices — the vendor's invoice goes on the
-  // settlement (ISS-0133). The PO's type is set in the same pass the matched
-  // invoices may be ticked, so clear after.
-  useEffect(() => {
-    if (isPrepayment && selectedInvoiceIds.size > 0) setSelectedInvoiceIds(new Set())
-  }, [isPrepayment, selectedInvoiceIds.size])
 
   // Auto-fill pre-tax: prefer the linked invoices' real pre-tax; fall back to the
   // selected PO lines when the PA links no invoice (GR-only / manual payment).
@@ -1121,14 +1113,6 @@ ${submitError}
                 Link Invoices & Goods Receipts
               </h2>
 
-              {isPrepayment ? (
-                // ISS-0133: paid before the vendor invoices or delivers — the
-                // invoice and the receipts go on the settlement instead.
-                <p className="text-xs text-neutral-500 px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
-                  A prepayment carries no invoices or receipts — the vendor's invoice is linked
-                  on the settlement PA that settles this prepayment.
-                </p>
-              ) : (<>
               {/* Invoices multi-select */}
               <div className="flex flex-col gap-2">
                 <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
@@ -1303,7 +1287,6 @@ ${submitError}
                   )}
                 </div>
               </div>
-              </>)}
               </>)}
 
               {/* PA Type — the choices follow the PO's prepayment flag: a prepaid

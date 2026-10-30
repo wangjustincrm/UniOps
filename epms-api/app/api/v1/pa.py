@@ -435,12 +435,11 @@ async def _check_prepayment_pct(db, po: PurchaseOrder, pct) -> None:
 
 
 def _prepayment_amounts(po: PurchaseOrder, pct, tax_given: bool) -> dict:
-    """ISS-0133 (rule question 8, option B): a prepayment PA's pre-tax amount
-    is computed from its %, never typed. Base = the whole PO's pre-tax total
-    and no invoices on a prepayment — both the developer's proposal, accepted
-    by the owner on 2026-10-30. One line, "Prepayment N% of PO-…": nothing
-    downstream reads PA lines (NC push, payment, posting and settlement use
-    the header), and a single line keeps the lines equal to the pre-tax amount.
+    """ISS-0133 (rule question 8, the administrator's answer B: the amount is
+    calculated from the %). Base = the whole PO — the question put it as
+    "% × PO amount". The pre-tax amount is computed, never typed. One line,
+    "Prepayment N% of PO-…", unless linked invoices decide the lines
+    (PA-018); invoices stay optional on a prepayment (PA-010, INV-009).
 
     Tax, shipping and other charges stay as entered, as on any PA: 3 of the
     25 prepayments on record (all 100%) also prepaid the freight, one with tax
@@ -453,7 +452,7 @@ def _prepayment_amounts(po: PurchaseOrder, pct, tax_given: bool) -> dict:
     base = po.subtotal or Decimal("0")
     pretax = (base * pct / 100).quantize(cent, ROUND_HALF_UP)
     out = {
-        "subtotal": pretax, "invoice_ids": [],
+        "subtotal": pretax,
         "line_items": [PaLineItemIn(
             description=f"Prepayment {pct.normalize():f}% of {po.number}",
             qty=Decimal("1"), unit="lot", unit_price=pretax)],
@@ -464,15 +463,6 @@ def _prepayment_amounts(po: PurchaseOrder, pct, tax_given: bool) -> dict:
         else:
             out["tax_amount"] = (pretax * (po.tax_rate or Decimal("0"))).quantize(cent, ROUND_HALF_UP)
     return out
-
-
-def _refuse_prepayment_invoices(invoice_ids) -> None:
-    if invoice_ids:
-        raise HTTPException(
-            status_code=422,
-            detail="A prepayment PA does not carry invoices — the vendor's invoice "
-                   "goes on the settlement PA that settles this prepayment.",
-        )
 
 
 async def _get_prepayment_config(db: SessionDep) -> PrepaymentConfig:
@@ -675,7 +665,6 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
     # ── Prepayment-specific guards ─────────────────────────────────────────────
     if body.pa_type == "prepayment":
         await _check_prepayment_pct(db, po, body.prepayment_pct)
-        _refuse_prepayment_invoices(body.invoice_ids)
         # ISS-0133: the pre-tax amount follows the %, whatever the client sent.
         tax_given = "tax_amount" in body.model_fields_set
         for field, value in _prepayment_amounts(po, body.prepayment_pct, tax_given).items():
@@ -930,7 +919,6 @@ async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: Curr
     # the pre-tax amount and the single line are recomputed from the % and the
     # PO — whatever the client sent.
     if pa.pa_type == "prepayment" and pa.po_id is not None:
-        _refuse_prepayment_invoices(body.invoice_ids)
         pp_po_id = (body.po_ids[0] if body.po_ids else pa.po_id)
         pp_po = await po_crud.get_by_id(db, pp_po_id)
         if pp_po is None:

@@ -471,19 +471,6 @@ async def test_prepayment_amount_follows_the_pct(admin_client):
     assert (r.json()["subtotal"], r.json()["tax_amount"]) == ("200.00", "28.60")
 
 
-@pytest.mark.asyncio
-async def test_prepayment_carries_no_invoices(admin_client):
-    """Refused before any invoice check runs: the invoice belongs on the settlement."""
-    import uuid
-    v = await _make_vendor(admin_client, "VND-PP-INV-01")
-    po = await _make_po(admin_client, v["id"])
-    r = await admin_client.post(PA_URL, json=_pa_payload(
-        po["id"], pa_type="prepayment", prepayment_pct="30",
-        expected_settlement_date="2026-05-01", invoice_ids=[str(uuid.uuid4())]))
-    assert r.status_code == 422, r.text
-    assert "settlement" in r.json()["detail"]
-
-
 # ── Receipt gate (3-way match required for non-prepayment PAs) ────────────────
 
 @pytest.mark.asyncio

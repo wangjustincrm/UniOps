@@ -178,9 +178,9 @@ function PoPaEditPage() {
   // ── Derived ────────────────────────────────────────────────────────────────
   const isMultiPo = poIds.length > 1
   // ISS-0133: a prepayment's pre-tax amount is its % of the whole PO's pre-tax
-  // total, and it carries no invoices or receipts. Tax is pre-filled with the
-  // same share of the PO's tax and stays editable, like freight. Keyed on the
-  // saved type — the one the server recomputes on.
+  // total. Tax is pre-filled with the same share of the PO's tax and stays
+  // editable, like freight. Keyed on the saved type — the one the server
+  // recomputes on.
   const isPrepayment = pa?.pa_type === 'prepayment'
   const prepayPctNum = parseFloat(prepaymentPct) || 0
   const prepayBase   = Number(po?.subtotal ?? 0)
@@ -291,7 +291,8 @@ function PoPaEditPage() {
   }, [isPrepayment, initialized, prepayPretax, prepayTax]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (!invoicesTouched) return
+    // A prepayment's amount follows its %, not the invoices (ISS-0133).
+    if (!invoicesTouched || isPrepayment) return
     const linked = selectedInvoices.length > 0
     const auto = linked ? (derivedTotal ?? invoiceSubtotal) : (isAgreementMode ? 0 : autoSubtotal)
     setSubtotal(auto > 0 ? String(Number(auto.toFixed(2))) : '')
@@ -383,11 +384,11 @@ function PoPaEditPage() {
           // clearing a charge back to 0 would silently keep the old amount.
           shipping_amount: shippingNum,
           other_charges: otherNum,
-          invoice_ids: isPrepayment ? [] : Array.from(selectedInvoiceIds),
+          invoice_ids: Array.from(selectedInvoiceIds),
           // Omitted entirely on the agreement route rather than sent empty:
           // there is no PO line and no goods receipt to carry, and `[]` is a
           // value — it would overwrite, not skip.
-          gr_ids: isAgreementMode ? undefined : isPrepayment ? [] : Array.from(selectedGrIds),
+          gr_ids: isAgreementMode ? undefined : Array.from(selectedGrIds),
           prepayment_pct: paType === 'prepayment' ? parseFloat(prepaymentPct) : undefined,
           expected_settlement_date: paType === 'prepayment' ? expectedSettlement : undefined,
           line_items: isAgreementMode ? undefined : paLineItems,
@@ -564,12 +565,6 @@ function PoPaEditPage() {
               {isAgreementMode ? 'Link Invoices' : 'Link Invoices & Goods Receipts'}
             </h2>
 
-            {isPrepayment ? (
-              <p className="text-xs text-neutral-500 px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
-                A prepayment carries no invoices or receipts — the vendor's invoice is linked
-                on the settlement PA that settles this prepayment.
-              </p>
-            ) : (<>
             {/* Invoices multi-select */}
             <div className="flex flex-col gap-2">
               <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
@@ -772,7 +767,6 @@ function PoPaEditPage() {
                 </div>
               </div>
             )}
-            </>)}
 
             {/* PA Type — derived from the linked PO, read-only. The agreement
                 route only ever creates pa_type='regular' (POST /pa 422s the
