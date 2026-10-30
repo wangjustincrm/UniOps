@@ -247,13 +247,22 @@ export default function PrDetailPage() {
     !!pr &&
     APPROVABLE_STATUSES.includes(pr.status as DocumentStatus) &&
     (hasApproveTask || isAdmin || (!tasksLoaded && roleMatchesStep))
+  // Edit / Recall to Edit / Withdraw belong to the requester or a System Admin
+  // (REJ-004 / REJ-005); the engine refuses everyone else, so don't offer them.
+  // (The approver currently holding the PR acts from the approval bar instead.)
+  const isRequesterOrAdmin = !!pr && (isAdmin || pr.created_by === user?.id)
+  // A refused action used to leave the page silent (ISS-0156).
+  const [actionError, setActionError] = useState<string | null>(null)
+  const onActionError = (e: unknown) =>
+    setActionError(e instanceof Error ? e.message : 'The action could not be completed.')
 
   const handleConfirm = (action: ApprovalAction, comment: string) => {
     if (!pr) return
     const apiAction = action === 'approve' ? 'approve' : action === 'return' ? 'return' : 'reject'
+    setActionError(null)
     prAction.mutate(
       { action: apiAction, comment: comment || undefined },
-      { onSuccess: () => setPendingAction(null) }
+      { onSuccess: () => setPendingAction(null), onError: (e) => { setPendingAction(null); onActionError(e) } }
     )
   }
 
@@ -313,7 +322,7 @@ export default function PrDetailPage() {
             <p className="mt-0.5 text-sm text-neutral-400">Submitted {formatDate(pr.submitted_at ?? '')}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {['draft', 'returned', 'submitted', 'in_review'].includes(pr.status) && !canApprove && (
+            {['draft', 'returned', 'submitted', 'in_review'].includes(pr.status) && !canApprove && isRequesterOrAdmin && (
               <>
                 {['draft', 'returned'].includes(pr.status) ? (
                   <Link to={`/pr/${pr.id}/edit`}>
@@ -328,9 +337,10 @@ export default function PrDetailPage() {
                     size="sm"
                     onClick={() => {
                       if (confirm(`Recall ${pr.number} for editing? It will be moved back to Draft.`)) {
+                        setActionError(null)
                         prAction.mutate(
                           { action: 'recall' },
-                          { onSuccess: () => navigate(`/pr/${pr.id}/edit`) }
+                          { onSuccess: () => navigate(`/pr/${pr.id}/edit`), onError: onActionError }
                         )
                       }
                     }}
@@ -345,7 +355,8 @@ export default function PrDetailPage() {
                   className="border-danger-200 text-danger-600 hover:bg-danger-50"
                   onClick={() => {
                     if (confirm(`Withdraw ${pr.number}? This will cancel the PR.`)) {
-                      prAction.mutate({ action: 'cancel' })
+                      setActionError(null)
+                      prAction.mutate({ action: 'cancel' }, { onError: onActionError })
                     }
                   }}
                   disabled={prAction.isPending}
@@ -368,6 +379,11 @@ export default function PrDetailPage() {
             )}
           </div>
         </div>
+        {actionError && (
+          <div role="alert" className="mt-3 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-600">
+            {actionError}
+          </div>
+        )}
       </div>
 
       {/* Main content + timeline */}

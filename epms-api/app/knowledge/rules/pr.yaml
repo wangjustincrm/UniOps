@@ -115,8 +115,10 @@ rules:
       on, or a System Admin. Known defect: the PR page also shows Withdraw on
       a PR that is in review, but there it fails with an error ("Cannot
       cancel PR in status 'in_review'"). To stop an in-review PR, use Recall
-      to Edit, or ask the approver to return or reject it.
-    enforced_in: "approval-api app/crud/engine.py _DOC_META['pr']['valid_cancel']; epms/src/pages/pr/PrDetailPage.tsx (Withdraw shown for draft/returned/submitted/in_review)"
+      to Edit, or ask the approver to return or reject it. Edit, Recall to
+      Edit and Withdraw are shown only to the requester and a System Admin;
+      when one of these actions is refused, the page shows the reason.
+    enforced_in: "approval-api app/crud/engine.py _DOC_META['pr']['valid_cancel']; epms/src/pages/pr/PrDetailPage.tsx (Withdraw shown for draft/returned/submitted/in_review, isRequesterOrAdmin, actionError)"
     provenance: pinned
     test:
       - "approval-api/tests/test_engine_rules.py::test_cancel_statuses_are_the_engines"
