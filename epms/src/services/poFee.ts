@@ -55,8 +55,10 @@ export interface PoFeeArrival {
 }
 
 export interface PoFeeDetail {
-  /** True for any order mirrored from NC, milk included. */
+  /** True for any order mirrored from NC, milk included, and any approved EPMS-raised PO. */
   applies: boolean
+  /** False on an EPMS-raised PO: no Incoterms there, fees are only listed. */
+  is_nc: boolean
   /** Raw-material / packaging orders must carry Incoterms; on milk it is optional. */
   incoterms_required: boolean
   incoterms_code: string | null
@@ -64,7 +66,7 @@ export interface PoFeeDetail {
   term: { code: string; label: string; needs_freight: boolean; needs_customs: boolean; active: boolean } | null
   status: FeeStatus
   arrivals: PoFeeArrival[]
-  /** Linked while the PO had no arrival — counts toward none. */
+  /** Linked with no arrival: an EPMS-raised PO linked while it had none, or an arrival since deleted. */
   unassigned: PoFeeInvoice[]
 }
 
@@ -95,6 +97,8 @@ export interface FeeCandidatePo {
   number: string
   vendor_name: string
   status: string
+  /** 'epms' = raised in EPMS; such a PO may have no arrival, and is then linked as a whole. */
+  source: 'nc' | 'epms'
   /** Milk orders are linkable too (no Incoterms requirement on them). */
   is_milk: boolean
   incoterms_code: string | null
@@ -102,7 +106,7 @@ export interface FeeCandidatePo {
 }
 
 export interface FeeCandidatePage {
-  /** How many raw-material POs match in all — the list may show fewer. */
+  /** How many POs match in all — the list may show fewer. */
   total: number
   /** Latest arrival first; orders with no arrival yet last. */
   items: FeeCandidatePo[]

@@ -1,9 +1,10 @@
 /**
- * Freight & Customs — on an NC PO, every arrival with the freight / customs
+ * Freight & Customs — on a PO, every arrival with the freight / customs
  * invoices linked to it, against what the PO's Incoterms say is expected
  * (Admin → Incoterms Settings). Raw-material orders always show it; a milk
  * order shows it once it has an Incoterms code or a linked fee — Incoterms is
- * optional there, so an empty panel would only be noise.
+ * optional there, so an empty panel would only be noise. An EPMS-raised PO
+ * (no Incoterms) shows it once a fee is linked, listed but never judged.
  *
  * Read-only. Links are made from the fee invoice's own page (InvoiceFeeLinksPanel):
  * the invoice is the thing that arrives, and one freight bill or customs invoice
@@ -103,7 +104,11 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
         {(judged || data.incoterms_required) && <FeeStatusBadge status={data.status} />}
       </div>
 
-      {term ? (
+      {!data.is_nc ? (
+        <p className="text-sm text-neutral-500">
+          Fees linked to this order are listed below; they are not checked for completeness.
+        </p>
+      ) : term ? (
         <p className="text-sm text-neutral-600">
           Incoterms <span className="font-medium text-neutral-900">{incoterms}</span>
           {' — '}
@@ -133,7 +138,7 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
       )}
 
       {data.arrivals.length === 0 ? (
-        <p className="text-sm text-neutral-500">No arrivals yet.</p>
+        data.is_nc && <p className="text-sm text-neutral-500">No arrivals yet.</p>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-neutral-200">
           <table className="w-full text-sm">
@@ -178,7 +183,11 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
       {data.unassigned.length > 0 && (
         <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
           <p className="text-neutral-600">
-            Linked to an arrival that has since been deleted — open the invoice to choose another:
+            {data.is_nc
+              ? 'Linked to an arrival that has since been deleted — open the invoice to choose another:'
+              : data.arrivals.length === 0
+                ? 'Linked to the whole order (no arrival yet):'
+                : 'Linked to the whole order, not to an arrival — open the invoice to choose one:'}
           </p>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {data.unassigned.map((i) => (
@@ -191,7 +200,7 @@ export function PoFeePanel({ poId, canEditDetails }: { poId: string; canEditDeta
       )}
 
       <p className="text-xs text-neutral-400">
-        Freight and customs invoices are linked from the invoice&apos;s own page (Link to NC PO).
+        Freight and customs invoices are linked from the invoice&apos;s own page (Link to PO).
       </p>
     </div>
   )
