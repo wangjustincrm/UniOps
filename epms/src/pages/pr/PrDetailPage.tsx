@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, MessageSquare, X, FileText, Pencil, ChevronDown } from 'lucide-react'
@@ -96,12 +96,31 @@ interface ApprovalModalProps {
   // it can silently consume the NEXT step's task when the same person approves
   // two consecutive steps — two levels passed on one intended click.
   isPending: boolean
+  // The refusal of the last attempt, shown in the dialog — it used to stay
+  // open with no message at all (ISS-0166).
+  error: string | null
 }
 
-function ApprovalModal({ action, prNumber, onConfirm, onClose, isPending }: ApprovalModalProps) {
+function ApprovalModal({ action, prNumber, onConfirm, onClose, isPending, error }: ApprovalModalProps) {
   const [comment, setComment] = useState('')
   const needsComment = action !== 'approve'
   const canSubmit = !needsComment || comment.trim().length > 0
+  // isPending alone did not stop a quick double-click (PR-20261022-0005 was
+  // approved twice, ISS-0079): it reaches the button only after the mutation
+  // has notified, a re-render later. `sent` is set inside the click itself, so
+  // the second click finds the button already disabled. Re-armed when the
+  // request settles — on success the dialog closes, on failure it can retry.
+  const sentRef = useRef(false)
+  const [sent, setSent] = useState(false)
+  useEffect(() => {
+    if (!isPending) { sentRef.current = false; setSent(false) }
+  }, [isPending])
+  const handleConfirmClick = () => {
+    if (sentRef.current) return
+    sentRef.current = true
+    setSent(true)
+    onConfirm(comment)
+  }
 
   const config = {
     approve: {
@@ -169,18 +188,24 @@ function ApprovalModal({ action, prNumber, onConfirm, onClose, isPending }: Appr
             </div>
           </div>
 
+          {error && (
+            <p role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+              {error}
+            </p>
+          )}
+
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
             <button
-              disabled={!canSubmit || isPending}
-              onClick={() => onConfirm(comment)}
+              disabled={!canSubmit || isPending || sent}
+              onClick={handleConfirmClick}
               className={cn(
                 'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
                 config.btn
               )}
             >
               {config.icon}
-              {isPending ? 'Working…' : config.label}
+              {isPending || sent ? 'Working…' : config.label}
             </button>
           </div>
         </div>
@@ -252,7 +277,9 @@ export default function PrDetailPage() {
     if (!pr) return
     const apiAction = action === 'approve' ? 'approve' : action === 'return' ? 'return' : 'reject'
     prAction.mutate(
-      { action: apiAction, comment: comment || undefined },
+      // expected_step: a decision is for the step on screen; once the PR has
+      // moved on the server refuses it rather than applying it to the next one.
+      { action: apiAction, comment: comment || undefined, expected_step: pr.approval_step_idx ?? 0 },
       { onSuccess: () => setPendingAction(null) }
     )
   }
@@ -675,8 +702,9 @@ export default function PrDetailPage() {
           action={pendingAction}
           prNumber={pr.number}
           onConfirm={(comment) => handleConfirm(pendingAction, comment)}
-          onClose={() => setPendingAction(null)}
+          onClose={() => { setPendingAction(null); prAction.reset() }}
           isPending={prAction.isPending}
+          error={prAction.error instanceof Error ? prAction.error.message : null}
         />
       )}
     </div>

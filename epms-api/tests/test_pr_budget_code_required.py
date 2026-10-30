@@ -72,7 +72,7 @@ def delegations(monkeypatch):
     """
     calls: list[tuple[str, str, str]] = []
 
-    async def _fake(doc_type, doc_id, action, comment, token):  # noqa: ANN001
+    async def _fake(doc_type, doc_id, action, comment, token, expected_step=None):  # noqa: ANN001
         calls.append((doc_type, doc_id, action))
 
     import app.api.v1.pr as pr_api

@@ -1564,12 +1564,23 @@ class ActionContext:
 
 
 async def load_action_context(db: AsyncSession, doc_type: str,
-                              doc_id: uuid.UUID) -> ActionContext:
-    """Read-only. Raises LookupError when the document does not exist."""
+                              doc_id: uuid.UUID, *,
+                              for_update: bool = False) -> ActionContext:
+    """Read-only. Raises LookupError when the document does not exist.
+
+    `for_update` locks the document row until the caller's transaction ends.
+    execute_action needs it: two requests for the same document (a double-click
+    on Approve) otherwise both read the same status and step and both act —
+    PR-20261022-0005 got every approval and its auto-PDF twice (ISS-0079).
+    Locked, the second waits for the first to commit and then sees where the
+    document really is."""
     meta = _resolve_meta(doc_type)
     Model = meta["model"]
 
-    result = await db.execute(select(Model).where(Model.id == doc_id))
+    stmt = select(Model).where(Model.id == doc_id)
+    if for_update:
+        stmt = stmt.with_for_update(of=Model)
+    result = await db.execute(stmt)
     doc = result.scalar_one_or_none()
     if doc is None:
         raise LookupError(f"{doc_type.upper()} {doc_id} not found")
@@ -1715,8 +1726,9 @@ async def execute_action(
     actor_role: str,
     comment: str | None = None,
     today: date | None = None,
+    expected_step: int | None = None,
 ) -> ActionResult:
-    ctx = await load_action_context(db, doc_type, doc_id)
+    ctx = await load_action_context(db, doc_type, doc_id, for_update=True)
     meta = ctx.meta
     doc = ctx.doc
     step = ctx.step
@@ -1745,6 +1757,17 @@ async def execute_action(
     # currently sits in its workflow.
     current_step_role = workflow[step]["role"] if step < len(workflow) else ""
     finance_bp_ids = {uuid.UUID(u) for u in rm.get("finance_bp_user_ids", [])}
+
+    # The caller says which step its decision is for. If the document has moved
+    # on since, the decision was already taken (a double-click, a second tab) —
+    # acting anyway would spend it on the NEXT step, which an administrator, who
+    # may approve any step, would pass without ever seeing it (ISS-0079).
+    if (expected_step is not None and act in ("approve", "return", "reject")
+            and expected_step != step):
+        raise ValueError(
+            f"This {doc_type.upper()} has already moved past the step you acted on "
+            "— refresh the page to see where it is now."
+        )
 
     if act == "submit":
         if _status_of(meta, doc) not in meta["valid_submit"]:
