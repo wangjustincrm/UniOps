@@ -118,6 +118,32 @@ async def test_rejecting_exception_keeps_the_match_task_open(admin_client):
 
 
 @pytest.mark.asyncio
+async def test_credit_note_request_keeps_the_exception_task_open(admin_client):
+    """ISS-0171: requesting a credit note leaves the invoice in exception, so
+    the resolve_exception task stays open as the follow-up (retitled) until the
+    invoice leaves exception — here by a later accept."""
+    inv, _po = await _over_tolerance_invoice(admin_client, "STALE2B")
+    assert len(await _tasks(inv["id"], "resolve_exception")) == 1
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/exception",
+                                json={"resolution": "credit_note_requested",
+                                      "note": "Vendor to credit 10 units"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "exception"
+
+    open_tasks = await _tasks(inv["id"], "resolve_exception")
+    assert len(open_tasks) == 1, "credit note requested ≠ done: the task must stay open"
+    assert open_tasks[0].title.startswith("Awaiting credit note")
+    assert "Vendor to credit 10 units" in open_tasks[0].description
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/exception",
+                                json={"resolution": "accepted", "note": "credit received"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "matched"
+    assert await _tasks(inv["id"], "resolve_exception") == []
+
+
+@pytest.mark.asyncio
 async def test_accepting_exception_raises_the_downstream_prompt(admin_client):
     """accept 之后发票就是 matched,下游该有落点。
 

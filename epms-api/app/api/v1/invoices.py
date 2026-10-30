@@ -1761,10 +1761,23 @@ async def resolve_exception(
             Task.type == "resolve_exception", Task.document_type == "invoice",
             Task.document_id == inv.id, Task.is_completed.is_(False),
         ))).scalar_one_or_none()
+        # The task is done only when the invoice leaves "exception" (INV-3WM-007).
+        # "Request credit note" leaves it there: the task stays open as the
+        # follow-up until the credit arrives and AP accepts, edits, re-matches or
+        # deletes the invoice (ISS-0171). A vendor credit is not linked to an
+        # invoice, so its arrival cannot close the task by itself.
         if exc_task is not None:
-            exc_task.is_completed = True
-            exc_task.completed_at = datetime.now(timezone.utc)
-            exc_task.completed_by = caller_id
+            if result.status != "exception":
+                exc_task.is_completed = True
+                exc_task.completed_at = datetime.now(timezone.utc)
+                exc_task.completed_by = caller_id
+            elif body.resolution == "credit_note_requested":
+                exc_task.title = f"Awaiting credit note — {inv.internal_ref}"
+                exc_task.description = (
+                    f"A credit note was requested from the vendor for invoice "
+                    f"{inv.internal_ref}: {body.note} When it arrives, accept or "
+                    f"edit the invoice so it leaves exception."
+                )
         # Accepting an exception IS a match decision — it lands the invoice in
         # "matched" exactly as review_match() approve does. Everything that hangs
         # off "this invoice is now matched" therefore has to run here too, or for

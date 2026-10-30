@@ -101,9 +101,12 @@ values:
       schedule). A missing receipt or a quantity difference does not cause it.
       It carries a task to whoever has to resolve it, and it cannot be paid
       until that is cleared. AP clears it by accepting the variance (the
-      invoice becomes Matched) or by asking the vendor for a credit note; either
-      needs a written note, which stays visible on the invoice's 3-Way Match
-      tab and in its History.
+      invoice becomes Matched). AP can instead ask the vendor for a credit
+      note: the invoice stays in Exception and the task stays open, retitled
+      "Awaiting credit note", until the invoice is accepted, edited,
+      re-matched or deleted — the credit's arrival does not close it by
+      itself. Both need a written note, which stays visible on the invoice's
+      3-Way Match tab and in its History.
 
   - value: approved
     label: Approved
