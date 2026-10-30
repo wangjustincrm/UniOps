@@ -146,7 +146,9 @@ rules:
       neither), or Incoterms not set (it cannot be judged until Incoterms is
       filled in on Edit Details). Milk orders appear in that column only once
       they have Incoterms. Changing a code's settings re-rates every order
-      that uses it at once.
+      that uses it at once. A PO raised in EPMS has no Incoterms: once a fee
+      is linked to it the panel lists it, but it is never judged and the Fees
+      column stays blank.
     enforced_in: "epms-api app/crud/po_fee.py _rollup / fee_detail_for_po / fee_status_for_pos (read live from company_config.incoterms_terms); app/api/v1/po.py GET /po/{id}/fee-status, fee_status on GET /po and GET /po/{id}"
     provenance: pinned
     test:

@@ -648,8 +648,8 @@ async def fee_link_candidates(
     limit: int = Query(default=50, ge=1, le=500),
     fee_type: str | None = Query(default=None, pattern="^(freight|customs|other)$"),
 ):
-    """Raw-material POs (with their arrivals) a freight / customs invoice can be
-    linked to, latest arrival first, plus the total that match — searched by
+    """POs (with their arrivals) a freight / customs invoice can be linked to —
+    NC orders with an arrival and approved EPMS POs — latest arrival first, plus the total that match — searched by
     PO number, vendor or arrival number, never filtered by the invoice's own
     vendor (a forwarder, not the PO's supplier)."""
     return await po_fee_crud.search_candidate_pos(db, q, limit, fee_type)

@@ -196,15 +196,21 @@ rules:
       - 运费发票 / 清关费发票怎么关联到原料 PO？
       - how do I link a freight or customs invoice to a raw-material PO
       - can a freight invoice be linked to a milk PO
+      - 运费发票能关联 EPMS 自己的 PO 吗？
+      - can a freight invoice be linked to a PO raised in EPMS
       - a customs invoice covers several POs, how do I record that
     answer: >
       A freight or customs-clearance invoice from a forwarder or broker is
       still paid by a Direct PA, to that forwarder or broker. Separately, on
-      the invoice's page, Link to NC PO records which arrival of which order
-      from NC it belongs to — raw material, packaging or milk, any vendor's
-      order, searched by PO number, vendor or arrival number, the most recent
-      arrivals listed first. Only orders that already have an arrival are
-      offered, and every link names an arrival. A milk order with no
+      the invoice's page, Link to PO records which arrival of which order it
+      belongs to — an order from NC (raw material, packaging or milk) or a PO
+      raised in EPMS, any vendor's order, searched by PO number, vendor or
+      arrival number, the most recent arrivals listed first. An NC order is
+      offered only once it has an arrival, and its link always names one. An
+      EPMS PO is offered once approved (not draft, in approval, returned,
+      rejected or cancelled); if it has arrivals the link names one, if it has
+      none yet it is linked to the whole PO, and every fee type can be used on
+      it. A milk order with no
       Incoterms can only be linked as Other — set its Incoterms in Edit
       Details to link freight or customs to it. A fee linked as Other needs a
       note saying what it is (inspection, storage, …). A freight bill can
@@ -214,13 +220,14 @@ rules:
       split, and linking does not change the invoice's match, status or
       payment. It can be done on an invoice that is matched for a Direct PA
       or not yet matched, by users who can match invoices.
-    enforced_in: "epms-api app/crud/po_fee.py replace_for_invoice (LINKABLE_ROUTES, is_fee_linkable_po = any NC order, arrival always required, takes_fee_type = milk without Incoterms only 'other'; an 'other' link needs a note); search_candidate_pos (NC orders with an arrival, filtered by fee_type); app/api/v1/invoices.py PUT /invoices/{id}/fee-links (epms.invoice.match); app/models/invoice_fee_link.py (not invoices.po_id)"
+    enforced_in: "epms-api app/crud/po_fee.py replace_for_invoice (LINKABLE_ROUTES, is_fee_linkable_po = any NC order or an approved EPMS PO, arrival required unless an EPMS PO has none, takes_fee_type = NC milk without Incoterms only 'other'; an 'other' link needs a note); search_candidate_pos (NC orders with an arrival + approved EPMS POs, filtered by fee_type); app/api/v1/invoices.py PUT /invoices/{id}/fee-links (epms.invoice.match); app/models/invoice_fee_link.py (not invoices.po_id)"
     provenance: pinned
     test:
       - "tests/test_po_fee.py::test_linking_never_touches_matching_or_payment"
       - "tests/test_po_fee.py::test_link_validation"
       - "tests/test_po_fee.py::test_milk_orders_take_fee_links_too"
-      - "tests/test_po_fee.py::test_candidates_are_nc_orders_with_arrivals"
+      - "tests/test_po_fee.py::test_epms_raised_pos_take_fee_links"
+      - "tests/test_po_fee.py::test_candidates_are_nc_orders_with_arrivals_and_approved_epms_pos"
       - "tests/test_po_fee.py::test_an_other_fee_needs_a_note"
       - "tests/test_po_fee.py::test_freight_per_arrival_and_customs_per_line_complete_the_po"
   - id: unmatching_an_invoice

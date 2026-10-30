@@ -1,8 +1,9 @@
 /**
- * Link to NC PO — records which NC order (raw material, packaging or milk)
- * and which of its arrivals a freight or customs invoice belongs to. Only
- * orders with an arrival are offered: a fee follows a delivery, and every
- * link names one.
+ * Link to PO — records which order and which of its arrivals a freight or
+ * customs invoice belongs to: an NC order (raw material, packaging or milk)
+ * that has an arrival, or an approved EPMS-raised PO (since 2026-10-30). A fee
+ * follows a delivery, so a link names an arrival — except on an EPMS PO that
+ * has none yet, which is linked as a whole ("Whole PO").
  *
  * The invoice is still paid by a Direct PA, to the forwarder / broker; this is
  * only a record of where the cost came from. It never changes the invoice's
@@ -160,7 +161,7 @@ export function InvoiceFeeLinksPanel({
       <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-neutral-400">
           <Link2 className="h-3.5 w-3.5" />
-          Link to NC PO
+          Link to PO
         </h3>
         {canEdit && !editing && (
           <Button variant="secondary" size="sm" onClick={startEditing} disabled={!linkable && !links?.length}>
@@ -171,9 +172,9 @@ export function InvoiceFeeLinksPanel({
       </div>
 
       <p className="mb-3 text-xs text-neutral-500">
-        For a freight or customs invoice that belongs to an arrival of an NC order (raw material, packaging or
-        milk). Shows on that PO&apos;s Freight &amp; Customs panel. Payment is unchanged — this invoice is still
-        paid by a Direct PA.
+        For a freight or customs invoice that belongs to a PO — an NC order (raw material, packaging or milk) or
+        a PO raised in EPMS. Shows on that PO&apos;s Freight &amp; Customs panel. Payment is unchanged — this
+        invoice is still paid by a Direct PA.
         {!linkable && ' This invoice is matched on another route, so links can only be removed here.'}
       </p>
 
@@ -191,7 +192,7 @@ export function InvoiceFeeLinksPanel({
                 {l.po_number}
               </Link>
               <span className="text-xs text-neutral-500">
-                {l.gr_number ? `arrival ${l.gr_number}` : 'no arrival chosen'}
+                {l.gr_number ? `arrival ${l.gr_number}` : 'whole PO, no arrival'}
               </span>
               <span className="text-xs text-neutral-400">· {lineLabel(l.invoice_line_id)}</span>
               {l.fee_type === 'other' && (editing ? (
@@ -271,7 +272,7 @@ export function InvoiceFeeLinksPanel({
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
                 <Input
                   className="pl-9"
-                  placeholder="Search NC POs with arrivals by PO number, supplier or arrival number…"
+                  placeholder="Search POs by PO number, supplier or arrival number…"
                   value={q}
                   onChange={(e) => setQ(e.target.value)}
                 />
@@ -281,7 +282,7 @@ export function InvoiceFeeLinksPanel({
                 {isFetching && !candidates ? (
                   <div className="flex justify-center py-6 text-neutral-400"><Loader2 className="h-4 w-4 animate-spin" /></div>
                 ) : !candidates?.length ? (
-                  <p className="px-3 py-4 text-sm text-neutral-400">No NC POs with an arrival match.</p>
+                  <p className="px-3 py-4 text-sm text-neutral-400">No POs match.</p>
                 ) : (
                   <ul className="divide-y divide-neutral-100">
                     {candidates.map((po) => (
@@ -289,12 +290,23 @@ export function InvoiceFeeLinksPanel({
                         <div className="flex flex-wrap items-baseline gap-2 text-sm">
                           <span className="font-mono text-xs font-semibold text-neutral-800">{po.number}</span>
                           <span className="text-neutral-600">{po.vendor_name}</span>
+                          {po.source === 'epms' && (
+                            <span className="rounded bg-neutral-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-neutral-600">EPMS</span>
+                          )}
                           {po.is_milk && (
                             <span className="rounded bg-primary-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700">Milk</span>
                           )}
                           {po.incoterms_code && <span className="text-xs text-neutral-400">{po.incoterms_code}</span>}
                         </div>
                         <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                          {po.arrivals.length === 0 && (
+                            <label className="flex items-center gap-1.5 text-xs text-neutral-600">
+                              <input type="checkbox" checked={isTicked(po.id, null)}
+                                     disabled={needsNote && !isTicked(po.id, null)}
+                                     onChange={() => toggle(po.id, po.number, null, null)} />
+                              Whole PO <span className="text-neutral-400">(no arrival yet)</span>
+                            </label>
+                          )}
                           {po.arrivals.map((a) => (
                             <label key={a.id} className="flex items-center gap-1.5 text-xs text-neutral-600">
                               <input type="checkbox" checked={isTicked(po.id, a.id)}
@@ -312,7 +324,7 @@ export function InvoiceFeeLinksPanel({
                 {page && page.total > page.items.length && (
                   <div className="flex items-center justify-between gap-3 border-t border-neutral-100 bg-neutral-50 px-3 py-2 text-xs text-neutral-500">
                     <span>
-                      Showing {page.items.length} of {page.total} — latest arrivals first. Search to find a specific PO.
+                      Showing {page.items.length} of {page.total} — latest arrivals first, then POs with none yet. Search to find a specific PO.
                     </span>
                     <Button variant="secondary" size="sm" disabled={isFetching}
                             onClick={() => setLimit((n) => n + PAGE)}>
@@ -330,6 +342,7 @@ export function InvoiceFeeLinksPanel({
               <p className="text-xs text-neutral-400">
                 Ticks apply to the part of the invoice and fee type chosen above. A freight bill the carrier
                 combined can tick several arrivals; for a customs invoice, pick each line in turn and tick its PO.
+                An EPMS PO with no arrival yet is ticked as Whole PO.
               </p>
             </>
           )}

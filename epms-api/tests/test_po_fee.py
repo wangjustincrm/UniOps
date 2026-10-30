@@ -243,13 +243,17 @@ async def test_link_validation(admin_client, test_engine):
     pid, (g1,) = await _po(test_engine, code="FOB", arrivals=1)
     other, (g_other,) = await _po(test_engine, code="FOB", arrivals=1)
     no_arrival, _ = await _po(test_engine, code="FOB")
-    epms_po, _ = await _po(test_engine, type_=2, source=None)
+    cancelled, _ = await _po(test_engine, code="FOB", status="cancelled", arrivals=1)
+    epms_draft, _ = await _po(test_engine, type_=2, source=None, status="draft")
     inv = await _fee_invoice(admin_client)
 
     async def put(*links):
         return await _put_links(admin_client, inv["id"], list(links))
 
-    assert (await put({"fee_type": "freight", "po_id": epms_po})).status_code == 422
+    # Cancelled, and EPMS POs not approved yet, are refused.
+    for po_id in (cancelled, epms_draft):
+        r = await put({"fee_type": "freight", "po_id": po_id})
+        assert r.status_code == 422 and "not approved" in r.json()["detail"], r.text
     assert (await put({"fee_type": "freight", "po_id": pid, "gr_id": g_other})).status_code == 422
     # Every link names an arrival — whether or not the PO has any yet.
     assert (await put({"fee_type": "freight", "po_id": pid})).status_code == 422
@@ -262,6 +266,34 @@ async def test_link_validation(admin_client, test_engine):
     assert r.status_code == 200 and len(r.json()) == 1
     got = (await admin_client.get(f"{INV_URL}/{inv['id']}/fee-links")).json()
     assert [(l["po_id"], l["gr_id"]) for l in got] == [(str(pid), str(g1))]
+
+
+async def test_epms_raised_pos_take_fee_links(admin_client, test_engine):
+    # Opened up 2026-10-30: EPMS's own POs carry freight and customs invoices
+    # too (INV-2026-0844 → PO-678-2606-01). Every fee type, no Incoterms; an
+    # arrival when the PO has one, the whole PO while it has none.
+    bare, _ = await _po(test_engine, type_=2, source=None, status="approved")
+    received, (g1,) = await _po(test_engine, type_=2, source=None, status="fully_received", arrivals=1)
+    inv = await _fee_invoice(admin_client, lines=2)
+    line_ids = [li["id"] for li in inv["line_items"]]
+
+    async def put(*links):
+        return await _put_links(admin_client, inv["id"], list(links))
+
+    # With an arrival on the PO, the link must name it.
+    assert (await put({"fee_type": "freight", "po_id": received})).status_code == 422
+    r = await put({"fee_type": "freight", "po_id": received, "gr_id": g1, "invoice_line_id": line_ids[0]},
+                  {"fee_type": "customs", "po_id": bare, "invoice_line_id": line_ids[1]})
+    assert r.status_code == 200, r.text
+    assert {(l["po_id"], l["gr_id"]) for l in r.json()} == {(str(received), str(g1)), (str(bare), None)}
+
+    # The PO page lists the whole-PO link; nothing is judged without Incoterms.
+    detail = (await admin_client.get(f"{PO_URL}/{bare}/fee-status")).json()
+    assert detail["applies"] is True and detail["is_nc"] is False
+    assert detail["incoterms_required"] is False and detail["term"] is None
+    assert [i["fee_type"] for i in detail["unassigned"]] == ["customs"]
+    po = (await admin_client.get(f"{PO_URL}/{bare}")).json()
+    assert po["fee_status"] is None
 
 
 async def test_milk_orders_take_fee_links_too(admin_client, test_engine):
@@ -327,11 +359,13 @@ async def test_po_route_invoice_cannot_take_links_but_can_drop_them(admin_client
     assert r.status_code == 200 and r.json() == []
 
 
-async def test_candidates_are_nc_orders_with_arrivals(admin_client, test_engine):
+async def test_candidates_are_nc_orders_with_arrivals_and_approved_epms_pos(admin_client, test_engine):
     pid, (g1,) = await _po(test_engine, code="FOB", arrivals=1)
     milk, (gm,) = await _po(test_engine, status="nc_milk", arrivals=1)
     no_arrival, _ = await _po(test_engine, code="FOB")
-    epms_po, _ = await _po(test_engine, type_=2, source=None, arrivals=1)
+    epms_po, (ge,) = await _po(test_engine, type_=2, source=None, arrivals=1)
+    epms_bare, _ = await _po(test_engine, type_=2, source=None, status="approved")
+    epms_draft, _ = await _po(test_engine, type_=2, source=None, status="draft")
 
     async def number_of(po_id):
         async with _factory(test_engine)() as db:
@@ -356,7 +390,16 @@ async def test_candidates_are_nc_orders_with_arrivals(admin_client, test_engine)
     body = (await admin_client.get(f"{INV_URL}/fee-link-candidates",
                                    params={"q": await number_of(pid), "fee_type": "customs"})).json()
     assert body["total"] == 1
-    for excluded in (no_arrival, epms_po):
+    # EPMS-raised POs (since 2026-10-30): approved ones, with or without an
+    # arrival, for every fee type.
+    for po_id, arrivals in ((epms_po, [str(ge)]), (epms_bare, [])):
+        for fee_type in ("freight", "customs", "other"):
+            body = (await admin_client.get(f"{INV_URL}/fee-link-candidates",
+                                           params={"q": await number_of(po_id), "fee_type": fee_type})).json()
+            assert [(p["id"], p["source"], p["is_milk"], [a["id"] for a in p["arrivals"]])
+                    for p in body["items"]] == [(str(po_id), "epms", False, arrivals)], fee_type
+    # An NC order with no arrival yet, and an EPMS draft, are not offered.
+    for excluded in (no_arrival, epms_draft):
         body = (await admin_client.get(f"{INV_URL}/fee-link-candidates",
                                        params={"q": await number_of(excluded)})).json()
         assert body == {"total": 0, "items": []}

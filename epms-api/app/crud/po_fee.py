@@ -1,4 +1,5 @@
-"""PO Fee Invoices — freight / customs invoices linked to raw-material POs.
+"""PO Fee Invoices — freight / customs invoices linked to POs (NC orders and,
+since 2026-10-30, EPMS-raised ones too).
 
 Design: docs/superpowers/specs/2026-10-23-po-fee-invoices-design.md.
 
@@ -128,16 +129,37 @@ JUDGED_FEE_TYPES = ("freight", "customs")
 
 
 def takes_fee_type(po: PurchaseOrder, fee_type: str) -> bool:
-    return (fee_type not in JUDGED_FEE_TYPES or is_raw_material_po(po)
-            or po.incoterms_code is not None)
+    # The milk rule is an NC one; an EPMS-raised PO has no Incoterms picker
+    # and takes every fee type.
+    return (fee_type not in JUDGED_FEE_TYPES or po.source != "nc"
+            or is_raw_material_po(po) or po.incoterms_code is not None)
+
+
+# An EPMS-raised PO is linkable once it is a real order — approved or past it.
+# Draft, in-approval, returned, rejected and cancelled ones are not.
+EPMS_LINKABLE_STATUSES = ("approved", "issued", "partially_received", "fully_received", "closed")
+
+
+def is_nc_po(po: PurchaseOrder) -> bool:
+    return po.source == "nc"
 
 
 def is_fee_linkable_po(po: PurchaseOrder) -> bool:
-    """Any order mirrored from NC — milk included (user 2026-10-26). Fees are
-    linked to an ARRIVAL, so in practice only orders that have one; that half
-    is checked where the arrivals are loaded. The Incoterms requirement stays
-    on raw-material orders only (is_raw_material_po)."""
-    return po.source == "nc" and po.status != "cancelled"
+    """Any order mirrored from NC — milk included (user 2026-10-26) — and,
+    since 2026-10-30, any approved EPMS-raised PO: those carry freight and
+    customs invoices too. An NC order is linked to an ARRIVAL, so in practice
+    only NC orders that have one; that half is checked where the arrivals are
+    loaded. The Incoterms requirement stays on raw-material orders only
+    (is_raw_material_po)."""
+    if is_nc_po(po):
+        return po.status != "cancelled"
+    return po.status in EPMS_LINKABLE_STATUSES
+
+
+def fee_linkable_po_clause():
+    return or_(and_(PurchaseOrder.source == "nc", PurchaseOrder.status != "cancelled"),
+               and_(func.coalesce(PurchaseOrder.source, "") != "nc",
+                    PurchaseOrder.status.in_(EPMS_LINKABLE_STATUSES)))
 
 
 
@@ -205,20 +227,23 @@ async def replace_for_invoice(
             raise FeeLinkInvalid("Purchase order not found")
         if not is_fee_linkable_po(po):
             raise FeeLinkInvalid(
-                f"{po.number} is not an order from NC. Fees can only be linked to those.")
+                f"{po.number} is cancelled or not approved yet, so fees cannot be linked to it.")
         if not takes_fee_type(po, l.fee_type):
             raise FeeLinkInvalid(
                 f"{po.number} is a milk order with no Incoterms, so it can only be linked as "
                 "Other. Set its Incoterms in Edit Details to link freight or customs.")
         if l.invoice_line_id is not None and str(l.invoice_line_id) not in line_ids:
             raise FeeLinkInvalid("That invoice line does not belong to this invoice")
-        # Every link names an arrival: a fee follows a delivery, and an
-        # arrival-less link would count toward none. (Links can still LOSE
-        # their arrival when Data Maintenance deletes it — gr_id is SET NULL —
-        # and are shown on the PO as such; re-saving them asks for one.)
+        # A link names an arrival: a fee follows a delivery, and an
+        # arrival-less link would count toward none. The one exception is an
+        # EPMS-raised PO with no arrival yet — its fee is linked to the whole
+        # order (user 2026-10-30). (Links can still LOSE their arrival when
+        # Data Maintenance deletes it — gr_id is SET NULL — and are shown on
+        # the PO as such; re-saving them asks for one.)
         if l.gr_id is None:
-            raise FeeLinkInvalid(f"Choose which arrival(s) of {po.number} this fee is for")
-        if l.gr_id not in grs_by_po[l.po_id]:
+            if is_nc_po(po) or grs_by_po[l.po_id]:
+                raise FeeLinkInvalid(f"Choose which arrival(s) of {po.number} this fee is for")
+        elif l.gr_id not in grs_by_po[l.po_id]:
             raise FeeLinkInvalid(f"That arrival does not belong to {po.number}")
         key = (l.invoice_line_id, l.fee_type, l.po_id, l.gr_id)
         if key in seen:
@@ -240,22 +265,27 @@ async def replace_for_invoice(
 async def search_candidate_pos(db: AsyncSession, q: str | None, limit: int = 50,
                                fee_type: str | None = None) -> dict:
     """NC orders that have at least one arrival — raw material, packaging and
-    milk alike — for the link picker, with their arrivals and how many match in
-    all (the picker says "showing N of M" rather than cutting off silently).
+    milk alike — and approved EPMS-raised POs, with or without one, for the
+    link picker, with their arrivals and how many match in all (the picker
+    says "showing N of M" rather than cutting off silently).
 
     Searched by PO number, vendor or arrival number — never filtered by the fee
     invoice's own vendor (a forwarder, not the PO's supplier). Latest arrival
-    first: a freight or customs invoice follows a delivery. For a freight or
-    customs fee, milk orders without Incoterms are left out (takes_fee_type)."""
+    first, then orders with none yet, newest first: a freight or customs
+    invoice follows a delivery. For a freight or customs fee, milk orders
+    without Incoterms are left out (takes_fee_type)."""
     latest_arrival = (
         select(GoodsReceipt.po_id, func.max(GoodsReceipt.received_at).label("last_at"))
         .where(GoodsReceipt.status != "cancelled")
         .group_by(GoodsReceipt.po_id).subquery())
+    is_nc = func.coalesce(PurchaseOrder.source, "") == "nc"   # source is NULL on EPMS POs
     stmt = (select(PurchaseOrder)
-            .join(latest_arrival, latest_arrival.c.po_id == PurchaseOrder.id)
-            .where(PurchaseOrder.source == "nc", PurchaseOrder.status != "cancelled"))
+            .outerjoin(latest_arrival, latest_arrival.c.po_id == PurchaseOrder.id)
+            .where(fee_linkable_po_clause(),
+                   or_(~is_nc, latest_arrival.c.po_id.is_not(None))))
     if fee_type in JUDGED_FEE_TYPES:
-        stmt = stmt.where(or_(raw_material_po_clause(), PurchaseOrder.incoterms_code.is_not(None)))
+        stmt = stmt.where(or_(~is_nc, raw_material_po_clause(),
+                              PurchaseOrder.incoterms_code.is_not(None)))
     if q and q.strip():
         like = f"%{q.strip()}%"
         by_arrival = select(GoodsReceipt.po_id).where(GoodsReceipt.number.ilike(like))
@@ -270,7 +300,8 @@ async def search_candidate_pos(db: AsyncSession, q: str | None, limit: int = 50,
     grs = await _arrivals(db, [p.id for p in pos])
     return {"total": total, "items": [{
         "id": p.id, "number": p.number, "vendor_name": p.vendor_name, "status": p.status,
-        "is_milk": not is_raw_material_po(p),
+        "source": "nc" if is_nc_po(p) else "epms",
+        "is_milk": is_nc_po(p) and not is_raw_material_po(p),
         "incoterms_code": p.incoterms_code,
         "arrivals": [{"id": g.id, "number": g.number, "received_at": g.received_at}
                      for g in grs.get(p.id, [])],
@@ -312,10 +343,11 @@ async def fee_status_for_pos(db: AsyncSession, pos: list[PurchaseOrder]) -> dict
     """PO id → roll-up status. Raw-material orders always get one (Incoterms is
     required on them). A milk order gets one only once someone has given it an
     Incoterms code — otherwise there is nothing to judge, and the list would
-    say "Incoterms not set" on every milk order. One query for arrivals and
-    one for links whatever the page size."""
+    say "Incoterms not set" on every milk order. An EPMS-raised PO never gets
+    one: it has no Incoterms picker, so its linked fees are only listed. One
+    query for arrivals and one for links whatever the page size."""
     raw = [p for p in pos if is_raw_material_po(p)
-           or (is_fee_linkable_po(p) and p.incoterms_code)]
+           or (is_nc_po(p) and is_fee_linkable_po(p) and p.incoterms_code)]
     if not raw:
         return {}
     cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
@@ -334,7 +366,8 @@ async def fee_status_for_pos(db: AsyncSession, pos: list[PurchaseOrder]) -> dict
 async def fee_detail_for_po(db: AsyncSession, po: PurchaseOrder) -> dict:
     """Everything the PO page's Freight & Customs panel shows."""
     cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
-    term = term_for(po.incoterms_code, effective_terms(cfg))
+    # Fees on an EPMS-raised PO are listed, never judged (fee_status_for_pos).
+    term = term_for(po.incoterms_code, effective_terms(cfg)) if is_nc_po(po) else None
     arrivals = (await _arrivals(db, [po.id])).get(po.id, [])
 
     rows = (await db.execute(
@@ -370,6 +403,7 @@ async def fee_detail_for_po(db: AsyncSession, po: PurchaseOrder) -> dict:
 
     return {
         "applies": is_fee_linkable_po(po),
+        "is_nc": is_nc_po(po),
         # Raw-material orders must carry Incoterms; on a milk order it is
         # optional, so "not set" there is not something to fix.
         "incoterms_required": is_raw_material_po(po),
