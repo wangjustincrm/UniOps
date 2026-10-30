@@ -1,22 +1,21 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, Badge, ErrorMessage } from '@/platform-ui'
+import { ActionButton, Badge, DateTimeInput, ErrorMessage } from '@/platform-ui'
 import { clearAuthLatch, pinHostKey, resetCursor, testConnection, type ConnectionRead, type ConnectionTest } from './connectionsApi'
 
 const CONFIG = 'sales.config'
 
 /** Shopify: the pull cursor, read-only; a person resets it (audited, FR-OB-10). */
 function Cursor({ c, onDone }: { c: ConnectionRead; onDone: () => void }) {
-  const [value, setValue] = useState('')
-  const reset = useMutation({ mutationFn: (v: string | null) => resetCursor(c.id, v), onSuccess: () => { setValue(''); onDone() } })
+  const [value, setValue] = useState<string | null>(null)  // ISO with its zone
+  const reset = useMutation({ mutationFn: (v: string | null) => resetCursor(c.id, v), onSuccess: () => { setValue(null); onDone() } })
   return (
     <div className="flex flex-col gap-1">
       <p>Next pull from: <span className="font-medium">{c.cursor_updated_at ? new Date(c.cursor_updated_at).toLocaleString() : 'not set — nothing is pulled'}</span></p>
       <div className="flex flex-wrap items-center gap-2">
-        <input type="datetime-local" aria-label="New cursor" value={value} onChange={(e) => setValue(e.target.value)}
-          className="h-8 rounded-md border border-neutral-200 px-2 text-xs" />
+        <DateTimeInput aria-label="New cursor" value={value} onChange={setValue} className="h-8 max-w-[14rem] text-xs" />
         <ActionButton size="sm" variant="secondary" permission={CONFIG} disabled={!value}
-          onAction={() => reset.mutateAsync(new Date(value).toISOString()).catch(() => {})}>Reset cursor</ActionButton>
+          onAction={() => reset.mutateAsync(value).catch(() => {})}>Reset cursor</ActionButton>
       </div>
       <ErrorMessage error={reset.error} />
     </div>

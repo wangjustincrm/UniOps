@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { Badge, CrudPage, useToast, type ColumnDef, type FieldSpec } from '@/platform-ui'
 import { AuditHistory } from '../AuditHistory'
+import { partnerOptions } from '../lookups'
 import {
   dcRoutingClient, downloadDcRouting, fetchDcRoutingAudit,
   type DcRoutingCreate, type DcRoutingRead, type DcRoutingUpdate,
@@ -11,7 +12,7 @@ const base = { dc_number: required, notes: z.string().trim().nullable().optional
 const createSchema = z.object({ partner_code: required, ship_to_gln: required, ...base })
 const updateSchema = z.object(base)
 const fields: FieldSpec[] = [
-  { name: 'partner_code', label: 'Partner', required: true },
+  { name: 'partner_code', label: 'Partner', required: true, type: 'reference', loadOptions: partnerOptions },
   { name: 'ship_to_gln', label: 'Ship-to GLN', required: true },
   { name: 'dc_number', label: 'DC number', required: true },
   { name: 'notes', label: 'Notes', type: 'textarea' },

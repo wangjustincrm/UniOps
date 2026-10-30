@@ -1,18 +1,29 @@
 import { useMemo, useState } from 'react'
-import { useForm, type FieldValues, type Resolver } from 'react-hook-form'
+import { Controller, useForm, type FieldValues, type Resolver } from 'react-hook-form'
 import type { z } from 'zod'
+import { Autocomplete } from '../primitives/Autocomplete'
+import { Checkbox } from '../primitives/Checkbox'
+import type { ComboOption } from '../primitives/Combobox'
+import { DateInput, NumberInput, Textarea } from '../primitives/FieldInputs'
+import { Select } from '../primitives/Select'
 import { Button, FormField, Input } from '../primitives/shell'
 import { businessErrorOf } from '../resource/businessError'
 import { ErrorMessage } from './ErrorMessage'
 import { zodResolver } from './zodResolver'
 
-export type FieldType = 'text' | 'email' | 'number' | 'textarea' | 'checkbox' | 'select'
+// Each type has its control: select → Select, checkbox → Checkbox, number →
+// NumberInput, date → DateInput ("YYYY-MM-DD", a string), textarea →
+// Textarea, reference → Autocomplete over `loadOptions` (a code of another
+// record, e.g. an item or a partner).
+export type FieldType = 'text' | 'email' | 'number' | 'textarea' | 'checkbox' | 'select' | 'date' | 'reference'
 
 export interface FieldSpec {
   name: string
   label: string
   type?: FieldType
   options?: { value: string; label: string }[]
+  /** reference fields: the options for what was typed. */
+  loadOptions?: (query: string) => Promise<ComboOption[]>
   required?: boolean
   hint?: string
   placeholder?: string
@@ -90,26 +101,38 @@ export function SchemaForm({
         const common = { id, disabled: readOnly || f.readOnly, 'aria-invalid': err ? true : undefined }
         let control
         if (f.type === 'checkbox') {
-          control = <input type="checkbox" {...common} {...form.register(f.name)} className="h-4 w-4" />
+          control = (
+            <Controller control={form.control} name={f.name} render={({ field }) => (
+              <Checkbox id={id} checked={!!field.value} onCheckedChange={field.onChange} onBlur={field.onBlur}
+                disabled={common.disabled} aria-invalid={common['aria-invalid']} />
+            )} />
+          )
         } else if (f.type === 'select') {
           control = (
-            <select {...common} {...form.register(f.name)} className="h-10 rounded-lg border border-neutral-200 bg-white px-3 text-sm">
-              <option value="">—</option>
-              {f.options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
+            <Controller control={form.control} name={f.name} render={({ field }) => (
+              <Select id={id} value={field.value || null} onChange={(v) => field.onChange(v ?? '')} onBlur={field.onBlur}
+                options={f.options ?? []} emptyLabel="—" placeholder="—" disabled={common.disabled}
+                aria-invalid={common['aria-invalid']} />
+            )} />
+          )
+        } else if (f.type === 'reference') {
+          control = (
+            <Controller control={form.control} name={f.name} render={({ field }) => (
+              <Autocomplete id={id} value={field.value || null} onChange={(v) => field.onChange(v ?? '')} onBlur={field.onBlur}
+                loadOptions={f.loadOptions ?? (async () => [])} placeholder={f.placeholder} disabled={common.disabled}
+                aria-label={f.label} aria-invalid={common['aria-invalid']} />
+            )} />
           )
         } else if (f.type === 'textarea') {
-          control = <textarea {...common} {...form.register(f.name)} rows={4} placeholder={f.placeholder} className="rounded-lg border border-neutral-200 px-3 py-2 text-sm" />
+          control = <Textarea {...common} {...form.register(f.name)} placeholder={f.placeholder} />
+        } else if (f.type === 'number') {
+          control = <NumberInput {...common} placeholder={f.placeholder} {...form.register(f.name)} />
+        } else if (f.type === 'date') {
+          control = <DateInput {...common} {...form.register(f.name)} />
+        } else if (f.type === 'email') {
+          control = <Input {...common} type="email" placeholder={f.placeholder} {...form.register(f.name)} />
         } else {
-          control = (
-            <Input
-              {...common}
-              type={f.type === 'number' ? 'number' : f.type === 'email' ? 'email' : 'text'}
-              step={f.type === 'number' ? 'any' : undefined}
-              placeholder={f.placeholder}
-              {...form.register(f.name)}
-            />
-          )
+          control = <Input {...common} placeholder={f.placeholder} {...form.register(f.name)} />
         }
         return (
           <FormField key={f.name} label={f.label} htmlFor={id} required={f.required} hint={f.hint} error={typeof err === 'string' ? err : undefined}>
@@ -137,7 +160,7 @@ function prepare(values: FieldValues, fields: FieldSpec[]): FieldValues {
     const v = out[f.name]
     if (f.type === 'number') {
       out[f.name] = v === '' || v === null || v === undefined ? null : typeof v === 'string' ? Number(v) : v
-    } else if (f.type === 'select') {
+    } else if (f.type === 'select' || f.type === 'reference' || f.type === 'date') {
       out[f.name] = v === '' || v === undefined ? null : v
     }
   }

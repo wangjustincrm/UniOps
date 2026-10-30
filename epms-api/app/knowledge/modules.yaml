@@ -301,6 +301,12 @@ modules:
         12/13/14-digit forms do not matter). The item code is not used. A line
         that matches nothing, or whose barcode Shopify could not return, waits
         in Review — fix the item or the barcode, then Re-check.
+      - >-
+        Every Sales list works the same way: the arrow on a column header
+        searches, sorts or hides that column; "Search" opens a panel to filter
+        on any field (several values of one field = any of them; several fields
+        = all of them); the chips above the table show the active sorting and
+        filters and remove them; the eye at the left shows or hides columns.
 
   - key: booking
     label: Meeting Rooms

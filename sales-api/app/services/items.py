@@ -10,7 +10,7 @@ from sqlalchemy import select
 from app.domain.items import check_units, factor, normalise_unit, titles_column, titles_list, units_text
 from app.models.config import DcRouting, Item, ItemPartnerCode, ItemUnit, Partner
 from app.platform.errors import InvalidInput
-from app.platform.repository import FilterRule, Repository, parse_bool
+from app.platform.repository import Repository
 from app.platform.services import CrudService
 from app.schemas.items import (
     DcRoutingCreate, DcRoutingRead, DcRoutingUpdate, ItemCreate, ItemRead, ItemUpdate, PartnerCodeCreate,
@@ -42,9 +42,10 @@ async def _require(session, model, column, value, field: str, what: str) -> None
 class ItemRepository(Repository[Item]):
     model = Item
     search_fields = ("item_code", "description", "sku", "upc", "gtin")
-    sortable = {"item_code": Item.item_code, "description": Item.description, "active": Item.active}
-    filterable = {"active": FilterRule(Item.active, ops=frozenset({"eq"}), cast=parse_bool),
-                  "warehouse_held": FilterRule(Item.warehouse_held, ops=frozenset({"eq"}), cast=parse_bool)}
+    list_fields = ("item_code", "description", "sku", "upc", "gtin", "gross_weight_lb_per_ea", "warehouse_held",
+                   "active", "created_at", "updated_at")
+    labels = {"sku": "SKU", "upc": "UPC", "gtin": "GTIN", "gross_weight_lb_per_ea": "Gross weight per EA (lb)",
+              "warehouse_held": "Held in the warehouse"}
     default_sort = ("item_code",)
 
 
@@ -120,9 +121,7 @@ class ItemService(CrudService[Item, ItemRead, ItemCreate, ItemUpdate]):
 class PartnerCodeRepository(Repository[ItemPartnerCode]):
     model = ItemPartnerCode
     search_fields = ("partner_code", "buyer_part", "item_code")
-    sortable = {"partner_code": ItemPartnerCode.partner_code, "buyer_part": ItemPartnerCode.buyer_part,
-                "item_code": ItemPartnerCode.item_code}
-    filterable = {"partner_code": FilterRule(ItemPartnerCode.partner_code), "item_code": FilterRule(ItemPartnerCode.item_code)}
+    list_fields = ("partner_code", "buyer_part", "item_code", "created_at", "updated_at")
     default_sort = ("partner_code", "buyer_part")
 
 
@@ -150,10 +149,8 @@ class PartnerCodeService(CrudService[ItemPartnerCode, PartnerCodeRead, PartnerCo
 class DcRoutingRepository(Repository[DcRouting]):
     model = DcRouting
     search_fields = ("partner_code", "ship_to_gln", "dc_number", "notes")
-    sortable = {"partner_code": DcRouting.partner_code, "ship_to_gln": DcRouting.ship_to_gln,
-                "dc_number": DcRouting.dc_number, "active": DcRouting.active}
-    filterable = {"partner_code": FilterRule(DcRouting.partner_code),
-                  "active": FilterRule(DcRouting.active, ops=frozenset({"eq"}), cast=parse_bool)}
+    list_fields = ("partner_code", "ship_to_gln", "dc_number", "notes", "active", "created_at", "updated_at")
+    labels = {"ship_to_gln": "Ship-to GLN", "dc_number": "DC number"}
     default_sort = ("partner_code", "ship_to_gln")
 
 

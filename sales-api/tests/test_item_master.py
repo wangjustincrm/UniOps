@@ -185,3 +185,18 @@ async def test_dc_routing_by_partner_and_gln(http):
     assert rep["ok"] and rep["counts"] == {"create": 1, "update": 1, "unchanged": 0}
     r = await http.post(DC, json={"partner_code": "NOPE", "ship_to_gln": "1", "dc_number": "1"}, headers=OP)
     assert r.status_code == 422 and r.json()["error"]["details"]["field"] == "partner_code"
+
+
+async def test_the_list_meta_describes_the_fields_and_needs_read(http):
+    nobody = {"Authorization": f"Bearer {make_token('requester')}"}
+    assert (await http.get(f"{ITEMS}/meta", headers=nobody)).status_code == 403
+    m = (await http.get(f"{ITEMS}/meta", headers=READER)).json()
+    f = {x["name"]: x for x in m["fields"]}
+    assert m["version"] == 1 and m["searchable"] and m["default_sort"] == ["item_code"]
+    assert (f["upc"]["label"], f["upc"]["type"], f["upc"]["filterable"]) == ("UPC", "text", True)
+    assert (f["warehouse_held"]["type"], f["gross_weight_lb_per_ea"]["type"]) == ("bool", "number")
+    assert "units" not in f  # a list: nothing to filter, sort or show in a cell
+    r = await http.get(f"{ITEMS}?filter=upc:is_null:&filter=description:contains:formula|milk", headers=READER)
+    assert r.status_code == 200
+    r = await http.get(f"{ITEMS}?filter=gross_weight_lb_per_ea:gt:heavy", headers=READER)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "query.bad_value"

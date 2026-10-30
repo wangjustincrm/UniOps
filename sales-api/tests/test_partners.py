@@ -141,7 +141,7 @@ async def test_list_search_sort_filter(http):
     assert codes(await http.get(f"{BASE}?filter=settlement_mode:eq:INVOICE&page_size=1", headers=READER)) == ["JC"]
     r = await http.get(f"{BASE}?filter=settlement_mode:eq:INVOICE&page_size=1", headers=READER)
     assert r.json()["total"] == 2
-    r = await http.get(f"{BASE}?sort=invoice_email", headers=READER)
+    r = await http.get(f"{BASE}?sort=invoice_cc", headers=READER)
     assert r.status_code == 422 and r.json()["error"]["code"] == "query.unknown_field"
 
 

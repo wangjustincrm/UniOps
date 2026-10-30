@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { QueryTable, Sheet, defaultSpec, type ColumnDef, type QuerySpec } from '@/platform-ui'
 import { OrderDetailView, StateBadge } from './OrderDetailView'
-import { FULFILLMENT_STATUSES, SOURCE_TYPES, ordersClient, type OrderRead } from './ordersApi'
+import { ordersClient, type OrderRead } from './ordersApi'
 
 const orderColumns: ColumnDef<OrderRead, unknown>[] = [
   { accessorKey: 'order_number', header: 'Order' },
@@ -21,10 +21,6 @@ export function OrderList({ fixed = [], title, description, emptyTitle, detailEx
   const [spec, setSpec] = useState<QuerySpec>({ ...defaultSpec(), filters: fixed ?? [] })
   const [open, setOpen] = useState<OrderRead | null>(null)
   const list = useQuery({ queryKey: ['orders', spec], queryFn: () => ordersClient.list(spec), placeholderData: keepPreviousData })
-  const filters = fixed?.length ? [] : [
-    { field: 'fulfillment_status', label: 'Status', options: FULFILLMENT_STATUSES.map((v) => ({ value: v, label: v })) },
-    { field: 'source_type', label: 'Source', options: SOURCE_TYPES.map((v) => ({ value: v, label: v })) },
-  ]
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -33,9 +29,10 @@ export function OrderList({ fixed = [], title, description, emptyTitle, detailEx
       </div>
       <QueryTable<OrderRead>
         columns={orderColumns} rows={list.data?.items ?? []} total={list.data?.total ?? 0} spec={spec}
+        resource={ordersClient} locked={(fixed ?? []).map((f) => f.field)}
         onSpecChange={(s) => setSpec({ ...s, filters: [...(fixed ?? []), ...(s.filters ?? []).filter((f) => !fixed?.some((x) => x.field === f.field))] })}
         sortable={['order_number', 'first_received_at', 'order_date', 'partner_code', 'fulfillment_status']}
-        searchable filters={filters} loading={list.isLoading} error={list.error} onRetry={() => list.refetch()}
+        searchable loading={list.isLoading} error={list.error} onRetry={() => list.refetch()}
         rowKey={(o) => o.id} onRowClick={setOpen} emptyTitle={emptyTitle}
       />
       <Sheet open={open !== null} onOpenChange={(o) => { if (!o) setOpen(null) }} title={open ? `Order ${open.order_number}` : ''} className="max-w-3xl">

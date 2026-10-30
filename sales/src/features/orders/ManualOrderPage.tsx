@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, Button, ErrorMessage, FormField, Input, useToast } from '@/platform-ui'
+import { ActionButton, Autocomplete, Button, ErrorMessage, FormField, Input, NumberInput, useToast } from '@/platform-ui'
+import { itemOptions, manualPartnerOptions } from '../configuration/lookups'
 import { OrderList } from './OrdersPage'
 import {
   cancelManual, createManual, previewManual, submitManual,
@@ -36,7 +37,9 @@ function NewManualOrder() {
     <section aria-label="New manual order" className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-4">
       <h2 className="font-semibold text-neutral-800">New manual order</h2>
       <div className="grid gap-3 sm:grid-cols-2">
-        <FormField label="Partner (MANUAL channel)" htmlFor="m-partner" required><Input id="m-partner" value={partner} onChange={(e) => setPartner(e.target.value)} /></FormField>
+        <FormField label="Partner (MANUAL channel)" htmlFor="m-partner" required>
+          <Autocomplete id="m-partner" aria-label="Partner" value={partner || null} onChange={(v) => setPartner(v ?? '')} loadOptions={manualPartnerOptions} minChars={0} />
+        </FormField>
         <FormField label="Customer reference" htmlFor="m-ref"><Input id="m-ref" value={reference} onChange={(e) => setReference(e.target.value)} /></FormField>
       </div>
       <table className="w-full text-sm">
@@ -44,8 +47,8 @@ function NewManualOrder() {
         <tbody>
           {lines.map((l, i) => (
             <tr key={i}>
-              <td><Input aria-label={`Item ${i + 1}`} value={l.item_code} onChange={(e) => set(i, 'item_code', e.target.value)} /></td>
-              <td><Input aria-label={`Quantity ${i + 1}`} type="number" value={l.quantity} onChange={(e) => set(i, 'quantity', e.target.value)} /></td>
+              <td><Autocomplete aria-label={`Item ${i + 1}`} value={l.item_code || null} onChange={(v) => set(i, 'item_code', v ?? '')} loadOptions={itemOptions} /></td>
+              <td><NumberInput aria-label={`Quantity ${i + 1}`} value={l.quantity} onChange={(e) => set(i, 'quantity', e.target.value)} /></td>
               <td><Input aria-label={`Unit ${i + 1}`} value={l.unit} onChange={(e) => set(i, 'unit', e.target.value)} /></td>
               <td className="px-2 text-xs">{preview?.[i] ? (preview[i].problem ? <span className="text-danger-600">{preview[i].problem}</span> : preview[i].qty_ea) : ''}</td>
             </tr>

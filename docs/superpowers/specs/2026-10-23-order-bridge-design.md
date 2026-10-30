@@ -712,6 +712,45 @@ Input to the decision on trimming the platform (§14.7). One configuration table
 - **P3 (orders) added:** composite natural keys for CSV (`csv_key` may be a tuple — partner codes, DC routing) and four CrudService hooks: `build` / `apply_changes` (create, update and import alike — an item's units are a child set), `csv_value` (export of a non-column value: `EA=1; CASE=6`) and `_same` (import's unchanged test for such a value). Used for the first time: `StateMachine.transition` on orders and documents, `Quantity.to_base` / `UnitTable` (EA conversion, never rounded), `historical_column` (the order list).
 - **Not used yet**, with the phase that first needs it: `StateMachine` / `CommandService` / events (P3–P5), `Outbox` / `OutboxWorker`, `GuardedGateway` / `container.gateway`, `pipeline`, `ScheduledJob` (P2), `SettingsRegistry` (P1 settings, P2 scheduler), `Quantity` / `Money` (P3–P6), `historical_column` (P9); UI `StatusBadge` (P2 onward), `Combobox`, `Popover`, `Tabs` (order screens). `SoftDeletable` is unused by design in v1 (§13.1). Nothing is proposed for removal before those phases have used, or failed to use, each piece.
 
+### 13.19 List query contract (every list endpoint; 2026-10-30)
+
+Every list in the module — Partners, Items, Partner codes, DC routing, Connections, Orders, Review, Documents, Runs, Log — speaks one contract, declared once per resource on its repository and served by the platform (`app/platform/query.py`, `repository.py`; client `sales/src/platform-ui`).
+
+**Declaration (ABP style).** A repository names its `list_fields` (model columns that are sortable and filterable), optional `labels` and `enums` (a field and its values, from the domain constants), plus `search_fields`, `default_sort` and any special `filterable` / `sortable` entry. Only declared keys reach SQL, as columns; anything else is `422 query.unknown_field`. `secret_name` and `host_key` are never list fields.
+
+**Request.**
+
+| Parameter | Form | Meaning |
+| --- | --- | --- |
+| `filter` | `field:op:value`, repeated | different filters are AND (also two on one field, e.g. `gte` and `lte`) |
+| value | `v1\|v2` | several values: any of them for the positive operators, none of them for `ne` / `not_contains` / `not_in`; a literal `\|` is written `\\|`, a backslash `\\` |
+| `between` | `low..high` | either side may be empty; `range` is the old name and still accepted |
+| `is_null` / `not_null` | `field:is_null:` | no value |
+| `sort` | `a,-b` | priority = order; `-` descending; ties broken by id |
+| `search` | text | the quick search over `search_fields` (ILIKE) |
+| `page`, `page_size` | | `page_size` ≤ 200, `page` ≤ 10 000 |
+
+Limits: 20 filters, 100 values per filter, 200 characters per value, 100 for `search`.
+
+**Operators by field type** (the type comes from the column; a declared enum is `enum`):
+
+| Type | Operators |
+| --- | --- |
+| text | `contains`, `not_contains`, `starts_with`, `ends_with` (case-insensitive, `%` and `_` literal), `eq`, `ne` (exact), `in`, `not_in`, `is_null`, `not_null` |
+| number / date / datetime | `eq`, `ne`, `gt`, `gte`, `lt`, `lte` (one value), `between`, `in`, `not_in`, `is_null`, `not_null` |
+| enum | `eq`, `ne`, `in`, `not_in`, `is_null`, `not_null` |
+| bool | `eq`, `ne`, `is_null`, `not_null` |
+
+Values are cast to the column type before SQL: a bad value is `422 query.bad_value`, never a database error. A datetime without a time zone is UTC. The negative operators (`ne`, `not_in`, `not_contains`) include rows where the field is empty (an empty value is not any of the values).
+
+**Response.** `{items, total}`. `GET <resource>/meta` (read permission) returns `{version, fields, searchable, default_sort}`; each field has `name, label, type, enum_values, filterable, sortable, groupable, operators`. The fields are the read schema's scalar fields in its order, then any other declared key, each once.
+
+**Client.** `QueryTable` takes the resource and builds from `/meta`: a menu per column (Search · Sort ascending / descending · Hide column), the chips row (SORTING — order is priority, click flips, × removes; SEARCH — one chip per filter plus the quick search; filters the page sets itself are shown without ×), the search panel (tick a field → operator → values as tags; Search applies, Clear resets the panel), the column chooser (the eye; a hidden column stays searchable and sortable; fields the page does not list start hidden). The page's own columns keep their titles and cells. The state of a list is one versioned JSON object, `ViewState` (`version, sort, filters, search, pageSize, columns, hidden`; `resource/viewState.ts`); the request is serialised from it. The browser address bar is not synced (keep-alive tabs).
+
+**Grouping (Stage B, next).** `group=field,-field2` (at most 3 keys, from a `groupable` whitelist): rows ordered by the group keys first, then the sort; the response gains `groups: [{key: […], count}]` over the whole filtered result (at most 500, else `groups_truncated`). Client: GROUPING chips, Group ascending / descending in the column menu, nested collapsible group rows. A group checkbox comes with the first list that has row selection.
+
+**Saved views (planned, not built).** A table `sales_user_views` (user_id, resource, name, state jsonb = a `ViewState`, is_default; unique (user_id, resource, name)) and a views menu on `QueryTable` (save as, rename, delete, set default). A stored state of another `version` is ignored, not misread.
+
 ## 14. Isolation from other projects
 
 The product owner's condition: the foundation and the UI library are used only by Order Bridge first, and nothing may cause issues for other projects.

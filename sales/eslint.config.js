@@ -15,6 +15,22 @@ const SHELL = {
 }
 // The app shell may import @uniops/shell directly (tabs, routes).
 const SHELL_LAYER = ['src/main.tsx', 'src/components/layout/**', 'src/app/**']
+// Form controls come from the primitives (Select, Checkbox, CheckboxList,
+// NumberInput, DateInput, DateTimeInput, Textarea, Autocomplete…): pages and
+// patterns never render a raw one (the user's rule, 2026-10-30).
+const TYPES = '/^(checkbox|radio|date|datetime-local|number|file)$/'
+const RAW_CONTROLS = [
+  { selector: "JSXOpeningElement[name.name='select']", message: 'Use Select (or CheckboxList) from @/platform-ui, not a raw <select>.' },
+  { selector: "JSXOpeningElement[name.name='textarea']", message: 'Use Textarea from @/platform-ui, not a raw <textarea>.' },
+  {
+    selector: `JSXOpeningElement[name.name=/^(input|Input)$/] > JSXAttribute[name.name='type'][value.value=${TYPES}]`,
+    message: 'Use Checkbox, NumberInput, DateInput, DateTimeInput or FilePicker from @/platform-ui for this input type.',
+  },
+  {
+    selector: "JSXOpeningElement[name.name=/^(input|Input)$/] > JSXAttribute[name.name='type'][value.type='JSXExpressionContainer']",
+    message: 'A computed input type hides which control this is: use the matching primitive from @/platform-ui.',
+  },
+]
 
 export default defineConfig([
   globalIgnores(['dist']),
@@ -73,5 +89,10 @@ export default defineConfig([
     files: ['src/**/*.{ts,tsx}'],
     ignores: ['src/platform-ui/**', ...SHELL_LAYER],
     rules: { 'no-restricted-imports': ['error', { patterns: [SHELL] }] },
+  },
+  {
+    files: ['src/**/*.tsx'],
+    ignores: ['src/platform-ui/primitives/**'],
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS] },
   },
 ])

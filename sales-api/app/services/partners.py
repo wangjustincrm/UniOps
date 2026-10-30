@@ -7,10 +7,11 @@ from typing import Any
 
 from sqlalchemy import func, select
 
+from app.domain.config import CHANNELS, INVOICE_METHODS, SENDING_MODES, SETTLEMENT_MODES
 from app.domain.partners import check_partner
 from app.models.config import Partner
 from app.platform.errors import BusinessError
-from app.platform.repository import FilterRule, Repository, parse_bool
+from app.platform.repository import Repository
 from app.platform.services import CrudService
 from app.schemas.partners import PartnerCreate, PartnerRead, PartnerUpdate
 
@@ -21,17 +22,13 @@ CONFIG = "sales.config"
 class PartnerRepository(Repository[Partner]):
     model = Partner
     search_fields = ("code", "name", "abbrev")
-    sortable = {
-        "code": Partner.code, "name": Partner.name, "channel": Partner.channel,
-        "settlement_mode": Partner.settlement_mode, "active": Partner.active,
-        "updated_at": Partner.updated_at,
-    }
-    filterable = {
-        "active": FilterRule(Partner.active, ops=frozenset({"eq"}), cast=parse_bool),
-        "channel": FilterRule(Partner.channel),
-        "settlement_mode": FilterRule(Partner.settlement_mode),
-        "invoice_method": FilterRule(Partner.invoice_method),
-    }
+    list_fields = ("code", "name", "abbrev", "channel", "settlement_mode", "sending_mode", "delay_minutes",
+                   "invoice_method", "invoice_email", "payment_terms", "dc_routing_required", "min_shelf_life_days",
+                   "label_code", "active", "created_at", "updated_at")
+    labels = {"abbrev": "Abbreviation", "delay_minutes": "Delay (minutes)", "dc_routing_required": "DC routing required",
+              "min_shelf_life_days": "Min shelf life (days)"}
+    enums = {"channel": CHANNELS, "settlement_mode": SETTLEMENT_MODES, "sending_mode": SENDING_MODES,
+             "invoice_method": INVOICE_METHODS}
     default_sort = ("code",)
 
 

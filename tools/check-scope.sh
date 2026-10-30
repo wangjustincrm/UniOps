@@ -24,7 +24,8 @@
 #      sales/src/platform-ui).
 # For sales it also confirms that a deliberate type error inside
 # src/platform-ui is reported by tsc (the TS5101 "diagnostics skipped" trap),
-# that the ESLint import rule fires on a planted business import, and that
+# that the ESLint import rule fires on a planted business import, that the
+# raw-form-control rule fires outside platform-ui/primitives (and not inside), and that
 # both a library class and a shell-only class reach the built CSS (§13.15).
 #
 # Steps 5+ run in throwaway containers (python:3.12-slim, node:20-alpine) on a
@@ -316,14 +317,32 @@ TS
       probe src/platform-ui/patterns/__eslint_probe__.ts "import { Button } from \"@uniops/shell\""
       probe src/features/__eslint_probe__.ts "import { Button } from \"@uniops/shell\""
       probe src/pages/__eslint_probe__.ts "import { Badge } from \"@uniops/shell\""
+      # Form controls come from the primitives: a raw one is refused outside
+      # platform-ui/primitives, and allowed inside (the admitted half).
+      control_probe() {  # file, JSX, expect (fires | passes)
+        mkdir -p "$(dirname "$1")"
+        printf "export const Planted = () => %s\n" "$2" > "$1"
+        npx eslint "$1" >/tmp/p.log 2>&1
+        if [ "$3" = fires ]; then
+          grep -q "no-restricted-syntax" /tmp/p.log || { echo "ESLint did NOT refuse the raw control: $1 <- $2"; tail -10 /tmp/p.log; exit 20; }
+        else
+          grep -q "no-restricted-syntax" /tmp/p.log && { echo "ESLint refused a raw control inside the primitives: $1"; tail -10 /tmp/p.log; exit 21; }
+        fi
+        rm "$1"
+      }
+      control_probe src/features/__eslint_probe__.tsx "<select />" fires
+      control_probe src/platform-ui/patterns/__eslint_probe__.tsx "<input type=\"checkbox\" />" fires
+      control_probe src/features/__eslint_probe__.tsx "<textarea />" fires
+      control_probe src/pages/__eslint_probe__.tsx "<input type=\"datetime-local\" />" fires
+      control_probe src/platform-ui/primitives/__eslint_probe__.tsx "<select />" passes
       npx vite build >/tmp/b.log 2>&1 || { echo "build failed"; tail -10 /tmp/b.log; exit 16; }
       grep -q "radix-popover-trigger-width" dist/assets/*.css || { echo "platform-ui classes missing from the built CSS"; exit 17; }
       # As written in CSS: hover:x → .hover\:x
       grep -qF "$SHELL_SELECTOR" dist/assets/*.css || { echo "shell-only class $SHELL_SENTINEL missing from the built CSS"; exit 19; }
-      echo "probe reported; 0 other type errors; import + layer rules pass; 7 planted ESLint violations caught; library and shell classes in CSS"
+      echo "probe reported; 0 other type errors; import + layer rules pass; 7 planted import violations and 4 raw form controls caught, a primitive admitted; library and shell classes in CSS"
     '
   rc=$?
-  if [[ $rc == 0 ]]; then ok "sales: TS5101 trap, import + layer rules, ESLint probes, library + shell CSS"; else fail "sales checks (code $rc)"; fi
+  if [[ $rc == 0 ]]; then ok "sales: TS5101 trap, import + layer rules, ESLint probes (imports, raw controls), library + shell CSS"; else fail "sales checks (code $rc)"; fi
 fi
 
 echo

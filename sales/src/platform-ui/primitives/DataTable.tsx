@@ -26,10 +26,17 @@ export interface DataTableProps<T> {
   errorMessage?: string | null
   onRetry?: () => void
   emptyTitle?: string
-  /** One sort key at a time; only the `sortable` column ids get a header button. */
-  sort?: SortValue | null
+  /** The sort keys in priority order (one or several); only the `sortable`
+   *  column ids get a header button, which sorts by that column alone. */
+  sort?: SortValue | SortValue[] | null
   sortable?: string[]
   onSortChange?: (sort: SortValue) => void
+  /** Rendered after a column's title (e.g. its menu). */
+  headerAddon?: (columnId: string) => ReactNode
+  /** A narrow first header cell (e.g. the column chooser); its body cells stay empty. */
+  leadingHeader?: ReactNode
+  /** A row between the toolbar and the table (e.g. the active sort / filter chips). */
+  chips?: ReactNode
   /** A controlled search box, applied on Enter. */
   search?: { value: string; onSubmit: (value: string) => void }
   /** Controls placed after the search box (e.g. filters), and actions on the right. */
@@ -49,10 +56,10 @@ export interface DataTableProps<T> {
  *  query contract — QueryTable (patterns) adapts it to a QuerySpec. */
 export function DataTable<T>({
   columns, rows, rowKey, onRowClick, loading, errorMessage, onRetry, emptyTitle = 'Nothing here yet',
-  sort, sortable = [], onSortChange, search, filters, toolbar, pagination,
+  sort, sortable = [], onSortChange, headerAddon, leadingHeader, chips, search, filters, toolbar, pagination,
 }: DataTableProps<T>) {
   const [searchDraft, setSearchDraft] = useSynced(search?.value ?? '')
-  const sorting: SortingState = useMemo(() => (sort ? [sort] : []), [sort])
+  const sorting: SortingState = useMemo(() => (Array.isArray(sort) ? sort : sort ? [sort] : []), [sort])
   const sortableSet = useMemo(() => new Set(sortable), [sortable])
 
   const table = useReactTable({
@@ -61,7 +68,7 @@ export function DataTable<T>({
     state: { sorting },
     manualSorting: true,
     manualPagination: true,
-    enableMultiSort: false,
+    enableMultiSort: true,
     rowCount: pagination?.total ?? rows.length,
     getCoreRowModel: getCoreRowModel(),
     getRowId: (row) => String(rowKey(row)),
@@ -92,6 +99,8 @@ export function DataTable<T>({
         </div>
       )}
 
+      {chips}
+
       {errorMessage ? (
         <ErrorState message={errorMessage} onRetry={onRetry} />
       ) : (
@@ -100,23 +109,29 @@ export function DataTable<T>({
             <thead className="bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500">
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
+                  {leadingHeader !== undefined && <th className="w-8 px-2 py-2">{leadingHeader}</th>}
                   {hg.headers.map((h) => {
                     const canSort = sortableSet.has(h.column.id) && !!onSortChange
                     const dir = h.column.getIsSorted()
+                    const priority = sorting.length > 1 ? sorting.findIndex((s) => s.id === h.column.id) + 1 : 0
                     return (
                       <th key={h.id} className="px-3 py-2 font-medium" aria-sort={dir ? (dir === 'desc' ? 'descending' : 'ascending') : undefined}>
-                        {h.isPlaceholder ? null : canSort ? (
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-1 uppercase hover:text-neutral-800"
-                            onClick={() => onSortChange?.({ id: h.column.id, desc: dir === 'asc' })}
-                          >
-                            {flexRender(h.column.columnDef.header, h.getContext())}
-                            {dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : dir === 'desc' ? <ArrowDown className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3 opacity-40" />}
-                          </button>
-                        ) : (
-                          flexRender(h.column.columnDef.header, h.getContext())
-                        )}
+                        <span className="inline-flex items-center gap-1">
+                          {h.isPlaceholder ? null : canSort ? (
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 uppercase hover:text-neutral-800"
+                              onClick={() => onSortChange?.({ id: h.column.id, desc: dir === 'asc' })}
+                            >
+                              {flexRender(h.column.columnDef.header, h.getContext())}
+                              {dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : dir === 'desc' ? <ArrowDown className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3 opacity-40" />}
+                              {priority > 0 && <sup className="text-[10px] text-neutral-400">{priority}</sup>}
+                            </button>
+                          ) : (
+                            flexRender(h.column.columnDef.header, h.getContext())
+                          )}
+                          {headerAddon?.(h.column.id)}
+                        </span>
                       </th>
                     )
                   })}
@@ -125,13 +140,14 @@ export function DataTable<T>({
             </thead>
             <tbody>
               {loading && rows.length === 0
-                ? Array.from({ length: 5 }, (_, i) => <SkeletonRow key={i} cols={columns.length} />)
+                ? Array.from({ length: 5 }, (_, i) => <SkeletonRow key={i} cols={columns.length + (leadingHeader !== undefined ? 1 : 0)} />)
                 : table.getRowModel().rows.map((r) => (
                   <tr
                     key={r.id}
                     onClick={onRowClick ? () => onRowClick(r.original) : undefined}
                     className={cn('border-t border-neutral-100', onRowClick && 'cursor-pointer hover:bg-neutral-50')}
                   >
+                    {leadingHeader !== undefined && <td />}
                     {r.getVisibleCells().map((c) => (
                       <td key={c.id} className="px-3 py-2 text-neutral-700">
                         {flexRender(c.column.columnDef.cell, c.getContext())}

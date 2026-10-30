@@ -6,6 +6,7 @@ import logging
 import os
 from typing import Any, ClassVar
 
+from app.domain.config import AFTER_READ, CONNECTION_KINDS, CONNECTION_MODES
 from app.domain.connections import check_connection
 from app.integrations import shopify as shopify_mod
 from app.integrations.sftp import readable
@@ -14,7 +15,7 @@ from app.platform.errors import InvalidInput
 from sqlalchemy import select
 from app.models.config import Connection
 from app.platform.authorization import requires
-from app.platform.repository import FilterRule, Repository, parse_bool
+from app.platform.repository import Repository
 from app.platform.services import CrudService
 from app.schemas.connections import (
     ConnectionCreate, ConnectionRead, ConnectionTestRead, ConnectionUpdate, FolderCheckRead, HostKeyRead,
@@ -42,11 +43,13 @@ def same_key(a: str | None, b: str | None) -> bool:
 class ConnectionRepository(Repository[Connection]):
     model = Connection
     search_fields = ("name", "host")
-    sortable = {"name": Connection.name, "kind": Connection.kind, "mode": Connection.mode, "active": Connection.active}
-    filterable = {
-        "kind": FilterRule(Connection.kind), "mode": FilterRule(Connection.mode),
-        "active": FilterRule(Connection.active, ops=frozenset({"eq"}), cast=parse_bool),
-    }
+    # secret_name and host_key are not list fields: never echoed back in a filter error.
+    list_fields = ("name", "kind", "host", "port", "username", "after_read", "stable_seconds", "mode",
+                   "auth_failed_at", "api_version", "cursor_updated_at", "page_size", "order_number_cutoff",
+                   "partner_code", "active", "created_at", "updated_at")
+    labels = {"after_read": "After read", "stable_seconds": "Stable (seconds)", "auth_failed_at": "Login refused at",
+              "api_version": "API version", "cursor_updated_at": "Cursor (updated at)"}
+    enums = {"kind": CONNECTION_KINDS, "after_read": AFTER_READ, "mode": CONNECTION_MODES}
     default_sort = ("name",)
 
 

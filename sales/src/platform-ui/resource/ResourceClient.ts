@@ -1,4 +1,5 @@
 import { toSearchParams, type Page, type QuerySpec } from './querySpec'
+import type { ListMeta } from './listMeta'
 
 /** What the business API client provides. Paths are relative to its base. */
 export interface HttpClient {
@@ -36,6 +37,8 @@ export interface ImportReport {
 export interface ResourceClient<TRead, TCreate, TUpdate> {
   basePath: string
   list: (spec: QuerySpec) => Promise<Page<TRead>>
+  /** The list's fields, labels, types and operators (`GET <resource>/meta`). */
+  meta: () => Promise<ListMeta>
   get: (id: number) => Promise<TRead>
   create: (data: TCreate) => Promise<TRead>
   /** `data` holds only the fields to change; a field set to null is cleared. */
@@ -55,6 +58,7 @@ export function createResourceClient<TRead, TCreate, TUpdate = TCreate>(
   return {
     basePath: base,
     list: (spec) => http.get<Page<TRead>>(`${base}?${toSearchParams(spec)}`),
+    meta: () => http.get<ListMeta>(`${base}/meta`),
     get: (id) => http.get<TRead>(`${base}/${id}`),
     create: (data) => http.post<TRead>(base, data),
     update: (id, data, version) =>

@@ -2,7 +2,7 @@
 
     router = crud_router("/config/partners", PartnerService, uow=get_uow)
 
-list · get · create · update (`?version=`) · deactivate · export.csv ·
+list · meta · get · create · update (`?version=`) · deactivate · export.csv ·
 import.csv (`?dry_run=`). The router enforces no permission of its own: the
 service checks the keys it declares (app/platform/authorization.py), so the
 same rule holds for any other caller. `uow` is the business code's
@@ -40,6 +40,10 @@ def read_router(
         page = await service_cls(u).list(spec)
         return {"items": [i.model_dump(mode="json") for i in page.items], "total": page.total}
 
+    @r.get("/meta")
+    async def meta(u: UoW) -> dict:
+        return await service_cls(u).meta()
+
     @r.get("/{id}", response_model=Read)
     async def get(u: UoW, id: int):
         return await service_cls(u).get(id)
@@ -65,6 +69,10 @@ def crud_router(
     async def list_(u: UoW, spec: Spec) -> dict:
         page = await service_cls(u).list(spec)
         return {"items": [i.model_dump(mode="json") for i in page.items], "total": page.total}
+
+    @r.get("/meta")
+    async def meta(u: UoW) -> dict:
+        return await service_cls(u).meta()
 
     @r.get("/export.csv")
     async def export(u: UoW, spec: Spec) -> Response:

@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { FieldValues } from 'react-hook-form'
 import type { z } from 'zod'
 import { Button } from '../primitives/shell'
@@ -7,6 +7,7 @@ import { QueryTable } from './QueryTable'
 import { ActionButton } from './ActionButton'
 import { Sheet } from '../primitives/Sheet'
 import { Dialog } from '../primitives/Dialog'
+import { FilePicker } from '../primitives/FilePicker'
 import { ConfirmAction } from './ConfirmAction'
 import { SchemaForm, type FieldSpec } from './SchemaForm'
 import { useCrudResource } from '../resource/useCrudResource'
@@ -57,7 +58,6 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
   const [confirmDeactivate, setConfirmDeactivate] = useState(false)
   const [preview, setPreview] = useState<{ file: File; report: ImportReport } | null>(null)
   const [importError, setImportError] = useState<unknown>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
 
   // The open record as the list now has it: an action in the detail panel
   // (or another user) may have changed it, and a save needs its current version.
@@ -77,8 +77,6 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
       setPreview({ file, report: await client.importCsv(file, true) })
     } catch (e) {
       setImportError(e)
-    } finally {
-      if (fileRef.current) fileRef.current.value = ''
     }
   }
 
@@ -95,6 +93,7 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
         total={list.data?.total ?? 0}
         spec={spec}
         onSpecChange={setSpec}
+        resource={client}
         sortable={props.sortable}
         searchable
         loading={list.isLoading}
@@ -109,10 +108,7 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
               <Button variant="secondary" size="sm" onClick={() => props.onExport?.(client.exportPath(spec))}>Export CSV</Button>
             )}
             {props.csvImport && canWrite && (
-              <>
-                <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" aria-label="CSV file" onChange={(e) => pickFile(e.target.files?.[0])} />
-                <Button variant="secondary" size="sm" onClick={() => fileRef.current?.click()}>Import CSV</Button>
-              </>
+              <FilePicker accept=".csv,text/csv" label="CSV file" onFile={pickFile}>Import CSV</FilePicker>
             )}
             <ActionButton size="sm" permission={writePermission} onAction={() => setEditing('new')}>New</ActionButton>
           </>

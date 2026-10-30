@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PermissionProvider, ToastProvider } from '@/platform-ui'
@@ -17,11 +17,11 @@ const detail: OrderDetail = { ...order, notes: null, documents: [{ id: 9, kind: 
   timeline: [], lines: [{ id: 1, line_no: 5, item_code: null, source: { sku: 'NOPE' }, ordered_qty: '1', order_unit: 'CASE', factor_ea: null,
     qty_ea: null, unit_price: '1', line_status: 'Active', removed: false, problem: 'item not in the Item Master' }] }
 
-const api = vi.hoisted(() => ({ resolve: vi.fn() }))
+const api = vi.hoisted(() => ({ resolve: vi.fn(), fetchOrder: vi.fn() }))
 vi.mock('./ordersApi', async (orig) => {
   const real = await orig<typeof import('./ordersApi')>()
   return { ...real, ordersClient: { ...real.ordersClient, list: vi.fn(async () => ({ items: [order], total: 1 })) },
-    fetchOrder: vi.fn(async () => detail), resolveReview: api.resolve }
+    fetchOrder: api.fetchOrder, resolveReview: api.resolve }
 })
 const { default: ReviewPage } = await import('./ReviewPage')
 
@@ -31,6 +31,7 @@ function renderAs(keys: string[]) {
 }
 
 describe('Review worklist', () => {
+  beforeEach(() => { api.fetchOrder.mockReset(); api.fetchOrder.mockResolvedValue(detail) })
   it('shows why the order is held and its unmatched line; Re-check needs sales.order.operate', async () => {
     const { unmount } = renderAs(['sales.read'])
     fireEvent.click(await screen.findByText('9302'))
@@ -46,5 +47,22 @@ describe('Review worklist', () => {
     fireEvent.click(within(dialog).getByText('Re-check'))
     await waitFor(() => expect(api.resolve).toHaveBeenCalledWith(4))
     expect(await within(dialog).findByText('line 5: item not in the Item Master')).toBeInTheDocument()
+    expect(within(dialog).getByRole('status')).toHaveTextContent(/Re-checked at .*: still 1 problem/)
+  })
+
+  it('a re-check shows the new reason and lines at once, without reopening or reloading', async () => {
+    const fixed = { ...detail, review_reason: 'line 5: the variant title looks like a pack size this item has no unit for',
+      lines: [{ ...detail.lines[0], item_code: 'CF0092', problem: 'the variant title looks like a pack size this item has no unit for' }] }
+    api.resolve.mockImplementation(async () => {
+      api.fetchOrder.mockResolvedValue(fixed)  // the server's state after the re-check
+      return { order, remaining: [fixed.review_reason] }
+    })
+    renderAs(['sales.read', 'sales.order.operate'])
+    fireEvent.click(await screen.findByText('9302'))
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByText(/item not in the Item Master \(sku=NOPE/)).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByText('Re-check'))
+    await waitFor(() => expect(within(dialog).queryByText(/item not in the Item Master \(sku=NOPE/)).not.toBeInTheDocument())
+    expect(within(dialog).getByText('CF0092')).toBeInTheDocument()
   })
 })

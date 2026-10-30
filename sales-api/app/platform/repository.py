@@ -3,23 +3,33 @@
     class PartnerRepository(Repository[Partner]):
         model = Partner
         search_fields = ("code", "name")
-        sortable = {"code": Partner.code, "name": Partner.name}
-        filterable = {"active": FilterRule(Partner.active, cast=parse_bool)}
+        list_fields = ("code", "name", "channel", "active")   # sortable + filterable columns
+        sortable = {...}; filterable = {...}                   # extra or special keys, if any
+        labels = {"code": "Partner code"}                      # else humanised from the name
+        enums = {"channel": CHANNELS}                          # an enum field and its values
+
+The same declaration drives the list query and `/meta` (field_meta), from
+which the client builds its column menus and search panel.
 
 There is deliberately no `delete`: config rows are deactivated, documents are
 never removed. Models that opt in to SoftDeletable get `soft_delete`.
 """
 from __future__ import annotations
 
-from collections.abc import Mapping
-from datetime import datetime, timezone
-from typing import Any, ClassVar, Generic, TypeVar
+from collections.abc import Mapping, Sequence
+from datetime import date, datetime, timezone
+from decimal import Decimal
+from types import UnionType
+from typing import Any, ClassVar, Generic, Literal, TypeVar, Union, get_args, get_origin
 
-from sqlalchemy import Select, and_, func, or_, select, true
+from pydantic import BaseModel
+from sqlalchemy import Select, and_, func, not_, or_, select, true
 
 from app.platform.entities import SoftDeletable
 from app.platform.errors import InvalidInput, NotFound
-from app.platform.query import Filter, FilterRule, Page, QuerySpec, parse_bool, parse_sort  # noqa: F401 — re-exported
+from app.platform.query import (  # noqa: F401 — FilterRule, parse_bool re-exported
+    NO_VALUE_OPS, OPS_BY_KIND, RANGE_OPS, Filter, FilterRule, Page, QuerySpec, kind_for, parse_bool, parse_sort,
+)
 
 T = TypeVar("T")
 
@@ -33,10 +43,22 @@ class Repository(Generic[T]):
     search_fields: ClassVar[tuple[str, ...]] = ()
     sortable: ClassVar[Mapping[str, Any]] = {}
     filterable: ClassVar[Mapping[str, FilterRule]] = {}
+    # Model columns that are both sortable and filterable (merged into the two
+    # maps above when the class is defined; an explicit entry there wins).
+    list_fields: ClassVar[tuple[str, ...]] = ()
+    labels: ClassVar[Mapping[str, str]] = {}
+    enums: ClassVar[Mapping[str, Sequence[str]]] = {}
     default_sort: ClassVar[tuple[str, ...]] = ()  # sortable keys, "-" for descending
     # A boolean column marking rows imported as history (e.g. from the system
     # being replaced). Excluded unless asked for; never on open-work lists.
     historical_column: ClassVar[str | None] = None
+
+    def __init_subclass__(cls, **kw: Any) -> None:
+        super().__init_subclass__(**kw)
+        if cls.list_fields:
+            cols = {n: getattr(cls.model, n) for n in cls.list_fields}
+            cls.sortable = {**cols, **cls.sortable}
+            cls.filterable = {**{n: FilterRule(c) for n, c in cols.items()}, **cls.filterable}
 
     def __init__(self, uow) -> None:
         self.uow = uow
@@ -100,6 +122,45 @@ class Repository(Generic[T]):
             q = q.where(self._filter(f))
         return q
 
+    # ── field kinds and operators (one declaration: query and /meta) ────────
+    @classmethod
+    def field_kind(cls, name: str) -> str:
+        if name in cls.enums:
+            return "enum"
+        rule = cls.filterable.get(name)
+        if rule is not None and rule.kind:
+            return rule.kind
+        column = rule.column if rule is not None else cls.sortable.get(name, getattr(cls.model, name, None))
+        return kind_for(column)
+
+    @classmethod
+    def field_ops(cls, name: str) -> tuple[str, ...]:
+        rule = cls.filterable.get(name)
+        if rule is None:
+            return ()
+        if rule.ops is not None:  # a narrower set declared on purpose
+            return tuple(sorted("between" if o == "range" else o for o in rule.ops))
+        return OPS_BY_KIND[cls.field_kind(name)]
+
+    @classmethod
+    def field_meta(cls, read_schema: type[BaseModel] | None = None) -> list[dict[str, Any]]:
+        """Every field a client can show, filter or sort: the read schema's
+        scalar fields, then any other declared key. JSON / list fields are
+        left out (nothing to filter, sort or show in a cell)."""
+        names: list[str] = []
+        for name, info in (read_schema.model_fields.items() if read_schema else ()):
+            if _scalar(info.annotation):
+                names.append(name)
+        names = list(dict.fromkeys([*names, *cls.filterable, *cls.sortable]))  # each once, schema order first
+        out = []
+        for n in names:
+            out.append({
+                "name": n, "label": cls.labels.get(n) or _humanise(n), "type": cls.field_kind(n),
+                "enum_values": list(cls.enums.get(n, ())), "filterable": n in cls.filterable,
+                "sortable": n in cls.sortable, "groupable": False, "operators": list(cls.field_ops(n)),
+            })
+        return out
+
     def _filter(self, f: Filter):
         rule = self.filterable.get(f.field)
         if rule is None:
@@ -107,26 +168,40 @@ class Repository(Generic[T]):
                 "query.unknown_field", f"cannot filter on {f.field!r}",
                 {"field": f.field, "allowed": sorted(self.filterable)},
             )
-        if f.op not in rule.ops:
+        allowed = self.field_ops(f.field)
+        op = "between" if f.op == "range" else f.op
+        if op not in allowed:
             raise InvalidInput(
                 "query.unsupported_operator", f"{f.op!r} is not allowed on {f.field!r}",
-                {"field": f.field, "op": f.op, "allowed": sorted(rule.ops)},
+                {"field": f.field, "op": f.op, "allowed": list(allowed)},
             )
+        col = rule.column
+        if op in NO_VALUE_OPS:
+            return col.is_(None) if op == "is_null" else col.is_not(None)
         try:
-            if f.op == "eq":
-                return rule.column == rule.convert(f.value)
-            if f.op == "in":
-                values = f.value if isinstance(f.value, list) else [f.value]
-                return rule.column.in_([rule.convert(v) for v in values])
-            if f.op == "contains":
-                return rule.column.ilike(f"%{_like_escape(str(f.value))}%", escape="\\")
-            low, high = (list(f.value) + [None, None])[:2]
-            parts = []
-            if low is not None:
-                parts.append(rule.column >= rule.convert(low))
-            if high is not None:
-                parts.append(rule.column <= rule.convert(high))
-            return and_(*parts) if parts else true()
+            if op in RANGE_OPS:
+                low, high = (list(f.value) + [None, None])[:2]
+                parts = []
+                if low is not None:
+                    parts.append(col >= rule.convert(low))
+                if high is not None:
+                    parts.append(col <= rule.convert(high))
+                return and_(*parts) if parts else true()
+            values = f.value if isinstance(f.value, list) else [f.value]
+            if op in ("contains", "not_contains", "starts_with", "ends_with"):
+                pats = [{"contains": "%{}%", "not_contains": "%{}%", "starts_with": "{}%", "ends_with": "%{}"}[op]
+                        .format(_like_escape(str(v))) for v in values]
+                likes = [col.ilike(p, escape="\\") for p in pats]
+                if op == "not_contains":  # none of them; an empty value does not contain anything
+                    return or_(col.is_(None), not_(or_(*likes)))
+                return or_(*likes)
+            converted = [rule.convert(v) for v in values]
+            if op in ("eq", "in"):
+                return col.in_(converted) if len(converted) > 1 or op == "in" else col == converted[0]
+            if op in ("ne", "not_in"):  # none of them; NULL is not any of them either
+                return or_(col.is_(None), col.not_in(converted))
+            return {"gt": col > converted[0], "gte": col >= converted[0],
+                    "lt": col < converted[0], "lte": col <= converted[0]}[op]
         except (ValueError, TypeError, ArithmeticError) as e:
             raise InvalidInput(
                 "query.bad_value", f"bad value for {f.field!r}: {e}", {"field": f.field},
@@ -147,3 +222,20 @@ class Repository(Generic[T]):
         clauses.append(self.model.id.desc() if not keys or keys[-1].desc else self.model.id.asc())
         return q.order_by(*clauses)
 
+
+
+def _humanise(name: str) -> str:
+    """`source_order_number` → "Source order number"; `id` words → "ID"."""
+    words = ["ID" if w == "id" else w for w in name.split("_") if w]
+    text = " ".join(words)
+    return text[:1].upper() + text[1:]
+
+
+def _scalar(annotation: Any) -> bool:
+    """str / int / Decimal / bool / date / datetime, a str enum or a Literal, optionally `| None`."""
+    args = get_args(annotation) if get_origin(annotation) in (Union, UnionType) else (annotation,)
+    args = tuple(a for a in args if a is not type(None))
+    if len(args) == 1 and get_origin(args[0]) is Literal:
+        return True
+    return len(args) == 1 and isinstance(args[0], type) and (
+        args[0] in (int, float, Decimal, bool, date, datetime) or issubclass(args[0], str))

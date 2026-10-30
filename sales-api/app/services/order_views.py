@@ -10,6 +10,7 @@ from decimal import Decimal
 from sqlalchemy import or_, select
 
 from app.domain.order_rules import order_state, payment_satisfied, to_ea
+from app.domain.orders import HOLD_REASONS, ORDER_STATES, SOURCE_TYPES
 from app.domain.status import FULFILLMENT, Fulfillment as F
 from app.domain.status import Invoice as Inv
 from app.models.config import Connection, Item, Partner
@@ -18,7 +19,7 @@ from app.models.orders import Order, OrderLine
 from app.models.records import AuditRecord
 from app.platform.authorization import requires
 from app.platform.errors import BusinessError, InvalidInput
-from app.platform.repository import FilterRule, Repository, parse_bool
+from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.schemas.orders import (
     LinePreview, LineRead, ManualLineIn, ManualOrderIn, OrderDetail, OrderDocumentRead, OrderRead, ReviewResult,
@@ -34,14 +35,19 @@ OPERATE = "sales.order.operate"
 class OrderRepository(Repository[Order]):
     model = Order
     search_fields = ("source_order_number", "source_reference", "source_order_id", "review_reason")
-    sortable = {"order_number": Order.order_number, "first_received_at": Order.first_received_at,
-                "order_date": Order.order_date, "partner_code": Order.partner_code,
-                "fulfillment_status": Order.fulfillment_status}
-    filterable = {
-        "fulfillment_status": FilterRule(Order.fulfillment_status), "partner_code": FilterRule(Order.partner_code),
-        "source_type": FilterRule(Order.source_type),
-        "historical": FilterRule(Order.historical, ops=frozenset({"eq"}), cast=parse_bool),
-    }
+    list_fields = ("order_number", "partner_code", "connection_id", "source_type", "source_order_id",
+                   "source_order_number", "source_reference", "order_type", "department", "order_date",
+                   "requested_delivery_date", "do_not_deliver_after", "cancel_date", "currency", "subtotal", "tax",
+                   "shipping", "discount", "total", "fulfillment_status", "invoice_status", "hold_reason",
+                   "review_reason", "historical", "first_received_at", "paid_at", "source_updated_at",
+                   "source_cancelled_at", "archived_in_shopify_at", "archive_suppressed", "shopify_financial_status",
+                   "shopify_fulfillment_status", "created_at", "updated_at")
+    labels = {"order_number": "Order", "source_order_number": "Source no.", "source_order_id": "Source ID",
+              "fulfillment_status": "Status", "first_received_at": "Received", "paid_at": "Paid",
+              "shopify_financial_status": "Shopify payment", "shopify_fulfillment_status": "Shopify fulfillment"}
+    enums = {"source_type": SOURCE_TYPES, "fulfillment_status": tuple(s.value for s in F),
+             "invoice_status": tuple(s.value for s in Inv), "hold_reason": HOLD_REASONS,
+             "order_state": ORDER_STATES}
     default_sort = ("-order_number",)
     historical_column = "historical"
 

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { CrudPage, useToast, type ColumnDef, type FieldSpec } from '@/platform-ui'
 import { AuditHistory } from '../AuditHistory'
+import { itemOptions, partnerOptions } from '../lookups'
 import {
   downloadPartnerCodes, fetchPartnerCodeAudit, partnerCodesClient,
   type PartnerCodeCreate, type PartnerCodeRead, type PartnerCodeUpdate,
@@ -10,9 +11,9 @@ const required = z.string().trim().min(1, 'Required').max(100)
 const createSchema = z.object({ partner_code: required, buyer_part: required, item_code: required })
 const updateSchema = z.object({ item_code: required })
 const fields: FieldSpec[] = [
-  { name: 'partner_code', label: 'Partner', required: true },
+  { name: 'partner_code', label: 'Partner', required: true, type: 'reference', loadOptions: partnerOptions },
   { name: 'buyer_part', label: 'Buyer part', required: true, hint: "This partner's own number for the item; it never matches another partner's lines." },
-  { name: 'item_code', label: 'Item', required: true },
+  { name: 'item_code', label: 'Item', required: true, type: 'reference', loadOptions: itemOptions },
 ]
 const columns: ColumnDef<PartnerCodeRead, unknown>[] = [
   { accessorKey: 'partner_code', header: 'Partner' },

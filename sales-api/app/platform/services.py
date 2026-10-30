@@ -76,6 +76,17 @@ class ReadOnlyService(Generic[T, R]):
         page = await self.repo.list(spec)
         return Page[Any](items=[self.to_read(e) for e in page.items], total=page.total)
 
+    META_VERSION: ClassVar[int] = 1
+
+    async def meta(self) -> dict[str, Any]:
+        """The list's fields for the client (design §13.19): name, label, type,
+        enum values, what each allows (filter / sort / group) and its
+        operators — from the same declaration the list query uses."""
+        await self._authorize(self.read_permission)
+        repo = self.repo_cls
+        return {"version": self.META_VERSION, "fields": repo.field_meta(self.read_schema),
+                "searchable": bool(repo.search_fields), "default_sort": list(repo.default_sort)}
+
 
 @dataclass
 class RowIssue:

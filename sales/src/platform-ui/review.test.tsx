@@ -9,6 +9,7 @@ import {
   setFilter, type ColumnDef, type QuerySpec,
 } from './index'
 import { zodResolver } from './patterns/zodResolver'
+import { chooseOption } from './testing'
 
 describe('zodResolver', () => {
   it('nests errors by path and puts object-level issues under root', async () => {
@@ -46,7 +47,7 @@ describe('SchemaForm (review)', () => {
     fireEvent.click(screen.getByText('Save'))
     await waitFor(() => expect(onSubmit).toHaveBeenLastCalledWith({ qty: null, kind: null }))
     fireEvent.change(screen.getByLabelText('Qty'), { target: { value: '12' } })
-    fireEvent.change(screen.getByLabelText('Kind'), { target: { value: 'B' } })
+    await chooseOption(screen.getByLabelText('Kind'), 'B')
     fireEvent.click(screen.getByText('Save'))
     await waitFor(() => expect(onSubmit).toHaveBeenLastCalledWith({ qty: 12, kind: 'B' }))
   })
@@ -95,10 +96,6 @@ function Table({ initial, onSpec }: { initial: QuerySpec; onSpec?: (s: QuerySpec
       <button type="button" onClick={() => setSpec({ ...spec, search: 'from outside' })}>external</button>
       <QueryTable<Row>
         columns={columns} rows={[{ id: 1, code: 'A' }]} total={500} spec={spec} searchable rowKey={(r) => r.id}
-        filters={[
-          { field: 'status', label: 'Status', options: [{ value: 'Open', label: 'Open' }, { value: 'Closed', label: 'Closed' }] },
-          { field: 'code', label: 'Code contains' },
-        ]}
         onSpecChange={(s) => { setSpec(s); onSpec?.(s) }}
       />
     </>
@@ -113,19 +110,7 @@ describe('QueryTable (review)', () => {
     expect(screen.getByLabelText('Search')).toHaveValue('from outside')
   })
 
-  it('filter controls write spec.filters and reset the page', () => {
-    const onSpec = vi.fn()
-    render(<Table initial={{ page: 3, pageSize: 20 }} onSpec={onSpec} />)
-    fireEvent.change(screen.getByLabelText('Status'), { target: { value: 'Open' } })
-    expect(onSpec).toHaveBeenLastCalledWith(expect.objectContaining({ page: 1, filters: [{ field: 'status', op: 'eq', value: 'Open' }] }))
-    const box = screen.getByLabelText('Code contains')
-    fireEvent.change(box, { target: { value: ' ab ' } })
-    fireEvent.keyDown(box, { key: 'Enter' })
-    expect(onSpec).toHaveBeenLastCalledWith(expect.objectContaining({
-      filters: [{ field: 'status', op: 'eq', value: 'Open' }, { field: 'code', op: 'contains', value: 'ab' }] }))
-    fireEvent.change(screen.getByLabelText('Status'), { target: { value: '' } })
-    expect(onSpec).toHaveBeenLastCalledWith(expect.objectContaining({ filters: [{ field: 'code', op: 'contains', value: 'ab' }] }))
-  })
+  // The per-page filter controls were replaced by the search panel (listView.test.tsx).
 
   it('a page size above the server maximum is clamped', () => {
     const onSpec = vi.fn()

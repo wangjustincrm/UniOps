@@ -24,6 +24,11 @@ async def list_orders(u: UoW, spec: Spec) -> dict:
     return {"items": [i.model_dump(mode="json") for i in page.items], "total": page.total}
 
 
+@router.get("/meta")
+async def orders_meta(u: UoW) -> dict:
+    return await OrderService(u).meta()
+
+
 @router.post("/manual/preview", response_model=list[LinePreview])
 async def manual_preview(u: UoW, lines: list[ManualLineIn]):
     return await ManualOrderService(u).preview(lines)  # reads only

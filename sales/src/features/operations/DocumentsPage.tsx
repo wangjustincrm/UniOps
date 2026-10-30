@@ -3,7 +3,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
   ActionButton, Badge, ErrorMessage, QueryTable, Sheet, defaultSpec, type ColumnDef, type QuerySpec,
 } from '@/platform-ui'
-import { DOCUMENT_KINDS, INBOUND_STATUSES, documentsClient, downloadOriginal, type DocumentRead } from './operationsApi'
+import { documentsClient, downloadOriginal, type DocumentRead } from './operationsApi'
 
 const statusVariant: Record<string, 'success' | 'warning' | 'danger' | 'neutral' | 'info'> = {
   Pending: 'info', Processing: 'info', Processed: 'success', Failed: 'danger', Skipped: 'neutral', Duplicate: 'neutral',
@@ -58,16 +58,13 @@ export default function DocumentsPage() {
       </div>
       <QueryTable<DocumentRead>
         columns={columns}
+        resource={documentsClient}
         rows={list.data?.items ?? []}
         total={list.data?.total ?? 0}
         spec={spec}
         onSpecChange={setSpec}
         sortable={['created_at', 'remote_name', 'kind', 'size']}
         searchable
-        filters={[
-          { field: 'kind', label: 'Kind', options: DOCUMENT_KINDS.map((k) => ({ value: k, label: k })) },
-          { field: 'processing_status', label: 'Status', options: INBOUND_STATUSES.map((k) => ({ value: k, label: k })) },
-        ]}
         loading={list.isLoading}
         error={list.error}
         onRetry={() => list.refetch()}

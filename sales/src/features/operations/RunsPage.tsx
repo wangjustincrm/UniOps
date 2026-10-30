@@ -39,13 +39,14 @@ function LogTable({ fixed, searchable = true }: { fixed?: QuerySpec['filters']; 
   return (
     <QueryTable<LogRead>
       columns={logColumns}
+      resource={logClient}
+      locked={(fixed ?? []).map((f) => f.field)}
       rows={list.data?.items ?? []}
       total={list.data?.total ?? 0}
       spec={spec}
       onSpecChange={(s) => setSpec({ ...s, filters: [...(fixed ?? []), ...(s.filters ?? []).filter((f) => !fixed?.some((x) => x.field === f.field))] })}
       sortable={['at', 'level']}
       searchable={searchable}
-      filters={[{ field: 'level', label: 'Level', options: ['ERROR', 'WARNING', 'INFO'].map((v) => ({ value: v, label: v })) }]}
       loading={list.isLoading}
       error={list.error}
       onRetry={() => list.refetch()}
@@ -100,12 +101,12 @@ function Runs() {
       <ErrorMessage error={error} />
       <QueryTable<RunRead>
         columns={runColumns}
+        resource={runsClient}
         rows={list.data?.items ?? []}
         total={list.data?.total ?? 0}
         spec={spec}
         onSpecChange={setSpec}
         sortable={['started_at', 'status']}
-        filters={[{ field: 'status', label: 'Status', options: Object.keys(runVariant).map((v) => ({ value: v, label: v })) }]}
         loading={list.isLoading}
         error={list.error}
         onRetry={() => list.refetch()}

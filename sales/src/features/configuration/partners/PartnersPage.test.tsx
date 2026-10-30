@@ -108,6 +108,6 @@ describe('the dev2 partners (regression, 2026-10-29)', () => {
     fireEvent.click(screen.getAllByText('Walmart')[0])
     const sheet = await screen.findByRole('dialog')
     expect(within(sheet).getByLabelText(/^Name/)).toHaveValue('Walmart')
-    expect(within(sheet).getByLabelText(/^Channel/)).toHaveValue('TRUECOMMERCE')
+    expect(within(sheet).getByLabelText(/^Channel/)).toHaveTextContent('TRUECOMMERCE')
   })
 })

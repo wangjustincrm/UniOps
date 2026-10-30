@@ -3,14 +3,14 @@
 path and needs sales.file.retry."""
 from __future__ import annotations
 
-from datetime import datetime
-
 from sqlalchemy import select
 
+from app.domain.documents import DIRECTIONS, KINDS, LOG_LEVELS, ORIGINS, RUN_STATUSES, RUN_TRIGGERS, SYSTEMS
+from app.domain.status import Ack, InboundFile, OutboundFile
 from app.models.documents import Document, LogEntry, Run
 from app.platform.authorization import requires
 from app.platform.errors import BusinessError
-from app.platform.repository import FilterRule, Repository, parse_bool  # noqa: F401
+from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.schemas.operations import DocumentRead, LogRead, RunRead
 
@@ -21,14 +21,14 @@ FILE_RETRY = "sales.file.retry"
 class DocumentRepository(Repository[Document]):
     model = Document
     search_fields = ("remote_name", "sha256", "error")
-    sortable = {"id": Document.id, "created_at": Document.created_at, "remote_name": Document.remote_name,
-                "kind": Document.kind, "processing_status": Document.processing_status, "size": Document.size}
-    filterable = {
-        "direction": FilterRule(Document.direction), "kind": FilterRule(Document.kind),
-        "system": FilterRule(Document.system), "connection_id": FilterRule(Document.connection_id),
-        "processing_status": FilterRule(Document.processing_status),
-        "created_at": FilterRule(Document.created_at, ops=frozenset({"range"}), cast=datetime.fromisoformat),
-    }
+    list_fields = ("id", "direction", "origin", "system", "connection_id", "kind", "remote_name", "size",
+                   "remote_mtime", "sha256", "processing_status", "file_status", "ack_status", "isa13", "gs06",
+                   "st02", "partner_code", "error", "created_at")
+    labels = {"remote_name": "File", "remote_mtime": "Modified on the server", "isa13": "ISA13", "gs06": "GS06",
+              "st02": "ST02", "sha256": "SHA-256"}
+    enums = {"direction": DIRECTIONS, "origin": ORIGINS, "system": SYSTEMS, "kind": KINDS,
+             "processing_status": tuple(s.value for s in InboundFile),
+             "file_status": tuple(s.value for s in OutboundFile), "ack_status": tuple(s.value for s in Ack)}
     default_sort = ("-created_at",)
 
 
@@ -54,8 +54,8 @@ class DocumentService(ReadOnlyService[Document, DocumentRead]):
 
 class RunRepository(Repository[Run]):
     model = Run
-    sortable = {"id": Run.id, "started_at": Run.started_at, "status": Run.status}
-    filterable = {"status": FilterRule(Run.status), "trigger": FilterRule(Run.trigger), "job": FilterRule(Run.job)}
+    list_fields = ("id", "job", "trigger", "status", "started_at", "heartbeat_at", "finished_at", "error")
+    enums = {"trigger": RUN_TRIGGERS, "status": RUN_STATUSES}
     default_sort = ("-started_at",)
 
 
@@ -78,13 +78,9 @@ class RunService(ReadOnlyService[Run, RunRead]):
 class LogRepository(Repository[LogEntry]):
     model = LogEntry
     search_fields = ("message",)
-    sortable = {"id": LogEntry.id, "at": LogEntry.at, "level": LogEntry.level}
-    filterable = {
-        "level": FilterRule(LogEntry.level), "step": FilterRule(LogEntry.step),
-        "run_id": FilterRule(LogEntry.run_id), "connection_id": FilterRule(LogEntry.connection_id),
-        "document_id": FilterRule(LogEntry.document_id), "order_id": FilterRule(LogEntry.order_id),
-        "at": FilterRule(LogEntry.at, ops=frozenset({"range"}), cast=datetime.fromisoformat),
-    }
+    list_fields = ("id", "at", "run_id", "level", "step", "connection_id", "document_id", "order_id",
+                   "transfer_id", "message")
+    enums = {"level": LOG_LEVELS}
     default_sort = ("-at",)
 
 
