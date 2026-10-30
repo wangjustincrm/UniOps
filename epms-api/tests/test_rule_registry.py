@@ -426,11 +426,12 @@ def test_only_the_requester_edits_a_draft_or_returned_pr():
     assert "Only the requester who raised this PR can edit it" in src
 
 
-def test_the_pr_page_offers_withdraw_on_in_review():
-    """Known defect stated by withdraw_a_pr: shown on in_review, refused there.
-    When the page stops offering it, this fails and the rule is updated."""
+def test_the_pr_page_offers_withdraw_where_the_engine_allows():
+    """withdraw_a_pr: Withdraw is offered only where the engine cancels a PR
+    (approval-api _DOC_META['pr']['valid_cancel'] = draft/returned/submitted)."""
     page = _src("epms/src/pages/pr/PrDetailPage.tsx")
     assert "['draft', 'returned', 'submitted', 'in_review'].includes(pr.status) && !canApprove" in page
+    assert "{['draft', 'returned', 'submitted'].includes(pr.status) && (" in page
     assert "action: 'cancel'" in page
     # …and only to the requester or a System Admin, with a refusal shown (ISS-0156).
     assert "&& !canApprove && isRequesterOrAdmin" in page

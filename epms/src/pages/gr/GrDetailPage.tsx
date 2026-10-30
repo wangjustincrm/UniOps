@@ -35,6 +35,7 @@ const GR_STATUS_CONFIG: Record<GrStatus, { label: string; variant: 'neutral' | '
   collected:          { label: 'Collected',               variant: 'success',  dot: 'bg-success-600' },
   confirmed:          { label: 'Confirmed',               variant: 'success',  dot: 'bg-success-600' },
   discrepancy:        { label: 'Discrepancy',             variant: 'danger',   dot: 'bg-danger-600'  },
+  rejected:           { label: 'Rejected',                variant: 'danger',   dot: 'bg-danger-600'  },
   cancelled:          { label: 'Cancelled',               variant: 'neutral',  dot: 'bg-neutral-400' },
 }
 

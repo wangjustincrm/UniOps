@@ -141,9 +141,10 @@ type ApprovalAction = 'approve' | 'return' | 'reject'
 // same action — usually a 409 the user reads as a failure, but for 'approve' it
 // can silently consume the NEXT step's task when the same person approves two
 // consecutive steps. ProcessModal already gates on `busy` for the same reason.
-function ApprovalModal({ action, paNumber, onConfirm, onClose, isPending }: {
+function ApprovalModal({ action, paNumber, onConfirm, onClose, isPending, error }: {
   action: ApprovalAction; paNumber: string
   onConfirm: (comment: string) => void; onClose: () => void; isPending: boolean
+  error?: string | null
 }) {
   const [comment, setComment] = useState('')
   const needsComment = action !== 'approve'
@@ -175,6 +176,7 @@ function ApprovalModal({ action, paNumber, onConfirm, onClose, isPending }: {
                 className="w-full resize-none rounded-lg border border-neutral-300 bg-white pl-8 pr-3 pt-2 pb-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
             </div>
           </div>
+          {error && <p role="alert" className="text-xs text-danger-600">{error}</p>}
           <div className="flex justify-end gap-2">
             <button onClick={onClose} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50">Cancel</button>
             <button disabled={(needsComment && !comment.trim()) || isPending} onClick={() => onConfirm(comment)}
@@ -1126,8 +1128,9 @@ export default function PaDetailPage() {
           action={pendingAction}
           paNumber={pa.pa_number}
           onConfirm={(comment) => handleConfirm(pendingAction, comment)}
-          onClose={() => setPendingAction(null)}
+          onClose={() => { paAction.reset(); setPendingAction(null) }}
           isPending={paAction.isPending}
+          error={paAction.isError && paAction.error instanceof Error ? paAction.error.message : null}
         />
       )}
       {processOpen && (

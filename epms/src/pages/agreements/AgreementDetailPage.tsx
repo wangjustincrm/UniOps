@@ -33,7 +33,7 @@ import { historyLine } from '@/lib/approvalHistory'
 import { buildApprovalNodes } from '@/lib/approvalTimeline'
 import type { InvoiceStatus } from '@/services/invoices'
 import { isAgreementAdmissible } from '@/lib/agreements'
-import { canRecallDocument } from '@/lib/documentActions'
+import { canRecallDocument, canWithdrawDocument } from '@/lib/documentActions'
 import { clearSubmitFailure, peekSubmitFailure } from '@/lib/submitFailure'
 
 const TYPE_LABELS: Record<AgreementType, string> = {
@@ -365,10 +365,6 @@ export default function AgreementDetailPage() {
   // a missing submit button reads as a broken page, not as a missing field.
   const missingOwner = !!agreement && !agreement.owner_id
   const canEdit = canWrite && !!agreement && ['draft', 'returned'].includes(agreement.status)
-  // Matches approval-api's _DOC_META["agr"]["valid_cancel"] = ("draft", "returned", "submitted")
-  // (engine.py:104) — NOT "in_review": once a human has already acted (the
-  // first approve moves it to in_review), cancel is no longer offered.
-  const canCancel = canWrite && !!agreement && ['draft', 'returned', 'submitted'].includes(agreement.status)
 
   // Approval gating follows the open-task convention used across PR/PO/PA:
   // the Approve button only appears when the current user holds an active
@@ -382,6 +378,11 @@ export default function AgreementDetailPage() {
   // PRD §3.3.3 recall: the creator or a System Admin, submitted / in_review
   // → draft; the next submit starts from the first step (ISS-0119).
   const canRecall = !!agreement && canRecallDocument(agreement, user ?? {})
+  // Cancel follows the engine's rule, not epms.agreement.write: approval-api
+  // valid_cancel = draft / returned / submitted (not in_review), by the
+  // creator, a System Admin or the approver holding it. The write key showed
+  // it to people the engine refuses and hid it from that approver.
+  const canCancel = !!agreement && canWithdrawDocument('agr', agreement, user ?? {}, hasApproveTask)
 
   const periodRows = scheduleRows.filter((r) => r.schedule_type === 'period')
   const milestoneRows = scheduleRows.filter((r) => r.schedule_type === 'milestone')

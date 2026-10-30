@@ -362,6 +362,9 @@ export default function PrDetailPage() {
                     Recall to Edit
                   </Button>
                 )}
+                {/* The engine cancels a PR only while draft / returned / submitted
+                    (valid_cancel, PRD §3.3.3); on in_review it always refused. */}
+                {['draft', 'returned', 'submitted'].includes(pr.status) && (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -376,6 +379,7 @@ export default function PrDetailPage() {
                 >
                   Withdraw
                 </Button>
+                )}
               </>
             )}
             {/* Approver actions moved to fixed bottom bar */}
