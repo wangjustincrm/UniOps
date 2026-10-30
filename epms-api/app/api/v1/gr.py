@@ -60,7 +60,7 @@ async def list_grs(
     items, total = await gr_crud.get_all(
         db, status=status, po_id=po_id, vendor_id=vendor_id,
         search=search, gr_type=gr_type,
-        po_ids_subq=scope["po_subq"],
+        po_ids_subq=scope["gr_po_subq"],
         page=page, page_size=page_size, sort=sort, dir=dir,
     )
     return GrListResponse(items=items, total=total)
@@ -152,7 +152,7 @@ async def _receiving_rows(db, user, *, date_from, date_to, department_id, vendor
         db,
         date_from=date_from, date_to=date_to,
         department_id=department_id, vendor_id=vendor_id, search=search,
-        po_ids_subq=scope["po_subq"],
+        po_ids_subq=scope["gr_po_subq"],
         page=page, page_size=page_size, sort=sort, dir=dir,
     )
 

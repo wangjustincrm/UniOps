@@ -432,6 +432,9 @@ def test_the_pr_page_offers_withdraw_on_in_review():
     page = _src("epms/src/pages/pr/PrDetailPage.tsx")
     assert "['draft', 'returned', 'submitted', 'in_review'].includes(pr.status) && !canApprove" in page
     assert "action: 'cancel'" in page
+    # …and only to the requester or a System Admin, with a refusal shown (ISS-0156).
+    assert "&& !canApprove && isRequesterOrAdmin" in page
+    assert "pr.created_by === user?.id" in page and "onError: onActionError" in page
 
 
 def test_pr_line_prices_may_be_zero_or_negative():
@@ -468,7 +471,7 @@ def test_decomposition_factors_are_required_on_submit_only():
 def test_pr_list_filters():
     page = _src("epms/src/pages/pr/PrListPage.tsx")
     for text in ("Search by PR#, title, vendor, budget code", "All Departments",
-                 "disabled={isRequesterOnly}", "My Purchase Requisitions", "prepaidFilter"):
+                 "{!isRequesterOnly && (", "My Purchase Requisitions", "prepaidFilter"):
         assert text in page, text
 
 

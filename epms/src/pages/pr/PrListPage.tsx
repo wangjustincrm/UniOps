@@ -180,34 +180,33 @@ export default function PrListPage() {
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
-          <select
-            value={deptFilter}
-            onChange={(e) => handleFilterChange(setDeptFilter)(e.target.value)}
-            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
-          >
-            <option value="all">All Departments</option>
-            {departments.map((d) => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
-          <select
-            value={isRequesterOnly ? (user?.id ?? 'all') : requesterFilter}
-            onChange={(e) => handleFilterChange(setRequesterFilter)(e.target.value)}
-            disabled={isRequesterOnly}
-            title="Filter by Requester"
-            className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600 disabled:bg-neutral-50 disabled:text-neutral-500"
-          >
-            {isRequesterOnly ? (
-              <option value={user?.id ?? 'all'}>{user?.name ? `${user.name} (me)` : 'My Requests'}</option>
-            ) : (
-              <>
+          {/* A pure requester's list is always their own PRs, so neither
+              filter has anything to offer (PRD §3.2.3, ISS-0167). */}
+          {!isRequesterOnly && (
+            <>
+              <select
+                value={deptFilter}
+                onChange={(e) => handleFilterChange(setDeptFilter)(e.target.value)}
+                className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+              >
+                <option value="all">All Departments</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>{d.name}</option>
+                ))}
+              </select>
+              <select
+                value={requesterFilter}
+                onChange={(e) => handleFilterChange(setRequesterFilter)(e.target.value)}
+                title="Filter by Requester"
+                className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+              >
                 <option value="all">All Requesters</option>
                 {requesters.map((u) => (
                   <option key={u.id} value={u.id}>{u.full_name}</option>
                 ))}
-              </>
-            )}
-          </select>
+              </select>
+            </>
+          )}
           <select
             value={typeFilter}
             onChange={(e) => handleFilterChange(setTypeFilter)(e.target.value)}

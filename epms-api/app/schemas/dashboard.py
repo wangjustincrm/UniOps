@@ -100,7 +100,9 @@ class PaRow(BaseModel):
     id: uuid.UUID
     pa_number: str
     vendor_name: str
-    po_number: str
+    # None for a PA with no PO (agreement, freight, Direct PA) — a required str
+    # here made the whole dashboard 500 as soon as one was in the list (ISS-0159).
+    po_number: str | None = None
     # Every PO the payment settles, primary first (a PA may cover several).
     # po_number above stays the primary one; the dashboard row shows it plus a
     # "+N" so a multi-PO payment does not read as a single-PO one.
