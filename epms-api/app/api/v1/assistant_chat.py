@@ -887,7 +887,7 @@ async def _answer_receiving_report(db, scope, body, planned, actor) -> dict:
         frm = _dt.date.fromisoformat(planned["from"]) if planned.get("from") else None
         to = _dt.date.fromisoformat(planned["to"]) if planned.get("to") else None
     _, total, summary, _ = await gr_report_crud.receiving_rows(
-        db, date_from=frm, date_to=to, po_ids_subq=scope["po_subq"],
+        db, date_from=frm, date_to=to, po_ids_subq=scope["gr_po_subq"],
         page=1, page_size=1)
     result = {"period": {"from": frm.isoformat() if frm else None,
                          "to": to.isoformat() if to else None},

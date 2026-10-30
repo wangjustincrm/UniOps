@@ -235,3 +235,24 @@ rules:
     test:
       - "tests/test_assistant_iss_batch1.py::test_budget_unreachable_is_treated_as_within_budget"
       - "tests/test_rule_registry.py::test_an_unreachable_budget_service_skips_the_catalogue_check"
+  - id: who_sees_which_prs
+    also_in: [gr]
+    asked_as:
+      - 为什么我能看到别人的请购单？
+      - 付款员（Payment Officer）能看到所有请购单吗？
+      - why can I see other people's PRs
+    answer: >
+      A Requester sees the PRs they raised and the goods receipts on them
+      (plus any document they hold an open approval task on, or a PR they are
+      the Service/Project Owner of). Department, GM/OPM, Director and
+      Supervisor roles add their own departments or reports. A role outside
+      that set (Procurement, AP, Finance, CFO, Auditor and so on) shows every
+      PR or every goods receipt only if that role itself has View PR or View
+      GR in Access Control. So a Requester who also holds Payment Officer,
+      which has neither, still sees only their own PRs and goods receipts,
+      while seeing every PO, invoice and payment application.
+    enforced_in: "epms-api app/core/access_scope.py build_scope / _wide_view_keys (pr_subq, gr_po_subq), scoped_department_ids"
+    provenance: pinned
+    test:
+      - "tests/test_scope_wide_role_view_keys.py::test_requester_plus_payment_officer_sees_only_own_prs_and_grs"
+      - "tests/test_scope_wide_role_view_keys.py::test_requester_plus_role_holding_view_pr_still_sees_everything"
