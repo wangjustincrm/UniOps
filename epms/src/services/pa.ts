@@ -25,7 +25,7 @@ export const PA_TYPE_LABEL: Record<PaType, string> = {
   balance: 'Balance',
 }
 
-export type PaAction = 'submit' | 'approve' | 'return' | 'reject' | 'process' | 'cancel'
+export type PaAction = 'submit' | 'approve' | 'return' | 'reject' | 'process' | 'cancel' | 'recall'
 
 export type SettlementStatus = 'pending' | 'settled' | 'disputed'
 
@@ -123,6 +123,7 @@ export interface ApiPa {
   line_items: ApiPaLineItem[]
   notes?: string
   approval_step_idx: number
+  created_by?: string
   created_by_name?: string | null
   created_at: string
   updated_at: string

@@ -34,6 +34,7 @@ import { historyLine, isSkipped } from '@/lib/approvalHistory'
 import type { GrStatus } from '@/services/gr'
 import { vendorService } from '@/services/vendors'
 import { isImportedEditablePo } from '@/lib/importedPoEdit'
+import { canWithdrawDocument } from '@/lib/documentActions'
 
 const TYPE_LABELS: Record<number, string> = {
   1: 'Raw Mat./Pack.',
@@ -523,6 +524,8 @@ export default function PoDetailPage() {
   const { data: grsData, isLoading: grsLoading } = useGrs({ po_id: id ?? '' }, Boolean(id))
   const linkedGrs = (grsData?.items ?? []).filter((g) => g.status !== 'cancelled')
   const poAction = usePoAction(id ?? '')
+  // Withdraw shows its refusal in the header rather than in an alert().
+  const poWithdraw = usePoAction(id ?? '', { alertOnError: false })
   const { reminder, sendReminder } = useApprovalReminder(() => poService.remind(id ?? ''))
   const { user } = useAuthStore()
   const { data: config } = useConfig()
@@ -582,7 +585,10 @@ export default function PoDetailPage() {
   const canEditImported =
     isImportedEditablePo(po) &&
     (user?.role === 'system_admin' || !!perms?.['epms.po.edit_imported'])
-  const canWithdraw = isProcurementOfficer && po && ['draft', 'submitted'].includes(po.status)
+  // Same parties and statuses as the engine's cancel (lib/documentActions.ts):
+  // draft / returned / submitted, by the creator, a System Admin or the
+  // approver holding it — not "any procurement role" (ISS-0082).
+  const canWithdraw = !!po && canWithdrawDocument('po', po, user ?? {}, hasApproveTask)
   // PA creation is permission-driven, exactly like the PA list's Create button
   // (PaListPage): the Access Control matrix decides, not a hard-coded role list.
   // A hard-coded list also read only the JWT's primary role, so an ADDITIONAL
@@ -740,11 +746,21 @@ export default function PoDetailPage() {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => poAction.mutate({ action: 'cancel' })}
-                disabled={poAction.isPending}
+                className="border-danger-200 text-danger-600 hover:bg-danger-50"
+                onClick={() => {
+                  if (confirm(`Withdraw ${po.number}? This will cancel the PO.`)) {
+                    poWithdraw.mutate({ action: 'cancel' })
+                  }
+                }}
+                disabled={poWithdraw.isPending}
               >
                 Withdraw
               </Button>
+            )}
+            {poWithdraw.isError && (
+              <span className="text-xs text-danger-600">
+                {poWithdraw.error instanceof Error ? poWithdraw.error.message : 'Could not withdraw the PO'}
+              </span>
             )}
             {canPlaceOrder && (
               <button

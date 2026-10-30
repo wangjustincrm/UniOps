@@ -28,6 +28,7 @@ import {
   type CreditSuggestResponse,
 } from '@/services/vendorCredits'
 import { InvoiceMatchVariancePanel } from '@/components/invoices/InvoiceMatchVariancePanel'
+import { canRecallDocument, canWithdrawDocument } from '@/lib/documentActions'
 import { useConfig } from '@/hooks/useConfig'
 import type { ApiPa } from '@/services/pa'
 import { historyLine, isSkipped } from '@/lib/approvalHistory'
@@ -367,6 +368,9 @@ export default function PaDetailPage() {
   useDocTabTitle(pa?.pa_number)
   const { data: events } = usePaEvents(id ?? '')
   const paAction = usePaAction(id ?? '')
+  // Withdraw / Recall get their own mutation so their refusal shows in the
+  // header and not in the approval or payment dialogs.
+  const paHeaderAction = usePaAction(id ?? '')
   const confirmSettlement = useConfirmSettlement(id ?? '')
   // Assigned below paPoLinks so it covers EVERY PO on the payment — the line
   // variance panel matches an invoice line to its PO line by id, and an invoice
@@ -486,6 +490,10 @@ export default function PaDetailPage() {
     (['submitted', 'in_review'].includes(pa.status)) &&
     hasApproveTask
   const canProcess  = payPerm?.can_pay ?? false
+  // The engine's cancel (draft/returned) and recall (submitted/in_review)
+  // rules, PRD §3.3.3 / PA-APR-004 (ISS-0082, ISS-0119).
+  const canWithdraw = canWithdrawDocument('pa', pa, user ?? {})
+  const canRecall   = canRecallDocument(pa, user ?? {})
   const canSettle   = user?.role === 'requester' || user?.role === 'system_admin'
 
   const handleConfirm = (action: ApprovalAction, comment: string) => {
@@ -607,6 +615,40 @@ export default function PaDetailPage() {
               <CheckCircle2 className="h-4 w-4" />
               {paAction.isPending ? 'Submitting…' : 'Submit for Approval'}
             </Button>
+          )}
+          {canRecall && (
+            <Button
+              variant="secondary"
+              className="gap-2"
+              disabled={paHeaderAction.isPending}
+              onClick={() => {
+                if (confirm(`Recall ${pa.pa_number}? It will be moved back to Draft; the next submit starts from the first approval step.`)) {
+                  paHeaderAction.mutate({ action: 'recall' })
+                }
+              }}
+            >
+              <RotateCcw className="h-4 w-4" />
+              Recall
+            </Button>
+          )}
+          {canWithdraw && (
+            <Button
+              variant="secondary"
+              className="border-danger-200 text-danger-600 hover:bg-danger-50"
+              disabled={paHeaderAction.isPending}
+              onClick={() => {
+                if (confirm(`Withdraw ${pa.pa_number}? This will cancel the PA.`)) {
+                  paHeaderAction.mutate({ action: 'cancel' })
+                }
+              }}
+            >
+              Withdraw
+            </Button>
+          )}
+          {paHeaderAction.isError && (
+            <span className="self-center text-xs text-danger-600">
+              {paHeaderAction.error instanceof Error ? paHeaderAction.error.message : 'The action was refused'}
+            </span>
           )}
           {/* Approval actions moved to fixed bottom bar */}
           {pa.status === 'approved' && canProcess && (
