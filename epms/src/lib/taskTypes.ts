@@ -204,5 +204,11 @@ export function taskHref(task: TaskHrefInput): string {
     return `/pa/create?poId=${task.document_id}`
   }
 
+  // confirm_receipt anchors on the PO and opens New GR pre-filled with it
+  // (GR-L-002) — the same link its email carries (notification._task_link).
+  if (task.type === 'confirm_receipt') {
+    return `/gr/new?poId=${task.document_id}`
+  }
+
   return `${HREF_MAP[docType] ?? '/'}/${task.document_id}`
 }

@@ -58,6 +58,11 @@ describe('taskHref — EPMS doc types still resolve in-app', () => {
     expect(taskHref({ type: 'create_pa', document_type: 'po', document_id: VISIT_ID }))
       .toBe(`/pa/create?poId=${VISIT_ID}`)
   })
+
+  it('sends confirm_receipt to New GR pre-filled with the PO (ISS-0094)', () => {
+    expect(taskHref({ type: 'confirm_receipt', document_type: 'po', document_id: VISIT_ID }))
+      .toBe(`/gr/new?poId=${VISIT_ID}`)
+  })
 })
 
 describe('taskHref — PO sign-off', () => {
