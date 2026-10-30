@@ -260,6 +260,35 @@ async def test_service_gr_flow(admin_client, test_engine):
     assert r.json()["status"] == "confirmed"
 
 
+@pytest.mark.asyncio
+async def test_service_po_confirmed_before_place_order_ends_fully_received(admin_client, test_engine):
+    """ISS-0108: a service PO may be confirmed while still approved (GR-S-008);
+    PT-008 leaves it at approved then. Placing the order afterwards must land it
+    on fully_received, not issued."""
+    from app.models.po import PurchaseOrder
+    po, _ = await _make_issued_po(admin_client, test_engine, "VND-GR-SVC-PO1", po_type=4)
+    po_id = po["id"]
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        row = (await db.execute(
+            _select(PurchaseOrder).where(PurchaseOrder.id == _uuid.UUID(po_id)))).scalar_one()
+        row.status = "approved"
+        await db.commit()
+
+    gr = await _create_gr(admin_client, po_id, line_items=[{
+        "po_line_id": po["line_items"][0]["id"],
+        "description": "Hydraulic Pump", "qty_ordered": "2", "qty_received": "2",
+        "unit": "EA", "unit_price": "350.00", "condition": "good",
+    }])
+    r = await admin_client.post(f"{GR_URL}/{gr['id']}/action", json={"action": "confirm"})
+    assert r.json()["status"] == "confirmed", r.text
+    assert (await admin_client.get(f"{PO_URL}/{po_id}")).json()["status"] == "approved"
+
+    r = await admin_client.post(f"{PO_URL}/{po_id}/place-order", json={"method": "online"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "fully_received"
+
+
 # ── GR on a PO with no linked PR (imported POs) ────────────────────────────────
 # There is no requester to acknowledge/collect/confirm, so the requester steps
 # are skipped automatically and system admins get an alert email instead.

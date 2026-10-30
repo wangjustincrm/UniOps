@@ -60,12 +60,15 @@ rules:
       Place Order is done on an approved PO by someone with PO write
       permission — by default Procurement Officers, Procurement Managers and
       System Admins; the PO page shows the button only to users whose main
-      role is one of those three. It moves the PO to Issued. Approving a PO
-      does not place it, and the approvers are not the people who place it.
-    enforced_in: "epms-api app/api/v1/po.py place-order (PoWriteDep = epms.po.write); app/crud/po.py place_order (status approved → issued); epms/src/pages/po/PoDetailPage.tsx canPlaceOrder"
+      role is one of those three. It moves the PO to Issued — or, for a
+      service or project PO whose completion was already confirmed while it
+      was still approved, straight to Partially or Fully Received. Approving a
+      PO does not place it, and the approvers are not the people who place it.
+    enforced_in: "epms-api app/api/v1/po.py place-order (PoWriteDep = epms.po.write); app/crud/po.py place_order (status approved → issued, then sync_po_receipt_status); epms/src/pages/po/PoDetailPage.tsx canPlaceOrder"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_place_order_needs_po_write_on_an_approved_po"
+      - "tests/test_gr.py::test_service_po_confirmed_before_place_order_ends_fully_received"
   - id: no_manual_po_close
     asked_as:
       - 怎么手动关闭一张 PO？
