@@ -139,13 +139,13 @@ function NteBar({ consumedAmount, notToExceed, currency }: { consumedAmount: str
   return (
     <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-5 py-4 flex flex-col gap-2 max-w-sm">
       <div className="flex justify-between text-sm">
-        <span className="text-neutral-700">Consumed</span>
+        <span className="text-neutral-700">Consumed (pre-tax)</span>
         <span className={cn('amount font-semibold', overCeiling ? 'text-danger-600' : 'text-neutral-900')}>
           {formatAmount(consumed, currency)}
         </span>
       </div>
       <div className="flex justify-between text-sm">
-        <span className="text-neutral-700">Not to Exceed</span>
+        <span className="text-neutral-700">Not to Exceed (pre-tax)</span>
         <span className="amount text-neutral-900">{ceiling !== null ? formatAmount(ceiling, currency) : 'No ceiling'}</span>
       </div>
       {ceiling !== null && (
@@ -629,7 +629,7 @@ export default function AgreementDetailPage() {
             </section>
 
             <section>
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-3">Consumed / Not to Exceed</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-3">Consumed / Not to Exceed (pre-tax)</h2>
               <NteBar consumedAmount={agreement.consumed_amount} notToExceed={agreement.not_to_exceed} currency={agreement.currency} />
             </section>
           </div>

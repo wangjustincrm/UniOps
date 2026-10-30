@@ -583,9 +583,13 @@ async def _recompute_consumed(db: AsyncSession, agreement_id: uuid.UUID) -> None
     Deriving it from the invoice set makes re-match idempotent: incrementing
     would double-count every correction, and the number drives the NTE warning
     banner AP looks at.
+
+    Pre-tax (Invoice.amount), like the Not-to-Exceed and the stage / period
+    amounts it is compared with (ISS-0128): summing the tax-inclusive total put
+    an agreement invoiced exactly to its stages over its ceiling by the tax.
     """
     total = (await db.execute(
-        select(func.coalesce(func.sum(Invoice.total_amount), Decimal("0")))
+        select(func.coalesce(func.sum(Invoice.amount), Decimal("0")))
         .where(Invoice.agreement_id == agreement_id)
     )).scalar_one()
     agr = (await db.execute(

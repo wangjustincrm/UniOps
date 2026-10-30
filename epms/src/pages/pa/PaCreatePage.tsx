@@ -909,7 +909,7 @@ ${submitError}
                   <div className="text-xs text-neutral-400 mt-0.5">{agreement.vendor_name}</div>
                   <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-neutral-500">
                     <span>
-                      Consumed {formatAmount(agreementConsumed, agreement.currency)}
+                      Consumed (pre-tax) {formatAmount(agreementConsumed, agreement.currency)}
                       {agreementCeiling !== null ? ` / NTE ${formatAmount(agreementCeiling, agreement.currency)}` : ' / No ceiling'}
                     </span>
                     {agreementOverCeiling && (

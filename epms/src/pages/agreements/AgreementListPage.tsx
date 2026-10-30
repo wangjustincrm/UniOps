@@ -185,7 +185,7 @@ export default function AgreementListPage() {
                 <SortTh label="Type" sortKey="agreement_type" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
                 <SortTh label="Valid From" sortKey="valid_from" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
                 <SortTh label="Valid Until" sortKey="valid_to" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
-                <SortTh label="Consumed / Not to Exceed" sortKey="consumed_amount" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="Consumed / NTE (pre-tax)" sortKey="consumed_amount" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
                 <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-semibold text-neutral-500" />
                 <th className="px-4 py-3" />
               </tr>

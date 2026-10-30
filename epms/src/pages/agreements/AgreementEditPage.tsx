@@ -491,9 +491,9 @@ export default function AgreementEditPage() {
 
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               <FormField
-                label="Not to Exceed"
+                label="Not to Exceed (pre-tax)"
                 htmlFor="notToExceed"
-                hint="Optional ceiling. Spend past this amount only warns — it never blocks matching or approval."
+                hint="Optional ceiling, before tax — compared with the pre-tax total of the invoices matched to the agreement. Spend past it only warns; it never blocks matching or approval."
               >
                 <Input
                   id="notToExceed"

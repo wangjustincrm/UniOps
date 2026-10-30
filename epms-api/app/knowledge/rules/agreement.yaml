@@ -50,9 +50,12 @@ rules:
     answer: >
       Yes. Not to Exceed is a warning only: going over it never blocks
       matching, approval or payment, and adds no approval step. Agreement Detail
-      shows how much has been consumed (the tax-inclusive total of the invoices
-      matched to it) against the ceiling, and warns when it is exceeded. An
-      agreement with no NTE has no ceiling at all.
+      shows how much has been consumed (the pre-tax total of the invoices
+      matched to it) against the ceiling, and warns when it is exceeded. The
+      NTE and the milestone stage amounts are pre-tax too, like a recurring
+      agreement's expected amount per period, so an agreement invoiced exactly
+      to its stages does not show over the ceiling. An agreement with no NTE
+      has no ceiling at all.
     enforced_in: "epms-api app/crud/agreement.py (\"NTE ceiling being warn-only by explicit user decision\"); app/api/v1/pa.py agreement route has no NTE check; epms AgreementCreatePage.tsx \"Not to Exceed is a warning only\""
     provenance: pinned
     test:

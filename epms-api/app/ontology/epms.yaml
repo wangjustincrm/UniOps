@@ -771,9 +771,9 @@ entities:
       grace_days: {kind: int, label: "Grace days after valid_to during which invoices are still accepted"}
       not_to_exceed:
         kind: money
-        label: "Spending ceiling (Not to Exceed, NTE). EMPTY means the agreement
-          has no ceiling — say \"no ceiling\", never \"0\""
-      consumed_amount: {kind: money, label: "Amount consumed against the agreement so far"}
+        label: "Spending ceiling (Not to Exceed, NTE), pre-tax. EMPTY means the
+          agreement has no ceiling — say \"no ceiling\", never \"0\""
+      consumed_amount: {kind: money, label: "Amount consumed against the agreement so far (pre-tax: the sum of the matched invoices' amounts before tax)"}
       remaining_amount:
         kind: money
         label: "NTE still available (not_to_exceed - consumed_amount). Empty
