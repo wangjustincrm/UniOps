@@ -23,6 +23,7 @@ import { userService, type ApiUserBrief } from '@/services/users'
 import { BudgetAccountCascade } from '@/components/budget/BudgetAccountCascade'
 import { RecurringFields, EMPTY_RECURRING_FIELDS, type RecurringFieldsValue } from '@/components/agreements/RecurringFields'
 import { MilestoneEditor } from '@/components/agreements/MilestoneEditor'
+import { errorMessage, rememberSubmitFailure } from '@/lib/submitFailure'
 
 const TYPE_OPTIONS: { value: AgreementType; label: string; hint: string }[] = [
   // Whole-branch review (M8): a house account is not necessarily a counter
@@ -228,7 +229,18 @@ export default function AgreementCreatePage() {
         }
       }
       if (submitForApproval) {
-        await agreementService.action(newAgreement.id, { action: 'submit' })
+        // A refused submit used to leave the user on this form with the reason
+        // only in the console, and each further click saved another identical
+        // draft (AGR-202610-0016…0020, ISS-0090). The agreement exists now —
+        // go to it either way, and say there why it was not submitted.
+        try {
+          await agreementService.action(newAgreement.id, { action: 'submit' })
+        } catch (err) {
+          rememberSubmitFailure(
+            newAgreement.id,
+            `Saved as a draft but not submitted: ${errorMessage(err, 'the submission was refused')}`,
+          )
+        }
       }
       replaceTab(`/agreements/${newAgreement.id}`)
     } finally {

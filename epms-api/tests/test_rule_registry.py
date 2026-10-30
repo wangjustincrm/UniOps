@@ -996,3 +996,16 @@ async def test_a_process_answer_carries_the_engines_rules(monkeypatch):
     got = await guide_view.process_steps("pr", "t")
     assert [r["id"] for r in got["engine_rules"]] == [
         "returned_document_resumes_at_the_returning_step"]
+
+
+def test_a_refused_submit_takes_the_user_to_the_saved_draft():
+    """refused_submit_keeps_one_draft (ISS-0090, ISS-0166): the create pages
+    hand the refusal to the draft's page and go there instead of staying on
+    the form, where each further click saved another draft."""
+    pr_create = _src("epms/src/pages/pr/PrCreatePage.tsx")
+    assert "rememberSubmitFailure(newPr.id" in pr_create
+    assert "replaceTab(`/pr/${newPr.id}/edit`)" in pr_create
+    agr_create = _src("epms/src/pages/agreements/AgreementCreatePage.tsx")
+    assert "rememberSubmitFailure(\n            newAgreement.id" in agr_create
+    assert "peekSubmitFailure(id)" in _src("epms/src/pages/pr/PrEditPage.tsx")
+    assert "peekSubmitFailure(id)" in _src("epms/src/pages/agreements/AgreementDetailPage.tsx")

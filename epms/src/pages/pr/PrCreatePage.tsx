@@ -15,6 +15,7 @@ import { ProcurementTypeSelector } from '@/components/pr/ProcurementTypeSelector
 import { BudgetBalanceWidget, OverBudgetWarning } from '@/components/pr/BudgetBalanceWidget'
 import { PrLineItems, lineItemsTotal, validateLineItems } from '@/components/pr/PrLineItems'
 import { budgetAccountError, requiresBudgetAccount, budgetCheckPayload } from '@/lib/prBudget'
+import { errorMessage, rememberSubmitFailure } from '@/lib/submitFailure'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig } from '@/hooks/useConfig'
 import { useBudgetOverview, useFactors, useBalance } from '@/hooks/useBudget'
@@ -165,6 +166,7 @@ export default function PrCreatePage() {
   const [lineItems, setLineItems] = useState<PrLineItem[]>([defaultLine()])
   const [lineErrors, setLineErrors] = useState<Record<string, { description?: string; qty?: string; unitPrice?: string }>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   const createPr = useCreatePr()
 
@@ -417,8 +419,10 @@ export default function PrCreatePage() {
       return
     }
     setIsSubmitting(true)
+    setSubmitError(null)
+    let newPr: { id: string } | null = null
     try {
-      const newPr = await createPr.mutateAsync({
+      newPr = await createPr.mutateAsync({
         title: formData.title,
         type: selectedType!,
         currency,
@@ -455,9 +459,22 @@ export default function PrCreatePage() {
           notes: item.notes || undefined,
         })),
       })
-      await Promise.all(attachments.map((f) => prAttachmentService.upload(newPr.id, f)))
-      await prService.action(newPr.id, { action: 'submit' })
-      replaceTab(`/pr/${newPr.id}`)
+      const created = newPr
+      await Promise.all(attachments.map((f) => prAttachmentService.upload(created.id, f)))
+      await prService.action(created.id, { action: 'submit' })
+      replaceTab(`/pr/${created.id}`)
+    } catch (err) {
+      // The refusal used to vanish: nothing on the page, and each further
+      // click saved another draft (PR-20261028-0005…0009, ISS-0166). Once the
+      // PR exists it is a draft — go to it, with the reason, and submit from
+      // there. Before that, the form stays and says why.
+      const message = errorMessage(err, 'The purchase request could not be submitted')
+      if (newPr) {
+        rememberSubmitFailure(newPr.id, `Saved as a draft but not submitted: ${message}`)
+        replaceTab(`/pr/${newPr.id}/edit`)
+      } else {
+        setSubmitError(message)
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -1017,6 +1034,9 @@ export default function PrCreatePage() {
                   <Link to="/pr">
                     <Button variant="secondary">Cancel</Button>
                   </Link>
+                  {submitError && (
+                    <p role="alert" className="flex-1 mx-4 text-sm text-danger-600">{submitError}</p>
+                  )}
                   <div className="flex items-center gap-3">
                     <Button type="button" variant="secondary" disabled={isSubmitting} onClick={handleDraftSave}>Save as Draft</Button>
                     <Button type="submit" disabled={!selectedType || isSubmitting || isHardBlock}>

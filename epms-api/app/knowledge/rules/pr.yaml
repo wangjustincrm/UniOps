@@ -235,3 +235,24 @@ rules:
     test:
       - "tests/test_assistant_iss_batch1.py::test_budget_unreachable_is_treated_as_within_budget"
       - "tests/test_rule_registry.py::test_an_unreachable_budget_service_skips_the_catalogue_check"
+  - id: refused_submit_keeps_one_draft
+    also_in: [agreement]
+    asked_as:
+      - 新建请购单点提交被拒绝了，会生成草稿吗？
+      - 提交失败后为什么多了一张草稿？
+      - what happens if Submit for Approval is refused on a new PR or agreement
+    answer: >
+      On New PR and New Agreement, Submit for Approval first saves the
+      document and then submits it. If the submission is refused — for
+      example the department has no active Department Manager, or a
+      milestone agreement has no stage — the document stays saved as a
+      draft and you are taken to it with the reason shown: a PR opens on
+      its edit page, an agreement on its page. Fix what the message says and
+      submit that draft; clicking Submit again does not create another one.
+      If the PR is refused while you are already editing a draft, the reason
+      is shown next to the Submit button.
+    enforced_in: "epms/src/pages/pr/PrCreatePage.tsx onSubmit and agreements/AgreementCreatePage.tsx handleSubmit (rememberSubmitFailure → replaceTab to the draft); pr/PrEditPage.tsx and agreements/AgreementDetailPage.tsx show it (epms/src/lib/submitFailure.ts)"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_a_refused_submit_takes_the_user_to_the_saved_draft"
+      - "epms/src/lib/submitFailure.test.ts"
