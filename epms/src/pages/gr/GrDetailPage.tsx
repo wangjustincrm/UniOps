@@ -336,6 +336,7 @@ export default function GrDetailPage() {
                     <MetaRow label="Storage Location" value={gr.storage_location} />
                   )}
                   {gr.notes && <MetaRow label="Notes" value={gr.notes} />}
+                  {gr.over_receipt_reason && <MetaRow label="Over-receipt Reason" value={gr.over_receipt_reason} />}
                 </div>
               </div>
               {/* Linked Documents */}

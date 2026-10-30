@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth.store'
 import { usePo, usePos } from '@/hooks/usePos'
-import { useCreateGr } from '@/hooks/useGrs'
+import { useCreateGr, usePoOpenQuantities } from '@/hooks/useGrs'
 import { type GrLineCondition, type GrAttachmentIn } from '@/services/gr'
 import { type ApiPo } from '@/services/po'
 
@@ -56,6 +56,10 @@ interface FormGrLineItem {
   material_id?: string
   qty_ordered: number
   qty_received: number
+  // From GET /gr/open-quantities; null when the PO line has no figures (fallback)
+  already_received: number | null
+  pending: number | null
+  open: number | null
   unit: string
   unit_price: number
   line_total: number
@@ -109,6 +113,12 @@ export default function GrCreatePage() {
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [submitted, setSubmitted] = useState(false)
+  const [overReceiptReason, setOverReceiptReason] = useState('')
+
+  // Received / pending / open per PO line. Pending = GRs created but not yet
+  // collected — they reach the PO line only on collection, so the PO's own
+  // received_qty alone let two GRs each take the full remainder (ISS-0169).
+  const openQtyQuery = usePoOpenQuantities(selectedPo?.id ?? '')
 
   // When PO changes, rebuild line items from PO lines.
   //
@@ -125,25 +135,36 @@ export default function GrCreatePage() {
   useEffect(() => {
     if (!selectedPoId) { appliedForPoRef.current = null; setLineItems([]); return }
     if (!selectedPo) return
+    if (!openQtyQuery.isFetched) return
     if (appliedForPoRef.current === selectedPoId) return
     appliedForPoRef.current = selectedPoId
+    const openByLine = new Map((openQtyQuery.data ?? []).map((o) => [o.po_line_id, o]))
     setLineItems(
-      selectedPo.line_items.map((li) => ({
-        id: crypto.randomUUID(),
-        po_line_id: li.id,
-        description: li.description,
-        material_id: li.material_id,
-        qty_ordered: Number(li.qty),
-        qty_received: Math.max(0, Number(li.qty) - Number(li.received_qty ?? 0)),
-        unit: li.unit,
-        unit_price: Number(li.unit_price),
-        line_total: Number(li.line_total),
-        condition: 'good' as GrLineCondition,
-        discrepancy_notes: '',
-      }))
+      selectedPo.line_items.map((li) => {
+        const o = openByLine.get(li.id)
+        const qty = o ? Number(o.open) : Math.max(0, Number(li.qty) - Number(li.received_qty ?? 0))
+        return {
+          id: crypto.randomUUID(),
+          po_line_id: li.id,
+          description: li.description,
+          material_id: li.material_id,
+          qty_ordered: Number(li.qty),
+          // Default to what is still open, so a second GR does not repeat a pending one.
+          qty_received: qty,
+          already_received: o ? Number(o.received) : null,
+          pending: o ? Number(o.pending) : null,
+          open: o ? Number(o.open) : null,
+          unit: li.unit,
+          unit_price: Number(li.unit_price),
+          line_total: Math.round(qty * Number(li.unit_price) * 100) / 100,
+          condition: 'good' as GrLineCondition,
+          discrepancy_notes: '',
+        }
+      })
     )
+    setOverReceiptReason('')
     if (selectedPo.delivery_address) setStorageLocation(selectedPo.delivery_address)
-  }, [selectedPoId, selectedPo])
+  }, [selectedPoId, selectedPo, openQtyQuery.isFetched, openQtyQuery.data])
 
   const updateLine = (idx: number, patch: Partial<FormGrLineItem>) => {
     setLineItems((prev) => {
@@ -173,6 +194,10 @@ export default function GrCreatePage() {
   // Lines actually being received (qty > 0); lines with 0 are skipped in this shipment
   const receivedLines = lineItems.filter((l) => l.qty_received > 0)
 
+  // Over-receipt is allowed, but only with a reason (ISS-0098/0169).
+  const overLines = lineItems.filter(isOverReceipt)
+  const needsOverReason = overLines.length > 0
+
   // ── Validation ──────────────────────────────────────────────────────────────
   const errors: string[] = []
   if (submitted) {
@@ -186,6 +211,9 @@ export default function GrCreatePage() {
         errors.push(`Line ${i + 1}: Discrepancy/damage notes are required`)
       }
     })
+    if (needsOverReason && !overReceiptReason.trim()) {
+      errors.push('Give a reason for receiving more than the open quantity')
+    }
   }
 
   const handleSubmit = async () => {
@@ -199,6 +227,7 @@ export default function GrCreatePage() {
     lineItems.forEach((l, i) => {
       if (l.qty_received > 0 && (l.condition === 'discrepancy' || l.condition === 'damaged') && !l.discrepancy_notes?.trim()) errs.push(`notes${i}`)
     })
+    if (needsOverReason && !overReceiptReason.trim()) errs.push('overReason')
     if (errs.length > 0) return
 
     try {
@@ -230,6 +259,7 @@ export default function GrCreatePage() {
         })),
         notes: notes.trim() || undefined,
         attachments: attachments.length > 0 ? attachments : undefined,
+        over_receipt_reason: needsOverReason ? overReceiptReason.trim() : undefined,
       })
       replaceTab(`/gr/${newGr.id}`)
     } catch {
@@ -273,6 +303,12 @@ export default function GrCreatePage() {
           <ul className="list-disc list-inside text-sm text-danger-600 space-y-0.5">
             {errors.map((e) => <li key={e}>{e}</li>)}
           </ul>
+        </div>
+      )}
+
+      {createGr.isError && (
+        <div className="rounded-lg border border-danger-200 bg-danger-50 p-4 text-sm text-danger-700">
+          {createGr.error instanceof Error ? createGr.error.message : 'The goods receipt could not be saved'}
         </div>
       )}
 
@@ -520,6 +556,35 @@ export default function GrCreatePage() {
             </div>
           </div>
 
+          {/* Over-receipt: allowed with a reason */}
+          {needsOverReason && (
+            <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
+              <AlertTriangle className="h-5 w-5 text-warning-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 flex flex-col gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-warning-700">Receiving more than the PO line has open</p>
+                  <p className="text-sm text-warning-600 mt-0.5">
+                    {overLines.map((l) => `${l.description}: ${l.qty_received} received, ${l.open} open`).join('; ')}.
+                    {' '}Over-receipt is allowed, but the reason is required and is kept on the GR.
+                  </p>
+                </div>
+                <label className="text-xs font-medium text-warning-700">
+                  Over-receipt reason <span className="text-danger-600">*</span>
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Vendor shipped a full case; extra units kept as spares"
+                  value={overReceiptReason}
+                  onChange={(e) => setOverReceiptReason(e.target.value)}
+                  className={cn(
+                    'w-full px-3 py-1.5 rounded border text-sm bg-white focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
+                    submitted && !overReceiptReason.trim() ? 'border-danger-400' : 'border-warning-300'
+                  )}
+                />
+              </div>
+            </div>
+          )}
+
           {/* Issues warning */}
           {hasIssues && (
             <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
@@ -573,6 +638,7 @@ function LineRow({
   const hasIssue = line.condition === 'discrepancy' || line.condition === 'damaged'
   const noteError = submitted && line.qty_received > 0 && hasIssue && !line.discrepancy_notes?.trim()
   const qtyError = submitted && line.qty_received < 0
+  const over = isOverReceipt(line)
 
   return (
     <>
@@ -584,6 +650,11 @@ function LineRow({
         </td>
         <td className="px-4 py-3 text-right text-neutral-500 font-mono text-xs">
           {line.qty_ordered} {line.unit}
+          {line.open !== null && (
+            <div className="mt-0.5 text-[10px] text-neutral-400 whitespace-nowrap">
+              Received {line.already_received} · Pending {line.pending} · Open {line.open}
+            </div>
+          )}
         </td>
         <td className="px-4 py-3 text-right">
           <div className="flex flex-col items-end gap-0.5">
@@ -599,10 +670,11 @@ function LineRow({
               placeholder="0"
               className={cn(
                 'w-20 h-8 text-right px-2 rounded border text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary-600',
-                qtyError ? 'border-danger-400 bg-danger-50' : 'border-neutral-300'
+                qtyError ? 'border-danger-400 bg-danger-50' : over ? 'border-warning-400 bg-warning-50' : 'border-neutral-300'
               )}
             />
             {qtyError && <span className="text-[10px] text-danger-600">Required</span>}
+            {over && <span className="text-[10px] text-warning-600">Over open qty</span>}
           </div>
         </td>
         <td className="px-4 py-3 text-neutral-500 text-xs">{line.unit}</td>
@@ -656,6 +728,10 @@ function LineRow({
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function isOverReceipt(line: FormGrLineItem): boolean {
+  return line.open !== null && line.qty_received > 0 && line.qty_received > line.open
+}
 
 function FormField({
   label, required, hint, error, children,

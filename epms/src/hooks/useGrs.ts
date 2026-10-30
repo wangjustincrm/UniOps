@@ -36,6 +36,15 @@ export function useGrsForPos(poIds: string[], enabled = true) {
   return { items: results.flatMap((r) => r.data?.items ?? []), isLoading: false }
 }
 
+// Keyed under 'grs' so every GR create/action invalidation refreshes it.
+export function usePoOpenQuantities(poId: string) {
+  return useQuery({
+    queryKey: ['grs', 'open-quantities', poId],
+    queryFn: () => grService.openQuantities(poId),
+    enabled: Boolean(poId),
+  })
+}
+
 export function useGr(id: string) {
   return useQuery({
     queryKey: ['grs', id],

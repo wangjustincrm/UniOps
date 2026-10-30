@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { useGr, useGrAction } from '@/hooks/useGrs'
 import { useAuthStore } from '@/stores/auth.store'
+import { isOverReceiptError } from '@/services/gr'
 
 type QualityRating = 'satisfactory' | 'issues' | 'rejected'
 
@@ -44,6 +45,10 @@ export default function ServiceGrConfirmPage() {
   const [dragging, setDragging] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [overReceiptReason, setOverReceiptReason] = useState('')
+  // Asked for only when the server says confirming takes a PO line past its
+  // order and the GR carries no reason yet (ISS-0169).
+  const needsOverReason = isOverReceiptError(grAction.error)
 
   // ── Guard ──────────────────────────────────────────────────────────────────
 
@@ -105,6 +110,7 @@ export default function ServiceGrConfirmPage() {
     setSubmitted(true)
     if (!completionDate || acceptanceNotes.trim().length < 10) return
     if (qualityRating !== 'satisfactory' && !issueDetails.trim()) return
+    if (needsOverReason && !overReceiptReason.trim()) return
 
     const combinedNotes = [
       acceptanceNotes.trim(),
@@ -113,7 +119,10 @@ export default function ServiceGrConfirmPage() {
 
     const apiAction = qualityRating === 'rejected' ? 'reject' : 'confirm'
     grAction.mutate(
-      { action: apiAction, collected_by: user?.name, collection_notes: combinedNotes },
+      {
+        action: apiAction, collected_by: user?.name, collection_notes: combinedNotes,
+        over_receipt_reason: overReceiptReason.trim() || undefined,
+      },
       { onSuccess: () => replaceTab(`/gr/${id}`) }
     )
   }
@@ -354,6 +363,34 @@ export default function ServiceGrConfirmPage() {
           <p className="text-sm text-danger-700">
             <strong>Rejecting</strong> the service will mark this GR as <strong>Rejected</strong> and notify the Procurement Officer to liaise with the vendor. Payment Application will not be created.
           </p>
+        </div>
+      )}
+
+      {grAction.isError && (
+        <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
+          <AlertTriangle className="h-5 w-5 text-warning-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 flex flex-col gap-2">
+            <p className="text-sm text-warning-700">
+              {grAction.error instanceof Error ? grAction.error.message : 'The confirmation could not be saved'}
+            </p>
+            {needsOverReason && (
+              <>
+                <label className="text-xs font-medium text-warning-700">
+                  Over-receipt reason <span className="text-danger-600">*</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={overReceiptReason}
+                  onChange={(e) => setOverReceiptReason(e.target.value)}
+                  placeholder="Why more than the PO line has open is being confirmed"
+                  className={cn(
+                    'w-full px-3 py-1.5 rounded border text-sm bg-white focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
+                    submitted && !overReceiptReason.trim() ? 'border-danger-400' : 'border-warning-300'
+                  )}
+                />
+              </>
+            )}
+          </div>
         </div>
       )}
 

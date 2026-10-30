@@ -68,6 +68,126 @@ def _build_line_items(gr_id: uuid.UUID, items_in) -> list[GrLineItem]:
     ]
 
 
+def _effective_qty(line) -> Decimal:
+    """The quantity a GR line posts to its PO line — actual_qty when set."""
+    return line.actual_qty if line.actual_qty is not None else line.qty_received
+
+
+# ── Over-receipt (ISS-0098 / ISS-0169) ─────────────────────────────────────────
+#
+# Receiving more than a PO line still has open is allowed, but only with a
+# reason. "Open" counts GRs that are created but not yet collected/confirmed:
+# their quantities reach the PO line only on collection (GR-P-003), so leaving
+# them out let two GRs each take the full remainder.
+
+#: GR statuses whose quantities are on their way to the PO line but not posted yet.
+PENDING_GR_STATUSES = ("pending_ack", "collection_pending")
+
+OVER_RECEIPT_PREFIX = "Over-receipt"
+
+
+class OverReceiptReasonRequired(ValueError):
+    """A receipt takes a PO line past its ordered quantity and no reason was given."""
+
+
+async def open_qty_by_po_line(
+    db: AsyncSession, po_id: uuid.UUID, *, exclude_gr_id: uuid.UUID | None = None,
+) -> dict[uuid.UUID, dict[str, Decimal]]:
+    """po_line_id → ordered / received / pending / open for every line of the PO.
+
+    ``open`` may be negative when the line is already over-received; callers
+    that display it clamp at 0, the over-receipt check compares the raw value.
+    """
+    po_lines = (await db.execute(
+        select(PoLineItem).where(PoLineItem.po_id == po_id))).scalars().all()
+    stmt = (
+        select(GrLineItem.po_line_id,
+               func.sum(func.coalesce(GrLineItem.actual_qty, GrLineItem.qty_received)))
+        .join(GoodsReceipt, GoodsReceipt.id == GrLineItem.gr_id)
+        .where(GoodsReceipt.po_id == po_id,
+               GoodsReceipt.status.in_(PENDING_GR_STATUSES),
+               GrLineItem.po_line_id.is_not(None))
+        .group_by(GrLineItem.po_line_id)
+    )
+    if exclude_gr_id is not None:
+        stmt = stmt.where(GoodsReceipt.id != exclude_gr_id)
+    pending = {row[0]: row[1] or Decimal("0") for row in (await db.execute(stmt)).all()}
+    out: dict[uuid.UUID, dict[str, Decimal]] = {}
+    for pl in po_lines:
+        p = pending.get(pl.id, Decimal("0"))
+        out[pl.id] = {
+            "ordered": pl.qty,
+            "received": pl.received_qty,
+            "pending": p,
+            "open": pl.qty - pl.received_qty - p,
+            "description": pl.description,
+        }
+    return out
+
+
+def _fmt_qty(q: Decimal) -> str:
+    return f"{q.normalize():f}"
+
+
+def _over_receipt_message(over: list[tuple[str, Decimal, Decimal]]) -> str:
+    parts = "; ".join(
+        f"{desc}: receiving {_fmt_qty(qty)}, only {_fmt_qty(max(avail, Decimal('0')))} still open"
+        for desc, qty, avail in over
+    )
+    return (f"{OVER_RECEIPT_PREFIX}: {parts}. "
+            "Give a reason to receive more than the PO line has open.")
+
+
+async def _over_receipt_on_create(
+    db: AsyncSession, po_id: uuid.UUID, items_in,
+) -> list[tuple[str, Decimal, Decimal]]:
+    """Lines of a new GR that exceed what their PO line has open (received + pending)."""
+    wanted: dict[uuid.UUID, Decimal] = {}
+    for item in items_in:
+        if item.po_line_id is not None:
+            wanted[item.po_line_id] = wanted.get(item.po_line_id, Decimal("0")) + _effective_qty(item)
+    if not wanted:
+        return []
+    avail = await open_qty_by_po_line(db, po_id)
+    return [
+        (avail[pl]["description"], qty, avail[pl]["open"])
+        for pl, qty in wanted.items()
+        if pl in avail and qty > 0 and qty > avail[pl]["open"]
+    ]
+
+
+async def _require_over_receipt_reason_on_post(
+    db: AsyncSession, gr: GoodsReceipt, reason_in: str | None,
+) -> None:
+    """Before a GR's quantities are posted: if they take a PO line past its
+    ordered quantity and the GR carries no reason yet, one must be given now.
+
+    Catches GRs created before the check existed and a GR collected after
+    another one already filled the line.
+    """
+    if gr.over_receipt_reason:
+        return
+    posting: dict[uuid.UUID, Decimal] = {}
+    for line in gr.line_items:
+        if line.po_line_id is not None:
+            posting[line.po_line_id] = posting.get(line.po_line_id, Decimal("0")) + _effective_qty(line)
+    if not posting:
+        return
+    po_lines = (await db.execute(
+        select(PoLineItem).where(PoLineItem.id.in_(posting.keys())))).scalars().all()
+    over = [
+        (pl.description, posting[pl.id], pl.qty - pl.received_qty)
+        for pl in po_lines
+        if posting[pl.id] > 0 and pl.received_qty + posting[pl.id] > pl.qty
+    ]
+    if not over:
+        return
+    reason = (reason_in or "").strip()
+    if not reason:
+        raise OverReceiptReasonRequired(_over_receipt_message(over))
+    gr.over_receipt_reason = reason
+
+
 # ── Reads ──────────────────────────────────────────────────────────────────────
 
 # GET /gr ?sort= keys → what the GR list's column shows (whitelist = the
@@ -154,6 +274,11 @@ async def create(
     created_by: uuid.UUID,
     token: str | None = None,
 ) -> GoodsReceipt:
+    over = await _over_receipt_on_create(db, po.id, payload.line_items)
+    over_reason = (payload.over_receipt_reason or "").strip() or None
+    if over and over_reason is None:
+        raise OverReceiptReasonRequired(_over_receipt_message(over))
+
     number = await _next_number(db)
     gr_type = "physical" if is_physical(po.type) else "service"
     received_by_name = payload.received_by or await _actor_name(db, created_by)
@@ -173,6 +298,7 @@ async def create(
         status="pending_ack",
         storage_location=payload.storage_location,
         notes=payload.notes,
+        over_receipt_reason=over_reason if over else None,
         received_at=datetime.now(timezone.utc),
         received_by=received_by_name,
         created_by=created_by,
@@ -278,6 +404,7 @@ async def action(
             gr.status = "collected" if gr.gr_type == "physical" else "confirmed"
             gr.collected_at = now
             gr.collected_by = req.acknowledged_by or await _actor_name(db, actor_id)
+            await _require_over_receipt_reason_on_post(db, gr, req.over_receipt_reason)
             await _update_po_received_qty(db, gr)
         elif gr.gr_type == "physical":
             gr.status = "collection_pending"
@@ -290,6 +417,7 @@ async def action(
     elif act == "collect":
         if gr.status != "collection_pending" or gr.gr_type != "physical":
             raise ValueError(f"Cannot collect GR in status '{gr.status}' (type={gr.gr_type})")
+        await _require_over_receipt_reason_on_post(db, gr, req.over_receipt_reason)
         await _complete_tasks(db, gr.id)
         gr.status = "collected"
         gr.collected_at = now
@@ -305,6 +433,7 @@ async def action(
             allowed.add("pending_ack")
         if gr.status not in allowed:
             raise ValueError(f"Cannot confirm GR in status '{gr.status}'")
+        await _require_over_receipt_reason_on_post(db, gr, req.over_receipt_reason)
         await _complete_tasks(db, gr.id)
         if gr.status == "pending_ack":
             gr.acknowledged_at = now

@@ -59,6 +59,10 @@ class GoodsReceipt(UUIDPrimaryKey, TimestampMixin, Base):
     collected_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     collection_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Why this receipt takes a PO line past its ordered quantity (ISS-0098/0169).
+    # Required when it does — at creation, or at collect/confirm if it was not given then.
+    over_receipt_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=False, index=True

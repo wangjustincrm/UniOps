@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { useGr, useGrAction } from '@/hooks/useGrs'
 import { useAuthStore } from '@/stores/auth.store'
-import { type GrLineCondition } from '@/services/gr'
+import { type GrLineCondition, isOverReceiptError } from '@/services/gr'
 
 // ─── Condition options ────────────────────────────────────────────────────────
 
@@ -42,6 +42,10 @@ export default function CollectionConfirmPage() {
   const [generalNotes, setGeneralNotes] = useState('')
   const [lines, setLines] = useState<CollectionLine[]>([])
   const [submitted, setSubmitted] = useState(false)
+  const [overReceiptReason, setOverReceiptReason] = useState('')
+  // Asked for only when the server says this collection takes a PO line past
+  // its order and the GR carries no reason yet (ISS-0169).
+  const needsOverReason = isOverReceiptError(grAction.error)
 
   useEffect(() => {
     if (gr?.line_items) {
@@ -104,8 +108,12 @@ export default function CollectionConfirmPage() {
     setSubmitted(true)
     const hasErrors = lines.some((l) => l.condition !== 'good' && !l.collectionNotes.trim())
     if (!collectionDate || hasErrors) return
+    if (needsOverReason && !overReceiptReason.trim()) return
     grAction.mutate(
-      { action: 'collect', collected_by: user?.name, collection_notes: generalNotes.trim() || undefined },
+      {
+        action: 'collect', collected_by: user?.name, collection_notes: generalNotes.trim() || undefined,
+        over_receipt_reason: overReceiptReason.trim() || undefined,
+      },
       { onSuccess: () => replaceTab(`/gr/${id}`) }
     )
   }
@@ -305,6 +313,34 @@ export default function CollectionConfirmPage() {
             <p className="text-sm text-warning-600 mt-0.5">
               Submitting will notify the Procurement Officer. Invoice creation will be blocked until issues are resolved.
             </p>
+          </div>
+        </div>
+      )}
+
+      {grAction.isError && (
+        <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
+          <AlertTriangle className="h-5 w-5 text-warning-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 flex flex-col gap-2">
+            <p className="text-sm text-warning-700">
+              {grAction.error instanceof Error ? grAction.error.message : 'The collection could not be saved'}
+            </p>
+            {needsOverReason && (
+              <>
+                <label className="text-xs font-medium text-warning-700">
+                  Over-receipt reason <span className="text-danger-600">*</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={overReceiptReason}
+                  onChange={(e) => setOverReceiptReason(e.target.value)}
+                  placeholder="Why more than the PO line has open is being received"
+                  className={cn(
+                    'w-full px-3 py-1.5 rounded border text-sm bg-white focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
+                    submitted && !overReceiptReason.trim() ? 'border-danger-400' : 'border-warning-300'
+                  )}
+                />
+              </>
+            )}
           </div>
         </div>
       )}
