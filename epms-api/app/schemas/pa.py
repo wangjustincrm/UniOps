@@ -6,6 +6,7 @@ from decimal import Decimal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.current_step import CurrentStep
+from app.schemas.invoice import InvoiceResponse
 
 PA_WORKFLOW = [
     {"step": 0, "role": "finance_bp",      "label": "Finance BP Review"},
@@ -106,6 +107,23 @@ class PaCreate(BaseModel):
         if pos and self.po_id is not None and self.po_id not in pos:
             raise ValueError("po_id must be one of po_ids")
         return self
+
+
+class LinkedPoDefaults(BaseModel):
+    """What a Direct PA defaults to from the PO its invoice is linked to."""
+    po_number: str
+    department_id: uuid.UUID | None = None
+    cost_center_id: uuid.UUID | None = None
+    budget_code: str | None = None
+
+
+class DirectPaCandidate(InvoiceResponse):
+    linked_po: LinkedPoDefaults | None = None
+
+
+class DirectPaCandidatesResponse(BaseModel):
+    items: list[DirectPaCandidate]
+    total: int
 
 
 class DirectPaCreate(BaseModel):

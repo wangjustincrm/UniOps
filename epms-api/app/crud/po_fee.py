@@ -262,6 +262,47 @@ async def replace_for_invoice(
     return before, after
 
 
+def _leaf_budget(code: str | None) -> str | None:
+    """budget_code is sometimes stored as "CODE-Name"; the form wants the code."""
+    if not code:
+        return None
+    return code.strip().split(" ")[0].split("-")[0] or None
+
+
+async def linked_po_defaults(db: AsyncSession,
+                             invoice_ids: list[uuid.UUID]) -> dict[uuid.UUID, dict]:
+    """Invoice id -> what a Direct PA defaults to from the PO it is linked to
+    (Link to PO, not Match to PO; user 2026-10-30): the department and cost
+    centre of the PO's PR, and the PO's budget code (its PR's when the PO has
+    none). An invoice linked to POs that disagree, or only to POs that carry
+    none of this (NC orders have no PR), gets nothing — the form keeps its own
+    default."""
+    from app.models.pr import PurchaseRequest
+    if not invoice_ids:
+        return {}
+    rows = (await db.execute(
+        select(InvoiceFeeLink.invoice_id, PurchaseOrder.number, PurchaseOrder.budget_code,
+               PurchaseRequest.department_id, PurchaseRequest.cost_center_id,
+               PurchaseRequest.budget_code)
+        .join(PurchaseOrder, PurchaseOrder.id == InvoiceFeeLink.po_id)
+        .outerjoin(PurchaseRequest, PurchaseRequest.id == PurchaseOrder.pr_id)
+        .where(InvoiceFeeLink.invoice_id.in_(invoice_ids)))).all()
+    found: dict[uuid.UUID, dict[tuple, set[str]]] = defaultdict(dict)
+    for inv_id, po_no, po_bc, dept_id, cc_id, pr_bc in rows:
+        key = (dept_id, cc_id, _leaf_budget(po_bc) or _leaf_budget(pr_bc))
+        if key == (None, None, None):
+            continue
+        found[inv_id].setdefault(key, set()).add(po_no)
+    out: dict[uuid.UUID, dict] = {}
+    for inv_id, keys in found.items():
+        if len(keys) != 1:
+            continue
+        (dept_id, cc_id, bc), pos = next(iter(keys.items()))
+        out[inv_id] = {"po_number": ", ".join(sorted(pos)), "department_id": dept_id,
+                       "cost_center_id": cc_id, "budget_code": bc}
+    return out
+
+
 async def search_candidate_pos(db: AsyncSession, q: str | None, limit: int = 50,
                                fee_type: str | None = None) -> dict:
     """NC orders that have at least one arrival — raw material, packaging and

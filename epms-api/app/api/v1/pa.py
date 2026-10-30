@@ -34,9 +34,9 @@ from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.vendor import Vendor
 from app.schemas.config import PrepaymentConfig
-from app.schemas.invoice import InvoiceListResponse
 from app.schemas.pa import (
-    DirectPaCreate, PaActionRequest, PaCreate, PaListResponse, PaResponse, PaUpdate,
+    DirectPaCandidate, DirectPaCandidatesResponse, DirectPaCreate, PaActionRequest, PaCreate,
+    PaListResponse, PaResponse, PaUpdate,
 )
 from app.schemas.pr import ApprovalEventResponse
 
@@ -490,7 +490,7 @@ async def _may_create_pa_on_behalf(
     return False
 
 
-@router.get("/direct/candidates", response_model=InvoiceListResponse)
+@router.get("/direct/candidates", response_model=DirectPaCandidatesResponse)
 async def direct_pa_candidates(db: SessionDep, user: PaWriteDep,
                                vendor_id: uuid.UUID | None = Query(default=None)):
     """Invoices the caller may put on a Direct PA: matched to the Direct route,
@@ -513,7 +513,12 @@ async def direct_pa_candidates(db: SessionDep, user: PaWriteDep,
             select(func.jsonb_array_elements_text(PaymentApplication.invoice_ids))
             .where(PaymentApplication.status != "cancelled"))).scalars().all())
         items = [i for i in items if str(i.id) not in held]
-    return {"items": items, "total": len(items)}
+    # An invoice linked to a PO (Link to PO) defaults the form to that PO's
+    # department, cost centre and budget code (user, 2026-10-30).
+    from app.crud.po_fee import linked_po_defaults
+    defaults = await linked_po_defaults(db, [i.id for i in items])
+    out = [DirectPaCandidate(**i.model_dump(), linked_po=defaults.get(i.id)) for i in items]
+    return {"items": out, "total": len(out)}
 
 
 @router.post("/direct", response_model=PaResponse, status_code=201)

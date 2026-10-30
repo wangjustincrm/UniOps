@@ -416,3 +416,63 @@ async def test_a_direct_invoice_takes_no_goods_receipt(admin_client, world):
     # Positive control: an edit that is not a GR link still goes through while no PA holds it.
     ok = await admin_client.patch(f"/api/v1/invoices/{inv['id']}", json={"notes": "checked"})
     assert ok.status_code == 200, ok.text
+
+
+async def _linked_po(test_engine, w, invoice_id, *, po_budget=None, pr_budget=None,
+                     with_pr=True, dept="ops"):
+    """An EPMS PO (from a PR of department `dept`, when `with_pr`) the invoice is
+    linked to through Link to PO."""
+    from sqlalchemy import select
+
+    from app.models.invoice_fee_link import InvoiceFeeLink
+    from app.models.po import PurchaseOrder
+    from app.models.pr import PurchaseRequest
+    from app.models.user import User
+    async with _factory(test_engine)() as db:
+        creator = (await db.execute(select(User).limit(1))).scalar_one()
+        pr_id = None
+        if with_pr:
+            pr = PurchaseRequest(number=f"PR-L-{uuid.uuid4().hex[:6]}", title="t", type=2,
+                                 status="approved", currency="CAD", amount=Decimal("10"),
+                                 created_by=creator.id, department_id=w[dept],
+                                 cost_center_id=w[f"{dept}_cc"], budget_code=pr_budget)
+            db.add(pr)
+            await db.flush()
+            pr_id = pr.id
+        po = PurchaseOrder(number=f"PO-L-{uuid.uuid4().hex[:6]}", title="Linked", type=2,
+                           status="issued", currency="CAD", subtotal=Decimal("10"),
+                           tax_rate=Decimal("0"), tax_amount=Decimal("0"), total=Decimal("10"),
+                           vendor_id=uuid.UUID(w["v1"]), vendor_name="V", pr_id=pr_id,
+                           budget_code=po_budget, created_by=creator.id,
+                           source=None if with_pr else "nc")
+        db.add(po)
+        await db.flush()
+        db.add(InvoiceFeeLink(invoice_id=uuid.UUID(invoice_id), fee_type="freight", po_id=po.id))
+        await db.commit()
+        return po.number
+
+
+async def test_candidate_carries_the_linked_po_defaults(admin_client, world, test_engine):
+    """User, 2026-10-30: an invoice linked to a PO (Link to PO) defaults the Direct
+    PA to that PO's department and budget code — the PO's own code, else its PR's."""
+    own = await _direct_invoice(admin_client, world["v1"])
+    po_own = await _linked_po(test_engine, world, own["id"], po_budget="CRM00301", pr_budget="CRM9")
+    from_pr = await _direct_invoice(admin_client, world["v1"])
+    await _linked_po(test_engine, world, from_pr["id"], pr_budget="CRM0090201-Repairs", dept="qa")
+    nc = await _direct_invoice(admin_client, world["v1"])
+    await _linked_po(test_engine, world, nc["id"], with_pr=False)
+    clash = await _direct_invoice(admin_client, world["v1"])
+    await _linked_po(test_engine, world, clash["id"], po_budget="CRM00301")
+    await _linked_po(test_engine, world, clash["id"], po_budget="CRM00302")
+    plain = await _direct_invoice(admin_client, world["v1"])
+
+    r = await admin_client.get("/api/v1/pa/direct/candidates", params={"vendor_id": world["v1"]})
+    assert r.status_code == 200, r.text
+    got = {i["id"]: i["linked_po"] for i in r.json()["items"]}
+    assert got[own["id"]] == {"po_number": po_own, "department_id": str(world["ops"]),
+                              "cost_center_id": str(world["ops_cc"]), "budget_code": "CRM00301"}
+    assert got[from_pr["id"]]["department_id"] == str(world["qa"])
+    assert got[from_pr["id"]]["budget_code"] == "CRM0090201"
+    assert got[nc["id"]] is None            # NC order: no PR, no budget code
+    assert got[clash["id"]] is None         # two POs that disagree
+    assert got[plain["id"]] is None

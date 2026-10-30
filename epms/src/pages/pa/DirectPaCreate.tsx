@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Loader2, CreditCard, AlertTriangle, ArrowLeft, Upload } from 'lucide-react'
 import { BackLink } from '@/components/BackLink'
@@ -12,6 +12,7 @@ import { useRolePermissions } from '@/hooks/useConfig'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useCreateDirectPa, useDirectPaCandidates } from '@/hooks/usePas'
 import { useStaticTabNav } from '@/hooks/useStaticTabNav'
+import type { LinkedPoDefaults } from '@/services/pa'
 import { SELECT_CLS, TH_CLS, cents, errorMessage, num } from '@/pages/freight/freightUi'
 
 /** Payment Applications → Create Direct PA (/pa/new?source=direct[&invoice=<id>]).
@@ -94,6 +95,33 @@ function DirectPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nul
     () => new Set(chosen.map((i) => `${i.vendor_id}|${i.currency}`)).size > 1,
     [chosen],
   )
+
+  // An invoice linked to a PO (Link to PO, not Match to PO) defaults the form
+  // to that PO's department, cost center and budget code (user, 2026-10-30) —
+  // when every ticked invoice that has one agrees. Applied once per new set of
+  // defaults, so the fields stay editable; the cascade is remounted so its
+  // department-change reset does not wipe the cost center set alongside.
+  const linked: LinkedPoDefaults | null = (() => {
+    const seen = new Map<string, LinkedPoDefaults>()
+    for (const i of chosen) {
+      const d = i.linked_po
+      if (d) seen.set(`${d.department_id}|${d.cost_center_id}|${d.budget_code}`, d)
+    }
+    return seen.size === 1 ? [...seen.values()][0] : null
+  })()
+  const linkedKey = linked ? `${linked.department_id}|${linked.cost_center_id}|${linked.budget_code}` : ''
+  const appliedKey = useRef('')
+  const [cascadeKey, setCascadeKey] = useState(0)
+  useEffect(() => {
+    if (!linked || linkedKey === appliedKey.current) return
+    appliedKey.current = linkedKey
+    if (linked.department_id) {
+      setDepartmentId(linked.department_id)
+      setCostCenterId(linked.cost_center_id ?? undefined)
+    }
+    if (linked.budget_code) setBudgetCode(linked.budget_code)
+    setCascadeKey((k) => k + 1)
+  }, [linkedKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const createPa = useCreateDirectPa()
 
@@ -189,6 +217,9 @@ function DirectPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nul
                       <Link to={`/invoices/${inv.id}`} onClick={(e) => e.stopPropagation()} className="font-mono text-xs font-semibold text-primary-700 hover:underline">
                         {inv.vendor_invoice_number}
                       </Link>
+                      {inv.linked_po && (
+                        <div className="text-[10px] text-neutral-400">Linked to {inv.linked_po.po_number}</div>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 text-xs text-neutral-700">{inv.vendor_name}</td>
                     <td className="px-3 py-2.5 text-xs text-neutral-600">{formatDate(inv.invoice_date)}</td>
@@ -219,6 +250,7 @@ function DirectPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nul
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-neutral-700">Cost Center & Budget Account *</label>
             <BudgetAccountCascade
+              key={cascadeKey}
               departmentId={departmentId || undefined}
               costCenterId={costCenterId}
               budgetCode={budgetCode}
@@ -226,6 +258,11 @@ function DirectPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nul
             />
             {!departmentId && (
               <p className="text-xs text-neutral-400">Select a department first to enable the budget account picker.</p>
+            )}
+            {linked && appliedKey.current === linkedKey && (
+              <p className="text-xs text-neutral-500">
+                Defaulted from linked PO <span className="font-mono">{linked.po_number}</span> — change if needed.
+              </p>
             )}
           </div>
         </div>
