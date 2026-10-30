@@ -240,6 +240,7 @@ function PoPaEditPage() {
 
   const subtotalNum  = parseFloat(subtotal)  || 0
   const taxNum       = parseFloat(taxAmount) || 0
+  const taxMissing   = taxAmount.trim() === ''   // required, as on New PA (ISS-0136)
   const shippingNum  = parseFloat(shippingAmount) || 0
   const otherNum     = parseFloat(otherCharges) || 0
   const paymentTotal = subtotalNum + taxNum + shippingNum + otherNum
@@ -290,6 +291,7 @@ function PoPaEditPage() {
     if (!title.trim())   errors.push('PA Title is required')
     if (subtotalNum <= 0) errors.push('Pre-tax amount must be greater than zero')
     if (taxNum < 0)      errors.push('Tax amount cannot be negative')
+    if (taxMissing)      errors.push('Tax amount is required — enter 0 if there is no tax')
     if (paType === 'prepayment' && (!prepaymentPct || parseFloat(prepaymentPct) <= 0 || parseFloat(prepaymentPct) > 100))
       errors.push('Prepayment percentage must be between 1 and 100')
     if (paType === 'prepayment' && !expectedSettlement)
@@ -320,7 +322,7 @@ function PoPaEditPage() {
     if (!pa) return
     if (!isAgreementMode && !po) return
     if (!isAgreementMode && poIds.length === 0) return
-    if (!title.trim() || subtotalNum <= 0 || taxNum < 0 || paymentTotal <= 0) return
+    if (!title.trim() || subtotalNum <= 0 || taxNum < 0 || taxMissing || paymentTotal <= 0) return
     if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement)) return
     // PO route only — agreement PAs are exempt. The notice under the invoice
     // list already names the two ends.
@@ -874,7 +876,7 @@ function PoPaEditPage() {
                     placeholder="0.00"
                     className={cn(
                       'h-10 px-3 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
-                      submitted && taxNum < 0 ? 'border-danger-400' : 'border-neutral-300'
+                      submitted && (taxNum < 0 || taxMissing) ? 'border-danger-400' : 'border-neutral-300'
                     )}
                   />
                 </div>
