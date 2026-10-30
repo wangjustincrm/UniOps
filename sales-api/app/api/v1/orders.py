@@ -5,6 +5,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query
 
 from app.core.deps import get_uow
+from app.platform.crud_router import page_body
 from app.platform.query import QuerySpec, query_spec
 from app.runtime import Runtime, get_runtime
 from app.schemas.orders import LinePreview, ManualLineIn, ManualOrderIn, OrderDetail, OrderRead, ReviewResult
@@ -20,8 +21,7 @@ router = APIRouter(prefix="/orders", tags=["orders"])
 
 @router.get("")
 async def list_orders(u: UoW, spec: Spec) -> dict:
-    page = await OrderService(u).list(spec)
-    return {"items": [i.model_dump(mode="json") for i in page.items], "total": page.total}
+    return page_body(await OrderService(u).list(spec))
 
 
 @router.get("/meta")

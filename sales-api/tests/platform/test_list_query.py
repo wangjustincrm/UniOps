@@ -19,6 +19,7 @@ class Widgets(Repository[Widget]):
     list_fields = ("code", "name", "email", "price", "active", "created_at")
     labels = {"email": "E-mail"}
     enums = {"code": ("A1", "B2", "C3", "N4")}
+    groupable = ("active", "email", "price")
     default_sort = ("code",)
 
 
@@ -125,6 +126,7 @@ def test_field_meta_comes_from_the_declaration():
     assert meta["code"] | {"operators": None} == {
         "name": "code", "label": "Code", "type": "enum", "enum_values": ["A1", "B2", "C3", "N4"], "filterable": True,
         "sortable": True, "groupable": False, "operators": None}
+    assert (meta["active"]["groupable"], meta["price"]["groupable"]) == (True, True)
     assert meta["code"]["operators"] == ["eq", "ne", "in", "not_in", "is_null", "not_null"]
     assert (meta["email"]["label"], meta["email"]["type"]) == ("E-mail", "text")
     assert "starts_with" in meta["email"]["operators"]
@@ -148,3 +150,58 @@ def test_every_listed_resource_names_each_field_once_and_keeps_its_schema_fields
             assert (f["type"] == "enum") == (f["name"] in svc.repo_cls.enums), (svc.__name__, f["name"])
     partner = {f["name"]: f for f in PartnerService.repo_cls.field_meta(PartnerService.read_schema)}
     assert partner["channel"]["enum_values"] == ["SHOPIFY", "TRUECOMMERCE", "MANUAL"] and partner["channel"]["filterable"]
+
+
+
+# ── grouping (Stage B) ───────────────────────────────────────────────────────
+
+async def grouped(uow_factory, group: str, **kw):
+    from app.platform.query import parse_sort
+    async with uow_factory(SYSTEM_ACTOR) as uow:
+        return await Widgets(uow).list(QuerySpec(group=parse_sort(group), **kw))
+
+
+def keys(page):
+    return [(g.key, g.count) for g in page.groups]
+
+
+async def test_group_counts_cover_the_whole_result_on_every_page(uow_factory, seeded):
+    p1 = await grouped(uow_factory, "active", page_size=1)
+    p3 = await grouped(uow_factory, "active", page_size=1, page=3)
+    assert keys(p1) == keys(p3) == [([False], 1), ([True], 3)]   # not just the page's one row
+    assert [w.code for w in p1.items] == ["C3"] and p1.total == 4 and not p1.groups_truncated
+    desc = await grouped(uow_factory, "-active", page_size=50)
+    assert keys(desc) == [([True], 3), ([False], 1)] and [w.code for w in desc.items] == ["A1", "B2", "N4", "C3"]
+
+
+async def test_grouping_with_sort_filters_and_search(uow_factory, seeded):
+    from app.platform.query import SortKey
+    p = await grouped(uow_factory, "active", sort=[SortKey(field="price", desc=True)],
+                      filters=[parse_filter("name:contains:an|apple")], search="a")
+    assert keys(p) == [([True], 3)]
+    assert [w.code for w in p.items] == ["A1", "B2", "N4"]  # within the group: price descending
+    two = await grouped(uow_factory, "active,-price")
+    assert keys(two) == [([False, "9.99"], 1), ([True, "3.00"], 1), ([True, "1.50"], 1), ([True, "0.00"], 1)]
+    nulls = await grouped(uow_factory, "email")
+    assert keys(nulls)[-1] == ([None], 1)  # an empty value is a group of its own, last
+    assert (await grouped(uow_factory, "-email")).groups[-1].key == [None]  # last in either direction
+
+
+async def test_more_groups_than_returned_are_flagged(uow_factory, seeded, monkeypatch):
+    import app.platform.repository as repo
+    monkeypatch.setattr(repo, "MAX_GROUPS", 2)
+    p = await grouped(uow_factory, "price")
+    assert p.groups_truncated and keys(p) == [(["0.00"], 1), (["1.50"], 1)]
+    assert p.total == 4 and len(p.items) == 4  # the rows themselves are all there
+
+
+async def test_what_cannot_be_grouped_is_refused(uow_factory, seeded):
+    from app.platform.query import query_spec
+    for field in ("name", "version"):  # free text / not a list field
+        with pytest.raises(InvalidInput) as e:
+            await grouped(uow_factory, field)
+        assert e.value.code == "query.not_groupable" and e.value.details["field"] == field
+    with pytest.raises(InvalidInput) as e:
+        query_spec(group="active,email,price,code")
+    assert e.value.code == "query.too_many_groups"
+    assert [k.field for k in query_spec(group="active,-email,price").group] == ["active", "email", "price"]

@@ -30,6 +30,8 @@ class DocumentRepository(Repository[Document]):
              "processing_status": tuple(s.value for s in InboundFile),
              "file_status": tuple(s.value for s in OutboundFile), "ack_status": tuple(s.value for s in Ack)}
     default_sort = ("-created_at",)
+    groupable = ("direction", "origin", "system", "kind", "processing_status", "file_status", "ack_status",
+                 "partner_code", "connection_id")
 
 
 class DocumentService(ReadOnlyService[Document, DocumentRead]):
@@ -57,6 +59,7 @@ class RunRepository(Repository[Run]):
     list_fields = ("id", "job", "trigger", "status", "started_at", "heartbeat_at", "finished_at", "error")
     enums = {"trigger": RUN_TRIGGERS, "status": RUN_STATUSES}
     default_sort = ("-started_at",)
+    groupable = ("job", "trigger", "status")
 
 
 class RunService(ReadOnlyService[Run, RunRead]):
@@ -82,6 +85,7 @@ class LogRepository(Repository[LogEntry]):
                    "transfer_id", "message")
     enums = {"level": LOG_LEVELS}
     default_sort = ("-at",)
+    groupable = ("level", "step", "run_id", "connection_id")
 
 
 class LogService(ReadOnlyService[LogEntry, LogRead]):

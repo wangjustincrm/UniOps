@@ -5,6 +5,8 @@
 // any of them for the positive operators, none of them for ne / not_contains
 // / not_in. between (old name range) is "low..high", either side empty;
 // is_null / not_null take no value. Different filters are AND.
+// group=a,-b: rows grouped by up to 3 fields; the response's `groups` count
+// each group over the whole result.
 
 export type FilterOp =
   | 'eq' | 'ne' | 'contains' | 'not_contains' | 'starts_with' | 'ends_with' | 'in' | 'not_in'
@@ -33,12 +35,25 @@ export interface QuerySpec {
   search?: string
   filters?: Filter[]
   includeHistorical?: boolean
+  /** Group by these fields (at most MAX_GROUP_KEYS), before the sort. */
+  group?: SortKey[]
+}
+
+export interface GroupCount {
+  /** One value per group field. */
+  key: (string | number | boolean | null)[]
+  count: number
 }
 
 export interface Page<T> {
   items: T[]
   total: number
+  /** Only when grouped: every group of the whole result, in group order. */
+  groups?: GroupCount[]
+  groups_truncated?: boolean
 }
+
+export const MAX_GROUP_KEYS = 3
 
 export const MAX_PAGE_SIZE = 200
 
@@ -121,5 +136,26 @@ export function toSearchParams(spec: QuerySpec): URLSearchParams {
   if (spec.search?.trim()) p.set('search', spec.search.trim())
   for (const f of spec.filters ?? []) p.append('filter', `${f.field}:${f.op}:${filterValue(f)}`)
   if (spec.includeHistorical) p.set('include_historical', 'true')
+  if (spec.group?.length) p.set('group', spec.group.map((g) => (g.desc ? `-${g.field}` : g.field)).join(','))
   return p
+}
+
+// ── grouping: the order of the keys is the nesting ──────────────────────────
+
+/** Group by `field` too (a key already there keeps its place); at most MAX_GROUP_KEYS. */
+export function groupBy(spec: QuerySpec, field: string, desc: boolean): QuerySpec {
+  const group = spec.group ?? []
+  if (group.some((g) => g.field === field)) {
+    return { ...spec, page: 1, group: group.map((g) => (g.field === field ? { field, desc } : g)) }
+  }
+  if (group.length >= MAX_GROUP_KEYS) return spec
+  return { ...spec, page: 1, group: [...group, { field, desc }] }
+}
+
+export function flipGroup(spec: QuerySpec, field: string): QuerySpec {
+  return { ...spec, page: 1, group: (spec.group ?? []).map((g) => (g.field === field ? { field, desc: !g.desc } : g)) }
+}
+
+export function removeGroup(spec: QuerySpec, field: string): QuerySpec {
+  return { ...spec, page: 1, group: (spec.group ?? []).filter((g) => g.field !== field) }
 }

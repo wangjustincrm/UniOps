@@ -42,7 +42,8 @@ export type { DateTimeInputProps, TextareaProps } from './primitives/FieldInputs
 export { isDateOnly, isoToLocalInput, localInputToIso } from './primitives/dateValues'
 export type { ComboOption } from './primitives/Combobox'
 export { DataTable } from './primitives/DataTable'
-export type { ColumnDef, DataTableProps, SortValue } from './primitives/DataTable'
+export { groupKey } from './primitives/groupKey'
+export type { ColumnDef, DataTableProps, SortValue, Grouping } from './primitives/DataTable'
 export { StatusBadge } from './primitives/StatusBadge'
 export type { StatusStyle, BadgeVariant } from './primitives/StatusBadge'
 export { EmptyState, ErrorState, ErrorLine } from './primitives/States'
@@ -50,9 +51,10 @@ export { EmptyState, ErrorState, ErrorLine } from './primitives/States'
 // ── resource ─────────────────────────────────────────────────────────────────
 export {
   toSearchParams, defaultSpec, MAX_PAGE_SIZE, clampPageSize, getFilter, setFilter, clearFilter, filtersOf,
-  setFieldFilters, removeFilterAt, sortBy, flipSort, removeSort, escapeValue,
+  setFieldFilters, removeFilterAt, sortBy, flipSort, removeSort, escapeValue, groupBy, flipGroup, removeGroup,
+  MAX_GROUP_KEYS,
 } from './resource/querySpec'
-export type { QuerySpec, SortKey, Filter, FilterOp, FilterValue, Page } from './resource/querySpec'
+export type { QuerySpec, SortKey, Filter, FilterOp, FilterValue, Page, GroupCount } from './resource/querySpec'
 export { useListMeta } from './resource/listMeta'
 export type { FieldMeta, FieldKind, ListMeta } from './resource/listMeta'
 export { VIEW_STATE_VERSION, viewStateOf, specOf, serializeView, parseView } from './resource/viewState'

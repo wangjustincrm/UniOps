@@ -43,6 +43,8 @@ function LogTable({ fixed, searchable = true }: { fixed?: QuerySpec['filters']; 
       locked={(fixed ?? []).map((f) => f.field)}
       rows={list.data?.items ?? []}
       total={list.data?.total ?? 0}
+      groups={list.data?.groups}
+      groupsTruncated={list.data?.groups_truncated}
       spec={spec}
       onSpecChange={(s) => setSpec({ ...s, filters: [...(fixed ?? []), ...(s.filters ?? []).filter((f) => !fixed?.some((x) => x.field === f.field))] })}
       sortable={['at', 'level']}
@@ -104,6 +106,8 @@ function Runs() {
         resource={runsClient}
         rows={list.data?.items ?? []}
         total={list.data?.total ?? 0}
+        groups={list.data?.groups}
+        groupsTruncated={list.data?.groups_truncated}
         spec={spec}
         onSpecChange={setSpec}
         sortable={['started_at', 'status']}

@@ -47,6 +47,7 @@ class ItemRepository(Repository[Item]):
     labels = {"sku": "SKU", "upc": "UPC", "gtin": "GTIN", "gross_weight_lb_per_ea": "Gross weight per EA (lb)",
               "warehouse_held": "Held in the warehouse"}
     default_sort = ("item_code",)
+    groupable = ("warehouse_held", "active")
 
 
 class ItemService(CrudService[Item, ItemRead, ItemCreate, ItemUpdate]):
@@ -123,6 +124,7 @@ class PartnerCodeRepository(Repository[ItemPartnerCode]):
     search_fields = ("partner_code", "buyer_part", "item_code")
     list_fields = ("partner_code", "buyer_part", "item_code", "created_at", "updated_at")
     default_sort = ("partner_code", "buyer_part")
+    groupable = ("partner_code", "item_code")
 
 
 class PartnerCodeService(CrudService[ItemPartnerCode, PartnerCodeRead, PartnerCodeCreate, PartnerCodeUpdate]):
@@ -152,6 +154,7 @@ class DcRoutingRepository(Repository[DcRouting]):
     list_fields = ("partner_code", "ship_to_gln", "dc_number", "notes", "active", "created_at", "updated_at")
     labels = {"ship_to_gln": "Ship-to GLN", "dc_number": "DC number"}
     default_sort = ("partner_code", "ship_to_gln")
+    groupable = ("partner_code", "active")
 
 
 class DcRoutingService(CrudService[DcRouting, DcRoutingRead, DcRoutingCreate, DcRoutingUpdate]):

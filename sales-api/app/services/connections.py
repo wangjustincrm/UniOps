@@ -51,6 +51,7 @@ class ConnectionRepository(Repository[Connection]):
               "api_version": "API version", "cursor_updated_at": "Cursor (updated at)"}
     enums = {"kind": CONNECTION_KINDS, "after_read": AFTER_READ, "mode": CONNECTION_MODES}
     default_sort = ("name",)
+    groupable = ("kind", "mode", "after_read", "partner_code", "active")
 
 
 class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate, ConnectionUpdate]):

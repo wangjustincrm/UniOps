@@ -61,6 +61,8 @@ export default function DocumentsPage() {
         resource={documentsClient}
         rows={list.data?.items ?? []}
         total={list.data?.total ?? 0}
+        groups={list.data?.groups}
+        groupsTruncated={list.data?.groups_truncated}
         spec={spec}
         onSpecChange={setSpec}
         sortable={['created_at', 'remote_name', 'kind', 'size']}

@@ -44,6 +44,12 @@ async def test_orders_list_detail_and_the_review_worklist(api):
     r = (await api.get("/api/v1/orders?sort=order_number", headers=READER)).json()
     assert [(o["source_order_number"], o["fulfillment_status"], o["order_state"]) for o in r["items"]] == [
         ("9301", "Pending", "Active"), ("9302", "Review", "On Hold")]
+    g = (await api.get("/api/v1/orders?group=fulfillment_status,partner_code&page_size=1", headers=READER)).json()
+    assert g["groups"] == [{"key": ["Pending", "SHOP"], "count": 1}, {"key": ["Review", "SHOP"], "count": 1}]
+    assert g["groups_truncated"] is False and len(g["items"]) == 1 and g["total"] == 2
+    r = await api.get("/api/v1/orders?group=review_reason", headers=READER)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "query.not_groupable"
+    assert "groups" not in (await api.get("/api/v1/orders", headers=READER)).json()  # only when asked
     review = (await api.get("/api/v1/orders?filter=fulfillment_status:eq:Review", headers=READER)).json()
     assert [o["source_order_number"] for o in review["items"]] == ["9302"]
     d = (await api.get(f"/api/v1/orders/{review['items'][0]['id']}", headers=READER)).json()

@@ -12,6 +12,8 @@ sends reaches SQL as an identifier.
     between                  low..high, either side empty (`range` = alias)
     is_null / not_null       no value (`field:is_null:`)
     sort=a,-b   search=…   page=…   page_size=…
+    group=a,-b               up to 3 groupable fields; rows come grouped, and
+                             `groups` counts each key over the whole result
 """
 from __future__ import annotations
 
@@ -55,6 +57,8 @@ MAX_IN_VALUES = 100
 MAX_SEARCH = 100
 MAX_FILTERS = 20
 MAX_VALUE = 200
+MAX_GROUP_KEYS = 3
+MAX_GROUPS = 500  # group counts returned; beyond: groups_truncated
 
 
 class SortKey(BaseModel):
@@ -78,11 +82,21 @@ class QuerySpec(BaseModel):
     search: str | None = Field(None, max_length=MAX_SEARCH)
     filters: list[Filter] = Field(default_factory=list, max_length=MAX_FILTERS)
     include_historical: bool = False
+    group: list[SortKey] = Field(default_factory=list, max_length=MAX_GROUP_KEYS)
+
+
+class Group(BaseModel):
+    key: list[Any]  # one value per group field, JSON-ready (dates ISO, decimals as text)
+    count: int
 
 
 class Page(BaseModel, Generic[T]):
     items: list[T]
     total: int
+    # Only when the query groups: every group of the whole filtered result
+    # (not just this page), in group order; at most MAX_GROUPS.
+    groups: list[Group] | None = None
+    groups_truncated: bool = False
 
 
 @dataclass(frozen=True)
@@ -216,8 +230,12 @@ def query_spec(
     search: Annotated[str | None, Query(max_length=MAX_SEARCH)] = None,
     filter: Annotated[list[str] | None, Query(max_length=MAX_FILTERS)] = None,  # noqa: A002 — the parameter's name
     include_historical: bool = False,
+    group: Annotated[str | None, Query(max_length=200)] = None,
 ) -> QuerySpec:
-    """FastAPI dependency: `?page=&page_size=&sort=a,-b&search=&filter=f:op:v&filter=…`."""
+    """FastAPI dependency: `?page=&page_size=&sort=a,-b&search=&filter=f:op:v&filter=…&group=a,-b`."""
+    keys = parse_sort(group)
+    if len(keys) > MAX_GROUP_KEYS:
+        raise InvalidInput("query.too_many_groups", f"group by at most {MAX_GROUP_KEYS} fields", {"max": MAX_GROUP_KEYS})
     return QuerySpec(
         page=page,
         page_size=page_size,
@@ -225,4 +243,5 @@ def query_spec(
         search=search,
         filters=[parse_filter(f) for f in (filter or [])],
         include_historical=include_historical,
+        group=keys,
     )

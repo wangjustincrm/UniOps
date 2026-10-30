@@ -91,6 +91,8 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
         columns={props.columns}
         rows={list.data?.items ?? []}
         total={list.data?.total ?? 0}
+        groups={list.data?.groups}
+        groupsTruncated={list.data?.groups_truncated}
         spec={spec}
         onSpecChange={setSpec}
         resource={client}

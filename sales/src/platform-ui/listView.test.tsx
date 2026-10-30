@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import {
   QueryTable, flipSort, parseView, removeSort, serializeView, setFieldFilters, sortBy, toSearchParams, viewStateOf,
-  type ColumnDef, type ListMeta, type QuerySpec,
+  type ColumnDef, type GroupCount, type ListMeta, type QuerySpec,
 } from './index'
 import { chooseOption } from './testing'
 
@@ -15,12 +15,12 @@ import { chooseOption } from './testing'
 const meta: ListMeta = {
   version: 1, searchable: true, default_sort: ['code'],
   fields: [
-    { name: 'code', label: 'Item code', type: 'text', enum_values: [], filterable: true, sortable: true, groupable: false,
+    { name: 'code', label: 'Item code', type: 'text', enum_values: [], filterable: true, sortable: true, groupable: true,
       operators: ['contains', 'not_contains', 'starts_with', 'ends_with', 'eq', 'ne', 'in', 'not_in', 'is_null', 'not_null'] },
     { name: 'price', label: 'Price', type: 'number', enum_values: [], filterable: true, sortable: true, groupable: false,
       operators: ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'not_in', 'is_null', 'not_null'] },
     { name: 'status', label: 'Status', type: 'enum', enum_values: ['Pending', 'Review', 'Shipped'], filterable: true, sortable: false,
-      groupable: false, operators: ['eq', 'ne', 'in', 'not_in', 'is_null', 'not_null'] },
+      groupable: true, operators: ['eq', 'ne', 'in', 'not_in', 'is_null', 'not_null'] },
     { name: 'sku', label: 'SKU', type: 'text', enum_values: [], filterable: true, sortable: true, groupable: false, operators: ['contains', 'eq'] },
   ],
 }
@@ -31,10 +31,13 @@ const columns: ColumnDef<Row, unknown>[] = [
 ]
 const resource = { basePath: '/things', meta: async () => meta }
 
-function Harness({ initial, locked, onSpec }: { initial?: QuerySpec; locked?: string[]; onSpec: (s: QuerySpec) => void }) {
+function Harness({ initial, locked, onSpec, data = rows, groups, truncated }: {
+  initial?: QuerySpec; locked?: string[]; onSpec: (s: QuerySpec) => void; data?: Row[]; groups?: GroupCount[]; truncated?: boolean
+}) {
   const [spec, setSpec] = useState<QuerySpec>(initial ?? { page: 3, pageSize: 50 })
   return (
-    <QueryTable<Row> columns={columns} rows={rows} total={1} spec={spec} resource={resource} locked={locked} searchable
+    <QueryTable<Row> columns={columns} rows={data} total={data.length} spec={spec} resource={resource} locked={locked} searchable
+      groups={groups} groupsTruncated={truncated}
       rowKey={(r) => r.id} onSpecChange={(s) => { setSpec(s); onSpec(s) }} />
   )
 }
@@ -100,7 +103,7 @@ describe('QueryTable with /meta', () => {
     const t = renderTable({ locked: ['status'], initial: { page: 2, pageSize: 50, search: 'milk',
       sort: [{ field: 'code' }, { field: 'price', desc: true }],
       filters: [{ field: 'status', op: 'eq', value: 'Review' }, { field: 'code', op: 'contains', value: ['l', 'm'] }] } })
-    const chips = await screen.findByRole('group', { name: 'Active sort and search' })
+    const chips = await screen.findByRole('group', { name: 'Active sort, grouping and search' })
     expect(within(chips).getByText('Sorting')).toBeInTheDocument()
     expect(within(chips).getByText('Item code contains "l" or "m"')).toBeInTheDocument()
     expect(within(chips).getByText('Status is "Review"')).toBeInTheDocument()
@@ -164,5 +167,49 @@ describe('QueryTable with /meta', () => {
     expect(await screen.findByRole('columnheader', { name: /Price/ })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: /SKU/ })).toBeInTheDocument()
     expect(screen.getByText('SKU-92')).toBeInTheDocument()  // a generic cell for a /meta field
+  })
+
+  it('groups from the column menu: GROUPING chips, nesting order, flip and remove, at most 3', async () => {
+    const t = renderTable()
+    fireEvent.click(within(await openMenu('Status')).getByText('Group ascending'))
+    expect(t.request().get('group')).toBe('status')
+    expect(t.last().page).toBe(1)
+    fireEvent.click(within(await openMenu('Item code')).getByText('Group descending'))
+    expect(t.request().get('group')).toBe('status,-code')
+    const chips = screen.getByRole('group', { name: 'Active sort, grouping and search' })
+    expect(within(chips).getByText('Grouping')).toBeInTheDocument()
+    fireEvent.click(within(chips).getByText('Status'))
+    expect(t.request().get('group')).toBe('-status,-code')
+    fireEvent.click(within(chips).getByRole('button', { name: 'Remove grouping by Item code' }))
+    expect(t.request().get('group')).toBe('-status')
+    expect(within(await openMenu('Price')).queryByText('Group ascending')).toBeNull()  // not groupable
+  })
+
+  it('a fourth grouping is not offered once three are in use', async () => {
+    renderTable({ initial: { page: 1, pageSize: 50, group: [{ field: 'status' }, { field: 'code' }, { field: 'sku' }] } })
+    const menu = await openMenu('Status')
+    expect(within(menu).getByText('Group ascending').closest('[role=menuitem]')).not.toHaveAttribute('data-disabled')  // already a level
+    fireEvent.keyDown(document.activeElement!, { key: 'Escape' })
+  })
+
+  it('nested group rows show the whole-result count and collapse what is under them', async () => {
+    const data: Row[] = [
+      { id: 1, code: 'A', price: '1.10', status: 'Review', sku: 's1' }, { id: 2, code: 'A', price: '2.20', status: 'Review', sku: 's2' },
+      { id: 3, code: 'B', price: '3.30', status: 'Review', sku: 's3' }, { id: 4, code: 'C', price: '4.40', status: 'Shipped', sku: 's4' },
+    ]
+    const groups: GroupCount[] = [{ key: ['Review', 'A'], count: 12 }, { key: ['Review', 'B'], count: 1 }, { key: ['Shipped', 'C'], count: 2 }]
+    renderTable({ data, groups, truncated: true, initial: { page: 1, pageSize: 4, group: [{ field: 'status' }, { field: 'code' }] } })
+    const review = await screen.findByRole('button', { name: /Status:\s*Review\s*13/ })  // 12 + 1 over the whole result
+    expect(screen.getByRole('button', { name: /Item code:\s*A\s*12/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Status:\s*Shipped\s*2/ })).toBeInTheDocument()
+    expect(screen.getAllByRole('row')).toHaveLength(1 + 4 + 2 + 3)  // header + rows + 2 status + 3 code groups
+    fireEvent.click(review)
+    expect(review).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('1.10')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Item code:\s*A/ })).toBeNull()  // nested headers fold too
+    expect(screen.getByText('4.40')).toBeInTheDocument()
+    fireEvent.click(review)
+    expect(screen.getByText('1.10')).toBeInTheDocument()
+    expect(screen.getByText(/counts are shown for the first 500/)).toBeInTheDocument()
   })
 })

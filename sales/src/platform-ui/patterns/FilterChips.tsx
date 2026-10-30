@@ -1,7 +1,7 @@
 import { ArrowDown, ArrowUp } from 'lucide-react'
 import { Chip } from '../primitives/Chip'
 import type { FieldMeta } from '../resource/listMeta'
-import { flipSort, removeFilterAt, removeSort, type QuerySpec } from '../resource/querySpec'
+import { flipGroup, flipSort, removeFilterAt, removeGroup, removeSort, type QuerySpec } from '../resource/querySpec'
 import { filterText } from './listView'
 
 export interface FilterChipsProps {
@@ -15,16 +15,18 @@ export interface FilterChipsProps {
 }
 
 /** What shapes the list right now, one group per kind: SORTING (chip order is
- *  the priority; click flips the direction), SEARCH (one chip per filter, and
+ *  the priority; click flips the direction), GROUPING (chip order is the
+ *  nesting), SEARCH (one chip per filter, and
  *  the quick search). Nothing active → nothing rendered. */
 export function FilterChips({ spec, onSpecChange, fields, locked = [], labelOf }: FilterChipsProps) {
   const label = (f: string) => fields.get(f)?.label ?? labelOf?.(f) ?? f
   const sort = spec.sort ?? []
   const filters = (spec.filters ?? []).map((f, i) => ({ f, i }))
   const search = spec.search?.trim()
-  if (sort.length === 0 && filters.length === 0 && !search) return null
+  const group = spec.group ?? []
+  if (sort.length === 0 && group.length === 0 && filters.length === 0 && !search) return null
   return (
-    <div role="group" aria-label="Active sort and search" className="flex flex-col gap-1.5 text-xs">
+    <div role="group" aria-label="Active sort, grouping and search" className="flex flex-col gap-1.5 text-xs">
       {sort.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="w-16 font-medium uppercase tracking-wide text-neutral-400">Sorting</span>
@@ -37,6 +39,23 @@ export function FilterChips({ spec, onSpecChange, fields, locked = [], labelOf }
             >
               <span className="inline-flex items-center gap-1">
                 {label(s.field)} {s.desc ? <ArrowDown aria-label="descending" className="h-3 w-3" /> : <ArrowUp aria-label="ascending" className="h-3 w-3" />}
+              </span>
+            </Chip>
+          ))}
+        </div>
+      )}
+      {group.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="w-16 font-medium uppercase tracking-wide text-neutral-400">Grouping</span>
+          {group.map((g) => (
+            <Chip
+              key={g.field}
+              onClick={() => onSpecChange(flipGroup(spec, g.field))}
+              onRemove={() => onSpecChange(removeGroup(spec, g.field))}
+              removeLabel={`Remove grouping by ${label(g.field)}`}
+            >
+              <span className="inline-flex items-center gap-1">
+                {label(g.field)} {g.desc ? <ArrowDown aria-label="descending" className="h-3 w-3" /> : <ArrowUp aria-label="ascending" className="h-3 w-3" />}
               </span>
             </Chip>
           ))}

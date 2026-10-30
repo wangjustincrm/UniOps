@@ -17,8 +17,18 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 
-from app.platform.query import QuerySpec, query_spec
+from app.platform.query import Page, QuerySpec, query_spec
 from app.platform.services import MAX_IMPORT_BYTES, CrudService, ReadOnlyService
+
+
+def page_body(page: Page) -> dict:
+    """A list response: `{items, total}`, plus `groups` and `groups_truncated`
+    when the query grouped (design §13.19)."""
+    body: dict = {"items": [i.model_dump(mode="json") for i in page.items], "total": page.total}
+    if page.groups is not None:
+        body["groups"] = [g.model_dump(mode="json") for g in page.groups]
+        body["groups_truncated"] = page.groups_truncated
+    return body
 
 
 def read_router(
@@ -37,8 +47,7 @@ def read_router(
 
     @r.get("")
     async def list_(u: UoW, spec: Spec) -> dict:
-        page = await service_cls(u).list(spec)
-        return {"items": [i.model_dump(mode="json") for i in page.items], "total": page.total}
+        return page_body(await service_cls(u).list(spec))
 
     @r.get("/meta")
     async def meta(u: UoW) -> dict:
@@ -67,8 +76,7 @@ def crud_router(
 
     @r.get("")
     async def list_(u: UoW, spec: Spec) -> dict:
-        page = await service_cls(u).list(spec)
-        return {"items": [i.model_dump(mode="json") for i in page.items], "total": page.total}
+        return page_body(await service_cls(u).list(spec))
 
     @r.get("/meta")
     async def meta(u: UoW) -> dict:

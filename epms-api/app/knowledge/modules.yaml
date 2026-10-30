@@ -307,6 +307,9 @@ modules:
         on any field (several values of one field = any of them; several fields
         = all of them); the chips above the table show the active sorting and
         filters and remove them; the eye at the left shows or hides columns.
+        "Group ascending / descending" on a column (status, partner, kind…)
+        groups the rows under headers with the number of rows in each group;
+        a header folds its rows away; up to three levels.
 
   - key: booking
     label: Meeting Rooms

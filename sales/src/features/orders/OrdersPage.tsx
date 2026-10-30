@@ -29,6 +29,7 @@ export function OrderList({ fixed = [], title, description, emptyTitle, detailEx
       </div>
       <QueryTable<OrderRead>
         columns={orderColumns} rows={list.data?.items ?? []} total={list.data?.total ?? 0} spec={spec}
+        groups={list.data?.groups} groupsTruncated={list.data?.groups_truncated}
         resource={ordersClient} locked={(fixed ?? []).map((f) => f.field)}
         onSpecChange={(s) => setSpec({ ...s, filters: [...(fixed ?? []), ...(s.filters ?? []).filter((f) => !fixed?.some((x) => x.field === f.field))] })}
         sortable={['order_number', 'first_received_at', 'order_date', 'partner_code', 'fulfillment_status']}

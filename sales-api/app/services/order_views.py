@@ -49,6 +49,8 @@ class OrderRepository(Repository[Order]):
              "invoice_status": tuple(s.value for s in Inv), "hold_reason": HOLD_REASONS,
              "order_state": ORDER_STATES}
     default_sort = ("-order_number",)
+    groupable = ("partner_code", "source_type", "fulfillment_status", "invoice_status", "hold_reason", "order_date",
+                 "currency", "historical", "archive_suppressed", "shopify_financial_status")
     historical_column = "historical"
 
 

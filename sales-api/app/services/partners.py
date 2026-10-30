@@ -30,6 +30,7 @@ class PartnerRepository(Repository[Partner]):
     enums = {"channel": CHANNELS, "settlement_mode": SETTLEMENT_MODES, "sending_mode": SENDING_MODES,
              "invoice_method": INVOICE_METHODS}
     default_sort = ("code",)
+    groupable = ("channel", "settlement_mode", "sending_mode", "invoice_method", "dc_routing_required", "active")
 
 
 # The columns the partner rules look at (check_partner).

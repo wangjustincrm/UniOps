@@ -7,6 +7,7 @@
         sortable = {...}; filterable = {...}                   # extra or special keys, if any
         labels = {"code": "Partner code"}                      # else humanised from the name
         enums = {"channel": CHANNELS}                          # an enum field and its values
+        groupable = ("channel", "active")                      # fields rows can be grouped by
 
 The same declaration drives the list query and `/meta` (field_meta), from
 which the client builds its column menus and search panel.
@@ -28,7 +29,8 @@ from sqlalchemy import Select, and_, func, not_, or_, select, true
 from app.platform.entities import SoftDeletable
 from app.platform.errors import InvalidInput, NotFound
 from app.platform.query import (  # noqa: F401 — FilterRule, parse_bool re-exported
-    NO_VALUE_OPS, OPS_BY_KIND, RANGE_OPS, Filter, FilterRule, Page, QuerySpec, kind_for, parse_bool, parse_sort,
+    MAX_GROUPS, NO_VALUE_OPS, OPS_BY_KIND, RANGE_OPS, Filter, FilterRule, Group, Page, QuerySpec, kind_for, parse_bool,
+    parse_sort,
 )
 
 T = TypeVar("T")
@@ -48,6 +50,9 @@ class Repository(Generic[T]):
     list_fields: ClassVar[tuple[str, ...]] = ()
     labels: ClassVar[Mapping[str, str]] = {}
     enums: ClassVar[Mapping[str, Sequence[str]]] = {}
+    # Fields the list can be grouped by (sortable or filterable keys): the
+    # values that repeat — a status, a partner, a flag — not free text.
+    groupable: ClassVar[tuple[str, ...]] = ()
     default_sort: ClassVar[tuple[str, ...]] = ()  # sortable keys, "-" for descending
     # A boolean column marking rows imported as history (e.g. from the system
     # being replaced). Excluded unless asked for; never on open-work lists.
@@ -89,9 +94,38 @@ class Repository(Generic[T]):
         total = (await self.session.execute(
             select(func.count()).select_from(q.order_by(None).subquery())
         )).scalar_one()
+        groups, truncated = (await self._groups(q, spec)) if spec.group else (None, False)
         q = self._order(q, spec).offset((spec.page - 1) * spec.page_size).limit(spec.page_size)
         items = list((await self.session.execute(q)).scalars().all())
-        return Page[Any](items=items, total=total)
+        return Page[Any](items=items, total=total, groups=groups, groups_truncated=truncated)
+
+    # ── grouping (design §13.19) ─────────────────────────────────────────────
+    def _group_order(self, spec: QuerySpec) -> list[tuple[Any, Any]]:
+        """(column, ORDER BY clause) per group key. Empty values come last in
+        either direction, the same in the rows and in the counts."""
+        out = []
+        for k in spec.group:
+            if k.field not in self.groupable:
+                raise InvalidInput(
+                    "query.not_groupable", f"cannot group by {k.field!r}",
+                    {"field": k.field, "allowed": list(self.groupable)},
+                )
+            col = self.sortable.get(k.field)
+            if col is None:
+                col = self.filterable[k.field].column
+            out.append((col, (col.desc() if k.desc else col.asc()).nulls_last()))
+        return out
+
+    async def _groups(self, q: Select, spec: QuerySpec) -> tuple[list[Group], bool]:
+        """Each group of the whole filtered result and its row count — so a
+        group header shows its true size whichever page it starts on."""
+        order = self._group_order(spec)
+        cols = [c for c, _ in order]
+        gq = (q.with_only_columns(*cols, func.count()).group_by(*cols)
+              .order_by(*(o for _, o in order)).limit(MAX_GROUPS + 1))
+        rows = (await self.session.execute(gq)).all()
+        groups = [Group(key=[_json_key(v) for v in r[:-1]], count=r[-1]) for r in rows[:MAX_GROUPS]]
+        return groups, len(rows) > MAX_GROUPS
 
     async def add(self, entity: T) -> T:
         self.session.add(entity)
@@ -157,7 +191,7 @@ class Repository(Generic[T]):
             out.append({
                 "name": n, "label": cls.labels.get(n) or _humanise(n), "type": cls.field_kind(n),
                 "enum_values": list(cls.enums.get(n, ())), "filterable": n in cls.filterable,
-                "sortable": n in cls.sortable, "groupable": False, "operators": list(cls.field_ops(n)),
+                "sortable": n in cls.sortable, "groupable": n in cls.groupable, "operators": list(cls.field_ops(n)),
             })
         return out
 
@@ -209,7 +243,7 @@ class Repository(Generic[T]):
 
     def _order(self, q: Select, spec: QuerySpec) -> Select:
         keys = spec.sort or parse_sort(",".join(self.default_sort))
-        clauses = []
+        clauses = [o for _, o in self._group_order(spec)]  # grouped rows first, then the sort
         for k in keys:
             col = self.sortable.get(k.field)
             if col is None:
@@ -239,3 +273,12 @@ def _scalar(annotation: Any) -> bool:
         return True
     return len(args) == 1 and isinstance(args[0], type) and (
         args[0] in (int, float, Decimal, bool, date, datetime) or issubclass(args[0], str))
+
+
+def _json_key(v: Any) -> Any:
+    """A group key value as JSON carries it (dates ISO, decimals as text)."""
+    if isinstance(v, (datetime, date)):
+        return v.isoformat()
+    if isinstance(v, Decimal):
+        return str(v)
+    return v

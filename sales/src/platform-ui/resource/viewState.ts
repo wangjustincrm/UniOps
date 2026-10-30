@@ -10,6 +10,7 @@ export const VIEW_STATE_VERSION = 1
 export interface ViewState {
   version: typeof VIEW_STATE_VERSION
   sort: SortKey[]
+  group: SortKey[]
   filters: Filter[]
   search?: string
   pageSize: number
@@ -27,14 +28,14 @@ export const emptyLayout = (): Layout => ({ columns: [], hidden: [] })
 
 export function viewStateOf(spec: QuerySpec, layout: Layout): ViewState {
   return {
-    version: VIEW_STATE_VERSION, sort: spec.sort ?? [], filters: spec.filters ?? [],
+    version: VIEW_STATE_VERSION, sort: spec.sort ?? [], group: spec.group ?? [], filters: spec.filters ?? [],
     ...(spec.search ? { search: spec.search } : {}), pageSize: spec.pageSize, columns: layout.columns, hidden: layout.hidden,
   }
 }
 
 /** The query half of a view, on page 1. */
 export function specOf(view: ViewState): QuerySpec {
-  return { page: 1, pageSize: view.pageSize, sort: view.sort, filters: view.filters, search: view.search }
+  return { page: 1, pageSize: view.pageSize, sort: view.sort, group: view.group, filters: view.filters, search: view.search }
 }
 
 export const serializeView = (view: ViewState): string => JSON.stringify(view)
@@ -44,7 +45,7 @@ export function parseView(text: string): ViewState | null {
   try {
     const v = JSON.parse(text) as Partial<ViewState>
     if (v?.version !== VIEW_STATE_VERSION || !Array.isArray(v.sort) || !Array.isArray(v.filters)) return null
-    return { columns: [], hidden: [], pageSize: 50, ...v } as ViewState
+    return { columns: [], hidden: [], group: [], pageSize: 50, ...v } as ViewState
   } catch {
     return null
   }

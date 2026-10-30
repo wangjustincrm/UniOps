@@ -1,9 +1,12 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
-import { DataTable, type ColumnDef } from '../primitives/DataTable'
+import { DataTable, type ColumnDef, type Grouping } from '../primitives/DataTable'
+import { groupKey } from '../primitives/groupKey'
 import { Button } from '../primitives/shell'
 import { useListMeta, type FieldMeta, type ListMeta } from '../resource/listMeta'
-import { clampPageSize, sortBy, type Filter, type QuerySpec } from '../resource/querySpec'
+import {
+  MAX_GROUP_KEYS, clampPageSize, groupBy, sortBy, type Filter, type GroupCount, type QuerySpec,
+} from '../resource/querySpec'
 import { viewStateOf, type Layout, type ViewState } from '../resource/viewState'
 import { errorText } from '../resource/businessError'
 import { ColumnChooser } from './ColumnChooser'
@@ -16,6 +19,9 @@ export interface QueryTableProps<T> {
   columns: ColumnDef<T, unknown>[]
   rows: T[]
   total: number
+  /** The list response's `groups` / `groups_truncated` (when spec.group is set). */
+  groups?: GroupCount[]
+  groupsTruncated?: boolean
   /** Server-side paging / sorting / search / filters: the table only edits the spec. */
   spec: QuerySpec
   onSpecChange: (spec: QuerySpec) => void
@@ -75,8 +81,8 @@ function WithMeta<T>({ resource, ...props }: ViewProps<T> & { resource: NonNulla
 }
 
 function QueryTableView<T>({
-  columns, spec, onSpecChange, meta, locked = [], sortable = [], total, searchable, error, errorMessages,
-  toolbar, onViewChange, ...view
+  columns, spec, onSpecChange, meta, locked = [], sortable = [], total, groups, groupsTruncated, searchable, error,
+  errorMessages, toolbar, onViewChange, ...view
 }: ViewProps<T> & { meta: ListMeta | undefined }) {
   const fields = useMemo(() => new Map((meta?.fields ?? []).map((f) => [f.name, f])), [meta])
   const [hiddenOverride, setHiddenOverride] = useState<Record<string, boolean>>({})
@@ -108,11 +114,36 @@ function QueryTableView<T>({
   const panelFields = (meta?.fields ?? []).filter((f) => f.filterable && !locked.includes(f.name))
   const visible = allColumns.filter((c) => !isHidden(columnId(c)))
 
+  // Counts per group prefix (level 0…n), from the whole-result group list.
+  const grouping = useMemo<Grouping<T> | undefined>(() => {
+    const levels = spec.group ?? []
+    if (levels.length === 0 || !groups) return undefined
+    const counts = new Map<string, number>()
+    for (const g of groups) {
+      for (let i = 0; i < levels.length; i++) {
+        const k = groupKey(g.key.slice(0, i + 1))
+        counts.set(k, (counts.get(k) ?? 0) + g.count)
+      }
+    }
+    return {
+      levels: levels.map((g) => ({ id: g.field, label: fields.get(g.field)?.label ?? g.field })),
+      value: (row, id) => (row as Record<string, unknown>)[id],
+      counts,
+      truncated: groupsTruncated,
+      format: (id, v) => {
+        const f = fields.get(id)
+        if (v === null || v === undefined || v === '') return '(empty)'
+        return f ? formatValue(f, v) : String(v)
+      },
+    }
+  }, [spec.group, groups, groupsTruncated, fields])
+
   return (
     <>
       <DataTable<T>
         {...view}
         columns={visible}
+        grouping={grouping}
         errorMessage={error ? errorText(error, errorMessages) : null}
         sort={(spec.sort ?? []).map((s) => ({ id: s.field, desc: !!s.desc }))}
         sortable={sortableIds}
@@ -124,6 +155,8 @@ function QueryTableView<T>({
               field={f}
               onSearch={() => setPanel({ open: true, focus: id })}
               onSort={(desc) => change(sortBy(spec, id, desc))}
+              onGroup={(desc) => change(groupBy(spec, id, desc))}
+              canGroup={(spec.group ?? []).length < MAX_GROUP_KEYS || (spec.group ?? []).some((g) => g.field === id)}
               onHide={() => setHidden([...hidden, id])}
             />
           ) : null
