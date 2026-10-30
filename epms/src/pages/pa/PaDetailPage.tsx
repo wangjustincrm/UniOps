@@ -30,7 +30,8 @@ import {
 import { InvoiceMatchVariancePanel } from '@/components/invoices/InvoiceMatchVariancePanel'
 import { useConfig } from '@/hooks/useConfig'
 import type { ApiPa } from '@/services/pa'
-import { historyLine, isSkipped } from '@/lib/approvalHistory'
+import { historyLine } from '@/lib/approvalHistory'
+import { approvalNodeStates } from '@/lib/approvalTimeline'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
@@ -59,7 +60,7 @@ function TimelineStep({
   label: string; actor?: string; date?: string;
   /** `date` is a calendar date with no time of day (the payment date). */
   dateOnly?: boolean;
-  status: 'done' | 'active' | 'pending' | 'skipped';
+  status: 'done' | 'active' | 'pending' | 'skipped' | 'returned' | 'rejected';
   note?: string;
 }) {
   const isAutoApproved = note?.includes('Auto-approved')
@@ -72,6 +73,8 @@ function TimelineStep({
           'bg-primary-600 ring-4 ring-primary-100': status === 'active',
           'bg-neutral-200':  status === 'pending',
           'border-2 border-dashed border-neutral-300 bg-white': status === 'skipped',
+          'bg-warning-500': status === 'returned',
+          'bg-danger-600': status === 'rejected',
         })}>
           {status === 'done'
             ? <CheckCircle2 className="h-4 w-4 text-white" />
@@ -79,7 +82,11 @@ function TimelineStep({
               ? <Clock className="h-3.5 w-3.5 text-white animate-pulse" />
               : status === 'skipped'
                 ? <SkipForward className="h-3.5 w-3.5 text-neutral-300" />
-                : <div className="h-2 w-2 rounded-full bg-neutral-400" />}
+                : status === 'returned'
+                  ? <RotateCcw className="h-3.5 w-3.5 text-white" />
+                  : status === 'rejected'
+                    ? <X className="h-3.5 w-3.5 text-white" />
+                    : <div className="h-2 w-2 rounded-full bg-neutral-400" />}
         </div>
         <div className="w-px flex-1 bg-neutral-200 mt-1" />
       </div>
@@ -96,6 +103,16 @@ function TimelineStep({
             Auto-skipped
           </span>
         )}
+        {status === 'returned' && (
+          <span className="inline-flex items-center mt-1 rounded-full bg-warning-50 px-2 py-0.5 text-[10px] font-medium text-warning-700">
+            Returned
+          </span>
+        )}
+        {status === 'rejected' && (
+          <span className="inline-flex items-center mt-1 rounded-full bg-danger-50 px-2 py-0.5 text-[10px] font-medium text-danger-700">
+            Rejected
+          </span>
+        )}
         {/* Quoted for a real comment somebody typed; unquoted for a skip
             reason, which is the system explaining itself, not a person. */}
         {note && !isAutoApproved && (
@@ -105,6 +122,9 @@ function TimelineStep({
         )}
         {status === 'active' && !date && (
           <p className="text-xs text-primary-600 mt-0.5 font-medium">Awaiting action</p>
+        )}
+        {status === 'returned' && (
+          <p className="text-xs text-neutral-500 mt-1">Returned for revision — waiting for the requester to resubmit</p>
         )}
       </div>
     </div>
@@ -503,14 +523,13 @@ export default function PaDetailPage() {
       { onSuccess: () => setProcessOpen(false) },
     )
 
-  // Build timeline steps
-  // Index approval events by step_idx for quick lookup
-  const approveEventByStep = (events ?? [])
-    .filter((e) => e.action === 'approve')
-    .reduce<Record<number, typeof events[0]>>((acc, e) => {
-      if (!(e.step_idx in acc)) acc[e.step_idx] = e
-      return acc
-    }, {})
+  // Build timeline steps. Step states come from the reading shared with the
+  // PR / PO / Agreement timelines: a returned PA shows the steps it already
+  // passed as approved and marks the step that returned it, a rejected one
+  // marks the rejecting step (ISS-0088), and the open step names who holds it
+  // (ISS-0085).
+  const nodeStates = approvalNodeStates(
+    wfNodes.length, pa.status, stepIdx, events ?? [], ['approved', 'processed'])
   const submitEvent = (events ?? []).find((e) => e.action === 'submit')
 
   const steps = [
@@ -524,25 +543,31 @@ export default function PaDetailPage() {
       note: undefined as string | undefined,
     },
     ...wfNodes.map((node, i) => {
-      const isDone = ['approved', 'processed'].includes(pa.status) || i < stepIdx
-      const isActive = !isDone && i === stepIdx && ['submitted', 'in_review'].includes(pa.status)
-      const evt = approveEventByStep[i]
-      const isAutoSkipped = isSkipped(evt)
+      const { status: st, event: evt } = nodeStates[i]
+      const isAutoSkipped = st === 'skipped'
+      const isDecision = st === 'returned' || st === 'rejected'
       return {
         label: node.label,
-        actor: isAutoSkipped ? undefined : evt?.actor_name ?? undefined,
+        actor: isAutoSkipped ? undefined
+          : st === 'current' ? pa.current_step?.approver_name ?? undefined
+          : evt?.actor_name ?? undefined,
         date: isAutoSkipped ? undefined : evt?.created_at ?? undefined,
         // A skipped step shows WHY it was skipped. The tag alone says a level
         // was bypassed without saying on what grounds, which for a payment
         // approval is the one thing a reader actually needs. skip_reason is
         // the server's reading of the comment — it also handles the
-        // "Re-synced (config change): Auto-skipped (...)" form.
-        note: evt?.kind === 'same_approver' || evt?.kind === 'imported'
-          ? 'Auto-approved (same approver)'
-          : isAutoSkipped
-            ? evt?.skip_reason || undefined
-            : undefined,
-        status: isAutoSkipped ? 'skipped' as const : isDone ? 'done' as const : isActive ? 'active' as const : 'pending' as const,
+        // "Re-synced (config change): Auto-skipped (...)" form. A return or
+        // reject shows the decider's comment.
+        note: isDecision
+          ? evt?.comment ?? undefined
+          : evt?.kind === 'same_approver' || evt?.kind === 'imported'
+            ? 'Auto-approved (same approver)'
+            : isAutoSkipped
+              ? evt?.skip_reason || undefined
+              : undefined,
+        status: st === 'completed' ? 'done' as const
+          : st === 'current' ? 'active' as const
+          : st,
       }
     }),
     {
