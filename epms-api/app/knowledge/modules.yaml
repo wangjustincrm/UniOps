@@ -345,9 +345,9 @@ modules:
       - budget_plan_vs_actual
     notes:
       - >-
-        You meet this without opening it — the budget widget on the Create PR
-        form is this module, and an over-budget request is stopped or needs
-        justification because of it.
+        You meet this without opening it — the budget widget on the New PR
+        and Edit PR forms is this module, and an over-budget request is stopped
+        or needs justification because of it.
       - >-
         The Plan vs Actual grid stacks two figures in every cell — plan and NC
         posted (optionally including vouchers NC has not tallied yet). Ask about

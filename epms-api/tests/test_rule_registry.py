@@ -1075,3 +1075,12 @@ def test_currency_lists_follow_currency_settings():
         src = _src(f"epms/src/pages/{page}")
         assert "enabledCurrencyOptions(config" in src, page
         assert "CURRENCIES.filter" not in src, page
+
+
+def test_the_budget_panel_is_on_new_and_edit_pr():
+    """modules.yaml budget note (ISS-0142, OBG-001): Edit PR shows the same
+    budget panel as New PR, fed by the form's own amount before saving."""
+    for page in ("PrCreatePage.tsx", "PrEditPage.tsx"):
+        src = _src(f"epms/src/pages/pr/{page}")
+        assert "<BudgetBalanceWidget" in src, page
+        assert "thisAmount={estimatedAmount}" in src, page
