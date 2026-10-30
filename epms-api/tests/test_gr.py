@@ -116,6 +116,17 @@ async def test_create_gr(admin_client, test_engine):
 
 
 @pytest.mark.asyncio
+async def test_create_gr_keeps_the_entered_title_and_received_by(admin_client, test_engine):
+    """ISS-0091 / GR-P-002: the New GR form now sends a typed title and a
+    free-text Received By; the API keeps both instead of the PO title / creator."""
+    po, _ = await _make_issued_po(admin_client, test_engine, "VND-GR-CREATE-02")
+    gr = await _create_gr(admin_client, po["id"], title="Pump delivery, 2nd truck",
+                          received_by="Wanda Warehouse")
+    assert gr["title"] == "Pump delivery, 2nd truck"
+    assert gr["received_by"] == "Wanda Warehouse"
+
+
+@pytest.mark.asyncio
 async def test_create_gr_with_negative_discount_line(admin_client, test_engine):
     """PO 放宽了负单价折扣行(cad9d17),GR 镜像同一 PO 行时必须同样放行,
     否则仓库对带折扣行的 PO 无法收货(生产复现:POST /gr 422)。

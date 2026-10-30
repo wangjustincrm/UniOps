@@ -106,6 +106,11 @@ export default function GrCreatePage() {
       : null
 
   const [receivedAt, setReceivedAt] = useState(new Date().toISOString().slice(0, 10))
+  // GR-P-002: title and received by are the user's to enter (ISS-0091). They
+  // start from the PO title and the signed-in user, who is often not the
+  // person who physically received the goods.
+  const [title, setTitle] = useState('')
+  const [receivedBy, setReceivedBy] = useState('')
   const [storageLocation, setStorageLocation] = useState('')
   const [notes, setNotes] = useState('')
   const [lineItems, setLineItems] = useState<FormGrLineItem[]>([])
@@ -163,6 +168,8 @@ export default function GrCreatePage() {
       })
     )
     setOverReceiptReason('')
+    setTitle(selectedPo.title)
+    setReceivedBy((prev) => prev || user?.name || '')
     if (selectedPo.delivery_address) setStorageLocation(selectedPo.delivery_address)
   }, [selectedPoId, selectedPo, openQtyQuery.isFetched, openQtyQuery.data])
 
@@ -203,6 +210,7 @@ export default function GrCreatePage() {
   if (submitted) {
     if (!selectedPo) errors.push('Select a Purchase Order')
     if (!receivedAt) errors.push('Enter the receipt date')
+    if (!title.trim()) errors.push('Enter a title')
     if (!storageLocation.trim() && selectedPo && isPhysicalGr(selectedPo.type)) errors.push('Enter a storage location')
     if (receivedLines.length === 0) errors.push('At least one line must have a received quantity greater than 0')
     lineItems.forEach((l, i) => {
@@ -222,6 +230,7 @@ export default function GrCreatePage() {
 
     const errs: string[] = []
     if (!receivedAt) errs.push('date')
+    if (!title.trim()) errs.push('title')
     if (!storageLocation.trim() && isPhysicalGr(selectedPo.type)) errs.push('location')
     if (receivedLines.length === 0) errs.push('noLines')
     lineItems.forEach((l, i) => {
@@ -241,11 +250,11 @@ export default function GrCreatePage() {
       const newGr = await createGr.mutateAsync({
         // gr_type and vendor_id are derived from the PO server-side; line_total is
         // recomputed there too — send only the fields the user actually controls.
-        title: selectedPo.title,
+        title: title.trim(),
         currency: selectedPo.currency,
         po_id: selectedPo.id,
         storage_location: storageLocation.trim() || undefined,
-        received_by: user?.name,
+        received_by: receivedBy.trim() || undefined,
         line_items: receivedLines.map((l) => ({
           po_line_id: l.po_line_id,
           description: l.description,
@@ -416,6 +425,34 @@ export default function GrCreatePage() {
           <div className="rounded-xl border border-neutral-200 bg-white p-6 flex flex-col gap-4">
             <h2 className="text-base font-semibold text-neutral-900">Receipt Details</h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <FormField
+                label="Title"
+                required
+                error={submitted && !title.trim() ? 'Required' : ''}
+              >
+                <input
+                  type="text"
+                  maxLength={255}
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                />
+              </FormField>
+              <FormField
+                label="Received By"
+                hint={isPhysicalGr(selectedPo.type)
+                  ? 'The person who physically received the goods — left empty, it is you'
+                  : 'The person recording the service — left empty, it is you'}
+              >
+                <input
+                  type="text"
+                  maxLength={200}
+                  placeholder={user?.name ?? ''}
+                  value={receivedBy}
+                  onChange={(e) => setReceivedBy(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                />
+              </FormField>
               <FormField
                 label="Receipt Date"
                 required
