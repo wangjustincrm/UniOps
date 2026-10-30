@@ -174,6 +174,10 @@ async def get_pr(pr_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
     scope = await build_scope(db, user)
     if not await is_pr_visible(db, pr_id, scope):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PR not found")
+    # The Approval Timeline names who the current step is waiting on (and any
+    # stand-in) from this — the same open-task reading as the list's Status
+    # cell, so the two cannot disagree (ISS-0085).
+    await enrich_current_step(db, "pr", [pr])
     return pr
 
 

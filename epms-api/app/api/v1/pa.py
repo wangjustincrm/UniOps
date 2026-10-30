@@ -743,6 +743,8 @@ async def get_pa(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
         from app.crud.freight import cost_allocations
         pa.cost_allocations = await cost_allocations(db, pa.id)
     await pa_crud.attach_direct_labels(db, [pa])
+    # Who the current approval step is waiting on — see get_pr (ISS-0085).
+    await enrich_current_step(db, "pa", [pa])
     return pa
 
 
