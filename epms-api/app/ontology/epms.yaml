@@ -451,8 +451,11 @@ entities:
       status:
         kind: enum
         label: "Status"
+        # discrepancy: a collected GR flagged by hand (GR-C-003, Flag
+        # Discrepancy on GR Detail); rejected: a service GR rejected at
+        # confirmation (GR-S-005).
         values: [pending_ack, acknowledged, collection_pending, collected,
-                 confirmed, cancelled]
+                 confirmed, discrepancy, rejected, cancelled]
       po_number: {kind: text, doc_number: PO, label: "PO number"}
       pr_number: {kind: text, doc_number: PR, label: "PR number"}
       vendor_name: {kind: text, label: "Vendor name"}
