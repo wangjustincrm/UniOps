@@ -119,6 +119,24 @@ export function isEpmsInboxTask(task: { document_type: string }): boolean {
   return EPMS_INBOX_DOC_TYPES.has(task.document_type.toLowerCase())
 }
 
+// The marker approval-api writes at the head of the description of an
+// over-budget pre-approval task (engine._create_approve_task, OBG-002):
+// "⚠️ OVER-BUDGET PRE-APPROVAL — PR amount: …\nJustification: …".
+const OVER_BUDGET_MARKER = 'OVER-BUDGET PRE-APPROVAL'
+
+/** For an over-budget pre-approval task, the requester's justification
+ *  ('' when none was given); null for every other task. The engine puts no
+ *  structured flag on the task, only this description (ISS-0126). */
+export function overBudgetJustification(
+  task: { type: string; description?: string | null },
+): string | null {
+  if (task.type !== 'approve_pr' || !task.description?.includes(OVER_BUDGET_MARKER)) return null
+  // Everything after the label: a justification may run over several lines.
+  const at = task.description.indexOf('Justification:')
+  const text = at < 0 ? '' : task.description.slice(at + 'Justification:'.length).trim()
+  return text === '(no justification provided)' ? '' : text
+}
+
 // Portal origin — NC sync errors that are not a missing vendor are resolved in
 // Portal's Admin Panel (EPMS has no NC sync page of its own).
 const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'

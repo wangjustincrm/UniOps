@@ -194,3 +194,29 @@ describe('isEpmsInboxTask — EPMS inbox shows EPMS work only', () => {
     }
   })
 })
+
+describe('overBudgetJustification (ISS-0126)', () => {
+  it('reads the justification off an over-budget pre-approval task', async () => {
+    const { overBudgetJustification } = await import('./taskTypes')
+    expect(overBudgetJustification({
+      type: 'approve_pr',
+      description: '⚠️ OVER-BUDGET PRE-APPROVAL — PR amount: 60.00\nJustification: Needed for\nthe line 3 repair',
+    })).toBe('Needed for\nthe line 3 repair')
+  })
+
+  it('an over-budget task without a justification is still recognised', async () => {
+    const { overBudgetJustification } = await import('./taskTypes')
+    expect(overBudgetJustification({
+      type: 'approve_pr',
+      description: '⚠️ OVER-BUDGET PRE-APPROVAL — PR amount: 60.00\nJustification: (no justification provided)',
+    })).toBe('')
+  })
+
+  it('a plain PR approval is not one', async () => {
+    const { overBudgetJustification } = await import('./taskTypes')
+    expect(overBudgetJustification({
+      type: 'approve_pr', description: 'Step 1/3: Department Manager approval required.',
+    })).toBeNull()
+    expect(overBudgetJustification({ type: 'approve_po', description: 'OVER-BUDGET PRE-APPROVAL' })).toBeNull()
+  })
+})
