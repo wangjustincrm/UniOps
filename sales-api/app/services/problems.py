@@ -13,6 +13,12 @@ UNREADABLE_FILE = "unreadable_file"      # entity: document id (FR-OB-70)
 SFTP_FETCH_FAILED = "sftp_fetch_failed"  # entity: connection id (FR-OB-51)
 SFTP_AUTH_FAILED = "sftp_auth_failed"    # entity: connection id (FR-OB-50, AC-OB-48)
 FILE_NOT_STORED = "file_not_stored"      # entity: connection id (FR-OB-74)
+# P3 (orders and the Shopify channel)
+ORDER_REVIEW = "order_review"            # entity: order id (FR-OB-15, AC-OB-13)
+ORDER_ARCHIVED = "order_archived"        # entity: order id (FR-OB-03d)
+SHOPIFY_FETCH_FAILED = "shopify_fetch_failed"  # entity: connection id (FR-OB-51)
+SHOPIFY_AUTH_FAILED = "shopify_auth_failed"    # entity: connection id (FR-OB-50)
+ORDER_FILE_UNREADABLE = "order_file_bad"       # entity: document id (FR-OB-70)
 
 
 async def _operator(session):

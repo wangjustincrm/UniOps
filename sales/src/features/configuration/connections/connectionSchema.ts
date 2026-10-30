@@ -28,10 +28,14 @@ const fields = {
   mode: choice(MODES),
   secret_name: z.string().trim().max(100).refine((v) => v === '' || SECRET.test(v), SECRET_NAME_MESSAGE).nullable().optional(),
   host_key: z.string().trim().refine((v) => v === '' || KEY_LINE.test(v), HOST_KEY_MESSAGE).nullable().optional(),
+  api_version: z.string().trim().refine((v) => v === '' || /^\d{4}-\d{2}$/.test(v), 'A version like 2026-04').nullable().optional(),
+  page_size: z.number().int().min(1, 'From 1').max(250, 'At most 250').nullable().optional(),
+  order_number_cutoff: z.number().int().min(0).nullable().optional(),
+  partner_code: optional(50),
   active: z.boolean(),
 }
 
-type Values = { kind?: string; after_read?: string; processed_folder?: string | null; host_key?: string | null } & Record<string, unknown>
+type Values = { kind?: string; after_read?: string; processed_folder?: string | null; host_key?: string | null; host?: string | null; partner_code?: string | null } & Record<string, unknown>
 const SFTP_REQUIRED = ['host', 'username', 'inbound_folder', 'secret_name'] as const
 
 function rules(v: Values, ctx: z.RefinementCtx) {
@@ -40,8 +44,16 @@ function rules(v: Values, ctx: z.RefinementCtx) {
       if (!String(v[f] ?? '').trim()) ctx.addIssue({ code: 'custom', path: [f], message: 'Required for an SFTP connection' })
     }
   }
-  if (v.kind === 'SHOPIFY' && String(v.host_key ?? '').trim()) {
-    ctx.addIssue({ code: 'custom', path: ['host_key'], message: 'host_key must be empty for a SHOPIFY connection' })
+  if (v.kind === 'SHOPIFY') {
+    if (String(v.host_key ?? '').trim()) ctx.addIssue({ code: 'custom', path: ['host_key'], message: 'host_key must be empty for a SHOPIFY connection' })
+    if (!String(v.host ?? '').trim().toLowerCase().endsWith('.myshopify.com')) {
+      ctx.addIssue({ code: 'custom', path: ['host'], message: "The store's <name>.myshopify.com address" })
+    }
+    for (const f of ['api_version', 'partner_code'] as const) {
+      if (!String(v[f] ?? '').trim()) ctx.addIssue({ code: 'custom', path: [f], message: 'Required for a SHOPIFY connection' })
+    }
+  } else if (String(v.partner_code ?? '').trim()) {
+    ctx.addIssue({ code: 'custom', path: ['partner_code'], message: "Only for SHOPIFY; an SFTP channel's partner comes from each file" })
   }
   if (v.after_read === 'MOVE' && !String(v.processed_folder ?? '').trim()) {
     ctx.addIssue({ code: 'custom', path: ['processed_folder'], message: 'Required when after-read is MOVE' })
@@ -70,14 +82,19 @@ export const connectionFields: FieldSpec[] = [
     hint: 'A file is read once its modified time is at least this old.' },
   { name: 'mode', label: 'Mode', type: 'select', options: options(MODES), required: true },
   { name: 'secret_name', label: 'Secret name', hint: 'The server environment variable that holds the password. The password itself is never entered here.' },
-  { name: 'host_key', label: 'Pinned host key', type: 'textarea', hint: 'Set by "Pin this key" after a connection test.' },
+  { name: 'host_key', label: 'Pinned host key', type: 'textarea', hint: 'SFTP only. Set by "Pin this key" after a connection test.' },
+  { name: 'api_version', label: 'Shopify API version', placeholder: '2026-04', hint: 'Shopify only.' },
+  { name: 'page_size', label: 'Orders per page', type: 'number', hint: 'Shopify only; at most 250 (default 50).' },
+  { name: 'order_number_cutoff', label: 'Order number cut-off', type: 'number', hint: 'Shopify only: orders numbered below it are historical and never sent (FR-OB-17).' },
+  { name: 'partner_code', label: 'Partner', hint: "Shopify only: whose orders the store's are." },
   { name: 'active', label: 'Active', type: 'checkbox' },
 ]
 
 export const connectionEmptyValues: Record<string, unknown> = {
   name: '', kind: 'SFTP', host: '', port: 22, username: '', inbound_folder: '', outbound_folder: '', processed_folder: '',
   error_folder: '', test_inbound_folder: '', test_outbound_folder: '', after_read: 'LEAVE', stable_seconds: 60,
-  mode: 'TEST', secret_name: '', host_key: '', active: true,
+  mode: 'TEST', secret_name: '', host_key: '', api_version: '', page_size: null, order_number_cutoff: null, partner_code: '',
+  active: true,
 }
 
 export function connectionToFormValues(c: ConnectionRead): Record<string, unknown> {

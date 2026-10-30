@@ -23,6 +23,21 @@ def check_connection(values: dict[str, Any]) -> None:
                            "host_key must be empty for a SHOPIFY connection. Passwords and tokens never go in "
                            "the CSV; put them in the server environment under secret_name.",
                            {"field": "host_key"})
+    # A Shopify channel names its store, API version and partner (option 1,
+    # 2026-10-29); an SFTP channel takes its partner from each file.
+    if values.get("kind") == "SHOPIFY":
+        host = str(values.get("host") or "").strip().lower()
+        if not host.endswith(".myshopify.com"):
+            raise InvalidInput("connection.shopify_host", "host must be the store's <name>.myshopify.com address",
+                               {"field": "host"})
+        for field in ("api_version", "partner_code"):
+            if not values.get(field):
+                raise InvalidInput("connection.field_required", f"{field} is required for a SHOPIFY connection",
+                                   {"field": field})
+    elif values.get("partner_code"):
+        raise InvalidInput("connection.partner_shopify_only",
+                           "partner_code is for SHOPIFY connections only; an SFTP channel's partner comes from each file",
+                           {"field": "partner_code"})
     # After-read Move needs somewhere to move to (FR-OB-74).
     if values.get("after_read") == "MOVE" and not values.get("processed_folder"):
         raise InvalidInput("connection.field_required", "a processed folder is required when after-read is MOVE",

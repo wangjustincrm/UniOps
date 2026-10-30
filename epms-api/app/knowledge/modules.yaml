@@ -274,12 +274,33 @@ modules:
       The sales operations team. Each part — orders, files, transfers,
       invoices, configuration — has its own permission; reading needs one too.
     typical:
-      - Open the Sales module from the Portal
+      - Look up an order from the Shopify store or a retailer and see its lines in EA, where it came from and what happened to it
+      - Work the Review list — orders held because an item, unit, case pack, partner or DC route needs a decision
+      - Enter a manual order (sample, phone order, staff purchase) as a draft and submit it
+      - Maintain the partners, items with their units, retailer part numbers and DC routing, also by CSV
+      - Set up the SFTP and Shopify connections, test them, and see the files received and each run's report
     notes:
       - >-
-        Sales is being built in phases. Until a part goes live, that work is
-        still done in Zoho, and this module does not show it yet — so if an
-        order is not in Sales, look in Zoho before concluding it is missing.
+        Sales is being built in phases. Orders are read from Shopify and from
+        retailer 850s, but Sales does not send anything to the warehouse yet:
+        940s, shipments and invoices still run in Zoho until those parts go
+        live — so for a shipment or an invoice, look in Zoho.
+      - >-
+        Passwords and tokens are never entered in Sales: a connection only
+        names the server setting that holds them.
+      - >-
+        A Shopify line's unit comes from its variant title: a title containing
+        one of the item's unit names, or a Shopify title listed after that unit
+        in the Item Master (e.g. 2PACK=2 [2-Can, 2-Pack]), is that unit; any
+        other title ("Bib", "Can", "Default Title") is EA. A title that looks
+        like a pack no unit matches ("Box of 12", "3 x Can") waits in Review,
+        so a new pack size never ships as one each.
+      - >-
+        A Shopify line finds its item by SKU, then by the product's barcode in
+        Shopify against the item's GTIN, then UPC (leading zeros and the
+        12/13/14-digit forms do not matter). The item code is not used. A line
+        that matches nothing, or whose barcode Shopify could not return, waits
+        in Review — fix the item or the barcode, then Re-check.
 
   - key: booking
     label: Meeting Rooms

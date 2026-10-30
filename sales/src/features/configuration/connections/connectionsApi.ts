@@ -31,6 +31,12 @@ export interface ConnectionRead {
   host_key: string | null
   auth_failed_at: string | null
   auth_failed_reason: string | null
+  api_version: string | null
+  /** Shopify: where the next pull starts (inclusive); written by the system. */
+  cursor_updated_at: string | null
+  page_size: number | null
+  order_number_cutoff: number | null
+  partner_code: string | null
   active: boolean
   version: number
   created_at: string
@@ -39,7 +45,7 @@ export interface ConnectionRead {
   updated_by_name: string | null
 }
 
-type Editable = Omit<ConnectionRead, 'id' | 'version' | 'secret_present' | 'auth_failed_at' | 'auth_failed_reason'
+type Editable = Omit<ConnectionRead, 'id' | 'version' | 'secret_present' | 'auth_failed_at' | 'auth_failed_reason' | 'cursor_updated_at'
   | 'created_at' | 'created_by_name' | 'updated_at' | 'updated_by_name'>
 export type ConnectionCreate = Editable
 export type ConnectionUpdate = Omit<Editable, 'name'>
@@ -48,6 +54,7 @@ export interface ConnectionTest {
   host_key: { line: string; fingerprint: string; pinned: boolean; matches: boolean } | null
   folders: { folder: string; ok: boolean; files: number | null; error: string | null }[]
   error: string | null
+  shop?: { name?: string; domain?: string; myshopify_domain?: string; currency?: string; iana_timezone?: string } | null
 }
 
 export const CONNECTIONS_PATH = '/config/connections'
@@ -55,6 +62,8 @@ export const connectionsClient = createResourceClient<ConnectionRead, Connection
 export const fetchConnectionAudit = (id: number) => api.get<AuditEntry[]>(`${CONNECTIONS_PATH}/${id}/audit`)
 export const testConnection = (id: number) => api.post<ConnectionTest>(`${CONNECTIONS_PATH}/${id}/test`)
 export const clearAuthLatch = (id: number) => api.post<ConnectionRead>(`${CONNECTIONS_PATH}/${id}/clear-auth-latch`)
+export const resetCursor = (id: number, cursor: string | null) =>
+  api.post<ConnectionRead>(`${CONNECTIONS_PATH}/${id}/reset-cursor`, { cursor_updated_at: cursor })
 export const pinHostKey = (c: ConnectionRead, line: string) =>
   connectionsClient.update(c.id, { host_key: line }, c.version)
 export const downloadConnections = (path: string) => api.download(path, 'connections.csv')

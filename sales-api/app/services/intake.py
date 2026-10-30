@@ -84,12 +84,19 @@ class ConnectionSnapshot:
     after_read: str
     stable_seconds: int
     auth_failed_at: datetime | None
+    # Shopify (sales04)
+    api_version: str | None = None
+    cursor_updated_at: datetime | None = None
+    page_size: int | None = None
+    order_number_cutoff: int | None = None
+    partner_code: str | None = None
 
     @classmethod
     def of(cls, c: Connection) -> ConnectionSnapshot:
         return cls(c.id, c.name, c.kind, c.host, c.port, c.username, c.secret_name, c.host_key, c.mode,
                    c.inbound_folder, c.processed_folder, c.error_folder, c.after_read, c.stable_seconds,
-                   c.auth_failed_at)
+                   c.auth_failed_at, c.api_version, c.cursor_updated_at, c.page_size, c.order_number_cutoff,
+                   c.partner_code)
 
 
 class Intake:

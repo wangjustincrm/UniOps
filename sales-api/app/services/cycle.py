@@ -41,18 +41,22 @@ class SalesCycle(ScheduledJob):
     name = "sales_cycle"
     lock_key = CYCLE_LOCK_KEY
 
-    def __init__(self, *, intake: Intake, outbox_worker, **kw) -> None:
+    def __init__(self, *, intake: Intake, outbox_worker, shopify_intake=None, edi_intake=None, **kw) -> None:
         super().__init__(stale_after=STALE_AFTER, **kw)
         self.intake = intake
+        self.shopify_intake = shopify_intake
+        self.edi_intake = edi_intake
         self.outbox_worker = outbox_worker
 
     async def run_once(self, run) -> RunSummary:
         async with self.uow_factory(SYSTEM_ACTOR) as uow:
-            conns = [ConnectionSnapshot.of(c) for c in (await uow.session.execute(
-                select(Connection).where(Connection.active.is_(True), Connection.kind == "SFTP").order_by(Connection.name)
+            active = [ConnectionSnapshot.of(c) for c in (await uow.session.execute(
+                select(Connection).where(Connection.active.is_(True)).order_by(Connection.name)
             )).scalars()]
+        conns = [c for c in active if c.kind == "SFTP"]
+        stores = [c for c in active if c.kind == "SHOPIFY"]
         await oplog.write_alone(self.uow_factory, "INFO", "cycle", f"cycle started ({run.trigger}): "
-                                f"{len(conns)} SFTP connection(s)", run_id=run.id)
+                                f"{len(conns)} SFTP connection(s), {len(stores)} Shopify store(s)", run_id=run.id)
         per: dict[str, dict] = {}
         trouble = 0
         for c in conns:
@@ -64,7 +68,20 @@ class SalesCycle(ScheduledJob):
                 r = PassReport(status="list_failed")
             per[c.name] = r.as_dict()
             trouble += r.failed + (r.status == "list_failed")
+        # Step 1 for Shopify, then step 2: the stored 850s become orders (§4.2).
+        shopify: dict[str, dict] = {}
+        for c in stores if self.shopify_intake else []:
+            try:
+                r = await self.shopify_intake.run_pass(c, run_id=run.id)
+                shopify[c.name] = r.as_dict()
+                trouble += r.failed + (r.status in ("fetch_failed", "not_advanced"))
+            except Exception as e:  # noqa: BLE001 — never expected; the pass catches its own failures
+                await oplog.write_alone(self.uow_factory, "ERROR", "cycle", f"{c.name}: Shopify pass failed: {e}",
+                                        run_id=run.id, connection_id=c.id)
+                trouble += 1
+        edi = await self.edi_intake.run_pass(run_id=run.id) if self.edi_intake else {}
+        trouble += edi.get("failed", 0)
         outbox = asdict(await self.outbox_worker.run_once())
-        counts = {"connections": per, "outbox": outbox}
+        counts = {"connections": per, "shopify": shopify, "edi_850": edi, "outbox": outbox}
         await oplog.write_alone(self.uow_factory, "INFO", "cycle", "cycle finished", run_id=run.id, context=counts)
         return RunSummary(counts=counts, partial=trouble > 0)

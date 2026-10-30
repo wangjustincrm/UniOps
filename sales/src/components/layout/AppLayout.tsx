@@ -3,7 +3,7 @@ import { NavLink, useLocation, Routes, Route, Navigate } from 'react-router-dom'
 import { TabStoreProvider, TabBar, TabHost, TabRouterSync, useTabStore } from '@uniops/shell'
 import { moduleRoutes } from '@/app/routes'
 import {
-  Home, Building2, Plug, FileText, Activity,
+  Home, Building2, Plug, FileText, Activity, ShoppingCart, AlertTriangle, PenLine, Package, Tags, Route as RouteIcon,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -37,10 +37,16 @@ interface NavItem { label: string; href: string; icon: typeof Home; perm: string
 
 const NAV: NavItem[] = [
   { label: 'Home', href: '/home', icon: Home, perm: MODULE_PERMS[0], section: 'Sales' },
+  { label: 'Orders', href: '/orders', icon: ShoppingCart, perm: 'sales.read', section: 'Orders' },
+  { label: 'Review', href: '/review', icon: AlertTriangle, perm: 'sales.order.operate', section: 'Orders' },
+  { label: 'Manual orders', href: '/orders/manual', icon: PenLine, perm: 'sales.order.operate', section: 'Orders' },
   { label: 'Documents', href: '/documents', icon: FileText, perm: 'sales.read', section: 'Operations' },
   { label: 'Runs and log', href: '/runs', icon: Activity, perm: 'sales.read', section: 'Operations' },
   { label: 'Partners', href: '/config/partners', icon: Building2, perm: 'sales.read', section: 'Configuration' },
   { label: 'Connections', href: '/config/connections', icon: Plug, perm: 'sales.read', section: 'Configuration' },
+  { label: 'Items', href: '/config/items', icon: Package, perm: 'sales.read', section: 'Configuration' },
+  { label: 'Partner codes', href: '/config/partner-codes', icon: Tags, perm: 'sales.read', section: 'Configuration' },
+  { label: 'DC routing', href: '/config/dc-routing', icon: RouteIcon, perm: 'sales.read', section: 'Configuration' },
 ]
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────

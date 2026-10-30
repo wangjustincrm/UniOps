@@ -126,6 +126,9 @@ def test_the_listed_additions_are_exactly_the_agreed_ones():
     assert st.FULFILLMENT_ADDITIONS == {
         F.GENERATED_940: {F.CANCELLED},
         F.TIMEOUT_940: {F.ACCEPTED_940, F.REJECTED_940, F.SHIPPED},
+        F.PENDING: {F.REVIEW},           # FR-OB-15 + FR-OB-16 (2026-10-29)
+        F.PAYMENT_HOLD: {F.REVIEW},      # FR-OB-15 + FR-OB-16
+        F.REVIEW: {F.PAYMENT_HOLD},      # FR-OB-12
     }
     assert st.TRANSFER_ADDITIONS == {st.Transfer.FAILED: {st.Transfer.GENERATED_943, st.Transfer.CANCELLED}}
     assert st.ACK_ADDITIONS == {st.Ack.TIMEOUT: {st.Ack.ACCEPTED, st.Ack.REJECTED, st.Ack.ACCEPTED_BY_945}}

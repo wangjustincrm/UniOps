@@ -19,7 +19,7 @@ from sqlalchemy import (
     UniqueConstraint, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.domain.config import (
@@ -74,6 +74,8 @@ class Item(Audited, Versioned, Deactivatable, Base):
     gtin: Mapped[str | None] = mapped_column(String(50), nullable=True)
     gross_weight_lb_per_ea: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     warehouse_held: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Edited as part of the item (P3); loaded with it.
+    units: Mapped[list[ItemUnit]] = relationship(lazy="selectin", order_by="ItemUnit.id")
 
 
 class ItemUnit(Audited, Versioned, Deactivatable, Base):
@@ -89,6 +91,9 @@ class ItemUnit(Audited, Versioned, Deactivatable, Base):
         String(50), ForeignKey("sales_items.item_code"), nullable=False)
     unit: Mapped[str] = mapped_column(String(20), nullable=False)
     factor_ea: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
+    # Comma list of Shopify variant titles that mean this unit (PRD A.11), on
+    # top of the unit's own name — e.g. "2-Can, 2-Pack" for 2PACK.
+    shopify_titles: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
 class ItemPartnerCode(Audited, Versioned, Base):
@@ -136,6 +141,10 @@ class Connection(Audited, Versioned, Deactivatable, Base):
         one_of("kind", CONNECTION_KINDS, "ck_sales_connections_kind"),
         one_of("after_read", AFTER_READ, "ck_sales_connections_after_read"),
         one_of("mode", CONNECTION_MODES, "ck_sales_connections_mode"),
+        # The store's orders belong to one partner; an SFTP channel's partner
+        # comes from each file's content (850 TradingPartner). sales04.
+        CheckConstraint("kind = 'SHOPIFY' OR partner_code IS NULL", name="ck_sales_connections_partner_shopify_only"),
+        CheckConstraint("page_size IS NULL OR page_size BETWEEN 1 AND 250", name="ck_sales_connections_page_size"),
     )
 
     name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
@@ -158,6 +167,17 @@ class Connection(Audited, Versioned, Deactivatable, Base):
     # The server's public host key ("ssh-ed25519 AAAA…"), pinned by an admin (§5.1;
     # sales03). No pin, no connection: the gateway never trusts a first key.
     host_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Shopify, per store (option 1, product owner 2026-10-29; sales04): the
+    # channel's settings live on its row, only secrets in the environment.
+    api_version: Mapped[str | None] = mapped_column(String(20), nullable=True)      # was SHOPIFY_API_VERSION
+    # The inclusive updated_at cursor (FR-OB-10; was SHOPIFY_LAST_SYNC_DATE):
+    # written by the intake only; a person resets it through an audited action.
+    # NULL = pull nothing.
+    cursor_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    page_size: Mapped[int | None] = mapped_column(Integer, nullable=True)            # orders per page (≤ 250)
+    order_number_cutoff: Mapped[int | None] = mapped_column(Integer, nullable=True)  # FR-OB-17 (9000 today)
+    partner_code: Mapped[str | None] = mapped_column(
+        String(50), ForeignKey("sales_partners.code", name="fk_sales_connections_partner_code"), nullable=True)
 
 
 class Setting(Audited, SettingRecordMixin, Base):

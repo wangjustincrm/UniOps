@@ -1,10 +1,27 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ActionButton, Badge, ErrorMessage } from '@/platform-ui'
-import { clearAuthLatch, pinHostKey, testConnection, type ConnectionRead, type ConnectionTest } from './connectionsApi'
+import { clearAuthLatch, pinHostKey, resetCursor, testConnection, type ConnectionRead, type ConnectionTest } from './connectionsApi'
 
 const CONFIG = 'sales.config'
-export const SHOPIFY_TEST_LATER = 'Shopify connection test arrives with the Shopify gateway (P3)'
+
+/** Shopify: the pull cursor, read-only; a person resets it (audited, FR-OB-10). */
+function Cursor({ c, onDone }: { c: ConnectionRead; onDone: () => void }) {
+  const [value, setValue] = useState('')
+  const reset = useMutation({ mutationFn: (v: string | null) => resetCursor(c.id, v), onSuccess: () => { setValue(''); onDone() } })
+  return (
+    <div className="flex flex-col gap-1">
+      <p>Next pull from: <span className="font-medium">{c.cursor_updated_at ? new Date(c.cursor_updated_at).toLocaleString() : 'not set — nothing is pulled'}</span></p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input type="datetime-local" aria-label="New cursor" value={value} onChange={(e) => setValue(e.target.value)}
+          className="h-8 rounded-md border border-neutral-200 px-2 text-xs" />
+        <ActionButton size="sm" variant="secondary" permission={CONFIG} disabled={!value}
+          onAction={() => reset.mutateAsync(new Date(value).toISOString()).catch(() => {})}>Reset cursor</ActionButton>
+      </div>
+      <ErrorMessage error={reset.error} />
+    </div>
+  )
+}
 
 /** Under a connection's form: whether its secret is on the server, its login
  *  latch, and the connection test (FR-OB-74: lists folders, changes nothing),
@@ -36,16 +53,15 @@ export function ConnectionTools({ connection: c }: { connection: ConnectionRead 
           </ActionButton>
         </div>
       )}
-      {c.kind === 'SFTP' ? (
-        <div>
-          <ActionButton size="sm" variant="secondary" permission={CONFIG} onAction={() => test.mutateAsync().catch(() => {})}>
-            Test connection
-          </ActionButton>
-          <p className="mt-1 text-xs text-neutral-500">Lists the folders. Nothing is created, moved or deleted.</p>
-        </div>
-      ) : (
-        <p className="text-neutral-500">{SHOPIFY_TEST_LATER}.</p>
-      )}
+      {c.kind === 'SHOPIFY' && <Cursor c={c} onDone={refresh} />}
+      <div>
+        <ActionButton size="sm" variant="secondary" permission={CONFIG} onAction={() => test.mutateAsync().catch(() => {})}>
+          Test connection
+        </ActionButton>
+        <p className="mt-1 text-xs text-neutral-500">
+          {c.kind === 'SFTP' ? 'Lists the folders. Nothing is created, moved or deleted.' : "Reads the store's name and currency. Nothing is written."}
+        </p>
+      </div>
       <ErrorMessage error={test.error ?? pin.error ?? clear.error} />
       {result && (
         <div className="flex flex-col gap-2 rounded-md border border-neutral-100 p-2">
@@ -58,6 +74,9 @@ export function ConnectionTools({ connection: c }: { connection: ConnectionRead 
                 </ActionButton>
               )}
             </div>
+          )}
+          {result.shop && (
+            <p>Store: <span className="font-medium">{result.shop.name}</span> · {result.shop.myshopify_domain ?? result.shop.domain} · {result.shop.currency}</p>
           )}
           {result.error && <p className="text-danger-600">{result.error}</p>}
           {result.folders.length > 0 && (

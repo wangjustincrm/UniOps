@@ -11,13 +11,16 @@ from typing import Any
 
 from app.container import Container, RefusalRecord, build_container
 from app.integrations.sftp import AsyncsshSftp
+from app.integrations.shopify import HttpShopify
 from app.models.documents import Run
 from app.models.records import OutboxRecord
 from app.platform.jobs import Background
 from app.platform.outbox import Outbox, OutboxWorker
 from app.services import oplog
 from app.services.cycle import SalesCycle, settings_schedule
+from app.services.edi_intake import EdiIntake
 from app.services.intake import Intake
+from app.services.shopify_intake import ShopifyIntake
 from app.services.problems import task_service
 
 
@@ -26,26 +29,34 @@ class Runtime:
     container: Container
     uow_factory: Any
     intake: Intake
+    shopify_intake: ShopifyIntake
+    edi_intake: EdiIntake
     cycle: SalesCycle
     background: Background
 
 
-def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None) -> Runtime:
+def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify: Any = None) -> Runtime:
     async def refusal_sink(r: RefusalRecord) -> None:  # the "would have written" row (§5.5)
         await oplog.write_alone(uow_factory, "WARNING", "guard", r.message, context=r.context)
 
     container = build_container(
         settings,
         real_sftp=lambda: AsyncsshSftp(allowed_hosts=settings.sftp_allowed_hosts, secret=os.environ.get),
+        real_shopify=lambda: HttpShopify(secret=os.environ.get),
         refusal_sink=refusal_sink,
     )
     if sftp is not None:
         container.sftp = sftp
-    intake = Intake(uow_factory=uow_factory, sftp=container.sftp, tasks=task_service(container.notify_tasks))
+    if shopify is not None:
+        container.shopify = shopify
+    tasks = task_service(container.notify_tasks)
+    intake = Intake(uow_factory=uow_factory, sftp=container.sftp, tasks=tasks)
+    shopify_intake = ShopifyIntake(uow_factory=uow_factory, shopify=container.shopify, tasks=tasks)
+    edi_intake = EdiIntake(uow_factory=uow_factory, tasks=tasks)
     worker = OutboxWorker(Outbox(OutboxRecord), {}, uow_factory)  # no outbox kinds before P4
-    cycle = SalesCycle(intake=intake, outbox_worker=worker, run_model=Run, uow_factory=uow_factory,
-                       schedule=settings_schedule(uow_factory))
-    return Runtime(container, uow_factory, intake, cycle, Background())
+    cycle = SalesCycle(intake=intake, shopify_intake=shopify_intake, edi_intake=edi_intake, outbox_worker=worker,
+                       run_model=Run, uow_factory=uow_factory, schedule=settings_schedule(uow_factory))
+    return Runtime(container, uow_factory, intake, shopify_intake, edi_intake, cycle, Background())
 
 
 _runtime: Runtime | None = None

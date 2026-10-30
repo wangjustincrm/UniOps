@@ -4,6 +4,12 @@ import PartnersPage from '@/features/configuration/partners/PartnersPage'
 import ConnectionsPage from '@/features/configuration/connections/ConnectionsPage'
 import DocumentsPage from '@/features/operations/DocumentsPage'
 import RunsPage from '@/features/operations/RunsPage'
+import OrdersPage from '@/features/orders/OrdersPage'
+import ReviewPage from '@/features/orders/ReviewPage'
+import ManualOrderPage from '@/features/orders/ManualOrderPage'
+import ItemsPage from '@/features/configuration/items/ItemsPage'
+import PartnerCodesPage from '@/features/configuration/partner-codes/PartnerCodesPage'
+import DcRoutingPage from '@/features/configuration/dc-routing/DcRoutingPage'
 
 // Module routes. Every route also appears in NAV (components/layout/AppLayout)
 // with the permission key that gates it.
@@ -28,6 +34,12 @@ export const moduleRoutes: RouteDef[] = [
     element: <DocumentsPage />,
     tab: { title: 'Documents', icon: 'FileText', keyStrategy: 'static' },
   },
+  { path: '/orders', element: <OrdersPage />, tab: { title: 'Orders', icon: 'ShoppingCart', keyStrategy: 'static' } },
+  { path: '/review', element: <ReviewPage />, tab: { title: 'Review', icon: 'AlertTriangle', keyStrategy: 'static' } },
+  { path: '/orders/manual', element: <ManualOrderPage />, tab: { title: 'Manual orders', icon: 'PenLine', keyStrategy: 'static' } },
+  { path: '/config/items', element: <ItemsPage />, tab: { title: 'Items', icon: 'Package', keyStrategy: 'static' } },
+  { path: '/config/partner-codes', element: <PartnerCodesPage />, tab: { title: 'Partner codes', icon: 'Tags', keyStrategy: 'static' } },
+  { path: '/config/dc-routing', element: <DcRoutingPage />, tab: { title: 'DC routing', icon: 'Route', keyStrategy: 'static' } },
   {
     path: '/runs',
     element: <RunsPage />,

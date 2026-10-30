@@ -88,6 +88,14 @@ FULFILLMENT_ADDITIONS = {
     # timeout task is completed when the late answer arrives (P4, TaskService
     # resolve_problem).
     F.TIMEOUT_940: {F.ACCEPTED_940, F.REJECTED_940, F.SHIPPED},
+    # FR-OB-15 + FR-OB-16 (product owner, 2026-10-29): a source update before
+    # the 940 may make the order invalid (unmatched item, no conversion,
+    # fractional EA, zero quantity) — it goes to Review, also from Payment Hold.
+    # A resolved review of an unpaid PREPAID order goes to Payment Hold
+    # (FR-OB-12), not to Pending, which would claim it waits only for the 940.
+    F.PENDING: {F.REVIEW},
+    F.PAYMENT_HOLD: {F.REVIEW},
+    F.REVIEW: {F.PAYMENT_HOLD},
 }
 FULFILLMENT_HOLD_ENTRIES = {
     # 9.1 lists Shipped → On Hold (second 945, FR-OB-25). FR-OB-18: a source

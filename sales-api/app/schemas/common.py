@@ -25,9 +25,12 @@ HOST_KEY_MESSAGE = (
 SECRET_NAME_MESSAGE = ("secret_name must be an environment variable name like SALES_SECRET_RADIANT "
                        "(capitals, digits, underscore)")
 EXCEL_MESSAGE = "this looks like Excel changed a number; format the column as Text"
+BARCODE_MESSAGE = ("must be 8, 12, 13 or 14 digits (Excel may have dropped a leading zero or changed the "
+                   "number; format the column as Text)")
 
 _SECRET_NAME = re.compile(r"[A-Z][A-Z0-9_]*")
 _EXCEL_NUMBER = re.compile(r"[+-]?\d+(\.\d+)?[eE][+-]?\d+")
+_BARCODE = re.compile(r"\d{8}|\d{12,14}")
 
 
 def host_key_line(v: str) -> str:
@@ -58,3 +61,10 @@ def not_excel_number(v: str) -> str:
     if _EXCEL_NUMBER.fullmatch(v.strip()):
         raise PydanticCustomError("excel_number", EXCEL_MESSAGE)
     return v
+
+
+def barcode(v: str) -> str:
+    """UPC / GTIN: the GTIN family's lengths, digits only (FR-OB-02)."""
+    if not _BARCODE.fullmatch(v.strip()):
+        raise PydanticCustomError("barcode", BARCODE_MESSAGE)
+    return v.strip()

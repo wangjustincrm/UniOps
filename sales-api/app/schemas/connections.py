@@ -22,6 +22,10 @@ Folder = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 SecretName = Annotated[str, StringConstraints(strip_whitespace=True, max_length=100), AfterValidator(secret_name)]
 HostKeyLine = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1), AfterValidator(host_key_line)]
 Port = Annotated[int, Field(ge=1, le=65535)]
+ApiVersion = Annotated[str, StringConstraints(strip_whitespace=True, pattern=r"^\d{4}-\d{2}$")]
+PageSize = Annotated[int, Field(ge=1, le=250)]
+Cutoff = Annotated[int, Field(ge=0)]
+PartnerCode = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
 Seconds = Annotated[int, Field(ge=0)]
 
 
@@ -44,6 +48,10 @@ class ConnectionCreate(BaseModel):
     mode: Mode
     secret_name: SecretName | None = None
     host_key: HostKeyLine | None = None
+    api_version: ApiVersion | None = None
+    page_size: PageSize | None = None
+    order_number_cutoff: Cutoff | None = None
+    partner_code: PartnerCode | None = None
     active: bool = True
 
 
@@ -67,6 +75,10 @@ class ConnectionUpdate(BaseModel):
     mode: Mode = None  # type: ignore[assignment]
     secret_name: SecretName | None = None
     host_key: HostKeyLine | None = None
+    api_version: ApiVersion | None = None
+    page_size: PageSize | None = None
+    order_number_cutoff: Cutoff | None = None
+    partner_code: PartnerCode | None = None
     active: bool = None  # type: ignore[assignment]
 
 
@@ -93,6 +105,11 @@ class ConnectionRead(BaseModel):
     host_key: str | None
     auth_failed_at: datetime | None
     auth_failed_reason: str | None
+    api_version: str | None
+    cursor_updated_at: datetime | None  # system-written; reset through its own action
+    page_size: int | None
+    order_number_cutoff: int | None
+    partner_code: str | None
     active: bool
     version: int
     created_at: datetime
@@ -115,6 +132,11 @@ class FolderCheckRead(BaseModel):
     error: str | None = None
 
 
+class CursorReset(BaseModel):
+    """The inclusive updated_at to pull from next (FR-OB-10); null = pull nothing."""
+    cursor_updated_at: datetime | None
+
+
 class ConnectionTestRead(BaseModel):
     """FR-OB-74: what the test saw; it creates, moves and deletes nothing.
     `folders` is empty unless the server's key matches the pin (no login to
@@ -122,3 +144,4 @@ class ConnectionTestRead(BaseModel):
     host_key: HostKeyRead | None
     folders: list[FolderCheckRead]
     error: str | None = None
+    shop: dict | None = None  # Shopify: the store's name, domain and currency

@@ -19,9 +19,10 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.integrations import email, sftp
+from app.integrations import email, sftp, shopify
 from app.integrations.email import FakeEmail
 from app.integrations.sftp import FakeSftp
+from app.integrations.shopify import FakeShopify
 from app.platform.container import gateway, is_test
 from app.platform.guard import Refused
 
@@ -68,13 +69,15 @@ def _not_built_yet(name: str, phase: str):
 class Container:
     sftp: Any
     email: Any
+    shopify: Any
     # Task Inbox mail (product owner, 2026-10-28): while external email is off,
     # tasks are written as already notified, so the epms notifier never mails
     # them from a dev or test stack.
     notify_tasks: Callable[[], bool]
 
 
-def build_container(settings: Any, *, real_sftp=None, real_email=None, refusal_sink: RefusalSink | None = None) -> Container:
+def build_container(settings: Any, *, real_sftp=None, real_email=None, real_shopify=None,
+                    refusal_sink: RefusalSink | None = None) -> Container:
     if not is_test(settings) and refusal_sink is None:
         raise TypeError("outside tests a refusal_sink is required: refused writes must be logged (§5.5)")
 
@@ -91,6 +94,11 @@ def build_container(settings: Any, *, real_sftp=None, real_email=None, refusal_s
             settings, real=real_email or _not_built_yet("email", "P6/P8"), fake=FakeEmail,
             guarded=email.guarded(EXTERNAL_EMAIL_SWITCH), reads=email.READS, name="email",
             summarise=email.summary, on_refused=on_refused,
+        ),
+        shopify=gateway(
+            settings, real=real_shopify or _not_built_yet("Shopify", "P3"), fake=FakeShopify,
+            guarded=shopify.guarded(PARTNER_WRITES_SWITCH), reads=shopify.READS, name="shopify",
+            on_refused=on_refused,
         ),
         notify_tasks=lambda: getattr(settings, EXTERNAL_EMAIL_SWITCH, False) is True,
     )

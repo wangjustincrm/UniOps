@@ -9,7 +9,7 @@ from app.models.config import Connection
 from app.platform.crud_router import crud_router, read_router
 from app.runtime import Runtime, get_runtime
 from app.schemas.audit import AuditEntryRead
-from app.schemas.connections import ConnectionRead, ConnectionTestRead
+from app.schemas.connections import ConnectionRead, ConnectionTestRead, CursorReset
 from app.schemas.operations import RunStarted
 from app.services import audit
 from app.services.connections import READ, ConnectionService
@@ -28,7 +28,14 @@ async def connection_audit(u: UoW, id: int):
 
 @connections.post("/{id}/test", response_model=ConnectionTestRead)
 async def connection_test(u: UoW, rt: Rt, id: int):
-    return await ConnectionService(u).test(id, rt.container.sftp)  # reads only: nothing to commit
+    return await ConnectionService(u).test(id, rt.container.sftp, rt.container.shopify)  # reads only
+
+
+@connections.post("/{id}/reset-cursor", response_model=ConnectionRead)
+async def connection_reset_cursor(u: UoW, id: int, body: CursorReset):
+    out = await ConnectionService(u).reset_cursor(id, body.cursor_updated_at)
+    await u.commit()
+    return out
 
 
 @connections.post("/{id}/clear-auth-latch", response_model=ConnectionRead)

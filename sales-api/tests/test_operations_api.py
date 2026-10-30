@@ -205,13 +205,25 @@ async def test_documents_register_raw_bytes_and_log(api):
     assert (await api.get("/api/v1/log", headers=NOBODY)).status_code == 403
 
 
-async def test_a_shopify_connection_test_never_touches_sftp(api):
-    shop = dict(kind="SHOPIFY", host="example.myshopify.com", port=443, username=None, inbound_folder=None,
-                processed_folder=None, error_folder=None, secret_name="SALES_SECRET_SHOPIFY")
-    c = (await api.post(C, json=conn_body(name="Shopify", **shop), headers=OP)).json()
+async def shopify_partner(api):
+    r = await api.post("/api/v1/config/partners", headers=OP, json={
+        "code": "SHOP", "name": "Shopify", "channel": "SHOPIFY", "settlement_mode": "PREPAID",
+        "sending_mode": "AUTOMATIC", "delay_minutes": 180, "invoice_method": "NONE", "dc_routing_required": False})
+    assert r.status_code == 201, r.text
+
+
+SHOP = dict(kind="SHOPIFY", host="example.myshopify.com", port=443, username=None, inbound_folder=None,
+            processed_folder=None, error_folder=None, secret_name="SALES_SECRET_SHOPIFY", api_version="2026-04",
+            partner_code="SHOP")
+
+
+async def test_a_shopify_connection_test_reads_shop_info_and_never_touches_sftp(api):
+    await shopify_partner(api)
+    c = (await api.post(C, json=conn_body(name="Shopify", **SHOP), headers=OP)).json()
     r = (await api.post(f"{C}/{c['id']}/test", headers=OP)).json()
-    assert r == {"host_key": None, "folders": [], "error": "Shopify connection test arrives with the Shopify gateway (P3)"}
+    assert r["shop"]["name"] == "Test store" and r["error"] is None and r["host_key"] is None
     assert api.fake.calls == []  # no SSH against an HTTPS host
+    assert [m for m, _ in api.runtime.container.shopify.calls] == ["shop"]
 
 
 def test_errors_are_shown_as_short_readable_text():

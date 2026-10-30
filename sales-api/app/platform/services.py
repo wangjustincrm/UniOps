@@ -117,7 +117,8 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
     # CSV: the columns exported and accepted, and the natural key that decides
     # create vs update on import (e.g. "code").
     csv_columns: ClassVar[tuple[str, ...]] = ()
-    csv_key: ClassVar[str | None] = None
+    # One column, or several for a composite natural key (e.g. partner + buyer part).
+    csv_key: ClassVar[str | tuple[str, ...] | None] = None
     # Database unique constraints / indexes whose violation is a refusal, not
     # a bug: constraint name → (error code, field). The service's own check
     # gives the message first; this catches what races past it.
@@ -137,6 +138,22 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
     async def after_delete(self, entity: T) -> None:
         """Only for SoftDeletable entities (none in v1)."""
 
+    def build(self, values: dict[str, Any]) -> T:
+        """The new entity from validated values (create and CSV import). Override
+        for values that are not plain columns (e.g. an item's units)."""
+        return self.model(**values)
+
+    async def apply_changes(self, entity: T, changes: dict[str, Any]) -> None:
+        """Apply validated changes (update and CSV import); see `build`."""
+        for k, v in changes.items():
+            setattr(entity, k, v)
+
+    @property
+    def _key_columns(self) -> tuple[str, ...]:
+        if not self.csv_key:
+            return ()
+        return (self.csv_key,) if isinstance(self.csv_key, str) else tuple(self.csv_key)
+
     # ── writes ───────────────────────────────────────────────────────────────
     def _reason(self, operation: str) -> None:
         """The audit rows of a CRUD write carry the operation as their reason,
@@ -148,7 +165,7 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
         await self._authorize(self.write_permission)
         self._reason("create")
         await self.validate_create(data)
-        entity = self.model(**data.model_dump())
+        entity = self.build(data.model_dump())
         try:
             async with self.uow.session.begin_nested():
                 await self.repo.add(entity)
@@ -171,8 +188,7 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
         # exclude_unset: a field sent as null is cleared, an absent field is untouched.
         changes = data.model_dump(exclude_unset=True)
         await self.before_update(entity, changes)
-        for k, v in changes.items():
-            setattr(entity, k, v)
+        await self.apply_changes(entity, changes)
         try:
             await self.uow.session.flush()
         except StaleDataError as e:
@@ -200,7 +216,7 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
         while True:
             page = await self.repo.list(spec.model_copy(update={"page": page_no, "page_size": EXPORT_PAGE}))
             for e in page.items:
-                w.writerow([_csv_cell(getattr(e, c)) for c in columns])
+                w.writerow([_csv_cell(self.csv_value(e, c)) for c in columns])
             if page_no * EXPORT_PAGE >= page.total:
                 break
             page_no += 1
@@ -229,8 +245,10 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
         unknown = [h for h in header if h not in self._csv_export_columns()]
         for h in unknown:
             report.errors.append(RowIssue(0, h, "csv.unknown_column", f"unknown column {h!r}"))
-        if self.csv_key not in header:
-            report.errors.append(RowIssue(0, self.csv_key, "csv.missing_key", f"column {self.csv_key!r} is required"))
+        keys = self._key_columns
+        for kc in keys:
+            if kc not in header:
+                report.errors.append(RowIssue(0, kc, "csv.missing_key", f"column {kc!r} is required"))
         if len(set(header)) != len(header):
             report.errors.append(RowIssue(0, None, "csv.duplicate_column", "a column appears twice"))
         if report.errors:
@@ -242,7 +260,7 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
         existing: dict[str, Any] = {}
         ambiguous: set[str] = set()
         for e in (await self.uow.session.execute(q)).scalars():
-            k = _norm_key(getattr(e, self.csv_key))
+            k = tuple(_norm_key(getattr(e, kc)) for kc in keys)
             if k in existing:
                 ambiguous.add(k)
             existing[k] = e
@@ -255,18 +273,20 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
                 continue
             values = {k: _csv_in(v) for k, v in raw.items()}
             sent_version = values.pop("version", None)
-            key = values.get(self.csv_key)
-            if key is None or not str(key).strip():
-                report.errors.append(RowIssue(i, self.csv_key, "csv.missing_key", "the key is empty"))
+            empty = [kc for kc in keys if values.get(kc) is None or not str(values[kc]).strip()]
+            if empty:
+                report.errors.append(RowIssue(i, empty[0], "csv.missing_key", "the key is empty"))
                 continue
-            key = values[self.csv_key] = str(key).strip()
-            nkey = _norm_key(key)
+            for kc in keys:
+                values[kc] = str(values[kc]).strip()
+            key = " / ".join(values[kc] for kc in keys)
+            nkey = tuple(_norm_key(values[kc]) for kc in keys)
             if nkey in seen:
-                report.errors.append(RowIssue(i, self.csv_key, "csv.duplicate_key", f"{key!r} appears twice"))
+                report.errors.append(RowIssue(i, keys[0], "csv.duplicate_key", f"{key!r} appears twice"))
                 continue
             seen.add(nkey)
             if nkey in ambiguous:
-                report.errors.append(RowIssue(i, self.csv_key, "csv.ambiguous_key",
+                report.errors.append(RowIssue(i, keys[0], "csv.ambiguous_key",
                                               f"{key!r} matches more than one existing record"))
                 continue
             current = existing.get(nkey)
@@ -278,7 +298,8 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
                         f"file has {sent_version}); export again"))
                     continue
             if current is not None:
-                values[self.csv_key] = getattr(current, self.csv_key)  # keep the stored spelling
+                for kc in keys:
+                    values[kc] = getattr(current, kc)  # keep the stored spelling
             try:
                 if current is None:
                     data = self.create_schema.model_validate(values)
@@ -288,9 +309,9 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
                 else:
                     # The key identifies the row; it is never an update field.
                     data = self.update_schema.model_validate(
-                        {k: v for k, v in values.items() if k != self.csv_key})
+                        {k: v for k, v in values.items() if k not in keys})
                     sent = data.model_dump(exclude_unset=True)
-                    changes = {k: v for k, v in sent.items() if getattr(current, k) != v}
+                    changes = {k: v for k, v in sent.items() if not self._same(current, k, v)}
                     if changes:
                         await self.before_update(current, changes)
                     before = {k: jsonable(getattr(current, k)) for k in changes}
@@ -321,10 +342,9 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
             try:
                 async with self.uow.session.begin_nested():
                     if plan.action == "create":
-                        self.uow.session.add(self.model(**changes))
+                        self.uow.session.add(self.build(changes))
                     else:
-                        for k, v in changes.items():
-                            setattr(entity, k, v)
+                        await self.apply_changes(entity, changes)
                     await self.uow.session.flush()
             except DBAPIError as e:  # constraint, value too long, … (not a lost connection)
                 if e.connection_invalidated:
@@ -344,6 +364,15 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
             return report
         report.written = True
         return report
+
+    def csv_value(self, entity: T, column: str) -> Any:
+        """A column's export value (override for values that are not plain columns)."""
+        return getattr(entity, column)
+
+    def _same(self, entity: T, key: str, value: Any) -> bool:
+        """Whether an imported value equals the stored one (override for values
+        that are not plain columns)."""
+        return getattr(entity, key) == value
 
     def _unique_refusal(self, e: DBAPIError) -> BusinessError | None:
         hit = self.unique_constraints.get(_constraint_name(e) or "")

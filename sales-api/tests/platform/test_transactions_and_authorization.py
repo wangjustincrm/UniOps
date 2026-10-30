@@ -159,6 +159,7 @@ def endpoint_commit_counts(source: str) -> dict[str, int]:
 NO_REQUEST_WRITE = {
     "api/v1/operations.py:connection_test": "reads only: lists folders, never writes (FR-OB-74)",
     "api/v1/operations.py:run_now": "the run is claimed in a unit of its own (ScheduledJob.claim)",
+    "api/v1/orders.py:manual_preview": "the EA preview before saving: reads only (FR-OB-19a)",
 }
 
 

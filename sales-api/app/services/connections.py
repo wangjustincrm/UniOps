@@ -7,7 +7,11 @@ import os
 from typing import Any, ClassVar
 
 from app.domain.connections import check_connection
+from app.integrations import shopify as shopify_mod
 from app.integrations.sftp import readable
+from app.models.config import Partner
+from app.platform.errors import InvalidInput
+from sqlalchemy import select
 from app.models.config import Connection
 from app.platform.authorization import requires
 from app.platform.repository import FilterRule, Repository, parse_bool
@@ -23,10 +27,9 @@ logger = logging.getLogger(__name__)
 READ = "sales.read"
 CONFIG = "sales.config"
 
-SHOPIFY_TEST_LATER = "Shopify connection test arrives with the Shopify gateway (P3)"
 
 _RULE_FIELDS = ("kind", "host", "username", "inbound_folder", "secret_name", "after_read", "processed_folder",
-                "host_key")
+                "host_key", "api_version", "partner_code")
 _FOLDERS = ("inbound_folder", "outbound_folder", "processed_folder", "error_folder",
             "test_inbound_folder", "test_outbound_folder")
 
@@ -56,7 +59,8 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
     write_permission = CONFIG
     csv_key = "name"
     csv_columns = ("name", "kind", "host", "port", "username", *_FOLDERS, "after_read", "stable_seconds", "mode",
-                   "secret_name", "host_key", "active")
+                   "secret_name", "host_key", "api_version", "page_size", "order_number_cutoff", "partner_code",
+                   "active")
     unique_constraints = {"sales_connections_name_key": ("connection.name_taken", "name")}
     # Where secrets live (§5.3): the server environment, read for presence only.
     environ: ClassVar[Any] = os.environ
@@ -66,20 +70,46 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
         out.secret_present = bool(entity.secret_name and self.environ.get(entity.secret_name))
         return out
 
+    async def _partner_exists(self, code: str | None) -> None:
+        if code and (await self.uow.session.execute(select(Partner.id).where(Partner.code == code))).scalar_one_or_none() is None:
+            raise InvalidInput("partner.unknown", f"no partner {code!r}", {"field": "partner_code"})
+
     async def validate_create(self, data: ConnectionCreate) -> None:
         check_connection(data.model_dump())
+        await self._partner_exists(data.partner_code)
 
     async def before_update(self, entity: Connection, changes: dict[str, Any]) -> None:
         check_connection({**{k: getattr(entity, k) for k in _RULE_FIELDS}, **changes})
+        await self._partner_exists(changes.get("partner_code"))
 
     @requires(CONFIG)
-    async def test(self, id: int, sftp) -> ConnectionTestRead:
-        """Reads only (FR-OB-74). The host key is read without logging in; the
-        folders are listed only when the server's key is the pinned one."""
+    async def reset_cursor(self, id: int, cursor) -> ConnectionRead:
+        """FR-OB-10: where the next pull starts (inclusive); null pulls nothing.
+        The only way a person changes the cursor — audited."""
+        entity = await self.repo.get(id, for_update=True)
+        if entity.kind != "SHOPIFY":
+            raise InvalidInput("connection.cursor_shopify_only", "only a SHOPIFY connection has a cursor",
+                               {"field": "cursor_updated_at"})
+        self.uow.set_reason("reset cursor")
+        entity.cursor_updated_at = cursor
+        await self.uow.session.flush()
+        return self.to_read(entity)
+
+    @requires(CONFIG)
+    async def test(self, id: int, sftp, shopify=None) -> ConnectionTestRead:
+        """Reads only (FR-OB-74). SFTP: the host key is read without logging
+        in; the folders are listed only when the server's key is the pinned
+        one. Shopify: the store's shop info, through its own gateway."""
         entity = await self.repo.get(id)
-        if entity.kind != "SFTP":  # never SSH against a Shopify host (P3 tests it through its own gateway)
-            return ConnectionTestRead(host_key=None, folders=[], error=SHOPIFY_TEST_LATER)
         snap = ConnectionSnapshot.of(entity)
+        if entity.kind == "SHOPIFY":  # never SSH against a Shopify host
+            try:
+                info = await shopify.shop(snap)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("connection test %s: shop: %r", entity.name, e)
+                return ConnectionTestRead(host_key=None, folders=[], error=shopify_mod.readable(e))
+            return ConnectionTestRead(host_key=None, folders=[], shop={
+                k: info.get(k) for k in ("name", "domain", "myshopify_domain", "currency", "iana_timezone")})
         try:
             key = await sftp.host_key(snap)
         except Exception as e:  # noqa: BLE001 — the test reports, it does not fail

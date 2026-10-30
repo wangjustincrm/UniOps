@@ -53,8 +53,8 @@ async def test_a_key_line_must_carry_its_own_type(api):  # noqa: F811
 
 
 async def test_shopify_takes_no_host_key(api):  # noqa: F811
-    shop = dict(kind="SHOPIFY", host="example.myshopify.com", port=443, username=None,
-                inbound_folder=None, processed_folder=None, error_folder=None, secret_name="SALES_SECRET_SHOPIFY")
+    from tests.test_operations_api import SHOP as shop, shopify_partner
+    await shopify_partner(api)
     r = await api.post(C, json=conn_body(name="Shopify", host_key=FAKE_KEY, **shop), headers=OP)
     assert r.status_code == 422 and r.json()["error"]["details"]["field"] == "host_key"
     assert "must be empty for a SHOPIFY connection" in r.json()["error"]["message"]

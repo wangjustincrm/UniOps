@@ -9,6 +9,7 @@ const conn: ConnectionRead = {
   outbound_folder: null, processed_folder: '/processed', error_folder: '/error', test_inbound_folder: null,
   test_outbound_folder: null, after_read: 'LEAVE', stable_seconds: 60, mode: 'TEST', secret_name: 'SALES_SECRET_SFTP_TEST',
   secret_present: true, host_key: null, auth_failed_at: null, auth_failed_reason: null, active: true, version: 3,
+  api_version: null, cursor_updated_at: null, page_size: null, order_number_cutoff: null, partner_code: null,
   created_at: '2026-10-29T12:00:00Z', created_by_name: 'Op', updated_at: null, updated_by_name: null,
 }
 const LINE = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample'
@@ -88,17 +89,24 @@ describe('CSV import preview (2026-10-29, the dev2 Connections file)', () => {
 })
 
 describe('a Shopify connection', () => {
-  it('has no SSH host key, pin or test — only its secret and the P3 note', async () => {
+  it('has no SSH host key or pin; shows the cursor read-only with a reset for sales.config', async () => {
     const mod = await import('./connectionsApi')
     const shop = { ...conn, id: 2, name: 'Shopify', kind: 'SHOPIFY' as const, host: 'example.myshopify.com', port: 443,
-      username: null, inbound_folder: null, secret_name: 'SALES_SECRET_SHOPIFY', host_key: null }
+      username: null, inbound_folder: null, secret_name: 'SALES_SECRET_SHOPIFY', host_key: null, api_version: '2026-04',
+      partner_code: 'SHOP', cursor_updated_at: '2026-10-28T12:00:00Z' }
     vi.mocked(mod.connectionsClient.list).mockResolvedValue({ items: [shop], total: 1 })
-    renderAs(['sales.read', 'sales.config'])
+    const { unmount } = renderAs(['sales.read'])
     expect(await screen.findByText('Ready')).toBeInTheDocument()  // not "Key not pinned"
     fireEvent.click(await screen.findByText('example.myshopify.com'))
-    const status = await within(await screen.findByRole('dialog')).findByRole('region', { name: 'Connection status' })
-    expect(within(status).getByText(/Shopify connection test arrives with the Shopify gateway \(P3\)/)).toBeInTheDocument()
-    expect(within(status).queryByText('Test connection')).not.toBeInTheDocument()
+    let status = await within(await screen.findByRole('dialog')).findByRole('region', { name: 'Connection status' })
+    expect(within(status).getByText(/Next pull from/)).toBeInTheDocument()
+    expect(within(status).queryByText('Reset cursor')).not.toBeInTheDocument()  // a reader cannot
     expect(within(status).queryByText(/Host key/)).not.toBeInTheDocument()
+    unmount()
+    renderAs(['sales.read', 'sales.config'])
+    fireEvent.click(await screen.findByText('example.myshopify.com'))
+    status = await within(await screen.findByRole('dialog')).findByRole('region', { name: 'Connection status' })
+    expect(within(status).getByText('Reset cursor')).toBeDisabled()  // until a date is chosen
+    expect(within(status).getByText(/Reads the store's name/)).toBeInTheDocument()
   })
 })
