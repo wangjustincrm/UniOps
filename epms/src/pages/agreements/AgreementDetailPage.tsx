@@ -32,6 +32,7 @@ import type { ApiEvent } from '@/services/pr'
 import { historyLine, isSkipped } from '@/lib/approvalHistory'
 import type { InvoiceStatus } from '@/services/invoices'
 import { isAgreementAdmissible } from '@/lib/agreements'
+import { canRecallDocument } from '@/lib/documentActions'
 
 const TYPE_LABELS: Record<AgreementType, string> = {
   house_account: 'House Account',
@@ -170,17 +171,19 @@ function NteBar({ consumedAmount, notToExceed, currency }: { consumedAmount: str
 
 // ─── Approval action modal ───────────────────────────────────────────────────
 
-type ApprovalAction = 'approve' | 'return'
+type ApprovalAction = 'approve' | 'return' | 'reject'
 
-function ApprovalModal({ action, agreementNumber, onConfirm, onClose, isPending }: {
+function ApprovalModal({ action, agreementNumber, onConfirm, onClose, isPending, error }: {
   action: ApprovalAction
   agreementNumber: string
   onConfirm: (comment: string) => void
   onClose: () => void
   isPending: boolean
+  /** The server's refusal, shown in the dialog. */
+  error?: string
 }) {
   const [comment, setComment] = useState('')
-  const needsComment = action === 'return'
+  const needsComment = action !== 'approve'
   const canSubmit = !needsComment || comment.trim().length > 0
 
   const config = {
@@ -201,6 +204,15 @@ function ApprovalModal({ action, agreementNumber, onConfirm, onClose, isPending 
       btn: 'bg-warning-500 hover:bg-warning-600 text-white',
       commentLabel: 'Revision instructions *',
       placeholder: 'Describe what needs to be revised…',
+    },
+    reject: {
+      title: 'Reject Agreement',
+      label: 'Reject',
+      icon: <XCircle className="h-5 w-5 text-danger-600" />,
+      bgIcon: 'bg-danger-50',
+      btn: 'bg-danger-600 hover:bg-danger-700 text-white',
+      commentLabel: 'Reason for rejection *',
+      placeholder: 'Explain why this agreement is being rejected…',
     },
   }[action]
 
@@ -236,6 +248,7 @@ function ApprovalModal({ action, agreementNumber, onConfirm, onClose, isPending 
               />
             </div>
           </div>
+          {error && <p className="text-xs text-danger-600">{error}</p>}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
             <button
@@ -267,6 +280,10 @@ export default function AgreementDetailPage() {
   const { data: deptData } = useDepartments()
   const departments = deptData?.items ?? []
   const agreementAction = useAgreementAction(id ?? '')
+  // The approval dialog and Recall show the server's refusal on the page
+  // instead of in an alert().
+  const agreementDecision = useAgreementAction(id ?? '', { alertOnError: false })
+  const agreementRecall = useAgreementAction(id ?? '', { alertOnError: false })
   const { user } = useAuthStore()
   const [pendingAction, setPendingAction] = useState<ApprovalAction | null>(null)
 
@@ -380,6 +397,9 @@ export default function AgreementDetailPage() {
   )
   const canApprove =
     !!user && !!agreement && APPROVABLE_STATUSES.includes(agreement.status) && hasApproveTask
+  // PRD §3.3.3 recall: the creator or a System Admin, submitted / in_review
+  // → draft; the next submit starts from the first step (ISS-0119).
+  const canRecall = !!agreement && canRecallDocument(agreement, user ?? {})
 
   const periodRows = scheduleRows.filter((r) => r.schedule_type === 'period')
   const milestoneRows = scheduleRows.filter((r) => r.schedule_type === 'milestone')
@@ -434,7 +454,7 @@ export default function AgreementDetailPage() {
   const deleteAttachment = useDeleteAgreementAttachment(agreement?.id ?? '')
 
   const handleConfirm = (action: ApprovalAction, comment: string) => {
-    agreementAction.mutate(
+    agreementDecision.mutate(
       { action, comment: comment || undefined },
       { onSuccess: () => setPendingAction(null) }
     )
@@ -518,6 +538,26 @@ export default function AgreementDetailPage() {
                   </span>
                 )}
               </>
+            )}
+            {canRecall && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  if (confirm(`Recall ${agreement.number}? It will be moved back to Draft; the next submit starts from the first approval step.`)) {
+                    agreementRecall.mutate({ action: 'recall' })
+                  }
+                }}
+                disabled={agreementRecall.isPending}
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Recall
+              </Button>
+            )}
+            {agreementRecall.isError && (
+              <span className="text-xs text-danger-600">
+                {agreementRecall.error instanceof Error ? agreementRecall.error.message : 'Could not recall the agreement'}
+              </span>
             )}
             {canCancel && (
               <Button
@@ -892,6 +932,14 @@ export default function AgreementDetailPage() {
             <Button variant="secondary" size="sm" onClick={() => setPendingAction('return')} className="gap-1.5">
               <RotateCcw className="h-3.5 w-3.5" /> Return for Revision
             </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setPendingAction('reject')}
+              className="gap-1.5 border-danger-200 text-danger-600 hover:bg-danger-50"
+            >
+              <XCircle className="h-3.5 w-3.5" /> Reject
+            </Button>
             <button
               onClick={() => setPendingAction('approve')}
               className="inline-flex items-center gap-2 h-9 px-5 rounded-lg bg-success-600 text-white text-sm font-semibold hover:bg-success-700 transition-colors"
@@ -907,9 +955,12 @@ export default function AgreementDetailPage() {
         <ApprovalModal
           action={pendingAction}
           agreementNumber={agreement.number}
-          isPending={agreementAction.isPending}
+          isPending={agreementDecision.isPending}
+          error={agreementDecision.isError
+            ? (agreementDecision.error instanceof Error ? agreementDecision.error.message : 'The action was refused')
+            : undefined}
           onConfirm={(comment) => handleConfirm(pendingAction, comment)}
-          onClose={() => setPendingAction(null)}
+          onClose={() => { agreementDecision.reset(); setPendingAction(null) }}
         />
       )}
     </div>

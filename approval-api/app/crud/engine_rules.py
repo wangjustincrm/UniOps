@@ -70,9 +70,10 @@ ENGINE_RULES: list[dict] = [
         "area": "approval_engine",
         "answer": (
             "The person who submitted a document — or a System Admin — can recall it "
-            "while it is {recallable} (on a purchase request this is the Recall to "
-            "Edit button). It goes back to draft, can be edited, and when submitted "
-            "again it starts from the first step."),
+            "while it is {recallable} (the Recall to Edit button on a purchase "
+            "request, Recall on a payment application or an agreement). It goes "
+            "back to draft, can be edited, and when submitted again it starts from "
+            "the first step."),
         "pinned_by": [
             "tests/test_engine_recall.py::test_recall_by_submitter_succeeds",
             "tests/test_engine_recall.py::test_recall_by_non_submitter_rejected",

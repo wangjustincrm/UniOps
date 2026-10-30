@@ -14,7 +14,7 @@ export type AgreementStatus =
 
 export type AgreementType = 'house_account' | 'recurring' | 'milestone'
 
-export type AgreementAction = 'submit' | 'approve' | 'return' | 'cancel'
+export type AgreementAction = 'submit' | 'approve' | 'return' | 'reject' | 'cancel' | 'recall'
 
 export type RecurringType =
   | 'weekly'

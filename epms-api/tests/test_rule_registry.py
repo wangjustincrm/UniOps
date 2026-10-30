@@ -852,6 +852,11 @@ def test_approval_buttons_follow_the_open_task():
     assert "hasApproveTask" in pa and "'approve_pa'" in pa
     pr = _src("epms/src/pages/pr/PrDetailPage.tsx")
     assert "(hasApproveTask || isAdmin || (!tasksLoaded && roleMatchesStep))" in pr
+    # ISS-0117: Reject sits in the same task-gated bar as Approve / Return.
+    agr = _src("epms/src/pages/agreements/AgreementDetailPage.tsx")
+    assert "t.document_id === agreement.id && t.type === 'approve_agr'" in agr
+    bar = agr.split("{/* Fixed bottom approver action bar */}")[1].split("{/* Approval modal */}")[0]
+    assert bar.lstrip().startswith("{canApprove && (") and "setPendingAction('reject')" in bar
 
 
 def test_the_delegation_page_is_in_the_admin_sidebar():
