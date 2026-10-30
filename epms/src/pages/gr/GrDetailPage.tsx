@@ -551,7 +551,18 @@ function LineDetailRow({ line, idx, currency }: { line: ApiGrLineItem; idx: numb
 const RESOLUTION_LABELS: Record<GrDamageResolution, string> = {
   return: 'Return to vendor',
   credit: 'Credit from vendor',
+  replacement: 'Replacement',
+  other: 'Other',
 }
+
+// Reference label per resolution; null = no reference field.
+const REF_LABELS: Record<GrDamageResolution, string | null> = {
+  return: 'Return / RMA number',
+  credit: 'Credit note number',
+  replacement: 'Replacement delivery / reference',
+  other: null,
+}
+const REF_REQUIRED: GrDamageResolution[] = ['return', 'credit']
 
 function DamageResolutionCard({ gr }: { gr: ApiGr }) {
   const { user } = useAuthStore()
@@ -565,14 +576,19 @@ function DamageResolutionCard({ gr }: { gr: ApiGr }) {
   const [note, setNote] = useState('')
   const [tried, setTried] = useState(false)
 
+  const refRequired = REF_REQUIRED.includes(resolution)
+  const noteRequired = resolution === 'other'
+  const refMissing = refRequired && !ref.trim()
+  const noteMissing = noteRequired && !note.trim()
+
   const submit = () => {
     setTried(true)
-    if (!ref.trim()) return
+    if (refMissing || noteMissing) return
     grAction.mutate(
       {
         action: 'resolve_damage',
         damage_resolution: resolution,
-        damage_resolution_ref: ref.trim(),
+        damage_resolution_ref: REF_LABELS[resolution] ? ref.trim() || undefined : undefined,
         damage_resolution_note: note.trim() || undefined,
       },
       { onSuccess: () => setOpen(false) },
@@ -593,7 +609,7 @@ function DamageResolutionCard({ gr }: { gr: ApiGr }) {
       {gr.damage_resolution ? (
         <div className="flex flex-col gap-2">
           <MetaRow label="Resolution" value={RESOLUTION_LABELS[gr.damage_resolution]} />
-          <MetaRow label="Reference" value={gr.damage_resolution_ref ?? '—'} mono />
+          {gr.damage_resolution_ref && <MetaRow label="Reference" value={gr.damage_resolution_ref} mono />}
           {gr.damage_resolution_note && <MetaRow label="Note" value={gr.damage_resolution_note} />}
           <MetaRow
             label="Recorded"
@@ -604,7 +620,7 @@ function DamageResolutionCard({ gr }: { gr: ApiGr }) {
         <p className="text-sm text-neutral-500">This GR was cancelled; no vendor resolution is needed.</p>
       ) : !open ? (
         <p className="text-sm text-warning-700">
-          Not recorded yet. The Report Goods Damage task stays open until a return or credit is recorded here.
+          Not recorded yet. The Report Goods Damage task stays open until the outcome (return, credit, replacement or other) is recorded here.
         </p>
       ) : (
         <div className="flex flex-col gap-3">
@@ -622,32 +638,42 @@ function DamageResolutionCard({ gr }: { gr: ApiGr }) {
               </label>
             ))}
           </div>
+          {REF_LABELS[resolution] && (
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-neutral-700">
+                {REF_LABELS[resolution]}{' '}
+                {refRequired ? <span className="text-danger-600">*</span> : <span className="text-neutral-400 font-normal">(optional)</span>}
+              </label>
+              <input
+                type="text"
+                maxLength={100}
+                value={ref}
+                onChange={(e) => setRef(e.target.value)}
+                className={cn(
+                  'h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
+                  tried && refMissing ? 'border-danger-400' : 'border-neutral-300'
+                )}
+              />
+              {tried && refMissing && <p className="text-xs text-danger-600">Required</p>}
+            </div>
+          )}
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-neutral-700">
-              {resolution === 'return' ? 'Return / RMA number' : 'Credit note number'}{' '}
-              <span className="text-danger-600">*</span>
+              Note {noteRequired && <span className="text-danger-600">*</span>}
             </label>
-            <input
-              type="text"
-              maxLength={100}
-              value={ref}
-              onChange={(e) => setRef(e.target.value)}
-              className={cn(
-                'h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
-                tried && !ref.trim() ? 'border-danger-400' : 'border-neutral-300'
-              )}
-            />
-            {tried && !ref.trim() && <p className="text-xs text-danger-600">Required</p>}
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-neutral-700">Note</label>
             <textarea
               rows={2}
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Optional — what was agreed with the vendor"
-              className="px-3 py-2 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none"
+              placeholder={noteRequired
+                ? 'Required — why no return, credit or replacement is needed (e.g. minor damage, no claim)'
+                : 'Optional — what was agreed with the vendor'}
+              className={cn(
+                'px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none',
+                tried && noteMissing ? 'border-danger-400' : 'border-neutral-300'
+              )}
             />
+            {tried && noteMissing && <p className="text-xs text-danger-600">Required</p>}
           </div>
           {grAction.isError && (
             <p className="text-sm text-danger-600">

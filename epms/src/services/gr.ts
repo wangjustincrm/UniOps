@@ -11,7 +11,7 @@ export type GrStatus =
 
 export type GrAction = 'acknowledge' | 'collect' | 'confirm' | 'reject' | 'discrepancy' | 'cancel' | 'resolve_damage'
 
-export type GrDamageResolution = 'return' | 'credit'
+export type GrDamageResolution = 'return' | 'credit' | 'replacement' | 'other'
 
 export type GrLineCondition = 'good' | 'discrepancy' | 'damaged'
 

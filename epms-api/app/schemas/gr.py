@@ -99,7 +99,11 @@ class GrCreate(BaseModel):
 
 
 # How Procurement settled damaged / discrepancy lines with the vendor.
-DAMAGE_RESOLUTIONS = ("return", "credit")
+# return / credit need the vendor's RMA / credit note number; replacement may
+# carry the replacement delivery's reference; other (e.g. minor damage, no
+# claim) needs a note saying why.
+DAMAGE_RESOLUTIONS = ("return", "credit", "replacement", "other")
+DAMAGE_RESOLUTIONS_NEEDING_REF = ("return", "credit")
 
 
 class GrActionRequest(BaseModel):
@@ -115,7 +119,8 @@ class GrActionRequest(BaseModel):
     # collect / confirm: asked for when posting this GR goes past the ordered
     # quantity and no reason was given when it was created.
     over_receipt_reason: str | None = None
-    # resolve_damage: return | credit, the vendor's reference, optional note
+    # resolve_damage: return | credit | replacement | other, the vendor's
+    # reference (required for return / credit), note (required for other)
     damage_resolution: str | None = None
     damage_resolution_ref: str | None = Field(default=None, max_length=100)
     damage_resolution_note: str | None = None
