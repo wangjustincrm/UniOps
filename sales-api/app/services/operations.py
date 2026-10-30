@@ -12,6 +12,7 @@ from app.platform.authorization import requires
 from app.platform.errors import BusinessError
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
+from app.platform.views import Preset
 from app.schemas.operations import DocumentRead, LogRead, RunRead
 
 READ = "sales.read"
@@ -32,6 +33,13 @@ class DocumentRepository(Repository[Document]):
     default_sort = ("-created_at",)
     groupable = ("direction", "origin", "system", "kind", "processing_status", "file_status", "ack_status",
                  "partner_code", "connection_id")
+    presets = (
+        Preset("all", "All"),
+        Preset("inbound_failed", "Inbound failed", {"filters": [{"field": "direction", "op": "eq", "value": "IN"}, {"field": "processing_status", "op": "eq", "value": "Failed"}]}),
+        Preset("duplicates_not_ours", "Duplicates / not ours",
+               {"filters": [{"field": "processing_status", "op": "in", "value": ["Duplicate", "Skipped"]}]}),
+        Preset("outbound", "Outbound", {"filters": [{"field": "direction", "op": "eq", "value": "OUT"}]}),
+    )
 
 
 class DocumentService(ReadOnlyService[Document, DocumentRead]):
@@ -60,6 +68,8 @@ class RunRepository(Repository[Run]):
     enums = {"trigger": RUN_TRIGGERS, "status": RUN_STATUSES}
     default_sort = ("-started_at",)
     groupable = ("job", "trigger", "status")
+    presets = (Preset("all", "All"),
+               Preset("failed", "Failed or partial", {"filters": [{"field": "status", "op": "in", "value": ["FAILED", "PARTIAL"]}]}))
 
 
 class RunService(ReadOnlyService[Run, RunRead]):
@@ -86,6 +96,7 @@ class LogRepository(Repository[LogEntry]):
     enums = {"level": LOG_LEVELS}
     default_sort = ("-at",)
     groupable = ("level", "step", "run_id", "connection_id")
+    presets = (Preset("all", "All"), Preset("errors", "Errors", {"filters": [{"field": "level", "op": "eq", "value": "ERROR"}]}))
 
 
 class LogService(ReadOnlyService[LogEntry, LogRead]):

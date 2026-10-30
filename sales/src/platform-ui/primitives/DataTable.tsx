@@ -3,7 +3,7 @@ import {
   flexRender, getCoreRowModel, useReactTable,
   type ColumnDef, type SortingState, type Updater,
 } from '@tanstack/react-table'
-import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, GripVertical } from 'lucide-react'
 import { Input, Pagination, SkeletonRow } from './shell'
 import { cn } from '../lib/cn'
 import { EmptyState, ErrorState } from './States'
@@ -53,6 +53,11 @@ export interface DataTableProps<T> {
   chips?: ReactNode
   /** Nested, collapsible group header rows with their counts. */
   grouping?: Grouping<T>
+  /** First in the toolbar row (e.g. the view picker). */
+  leading?: ReactNode
+  /** Columns can be dragged to a new place: `id` goes before `beforeId` (null = last).
+   *  The keyboard way is the column chooser's ↑ ↓. */
+  onColumnMove?: (id: string, beforeId: string | null) => void
   /** A controlled search box, applied on Enter. */
   search?: { value: string; onSubmit: (value: string) => void }
   /** Controls placed after the search box (e.g. filters), and actions on the right. */
@@ -72,8 +77,11 @@ export interface DataTableProps<T> {
  *  query contract — QueryTable (patterns) adapts it to a QuerySpec. */
 export function DataTable<T>({
   columns, rows, rowKey, onRowClick, loading, errorMessage, onRetry, emptyTitle = 'Nothing here yet',
-  sort, sortable = [], onSortChange, headerAddon, leadingHeader, chips, grouping, search, filters, toolbar, pagination,
+  sort, sortable = [], onSortChange, headerAddon, leadingHeader, chips, grouping, leading, onColumnMove, search, filters,
+  toolbar, pagination,
 }: DataTableProps<T>) {
+  const [dragging, setDragging] = useState<string | null>(null)
+  const [dropOn, setDropOn] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const toggle = (k: string) => setCollapsed((s) => {
     const next = new Set(s)
@@ -103,8 +111,9 @@ export function DataTable<T>({
 
   return (
     <div className="flex flex-col gap-3">
-      {(search || toolbar || filters) && (
+      {(search || toolbar || filters || leading) && (
         <div className="flex flex-wrap items-center gap-2">
+          {leading}
           {search && (
             <Input
               aria-label="Search"
@@ -138,8 +147,40 @@ export function DataTable<T>({
                     const dir = h.column.getIsSorted()
                     const priority = sorting.length > 1 ? sorting.findIndex((s) => s.id === h.column.id) + 1 : 0
                     return (
-                      <th key={h.id} className="px-3 py-2 font-medium" aria-sort={dir ? (dir === 'desc' ? 'descending' : 'ascending') : undefined}>
+                      <th
+                        key={h.id}
+                        className={cn('px-3 py-2 font-medium',
+                          dragging === h.column.id && 'opacity-40', dropOn === h.column.id && dragging !== h.column.id && 'shadow-[inset_2px_0_0_0_var(--color-primary-600,#0a7c7c)]')}
+                        aria-sort={dir ? (dir === 'desc' ? 'descending' : 'ascending') : undefined}
+                        onDragOver={onColumnMove ? (e) => { if (dragging) { e.preventDefault(); setDropOn(h.column.id) } } : undefined}
+                        onDragLeave={onColumnMove ? () => setDropOn((d) => (d === h.column.id ? null : d)) : undefined}
+                        onDrop={onColumnMove ? (e) => {
+                          e.preventDefault()
+                          const id = e.dataTransfer.getData('text/x-column') || dragging
+                          if (id && id !== h.column.id) onColumnMove(id, h.column.id)
+                          setDragging(null); setDropOn(null)
+                        } : undefined}
+                        onDragEnd={onColumnMove ? () => { setDragging(null); setDropOn(null) } : undefined}
+                      >
                         <span className="inline-flex items-center gap-1">
+                          {onColumnMove && (
+                            // The grip is what is dragged (a press on the sort button never starts a drag);
+                            // the keyboard way is the column chooser's ↑ ↓.
+                            <span
+                              draggable
+                              aria-hidden
+                              data-column-grip={h.column.id}
+                              title="Drag to move the column"
+                              className="-ml-1 cursor-grab text-neutral-300 hover:text-neutral-500 active:cursor-grabbing"
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData('text/x-column', h.column.id)
+                                e.dataTransfer.effectAllowed = 'move'
+                                setDragging(h.column.id)
+                              }}
+                            >
+                              <GripVertical className="h-3 w-3" />
+                            </span>
+                          )}
                           {h.isPlaceholder ? null : canSort ? (
                             <button
                               type="button"

@@ -161,7 +161,7 @@ describe('QueryTable with /meta', () => {
     fireEvent.click(within(await openMenu('Price')).getByText('Hide column'))
     await waitFor(() => expect(screen.queryByRole('columnheader', { name: /Price/ })).toBeNull())
     expect(screen.queryByRole('columnheader', { name: /SKU/ })).toBeNull()  // not a page column: hidden at first
-    fireEvent.click(screen.getByRole('button', { name: 'Show or hide columns' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Show, hide or move columns' }))
     fireEvent.click(await screen.findByLabelText('Price'))
     fireEvent.click(screen.getByLabelText('SKU'))
     expect(await screen.findByRole('columnheader', { name: /Price/ })).toBeInTheDocument()

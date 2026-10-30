@@ -275,7 +275,7 @@ modules:
       invoices, configuration — has its own permission; reading needs one too.
     typical:
       - Look up an order from the Shopify store or a retailer and see its lines in EA, where it came from and what happened to it
-      - Work the Review list — orders held because an item, unit, case pack, partner or DC route needs a decision
+      - Work the orders that need review (Orders → view "Needs review") — held because an item, unit, case pack, partner or DC route needs a decision — and Re-check them after fixing the cause
       - Enter a manual order (sample, phone order, staff purchase) as a draft and submit it
       - Maintain the partners, items with their units, retailer part numbers and DC routing, also by CSV
       - Set up the SFTP and Shopify connections, test them, and see the files received and each run's report
@@ -309,7 +309,12 @@ modules:
         filters and remove them; the eye at the left shows or hides columns.
         "Group ascending / descending" on a column (status, partner, kind…)
         groups the rows under headers with the number of rows in each group;
-        a header folds its rows away; up to three levels.
+        a header folds its rows away; up to three levels. The view menu left of
+        the toolbar has the list's system views (e.g. Orders: All, Needs review,
+        Payment hold, Pending, Archive suppressed, Historical) and your own: change
+        the list, then Save as new; a dot means unsaved changes (Save, Save as new,
+        Reset); ⋯ renames, deletes or makes a view your default. Columns can be
+        dragged to a new place, or moved with the arrows in the eye menu.
 
   - key: booking
     label: Meeting Rooms

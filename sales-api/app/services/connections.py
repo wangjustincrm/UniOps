@@ -17,6 +17,7 @@ from app.models.config import Connection
 from app.platform.authorization import requires
 from app.platform.repository import Repository
 from app.platform.services import CrudService
+from app.platform.views import Preset
 from app.schemas.connections import (
     ConnectionCreate, ConnectionRead, ConnectionTestRead, ConnectionUpdate, FolderCheckRead, HostKeyRead,
 )
@@ -52,6 +53,9 @@ class ConnectionRepository(Repository[Connection]):
     enums = {"kind": CONNECTION_KINDS, "after_read": AFTER_READ, "mode": CONNECTION_MODES}
     default_sort = ("name",)
     groupable = ("kind", "mode", "after_read", "partner_code", "active")
+    presets = (Preset("all", "All"),
+               Preset("inactive", "Inactive", {"filters": [{"field": "active", "op": "eq", "value": "false"}]}),
+               Preset("login_refused", "Login refused", {"filters": [{"field": "auth_failed_at", "op": "not_null", "value": None}]}))
 
 
 class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate, ConnectionUpdate]):

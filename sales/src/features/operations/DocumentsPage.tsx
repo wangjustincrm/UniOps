@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
-  ActionButton, Badge, ErrorMessage, QueryTable, Sheet, defaultSpec, type ColumnDef, type QuerySpec,
+  ActionButton, Badge, ErrorMessage, QueryTable, useListView, Sheet, type ColumnDef,
 } from '@/platform-ui'
 import { documentsClient, downloadOriginal, type DocumentRead } from './operationsApi'
 
@@ -47,9 +47,10 @@ function Detail({ d }: { d: DocumentRead }) {
 
 /** Operations → Documents: every file read or written, its original bytes kept (FR-OB-05). */
 export default function DocumentsPage() {
-  const [spec, setSpec] = useState<QuerySpec>(defaultSpec())
+  const view = useListView(documentsClient)
+  const { spec } = view
   const [open, setOpen] = useState<DocumentRead | null>(null)
-  const list = useQuery({ queryKey: ['documents', spec], queryFn: () => documentsClient.list(spec), placeholderData: keepPreviousData })
+  const list = useQuery({ queryKey: ['documents', spec], queryFn: () => documentsClient.list(spec), placeholderData: keepPreviousData, enabled: view.ready })
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -63,8 +64,7 @@ export default function DocumentsPage() {
         total={list.data?.total ?? 0}
         groups={list.data?.groups}
         groupsTruncated={list.data?.groups_truncated}
-        spec={spec}
-        onSpecChange={setSpec}
+        {...view.tableProps}
         sortable={['created_at', 'remote_name', 'kind', 'size']}
         searchable
         loading={list.isLoading}

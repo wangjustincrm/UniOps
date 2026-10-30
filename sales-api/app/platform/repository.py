@@ -28,6 +28,7 @@ from sqlalchemy import Select, and_, func, not_, or_, select, true
 
 from app.platform.entities import SoftDeletable
 from app.platform.errors import InvalidInput, NotFound
+from app.platform.views import Preset
 from app.platform.query import (  # noqa: F401 — FilterRule, parse_bool re-exported
     MAX_GROUPS, NO_VALUE_OPS, OPS_BY_KIND, RANGE_OPS, Filter, FilterRule, Group, Page, QuerySpec, kind_for, parse_bool,
     parse_sort,
@@ -53,6 +54,8 @@ class Repository(Generic[T]):
     # Fields the list can be grouped by (sortable or filterable keys): the
     # values that repeat — a status, a partner, a flag — not free text.
     groupable: ClassVar[tuple[str, ...]] = ()
+    # System views (design §13.19): named partial view states, in /meta.
+    presets: ClassVar[tuple[Preset, ...]] = ()
     default_sort: ClassVar[tuple[str, ...]] = ()  # sortable keys, "-" for descending
     # A boolean column marking rows imported as history (e.g. from the system
     # being replaced). Excluded unless asked for; never on open-work lists.

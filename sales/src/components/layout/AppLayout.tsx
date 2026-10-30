@@ -3,15 +3,19 @@ import { NavLink, useLocation, Routes, Route, Navigate } from 'react-router-dom'
 import { TabStoreProvider, TabBar, TabHost, TabRouterSync, useTabStore } from '@uniops/shell'
 import { moduleRoutes } from '@/app/routes'
 import {
-  Home, Building2, Plug, FileText, Activity, ShoppingCart, AlertTriangle, PenLine, Package, Tags, Route as RouteIcon,
+  Home, Building2, Plug, FileText, Activity, ShoppingCart, PenLine, Package, Tags, Route as RouteIcon,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { PORTAL_URL } from '@/lib/api'
+import { PORTAL_URL, api } from '@/lib/api'
 import { signOut } from '@/lib/signOut'
 import { useBranding } from '@/hooks/useBranding'
 import { usePermissions, MODULE_PERMS } from '@/hooks/usePermissions'
-import { PermissionProvider } from '@/platform-ui'
+import { PermissionProvider, ViewsProvider, createViewsClient } from '@/platform-ui'
+import { ViewRedirect } from '@/app/ViewRedirect'
+
+// Every list's saved views (design §13.19) go through this one client.
+const views = createViewsClient(api)
 import { useRecoverFailedQueries } from '@/app/recoverFailedQueries'
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
@@ -38,7 +42,6 @@ interface NavItem { label: string; href: string; icon: typeof Home; perm: string
 const NAV: NavItem[] = [
   { label: 'Home', href: '/home', icon: Home, perm: MODULE_PERMS[0], section: 'Sales' },
   { label: 'Orders', href: '/orders', icon: ShoppingCart, perm: 'sales.read', section: 'Orders' },
-  { label: 'Review', href: '/review', icon: AlertTriangle, perm: 'sales.order.operate', section: 'Orders' },
   { label: 'Manual orders', href: '/orders/manual', icon: PenLine, perm: 'sales.order.operate', section: 'Orders' },
   { label: 'Documents', href: '/documents', icon: FileText, perm: 'sales.read', section: 'Operations' },
   { label: 'Runs and log', href: '/runs', icon: Activity, perm: 'sales.read', section: 'Operations' },
@@ -331,11 +334,16 @@ export default function AppLayout() {
   if (location.pathname === '/') {
     return <Navigate to={visibleNav[0].href} replace />
   }
+  // The Review worklist became the Orders view "Needs review" (2026-10-30).
+  if (location.pathname === '/review') {
+    return <ViewRedirect to="/orders" resource="orders" view="needs_review" />
+  }
 
   // Embedded (iframe): single page, no chrome/tabs — the host owns navigation.
   if (IS_EMBEDDED) {
     return (
       <PermissionProvider can={perms.can}>
+      <ViewsProvider client={views}>
       <div className="h-screen overflow-y-auto bg-[#FAFBFC]">
         <div className="mx-auto max-w-[1440px] p-4 md:p-6">
           <Routes>
@@ -345,12 +353,14 @@ export default function AppLayout() {
           </Routes>
         </div>
       </div>
+      </ViewsProvider>
       </PermissionProvider>
     )
   }
 
   return (
     <PermissionProvider can={perms.can}>
+    <ViewsProvider client={views}>
     <TabStoreProvider options={{ initialTabs: [{
       key: visibleNav[0].href, title: visibleNav[0].label, kind: 'page', path: visibleNav[0].href, pinned: true, closable: false,
     }], userId: user?.id }}>
@@ -382,6 +392,7 @@ export default function AppLayout() {
         </div>
       </div>
     </TabStoreProvider>
+    </ViewsProvider>
     </PermissionProvider>
   )
 }

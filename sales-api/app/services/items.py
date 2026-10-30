@@ -12,6 +12,7 @@ from app.models.config import DcRouting, Item, ItemPartnerCode, ItemUnit, Partne
 from app.platform.errors import InvalidInput
 from app.platform.repository import Repository
 from app.platform.services import CrudService
+from app.platform.views import Preset
 from app.schemas.items import (
     DcRoutingCreate, DcRoutingRead, DcRoutingUpdate, ItemCreate, ItemRead, ItemUpdate, PartnerCodeCreate,
     PartnerCodeRead, PartnerCodeUpdate, UnitRead,
@@ -48,6 +49,9 @@ class ItemRepository(Repository[Item]):
               "warehouse_held": "Held in the warehouse"}
     default_sort = ("item_code",)
     groupable = ("warehouse_held", "active")
+    presets = (Preset("active", "Active", {"filters": [{"field": "active", "op": "eq", "value": "true"}]}),
+               Preset("inactive", "Inactive", {"filters": [{"field": "active", "op": "eq", "value": "false"}]}),
+               Preset("all", "All"))
 
 
 class ItemService(CrudService[Item, ItemRead, ItemCreate, ItemUpdate]):
@@ -125,6 +129,7 @@ class PartnerCodeRepository(Repository[ItemPartnerCode]):
     list_fields = ("partner_code", "buyer_part", "item_code", "created_at", "updated_at")
     default_sort = ("partner_code", "buyer_part")
     groupable = ("partner_code", "item_code")
+    presets = (Preset("all", "All"),)
 
 
 class PartnerCodeService(CrudService[ItemPartnerCode, PartnerCodeRead, PartnerCodeCreate, PartnerCodeUpdate]):
@@ -155,6 +160,9 @@ class DcRoutingRepository(Repository[DcRouting]):
     labels = {"ship_to_gln": "Ship-to GLN", "dc_number": "DC number"}
     default_sort = ("partner_code", "ship_to_gln")
     groupable = ("partner_code", "active")
+    presets = (Preset("active", "Active", {"filters": [{"field": "active", "op": "eq", "value": "true"}]}),
+               Preset("inactive", "Inactive", {"filters": [{"field": "active", "op": "eq", "value": "false"}]}),
+               Preset("all", "All"))
 
 
 class DcRoutingService(CrudService[DcRouting, DcRoutingRead, DcRoutingCreate, DcRoutingUpdate]):

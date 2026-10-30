@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, Badge, ErrorMessage, QueryTable, Sheet, Tabs, defaultSpec, useToast, type ColumnDef, type QuerySpec,
+  ActionButton, Badge, ErrorMessage, QueryTable, useListView, Sheet, Tabs, useToast, type ColumnDef, type QuerySpec,
 } from '@/platform-ui'
 import { logClient, runNow, runsClient, type LogRead, type PassReport, type RunRead } from './operationsApi'
 
@@ -34,8 +34,9 @@ const logColumns: ColumnDef<LogRead, unknown>[] = [
 ]
 
 function LogTable({ fixed, searchable = true }: { fixed?: QuerySpec['filters']; searchable?: boolean }) {
-  const [spec, setSpec] = useState<QuerySpec>({ ...defaultSpec(), filters: fixed ?? [] })
-  const list = useQuery({ queryKey: ['log', spec], queryFn: () => logClient.list(spec), placeholderData: keepPreviousData })
+  const view = useListView(logClient, { fixed })  // inside a run: that run's log, no views
+  const { spec } = view
+  const list = useQuery({ queryKey: ['log', spec], queryFn: () => logClient.list(spec), placeholderData: keepPreviousData, enabled: view.ready })
   return (
     <QueryTable<LogRead>
       columns={logColumns}
@@ -45,8 +46,7 @@ function LogTable({ fixed, searchable = true }: { fixed?: QuerySpec['filters']; 
       total={list.data?.total ?? 0}
       groups={list.data?.groups}
       groupsTruncated={list.data?.groups_truncated}
-      spec={spec}
-      onSpecChange={(s) => setSpec({ ...s, filters: [...(fixed ?? []), ...(s.filters ?? []).filter((f) => !fixed?.some((x) => x.field === f.field))] })}
+      {...view.tableProps}
       sortable={['at', 'level']}
       searchable={searchable}
       loading={list.isLoading}
@@ -90,11 +90,12 @@ function RunDetail({ run }: { run: RunRead }) {
 function Runs() {
   const qc = useQueryClient()
   const toast = useToast()
-  const [spec, setSpec] = useState<QuerySpec>(defaultSpec())
+  const view = useListView(runsClient)
+  const { spec } = view
   const [open, setOpen] = useState<RunRead | null>(null)
   const [error, setError] = useState<unknown>(null)
   const list = useQuery({
-    queryKey: ['runs', spec], queryFn: () => runsClient.list(spec), placeholderData: keepPreviousData,
+    queryKey: ['runs', spec], queryFn: () => runsClient.list(spec), placeholderData: keepPreviousData, enabled: view.ready,
     refetchInterval: (q) => (q.state.data?.items.some((r) => r.status === 'RUNNING') ? 3000 : false),
   })
   const current = open ? (list.data?.items.find((r) => r.id === open.id) ?? open) : null
@@ -108,8 +109,7 @@ function Runs() {
         total={list.data?.total ?? 0}
         groups={list.data?.groups}
         groupsTruncated={list.data?.groups_truncated}
-        spec={spec}
-        onSpecChange={setSpec}
+        {...view.tableProps}
         sortable={['started_at', 'status']}
         loading={list.isLoading}
         error={list.error}

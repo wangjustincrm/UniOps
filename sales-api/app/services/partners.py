@@ -13,6 +13,7 @@ from app.models.config import Partner
 from app.platform.errors import BusinessError
 from app.platform.repository import Repository
 from app.platform.services import CrudService
+from app.platform.views import Preset
 from app.schemas.partners import PartnerCreate, PartnerRead, PartnerUpdate
 
 READ = "sales.read"
@@ -31,6 +32,9 @@ class PartnerRepository(Repository[Partner]):
              "invoice_method": INVOICE_METHODS}
     default_sort = ("code",)
     groupable = ("channel", "settlement_mode", "sending_mode", "invoice_method", "dc_routing_required", "active")
+    presets = (Preset("active", "Active", {"filters": [{"field": "active", "op": "eq", "value": "true"}]}),
+               Preset("inactive", "Inactive", {"filters": [{"field": "active", "op": "eq", "value": "false"}]}),
+               Preset("all", "All"))
 
 
 # The columns the partner rules look at (check_partner).

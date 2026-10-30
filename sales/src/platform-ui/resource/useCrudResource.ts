@@ -6,6 +6,7 @@ import type { ResourceClient } from './ResourceClient'
 export function useCrudResource<TRead, TCreate, TUpdate>(
   client: ResourceClient<TRead, TCreate, TUpdate>,
   spec: QuerySpec,
+  { enabled = true }: { enabled?: boolean } = {},
 ) {
   const qc = useQueryClient()
   const key = ['platform-crud', client.basePath] as const
@@ -13,6 +14,7 @@ export function useCrudResource<TRead, TCreate, TUpdate>(
     queryKey: [...key, spec],
     queryFn: () => client.list(spec),
     placeholderData: keepPreviousData,
+    enabled,
   })
   const refresh = () => qc.invalidateQueries({ queryKey: key })
   const create = useMutation({ mutationFn: (data: TCreate) => client.create(data), onSuccess: refresh })

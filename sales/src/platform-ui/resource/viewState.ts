@@ -1,9 +1,13 @@
 import type { Filter, QuerySpec, SortKey } from './querySpec'
 
 // One JSON object holds everything a list view is: the query (filters, sort,
-// search, paging) and the layout (column order, hidden columns). Saved views
-// per user (design §13.19) store exactly this — so it is versioned, and a
-// stored view of another version is dropped rather than misread.
+// group, search, paging, history) and the layout (column order and which
+// columns show). Saved views (design §13.19) store exactly this — so it is
+// versioned, and the server flags a stored view of another version.
+//
+// Layout: `columns` is the display order and also lists the extra columns
+// (fields the page does not show by itself) that are switched on; `hidden`
+// lists the page's own columns that are switched off.
 
 export const VIEW_STATE_VERSION = 1
 
@@ -14,7 +18,7 @@ export interface ViewState {
   filters: Filter[]
   search?: string
   pageSize: number
-  /** Column ids in display order (empty = the page's own order). */
+  includeHistorical?: boolean
   columns: string[]
   hidden: string[]
 }
@@ -27,25 +31,50 @@ export interface Layout {
 export const emptyLayout = (): Layout => ({ columns: [], hidden: [] })
 
 export function viewStateOf(spec: QuerySpec, layout: Layout): ViewState {
-  return {
+  return normalizeView({
     version: VIEW_STATE_VERSION, sort: spec.sort ?? [], group: spec.group ?? [], filters: spec.filters ?? [],
-    ...(spec.search ? { search: spec.search } : {}), pageSize: spec.pageSize, columns: layout.columns, hidden: layout.hidden,
-  }
+    search: spec.search, pageSize: spec.pageSize, includeHistorical: spec.includeHistorical,
+    columns: layout.columns, hidden: layout.hidden,
+  })
 }
 
 /** The query half of a view, on page 1. */
 export function specOf(view: ViewState): QuerySpec {
-  return { page: 1, pageSize: view.pageSize, sort: view.sort, group: view.group, filters: view.filters, search: view.search }
+  return {
+    page: 1, pageSize: view.pageSize, sort: view.sort, group: view.group, filters: view.filters, search: view.search,
+    ...(view.includeHistorical ? { includeHistorical: true } : {}),
+  }
 }
 
-export const serializeView = (view: ViewState): string => JSON.stringify(view)
+export const layoutOf = (view: ViewState): Layout => ({ columns: view.columns, hidden: view.hidden })
+
+/** Every part present and in one shape, so two states compare as text. */
+export function normalizeView(v: Partial<ViewState>): ViewState {
+  const sortKey = (k: SortKey) => ({ field: k.field, desc: !!k.desc })
+  return {
+    version: VIEW_STATE_VERSION,
+    sort: (v.sort ?? []).map(sortKey),
+    group: (v.group ?? []).map(sortKey),
+    filters: (v.filters ?? []).map((f) => ({ field: f.field, op: f.op, value: f.value ?? null })),
+    ...(v.search?.trim() ? { search: v.search.trim() } : {}),
+    pageSize: v.pageSize ?? 50,
+    ...(v.includeHistorical ? { includeHistorical: true } : {}),
+    columns: v.columns ?? [],
+    hidden: v.hidden ?? [],
+  }
+}
+
+export const sameView = (a: Partial<ViewState>, b: Partial<ViewState>): boolean =>
+  JSON.stringify(normalizeView(a)) === JSON.stringify(normalizeView(b))
+
+export const serializeView = (view: ViewState): string => JSON.stringify(normalizeView(view))
 
 /** A stored view, or null when it is not one this version can read. */
 export function parseView(text: string): ViewState | null {
   try {
     const v = JSON.parse(text) as Partial<ViewState>
     if (v?.version !== VIEW_STATE_VERSION || !Array.isArray(v.sort) || !Array.isArray(v.filters)) return null
-    return { columns: [], hidden: [], group: [], pageSize: 50, ...v } as ViewState
+    return normalizeView(v)
   } catch {
     return null
   }

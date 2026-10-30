@@ -12,8 +12,8 @@ import { ConfirmAction } from './ConfirmAction'
 import { SchemaForm, type FieldSpec } from './SchemaForm'
 import { useCrudResource } from '../resource/useCrudResource'
 import type { ImportReport, ResourceClient } from '../resource/ResourceClient'
-import { defaultSpec, type QuerySpec } from '../resource/querySpec'
 import { useCan } from './permissions'
+import { useListView } from './views'
 import { ErrorMessage } from './ErrorMessage'
 
 interface Row {
@@ -51,8 +51,9 @@ export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
  *  the write permission opens a record read-only (no save, no deactivate). */
 export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T, TCreate, TUpdate>) {
   const { client, writePermission } = props
-  const [spec, setSpec] = useState<QuerySpec>(defaultSpec())
-  const { list, create, update, deactivate } = useCrudResource(client, spec)
+  const view = useListView(client)
+  const { spec } = view
+  const { list, create, update, deactivate } = useCrudResource(client, spec, { enabled: view.ready })
   const canWrite = useCan(writePermission)
   const [editing, setEditing] = useState<T | 'new' | null>(null)
   const [confirmDeactivate, setConfirmDeactivate] = useState(false)
@@ -93,8 +94,7 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
         total={list.data?.total ?? 0}
         groups={list.data?.groups}
         groupsTruncated={list.data?.groups_truncated}
-        spec={spec}
-        onSpecChange={setSpec}
+        {...view.tableProps}
         resource={client}
         sortable={props.sortable}
         searchable

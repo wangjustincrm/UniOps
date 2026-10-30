@@ -10,6 +10,8 @@ import {
 import { viewStateOf, type Layout, type ViewState } from '../resource/viewState'
 import { errorText } from '../resource/businessError'
 import { ColumnChooser } from './ColumnChooser'
+import { ViewPicker } from './ViewPicker'
+import type { ViewPickerModel } from './views'
 import { ColumnMenu } from './ColumnMenu'
 import { FilterChips } from './FilterChips'
 import { SearchPanel } from './SearchPanel'
@@ -41,8 +43,13 @@ export interface QueryTableProps<T> {
   onRowClick?: (row: T) => void
   emptyTitle?: string
   toolbar?: ReactNode
-  /** Everything the view is, on every change (for saved views later). */
+  /** Everything the view is, on every change. */
   onViewChange?: (view: ViewState) => void
+  /** Controlled layout (column order and visibility), e.g. from useListView. */
+  layout?: Layout
+  onLayoutChange?: (layout: Layout) => void
+  /** The list's saved views (useListView(...).picker): shown left of the toolbar. */
+  picker?: ViewPickerModel
 }
 
 const columnId = <T,>(c: ColumnDef<T, unknown>): string =>
@@ -82,10 +89,11 @@ function WithMeta<T>({ resource, ...props }: ViewProps<T> & { resource: NonNulla
 
 function QueryTableView<T>({
   columns, spec, onSpecChange, meta, locked = [], sortable = [], total, groups, groupsTruncated, searchable, error,
-  errorMessages, toolbar, onViewChange, ...view
+  errorMessages, toolbar, onViewChange, layout: layoutProp, onLayoutChange, picker, ...view
 }: ViewProps<T> & { meta: ListMeta | undefined }) {
   const fields = useMemo(() => new Map((meta?.fields ?? []).map((f) => [f.name, f])), [meta])
-  const [hiddenOverride, setHiddenOverride] = useState<Record<string, boolean>>({})
+  const [ownLayout, setOwnLayout] = useState<Layout>({ columns: [], hidden: [] })
+  const layout = layoutProp ?? ownLayout
   const [panel, setPanel] = useState<{ open: boolean; focus: string | null }>({ open: false, focus: null })
 
   // The page's columns, then every other field /meta describes (hidden at first).
@@ -96,23 +104,39 @@ function QueryTableView<T>({
       id: f.name, header: f.label, cell: ({ row }) => formatValue(f, (row.original as Record<string, unknown>)[f.name]),
     })),
   ], [columns, meta, pageIds])
-  const isHidden = (id: string) => hiddenOverride[id] ?? !pageIds.has(id)
-  const hidden = allColumns.map(columnId).filter(isHidden)
-  const layout: Layout = { columns: allColumns.map(columnId), hidden }
+  // Layout (resource/viewState.ts): no `columns` = the page's order, its own
+  // columns shown, the extra ones hidden; otherwise `columns` is the whole
+  // order, and a column it does not name (added later) shows if it is the page's.
+  const allIds = allColumns.map(columnId)
+  const order = layout.columns.length
+    ? [...layout.columns.filter((id) => allIds.includes(id)), ...allIds.filter((id) => !layout.columns.includes(id))]
+    : allIds
+  const isHidden = (id: string) =>
+    layout.hidden.includes(id) || (!pageIds.has(id) && !(layout.columns.length > 0 && layout.columns.includes(id)))
+  const hidden = order.filter(isHidden)
 
-  const change = (next: QuerySpec, nextLayout: Layout = layout) => {
-    onSpecChange(next)
-    onViewChange?.(viewStateOf(next, nextLayout))
+  const setLayout = (next: Layout) => {
+    if (onLayoutChange) onLayoutChange(next)
+    else setOwnLayout(next)
+    onViewChange?.(viewStateOf(spec, next))
   }
-  const setHidden = (ids: string[]) => {
-    const next = Object.fromEntries(allColumns.map((c) => [columnId(c), ids.includes(columnId(c))]))
-    setHiddenOverride(next)
-    onViewChange?.(viewStateOf(spec, { ...layout, hidden: ids }))
+  const change = (next: QuerySpec) => {
+    onSpecChange(next)
+    onViewChange?.(viewStateOf(next, layout))
+  }
+  // Showing or hiding writes the whole order down, so an extra column shown
+  // stays shown (named in `columns`, not in `hidden`).
+  const setHidden = (ids: string[]) => setLayout({ columns: order, hidden: ids })
+  const move = (id: string, to: number) => {
+    const next = order.filter((x) => x !== id)
+    next.splice(Math.max(0, Math.min(to, next.length)), 0, id)
+    setLayout({ columns: next, hidden })
   }
 
   const sortableIds = [...sortable, ...(meta?.fields ?? []).filter((f) => f.sortable).map((f) => f.name)]
   const panelFields = (meta?.fields ?? []).filter((f) => f.filterable && !locked.includes(f.name))
-  const visible = allColumns.filter((c) => !isHidden(columnId(c)))
+  const byId = new Map(allColumns.map((c) => [columnId(c), c]))
+  const visible = order.filter((id) => !isHidden(id)).map((id) => byId.get(id)!)
 
   // Counts per group prefix (level 0…n), from the whole-result group list.
   const grouping = useMemo<Grouping<T> | undefined>(() => {
@@ -148,6 +172,8 @@ function QueryTableView<T>({
         sort={(spec.sort ?? []).map((s) => ({ id: s.field, desc: !!s.desc }))}
         sortable={sortableIds}
         onSortChange={(s) => change(specFromSorting(spec, [s]))}
+        onColumnMove={meta ? (id, beforeId) => move(id, beforeId === null ? order.length : order.filter((x) => x !== id).indexOf(beforeId)) : undefined}
+        leading={picker ? <ViewPicker model={picker} /> : undefined}
         headerAddon={(id) => {
           const f = fields.get(id)
           return f ? (
@@ -163,9 +189,10 @@ function QueryTableView<T>({
         }}
         leadingHeader={meta ? (
           <ColumnChooser
-            columns={allColumns.map((c) => ({ id: columnId(c), label: headerText(c, fields.get(columnId(c))) }))}
+            columns={order.map((id) => ({ id, label: headerText(byId.get(id)!, fields.get(id)) }))}
             hidden={hidden}
             onChange={setHidden}
+            onMove={(id, delta) => move(id, order.indexOf(id) + delta)}
           />
         ) : undefined}
         chips={meta ? (

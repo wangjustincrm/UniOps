@@ -86,7 +86,8 @@ class ReadOnlyService(Generic[T, R]):
         await self._authorize(self.read_permission)
         repo = self.repo_cls
         return {"version": self.META_VERSION, "fields": repo.field_meta(self.read_schema),
-                "searchable": bool(repo.search_fields), "default_sort": list(repo.default_sort)}
+                "searchable": bool(repo.search_fields), "default_sort": list(repo.default_sort),
+                "views": [p.as_dict() for p in repo.presets]}
 
 
 @dataclass

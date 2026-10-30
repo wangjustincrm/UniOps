@@ -21,6 +21,7 @@ from app.platform.authorization import requires
 from app.platform.errors import BusinessError, InvalidInput
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
+from app.platform.views import Preset
 from app.schemas.orders import (
     LinePreview, LineRead, ManualLineIn, ManualOrderIn, OrderDetail, OrderDocumentRead, OrderRead, ReviewResult,
     TimelineEntry,
@@ -51,6 +52,15 @@ class OrderRepository(Repository[Order]):
     default_sort = ("-order_number",)
     groupable = ("partner_code", "source_type", "fulfillment_status", "invoice_status", "hold_reason", "order_date",
                  "currency", "historical", "archive_suppressed", "shopify_financial_status")
+    # System views (§13.19). Review reason is shown where it says something.
+    presets = (
+        Preset("all", "All", {"hidden": ["review_reason"]}),
+        Preset("needs_review", "Needs review", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Review"}]}),
+        Preset("payment_hold", "Payment hold", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Payment Hold"}], "hidden": ["review_reason"]}),
+        Preset("pending", "Pending (waiting for the 940)", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Pending"}], "hidden": ["review_reason"]}),
+        Preset("archive_suppressed", "Archive suppressed", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Archive Suppressed"}], "hidden": ["review_reason"]}),
+        Preset("historical", "Historical", {"filters": [{"field": "historical", "op": "eq", "value": "true"}], "includeHistorical": True, "hidden": ["review_reason"]}),
+    )
     historical_column = "historical"
 
 
