@@ -451,6 +451,10 @@ def test_pr_line_prices_may_be_zero_or_negative():
         PrLineItemIn(**base, qty=Decimal("0"), unit_price=Decimal("1"))
     page = _src("epms/src/pages/pr/PrCreatePage.tsx")
     assert "estimatedAmount === 0" in page and "At least one line must have a price" in page
+    # The form keeps a typed 0: `value={item.unitPrice || ''}` emptied the box (ISS-0083).
+    lines = _src("epms/src/components/pr/PrLineItems.tsx")
+    assert "item.unitPrice || ''" not in lines
+    assert lines.count("<UnitPriceInput") == 2
 
 
 def test_changing_the_department_clears_the_budget_fields():
