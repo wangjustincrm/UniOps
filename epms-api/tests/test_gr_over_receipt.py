@@ -124,3 +124,34 @@ async def test_collect_asks_for_a_reason_when_it_would_exceed_the_order(admin_cl
     assert r.json()["status"] == "collected"
     assert r.json()["over_receipt_reason"] == "Extra unit kept as spare"
     assert await _received_qty(admin_client, po["id"]) == 3.0
+
+
+async def test_double_submit_creates_one_gr(admin_client, test_engine, monkeypatch):
+    """ISS-0152: a double-click sent two creates 1 ms apart. Both read the open
+    quantity before either was saved, so both passed and the line was received
+    twice. One GR per PO is created at a time; the second needs a reason."""
+    import asyncio
+
+    import app.crud.gr as gr_crud
+
+    # Hold each request between its open-quantity read and its save, so the two
+    # overlap the way the double-click did instead of by luck of scheduling.
+    original = gr_crud._over_receipt_on_create
+
+    async def _slow(*args, **kwargs):
+        result = await original(*args, **kwargs)
+        await asyncio.sleep(0.3)
+        return result
+
+    monkeypatch.setattr(gr_crud, "_over_receipt_on_create", _slow)
+    po, _ = await _make_issued_po(admin_client, test_engine, "VND-OVR-05")
+    pl = await _po_line_id(admin_client, po["id"])
+
+    first, second = await asyncio.gather(
+        _post_gr(admin_client, po["id"], [_line(pl, 2)]),
+        _post_gr(admin_client, po["id"], [_line(pl, 2)]),
+    )
+
+    assert sorted([first.status_code, second.status_code]) == [201, 422], (first.text, second.text)
+    r = await admin_client.get(GR_URL, params={"po_id": po["id"]})
+    assert r.json()["total"] == 1

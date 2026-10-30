@@ -81,7 +81,9 @@ rules:
       not yet collected, and what is still open. Entering more than the open
       quantity raises a warning and the GR cannot be submitted without an
       over-receipt reason. Receipts still waiting to be acknowledged or
-      collected count against the open quantity. If a receipt would take a
+      collected count against the open quantity — including one saved a
+      moment earlier for the same PO, so a double-click on Submit Goods
+      Receipt cannot receive the same quantity twice. If a receipt would take a
       line past its order when it is collected and has no reason yet, the
       reason is asked for at collection. The reason is kept on the GR.
       Over-receiving does not change what is paid: an invoice above the PO
@@ -92,6 +94,7 @@ rules:
       - "tests/test_gr_over_receipt.py::test_over_receipt_needs_a_reason_on_create"
       - "tests/test_gr_over_receipt.py::test_pending_grs_count_against_the_open_quantity"
       - "tests/test_gr_over_receipt.py::test_collect_asks_for_a_reason_when_it_would_exceed_the_order"
+      - "tests/test_gr_over_receipt.py::test_double_submit_creates_one_gr"
   - id: no_escalation_for_goods_receipts
     also_in: [notifications]
     asked_as:

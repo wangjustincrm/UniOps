@@ -73,6 +73,8 @@ export default function GrCreatePage() {
   const replaceTab = useReplaceTab(epmsRoutes)
   const [searchParams] = useSearchParams()
   const createGr = useCreateGr()
+  const savingRef = useRef(false)
+  const [saving, setSaving] = useState(false)
   const { data: posData } = usePos()
   const eligiblePos = (posData?.items ?? []).filter(canReceive)
   const { user } = useAuthStore()
@@ -218,6 +220,11 @@ export default function GrCreatePage() {
 
   const handleSubmit = async () => {
     setSubmitted(true)
+    // A double-click created two GRs for one delivery (GR-20261027-0004/0005,
+    // ISS-0152): the button stayed live while the pack list was encoded and the
+    // request was out. The ref stops the second click synchronously; `saving`
+    // shows it.
+    if (savingRef.current) return
     if (!selectedPo) return
 
     const errs: string[] = []
@@ -230,6 +237,8 @@ export default function GrCreatePage() {
     if (needsOverReason && !overReceiptReason.trim()) errs.push('overReason')
     if (errs.length > 0) return
 
+    savingRef.current = true
+    setSaving(true)
     try {
       const attachments: GrAttachmentIn[] = await Promise.all(
         packListFiles.map(async (f) => ({
@@ -264,6 +273,9 @@ export default function GrCreatePage() {
       replaceTab(`/gr/${newGr.id}`)
     } catch {
       // error already in mutation state
+    } finally {
+      savingRef.current = false
+      setSaving(false)
     }
   }
 
@@ -613,9 +625,9 @@ export default function GrCreatePage() {
             <Link to="/gr">
               <Button variant="secondary">Cancel</Button>
             </Link>
-            <Button onClick={handleSubmit} className="gap-2">
+            <Button onClick={handleSubmit} disabled={saving} className="gap-2">
               <Package className="h-4 w-4" />
-              Submit Goods Receipt
+              {saving ? 'Submitting…' : 'Submit Goods Receipt'}
             </Button>
           </div>
         </>
