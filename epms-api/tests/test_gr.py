@@ -300,6 +300,33 @@ async def test_service_po_confirmed_before_place_order_ends_fully_received(admin
     assert r.json()["status"] == "fully_received"
 
 
+@pytest.mark.asyncio
+async def test_service_gr_reject_only_after_acknowledge(admin_client, test_engine):
+    """GR-S-005 (ISS-0121, ISS-0179): a service GR can be rejected only in
+    collection_pending; from pending_ack the refusal is a 409 with a message
+    (the confirm page now offers Reject only in collection_pending). Reject
+    sets rejected and closes the GR's tasks."""
+    po, _ = await _make_issued_po(admin_client, test_engine, "VND-GR-SVC-REJ", po_type=4)
+    gr = await _create_gr(admin_client, po["id"])
+    assert gr["status"] == "pending_ack"
+
+    r = await admin_client.post(f"{GR_URL}/{gr['id']}/action",
+                                json={"action": "reject", "collection_notes": "Not done at all"})
+    assert r.status_code == 409
+    assert "collection_pending" in r.json()["detail"]
+
+    r = await admin_client.post(f"{GR_URL}/{gr['id']}/action", json={"action": "acknowledge"})
+    assert r.json()["status"] == "collection_pending"
+    assert await _open_requester_tasks(test_engine, gr["id"])   # confirm_service_gr
+
+    r = await admin_client.post(f"{GR_URL}/{gr['id']}/action",
+                                json={"action": "reject", "collection_notes": "Not done at all"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "rejected"
+    assert r.json()["collection_notes"] == "Not done at all"
+    assert await _open_requester_tasks(test_engine, gr["id"]) == []
+
+
 # ── GR on a PO with no linked PR (imported POs) ────────────────────────────────
 # There is no requester to acknowledge/collect/confirm, so the requester steps
 # are skipped automatically and system admins get an alert email instead.

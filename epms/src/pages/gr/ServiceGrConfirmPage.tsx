@@ -129,6 +129,11 @@ export default function ServiceGrConfirmPage() {
 
   const totalValue = gr.line_items.reduce((s, l) => s + Number(l.line_total), 0)
 
+  // GR-S-005: a service GR can be rejected only once acknowledged
+  // (collection_pending). From pending_ack the server refuses it with a 409,
+  // so the option is not offered there (ISS-0121, ISS-0179).
+  const canReject = gr.status === 'collection_pending'
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
@@ -223,7 +228,7 @@ export default function ServiceGrConfirmPage() {
               { value: 'satisfactory', label: 'Satisfactory',    icon: CheckCircle2,   on: 'border-success-400 bg-success-50', iconCls: 'text-success-600' },
               { value: 'issues',       label: 'Has Issues',      icon: AlertTriangle,  on: 'border-warning-400 bg-warning-50', iconCls: 'text-warning-500' },
               { value: 'rejected',     label: 'Reject Service',  icon: AlertTriangle,  on: 'border-danger-400 bg-danger-50',   iconCls: 'text-danger-600' },
-            ] as const).map((opt) => {
+            ] as const).filter((opt) => opt.value !== 'rejected' || canReject).map((opt) => {
               const Icon = opt.icon
               const selected = qualityRating === opt.value
               return (
@@ -354,14 +359,16 @@ export default function ServiceGrConfirmPage() {
         <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
           <AlertTriangle className="h-5 w-5 text-warning-500 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-warning-700">
-            Submitting with issues will notify the Procurement Officer. The GR will still be confirmed and Payment Application can proceed.
+            The GR will still be confirmed and Payment Application can proceed. The issue details are kept in the
+            GR's acceptance notes; the Procurement Officer is not notified, so tell them if the vendor needs to be contacted.
           </p>
         </div>
       ) : (
         <div className="rounded-lg border border-danger-200 bg-danger-50 p-4 flex gap-3">
           <AlertTriangle className="h-5 w-5 text-danger-600 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-danger-700">
-            <strong>Rejecting</strong> the service will mark this GR as <strong>Rejected</strong> and notify the Procurement Officer to liaise with the vendor. Payment Application will not be created.
+            <strong>Rejecting</strong> the service will mark this GR as <strong>Rejected</strong> and close its tasks. Nothing is
+            received against the PO. The Procurement Officer is not notified, so tell them if the vendor needs to be contacted.
           </p>
         </div>
       )}
