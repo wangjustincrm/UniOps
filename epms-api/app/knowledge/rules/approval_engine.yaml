@@ -35,7 +35,7 @@ rules:
       approved that step, opening the link shows the document in its
       current status with no approval buttons — there is nothing left for
       you to do on it.
-    enforced_in: "epms/src/pages/pr/PrDetailPage.tsx, po/PoDetailPage.tsx, pa/PaDetailPage.tsx canApprove (open approve task for this document)"
+    enforced_in: "epms/src/pages/pr/PrDetailPage.tsx, po/PoDetailPage.tsx, pa/PaDetailPage.tsx, agreements/AgreementDetailPage.tsx canApprove (open approve task for this document)"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_approval_buttons_follow_the_open_task"

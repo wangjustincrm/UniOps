@@ -15,6 +15,7 @@ import { useRolePermissions } from '@/hooks/useConfig'
 import { type GrStatus, type ApiGr, type ApiGrLineItem, type GrDamageResolution } from '@/services/gr'
 import { useGrAttachments, useDeleteGrAttachment, useRegenerateGrPdf } from '@/hooks/useGrAttachments'
 import { grAttachmentService } from '@/services/grAttachments'
+import { canCancelGr } from '@/lib/documentActions'
 
 // Statuses the backend accepts for POST /gr/{id}/attachments/regenerate-pdf
 // (anything from the acknowledge step onward, excluding cancelled).
@@ -51,6 +52,9 @@ function GrStatusBadge({ status }: { status: GrStatus }) {
 
 function GrTimeline({ gr }: { gr: ApiGr }) {
   const isPhysical = gr.gr_type === 'physical'
+  // A cancelled (or rejected) GR waits on nobody — no step may show Waiting /
+  // Awaiting (ISS-0124).
+  const awaiting = gr.status === 'cancelled' || gr.status === 'rejected' ? undefined : 'Awaiting requester'
 
   const steps = [
     {
@@ -64,29 +68,29 @@ function GrTimeline({ gr }: { gr: ApiGr }) {
     {
       key: 'ack',
       label: 'Acknowledged',
-      sublabel: gr.acknowledged_by ? `By ${gr.acknowledged_by}` : 'Awaiting requester',
+      sublabel: gr.acknowledged_by ? `By ${gr.acknowledged_by}` : awaiting,
       date: gr.acknowledged_at ? formatDateTime(gr.acknowledged_at) : undefined,
       done: !!gr.acknowledged_at,
-      pending: !gr.acknowledged_at,
+      pending: !!awaiting && !gr.acknowledged_at,
       icon: CheckCircle2,
     },
     isPhysical
       ? {
           key: 'collected',
           label: 'Collection Confirmed',
-          sublabel: gr.collected_by ? `By ${gr.collected_by}` : 'Awaiting requester',
+          sublabel: gr.collected_by ? `By ${gr.collected_by}` : awaiting,
           date: gr.collected_at ? formatDateTime(gr.collected_at) : undefined,
           done: !!gr.collected_at,
-          pending: !!gr.acknowledged_at && !gr.collected_at,
+          pending: !!awaiting && !!gr.acknowledged_at && !gr.collected_at,
           icon: Truck,
         }
       : {
           key: 'confirmed',
           label: 'Service Confirmed',
-          sublabel: gr.collected_by ? `By ${gr.collected_by}` : 'Awaiting requester',
+          sublabel: gr.collected_by ? `By ${gr.collected_by}` : awaiting,
           date: gr.collected_at ? formatDateTime(gr.collected_at) : undefined,
           done: gr.status === 'confirmed',
-          pending: !!gr.acknowledged_at && gr.status !== 'confirmed',
+          pending: !!awaiting && !!gr.acknowledged_at && gr.status !== 'confirmed',
           icon: CheckCircle2,
         },
   ]
@@ -176,6 +180,9 @@ export default function GrDetailPage() {
   const { data: gr, isLoading } = useGr(id ?? '')
   useDocTabTitle(gr?.number)
   const grAction = useGrAction(id ?? '')
+  // Cancel has its own mutation so its refusal shows next to the button.
+  const grCancel = useGrAction(id ?? '')
+  const grPerms = useRolePermissions().data?.permissions
   const { data: po } = usePo(gr?.po_id ?? '')
   const { data: attachments = [] } = useGrAttachments(id ?? '')
   const deleteAttachment = useDeleteGrAttachment(id ?? '')
@@ -209,6 +216,10 @@ export default function GrDetailPage() {
 
   const canCollect = gr.status === 'collection_pending' && gr.gr_type === 'physical' &&
     (user?.role === 'requester' || user?.role === 'system_admin')
+
+  // PRD GR-C-004: pending_ack / collection_pending. Offered to whoever recorded
+  // it, warehouse receivers and System Admin (ISS-0124; lib/documentActions.ts).
+  const canCancel = canCancelGr(gr, user ?? {}, !!grPerms?.['epms.gr.receive'])
 
   const handleAcknowledge = () => {
     grAction.mutate(
@@ -258,6 +269,26 @@ export default function GrDetailPage() {
               <Truck className="h-4 w-4" />
               Confirm Collection
             </Button>
+          )}
+          {canCancel && (
+            <Button
+              variant="secondary"
+              className="gap-2 border-danger-200 text-danger-600 hover:bg-danger-50"
+              disabled={grCancel.isPending}
+              onClick={() => {
+                if (confirm(`Cancel ${gr.number}? Nothing will be recorded as received and its open tasks will be closed.`)) {
+                  grCancel.mutate({ action: 'cancel' })
+                }
+              }}
+            >
+              <X className="h-4 w-4" />
+              Cancel GR
+            </Button>
+          )}
+          {grCancel.isError && (
+            <span className="text-xs text-danger-600">
+              {grCancel.error instanceof Error ? grCancel.error.message : 'Could not cancel the GR'}
+            </span>
           )}
         </div>
       </div>
