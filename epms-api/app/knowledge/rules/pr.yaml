@@ -186,9 +186,9 @@ rules:
       - how do I copy a PR
     answer: >
       Select the old PR on the PR list and click Copy. A new PR form opens
-      filled in from it — title ("Copy of …"), type, lines, currency, notes,
-      delivery address, cost centre and budget account, and the vendor if it
-      is still active. Dates, decomposition factors, attachments and the
+      filled in from it — title ("Copy of …"), type, department (if still
+      active), lines, currency, notes, delivery address, cost centre and
+      budget account, and the vendor if it is still active. Dates, decomposition factors, attachments and the
       Service/Project Owner are not copied.
     enforced_in: "epms/src/pages/pr/PrListPage.tsx (Copy → /pr/new?copyFrom=); PrCreatePage.tsx copyFrom prefill"
     provenance: pinned

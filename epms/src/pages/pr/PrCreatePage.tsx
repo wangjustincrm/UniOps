@@ -173,6 +173,12 @@ export default function PrCreatePage() {
   const { data: sourcePr } = usePr(copyFromId)
   const [copyFilled, setCopyFilled] = useState(false)
   const [copyVendorId, setCopyVendorId] = useState<string | null>(null)
+  // Copy carries the source PR's department (ISS-0100). It is set first, on
+  // its own: the cost centres are listed per department, so the copied cost
+  // centre and budget account are only filled in once that list has loaded —
+  // otherwise picking the department afterwards would clear them again.
+  const [copyDeptApplied, setCopyDeptApplied] = useState(false)
+  const [copyDeptNote, setCopyDeptNote] = useState<string | null>(null)
 
   const { data: vendorsData } = useVendors({
     active_only: true,
@@ -203,7 +209,22 @@ export default function PrCreatePage() {
   }, [config?.delivery_address, setValue])
 
   useEffect(() => {
-    if (!sourcePr || copyFilled) return
+    if (!sourcePr || copyDeptApplied || !departmentsData) return
+    if (sourcePr.department_id) {
+      if (departments.some((d) => d.id === sourcePr.department_id)) {
+        setSelectedDepartmentId(sourcePr.department_id)
+      } else {
+        setCopyDeptNote(
+          `The department of ${sourcePr.number}${sourcePr.department_name ? ` (${sourcePr.department_name})` : ''} is no longer active — choose a department.`,
+        )
+      }
+    }
+    setCopyDeptApplied(true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourcePr, copyDeptApplied, departmentsData])
+
+  useEffect(() => {
+    if (!sourcePr || copyFilled || !copyDeptApplied) return
     if (!vendorsData || !costCentersData || !budgetData) return
 
     setSelectedType(sourcePr.type as ProcurementType)
@@ -258,7 +279,7 @@ export default function PrCreatePage() {
 
     setCopyFilled(true)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourcePr, copyFilled, vendorsData, costCentersData, budgetData])
+  }, [sourcePr, copyFilled, copyDeptApplied, vendorsData, costCentersData, budgetData])
 
   const estimatedAmount = lineItemsTotal(lineItems)
   // Look up from ccL2Accounts (already scoped to the selected CC + L1) to avoid matching a
@@ -660,6 +681,7 @@ export default function PrCreatePage() {
                       onChange={(e) => {
                         setSelectedDepartmentId(e.target.value || undefined)
                         setDepartmentError(null)
+                        setCopyDeptNote(null)
                         // department changed → clear cost-center cascade (cc belongs to the old dept)
                         setSelectedCostCenter(''); setSelectedCostCenterId(undefined)
                         setSelectedL1(''); setSelectedL1Obj(null); setSelectedL2('')
@@ -674,6 +696,9 @@ export default function PrCreatePage() {
                     </select>
                     {departmentError && (
                       <p className="text-xs text-danger-600">{departmentError}</p>
+                    )}
+                    {copyDeptNote && !departmentError && (
+                      <p className="text-xs text-warning-600">{copyDeptNote}</p>
                     )}
                   </div>
 
