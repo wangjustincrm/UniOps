@@ -155,6 +155,47 @@ async def _validate_agreement_pa_invoices(
                         "explicitly without receipt evidence, before raising payment."))
 
 
+# PA statuses that no longer hold a claim on their invoices. Same set the
+# New PA form uses to hide an invoice (PaCreatePage claimedByPaNumber).
+_RELEASED_PA_STATUSES = ("cancelled", "rejected")
+
+
+async def _assert_invoices_not_on_other_live_pa(
+    db: SessionDep, invoice_ids: list, pa_id: uuid.UUID | None = None,
+) -> None:
+    """No invoice may sit on two live PAs: that is one bill paid twice
+    (ISS-0112, PA-012). The New PA form hides such invoices, but the Edit form
+    of a returned PA listed them again and the server took the second claim.
+    So the rule lives here, run on create, on every invoice-list PATCH and on
+    submit, for the PO and the agreement route alike (Direct and Freight PAs
+    have their own check in crud). The invoice rows are locked so two PAs
+    saved at the same moment cannot both pass.
+    """
+    ids = [uuid.UUID(str(i)) for i in dict.fromkeys(str(i) for i in invoice_ids or [])]
+    if not ids:
+        return
+    refs = dict((await db.execute(
+        select(Invoice.id, Invoice.internal_ref).where(Invoice.id.in_(ids))
+        .order_by(Invoice.id).with_for_update()
+    )).all())
+    held: list[str] = []
+    for iid in ids:
+        q = select(PaymentApplication.pa_number).where(
+            PaymentApplication.invoice_ids.contains([str(iid)]),
+            PaymentApplication.status.not_in(_RELEASED_PA_STATUSES),
+        )
+        if pa_id is not None:
+            q = q.where(PaymentApplication.id != pa_id)
+        numbers = (await db.execute(q.order_by(PaymentApplication.pa_number))).scalars().all()
+        if numbers:
+            held.append(f"{refs.get(iid, iid)} is already on {', '.join(numbers)}")
+    if held:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Invoice {'; '.join(held)} and cannot be paid twice. Remove it "
+                   "from this payment application, or cancel the other one first.")
+
+
 async def _assert_invoices_belong_to_pos(
     db: SessionDep, pos: list[PurchaseOrder], invoice_ids: list[uuid.UUID],
 ) -> None:
@@ -506,6 +547,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         # see _validate_agreement_pa_invoices, shared with update_pa's PATCH
         # path so the same rules apply there too.
         await _validate_agreement_pa_invoices(db, agr, body.invoice_ids)
+        await _assert_invoices_not_on_other_live_pa(db, body.invoice_ids)
         # No due-date window here: an agreement PA routinely pays a run of
         # statements together (decided 2026-10-06) — see
         # _assert_invoice_due_dates_within_window.
@@ -660,6 +702,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
     # ── Invoice validation ─────────────────────────────────────────────────────
     await _assert_invoices_belong_to_pos(db, pos, body.invoice_ids)
     await _assert_invoice_due_dates_within_window(db, body.invoice_ids)
+    await _assert_invoices_not_on_other_live_pa(db, body.invoice_ids)
 
     # ── 收货闸门 —— 预付款先付后收豁免;其余类型须有 3-way matched 发票 ──
     # 每一张 PO 都要过闸:只查主 PO 会让「搭车」的第二张 PO 在完全没收货的情况下
@@ -817,6 +860,8 @@ async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: Curr
         await _validate_agreement_pa_invoices(db, agr, body.invoice_ids)
     if pa.agreement_id is None and body.invoice_ids is not None:
         await _assert_invoice_due_dates_within_window(db, body.invoice_ids)
+    if body.invoice_ids is not None and pa.source not in ("direct", "freight"):
+        await _assert_invoices_not_on_other_live_pa(db, body.invoice_ids, pa.id)
 
     # ── PO-set replacement ─────────────────────────────────────────────────────
     # Editing which POs a draft covers runs the same gates creation does. Doing
@@ -945,6 +990,19 @@ async def pa_action(
         raise HTTPException(status_code=404, detail="PA not found")
     if body.action == "submit":
         _assert_invoice_link_on_submit(pa)
+        # Also catches a draft saved before this check existed.
+        await _assert_invoices_not_on_other_live_pa(db, pa.invoice_ids, pa.id)
+        # ISS-0125: invoice_ids has no FK, so a deleted invoice leaves its id
+        # behind and the PA would go on to pay a bill that no longer exists.
+        if pa.invoice_ids:
+            found = set((await db.execute(select(Invoice.id).where(
+                Invoice.id.in_([uuid.UUID(i) for i in pa.invoice_ids])))).scalars().all())
+            if len(found) < len(set(pa.invoice_ids)):
+                raise HTTPException(
+                    status_code=409,
+                    detail="An invoice on this payment application has been deleted. Edit "
+                           "the payment application, link the invoice(s) it really pays, "
+                           "and submit again.")
     try:
         if body.action == "process":
             # Payment is not a workflow action (Phase 0-B1.5): forward to

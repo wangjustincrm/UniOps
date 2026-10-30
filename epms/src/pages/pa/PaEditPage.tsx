@@ -7,7 +7,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDot } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
-import { usePa, useUpdatePa } from '@/hooks/usePas'
+import { usePa, usePas, usePasForPos, useUpdatePa } from '@/hooks/usePas'
 import { usePaAttachments, useUploadPaAttachment, useDeletePaAttachment } from '@/hooks/usePaAttachments'
 import { paAttachmentService } from '@/services/paAttachments'
 import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
@@ -116,6 +116,36 @@ function PoPaEditPage() {
     ? (agreementInvoicesData?.items ?? [])
     : (invoicesForPos.items ?? [])
   const poGrs      = (grsForPos.items ?? []).filter((g) => g.status !== 'cancelled')
+
+  // Invoices another live PA already pays (ISS-0112). Same rule as New PA
+  // (PaCreatePage claimedByPaNumber): hidden from the picker, with a note
+  // saying where they went. One this PA still holds stays listed with a
+  // warning so it can be unticked; the server refuses to save or submit it.
+  const poPasQuery = usePasForPos(isAgreementMode ? [] : poIds, !isAgreementMode)
+  const { data: agreementPas } = usePas(
+    agreement ? { search: agreement.number } : undefined,
+    isAgreementMode && Boolean(agreement),
+  )
+  const claimedByPaNumber = new Map<string, string>()
+  const otherPas = isAgreementMode
+    ? (agreementPas?.items ?? []).filter((p) => p.agreement_id === pa?.agreement_id)
+    : (poPasQuery.items ?? [])
+  for (const other of otherPas) {
+    if (other.id === pa?.id || ['cancelled', 'rejected'].includes(other.status)) continue
+    for (const invId of other.invoice_ids) {
+      if (!claimedByPaNumber.has(invId)) claimedByPaNumber.set(invId, other.pa_number)
+    }
+  }
+  const invoiceChoices = poInvoices.filter(
+    (inv) => !claimedByPaNumber.has(inv.id) || selectedInvoiceIds.has(inv.id),
+  )
+  const hiddenClaimed = poInvoices.filter(
+    (inv) => claimedByPaNumber.has(inv.id) && !selectedInvoiceIds.has(inv.id),
+  )
+  const hiddenClaimedNote = hiddenClaimed.length === 0 ? null : (() => {
+    const pas = [...new Set(hiddenClaimed.map((inv) => claimedByPaNumber.get(inv.id)!))].sort()
+    return `${hiddenClaimed.length} invoice${hiddenClaimed.length === 1 ? ' is' : 's are'} already on ${pas.join(', ')} and cannot be paid twice.`
+  })()
 
   // Pre-fill form once PA data loads
   useEffect(() => {
@@ -496,13 +526,15 @@ function PoPaEditPage() {
                   : (isMultiPo ? 'Invoices for these POs' : 'Invoices for this PO')}
                 <span className="text-neutral-400 font-normal">(select all that apply)</span>
               </p>
-              {poInvoices.length === 0 ? (
+              {invoiceChoices.length === 0 ? (
                 <p className="text-xs text-neutral-400 italic px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
-                  {isAgreementMode ? 'No invoices matched to this agreement yet' : 'No invoices found for the selected PO(s) yet'}
+                  {hiddenClaimedNote
+                    ? `Nothing left to pay — ${hiddenClaimedNote}`
+                    : (isAgreementMode ? 'No invoices matched to this agreement yet' : 'No invoices found for the selected PO(s) yet')}
                 </p>
               ) : (
                 <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-100">
-                  {poInvoices.map((inv) => (
+                  {invoiceChoices.map((inv) => (
                     <label
                       key={inv.id}
                       className={cn(
@@ -529,10 +561,18 @@ function PoPaEditPage() {
                           <span className="text-neutral-200">·</span>
                           <span>Tax <span className="font-mono text-neutral-600">{formatAmount(inv.tax_amount, inv.currency)}</span></span>
                         </div>
+                        {claimedByPaNumber.has(inv.id) && (
+                          <p className="mt-1 text-[11px] text-danger-600">
+                            Also on {claimedByPaNumber.get(inv.id)} — untick it; one invoice cannot be paid twice.
+                          </p>
+                        )}
                       </div>
                     </label>
                   ))}
                 </div>
+              )}
+              {invoiceChoices.length > 0 && hiddenClaimedNote && (
+                <p className="text-[11px] text-neutral-400">{hiddenClaimedNote}</p>
               )}
               {!isAgreementMode && (
                 <DueWindowNotice invoices={poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id))} />

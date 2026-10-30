@@ -1764,6 +1764,14 @@ async def delete(db: AsyncSession, invoice: Invoice) -> None:
             f"Cannot delete invoice in '{invoice.status}' status. "
             "Only unmatched or exception invoices may be deleted."
         )
+    # ISS-0125: the PA would stay payable for a bill that no longer exists.
+    held_by = await _invoice_referenced_by_active_pa(db, invoice.id)
+    if held_by is not None:
+        raise ValueError(
+            f"Payment Application {held_by.pa_number} ({held_by.status}) still pays this "
+            "invoice. Remove the invoice from that payment application, or cancel it, "
+            "before deleting the invoice."
+        )
     po_id = invoice.po_id
     agreement_id = invoice.agreement_id
     # Whole-branch review (I4): release the agreement-side evidence BEFORE the

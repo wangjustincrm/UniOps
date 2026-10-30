@@ -721,14 +721,19 @@ def test_remittance_is_sent_by_hand_and_not_modelled():
     assert "/remittance/send" in routes
 
 
-def test_claimed_invoices_are_hidden_by_the_form_only():
+def test_one_invoice_one_pa_is_refused_by_the_server():
     from app.api.v1 import pa as pa_api
 
+    # ISS-0112: the server refuses it on create, on PATCH and on submit, with
+    # the same "released" statuses the forms use.
+    assert pa_api._RELEASED_PA_STATUSES == ("cancelled", "rejected")
+    for fn in (pa_api.create_pa, pa_api.update_pa, pa_api.pa_action):
+        assert "_assert_invoices_not_on_other_live_pa" in inspect.getsource(fn)
     page = _src("epms/src/pages/pa/PaCreatePage.tsx")
     assert "if (['cancelled', 'rejected'].includes(pa.status)) continue" in page
     assert "lockedInvoiceIds" in page
-    # The server does not check claims on create (one_invoice_one_pa says so).
-    assert "payable_invoice_po_ids" not in inspect.getsource(pa_api.create_pa)
+    edit = _src("epms/src/pages/pa/PaEditPage.tsx")
+    assert "other.id === pa?.id || ['cancelled', 'rejected'].includes(other.status)" in edit
 
 
 # ── Invoices ─────────────────────────────────────────────────────────────────

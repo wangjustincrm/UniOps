@@ -104,7 +104,8 @@ rules:
       Finance Accounts Payable in the same step: one never posted is removed,
       one posted at match is voided and its accrual reversed. If Finance cannot
       confirm, nothing is deleted and the message names the invoice; try again
-      later. An invoice already in payment cannot be deleted at all.
+      later. An invoice already in payment, or on a payment application that
+      is not cancelled or rejected, cannot be deleted at all.
     enforced_in: "epms-api app/services/finance_sync.py void_deleted_invoices + before_commit guard; api/v1/invoices.py, api/v1/freight.py, api/v1/admin.py delete endpoints; finance-api crud/ap_invoice.py void_for_deleted_source; PRD EPMS INV-DEL-001…003, FINANCE FIN-AP-03"
     provenance: pinned
     test:
@@ -246,11 +247,35 @@ rules:
       - 同一张发票能被两张 PA 付款吗？
       - can one invoice be paid by two PAs
     answer: >
-      No, in practice: the payment application form does not offer an
-      invoice that is already on another payment application that is not
-      cancelled or rejected, so each invoice is paid by one PA. This is the
-      form's rule — the server does not itself refuse it.
-    enforced_in: "epms/src/pages/pa/PaCreatePage.tsx (claimed invoices filtered); epms-api app/crud/po.py payable_invoice_po_ids; app/api/v1/pa.py create has no claim check"
+      No. An invoice that is already on another payment application that is
+      not cancelled or rejected cannot be put on a second one: the New PA and
+      Edit PA forms do not offer it (they say which PA holds it), and the
+      server refuses it when a PA is created, when its invoices are changed
+      and when it is submitted, on the PO and the agreement route alike. Once
+      that other PA is cancelled or rejected, the invoice is free again.
+    enforced_in: "epms-api app/api/v1/pa.py _assert_invoices_not_on_other_live_pa (create_pa, update_pa, pa_action submit); app/crud/pa.py create_direct and app/crud/freight.py for Direct / Freight PAs; epms/src/pages/pa/PaCreatePage.tsx and PaEditPage.tsx (claimed invoices hidden)"
     provenance: pinned
     test:
-      - "tests/test_rule_registry.py::test_claimed_invoices_are_hidden_by_the_form_only"
+      - "tests/test_rule_registry.py::test_one_invoice_one_pa_is_refused_by_the_server"
+      - "tests/test_procurement_batch1.py::test_po_route_second_pa_on_same_invoice_refused"
+      - "tests/test_procurement_batch1.py::test_agreement_pa_edit_cannot_reclaim_invoice"
+  - id: invoice_on_a_pa_is_locked
+    also_in: [pa]
+    asked_as:
+      - 发票已经在 PA 上了还能改金额或删除吗？
+      - why can't I edit the amount of this invoice
+      - why can't I delete this invoice, it says a payment application pays it
+    answer: >
+      While an invoice is on a payment application that is not cancelled or
+      rejected, its pre-tax amount, tax, currency, line items and linked goods
+      receipts cannot be changed and it cannot be deleted — the PA was raised
+      for those figures and would otherwise pay amounts that no longer exist.
+      Its dates and notes stay editable. To change it, first remove the
+      invoice from that PA (Edit the PA while it is a draft or returned) or
+      cancel the PA. A PA whose invoice has been deleted cannot be submitted.
+    enforced_in: "epms-api app/api/v1/invoices.py update_invoice (_invoice_money_fields_changed); app/crud/invoice.py delete; app/api/v1/pa.py pa_action submit"
+    provenance: pinned
+    test:
+      - "tests/test_procurement_batch1.py::test_invoice_on_live_pa_amounts_locked_dates_editable"
+      - "tests/test_procurement_batch1.py::test_invoice_on_live_pa_cannot_be_deleted"
+      - "tests/test_procurement_batch1.py::test_pa_whose_invoice_was_deleted_cannot_be_submitted"

@@ -2,6 +2,7 @@
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -946,6 +947,33 @@ async def unmatch_invoice_direct(
     return inv
 
 
+def _invoice_money_fields_changed(inv, body: InvoiceUpdate, prev_gr_ids) -> list[str]:
+    """Which of the fields a PA is paid on this edit really changes. Compared by
+    value, because the Edit form sends every field back even when untouched."""
+    def dec(v):
+        return Decimal(str(v)) if v is not None else None
+
+    def lines(items):
+        return [(str(li.get("description") or "").strip(), dec(li.get("quantity")),
+                 dec(li.get("unit_price")), dec(li.get("line_total")),
+                 bool(li.get("non_po_fee")))
+                for li in items or []]
+
+    moved: list[str] = []
+    if body.amount is not None and dec(body.amount) != dec(inv.amount):
+        moved.append("pre-tax amount")
+    if body.tax_amount is not None and dec(body.tax_amount) != dec(inv.tax_amount):
+        moved.append("tax")
+    if body.currency is not None and body.currency.upper() != (inv.currency or "").upper():
+        moved.append("currency")
+    if body.line_items is not None and lines(
+            [li.model_dump() for li in body.line_items]) != lines(inv.line_items):
+        moved.append("line items")
+    if body.gr_ids is not None and set(body.gr_ids) != set(prev_gr_ids):
+        moved.append("goods receipts")
+    return moved
+
+
 @router.patch("/{invoice_id}", response_model=InvoiceResponse)
 async def update_invoice(
     invoice_id: uuid.UUID,
@@ -988,6 +1016,21 @@ async def update_invoice(
         prev_gr_ids = [uuid.UUID(gid) for gid in inv.gr_ids]
     elif inv.gr_id:
         prev_gr_ids = [inv.gr_id]
+
+    # ISS-0125: a PA copies the invoice's figures when it is raised and pays
+    # them. Changing them underneath a live PA re-ran the match, dropped the
+    # invoice to Unmatched (detached from its PO, so Delete appeared) and left
+    # the PA payable for the old amount. Same rule Unmatch already applies:
+    # the PA has to let go of the invoice first. Dates and notes stay editable.
+    held_by = await invoice_crud._invoice_referenced_by_active_pa(db, inv.id)
+    if held_by is not None:
+        moved = _invoice_money_fields_changed(inv, body, prev_gr_ids)
+        if moved:
+            raise HTTPException(
+                status_code=409,
+                detail=(f"Payment Application {held_by.pa_number} ({held_by.status}) pays this "
+                        f"invoice, so its {', '.join(moved)} cannot be changed. Remove the "
+                        "invoice from that payment application, or cancel it, first."))
 
     prev_status = inv.status
     caller_id = uuid.UUID(user["sub"])

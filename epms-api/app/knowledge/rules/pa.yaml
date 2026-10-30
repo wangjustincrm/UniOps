@@ -122,7 +122,7 @@ rules:
       days apart; a PO has no three-way matched invoice and no authorised
       receipt override; or an invoice is already on another payment
       application that is not cancelled or rejected (the form does not offer
-      it). Agreement PAs follow the agreement's own rules and have no
+      it and the server refuses it). Agreement PAs follow the agreement's own rules and have no
       due-date window. Give me the invoice or PO numbers and I can look at
       their data.
     provenance: derived
