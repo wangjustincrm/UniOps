@@ -153,6 +153,28 @@ def nc_tax(uniops_code: str | None, base: Decimal, tax: Decimal) -> tuple[str, D
     raise PushRefused(f"Tax {tax} on {base} ({rate}%) has no tax line and no NC tax code fits")
 
 
+# Rates tried, in order, when the taxed part of an invoice must be inferred.
+# HST 13 first: almost every vendor is in Ontario. 5% last — any tax in cents
+# reproduces at 5%, so it would win every time if tried earlier.
+_INFER_RATES = (Decimal("13"), Decimal("15"), Decimal("14"), Decimal("5"))
+
+
+def _fits_nominal(base: Decimal, tax: Decimal) -> bool:
+    if not base:
+        return False
+    rate = tax / base * 100
+    return any(abs(rate - t) <= Decimal("0.15") for t in _INFER_RATES)
+
+
+def _taxed_part(amount: Decimal, tax: Decimal) -> Decimal | None:
+    """The part of `amount` that carries `tax` at a statutory rate, or None."""
+    for r in _INFER_RATES:
+        part = (tax * 100 / r).quantize(_CENT, ROUND_HALF_UP)
+        if _ZERO < part < amount and (part * r / 100).quantize(_CENT, ROUND_HALF_UP) == tax:
+            return part
+    return None
+
+
 def clip(s: str, n: int) -> str:
     s = " ".join((s or "").split())
     return s if len(s) <= n else s[:n].rstrip()
@@ -408,6 +430,14 @@ async def plan_bill(db: AsyncSession, ap: ApInvoice, ref: _Ref | None = None,
             m[1] += t.tax_amount or _ZERO
         if not merged:
             merged[None] = [ap.amount, ap.tax_amount]
+            # Mixed-rate invoice keyed without tax lines (Culligan 64069TP: 0.98 on
+            # 197.50 = 0.5%): the tax belongs to part of the amount only. Infer
+            # that part from the first statutory rate that gives the tax back to
+            # the cent; the rest becomes the zero-rated row below (user, 2026-10-30).
+            if ap.tax_amount > _ZERO and not _fits_nominal(ap.amount, ap.tax_amount):
+                part = _taxed_part(ap.amount, ap.tax_amount)
+                if part is not None:
+                    merged[None] = [part, ap.tax_amount]
         # A tax line with tax but no taxable base (11 of 642 in production,
         # 2026-10-27) was keyed with the tax only: its base is the invoice's
         # pre-tax amount less what the other lines cover.

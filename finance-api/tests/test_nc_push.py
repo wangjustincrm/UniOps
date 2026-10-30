@@ -318,6 +318,24 @@ async def test_plan_freight_one_row_per_cost_centre(db_session):
     assert got == [("100.00", "13.00", "001", "CRM0150102"), ("50.00", "0.00", "006", "CRM0150102")]
 
 
+async def test_plan_mixed_rate_without_tax_lines_infers_the_taxed_part(db_session):
+    """Culligan 64069TP (user, 2026-10-30): 0.98 tax on 197.50 and no tax line.
+    The taxed part is inferred at 13% (7.54), the rest is its own zero-rated row."""
+    vid = _vendor()
+    ap, *_ = await _ap(db_session, vendor_id=vid, amount="197.50", tax="0.98", tax_lines=())
+    plan = await svc.plan_bill(db_session, ap, today=date(2026, 10, 27))
+    got = [(str(r.notax), str(r.tax), r.nc_tax_code, str(r.tax_rate)) for r in plan.rows]
+    assert got == [("7.54", "0.98", "001", "13"), ("189.96", "0", "006", "0")]
+    assert plan.total == ap.total_amount
+
+
+async def test_plan_without_tax_lines_at_a_full_rate_stays_one_row(db_session):
+    vid = _vendor()
+    ap, *_ = await _ap(db_session, vendor_id=vid, amount="100.00", tax="13.00", tax_lines=())
+    plan = await svc.plan_bill(db_session, ap, today=date(2026, 10, 27))
+    assert [(str(r.notax), r.nc_tax_code) for r in plan.rows] == [("100.00", "001")]
+
+
 async def test_plan_mixed_rate_splits_untaxed_portion(db_session):
     """Culligan-style: tax lines cover only part of the invoice; the rest is its
     own zero-rated row so every row carries a single rate (user, 2026-10-27)."""
