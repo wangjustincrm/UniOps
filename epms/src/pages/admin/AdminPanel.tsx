@@ -1959,7 +1959,7 @@ function CollectionConfigSection() {
         <div className="flex flex-col gap-3">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Collection SLA Escalation</h3>
           <p className="rounded-lg bg-neutral-50 border border-neutral-200 px-3 py-2 text-xs text-neutral-600">
-            Stored only — these reminders and alerts are not sent yet.
+            Checked once a day (at the daily digest time) while collection is required; counted from the day the GR was saved. The Dept. Manager and Finance Manager are each told once, after the requester has been reminded.
           </p>
           <SlaRow label="Requester reminder" description="Reminder: 'Goods are ready to collect at Technical Warehouse for PO [#].'" value={cfg.reminder_days} onChange={(v) => set('reminder_days', v)} />
           <SlaRow label="Dept. Manager escalation" description="Dept. Manager notified: 'Goods for PO [#] have not been collected. Please follow up.'" value={cfg.manager_escalation_days} onChange={(v) => set('manager_escalation_days', v)} min={cfg.reminder_days + 1} />

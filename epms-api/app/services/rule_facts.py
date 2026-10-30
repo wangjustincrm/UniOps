@@ -177,10 +177,14 @@ async def collection_gate(db) -> dict:
     """Admin → Collection Config "Collection Confirmation Required" (ISS-0146),
     read the way crud.po.collection_gate_on reads it."""
     cfg = await _config(db)
-    on = bool((getattr(cfg, "collection_config", None) or {}).get("collection_gate_enabled", False))
+    cc = getattr(cfg, "collection_config", None) or {}
+    on = bool(cc.get("collection_gate_enabled", False))
     return {"state": ("switched on: a physical PO's PA waits until its goods are collected"
                       if on else
-                      "switched off: a PA is allowed as soon as a goods receipt is recorded")}
+                      "switched off: a PA is allowed as soon as a goods receipt is recorded"),
+            "reminder_days": cc.get("reminder_days", 2),
+            "manager_days": cc.get("manager_escalation_days", 4),
+            "fm_days": cc.get("fm_alert_days", 7)}
 
 
 # ── Payment applications and invoices ────────────────────────────────────────

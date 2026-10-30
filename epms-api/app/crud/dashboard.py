@@ -686,11 +686,27 @@ async def build_warehouse(db: AsyncSession) -> DashboardResponse:
 
     ack_count = ack_r.scalar_one()
     disc_count = disc_r.scalar_one()
+    # "GR flagged 'Collection Overdue' on dashboard" (Collection Config, Finance
+    # Manager alert): waiting past fm_alert_days, while collection is required.
+    from app.crud.config import get_or_create as get_config
+    from app.tasks.gr_collect_due import collection_overdue_cutoff
+
+    cutoff = collection_overdue_cutoff(await get_config(db))
+    overdue = 0
+    if cutoff is not None:
+        overdue = (await db.execute(
+            select(func.count()).select_from(GoodsReceipt).where(
+                GoodsReceipt.status == "collection_pending",
+                func.coalesce(GoodsReceipt.received_at, GoodsReceipt.created_at) < cutoff,
+            )
+        )).scalar_one()
     return DashboardResponse(
         role="warehouse",
         kpis=[
             KpiCard(title="GRs Awaiting ACK", value=str(ack_count), alert=ack_count > 0),
-            KpiCard(title="Collection Pending", value=str(col_r.scalar_one())),
+            KpiCard(title="Collection Pending", value=str(col_r.scalar_one()),
+                    subtitle=f"{overdue} Collection Overdue" if overdue else None,
+                    alert=overdue > 0),
             KpiCard(title="Discrepancies", value=str(disc_count), alert=disc_count > 0),
             KpiCard(title="Completed This Month", value=str(done_r.scalar_one())),
         ],

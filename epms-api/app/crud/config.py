@@ -270,6 +270,29 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
         "<b>Vendor:</b> {vendor}\n\n"
         "<a href=\"{link}\">Open the Goods Receipt</a>\n\n{company_name}",
     ),
+    # Collection SLA escalation (app/tasks/gr_collect_due.py, ISS-0146 ②) —
+    # wording from EPMS → Admin → Collection Config.
+    "gr_collect_reminder": _DEFAULT_EMAIL_TEMPLATE(
+        "Reminder: Goods Ready to Collect — PO {po_number}",
+        "Hi {recipient_name},\n\nGoods are ready to collect at Technical Warehouse for PO "
+        "<b>{po_number}</b> (goods receipt <b>{gr_number}</b>, waiting {days_waiting} day(s)).\n\n"
+        "<a href=\"{link}\">Open the Goods Receipt</a>\n\n{company_name}",
+    ),
+    "gr_collect_escalation": _DEFAULT_EMAIL_TEMPLATE(
+        "Overdue: Goods Not Collected — PO {po_number}",
+        "Hi {recipient_name},\n\nGoods for PO <b>{po_number}</b> have not been collected "
+        "(goods receipt <b>{gr_number}</b>, waiting {days_waiting} day(s); requester "
+        "<b>{holder_name}</b>). Please follow up.\n\n"
+        "<a href=\"{link}\">Open the Goods Receipt</a>\n\n{company_name}",
+    ),
+    "gr_collect_fm_alert": _DEFAULT_EMAIL_TEMPLATE(
+        "Collection Overdue — PO {po_number}",
+        "Hi {recipient_name},\n\nGoods receipt <b>{gr_number}</b> for PO <b>{po_number}</b> "
+        "has not been collected after {days_waiting} day(s) (requester <b>{holder_name}</b>). "
+        "It is flagged Collection Overdue on the Warehouse dashboard.\n\n"
+        "<b>Vendor:</b> {vendor}\n\n"
+        "<a href=\"{link}\">Open the Goods Receipt</a>\n\n{company_name}",
+    ),
     "service_gr_escalation": _DEFAULT_EMAIL_TEMPLATE(
         "Overdue: Service Completion Not Confirmed — {po_number}",
         "Hi {recipient_name},\n\nPO <b>{po_number}</b> was expected to be complete on "
