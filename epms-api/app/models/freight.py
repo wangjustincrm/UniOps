@@ -23,7 +23,10 @@ from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
 
 # The fixed budget account every freight cost lands on (D6). Stored bare —
 # never the "code-name" composite some legacy budget_code columns hold.
-FREIGHT_BUDGET_CODE = "CRM0150102"
+# CRM00204 Postage & Delivery Charges since 2026-10-30 (was CRM0150102 Freight
+# Out FTL/LTL, which is truckload freight); migration fr02 moved existing rows.
+# finance-api nc_push.FREIGHT_REVEXP must stay the same code.
+FREIGHT_BUDGET_CODE = "CRM00204"
 
 
 class FreightCarrier(UUIDPrimaryKey, TimestampMixin, Base):

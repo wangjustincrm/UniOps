@@ -76,7 +76,7 @@ modules:
         numbers on that invoice's page, unregistered ones and pickup / late fees
         are assigned by hand, and the matched invoices are paid from EPMS →
         Payment Applications → New Freight PA, one PA split by cost center. All
-        freight is charged to budget account CRM0150102.
+        freight is charged to budget account CRM00204.
       - >-
         A vendor credit (money the vendor owes back — a credit note, or an
         overpayment or duplicate payment they acknowledge) is not an invoice.

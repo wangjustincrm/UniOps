@@ -65,8 +65,9 @@ EXTERNAL_ID_PREFIX = "UNIOPS-"
 SCOMMENT_MAX = 250            # pfxx billdefine, raised from 20 (rollout step)
 DEF16_MAX = 101               # DB column
 
-# Every freight cost lands on this budget account (freight design D6).
-FREIGHT_REVEXP = "CRM0150102"
+# Every freight cost lands on this budget account (freight design D6); same code
+# as epms-api models.freight.FREIGHT_BUDGET_CODE. CRM0150102 until 2026-10-30.
+FREIGHT_REVEXP = "CRM00204"
 
 # UniOps tax code -> NC tax code. The rate on the row is the invoice's actual
 # rate: NC keeps explicit amounts as sent (proven: 001 at 15% stays 15%).

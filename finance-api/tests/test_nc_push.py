@@ -315,7 +315,7 @@ async def test_plan_freight_one_row_per_cost_centre(db_session):
     plan = await svc.plan_bill(db_session, ap, today=date(2026, 10, 27))
     assert plan.summary == "Freight UPS-77"
     got = sorted((str(r.notax), str(r.tax), r.nc_tax_code, r.dims.revexp) for r in plan.rows)
-    assert got == [("100.00", "13.00", "001", "CRM0150102"), ("50.00", "0.00", "006", "CRM0150102")]
+    assert got == [("100.00", "13.00", "001", "CRM00204"), ("50.00", "0.00", "006", "CRM00204")]
 
 
 async def test_plan_mixed_rate_without_tax_lines_infers_the_taxed_part(db_session):
@@ -696,7 +696,7 @@ async def test_list_gl_code_without_po_follows_the_nc_push(client, db_session):
     r = await client.get("/finance/v1/ap/invoices", headers=_h())
     assert r.status_code == 200, r.text
     gl = {i["ap_invoice_number"]: i["gl_code"] for i in r.json()["items"]}
-    assert gl == {"AP-FR": "CRM0150102", "AP-DIR": "CRM00301", "AP-AGR": "CRM01114",
+    assert gl == {"AP-FR": "CRM00204", "AP-DIR": "CRM00301", "AP-AGR": "CRM01114",
                   "AP-DIR-NOPA": None}
 
 
