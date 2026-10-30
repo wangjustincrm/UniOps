@@ -175,9 +175,9 @@ rules:
     answer: >
       The PR list has a search box (PR number, title, vendor, budget code)
       and filters for Status, Department, Requester, Type and Prepaid.
-      Someone who is only a Requester sees only their own PRs: the Requester
-      filter is fixed to themselves and the list is titled My Purchase
-      Requisitions.
+      Someone who is only a Requester sees only their own PRs: the
+      Department and Requester filters are not shown and the list is titled
+      My Purchase Requisitions.
     enforced_in: "epms/src/pages/pr/PrListPage.tsx"
     provenance: pinned
     test:

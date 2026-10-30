@@ -471,7 +471,7 @@ def test_decomposition_factors_are_required_on_submit_only():
 def test_pr_list_filters():
     page = _src("epms/src/pages/pr/PrListPage.tsx")
     for text in ("Search by PR#, title, vendor, budget code", "All Departments",
-                 "disabled={isRequesterOnly}", "My Purchase Requisitions", "prepaidFilter"):
+                 "{!isRequesterOnly && (", "My Purchase Requisitions", "prepaidFilter"):
         assert text in page, text
 
 
