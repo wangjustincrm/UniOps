@@ -10,7 +10,7 @@ from app.crud import payment_execute
 from app.crud.payment_execute import PaymentPermissionError
 from app.models.mirrors import ExpenseClaim, ExpenseInvoice, Invoice
 from app.models.pa import PaymentApplication
-from app.models.payment_batch import DRAFT, EXECUTED, PaymentBatch, PaymentBatchLine
+from app.models.payment_batch import CANCELLED, DRAFT, EXECUTED, PaymentBatch, PaymentBatchLine
 from app.schemas.payment_execute import PaymentExecuteRequest
 
 
@@ -165,6 +165,7 @@ async def list_due(db: AsyncSession, currency: str | None = None) -> list[dict]:
 
     inv_no = await vendor_inv_no_map(db, pas)
     refs = await epms_invoice_refs(db, pas)
+    in_drafts = await draft_batches_by_doc(db, [r.id for r in pas] + [c.id for c in claims])
     rows = [
         {"doc_kind": "pa_dir" if r.is_direct else "pa",
          "doc_id": str(r.id), "doc_number": r.pa_number,
@@ -175,6 +176,7 @@ async def list_due(db: AsyncSession, currency: str | None = None) -> list[dict]:
          # po | agreement | freight | direct — lets the UI tell a Freight PA
          # (doc_kind 'pa', EPMS-owned) apart from a PO/agreement PA.
          "pa_source": r.source,
+         "in_draft_batches": in_drafts.get(r.id, []),
          "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None}
         for r in pas
     ]
@@ -185,10 +187,31 @@ async def list_due(db: AsyncSession, currency: str | None = None) -> list[dict]:
          "amount": str(c.total_amount), "currency": c.currency,
          "claim_type": c.claim_type,
          "pa_source": None,
+         "in_draft_batches": in_drafts.get(c.id, []),
          "submitted_at": c.submitted_at.isoformat() if c.submitted_at else None}
         for c in claims
     ]
     return rows
+
+
+async def draft_batches_by_doc(db: AsyncSession, doc_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[str]]:
+    """doc_id → numbers of the DRAFT batches already holding it.
+
+    A draft reserves nothing, so a document may sit in several (ISS-0163: it
+    stays selectable, but marked); only one execution can pay it — the
+    executor locks the document and refuses a second payment."""
+    if not doc_ids:
+        return {}
+    rows = (await db.execute(
+        select(PaymentBatchLine.doc_id, PaymentBatch.batch_number)
+        .join(PaymentBatch, PaymentBatch.id == PaymentBatchLine.batch_id)
+        .where(PaymentBatch.status == DRAFT, PaymentBatchLine.doc_id.in_(doc_ids))
+        .order_by(PaymentBatch.batch_number)
+    )).all()
+    out: dict[uuid.UUID, list[str]] = {}
+    for doc_id, number in rows:
+        out.setdefault(doc_id, []).append(number)
+    return out
 
 
 async def create_batch(db: AsyncSession, *, docs: list[tuple[str, uuid.UUID]],
@@ -252,6 +275,17 @@ async def create_batch(db: AsyncSession, *, docs: list[tuple[str, uuid.UUID]],
             batch_id=batch.id, doc_kind="expense_claim",
             doc_id=c.id, doc_number=c.claim_number, amount=c.total_amount,
         ))
+    await db.flush()
+    return batch
+
+
+async def cancel_batch(db: AsyncSession, batch: PaymentBatch) -> PaymentBatch:
+    """Cancel a draft batch (ISS-0163). Its lines stay as history; nothing
+    else changes, because a draft reserves nothing — its documents are still
+    approved and simply stop showing the "in draft" mark."""
+    if batch.status != DRAFT:
+        raise ValueError(f"Only a draft batch can be cancelled (this one is {batch.status})")
+    batch.status = CANCELLED
     await db.flush()
     return batch
 

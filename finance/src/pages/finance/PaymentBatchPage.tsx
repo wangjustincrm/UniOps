@@ -42,6 +42,9 @@ interface Due {
   // EPMS invoices the PA settles (empty for claims and OA Direct PAs) and the
   // earliest of their due dates — a date-only string.
   invoices?: { id: string; number: string }[]; due_date?: string | null
+  // Draft batches that already hold it (ISS-0163). A draft reserves nothing,
+  // so it stays selectable — but only one execution can pay it.
+  in_draft_batches?: string[]
 }
 
 export const DUE_CURRENCIES = ['CAD', 'USD', 'CNY', 'EUR']
@@ -264,7 +267,13 @@ export default function PaymentBatchPage() {
               </span>
             )}
             {canPay && (
-              <button onClick={() => createBatch.mutate()} disabled={selected.size === 0 || createBatch.isPending}
+              <button onClick={() => {
+                const held = dueAll.filter((d) => selected.has(d.doc_id) && d.in_draft_batches?.length)
+                if (held.length > 0 && !window.confirm(
+                  `${held.map((d) => `${d.doc_number} is already in draft ${d.in_draft_batches!.join(', ')}`).join('\n')}\n\n`
+                  + 'Add to a new batch anyway? It can be paid only once — whichever batch is executed first pays it.')) return
+                createBatch.mutate()
+              }} disabled={selected.size === 0 || createBatch.isPending}
                       className={primaryBtn}>
                 {createBatch.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
                 Create Batch
@@ -308,6 +317,12 @@ export default function PaymentBatchPage() {
                         {d.doc_number || d.doc_id.slice(0, 8)}
                       </button>
                     ) : (d.doc_number || d.doc_id.slice(0, 8))}
+                    {d.in_draft_batches && d.in_draft_batches.length > 0 && (
+                      <div className="mt-0.5 font-sans text-[10px] text-amber-700"
+                           title="Already in a draft batch — it can still be selected, but is paid only once">
+                        In draft {d.in_draft_batches.join(', ')}
+                      </div>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-xs text-neutral-600">
                     {d.submitted_at ? new Date(d.submitted_at).toLocaleDateString() : <span className="text-neutral-300">—</span>}
@@ -379,14 +394,21 @@ export default function PaymentBatchPage() {
             qc.invalidateQueries({ queryKey: ['payment-batches'] })
             qc.invalidateQueries({ queryKey: ['payments-due'] })
           }}
+          onCancelled={(number) => {
+            flash('ok', `Batch ${number} cancelled — its payments are back to unbatched`)
+            qc.invalidateQueries({ queryKey: ['payment-batches'] })
+            qc.invalidateQueries({ queryKey: ['payments-due'] })
+            setOpenBatch(null)
+          }}
           onError={(m) => flash('err', m)} />
       )}
     </PortalChromeLayout>
   )
 }
 
-function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
+function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, onError }: {
   batchId: string; canPay: boolean; onClose: () => void
+  onCancelled: (batchNumber: string) => void
   onExecuted: (paid: number, failed: number) => void; onError: (m: string) => void
 }) {
   const qc = useQueryClient()
@@ -470,6 +492,17 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
     if (!s) return []
     return planApplications(s, deselected[docId] ?? new Set<string>())
   }
+
+  // Cancel a draft (ISS-0163): the lines stay as history; its documents were
+  // never reserved, so they simply stop showing the "In draft" mark.
+  const cancel = useMutation({
+    mutationFn: () => financeApi.post<Batch>(`/payments/batches/${batchId}/cancel`, {}),
+    onSuccess: (b) => {
+      qc.invalidateQueries({ queryKey: ['batch', batchId] })
+      onCancelled(b.batch_number)
+    },
+    onError: (e: Error) => onError(e.message),
+  })
 
   const execute = useMutation({
     mutationFn: () => {
@@ -672,6 +705,13 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
                 </span>
               ) : canPay && batch?.status === 'draft' ? (
                 <>
+                  <button onClick={() => {
+                    if (window.confirm(`Cancel draft ${batch.batch_number}? Nothing is paid; its payments go back to unbatched.`)) cancel.mutate()
+                  }} disabled={cancel.isPending || execute.isPending}
+                          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-neutral-300 px-3 text-sm text-neutral-600 hover:bg-neutral-50 disabled:opacity-50">
+                    {cancel.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Cancel Draft
+                  </button>
                   <label className="flex items-center gap-2 text-sm text-neutral-600">
                     <span>Pay from bank</span>
                     <select value={bankId} onChange={(e) => setBankId(e.target.value)}
