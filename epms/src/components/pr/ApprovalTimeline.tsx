@@ -1,5 +1,5 @@
 import { cn, formatDateTime } from '@/lib/utils'
-import { Check, Clock, SkipForward } from 'lucide-react'
+import { Check, Clock, RotateCcw, SkipForward, X } from 'lucide-react'
 import type { ApprovalStep } from '@/types'
 
 const CHANNEL_BADGES: Record<string, string> = {
@@ -44,13 +44,17 @@ export function ApprovalTimeline({ steps, onSendReminder, reminder }: ApprovalTi
                   step.status === 'completed' && 'bg-success-600 text-white',
                   step.status === 'current' && 'bg-primary-600 text-white ring-4 ring-primary-100',
                   step.status === 'pending' && 'border-2 border-neutral-300 bg-white text-neutral-400',
-                  step.status === 'skipped' && 'border-2 border-dashed border-neutral-300 bg-white text-neutral-300'
+                  step.status === 'skipped' && 'border-2 border-dashed border-neutral-300 bg-white text-neutral-300',
+                  step.status === 'returned' && 'bg-warning-500 text-white',
+                  step.status === 'rejected' && 'bg-danger-600 text-white'
                 )}
               >
                 {step.status === 'completed' && <Check className="h-3.5 w-3.5" strokeWidth={2.5} />}
                 {step.status === 'current' && <Clock className="h-3.5 w-3.5" />}
                 {step.status === 'pending' && <span className="h-2 w-2 rounded-full bg-neutral-300" />}
                 {step.status === 'skipped' && <SkipForward className="h-3.5 w-3.5" />}
+                {step.status === 'returned' && <RotateCcw className="h-3.5 w-3.5" />}
+                {step.status === 'rejected' && <X className="h-3.5 w-3.5" strokeWidth={2.5} />}
               </div>
               {!isLast && (
                 <div
@@ -72,13 +76,15 @@ export function ApprovalTimeline({ steps, onSendReminder, reminder }: ApprovalTi
                       step.status === 'completed' && 'text-neutral-900',
                       step.status === 'current' && 'text-primary-700',
                       step.status === 'pending' && 'text-neutral-400',
-                      step.status === 'skipped' && 'text-neutral-400 line-through'
+                      step.status === 'skipped' && 'text-neutral-400 line-through',
+                      step.status === 'returned' && 'text-warning-700',
+                      step.status === 'rejected' && 'text-danger-700'
                     )}
                   >
                     {step.actorName ? `${step.role} — ${step.actorName}` : step.role}
                   </p>
 
-                  {step.status === 'completed' && step.completedAt && (
+                  {['completed', 'returned', 'rejected'].includes(step.status) && step.completedAt && (
                     <p className="text-xs text-neutral-400 mt-0.5">{formatDateTime(step.completedAt)}</p>
                   )}
 
@@ -121,6 +127,11 @@ export function ApprovalTimeline({ steps, onSendReminder, reminder }: ApprovalTi
 
               {step.comment && (
                 <p className="mt-1 text-xs text-neutral-500 italic">"{step.comment}"</p>
+              )}
+
+              {/* Unquoted: the system explaining a skip or a return, not a person. */}
+              {step.note && (
+                <p className="mt-1 text-xs text-neutral-500">{step.note}</p>
               )}
 
               {step.status === 'current' && onSendReminder && (

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
@@ -42,6 +43,7 @@ export default function PoEditPage() {
   useDocTabTitle(po?.number && `Edit ${po.number}`)
   const { data: config } = useConfig()
   const updatePo = useUpdatePo()
+  const queryClient = useQueryClient()
   const poAction = usePoAction(id ?? '')
 
   const [title, setTitle] = useState('')
@@ -167,6 +169,13 @@ export default function PoEditPage() {
       })
       if (andSubmit) {
         await poService.action(id!, { action: 'submit' })
+        // The PO detail tab is kept alive and does not refetch on show: without
+        // this it kept showing Returned, Edit and the old timeline until F5
+        // (ISS-0122). ['pos'] covers the PO and its events.
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['pos'] }),
+          queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+        ])
       }
       replaceTab(`/po/${id}`)
     } finally {

@@ -5,7 +5,7 @@ import { AlertCircle, Clock, ArrowRight, Check, Inbox, RefreshCw } from 'lucide-
 import { cn, formatCAD, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { useTasks } from '@/hooks/useTasks'
-import { TASK_TYPE_LABELS, isEpmsInboxTask, taskHref } from '@/lib/taskTypes'
+import { TASK_TYPE_LABELS, isEpmsInboxTask, overBudgetJustification, taskHref } from '@/lib/taskTypes'
 import type { TaskType } from '@/lib/taskTypes'
 import type { ApiTask } from '@/services/tasks'
 import { groupTasks } from '@/lib/groupTasks'
@@ -56,6 +56,9 @@ function FullTaskCard({ task }: FullTaskCardProps) {
   const navigate = useNavigate()
   const isUrgent = task.priority === 'urgent'
   const isDone = task.is_completed
+  // OBG-002: an over-budget pre-approval is told apart from a plain PR
+  // approval and carries the justification inline (ISS-0126).
+  const obJustification = overBudgetJustification(task)
 
   // Budget Plans are owned by the Finance module. The plan pages physically live
   // in EPMS but are surfaced through Finance (Portal chrome) via EpmsEmbed, so a
@@ -100,7 +103,9 @@ function FullTaskCard({ task }: FullTaskCardProps) {
                   : 'text-neutral-900'
               )}
             >
-              {TASK_TYPE_LABELS[task.type as TaskType] ?? task.type}
+              {obJustification !== null
+                ? 'Over-Budget Pre-Approval'
+                : TASK_TYPE_LABELS[task.type as TaskType] ?? task.type}
             </p>
             {isDone && (
               <span className="inline-flex items-center gap-1 rounded-full bg-success-100 px-2 py-0.5 text-[11px] font-medium text-success-700">
@@ -137,6 +142,18 @@ function FullTaskCard({ task }: FullTaskCardProps) {
               )}
             >
               {task.description}
+            </p>
+          )}
+
+          {obJustification !== null && (
+            <p
+              className={cn(
+                'mt-2 whitespace-pre-line text-xs leading-relaxed',
+                isDone ? 'text-neutral-400' : 'text-neutral-500'
+              )}
+            >
+              <span className="font-medium">Justification:</span>{' '}
+              {obJustification || '(no justification provided)'}
             </p>
           )}
 

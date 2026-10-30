@@ -13,7 +13,7 @@ import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
 import { ScheduleTable } from '@/components/agreements/ScheduleTable'
 import { ReceiptTable } from '@/components/agreements/ReceiptTable'
 import { formatAmount, formatDate, formatDateTime, formatBytes, cn } from '@/lib/utils'
-import type { ApprovalStep, DocumentStatus } from '@/types'
+import type { ApprovalStep, CurrentStep, DocumentStatus } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig, useRolePermissions } from '@/hooks/useConfig'
 import { useAgreement, useAgreementAction, useAgreementEvents, useAgreementSchedule } from '@/hooks/useAgreements'
@@ -29,7 +29,8 @@ import {
 import { agreementAttachmentService } from '@/services/agreementAttachments'
 import type { AgreementStatus, AgreementType } from '@/services/agreement'
 import type { ApiEvent } from '@/services/pr'
-import { historyLine, isSkipped } from '@/lib/approvalHistory'
+import { historyLine } from '@/lib/approvalHistory'
+import { buildApprovalNodes } from '@/lib/approvalTimeline'
 import type { InvoiceStatus } from '@/services/invoices'
 import { isAgreementAdmissible } from '@/lib/agreements'
 import { canRecallDocument } from '@/lib/documentActions'
@@ -77,19 +78,8 @@ function buildWorkflowSteps(
   stepIdx: number,
   events: ApiEvent[] = [],
   createdByName?: string | null,
+  currentStep?: CurrentStep | null,
 ): ApprovalStep[] {
-  // Who actually acted at each step. Same indexing as PrDetailPage's copy of
-  // this function — first approve event per step_idx wins — because the
-  // timeline they both feed is one component and must read the same either
-  // way. Without this the agreement's timeline rendered four role labels and
-  // four green ticks with not one name against them: it showed that the
-  // document was approved, never by whom.
-  const approveEventByStep = events
-    .filter((e) => e.action === 'approve')
-    .reduce<Record<number, ApiEvent>>((acc, e) => {
-      if (!(e.step_idx in acc)) acc[e.step_idx] = e
-      return acc
-    }, {})
   const submitEvent = events.find((e) => e.action === 'submit')
 
   const created: ApprovalStep = {
@@ -102,27 +92,14 @@ function buildWorkflowSteps(
     action: 'Created',
     channel: 'Web',
   }
-  const approvalNodes: ApprovalStep[] = nodes.map((node, i) => {
-    let s: ApprovalStep['status']
-    if (status === 'draft') {
-      s = 'pending'
-    } else if (['active', 'expired', 'closed'].includes(status)) {
-      s = 'completed'
-    } else if (status === 'cancelled') {
-      s = i < stepIdx ? 'completed' : i === stepIdx ? 'skipped' : 'pending'
-    } else {
-      // in_review, returned
-      s = i < stepIdx ? 'completed' : i === stepIdx ? 'current' : 'pending'
-    }
-    // Auto-skipped steps carry an approve event with a machine actor; naming
-    // it would credit a person for a decision nobody made. Same rule as PR.
-    const evt = approveEventByStep[i]
-    const autoSkipped = isSkipped(evt)
-    if (autoSkipped) s = 'skipped'
-    return {
-      id: node.id, role: node.label, status: s,
-      actorName: autoSkipped ? undefined : evt?.actor_name ?? undefined,
-    }
+  // Who acted at each step, the skip reasons, the open step's approver and the
+  // return / reject marker: one reading shared with the PR, PO and PA
+  // timelines, so a returned or rejected agreement no longer shows a step it
+  // already passed as "Awaiting action", nor a cancel as an auto-skip (ISS-0088).
+  const approvalNodes = buildApprovalNodes({
+    nodes, status, stepIdx, events, currentStep,
+    doneStatuses: ['active', 'expired', 'closed'],
+    ownerLabel: 'creator',
   })
   return [created, ...approvalNodes]
 }
@@ -482,6 +459,7 @@ export default function AgreementDetailPage() {
     // Resolved off the same directory the Owner row uses — the agreement
     // response carries created_by as a bare uuid, no name.
     usersData?.items?.find((u) => u.id === agreement.created_by)?.full_name,
+    agreement.current_step,
   )
   const department = departments.find((d) => d.id === agreement.department_id)
 

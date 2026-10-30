@@ -164,11 +164,14 @@ export interface ApprovalStep {
   id: string
   role: string
   actorName?: string
-  status: 'completed' | 'current' | 'pending' | 'skipped'
+  /** returned / rejected: the step at which the document was sent back or rejected. */
+  status: 'completed' | 'current' | 'pending' | 'skipped' | 'returned' | 'rejected'
   completedAt?: string
   channel?: 'Web' | 'Email' | 'Teams'
   action?: 'Approved' | 'Returned' | 'Rejected' | 'Created' | 'Issued'
   comment?: string
+  /** System text under the step: why it was skipped, or what a return waits on. */
+  note?: string
   daysWaiting?: number
 }
 

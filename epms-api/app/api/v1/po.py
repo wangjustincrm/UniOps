@@ -129,6 +129,8 @@ async def get_po(po_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
     scope = await build_scope(db, user)
     if not await is_po_visible(db, po_id, scope):
         raise HTTPException(status_code=404, detail="PO not found")
+    # Who the current approval step is waiting on — see get_pr (ISS-0085).
+    await enrich_current_step(db, "po", [po])
     # Resolve the linked PR's requester so the frontend can gate GR creation on the
     # actual requester identity (not the PO creator / not a generic role).
     data = PoResponse.model_validate(po).model_dump()

@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
 import { formatAmount, formatDate, formatUnitPrice, cn } from '@/lib/utils'
-import type { ApprovalStep, DocumentStatus, WorkflowNodeDef } from '@/types'
+import type { ApprovalStep, CurrentStep, DocumentStatus, WorkflowNodeDef } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
 import { PoSignoffPanel } from '@/components/po/PoSignoffPanel'
@@ -30,7 +30,8 @@ import { poService } from '@/services/po'
 import type { ApiPo, ApiPoLineItem } from '@/services/po'
 import { useApprovalReminder } from '@/hooks/useApprovalReminder'
 import type { ApiEvent } from '@/services/pr'
-import { historyLine, isSkipped } from '@/lib/approvalHistory'
+import { historyLine } from '@/lib/approvalHistory'
+import { buildApprovalNodes } from '@/lib/approvalTimeline'
 import type { GrStatus } from '@/services/gr'
 import { vendorService } from '@/services/vendors'
 import { isImportedEditablePo } from '@/lib/importedPoEdit'
@@ -76,15 +77,10 @@ const GR_STATUS_DOC: Record<GrStatus, DocumentStatus> = {
 
 // ─── Approval Timeline ─────────────────────────────────────────────────────────
 
-function buildWorkflowSteps(nodes: WorkflowNodeDef[], status: string, stepIdx: number, events: ApiEvent[] = []): ApprovalStep[] {
-  // Index approve events by step_idx so each workflow node shows who acted.
-  const approveEventByStep = events
-    .filter((e) => e.action === 'approve')
-    .reduce<Record<number, ApiEvent>>((acc, e) => {
-      if (!(e.step_idx in acc)) acc[e.step_idx] = e
-      return acc
-    }, {})
-
+function buildWorkflowSteps(
+  nodes: WorkflowNodeDef[], status: string, stepIdx: number, events: ApiEvent[] = [],
+  currentStep?: CurrentStep | null,
+): ApprovalStep[] {
   const created: ApprovalStep = {
     id: 'created',
     role: 'Procurement Officer',
@@ -96,26 +92,16 @@ function buildWorkflowSteps(nodes: WorkflowNodeDef[], status: string, stepIdx: n
     action: 'Created',
     channel: 'Web',
   }
-  const approvalNodes: ApprovalStep[] = nodes.map((node, i) => {
-    let s: ApprovalStep['status']
-    if (['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_milk'].includes(status)) {
-      s = 'completed'
-    } else if (status === 'cancelled') {
-      s = i < stepIdx ? 'completed' : i === stepIdx ? 'skipped' : 'pending'
-    } else if (status === 'submitted' || status === 'nc_pending') {
-      // 'nc_pending' = awaiting approval in NC, where the real signatories are.
-      // Every UniOps step renders as pending rather than 'current': no task was
-      // ever raised here, and showing one as current invites somebody to wait
-      // for an approval that will never arrive in this system.
-      s = i < stepIdx ? 'completed' : 'pending'
-    } else {
-      s = i < stepIdx ? 'completed' : i === stepIdx ? 'current' : 'pending'
-    }
-    const evt = approveEventByStep[i]
-    if (isSkipped(evt)) {
-      s = 'skipped'
-    }
-    return { id: node.id, role: node.label, actorName: isSkipped(evt) ? undefined : evt?.actor_name ?? undefined, status: s }
+  // Shared with the PR / Agreement / PA timelines. A `submitted` PO sits on its
+  // first approver's open task like any other document and shows that step as
+  // current (ISS-0088); it used to be lumped with nc_pending and showed none.
+  // 'nc_pending' = awaiting approval in NC, where the real signatories are: it
+  // is not an awaiting status there, so every UniOps step renders as pending
+  // rather than 'current' — no task was ever raised here.
+  const approvalNodes = buildApprovalNodes({
+    nodes, status, stepIdx, events, currentStep,
+    doneStatuses: ['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_milk'],
+    ownerLabel: 'Procurement Officer',
   })
   return [created, ...approvalNodes]
 }
@@ -667,7 +653,7 @@ export default function PoDetailPage() {
     )
   }
 
-  const approvalSteps = buildWorkflowSteps(workflowSteps ?? [], po.status, po.approval_step_idx ?? 0, events ?? [])
+  const approvalSteps = buildWorkflowSteps(workflowSteps ?? [], po.status, po.approval_step_idx ?? 0, events ?? [], po.current_step)
   // Mirrors the PDF: the Sample column only appears when some line carries one,
   // so POs without samples keep their existing layout.
   const showSample = po.line_items.some((li) => li.sample)

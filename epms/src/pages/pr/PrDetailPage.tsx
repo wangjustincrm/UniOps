@@ -7,14 +7,15 @@ import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
 import { formatAmount, formatDate, cn } from '@/lib/utils'
-import type { ApprovalStep, DocumentStatus, WorkflowNodeDef } from '@/types'
+import type { ApprovalStep, CurrentStep, DocumentStatus, WorkflowNodeDef } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig } from '@/hooks/useConfig'
 import { usePr, usePrAction, usePrEvents, usePrWorkflowSteps } from '@/hooks/usePrs'
 import { useApprovalReminder } from '@/hooks/useApprovalReminder'
 import { prService } from '@/services/pr'
 import type { ApiEvent } from '@/services/pr'
-import { historyLine, isSkipped } from '@/lib/approvalHistory'
+import { historyLine } from '@/lib/approvalHistory'
+import { buildApprovalNodes } from '@/lib/approvalTimeline'
 import { useTasks } from '@/hooks/useTasks'
 import { useBudgetOverview, useFactors } from '@/hooks/useBudget'
 import { usePrAttachments, useUploadAttachment, useDeleteAttachment, useRegeneratePrPdf } from '@/hooks/usePrAttachments'
@@ -39,14 +40,8 @@ function buildWorkflowSteps(
   stepIdx: number,
   events: ApiEvent[] = [],
   createdByName?: string | null,
+  currentStep?: CurrentStep | null,
 ): ApprovalStep[] {
-  // Index approve events by step_idx so each workflow node shows who acted.
-  const approveEventByStep = events
-    .filter((e) => e.action === 'approve')
-    .reduce<Record<number, ApiEvent>>((acc, e) => {
-      if (!(e.step_idx in acc)) acc[e.step_idx] = e
-      return acc
-    }, {})
   const submitEvent = events.find((e) => e.action === 'submit')
 
   const created: ApprovalStep = {
@@ -59,22 +54,12 @@ function buildWorkflowSteps(
     action: 'Created',
     channel: 'Web',
   }
-  const approvalNodes: ApprovalStep[] = nodes.map((node, i) => {
-    let s: ApprovalStep['status']
-    if (['approved', 'paid', 'closed'].includes(status)) {
-      s = 'completed'
-    } else if (status === 'rejected') {
-      s = i < stepIdx ? 'completed' : i === stepIdx ? 'skipped' : 'pending'
-    } else if (status === 'returned' || status === 'cancelled') {
-      s = i < stepIdx ? 'completed' : 'pending'
-    } else {
-      s = i < stepIdx ? 'completed' : i === stepIdx ? 'current' : 'pending'
-    }
-    const evt = approveEventByStep[i]
-    if (isSkipped(evt)) {
-      s = 'skipped'
-    }
-    return { id: node.id, role: node.label, actorName: isSkipped(evt) ? undefined : evt?.actor_name ?? undefined, status: s }
+  // Step states, names, skip reasons and the return / reject marker come from
+  // the one reading shared with the PO, Agreement and PA timelines.
+  const approvalNodes = buildApprovalNodes({
+    nodes, status, stepIdx, events, currentStep,
+    doneStatuses: ['approved', 'paid', 'closed'],
+    ownerLabel: 'requester',
   })
   return [created, ...approvalNodes]
 }
@@ -288,6 +273,7 @@ export default function PrDetailPage() {
     pr.approval_step_idx ?? 0,
     events ?? [],
     pr.created_by_name,
+    pr.current_step,
   )
   const hasMaterial = pr.type === 1 || pr.type === 3
 
