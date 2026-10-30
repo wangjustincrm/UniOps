@@ -84,6 +84,11 @@ export interface ApiInvoice {
   gr_value?: number
   variance?: number
   variance_pct?: number
+  // ISS-0129: detail endpoint only — the variance across every invoice on the
+  // same PO line(s), which decides Matched / Exception.
+  cumulative_variance?: number | null
+  cumulative_variance_pct?: number | null
+  cumulative_other_invoices?: string[]
   exception_reason?: string
   exception_resolved_at?: string
   exception_resolved_by?: string

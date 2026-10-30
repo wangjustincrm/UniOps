@@ -357,8 +357,17 @@ export default function InvoiceDetailPage() {
 
   const sla = inv.status === 'unmatched' ? computeSla(inv.uploaded_at) : null
 
-  const varianceAbs = Math.abs(Number(inv.variance ?? 0))
-  const variancePctAbs = Math.abs(Number(inv.variance_pct ?? 0))
+  // ISS-0129: the variance shown is the one that decides Matched / Exception —
+  // every invoice allocated to the same PO line(s), from the server
+  // (cumulative_variance). inv.variance is this invoice alone vs the PO: on a
+  // second bill for the same goods it read "+0%" next to an Exception.
+  const decidingVariance = Number(inv.cumulative_variance ?? inv.variance ?? 0)
+  const decidingPct = Number(inv.cumulative_variance_pct ?? inv.variance_pct ?? 0)
+  const otherInvoices = inv.cumulative_other_invoices ?? []
+  const varianceScope = otherInvoices.length > 0 ? ' (all invoices on this PO line)' : ''
+  const varianceAbs = Math.abs(decidingVariance)
+  const variancePctAbs = Math.abs(decidingPct)
+  const signed = (n: number) => (n > 0 ? '+' : n < 0 ? '−' : '')
   const hasException = inv.status === 'exception'
   // An accepted exception leaves "exception" for "matched" — the variance is
   // still there, a person signed it off. Must not read as "within tolerance".
@@ -366,13 +375,18 @@ export default function InvoiceDetailPage() {
   // Billing less than the PO always passes (a line may be invoiced in parts) —
   // tolerance never applies to it, so "within 5% tolerance" was wrong for, say,
   // -23%. Not an exception either: nothing to review, no justification.
-  const partiallyInvoiced = !hasException && !exceptionAccepted && Number(inv.variance ?? 0) < 0
+  const partiallyInvoiced = !hasException && !exceptionAccepted && decidingVariance < 0
   // "Three-way" needs a linked goods receipt (INV-3WM-006). Matching itself
   // compares amounts only and runs without one (ISS-0138: such invoices read
   // "✓ Passed" with a "Fully delivered" GR row while nothing was received).
   const hasGr = inv.gr_id != null
   const matchLabel = hasGr ? '3-Way Match' : '2-Way Match'
   const awaitingGr = !hasGr && !hasException && !exceptionAccepted
+  // Matched when it was the only bill, but a later invoice on the same PO line
+  // has since pushed the line over tolerance (ISS-0129). Not an Exception on
+  // this invoice — still must not read "within tolerance".
+  const overBilledSince = !hasException && !exceptionAccepted && otherInvoices.length > 0
+    && decidingVariance > 0 && variancePctAbs > matchTolerancePct
   const resolutionNoteLabel = inv.exception_resolution === 'accepted' ? 'Justification' : 'Instructions'
   // Agreement route: no PO/GR, so the PO-vs-GR-vs-Invoice 3-way table doesn't
   // apply — there is nothing to reconcile against but the agreement itself.
@@ -566,8 +580,15 @@ export default function InvoiceDetailPage() {
           <AlertTriangle className="h-5 w-5 text-danger-600 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="text-sm font-semibold text-danger-700">
-              Invoice variance: {inv.currency} {formatAmount(varianceAbs, inv.currency)} ({variancePctAbs.toFixed(1)}% over PO)
+              Variance{varianceScope}: {signed(decidingVariance)}{inv.currency} {formatAmount(varianceAbs, inv.currency)}
+              {' '}({variancePctAbs.toFixed(1)}% {decidingVariance < 0 ? 'below' : 'over'} PO)
             </p>
+            {otherInvoices.length > 0 && (
+              <p className="text-xs text-danger-600 mt-0.5">
+                Other invoices on this PO line: {otherInvoices.join(', ')}. This invoice alone vs the PO:{' '}
+                {Number(inv.variance ?? 0) >= 0 ? '+' : ''}{formatAmount(Number(inv.variance ?? 0), inv.currency)}.
+              </p>
+            )}
             <p className="text-sm text-danger-600 mt-0.5">{inv.exception_reason}</p>
             {inv.exception_resolved_at && (
               <p className="text-xs text-neutral-500 mt-1">
@@ -632,7 +653,7 @@ export default function InvoiceDetailPage() {
                     Application approval chain.
                   </p>
                   <p className="text-xs text-neutral-600">
-                    This invoice was matched with a variance of {formatAmount(Math.abs(Number(inv.variance ?? 0)), inv.currency)}
+                    This invoice was matched with a variance{varianceScope} of {signed(decidingVariance)}{formatAmount(varianceAbs, inv.currency)}
                     {' '}against PO reference {formatAmount(Number(inv.po_total ?? 0), inv.currency)}. Confirm to finalize the match,
                     or reject to send it back to {inv.match_assignee_name ?? 'the assignee'}.
                   </p>
@@ -1274,10 +1295,10 @@ export default function InvoiceDetailPage() {
                   {/* Summary row */}
                   <div className={cn('rounded-xl border p-5 flex items-center gap-4',
                     hasException ? 'border-danger-200 bg-danger-50'
-                      : exceptionAccepted ? 'border-warning-200 bg-warning-50'
+                      : exceptionAccepted || overBilledSince ? 'border-warning-200 bg-warning-50'
                       : partiallyInvoiced || awaitingGr ? 'border-primary-200 bg-primary-50'
                       : 'border-success-200 bg-success-50')}>
-                    {hasException || exceptionAccepted
+                    {hasException || exceptionAccepted || overBilledSince
                       ? <AlertTriangle className={cn('h-8 w-8 flex-shrink-0', hasException ? 'text-danger-600' : 'text-warning-600')} />
                       : partiallyInvoiced || awaitingGr
                       ? <Info className="h-8 w-8 text-primary-600 flex-shrink-0" />
@@ -1285,10 +1306,12 @@ export default function InvoiceDetailPage() {
                     }
                     <div>
                       <p className={cn('text-sm font-semibold',
-                        hasException ? 'text-danger-700' : exceptionAccepted ? 'text-warning-700'
+                        hasException ? 'text-danger-700' : exceptionAccepted || overBilledSince ? 'text-warning-700'
                           : partiallyInvoiced || awaitingGr ? 'text-primary-700' : 'text-success-700')}>
                         {hasException || exceptionAccepted
-                          ? `${matchLabel}: ${hasException ? 'Exception' : 'Exception accepted'} — Variance ${Number(inv.variance_pct ?? 0) > 0 ? '+' : ''}${Number(inv.variance_pct ?? 0).toFixed(1)}% (${inv.currency} ${formatAmount(Number(inv.variance ?? 0), inv.currency)})`
+                          ? `${matchLabel}: ${hasException ? 'Exception' : 'Exception accepted'} — Variance${varianceScope} ${decidingPct > 0 ? '+' : ''}${decidingPct.toFixed(1)}% (${inv.currency} ${formatAmount(decidingVariance, inv.currency)})`
+                          : overBilledSince
+                          ? `${matchLabel}: Matched — the PO line is now billed ${decidingPct.toFixed(1)}% over (${inv.currency} ${formatAmount(decidingVariance, inv.currency)}) together with ${otherInvoices.join(', ')}`
                           : partiallyInvoiced
                           ? `${matchLabel}: Partially invoiced — ${inv.currency} ${formatAmount(varianceAbs, inv.currency)} (${variancePctAbs.toFixed(1)}%) below PO${awaitingGr ? ' · awaiting goods receipt' : ''}`
                           : awaitingGr
@@ -1371,23 +1394,23 @@ export default function InvoiceDetailPage() {
                           href={`/invoices/${inv.id}`}
                           amount={inv.total_amount}
                           currency={inv.currency}
-                          note={hasException || exceptionAccepted
-                            ? `${Number(inv.variance_pct ?? 0) > 0 ? '+' : ''}${Number(inv.variance_pct ?? 0).toFixed(1)}% vs PO${exceptionAccepted ? ' (accepted)' : ''}`
+                          note={hasException || exceptionAccepted || overBilledSince
+                            ? `${decidingPct > 0 ? '+' : ''}${decidingPct.toFixed(1)}% vs PO${varianceScope}${exceptionAccepted ? ' (accepted)' : ''}`
                             : partiallyInvoiced
                             ? `-${variancePctAbs.toFixed(1)}% vs PO (partial)`
                             : 'Within tolerance'}
-                          ok={!hasException}
+                          ok={!hasException && !overBilledSince}
                         />
                       </tbody>
                     </table>
                     {/* Variance footer */}
                     <div className="px-4 py-3 border-t border-neutral-200 bg-neutral-50 flex justify-end">
                       <div className="flex items-center gap-6 text-sm">
-                        <span className="text-neutral-500">Variance</span>
+                        <span className="text-neutral-500">Variance{varianceScope}</span>
                         <span className={cn('font-mono font-semibold',
                           variancePctAbs > matchTolerancePct ? 'text-danger-600' : variancePctAbs > 0 ? 'text-warning-600' : 'text-success-600')}>
-                          {Number(inv.variance ?? 0) >= 0 ? '+' : ''}{formatAmount(Number(inv.variance ?? 0), inv.currency)}{' '}
-                          ({Number(inv.variance_pct ?? 0) >= 0 ? '+' : ''}{Number(inv.variance_pct ?? 0).toFixed(2)}%)
+                          {decidingVariance >= 0 ? '+' : ''}{formatAmount(decidingVariance, inv.currency)}{' '}
+                          ({decidingPct >= 0 ? '+' : ''}{decidingPct.toFixed(2)}%)
                         </span>
                       </div>
                     </div>

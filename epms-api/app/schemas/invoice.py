@@ -256,6 +256,12 @@ class InvoiceResponse(BaseModel):
     variance_pct: Decimal | None
     matched_po_line_ids: list | None = None
     matched_reference_total: Decimal | None = None
+    # ISS-0129: the variance that decides Matched / Exception — every invoice
+    # allocated to the same PO line(s), not this invoice alone (INV-3WM-001).
+    # Detail endpoint only (crud.invoice.attach_cumulative_variance).
+    cumulative_variance: Decimal | None = None
+    cumulative_variance_pct: Decimal | None = None
+    cumulative_other_invoices: list[str] = Field(default_factory=list)
     exception_reason: str | None
     exception_resolved_at: datetime | None
     exception_resolved_by: uuid.UUID | None

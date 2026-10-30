@@ -196,7 +196,11 @@ function PoRouteVariancePanel({
 
   const variance = Number(invoice.variance ?? 0)
   const variancePct = Number(invoice.variance_pct ?? 0)
-  const variancePctAbs = Math.abs(variancePct)
+  // Tone follows the variance that decides Matched / Exception (all invoices
+  // on the PO line — ISS-0129), not this invoice alone, which can read 0 on a
+  // second bill for the same goods.
+  const toneVariance = Number(invoice.cumulative_variance ?? variance)
+  const variancePctAbs = Math.abs(Number(invoice.cumulative_variance_pct ?? variancePct))
 
   // Whole-branch review (finding 4c): tone used to key off the ABSOLUTE
   // variance percentage, so a partially-invoiced PO line (variance < 0 —
@@ -206,9 +210,9 @@ function PoRouteVariancePanel({
   // (crud/invoice.py: `if variance > 0 and not within_tolerance(...)`) —
   // align the color with that: under-invoicing, at any magnitude, never
   // reads as danger here.
-  const tone: 'success' | 'warning' | 'danger' = centsEqual(variance, 0)
+  const tone: 'success' | 'warning' | 'danger' = centsEqual(toneVariance, 0)
     ? 'success'
-    : variance < 0
+    : toneVariance < 0
       ? 'warning'
       : variancePctAbs <= tolerancePct ? 'warning' : 'danger'
 

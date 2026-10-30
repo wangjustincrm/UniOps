@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import case, func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -40,6 +40,60 @@ logger = logging.getLogger(__name__)
 
 
 # ── Claimed receipts (Task 5) ───────────────────────────────────────────────────
+
+async def attach_cumulative_variance(db: AsyncSession, invoice: Invoice) -> None:
+    """Put the variance that decides Matched / Exception on the invoice for its
+    detail page (ISS-0129). match() measures each allocated PO line against the
+    pre-tax amount every invoice allocated to it (INV-3WM-001); the header
+    `variance` is this invoice alone against the PO, which on a second bill for
+    the same goods reads "+0%" while the invoice sits in Exception.
+
+    Same query as match() step 4, run now, so it also reflects invoices matched
+    to those lines after this one. When any line is over-billed, the figure is
+    the over-billed lines only (what raises the Exception); otherwise the net.
+    """
+    rows = [a for a in (invoice.allocations or [])]
+    if not rows:
+        return
+    keys = list(dict.fromkeys((a.po_id, a.po_line_id) for a in rows))
+    per_key: list[tuple[Decimal, Decimal]] = []
+    for po_id, po_line_id in keys:
+        if po_line_id is not None:
+            reference = (await db.execute(
+                select(PoLineItem.line_total).where(PoLineItem.id == po_line_id)
+            )).scalar_one_or_none()
+        else:
+            reference = (await db.execute(
+                select(PurchaseOrder.subtotal).where(PurchaseOrder.id == po_id)
+            )).scalar_one_or_none()
+        if reference is None:
+            return
+        q = select(func.coalesce(func.sum(InvoicePoAllocation.allocated_amount), Decimal("0"))) \
+            .where(InvoicePoAllocation.po_id == po_id)
+        q = q.where(InvoicePoAllocation.po_line_id == po_line_id) if po_line_id is not None \
+            else q.where(InvoicePoAllocation.po_line_id.is_(None))
+        invoiced = (await db.execute(q)).scalar_one() or Decimal("0")
+        per_key.append((invoiced - reference, reference))
+    over = [(v, r) for v, r in per_key if v > Decimal("0")]
+    chosen = over or per_key
+    variance = sum((v for v, _ in chosen), Decimal("0"))
+    reference = sum((r for _, r in chosen), Decimal("0"))
+    invoice.cumulative_variance = variance
+    invoice.cumulative_variance_pct = (
+        (variance / reference * 100).quantize(Decimal("0.0001"))
+        if reference != Decimal("0") else Decimal("0"))
+
+    conds = [and_(InvoicePoAllocation.po_id == po_id,
+                  InvoicePoAllocation.po_line_id == po_line_id if po_line_id is not None
+                  else InvoicePoAllocation.po_line_id.is_(None))
+             for po_id, po_line_id in keys]
+    invoice.cumulative_other_invoices = list((await db.execute(
+        select(Invoice.internal_ref).distinct()
+        .join(InvoicePoAllocation, InvoicePoAllocation.invoice_id == Invoice.id)
+        .where(or_(*conds), Invoice.id != invoice.id)
+        .order_by(Invoice.internal_ref)
+    )).scalars().all())
+
 
 async def attach_claimed_receipts(db: AsyncSession, invoices: list) -> None:
     """Inject `claimed_receipts` onto ORM invoice instances, batched.

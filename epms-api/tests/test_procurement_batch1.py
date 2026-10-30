@@ -214,3 +214,34 @@ async def test_po_header_match_without_picked_lines_takes_invoice_lines(admin_cl
     r = await admin_client.post(PA_URL, json=_pa_body(po["id"], invs, line_items=[]))
     assert r.status_code == 201, r.text
     assert [Decimal(str(l["line_total"])) for l in r.json()["line_items"]] == [Decimal("100.00")]
+
+
+# ── ISS-0129 ────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_detail_shows_the_cumulative_variance_that_decides_exception(admin_client):
+    await _ensure_company_config()
+    v = await _make_vendor(admin_client, f"B1-CUM-{_uuid.uuid4().hex[:6]}")
+    po = await _make_issued_po(admin_client, v["id"], lines=[
+        {"description": "Widget", "qty": "1", "unit": "EA", "unit_price": "100.00"}])
+    line = po["line_items"][0]["id"]
+
+    refs = []
+    for n in range(2):
+        inv = (await admin_client.post(INV_URL, json=_inv_payload(
+            v["id"], vendor_invoice_number=f"B1C-{n}-{_uuid.uuid4().hex[:6]}",
+            amount="100.00", tax_amount="13.00",
+            line_items=[{"description": "Widget", "quantity": "1",
+                         "unit_price": "100.00", "line_total": "100.00"}]))).json()
+        r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={"allocations": [
+            {"invoice_line_id": inv["line_items"][0]["id"], "po_id": po["id"],
+             "po_line_id": line, "allocated_amount": "100.00"}]})
+        assert r.status_code == 200, r.text
+        refs.append((inv["id"], inv["internal_ref"], r.json()["status"]))
+
+    assert [s for _, _, s in refs] == ["matched", "exception"]
+    d = (await admin_client.get(f"{INV_URL}/{refs[1][0]}")).json()
+    assert Decimal(str(d["variance"])) == 0                 # this invoice alone vs the PO
+    assert Decimal(str(d["cumulative_variance"])) == Decimal("100")
+    assert Decimal(str(d["cumulative_variance_pct"])) == Decimal("100")
+    assert d["cumulative_other_invoices"] == [refs[0][1]]

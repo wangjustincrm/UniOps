@@ -705,6 +705,7 @@ async def get_invoice(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPa
         raise HTTPException(status_code=404, detail="Invoice not found")
     await _attach_match_assignees(db, [inv])
     await invoice_crud.attach_claimed_receipts(db, [inv])
+    await invoice_crud.attach_cumulative_variance(db, inv)
     return inv
 
 
