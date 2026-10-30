@@ -55,10 +55,19 @@ def sent(monkeypatch):
     return out
 
 
-async def test_off_by_default(test_engine, sent):
+async def test_on_by_default(test_engine, sent):
+    """PRD PA-007: the requester is notified — unless an admin switches it off."""
     factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as db:
-        _, pa = await _setup(db, enabled=None)
+        requester, pa = await _setup(db, enabled=None)
+        await send_pa_approved(pa.id, db=db)
+    assert [to for to, _ in sent] == [requester.email]
+
+
+async def test_switched_off_emails_nobody(test_engine, sent):
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        _, pa = await _setup(db, enabled=False)
         await send_pa_approved(pa.id, db=db)
     assert sent == []
 

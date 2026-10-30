@@ -635,7 +635,7 @@ async def send_pa_approved(pa_id, db: AsyncSession | None = None) -> None:
 
         cfg = await get_config(db)
         settings_map = cfg.notification_settings or {}
-        if not settings_map.get("pa_approved_notify_requester", False):
+        if not settings_map.get("pa_approved_notify_requester", True):
             return
         if settings_map.get("default_channel") == "none":
             return

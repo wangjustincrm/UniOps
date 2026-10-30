@@ -118,10 +118,10 @@ async def service_gr_reminders(db) -> dict:
 async def notification_switches(db) -> dict:
     """Portal → Notification Settings switches the Assistant states (ISS-0137).
     Fallbacks are the consumers' own: agreement_overdue.run_agreement_overdue
-    reads True, notification.send_pa_approved reads False."""
+    reads True, notification.send_pa_approved reads True (PRD PA-007)."""
     cfg = await _config(db)
     ns = (cfg.notification_settings if cfg else None) or {}
-    pa_on = bool(ns.get("pa_approved_notify_requester", False))
+    pa_on = bool(ns.get("pa_approved_notify_requester", True))
     overdue_on = bool(ns.get("agreement_overdue_enabled", True))
     return {
         "pa_approved": ("switched on, so the requester is emailed when the PA is "

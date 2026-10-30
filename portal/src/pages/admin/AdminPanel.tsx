@@ -967,7 +967,7 @@ function NotificationSettings() {
   // ISS-0146 ③: off, and dry run first — mirrors crud/config.py.
   const budgetAlertVal = budgetAlert ?? ns?.budget_alert_enabled ?? false
   const budgetAlertDryRunVal = budgetAlertDryRun ?? ns?.budget_alert_dry_run ?? true
-  const paApprovedNotifyVal = paApprovedNotify ?? ns?.pa_approved_notify_requester ?? false
+  const paApprovedNotifyVal = paApprovedNotify ?? ns?.pa_approved_notify_requester ?? true
   const mailboxesVal = mailboxes ?? ns?.role_shared_mailboxes ?? {}
 
   const setMailboxFor = (code: string, value: string) => {
@@ -1196,7 +1196,7 @@ function NotificationSettings() {
         </div>
       </Field>
 
-      <Field label="PA Approved — Notify Requester" hint="When on, the person who raised a Payment Application gets an email once it is fully approved. Information only — no task. Off by default.">
+      <Field label="PA Approved — Notify Requester" hint="When on, the person who raised a Payment Application gets an email once it is fully approved. Information only — no task. On by default (PRD PA-007); switch off to stop these emails.">
         <div className="flex items-center gap-2 pt-1.5">
           <Toggle checked={paApprovedNotifyVal} onChange={(v) => setPaApprovedNotify(v)} />
           <span className="text-xs text-neutral-500">{paApprovedNotifyVal ? 'On — requesters are emailed on final approval' : 'Off — requesters are not emailed'}</span>

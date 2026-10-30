@@ -63,16 +63,18 @@ rules:
       - PA 批准后申请人会收到通知吗？
       - am I told when my PA is approved
     answer: >
-      Only if an admin has switched it on: Portal → Admin → Notification
-      Settings → PA Approved — Notify Requester. When on, the person who raised
-      the PA gets one email once it is fully approved (information only — no
-      task; paying it is the Payment Officer's). It is currently {pa_approved}.
+      Yes, unless an admin has switched it off: Portal → Admin → Notification
+      Settings → PA Approved — Notify Requester (on by default). When on, the
+      person who raised the PA gets one email once it is fully approved
+      (information only — no task; paying it is the Payment Officer's). It is
+      currently {pa_approved}.
       Their own channel choice in My Profile still applies.
     provenance: derived
     derive: notification_switches
-    enforced_in: "epms-api app/services/notification.py send_pa_approved (notification_settings.pa_approved_notify_requester, default off); app/api/v1/pa.py pa_action on new_status approved"
+    enforced_in: "epms-api app/services/notification.py send_pa_approved (notification_settings.pa_approved_notify_requester, default on — PRD PA-007); app/api/v1/pa.py pa_action on new_status approved"
     test:
-      - "tests/test_pa_approved_notify.py::test_off_by_default"
+      - "tests/test_pa_approved_notify.py::test_on_by_default"
+      - "tests/test_pa_approved_notify.py::test_switched_off_emails_nobody"
       - "tests/test_pa_approved_notify.py::test_on_emails_the_requester_and_raises_no_task"
   - id: agreement_overdue_email
     also_in: [agreement]
