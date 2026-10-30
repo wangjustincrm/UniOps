@@ -673,11 +673,6 @@ export default function PaDetailPage() {
               Withdraw
             </Button>
           )}
-          {paHeaderAction.isError && (
-            <span className="self-center text-xs text-danger-600">
-              {paHeaderAction.error instanceof Error ? paHeaderAction.error.message : 'The action was refused'}
-            </span>
-          )}
           {/* Approval actions moved to fixed bottom bar */}
           {pa.status === 'approved' && canProcess && (
             <Button
@@ -707,6 +702,14 @@ export default function PaDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Refused header actions (Submit / Recall / Withdraw). Its own row: a long
+          reason inside the button bar squeezed the header (ISS-0166 retest). */}
+      {paHeaderAction.isError && (
+        <p role="alert" className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+          {paHeaderAction.error instanceof Error ? paHeaderAction.error.message : 'The action was refused'}
+        </p>
+      )}
 
       <div className="grid grid-cols-3 gap-6">
         {/* Main content */}

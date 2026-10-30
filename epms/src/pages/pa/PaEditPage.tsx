@@ -105,6 +105,10 @@ function PoPaEditPage() {
   const [otherChargesNote, setOtherNote]= useState('')
   const [notes, setNotes]               = useState('')
   const [submitted, setSubmitted]       = useState(false)
+  // Save & Resubmit saves first, then submits; a refused submit is shown here
+  // instead of being swallowed (ISS-0166 retest: no message at all).
+  const [submitError, setSubmitError]   = useState<string | null>(null)
+  const [submitting, setSubmitting]     = useState(false)
   const [initialized, setInitialized]   = useState(false)
 
   const { data: agreementInvoicesData } = useInvoices(
@@ -397,7 +401,17 @@ function PoPaEditPage() {
       })
 
       if (andSubmit) {
-        await paService.action(pa.id, { action: 'submit' })
+        setSubmitError(null)
+        setSubmitting(true)
+        try {
+          await paService.action(pa.id, { action: 'submit' })
+        } catch (e) {
+          setSubmitError(e instanceof Error ? e.message : 'Could not submit the PA')
+          await queryClient.invalidateQueries({ queryKey: ['pas'] })
+          return
+        } finally {
+          setSubmitting(false)
+        }
         await queryClient.invalidateQueries({ queryKey: ['pas'] })
         replaceTab('/pa')
       } else {
@@ -1011,11 +1025,16 @@ function PoPaEditPage() {
             <Button variant="secondary" onClick={() => handleSave(false)} disabled={updatePa.isPending}>
               Save Draft
             </Button>
-            <Button onClick={() => handleSave(true)} disabled={updatePa.isPending} className="gap-2">
+            <Button onClick={() => handleSave(true)} disabled={updatePa.isPending || submitting} className="gap-2">
               <CreditCard className="h-4 w-4" />
-              Save & Resubmit
+              {submitting ? 'Submitting…' : 'Save & Resubmit'}
             </Button>
           </div>
+          {submitError && (
+            <p role="alert" className="text-right text-sm text-danger-600">
+              Saved as a draft but not submitted: {submitError}
+            </p>
+          )}
         </div>
 
         {/* ── Sidebar — Summary ───────────────────────────────────────────────── */}
