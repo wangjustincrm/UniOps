@@ -243,6 +243,25 @@ async def test_gr_cancel(admin_client, test_engine):
 
 
 @pytest.mark.asyncio
+async def test_gr_cancel_only_before_collection(admin_client, test_engine):
+    """PRD GR-C-004 (ISS-0124): cancel is accepted in collection_pending too,
+    and refused once the goods are collected."""
+    po, _ = await _make_issued_po(admin_client, test_engine, "VND-GR-CANCEL-02")
+    gr = await _create_gr(admin_client, po["id"])
+    r = await admin_client.post(f"{GR_URL}/{gr['id']}/action", json={"action": "acknowledge"})
+    assert r.json()["status"] == "collection_pending"
+    r = await admin_client.post(f"{GR_URL}/{gr['id']}/action", json={"action": "cancel"})
+    assert r.status_code == 200 and r.json()["status"] == "cancelled"
+
+    po2, _ = await _make_issued_po(admin_client, test_engine, "VND-GR-CANCEL-03")
+    gr2 = await _create_gr(admin_client, po2["id"])
+    await admin_client.post(f"{GR_URL}/{gr2['id']}/action", json={"action": "acknowledge"})
+    await admin_client.post(f"{GR_URL}/{gr2['id']}/action", json={"action": "collect"})
+    r = await admin_client.post(f"{GR_URL}/{gr2['id']}/action", json={"action": "cancel"})
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
 async def test_service_gr_flow(admin_client, test_engine):
     """Type 4 (Service) GR → service flow."""
     po, _ = await _make_issued_po(admin_client, test_engine, "VND-GR-SVC-01", po_type=4)

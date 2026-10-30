@@ -626,6 +626,20 @@ def test_gr_statuses_are_the_routes():
                      "service": "approved, issued and partially_received"}
 
 
+def test_gr_cancel_button_follows_the_server():
+    """ISS-0124: the page offers Cancel GR in exactly the statuses the action
+    accepts, and only through the shared predicate."""
+    from app.crud import gr as gr_crud
+
+    src = inspect.getsource(gr_crud.action)
+    assert 'elif act == "cancel":\n        if gr.status not in ("pending_ack", "collection_pending"):' in src
+    page = _src("epms/src/pages/gr/GrDetailPage.tsx")
+    assert "canCancelGr(gr, user ?? {}, !!grPerms?.['epms.gr.receive'])" in page
+    assert "grCancel.mutate({ action: 'cancel' })" in page
+    lib = _src("epms/src/lib/documentActions.ts")
+    assert "GR_CANCELLABLE_STATUSES = ['pending_ack', 'collection_pending'] as const" in lib
+
+
 def test_a_damaged_line_raises_an_urgent_task_for_procurement():
     from app.crud import gr as gr_crud
 

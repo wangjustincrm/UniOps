@@ -1,7 +1,7 @@
 area: gr
 label: Goods receipts and service confirmations
 covers: >
-  When a receipt can be created, damaged goods, reminders and escalation for receipts and service completion, the Receiving Report.
+  When a receipt can be created, cancelling a receipt, damaged goods, reminders and escalation for receipts and service completion, the Receiving Report.
 rules:
   - id: gr_numbering
     asked_as:
@@ -30,6 +30,24 @@ rules:
     provenance: pinned
     test:
       - "tests/test_assistant_iss_batch1.py::test_gr_without_pr_rule_matches_the_code"
+  - id: cancel_a_receipt
+    asked_as:
+      - can I cancel a goods receipt
+      - who can cancel a GR
+      - 收货单可以撤销吗
+    answer: >
+      Yes, while it is Pending Acknowledgement or Collection Pending — Cancel GR
+      on the GR page, offered to whoever recorded the receipt, anyone with the
+      warehouse receive permission, and System Admins. Once the goods are
+      collected or the service confirmed it can no longer be cancelled there.
+      A cancelled receipt counts nothing as received, its open tasks
+      (including a damage report) are closed, and its progress shows nothing
+      waiting.
+    enforced_in: "epms-api app/crud/gr.py action cancel (pending_ack / collection_pending); epms/src/lib/documentActions.ts canCancelGr, used by pages/gr/GrDetailPage.tsx"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_gr_cancel_button_follows_the_server"
+      - "tests/test_gr.py::test_gr_cancel_only_before_collection"
 
   # ── Added 2026-10-21 (issue review batch 3) ───────────────────────────────
   - id: when_a_receipt_can_be_created

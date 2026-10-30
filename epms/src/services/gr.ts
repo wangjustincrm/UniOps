@@ -57,6 +57,7 @@ export interface ApiGr {
   damage_resolution_note?: string | null
   damage_resolved_at?: string | null
   damage_resolved_by?: string | null
+  created_by?: string
   created_at: string
 }
 
