@@ -680,11 +680,13 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
       }
       if (matchedPo) {
         const lineAllocs = buildLineLevelAllocations(inv, matchedPo)
-        const linkedGr = grs.find((g) => g.po_id === matchedPo.id && g.status !== 'cancelled')
+        // No GR is sent: the server then links every GR that received the
+        // matched lines (INV-MATCH-010). Sending the first GR on the PO here
+        // switched that off and left a two-delivery PO with one GR (ISS-0080).
         matchInvoiceMutation.mutate(
           lineAllocs
-            ? { id: inv.id, allocations: lineAllocs, gr_id: linkedGr?.id }
-            : { id: inv.id, po_id: matchedPo.id, gr_id: linkedGr?.id },
+            ? { id: inv.id, allocations: lineAllocs }
+            : { id: inv.id, po_id: matchedPo.id },
           {
             onSuccess: () => finishOne(inv.id),
             onError: () => setCreatedInv(inv),   // fall back to manual panel
@@ -741,7 +743,12 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
     }
 
     const handleAllocSubmit = (payload: { allocations: AllocationInput[]; nonPoLines: NonPoLineInput[]; referencePoId: string | null }) => {
-      const linkedGr = matchedPo ? grs.find((g) => g.po_id === matchedPo.id && g.status !== 'cancelled') : undefined
+      // As above, the server finds the GRs for allocated lines. Only a
+      // fee-only invoice (no allocation to discover from) keeps the old
+      // reference to a GR on the PO.
+      const feeOnly = payload.allocations.length === 0
+      const linkedGr = feeOnly && matchedPo
+        ? grs.find((g) => g.po_id === matchedPo.id && g.status !== 'cancelled') : undefined
       matchInvoiceMutation.mutate(
         { id: createdInv.id, allocations: payload.allocations, non_po_lines: payload.nonPoLines,
           reference_po_id: payload.referencePoId ?? undefined, gr_id: linkedGr?.id },

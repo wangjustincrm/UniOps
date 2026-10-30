@@ -1062,8 +1062,11 @@ async def update_invoice(
 
     # Re-run match against current allocations so variance/status reflect edits.
     if prev_po_id is not None or inv.gr_ids:
-        result = await invoice_crud.rematch_from_existing(
-            db, result, matched_by=caller_id, accepted_numbers=accepted_numbers)
+        try:
+            result = await invoice_crud.rematch_from_existing(
+                db, result, matched_by=caller_id, accepted_numbers=accepted_numbers)
+        except invoice_crud.AllocationImbalance as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
 
     # An edit can MATCH the invoice: rematch_from_existing calls crud.match()
     # directly, and match() is where the status is set — every piece of

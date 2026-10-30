@@ -163,3 +163,24 @@ async def test_pa_whose_invoice_was_deleted_cannot_be_submitted(admin_client, te
     r = await admin_client.post(f"{PA_URL}/{pa['id']}/action", json={"action": "submit"})
     assert r.status_code == 409, r.text
     assert "has been deleted" in r.json()["detail"]
+
+
+# ── ISS-0120 ────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_match_to_another_vendors_po_refused(admin_client):
+    await _ensure_company_config()
+    mine = await _make_vendor(admin_client, f"B1-MINE-{_uuid.uuid4().hex[:6]}")
+    other = await _make_vendor(admin_client, f"B1-OTHR-{_uuid.uuid4().hex[:6]}")
+    other_po = await _make_issued_po(admin_client, other["id"])
+    inv = (await admin_client.post(INV_URL, json=_inv_payload(
+        mine["id"], vendor_invoice_number=f"B1-{_uuid.uuid4().hex[:6]}"))).json()
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={"allocations": [
+        {"invoice_line_id": inv["line_items"][0]["id"], "po_id": other_po["id"],
+         "po_line_id": other_po["line_items"][0]["id"], "allocated_amount": "1000.00"}]})
+    assert r.status_code == 422, r.text
+    assert other_po["number"] in r.json()["detail"]
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={"po_id": other_po["id"]})
+    assert r.status_code == 422, r.text

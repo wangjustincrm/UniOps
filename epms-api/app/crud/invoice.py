@@ -1149,6 +1149,14 @@ async def match(
             )).scalar_one_or_none()
             if po is None:
                 raise ValueError(f"Purchase order {a.po_id} not found")
+            # ISS-0120: the candidate list offers only this vendor's POs, but
+            # the endpoint took any PO id it was sent. Same rule as the
+            # fee-only link and the agreement route below.
+            if invoice.vendor_id is not None and po.vendor_id != invoice.vendor_id:
+                raise AllocationImbalance(
+                    f"{po.number} is a purchase order of {po.vendor_name}, not of "
+                    f"{invoice.vendor_name}. An invoice can only be matched to its own "
+                    "vendor's purchase orders.")
             po_cache[a.po_id] = po
         if a.po_line_id is not None:
             exists = (await db.execute(
