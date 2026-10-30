@@ -4,7 +4,7 @@ import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, Search, Upload, X } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
@@ -35,6 +35,7 @@ export default function AgreementEditPage() {
   const { data: agreement, isLoading } = useAgreement(id ?? '')
   useDocTabTitle(agreement?.number && `Edit ${agreement.number}`)
   const updateAgreement = useUpdateAgreement()
+  const queryClient = useQueryClient()
   const { data: deptData } = useDepartments()
   const departments = (deptData?.items ?? []).filter((d) => d.is_active)
   const taxCodes = useTaxCodes()
@@ -362,6 +363,14 @@ export default function AgreementEditPage() {
       }
       if (andSubmit) {
         await agreementService.action(id!, { action: 'submit' })
+        // The detail tab is kept alive and does not refetch on show, so
+        // without this it kept the pre-submit Returned status, buttons and
+        // timeline until F5 (ISS-0122). The save's own invalidation above ran
+        // before the submit, so it fetched the still-returned agreement.
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['agreements'] }),
+          queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+        ])
       }
       replaceTab(`/agreements/${id}`)
     } finally {
