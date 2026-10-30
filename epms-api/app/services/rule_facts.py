@@ -115,6 +115,24 @@ async def service_gr_reminders(db) -> dict:
             "time": (ns.get("followup_time") or "08:00")}
 
 
+async def notification_switches(db) -> dict:
+    """Portal → Notification Settings switches the Assistant states (ISS-0137).
+    Fallbacks are the consumers' own: agreement_overdue.run_agreement_overdue
+    reads True, notification.send_pa_approved reads False."""
+    cfg = await _config(db)
+    ns = (cfg.notification_settings if cfg else None) or {}
+    pa_on = bool(ns.get("pa_approved_notify_requester", False))
+    overdue_on = bool(ns.get("agreement_overdue_enabled", True))
+    return {
+        "pa_approved": ("switched on, so the requester is emailed when the PA is "
+                        "fully approved" if pa_on else
+                        "switched off, so the requester is not emailed"),
+        "agreement_overdue": ("switched on" if overdue_on else
+                              "switched off, so no overdue email or chase task is "
+                              "raised (the period is still marked overdue)"),
+    }
+
+
 # ── Payment applications and invoices ────────────────────────────────────────
 
 def pa_invoice_window(db) -> dict:

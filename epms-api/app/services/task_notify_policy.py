@@ -44,7 +44,8 @@ DEFAULT_IMMEDIATE: frozenset[str] = frozenset({
 # page with the reason instead of a checkbox that would do nothing.
 SELF_NOTIFIED: dict[str, str] = {
     "chase_agreement_invoice":
-        "Emailed by the agreement overdue check when a billing period goes overdue.",
+        "Emailed by the agreement overdue check when a billing period goes overdue. "
+        "Switch it on or off under Notification Settings → Agreement Overdue Reminder.",
 }
 
 _BUILT_IN_CLAIM_TYPES = ("exp", "mil", "trv")

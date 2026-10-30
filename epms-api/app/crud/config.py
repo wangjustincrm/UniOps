@@ -116,6 +116,10 @@ _DEFAULT_NOTIFICATION_SETTINGS = {
     # 默认 ON 是刻意的:daily_followup_enabled 默认 OFF,结果上线后没人知道要去
     # admin 打开、提醒一直没发。开关的作用是"吵了可以关掉",不是"要用得先找到它"。
     "agreement_overdue_enabled": True,
+    # PA 最终批准后给申请人发一封知会邮件(ISS-0137 / PA-007)。纯知会,不生成
+    # Task —— 申请人此时没有要做的事。默认 OFF:要不要发由管理员在 Portal →
+    # Admin → Notification Settings 决定。消费方 .get(..., False) 显式回落。
+    "pa_approved_notify_requester": False,
     # 服务/项目 PO 完成日到期催建 GR(app/tasks/service_gr_due.py)。
     # 默认 OFF + dry_run 默认 ON 是刻意的两道闸:上线当天先让扫描空跑一轮,
     # 把命中清单汇总发给 admin 过目,确认无误再开。存量单据靠回填脚本补日期,

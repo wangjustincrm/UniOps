@@ -59,6 +59,8 @@ interface CompanyConfig {
     daily_followup_enabled?: boolean
     service_gr_due_enabled?: boolean
     service_gr_due_dry_run?: boolean
+    agreement_overdue_enabled?: boolean
+    pa_approved_notify_requester?: boolean
     role_shared_mailboxes?: Record<string, string>
     [key: string]: unknown
   }
@@ -927,6 +929,8 @@ function NotificationSettings() {
   const [webhook, setWebhook] = useState('')
   const [followup, setFollowup] = useState('')
   const [serviceGrDue, setServiceGrDue] = useState<boolean | null>(null)
+  const [agreementOverdue, setAgreementOverdue] = useState<boolean | null>(null)
+  const [paApprovedNotify, setPaApprovedNotify] = useState<boolean | null>(null)
   const [serviceGrDryRun, setServiceGrDryRun] = useState<boolean | null>(null)
   const [mailboxes, setMailboxes] = useState<Record<string, string> | null>(null)
   const [mailboxError, setMailboxError] = useState<string | null>(null)
@@ -946,6 +950,10 @@ function NotificationSettings() {
   // switched on, and once on it stays in dry-run until explicitly released.
   const serviceGrDueVal = serviceGrDue ?? ns?.service_gr_due_enabled ?? false
   const serviceGrDryRunVal = serviceGrDryRun ?? ns?.service_gr_due_dry_run ?? true
+  // ISS-0137. Fallbacks mirror crud/config.py: the overdue chase is on unless
+  // switched off; the PA-approved email is off unless switched on.
+  const agreementOverdueVal = agreementOverdue ?? ns?.agreement_overdue_enabled ?? true
+  const paApprovedNotifyVal = paApprovedNotify ?? ns?.pa_approved_notify_requester ?? false
   const mailboxesVal = mailboxes ?? ns?.role_shared_mailboxes ?? {}
 
   const setMailboxFor = (code: string, value: string) => {
@@ -991,6 +999,8 @@ function NotificationSettings() {
           followup_time: followupVal,
           service_gr_due_enabled: serviceGrDueVal,
           service_gr_due_dry_run: serviceGrDryRunVal,
+          agreement_overdue_enabled: agreementOverdueVal,
+          pa_approved_notify_requester: paApprovedNotifyVal,
           role_shared_mailboxes: mailboxesVal,
         },
         smtp_host: smtpVal.host || null,
@@ -1130,6 +1140,20 @@ function NotificationSettings() {
           </div>
         </Field>
       )}
+
+      <Field label="Agreement Overdue Reminder" hint="When a purchase agreement's billing period is overdue with no invoice, the agreement owner gets a Chase Invoice task and an email. Turning this off stops both the email and the task (the period is still marked overdue on the agreement). On by default.">
+        <div className="flex items-center gap-2 pt-1.5">
+          <Toggle checked={agreementOverdueVal} onChange={(v) => setAgreementOverdue(v)} />
+          <span className="text-xs text-neutral-500">{agreementOverdueVal ? 'On — overdue agreement periods are chased' : 'Off — no overdue reminders or chase tasks'}</span>
+        </div>
+      </Field>
+
+      <Field label="PA Approved — Notify Requester" hint="When on, the person who raised a Payment Application gets an email once it is fully approved. Information only — no task. Off by default.">
+        <div className="flex items-center gap-2 pt-1.5">
+          <Toggle checked={paApprovedNotifyVal} onChange={(v) => setPaApprovedNotify(v)} />
+          <span className="text-xs text-neutral-500">{paApprovedNotifyVal ? 'On — requesters are emailed on final approval' : 'Off — requesters are not emailed'}</span>
+        </div>
+      </Field>
 
       {/* Test notification */}
       <div className="flex items-center gap-2">

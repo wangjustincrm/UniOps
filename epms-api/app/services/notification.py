@@ -613,6 +613,66 @@ async def send_signoff_complete(po_id, db: AsyncSession | None = None) -> None:
         logger.error("send_signoff_complete failed for PO %s: %s", po_id, exc)
 
 
+async def send_pa_approved(pa_id, db: AsyncSession | None = None) -> None:
+    """Tell the PA's requester it has been approved (final step) — ISS-0137 /
+    PA-007, when Portal → Notification Settings → "PA Approved — Notify
+    Requester" is on (off by default).
+
+    An email and not a Task: the requester has nothing to do next (payment is
+    the Payment Officer's). Never raises — a failed notification must not undo
+    the approval that triggered it.
+    """
+    try:
+        if db is None:
+            from app.db.session import AsyncSessionLocal
+            async with AsyncSessionLocal() as session:
+                await send_pa_approved(pa_id, db=session)
+            return
+
+        from app.crud.config import get_or_create as get_config
+        from app.models.pa import PaymentApplication
+        from app.services.email import send_email
+
+        cfg = await get_config(db)
+        settings_map = cfg.notification_settings or {}
+        if not settings_map.get("pa_approved_notify_requester", False):
+            return
+        if settings_map.get("default_channel") == "none":
+            return
+        pa = (await db.execute(
+            select(PaymentApplication).where(PaymentApplication.id == pa_id)
+        )).scalar_one_or_none()
+        if pa is None or pa.status != "approved" or pa.created_by is None:
+            return
+        recipient = (await db.execute(
+            select(User).where(User.id == pa.created_by)
+        )).scalar_one_or_none()
+        if recipient is None or not recipient.email or not recipient.is_active:
+            return
+        # Respect the recipient's own delivery preference, same as _dispatch.
+        if recipient.notification_channel in ("none", "teams_only"):
+            return
+
+        tpl = (cfg.email_templates or {}).get("pa_approved") or {}
+        variables = {
+            "company_name": cfg.name,
+            "recipient_name": recipient.full_name,
+            "pa_number": pa.pa_number,
+            "link": _task_link("pa", pa.id),
+        }
+        subject = _render(tpl.get("subject", "Your PA {pa_number} has been approved"), variables, escape=False)
+        body = _render(tpl.get("body", "Payment Application {pa_number} has been approved."), variables, escape=True)
+        await send_email(recipient.email, subject, _build_email_html(body), **_smtp_kwargs(cfg))
+    except Exception as exc:  # noqa: BLE001
+        logger.error("send_pa_approved failed for PA %s: %s", pa_id, exc)
+
+
+def fire_and_forget_pa_approved(pa_id) -> None:
+    """Schedule the PA-approved email to the requester (own DB session)."""
+    from app.core.background import spawn
+    spawn(send_pa_approved(pa_id), name=f"pa_approved:{pa_id}")
+
+
 def fire_and_forget_signoff_complete(po_id) -> None:
     """Schedule the sign-off completion email (own DB session)."""
     from app.core.background import spawn

@@ -973,6 +973,9 @@ async def pa_action(
     await db.refresh(pa)
     # Generate PDF when PA transitions to approved
     if result.get("new_status") == "approved":
+        # ISS-0137: email the requester, if Notification Settings say so.
+        from app.services import notification as notification_service
+        notification_service.fire_and_forget_pa_approved(pa.id)
         # 统一 settlement：settlement PA 一旦 approved，回填来源预付为 settled
         if pa.pa_type == "settlement":
             await pa_crud.mark_prepayment_settled(
