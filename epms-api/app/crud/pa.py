@@ -18,7 +18,7 @@ from app.models.invoice import Invoice
 from app.models.pa import PaLineItem, PaymentApplication
 from app.models.pa_po_link import PaPoLink
 from app.crud.pa_links import pa_ids_for_po, pa_ids_for_pos, po_ids_of_pa
-from app.crud.pa_lines import derive_lines
+from app.crud.pa_lines import derive_lines, invoice_lines
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.pa_attachment import PaAttachment
@@ -333,6 +333,10 @@ async def create(
     # Invoices matched line by line decide the lines; the hand-picked ones the
     # client sent only stand when the invoices cannot (see crud.pa_lines).
     derived = await derive_lines(db, payload.invoice_ids, [po_id for po_id, _ in links])
+    if derived is None and not payload.line_items:
+        # Nothing to derive from PO lines and none picked: the invoices' own
+        # lines (always the case on the agreement route — ISS-0109).
+        derived = await invoice_lines(db, payload.invoice_ids)
     items = (_build_derived_line_items(pa.id, derived) if derived is not None
              else _build_line_items(pa.id, payload.line_items))
     for item in items:
@@ -429,6 +433,10 @@ async def update(
                                  or po_links is not None):
         po_ids = list((await db.execute(po_ids_of_pa(pa.id))).scalars().all())
         derived = await derive_lines(db, pa.invoice_ids or [], po_ids)
+        if derived is None and payload.line_items is not None and not payload.line_items:
+            derived = await invoice_lines(db, pa.invoice_ids or [])
+    elif pa.agreement_id is not None and payload.invoice_ids is not None:
+        derived = await invoice_lines(db, pa.invoice_ids or [])
     if derived is not None or payload.line_items is not None:
         for old in list(pa.line_items):
             await db.delete(old)

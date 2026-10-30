@@ -184,3 +184,33 @@ async def test_match_to_another_vendors_po_refused(admin_client):
 
     r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={"po_id": other_po["id"]})
     assert r.status_code == 422, r.text
+
+
+# ── ISS-0109 ────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_agreement_pa_takes_the_invoice_lines(admin_client, test_engine):
+    agr, invs = await _agreement_with_invoices(admin_client, test_engine)
+    r = await admin_client.post(PA_URL, json={
+        "title": "Lines", "agreement_id": str(agr.id), "invoice_ids": [invs[0]["id"]],
+        "subtotal": "100.00", "tax_amount": "0.00"})
+    assert r.status_code == 201, r.text
+    lines = r.json()["line_items"]
+    assert [(l["description"], Decimal(str(l["line_total"]))) for l in lines] == [
+        ("Monthly statement", Decimal("100.00"))]
+    assert invs[0]["internal_ref"] in lines[0]["notes"]
+
+    # Changing the invoice selection on a draft rebuilds them.
+    r = await admin_client.patch(f"{PA_URL}/{r.json()['id']}",
+                                 json={"invoice_ids": [i["id"] for i in invs]})
+    assert r.status_code == 200, r.text
+    assert len(r.json()["line_items"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_po_header_match_without_picked_lines_takes_invoice_lines(admin_client, test_engine):
+    po, invs = await _po_with_invoices(admin_client, test_engine, [_date(2026, 3, 2)])
+    # _po_with_invoices seeds invoices with no lines: one line for the invoice.
+    r = await admin_client.post(PA_URL, json=_pa_body(po["id"], invs, line_items=[]))
+    assert r.status_code == 201, r.text
+    assert [Decimal(str(l["line_total"])) for l in r.json()["line_items"]] == [Decimal("100.00")]

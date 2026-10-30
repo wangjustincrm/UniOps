@@ -5,12 +5,18 @@ import { derivedLinesTotal, type DerivedPaLine } from '@/lib/paLinesFromInvoices
 // Read-only line table for a PA whose invoices were matched line by line: the
 // lines are what those invoices bought, so there is nothing to tick. Shown in
 // place of the PO line picker on the create and edit screens.
-export function DerivedPaLinesTable({ lines, currency }: { lines: DerivedPaLine[]; currency: string }) {
+// `fromInvoiceLines`: an agreement PA, whose lines are the invoices' own lines
+// (no PO line behind any of them, and none of them a "non-PO fee").
+export function DerivedPaLinesTable({ lines, currency, fromInvoiceLines = false }: {
+  lines: DerivedPaLine[]; currency: string; fromInvoiceLines?: boolean
+}) {
   return (
     <div className="flex flex-col gap-2">
       <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
         <CircleDot className="h-3.5 w-3.5" /> Line Items
-        <span className="text-neutral-400 font-normal">(from the selected invoices' line matching)</span>
+        <span className="text-neutral-400 font-normal">
+          {fromInvoiceLines ? "(from the selected invoices' lines)" : "(from the selected invoices' line matching)"}
+        </span>
       </p>
       <div className="rounded-lg border border-neutral-200 overflow-hidden">
         <table className="w-full text-xs">
@@ -28,7 +34,7 @@ export function DerivedPaLinesTable({ lines, currency }: { lines: DerivedPaLine[
                 <td className="px-3 py-2.5">
                   <div className="text-neutral-800 font-medium">{l.description}</div>
                   <div className="text-[10px] text-neutral-400 mt-0.5">
-                    {l.po_line_id ? l.notes : `Non-PO fee · ${l.notes}`}
+                    {l.po_line_id || fromInvoiceLines ? l.notes : `Non-PO fee · ${l.notes}`}
                   </div>
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono text-neutral-500">{l.qty} {l.unit}</td>

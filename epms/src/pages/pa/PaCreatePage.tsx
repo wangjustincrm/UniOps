@@ -22,7 +22,7 @@ import type { ApiInvoice } from '@/services/invoices'
 import type { DocumentStatus } from '@/types'
 import { DueWindowNotice } from './DueWindowNotice'
 import { DerivedPaLinesTable } from './DerivedPaLinesTable'
-import { derivePaLines, derivedLinesTotal } from '@/lib/paLinesFromInvoices'
+import { derivePaLines, derivedLinesTotal, invoiceOwnLines } from '@/lib/paLinesFromInvoices'
 import { dueWindowViolation, earliestDueGroup, PA_INVOICE_DUE_WINDOW_DAYS } from './invoiceDueWindow'
 
 // Invoice multi-select list — shared by the PO route (the PO's invoices) and
@@ -389,6 +389,9 @@ function PoPaCreate() {
   // Invoices matched line by line decide the PA's lines (and, for an invoice
   // split across POs, this PA's share of it); the PO line picker only remains
   // for invoices matched against the PO total. The server re-derives on save.
+  // Agreement PA: the invoices' own lines (ISS-0109). Preview only; the
+  // server builds the same lines on save (crud/pa_lines.py::invoice_lines).
+  const agreementLines = isAgreementMode ? invoiceOwnLines(selectedInvoices) : null
   const derivedLines = isAgreementMode ? null : derivePaLines(
     selectedInvoices, selectedPos.map((p) => p.id),
     new Map(selectedPos.flatMap((p) => p.line_items.map((l) => [l.id, l] as const))),
@@ -584,12 +587,25 @@ function PoPaCreate() {
       : derivedLines ? derivedLinesTotal(derivedLines) : invoiceSubtotal
     if (auto > 0) {
       setSubtotal(String(Number(auto.toFixed(2))))
+    } else if (isAgreementMode) {
+      // An agreement PA has no PO lines to fall back to: with every invoice
+      // unticked there is nothing to pay, not the last invoice's amount
+      // (ISS-0113).
+      setSubtotal('')
     }
   }, [hasLinkedInvoices, invoiceSubtotal, autoSubtotal, derivedLines ? derivedLinesTotal(derivedLines) : null]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-fill tax. When invoices are linked, use their real tax — authoritative
   // and survives a PO whose snapshotted tax_rate is 0/null. Otherwise fall back
   // to the PO's tax rate × pre-tax for CAD. Skipped once the user edits tax.
+  //
+  // `taxCleared` is a dependency so the fill runs again after the reset above
+  // wipes the field. That reset waits for the PO list; arriving from the PO
+  // page or a task, the invoices are already cached, so the tax was filled
+  // first, then wiped, and the pre-tax amount and the invoice ticks were put
+  // back in the same pass — none of the other inputs changed, the fill never
+  // re-ran, and the PA showed Tax empty with the invoice ticked (ISS-0136).
+  const taxCleared = taxAmount === ''
   useEffect(() => {
     if (taxManuallyEdited) return
     if (hasLinkedInvoices) {
@@ -599,7 +615,7 @@ function PoPaCreate() {
     } else {
       setTaxAmount('')
     }
-  }, [hasLinkedInvoices, invoiceTax, subtotalNum, formCurrency, paTaxRate, taxManuallyEdited]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hasLinkedInvoices, invoiceTax, subtotalNum, formCurrency, paTaxRate, taxManuallyEdited, taxCleared]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Validation
   const errors: string[] = []
@@ -1411,6 +1427,9 @@ ${submitError}
                   </div>
                 )}
               </div>
+              {agreementLines && (
+                <DerivedPaLinesTable lines={agreementLines} currency={formCurrency} fromInvoiceLines />
+              )}
             </div>
           )}
 

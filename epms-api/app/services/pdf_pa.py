@@ -103,6 +103,10 @@ def generate_pa_pdf(
     if getattr(pa, "source", None) == "freight":
         # No PO: say what the payment is instead of printing an empty cell.
         po_label, po_value = "Payment For", "Courier freight (cost split below)"
+    elif not po_numbers and getattr(pa, "agreement_number", None):
+        # Agreement route: the agreement is what authorises the payment
+        # (ISS-0109 — the PDF printed "PO Number —" and no agreement at all).
+        po_label, po_value = "Agreement", pa.agreement_number
     elif getattr(pa, "source", None) == "direct":
         # Direct PA: no PO either — print what it is charged to.
         po_label = "Charged To"

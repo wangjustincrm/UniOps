@@ -58,7 +58,11 @@ values:
         line by line: each matched invoice line becomes a PA line on the PO line
         it was matched to, and non-PO fees on the invoice (freight, for example)
         become lines of their own. You only pick PO lines yourself when an
-        invoice was matched against the PO total alone.
+        invoice was matched against the PO total alone; if you pick none, the
+        PA takes the invoices' own lines. A PA raised against an agreement
+        always takes its invoices' own lines (an invoice whose lines do not
+        add up to its pre-tax amount becomes one line), and its PDF names the
+        agreement.
       - >-
         Courier charges (UPS, FedEx, Purolator…) are not paid this way. Buyers
         register each tracking number on EPMS → Freight → Shipments with the

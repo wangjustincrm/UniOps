@@ -21,7 +21,7 @@ import { DueWindowNotice } from './DueWindowNotice'
 import { DerivedPaLinesTable } from './DerivedPaLinesTable'
 import { FreightPaEditForm } from './FreightPaEditForm'
 import { DirectPaEditForm } from './DirectPaEditForm'
-import { derivePaLines } from '@/lib/paLinesFromInvoices'
+import { derivePaLines, derivedLinesTotal, invoiceOwnLines } from '@/lib/paLinesFromInvoices'
 import { dueWindowViolation } from './invoiceDueWindow'
 
 /**
@@ -97,6 +97,9 @@ function PoPaEditPage() {
   const [subtotal, setSubtotal]         = useState('')
   const [taxAmount, setTaxAmount]       = useState('')
   const [taxManuallyEdited, setTaxManuallyEdited] = useState(false)
+  // Set once the user ticks or unticks an invoice. Until then the saved
+  // amounts stand; from then on they follow the selection (ISS-0113).
+  const [invoicesTouched, setInvoicesTouched] = useState(false)
   const [shippingAmount, setShipping]   = useState('')
   const [otherCharges, setOther]        = useState('')
   const [otherChargesNote, setOtherNote]= useState('')
@@ -258,8 +261,24 @@ function PoPaEditPage() {
   const paTaxCode = (isAgreementMode ? pa?.tax_code : po?.tax_code) ?? pa?.tax_code ?? null
 
   // Auto-fill tax at the PO's rate when not manually edited
+  const selectedInvoices = poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id))
+  const invoiceSubtotal = selectedInvoices.reduce((s, inv) => s + Number(inv.amount), 0)
+  const invoiceTax      = selectedInvoices.reduce((s, inv) => s + Number(inv.tax_amount), 0)
+  const derivedTotal    = derivedLines ? derivedLinesTotal(derivedLines) : null
+
+  // After a change to the invoice selection, Pre-tax and Tax follow the ticked
+  // invoices, as on New PA (PRD §3.15.2). Tax a user types afterwards sticks.
   useEffect(() => {
-    if (taxManuallyEdited) return
+    if (!invoicesTouched) return
+    const linked = selectedInvoices.length > 0
+    const auto = linked ? (derivedTotal ?? invoiceSubtotal) : (isAgreementMode ? 0 : autoSubtotal)
+    setSubtotal(auto > 0 ? String(Number(auto.toFixed(2))) : '')
+    if (!taxManuallyEdited && linked) setTaxAmount(invoiceTax.toFixed(2))
+    else if (!taxManuallyEdited && isAgreementMode) setTaxAmount('')
+  }, [invoicesTouched, invoiceSubtotal, invoiceTax, derivedTotal, selectedInvoices.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (taxManuallyEdited || (invoicesTouched && selectedInvoices.length > 0)) return
     if (po?.currency === 'CAD' && subtotalNum > 0) {
       setTaxAmount((subtotalNum * paTaxRate).toFixed(2))
     }
@@ -281,6 +300,10 @@ function PoPaEditPage() {
 
   const toggleInvoice = (invId: string) => {
     setSelectedInvoiceIds((prev) => { const n = new Set(prev); if (n.has(invId)) n.delete(invId); else n.add(invId); return n })
+    if (!invoicesTouched) {
+      setInvoicesTouched(true)
+      setTaxManuallyEdited(false)   // the saved tax was for the old selection
+    }
   }
   const toggleGr = (grId: string) => {
     setSelectedGrIds((prev) => { const n = new Set(prev); if (n.has(grId)) n.delete(grId); else n.add(grId); return n })
@@ -623,6 +646,10 @@ function PoPaEditPage() {
 
             )}
 
+            {isAgreementMode && invoiceOwnLines(selectedInvoices) && (
+              <DerivedPaLinesTable lines={invoiceOwnLines(selectedInvoices)!} currency={paCurrency} fromInvoiceLines />
+            )}
+
             {/* PO Line Items — nothing to select without a PO */}
             {!isAgreementMode && po && derivedLines && (
               <DerivedPaLinesTable lines={derivedLines} currency={po.currency} />
@@ -811,7 +838,7 @@ function PoPaEditPage() {
 
             {/* Charge breakdown */}
             <div className="flex flex-col gap-3">
-              <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">Charge Breakdown ({po?.currency ?? ''})</p>
+              <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">Charge Breakdown ({paCurrency})</p>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1">
