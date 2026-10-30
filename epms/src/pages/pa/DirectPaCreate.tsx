@@ -5,6 +5,7 @@ import { BackLink } from '@/components/BackLink'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { BudgetAccountCascade } from '@/components/budget/BudgetAccountCascade'
+import { DirectPaBudgetPanel } from '@/components/pa/DirectPaBudgetPanel'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { dueInfo } from '@/lib/dueDate'
 import { useAuthStore } from '@/stores/auth.store'
@@ -228,6 +229,7 @@ function DirectPaForm({ preselectInvoiceId }: { preselectInvoiceId: string | nul
               <p className="text-xs text-neutral-400">Select a department first to enable the budget account picker.</p>
             )}
           </div>
+          <DirectPaBudgetPanel costCenterId={costCenterId} budgetCode={budgetCode} amount={subtotal} currency={currency} />
         </div>
 
         <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col gap-3">

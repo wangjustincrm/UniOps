@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
+import { DirectPaBudgetPanel } from '@/components/pa/DirectPaBudgetPanel'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
@@ -1000,6 +1001,13 @@ export default function PaDetailPage() {
                 Freight PA (its documents are in the Cost Allocation table) or a
                 Direct PA (its invoices are under Linked Documents). */}
             {!isFreight && !isDirect && <DocumentChainTree currentType="pa" id={pa.id} />}
+            {isDirect && (
+              <div className="mt-6 border-t border-neutral-100 pt-4">
+                <DirectPaBudgetPanel costCenterId={pa.cost_center_id} budgetCode={pa.budget_account_code}
+                  amount={Number(pa.subtotal)} currency={pa.currency}
+                  showAfter={!(['processed', 'cancelled', 'rejected'] as PaStatus[]).includes(pa.status)} />
+              </div>
+            )}
           </div>
         </div>
       </div>

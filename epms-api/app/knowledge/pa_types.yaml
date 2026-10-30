@@ -83,7 +83,12 @@ values:
         approved on the "PA (Direct)" workflow in Portal → Admin → Approval
         Workflows. Its amounts come from the invoices; the title, reason,
         department, cost center and budget account stay editable until it is
-        submitted. OA no longer has Direct PAs. If the invoice is not in EPMS
+        submitted. Create Direct PA, its edit form and the Direct PA page show
+        the budget of the chosen cost center × budget account (annual budget,
+        committed, actual spent, available and "after this payment", which
+        subtracts the pre-tax amount; not shown for a non-CAD PA or once it is
+        paid) — for reference only: it never blocks the PA or adds an approval
+        step. OA no longer has Direct PAs. If the invoice is not in EPMS
         yet, Upload Invoice on the Create Direct PA page uploads it and matches
         it for a Direct PA in one go, then brings you back with it ticked.
 

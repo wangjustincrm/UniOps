@@ -7,6 +7,7 @@ import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { BudgetAccountCascade } from '@/components/budget/BudgetAccountCascade'
+import { DirectPaBudgetPanel } from '@/components/pa/DirectPaBudgetPanel'
 import { cn, formatAmount } from '@/lib/utils'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useUpdatePa } from '@/hooks/usePas'
@@ -115,6 +116,8 @@ export function DirectPaEditForm({ pa }: { pa: ApiPa }) {
             onChange={(next) => { setCostCenterId(next.costCenterId); setBudgetCode(next.budgetCode) }}
           />
         </div>
+        <DirectPaBudgetPanel costCenterId={costCenterId} budgetCode={budgetCode}
+          amount={Number(pa.subtotal)} currency={pa.currency} />
       </div>
 
       <div className="flex justify-end gap-2">
