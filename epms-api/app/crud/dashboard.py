@@ -145,7 +145,10 @@ async def _approver_budget(
         if hit and time.monotonic() - hit[0] < _CC_SUMMARY_TTL:
             return hit[1]
         async with sem:
-            data = await budget_client.get_actuals_summary(token, year, uuid.UUID(cc_id))
+            # Unposted included: the Budget Dashboard's default and the basis
+            # of the budget alert emails, so the three agree.
+            data = await budget_client.get_actuals_summary(token, year, uuid.UUID(cc_id),
+                                                           include_unposted=True)
         if data is None:
             return []
         accounts = data.get("accounts") or []

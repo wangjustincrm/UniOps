@@ -167,11 +167,16 @@ async def get_actuals_summary(
     bearer_token: str | None,
     fiscal_year: int,
     cost_center_id: uuid.UUID | None = None,
+    include_unposted: bool = False,
 ) -> dict[str, Any] | None:
-    """Returns the budget-api /actuals/summary response, or None on failure."""
+    """Returns the budget-api /actuals/summary response, or None on failure.
+    ``include_unposted``: NC actual including vouchers not yet tallied — the
+    Budget Dashboard's default basis."""
     params: dict[str, Any] = {"fiscal_year": fiscal_year}
     if cost_center_id is not None:
         params["cost_center_id"] = str(cost_center_id)
+    if include_unposted:
+        params["include_unposted"] = "true"
     url = f"{settings.BUDGET_API_URL}/api/v1/actuals/summary"
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:

@@ -75,8 +75,11 @@ async def nc_actuals_by_account(
     bearer_token: str | None,
     fiscal_year: int,
     cost_center_id: uuid.UUID | None,
+    include_unposted: bool = False,
 ) -> dict[str, Decimal] | None:
     """NC posted actual per budget account, year total — every account at once.
+    ``include_unposted`` adds vouchers entered in NC but not yet tallied — the
+    Budget Dashboard's default basis (EPMS budget alert emails ask for it).
 
     The per-account figures behind `/actuals/summary`, which is what the OA
     expense-claim account picker shows as each account's remaining budget. It
@@ -94,6 +97,8 @@ async def nc_actuals_by_account(
     params: dict[str, object] = {"fiscal_year": fiscal_year}
     if cost_center_id is not None:
         params["cost_center_id"] = str(cost_center_id)
+    if include_unposted:
+        params["include_unposted"] = "true"
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
             r = await client.get(url, params=params, headers=_auth_headers(bearer_token))

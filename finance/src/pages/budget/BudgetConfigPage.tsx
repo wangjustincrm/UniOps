@@ -293,19 +293,19 @@ function CompanyConfigSection() {
       <SectionCard
         icon={Gauge}
         title="Budget Alert Thresholds"
-        description="Controls the colour-coded budget utilisation alerts on the Budget Dashboard."
+        description="Colours the Budget Dashboard alerts, and sets the levels for the budget alert emails (sent once a day when switched on in Portal → Admin → Notification Settings → Budget Threshold Alerts; email only — no Teams alerts)."
       >
         <div className="flex flex-col gap-3 max-w-2xl">
           {[
             {
               k: 'yellow_threshold_pct' as const, label: 'Warning threshold',
               badge: 'bg-amber-100 text-amber-700', badgeLabel: 'Yellow',
-              desc: 'Budget row highlighted amber. Daily email digest sent to Dept. Manager.',
+              desc: 'Budget row highlighted amber. When budget alert emails are on: a daily digest to the Dept. Manager (Finance Manager if the department has none).',
             },
             {
               k: 'red_threshold_pct' as const, label: 'Over-budget threshold',
               badge: 'bg-red-100 text-red-700', badgeLabel: 'Red',
-              desc: 'Budget row highlighted red. Immediate email + Teams alert to Dept. Manager, Finance Manager, and GM/OPM.',
+              desc: 'Budget row highlighted red. When budget alert emails are on: an email (checked daily) to the Dept. Manager, Finance Manager and GM/OPM. No Teams alerts.',
             },
           ].map(({ k, label, badge, badgeLabel, desc }) => (
             <div key={k} className="flex items-start justify-between gap-4 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3.5">

@@ -96,7 +96,8 @@ async def test_budget_is_judged_per_cost_center_and_account(test_engine, monkeyp
         cc3: [{"l1_code": "IDLE", "annual_budget": "0", "committed": "0", "actual_spent": "0"}],
     }
 
-    async def _summary(token, fiscal_year, cost_center_id=None):
+    async def _summary(token, fiscal_year, cost_center_id=None, include_unposted=False):
+        assert include_unposted is True       # the Budget Dashboard's default basis
         seen["asked"].append(str(cost_center_id))
         return {"accounts": by_cc[str(cost_center_id)]}
 

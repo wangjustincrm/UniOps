@@ -62,6 +62,8 @@ interface CompanyConfig {
     agreement_overdue_enabled?: boolean
     gr_ack_due_enabled?: boolean
     gr_ack_due_dry_run?: boolean
+    budget_alert_enabled?: boolean
+    budget_alert_dry_run?: boolean
     pa_approved_notify_requester?: boolean
     role_shared_mailboxes?: Record<string, string>
     [key: string]: unknown
@@ -934,6 +936,8 @@ function NotificationSettings() {
   const [agreementOverdue, setAgreementOverdue] = useState<boolean | null>(null)
   const [grAckDue, setGrAckDue] = useState<boolean | null>(null)
   const [grAckDryRun, setGrAckDryRun] = useState<boolean | null>(null)
+  const [budgetAlert, setBudgetAlert] = useState<boolean | null>(null)
+  const [budgetAlertDryRun, setBudgetAlertDryRun] = useState<boolean | null>(null)
   const [paApprovedNotify, setPaApprovedNotify] = useState<boolean | null>(null)
   const [serviceGrDryRun, setServiceGrDryRun] = useState<boolean | null>(null)
   const [mailboxes, setMailboxes] = useState<Record<string, string> | null>(null)
@@ -960,6 +964,9 @@ function NotificationSettings() {
   // ISS-0146 ①: off, and dry run first — mirrors crud/config.py.
   const grAckDueVal = grAckDue ?? ns?.gr_ack_due_enabled ?? false
   const grAckDryRunVal = grAckDryRun ?? ns?.gr_ack_due_dry_run ?? true
+  // ISS-0146 ③: off, and dry run first — mirrors crud/config.py.
+  const budgetAlertVal = budgetAlert ?? ns?.budget_alert_enabled ?? false
+  const budgetAlertDryRunVal = budgetAlertDryRun ?? ns?.budget_alert_dry_run ?? true
   const paApprovedNotifyVal = paApprovedNotify ?? ns?.pa_approved_notify_requester ?? false
   const mailboxesVal = mailboxes ?? ns?.role_shared_mailboxes ?? {}
 
@@ -1009,6 +1016,8 @@ function NotificationSettings() {
           agreement_overdue_enabled: agreementOverdueVal,
           gr_ack_due_enabled: grAckDueVal,
           gr_ack_due_dry_run: grAckDryRunVal,
+          budget_alert_enabled: budgetAlertVal,
+          budget_alert_dry_run: budgetAlertDryRunVal,
           pa_approved_notify_requester: paApprovedNotifyVal,
           role_shared_mailboxes: mailboxesVal,
         },
@@ -1161,6 +1170,21 @@ function NotificationSettings() {
           <div className="flex items-center gap-2 pt-1.5">
             <Toggle checked={grAckDryRunVal} onChange={(v) => setGrAckDryRun(v)} />
             <span className="text-xs text-neutral-500">{grAckDryRunVal ? 'Dry run — admins get a preview only' : 'Live — owners and their managers are notified'}</span>
+          </div>
+        </Field>
+      )}
+
+      <Field label="Budget Threshold Alerts" hint="When on, every budget line (cost center × account) is checked daily at the digest time against Finance → Budget Config thresholds: reaching the warning level sends the Department Manager a digest; reaching the over-budget level emails the Department Manager, Finance Manager and the department's GM/OPM. Once per crossing. Email only — no Teams alerts. Off by default.">
+        <div className="flex items-center gap-2 pt-1.5">
+          <Toggle checked={budgetAlertVal} onChange={(v) => setBudgetAlert(v)} />
+          <span className="text-xs text-neutral-500">{budgetAlertVal ? 'On — budget lines are checked daily' : 'Off — no budget alert emails'}</span>
+        </div>
+      </Field>
+      {budgetAlertVal && (
+        <Field label="Budget Threshold Alerts — Dry Run" hint="Leave on first: administrators get the list of lines that would be reported, nobody else is emailed and nothing is marked as sent. Turn off once the list looks right.">
+          <div className="flex items-center gap-2 pt-1.5">
+            <Toggle checked={budgetAlertDryRunVal} onChange={(v) => setBudgetAlertDryRun(v)} />
+            <span className="text-xs text-neutral-500">{budgetAlertDryRunVal ? 'Dry run — admins get a preview only' : 'Live — managers are emailed'}</span>
           </div>
         </Field>
       )}

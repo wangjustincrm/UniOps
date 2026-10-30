@@ -3,8 +3,34 @@ label: Budget checks
 covers: >
   When a PR is checked against the budget, what over budget leads to, whether
   budget is reserved, what happens when the Budget service is down, what
-  Committed means.
+  Committed means, budget alert emails.
 # The over-budget rules themselves are PR rules (topic over_budget in pr.yaml)
 # and are listed here through also_in; the over-budget MODE is configuration
 # the approval engine reports (explain_process for a PR).
-rules: []
+rules:
+  - id: budget_alert_emails
+    also_in: [notifications]
+    asked_as:
+      - 预算超支会发邮件提醒吗？
+      - 预算用到 80% 会通知部门经理吗？
+      - do budget overruns send an alert
+    answer: >
+      Budget alert emails are {state}. When on, once a day at {time} UTC every
+      cost center × budget account is checked: usage is NC year-to-date actual
+      (vouchers not yet tallied included) ÷ the approved annual budget, as on
+      the Budget Dashboard; committed is not counted, and spend with no budget
+      counts as over. A line that reaches the warning threshold ({warning}%) is
+      listed in a digest to the Department Manager; one that reaches the
+      over-budget threshold ({over}%) is emailed to the Department Manager,
+      every Finance Manager and the department's GM or OPM. A department with
+      no Department Manager goes to the Finance Manager instead. Each line is
+      emailed once per crossing, and again only after it has dropped back and
+      crossed again. Email only — there are no Teams alerts. The switch is
+      Portal → Admin → Notification Settings → Budget Threshold Alerts; the
+      thresholds are Finance → Budget Config.
+    provenance: derived
+    derive: budget_alerts
+    enforced_in: "epms-api app/tasks/budget_alerts.py run_budget_alerts (budget_admin_config thresholds; notification_settings budget_alert_enabled default off, budget_alert_dry_run default on; budget_alert_states)"
+    test:
+      - "tests/test_budget_alerts.py::test_crossings_are_emailed_once_and_rearm"
+      - "tests/test_budget_alerts.py::test_off_and_dry_run_email_nobody"

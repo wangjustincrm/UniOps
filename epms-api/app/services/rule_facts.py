@@ -155,6 +155,24 @@ async def gr_ack_reminders(db) -> dict:
             "state": state, "time": ns.get("followup_time") or "08:00"}
 
 
+async def budget_alerts(db) -> dict:
+    """Budget threshold alert emails (ISS-0146 ③), read the way
+    tasks/budget_alerts reads them."""
+    cfg = await _config(db)
+    ns = getattr(cfg, "notification_settings", None) or {}
+    bac = getattr(cfg, "budget_admin_config", None) or {}
+    if not ns.get("budget_alert_enabled", False):
+        state = "switched off, so no budget alert emails are sent"
+    elif ns.get("budget_alert_dry_run", True):
+        state = ("switched on in dry run: the list goes to the System Admins only, "
+                 "nobody else is emailed yet")
+    else:
+        state = "switched on and live"
+    return {"state": state, "warning": bac.get("yellow_threshold_pct", 80),
+            "over": bac.get("red_threshold_pct", 100),
+            "time": ns.get("followup_time") or "08:00"}
+
+
 async def collection_gate(db) -> dict:
     """Admin → Collection Config "Collection Confirmation Required" (ISS-0146),
     read the way crud.po.collection_gate_on reads it."""

@@ -133,6 +133,10 @@ _DEFAULT_NOTIFICATION_SETTINGS = {
     # ISS-0146 ①): same two gates as service_gr_due — off, and dry run first.
     "gr_ack_due_enabled": False,
     "gr_ack_due_dry_run": True,
+    # Budget threshold alert emails (app/tasks/budget_alerts.py, ISS-0146 ③):
+    # off, and dry run first. Email only — no Teams (owner, 2026-10-30).
+    "budget_alert_enabled": False,
+    "budget_alert_dry_run": True,
     # 角色 → 共享邮箱。配了地址的角色,其“角色池”任务只发这一个邮箱,
     # 不再逐个通知该角色成员。空 = 维持逐人发送。
     "role_shared_mailboxes": {},

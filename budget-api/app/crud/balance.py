@@ -208,8 +208,12 @@ async def get_actuals_summary(
     *, cost_center_id: uuid.UUID | None = None, fiscal_year: int,
     cc_ids: list[uuid.UUID] | None = None,
     bearer_token: str | None = None,
+    include_unposted: bool = False,
 ) -> ActualsSummaryResponse:
     """Per-account summary: plan vs actual for the full year.
+
+    ``include_unposted`` (default off, so existing callers are unchanged) counts
+    NC vouchers not yet tallied too — the Budget Dashboard's default.
 
     `actual_spent` is NC's posted figure, for the same reason and from the same
     source as `get_balance` — see there. This one had been left reading the
@@ -227,7 +231,7 @@ async def get_actuals_summary(
             cost_center_id=cost_center_id, fiscal_year=fiscal_year, accounts=[])
     nc_actual = await finance_client.nc_actuals_by_account(
         bearer_token=bearer_token, fiscal_year=fiscal_year,
-        cost_center_id=cost_center_id,
+        cost_center_id=cost_center_id, include_unposted=include_unposted,
     )
     if nc_actual is None:
         logger.warning(
