@@ -7,6 +7,8 @@
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:8014'
 const EPMS_BASE = (import.meta.env.VITE_EPMS_API_URL as string | undefined) || 'http://localhost:8000'
 
+import { exitToPortal, leaveFor, markSessionExpired } from './session'
+
 export const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'
 
 function getToken(): string | null {
@@ -78,6 +80,13 @@ export async function toApiError(res: Response): Promise<ApiError> {
   return new ApiError(message, res.status, detail, body)
 }
 
+// Told when a request is refused for the session (the layout re-renders and leaves).
+const sessionExpiredListeners = new Set<() => void>()
+export function onSessionExpired(listener: () => void): () => void {
+  sessionExpiredListeners.add(listener)
+  return () => { sessionExpiredListeners.delete(listener) }
+}
+
 async function authFetch(url: string, opts: { method?: string; body?: unknown } = {}): Promise<Response> {
   const h: Record<string, string> = {}
   const token = getToken()
@@ -91,8 +100,14 @@ async function authFetch(url: string, opts: { method?: string; body?: unknown } 
   }
   const res = await fetch(url, { method: opts.method ?? 'GET', headers: h, body: bodyInit })
   if (res.status === 401) {
-    localStorage.removeItem('sales-auth')
-    window.location.href = `${PORTAL_URL}/logout`
+    // The layout sees the token gone and leaves through exitToPortal, which
+    // goes to /logout now (lib/session.ts: why, and the loop it prevents).
+    markSessionExpired()
+    if (sessionExpiredListeners.size > 0) sessionExpiredListeners.forEach((l) => l())
+    else {  // no layout listening (e.g. a page used on its own): leave from here
+      const next = exitToPortal(PORTAL_URL, window.location.href)
+      if (next.kind === 'go') leaveFor(next.url)
+    }
     throw new Error('Session expired. Redirecting to portal…')
   }
   return res

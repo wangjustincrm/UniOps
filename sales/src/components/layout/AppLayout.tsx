@@ -7,7 +7,8 @@ import {
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { PORTAL_URL, api } from '@/lib/api'
+import { PORTAL_URL, api, onSessionExpired } from '@/lib/api'
+import { exitToPortal, leaveFor } from '@/lib/session'
 import { signOut } from '@/lib/signOut'
 import { useBranding } from '@/hooks/useBranding'
 import { usePermissions, MODULE_PERMS } from '@/hooks/usePermissions'
@@ -264,21 +265,28 @@ const IS_EMBEDDED = detectIframeEmbed()
 export default function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  const [, setExpiredAt] = useState(0)
+  useEffect(() => onSessionExpired(() => setExpiredAt(Date.now())), [])  // a 401: render again, without the token
   const { token, user } = getStoredSession()
   const perms = usePermissions()
   const location = useLocation()
-
+  // No session: where to (pure), then leave once from the effect.
+  const exit = token ? null : exitToPortal(PORTAL_URL, window.location.href)
+  const exitUrl = exit?.kind === 'go' ? exit.url : null
   useEffect(() => {
-    if (!token) {
-      const returnUrl = encodeURIComponent(window.location.href)
-      window.location.href = `${PORTAL_URL}?returnUrl=${returnUrl}`
-    }
-  }, [token])
+    if (exitUrl) leaveFor(exitUrl)
+  }, [exitUrl])
 
   if (!token) {
     return (
-      <div className="flex h-screen items-center justify-center text-sm text-neutral-500">
-        Redirecting to portal for authentication…
+      <div className="flex h-screen flex-col items-center justify-center gap-3 px-4 text-center text-sm text-neutral-500">
+        {exit?.kind === 'stop' ? (
+          <>
+            <p className="font-medium text-neutral-700">We could not sign you in to Sales.</p>
+            <p className="max-w-md">Your session has expired and could not be renewed automatically.</p>
+            <a href={`${PORTAL_URL}/logout`} className="font-medium text-primary-600 hover:underline">Sign in again</a>
+          </>
+        ) : 'Redirecting to portal for authentication…'}
       </div>
     )
   }

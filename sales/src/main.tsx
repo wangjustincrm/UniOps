@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { useModuleAuth } from './store/auth'
+import { clearSessionMarks } from './lib/session'
 
 // ── Portal session handoff ────────────────────────────────────────────────────
 // Portal redirects to `${MODULE_URL}/#__session=<base64>` after login. We pluck
@@ -38,6 +39,9 @@ function decodeUtf8Base64(b64: string): string {
       user: moduleUser,
       isAuthenticated: true,
     })
+
+    // A new session: whatever expired before is over.
+    clearSessionMarks()
 
     // 2. Persist to localStorage
     const existing = JSON.parse(localStorage.getItem('sales-auth') ?? '{}')
