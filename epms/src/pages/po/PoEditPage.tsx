@@ -13,7 +13,7 @@ import { BudgetAccountSelect } from '@/components/budget/BudgetAccountSelect'
 import { useConfig } from '@/hooks/useConfig'
 import { formatAmount, cn } from '@/lib/utils'
 import type { ProcurementType, PrLineItem, Currency } from '@/types'
-import { CURRENCIES } from '@/types'
+import { enabledCurrencyOptions } from '@/lib/currencies'
 import { usePo, useUpdatePo, usePoAction, usePoAttachments, useUploadPoAttachment, useDeletePoAttachment } from '@/hooks/usePos'
 import { poAttachmentService } from '@/services/poAttachments'
 import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
@@ -342,7 +342,7 @@ export default function PoEditPage() {
                 <select value={currency}
                   onChange={(e) => { const c = e.target.value as Currency; setCurrency(c); if (c !== 'CAD') { setTaxRate(0); setTaxCode(null) } else setTaxRate(0.13) }}
                   className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
-                  {CURRENCIES.filter((c) => (config?.enabled_currencies ?? ['CAD','USD','EUR','RMB']).includes(c.value)).map((c) => (
+                  {enabledCurrencyOptions(config, currency).map((c) => (
                     <option key={c.value} value={c.value}>{c.value} — {c.label}</option>
                   ))}
                 </select>

@@ -1054,3 +1054,15 @@ def test_a_refused_submit_takes_the_user_to_the_saved_draft():
     assert "rememberSubmitFailure(\n            newAgreement.id" in agr_create
     assert "peekSubmitFailure(id)" in _src("epms/src/pages/pr/PrEditPage.tsx")
     assert "peekSubmitFailure(id)" in _src("epms/src/pages/agreements/AgreementDetailPage.tsx")
+
+
+def test_currency_lists_follow_currency_settings():
+    """currencies_on_a_pr_or_po (ISS-0118): every PR / PO / agreement currency
+    list is built from the enabled list, not by filtering the four presets."""
+    helper = _src("epms/src/lib/currencies.ts")
+    assert "config?.enabled_currencies" in helper and "custom_currencies" in helper
+    for page in ("pr/PrCreatePage.tsx", "pr/PrEditPage.tsx", "po/PoCreatePage.tsx",
+                 "po/PoEditPage.tsx", "agreements/AgreementCreatePage.tsx"):
+        src = _src(f"epms/src/pages/{page}")
+        assert "enabledCurrencyOptions(config" in src, page
+        assert "CURRENCIES.filter" not in src, page

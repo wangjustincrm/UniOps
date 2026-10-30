@@ -27,7 +27,7 @@ import { userService, type ApiUserBrief } from '@/services/users'
 import type { ApiVendor } from '@/services/vendors'
 import type { ApiBudgetL1 } from '@/services/budget'
 import type { PrLineItem, Currency, ProcurementType } from '@/types'
-import { CURRENCIES } from '@/types'
+import { enabledCurrencyOptions } from '@/lib/currencies'
 
 const TYPE_LABELS: Record<number, string> = {
   1: 'Raw Mat./Pack.',
@@ -615,7 +615,7 @@ export default function PrEditPage() {
                 onChange={(e) => setCurrency(e.target.value as Currency)}
                 className="h-10 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
               >
-                {CURRENCIES.filter((c) => (config?.enabled_currencies ?? ['CAD', 'USD', 'EUR', 'RMB']).includes(c.value)).map((c) => (
+                {enabledCurrencyOptions(config, currency).map((c) => (
                   <option key={c.value} value={c.value}>{c.value} — {c.label}</option>
                 ))}
               </select>

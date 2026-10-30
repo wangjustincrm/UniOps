@@ -11,7 +11,7 @@ import { BudgetAccountSelect } from '@/components/budget/BudgetAccountSelect'
 import { useConfig } from '@/hooks/useConfig'
 import { formatAmount, cn } from '@/lib/utils'
 import type { ProcurementType, PrLineItem, Currency } from '@/types'
-import { CURRENCIES } from '@/types'
+import { enabledCurrencyOptions } from '@/lib/currencies'
 import { useCreatePo } from '@/hooks/usePos'
 import { poService } from '@/services/po'
 import { usePr } from '@/hooks/usePrs'
@@ -415,9 +415,7 @@ export default function PoCreatePage() {
                   }}
                   className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 >
-                  {[
-                    ...CURRENCIES.filter((c) => (config?.enabled_currencies ?? ['CAD','USD','EUR','RMB']).includes(c.value)),
-                  ].map((c) => (
+                  {enabledCurrencyOptions(config, currency).map((c) => (
                     <option key={c.value} value={c.value}>{c.value} — {c.label}</option>
                   ))}
                 </select>
