@@ -175,3 +175,55 @@ async def test_department_without_manager_goes_to_finance_manager(sessions, mail
     await mod.run_budget_alerts()
     to = [t for t, _ in mail["to"]]
     assert people["fm"].email in to and people["dm"].email not in to
+
+
+@pytest.mark.asyncio
+async def test_hourly_run_alerts_over_budget_only(sessions, mail, config, monkeypatch):
+    """Over budget is "immediate" (hourly); a warning waits for the daily digest
+    and is not marked by the hourly run, so the digest still reports it."""
+    async with sessions() as db:
+        a, b, people = await _world(db)
+    await config(ns={"budget_alert_enabled": True, "budget_alert_dry_run": False})
+    _stub(monkeypatch, a, b, {("A", "TRAVEL"): (100, 85), ("A", "IT"): (100, 120)})
+
+    await mod.run_budget_alerts(over_only=True)
+    dm_mail = [s for t, s in mail["to"] if t == people["dm"].email]
+    assert dm_mail and all("over budget" in s for s in dm_mail)
+
+    await mod.run_budget_alerts()                         # daily: the warning, not IT again
+    dm_mail = [s for t, s in mail["to"] if t == people["dm"].email]
+    assert len(dm_mail) == 2 and "warning" in dm_mail[1].lower()
+
+
+@pytest.mark.asyncio
+async def test_hourly_run_is_quiet_in_dry_run(sessions, mail, config, monkeypatch):
+    async with sessions() as db:
+        a, b, _ = await _world(db)
+    await config(ns={"budget_alert_enabled": True})      # dry run is the default
+    _stub(monkeypatch, a, b, {("A", "IT"): (100, 120)})
+    await mod.run_budget_alerts(over_only=True)
+    assert mail == {"to": [], "admin": []}
+
+
+@pytest.mark.asyncio
+async def test_over_budget_posts_one_teams_card_for_teams_recipients(sessions, mail, config, monkeypatch):
+    cards = []
+
+    async def _card(webhook, title, body, link=None, **kw):
+        cards.append((webhook, title, body))
+    monkeypatch.setattr("app.services.teams.send_teams_card", _card)
+    async with sessions() as db:
+        a, b, people = await _world(db)
+        dm = await db.get(type(people["dm"]), people["dm"].id)
+        dm.teams_account, dm.notification_channel = "dm@teams", "both"
+        await db.commit()
+    await config(ns={"budget_alert_enabled": True, "budget_alert_dry_run": False,
+                     "teams_webhook_url": "https://example.invalid/hook"})
+    _stub(monkeypatch, a, b, {("A", "IT"): (100, 120), ("A", "TRAVEL"): (100, 85)})
+    await mod.run_budget_alerts()
+    assert len(cards) == 1
+    webhook, title, body = cards[0]
+    assert webhook == "https://example.invalid/hook" and "1 line(s)" in title
+    assert "IT" in body and "TRAVEL" not in body           # warnings are email only
+    assert people["dm"].full_name in body
+    assert people["dm"].email in [t for t, _ in mail["to"]]  # "both": email too

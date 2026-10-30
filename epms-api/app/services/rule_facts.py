@@ -162,7 +162,7 @@ async def budget_alerts(db) -> dict:
     ns = getattr(cfg, "notification_settings", None) or {}
     bac = getattr(cfg, "budget_admin_config", None) or {}
     if not ns.get("budget_alert_enabled", False):
-        state = "switched off, so no budget alert emails are sent"
+        state = "switched off, so no budget alerts are sent"
     elif ns.get("budget_alert_dry_run", True):
         state = ("switched on in dry run: the list goes to the System Admins only, "
                  "nobody else is emailed yet")

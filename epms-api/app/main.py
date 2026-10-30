@@ -47,8 +47,9 @@ async def lifespan(app: FastAPI):
     gr_ack_task = asyncio.create_task(gr_ack_due_loop())
     # Budget threshold alert emails (Budget Config thresholds, ISS-0146 ③).
     # Gated OFF by default.
-    from app.tasks.budget_alerts import budget_alerts_loop
+    from app.tasks.budget_alerts import budget_alerts_loop, budget_over_alerts_loop
     budget_alert_task = asyncio.create_task(budget_alerts_loop())
+    budget_over_alert_task = asyncio.create_task(budget_over_alerts_loop())
     yield
     logger.info("Shutting down — closing connections")
     followup_task.cancel()
@@ -58,6 +59,7 @@ async def lifespan(app: FastAPI):
     service_gr_task.cancel()
     gr_ack_task.cancel()
     budget_alert_task.cancel()
+    budget_over_alert_task.cancel()
     # Settle fire-and-forget work (notification emails, PDF generation, PMS
     # import) BEFORE disposing the engine. Each of those owns its own session;
     # tearing the pool down underneath one leaves it mid-transaction. Brief

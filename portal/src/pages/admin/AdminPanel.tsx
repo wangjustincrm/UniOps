@@ -1174,7 +1174,7 @@ function NotificationSettings() {
         </Field>
       )}
 
-      <Field label="Budget Threshold Alerts" hint="When on, every budget line (cost center × account) is checked daily at the digest time against Finance → Budget Config thresholds: reaching the warning level sends the Department Manager a digest; reaching the over-budget level emails the Department Manager, Finance Manager and the department's GM/OPM. Once per crossing. Email only — no Teams alerts. Off by default.">
+      <Field label="Budget Threshold Alerts" hint="When on, every budget line (cost center × account) is checked against Finance → Budget Config thresholds: reaching the warning level sends the Department Manager a daily digest (at the digest time); reaching the over-budget level is reported within the hour by email to the Department Manager, Finance Manager and the department's GM/OPM, plus a Teams card (Teams Webhook URL above) when one of them chose Teams. Once per crossing. Off by default.">
         <div className="flex items-center gap-2 pt-1.5">
           <Toggle checked={budgetAlertVal} onChange={(v) => setBudgetAlert(v)} />
           <span className="text-xs text-neutral-500">{budgetAlertVal ? 'On — budget lines are checked daily' : 'Off — no budget alert emails'}</span>

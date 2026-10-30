@@ -2,29 +2,38 @@
 Budget threshold alert emails (ISS-0146 ③, BUDGET.md BCFG-004 / BUD-OI-02).
 
 Finance → Budget Config's thresholds (budget_admin_config.yellow_threshold_pct /
-red_threshold_pct, default 80 / 100) promised a daily digest at the warning
-level and an alert at the over-budget level; nothing sent either. This sweep
-sends them — by email only: Teams alerts are deliberately not part of this
-(owner's decision 2026-10-30; the system can only post to one shared channel).
+red_threshold_pct, default 80 / 100) promised "Daily email digest sent to Dept.
+Manager" at the warning level and "Immediate email + Teams alert to Dept.
+Manager, Finance Manager, and GM/OPM" at the over-budget level; nothing sent
+either. Rule question 16 was answered B — build it as described — so:
+- warning → the daily digest, by email;
+- over budget → checked every hour (NC actuals change only when Finance syncs
+  NC vouchers, hourly by default — that is as immediate as the data is), by
+  email, plus one Teams card on the company's Teams webhook when a recipient
+  has chosen Teams (My Profile → notification channel) — the same webhook and
+  channel rule as task notifications.
 
 What is measured — the Budget Dashboard's own alert (BDASH-003): per cost
 center × budget account, NC year-to-date actual (vouchers not yet tallied
 included, the dashboard's default) ÷ the approved annual budget. Committed is
 not counted (nothing books it — BACT-003). Spend with no budget counts as over.
 
-Who gets what, once a day at followup_time:
-- a line that crossed UP into the warning level → one digest per Department
-  Manager listing their lines;
-- a line that crossed UP into the over-budget level → one email per person to
-  the Department Manager, every Finance Manager and the department's GM or OPM
-  (company_config.dept_gm_opm_mapping);
-- a department with no Department Manager → the Finance Manager(s) instead.
+Who gets what:
+- once a day at followup_time, a line that crossed UP into the warning level →
+  one digest per Department Manager listing their lines;
+- within the hour, a line that crossed UP into the over-budget level → one
+  email per person to the Department Manager, every Finance Manager and the
+  department's GM or OPM (company_config.dept_gm_opm_mapping);
+- a department with no Department Manager → the Finance Manager(s) instead
+  (developer's choice — the page names no one else).
+
 Each crossing is emailed once (budget_alert_states); when usage falls back the
 mark is lowered, so a later crossing alerts again.
 
-Gates, as for the other sweeps: notification_settings.budget_alert_enabled
-(default off) and budget_alert_dry_run (default on: System Admins get the list,
-nobody else is emailed and nothing is marked). Budget figures are read from
+Gates, as for the other sweeps (developer's choice, so a release does not start
+emailing on its own): notification_settings.budget_alert_enabled (default off)
+and budget_alert_dry_run (default on: once a day System Admins get the list,
+nobody else is emailed and nothing is marked; the hourly check stays quiet). Budget figures are read from
 budget-api as the system account (no user is signed in), which sees every cost
 center. Single-instance assumption, like the other sweeps.
 """
@@ -228,6 +237,52 @@ def _table(crossings: list[Crossing], dept_names: dict) -> str:
             "<th>Actual (NC, incl. unposted)</th><th>Used</th></tr>" + rows + "</table>")
 
 
+def _teams_text(crossings: list[Crossing], dept_names: dict, names: list[str]) -> str:
+    lines = [
+        f"- {dept_names.get(c.line.department_id, '—')} · {c.line.cost_center} · {c.line.account}: "
+        f"{c.line.actual:,.2f} of {c.line.budget:,.2f} "
+        f"({'no budget' if c.line.used_pct is None else f'{c.line.used_pct}%'})"
+        for c in sorted(crossings, key=lambda c: (c.line.cost_center, c.line.account))
+    ]
+    return "\n\n".join(lines + [f"For: {', '.join(sorted(names))}"])
+
+
+async def _send_teams(cfg, users: dict, by_user: dict[uuid.UUID, list[Crossing]],
+                      dept_names: dict, fiscal_year: int, red) -> bool:
+    """One card for the over-budget lines, when at least one of their
+    recipients has chosen Teams and has a Teams account (the rule
+    notification.py applies to task notifications). The webhook posts to one
+    company channel, so one card names everyone it is for."""
+    from app.services.teams import send_teams_card
+
+    webhook = (cfg.notification_settings or {}).get("teams_webhook_url")
+    if not webhook:
+        return False
+    over: dict = {}
+    names: list[str] = []
+    for uid, crossings in by_user.items():
+        user = users.get(uid)
+        if (user is None or not user.is_active or not user.teams_account
+                or user.notification_channel not in ("teams_only", "both")):
+            continue
+        mine = [c for c in crossings if c.level == OVER]
+        if not mine:
+            continue
+        names.append(user.full_name or user.email)
+        for c in mine:
+            over[(c.line.cost_center_id, c.line.account_id)] = c
+    if not over:
+        return False
+    try:
+        await send_teams_card(
+            webhook, f"Budget alert: {len(over)} line(s) reached {red}% in FY{fiscal_year}",
+            _teams_text(list(over.values()), dept_names, names))
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.error("Budget alerts: Teams card failed: %s", exc)
+        return False
+
+
 async def _send(db: AsyncSession, cfg, by_user: dict[uuid.UUID, list[Crossing]],
                 dept_names: dict, fiscal_year: int, yellow, red) -> int:
     from app.services.email import send_email
@@ -263,11 +318,15 @@ async def _send(db: AsyncSession, cfg, by_user: dict[uuid.UUID, list[Crossing]],
             sent += 1
         except Exception as exc:  # noqa: BLE001 — one bad address must not stop the rest
             logger.error("Budget alerts: email to %s failed: %s", user.email, exc)
+    await _send_teams(cfg, users, by_user, dept_names, fiscal_year, red)
     return sent
 
 
-async def run_budget_alerts() -> None:
-    logger.info("Budget alerts: starting sweep")
+async def run_budget_alerts(over_only: bool = False) -> None:
+    """The daily run reports every crossing; the hourly run (over_only) only
+    the crossings into over budget, and marks only those, so a warning still
+    reaches the daily digest."""
+    logger.info("Budget alerts: starting %s sweep", "hourly over-budget" if over_only else "daily")
     try:
         async with session_module.AsyncSessionLocal() as db:
             cfg = await get_config(db)
@@ -275,6 +334,9 @@ async def run_budget_alerts() -> None:
             if not ns.get("budget_alert_enabled", False):
                 logger.info("Budget alerts: disabled by admin toggle — skipping run")
                 await db.commit()
+                return
+            if over_only and ns.get("budget_alert_dry_run", True):
+                await db.commit()       # the dry-run list goes out once a day
                 return
             bac = cfg.budget_admin_config or {}
             yellow = Decimal(str(bac.get("yellow_threshold_pct", 80)))
@@ -288,6 +350,9 @@ async def run_budget_alerts() -> None:
 
             lines = await read_lines(token, fiscal_year, yellow, red)
             plan = await plan_alerts(db, lines, fiscal_year)
+            if over_only:
+                plan = Plan(crossings=[c for c in plan.crossings if c.level == OVER],
+                            marks=[(ln, lv) for ln, lv in plan.marks if lv == OVER])
             dept_names = {d.id: d.name for d in (await db.execute(select(Department))).scalars()}
             logger.info("Budget alerts: %d line(s) read, %d new crossing(s)", len(lines), len(plan.crossings))
 
@@ -317,6 +382,17 @@ async def run_budget_alerts() -> None:
         logger.info("Budget alerts: sweep finished")
     except Exception as exc:  # noqa: BLE001 — one failure must not kill the loop
         logger.error("Budget alerts: sweep failed: %s", exc)
+
+
+OVER_BUDGET_CHECK_SECONDS = 3600
+
+
+async def budget_over_alerts_loop() -> None:
+    """Over budget is "immediate": checked every hour, the default NC voucher
+    sync interval — the actuals cannot change faster than that."""
+    while True:
+        await asyncio.sleep(OVER_BUDGET_CHECK_SECONDS)
+        await run_budget_alerts(over_only=True)
 
 
 async def budget_alerts_loop() -> None:
