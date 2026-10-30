@@ -73,13 +73,14 @@ rules:
       A prepayment can be at most the vendor's Max Prepayment % (on the vendor
       record) when one is set, otherwise the system cap in Admin Panel →
       Prepayment Config — and never more than that system cap in either case.
-      A cap of 0 means the vendor cannot be prepaid. The cap is not on
+      A cap of 0 means the vendor cannot be prepaid. When an order is prepaid
+      in stages, the cap applies to all its prepayments added together. The cap is not on
       agreements or POs. The vendor's own setting is readable as
       vendor.max_prepayment_pct; the system cap is only in Admin Panel →
       Prepayment Config. Whether a vendor can be prepaid is decided by these
       caps alone — never by the Prepaid flag on its past PRs or POs, which
       the payment application does not read.
-    enforced_in: "epms-api app/api/v1/pa.py create (effective_cap = vendor.max_prepayment_pct else Prepayment Config; second check against the system cap)"
+    enforced_in: "epms-api app/api/v1/pa.py _assert_prepayment_cap (effective_cap = vendor.max_prepayment_pct else Prepayment Config; second check against the system cap; cumulative over the PO's live prepayments via prior_prepayment_pct)"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_prepayment_cap_reads_the_vendor_then_the_system"

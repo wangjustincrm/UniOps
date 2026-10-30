@@ -3,7 +3,8 @@
 #
 # Derived: PaCreate's required fields. PA has no doc_preflight submit gates —
 # its rules live in api/v1/pa.py, which rejects a settlement or balance PA with
-# no prepayment_pa_id (422) and a second prepayment on the same PO (409).
+# no prepayment_pa_id (422), a prepayment on a PO that already has a
+# settlement (409), and a settlement while another prepayment is unpaid (409).
 topic: pa_types
 label: Payment Application types
 doc_type: pa
@@ -91,11 +92,14 @@ values:
     label: Prepayment
     covers: A deposit or full payment made before the vendor delivers.
     when: >
-      When the purchase order is marked as requiring prepayment. This is the
-      first of a pair — the money goes out now and is reconciled later.
+      When the purchase order is marked as requiring prepayment. The money goes
+      out now and is reconciled later by one settlement.
     notes:
-      - Only one prepayment PA can be open against a purchase order at a time.
-        Settle or cancel the existing one before raising another.
+      - A purchase order can be prepaid in stages — for example 30% when the
+        order is placed and 70% before shipment — each stage its own prepayment
+        PA. The vendor's cap applies to all the stages added together, not to
+        each one.
+      - No further prepayment can be raised once the order has a settlement.
       - Records what percentage of the order is being prepaid and when the
         settlement is expected.
 
@@ -103,9 +107,13 @@ values:
     label: Settlement
     covers: The reconciliation of a prepayment once the real invoice arrives.
     when: >
-      After a prepayment, when you know the actual amount. It must reference
-      the prepayment PA it is settling — without that link it is rejected.
+      After the prepayment(s), when you know the actual amount. It must
+      reference a prepayment PA on the order — without that link it is
+      rejected. One settlement reconciles every paid prepayment on the order
+      at once, and can apply up to their total.
     notes:
+      - It cannot be raised while another prepayment on the same order is
+        still waiting for approval or payment — pay or cancel that one first.
       - If the invoice exactly matches what was prepaid, nothing is owed and it
         reconciles immediately — no approval, no payment, no bank movement.
       - If the prepayment was too large, a finance confirmation task gates the
