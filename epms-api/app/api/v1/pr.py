@@ -38,6 +38,7 @@ router = APIRouter(prefix="/pr", tags=["purchase-requests"])
 async def list_prs(
     db: SessionDep,
     user: CurrentUserPayload,
+    token: BearerToken,
     status: str | None = Query(default=None),
     pr_type: int | None = Query(default=None),
     cost_center_id: uuid.UUID | None = Query(default=None),
@@ -74,7 +75,7 @@ async def list_prs(
         sort=sort,
         dir=dir,
     )
-    await enrich_current_step(db, "pr", items)
+    await enrich_current_step(db, "pr", items, token)
     return PrListResponse(items=items, total=total)
 
 
@@ -166,7 +167,7 @@ async def budget_check(
 
 
 @router.get("/{pr_id}", response_model=PrResponse)
-async def get_pr(pr_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+async def get_pr(pr_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload, token: BearerToken):
     from app.core.access_scope import is_pr_visible
     pr = await pr_crud.get_by_id(db, pr_id)
     if pr is None:
@@ -177,7 +178,7 @@ async def get_pr(pr_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
     # The Approval Timeline names who the current step is waiting on (and any
     # stand-in) from this — the same open-task reading as the list's Status
     # cell, so the two cannot disagree (ISS-0085).
-    await enrich_current_step(db, "pr", [pr])
+    await enrich_current_step(db, "pr", [pr], token)
     return pr
 
 

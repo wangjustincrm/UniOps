@@ -14,6 +14,26 @@ export interface HistoryLine {
 
 const words = (s: string) => s.replace(/_/g, ' ')
 
+// A step token that more than one actor role fulfils (same rule as epms-api
+// crud/signatories.py::_step_matches).
+const STEP_ROLE_ALIASES: Record<string, string[]> = { gm_or_opm: ['gm', 'opm'] }
+
+/** A workflow step as the engine / config lists it; `role` may be absent
+ *  (an agreement's configured nodes carry none), and then no label is used. */
+type StepDef = { label: string; role?: string }
+
+/** The step's name as configured in the approval engine (e.g. "AP Review") —
+ *  ISS-0107/0144, rule question 6: the approval flow is whatever the engine is
+ *  configured with. Used only while the event's step still has the role the
+ *  actor acted in (the workflow may have been edited since); otherwise null and
+ *  the role name is shown as before. */
+export function configuredStepLabel(e: ApiEvent, steps?: readonly StepDef[] | null): string | null {
+  const step = steps?.[e.step_idx]
+  if (!step?.label || !step.role || !e.actor_role) return null
+  const matches = e.actor_role === step.role || (STEP_ROLE_ALIASES[step.role] ?? []).includes(e.actor_role)
+  return matches ? step.label : null
+}
+
 /** Reads the event's `kind` (derived once by epms-api), never its comment text.
  *
  *  A skipped step is stored as an "approve" whose actor is whoever triggered
@@ -21,8 +41,9 @@ const words = (s: string) => s.replace(/_/g, ' ')
  *  is, History read "Approve by finance manager — <the requester>" (ISS-0077).
  *  A skip names the step and the reason, never a person; a PMS-import backfill
  *  drops the import account's name for the same reason the PDF does. */
-export function historyLine(e: ApiEvent): HistoryLine {
-  const role = words(e.actor_role)
+export function historyLine(e: ApiEvent, steps?: readonly StepDef[] | null): HistoryLine {
+  const configured = configuredStepLabel(e, steps)
+  const role = configured ?? words(e.actor_role)
   if (e.kind === 'skipped') {
     return { action: 'Skipped', role: `${role} step`, actorName: null, note: e.skip_reason ?? null }
   }

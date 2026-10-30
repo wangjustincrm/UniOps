@@ -748,7 +748,7 @@ async def test_the_workflow_view_of_a_pa_carries_its_payment_date(monkeypatch):
     async def no_events(db, doc_id):
         return []
 
-    async def no_step(db, doc_type, items):
+    async def no_step(db, doc_type, items, token=None):
         for it in items:
             it.current_step = None
 

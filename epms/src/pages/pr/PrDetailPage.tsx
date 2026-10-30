@@ -613,7 +613,7 @@ export default function PrDetailPage() {
               {events && events.length > 0 ? (
                 <ul className="flex flex-col gap-3">
                   {events.map((ev) => {
-                    const line = historyLine(ev)
+                    const line = historyLine(ev, workflowSteps)
                     return (
                       <li key={ev.id} className="flex gap-3 text-sm">
                         <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDate(ev.created_at)}</span>

@@ -37,6 +37,7 @@ PoEditImportedDep = Annotated[dict, Depends(require_permission("epms.po.edit_imp
 async def list_pos(
     db: SessionDep,
     user: CurrentUserPayload,
+    token: BearerToken,
     status: str | None = Query(default=None),
     vendor_id: uuid.UUID | None = Query(default=None),
     pr_id: uuid.UUID | None = Query(default=None),
@@ -65,7 +66,7 @@ async def list_pos(
         po_ids_subq=po_subq,
         page=page, page_size=page_size, sort=sort, dir=dir,
     )
-    await enrich_current_step(db, "po", items)
+    await enrich_current_step(db, "po", items, token)
     unpaid_invoice_po_ids: set[uuid.UUID] = set()
     # Map each listed PO's linked PR to its requester (PR.created_by) so the
     # frontend can scope actions like PA creation to the requester's own POs.
@@ -121,7 +122,7 @@ async def create_po(body: PoCreate, db: SessionDep, user: PoWriteDep, token: Bea
 
 
 @router.get("/{po_id}", response_model=PoResponse)
-async def get_po(po_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+async def get_po(po_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload, token: BearerToken):
     from app.core.access_scope import is_po_visible
     po = await po_crud.get_by_id(db, po_id)
     if po is None:
@@ -130,7 +131,7 @@ async def get_po(po_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
     if not await is_po_visible(db, po_id, scope):
         raise HTTPException(status_code=404, detail="PO not found")
     # Who the current approval step is waiting on — see get_pr (ISS-0085).
-    await enrich_current_step(db, "po", [po])
+    await enrich_current_step(db, "po", [po], token)
     # Resolve the linked PR's requester so the frontend can gate GR creation on the
     # actual requester identity (not the PO creator / not a generic role).
     data = PoResponse.model_validate(po).model_dump()

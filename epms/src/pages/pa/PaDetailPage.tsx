@@ -1029,7 +1029,7 @@ export default function PaDetailPage() {
               <div className="flex flex-col text-sm">
                 {events && events.length > 0 ? (
                   [...events].reverse().map((evt, i) => {
-                    const line = historyLine(evt)
+                    const line = historyLine(evt, workflowSteps)
                     return (
                       <div key={i} className="flex gap-4 pb-4 border-b border-neutral-100 last:border-0 last:pb-0">
                         <div className="text-xs text-neutral-400 w-32 shrink-0 mt-0.5">{formatDateTime(evt.created_at)}</div>

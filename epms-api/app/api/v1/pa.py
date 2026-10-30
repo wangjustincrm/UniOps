@@ -364,6 +364,7 @@ def _not_epms_pa(pa) -> bool:
 async def list_pas(
     db: SessionDep,
     user: CurrentUserPayload,
+    token: BearerToken,
     status: str | None = Query(default=None),
     po_id: uuid.UUID | None = Query(default=None),
     vendor_id: uuid.UUID | None = Query(default=None),
@@ -395,7 +396,7 @@ async def list_pas(
         direct_subq=scope.get("direct_subq"),
         page=page, page_size=page_size, sort=sort, dir=dir,
     )
-    await enrich_current_step(db, "pa", items)
+    await enrich_current_step(db, "pa", items, token)
     await pa_crud.attach_po_links(db, items)
     await pa_crud.attach_direct_labels(db, items)
     return {"items": [PaResponse.model_validate(pa) for pa in items], "total": total}
@@ -823,7 +824,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
 
 
 @router.get("/{pa_id}", response_model=PaResponse)
-async def get_pa(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+async def get_pa(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload, token: BearerToken):
     from app.core.access_scope import is_pa_visible
     pa = await pa_crud.get_by_id(db, pa_id)
     if _not_epms_pa(pa):
@@ -836,7 +837,7 @@ async def get_pa(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
         pa.cost_allocations = await cost_allocations(db, pa.id)
     await pa_crud.attach_direct_labels(db, [pa])
     # Who the current approval step is waiting on — see get_pr (ISS-0085).
-    await enrich_current_step(db, "pa", [pa])
+    await enrich_current_step(db, "pa", [pa], token)
     return pa
 
 

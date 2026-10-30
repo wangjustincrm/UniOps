@@ -103,10 +103,10 @@ async def _visible_agreement_or_404(
 
 
 @router.get("/{agreement_id}", response_model=AgreementResponse)
-async def get_agreement(agreement_id: uuid.UUID, db: SessionDep, user: AgrReadDep):
+async def get_agreement(agreement_id: uuid.UUID, db: SessionDep, user: AgrReadDep, token: BearerToken):
     agr = await _visible_agreement_or_404(db, user, agreement_id)
     # Who the current approval step is waiting on — see get_pr (ISS-0085).
-    await enrich_current_step(db, "agr", [agr])
+    await enrich_current_step(db, "agr", [agr], token)
     return agr
 
 

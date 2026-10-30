@@ -884,7 +884,7 @@ export default function AgreementDetailPage() {
             {events && events.length > 0 ? (
               <ul className="flex flex-col gap-3">
                 {events.map((e) => {
-                  const line = historyLine(e)
+                  const line = historyLine(e, workflowNodes)
                   return (
                     <li key={e.id} className="flex gap-3 text-sm">
                       <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDateTime(e.created_at)}</span>
