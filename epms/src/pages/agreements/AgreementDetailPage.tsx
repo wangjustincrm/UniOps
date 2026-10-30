@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { createPortal } from 'react-dom'
@@ -34,6 +34,7 @@ import { buildApprovalNodes } from '@/lib/approvalTimeline'
 import type { InvoiceStatus } from '@/services/invoices'
 import { isAgreementAdmissible } from '@/lib/agreements'
 import { canRecallDocument } from '@/lib/documentActions'
+import { clearSubmitFailure, peekSubmitFailure } from '@/lib/submitFailure'
 
 const TYPE_LABELS: Record<AgreementType, string> = {
   house_account: 'House Account',
@@ -263,6 +264,10 @@ export default function AgreementDetailPage() {
   const agreementRecall = useAgreementAction(id ?? '', { alertOnError: false })
   const { user } = useAuthStore()
   const [pendingAction, setPendingAction] = useState<ApprovalAction | null>(null)
+  // Why New Agreement's Submit for Approval was refused, when it brought the
+  // saved draft here instead (ISS-0090).
+  const [createSubmitError] = useState<string | null>(() => peekSubmitFailure(id))
+  useEffect(() => { clearSubmitFailure(id) }, [id])
 
   const { data: invoicesData, isLoading: invoicesLoading } = useInvoices(
     agreement ? { agreement_id: agreement.id } : undefined,
@@ -570,6 +575,12 @@ export default function AgreementDetailPage() {
           </div>
         </div>
       </div>
+
+      {createSubmitError && agreement.status === 'draft' && (
+        <p role="alert" className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+          {createSubmitError}
+        </p>
+      )}
 
       {/* Main content + timeline */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">

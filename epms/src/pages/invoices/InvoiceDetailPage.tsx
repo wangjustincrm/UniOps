@@ -1592,31 +1592,38 @@ function fmtBytes(b: number) {
   return `${(b / (1024 * 1024)).toFixed(1)} MB`
 }
 
-/** Fetches a single attachment file with auth → returns a revocable blob URL. */
+/** Fetches a single attachment file with auth → returns a revocable blob URL.
+ *  `error` says why it could not be fetched: a failed fetch used to leave Open
+ *  and Download greyed out with no word of why (HTTP 502, ISS-0096; FS-008). */
 function useAttachmentBlob(attachmentId: string, token: string | null) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!token) { setLoading(false); return }
     let url = ''
     setLoading(true)
+    setError(null)
     fetch(`${EXPENSE_BASE}/api/v1/invoice-attachments/${attachmentId}/file`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then((r) => r.ok ? r.blob() : Promise.reject(r.status))
+      .then((r) => r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then((blob) => { url = URL.createObjectURL(blob); setBlobUrl(url) })
-      .catch(() => setBlobUrl(null))
+      .catch((err: unknown) => {
+        setBlobUrl(null)
+        setError(err instanceof Error ? err.message : 'network error')
+      })
       .finally(() => setLoading(false))
 
     return () => { if (url) URL.revokeObjectURL(url) }
   }, [attachmentId, token])
 
-  return { blobUrl, loading }
+  return { blobUrl, loading, error }
 }
 
 function AttachmentItem({ att, token }: { att: AttachmentMeta; token: string | null }) {
-  const { blobUrl } = useAttachmentBlob(att.id, token)
+  const { blobUrl, error } = useAttachmentBlob(att.id, token)
 
   const handleDownload = () => {
     if (!blobUrl) return
@@ -1646,6 +1653,12 @@ function AttachmentItem({ att, token }: { att: AttachmentMeta; token: string | n
           Download
         </button>
       </div>
+      {error && (
+        <p role="alert" className="flex items-center gap-1 text-xs text-danger-600">
+          <AlertTriangle className="h-3 w-3 shrink-0" />
+          This file could not be loaded ({error}), so it cannot be opened or downloaded. Reload the page to try again; if it keeps failing, ask an administrator to check the file store.
+        </p>
+      )}
 
     </div>
   )
@@ -1665,14 +1678,15 @@ function InvoiceAttachments({
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
-  const { data: attachments = [], isLoading } = useQuery<AttachmentMeta[]>({
+  const { data: attachments = [], isLoading, error: listError } = useQuery<AttachmentMeta[]>({
     queryKey: ['invoice-attachments', invoiceId],
     queryFn: async () => {
       const res = await fetch(
         `${EXPENSE_BASE}/api/v1/invoice-attachments?invoice_id=${invoiceId}&invoice_source=epms`,
         { headers: { Authorization: `Bearer ${token}` } }
       )
-      if (!res.ok) return []
+      // A failed list used to read as "No attachment" (FS-008).
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return res.json()
     },
     enabled: !!invoiceId,
@@ -1731,6 +1745,12 @@ function InvoiceAttachments({
       {uploadError && (
         <p className="mb-2 text-xs text-danger-600 flex items-center gap-1">
           <AlertTriangle className="h-3 w-3 shrink-0" />{uploadError}
+        </p>
+      )}
+      {listError && (
+        <p role="alert" className="mb-2 text-xs text-danger-600 flex items-center gap-1">
+          <AlertTriangle className="h-3 w-3 shrink-0" />
+          The attachment list could not be loaded ({listError instanceof Error ? listError.message : 'error'}). Reload the page to try again.
         </p>
       )}
 

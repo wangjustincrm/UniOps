@@ -276,6 +276,13 @@ async def create(
     created_by: uuid.UUID,
     token: str | None = None,
 ) -> GoodsReceipt:
+    # One GR at a time per PO. A double-click on Submit sent two requests 1 ms
+    # apart; both read the same open quantity before either was saved, so the
+    # over-receipt check passed twice and the PO line was received twice
+    # (GR-20261027-0004/0005, ISS-0152). Locked, the second sees the first
+    # GR's quantity as pending and needs an over-receipt reason like any other.
+    await db.execute(
+        select(PurchaseOrder.id).where(PurchaseOrder.id == po.id).with_for_update())
     over = await _over_receipt_on_create(db, po.id, payload.line_items)
     over_reason = (payload.over_receipt_reason or "").strip() or None
     if over and over_reason is None:

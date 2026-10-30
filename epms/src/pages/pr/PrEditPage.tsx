@@ -11,6 +11,7 @@ import { FormField } from '@/components/ui/form-field'
 import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import { PrLineItems, lineItemsTotal, validateLineItems } from '@/components/pr/PrLineItems'
 import { budgetAccountError } from '@/lib/prBudget'
+import { clearSubmitFailure, errorMessage, peekSubmitFailure } from '@/lib/submitFailure'
 import { OverBudgetWarning } from '@/components/pr/BudgetBalanceWidget'
 import { useConfig } from '@/hooks/useConfig'
 import { useBudgetOverview, useBalance, useFactors } from '@/hooks/useBudget'
@@ -133,6 +134,10 @@ export default function PrEditPage() {
   const [selectedL2, setSelectedL2] = useState('')
 
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // Why the last Submit was refused — here, or on New PR before it brought
+  // the saved draft here (ISS-0166). It used to be shown nowhere.
+  const [submitError, setSubmitError] = useState<string | null>(() => peekSubmitFailure(id))
+  useEffect(() => { clearSubmitFailure(id) }, [id])
   const [initialized, setInitialized] = useState(false)
 
   const costCenters = costCentersData ?? []
@@ -338,10 +343,13 @@ export default function PrEditPage() {
     }
     setJustificationError(null)
     setIsSubmitting(true)
+    setSubmitError(null)
     try {
       await updatePr.mutateAsync({ id, body: buildPayload() })
       await prAction.mutateAsync({ action: 'submit' })
       replaceTab(`/pr/${id}`)
+    } catch (err) {
+      setSubmitError(errorMessage(err, 'The purchase request could not be submitted'))
     } finally {
       setIsSubmitting(false)
     }
@@ -795,6 +803,9 @@ export default function PrEditPage() {
             <Link to={`/pr/${id}`}>
               <Button variant="secondary">Cancel</Button>
             </Link>
+            {submitError && (
+              <p role="alert" className="flex-1 mx-4 text-sm text-danger-600">{submitError}</p>
+            )}
             <div className="flex items-center gap-3">
               <Button type="button" variant="secondary" disabled={isSubmitting || !title.trim()} onClick={handleSaveDraft}>
                 Save as Draft

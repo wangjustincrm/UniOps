@@ -301,7 +301,8 @@ async def pr_action(
             if not check.passed:
                 raise HTTPException(status_code=409, detail=check.message)
     try:
-        await delegate_action("pr", str(pr_id), body.action, body.comment, token)
+        await delegate_action("pr", str(pr_id), body.action, body.comment, token,
+                              expected_step=body.expected_step)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:

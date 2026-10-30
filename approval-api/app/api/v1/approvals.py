@@ -48,6 +48,7 @@ async def run_action(
             actor_id=actor_id,
             actor_role=actor_role,
             comment=body.comment,
+            expected_step=body.expected_step,
         )
     except LookupError as e:
         raise HTTPException(status_code=404, detail=str(e))
