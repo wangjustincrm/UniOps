@@ -717,8 +717,13 @@ async def _create_ack_task(db: AsyncSession, gr: GoodsReceipt) -> None:
         document_number=gr.number,
         assigned_role="requester",
         assigned_user_id=assignee_id,
-        title=f"Acknowledge GR: {gr.number} — {gr.title}",
-        description="New goods receipt requires your acknowledgement.",
+        # A service GR is acknowledged with Confirm Service Completion (there is
+        # no Acknowledge button on it), so its task says so (ISS-0179).
+        title=(f"Confirm Service Completion: {gr.number} — {gr.title}"
+               if gr.gr_type == "service" else f"Acknowledge GR: {gr.number} — {gr.title}"),
+        description=("Confirm on the goods receipt whether the service was completed "
+                     "(Satisfactory or Has Issues)." if gr.gr_type == "service"
+                     else "New goods receipt requires your acknowledgement."),
         vendor=gr.vendor_name,
     ))
 

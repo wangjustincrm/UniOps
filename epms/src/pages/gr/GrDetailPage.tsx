@@ -221,6 +221,9 @@ export default function GrDetailPage() {
   // PRD GR-C-004: pending_ack / collection_pending. Offered to whoever recorded
   // it, warehouse receivers and System Admin (ISS-0124; lib/documentActions.ts).
   const canCancel = canCancelGr(gr, user ?? {}, !!grPerms?.['epms.gr.receive'])
+  // PRD GR-C-003: a collected GR can be flagged Discrepancy (closes its open
+  // tasks, creates none). There was no button for it (ISS-0092).
+  const canFlagDiscrepancy = gr.status === 'collected' && isRequesterRole
 
   const handleAcknowledge = () => {
     grAction.mutate(
@@ -286,6 +289,21 @@ export default function GrDetailPage() {
               Cancel GR
             </Button>
           )}
+          {canFlagDiscrepancy && (
+            <Button
+              variant="secondary"
+              className="gap-2 border-danger-200 text-danger-600 hover:bg-danger-50"
+              disabled={grCancel.isPending}
+              onClick={() => {
+                if (confirm(`Flag ${gr.number} as Discrepancy? Its open tasks will be closed; nothing else changes.`)) {
+                  grCancel.mutate({ action: 'discrepancy' })
+                }
+              }}
+            >
+              <AlertTriangle className="h-4 w-4" />
+              Flag Discrepancy
+            </Button>
+          )}
           {grCancel.isError && (
             <span className="text-xs text-danger-600">
               {grCancel.error instanceof Error ? grCancel.error.message : 'Could not cancel the GR'}
@@ -301,8 +319,9 @@ export default function GrDetailPage() {
           <div>
             <p className="text-sm font-semibold text-danger-700">Discrepancy on record</p>
             <p className="text-sm text-danger-600 mt-0.5">
-              One or more items were received with issues. Invoice creation is blocked until the
-              Procurement Officer resolves the discrepancy.
+              This receipt was flagged as having a discrepancy and its open tasks were closed.
+              It does not block invoice matching or payment — a damaged line is followed up by
+              Procurement on the Report Goods Damage task (return or credit).
             </p>
           </div>
         </div>
