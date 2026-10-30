@@ -142,6 +142,9 @@ export function usePaAction(id: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pas'] })
       queryClient.invalidateQueries({ queryKey: ['pas', id] })
+      // The final approval stores the PA PDF as an attachment (PA-006); the
+      // Attachments tab showed it only after F5 (ISS-0104).
+      queryClient.invalidateQueries({ queryKey: ['pa-attachments', id] })
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },

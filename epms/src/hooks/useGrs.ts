@@ -73,6 +73,10 @@ export function useGrAction(id: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['grs'] })
       queryClient.invalidateQueries({ queryKey: ['grs', id] })
+      // Confirming a GR (service completion, receipt) stores its PDF as an
+      // attachment (GR-S-007); the Attachments tab showed it only after F5
+      // (ISS-0104).
+      queryClient.invalidateQueries({ queryKey: ['gr-attachments', id] })
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
