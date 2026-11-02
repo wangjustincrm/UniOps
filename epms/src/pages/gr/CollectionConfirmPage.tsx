@@ -5,7 +5,7 @@ import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, Truck, CheckCircle2, AlertTriangle, Package } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn, formatAmount, formatDate } from '@/lib/utils'
+import { cn, formatAmount, formatDate, formatQty } from '@/lib/utils'
 import { useGr, useGrAction } from '@/hooks/useGrs'
 import { useAuthStore } from '@/stores/auth.store'
 import { type GrLineCondition, isOverReceiptError } from '@/services/gr'
@@ -227,7 +227,7 @@ export default function CollectionConfirmPage() {
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-sm font-mono font-semibold text-neutral-900">
-                      {item.qty_received} {item.unit}
+                      {formatQty(item.qty_received)} {item.unit}
                     </p>
                     <p className="text-xs text-neutral-400 mt-0.5">
                       {formatAmount(item.line_total, gr.currency)}

@@ -7,7 +7,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { cn, formatAmount, formatDate, formatDateTime } from '@/lib/utils'
+import { cn, formatAmount, formatBytes, formatDate, formatDateTime, formatQty } from '@/lib/utils'
 import { useGr, useGrAction } from '@/hooks/useGrs'
 import { usePo } from '@/hooks/usePos'
 import { useAuthStore } from '@/stores/auth.store'
@@ -515,7 +515,7 @@ export default function GrDetailPage() {
                     <div key={att.id} className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
                       <Paperclip className="h-4 w-4 shrink-0 text-neutral-400" />
                       <span className="flex-1 truncate text-sm text-neutral-700">{att.filename}</span>
-                      <span className="text-xs text-neutral-400">{(att.file_size / 1024 / 1024).toFixed(1)} MB</span>
+                      <span className="text-xs text-neutral-400">{formatBytes(att.file_size)}</span>
                       <button
                         type="button"
                         onClick={() => {
@@ -573,8 +573,8 @@ function LineDetailRow({ line, idx, currency }: { line: ApiGrLineItem; idx: numb
           <div className="text-neutral-800">{line.description}</div>
           {line.material_id && <div className="text-xs text-neutral-400 font-mono mt-0.5">{line.material_id}</div>}
         </td>
-        <td className="px-4 py-3 text-right font-mono text-xs text-neutral-500">{line.qty_ordered}</td>
-        <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-neutral-900">{line.qty_received}</td>
+        <td className="px-4 py-3 text-right font-mono text-xs text-neutral-500">{formatQty(line.qty_ordered)}</td>
+        <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-neutral-900">{formatQty(line.qty_received)}</td>
         <td className="px-4 py-3 text-xs text-neutral-500">{line.unit}</td>
         <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-neutral-900">
           {formatAmount(line.line_total, currency)}

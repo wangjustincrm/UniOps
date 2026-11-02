@@ -4,7 +4,7 @@ import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, AlertTriangle, CheckCircle2, Package, Paperclip, X, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn, formatAmount, formatDate } from '@/lib/utils'
+import { cn, formatAmount, formatDate, formatQty } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth.store'
 import { usePo, usePos } from '@/hooks/usePos'
 import { useCreateGr, usePoOpenQuantities } from '@/hooks/useGrs'
@@ -706,7 +706,7 @@ function LineRow({
           {line.material_id && <div className="text-xs text-neutral-400 font-mono mt-0.5">{line.material_id}</div>}
         </td>
         <td className="px-4 py-3 text-right text-neutral-500 font-mono text-xs">
-          {line.qty_ordered} {line.unit}
+          {formatQty(line.qty_ordered)} {line.unit}
           {line.open !== null && (
             <div className="mt-0.5 text-[10px] text-neutral-400 whitespace-nowrap">
               Received {line.already_received} · Pending {line.pending} · Open {line.open}

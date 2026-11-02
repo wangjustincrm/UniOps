@@ -1,4 +1,5 @@
 import { cn, formatCAD } from '@/lib/utils'
+import { overBudgetFigures } from '@/lib/prBudget'
 import { TrendingUp, TrendingDown, Info } from 'lucide-react'
 
 interface BudgetData {
@@ -75,11 +76,15 @@ export function BudgetBalanceWidget({ data, thisAmount = 0, thisLabel = 'After t
 
 interface OverBudgetWarningProps {
   accountCode: string
-  overage: number
-  pct: number
+  /** This PR's amount. */
+  thisAmount: number
+  /** Balance available before this PR (may already be negative). */
+  available: number
+  annualBudget: number
 }
 
-export function OverBudgetWarning({ accountCode, overage, pct }: OverBudgetWarningProps) {
+export function OverBudgetWarning({ accountCode, thisAmount, available, annualBudget }: OverBudgetWarningProps) {
+  const { thisPrOver, afterThis, pctOverAnnual: pctOver } = overBudgetFigures(thisAmount, available, annualBudget)
   return (
     <div className="rounded-md border border-warning-500 bg-warning-50 p-3">
       <div className="flex gap-2">
@@ -89,7 +94,9 @@ export function OverBudgetWarning({ accountCode, overage, pct }: OverBudgetWarni
             This PR will exceed the budget for {accountCode}
           </p>
           <p className="text-warning-600 mt-0.5">
-            by {formatCAD(overage)} ({pct.toFixed(1)}% over). Please provide justification.
+            This PR is over by {formatCAD(thisPrOver)}. Balance after this PR: {formatCAD(afterThis)}
+            {pctOver !== null && <> ({pctOver.toFixed(1)}% over the annual budget)</>}
+            . Please provide justification.
           </p>
         </div>
       </div>

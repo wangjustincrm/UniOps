@@ -243,7 +243,6 @@ export default function PrEditPage() {
   const actualSpent = Number(budgetBalance?.actual_spent ?? 0)
   const available = annualBudget - committed - actualSpent
   const isOverBudget = selectedBudgetAccount ? estimatedAmount > available && estimatedAmount > 0 : false
-  const overage = isOverBudget ? estimatedAmount - available : 0
   const overBudgetMode = config?.budget_admin_config?.over_budget_mode ?? 'fm_gm_opm'
   const isHardBlock = isOverBudget && overBudgetMode === 'hard_block'
 
@@ -582,8 +581,9 @@ export default function PrEditPage() {
             {isOverBudget && selectedBudgetAccount && available > 0 && (
               <OverBudgetWarning
                 accountCode={selectedL2}
-                overage={overage}
-                pct={(overage / available) * 100}
+                thisAmount={estimatedAmount}
+                available={available}
+                annualBudget={annualBudget}
               />
             )}
 

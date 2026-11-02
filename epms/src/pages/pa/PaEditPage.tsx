@@ -6,7 +6,7 @@ import { epmsRoutes } from '@/app/routes'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDot } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn, formatAmount, formatDate } from '@/lib/utils'
+import { cn, formatAmount, formatDate, formatQty } from '@/lib/utils'
 import { usePa, usePas, usePasForPos, useUpdatePa } from '@/hooks/usePas'
 import { usePaAttachments, useUploadPaAttachment, useDeletePaAttachment } from '@/hooks/usePaAttachments'
 import { paAttachmentService } from '@/services/paAttachments'
@@ -759,7 +759,7 @@ function PoPaEditPage() {
                                 {isReceived ? `Received (${receivedQty} ${line.unit})` : 'Not yet received'}
                               </div>
                             </td>
-                            <td className="px-3 py-2.5 text-right font-mono text-neutral-500">{line.qty} {line.unit}</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-neutral-500">{formatQty(line.qty)} {line.unit}</td>
                             <td className="px-3 py-2.5 text-right font-mono font-medium text-neutral-700">
                               {receivedQty > 0 ? `${receivedQty} ${line.unit}` : '—'}
                             </td>
@@ -973,7 +973,7 @@ function PoPaEditPage() {
               <div className="flex items-center justify-between rounded-xl border-2 border-primary-200 bg-primary-50 px-5 py-3">
                 <span className="text-sm font-semibold text-neutral-700">Total Payment Amount</span>
                 <span className={cn('font-mono font-bold text-xl', paymentTotal > 0 ? 'text-primary-700' : 'text-neutral-300')}>
-                  {paymentTotal > 0 ? formatAmount(paymentTotal, po?.currency ?? '') : '—'}
+                  {paymentTotal > 0 ? formatAmount(paymentTotal, paCurrency) : '—'}
                 </span>
               </div>
             </div>

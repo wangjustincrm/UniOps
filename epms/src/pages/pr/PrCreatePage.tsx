@@ -31,6 +31,7 @@ import type { ApiVendor } from '@/services/vendors'
 import type { ProcurementType, PrLineItem, Currency } from '@/types'
 import { enabledCurrencyOptions } from '@/lib/currencies'
 import { ATTACHMENT_RULE, partitionUploads } from '@/lib/uploadLimits'
+import { formatBytes } from '@/lib/utils'
 
 const prSchema = z.object({
   title: z.string().min(3, 'Title is required'),
@@ -359,7 +360,6 @@ export default function PrCreatePage() {
   const isOverBudget = selectedBudgetAccount
     ? (budgetCheck && !budgetCheckError ? budgetCheck.over_budget : localOverBudget)
     : false
-  const overage = isOverBudget ? Math.max(estimatedAmount - available, 0) : 0
   // Over-Budget Approval Mode (single source of truth = Admin → Budget Config)
   const overBudgetMode = config?.budget_admin_config?.over_budget_mode ?? 'fm_gm_opm'
   const isHardBlock = isOverBudget && overBudgetMode === 'hard_block'
@@ -841,8 +841,9 @@ export default function PrCreatePage() {
                   {isOverBudget && selectedBudgetAccount && (
                     <OverBudgetWarning
                       accountCode={selectedL2}
-                      overage={overage}
-                      pct={(overage / available) * 100}
+                      thisAmount={estimatedAmount}
+                      available={available}
+                      annualBudget={annualBudget}
                     />
                   )}
 
@@ -1016,7 +1017,7 @@ export default function PrCreatePage() {
                     {attachments.map((f, i) => (
                       <div key={i} className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
                         <span className="flex-1 truncate text-neutral-700">📎 {f.name}</span>
-                        <span className="text-neutral-400 text-xs">{(f.size / 1024 / 1024).toFixed(1)} MB</span>
+                        <span className="text-neutral-400 text-xs">{formatBytes(f.size)}</span>
                         <button
                           type="button"
                           onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}

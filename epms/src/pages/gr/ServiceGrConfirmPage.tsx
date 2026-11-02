@@ -5,7 +5,7 @@ import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, CheckCircle2, AlertTriangle, Upload, X, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn, formatAmount, formatDate } from '@/lib/utils'
+import { cn, formatAmount, formatDate, formatQty } from '@/lib/utils'
 import { useGr, useGrAction } from '@/hooks/useGrs'
 import { useAuthStore } from '@/stores/auth.store'
 import { isOverReceiptError } from '@/services/gr'
@@ -181,7 +181,7 @@ export default function ServiceGrConfirmPage() {
                 <tr key={item.id} className={cn('border-b border-neutral-100', idx % 2 === 1 && 'bg-neutral-50/50')}>
                   <td className="px-4 py-3 text-neutral-400 text-xs text-center">{idx + 1}</td>
                   <td className="px-4 py-3 text-neutral-800">{item.description}</td>
-                  <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-neutral-900">{item.qty_received}</td>
+                  <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-neutral-900">{formatQty(item.qty_received)}</td>
                   <td className="px-4 py-3 text-xs text-neutral-500">{item.unit}</td>
                   <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-neutral-900">
                     {formatAmount(item.line_total, gr.currency)}

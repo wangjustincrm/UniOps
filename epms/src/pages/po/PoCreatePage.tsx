@@ -9,7 +9,7 @@ import { FormField } from '@/components/ui/form-field'
 import { PrLineItems, lineItemsTotal, validateLineItems } from '@/components/pr/PrLineItems'
 import { BudgetAccountSelect } from '@/components/budget/BudgetAccountSelect'
 import { useConfig } from '@/hooks/useConfig'
-import { formatAmount, cn } from '@/lib/utils'
+import { formatAmount, formatBytes, cn } from '@/lib/utils'
 import type { ProcurementType, PrLineItem, Currency } from '@/types'
 import { enabledCurrencyOptions } from '@/lib/currencies'
 import { useCreatePo } from '@/hooks/usePos'
@@ -565,7 +565,7 @@ export default function PoCreatePage() {
                       <span className="flex items-center gap-2 text-neutral-700">
                         <Upload className="h-3.5 w-3.5 text-neutral-400" />
                         {f.name}
-                        <span className="text-neutral-400">({(f.size / 1024 / 1024).toFixed(1)} MB)</span>
+                        <span className="text-neutral-400">({formatBytes(f.size)})</span>
                       </span>
                       <button
                         type="button"

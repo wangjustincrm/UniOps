@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Upload, Paperclip, X } from 'lucide-react'
 import { ATTACHMENT_RULE, partitionUploads } from '@/lib/uploadLimits'
+import { formatBytes } from '@/lib/utils'
 
 export interface EditableAttachment {
   id: string
@@ -85,7 +86,7 @@ export function AttachmentsEditor({
         >
           <Paperclip className="h-4 w-4 shrink-0 text-neutral-400" />
           <span className="flex-1 truncate text-neutral-700">{att.filename}</span>
-          <span className="text-xs text-neutral-400">{(att.file_size / 1024 / 1024).toFixed(1)} MB</span>
+          <span className="text-xs text-neutral-400">{formatBytes(att.file_size)}</span>
           <button
             type="button"
             onClick={() => onDownload(att)}

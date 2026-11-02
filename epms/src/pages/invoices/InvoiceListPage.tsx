@@ -102,6 +102,13 @@ function fmtSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
+/** A line whose Qty or Unit Price was just edited gets Total = qty × unit price
+ *  (rounded to cents, as on the PR/PO/GR forms). Total stays editable on its own. */
+const withLineTotal = (li: InvoiceLineItem): InvoiceLineItem => ({
+  ...li,
+  line_total: Math.round((Number(li.quantity) || 0) * (Number(li.unit_price) || 0) * 100) / 100,
+})
+
 interface UploadModalProps {
   onClose: () => void
   // `kind` tells the caller which collection the id belongs to. A vendor credit
@@ -1315,7 +1322,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                         <td className="px-2 py-1.5">
                           <input
                             type="number" min={0} step={0.001} value={item.quantity}
-                            onChange={(e) => setLineItems((prev) => prev.map((it, i) => i === idx ? { ...it, quantity: parseFloat(e.target.value) || 0 } : it))}
+                            onChange={(e) => setLineItems((prev) => prev.map((it, i) => i === idx ? withLineTotal({ ...it, quantity: parseFloat(e.target.value) || 0 }) : it))}
                             className="w-full h-7 px-2 rounded border border-neutral-200 text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-primary-500"
                           />
                         </td>
@@ -1330,7 +1337,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                         <td className="px-2 py-1.5">
                           <input
                             type="number" min={0} step={0.01} value={item.unit_price}
-                            onChange={(e) => setLineItems((prev) => prev.map((it, i) => i === idx ? { ...it, unit_price: parseFloat(e.target.value) || 0 } : it))}
+                            onChange={(e) => setLineItems((prev) => prev.map((it, i) => i === idx ? withLineTotal({ ...it, unit_price: parseFloat(e.target.value) || 0 }) : it))}
                             className="w-full h-7 px-2 rounded border border-neutral-200 text-xs text-right font-mono focus:outline-none focus:ring-1 focus:ring-primary-500"
                           />
                         </td>

@@ -11,7 +11,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
-import { formatAmount, formatDate, formatUnitPrice, cn } from '@/lib/utils'
+import { formatAmount, formatDate, formatQty, formatUnitPrice, cn } from '@/lib/utils'
 import type { ApprovalStep, CurrentStep, DocumentStatus, WorkflowNodeDef } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
@@ -956,7 +956,7 @@ export default function PoDetailPage() {
                                 <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{item.material_id || '—'}</td>
                               )}
                               <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{item.supplier_item_id || '—'}</td>
-                              <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{item.qty}</td>
+                              <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatQty(item.qty)}</td>
                               <td className="px-4 py-2.5 text-neutral-500">{item.unit}</td>
                               {showSample && (
                                 <td className="px-4 py-2.5 text-neutral-500">{item.sample || '—'}</td>
@@ -970,7 +970,7 @@ export default function PoDetailPage() {
                               <td className="px-4 py-2.5 amount text-right font-semibold text-neutral-900">{formatAmount(item.line_total, po.currency)}</td>
                               <td className="px-4 py-2.5">
                                 <div className="flex flex-col items-center gap-1">
-                                  <span className="text-xs text-neutral-600">{item.received_qty} / {item.qty}</span>
+                                  <span className="text-xs text-neutral-600">{formatQty(item.received_qty)} / {formatQty(item.qty)}</span>
                                   <div className="h-1.5 w-full rounded-full bg-neutral-200">
                                     <div
                                       style={{ width: `${pct}%` }}
