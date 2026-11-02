@@ -1,7 +1,6 @@
 """PDF generator for Purchase Requests using ReportLab."""
 from datetime import datetime, timezone
 from io import BytesIO
-from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -19,7 +18,7 @@ from reportlab.platypus import (
 from app.models.pr import PurchaseRequest
 from app.schemas.gr import is_service
 from app.services.pdf_template import (
-    approvals_element, build_logo, footer_note_element, get_tmpl,
+    approvals_element, build_logo, esc, footer_note_element, get_tmpl,
     header_note_element, qty_text, terms_element,
 )
 
@@ -92,7 +91,7 @@ def generate_pr_pdf(
 
     # ── Header ───────────────────────────────────────────────────────────────
     logo = build_logo(logo_data_url) if tmpl.get("show_logo", True) else None
-    left_col = [logo, Spacer(1, 1 * mm), Paragraph(company_name, co_style), Paragraph("Purchase Request", sub_style)] if logo else [Paragraph(company_name, co_style), Paragraph("Purchase Request", sub_style)]
+    left_col = [logo, Spacer(1, 1 * mm), Paragraph(esc(company_name), co_style), Paragraph("Purchase Request", sub_style)] if logo else [Paragraph(esc(company_name), co_style), Paragraph("Purchase Request", sub_style)]
     header = Table(
         [[left_col, [Paragraph(pr.number, num_style), Paragraph("PURCHASE REQUEST", tag_style)]]],
         colWidths=[W * 0.6, W * 0.4],
@@ -105,8 +104,9 @@ def generate_pr_pdf(
     elements.append(HRFlowable(width="100%", thickness=2, color=_PRIMARY, spaceAfter=6))
 
     # ── Meta grid ────────────────────────────────────────────────────────────
+    # Every value is escaped here (PDF-ESC-001), so callers pass raw text.
     def _cell(lbl: str, val: str | None) -> list:
-        return [Paragraph(lbl, lbl_style), Paragraph(val or "—", val_style)]
+        return [Paragraph(lbl, lbl_style), Paragraph(esc(val) or "—", val_style)]
 
     created_str = pr.created_at.strftime("%Y-%m-%d") if pr.created_at else "—"
     required_str = pr.required_by.strftime("%Y-%m-%d") if pr.required_by else "—"
@@ -116,13 +116,13 @@ def generate_pr_pdf(
     # the PR Detail page shows. The name is resolved by the caller (budget-api
     # owns the catalog); when it can't be, the code alone still stands.
     #
-    # Escaped because Paragraph parses its content as mini-XML (same reason as
-    # the escape() sites in pdf_po.py): 16 of the 168 budget accounts have "&"
-    # in their name, and the no-space form is the one that breaks -- unescaped,
-    # "Food&Beverage for hospitality" renders as "Food &Beverage;".
+    # Escaped by _cell, because Paragraph parses its content as mini-XML: 16 of
+    # the 168 budget accounts have "&" in their name, and the no-space form is
+    # the one that breaks -- unescaped, "Food&Beverage for hospitality" renders
+    # as "Food &Beverage;".
     budget_str = pr.budget_code
     if budget_str and budget_account_name:
-        budget_str = escape(f"{pr.budget_code} — {budget_account_name}")
+        budget_str = f"{pr.budget_code} — {budget_account_name}"
 
     # Service/Project only, and the pair travels together on purpose: the row
     # answers "when should this be finished, and who says it was". Both values
@@ -131,8 +131,8 @@ def generate_pr_pdf(
     # NULL-means-requester fallback at the caller (crud.pr_owner), so it reads
     # as a person even on a PR raised before the column existed.
     #
-    # Escaped for the same reason budget_str is: Paragraph parses its content as
-    # mini-XML, so an unescaped "&" in a name swallows the text after it.
+    # Escaped by _cell for the same reason budget_str is: Paragraph parses its
+    # content as mini-XML, so an unescaped "&" in a name swallows the text after it.
     owner_row = []
     if is_service(pr.type):
         completion_str = (
@@ -140,7 +140,7 @@ def generate_pr_pdf(
             if pr.service_completion_date else "—"
         )
         owner_row = [[
-            *_cell("Service Owner", escape(owner_name) if owner_name else None),
+            *_cell("Service Owner", owner_name),
             *_cell("Expected Completion", completion_str),
         ]]
 
@@ -186,14 +186,14 @@ def generate_pr_pdf(
 
     rows: list = [[Paragraph(h, th_style) for h in col_headers]]
     for i, item in enumerate(pr.line_items, 1):
-        row: list = [Paragraph(str(i), td_style), Paragraph(item.description, td_style)]
+        row: list = [Paragraph(str(i), td_style), Paragraph(esc(item.description), td_style)]
         if has_material:
-            row.append(Paragraph(item.material_id or "", td_style))
+            row.append(Paragraph(esc(item.material_id), td_style))
         if has_supplier:
-            row.append(Paragraph(item.supplier_item_id or "", td_style))
+            row.append(Paragraph(esc(item.supplier_item_id), td_style))
         row += [
             Paragraph(qty_text(item.qty), td_style),
-            Paragraph(item.unit, td_style),
+            Paragraph(esc(item.unit), td_style),
             Paragraph(f"{item.unit_price:,.2f}", td_style),
             Paragraph(f"{item.line_total:,.2f}", td_style),
         ]
@@ -245,13 +245,13 @@ def generate_pr_pdf(
     if pr.notes:
         elements.append(Spacer(1, 5 * mm))
         elements.append(Paragraph("Notes", sec_style))
-        elements.append(Paragraph(pr.notes, val_style))
+        elements.append(Paragraph(esc(pr.notes), val_style))
 
     # ── Delivery address ─────────────────────────────────────────────────────
     if pr.delivery_address:
         elements.append(Spacer(1, 5 * mm))
         elements.append(Paragraph("Delivery Address", sec_style))
-        elements.append(Paragraph(pr.delivery_address, val_style))
+        elements.append(Paragraph(esc(pr.delivery_address), val_style))
 
     # ── Terms & Conditions (from template) ───────────────────────────────────
     if tmpl.get("show_terms") and tmpl.get("terms_text"):

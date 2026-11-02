@@ -3,6 +3,7 @@ import base64
 from decimal import ROUND_HALF_UP, Decimal
 from io import BytesIO
 from typing import Any
+from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle
@@ -17,6 +18,21 @@ _LIGHT = colors.HexColor("#F5F5F5")
 
 def _s(name: str, **kw) -> ParagraphStyle:
     return ParagraphStyle(name, **kw)
+
+
+def esc(text: Any) -> str:
+    """User-entered text made safe for a ReportLab Paragraph (PDF-ESC-001).
+
+    Paragraph parses its content as mini-XML: an unescaped "<tag>" is taken for
+    markup and silently dropped, an "&" swallows what follows it, and a line
+    break collapses into a space. Escape &, < and >, and keep line breaks as
+    breaks. Every value a person typed (titles, names, descriptions, notes, the
+    Admin PDF-template texts) goes through this before it reaches Paragraph.
+    """
+    if text is None:
+        return ""
+    out = escape(str(text))
+    return out.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br/>")
 
 
 #: The ERP quotes purchase prices to five decimals; the columns hold five.
@@ -95,7 +111,7 @@ def header_note_element(text: str) -> list:
         return []
     style = _s("hdr_note", fontSize=8, textColor=_PRIMARY, fontName="Helvetica",
                backColor=colors.HexColor("#E8F8F8"), borderPadding=(4, 6, 4, 6))
-    return [Paragraph(text.strip(), style), Spacer(1, 3 * mm)]
+    return [Paragraph(esc(text.strip()), style), Spacer(1, 3 * mm)]
 
 
 def footer_note_element(text: str) -> list:
@@ -103,7 +119,7 @@ def footer_note_element(text: str) -> list:
     if not text or not text.strip():
         return []
     style = _s("ftr_note", fontSize=8, textColor=_GRAY, fontName="Helvetica-Oblique")
-    return [Spacer(1, 3 * mm), Paragraph(text.strip(), style)]
+    return [Spacer(1, 3 * mm), Paragraph(esc(text.strip()), style)]
 
 
 def terms_element(text: str) -> list:
@@ -117,7 +133,7 @@ def terms_element(text: str) -> list:
         HRFlowable(width="100%", thickness=0.5, color=_GRAY),
         Spacer(1, 2 * mm),
         Paragraph("Terms & Conditions", sec_style),
-        Paragraph(text.strip(), body_style),
+        Paragraph(esc(text.strip()), body_style),
     ]
 
 
@@ -139,8 +155,8 @@ def approvals_element(approvals: list[dict] | None, W: float) -> list:
     for entry in approvals:
         at = entry.get("at")
         rows.append([
-            Paragraph(entry.get("role") or "—", td_style),
-            Paragraph(entry.get("name") or "—", td_style),
+            Paragraph(esc(entry.get("role")) or "—", td_style),
+            Paragraph(esc(entry.get("name")) or "—", td_style),
             Paragraph(at.strftime("%Y-%m-%d") if at else "—", td_style),
         ])
 
