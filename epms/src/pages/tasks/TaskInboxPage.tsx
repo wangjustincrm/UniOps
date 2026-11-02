@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, Clock, ArrowRight, Check, Inbox, RefreshCw } from 'lucide-react'
-import { cn, formatCAD, formatDate } from '@/lib/utils'
+import { AlertCircle, Clock, ArrowRight, Check, Inbox, RefreshCw, Search, ChevronDown, ChevronRight } from 'lucide-react'
+import { cn, formatCAD, formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { useTasks } from '@/hooks/useTasks'
 import { TASK_TYPE_LABELS, isEpmsInboxTask, overBudgetJustification, taskHref } from '@/lib/taskTypes'
 import type { TaskType } from '@/lib/taskTypes'
@@ -47,6 +48,11 @@ const GROUP_ORDER: string[] = [
   'revise_pr', 'revise_po', 'revise_pa', 'revise_agr', 'revise_po_signoff', 'revise_budget_plan',
 ]
 
+// A group longer than this shows its first GROUP_PREVIEW cards and a
+// "Show all" button, so one big group (155 Process PA) does not push every
+// group after it off the page (ISS-0131).
+const GROUP_PREVIEW = 20
+
 // ─── Empty state messages ─────────────────────────────────────────────────────
 
 const EMPTY_MESSAGES: Record<TabValue, { heading: string; sub: string }> = {
@@ -69,6 +75,12 @@ function FullTaskCard({ task }: FullTaskCardProps) {
   // OBG-002: an over-budget pre-approval is told apart from a plain PR
   // approval and carries the justification inline (ISS-0126).
   const obJustification = overBudgetJustification(task)
+  // One approval task per step: the engine writes "Step 1/2: Department
+  // Manager review required." — show the step so two cards on the same
+  // document can be told apart (ISS-0131).
+  const step = task.type.startsWith('approve_') && task.description && /^Step \d+\/\d+:/.test(task.description)
+    ? task.description.replace(/\s+required\.?\s*$/, '')
+    : null
 
   // Budget Plans are owned by the Finance module. The plan pages physically live
   // in EPMS but are surfaced through Finance (Portal chrome) via EpmsEmbed, so a
@@ -137,6 +149,10 @@ function FullTaskCard({ task }: FullTaskCardProps) {
             {task.amount ? ` · ${formatCAD(task.amount)}` : ''}
           </p>
 
+          {step && (
+            <p className={cn('text-xs', isDone ? 'text-neutral-400' : 'text-neutral-500')}>{step}</p>
+          )}
+
           {/* Reason — the two ERP-bridge task families only. Their whole point
               is the explanation (which ERP supplier is missing, how many
               voucher lines fell out of the budget and why), and it lives
@@ -175,10 +191,12 @@ function FullTaskCard({ task }: FullTaskCardProps) {
             </div>
           )}
 
-          {/* Completed info */}
+          {/* Completed info — when, and by whom. No closer recorded means the
+              system closed it when the document moved on (ISS-0131). */}
           {isDone && task.completed_at && (
             <p className="mt-1 text-xs text-neutral-400">
-              Completed {formatDate(task.completed_at)}
+              Closed {formatDateTime(task.completed_at)}
+              {task.completed_by_name ? ` by ${task.completed_by_name}` : ' · Closed automatically'}
             </p>
           )}
         </div>
@@ -222,6 +240,16 @@ function EmptyState({ tab }: { tab: TabValue }) {
 
 export default function TaskInboxPage() {
   const [activeTab, setActiveTab] = useState<TabValue>('all')
+  // Client-side only: the inbox is one unpaginated list (PGN-001 exception).
+  const [search, setSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState('')
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [showAll, setShowAll] = useState<Set<string>>(new Set())
+  const toggleIn = (set: Set<string>, key: string) => {
+    const next = new Set(set)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    return next
+  }
   const queryClient = useQueryClient()
   const [refreshing, setRefreshing] = useState(false)
 
@@ -268,10 +296,20 @@ export default function TaskInboxPage() {
     return !t.is_completed
   })
 
+  const labelOf = (k: string) => TASK_TYPE_LABELS[k as TaskType] ?? k
+  // Type filter options: the types present on this tab, in group order.
+  const typeOptions = groupTasks(tabFiltered, (t) => t.type, labelOf, GROUP_ORDER)
+    .map((g) => ({ value: g.key, label: g.label }))
+  const needle = search.trim().toLowerCase()
+  const visible = tabFiltered.filter((t) =>
+    (!typeFilter || t.type === typeFilter) &&
+    (!needle || [t.document_number, t.vendor, t.title].some((v) => v?.toLowerCase().includes(needle)))
+  )
+
   const groups = groupTasks(
-    tabFiltered,
+    visible,
     (t) => t.type,
-    (k) => TASK_TYPE_LABELS[k] ?? k,
+    labelOf,
     GROUP_ORDER,
   )
 
@@ -363,26 +401,79 @@ export default function TaskInboxPage() {
         </div>
       </div>
 
+      {/* ── Search + type filter (client-side) ── */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-48">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+          <Input
+            placeholder="Search document #, vendor or title…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+            aria-label="Search tasks"
+          />
+        </div>
+        <select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          aria-label="Filter by task type"
+          className="h-10 max-w-full rounded-md border border-neutral-300 bg-white px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-primary-600"
+        >
+          <option value="">All task types</option>
+          {typeFilter && !typeOptions.some((o) => o.value === typeFilter) && (
+            <option value={typeFilter}>{labelOf(typeFilter)}</option>
+          )}
+          {typeOptions.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      </div>
+
       {/* ── Task list (grouped by type) ── */}
       {tabFiltered.length === 0 ? (
         <EmptyState tab={activeTab} />
+      ) : visible.length === 0 ? (
+        <p className="py-12 text-center text-sm text-neutral-500">No tasks match this search.</p>
       ) : (
         <div className="flex flex-col gap-6">
-          {groups.map((group) => (
+          {groups.map((group) => {
+            const isCollapsed = collapsed.has(group.key)
+            const items = showAll.has(group.key) ? group.items : group.items.slice(0, GROUP_PREVIEW)
+            return (
             <section key={group.key}>
-              <div className="mb-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setCollapsed((s) => toggleIn(s, group.key))}
+                aria-expanded={!isCollapsed}
+                className="mb-2 flex items-center gap-2 text-left"
+              >
+                {isCollapsed
+                  ? <ChevronRight className="h-4 w-4 text-neutral-400" />
+                  : <ChevronDown className="h-4 w-4 text-neutral-400" />}
                 <h3 className="text-sm font-semibold text-neutral-700">{group.label}</h3>
                 <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-neutral-100 px-1.5 text-[11px] font-semibold text-neutral-500">
                   {group.items.length}
                 </span>
-              </div>
-              <div className="flex flex-col gap-3">
-                {group.items.map((task) => (
-                  <FullTaskCard key={task.id} task={task} />
-                ))}
-              </div>
+              </button>
+              {!isCollapsed && (
+                <div className="flex flex-col gap-3">
+                  {items.map((task) => (
+                    <FullTaskCard key={task.id} task={task} />
+                  ))}
+                  {group.items.length > items.length && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAll((s) => toggleIn(s, group.key))}
+                      className="self-start text-sm font-medium text-primary-600 hover:text-primary-700 hover:underline"
+                    >
+                      Show all {group.items.length}
+                    </button>
+                  )}
+                </div>
+              )}
             </section>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
