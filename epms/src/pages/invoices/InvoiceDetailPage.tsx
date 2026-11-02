@@ -651,14 +651,25 @@ export default function InvoiceDetailPage() {
               {inv.status === 'match_review' && isAp && (
                 <div className="sm:col-span-2 rounded-xl border border-primary-200 bg-primary-50 p-4 flex flex-col gap-3">
                   <p className="text-sm font-semibold text-primary-800">Confirm invoice match</p>
+                  {/* An agreement invoice has no PO, GR or variance (AGR-026), so it
+                      is not described in PO / goods-receipt terms (ISS-0183). */}
                   <p className="text-xs text-neutral-500">
-                    This confirms the invoice is linked to the correct PO and goods receipt. It
+                    {isAgreementRoute
+                      ? 'This confirms the invoice is linked to the correct agreement.'
+                      : 'This confirms the invoice is linked to the correct PO and goods receipt.'} It
                     does not approve the payment amount — that happens later, on the Payment
                     Application approval chain.
                   </p>
                   <p className="text-xs text-neutral-600">
-                    This invoice was matched with a variance{varianceScope} of {signed(decidingVariance)}{formatAmount(varianceAbs, inv.currency)}
-                    {' '}against PO reference {formatAmount(Number(inv.po_total ?? 0), inv.currency)}. Confirm to finalize the match,
+                    {isAgreementRoute ? (
+                      <>Matched to Agreement {inv.agreement_number ?? inv.agreement_id?.slice(0, 8)}. </>
+                    ) : (
+                      <>
+                        This invoice was matched with a variance{varianceScope} of {signed(decidingVariance)}{formatAmount(varianceAbs, inv.currency)}
+                        {' '}against PO reference {formatAmount(Number(inv.po_total ?? 0), inv.currency)}.{' '}
+                      </>
+                    )}
+                    Confirm to finalize the match,
                     or reject to send it back to {inv.match_assignee_name ?? 'the assignee'}.
                   </p>
                   <textarea rows={2} value={reviewNote} onChange={(e) => setReviewNote(e.target.value)}
