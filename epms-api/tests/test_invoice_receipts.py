@@ -486,6 +486,45 @@ async def test_put_receipts_allowed_when_the_only_referencing_pa_is_cancelled(
     assert res.json()["receipt_ids"] == [str(receipt_b.id)]
 
 
+async def test_invoice_detail_names_the_pa_that_locks_its_receipts(admin_client, test_engine):
+    """ISS-0134 / AGR-032: GET /invoices/{id} names the live PA that freezes
+    the receipt evidence, so the panel can lock before the click — None while
+    no PA lists it, the PA number while one does, None again once cancelled."""
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _matched_invoice(admin_client, vendor_id, agr, amount="100.00")
+    inv_id = inv["id"]
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        receipt = await _create_receipt(db, agr, user_id, amount="100.00")
+    res = await admin_client.put(f"{INV_URL}/{inv_id}/receipts",
+                                  json={"receipt_ids": [str(receipt.id)]})
+    assert res.status_code == 200, res.text
+
+    detail = await admin_client.get(f"{INV_URL}/{inv_id}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["receipts_locked_by_pa"] is None
+
+    pa_id = await _raise_pa_referencing(admin_client, agr, inv)
+    async with factory() as db:
+        pa_row = (await db.execute(
+            select(PaymentApplication).where(PaymentApplication.id == uuid.UUID(pa_id))
+        )).scalar_one()
+        pa_number = pa_row.pa_number
+    detail = await admin_client.get(f"{INV_URL}/{inv_id}")
+    assert detail.json()["receipts_locked_by_pa"] == pa_number
+
+    async with factory() as db:
+        pa_row = (await db.execute(
+            select(PaymentApplication).where(PaymentApplication.id == uuid.UUID(pa_id))
+        )).scalar_one()
+        pa_row.status = "cancelled"
+        await db.commit()
+    detail = await admin_client.get(f"{INV_URL}/{inv_id}")
+    assert detail.json()["receipts_locked_by_pa"] is None
+
+
 async def test_settle_without_receipt_requires_the_invoice_be_matched_to_an_agreement(
     admin_client, test_engine,
 ):

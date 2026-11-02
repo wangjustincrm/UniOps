@@ -405,6 +405,19 @@ def test_the_task_inbox_has_no_mark_done():
     assert "/complete" not in tasks_ts
 
 
+def test_task_inbox_groups_follow_dsh_001():
+    """ISS-0131: every type in its DSH-001 category, revisions last."""
+    import re
+    page = _src("epms/src/pages/tasks/TaskInboxPage.tsx")
+    body = re.search(r"const GROUP_ORDER: string\[\] = \[(.*?)\n\]", page, re.S).group(1)
+    order = re.findall(r"'([a-z_]+)'", body)
+    first_revise = min(i for i, t in enumerate(order) if t.startswith("revise_"))
+    assert all(t.startswith("revise_") for t in order[first_revise:]), order
+    pos = order.index
+    assert pos("approve_agr") < pos("process_pa") < pos("create_po") < pos("acknowledge_gr")
+    assert pos("confirm_receipt") < pos("match_invoice") < pos("attach_receipts") < pos("confirm_settlement")
+
+
 # ── Purchase requests ────────────────────────────────────────────────────────
 
 def test_budget_gate_applies_to_every_type_but_1():

@@ -477,7 +477,7 @@ export default function InvoiceDetailPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between flex-wrap gap-4">
         <div className="flex items-start gap-4">
           <Link to="/invoices" className="mt-1 text-neutral-400 hover:text-neutral-600 transition-colors">
             <ArrowLeft className="h-5 w-5" />
@@ -502,7 +502,7 @@ export default function InvoiceDetailPage() {
         </div>
 
         {/* Header actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {!!inv && (inv.status === 'unmatched' || inv.status === 'exception') && !editing &&
             (isAp || inv.uploaded_by === user?.id || (inv.match_assignee_id != null && inv.match_assignee_id === user?.id)) && (
             <Button size="sm" className="gap-1.5" onClick={() => setShowMatchPanel((v) => !v)}>
@@ -626,7 +626,7 @@ export default function InvoiceDetailPage() {
         <ResolveExceptionPanel inv={inv} onClose={() => setShowResolvePanel(false)} />
       )}
 
-      <div className="flex gap-6 items-start">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
         {/* Main content */}
         <div className="flex-1 min-w-0 flex flex-col gap-4">
           {/* Tabs */}
@@ -1559,7 +1559,7 @@ export default function InvoiceDetailPage() {
         </div>
 
         {/* Right sidebar */}
-        <div className="w-56 flex-shrink-0 flex flex-col gap-4">
+        <div className="w-full lg:w-56 flex-shrink-0 flex flex-col gap-4">
           <div className="rounded-xl border border-neutral-200 bg-white p-4">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">Quick Info</h3>
             <div className="flex flex-col gap-2 text-xs">

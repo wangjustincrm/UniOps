@@ -47,6 +47,15 @@ function isPreselectableAgreementInvoice(inv: ApiInvoice): boolean {
   return (inv.receipt_ids?.length ?? 0) > 0
 }
 
+// AGR-061: a house-account invoice with neither receipts attached nor an
+// explicit no-evidence settlement cannot be paid — the server refuses the PA
+// with a 422. It stays in the picker, greyed out with the reason, rather than
+// being tickable into that refusal (ISS-0134).
+function lacksReceiptEvidence(inv: ApiInvoice): boolean {
+  return inv.agreement_type === 'house_account'
+    && (inv.receipt_ids?.length ?? 0) === 0 && !inv.legacy_settlement
+}
+
 // Says why a row is (or isn't) pre-ticked. Without it the new default reads as
 // an arbitrary subset — the operator sees some boxes ticked and no reason for
 // the others, which is how "the system missed one" starts.
@@ -68,12 +77,13 @@ function ReceiptEvidenceBadge({ invoice }: { invoice: ApiInvoice }) {
   if (invoice.legacy_settlement) {
     return <span className={cn(cls, 'bg-warning-50 text-warning-700')}>Settled without receipts</span>
   }
-  return <span className={cn(cls, 'bg-danger-50 text-danger-700')}>No receipt evidence</span>
+  return <span className={cn(cls, 'bg-danger-50 text-danger-700')}>No receipt evidence yet</span>
 }
 
 // Only invoices this payment could actually settle reach here — one already
-// claimed by another live PA is filtered out by the caller rather than shown
-// greyed out, so every row in this list is tickable.
+// claimed by another live PA is filtered out by the caller. The one exception
+// is a house-account invoice still waiting for receipt evidence: it is shown
+// greyed out and cannot be ticked (lacksReceiptEvidence).
 function InvoiceSelectList({
   invoices, selectedIds, onToggle, enforceDueWindow,
 }: {
@@ -87,11 +97,14 @@ function InvoiceSelectList({
     <div className="flex flex-col gap-1.5">
     <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-100">
       {invoices.map((inv) => {
+        const blocked = lacksReceiptEvidence(inv)
         return (
           <label
             key={inv.id}
+            title={blocked ? 'No receipt evidence yet — attach its receipts (or settle without receipt evidence) on the invoice first.' : undefined}
             className={cn(
-              'flex items-center gap-3 px-4 py-3 transition-colors cursor-pointer hover:bg-primary-50',
+              'flex items-center gap-3 px-4 py-3 transition-colors',
+              blocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-primary-50',
               selectedIds.has(inv.id) && 'bg-primary-50'
             )}
           >
@@ -99,11 +112,12 @@ function InvoiceSelectList({
               type="checkbox"
               checked={selectedIds.has(inv.id)}
               onChange={() => onToggle(inv.id)}
+              disabled={blocked && !selectedIds.has(inv.id)}
               className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600"
             />
             <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
                   <span className="font-mono text-xs font-semibold text-primary-700">{inv.internal_ref}</span>
                   <ReceiptEvidenceBadge invoice={inv} />
                 </div>
@@ -149,7 +163,7 @@ function PoPaCreate() {
   const [searchParams] = useSearchParams()
   const createPa = useCreatePa()
   const { user } = useAuthStore()
-  const { data: posData } = usePos()
+  const { data: posData, isLoading: posLoading } = usePos()
   const allPos = posData?.items ?? []
   // 从 Prepayment 详情页「Settle」进入：加载来源预付以预填并锁定上下文
   const settleFromId = searchParams.get('settleFrom') ?? ''
@@ -941,9 +955,9 @@ ${submitError}
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Main form */}
-        <div className="col-span-2 flex flex-col gap-5">
+        <div className="lg:col-span-2 min-w-0 flex flex-col gap-5">
 
           {/* ── Step 1 — Select PO / Agreement ─────────────────────────────── */}
           {isAgreementMode ? (
@@ -1054,7 +1068,9 @@ ${submitError}
                   and a currency; the first one ticked is the primary PO.
                 </p>
                 <div className="rounded-lg border border-neutral-200 max-h-56 overflow-y-auto">
-                  {filteredPos.length === 0 ? (
+                  {posLoading ? (
+                    <p className="px-3 py-4 text-xs text-neutral-400 text-center">Loading…</p>
+                  ) : filteredPos.length === 0 ? (
                     <p className="px-3 py-4 text-xs text-neutral-400 text-center">No eligible POs found</p>
                   ) : (
                     filteredPos.map((po) => {

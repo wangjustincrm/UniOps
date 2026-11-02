@@ -155,10 +155,11 @@ rules:
       raised. Recurring agreement: each invoice must be linked to a billing
       period whose service the department has confirmed. House account: each
       invoice must have its agreement receipts attached, or be settled
-      explicitly without receipt evidence, with a reason. Milestone: no
-      confirmation check. The same checks run again whenever the PA's
-      invoices are changed.
-    enforced_in: "epms-api app/api/v1/pa.py create_pa agreement branch + _validate_agreement_pa_invoices (_PAYABLE_INVOICE_STATUSES matched/approved; recurring schedule_id + accepted_at; house_account receipt_ids or legacy_settlement); app/schemas/invoice.py SettleWithoutReceiptRequest (reason required); PRD EPMS AGR-061"
+      explicitly without receipt evidence, with a reason; on New PA an
+      invoice with neither is shown greyed out ("No receipt evidence yet")
+      and cannot be ticked. Milestone: no confirmation check. The same checks
+      run again whenever the PA's invoices are changed.
+    enforced_in: "epms-api app/api/v1/pa.py create_pa agreement branch + _validate_agreement_pa_invoices (_PAYABLE_INVOICE_STATUSES matched/approved; recurring schedule_id + accepted_at; house_account receipt_ids or legacy_settlement); app/schemas/invoice.py SettleWithoutReceiptRequest (reason required); epms/src/pages/pa/PaCreatePage.tsx lacksReceiptEvidence; PRD EPMS AGR-061"
     provenance: pinned
     test:
       - "tests/test_agreement_pa.py::test_agreement_pa_skips_the_goods_receipt_gate"

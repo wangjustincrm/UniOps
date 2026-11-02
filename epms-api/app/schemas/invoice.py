@@ -259,6 +259,10 @@ class InvoiceResponse(BaseModel):
     # on purpose). Was write-only end to end — nothing in epms/src ever read
     # it back — the same silent-drop bug as receipt_ids above, one field over.
     receipt_variance_reason: str | None = None
+    # AGR-032: number of the non-cancelled PA that lists this invoice, which
+    # freezes its receipt evidence. Detail endpoint only, agreement invoices
+    # only (GET /invoices/{id}); None everywhere else (ISS-0134).
+    receipts_locked_by_pa: str | None = None
     # Which scheduled billing period this invoice claims (recurring route).
     # Same silent-drop as receipt_ids above: the column has existed since
     # Phase 1B and nothing ever sent it to the client, so the invoice page had
