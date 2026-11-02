@@ -351,6 +351,12 @@ async def test_freight_pa_snapshot_and_visibility(admin_client, world):
     assert again.status_code == 409
     assert (await admin_client.post(f"/api/v1/freight/invoices/{inv['id']}/reopen")).status_code == 409
 
+    # The invoice page names the holding PA's status, so it can say what would
+    # free the invoice — an approved PA offers no Cancel / Return (ISS-0183).
+    held = (await admin_client.get(f"/api/v1/freight/invoices/{inv['id']}")).json()
+    assert held["pa_number"] == pa["pa_number"]
+    assert held["pa_status"] == pa["status"]
+
 
 async def test_freight_pa_amounts_are_not_editable(admin_client, world):
     inv = await _matched_invoice(admin_client, world)
