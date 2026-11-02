@@ -19,6 +19,8 @@ import { useVendors } from '@/hooks/useVendors'
 import type { ApiVendor } from '@/services/vendors'
 import { useTaxCodes } from '@/hooks/useTaxCodes'
 import { useAuthStore } from '@/stores/auth.store'
+import { PaymentTermsField } from '@/components/po/PaymentTermsField'
+import { formatPaymentTerms } from '@/lib/paymentTerms'
 
 // PO lines can originate from a PR line — carry that source id so the backend
 // can persist pr_line_id and keep the PO↔PR line link.
@@ -82,6 +84,12 @@ export default function PoCreatePage() {
   // Form state
   const [title, setTitle] = useState('')
   const [selectedVendor, setSelectedVendor] = useState<ApiVendor | null>(null)
+  // PRD §3.12.1: payment terms default from the vendor and can be changed
+  // (ISS-0087). Re-defaulted each time a different vendor is picked.
+  const [paymentTerms, setPaymentTerms] = useState('')
+  useEffect(() => {
+    if (selectedVendor?.payment_terms) setPaymentTerms(selectedVendor.payment_terms)
+  }, [selectedVendor?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const [vendorQuery, setVendorQuery] = useState('')
   const [vendorOpen, setVendorOpen] = useState(false)
 
@@ -171,6 +179,7 @@ export default function PoCreatePage() {
     const e: Record<string, string> = {}
     if (!title.trim()) e.title = 'Title is required'
     if (!selectedVendor) e.vendor = 'Please select a vendor'
+    if (selectedVendor && !paymentTerms) e.paymentTerms = 'Choose the payment terms'
     if (status === 'submitted' && !expectedDelivery) e.expectedDelivery = 'Expected delivery date is required'
     setErrors(e)
     return Object.keys(e).length === 0
@@ -192,6 +201,7 @@ export default function PoCreatePage() {
         title,
         type: procurementType ?? 2,
         vendor_id: selectedVendor!.id,
+        payment_terms: paymentTerms || undefined,
         currency,
         tax_rate: effectiveTaxRate,
         tax_code: effectiveTaxRate > 0 ? taxCode ?? undefined : null,
@@ -395,6 +405,17 @@ export default function PoCreatePage() {
                 {errors.expectedDelivery && <p className="text-xs text-danger-600">{errors.expectedDelivery}</p>}
               </div>
             </div>
+
+            {/* Payment terms — PRD §3.12.1 (ISS-0087) */}
+            <FormField label="Payment Terms" htmlFor="paymentTerms">
+              <PaymentTermsField
+                value={paymentTerms}
+                onChange={(t) => { setPaymentTerms(t); setErrors((p) => ({ ...p, paymentTerms: '' })) }}
+                invalid={!!errors.paymentTerms}
+                hint={errors.paymentTerms || (selectedVendor?.payment_terms
+                  ? `Vendor's terms: ${formatPaymentTerms(selectedVendor.payment_terms)}` : null)}
+              />
+            </FormField>
 
             {/* Delivery Address */}
             <FormField

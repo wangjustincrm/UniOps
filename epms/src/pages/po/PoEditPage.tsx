@@ -21,6 +21,8 @@ import { poService } from '@/services/po'
 import { useVendors } from '@/hooks/useVendors'
 import { useTaxCodes } from '@/hooks/useTaxCodes'
 import type { ApiVendor } from '@/services/vendors'
+import { PaymentTermsField } from '@/components/po/PaymentTermsField'
+import { formatPaymentTerms } from '@/lib/paymentTerms'
 
 const TYPE_LABELS: Record<number, string> = {
   1: 'Type 1 — Raw Mat./Packaging',
@@ -48,6 +50,9 @@ export default function PoEditPage() {
 
   const [title, setTitle] = useState('')
   const [selectedVendor, setSelectedVendor] = useState<ApiVendor | null>(null)
+  // ISS-0087: the PO's saved terms (or the vendor's, for a PO saved before
+  // POs had their own); picking a different vendor re-defaults them.
+  const [paymentTerms, setPaymentTerms] = useState('')
   const [vendorQuery, setVendorQuery] = useState('')
   const [vendorOpen, setVendorOpen] = useState(false)
   const [procurementType, setProcurementType] = useState<ProcurementType | null>(null)
@@ -83,6 +88,7 @@ export default function PoEditPage() {
     setTaxCode(po.tax_code ?? null)
     setExpectedDelivery(po.expected_delivery ?? '')
     setDeliveryAddress(po.delivery_address ?? '')
+    setPaymentTerms(po.payment_terms ?? po.vendor_payment_terms ?? '')
     setNotes(po.notes ?? '')
     setIsPrepaid(po.is_prepaid ?? false)
     setLineItems(po.line_items.map((li) => ({
@@ -107,6 +113,11 @@ export default function PoEditPage() {
     }
   }, [po?.id])
 
+  useEffect(() => {
+    if (!po || !selectedVendor || selectedVendor.id === po.vendor_id) return
+    if (selectedVendor.payment_terms) setPaymentTerms(selectedVendor.payment_terms)
+  }, [selectedVendor?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const subtotal = lineItemsTotal(lineItems)
   const effectiveTaxRate = currency === 'CAD' ? taxRate : 0
   const taxAmount = Math.round(subtotal * effectiveTaxRate * 100) / 100
@@ -116,6 +127,7 @@ export default function PoEditPage() {
     const e: Record<string, string> = {}
     if (!title.trim()) e.title = 'Title is required'
     if (!selectedVendor) e.vendor = 'Please select a vendor'
+    if (selectedVendor && !paymentTerms) e.paymentTerms = 'Choose the payment terms'
     if (mode === 'submitted' && !expectedDelivery) e.expectedDelivery = 'Expected delivery date is required'
     setErrors(e)
     return Object.keys(e).length === 0
@@ -143,6 +155,7 @@ export default function PoEditPage() {
           title,
           type: procurementType ?? 2,
           vendor_id: selectedVendor!.id,
+          payment_terms: paymentTerms || undefined,
           currency,
           tax_rate: effectiveTaxRate,
           tax_code: effectiveTaxRate > 0 ? taxCode ?? undefined : null,
@@ -309,6 +322,16 @@ export default function PoEditPage() {
                 {errors.expectedDelivery && <p className="text-xs text-danger-600">{errors.expectedDelivery}</p>}
               </div>
             </div>
+
+            <FormField label="Payment Terms" htmlFor="paymentTerms">
+              <PaymentTermsField
+                value={paymentTerms}
+                onChange={(t) => { setPaymentTerms(t); setErrors((p) => ({ ...p, paymentTerms: '' })) }}
+                invalid={!!errors.paymentTerms}
+                hint={errors.paymentTerms || (selectedVendor?.payment_terms
+                  ? `Vendor's terms: ${formatPaymentTerms(selectedVendor.payment_terms)}` : null)}
+              />
+            </FormField>
 
             <FormField
               label="Delivery Address / Location"

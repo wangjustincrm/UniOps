@@ -53,6 +53,9 @@ class PurchaseOrder(UUIDPrimaryKey, TimestampMixin, Base):
     # PO's Edit Details save (api.v1.po.update_imported_details).
     incoterms_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
     incoterms: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # PRD §3.12.1 "defaulted from vendor; overridable" (ISS-0087). Same codes as
+    # vendors.payment_terms. NULL (older and NC-mirrored POs) = the vendor's.
+    payment_terms: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Set only when a buyer-initiated edit changes tax_rate (see crud.po.
     # update_imported_details). nc_purchase_sync/writer.py reads this as "the
     # tax rate was set by hand" and, while it is non-null, keeps the stored

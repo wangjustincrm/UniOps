@@ -36,6 +36,7 @@ import type { GrStatus } from '@/services/gr'
 import { vendorService } from '@/services/vendors'
 import { isImportedEditablePo } from '@/lib/importedPoEdit'
 import { canWithdrawDocument } from '@/lib/documentActions'
+import { formatPaymentTerms } from '@/lib/paymentTerms'
 
 const TYPE_LABELS: Record<number, string> = {
   1: 'Raw Mat./Pack.',
@@ -831,6 +832,10 @@ export default function PoDetailPage() {
                     ['Procurement Type', `Type ${po.type} — ${TYPE_LABELS[po.type]}`],
                     ['Vendor', po.vendor_name],
                     ['Currency', po.currency],
+                    // ISS-0087: the PO's own terms, or the vendor's on a PO that has none.
+                    ['Payment Terms', po.payment_terms
+                      ? formatPaymentTerms(po.payment_terms)
+                      : po.vendor_payment_terms ? `${formatPaymentTerms(po.vendor_payment_terms)} (vendor's terms)` : '—'],
                     ['Budget Code', po.budget_code ?? '—'],
                     ['Created', formatDate(po.created_at)],
                     ['Expected Delivery', expectedDeliveryDisplay],

@@ -118,6 +118,7 @@ async def create_po(body: PoCreate, db: SessionDep, user: PoWriteDep, token: Bea
         vendor_code=vendor.code,
         vendor_name=vendor.name,
         created_by=uuid.UUID(user["sub"]),
+        vendor_payment_terms=vendor.payment_terms,
     )
 
 
@@ -135,6 +136,10 @@ async def get_po(po_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload, tok
     # Resolve the linked PR's requester so the frontend can gate GR creation on the
     # actual requester identity (not the PO creator / not a generic role).
     data = PoResponse.model_validate(po).model_dump()
+    # A PO without its own terms (older, NC-mirrored) shows the vendor's.
+    if po.payment_terms is None:
+        vendor = await vendor_crud.get_by_id(db, po.vendor_id)
+        data["vendor_payment_terms"] = vendor.payment_terms if vendor else None
     data["pr_requester_id"] = await gr_crud.get_pr_requester_id(db, po.pr_id)
     # And its service OWNER — the identity POST /gr actually admits on a
     # service/project PO. The two are the same person unless a service PR named

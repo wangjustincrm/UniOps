@@ -89,6 +89,10 @@ export interface ApiPo {
   // NC PO's Edit Details) + named place. `incoterms` is the PLACE.
   incoterms_code?: string | null
   incoterms?: string | null
+  // ISS-0087: the PO's own terms; null on older / NC POs, which use the
+  // vendor's (vendor_payment_terms, on the detail read).
+  payment_terms?: string | null
+  vendor_payment_terms?: string | null
   buyer_edited_at?: string | null
   // Raw-material NC POs only (null otherwise) — are the freight / customs
   // invoices in? See services/poFee.ts FeeStatus.
@@ -126,6 +130,7 @@ export interface CreatePoBody {
   tax_rate: number
   tax_code?: string | null
   vendor_id: string
+  payment_terms?: string
   is_prepaid?: boolean
   budget_code?: string
   expected_delivery?: string
@@ -143,6 +148,7 @@ export interface UpdatePoBody {
   tax_rate?: number
   tax_code?: string | null
   vendor_id?: string
+  payment_terms?: string
   is_prepaid?: boolean
   budget_code?: string
   expected_delivery?: string

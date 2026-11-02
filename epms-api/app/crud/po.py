@@ -167,6 +167,7 @@ async def create(
     vendor_code: str,
     vendor_name: str,
     created_by: uuid.UUID,
+    vendor_payment_terms: str | None = None,
 ) -> PurchaseOrder:
     number = await _next_number(db, vendor_code)
     subtotal, tax_amount, total = _compute_totals(payload.line_items, payload.tax_rate)
@@ -198,6 +199,8 @@ async def create(
         pr_id=payload.pr_id,
         pr_number=pr_number,
         is_prepaid=getattr(payload, "is_prepaid", False) or False,
+        # PRD §3.12.1: defaulted from the vendor, overridable (ISS-0087).
+        payment_terms=payload.payment_terms or vendor_payment_terms,
         created_by=created_by,
     )
     db.add(po)
@@ -232,7 +235,8 @@ async def update(
     vendor_name: str | None = None,
 ) -> PurchaseOrder:
     for field in ("title", "type", "currency", "budget_code",
-                  "expected_delivery", "delivery_address", "notes", "is_prepaid"):
+                  "expected_delivery", "delivery_address", "notes", "is_prepaid",
+                  "payment_terms"):
         val = getattr(payload, field)
         if val is not None:
             setattr(po, field, val)
