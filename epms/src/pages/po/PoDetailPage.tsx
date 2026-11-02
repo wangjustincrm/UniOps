@@ -841,7 +841,13 @@ export default function PoDetailPage() {
                     ['Budget Code', po.budget_code ?? '—'],
                     ['Created', formatDate(po.created_at)],
                     ['Expected Delivery', expectedDeliveryDisplay],
-                    ['Delivery Address', po.delivery_address || '—'],
+                    // PO-IMP-002: an NC PO's Delivery Address defaults to the company
+                    // delivery address until the buyer edits it — Edit Details
+                    // pre-fills it, so the detail shows it too (ISS-0183). Display
+                    // only; nothing is written to the PO.
+                    ['Delivery Address', po.delivery_address
+                      || (po.source === 'nc' && config?.delivery_address
+                        ? `${config.delivery_address} (company default)` : '—')],
                     ['PR Reference', po.pr_number || '—'],
                   ] as [string, string][]).map(([label, value]) => (
                     <div key={label} className="flex flex-col gap-0.5">
