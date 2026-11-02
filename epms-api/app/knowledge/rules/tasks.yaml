@@ -32,6 +32,19 @@ rules:
     test:
       - "tests/test_task_complete_rejects_approvals.py::test_complete_rejects_approval_tasks"
       - "tests/test_rule_registry.py::test_the_task_inbox_has_no_mark_done"
+  # ISS-0131 follow-up: the groups' order is DSH-001's.
+  - id: task_inbox_group_order
+    asked_as:
+      - in what order does the Task Inbox list tasks
+      - 为什么 Task Inbox 里修改类任务排在最后？
+    answer: >
+      The Task Inbox groups tasks by type in a fixed order — approvals,
+      payment and placing orders, creates, receiving, invoice, settlement,
+      and revisions last — newest first within a group.
+    enforced_in: "epms/src/pages/tasks/TaskInboxPage.tsx GROUP_ORDER; PRD EPMS DSH-001"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_task_inbox_groups_follow_dsh_001"
   # ISS-0011: the Assistant's total was the inbox's plus 6 VMS tasks.
   - id: what_the_epms_task_inbox_lists
     asked_as:

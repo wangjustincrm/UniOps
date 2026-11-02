@@ -25,16 +25,26 @@ const TABS: { value: TabValue; label: string }[] = [
   { value: 'completed', label: 'Completed' },
 ]
 
-// Fixed display order for task-type groups (approvals → order → creates →
-// match → settlement). Types not listed fall to the end.
+// Fixed display order for task-type groups — DSH-001's categories in its
+// order: approvals, payment/placement, creates, receiving, invoice,
+// settlement, revisions (last). Types not listed fall to the end.
 const GROUP_ORDER: string[] = [
-  'approve_pr', 'approve_po', 'approve_pa', 'approve_budget_plan',
+  // approvals
+  'approve_pr', 'approve_po', 'approve_pa', 'approve_agr', 'sign_po', 'approve_budget_plan',
+  // payment / placement
   'process_pa', 'place_order',
+  // creates
   'create_pr', 'create_po', 'create_pa', 'create_prepayment_pa',
-  'acknowledge_gr', 'collect_goods', 'confirm_service_gr', 'gr_damage_report',
-  'review_match', 'match_invoice',
+  // receiving
+  'acknowledge_gr', 'collect_goods', 'confirm_service_gr', 'confirm_receipt', 'confirm_period', 'gr_damage_report',
+  // invoice
+  'review_match', 'match_invoice', 'resolve_exception', 'attach_receipts', 'chase_agreement_invoice',
+  // settlement
   'confirm_settlement',
-  'revise_pr', 'revise_po', 'revise_pa', 'revise_budget_plan',
+  // NC purchase-sync errors: no DSH-001 category; kept ahead of revisions.
+  'import_erp_vendor', 'resolve_nc_sync_error',
+  // revisions
+  'revise_pr', 'revise_po', 'revise_pa', 'revise_agr', 'revise_po_signoff', 'revise_budget_plan',
 ]
 
 // ─── Empty state messages ─────────────────────────────────────────────────────
