@@ -144,60 +144,63 @@ async def _document_vars(db: AsyncSession, task: Task) -> dict[str, Any]:
     """
     out: dict[str, Any] = {}
     try:
-        if (task.type or "").startswith("revise"):
-            # Returned for revision: the engine records the return as an
-            # approval event in the same transaction that creates this task.
-            from app.models.approval import ApprovalEvent
-            row = (await db.execute(
-                select(ApprovalEvent.comment, User.full_name)
-                .outerjoin(User, User.id == ApprovalEvent.actor_id)
-                .where(ApprovalEvent.document_type == task.document_type,
-                       ApprovalEvent.document_id == task.document_id,
-                       ApprovalEvent.action == "return")
-                .order_by(ApprovalEvent.created_at.desc())
-                .limit(1)
-            )).first()
-            out["comment"] = ((row.comment or "").strip() if row else "") or "—"
-            out["returned_by"] = (row.full_name if row else None) or "—"
+        # Savepoint: a failed lookup here must not abort the caller's
+        # transaction (the task / outbox writes around the send).
+        async with db.begin_nested():
+            if (task.type or "").startswith("revise"):
+                # Returned for revision: the engine records the return as an
+                # approval event in the same transaction that creates this task.
+                from app.models.approval import ApprovalEvent
+                row = (await db.execute(
+                    select(ApprovalEvent.comment, User.full_name)
+                    .outerjoin(User, User.id == ApprovalEvent.actor_id)
+                    .where(ApprovalEvent.document_type == task.document_type,
+                           ApprovalEvent.document_id == task.document_id,
+                           ApprovalEvent.action == "return")
+                    .order_by(ApprovalEvent.created_at.desc())
+                    .limit(1)
+                )).first()
+                out["comment"] = ((row.comment or "").strip() if row else "") or "—"
+                out["returned_by"] = (row.full_name if row else None) or "—"
 
-        dt = (task.document_type or "").lower()
-        if dt == "pr":
-            # PRD 3.9.2: PR emails carry the title, requester and currency.
-            from app.models.pr import PurchaseRequest
-            row = (await db.execute(
-                select(PurchaseRequest.title, PurchaseRequest.currency, User.full_name)
-                .outerjoin(User, User.id == PurchaseRequest.created_by)
-                .where(PurchaseRequest.id == task.document_id)
-            )).first()
-            if row:
-                out.update(pr_title=row.title, currency=row.currency or "CAD",
-                           requester_name=row.full_name or "—")
-            if (task.type or "").startswith("approve"):
-                out["step_label"] = _step_label(task.description)
-        elif dt == "gr":
-            # GR-N-001: PO number, delivery date, received items with
-            # quantity and condition; 3.9.2: storage location for collection.
-            from app.core.delegation import PLANT_TIMEZONE
-            from app.models.gr import GoodsReceipt
-            from zoneinfo import ZoneInfo
-            gr = (await db.execute(
-                select(GoodsReceipt).where(GoodsReceipt.id == task.document_id)
-            )).scalar_one_or_none()
-            if gr is not None:
-                out["po_number"] = gr.po_number
-                out["currency"] = gr.currency or "CAD"
-                out["delivery_date"] = (
-                    gr.received_at.astimezone(ZoneInfo(PLANT_TIMEZONE)).date().isoformat()
-                    if gr.received_at else "—")
-                # Same fallback the collect_goods task description uses.
-                out["storage_location"] = gr.storage_location or "Warehouse"
-                # Plain text, one line per item: values are escaped, and
-                # _build_email_html turns the newlines into <br>.
-                out["received_items"] = "\n".join(
-                    f"• {li.description} — {_qty(li.qty_received)} {li.unit} "
-                    f"({_CONDITION_LABELS.get(li.condition, li.condition)})"
-                    for li in gr.line_items
-                ) or "—"
+            dt = (task.document_type or "").lower()
+            if dt == "pr":
+                # PRD 3.9.2: PR emails carry the title, requester and currency.
+                from app.models.pr import PurchaseRequest
+                row = (await db.execute(
+                    select(PurchaseRequest.title, PurchaseRequest.currency, User.full_name)
+                    .outerjoin(User, User.id == PurchaseRequest.created_by)
+                    .where(PurchaseRequest.id == task.document_id)
+                )).first()
+                if row:
+                    out.update(pr_title=row.title, currency=row.currency or "CAD",
+                               requester_name=row.full_name or "—")
+                if (task.type or "").startswith("approve"):
+                    out["step_label"] = _step_label(task.description)
+            elif dt == "gr":
+                # GR-N-001: PO number, delivery date, received items with
+                # quantity and condition; 3.9.2: storage location for collection.
+                from app.core.delegation import PLANT_TIMEZONE
+                from app.models.gr import GoodsReceipt
+                from zoneinfo import ZoneInfo
+                gr = (await db.execute(
+                    select(GoodsReceipt).where(GoodsReceipt.id == task.document_id)
+                )).scalar_one_or_none()
+                if gr is not None:
+                    out["po_number"] = gr.po_number
+                    out["currency"] = gr.currency or "CAD"
+                    out["delivery_date"] = (
+                        gr.received_at.astimezone(ZoneInfo(PLANT_TIMEZONE)).date().isoformat()
+                        if gr.received_at else "—")
+                    # Same fallback the collect_goods task description uses.
+                    out["storage_location"] = gr.storage_location or "Warehouse"
+                    # Plain text, one line per item: values are escaped, and
+                    # _build_email_html turns the newlines into <br>.
+                    out["received_items"] = "\n".join(
+                        f"• {li.description} — {_qty(li.qty_received)} {li.unit} "
+                        f"({_CONDITION_LABELS.get(li.condition, li.condition)})"
+                        for li in gr.line_items
+                    ) or "—"
     except Exception as exc:  # noqa: BLE001
         logger.warning("Task %s: document facts for the email unavailable: %s", task.id, exc)
     return out
