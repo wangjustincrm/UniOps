@@ -90,6 +90,20 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
     async def before_update(self, entity: Connection, changes: dict[str, Any]) -> None:
         check_connection({**{k: getattr(entity, k) for k in _RULE_FIELDS}, **changes})
         await self._partner_exists(changes.get("partner_code"))
+        if changes.get("mode") == "LIVE" and entity.mode != "LIVE":
+            await self._go_live_gate()
+
+    async def _go_live_gate(self) -> None:
+        """PRD section 11 step 3 / AC-OB-71 (design §5.4): a channel goes LIVE
+        only when every gate event has an active rule with recipients and a
+        test notification was sent through it — the health page shows which."""
+        from app.services.notifications import gate  # notifications → schemas; kept local
+        missing = [g for g in await gate(self.uow.session) if not g.ok]
+        if missing:
+            raise InvalidInput(
+                "connection.go_live_gate",
+                "the notification gate is not met: " + "; ".join(f"{g.label} ({g.problem})" for g in missing),
+                {"field": "mode", "events": [g.event_type for g in missing]})
 
     @requires(CONFIG)
     async def reset_cursor(self, id: int, cursor) -> ConnectionRead:

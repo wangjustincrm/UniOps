@@ -29,6 +29,9 @@ ENV VITE_API_URL=$VITE_API_URL \
     VITE_FINANCE_API_URL=$VITE_FINANCE_API_URL \
     VITE_FINANCE_URL=$VITE_FINANCE_URL \
     VITE_VMS_URL=$VITE_VMS_URL
+# Sales deep link: Task Inbox tasks of document_type 'sales' open the Sales page (lib/api.ts SALES_URL).
+ARG VITE_SALES_URL
+ENV VITE_SALES_URL=$VITE_SALES_URL
 
 # Shared workspace package is copied so the app can depend on it (file: + the
 # --install-links copy) without changing this Dockerfile. Harmless when unused.

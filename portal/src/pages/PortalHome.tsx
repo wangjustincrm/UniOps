@@ -49,7 +49,7 @@ interface OaTask {
 
 interface UnifiedTask {
   id: string
-  module: 'EPMS' | 'EXPENSE' | 'VMS'
+  module: 'EPMS' | 'EXPENSE' | 'SALES' | 'VMS'
   title: string
   docNumber: string
   /** Identity used to merge the same task echoed across feeds. Defaults to
@@ -230,16 +230,53 @@ const MODULE_STYLE: Record<string, { border: string; badge: string; label: strin
   EPMS:    { border: 'border-l-primary-500',  badge: 'text-primary-600',  label: 'EPMS' },
   EXPENSE: { border: 'border-l-amber-400',    badge: 'text-amber-600',    label: 'Expense' },
   VMS:     { border: 'border-l-emerald-500',  badge: 'text-emerald-600',  label: 'Visitor' },
+  SALES:   { border: 'border-l-sky-500',      badge: 'text-sky-600',      label: 'Sales' },
 }
 
-const MODULE_ORDER: UnifiedTask['module'][] = ['EPMS', 'EXPENSE', 'VMS']
+const MODULE_ORDER: UnifiedTask['module'][] = ['EPMS', 'EXPENSE', 'VMS', 'SALES']
 
 const MODULE_HEADING: Record<UnifiedTask['module'], string> = {
   EPMS: 'EPMS', EXPENSE: 'Expense', VMS: 'Visitor',
+  SALES: 'Sales',
 }
 
 // EPMS engine task types → display labels (inlined; portal has no taskTypes.ts).
 const EPMS_TYPE_LABELS: Record<string, string> = {
+  // Sales (sales-api, document_type 'sales'; sales-api app/domain/notifications.py),
+  // shown under the Sales heading.
+  sales_unreadable_file: 'Unreadable inbound file',
+  sales_sftp_fetch_failed: 'SFTP fetch failed',
+  sales_sftp_auth_failed: 'SFTP authentication failed',
+  sales_file_not_stored: 'Inbound file not stored',
+  sales_shopify_fetch_failed: 'Shopify fetch failed',
+  sales_shopify_auth_failed: 'Shopify authentication failed',
+  sales_order_file_bad: 'Order file could not be read',
+  sales_order_review: 'Order needs review (unmapped item, unit, partner, DC, address)',
+  sales_order_archived: 'Paid order archived in Shopify before its 940',
+  sales_changed_after_940: 'Order changed after its 940',
+  sales_940_failed: '940 failed',
+  sales_940_rejected: '940 rejected by the warehouse (997)',
+  sales_940_timeout: 'No 997 for a 940 (ACK timeout)',
+  sales_997_unmatched: '997 matches no file',
+  sales_send_refused: 'A send was refused by the write guard',
+  sales_945_validation: '945 validation check',
+  sales_short_shipment: 'Short shipment',
+  sales_second_945: 'A second, different 945',
+  sales_945_no_order: '945 with no order',
+  sales_945_line: '945 line matches no order line',
+  sales_shopify_write: 'Shopify write-back failed',
+  sales_invoice_hold: 'Invoice on hold',
+  sales_invoice_failed: 'Invoice not sent',
+  sales_order_return: 'Return or cancellation after shipment',
+  sales_cancel_after_940: 'Cancelled at source after the 940',
+  sales_transfer_failed: 'Transfer 943 failed',
+  sales_943_rejected: '943 rejected by the warehouse (997)',
+  sales_943_timeout: 'No 997 for a 943 (ACK timeout)',
+  sales_transfer_discrepancy: 'Transfer discrepancy',
+  sales_partial_receipt: 'Transfer partially received',
+  sales_second_944: 'A second, different 944',
+  sales_944_no_transfer: '944 with no transfer',
+  sales_test: 'Test notification',
   create_pr: 'Create Purchase Request',
   create_po: 'Create Purchase Order',
   create_pa: 'Create Payment Application',
@@ -326,6 +363,7 @@ function TaskRow({ task }: { task: UnifiedTask }) {
         {task.module === 'EPMS' && <Briefcase className="h-4 w-4 text-primary-500" />}
         {task.module === 'EXPENSE' && <CreditCard className="h-4 w-4 text-amber-500" />}
         {task.module === 'VMS' && <UserCheck className="h-4 w-4 text-emerald-500" />}
+        {task.module === 'SALES' && <Store className="h-4 w-4 text-sky-500" />}
       </div>
 
       {/* Content */}
@@ -567,6 +605,12 @@ export default function PortalHome() {
           path = ''
           selfHref = '/admin?section=nc_sync'
         }
+      } else if (t.document_type === 'sales') {
+        // Sales tasks: document_id is derived from the problem key, not a record.
+        // The key (document_number) opens the Sales page /inbox/<key>, which
+        // shows the order, transfer, file or connection the task is about.
+        module = 'SALES'; base = SALES_URL
+        path = `/inbox/${encodeURIComponent(t.document_number)}`
       } else if (isVms) {
         module = 'VMS'; base = VMS_URL
         path = vmsDeeplinkPath(t.document_type, t.document_id)

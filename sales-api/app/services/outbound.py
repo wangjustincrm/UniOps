@@ -50,7 +50,7 @@ from app.platform.pipeline import isolated
 from app.services import oplog
 from app.services.intake import ConnectionSnapshot
 from app.services.problems import (
-    CHANGED_AFTER_940, EDI_940_FAILED, EDI_940_REJECTED, EDI_940_TIMEOUT, EDI_997_UNMATCHED, problem,
+    CHANGED_AFTER_940, EDI_940_FAILED, EDI_940_REJECTED, EDI_940_TIMEOUT, EDI_997_UNMATCHED, problem, send_refused,
 )
 from app.services.settings import ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, SETTINGS, SHADOW_MODE
 
@@ -173,6 +173,7 @@ class Outbound940:
                                      reason=f"refused by the write guard: {exc}")
         await oplog.write(uow.session, "WARNING", STEP, f"940 for order {order.order_number} suppressed: {exc}",
                           document_id=doc.id, order_id=order.id)
+        await send_refused(self.tasks, uow.session, row, f"the 940 for order {order.order_number}", exc)
 
     async def _pair(self, row, uow) -> tuple[Document, Order]:
         p = row.payload

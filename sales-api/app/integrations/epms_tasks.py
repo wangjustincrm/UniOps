@@ -113,9 +113,16 @@ class TaskService:
         t = self.t
         return (t.c.document_type == self.document_type) & (t.c.document_number == key) & (t.c.is_completed.is_(False))
 
-    async def raise_problem(self, session, event: str, entity: object, task: ProblemTask) -> uuid.UUID | None:
+    async def open_task(self, session, key: str) -> uuid.UUID | None:
+        """The problem's open task, if any."""
+        return (await session.execute(
+            select(self.t.c.id).where(self._open(key)).order_by(self.t.c.created_at).limit(1))).scalar_one_or_none()
+
+    async def raise_problem(self, session, event: str, entity: object, task: ProblemTask, *,
+                            assignee_id: uuid.UUID | None = None) -> uuid.UUID | None:
         """Create the problem's task, or refresh the open one. Returns the task
-        id, or None when the write failed (logged, never raised)."""
+        id, or None when the write failed (logged, never raised). A new task
+        goes to `assignee_id` when given, else to the configured assignee."""
         key = self.problem_key(event, entity)
         if len(task.task_type) > TYPE_MAX:
             raise ValueError(f"task type {task.task_type!r} is longer than {TYPE_MAX}")
@@ -138,7 +145,7 @@ class TaskService:
                     id=task_id, type=task.task_type, priority=task.priority,
                     document_type=self.document_type, document_id=uuid.uuid5(_NAMESPACE, key),
                     document_number=key, assigned_role=self.assigned_role,
-                    assigned_user_id=await self.assignee(session),
+                    assigned_user_id=assignee_id or await self.assignee(session),
                     title=task.title, description=task.description,
                     is_completed=False, notified_at=None if self.notify() else now,
                     created_at=now, updated_at=now,

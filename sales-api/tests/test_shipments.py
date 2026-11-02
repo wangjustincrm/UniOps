@@ -170,7 +170,9 @@ async def test_ac56_ac57_over_shipment_notifies_and_an_extra_item_goes_to_review
     [t] = await tasks(p5, "945_line")
     assert "CF0010" in t
     log = [x["message"] for x in await p5.q("SELECT message FROM sales_log WHERE step = '945 validation'")]
-    assert any("over-shipment" in m for m in log) and any("extra or substituted item" in m for m in log)  # P8 routes them
+    assert any("over-shipment" in m for m in log) and any("extra or substituted item" in m for m in log)
+    [v] = await tasks(p5, "945_validation")  # P8: one notification per shipment, every check in it
+    assert "over-shipment" in v and "extra or substituted item" in v and "only notify" in v
 
 
 async def test_ac58_expiry_with_and_without_a_partner_minimum(p5):

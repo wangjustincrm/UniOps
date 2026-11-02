@@ -7,10 +7,10 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, case, or_, select
 
 from app.domain.address import address_flags
-from app.domain.order_rules import order_state, payment_satisfied, to_ea
+from app.domain.order_rules import ON_HOLD_FULFILLMENT, order_state, payment_satisfied, to_ea
 from app.domain.orders import HOLD_REASONS, ORDER_STATES, SOURCE_TYPES
 from app.domain.status import FULFILLMENT, Fulfillment as F
 from app.domain.status import Invoice as Inv
@@ -21,6 +21,7 @@ from app.models.orders import Order, OrderLine
 from app.models.records import AuditRecord
 from app.platform.authorization import requires
 from app.platform.errors import BusinessError, InvalidInput
+from app.platform.query import FilterRule
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
@@ -39,6 +40,19 @@ _DOC_COLUMNS = (Document.id, Document.kind, Document.direction, Document.remote_
 OPERATE = "sales.order.operate"
 
 
+# The derived order state (D17) in SQL: the same rule as order_rules.order_state
+# (a test holds them together), so the list filters and the dashboard counts on it.
+ORDER_STATE_SQL = case(
+    (Order.fulfillment_status == F.DRAFT.value, "Draft"),
+    (Order.fulfillment_status == F.CANCELLED.value, "Cancelled"),
+    (or_(Order.fulfillment_status.in_([s.value for s in ON_HOLD_FULFILLMENT]),
+         Order.invoice_status.in_([Inv.BLOCKED.value, Inv.FAILED.value])), "On Hold"),
+    (and_(Order.fulfillment_status == F.SHIPPED.value, Order.invoice_status.in_([Inv.SENT.value, Inv.NOT_REQUIRED.value])),
+     "Completed"),
+    else_="Active",
+)
+
+
 class OrderRepository(Repository[Order]):
     model = Order
     search_fields = ("source_order_number", "source_reference", "source_order_id", "review_reason")
@@ -55,8 +69,10 @@ class OrderRepository(Repository[Order]):
     enums = {"source_type": SOURCE_TYPES, "fulfillment_status": tuple(s.value for s in F),
              "invoice_status": tuple(s.value for s in Inv), "hold_reason": HOLD_REASONS,
              "order_state": ORDER_STATES}
+    sortable = {"order_state": ORDER_STATE_SQL}
+    filterable = {"order_state": FilterRule(ORDER_STATE_SQL, kind="text")}
     default_sort = ("-order_number",)
-    groupable = ("partner_code", "source_type", "fulfillment_status", "invoice_status", "hold_reason", "order_date",
+    groupable = ("order_state", "partner_code", "source_type", "fulfillment_status", "invoice_status", "hold_reason", "order_date",
                  "currency", "historical", "archive_suppressed", "shopify_financial_status")
     # System views (§13.19). Review reason is shown where it says something.
     presets = (

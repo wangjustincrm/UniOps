@@ -202,3 +202,6 @@ class NotificationRule(Audited, Versioned, Deactivatable, Base):
     event_type: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     channel: Mapped[str] = mapped_column(String(10), nullable=False)
     recipients: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    # The last test notification (go-live gate, PRD section 11; sales13).
+    tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    test_result: Mapped[str | None] = mapped_column(Text, nullable=True)

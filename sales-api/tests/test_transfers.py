@@ -185,7 +185,9 @@ async def test_ac66_ac67_received_partially_received_and_over_received(p7):
     await store(p7, "944_EDI", x944(over.transfer_number, pallet * 2), "c.edi")
     await p7.tr.process_944s()
     assert [await status(p7, i) for i in (full.id, part.id, over.id)] == ["Received", "Partially Received", "Discrepancy"]
-    assert await p7.q("SELECT 1 FROM sales_log WHERE message LIKE 'transfer % partially received%'")  # P8 notifies
+    assert await p7.q("SELECT 1 FROM sales_log WHERE message LIKE 'transfer % partially received%'")
+    [pr] = await tasks(p7, "partial_receipt")  # P8: notified (no rule: a task to the operator)
+    assert f"transfer {part.transfer_number} received part of what was sent: line 1: 600 EA" in pr
     [t] = await tasks(p7, "transfer_discrepancy")
     assert "1200 EA received, 600 requested" in t
 

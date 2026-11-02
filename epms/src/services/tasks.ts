@@ -28,6 +28,8 @@ export type TaskType =
   // PO sign-off (NC imports). document_type is 'posign', not 'po'.
   | 'sign_po'
   | 'revise_po_signoff'
+  // Sales (sales-api, document_type 'sales'): sales_<event>, labelled in lib/taskTypes.ts.
+  | `sales_${string}`
 
 export interface ApiTask {
   id: string

@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     # (app/container.py wires the names into app.platform's GuardedGateway).
     SALES_EXTERNAL_EMAIL_ENABLED: bool = False
     SALES_PARTNER_WRITES_ENABLED: bool = False
+    # Where the Sales front end is reached from a mail client (a notification's link); empty: no link.
+    SALES_PUBLIC_URL: str = ""
 
     # ── SFTP hosts this stack may connect to (fail closed, every environment) ─
     # Comma-separated host names. Empty or unset: no SFTP connection at all —

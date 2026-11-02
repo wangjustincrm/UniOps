@@ -91,6 +91,7 @@ CONFIG_FILES=(
   portal/src/lib/api.ts portal/src/pages/admin/AdminPanel.tsx
   identity-api/alembic/versions/0023_sales_perms.py
   epms/src/lib/taskTypes.ts epms/src/services/tasks.ts epms-api/app/crud/task.py
+  epms/src/lib/api.ts epms/Dockerfile
   epms-api/app/knowledge/modules.yaml epms-api/tests/test_module_guide.py
 )
 SERVICE_CONFIG_RE='^(approval-api|booking-api|budget-api|epms-api|expense-api|file-api|finance-api|identity-api|inventory-api|mdm-api|mrp-api|vms-api)/app/core/config\.py$'
@@ -100,7 +101,10 @@ SERVICE_CONFIG_RE='^(approval-api|booking-api|budget-api|epms-api|expense-api|fi
 # gain, inserted right before the LAST occurrence of the anchor in the base
 # line. Any other change to these lines, and any change to any other existing
 # line, still fails; an entry whose anchor no longer matches its base line
-# fails too (the line moved — re-check it by hand).
+# fails too (the line moved — re-check it by hand). P8 (2026-11-02): the Portal
+# task list's module union and order gain 'SALES'; epms/src/lib/api.ts (the
+# Sales handoff) and epms/Dockerfile (VITE_SALES_URL) joined the configuration
+# list, additions only.
 #   path <TAB> line number in the base <TAB> anchor <TAB> inserted text
 LINE_EDITS=$(cat <<'EOF'
 docker-compose.dev.yml	111	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
@@ -123,6 +127,8 @@ portal/src/components/layout/navConfig.tsx	26	 }	, SALES_URL
 portal/src/lib/api.ts	391	]	, SALES_URL
 portal/src/pages/PortalHome.tsx	9	, encodeSession }	, SALES_URL
 portal/src/pages/PortalHome.tsx	15	, MRP_URL }	, SALES_ACCESS_PERMS
+portal/src/pages/PortalHome.tsx	51	'VMS'	'SALES' | 
+portal/src/pages/PortalHome.tsx	234	]	, 'SALES'
 EOF
 )
 # Compares a base file with a new one: unchanged and added lines pass; a base

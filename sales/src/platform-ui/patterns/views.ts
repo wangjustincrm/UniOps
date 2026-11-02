@@ -53,6 +53,8 @@ export interface ListView {
 }
 
 const fullState = (partial: Partial<ViewState>, pageSize: number): ViewState => normalizeView({ pageSize, ...partial })
+// The key of a requested view made on the spot: not one of the list's system views.
+const AD_HOC = '__requested'
 
 /** The list's query + layout, and its views when the app provides them.
  *  `fixed` filters (a list inside another record) are always kept and turn
@@ -102,10 +104,14 @@ export function useListView(
   const settled = (meta.isSuccess || meta.isError) && (mineQ.isSuccess || mineQ.isError)
   const request = useViewRequest(key)
   if (enabled && settled) {
-    const asked = request ? system.find((s) => s.key === request) : undefined
+    const asked = typeof request === 'string' ? system.find((s) => s.key === request) : undefined
     if (asked) {
       takeViewRequest(key)  // taken once, here; a request for an unknown view stays until one exists
       apply({ kind: 'system', key: asked.key, name: asked.name }, fullState(asked.state, pageSize))
+      if (!opened) setOpened(true)
+    } else if (request && typeof request !== 'string') {  // a view made on the spot (a dashboard card)
+      takeViewRequest(key)
+      apply({ kind: 'system', key: AD_HOC, name: request.name }, fullState(request.state, pageSize))
       if (!opened) setOpened(true)
     } else if (!opened) {
       const def = mine.find((m) => m.is_default)

@@ -1,5 +1,5 @@
-import { EmptyState } from '@/platform-ui'
+import { HomeDashboard } from '@/features/health/HomeDashboard'
 
 export default function HomePage() {
-  return <EmptyState title="Sales" description="The module skeleton is running." />
+  return <HomeDashboard />
 }

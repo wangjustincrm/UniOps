@@ -51,8 +51,8 @@ from app.services import oplog
 from app.services.intake import ConnectionSnapshot
 from app.services.outbound import TORONTO, latest_940
 from app.services.problems import (
-    EDI_945_LINE_UNMATCHED, EDI_945_NO_ORDER, ORDER_FILE_UNREADABLE, SECOND_945, SHOPIFY_WRITE_FAILED,
-    SHORT_SHIPMENT, problem,
+    EDI_945_LINE_UNMATCHED, EDI_945_NO_ORDER, EDI_945_VALIDATION, ORDER_FILE_UNREADABLE, SECOND_945,
+    SHOPIFY_WRITE_FAILED, SHORT_SHIPMENT, problem, send_refused,
 )
 from app.services.settings import SETTINGS, SHADOW_MODE
 
@@ -315,6 +315,13 @@ class Shipments:
         for c in p.checks:
             await oplog.write(s, "WARNING", "945 validation", f"945 {doc.remote_name}: {c['check']}: {c['message']}",
                               run_id=run_id, document_id=doc.id, order_id=p.order_id, context=c)
+        if p.checks:  # FR-OB-25d: only notifies — one notification per shipment, every check in it
+            await self.tasks.raise_problem(s, EDI_945_VALIDATION, shipment.id, problem(
+                EDI_945_VALIDATION, f"945 checks: {len(p.checks)} on shipment {shipment.id} ({doc.remote_name})"[:255],
+                f"945 file {doc.remote_name}, shipment {shipment.id}"
+                + (f", order {order.order_number} ({order.partner_code} {order.source_order_number})" if order else "")
+                + ". Applied as received; these checks only notify (FR-OB-25d):\n"
+                + "\n".join(f"- {c['check']}: {c['message']}" for c in p.checks)))
         if order is None:
             report.no_order += 1
             await self.tasks.raise_problem(s, EDI_945_NO_ORDER, shipment.id, problem(
@@ -513,6 +520,7 @@ class Shipments:
         sh.shopify_status, sh.shopify_error = "Suppressed", str(exc)[:2000] if exc else None
         await oplog.write(uow.session, "INFO", STEP, f"Shopify write for shipment {sh.id} refused by the guard: {exc}",
                           order_id=sh.order_id)
+        await send_refused(self.tasks, uow.session, row, f"the Shopify write for shipment {sh.id}", exc)
 
     async def retry_shopify(self, uow, shipment_id: int) -> Shipment:
         """A person's retry (sales.order.operate): one new row; the effect reads

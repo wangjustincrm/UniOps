@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Controller, useForm, type FieldValues, type Resolver, type UseFormReturn } from 'react-hook-form'
 import type { z } from 'zod'
 import { Autocomplete } from '../primitives/Autocomplete'
-import { Checkbox } from '../primitives/Checkbox'
+import { Checkbox, CheckboxList } from '../primitives/Checkbox'
 import type { ComboOption } from '../primitives/Combobox'
 import { DateInput, NumberInput, Textarea } from '../primitives/FieldInputs'
 import { Select } from '../primitives/Select'
@@ -14,8 +14,9 @@ import { zodResolver } from './zodResolver'
 // Each type has its control: select → Select, checkbox → Checkbox, number →
 // NumberInput, date → DateInput ("YYYY-MM-DD", a string), textarea →
 // Textarea, reference → Autocomplete over `loadOptions` (a code of another
-// record, e.g. an item or a partner).
-export type FieldType = 'text' | 'email' | 'number' | 'textarea' | 'checkbox' | 'select' | 'date' | 'reference'
+// record, e.g. an item or a partner), multiselect → CheckboxList over
+// `options` (an array of values).
+export type FieldType = 'text' | 'email' | 'number' | 'textarea' | 'checkbox' | 'select' | 'date' | 'reference' | 'multiselect'
 
 export interface FieldSpec {
   name: string
@@ -117,6 +118,13 @@ export function SchemaFields({ form, fields, readOnly, idPrefix = 'sf' }: {
             <Controller control={form.control} name={f.name} render={({ field }) => (
               <Checkbox id={id} checked={!!field.value} onCheckedChange={field.onChange} onBlur={field.onBlur}
                 disabled={common.disabled} aria-invalid={common['aria-invalid']} />
+            )} />
+          )
+        } else if (f.type === 'multiselect') {
+          control = (
+            <Controller control={form.control} name={f.name} render={({ field }) => (
+              <CheckboxList label={f.label} options={f.options ?? []} values={Array.isArray(field.value) ? field.value : []}
+                onChange={field.onChange} disabled={common.disabled} />
             )} />
           )
         } else if (f.type === 'select') {

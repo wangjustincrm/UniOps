@@ -76,6 +76,24 @@ export function vmsHandoffHref(path: string): string {
 }
 
 /**
+ * Sales module FRONTEND origin. sales-api writes its problems into the shared
+ * `tasks` table (document_type 'sales'), so they reach this inbox — but EPMS
+ * has no page for them: they open the Sales page /inbox/<problem key>. Build
+ * arg VITE_SALES_URL (epms/Dockerfile ARG and ENV; docker-compose epms-frontend
+ * / epms-web).
+ */
+export const SALES_URL = (import.meta.env.VITE_SALES_URL as string | undefined) || 'http://localhost:5182'
+
+/** Full-page URL into the Sales frontend with the `#__session=` handoff (sales/src/main.tsx). */
+export function salesHandoffHref(path: string): string {
+  const { token, refreshToken, user } = useAuthStore.getState()
+  const base = `${SALES_URL}${path}`
+  if (!token || !user) return base
+  const session = encodeUtf8Base64(JSON.stringify({ token, refreshToken: refreshToken ?? '', user }))
+  return `${base}#__session=${session}`
+}
+
+/**
  * Expense/OA microservice base URL (expense-api :8006) — unified invoice storage
  * + attachments. Browser-reachable absolute URL: the dev `/oa-api` Vite proxy is
  * dead inside the dockerized frontend (proxies to container-localhost:8006).

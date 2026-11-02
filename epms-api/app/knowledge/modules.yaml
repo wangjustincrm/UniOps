@@ -288,6 +288,10 @@ modules:
       - See what the warehouse shipped for an order (its 945) — every pallet with its lots, expiry and quantities, the checks that flagged something, and whether the shipment was written to Shopify; retry a failed Shopify write
       - Choose the warehouse's SFTP connection and how long to wait for its 997 (Configuration → Connections, Warehouse EDI)
       - During the shadow run, compare each 940 Zoho sent with the 940 Sales would send for the same order (Operations → Shadow compare), and mark a known difference as expected with a reason
+      - See at a glance how many orders are active, on hold, waiting for the warehouse or for invoicing, and what needs a person (Home) — each count opens its list
+      - Check the module's health — settings, connections (and test one), the scheduler, failed files, ACKs, sends, old tasks, the send switches and the go-live gate (Operations → Health)
+      - Choose who is told about each event and how — a Task Inbox task, an email or both, to users and outside addresses — and send a test (Configuration → Notifications); see every task and email sent (Operations → Notification history)
+      - Open a Sales task from the Task Inbox (Portal or EPMS): it opens the order, transfer, file or connection it is about
     notes:
       - >-
         Sales is being built in phases. Orders are read from Shopify and from
@@ -298,6 +302,16 @@ modules:
         until the release that turns them on; until then the 940s, Shopify
         fulfillments and invoices still come from Zoho — so for a shipment or an
         invoice, look in Zoho.
+      - >-
+        Who is told about a Sales problem follows Configuration → Notifications.
+        With no rule for an event, its task goes to the operator and no email
+        is sent. A problem that needs someone to act always has its task; the
+        rule can add an email (to users and outside addresses, once per
+        problem). Emails leave only where external email is switched on;
+        elsewhere they are recorded as not sent. A channel can be switched to
+        LIVE only once the go-live events (authentication failures, 940
+        failure / rejection / timeout, cancellation after the 940, paid order
+        archived) each have recipients and a test notification was sent.
       - >-
         While the shadow run is on (Configuration → Connections, Shadow run),
         Zoho is the live system: Sales reads the partners' folders but leaves

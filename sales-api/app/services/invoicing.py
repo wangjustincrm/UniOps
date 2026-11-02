@@ -49,7 +49,7 @@ from app.services import oplog
 from app.services.intake import ConnectionSnapshot
 from app.services.invoice_pdf import Party, PdfDoc, PdfLine, render
 from app.services.outbound import TORONTO
-from app.services.problems import INVOICE_FAILED, INVOICE_HOLD, ORDER_RETURN, problem
+from app.services.problems import INVOICE_FAILED, INVOICE_HOLD, ORDER_RETURN, problem, send_refused
 from app.services.settings import INVOICE_CONNECTION_ID, SETTINGS, SHADOW_MODE
 
 logger = logging.getLogger(__name__)
@@ -427,4 +427,5 @@ class Invoicing:
         if order.invoice_status == Inv.QUEUED.value:
             INVOICE.transition(order, Inv.FAILED, actor=uow.actor, events=uow.events, reason="refused by the outbound guard")
         await oplog.write(uow.session, "INFO", STEP, f"invoice {inv.invoice_number} refused by the guard: {exc}", order_id=order.id)
+        await send_refused(self.tasks, uow.session, row, f"invoice {inv.invoice_number} (order {order.order_number})", exc)
 

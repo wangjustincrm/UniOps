@@ -6,3 +6,9 @@ export const OLD_ADDRESSES: Record<string, { to: string; resource: string; view:
   // Manual orders became the Orders view "Manual drafts" + New manual order (2026-11-02).
   '/orders/manual': { to: '/orders', resource: 'orders', view: 'manual_drafts' },
 }
+
+/** The problem key of a Task Inbox link (/inbox/<key>), or null: InboxRedirect opens its page. */
+export function inboxKey(pathname: string): string | null {
+  const m = pathname.match(/^\/inbox\/(.+)$/)
+  return m ? decodeURIComponent(m[1]) : null
+}

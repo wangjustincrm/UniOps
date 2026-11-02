@@ -1,10 +1,11 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef } from '../primitives/DataTable'
 import { PageHeader } from '../primitives/PageHeader'
 import { Sheet } from '../primitives/Sheet'
 import type { ListMeta } from '../resource/listMeta'
 import { queryKeys } from '../resource/queryKeys'
+import { takeOpenRequest, useOpenRequest } from '../resource/viewRequests'
 import type { Filter, Page, QuerySpec } from '../resource/querySpec'
 import { ActionButton } from './ActionButton'
 import { QueryTable } from './QueryTable'
@@ -15,6 +16,8 @@ export interface ListResource<T> {
   basePath: string
   list: (spec: QuerySpec) => Promise<Page<T>>
   meta: () => Promise<ListMeta>
+  /** One record by id: a record asked for from elsewhere opens with its data. */
+  get?: (id: number) => Promise<T>
 }
 
 export interface ListContext<T> {
@@ -85,6 +88,16 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
     refetchInterval: props.refetchInterval ? (q) => props.refetchInterval!(q.state.data?.items ?? []) : undefined,
   })
   const rows = list.data?.items ?? []
+  // A record asked for from elsewhere (a Task Inbox link): fetched by its id
+  // when the client can, then opened like a clicked row.
+  const asked = useOpenRequest(resource.basePath)
+  useEffect(() => {
+    if (asked === undefined || !renderDetail) return
+    const id = takeOpenRequest(resource.basePath)
+    if (id === undefined) return
+    const stub = { id } as T
+    ;(resource.get ? resource.get(id) : Promise.resolve(stub)).then(setOpen, () => setOpen(stub))
+  }, [asked, renderDetail, resource])
   // The open record as the list now has it: an action, a re-check or another
   // user may have changed it since it was clicked.
   const current = open ? (rows.find((r) => r.id === open.id) ?? open) : null

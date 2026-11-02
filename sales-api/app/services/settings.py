@@ -49,3 +49,13 @@ INVOICE_CONNECTION_ID = SETTINGS.declare(Setting(
 ACK_TIMEOUT_MINUTES = SETTINGS.declare(Setting(
     "edi.ack_timeout_minutes", 120, int, validate=minimum(1), safe=120,
     description="Minutes to wait for a 997 before Timeout"))
+# P8 (FR-OB-52a): the health page's thresholds.
+PAUSED_ALARM_MINUTES = SETTINGS.declare(Setting(
+    "scheduler.paused_alarm_minutes", 60, int, validate=minimum(1), safe=60,
+    description="Minutes a paused scheduler shows WARNING before it is FAILED"))
+TASK_AGE_HOURS = SETTINGS.declare(Setting(
+    "health.task_age_hours", 24, int, validate=minimum(1), safe=24,
+    description="Hours after which an open task shows on the health page"))
+OUTBOX_BACKLOG_MINUTES = SETTINGS.declare(Setting(
+    "health.outbox_backlog_minutes", 30, int, validate=minimum(1), safe=30,
+    description="Minutes a queued send may wait before the health page warns"))

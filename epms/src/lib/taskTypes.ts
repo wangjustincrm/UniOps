@@ -1,4 +1,6 @@
 import { financeHandoffHref, vmsHandoffHref } from './api'
+// Sales tasks open the Sales frontend (P8).
+import { salesHandoffHref } from './api'
 
 // ─── Task types ────────────────────────────────────────────────────────────────
 //
@@ -80,6 +82,42 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   // services/ap_duplicate_invoice_tasks.py). ap_clerk, one standing task that
   // closes itself when nothing unreviewed is left.
   resolve_ap_duplicate_invoice: 'Resolve Duplicate NC Invoices',
+  // Sales (sales-api, document_type 'sales'): one task per problem, closed by
+  // sales-api when the problem clears. The list is sales-api's
+  // app/domain/notifications.py EVENT_TYPES, plus its rules' test notification.
+  sales_unreadable_file: 'Sales: Unreadable inbound file',
+  sales_sftp_fetch_failed: 'Sales: SFTP fetch failed',
+  sales_sftp_auth_failed: 'Sales: SFTP authentication failed',
+  sales_file_not_stored: 'Sales: Inbound file not stored',
+  sales_shopify_fetch_failed: 'Sales: Shopify fetch failed',
+  sales_shopify_auth_failed: 'Sales: Shopify authentication failed',
+  sales_order_file_bad: 'Sales: Order file could not be read',
+  sales_order_review: 'Sales: Order needs review (unmapped item, unit, partner, DC, address)',
+  sales_order_archived: 'Sales: Paid order archived in Shopify before its 940',
+  sales_changed_after_940: 'Sales: Order changed after its 940',
+  sales_940_failed: 'Sales: 940 failed',
+  sales_940_rejected: 'Sales: 940 rejected by the warehouse (997)',
+  sales_940_timeout: 'Sales: No 997 for a 940 (ACK timeout)',
+  sales_997_unmatched: 'Sales: 997 matches no file',
+  sales_send_refused: 'Sales: A send was refused by the write guard',
+  sales_945_validation: 'Sales: 945 validation check',
+  sales_short_shipment: 'Sales: Short shipment',
+  sales_second_945: 'Sales: A second, different 945',
+  sales_945_no_order: 'Sales: 945 with no order',
+  sales_945_line: 'Sales: 945 line matches no order line',
+  sales_shopify_write: 'Sales: Shopify write-back failed',
+  sales_invoice_hold: 'Sales: Invoice on hold',
+  sales_invoice_failed: 'Sales: Invoice not sent',
+  sales_order_return: 'Sales: Return or cancellation after shipment',
+  sales_cancel_after_940: 'Sales: Cancelled at source after the 940',
+  sales_transfer_failed: 'Sales: Transfer 943 failed',
+  sales_943_rejected: 'Sales: 943 rejected by the warehouse (997)',
+  sales_943_timeout: 'Sales: No 997 for a 943 (ACK timeout)',
+  sales_transfer_discrepancy: 'Sales: Transfer discrepancy',
+  sales_partial_receipt: 'Sales: Transfer partially received',
+  sales_second_944: 'Sales: A second, different 944',
+  sales_944_no_transfer: 'Sales: 944 with no transfer',
+  sales_test: 'Sales: Test notification',
 }
 
 // Portal origin — NC sync errors that are not a missing vendor are resolved in
@@ -108,6 +146,8 @@ export interface TaskHrefInput {
   type: string
   document_type: string
   document_id: string
+  /** Sales tasks: the problem key (SALES:<event>:<entity>) the Sales page resolves. */
+  document_number?: string
 }
 
 /**
@@ -158,6 +198,13 @@ export function taskHref(task: TaskHrefInput): string {
   // sync run.
   if (docType === 'ap_duplicate_invoice') {
     return financeHandoffHref('/finance/ap-duplicate-invoices')
+  }
+
+  // Sales tasks (sales-api). document_id is a key-derived UUID, not a record:
+  // the problem key in document_number goes to the Sales page /inbox/<key>,
+  // which opens the order, transfer, file or connection the task is about.
+  if (docType === 'sales') {
+    return salesHandoffHref(`/inbox/${encodeURIComponent(task.document_number ?? '')}`)
   }
 
   // Both create_pa and create_prepayment_pa anchor on the PO and open the PA

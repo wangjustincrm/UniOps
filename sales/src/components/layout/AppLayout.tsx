@@ -3,7 +3,7 @@ import { NavLink, useLocation, Routes, Route, Navigate } from 'react-router-dom'
 import { TabStoreProvider, TabBar, TabHost, TabRouterSync, useTabStore } from '@uniops/shell'
 import { moduleRoutes } from '@/app/routes'
 import {
-  Home, Building2, Plug, FileText, Activity, GitCompare, ShoppingCart, Package, Tags, Route as RouteIcon, Truck, Receipt, ArrowLeftRight, Warehouse,
+  Home, Building2, Plug, FileText, Activity, GitCompare, ShoppingCart, Package, Tags, Route as RouteIcon, Truck, Receipt, ArrowLeftRight, Warehouse, HeartPulse, Mail, Bell,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -14,7 +14,8 @@ import { useBranding } from '@/hooks/useBranding'
 import { usePermissions, MODULE_PERMS } from '@/hooks/usePermissions'
 import { PermissionProvider, ViewsProvider, createViewsClient } from '@/platform-ui'
 import { ViewRedirect } from '@/app/ViewRedirect'
-import { OLD_ADDRESSES } from '@/app/oldAddresses'
+import { OLD_ADDRESSES, inboxKey } from '@/app/oldAddresses'
+import { InboxRedirect } from '@/app/InboxRedirect'
 
 // Every list's saved views (design §13.19) go through this one client.
 const views = createViewsClient(api)
@@ -50,12 +51,15 @@ const NAV: NavItem[] = [
   { label: 'Documents', href: '/documents', icon: FileText, perm: 'sales.read', section: 'Operations' },
   { label: 'Runs and log', href: '/runs', icon: Activity, perm: 'sales.read', section: 'Operations' },
   { label: 'Shadow compare', href: '/shadow', icon: GitCompare, perm: 'sales.read', section: 'Operations' },
+  { label: 'Health', href: '/health', icon: HeartPulse, perm: 'sales.read', section: 'Operations' },
+  { label: 'Notification history', href: '/notifications', icon: Mail, perm: 'sales.read', section: 'Operations' },
   { label: 'Partners', href: '/config/partners', icon: Building2, perm: 'sales.read', section: 'Configuration' },
   { label: 'Connections', href: '/config/connections', icon: Plug, perm: 'sales.read', section: 'Configuration' },
   { label: 'Items', href: '/config/items', icon: Package, perm: 'sales.read', section: 'Configuration' },
   { label: 'Partner codes', href: '/config/partner-codes', icon: Tags, perm: 'sales.read', section: 'Configuration' },
   { label: 'DC routing', href: '/config/dc-routing', icon: RouteIcon, perm: 'sales.read', section: 'Configuration' },
   { label: 'Warehouses', href: '/config/warehouses', icon: Warehouse, perm: 'sales.read', section: 'Configuration' },
+  { label: 'Notifications', href: '/config/notifications', icon: Bell, perm: 'sales.read', section: 'Configuration' },
 ]
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -350,6 +354,9 @@ export default function AppLayout() {
   // Old addresses that became a view of another list (src/app/oldAddresses.ts).
   const moved = OLD_ADDRESSES[location.pathname]
   if (moved) return <ViewRedirect {...moved} />
+  // A Task Inbox link (epms, Portal): /inbox/<problem key> → the task's page and record.
+  const task = inboxKey(location.pathname)
+  if (task) return <InboxRedirect taskKey={task} />
 
   // Embedded (iframe): single page, no chrome/tabs — the host owns navigation.
   if (IS_EMBEDDED) {

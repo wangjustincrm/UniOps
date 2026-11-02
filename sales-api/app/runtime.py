@@ -27,6 +27,7 @@ from app.services.invoicing import SEND_INVOICE, Invoicing
 from app.services.transfers import SEND_943, Transfers
 from app.services.shipments import CLOSE, FULFILL, Shipments
 from app.services.shopify_intake import ShopifyIntake
+from app.services.notifications import NOTIFY_EMAIL, email_kind
 from app.services.problems import task_service
 
 
@@ -43,6 +44,7 @@ class Runtime:
     shipments: Shipments | None = None
     invoicing: Invoicing | None = None
     transfers: Transfers | None = None
+    tasks: Any = None
 
 
 def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify: Any = None) -> Runtime:
@@ -78,13 +80,13 @@ def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify:
     outbound.transfers = transfers
     worker = OutboxWorker(Outbox(OutboxRecord), {SEND_940: outbound.outbox_kind(), FULFILL: shipments.fulfill_kind(),
                                                  CLOSE: shipments.close_kind(), SEND_INVOICE: invoicing.outbox_kind(),
-                                                 SEND_943: transfers.outbox_kind()},
+                                                 SEND_943: transfers.outbox_kind(), NOTIFY_EMAIL: email_kind(container.email)},
                           uow_factory)
     cycle = SalesCycle(intake=intake, shopify_intake=shopify_intake, edi_intake=edi_intake, outbound=outbound,
                        shadow=shadow, shipments=shipments, invoicing=invoicing, transfers=transfers, outbox_worker=worker, run_model=Run, uow_factory=uow_factory,
                        schedule=settings_schedule(uow_factory))
     return Runtime(container, uow_factory, intake, shopify_intake, edi_intake, cycle, Background(), outbound, shipments,
-                   invoicing, transfers)
+                   invoicing, transfers, tasks)
 
 
 _runtime: Runtime | None = None

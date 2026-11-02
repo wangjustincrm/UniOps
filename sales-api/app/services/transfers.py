@@ -47,8 +47,8 @@ from app.services import oplog
 from app.services.intake import ConnectionSnapshot
 from app.services.outbound import TORONTO
 from app.services.problems import (
-    EDI_943_REJECTED, EDI_943_TIMEOUT, EDI_944_NO_TRANSFER, ORDER_FILE_UNREADABLE, SECOND_944, TRANSFER_DISCREPANCY,
-    TRANSFER_FAILED, problem,
+    EDI_943_REJECTED, EDI_943_TIMEOUT, EDI_944_NO_TRANSFER, ORDER_FILE_UNREADABLE, PARTIAL_RECEIPT, SECOND_944,
+    TRANSFER_DISCREPANCY, TRANSFER_FAILED, problem, send_refused,
 )
 from app.services.settings import ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, SETTINGS, SHADOW_MODE
 
@@ -330,6 +330,7 @@ class Transfers:
         t.error = f"not sent: {exc}"[:2000]
         await self._fail(uow, t, "", task=False)
         await oplog.write(uow.session, "INFO", STEP, f"943 {doc.remote_name} refused by the guard: {exc}", document_id=doc.id)
+        await send_refused(self.tasks, uow.session, row, f"the 943 for transfer {t.transfer_number}", exc)
 
     # ── the 997 (called by the 997 step for an AK2 943) ──────────────────────
     async def apply_997(self, uow, ack_doc: Document, g, st) -> int:
@@ -480,8 +481,13 @@ class Transfers:
                 TRANSFER_DISCREPANCY, f"Transfer {t.transfer_number}: receipt differs",
                 f"944 {doc.remote_name} for transfer {t.transfer_number}:\n" + "\n".join(a.discrepancies)))
         elif a.outcome == "Partially Received":
-            await oplog.write(s, "WARNING", STEP, f"transfer {t.transfer_number} partially received: "
-                              + "; ".join(f"line {k}: {v} EA" for k, v in a.received.items()), document_id=doc.id)
+            received = "; ".join(f"line {k}: {v} EA" for k, v in a.received.items())
+            await oplog.write(s, "WARNING", STEP, f"transfer {t.transfer_number} partially received: {received}",
+                              document_id=doc.id)
+            await self.tasks.raise_problem(s, PARTIAL_RECEIPT, t.id, problem(  # FR-OB-84: notifies
+                PARTIAL_RECEIPT, f"Transfer {t.transfer_number}: partially received",
+                f"944 {doc.remote_name} for transfer {t.transfer_number} received part of what was sent: {received}. "
+                "The rest may follow in a later 944."))
         await self.tasks.resolve_problem(s, EDI_943_TIMEOUT, t.id)
         await s.flush()
         return "applied"

@@ -309,6 +309,19 @@ _TASK_NO_STATUS_INVARIANT: dict[str, str] = {
     "vms_confirm_ppe": "同 vms_confirm_training。",
     "import_erp_vendor": "NC 同步每趟自己对账(services/nc_purchase_sync/error_tasks.py)。",
     "resolve_nc_sync_error": "同 import_erp_vendor。",
+    # Sales(sales-api,P8):一问题一任务,问题消失时 sales-api 自己 resolve_problem 收口,
+    # 也可在收件箱手工完成;document_type 'sales' 在 epms-api 没有 model。类型清单 =
+    # sales-api app/domain/notifications.py 的 EVENT_TYPES + sales_test(规则测试)。
+    **{t: "sales-api 自己收口(问题消失即完成);document_type 'sales' 在 epms-api 没有 model。"
+       for t in ("sales_unreadable_file", "sales_sftp_fetch_failed", "sales_sftp_auth_failed",
+                 "sales_file_not_stored", "sales_shopify_fetch_failed", "sales_shopify_auth_failed",
+                 "sales_order_file_bad", "sales_order_review", "sales_order_archived", "sales_changed_after_940",
+                 "sales_940_failed", "sales_940_rejected", "sales_940_timeout", "sales_997_unmatched",
+                 "sales_send_refused", "sales_945_validation", "sales_short_shipment", "sales_second_945",
+                 "sales_945_no_order", "sales_945_line", "sales_shopify_write", "sales_invoice_hold",
+                 "sales_invoice_failed", "sales_order_return", "sales_cancel_after_940", "sales_transfer_failed",
+                 "sales_943_rejected", "sales_943_timeout", "sales_transfer_discrepancy", "sales_partial_receipt",
+                 "sales_second_944", "sales_944_no_transfer", "sales_test")},
 }
 
 # ★覆盖边界:上表只能覆盖 EPMS 自己有 model 的表(pr/po/pa/agr/invoice/gr)。

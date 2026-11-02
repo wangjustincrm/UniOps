@@ -18,6 +18,7 @@ is allowed and means "off" to the caller, e.g. a paused schedule).
 from __future__ import annotations
 
 import logging
+import uuid
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -152,13 +153,14 @@ class SettingsRegistry:
         if setting.key not in self._declared:
             raise KeyError(f"setting {setting.key!r} is not declared")
         value = setting.coerce(raw)
+        stored = str(value) if isinstance(value, uuid.UUID) else value  # JSONB holds no UUID; parse reads it back
         row = (await session.execute(
             select(self.model).where(self.model.key == setting.key).with_for_update()
         )).scalar_one_or_none()
         if row is None:
-            session.add(self.model(key=setting.key, value=value))
+            session.add(self.model(key=setting.key, value=stored))
         else:
-            row.value = value
+            row.value = stored
         await session.flush()
         # Readers see the new value once it is committed — not before (they
         # would cache the old one for a whole TTL after the commit).
