@@ -20,6 +20,12 @@ function PdfCanvas({ file }: { file: File }) {
 
   useEffect(() => {
     let cancelled = false
+    // A new file (the next slice of a split PDF) must re-enter loading: the
+    // render effect below runs on `loading` / `pageNum` changes only, and both
+    // were already false / 1 after the first slice — so it never re-ran and the
+    // canvas kept showing slice 1 under slice 2's name (ISS-0143).
+    setLoading(true)
+    setPageNum(1)
 
     file.arrayBuffer().then(async (buf) => {
       if (cancelled) return
