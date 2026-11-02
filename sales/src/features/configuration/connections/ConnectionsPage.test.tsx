@@ -148,3 +148,14 @@ describe('Connections page: the shadow run switch', () => {
     await waitFor(() => expect(api.saveShadow).toHaveBeenCalledWith({ shadow_mode: false }))
   })
 })
+
+describe('Connections page: switching the shadow run on', () => {
+  it('says how many open orders became Zoho\'s', async () => {
+    api.shadow.mockResolvedValueOnce({ shadow_mode: false })
+    api.saveShadow.mockResolvedValue({ shadow_mode: true, marked_orders: 26 })
+    renderAs(['sales.read', 'sales.config'])
+    const panel = await screen.findByRole('region', { name: 'Shadow run' })
+    fireEvent.click(await within(panel).findByText('Turn the shadow run on'))
+    expect(await within(panel).findByText("26 open order(s) were marked as Zoho's.")).toBeInTheDocument()
+  })
+})

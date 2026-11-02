@@ -74,6 +74,6 @@ export const fetchEdiSettings = () => api.get<EdiSettings>('/config/edi-settings
 export const saveEdiSettings = (data: EdiSettings) => api.put<EdiSettings>('/config/edi-settings', data)
 
 /** The shadow run (§5.4): Zoho is live; Sales reads (Leave) and sends nothing. */
-export interface ShadowSetting { shadow_mode: boolean }
+export interface ShadowSetting { shadow_mode: boolean; marked_orders?: number | null }
 export const fetchShadowSetting = () => api.get<ShadowSetting>('/config/shadow')
 export const saveShadowSetting = (data: ShadowSetting) => api.put<ShadowSetting>('/config/shadow', data)

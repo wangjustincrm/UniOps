@@ -161,3 +161,5 @@ class ShadowSetting(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     shadow_mode: bool
+    # In the answer to switching on: the open orders marked as Zoho's.
+    marked_orders: int | None = None

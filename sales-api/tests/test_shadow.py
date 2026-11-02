@@ -219,3 +219,29 @@ async def test_the_switch_needs_sales_config_and_is_audited(edi):
     with pytest.raises(PermissionDenied):
         async with edi.env.factory(OP) as u:
             await ShadowSettingService(u).update(ShadowSetting(shadow_mode=False))
+
+
+async def test_switching_on_marks_every_open_order_and_off_never_clears_it(edi):
+    from app.schemas.connections import ShadowSetting
+    from app.services.connections import ShadowSettingService
+    sent, _ = await sent_order(edi, number=9301)       # a live 940: stays Sales'
+    edi.env.shop.orders = []
+    pending = await a_paid_order(edi, number=9302)     # open, before the switch-on
+    old = await a_paid_order(edi, number=8001)         # historical: left alone
+    async with edi.env.factory(OP) as u:
+        on = await ShadowSettingService(u).update(ShadowSetting(shadow_mode=True))
+        await u.commit()
+    assert on.marked_orders == 1
+    async with edi.env.factory(OP) as u:
+        await ShadowSettingService(u).update(ShadowSetting(shadow_mode=False))
+        await u.commit()
+    flags = {r["id"]: r["shadow"] for r in await edi.env.q("SELECT id, shadow FROM sales_orders")}
+    assert (flags[pending.id], flags[sent.id], flags[old.id]) == (True, False, False)  # off cleared nothing
+    assert (await edi.out.queue_due()).queued == 0      # never eligible after the switch-off
+    with pytest.raises(BusinessError) as e:
+        await send_now(edi, pending.id)
+    assert e.value.code == "send940.shadow_order"
+    audit = await edi.env.q("SELECT entity_id FROM sales_audit WHERE entity = 'sales_orders' AND reason = 'shadow run on'")
+    assert [a["entity_id"] for a in audit] == [str(pending.id)]
+    [log] = await edi.env.q("SELECT message FROM sales_log WHERE message LIKE 'shadow run on:%'")
+    assert log["message"].startswith("shadow run on: 1 open order(s) marked")

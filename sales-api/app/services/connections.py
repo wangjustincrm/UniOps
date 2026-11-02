@@ -194,6 +194,10 @@ class ShadowSettingService:
 
     @requires(CONFIG)
     async def update(self, body: ShadowSetting) -> ShadowSetting:
+        """On: the switch and the open orders' flag in one unit (mark_open_orders).
+        Off: the switch only — an order flagged stays Zoho's."""
+        from app.services.shadow import mark_open_orders  # shadow → outbound → … : imported when used
         self.uow.set_reason("shadow run on" if body.shadow_mode else "shadow run off")
         await SETTINGS.set(self.uow.session, SHADOW_MODE, body.shadow_mode)
-        return body
+        marked = await mark_open_orders(self.uow) if body.shadow_mode else 0
+        return ShadowSetting(shadow_mode=body.shadow_mode, marked_orders=marked)

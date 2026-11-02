@@ -294,8 +294,9 @@ modules:
       - >-
         While the shadow run is on (Configuration → Connections, Shadow run),
         Zoho is the live system: Sales reads the partners' folders but leaves
-        every file where it is, orders received are marked as Zoho's and never
-        get a 940 from Sales (also after the shadow run ends), Sales makes and
+        every file where it is, the orders open when it was switched on and
+        every order received since are marked as Zoho's and never get a 940
+        from Sales (also after the shadow run ends), Sales makes and
         sends no 940, acknowledgements are stored but not applied, and only
         problems with reading files or connections raise tasks. Files Zoho sent
         are copied into a reference folder on the server; Operations → Shadow

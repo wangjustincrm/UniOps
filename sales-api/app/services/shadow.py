@@ -22,16 +22,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, exists, func, select
 
 from app.domain.edi940 import build_940
 from app.domain.intake import classify
 from app.domain.order_rules import facts_of, qualifies
 from app.domain.shadow import compare, ignore_rules, reference_940
+from app.domain.status import Ack
 from app.domain.status import Fulfillment as F
 from app.domain.x12 import X12Error
 from app.models.config import Partner
-from app.models.documents import Document
+from app.models.documents import Document, DocumentLink
 from app.models.orders import Order
 from app.models.shadow import ShadowMatch
 from app.platform.actors import SYSTEM_ACTOR
@@ -42,7 +43,7 @@ from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.schemas.shadow import ShadowCompare, ShadowMatchRead
 from app.services import oplog
-from app.services.outbound import TORONTO
+from app.services.outbound import LIVE_940_FILE, TORONTO
 from app.domain.shadow import STATUSES
 
 logger = logging.getLogger(__name__)
@@ -234,6 +235,32 @@ class ShadowRun:
             for k, v in values.items():
                 setattr(row, k, v)
             row.compared_at = self.clock()
+
+
+# ── switching the shadow run on ──────────────────────────────────────────────
+
+async def mark_open_orders(uow, *, run_id: int | None = None) -> int:
+    """At switch-on, every open order becomes Zoho's (shadow = true), so none
+    becomes eligible for a 940 when the shadow run ends (cutover risk found on
+    dev2, 2026-11-02). Open: not Shipped, not Cancelled, not historical, and no
+    live 940 (that order is already Sales'). Each change is audited; switching
+    off never clears the flag."""
+    s = uow.session
+    live = exists().where(and_(
+        DocumentLink.entity_type == "order", DocumentLink.entity_id == Order.id,
+        Document.id == DocumentLink.document_id, Document.kind == "940_EDI", Document.direction == "OUT",
+        Document.file_status.in_([f.value for f in LIVE_940_FILE]),
+        Document.ack_status.not_in((Ack.REJECTED.value, Ack.TIMEOUT.value))))
+    orders = list((await s.execute(select(Order).where(
+        Order.shadow.is_(False), Order.historical.is_(False),
+        Order.fulfillment_status.not_in((F.SHIPPED.value, F.CANCELLED.value)), ~live,
+    ).order_by(Order.id).with_for_update())).scalars())
+    for o in orders:
+        o.shadow = True
+    await s.flush()
+    await oplog.write(s, "INFO", STEP, f"shadow run on: {len(orders)} open order(s) marked as Zoho's (never sent a 940 by Sales)",
+                      run_id=run_id, context={"orders": [o.id for o in orders][:500]})
+    return len(orders)
 
 
 # ── the page ─────────────────────────────────────────────────────────────────
