@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Pagination } from '@/components/ui/Pagination'
 import { cn, formatDate } from '@/lib/utils'
 import { useDepartments } from '@/hooks/useDepartments'
+import { useVendors } from '@/hooks/useVendors'
 import { useReceivingReport } from '@/hooks/useGrReport'
 import { grReportService, type ReceivingReportRow } from '@/services/grReport'
 
@@ -63,6 +64,7 @@ export default function ReceivingReportPage() {
   const [preset, setPreset] = useState<Preset>('this_month')
   const [range, setRange] = useState(() => presetRange('this_month'))
   const [departmentId, setDepartmentId] = useState('')
+  const [vendorId, setVendorId] = useState('')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
@@ -73,6 +75,7 @@ export default function ReceivingReportPage() {
   const [sort, onSort] = useSort<SortKey>(null, () => setPage(1))
 
   const { data: departments } = useDepartments()
+  const { data: vendors } = useVendors()
 
   // What the window selects, independent of which page of it is on screen.
   // The export sends exactly this — a spreadsheet of page 3 of 7 would be a
@@ -81,8 +84,9 @@ export default function ReceivingReportPage() {
     date_from: range.from || undefined,
     date_to: range.to || undefined,
     department_id: departmentId || undefined,
+    vendor_id: vendorId || undefined,
     search: search.trim() || undefined,
-  }), [range.from, range.to, departmentId, search])
+  }), [range.from, range.to, departmentId, vendorId, search])
 
   const { data, isLoading, isFetching, isError, error } = useReceivingReport({
     ...windowFilters, ...sortParams(sort), page, page_size: pageSize,
@@ -180,7 +184,7 @@ export default function ReceivingReportPage() {
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-neutral-500">Arrival From</label>
             <input type="date" className={inputCls} value={range.from}
@@ -198,6 +202,16 @@ export default function ReceivingReportPage() {
               <option value="">All Departments</option>
               {(departments?.items ?? []).map((d) => (
                 <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-neutral-500">Vendor</label>
+            <select className={inputCls} value={vendorId}
+              onChange={(e) => setVendorId(e.target.value)}>
+              <option value="">All Vendors</option>
+              {(vendors?.items ?? []).map((v) => (
+                <option key={v.id} value={v.id}>{v.name}</option>
               ))}
             </select>
           </div>

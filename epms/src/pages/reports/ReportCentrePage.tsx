@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { downloadCsv } from '@/lib/api'
 import { useVendors } from '@/hooks/useVendors'
 import { useCostCenters } from '@/hooks/useCostCenters'
+import { useConfig } from '@/hooks/useConfig'
 
 // ─── Shared filter state types ────────────────────────────────────────────────
 
@@ -378,10 +379,10 @@ function VendorReport() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const VENDOR_CATEGORIES = [
-    'Supplier', 'Service Provider', 'Contractor', 'Consultant',
-    'Logistics', 'IT', 'Utilities', 'Other',
-  ]
+  // The same list Admin → Vendor Settings maintains and the vendor form offers,
+  // so a category picked here is one a vendor can actually carry.
+  const { data: config } = useConfig()
+  const VENDOR_CATEGORIES = config?.vendor_categories ?? []
 
   const handleDownload = async () => {
     setLoading(true); setError(null)
