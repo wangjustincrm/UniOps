@@ -33,6 +33,7 @@ from app.models.orders import Order
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.pipeline import isolated
 from app.services import oplog
+from app.services.settings import SETTINGS, SHADOW_MODE
 from app.services.intake import ConnectionSnapshot
 from app.services.orders import BarcodeLookup, OrderSync
 from app.services.problems import SHOPIFY_AUTH_FAILED, SHOPIFY_FETCH_FAILED, problem
@@ -154,7 +155,8 @@ class ShopifyIntake:
                 return found
             doc = Document(direction="IN", origin="PARTNER", system="SHOPIFY", connection_id=conn.id,
                            kind="SHOPIFY_ORDER_JSON", remote_name=f"orders page {n} from {conn.cursor_updated_at.isoformat()}",
-                           size=len(data), sha256=sha, content=data, processing_status=InboundFile.PROCESSED.value)
+                           size=len(data), sha256=sha, content=data, processing_status=InboundFile.PROCESSED.value,
+                           shadow=await SETTINGS.get(s, SHADOW_MODE))
             s.add(doc)
             await s.flush()
             await uow.commit()

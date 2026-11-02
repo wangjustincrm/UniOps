@@ -4,3 +4,4 @@ from app.models import config  # noqa: F401,E402  — sales01_config
 from app.models import records  # noqa: F401,E402  — sales02_audit_outbox
 from app.models import documents  # noqa: F401,E402  — sales03_documents_runs
 from app.models import orders  # noqa: F401,E402  — sales05_orders
+from app.models import shadow  # noqa: F401,E402  — sales09_shadow

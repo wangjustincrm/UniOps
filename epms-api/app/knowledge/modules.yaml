@@ -282,6 +282,7 @@ modules:
       - See an order's 940s to the warehouse — whether the file was sent, and separately whether the warehouse acknowledged it (997) — and use Send 940 now, or Replace 940 for a live one
       - See which orders the next cycle would send a 940 for (Orders → Next 940s)
       - Choose the warehouse's SFTP connection and how long to wait for its 997 (Configuration → Connections, Warehouse EDI)
+      - During the shadow run, compare each 940 Zoho sent with the 940 Sales would send for the same order (Operations → Shadow compare), and mark a known difference as expected with a reason
     notes:
       - >-
         Sales is being built in phases. Orders are read from Shopify and from
@@ -290,6 +291,19 @@ modules:
         until the release that turns it on; until then the 940s the warehouse
         receives, and all shipments and invoices, still come from Zoho — so for
         a shipment or an invoice, look in Zoho.
+      - >-
+        While the shadow run is on (Configuration → Connections, Shadow run),
+        Zoho is the live system: Sales reads the partners' folders but leaves
+        every file where it is, orders received are marked as Zoho's and never
+        get a 940 from Sales (also after the shadow run ends), Sales makes and
+        sends no 940, acknowledgements are stored but not applied, and only
+        problems with reading files or connections raise tasks. Files Zoho sent
+        are copied into a reference folder on the server; Operations → Shadow
+        compare lists, per Zoho 940, Match, Differs, Expected difference, No
+        Sales order (no order with that number or PO), Sales only (Sales would
+        have sent a 940 that has no Zoho file) or Unreadable, and shows both
+        files side by side. Control numbers, dates and times, and each
+        system's own order number are not compared.
       - >-
         A 940 shows two statuses: the file (Ready To Send, Sent, Failed when the
         upload failed, Suppressed when sending is switched off, Cancelled when it

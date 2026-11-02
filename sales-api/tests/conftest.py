@@ -82,7 +82,10 @@ def migrated_db():
 @pytest_asyncio.fixture
 async def db_engine(migrated_db):
     engine = create_async_engine(migrated_db, echo=False, connect_args={"ssl": False})
+    from app.services.settings import SETTINGS
+    SETTINGS.invalidate()  # each test truncates sales_settings: never read the last test's cached values
     yield engine
+    SETTINGS.invalidate()
     await engine.dispose()
 
 

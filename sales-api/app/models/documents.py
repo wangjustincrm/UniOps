@@ -19,8 +19,8 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
-    CheckConstraint, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint,
-    func, text,
+    Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text, UniqueConstraint,
+    false, func, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, column_property, mapped_column
@@ -84,6 +84,9 @@ class Document(CreationAudited, Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # sales08: the 997 clock
     ack_detail: Mapped[str | None] = mapped_column(Text, nullable=True)  # the 997's codes, or the accepting 945
     zoho_file_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # sales09: read while the shadow run was on (§5.4) — never drives a status
+    # change or a Shopify write; P5 reads it on the shipments of a 945.
+    shadow: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=false())
 
     has_content: Mapped[bool] = column_property(content.column.is_not(None))
 

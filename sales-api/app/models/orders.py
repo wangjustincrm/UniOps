@@ -74,6 +74,8 @@ class Order(Audited, Versioned, Base):
     hold_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
     review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)  # why it is in Review (FR-OB-15)
     historical: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=false())  # FR-OB-17
+    # sales09: received during the shadow run — Zoho handles it; never sent a 940 by itself (§5.4).
+    shadow: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=false())
     first_received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # D20 delay start
     source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

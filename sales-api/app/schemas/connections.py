@@ -154,3 +154,10 @@ class EdiSettings(BaseModel):
 
     connection_id: int | None
     ack_timeout_minutes: Annotated[int, Field(ge=1, le=10080)]
+
+
+class ShadowSetting(BaseModel):
+    """The shadow run (§5.4): Zoho is live; Sales reads and sends nothing."""
+    model_config = ConfigDict(extra="forbid")
+
+    shadow_mode: bool

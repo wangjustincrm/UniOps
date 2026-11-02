@@ -59,6 +59,7 @@ class OrderFacts:
     historical: bool
     first_received_at: datetime
     paid_at: datetime | None
+    shadow: bool = False  # received during the shadow run (§5.4): Zoho handles it
 
 
 @dataclass(frozen=True)
@@ -72,7 +73,7 @@ def facts_of(order: Any, partner: Any) -> tuple[OrderFacts, PartnerFacts]:
     """The eligibility facts of an order row and its partner row."""
     return (OrderFacts(order.fulfillment_status, order.invoice_status, order.source_type, order.shopify_financial_status,
                        order.shopify_fulfillment_status, order.archived_in_shopify_at is not None, order.historical,
-                       order.first_received_at, order.paid_at),
+                       order.first_received_at, order.paid_at, bool(order.shadow)),
             PartnerFacts(partner.settlement_mode, partner.sending_mode, partner.delay_minutes))
 
 
@@ -91,6 +92,7 @@ def qualifies(o: OrderFacts, p: PartnerFacts, now: datetime) -> tuple[bool, str]
         (o.shopify_fulfillment_status != "fulfilled", "already fulfilled"),
         (not o.archived, "archived in Shopify"),
         (not o.historical, "historical order"),
+        (not o.shadow, "received during the shadow run (Zoho handles it)"),
         (p.sending_mode == "AUTOMATIC", "partner sends manually"),
     )
     for ok, why in checks:

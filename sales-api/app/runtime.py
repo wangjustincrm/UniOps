@@ -21,6 +21,7 @@ from app.services import oplog
 from app.services.cycle import SalesCycle, settings_schedule
 from app.services.edi_intake import EdiIntake
 from app.services.intake import Intake
+from app.services.shadow import ShadowRun
 from app.services.shopify_intake import ShopifyIntake
 from app.services.problems import task_service
 
@@ -57,8 +58,10 @@ def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify:
     edi_intake = EdiIntake(uow_factory=uow_factory, tasks=tasks)
     outbound = Outbound940(uow_factory=uow_factory, tasks=tasks, sftp=container.sftp)
     worker = OutboxWorker(Outbox(OutboxRecord), {SEND_940: outbound.outbox_kind()}, uow_factory)
+    shadow = ShadowRun(uow_factory=uow_factory, outbound=outbound,
+                       reference_dir=getattr(settings, "SALES_ZOHO_REFERENCE_DIR", "") or None)
     cycle = SalesCycle(intake=intake, shopify_intake=shopify_intake, edi_intake=edi_intake, outbound=outbound,
-                       outbox_worker=worker, run_model=Run, uow_factory=uow_factory,
+                       shadow=shadow, outbox_worker=worker, run_model=Run, uow_factory=uow_factory,
                        schedule=settings_schedule(uow_factory))
     return Runtime(container, uow_factory, intake, shopify_intake, edi_intake, cycle, Background(), outbound)
 

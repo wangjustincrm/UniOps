@@ -47,7 +47,7 @@ async def env(db_engine):
         await c.execute(sa.text(
             "TRUNCATE sales_order_lines, sales_orders, sales_log, sales_document_links, sales_documents, sales_runs, "
             "sales_item_partner_codes, sales_dc_routing, sales_item_units, sales_items, sales_connections, "
-            "sales_partners, sales_audit RESTART IDENTITY CASCADE"))
+            "sales_partners, sales_audit, sales_settings RESTART IDENTITY CASCADE"))
         await c.execute(sa.text("DELETE FROM tasks"))
     factory = UnitOfWorkFactory(async_sessionmaker(db_engine, expire_on_commit=False, autoflush=False),
                                 permissions=allow_all, audit=AuditTrail(AuditRecord))

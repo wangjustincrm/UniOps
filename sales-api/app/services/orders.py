@@ -39,6 +39,7 @@ from app.models.documents import DocumentLink
 from app.models.orders import Order, OrderLine
 from app.services.outbound import changed_after_940
 from app.services.problems import ORDER_ARCHIVED, ORDER_REVIEW, problem
+from app.services.settings import SETTINGS, SHADOW_MODE
 
 UPDATABLE = {F.REVIEW, F.PAYMENT_HOLD, F.PENDING, F.ARCHIVE_SUPPRESSED, F.DRAFT}
 # After a 940 the order is still updated, but what the 940 carried stays locked
@@ -261,6 +262,7 @@ class OrderSync:
             hold_reason="Payment Required" if status == F.PAYMENT_HOLD else None,
             review_reason="\n".join(reasons) or None,
             historical=bool(h.get("historical")),
+            shadow=await SETTINGS.get(self.s, SHADOW_MODE),
             first_received_at=received_at,
             paid_at=received_at if paid and partner is not None and partner.settlement_mode == "PREPAID" else None,
             source_updated_at=src.updated_at,

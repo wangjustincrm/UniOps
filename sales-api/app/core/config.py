@@ -80,6 +80,11 @@ class Settings(BaseSettings):
     # writable: dev lists only its test container; production lists Radiant at
     # release (DEPLOYMENT.md).
     SALES_SFTP_WRITE_HOSTS: str = ""
+    # Shadow run (§5.4): a read-only folder in the container holding files
+    # Zoho sent (940s, later 810s / 943s), copied there by hand. Each is
+    # stored once as a ZOHO_REFERENCE document — never parsed into orders,
+    # never sent. Empty = the import step is off.
+    SALES_ZOHO_REFERENCE_DIR: str = ""
 
     @property
     def sftp_write_hosts(self) -> frozenset[str]:

@@ -28,6 +28,7 @@ from app.schemas.orders import (
 )
 from app.services.intake import ConnectionSnapshot
 from app.services.orders import BarcodeLookup, OrderSync
+from app.services.settings import SETTINGS, SHADOW_MODE
 
 READ = "sales.read"
 _DOC_COLUMNS = (Document.id, Document.kind, Document.direction, Document.remote_name, Document.created_at,
@@ -191,7 +192,8 @@ class ManualOrderService:
                       source_order_number=data.customer_reference, requested_delivery_date=data.requested_delivery_date,
                       ship_to=data.ship_to, notes=data.notes, fulfillment_status=F.DRAFT.value,
                       invoice_status=(Inv.NOT_REQUIRED if p.invoice_method == "NONE" else Inv.PENDING).value,
-                      first_received_at=datetime.now(timezone.utc), version=1)
+                      first_received_at=datetime.now(timezone.utc), version=1,
+                      shadow=await SETTINGS.get(self.s, SHADOW_MODE))
         self.s.add(order)
         await self.s.flush()
         order.source_reference = f"{p.abbrev or p.code}-M{order.order_number}"

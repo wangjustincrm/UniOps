@@ -52,7 +52,7 @@ from app.services.intake import ConnectionSnapshot
 from app.services.problems import (
     CHANGED_AFTER_940, EDI_940_FAILED, EDI_940_REJECTED, EDI_940_TIMEOUT, EDI_997_UNMATCHED, problem,
 )
-from app.services.settings import ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, SETTINGS
+from app.services.settings import ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, SETTINGS, SHADOW_MODE
 
 logger = logging.getLogger(__name__)
 TORONTO = ZoneInfo("America/Toronto")  # "today" on a 940 (product owner, 2026-10-30)
@@ -82,6 +82,7 @@ def eligible_clause(now: datetime) -> ColumnElement[bool]:
         or_(o.shopify_fulfillment_status.is_(None), o.shopify_fulfillment_status != "fulfilled"),
         o.archived_in_shopify_at.is_(None),
         o.historical.is_(False),
+        o.shadow.is_(False),
         p.sending_mode == "AUTOMATIC",
         or_(started, paid_started),
     )
@@ -94,6 +95,7 @@ class EdiReport:
     skipped: str | None = None
     acks: int = 0
     unmatched_997: int = 0
+    shadow_997: int = 0  # stored only during the shadow run (§5.4)
     timeouts: int = 0
     failed: int = 0
     detail: list[str] = field(default_factory=list)
@@ -122,6 +124,10 @@ class Outbound940:
         order = await uow.session.get(Order, payload["order_id"], with_for_update=True)
         if doc is None or order is None:
             return "the document or the order is gone"
+        if await SETTINGS.get(uow.session, SHADOW_MODE):  # second barrier: a row queued before the switch-on
+            await oplog.write(uow.session, "WARNING", STEP, f"shadow run: 940 {doc.st02} for order {order.order_number} "
+                              "not sent (outbox row cancelled)", order_id=order.id, document_id=doc.id)
+            return "the shadow run is on: nothing is sent"
         if doc.file_status not in (OutboundFile.READY_TO_SEND, OutboundFile.SUPPRESSED):
             return f"the 940 is {doc.file_status}"
         if order.fulfillment_status != F.GENERATED_940:
@@ -216,6 +222,10 @@ class Outbound940:
         """One 940 for a locked order in Pending / a resend status: the file,
         its record (locked values) and, when valid, the outbox row."""
         s = uow.session
+        if await SETTINGS.get(s, SHADOW_MODE):
+            raise BusinessError("send940.shadow", "the shadow run is on: Sales sends no 940 (Zoho is live)")
+        if order.shadow:
+            raise BusinessError("send940.shadow_order", "this order was received during the shadow run: Zoho handles it")
         conn = await self._connection(s)
         if conn is None:
             raise BusinessError("edi.no_connection", "no warehouse connection is set for 940s (setting "
@@ -259,6 +269,9 @@ class Outbound940:
         report = EdiReport()
         now = self.clock()
         async with self.uow_factory(SYSTEM_ACTOR) as uow:
+            if await SETTINGS.get(uow.session, SHADOW_MODE):
+                report.skipped = "shadow run: no 940 is generated"
+                return report
             if await self._connection(uow.session) is None:
                 report.skipped = "no warehouse connection set"
                 return report
@@ -307,6 +320,10 @@ class Outbound940:
         partner = (await s.execute(select(Partner).where(Partner.code == order.partner_code))).scalar_one()
         if order.historical:
             raise BusinessError("send940.historical", "a historical order is never sent (FR-OB-17)")
+        if await SETTINGS.get(s, SHADOW_MODE):
+            raise BusinessError("send940.shadow", "the shadow run is on: Sales sends no 940 (Zoho is live)")
+        if order.shadow:
+            raise BusinessError("send940.shadow_order", "this order was received during the shadow run: Zoho handles it")
         status = F(order.fulfillment_status)
         live = await self.live_940(s, order.id)
         if status == F.GENERATED_940:
@@ -355,6 +372,14 @@ class Outbound940:
             async def one(uow, did=did):
                 doc = await uow.session.get(Document, did, with_for_update=True)
                 INBOUND_FILE.transition(doc, InboundFile.PROCESSING, actor=uow.actor, events=uow.events, reason="reading the 997")
+                if doc.shadow or await SETTINGS.get(uow.session, SHADOW_MODE):
+                    # §5.4: it answers a Zoho 940. Kept, not applied; matched against Zoho's 940s in P5.
+                    doc.shadow = True
+                    doc.error = "shadow run: stored only (answers a Zoho 940; matched against the Zoho references in P5)"
+                    INBOUND_FILE.transition(doc, InboundFile.SKIPPED, actor=uow.actor, events=uow.events, reason="shadow run")
+                    await oplog.write(uow.session, "INFO", STEP, f"shadow run: 997 {doc.remote_name} stored, not applied",
+                                      document_id=doc.id)
+                    return "shadow"
                 content = (await uow.session.execute(select(Document.content).where(Document.id == did))).scalar_one()
                 try:
                     groups = parse_997(content)
@@ -373,6 +398,8 @@ class Outbound940:
                 report.acks += 1
             elif outcome.ok and outcome.result == "unmatched":
                 report.unmatched_997 += 1
+            elif outcome.ok and outcome.result == "shadow":
+                report.shadow_997 += 1
             else:
                 report.failed += 1
         return report

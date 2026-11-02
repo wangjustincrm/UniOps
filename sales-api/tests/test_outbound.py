@@ -101,7 +101,7 @@ async def test_the_sql_twin_selects_exactly_what_qualifies_selects(edi):
                 invoice_status=rnd.choice(["Pending", "Not Required", "Blocked", "Failed"]),
                 shopify_financial_status=rnd.choice(["paid", "pending", "partially_refunded", "refunded", None]),
                 shopify_fulfillment_status=rnd.choice([None, None, "fulfilled", "partial"]),
-                archived_in_shopify_at=rnd.choice([None, None, T0]), historical=rnd.random() < 0.2,
+                archived_in_shopify_at=rnd.choice([None, None, T0]), historical=rnd.random() < 0.2, shadow=rnd.random() < 0.15,
                 first_received_at=T0 - timedelta(minutes=rnd.randint(0, 600)),
                 paid_at=rnd.choice([None, T0 - timedelta(minutes=rnd.randint(0, 600))]), version=1))
         await u.commit()
@@ -110,7 +110,7 @@ async def test_the_sql_twin_selects_exactly_what_qualifies_selects(edi):
         expected = {o.id for o in rows if qualifies(*facts_of(o, partners[o.partner_code]), T0)[0]}
         got = set((await u.session.execute(sa.select(Order.id).join(Partner, Partner.code == Order.partner_code)
                                            .where(eligible_clause(T0), Order.source_order_id.like("g%")))).scalars())
-    assert got == expected and 10 < len(expected) < 390  # both sides decided, on a real mix
+    assert got == expected and 3 < len(expected) < 390  # both sides decided, on a real mix
 
 
 async def test_ac21_the_dry_run_queues_no_historical_order_and_writes_nothing(edi):

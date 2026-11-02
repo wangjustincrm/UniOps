@@ -42,12 +42,13 @@ class SalesCycle(ScheduledJob):
     lock_key = CYCLE_LOCK_KEY
 
     def __init__(self, *, intake: Intake, outbox_worker, shopify_intake=None, edi_intake=None, outbound=None,
-                 **kw) -> None:
+                 shadow=None, **kw) -> None:
         super().__init__(stale_after=STALE_AFTER, **kw)
         self.intake = intake
         self.shopify_intake = shopify_intake
         self.edi_intake = edi_intake
         self.outbound = outbound
+        self.shadow = shadow
         self.outbox_worker = outbox_worker
 
     async def run_once(self, run) -> RunSummary:
@@ -95,6 +96,16 @@ class SalesCycle(ScheduledJob):
         if self.outbound:
             edi_out["997"] = asdict(await self.outbound.process_997s(run_id=run.id))
             edi_out["timeouts"] = asdict(await self.outbound.timeouts(run_id=run.id))
-        counts = {"connections": per, "shopify": shopify, "edi_850": edi, "940": edi_out, "outbox": outbox}
+        # The shadow run (§5.4): Zoho's reference files in, then the comparison.
+        shadow: dict = {}
+        if self.shadow:
+            try:
+                shadow = asdict(await self.shadow.run(run_id=run.id))
+                trouble += shadow.get("not_imported", 0)
+            except Exception as e:  # noqa: BLE001 — never expected; the comparison catches per reference
+                await oplog.write_alone(self.uow_factory, "ERROR", "cycle", f"shadow comparison failed: {e}", run_id=run.id)
+                trouble += 1
+        counts = {"connections": per, "shopify": shopify, "edi_850": edi, "940": edi_out, "outbox": outbox,
+                  "shadow": shadow}
         await oplog.write_alone(self.uow_factory, "INFO", "cycle", "cycle finished", run_id=run.id, context=counts)
         return RunSummary(counts=counts, partial=trouble > 0)

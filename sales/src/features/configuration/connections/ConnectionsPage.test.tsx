@@ -17,6 +17,7 @@ const LINE = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample'
 const api = vi.hoisted(() => ({
   test: vi.fn(), pin: vi.fn(), clear: vi.fn(), importCsv: vi.fn(),
   edi: vi.fn(async () => ({ connection_id: null, ack_timeout_minutes: 120 })), saveEdi: vi.fn(),
+  shadow: vi.fn(async () => ({ shadow_mode: true })), saveShadow: vi.fn(),
 }))
 vi.mock('./connectionsApi', async (orig) => {
   const real = await orig<typeof import('./connectionsApi')>()
@@ -26,6 +27,7 @@ vi.mock('./connectionsApi', async (orig) => {
     fetchConnectionAudit: vi.fn(async () => []),
     testConnection: api.test, pinHostKey: api.pin, clearAuthLatch: api.clear,
     fetchEdiSettings: api.edi, saveEdiSettings: api.saveEdi,
+    fetchShadowSetting: api.shadow, saveShadowSetting: api.saveShadow,
   }
 })
 const { default: ConnectionsPage } = await import('./ConnectionsPage')
@@ -126,5 +128,23 @@ describe('Connections page: warehouse EDI settings (P4)', () => {
     fireEvent.change(await within(panel).findByLabelText('997 wait (minutes)'), { target: { value: '90' } })
     fireEvent.click(within(panel).getByText('Save'))
     await waitFor(() => expect(api.saveEdi).toHaveBeenCalledWith({ connection_id: null, ack_timeout_minutes: 90 }))
+  })
+})
+
+describe('Connections page: the shadow run switch', () => {
+  it('says what it does; only sales.config turns it off, after a confirmation', async () => {
+    const { unmount } = renderAs(['sales.read'])
+    let panel = await screen.findByRole('region', { name: 'Shadow run' })
+    expect(await within(panel).findByRole('status')).toHaveTextContent(/On: Zoho is live/)
+    expect(within(panel).queryByText('Turn the shadow run off')).toBeNull()
+    unmount()
+    api.saveShadow.mockImplementation(async (d) => d)
+    renderAs(['sales.read', 'sales.config'])
+    panel = await screen.findByRole('region', { name: 'Shadow run' })
+    fireEvent.click(await within(panel).findByText('Turn the shadow run off'))
+    expect(api.saveShadow).not.toHaveBeenCalled()
+    const confirm = await screen.findByRole('dialog', { name: 'Turn the shadow run off?' })
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Turn off' }))
+    await waitFor(() => expect(api.saveShadow).toHaveBeenCalledWith({ shadow_mode: false }))
   })
 })

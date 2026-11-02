@@ -4,7 +4,7 @@ are `sales_<event>`; their labels and links are registered in P8."""
 from __future__ import annotations
 
 from app.integrations.epms_tasks import ProblemTask, TaskService, shared_tasks_table
-from app.services.settings import OPERATOR_USER_ID, SETTINGS
+from app.services.settings import OPERATOR_USER_ID, SETTINGS, SHADOW_MODE
 
 PREFIX, DOCUMENT_TYPE, ROLE = "SALES", "sales", "sales_operator"
 
@@ -31,9 +31,26 @@ async def _operator(session):
     return await SETTINGS.get(session, OPERATOR_USER_ID)
 
 
+# During the shadow run (§5.4) only intake and connection problems raise
+# tasks — they would be real problems after the cutover too. Every other
+# problem (review, archive, 940, 997, …) is logged instead: Zoho is live.
+SHADOW_RAISED = frozenset({UNREADABLE_FILE, SFTP_FETCH_FAILED, SFTP_AUTH_FAILED, FILE_NOT_STORED,
+                           SHOPIFY_FETCH_FAILED, SHOPIFY_AUTH_FAILED, ORDER_FILE_UNREADABLE})
+
+
+class SalesTasks(TaskService):
+    async def raise_problem(self, session, event: str, entity: object, task: ProblemTask):
+        if event not in SHADOW_RAISED and await SETTINGS.get(session, SHADOW_MODE):
+            from app.services import oplog  # oplog → models; kept local like the other late imports
+            await oplog.write(session, "INFO", "shadow", f"shadow run: no task raised: {task.title}",
+                              context={"event": event, "entity": str(entity)})
+            return None
+        return await super().raise_problem(session, event, entity, task)
+
+
 def task_service(notify) -> TaskService:
-    return TaskService(table=shared_tasks_table(), prefix=PREFIX, document_type=DOCUMENT_TYPE,
-                       assigned_role=ROLE, assignee=_operator, notify=notify)
+    return SalesTasks(table=shared_tasks_table(), prefix=PREFIX, document_type=DOCUMENT_TYPE,
+                      assigned_role=ROLE, assignee=_operator, notify=notify)
 
 
 def problem(event: str, title: str, description: str | None = None, *, urgent: bool = False) -> ProblemTask:

@@ -24,7 +24,7 @@ from __future__ import annotations
 import hashlib
 import posixpath
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -40,6 +40,7 @@ from app.platform.actors import SYSTEM_ACTOR
 from app.platform.guard import Suppressed
 from app.platform.pipeline import UnitOutcome, isolated
 from app.services import oplog
+from app.services.settings import SETTINGS, SHADOW_MODE
 from app.services.problems import FILE_NOT_STORED, SFTP_AUTH_FAILED, SFTP_FETCH_FAILED, UNREADABLE_FILE, problem
 
 STEP = "intake"
@@ -93,6 +94,9 @@ class ConnectionSnapshot:
     # Outbound (P4): where 940s are put; TEST mode uses the test folder.
     outbound_folder: str | None = None
     test_outbound_folder: str | None = None
+    # The shadow run (§5.4), read at the start of a pass: after-read is Leave
+    # and every stored document is flagged.
+    shadow: bool = False
 
     @classmethod
     def of(cls, c: Connection) -> ConnectionSnapshot:
@@ -121,6 +125,8 @@ class Intake:
     # ── one pass ──────────────────────────────────────────────────────────────
     async def run_pass(self, conn: ConnectionSnapshot, *, run_id: int | None = None) -> PassReport:
         report = PassReport()
+        async with self.uow_factory(SYSTEM_ACTOR) as uow:
+            conn = replace(conn, shadow=await SETTINGS.get(uow.session, SHADOW_MODE))
         if conn.auth_failed_at is not None:
             report.status = "latched"  # reported once, when it latched (AC-OB-48)
             return report
@@ -196,7 +202,7 @@ class Intake:
         s = uow.session
         row = dict(direction="IN", origin="PARTNER", system=c.system, connection_id=conn.id, kind=c.kind,
                    remote_name=f.name, size=f.size, remote_mtime=f.modified_at, sha256=sha,
-                   isa13=c.isa13, gs06=c.gs06, st02=c.st02)
+                   isa13=c.isa13, gs06=c.gs06, st02=c.st02, shadow=conn.shadow)
         if not c.ours:
             doc = Document(**row, content=None, processing_status=InboundFile.SKIPPED.value,
                            error=f"not ours: {c.kind}")
@@ -252,10 +258,19 @@ class Intake:
             await self._log("ERROR", f"{conn.name}: {f.name}: {why}", conn, run_id, file=f.name)
         await self._raise(FILE_NOT_STORED, conn.id, f"File could not be stored: {conn.name}",
                           f"{f.name}: {why}")
-        if conn.error_folder:
+        if conn.shadow:  # Zoho must still find it where it was
+            await self._log("INFO", f"{conn.name}: shadow run: {f.name} left in place (not moved to the error folder)",
+                            conn, run_id, file=f.name)
+        elif conn.error_folder:
             await self._remote_write(conn, f, "move", posixpath.join(conn.error_folder, f.name), None, run_id)
 
     async def _after_read(self, conn: ConnectionSnapshot, f: RemoteFile, doc_id: int, run_id: int | None) -> None:
+        if conn.shadow:  # §5.4: Leave whatever the connection says — Zoho reads the same folder
+            if conn.after_read != "LEAVE":
+                await oplog.write_alone(self.uow_factory, "INFO", STEP,
+                                        f"{conn.name}: shadow run: {f.name} left in place (after-read {conn.after_read} not applied)",
+                                        run_id=run_id, connection_id=conn.id, document_id=doc_id)
+            return
         if conn.after_read == "MOVE" and conn.processed_folder:
             await self._remote_write(conn, f, "move", posixpath.join(conn.processed_folder, f.name), doc_id, run_id)
         elif conn.after_read == "DELETE":

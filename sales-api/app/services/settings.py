@@ -32,6 +32,14 @@ OPERATOR_USER_ID = SETTINGS.declare(Setting(
 EDI_CONNECTION_ID = SETTINGS.declare(Setting(
     "edi.warehouse_connection_id", None, lambda v: None if v in (None, "") else int(v), safe=None,
     description="Warehouse SFTP connection for 940s and 997s"))
+# Shadow run (design §5.4; user decision 2026-11-02): Zoho stays the system
+# of record. While on: after-read is Leave whatever the connection says,
+# inbound documents are flagged `shadow`, orders received are flagged
+# `shadow` (never sent a 940 automatically, even after it is switched off),
+# no 940 is generated or put, and only intake / connection problems raise
+# tasks. A bad stored value reads as ON — the restrictive side.
+SHADOW_MODE = SETTINGS.declare(Setting(
+    "shadow_mode", False, as_bool, safe=True, description="Shadow run: read only, send nothing (Zoho is live)"))
 # FR-OB-23: no 997 within this time → Timeout and a task.
 ACK_TIMEOUT_MINUTES = SETTINGS.declare(Setting(
     "edi.ack_timeout_minutes", 120, int, validate=minimum(1), safe=120,

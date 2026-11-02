@@ -19,11 +19,11 @@ from app.platform.repository import Repository
 from app.platform.services import CrudService
 from app.platform.views import Preset
 from app.schemas.connections import (
-    ConnectionCreate, ConnectionRead, ConnectionTestRead, ConnectionUpdate, EdiSettings, FolderCheckRead, HostKeyRead,
+    ConnectionCreate, ConnectionRead, ConnectionTestRead, ConnectionUpdate, EdiSettings, FolderCheckRead, HostKeyRead, ShadowSetting,
 )
 from app.services.intake import ConnectionSnapshot
 from app.services.problems import SFTP_AUTH_FAILED
-from app.services.settings import ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, SETTINGS
+from app.services.settings import ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, SETTINGS, SHADOW_MODE
 
 logger = logging.getLogger(__name__)
 
@@ -179,4 +179,21 @@ class EdiSettingsService:
         self.uow.set_reason("EDI settings")
         await SETTINGS.set(s, EDI_CONNECTION_ID, body.connection_id)
         await SETTINGS.set(s, ACK_TIMEOUT_MINUTES, body.ack_timeout_minutes)
+        return body
+
+
+class ShadowSettingService:
+    """The shadow-run switch (§5.4): sales.config to change; audited."""
+
+    def __init__(self, uow) -> None:
+        self.uow = uow
+
+    @requires(READ)
+    async def get(self) -> ShadowSetting:
+        return ShadowSetting(shadow_mode=await SETTINGS.get(self.uow.session, SHADOW_MODE))
+
+    @requires(CONFIG)
+    async def update(self, body: ShadowSetting) -> ShadowSetting:
+        self.uow.set_reason("shadow run on" if body.shadow_mode else "shadow run off")
+        await SETTINGS.set(self.uow.session, SHADOW_MODE, body.shadow_mode)
         return body
