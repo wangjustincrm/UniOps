@@ -11,6 +11,7 @@ import { useRolePermissions } from '@/hooks/useConfig'
 import { useAllReceipts, useVoidReceiptAny, useApReviewReceiptAny } from '@/hooks/useAgreementReceipts'
 import { useUserDirectory } from '@/hooks/useUsers'
 import { VOIDABLE_STATUSES } from '@/components/agreements/ReceiptTable'
+import { RejectReceiptDialog } from '@/components/agreements/RejectReceiptDialog'
 import { receiptTotal, RECEIPT_TYPE_LABELS } from '@/services/agreementReceipts'
 import type { ApiReceiptWithAgreement, ReceiptStatus, ReceiptType } from '@/services/agreementReceipts'
 import type { DocumentStatus } from '@/types'
@@ -108,17 +109,16 @@ export default function ReceiptListPage() {
     voidReceipt.mutate({ agreementId, receiptId }, { onSettled: () => setPendingVoidId(null) })
   }
 
+  // Reject has no way back: crud/agreement_receipt.py writes status =
+  // "rejected", which is in RETIRED (not EDITABLE, not VOIDABLE), and
+  // ap_review only accepts FROM pending_ap_review — there is no endpoint
+  // that can move a rejected receipt anywhere else. Approve and Reject sit
+  // 8px apart in the same row (fix round 2, Important): a mis-click here is
+  // not "undo available", it's "re-key the whole receipt from scratch".
+  // So Reject asks first — in-page, not the browser's confirm() (ISS-0115).
+  const [rejectTarget, setRejectTarget] = useState<{ agreementId: string; receiptId: string; label: string } | null>(null)
+
   const handleReview = (agreementId: string, receiptId: string, action: 'approve' | 'reject') => {
-    // Reject has no way back: crud/agreement_receipt.py writes status =
-    // "rejected", which is in RETIRED (not EDITABLE, not VOIDABLE), and
-    // ap_review only accepts FROM pending_ap_review — there is no endpoint
-    // that can move a rejected receipt anywhere else. Approve and Reject sit
-    // 8px apart in the same row (fix round 2, Important): a mis-click here is
-    // not "undo available", it's "re-key the whole receipt from scratch".
-    if (action === 'reject' && !confirm(
-      'Reject this receipt? This is final — a rejected receipt can never be approved, removed, or edited afterward. ' +
-      'The only way to record this spend again is to enter a brand-new receipt.'
-    )) return
     setPendingReviewKey(`${receiptId}:${action}`)
     apReview.mutate({ agreementId, receiptId, action }, { onSettled: () => setPendingReviewKey(null) })
   }
@@ -240,7 +240,11 @@ export default function ReceiptListPage() {
                     anyReviewPending={apReview.isPending}
                     onVoid={() => handleVoid(receipt.agreement_id, receipt.id, receipt.receipt_ref)}
                     onApprove={() => handleReview(receipt.agreement_id, receipt.id, 'approve')}
-                    onReject={() => handleReview(receipt.agreement_id, receipt.id, 'reject')}
+                    onReject={() => setRejectTarget({
+                      agreementId: receipt.agreement_id,
+                      receiptId: receipt.id,
+                      label: `${receipt.receipt_ref ?? '(no reference #)'} · ${receipt.agreement_number}`,
+                    })}
                   />
                 )
               })}
@@ -252,6 +256,17 @@ export default function ReceiptListPage() {
       <div className="rounded-xl border border-neutral-200 bg-white">
         <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
       </div>
+
+      {rejectTarget && (
+        <RejectReceiptDialog
+          receiptLabel={rejectTarget.label}
+          onClose={() => setRejectTarget(null)}
+          onConfirm={() => {
+            handleReview(rejectTarget.agreementId, rejectTarget.receiptId, 'reject')
+            setRejectTarget(null)
+          }}
+        />
+      )}
     </div>
   )
 }

@@ -277,6 +277,21 @@ export async function fetchAllPages<T>(
 
 // ── Budget-api client (separate base URL — :8007) ─────────────────────────────
 
+/**
+ * The message a budget/mdm/finance-api refusal shows the user. A `detail` the
+ * service wrote is already a sentence for the user and is shown as is — the
+ * "finance-api:" prefix it used to wear read as an internal code (ISS-0115).
+ * The service name stays only on the bare HTTP status text (a 502 from a
+ * service that is down), where it is the one useful thing to say.
+ */
+async function serviceErrorDetail(res: Response, service: string): Promise<string> {
+  try {
+    const err = await res.json()
+    if (typeof err.detail === 'string' && err.detail) return err.detail
+  } catch { /* ignore */ }
+  return `${service}: ${res.statusText}`
+}
+
 async function budgetRequest<T>(
   method: string, path: string, body?: unknown, params?: Params,
 ): Promise<T> {
@@ -296,12 +311,7 @@ async function budgetRequest<T>(
   })
   if (res.status === 204) return undefined as T
   if (!res.ok) {
-    let detail = res.statusText
-    try {
-      const err = await res.json()
-      if (typeof err.detail === 'string') detail = err.detail
-    } catch { /* ignore */ }
-    throw new Error(`budget-api: ${detail}`)
+    throw new Error(await serviceErrorDetail(res, 'budget-api'))
   }
   return res.json() as Promise<T>
 }
@@ -336,12 +346,7 @@ async function mdmRequest<T>(
   })
   if (res.status === 204) return undefined as T
   if (!res.ok) {
-    let detail = res.statusText
-    try {
-      const err = await res.json()
-      if (typeof err.detail === 'string') detail = err.detail
-    } catch { /* ignore */ }
-    throw new Error(`mdm-api: ${detail}`)
+    throw new Error(await serviceErrorDetail(res, 'mdm-api'))
   }
   return res.json() as Promise<T>
 }
@@ -364,9 +369,7 @@ async function financeRequest<T>(method: string, path: string, body?: unknown): 
   })
   if (res.status === 204) return undefined as T
   if (!res.ok) {
-    let detail = res.statusText
-    try { const err = await res.json(); if (typeof err.detail === 'string') detail = err.detail } catch { /* ignore */ }
-    const error = new Error(`finance-api: ${detail}`) as Error & { status?: number }
+    const error = new Error(await serviceErrorDetail(res, 'finance-api')) as Error & { status?: number }
     error.status = res.status
     throw error
   }

@@ -335,7 +335,7 @@ export default function GrDetailPage() {
             <div>
               <p className="text-sm font-semibold text-warning-700">Collection Required</p>
               <p className="text-sm text-warning-600 mt-0.5">
-                Please go to <strong>{gr.storage_location}</strong> to collect your goods, then record the collection.
+                Please go to <strong>{gr.storage_location || 'Warehouse'}</strong> to collect your goods, then record the collection.
               </p>
             </div>
           </div>
@@ -384,7 +384,8 @@ export default function GrDetailPage() {
                   <MetaRow label="GR Type"     value={gr.gr_type === 'physical' ? 'Physical Goods' : 'Service'} />
                   <MetaRow label="Received By" value={gr.received_by} />
                   <MetaRow label="Received On" value={formatDate(gr.received_at)} />
-                  {gr.storage_location && gr.storage_location !== '—' && (
+                  {/* Not applicable to a service GR — older ones carry the PO delivery address (ISS-0132) */}
+                  {gr.gr_type === 'physical' && gr.storage_location && gr.storage_location !== '—' && (
                     <MetaRow label="Storage Location" value={gr.storage_location} />
                   )}
                   {gr.notes && <MetaRow label="Notes" value={gr.notes} />}

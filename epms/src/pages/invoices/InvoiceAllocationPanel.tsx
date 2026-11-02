@@ -84,6 +84,16 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
   // Fee-only invoice (nothing allocated to a PO): must link a PO to confirm.
   const needsReferencePo = balanced && !hasAllocations
   const canSubmit = balanced && (hasAllocations || !!referencePoId)
+  // Why Confirm is grey, in words (ISS-0153) — a new user could not tell that
+  // the lines have to be dragged across first. The fee-only case has its own
+  // message below the button.
+  const unplacedLines = lines.filter((l) => l.id && !assign[l.id] && !isNonPo(l.id))
+  const blockedReason = balanced ? null
+    : unallocated < 0
+      ? `${formatAmount(-unallocated, currency)} more is allocated than the invoice pre-tax total`
+      : unplacedLines.length > 0
+        ? `Allocate all invoice lines first — ${formatAmount(unallocated, currency)} unallocated`
+        : `The invoice lines do not add up to the pre-tax total — ${formatAmount(unallocated, currency)} unallocated`
 
   const drop = (poId: string, poLineId: string) => {
     if (!dragLineId) return
@@ -159,6 +169,7 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
         </div>
       )}
 
+      <p className="text-xs text-neutral-600">Drag each invoice line onto the PO line it belongs to.</p>
       <div className="grid grid-cols-2 gap-4">
         {/* Invoice lines (drag source) */}
         <div className="rounded-xl border border-neutral-200 bg-white p-4">
@@ -264,9 +275,13 @@ export function InvoiceAllocationPanel({ invoice, pos, onSubmit, submitting, def
         {needsReferencePo && !referencePoId && (
           <span className="text-[11px] text-danger-600">Link a PO to confirm a fee-only invoice</span>
         )}
-        <Button onClick={submit} disabled={!canSubmit || submitting}>
-          {submitting ? 'Matching...' : 'Confirm allocation & match'}
-        </Button>
+        {blockedReason && <span className="text-[11px] text-neutral-500">{blockedReason}</span>}
+        {/* title on the wrapper: a disabled button fires no hover events */}
+        <span title={blockedReason ?? undefined}>
+          <Button onClick={submit} disabled={!canSubmit || submitting}>
+            {submitting ? 'Matching...' : 'Confirm allocation & match'}
+          </Button>
+        </span>
       </div>
 
       {menu && createPortal(

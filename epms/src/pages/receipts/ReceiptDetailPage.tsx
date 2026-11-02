@@ -23,6 +23,7 @@ import {
   useApReviewReceiptAny,
 } from '@/hooks/useAgreementReceipts'
 import { VOIDABLE_STATUSES } from '@/components/agreements/ReceiptTable'
+import { RejectReceiptDialog } from '@/components/agreements/RejectReceiptDialog'
 import {
   ReceiptVendorPicker,
   type ReceiptVendorValue,
@@ -276,16 +277,15 @@ function ReceiptDetail({
     voidReceipt.mutate({ agreementId, receiptId: receipt.id })
   }
 
+  const [confirmReject, setConfirmReject] = useState(false)
+
   const handleReview = (action: 'approve' | 'reject') => {
     // Reject has no way back: the backend writes status = "rejected", which is
     // in RETIRED (neither EDITABLE nor VOIDABLE), and ap_review only accepts
     // FROM pending_ap_review — no endpoint can move a rejected receipt
     // anywhere. Approve is deliberately NOT confirmed: it is the high-frequency
     // action and it lands on `open`, which is still editable and voidable.
-    if (action === 'reject' && !confirm(
-      'Reject this receipt? This is final — a rejected receipt can never be approved, removed, or ' +
-      'edited afterward. The only way to record this spend again is to enter a brand-new receipt.'
-    )) return
+    // Reject is confirmed in RejectReceiptDialog (ISS-0115), which calls here.
     setPendingReview(action)
     apReview.mutate({ agreementId, receiptId: receipt.id, action }, {
       onSettled: () => setPendingReview(null),
@@ -332,7 +332,7 @@ function ReceiptDetail({
               <Button
                 variant="secondary"
                 className="gap-2"
-                onClick={() => handleReview('reject')}
+                onClick={() => setConfirmReject(true)}
                 disabled={anyPending}
               >
                 <XCircle className="h-4 w-4" />
@@ -674,6 +674,14 @@ function ReceiptDetail({
           </div>
         </div>
       </div>
+
+      {confirmReject && (
+        <RejectReceiptDialog
+          receiptLabel={`${heading} · ${receipt.agreement_number}`}
+          onClose={() => setConfirmReject(false)}
+          onConfirm={() => { setConfirmReject(false); handleReview('reject') }}
+        />
+      )}
     </div>
   )
 }

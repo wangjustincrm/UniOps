@@ -855,7 +855,10 @@ ${submitError}
     if (!title.trim() || subtotalNum <= 0 || taxNum < 0 || taxMissing) return
     if (!isSettlementType && netPayable <= 0) return
     if (isSettlementType && (appliedNum > grossTotal + 0.01)) return
-    if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement)) return
+    // Same bounds as the on-page message above — sending 120% only bought a
+    // second, raw copy of it in a browser pop-up (ISS-0115).
+    if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement || prepayPctNum <= 0 || prepayPctNum > 100
+      || priorPrepaidPct + prepayPctNum > 100)) return
     if (isSettlementType && !prepaymentPaId) return
     if (receiptOverrideMissing) return
     try {
@@ -1446,7 +1449,7 @@ ${submitError}
                             onChange={(e) => setPrepaymentPct(e.target.value)}
                             className={cn(
                               'h-9 w-full pl-3 pr-8 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
-                              submitted && (!prepaymentPct || parseFloat(prepaymentPct) <= 0) ? 'border-danger-400' : 'border-neutral-300'
+                              submitted && (!prepaymentPct || parseFloat(prepaymentPct) <= 0 || parseFloat(prepaymentPct) > 100) ? 'border-danger-400' : 'border-neutral-300'
                             )}
                           />
                           <span className="absolute right-3 top-2 text-sm text-neutral-400">%</span>

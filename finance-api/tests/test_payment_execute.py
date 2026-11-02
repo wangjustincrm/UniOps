@@ -316,7 +316,8 @@ async def test_self_payment_blocked_for_pa_creator(client, db_session):
 
     r = await _execute(client, "pa_dir", pa.id, user_id=payer)
     assert r.status_code == 403
-    assert "self_payment" in r.json()["detail"]
+    # Plain words, not the rule code (ISS-0115).
+    assert r.json()["detail"] == "You created this PA — another payment officer must pay it."
 
 
 async def test_self_payment_blocked_for_claimant(client, db_session):
@@ -329,6 +330,7 @@ async def test_self_payment_blocked_for_claimant(client, db_session):
 
     r = await _execute(client, "expense_claim", claim.id, user_id=payer)
     assert r.status_code == 403
+    assert r.json()["detail"] == "This is your own expense claim — another payment officer must pay it."
 
 
 async def test_self_payment_allowed_when_rule_disabled(client, db_session):

@@ -90,6 +90,15 @@ def _sqlstate(exc: IntegrityError) -> str | None:
     return getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
 
 
+# Same labels as the status badge (epms components/ui/badge.tsx). Only live
+# statuses can hold a reference, so retired ones never reach the message.
+_RECEIPT_STATUS_LABELS = {
+    "open": "Open",
+    "pending_ap_review": "Pending AP Review",
+    "reconciled": "Reconciled",
+}
+
+
 async def _receipt_integrity_error(
     db: SessionDep, exc: IntegrityError, agreement_id: uuid.UUID,
     agr_number: str, receipt_ref: str | None,
@@ -148,16 +157,20 @@ async def _receipt_integrity_error(
             # receipt back to `open` via _release_agreement_evidence.
             if conflict.status == "reconciled":
                 remedy = (f"It has already been claimed by an invoice. Re-match or "
-                          f"detach that invoice first — the receipt returns to 'open' "
+                          f"detach that invoice first — the receipt returns to Open "
                           f"and its reference is free again.")
             else:
                 remedy = ("Remove or reject that receipt if it was entered in error, "
                           "then record this one again.")
+            # Plain words (ISS-0115): the reference the recorder typed and the
+            # status as the receipt list labels it — not the receipt's UUID or
+            # the raw status code. The reference already identifies the row:
+            # it is unique among live receipts on this agreement (AGR-031).
+            label = _RECEIPT_STATUS_LABELS.get(conflict.status, conflict.status)
             return HTTPException(
                 status_code=409,
-                detail=f"Receipt reference '{receipt_ref}' is already recorded for "
-                       f"agreement {agr_number} by receipt {conflict.id}, which is "
-                       f"'{conflict.status}'. {remedy}",
+                detail=f"Reference # {receipt_ref} is already recorded on agreement "
+                       f"{agr_number} (status: {label}). {remedy}",
             )
 
     constraint = getattr(getattr(exc, "orig", None), "constraint_name", None)

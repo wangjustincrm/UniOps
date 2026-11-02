@@ -148,7 +148,7 @@ export default function CollectionConfirmPage() {
           <div>
             <p className="text-sm font-semibold text-warning-700">Collection Required</p>
             <p className="text-sm text-warning-600 mt-1">
-              Please go to <strong>{gr.storage_location}</strong> to collect your goods, then record the collection below.
+              Please go to <strong>{gr.storage_location || 'Warehouse'}</strong> to collect your goods, then record the collection below.
             </p>
             <div className="mt-2 grid grid-cols-2 gap-x-8 gap-y-1 text-xs text-warning-600">
               <span>Received by: <strong>{gr.received_by}</strong></span>
