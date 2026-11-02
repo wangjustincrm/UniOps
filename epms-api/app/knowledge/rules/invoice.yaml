@@ -240,7 +240,8 @@ rules:
       approved or paid), and while any payment application that is not
       cancelled still includes it — the message names that PA, which has to
       be cancelled first. An invoice matched to an agreement cannot be
-      unmatched from a PO. A reason is required.
+      unmatched from a PO. A reason is required, and it is kept in the
+      invoice's History.
     enforced_in: "epms-api app/crud/invoice.py gr_unlink_blocker / _invoice_referenced_by_active_pa; app/api/v1/invoices.py _guard_unmatch"
     provenance: pinned
     test:
@@ -248,6 +249,43 @@ rules:
       - "tests/test_invoice_unmatch.py::test_unmatch_refused_once_the_invoice_has_entered_payment"
       - "tests/test_invoice_unmatch.py::test_unmatch_po_refused_on_the_agreement_route"
       - "tests/test_invoice_unmatch.py::test_unmatch_requires_a_reason"
+  - id: invoice_history_keeps_every_step
+    asked_as:
+      - 发票的 History 记录哪些操作？
+      - who rejected this invoice match and why
+      - where can I see why an invoice was unmatched
+    answer: >
+      The invoice's History tab lists every step with who did it and when:
+      AP assigning the matching to someone (and that person declining it, with
+      their note), each match and what it was matched to, AP confirming or
+      rejecting a match sent for review (with the note), an exception being
+      accepted or a credit note requested (with the note), an edit that
+      changed the match result, and each Unmatch PO / Unmatch GR / removal from
+      the Direct PA route (with the reason). A later unmatch or re-match does
+      not remove earlier entries. Invoices matched before these steps were
+      recorded show only their upload and their current match.
+    enforced_in: "epms-api app/api/v1/invoices.py _audit_invoice / _audit_unmatch writers, GET /invoices/{id}/history; epms/src/pages/invoices/InvoiceDetailPage.tsx History tab"
+    provenance: pinned
+    test:
+      - "tests/test_invoice_history.py::test_history_keeps_assign_review_unmatch_and_rematch"
+      - "tests/test_invoice_history.py::test_history_records_decline_and_exception_resolution"
+  - id: invoice_file_types
+    asked_as:
+      - 发票可以上传什么格式的文件？
+      - can I upload a zip or Excel file as an invoice
+      - what file types does Upload Invoice accept
+    answer: >
+      Upload Invoice accepts PDF, JPG, JPEG and PNG files of at most 25 MB.
+      Any other file is refused before an invoice is created, with the reason
+      shown. Supporting documents on purchase requests, orders, goods receipts
+      and payment applications take PDF, images, Excel, Word, CSV, text and
+      saved emails (.msg / .eml), at most 25 MB per file.
+    enforced_in: "epms-api app/schemas/invoice.py InvoiceCreate._invoice_file_type; expense-api invoice_attachments MAX_FILE_BYTES; epms/src/lib/uploadLimits.ts; file-api ALLOWED_CONTENT_TYPES; epms-api *_attachments.py MAX_FILE_SIZE; PRD INV-001, §3.4.1"
+    provenance: pinned
+    test:
+      - "tests/test_invoice_upload_file_type.py::test_zip_invoice_is_refused_and_not_created"
+      - "tests/test_invoice_upload_file_type.py::test_inv001_types_and_manual_entry_are_accepted"
+      - "epms/src/lib/uploadLimits.test.ts"
   - id: one_invoice_one_pa
     also_in: [pa]
     asked_as:

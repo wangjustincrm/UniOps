@@ -10,8 +10,7 @@ import { usePo, usePos } from '@/hooks/usePos'
 import { useCreateGr, usePoOpenQuantities } from '@/hooks/useGrs'
 import { type GrLineCondition, type GrAttachmentIn } from '@/services/gr'
 import { type ApiPo } from '@/services/po'
-
-const MAX_FILE_SIZE = 10 * 1024 * 1024  // 10 MB
+import { ATTACHMENT_RULE, partitionUploads } from '@/lib/uploadLimits'
 
 async function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -117,6 +116,7 @@ export default function GrCreatePage() {
   const [notes, setNotes] = useState('')
   const [lineItems, setLineItems] = useState<FormGrLineItem[]>([])
   const [packListFiles, setPackListFiles] = useState<File[]>([])
+  const [packListError, setPackListError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [submitted, setSubmitted] = useState(false)
@@ -190,7 +190,10 @@ export default function GrCreatePage() {
 
   const addFiles = (incoming: FileList | null) => {
     if (!incoming) return
-    const valid = Array.from(incoming).filter((f) => f.size <= MAX_FILE_SIZE)
+    // Same rule as every other attachment area; a refused file is named, not
+    // silently dropped (the old 10 MB filter just left it out).
+    const { ok: valid, problems } = partitionUploads(Array.from(incoming), ATTACHMENT_RULE)
+    setPackListError(problems.length ? problems.join(' ') : null)
     setPackListFiles((prev) => {
       const existing = new Set(prev.map((f) => f.name + f.size))
       return [...prev, ...valid.filter((f) => !existing.has(f.name + f.size))]
@@ -508,7 +511,7 @@ export default function GrCreatePage() {
           <div className="rounded-xl border border-neutral-200 bg-white p-6 flex flex-col gap-4">
             <div>
               <h2 className="text-base font-semibold text-neutral-900">Pack List / Supporting Documents</h2>
-              <p className="mt-0.5 text-sm text-neutral-500">Optional — attach scanned packing lists, delivery notes, or photos (max 10 MB each)</p>
+              <p className="mt-0.5 text-sm text-neutral-500">Optional — attach scanned packing lists, delivery notes, or photos</p>
             </div>
 
             {/* Drop zone */}
@@ -524,16 +527,17 @@ export default function GrCreatePage() {
             >
               <Upload className="h-7 w-7 text-neutral-400" />
               <p className="text-sm font-medium text-neutral-600">Drop files here or click to browse</p>
-              <p className="text-xs text-neutral-400">PDF, JPG, PNG, Excel — up to 10 MB each</p>
+              <p className="text-xs text-neutral-400">{ATTACHMENT_RULE.hint}</p>
               <input
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx"
+                accept={ATTACHMENT_RULE.accept}
                 className="hidden"
-                onChange={(e) => addFiles(e.target.files)}
+                onChange={(e) => { addFiles(e.target.files); e.target.value = '' }}
               />
             </div>
+            {packListError && <p role="alert" className="text-xs text-danger-600">{packListError}</p>}
 
             {/* File list */}
             {packListFiles.length > 0 && (

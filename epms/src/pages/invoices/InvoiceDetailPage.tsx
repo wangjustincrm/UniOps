@@ -13,7 +13,8 @@ import { cn, formatAmount, formatDate, formatDateTime } from '@/lib/utils'
 import { EXPENSE_BASE } from '@/lib/api'
 import { computeSla } from '@/stores/invoice.store'
 import type { InvoiceStatus, InvoiceLineItem } from '@/services/invoices'
-import { useInvoiceChain, useInvoice, useDeleteInvoice, useUpdateInvoice, useReviewMatch } from '@/hooks/useInvoices'
+import { useInvoiceChain, useInvoice, useDeleteInvoice, useUpdateInvoice, useReviewMatch, useInvoiceHistory } from '@/hooks/useInvoices'
+import { historyLine, MATCH_ACTIONS } from '@/lib/invoiceHistory'
 import { InvoiceTaxSection } from '@/components/invoices/InvoiceTaxSection'
 import { InvoiceReceiptsPanel } from '@/components/invoices/InvoiceReceiptsPanel'
 import { InvoiceBillingPeriodPanel } from '@/components/invoices/InvoiceBillingPeriodPanel'
@@ -212,6 +213,8 @@ export default function InvoiceDetailPage() {
   const hasTaxLines = (taxLinesData?.lines?.length ?? 0) > 0
 
   const [activeTab, setActiveTab] = useState<'details' | 'match' | 'history'>('details')
+  // Every recorded step (ISS-0170), fetched when the History tab is opened.
+  const { data: historyRows, error: historyError } = useInvoiceHistory(id ?? '', activeTab === 'history')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [editing, setEditing] = useState(false)
   const [showAssignDialog, setShowAssignDialog] = useState(false)
@@ -1478,16 +1481,32 @@ export default function InvoiceDetailPage() {
           {activeTab === 'history' && (
             <div className="rounded-xl border border-neutral-200 bg-white p-5">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-4">Activity Log</h3>
+              {historyError && (
+                <p role="alert" className="mb-3 text-xs text-danger-600">
+                  The recorded steps could not be loaded ({historyError instanceof Error ? historyError.message : 'error'}) — only the upload and the current match are shown.
+                </p>
+              )}
               <div className="flex flex-col gap-0">
                 {[
-                  inv.matched_at && inv.exception_resolved_at && {
+                  // Recorded steps: assignment, every match, AP review, exception
+                  // resolution, unmatch — each kept with who, when and its note.
+                  ...(historyRows ?? []).map((h) => ({
+                    date: h.created_at,
+                    actor: h.actor_name ?? 'System',
+                    ...historyLine(h),
+                  })),
+                  // The two entries below are derived from the invoice's CURRENT
+                  // fields. They stand in only for invoices matched before steps
+                  // were recorded; once a recorded step exists they would repeat it.
+                  inv.matched_at && inv.exception_resolved_at
+                    && !(historyRows ?? []).some((h) => h.action === 'resolve_exception') && {
                     date: inv.exception_resolved_at,
                     actor: inv.exception_resolved_by_name ?? inv.exception_resolved_by ?? 'System',
                     action: inv.exception_resolution === 'accepted' ? 'Exception accepted with justification' : 'Credit note requested',
                     note: inv.exception_resolution_note ?? undefined,
                     color: 'bg-warning-500',
                   },
-                  inv.matched_at && {
+                  inv.matched_at && !(historyRows ?? []).some((h) => MATCH_ACTIONS.has(h.action)) && {
                     date: inv.matched_at,
                     actor: inv.matched_by_name ?? 'System',
                     // I1: this entry is the permanent audit trace — the one place a

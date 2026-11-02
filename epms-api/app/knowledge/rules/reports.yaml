@@ -1,7 +1,7 @@
 area: reports
 label: Reports
 covers: >
-  Which reports exist and what the Receiving Report counts.
+  Which reports exist, what the Receiving Report counts, and what a report's From / To dates include.
 rules:
   - id: report_types
     asked_as:
@@ -16,3 +16,18 @@ rules:
     enforced_in: "epms-api app/api/v1/reports.py router; epms/src/pages/reports/ReportCentrePage.tsx"
     test:
       - "tests/test_rule_registry.py::test_report_types_are_the_routers"
+  - id: report_date_range_includes_both_days
+    asked_as:
+      - 报表的结束日期包含当天吗？
+      - does the To date include that day
+      - why is my same-day report export empty
+    answer: >
+      Yes. In Reports → Report Centre, From and To are whole days at the plant
+      (Toronto time) and both are included: From 27/10 To 27/10 exports every
+      record created on 27/10. That is the same reading the Receiving Report
+      gives its Arrival From / To.
+    enforced_in: "epms-api app/crud/reports.py _in_range (all five date-filtered exports); app/crud/gr_report.py receiving_rows"
+    provenance: pinned
+    test:
+      - "tests/test_reports.py::test_same_day_range_exports_that_days_records"
+      - "tests/test_reports.py::test_range_days_are_plant_days"

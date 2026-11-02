@@ -21,6 +21,7 @@ import { useTaxCodes } from '@/hooks/useTaxCodes'
 import { useAuthStore } from '@/stores/auth.store'
 import { PaymentTermsField } from '@/components/po/PaymentTermsField'
 import { formatPaymentTerms } from '@/lib/paymentTerms'
+import { ATTACHMENT_RULE, partitionUploads } from '@/lib/uploadLimits'
 
 // PO lines can originate from a PR line — carry that source id so the backend
 // can persist pr_line_id and keep the PO↔PR line link.
@@ -112,6 +113,7 @@ export default function PoCreatePage() {
   const [lineItems, setLineItems] = useState<PoDraftLine[]>([defaultLine()])
   const [lineErrors, setLineErrors] = useState<Record<string, { description?: string; qty?: string; unitPrice?: string }>>({})
   const [attachments, setAttachments] = useState<File[]>([])
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -238,8 +240,11 @@ export default function PoCreatePage() {
   }
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
-    setAttachments((prev) => [...prev, ...files])
+    // Checked when picked: the document is saved before its files are sent,
+    // so a refused file would otherwise be found missing only afterwards.
+    const { ok, problems } = partitionUploads(Array.from(e.target.files ?? []), ATTACHMENT_RULE)
+    setAttachmentError(problems.length ? problems.join(' ') : null)
+    setAttachments((prev) => [...prev, ...ok])
     e.target.value = ''
   }
 
@@ -549,9 +554,10 @@ export default function PoCreatePage() {
               <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-neutral-300 bg-neutral-50 py-6 text-center transition-colors hover:border-primary-400 hover:bg-primary-50">
                 <Upload className="h-6 w-6 text-neutral-400" />
                 <span className="text-sm text-neutral-500">Drag &amp; drop or click to upload</span>
-                <span className="text-xs text-neutral-400">Any format · Max 25 MB per file</span>
-                <input type="file" multiple className="hidden" onChange={handleFileInput} />
+                <span className="text-xs text-neutral-400">{ATTACHMENT_RULE.hint}</span>
+                <input type="file" multiple accept={ATTACHMENT_RULE.accept} className="hidden" onChange={handleFileInput} />
               </label>
+              {attachmentError && <p role="alert" className="text-xs text-danger-600">{attachmentError}</p>}
               {attachments.length > 0 && (
                 <ul className="flex flex-col gap-1.5">
                   {attachments.map((f, i) => (

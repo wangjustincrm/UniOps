@@ -271,3 +271,59 @@ async def test_csv_filenames_contain_date(admin_client):
         assert r.status_code == 200
         cd = r.headers.get("content-disposition", "")
         assert today in cd, f"{path} filename should contain today's date"
+
+
+# ── Date range: both ends are whole plant days (ISS-0154) ───────────────────
+
+@pytest.mark.asyncio
+async def test_same_day_range_exports_that_days_records(admin_client):
+    """From = To = today exports today's records, as the Receiving Report does.
+    `created_at <= date_to` compared a timestamp with that day's midnight, so
+    the To day was left out and a same-day export held only the header."""
+    from datetime import timedelta
+    from app.core.delegation import local_today
+    v = await _make_vendor(admin_client, "VND-REP-DAY-01")
+    # A draft PO is enough (and needs no approval-api): the report lists every status.
+    po = (await admin_client.post(PO_URL, json={
+        "title": "Rep day PO", "type": 2, "vendor_id": v["id"],
+        "currency": "CAD", "tax_rate": "0.13", "line_items": [_PO_LINE],
+    })).json()
+    inv = (await admin_client.post(INV_URL, json={
+        "vendor_id": v["id"], "vendor_invoice_number": "INV-REP-DAY-001",
+        "amount": "10.00", "currency": "CAD",
+        "invoice_date": "2026-03-01", "due_date": "2026-03-31",
+    })).json()
+    today = local_today()
+    for path, key, number in (("po", "number", po["number"]),
+                              ("invoices", "internal_ref", inv["internal_ref"])):
+        same_day = _parse_csv((await admin_client.get(
+            f"{REP_URL}/{path}?date_from={today}&date_to={today}")).text)
+        assert number in {r[key] for r in same_day}, path
+        before = _parse_csv((await admin_client.get(
+            f"{REP_URL}/{path}?date_to={today - timedelta(days=1)}")).text)
+        assert number not in {r[key] for r in before}, path
+
+
+@pytest.mark.asyncio
+async def test_range_days_are_plant_days(admin_client, test_engine):
+    """23:30 in Toronto is the next day in UTC: it belongs to the Toronto day."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from sqlalchemy import text
+    v = await _make_vendor(admin_client, "VND-REP-DAY-02")
+    inv = (await admin_client.post(INV_URL, json={
+        "vendor_id": v["id"], "vendor_invoice_number": "INV-REP-DAY-002",
+        "amount": "10.00", "currency": "CAD",
+        "invoice_date": "2026-03-01", "due_date": "2026-03-31",
+    })).json()
+    late = datetime(2026, 2, 10, 23, 30, tzinfo=ZoneInfo("America/Toronto"))
+    async with test_engine.begin() as conn:
+        await conn.execute(text("UPDATE invoices SET created_at = :t WHERE id = :i"),
+                           {"t": late, "i": inv["id"]})
+
+    async def refs(qs):
+        r = await admin_client.get(f"{REP_URL}/invoices?{qs}")
+        return {row["internal_ref"] for row in _parse_csv(r.text)}
+
+    assert inv["internal_ref"] in await refs("date_from=2026-02-10&date_to=2026-02-10")
+    assert inv["internal_ref"] not in await refs("date_from=2026-02-11&date_to=2026-02-11")

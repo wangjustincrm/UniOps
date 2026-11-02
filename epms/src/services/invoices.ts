@@ -142,6 +142,9 @@ export interface CreateInvoiceBody {
   due_date: string
   line_items?: InvoiceLineItem[]
   notes?: string
+  /** The uploaded document's name; refused unless PDF / JPG / JPEG / PNG (INV-001). */
+  file_name?: string
+  file_size?: string
 }
 
 export interface UpdateInvoiceBody {
@@ -267,6 +270,23 @@ export interface ChainStep {
   refs: ChainStepRef[]
 }
 
+// One recorded step on the History tab — mirrors InvoiceHistoryEntry in
+// epms-api/app/schemas/invoice.py. `before` / `after` are what the step's
+// endpoint recorded (keys per action: see invoices.py HISTORY_ACTIONS).
+export type InvoiceHistoryAction =
+  | 'assign_match' | 'decline_match' | 'match' | 'review_approve' | 'review_reject'
+  | 'resolve_exception' | 'rematch_on_edit' | 'unmatch'
+
+export interface InvoiceHistoryEntry {
+  id: string
+  action: InvoiceHistoryAction
+  created_at: string
+  actor_id: string
+  actor_name: string | null
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+}
+
 export interface InvoiceChain {
   invoice_id: string
   internal_ref: string
@@ -303,6 +323,9 @@ export const invoiceService = {
   // JSONB array with no FK), which no PA list filter can reach.
   chain: (id: string) =>
     api.get<InvoiceChain>(`/invoices/${id}/chain`),
+
+  history: (id: string) =>
+    api.get<InvoiceHistoryEntry[]>(`/invoices/${id}/history`),
 
   create: (body: CreateInvoiceBody) =>
     api.post<ApiInvoice>('/invoices', body),

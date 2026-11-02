@@ -39,6 +39,7 @@ from app.schemas.invoice import (
     InvoiceCreate,
     InvoiceDuplicateCheckResponse,
     InvoiceExceptionRequest,
+    InvoiceHistoryEntry,
     InvoiceListResponse,
     InvoiceMatchRequest,
     InvoiceReceiptsRequest,
@@ -838,6 +839,64 @@ async def _audit_unmatch(db, inv, user: dict, scope_label: str,
     await db.flush()
 
 
+# What the History tab shows (ISS-0170). Every one is written by the endpoint
+# that performs the step, at that moment, so a later unmatch or re-match never
+# rewrites an earlier entry. "edit" rows (data maintenance, fee links) stay out.
+HISTORY_ACTIONS = ("assign_match", "decline_match", "match", "review_approve",
+                   "review_reject", "resolve_exception", "rematch_on_edit", "unmatch")
+
+
+def _match_target(inv) -> dict:
+    """What an invoice is matched to right now, for a history entry."""
+    return {
+        "route": inv.match_route,
+        "po_number": inv.po_number,
+        "gr_number": inv.gr_number,
+        "agreement_number": inv.agreement_number,
+    }
+
+
+async def _audit_invoice(db, inv, user: dict, action: str, after: dict,
+                         before: dict | None = None) -> None:
+    """One History entry for a step on this invoice (see HISTORY_ACTIONS).
+    Same table and shape as _audit_unmatch; the caller's commit carries it."""
+    actor_id = uuid.UUID(user["sub"])
+    actor_email = user.get("email") or (await db.execute(
+        select(User.email).where(User.id == actor_id)
+    )).scalar_one_or_none()
+    db.add(AdminAuditLog(
+        actor_id=actor_id, actor_email=actor_email or "unknown",
+        action=action, system="epms", entity="invoice",
+        record_id=inv.id, record_number=inv.internal_ref,
+        before=before, after=after,
+    ))
+    await db.flush()
+
+
+@router.get("/{invoice_id}/history", response_model=list[InvoiceHistoryEntry])
+async def invoice_history(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+    """Every recorded step on the invoice, oldest first. Same read gate as the
+    invoice itself."""
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None or not await _can_read_invoice(db, user, inv, await build_scope(db, user)):
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    rows = (await db.execute(
+        select(AdminAuditLog, User.full_name)
+        .outerjoin(User, User.id == AdminAuditLog.actor_id)
+        .where(AdminAuditLog.entity == "invoice", AdminAuditLog.record_id == invoice_id,
+               AdminAuditLog.action.in_(HISTORY_ACTIONS))
+        .order_by(AdminAuditLog.created_at, AdminAuditLog.id)
+    )).all()
+    return [
+        InvoiceHistoryEntry(
+            id=row.id, action=row.action, created_at=row.created_at,
+            actor_id=row.actor_id, actor_name=name or row.actor_email,
+            before=row.before, after=row.after,
+        )
+        for row, name in rows
+    ]
+
+
 @router.post("/{invoice_id}/unmatch-po", response_model=InvoiceResponse)
 async def unmatch_invoice_po(
     invoice_id: uuid.UUID, body: UnmatchRequest, db: SessionDep,
@@ -918,6 +977,7 @@ async def mark_invoice_direct(
         await invoice_crud.mark_direct(db, inv, matched_by=caller_id)
     except invoice_crud.DirectRouteInvalid as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    await _audit_invoice(db, inv, user, "match", {**_match_target(inv), "status": inv.status})
     # Matching is done — nobody still needs to be asked to match it.
     await _close_open_match_tasks(db, inv.id, caller_id)
     await _sync_exception_task(db, inv, inv, caller_id)
@@ -1072,6 +1132,12 @@ async def update_invoice(
                 db, result, matched_by=caller_id, accepted_numbers=accepted_numbers)
         except invoice_crud.AllocationImbalance as exc:
             raise HTTPException(status_code=422, detail=str(exc))
+        if result.status != prev_status:
+            # An edit moved the match outcome (e.g. revoked an accepted
+            # exception, or cleared allocations that no longer balance).
+            await _audit_invoice(db, result, user, "rematch_on_edit",
+                                 {**_match_target(result), "status": result.status},
+                                 before={"status": prev_status})
 
     # An edit can MATCH the invoice: rematch_from_existing calls crud.match()
     # directly, and match() is where the status is set — every piece of
@@ -1139,6 +1205,8 @@ async def match_invoice(
         result = await invoice_crud.match(db, inv, body, matched_by=caller_id,
                                           require_review=require_review,
                                           auto_link_grs=body.gr_ids is None and body.gr_id is None)
+        await _audit_invoice(db, result, user, "match",
+                             {**_match_target(result), "status": result.status})
 
         # 完成调用者的 match 任务(指派场景)
         now_ts = datetime.now(timezone.utc)
@@ -1566,6 +1634,7 @@ async def decline_match(
         task.assigned_user_id = None
         task.assigned_role = "ap_clerk"
     task.title = f"Match invoice {inv.internal_ref} to PO (assignment declined)"
+    await _audit_invoice(db, inv, user, "decline_match", {"note": body.note.strip()})
     task.description = (
         f"{caller_name or 'The assignee'} declined this match assignment: {body.note.strip()} "
         f"Please match the invoice yourself or reassign it."
@@ -1675,6 +1744,10 @@ async def assign_match(
             vendor=inv.vendor_name, amount=inv.total_amount,
         )
         db.add(task)
+    await _audit_invoice(db, inv, user, "assign_match", {
+        "assignee_id": str(assignee.id), "assignee_name": assignee.full_name,
+        "reassigned": existing is not None,
+    })
     await db.flush()
     await db.refresh(task)
     # Queued in the same commit as the task, so the notifier never sees the
@@ -1701,10 +1774,15 @@ async def match_review(
     if body.action == "reject" and not (body.note or "").strip():
         raise HTTPException(status_code=422, detail="A note is required when rejecting")
     reviewer_id = uuid.UUID(user["sub"])
+    # A reject clears the match, so what was reviewed is read before it.
+    reviewed = _match_target(inv)
     try:
         result = await invoice_crud.review_match(db, inv, body.action, body.note, reviewer_id)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    await _audit_invoice(
+        db, result, user, "review_approve" if body.action == "approve" else "review_reject",
+        {"note": (body.note or "").strip() or None, "status": result.status}, before=reviewed)
 
     # 完成 open review 任务
     review_task = (await db.execute(select(Task).where(
@@ -1810,6 +1888,8 @@ async def resolve_exception(
     caller_id = uuid.UUID(user["sub"])
     try:
         result = await invoice_crud.resolve_exception(db, inv, body, resolved_by=caller_id)
+        await _audit_invoice(db, result, user, "resolve_exception", {
+            "resolution": body.resolution, "note": body.note, "status": result.status})
         exc_task = (await db.execute(select(Task).where(
             Task.type == "resolve_exception", Task.document_type == "invoice",
             Task.document_id == inv.id, Task.is_completed.is_(False),

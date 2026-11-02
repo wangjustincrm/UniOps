@@ -17,7 +17,7 @@ from reportlab.platypus import (
 
 from app.models.pa import PaymentApplication
 from app.services.pdf_template import (
-    approvals_element, build_logo, footer_note_element, get_tmpl,
+    approvals_element, build_logo, esc, footer_note_element, get_tmpl,
     header_note_element, qty_text, terms_element, unit_price_text,
 )
 
@@ -72,7 +72,7 @@ def generate_pa_pdf(
     # ── Header ───────────────────────────────────────────────────────────────
     pa_type_label = "Prepayment Application" if pa.pa_type == "prepayment" else "Payment Application"
     logo = build_logo(logo_data_url) if tmpl.get("show_logo", True) else None
-    left_col = [logo, Spacer(1, 1 * mm), Paragraph(company_name, co_style), Paragraph(pa_type_label, sub_style)] if logo else [Paragraph(company_name, co_style), Paragraph(pa_type_label, sub_style)]
+    left_col = [logo, Spacer(1, 1 * mm), Paragraph(esc(company_name), co_style), Paragraph(pa_type_label, sub_style)] if logo else [Paragraph(esc(company_name), co_style), Paragraph(pa_type_label, sub_style)]
     header = Table(
         [[left_col, [Paragraph(pa.pa_number, num_style), Paragraph("PAYMENT APPLICATION", tag_style)]]],
         colWidths=[W * 0.6, W * 0.4],
@@ -86,7 +86,7 @@ def generate_pa_pdf(
 
     # ── Meta grid ────────────────────────────────────────────────────────────
     def _cell(lbl: str, val: str | None) -> list:
-        return [Paragraph(lbl, lbl_style), Paragraph(val or "—", val_style)]
+        return [Paragraph(lbl, lbl_style), Paragraph(esc(val) or "—", val_style)]
 
     submitted_str = pa.submitted_at.strftime("%Y-%m-%d") if pa.submitted_at else "—"
     approved_str = pa.approved_at.strftime("%Y-%m-%d") if pa.approved_at else "—"
@@ -149,9 +149,9 @@ def generate_pa_pdf(
     for i, item in enumerate(pa.line_items, 1):
         rows.append([
             Paragraph(str(i), td_style),
-            Paragraph(item.description, td_style),
+            Paragraph(esc(item.description), td_style),
             Paragraph(qty_text(item.qty), td_style),
-            Paragraph(item.unit, td_style),
+            Paragraph(esc(item.unit), td_style),
             # pa_line_items.unit_price holds five decimals (it is copied from
             # the PO line, and NC quotes purchase prices to five) -- printing
             # it at two silently rounds the price the PDF vouches for. Line
@@ -183,10 +183,10 @@ def generate_pa_pdf(
         for a in allocations:
             cc = " ".join(x for x in (a.get("cost_center_code"), a.get("cost_center_name")) if x)
             a_rows.append([
-                Paragraph(a.get("invoice_number") or "—", td_style),
-                Paragraph(a.get("department_name") or "—", td_style),
-                Paragraph(cc or "—", td_style),
-                Paragraph(a.get("budget_code") or "—", td_style),
+                Paragraph(esc(a.get("invoice_number")) or "—", td_style),
+                Paragraph(esc(a.get("department_name")) or "—", td_style),
+                Paragraph(esc(cc) or "—", td_style),
+                Paragraph(esc(a.get("budget_code")) or "—", td_style),
                 Paragraph(f"{a['amount']:,.2f}", td_style),
                 Paragraph(f"{a['tax_amount']:,.2f}", td_style),
             ])
@@ -214,7 +214,7 @@ def generate_pa_pdf(
     if pa.shipping_amount:
         summary_rows.append([Paragraph("Shipping", lbl_style), Paragraph(f"{pa.shipping_amount:,.2f}", val_style)])
     if pa.other_charges:
-        note = f" ({pa.other_charges_note})" if pa.other_charges_note else ""
+        note = f" ({esc(pa.other_charges_note)})" if pa.other_charges_note else ""
         summary_rows.append([Paragraph(f"Other Charges{note}", lbl_style), Paragraph(f"{pa.other_charges:,.2f}", val_style)])
 
     summary_tbl = Table(summary_rows, colWidths=[W * 0.75, W * 0.25])
@@ -264,7 +264,7 @@ def generate_pa_pdf(
     if pa.notes:
         elements.append(Spacer(1, 5 * mm))
         elements.append(Paragraph("Notes", sec_style))
-        elements.append(Paragraph(pa.notes, val_style))
+        elements.append(Paragraph(esc(pa.notes), val_style))
 
     # ── Footer ───────────────────────────────────────────────────────────────
     elements.append(Spacer(1, 8 * mm))

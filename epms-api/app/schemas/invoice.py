@@ -21,6 +21,11 @@ class InvoiceLineItem(BaseModel):
     non_po_note: str | None = Field(default=None, max_length=500)
 
 
+# PRD INV-001. Size (25 MB) is enforced where the bytes arrive: expense-api
+# invoice_attachments MAX_FILE_BYTES.
+INVOICE_FILE_EXTENSIONS = ("pdf", "jpg", "jpeg", "png")
+
+
 class InvoiceCreate(BaseModel):
     vendor_id: uuid.UUID
     vendor_invoice_number: str = Field(min_length=1, max_length=100)
@@ -35,6 +40,20 @@ class InvoiceCreate(BaseModel):
     notes: str | None = None
     # Optional pre-link to a PO at upload time
     po_id: uuid.UUID | None = None
+
+    @field_validator("file_name")
+    @classmethod
+    def _invoice_file_type(cls, v: str | None) -> str | None:
+        """INV-001: an invoice is a PDF, JPG, JPEG or PNG. The form checks it
+        too, but the record is created before the file is stored, so a refused
+        file used to leave an invoice behind (a .zip became INV-2026-0336)."""
+        if v is None or not v.strip():
+            return None
+        ext = v.rsplit(".", 1)[-1].lower() if "." in v else ""
+        if ext not in INVOICE_FILE_EXTENSIONS:
+            raise ValueError(
+                f"'{v}' cannot be uploaded as an invoice: accepted files are PDF, JPG, JPEG, PNG")
+        return v
 
 
 class InvoiceUpdate(BaseModel):
@@ -323,6 +342,20 @@ class UnmatchRequest(BaseModel):
         if not v.strip():
             raise ValueError("A reason is required when unmatching")
         return v.strip()
+
+
+class InvoiceHistoryEntry(BaseModel):
+    """One recorded step on an invoice's History tab (ISS-0170): an assignment,
+    a match, an AP review, an exception resolution or an unmatch. Read from
+    admin_audit_log, which is written at the moment of the step and never
+    rewritten — the invoice's own matched_* fields only ever hold the latest."""
+    id: uuid.UUID
+    action: str
+    created_at: datetime
+    actor_id: uuid.UUID
+    actor_name: str | None = None
+    before: dict | None = None
+    after: dict | None = None
 
 
 # ── Document chain (Invoice List due-date drawer) ─────────────────────────────
