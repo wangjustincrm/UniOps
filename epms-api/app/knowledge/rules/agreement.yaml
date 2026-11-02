@@ -76,10 +76,15 @@ rules:
       agreement if the owner changes. When the attached receipts' total differs
       from the invoice total, a reason is required before the receipt evidence
       can be saved (receipts without an amount, such as delivery notes, are not
-      compared); the PA shows the reason with the difference.
-    enforced_in: "epms-api app/api/v1/invoices.py _require_invoice_receipt_access; app/crud/attach_receipts_task.py; app/crud/invoice.py set_receipts (reason for a difference); PRD EPMS AGR-032"
+      compared); the PA shows the reason with the difference. Once a payment
+      application that is not cancelled lists the invoice, its receipt
+      evidence can no longer be changed: the 3-Way Match tab says "Locked —
+      used by PA-…" and the receipt controls are greyed out.
+    enforced_in: "epms-api app/api/v1/invoices.py _require_invoice_receipt_access, get_invoice receipts_locked_by_pa; app/crud/attach_receipts_task.py; app/crud/invoice.py set_receipts (reason for a difference) / _invoice_referenced_by_active_pa; epms/src/components/invoices/InvoiceReceiptsPanel.tsx; PRD EPMS AGR-032"
     provenance: pinned
     test:
+      - "tests/test_invoice_receipts.py::test_invoice_detail_names_the_pa_that_locks_its_receipts"
+      - "tests/test_invoice_receipts.py::test_put_receipts_rejects_an_invoice_referenced_by_an_active_pa"
       - "tests/test_attach_receipts_task.py::test_matching_to_a_house_account_raises_a_task_for_the_owner"
       - "tests/test_attach_receipts_task.py::test_someone_unrelated_is_refused_with_receipt_wording"
       - "tests/test_invoice_receipts.py::test_a_difference_without_a_reason_is_refused_and_nothing_is_claimed"

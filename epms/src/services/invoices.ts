@@ -69,6 +69,9 @@ export interface ApiInvoice {
   // with the invoice total (submitted by MatchPanel.tsx, stored separately
   // from legacy_settlement_reason — see models/invoice.py:76-78).
   receipt_variance_reason?: string | null
+  // AGR-032: the non-cancelled PA that lists this invoice and so freezes its
+  // receipt evidence. GET /invoices/{id} only, agreement invoices only.
+  receipts_locked_by_pa?: string | null
   // Which scheduled billing period this invoice claims (recurring route only —
   // house_account has no schedule, milestone picks its stage at match time).
   // NULL on a recurring invoice means the automatic claim could not place it,

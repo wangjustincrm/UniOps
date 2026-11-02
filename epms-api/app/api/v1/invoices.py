@@ -711,6 +711,12 @@ async def get_invoice(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPa
     await _attach_match_assignees(db, [inv])
     await invoice_crud.attach_claimed_receipts(db, [inv])
     await invoice_crud.attach_cumulative_variance(db, inv)
+    # AGR-032: receipt evidence is frozen while a non-cancelled PA lists the
+    # invoice. Name that PA so the Receipt Evidence panel can lock up front
+    # instead of answering the click with the 422 (ISS-0134).
+    if inv.agreement_id is not None:
+        held = await invoice_crud._invoice_referenced_by_active_pa(db, inv.id)
+        inv.receipts_locked_by_pa = held.pa_number if held is not None else None
     return inv
 
 
