@@ -17,6 +17,7 @@ import type { ApiEvent } from '@/services/pr'
 import { historyLine } from '@/lib/approvalHistory'
 import { buildApprovalNodes } from '@/lib/approvalTimeline'
 import { useTasks } from '@/hooks/useTasks'
+import { useCloseOnEscape } from '@/hooks/useCloseOnEscape'
 import { useBudgetOverview, useFactors } from '@/hooks/useBudget'
 import { usePrAttachments, useUploadAttachment, useDeleteAttachment, useRegeneratePrPdf } from '@/hooks/usePrAttachments'
 import { prAttachmentService } from '@/services/prAttachments'
@@ -215,6 +216,7 @@ export default function PrDetailPage() {
   const [pendingAction, setPendingAction] = useState<ApprovalAction | null>(null)
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement>(null)
+  useCloseOnEscape(moreOpen, () => setMoreOpen(false))
 
   const { data: pr, isLoading } = usePr(id ?? '')
   useDocTabTitle(pr?.number)

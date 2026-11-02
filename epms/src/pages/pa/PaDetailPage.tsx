@@ -18,6 +18,7 @@ import { usePa, usePaAction, usePaEvents, useConfirmSettlement, usePaWorkflowSte
 import { usePosByIds } from '@/hooks/usePos'
 import { useInvoices, useInvoicesByIds, useInvoicesForPos } from '@/hooks/useInvoices'
 import { useTasks } from '@/hooks/useTasks'
+import { useCloseOnEscape } from '@/hooks/useCloseOnEscape'
 import { useAuthStore } from '@/stores/auth.store'
 import { usePaAttachments, useUploadPaAttachment, useDeletePaAttachment, useRegeneratePaPdf } from '@/hooks/usePaAttachments'
 import { paAttachmentService } from '@/services/paAttachments'
@@ -444,6 +445,7 @@ export default function PaDetailPage() {
   const [processOpen, setProcessOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement>(null)
+  useCloseOnEscape(moreOpen, () => setMoreOpen(false))
   const { data: attachments = [] } = usePaAttachments(id ?? '')
   const uploadAttachment = useUploadPaAttachment(id ?? '')
   const deleteAttachment = useDeletePaAttachment(id ?? '')

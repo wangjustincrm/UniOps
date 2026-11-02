@@ -26,6 +26,7 @@ import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { useGrs } from '@/hooks/useGrs'
 
 import { useTasks } from '@/hooks/useTasks'
+import { useCloseOnEscape } from '@/hooks/useCloseOnEscape'
 import { poService } from '@/services/po'
 import type { ApiPo, ApiPoLineItem } from '@/services/po'
 import { useApprovalReminder } from '@/hooks/useApprovalReminder'
@@ -523,6 +524,7 @@ export default function PoDetailPage() {
   const [showPlaceOrder, setShowPlaceOrder] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement>(null)
+  useCloseOnEscape(moreOpen, () => setMoreOpen(false))
 
   const isProcurementOfficer = user?.role === 'procurement_officer' || user?.role === 'procurement_manager' || user?.role === 'system_admin'
 
