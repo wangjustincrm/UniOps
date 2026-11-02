@@ -121,6 +121,15 @@ async def create_gr(body: GrCreate, db: SessionDep, user: CurrentUserPayload, to
                 detail=f"Cannot create GR for PO in status '{po.status}' (must be issued or partially_received)"
             )
 
+    # The New GR form's own rule, held here too: a request with no lines (or
+    # lines sent under a misspelt key, which Pydantic drops) was saved as an
+    # empty GR — and with no PR on the PO went straight to Collected (ISS-0181).
+    if not any(li.qty_received > 0 for li in body.line_items):
+        raise HTTPException(
+            status_code=422,
+            detail="At least one line must have a received quantity greater than 0.",
+        )
+
     try:
         gr = await gr_crud.create(db, body, po=po, created_by=uuid.UUID(user["sub"]), token=token)
     except gr_crud.OverReceiptReasonRequired as exc:

@@ -93,6 +93,11 @@ class AllocationResponse(BaseModel):
     # Display helpers resolved at read time (not stored on the allocation row).
     po_number: str | None = None
     po_line_description: str | None = None
+    # What this allocation was matched against: the PO line's pre-tax
+    # line_total, or the PO's pre-tax subtotal for a header allocation — the
+    # same reference match() adds up into the invoice's po_total. Lets the
+    # 3-Way Match tab show each PO of a multi-PO invoice with its own amount.
+    po_reference: Decimal | None = None
     model_config = {"from_attributes": True}
 
 

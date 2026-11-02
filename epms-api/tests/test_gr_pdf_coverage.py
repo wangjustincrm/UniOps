@@ -279,3 +279,55 @@ async def test_physical_gr_collect_regenerates_the_pdf_with_collected_by(test_en
         text = _pdf_text(atts[0].file_data)
         assert b"Collected By" in text
         assert b"Cole Collector" in text
+
+
+@pytest.mark.parametrize("status, label", [
+    ("pending_ack", "Pending Acknowledgement"), ("collection_pending", "Collection Pending"),
+    ("collected", "Collected"), ("confirmed", "Confirmed"), ("discrepancy", "Discrepancy"),
+    ("rejected", "Rejected"), ("cancelled", "Cancelled"),
+])
+def test_gr_pdf_footer_prints_the_grs_own_status(status, label):
+    """ISS-0184: the footer read "Status: Confirmed" whatever the GR's status."""
+    gr = GoodsReceipt(
+        number="GR-FOOT-1", title="Footer", po_id=uuid.uuid4(), po_number="PO-1",
+        vendor_id=uuid.uuid4(), vendor_name="V", gr_type="physical", currency="CAD",
+        status=status, created_by=uuid.uuid4(), line_items=[],
+    )
+    text = _pdf_text(generate_gr_pdf(gr, "Co"))
+    assert f"Status: {label} ".encode() in text
+    if status != "confirmed":
+        assert b"Status: Confirmed" not in text
+
+
+@pytest.mark.asyncio
+async def test_physical_gr_pdf_footer_follows_acknowledge_and_collect(test_engine):
+    """ISS-0184: the acknowledge-time PDF says Collection Pending (the status the
+    GR is in from then on), the collect-time one Collected — never Confirmed."""
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        requester = await _user(db, "Fran Footer")
+        vendor = await _vendor(db)
+        pr = await _pr(db, requester.id)
+        po = await _po(db, vendor, requester.id, gr_type_int=2, pr_id=pr.id, pr_number=pr.number)
+        gr = _gr(
+            gr_type="physical", procurement_type=2, po=po, vendor=vendor,
+            created_by=requester.id, status="pending_ack",
+            pr_id=pr.id, pr_number=pr.number,
+        )
+        db.add(gr)
+        await db.commit()
+        await db.refresh(gr)
+
+        gr = await gr_action(db, gr, GrActionRequest(
+            action="acknowledge", acknowledged_by="Fran Footer"), actor_id=requester.id, token=None)
+        await db.commit()
+        await db.refresh(gr)
+        text = _pdf_text((await _attachments(db, gr.id, f"{gr.number}.pdf"))[0].file_data)
+        assert b"Status: Collection Pending" in text
+
+        gr = await gr_action(db, gr, GrActionRequest(
+            action="collect", collected_by="Fran Footer"), actor_id=requester.id, token=None)
+        await db.commit()
+        text = _pdf_text((await _attachments(db, gr.id, f"{gr.number}.pdf"))[0].file_data)
+        assert b"Status: Collected" in text
+        assert b"Status: Confirmed" not in text

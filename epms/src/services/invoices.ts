@@ -176,6 +176,9 @@ export interface InvoiceAllocation {
   note: string | null
   po_number?: string | null
   po_line_description?: string | null
+  // The PO line's pre-tax total (PO subtotal for a header allocation) this
+  // allocation was matched against.
+  po_reference?: number | null
 }
 
 export interface AllocationInput {

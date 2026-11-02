@@ -31,6 +31,19 @@ def _s(name: str, **kw) -> ParagraphStyle:
     return ParagraphStyle(name, **kw)
 
 
+# The GR's status as the GR pages label it (epms GrDetailPage GR_STATUS_CONFIG).
+# The footer printed "Confirmed" whatever the status was (ISS-0184).
+STATUS_LABELS = {
+    "pending_ack": "Pending Acknowledgement",
+    "collection_pending": "Collection Pending",
+    "collected": "Collected",
+    "confirmed": "Confirmed",
+    "discrepancy": "Discrepancy",
+    "rejected": "Rejected",
+    "cancelled": "Cancelled",
+}
+
+
 def generate_gr_pdf(
     gr: GoodsReceipt,
     company_name: str = "EPMS",
@@ -220,7 +233,7 @@ def generate_gr_pdf(
     elements.append(Spacer(1, 8 * mm))
     elements.append(HRFlowable(width="100%", thickness=0.5, color=_GRAY))
     elements.append(Paragraph(
-        f"Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} · Status: Confirmed · {gr.number}",
+        f"Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} · Status: {esc(STATUS_LABELS.get(gr.status, gr.status or '—'))} · {gr.number}",
         footer_style,
     ))
     if tmpl.get("show_terms") and tmpl.get("terms_text"):
