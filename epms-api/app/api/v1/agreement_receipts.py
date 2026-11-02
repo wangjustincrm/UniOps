@@ -25,6 +25,7 @@ from app.schemas.agreement_receipt import (
     ReceiptListResponse,
     ReceiptResponse,
     ReceiptUpdate,
+    ReceiptVendorCheckResponse,
     ReceiptWithAgreementResponse,
     receipt_vendor_mismatch,
 )
@@ -179,6 +180,37 @@ async def list_receipts(
     await _get_agreement_or_404(db, user, agreement_id)
     items = await receipt_crud.list_for_agreement(db, agreement_id, status=status_filter)
     return {"items": items, "total": len(items)}
+
+
+@router.get("/vendor-check", response_model=ReceiptVendorCheckResponse)
+async def check_receipt_vendor(
+    agreement_id: uuid.UUID,
+    db: SessionDep,
+    user: ReceiptReadDep,
+    vendor_id: Annotated[uuid.UUID | None, Query()] = None,
+    vendor_name: Annotated[str | None, Query(max_length=255)] = None,
+):
+    """Would a receipt with this merchant be flagged on this agreement?
+    (ISS-0114, PRD AGR-030.) The New / Edit Receipt form asks while the
+    recorder picks or types the merchant; the verdict is the one a saved
+    receipt gets in _with_agreement below, so the form and the saved receipt
+    cannot disagree. A reminder only — nothing here blocks a save.
+    """
+    agr = await _get_agreement_or_404(db, user, agreement_id)
+    if vendor_id is not None:
+        # A bound merchant is compared by id; its stored name is the vendor
+        # master's, exactly as _bind_vendor_master_data would save it.
+        vendor = await vendor_crud.get_by_id(db, vendor_id)
+        vendor_name = vendor.name if vendor is not None else vendor_name
+    return ReceiptVendorCheckResponse(
+        vendor_mismatch=receipt_vendor_mismatch(
+            receipt_vendor_id=vendor_id,
+            receipt_vendor_name=vendor_name,
+            agreement_vendor_id=agr.vendor_id,
+            agreement_vendor_name=agr.vendor_name,
+        ),
+        agreement_vendor_name=agr.vendor_name or "",
+    )
 
 
 async def _bind_vendor_master_data(

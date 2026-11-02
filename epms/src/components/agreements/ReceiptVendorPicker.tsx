@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Search, X } from 'lucide-react'
+import { AlertTriangle, Search, X } from 'lucide-react'
 import { useVendors } from '@/hooks/useVendors'
+import { useReceiptVendorCheck } from '@/hooks/useAgreementReceipts'
 import { AiBadge } from '@/components/ui/AiBadge'
 import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import { cn } from '@/lib/utils'
@@ -30,6 +31,10 @@ interface ReceiptVendorPickerProps {
   suggestion?: ReceiptVendorSuggestion | null
   disabled?: boolean
   inputId?: string
+  // The agreement the receipt is recorded against. When given, the field
+  // flags a merchant that differs from that agreement's vendor (PRD AGR-030,
+  // ISS-0114) — the server's verdict, the same one the saved receipt gets.
+  agreementId?: string
 }
 
 // ─── Matching an OCR string to the vendor list ──────────────────────────────
@@ -140,9 +145,13 @@ function uniqueVendorMatch(
  * warning).
  */
 export function ReceiptVendorPicker({
-  value, onChange, suggestion, disabled, inputId,
+  value, onChange, suggestion, disabled, inputId, agreementId,
 }: ReceiptVendorPickerProps) {
   const anchorRef = useRef<HTMLDivElement>(null)
+  const { data: vendorCheck } = useReceiptVendorCheck(agreementId, value.vendorId, value.vendorName)
+  // Only while the answer still describes what is in the box: a stale "differs"
+  // must not linger after the field was cleared.
+  const differs = Boolean(vendorCheck?.vendor_mismatch) && value.vendorName.trim() !== ''
   const [open, setOpen] = useState(false)
   const anchorRect = useAnchorRect(open, anchorRef)
 
@@ -309,6 +318,18 @@ export function ReceiptVendorPicker({
       ) : null}
       {aiText && !value.vendorId && (
         <p className="text-xs text-primary-500">AI extracted: "{aiText}"</p>
+      )}
+      {/* A reminder, not an error (same wording as the saved receipt's
+          warning): different stores of the same group are fine, so nothing is
+          blocked — the recorder is only asked to look. */}
+      {differs && (
+        <p className="flex items-start gap-1 text-xs text-warning-700">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            Differs from the agreement's vendor ({vendorCheck!.agreement_vendor_name}) — check
+            it was charged to the right house account.
+          </span>
+        </p>
       )}
     </div>
   )

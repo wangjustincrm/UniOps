@@ -96,6 +96,27 @@ rules:
     test:
       - "tests/test_assistant_iss_batch2.py::test_who_records_agreement_receipts_is_a_rule"
 
+  - id: receipt_vendor_differs_is_flagged
+    asked_as:
+      - why does the receipt say it differs from the agreement's vendor
+      - what if the receipt is from a different vendor than the agreement
+      - 收据商户和协议供应商不一致会怎样
+    answer: >
+      The merchant on a receipt (Vendor on receipt) is picked from the vendor
+      list or typed as printed. When it differs from the agreement's vendor,
+      the New / Edit Receipt form says so under the field and the saved
+      receipt shows a "Different vendor" warning on the Agreement Receipts
+      list and its detail page. A merchant picked from the vendor list is
+      compared by vendor record; typed text by name, ignoring case, store
+      numbers and a legal suffix. It is a reminder only: the receipt can still
+      be saved and used, because different stores of the same group are fine.
+      A blank merchant is never flagged.
+    enforced_in: "epms-api app/schemas/agreement_receipt.py receipt_vendor_mismatch; app/api/v1/agreement_receipts.py check_receipt_vendor (form) and _with_agreement (saved receipt); PRD EPMS AGR-030"
+    provenance: pinned
+    test:
+      - "tests/test_agreement_receipt_api.py::test_vendor_check_flags_a_different_vendor_picked_from_the_list"
+      - "tests/test_agreement_receipt_api.py::test_vendor_check_agrees_with_the_saved_receipt"
+
   # ── Added 2026-10-21 (issue review batch 3) ───────────────────────────────
   - id: confirming_service_periods
     asked_as:

@@ -87,8 +87,9 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
   // it matched (when it matched one) and the text stored either way. OCR
   // prefills it and the picker tries to bind it; both halves stay editable.
   // Nothing is compared against the agreement's vendor here — the backend
-  // decides that (receipt_vendor_mismatch) and the receipt list/detail views
-  // surface it, so there is exactly one verdict in the system.
+  // decides that (receipt_vendor_mismatch); the picker asks it live
+  // (agreementId, ISS-0114) and the receipt list/detail views show the saved
+  // verdict, so there is exactly one verdict in the system.
   const [vendor, setVendor] = useState<ReceiptVendorValue>({ vendorId: null, vendorName: '' })
   // Handed to the picker when OCR reads a merchant name off the photo. A new
   // object each time, so re-reading a photo of the SAME shop re-runs the match.
@@ -441,6 +442,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
             onChange={setVendor}
             suggestion={vendorSuggestion}
             disabled={isPending}
+            agreementId={agreementId}
           />
         </FormField>
         )}

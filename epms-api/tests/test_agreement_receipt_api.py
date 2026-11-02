@@ -1354,3 +1354,57 @@ async def test_refiling_a_slip_as_a_delivery_note_can_clear_its_amounts(admin_cl
               "tax_amount": None, "total_amount": None})
     assert r.status_code == 200, r.text
     assert r.json()["total_amount"] is None
+
+
+# ── ISS-0114: the New / Edit Receipt form's live "differs" flag ─────────────
+# PRD AGR-030: the merchant is "picked from Vendor Master; flagged when it
+# differs from the agreement's vendor". The form asks GET …/vendor-check before
+# saving; the verdict must be the one the saved receipt then carries.
+
+async def test_vendor_check_flags_a_different_vendor_picked_from_the_list(admin_client, test_engine):
+    agr, _ = await _create_agreement(admin_client, test_engine)
+    other_vendor_id, _, _ = await seed_vendor_and_user(test_engine, vendor_name="Ecolab CO")
+
+    r = await admin_client.get(_receipts_url(agr["id"]) + "/vendor-check",
+                               params={"vendor_id": str(other_vendor_id)})
+    assert r.status_code == 200, r.text
+    assert r.json() == {"vendor_mismatch": True, "agreement_vendor_name": "Princess Auto"}
+
+
+async def test_vendor_check_accepts_the_agreements_own_vendor(admin_client, test_engine):
+    agr, _ = await _create_agreement(admin_client, test_engine)
+
+    r = await admin_client.get(_receipts_url(agr["id"]) + "/vendor-check",
+                               params={"vendor_id": agr["vendor_id"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["vendor_mismatch"] is False
+
+
+async def test_vendor_check_on_typed_text_uses_the_same_tolerant_rule(admin_client, test_engine):
+    agr, _ = await _create_agreement(admin_client, test_engine)
+    url = _receipts_url(agr["id"]) + "/vendor-check"
+
+    assert (await admin_client.get(url, params={"vendor_name": "Canadian Tire #241"})
+            ).json()["vendor_mismatch"] is True
+    assert (await admin_client.get(url, params={"vendor_name": "PRINCESS AUTO #12"})
+            ).json()["vendor_mismatch"] is False
+    # Nothing entered is never flagged.
+    assert (await admin_client.get(url)).json()["vendor_mismatch"] is False
+
+
+async def test_vendor_check_agrees_with_the_saved_receipt(admin_client, test_engine):
+    agr, user_id = await _create_agreement(admin_client, test_engine)
+    other_vendor_id, _, _ = await seed_vendor_and_user(test_engine, vendor_name="YIJIA (HK) FOODSTUFFS")
+
+    check = (await admin_client.get(_receipts_url(agr["id"]) + "/vendor-check",
+                                    params={"vendor_id": str(other_vendor_id)})).json()
+    saved = (await admin_client.post(_receipts_url(agr["id"]), json=_receipt_payload(
+        user_id, receipt_ref="VENDOR-CHECK-SAVED", vendor_id=str(other_vendor_id)))).json()
+    detail = (await admin_client.get(_one_receipt_url(saved["id"]))).json()
+    assert check["vendor_mismatch"] is detail["vendor_mismatch"] is True
+
+
+async def test_vendor_check_on_an_unknown_agreement_is_404(admin_client, test_engine):
+    r = await admin_client.get(_receipts_url(str(uuid.uuid4())) + "/vendor-check",
+                               params={"vendor_name": "Anything"})
+    assert r.status_code == 404

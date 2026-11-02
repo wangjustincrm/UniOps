@@ -485,6 +485,7 @@ function ReceiptDetail({
                       value={vendor}
                       onChange={touch(setVendor)}
                       disabled={anyPending}
+                      agreementId={agreementId}
                     />
                   </FormField>
                   <FormField label={`Amount before tax (${receipt.currency})`} required htmlFor="receipt-amount">
