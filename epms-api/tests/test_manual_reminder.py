@@ -8,6 +8,7 @@ there is nobody to reach, it will not mail the same approver twice a day, and
 it never nudges the holder of a non-approval task on the same document.
 """
 import copy
+import re
 import uuid
 from datetime import timedelta
 
@@ -213,6 +214,8 @@ async def test_second_reminder_inside_the_cooldown_is_refused(
     second = await requester_client.post(f"/api/v1/pr/{pr.id}/remind")
     assert second.status_code == 429, second.text
     assert "already sent" in second.json()["detail"]
+    # DD/MM/YYYY HH:MM, still UTC (ISS-0183 — format only, zone unchanged).
+    assert re.search(r"after \d{2}/\d{2}/\d{4} \d{2}:\d{2} UTC\.", second.json()["detail"]), second.json()
 
     await drain(5)
     assert _to(captured_emails).count(approver.email) == 1, \

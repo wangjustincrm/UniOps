@@ -157,7 +157,8 @@ def approvals_element(approvals: list[dict] | None, W: float) -> list:
         rows.append([
             Paragraph(esc(entry.get("role")) or "—", td_style),
             Paragraph(esc(entry.get("name")) or "—", td_style),
-            Paragraph(at.strftime("%Y-%m-%d") if at else "—", td_style),
+            # DD/MM/YYYY (UI-DATE-001, ISS-0183) — format only.
+            Paragraph(at.strftime("%d/%m/%Y") if at else "—", td_style),
         ])
 
     tbl = Table(rows, colWidths=[W * 0.30, W * 0.45, W * 0.25], repeatRows=1)
