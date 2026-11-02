@@ -3,7 +3,9 @@
  *
  * The question finance has been asking all along: which payables are due, and
  * how much cash the next quarter needs. Built on NC's approved open balance,
- * because NC is the book of record for payable balances.
+ * because NC is the book of record for payable balances — but only the part an
+ * approved EPMS PA is about to pay, with reversal pairs netted out (finance,
+ * 2026-11-02; finance-api services/ap_cash_flow).
  *
  * The page is shaped by three things the data does, each of which would make a
  * naive forecast wrong:
@@ -23,10 +25,10 @@
  *
  * Currencies are never summed together.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle2, Download, HelpCircle, Loader2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Download, HelpCircle, Loader2, Search } from 'lucide-react'
 import { SortTh, sortParams, useSort, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
@@ -38,7 +40,7 @@ import { BillInvoices, billPurchaseOrders, invoicesCsv, type BillInvoice } from 
 const BILL_PAGE_SIZE = 100
 /** GET /ap-cash-flow/items sort keys (finance-api ap_cash_flow.ITEM_SORT). */
 type BillSortKey = 'bill_no' | 'supplier' | 'invoice_no' | 'purchase_order' | 'bill_date'
-  | 'payment_terms' | 'due_date' | 'open_bal'
+  | 'payment_terms' | 'due_date' | 'open_bal' | 'pa'
 
 interface Bucket {
   key: string; label: string; overdue: boolean
@@ -67,6 +69,8 @@ interface BillRow {
   /** One per invoice number on the bill's lines — usually one, often several. */
   invoices: BillInvoice[]; trade_type: string | null
   open_bal: string
+  /** The approved PA(s) that put this bill on the forecast. */
+  pa_numbers: string[]
   payment_terms: string | null; term_days: number | null
   due_date: string | null; days_to_due: number | null
   bucket: string; bucket_label: string
@@ -115,6 +119,17 @@ export default function ApCashFlowPage() {
   // figure on this page has to be traceable back to the documents behind it.
   const [supplier, setSupplier] = useState<{ code: string; name: string | null } | null>(null)
 
+  // Searches bill no, invoice no, supplier and PA no on the server, inside the
+  // current bucket / supplier if one is picked, else across the currency.
+  // Debounced so a fast typist does not fire a query per keystroke.
+  const [searchQ, setSearchQ] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(searchQ.trim()), 300)
+    return () => clearTimeout(t)
+  }, [searchQ])
+  const searching = debouncedQ !== ''
+
   const { data: summary, isFetching: loadingSummary } = useQuery({
     queryKey: ['ap-cash-flow-summary'],
     queryFn: () => financeApi.get<SummaryResp>('/ap-cash-flow/summary'),
@@ -122,21 +137,22 @@ export default function ApCashFlowPage() {
   // The bill drill-down is paged and sorted by the API. The page belongs to
   // the selection it was turned on: picking another bucket or supplier (or
   // currency) starts again at page 1, and so does a new sort.
-  const selKey = `${currency}|${bucket ?? ''}|${supplier?.code ?? ''}`
+  const selKey = `${currency}|${bucket ?? ''}|${supplier?.code ?? ''}|${debouncedQ}`
   const [billPageAt, setBillPageAt] = useState({ key: selKey, page: 1 })
   const billPage = billPageAt.key === selKey ? billPageAt.page : 1
   const setBillPage = (page: number) => setBillPageAt({ key: selKey, page })
   const [billSort, onBillSort] = useSort<BillSortKey>(null, () => setBillPage(1))
   const { sort: billSortKey, dir: billSortDir } = sortParams(billSort)
   const { data: items, isFetching: loadingItems, error: itemsError } = useQuery({
-    queryKey: ['ap-cash-flow-items', currency, bucket, supplier?.code, billPage, billSort],
+    queryKey: ['ap-cash-flow-items', currency, bucket, supplier?.code, debouncedQ, billPage, billSort],
     queryFn: () => financeApi.get<ItemsResp>(
       `/ap-cash-flow/items?currency=${currency}` +
       `${bucket ? `&bucket=${bucket}` : ''}` +
       `${supplier ? `&supplier_code=${encodeURIComponent(supplier.code)}` : ''}` +
+      `${searching ? `&q=${encodeURIComponent(debouncedQ)}` : ''}` +
       `&limit=${BILL_PAGE_SIZE}&offset=${(billPage - 1) * BILL_PAGE_SIZE}` +
       `${billSortKey ? `&sort=${billSortKey}&dir=${billSortDir}` : ''}`),
-    enabled: !!bucket || !!supplier,
+    enabled: !!bucket || !!supplier || searching,
   })
   const { data: missing } = useQuery({
     queryKey: ['ap-cash-flow-missing', currency],
@@ -152,8 +168,8 @@ export default function ApCashFlowPage() {
     bills: (r) => r.bills, amount: (r) => Number(r.amount), dated: (r) => r.oldest_bill,
   })
 
-  const selected = bucket || supplier
-  const clearSelection = () => { setBucket(null); setSupplier(null) }
+  const selected = bucket || supplier || searching
+  const clearSelection = () => { setBucket(null); setSupplier(null); setSearchQ('') }
   const pickBucket = (k: string) => {
     setSupplier(null)
     setBucket(bucket === k && !supplier ? null : k)
@@ -181,12 +197,12 @@ export default function ApCashFlowPage() {
       all.push(...page.items)
       if (all.length >= page.total || page.items.length === 0) break
     }
-    const head = ['Bill', 'Supplier code', 'Supplier', 'Invoice no', 'PO', 'Currency',
+    const head = ['AP no', 'Supplier code', 'Supplier', 'Invoice no', 'PO', 'PA', 'Currency',
                   'Bill date', 'Payment term', 'Term days', 'Due date', 'Days to due',
                   'Open balance', 'Bucket', 'No vendor record']
     const body = all.map((r) => [
       r.bill_no, r.supplier_code, r.supplier_name, invoicesCsv(r.invoices),
-      billPurchaseOrders(r.invoices).join('; '),
+      billPurchaseOrders(r.invoices).join('; '), r.pa_numbers.join('; '),
       r.currency, r.bill_date, r.payment_terms, r.term_days, r.due_date, r.days_to_due,
       r.open_bal, r.bucket_label, r.no_vendor_record ? 'yes' : 'no'])
     const csv = [head, ...body].map((c) => c.map(csvEscape).join(',')).join('\n')
@@ -204,7 +220,7 @@ export default function ApCashFlowPage() {
     <PortalChromeLayout
       activeKey="portal:/finance/ap-cash-flow"
       title="AP Cash Flow"
-      subtitle="What is due and when, from NC's approved open balance"
+      subtitle="What approved PAs will pay and when, from NC's open balance"
     >
       <div className="mx-auto max-w-7xl">
         {summary?.mirror && (
@@ -217,7 +233,9 @@ export default function ApCashFlowPage() {
               ? <AlertTriangle className="h-4 w-4 shrink-0" />
               : <CheckCircle2 className="h-4 w-4 shrink-0 text-[#085E5E]" />}
             <span>
-              Due dates are calculated as <strong>NC bill date + the supplier&rsquo;s payment term</strong>,
+              Only NC bills whose invoice is on an <strong>approved EPMS PA</strong> are counted;
+              a reversal and the bill it reverses (same supplier and invoice number, netting
+              to zero) are left out. Due dates are calculated as <strong>NC bill date + the supplier&rsquo;s payment term</strong>,
               taken from the vendor master (editable per supplier in EPMS &rsquo;Vendors&rsquo;).
               NC holds no due date of its own. Mirror as of{' '}
               <strong>{summary.mirror.synced_at?.replace('T', ' ').slice(0, 16) ?? 'never'}</strong>
@@ -271,8 +289,15 @@ export default function ApCashFlowPage() {
               Clear selection
             </button>
           )}
+          <div className="relative ml-auto">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
+            <input type="search" value={searchQ} onChange={(e) => setSearchQ(e.target.value)}
+                   placeholder="Search AP no., invoice no., supplier, PA no."
+                   aria-label="Search AP number, invoice number, supplier or PA number"
+                   className="w-72 rounded-lg border border-neutral-300 py-1.5 pl-8 pr-2.5 text-sm" />
+          </div>
           <button onClick={exportCsv}
-                  className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50">
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50">
             <Download className="h-4 w-4" /> Export CSV
           </button>
         </div>
@@ -379,7 +404,12 @@ export default function ApCashFlowPage() {
                 ? <>{supplier.name ?? supplier.code}
                     <span className="ml-1.5 font-mono text-xs font-normal text-neutral-400">
                       {supplier.code}</span></>
-                : row?.buckets.find((b) => b.key === bucket)?.label}
+                : bucket ? row?.buckets.find((b) => b.key === bucket)?.label
+                : `All ${currency} bills`}
+              {searching && (
+                <span className="ml-1.5 font-normal text-neutral-500">
+                  matching &ldquo;{debouncedQ}&rdquo;</span>
+              )}
               <span className="ml-2 font-normal text-neutral-500">
                 {items?.total ?? 0} bills · {money(items?.amount)} {currency}
               </span>
@@ -391,10 +421,11 @@ export default function ApCashFlowPage() {
               <table className="w-full min-w-[900px] text-sm">
                 <thead>
                   <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
-                    <SortTh label="Bill" sortKey="bill_no" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
+                    <SortTh label="AP no." sortKey="bill_no" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
                     <SortTh label="Supplier" sortKey="supplier" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
                     <SortTh label="Invoice no." sortKey="invoice_no" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
                     <SortTh label="PO" sortKey="purchase_order" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
+                    <SortTh label="PA" sortKey="pa" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
                     <SortTh label="Bill date" sortKey="bill_date" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
                     <SortTh label="Term" sortKey="payment_terms" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
                     <SortTh label="Due" sortKey="due_date" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
@@ -403,16 +434,16 @@ export default function ApCashFlowPage() {
                 </thead>
                 <tbody>
                   {loadingItems && !items ? (
-                    <tr><td colSpan={8} className="px-3 py-8 text-center">
+                    <tr><td colSpan={9} className="px-3 py-8 text-center">
                       <Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></td></tr>
                   ) : itemsError ? (
                     // A failed request must never read as "nothing here".
-                    <tr><td colSpan={8} className="px-3 py-8 text-center text-danger-700">
+                    <tr><td colSpan={9} className="px-3 py-8 text-center text-danger-700">
                       Could not load these bills: {String((itemsError as Error).message ?? itemsError)}
                     </td></tr>
                   ) : (items?.items.length ?? 0) === 0 ? (
-                    <tr><td colSpan={8} className="px-3 py-8 text-center text-neutral-400">
-                      Nothing in this bucket.</td></tr>
+                    <tr><td colSpan={9} className="px-3 py-8 text-center text-neutral-400">
+                      {searching ? 'No bill matches the search.' : 'Nothing in this bucket.'}</td></tr>
                   ) : items!.items.map((r) => (
                     <tr key={r.bill_no} className="border-t border-neutral-100 hover:bg-neutral-50/60">
                       <td className="px-3 py-2 font-mono text-xs">{r.bill_no}</td>
@@ -422,6 +453,7 @@ export default function ApCashFlowPage() {
                       </td>
                       <td className="px-3 py-2 font-mono text-xs text-neutral-600"><BillInvoices invoices={r.invoices} /></td>
                       <td className="px-3 py-2 font-mono text-xs text-neutral-500">{billPurchaseOrders(r.invoices).join(', ') || '—'}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-neutral-500">{r.pa_numbers.join(', ') || '—'}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-xs text-neutral-600">{day(r.bill_date)}</td>
                       <td className="px-3 py-2 text-xs text-neutral-500">
                         {r.payment_terms ?? '—'}
