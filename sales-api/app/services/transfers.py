@@ -387,12 +387,14 @@ class Transfers:
         return report
 
     # ── the 944 ──────────────────────────────────────────────────────────────
-    async def process_944s(self, *, run_id: int | None = None) -> TransferReport:
+    async def process_944s(self, *, run_id: int | None = None, connection_id: int | None = None) -> TransferReport:
         report = TransferReport()
         async with self.uow_factory(SYSTEM_ACTOR) as uow:
             ids = list((await uow.session.execute(select(Document.id).where(
                 Document.kind == "944_EDI", Document.direction == "IN",
-                Document.processing_status == InboundFile.PENDING.value).order_by(Document.id))).scalars())
+                Document.processing_status == InboundFile.PENDING.value,
+                *([Document.connection_id == connection_id] if connection_id is not None else []))
+                .order_by(Document.id))).scalars())
         for did in ids:
             out = await isolated(f"944 document {did}", lambda uow, did=did: self._one(uow, did, report, run_id),
                                  uow_factory=self.uow_factory, log=self._log_failure(run_id))

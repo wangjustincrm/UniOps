@@ -155,11 +155,15 @@ async def test_run_now_needs_sales_file_retry_and_records_the_run(api):
     assert r.status_code == 202
     run_id = r.json()["run_id"]
     run = (await api.get(f"/api/v1/runs/{run_id}", headers=READER)).json()
-    assert (run["status"], run["trigger"]) == ("SUCCEEDED", "MANUAL")
-    assert run["summary"]["connections"]["radiant"] | {} == {
+    assert (run["status"], run["trigger"], run["scope"]) == ("SUCCEEDED", "MANUAL", "system")
+    # every active connection first, each in its own run
+    [conn] = (await api.get("/api/v1/runs?filter=job:eq:sales_connection", headers=READER)).json()["items"]
+    assert conn["scope"].startswith("connection:") and conn["trigger"] == "MANUAL"
+    assert conn["summary"]["pass"] | {} == {
         "listed": 2, "too_new": 0, "already_here": 0, "not_ours": 0, "stored": 1, "duplicates": 1, "failed": 0,
         "status": "ok"}
-    assert (await api.get("/api/v1/runs", headers=READER)).json()["total"] == 1
+    assert conn["summary"]["text"] == "1 files, 0 errors"
+    assert (await api.get("/api/v1/runs", headers=READER)).json()["total"] == 2
     assert (await api.get("/api/v1/runs", headers=NOBODY)).status_code == 403
 
 
@@ -178,7 +182,7 @@ async def test_documents_register_raw_bytes_and_log(api):
     await make_conn(api, host_key=FAKE_KEY)
     api.fake.files.update({"/in/a.945": x12("945", "000000001"), "/in/b.945": x12("945", "000000001"),
                            "/in/mine.940": x12("940", "000000002")})
-    run_id = (await run_now(api)).json()["run_id"]
+    await run_now(api)
 
     docs = (await api.get("/api/v1/documents?sort=id", headers=READER)).json()
     assert docs["total"] == 3 and all("content" not in d for d in docs["items"])
@@ -197,9 +201,10 @@ async def test_documents_register_raw_bytes_and_log(api):
     assert r.status_code == 404 and r.json()["error"]["details"]["original_id"] == a["id"]
     assert (await api.get(f"/api/v1/documents/{a['id']}/raw", headers=NOBODY)).status_code == 403
 
-    log = (await api.get(f"/api/v1/log?filter=run_id:eq:{run_id}&sort=id", headers=READER)).json()
+    [conn] = (await api.get("/api/v1/runs?filter=job:eq:sales_connection", headers=READER)).json()["items"]
+    log = (await api.get(f"/api/v1/log?filter=run_id:eq:{conn['id']}&sort=id", headers=READER)).json()
     messages = [e["message"] for e in log["items"]]
-    assert messages[0].startswith("cycle started") and messages[-1] == "cycle finished"
+    assert messages[0] == "run started (MANUAL): radiant" and messages[-1] == "run finished: radiant"
     assert any("duplicates document" in m for m in messages) and any("not ours" in m for m in messages)
     r = await api.get("/api/v1/log?search=not%20ours", headers=READER)
     assert r.json()["total"] == 1

@@ -9,10 +9,14 @@ from app.models.config import Connection
 from app.platform.crud_router import crud_router, read_router
 from app.runtime import Runtime, get_runtime
 from app.schemas.audit import AuditEntryRead
-from app.schemas.connections import ConnectionRead, ConnectionTestRead, CursorReset, EdiSettings, ShadowSetting
+from app.schemas.connections import (
+    ConnectionRead, ConnectionTestRead, CursorReset, EdiSettings, SchedulerSettings, ShadowSetting,
+)
 from app.schemas.operations import RunStarted
 from app.services import audit
-from app.services.connections import READ, ConnectionService, EdiSettingsService, ShadowSettingService
+from app.services.connections import (
+    READ, ConnectionService, EdiSettingsService, SchedulerSettingsService, ShadowSettingService,
+)
 from app.services.operations import DocumentService, LogService, RunService
 
 UoW = Annotated[Any, Depends(get_uow)]
@@ -29,6 +33,12 @@ async def connection_audit(u: UoW, id: int):
 @connections.post("/{id}/test", response_model=ConnectionTestRead)
 async def connection_test(u: UoW, rt: Rt, id: int):
     return await ConnectionService(u).test(id, rt.container.sftp, rt.container.shopify)  # reads only
+
+
+@connections.post("/{id}/run-now", response_model=RunStarted, status_code=202)
+async def connection_run_now(u: UoW, rt: Rt, id: int):
+    # Claims its own run record (single flight per connection); runs in the background.
+    return RunStarted(run_id=await ConnectionService(u).run_now(id, rt.scheduler, rt.background))
 
 
 @connections.post("/{id}/reset-cursor", response_model=ConnectionRead)
@@ -62,10 +72,29 @@ runs = read_router("/runs", RunService, uow=get_uow, tags=["runs"])
 @runs.post("/run-now", response_model=RunStarted, status_code=202)
 async def run_now(u: UoW, rt: Rt):
     # Claims its own run record; the request's unit of work only checks the permission.
-    return RunStarted(run_id=await RunService(u).run_now(rt.cycle, rt.background))
+    return RunStarted(run_id=await RunService(u).run_now(rt.scheduler, rt.background))
+
+
+@runs.post("/run-now/system", response_model=RunStarted, status_code=202)
+async def run_system_now(u: UoW, rt: Rt):
+    return RunStarted(run_id=await RunService(u).run_system_now(rt.scheduler, rt.background))
 
 
 log = read_router("/log", LogService, uow=get_uow, tags=["log"])
+
+scheduler_setting = APIRouter(prefix="/config/scheduler", tags=["settings"])
+
+
+@scheduler_setting.get("", response_model=SchedulerSettings)
+async def scheduler_get(u: UoW):
+    return await SchedulerSettingsService(u).get()
+
+
+@scheduler_setting.put("", response_model=SchedulerSettings)
+async def scheduler_put(u: UoW, body: SchedulerSettings):
+    out = await SchedulerSettingsService(u).update(body)
+    await u.commit()
+    return out
 
 
 edi_settings = APIRouter(prefix="/config/edi-settings", tags=["connections"])

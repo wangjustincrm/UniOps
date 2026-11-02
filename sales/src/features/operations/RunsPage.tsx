@@ -3,21 +3,29 @@ import {
   ActionButton, DateTimeCell, ErrorMessage, ListPage, LocalTable, PageHeader, StatusCell, Tabs, formatDateTime, useToast,
   type ColumnDef, type QuerySpec,
 } from '@/platform-ui'
-import { logClient, runNow, runsClient, type LogRead, type PassReport, type RunRead } from './operationsApi'
+import { logClient, runFor, runNow, runsClient, type LogRead, type PassReport, type RunRead } from './operationsApi'
 
 const RETRY = 'sales.file.retry'
 const PASS_COLUMNS: (keyof PassReport)[] = ['listed', 'too_new', 'already_here', 'not_ours', 'stored', 'duplicates', 'failed']
 
+/** Each connection's pass report: one in a connection's run, all of them in an old cycle. */
+function passesOf(r: RunRead): Record<string, PassReport> {
+  if (r.summary?.pass) return { [r.summary.connection ?? r.scope ?? 'connection']: r.summary.pass }
+  return r.summary?.connections ?? {}
+}
+
 function total(r: RunRead, k: keyof PassReport): number {
-  return Object.values(r.summary?.connections ?? {}).reduce((n, p) => n + Number(p[k] ?? 0), 0)
+  return Object.values(passesOf(r)).reduce((n, p) => n + Number(p[k] ?? 0), 0)
 }
 
 const runColumns: ColumnDef<RunRead, unknown>[] = [
   { accessorKey: 'started_at', header: 'Started', cell: ({ row }) => <DateTimeCell value={row.original.started_at} /> },
+  { accessorKey: 'scope', header: 'For', cell: ({ row }) => runFor(row.original) },
   { accessorKey: 'trigger', header: 'Trigger' },
   { accessorKey: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={row.original.status} /> },
   { id: 'stored', header: 'Stored', cell: ({ row }) => total(row.original, 'stored') },
   { id: 'failed', header: 'Failed', cell: ({ row }) => total(row.original, 'failed') },
+  { id: 'summary', header: 'Summary', cell: ({ row }) => row.original.summary?.text ?? '' },
   { accessorKey: 'finished_at', header: 'Finished', cell: ({ row }) => <DateTimeCell value={row.original.finished_at} /> },
 ]
 
@@ -44,14 +52,15 @@ const passColumns: ColumnDef<Pass, unknown>[] = [
 ]
 
 function RunDetail({ run }: { run: RunRead }) {
-  const passes: Pass[] = Object.entries(run.summary?.connections ?? {}).map(([name, p]) => ({ ...p, name }))
+  const passes: Pass[] = Object.entries(passesOf(run)).map(([name, p]) => ({ ...p, name }))
   return (
     <div className="flex flex-col gap-4 text-sm">
-      <p>{run.trigger} · started {formatDateTime(run.started_at)} · finished {formatDateTime(run.finished_at)}</p>
+      <p>{runFor(run)} · {run.trigger} · started {formatDateTime(run.started_at)} · finished {formatDateTime(run.finished_at)}</p>
+      {run.summary?.text && <p>{run.summary.text}</p>}
       {run.error && <p role="alert" className="text-danger-600">{run.error}</p>}
       <section aria-label="Pass report">
         <h3 className="mb-1 font-semibold text-neutral-800">Pass report</h3>
-        {passes.length === 0 ? <p className="text-neutral-500">No connection was read.</p> : (
+        {passes.length === 0 ? <p className="text-neutral-500">{run.scope === 'system' ? 'The system job reads no connection.' : 'No connection was read.'}</p> : (
           <LocalTable<Pass> ariaLabel="Pass report" columns={passColumns} rows={passes} rowKey={(p) => p.name} />
         )}
       </section>
@@ -99,7 +108,7 @@ function Runs() {
 export default function RunsPage() {
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader title="Runs and log" description="Each cycle with its pass report per connection, and everything the module logged." />
+      <PageHeader title="Runs and log" description="Each connection's runs (its pass report) and the system job's, and everything the module logged. Run now runs every active connection, then the system job." />
       <Tabs items={[{ value: 'runs', label: 'Runs', content: <Runs /> }, { value: 'log', label: 'Log', content: <LogTable /> }]} />
     </div>
   )

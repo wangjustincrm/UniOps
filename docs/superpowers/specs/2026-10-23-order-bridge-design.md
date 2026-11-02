@@ -128,10 +128,14 @@ Before writing each migration: confirm single head per service and the parent (i
 - Single flight: a transaction-scoped advisory lock (`pg_try_advisory_xact_lock(<orders key>)`) around claiming the run, plus an `sales_runs` row in RUNNING with a heartbeat. A run whose heartbeat is older than the stale threshold is closed as FAILED by the next cycle (FR-OB-07, AC-OB-46).
 - "Run now" in the UI (permission `sales.file.retry`) claims a run through the same path; it never runs a second cycle concurrently.
 - Env switch `SALES_SCHEDULER_ENABLED` must be true for the loop to start (false in dev and test stacks by default, so a developer stack never talks to partners).
+- **Per connection (user decision 2026-11-02; `sales14`, `app/services/cycle.py`).** Two kinds of job replace the one cycle, each a `ScheduledJob` with its own single flight and run records (`sales_runs.scope`):
+  - a **connection job** per active connection (`connection:<id>`), due when its `next_run_at` is reached, it is not `schedule_paused`, and the time is inside its optional window — `active_from` / `active_to` in Toronto time (an end before the start crosses midnight and belongs to the day it started) on `active_days` (empty = every day) — `app/domain/schedule.py`. It does the connection's step (SFTP pass, or the store's Shopify pull) and then takes the documents it just stored through (850 → orders, 997 / 945 / 944 applied; only that connection's, `connection_id`), with the shadow rules. Its run writes `last_run_at / status / summary` ("3 files, 0 errors"), `last_error` and `next_run_at` (start + `schedule_minutes`, also after a failure) — a Core UPDATE: no audit row and no new version. `schedule_minutes` defaults to 5 (SFTP) / 10 (Shopify); the schedule is edited on the connection (form and CSV, `sales.config`, audited).
+  - the **system job** (`system`), every `scheduler.system_minutes` (default 1): 940 / 943 queueing, invoice advance, the outbox, ACK timeouts, the shadow reference import and comparison.
+  - `scheduler.paused` stays the master switch for every job (`scheduler.interval_minutes` is no longer read). Run now: per connection (`POST /config/connections/{id}/run-now`, `sales.file.retry`; ignores the schedule, refused while that connection runs), the system job (`POST /runs/run-now/system`), and the global one (`POST /runs/run-now`: every active connection — one already running is skipped — then the system job; returns the system run). The master switch and the system interval are edited on Health → Scheduler (`/config/scheduler`, `sales.config`, audited); Health lists every job with its last and next run and flags one overdue by more than three intervals (WARNING).
 
 ### 4.2 One cycle
 
-Steps run in order; each unit of work (one connection, one document, one order) runs in its own transaction and `try` block, records its outcome in `sales_log`, raises its task when needed and moves on (FR-OB-50, AC-OB-47):
+(Since 2026-11-02 these steps are split between the connection jobs — step 1 and the step-2 documents a connection stored — and the system job — steps 3 to 6; §4.1.) Steps run in order; each unit of work (one connection, one document, one order) runs in its own transaction and `try` block, records its outcome in `sales_log`, raises its task when needed and moves on (FR-OB-50, AC-OB-47):
 
 1. **Fetch** every active connection (SFTP: list → filter → download; Shopify: pages from the cursor). Store each document (FR-OB-70..76, §4.3).
 2. **Parse and apply inbound** documents in arrival order: 850 → orders; Shopify pages → orders; 997 → 940/943 ACK; 945 → shipments; 944 → receipts.
@@ -653,6 +657,8 @@ async def isolated(unit_name: str, fn, *, uow_factory, log) -> UnitOutcome:
 The intake chain (list → identity check → stability → download → hash/store → commit → after-read → classify, FR-OB-70..76) and the cycle (fetch → apply → time rules → build → outbox → write-back) are lists of `Step`s; each unit inside a step goes through `isolated`. `isolated` is the job's unit boundary and the only place in a cycle that commits (once per unit, FR-OB-50); the function it runs, and every service that function calls, only flushes (§13.4).
 
 ### 13.12 Scheduled job
+
+*(2026-11-02)* A job may carry a `scope` (e.g. one connection): single flight is per (job, scope) — the advisory lock takes the scope's hash as its second key, and the RUNNING check and stale closure look at that scope only — and every run row records its scope. `due(session, now)` decides an unforced claim (default: the interval since the last scheduled start, unless paused — the sketch below); `on_closed(run)` is called with every closed run, failures included (best effort, logged).
 
 ```python
 class ScheduledJob(ABC):

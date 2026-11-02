@@ -10,13 +10,13 @@ value is a migration, not an enum type change.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, time
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
-    Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, Numeric, String, Text,
-    UniqueConstraint, text,
+    Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, Time,
+    UniqueConstraint, false, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -153,6 +153,8 @@ class Connection(Audited, Versioned, Deactivatable, Base):
         # comes from each file's content (850 TradingPartner). sales04.
         CheckConstraint("kind = 'SHOPIFY' OR partner_code IS NULL", name="ck_sales_connections_partner_shopify_only"),
         CheckConstraint("page_size IS NULL OR page_size BETWEEN 1 AND 250", name="ck_sales_connections_page_size"),
+        CheckConstraint("schedule_minutes >= 1", name="ck_sales_connections_schedule_minutes"),
+        CheckConstraint("(active_from IS NULL) = (active_to IS NULL)", name="ck_sales_connections_active_window"),
     )
 
     name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
@@ -186,6 +188,20 @@ class Connection(Audited, Versioned, Deactivatable, Base):
     order_number_cutoff: Mapped[int | None] = mapped_column(Integer, nullable=True)  # FR-OB-17 (9000 today)
     partner_code: Mapped[str | None] = mapped_column(
         String(50), ForeignKey("sales_partners.code", name="fk_sales_connections_partner_code"), nullable=True)
+    # Its own schedule (sales14; user 2026-11-02): every N minutes, unless
+    # paused, inside the optional window (Toronto time; an end before the start
+    # crosses midnight; days "Mon,Tue,…", empty = every day).
+    schedule_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=5, server_default="5")
+    schedule_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    active_from: Mapped[time | None] = mapped_column(Time, nullable=True)
+    active_to: Mapped[time | None] = mapped_column(Time, nullable=True)
+    active_days: Mapped[str | None] = mapped_column(String(27), nullable=True)
+    # Written by the scheduler only.
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_run_status: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    last_run_summary: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Setting(Audited, SettingRecordMixin, Base):

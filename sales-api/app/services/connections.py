@@ -11,24 +11,30 @@ from app.domain.connections import check_connection
 from app.integrations import shopify as shopify_mod
 from app.integrations.sftp import readable
 from app.models.config import Partner
-from app.platform.errors import InvalidInput
-from sqlalchemy import select
+from app.platform.errors import BusinessError, InvalidInput
+from sqlalchemy import case, or_, select
 from app.models.config import Connection
 from app.platform.authorization import requires
+from app.platform.query import FilterRule, parse_bool
 from app.platform.repository import Repository
 from app.platform.services import CrudService
 from app.platform.views import Preset
 from app.schemas.connections import (
-    ConnectionCreate, ConnectionRead, ConnectionTestRead, ConnectionUpdate, EdiSettings, FolderCheckRead, HostKeyRead, ShadowSetting,
+    ConnectionCreate, ConnectionRead, ConnectionTestRead, ConnectionUpdate, EdiSettings, FolderCheckRead, HostKeyRead,
+    SchedulerSettings, ShadowSetting,
 )
 from app.services.intake import ConnectionSnapshot
 from app.services.problems import SFTP_AUTH_FAILED
-from app.services.settings import ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, INVOICE_CONNECTION_ID, SETTINGS, SHADOW_MODE
+from app.services.settings import (
+    ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, INVOICE_CONNECTION_ID, SCHEDULER_PAUSED, SETTINGS, SHADOW_MODE, SYSTEM_MINUTES,
+)
 
 logger = logging.getLogger(__name__)
 
 READ = "sales.read"
 CONFIG = "sales.config"
+FILE_RETRY = "sales.file.retry"
+DEFAULT_MINUTES = {"SFTP": 5, "SHOPIFY": 10}  # a new connection's schedule (user 2026-11-02)
 
 
 _RULE_FIELDS = ("kind", "host", "username", "inbound_folder", "secret_name", "after_read", "processed_folder",
@@ -42,19 +48,29 @@ def same_key(a: str | None, b: str | None) -> bool:
     return bool(a and b) and a.split()[:2] == b.split()[:2]
 
 
+# "Paused or failing": its schedule paused, its last run failed or partial, or its login latched.
+NEEDS_ATTENTION = case((or_(Connection.schedule_paused.is_(True), Connection.last_run_status.in_(("FAILED", "PARTIAL")),
+                            Connection.auth_failed_at.is_not(None)), True), else_=False)
+
+
 class ConnectionRepository(Repository[Connection]):
     model = Connection
     search_fields = ("name", "host")
     # secret_name and host_key are not list fields: never echoed back in a filter error.
     list_fields = ("name", "kind", "host", "port", "username", "after_read", "stable_seconds", "mode",
                    "auth_failed_at", "api_version", "cursor_updated_at", "page_size", "order_number_cutoff",
-                   "partner_code", "active", "created_at", "updated_at")
-    labels = {"after_read": "After read", "stable_seconds": "Stable (seconds)", "auth_failed_at": "Login refused at",
+                   "partner_code", "schedule_minutes", "schedule_paused", "last_run_at", "last_run_status", "next_run_at",
+                   "active", "created_at", "updated_at")
+    filterable = {"needs_attention": FilterRule(NEEDS_ATTENTION, kind="bool", cast=parse_bool)}
+    labels = {"schedule_minutes": "Every (minutes)", "schedule_paused": "Paused", "last_run_at": "Last run",
+              "last_run_status": "Last run status", "next_run_at": "Next run", "after_read": "After read", "stable_seconds": "Stable (seconds)", "auth_failed_at": "Login refused at",
               "api_version": "API version", "cursor_updated_at": "Cursor (updated at)"}
     enums = {"kind": CONNECTION_KINDS, "after_read": AFTER_READ, "mode": CONNECTION_MODES}
     default_sort = ("name",)
-    groupable = ("kind", "mode", "after_read", "partner_code", "active")
+    groupable = ("kind", "mode", "after_read", "partner_code", "schedule_paused", "last_run_status", "active")
     presets = (Preset("all", "All"),
+               Preset("paused_or_failing", "Paused or failing",
+                      {"filters": [{"field": "needs_attention", "op": "eq", "value": "true"}]}),
                Preset("inactive", "Inactive", {"filters": [{"field": "active", "op": "eq", "value": "false"}]}),
                Preset("login_refused", "Login refused", {"filters": [{"field": "auth_failed_at", "op": "not_null", "value": None}]}))
 
@@ -69,7 +85,7 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
     csv_key = "name"
     csv_columns = ("name", "kind", "host", "port", "username", *_FOLDERS, "after_read", "stable_seconds", "mode",
                    "secret_name", "host_key", "api_version", "page_size", "order_number_cutoff", "partner_code",
-                   "active")
+                   "schedule_minutes", "schedule_paused", "active_from", "active_to", "active_days", "active")
     unique_constraints = {"sales_connections_name_key": ("connection.name_taken", "name")}
     # Where secrets live (§5.3): the server environment, read for presence only.
     environ: ClassVar[Any] = os.environ
@@ -87,9 +103,19 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
         check_connection(data.model_dump())
         await self._partner_exists(data.partner_code)
 
+    def build(self, values: dict[str, Any]) -> Connection:
+        if values.get("schedule_minutes") is None:  # by kind (user 2026-11-02)
+            values["schedule_minutes"] = DEFAULT_MINUTES.get(values.get("kind"), 5)
+        return super().build(values)
+
     async def before_update(self, entity: Connection, changes: dict[str, Any]) -> None:
         check_connection({**{k: getattr(entity, k) for k in _RULE_FIELDS}, **changes})
         await self._partner_exists(changes.get("partner_code"))
+        start = changes.get("active_from", entity.active_from)
+        end = changes.get("active_to", entity.active_to)
+        if (start is None) != (end is None):
+            raise InvalidInput("connection.active_window", "give both the start and the end of the active hours, or neither",
+                               {"field": "active_to" if start is not None else "active_from"})
         if changes.get("mode") == "LIVE" and entity.mode != "LIVE":
             await self._go_live_gate()
 
@@ -104,6 +130,20 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
                 "connection.go_live_gate",
                 "the notification gate is not met: " + "; ".join(f"{g.label} ({g.problem})" for g in missing),
                 {"field": "mode", "events": [g.event_type for g in missing]})
+
+    @requires(FILE_RETRY)
+    async def run_now(self, id: int, scheduler, background) -> int:
+        """This connection's job now (sales.file.retry): ignores its schedule,
+        never its single flight — one already running is refused."""
+        entity = await self.repo.get(id)
+        if not entity.active:
+            raise InvalidInput("connection.inactive", "activate the connection before running it")
+        job = scheduler.connection(id)
+        run_id = await job.claim(trigger="MANUAL", force=True)
+        if run_id is None:
+            raise BusinessError("run.already_running", f"{entity.name} is running; wait for it to finish")
+        background.spawn(job.execute(run_id), name=f"sales-connection-{id}-run-{run_id}")
+        return run_id
 
     @requires(CONFIG)
     async def reset_cursor(self, id: int, cursor) -> ConnectionRead:
@@ -217,3 +257,25 @@ class ShadowSettingService:
         await SETTINGS.set(self.uow.session, SHADOW_MODE, body.shadow_mode)
         marked = await mark_open_orders(self.uow) if body.shadow_mode else 0
         return ShadowSetting(shadow_mode=body.shadow_mode, marked_orders=marked)
+
+
+class SchedulerSettingsService:
+    """The scheduler's master switch and the system job's interval (Health →
+    Scheduler): sales.config to change; audited (sales_settings is Audited)."""
+
+    def __init__(self, uow) -> None:
+        self.uow = uow
+
+    @requires(READ)
+    async def get(self) -> SchedulerSettings:
+        s = self.uow.session
+        return SchedulerSettings(paused=await SETTINGS.get(s, SCHEDULER_PAUSED),
+                                 system_minutes=await SETTINGS.get(s, SYSTEM_MINUTES))
+
+    @requires(CONFIG)
+    async def update(self, body: SchedulerSettings) -> SchedulerSettings:
+        s = self.uow.session
+        self.uow.set_reason("scheduler settings")
+        await SETTINGS.set(s, SCHEDULER_PAUSED, body.paused)
+        await SETTINGS.set(s, SYSTEM_MINUTES, body.system_minutes)
+        return body

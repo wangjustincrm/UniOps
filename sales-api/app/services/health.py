@@ -32,14 +32,17 @@ from app.models.shipments import Shipment, ShipmentRow
 from app.models.transfers import Receipt
 from app.platform.authorization import requires
 from app.platform.query import Filter, QuerySpec
-from app.schemas.health import CardRead, CheckRead, DashboardRead, HealthRead, RunBrief, TaskCount
+from app.domain.schedule import describe
+from app.schemas.health import CardRead, CheckRead, DashboardRead, HealthRead, JobRead, RunBrief, TaskCount
+from app.services.cycle import SYSTEM as SYSTEM_SCOPE
+from app.services.cycle import window_of
 from app.services.notifications import gate
 from app.services.operations import DocumentRepository
 from app.services.order_views import OrderRepository
 from app.services.problems import DOCUMENT_TYPE
 from app.services.settings import (
-    EDI_CONNECTION_ID, OPERATOR_USER_ID, OUTBOX_BACKLOG_MINUTES, PAUSED_ALARM_MINUTES, SCHEDULER_INTERVAL_MINUTES,
-    SCHEDULER_PAUSED, SETTINGS, SHADOW_MODE, TASK_AGE_HOURS,
+    EDI_CONNECTION_ID, OPERATOR_USER_ID, OUTBOX_BACKLOG_MINUTES, PAUSED_ALARM_MINUTES,
+    SCHEDULER_PAUSED, SETTINGS, SHADOW_MODE, SYSTEM_MINUTES, TASK_AGE_HOURS,
 )
 from app.services.transfer_views import TransferRepository
 
@@ -96,6 +99,13 @@ EXCEPTIONS_944 = _documents(("kind", "eq", "944_EDI"))
 REPOS = {"orders": OrderRepository, "documents": DocumentRepository, "transfers": TransferRepository}
 
 
+def _counts(keys) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for k in keys:
+        out[k] = out.get(k, 0) + 1
+    return out
+
+
 class Health:
     def __init__(self, uow, settings) -> None:
         self.uow = uow
@@ -143,17 +153,19 @@ class Health:
             else:
                 add(f"connection:{c.id}", f"Connection {c.name}", PASSED, f"{c.kind}, {c.mode}", link="/config/connections")
 
-        # scheduler
+        # scheduler: every job (per connection, and the system job)
+        jobs = await self.jobs(now)
         running = list((await self.s.execute(select(Run).where(Run.status == "RUNNING"))).scalars())
         last_ok = (await self.s.execute(select(func.max(Run.finished_at)).where(
             Run.status.in_(("SUCCEEDED", "PARTIAL"))))).scalar_one()
-        interval = await SETTINGS.get(self.s, SCHEDULER_INTERVAL_MINUTES) or 5
         paused = await SETTINGS.get(self.s, SCHEDULER_PAUSED)
         stale = [r for r in running if (r.heartbeat_at or r.started_at) < now - timedelta(minutes=30)]
         enabled = bool(getattr(self.settings, "SALES_SCHEDULER_ENABLED", False))
         last = f"last successful run {last_ok:%Y-%m-%d %H:%M} UTC" if last_ok else "no successful run yet"
-        if len(running) > 1:
-            add("scheduler", "Scheduler", FAILED, f"{len(running)} cycles are RUNNING at once", link="/runs")
+        twice = [k for k, n in _counts(f"{r.job}|{r.scope}" for r in running).items() if n > 1]
+        overdue = [j.label for j in jobs if j.overdue] if enabled else []
+        if twice:
+            add("scheduler", "Scheduler", FAILED, f"a job is RUNNING twice at once: {', '.join(twice)}", link="/runs")
         elif stale:
             add("scheduler", "Scheduler", FAILED, f"a cycle is stuck RUNNING since {stale[0].started_at:%Y-%m-%d %H:%M} UTC",
                 link="/runs")
@@ -168,10 +180,10 @@ class Health:
         elif not enabled:
             add("scheduler", "Scheduler", WARNING, f"not running in this environment (SALES_SCHEDULER_ENABLED off); {last}",
                 link="/runs")
-        elif last_ok is None or last_ok < now - timedelta(minutes=3 * interval):
-            add("scheduler", "Scheduler", WARNING, f"no successful cycle in the last {3 * interval} minutes; {last}", link="/runs")
+        elif overdue:
+            add("scheduler", "Scheduler", WARNING, f"overdue by more than 3 intervals: {', '.join(overdue)}; {last}", link="/runs")
         else:
-            add("scheduler", "Scheduler", PASSED, f"every {interval} minutes; {last}", link="/runs")
+            add("scheduler", "Scheduler", PASSED, f"{len(jobs)} jobs on schedule; {last}", link="/runs")
 
         # files and ACKs
         cards: dict[str, int] = {}
@@ -219,10 +231,37 @@ class Health:
         cards["critical"] = sum(c.result == FAILED for c in out)
         cards["warnings"] = sum(c.result == WARNING for c in out)
         return HealthRead(
+            jobs=jobs, scheduler_paused=paused, system_minutes=await SETTINGS.get(self.s, SYSTEM_MINUTES),
             result=result, checked_at=now, checks=out, cards=cards, shadow_mode=shadow,
             partner_writes_enabled=bool(getattr(self.settings, "SALES_PARTNER_WRITES_ENABLED", False)),
             external_email_enabled=bool(getattr(self.settings, "SALES_EXTERNAL_EMAIL_ENABLED", False)),
             scheduler_enabled=enabled, gate=gate_rows, gate_ok=all(g.ok for g in gate_rows))
+
+    async def jobs(self, now: datetime) -> list[JobRead]:
+        """Every job with its last and next run. Overdue: more than 3 intervals
+        past its next run while it should run (not paused, inside its window)."""
+        master = await SETTINGS.get(self.s, SCHEDULER_PAUSED)
+        minutes = await SETTINGS.get(self.s, SYSTEM_MINUTES)
+        last = (await self.s.execute(select(Run).where(Run.scope == SYSTEM_SCOPE).order_by(Run.started_at.desc())
+                                     .limit(1))).scalar_one_or_none()
+        last_sched = (await self.s.execute(select(func.max(Run.started_at)).where(
+            Run.scope == SYSTEM_SCOPE, Run.trigger == "SCHEDULE"))).scalar_one()
+        nxt = last_sched + timedelta(minutes=minutes) if last_sched else None
+        out = [JobRead(scope=SYSTEM_SCOPE, label="System job", connection_id=None, interval_minutes=minutes,
+                       schedule=f"every {minutes} min", paused=master, last_run_at=last.finished_at if last else None,
+                       last_run_status=last.status if last else None,
+                       last_run_summary=((last.summary or {}).get("text") or last.error) if last else None,
+                       next_run_at=nxt, overdue=not master and nxt is not None and now > nxt + timedelta(minutes=3 * minutes))]
+        for c in (await self.s.execute(select(Connection).where(Connection.active.is_(True)).order_by(Connection.name))).scalars():
+            w = window_of(c)
+            paused = master or c.schedule_paused
+            late = c.next_run_at is not None and now > c.next_run_at + timedelta(minutes=3 * c.schedule_minutes)
+            out.append(JobRead(scope=f"connection:{c.id}", label=c.name, connection_id=c.id,
+                               interval_minutes=c.schedule_minutes, schedule=describe(c.schedule_minutes, w),
+                               paused=paused, last_run_at=c.last_run_at, last_run_status=c.last_run_status,
+                               last_run_summary=c.last_run_summary, next_run_at=c.next_run_at,
+                               overdue=not paused and late and w.contains(now)))
+        return out
 
     # ── FR-OB-52b ────────────────────────────────────────────────────────────
     async def dashboard(self) -> DashboardRead:

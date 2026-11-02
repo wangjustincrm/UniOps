@@ -50,8 +50,13 @@ export interface RunRead {
   started_at: string
   heartbeat_at: string
   finished_at: string | null
-  summary: { connections?: Record<string, PassReport>; outbox?: Record<string, number> } | null
+  /** Before per-connection scheduling one cycle held every connection (`connections`); now a
+   *  connection's run holds its own `pass` (and `connection`, its name), and every run a `text`. */
+  summary: { connections?: Record<string, PassReport>; pass?: PassReport; connection?: string; text?: string;
+    outbox?: Record<string, number> } | null
   error: string | null
+  /** "connection:<id>" | "system" (none: the one cycle, before per-connection scheduling). */
+  scope: string | null
 }
 
 export interface LogRead {
@@ -73,3 +78,12 @@ export const runsClient = createResourceClient<RunRead, never>(api, '/runs')
 export const logClient = createResourceClient<LogRead, never>(api, '/log')
 export const downloadOriginal = (d: DocumentRead) => api.download(`/documents/${d.id}/raw`, d.remote_name ?? `document-${d.id}`)
 export const runNow = () => api.post<{ run_id: number }>('/runs/run-now')
+/** The system job alone, now (Health). */
+export const runSystemNow = () => api.post<{ run_id: number }>('/runs/run-now/system')
+
+/** What the run was for: the connection's name, the system job, or the one cycle (before 2026-11-02). */
+export function runFor(r: RunRead): string {
+  if (r.scope === 'system') return 'System job'
+  if (r.scope?.startsWith('connection:')) return r.summary?.connection ?? r.scope
+  return 'Cycle'
+}

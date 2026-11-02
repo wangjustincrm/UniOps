@@ -30,6 +30,22 @@ export interface GateEventRead {
   problem: string | null
 }
 
+/** One scheduled job: a connection's, or the system job. */
+export interface JobRead {
+  scope: string
+  label: string
+  connection_id: number | null
+  interval_minutes: number
+  schedule: string
+  paused: boolean
+  last_run_at: string | null
+  last_run_status: string | null
+  last_run_summary: string | null
+  next_run_at: string | null
+  /** More than 3 intervals past its next run while it should run. */
+  overdue: boolean
+}
+
 export interface HealthRead {
   result: HealthResult
   checked_at: string
@@ -41,6 +57,9 @@ export interface HealthRead {
   scheduler_enabled: boolean
   gate: GateEventRead[]
   gate_ok: boolean
+  jobs: JobRead[]
+  scheduler_paused: boolean
+  system_minutes: number
 }
 
 export interface CardRead {
@@ -68,3 +87,6 @@ export interface InboxTarget {
 export const fetchHealth = () => api.get<HealthRead>('/operations/health')
 export const fetchDashboard = () => api.get<DashboardRead>('/operations/dashboard')
 export const resolveInbox = (key: string) => api.get<InboxTarget>(`/inbox/${encodeURIComponent(key)}`)
+
+export interface SchedulerSettings { paused: boolean; system_minutes: number }
+export const saveScheduler = (body: SchedulerSettings) => api.put<SchedulerSettings>('/config/scheduler', body)

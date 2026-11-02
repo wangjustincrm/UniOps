@@ -23,9 +23,9 @@ from app.platform.actors import SYSTEM_ACTOR
 from app.platform.audit import AuditTrail
 from app.platform.guard import GuardedGateway
 from app.platform.outbox import Outbox, OutboxWorker
-from app.platform.jobs import Schedule
+
 from app.platform.uow import UnitOfWorkFactory
-from app.services.cycle import SalesCycle
+from app.services.cycle import SalesScheduler
 from app.services.intake import ConnectionSnapshot, Intake
 from app.services.problems import task_service
 
@@ -309,16 +309,19 @@ async def test_after_read_follows_the_switch_and_the_live_mode(env, switch, mode
 
 # ── scheduler: AC-OB-46 / 47 / 48 ───────────────────────────────────────────
 
-def make_cycle(env):
-    async def schedule():
-        return Schedule(timedelta(minutes=5))
-    return SalesCycle(intake=env.intake, outbox_worker=OutboxWorker(Outbox(OutboxRecord), {}, env.factory),
-                      run_model=Run, uow_factory=env.factory, schedule=schedule)
+def make_scheduler(env):
+    return SalesScheduler(intake=env.intake, outbox_worker=OutboxWorker(Outbox(OutboxRecord), {}, env.factory),
+                          run_model=Run, uow_factory=env.factory)
+
+
+def make_cycle(env, conn_id):
+    """A connection's job (single flight per connection, AC-OB-46)."""
+    return make_scheduler(env).connection(conn_id)
 
 
 async def test_ac46_two_cycles_cannot_run_at_once(env):
-    await env.add_conn()
-    cycle = make_cycle(env)
+    c = await env.add_conn()
+    cycle = make_cycle(env, c.id)
     env.fake.gate = asyncio.Event()
     first = asyncio.create_task(cycle.tick(trigger="MANUAL", force=True))
     for _ in range(100):
@@ -333,10 +336,12 @@ async def test_ac46_two_cycles_cannot_run_at_once(env):
 
 
 async def test_ac46_a_run_left_running_is_closed_as_failed_by_the_next_cycle(env):
-    cycle = make_cycle(env)
+    c = await env.add_conn()
+    cycle = make_cycle(env, c.id)
     async with env.factory(SYSTEM_ACTOR) as uow:
         old = datetime.now(timezone.utc) - timedelta(hours=2)
-        uow.session.add(Run(job=cycle.name, trigger="SCHEDULE", status="RUNNING", started_at=old, heartbeat_at=old))
+        uow.session.add(Run(job=cycle.name, scope=cycle.scope, trigger="SCHEDULE", status="RUNNING", started_at=old,
+                            heartbeat_at=old))
         await uow.commit()
     run = await cycle.tick(trigger="MANUAL", force=True)
     assert run is not None and run.status == "SUCCEEDED"
@@ -349,10 +354,12 @@ async def test_ac47_one_unreachable_partner_does_not_stop_the_others(env):
     await env.add_conn(name="b-fine", folder="/in-b")
     env.fake.fail_for[(bad.id, "list")] = OSError("connection timed out")
     env.fake.files["/in-b/a.945"] = x12("945")
-    run = await make_cycle(env).tick(trigger="MANUAL", force=True)
-    assert run.status == "PARTIAL"
-    per = run.summary["connections"]
-    assert per["a-unreachable"]["status"] == "list_failed" and per["b-fine"]["stored"] == 1
+    await make_scheduler(env).tick()  # each connection its own job: never due yet, so both run
+    runs = {r["scope"]: r for r in await env.q("SELECT scope, status, summary FROM sales_runs WHERE job = 'sales_connection'")}
+    assert runs[f"connection:{bad.id}"]["status"] == "PARTIAL"
+    assert runs[f"connection:{bad.id}"]["summary"]["pass"]["status"] == "list_failed"
+    good = next(r for k, r in runs.items() if k != f"connection:{bad.id}")
+    assert good["status"] == "SUCCEEDED" and good["summary"]["pass"]["stored"] == 1
     [task] = await env.q("SELECT type FROM tasks")
     assert task["type"] == "sales_sftp_fetch_failed"
     assert (await env.snap(bad.id)).auth_failed_at is None  # a network error is not latched
@@ -362,7 +369,7 @@ async def test_ac48_a_refused_login_is_reported_once_and_not_retried_until_clear
     from app.services.connections import ConnectionService
     c = await env.add_conn()
     env.fake.fail_for[(c.id, "list")] = SftpAuthFailed("login refused by sftp-test: bad password")
-    cycle = make_cycle(env)
+    cycle = make_cycle(env, c.id)
     await cycle.tick(trigger="MANUAL", force=True)
     await cycle.tick(trigger="MANUAL", force=True)
     assert env.fake.count("list") == 1  # the second cycle did not try again

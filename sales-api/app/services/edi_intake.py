@@ -29,11 +29,13 @@ class EdiIntake:
         self.tasks = tasks
         self.clock = clock
 
-    async def run_pass(self, *, run_id: int | None = None) -> dict[str, int]:
+    async def run_pass(self, *, run_id: int | None = None, connection_id: int | None = None) -> dict[str, int]:
         async with self.uow_factory(SYSTEM_ACTOR) as uow:
             ids = list((await uow.session.execute(select(Document.id).where(
                 Document.kind == "850_JSON", Document.direction == "IN",
-                Document.processing_status == InboundFile.PENDING.value).order_by(Document.id))).scalars())
+                Document.processing_status == InboundFile.PENDING.value,
+                *([Document.connection_id == connection_id] if connection_id is not None else []))
+                .order_by(Document.id))).scalars())
         out = {"files": len(ids), "processed": 0, "failed": 0, "orders": 0}
         for doc_id in ids:
             outcome = await isolated(f"850 document {doc_id}", lambda uow, d=doc_id: self._one(uow, d, run_id),

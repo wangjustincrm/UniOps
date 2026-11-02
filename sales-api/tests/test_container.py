@@ -46,7 +46,7 @@ async def test_the_runtime_builds_outside_tests_with_the_real_sftp_gateway():
                         SALES_EXTERNAL_EMAIL_ENABLED=False, sftp_allowed_hosts=frozenset({"sftp-test"}))
     rt = build_runtime(s, uow_factory=None)
     assert repr(rt.container.sftp) == "<GuardedGateway sftp>"
-    assert rt.intake.sftp is rt.container.sftp and rt.cycle.intake is rt.intake
+    assert rt.intake.sftp is rt.container.sftp and rt.scheduler.intake is rt.intake
     # The real gateway with this stack's host list, refusing before any traffic:
     with pytest.raises(SftpRefused, match="not in SALES_SFTP_ALLOWED_HOSTS"):
         await rt.container.sftp.list(SimpleNamespace(host="sftp.truecommerce.com", host_key="k"), "/in")

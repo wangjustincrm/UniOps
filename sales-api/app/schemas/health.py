@@ -19,6 +19,21 @@ class CheckRead(BaseModel):
     link: dict[str, Any] | None = None
 
 
+class JobRead(BaseModel):
+    """One scheduled job (per connection, and the system job)."""
+    scope: str               # "connection:<id>" | "system"
+    label: str
+    connection_id: int | None
+    interval_minutes: int
+    schedule: str            # "every 5 min, Mon–Fri 06:00–22:00"
+    paused: bool             # its own pause, or the master switch
+    last_run_at: datetime | None
+    last_run_status: str | None
+    last_run_summary: str | None
+    next_run_at: datetime | None
+    overdue: bool            # more than 3 intervals past its next run while it should run
+
+
 class HealthRead(BaseModel):
     result: str
     checked_at: datetime
@@ -32,6 +47,9 @@ class HealthRead(BaseModel):
     scheduler_enabled: bool
     gate: list[GateEventRead]
     gate_ok: bool
+    jobs: list[JobRead] = []
+    scheduler_paused: bool = False
+    system_minutes: int = 1
 
 
 class CardRead(BaseModel):

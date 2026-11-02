@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
     from app.runtime import get_runtime
     runtime = get_runtime()
     if settings.SALES_SCHEDULER_ENABLED:
-        runtime.background.spawn(runtime.cycle.loop(runtime.background.stop), name="sales-cycle")
+        runtime.background.spawn(runtime.scheduler.loop(runtime.background.stop), name="sales-scheduler")
         logger.info("scheduler started")
     else:
         logger.info("scheduler disabled (SALES_SCHEDULER_ENABLED=false); Run now still works")

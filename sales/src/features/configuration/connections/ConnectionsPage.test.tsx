@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PermissionProvider, ToastProvider } from '@/platform-ui'
+import { MemoryRouter } from 'react-router-dom'
 import type { ConnectionRead } from './connectionsApi'
 
 const conn: ConnectionRead = {
@@ -11,6 +12,8 @@ const conn: ConnectionRead = {
   secret_present: true, host_key: null, auth_failed_at: null, auth_failed_reason: null, active: true, version: 3,
   api_version: null, cursor_updated_at: null, page_size: null, order_number_cutoff: null, partner_code: null,
   created_at: '2026-10-29T12:00:00Z', created_by_name: 'Op', updated_at: null, updated_by_name: null,
+  schedule_minutes: 5, schedule_paused: false, active_from: null, active_to: null, active_days: null,
+  last_run_at: null, last_run_status: null, last_run_summary: null, last_error: null, next_run_at: null,
 }
 const LINE = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample'
 
@@ -18,26 +21,33 @@ const api = vi.hoisted(() => ({
   test: vi.fn(), pin: vi.fn(), clear: vi.fn(), importCsv: vi.fn(),
   edi: vi.fn(async () => ({ connection_id: null, ack_timeout_minutes: 120 })), saveEdi: vi.fn(),
   shadow: vi.fn(async () => ({ shadow_mode: true })), saveShadow: vi.fn(),
+  runNow: vi.fn(), runs: vi.fn(async (): Promise<{ items: unknown[]; total: number }> => ({ items: [], total: 0 })), update: vi.fn(),
+  list: vi.fn(),
 }))
 vi.mock('./connectionsApi', async (orig) => {
   const real = await orig<typeof import('./connectionsApi')>()
   return {
     ...real,
-    connectionsClient: { ...real.connectionsClient, list: vi.fn(async () => ({ items: [conn], total: 1 })), importCsv: api.importCsv },
+    connectionsClient: { ...real.connectionsClient, list: api.list, importCsv: api.importCsv, update: api.update },
+    runConnectionNow: api.runNow,
     fetchConnectionAudit: vi.fn(async () => []),
     testConnection: api.test, pinHostKey: api.pin, clearAuthLatch: api.clear,
     fetchEdiSettings: api.edi, saveEdiSettings: api.saveEdi,
     fetchShadowSetting: api.shadow, saveShadowSetting: api.saveShadow,
   }
 })
+vi.mock('@/features/operations/operationsApi', async (orig) => {
+  const real = await orig<typeof import('@/features/operations/operationsApi')>()
+  return { ...real, runsClient: { ...real.runsClient, list: api.runs } }
+})
 const { default: ConnectionsPage } = await import('./ConnectionsPage')
 
 function renderAs(keys: string[]) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
-    <QueryClientProvider client={qc}><ToastProvider>
+    <MemoryRouter><QueryClientProvider client={qc}><ToastProvider>
       <PermissionProvider can={(k) => keys.includes(k)}><ConnectionsPage /></PermissionProvider>
-    </ToastProvider></QueryClientProvider>,
+    </ToastProvider></QueryClientProvider></MemoryRouter>,
   )
 }
 
@@ -45,6 +55,8 @@ async function open() {
   fireEvent.click(await screen.findByText('sftp-test'))
   return within(await screen.findByRole('dialog')).findByRole('region', { name: 'Connection status' })
 }
+
+beforeEach(() => { api.list.mockResolvedValue({ items: [conn], total: 1 }) })
 
 describe('Connections page', () => {
   it('a reader sees the status but cannot test, pin or clear', async () => {
@@ -161,3 +173,60 @@ describe('Connections page: switching the shadow run on', () => {
     expect(await within(panel).findByText("26 open order(s) were marked as Zoho's.")).toBeInTheDocument()
   })
 })
+
+describe("a connection's schedule", () => {
+  const ran = { ...conn, schedule_minutes: 5, active_from: '06:00:00', active_to: '22:00:00', active_days: 'Mon,Tue,Wed,Thu,Fri',
+    last_run_at: '2026-11-02T20:00:00Z', last_run_status: 'PARTIAL', last_run_summary: '3 files, 1 errors', next_run_at: '2026-11-02T20:05:00Z' }
+
+  it('the list shows the schedule, the last run with its summary, and the next run', async () => {
+    api.list.mockResolvedValue({ items: [{ ...ran, schedule_paused: true }], total: 1 })
+    renderAs(['sales.read'])
+    expect(await screen.findByText('every 5 min, Mon–Fri 06:00–22:00')).toBeInTheDocument()
+    expect(screen.getByText('Paused')).toBeInTheDocument()
+    expect(screen.getByText('3 files, 1 errors')).toBeInTheDocument()
+    expect(screen.getByText('PARTIAL')).toBeInTheDocument()
+  })
+
+  it('the form edits it: minutes, pause, hours as HH:MM and days — sent as the API takes them', async () => {
+    api.list.mockResolvedValue({ items: [ran], total: 1 })
+    api.update.mockResolvedValue({ ...ran, version: 4 })
+    renderAs(['sales.read', 'sales.config'])
+    fireEvent.click(await screen.findByText('sftp-test'))
+    const sheet = await screen.findByRole('dialog')
+    expect(within(sheet).getByLabelText(/^Active from/)).toHaveValue('06:00')
+    fireEvent.change(within(sheet).getByLabelText(/^Schedule: every/), { target: { value: '15' } })
+    fireEvent.change(within(sheet).getByLabelText(/^Active until/), { target: { value: '' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
+    expect(await within(sheet).findByText('Give both the start and the end, or neither')).toBeInTheDocument()
+    fireEvent.change(within(sheet).getByLabelText(/^Active until/), { target: { value: '23:30' } })
+    fireEvent.click(within(within(sheet).getByRole('group', { name: 'Active days' })).getByRole('checkbox', { name: 'Sat' }))
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.update).toHaveBeenCalledWith(7, expect.objectContaining({
+      schedule_minutes: 15, active_to: '23:30:00', active_days: 'Mon,Tue,Wed,Thu,Fri,Sat' }), 3))
+  })
+
+  it('Run now needs sales.file.retry, runs this connection and shows its result when it ends', async () => {
+    api.list.mockResolvedValue({ items: [ran], total: 1 })
+    const { unmount } = renderAs(['sales.read'])
+    fireEvent.click(await screen.findByText('sftp-test'))
+    const read = await within(await screen.findByRole('dialog')).findByRole('region', { name: 'Schedule' })
+    expect(within(read).queryByRole('button', { name: 'Run now' })).toBeNull()
+    unmount()
+    api.runNow.mockResolvedValue({ run_id: 31 })
+    const running = { id: 31, job: 'sales_connection', scope: 'connection:7', trigger: 'MANUAL', status: 'RUNNING',
+      started_at: '2026-11-02T20:10:00Z', heartbeat_at: '2026-11-02T20:10:00Z', finished_at: null, error: null, summary: null }
+    api.runs.mockResolvedValueOnce({ items: [], total: 0 }).mockResolvedValueOnce({ items: [running], total: 1 })
+      .mockResolvedValue({ items: [{ ...running, status: 'SUCCEEDED', finished_at: '2026-11-02T20:10:03Z',
+        summary: { text: '2 files, 0 errors' } }], total: 1 })
+    renderAs(['sales.read', 'sales.retry', 'sales.file.retry'])
+    fireEvent.click(await screen.findByText('sftp-test'))
+    const sched = await within(await screen.findByRole('dialog')).findByRole('region', { name: 'Schedule' })
+    expect(within(sched).getByText('every 5 min, Mon–Fri 06:00–22:00')).toBeInTheDocument()
+    fireEvent.click(within(sched).getByRole('button', { name: 'Run now' }))
+    expect(await within(sched).findByText('Run 31 is running…')).toBeInTheDocument()
+    expect(api.runNow).toHaveBeenCalledWith(7)
+    expect(await within(sched).findByText('Run 31: SUCCEEDED — 2 files, 0 errors', {}, { timeout: 6000 })).toBeInTheDocument()
+    expect(api.runs).toHaveBeenCalledWith(expect.objectContaining({ filters: [{ field: 'scope', op: 'eq', value: 'connection:7' }] }))
+  })
+})
+

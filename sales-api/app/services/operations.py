@@ -64,12 +64,15 @@ class DocumentService(ReadOnlyService[Document, DocumentRead]):
 
 class RunRepository(Repository[Run]):
     model = Run
-    list_fields = ("id", "job", "trigger", "status", "started_at", "heartbeat_at", "finished_at", "error")
+    list_fields = ("id", "job", "scope", "trigger", "status", "started_at", "heartbeat_at", "finished_at", "error")
+    labels = {"scope": "For"}
     enums = {"trigger": RUN_TRIGGERS, "status": RUN_STATUSES}
     default_sort = ("-started_at",)
-    groupable = ("job", "trigger", "status")
+    groupable = ("scope", "job", "trigger", "status")
     presets = (Preset("all", "All"),
-               Preset("failed", "Failed or partial", {"filters": [{"field": "status", "op": "in", "value": ["FAILED", "PARTIAL"]}]}))
+               Preset("failed", "Failed or partial", {"filters": [{"field": "status", "op": "in", "value": ["FAILED", "PARTIAL"]}]}),
+               Preset("system", "System job", {"filters": [{"field": "scope", "op": "eq", "value": "system"}]}),
+               Preset("connections", "Connection jobs", {"filters": [{"field": "job", "op": "eq", "value": "sales_connection"}]}))
 
 
 class RunService(ReadOnlyService[Run, RunRead]):
@@ -78,13 +81,24 @@ class RunService(ReadOnlyService[Run, RunRead]):
     read_permission = READ
 
     @requires(FILE_RETRY)
-    async def run_now(self, cycle, background) -> int:
-        """Claims through the same path as the scheduler: never a second
-        cycle while one runs (AC-OB-46)."""
-        run_id = await cycle.claim(trigger="MANUAL", force=True)
+    async def run_now(self, scheduler, background) -> int:
+        """Everything now: each active connection's job, then the system job —
+        each through its own single flight (AC-OB-46; a connection already
+        running is skipped). Refused while the system job runs. Returns the
+        system run's id."""
+        run_id = await scheduler.system.claim(trigger="MANUAL", force=True)
         if run_id is None:
             raise BusinessError("run.already_running", "a cycle is running; wait for it to finish")
-        background.spawn(cycle.execute(run_id), name=f"sales-cycle-run-{run_id}")
+        background.spawn(scheduler.run_everything(run_id), name=f"sales-run-everything-{run_id}")
+        return run_id
+
+    @requires(FILE_RETRY)
+    async def run_system_now(self, scheduler, background) -> int:
+        """The system job alone, now (Health): never while it runs."""
+        run_id = await scheduler.system.claim(trigger="MANUAL", force=True)
+        if run_id is None:
+            raise BusinessError("run.already_running", "the system job is running; wait for it to finish")
+        background.spawn(scheduler.system.execute(run_id), name=f"sales-system-run-{run_id}")
         return run_id
 
 

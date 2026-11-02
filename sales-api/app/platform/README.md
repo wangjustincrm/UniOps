@@ -55,7 +55,7 @@ Each service declares its keys — `read_permission` / `write_permission` on CRU
 | `registry` | `Registry[K, V]` for strategy lookup (parsers, builders, senders) |
 | `guard` | `GuardedGateway(inner, settings=, guarded={method: switch}, reads=, allow=, summarise=, on_refused=)` — an allow-list, the only reader of the outbound switches; `Suppressed`, `Refused`. It knows no integration: each integration module supplies its own write/read lists |
 | `pipeline` | `Step`, `CycleContext`, `StepResult`, `isolated(unit, fn, uow_factory=, log=)` (a job's unit boundary: commits the unit, or rolls it back and reports; never re-raises), `run_steps` |
-| `jobs` | `ScheduledJob` (advisory lock, RUNNING row with heartbeat, stale closure, interval/pause read every tick; `tick` = `claim` + `execute`, so a "Run now" claims in the request and runs in the background), `RunRecordMixin`, `Background` (`spawn` / `drain`) |
+| `jobs` | `ScheduledJob` (advisory lock, RUNNING row with heartbeat, stale closure, interval/pause read every tick; `tick` = `claim` + `execute`, so a "Run now" claims in the request and runs in the background; an optional `scope` makes single flight per (job, scope); hooks `due` — when an unforced claim runs — and `on_closed`), `RunRecordMixin` (with `scope`), `Background` (`spawn` / `drain`) |
 | `settings_registry` | `Setting(key, default, parse, validate)`, `SettingsRegistry(model)` with a short-lived cache; `SettingRecordMixin` |
 | `container` | `gateway(settings, real=, fake=, guarded=)` — fake in the test environment, real behind the guard elsewhere |
 

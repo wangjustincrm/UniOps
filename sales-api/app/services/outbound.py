@@ -365,12 +365,14 @@ class Outbound940:
         return (await session.execute(q)).scalar_one_or_none()
 
     # ── 997s (FR-OB-22a) ─────────────────────────────────────────────────────
-    async def process_997s(self, *, run_id: int | None = None) -> EdiReport:
+    async def process_997s(self, *, run_id: int | None = None, connection_id: int | None = None) -> EdiReport:
         report = EdiReport()
         async with self.uow_factory(SYSTEM_ACTOR) as uow:
             ids = list((await uow.session.execute(select(Document.id).where(
                 Document.kind == "997_EDI", Document.direction == "IN",
-                Document.processing_status == InboundFile.PENDING.value).order_by(Document.id))).scalars())
+                Document.processing_status == InboundFile.PENDING.value,
+                *([Document.connection_id == connection_id] if connection_id is not None else []))
+                .order_by(Document.id))).scalars())
         for did in ids:
             async def one(uow, did=did):
                 doc = await uow.session.get(Document, did, with_for_update=True)

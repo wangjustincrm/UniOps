@@ -8,7 +8,14 @@ import type { DashboardRead, HealthRead } from './healthApi'
 
 const health: HealthRead = {
   result: 'FAILED', checked_at: '2026-11-02T20:00:00Z', shadow_mode: true, partner_writes_enabled: false,
-  external_email_enabled: false, scheduler_enabled: false, gate_ok: false,
+  external_email_enabled: false, scheduler_enabled: false, gate_ok: false, jobs: [
+    { scope: 'system', label: 'System job', connection_id: null, interval_minutes: 1, schedule: 'every 1 min', paused: false,
+      last_run_at: '2026-11-02T19:59:00Z', last_run_status: 'SUCCEEDED', last_run_summary: '0 940s queued, 0 sent, 0 problems',
+      next_run_at: '2026-11-02T20:00:00Z', overdue: false },
+    { scope: 'connection:7', label: 'radiant', connection_id: 7, interval_minutes: 5, schedule: 'every 5 min, Mon–Fri 06:00–22:00',
+      paused: false, last_run_at: '2026-11-02T19:00:00Z', last_run_status: 'FAILED', last_run_summary: 'OSError: timed out',
+      next_run_at: '2026-11-02T19:05:00Z', overdue: true }],
+  scheduler_paused: false, system_minutes: 1,
   cards: { critical: 1, warnings: 2, failed_inbound: 3, failed_outbound: 0, waiting_ack: 1, rejected_ack: 0, ack_timeout: 0,
     exceptions_944: 0, exceptions_945: 0, transfer_discrepancies: 0 },
   checks: [
@@ -29,9 +36,11 @@ const dashboard: DashboardRead = {
   runs: [{ id: 9, trigger: 'SCHEDULED', status: 'SUCCEEDED', started_at: '2026-11-02T19:55:00Z', finished_at: null, error: null }],
 }
 
-const h = vi.hoisted(() => ({ health: vi.fn(), dash: vi.fn(), resolve: vi.fn(), test: vi.fn() }))
+const h = vi.hoisted(() => ({ health: vi.fn(), dash: vi.fn(), resolve: vi.fn(), test: vi.fn(), save: vi.fn(), system: vi.fn() }))
 vi.mock('./healthApi', async (orig) => ({ ...(await orig<typeof import('./healthApi')>()),
-  fetchHealth: h.health, fetchDashboard: h.dash, resolveInbox: h.resolve }))
+  fetchHealth: h.health, fetchDashboard: h.dash, resolveInbox: h.resolve, saveScheduler: h.save }))
+vi.mock('@/features/operations/operationsApi', async (orig) => ({
+  ...(await orig<typeof import('@/features/operations/operationsApi')>()), runSystemNow: h.system }))
 vi.mock('@/features/configuration/connections/connectionsApi', async (orig) => ({
   ...(await orig<typeof import('@/features/configuration/connections/connectionsApi')>()), testConnection: h.test }))
 vi.mock('@/features/configuration/notifications/notificationsApi', async (orig) => ({
@@ -103,3 +112,32 @@ describe('a Task Inbox link', () => {
     await waitFor(() => expect(takeOpenRequest('/orders')).toBe(23))
   })
 })
+
+describe('Health → Scheduler', () => {
+  it('lists every job with its last and next run, flags the overdue one, runs the system job and edits the settings', async () => {
+    h.system.mockResolvedValue({ run_id: 50 })
+    h.save.mockResolvedValue({ paused: true, system_minutes: 2 })
+    renderAt('/health', <HealthPage />, ['sales.read', 'sales.config', 'sales.file.retry'])
+    const jobs = await screen.findByRole('table', { name: 'Scheduled jobs' })
+    const radiant = within(jobs).getByText('radiant').closest('tr')!
+    expect(radiant).toHaveTextContent('every 5 min, Mon–Fri 06:00–22:00')
+    expect(within(radiant).getByText('Overdue')).toBeInTheDocument()
+    expect(within(radiant).getByText('OSError: timed out')).toBeInTheDocument()
+    expect(within(within(jobs).getByText('System job').closest('tr')!).queryByText('Overdue')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Run the system job now' }))
+    await waitFor(() => expect(h.system).toHaveBeenCalledOnce())
+    fireEvent.click(screen.getByRole('button', { name: 'Scheduler settings' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Scheduler settings' })
+    fireEvent.click(within(sheet).getByRole('checkbox', { name: /Pause every job/ }))
+    fireEvent.change(within(sheet).getByLabelText(/^System job: every/), { target: { value: '2' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(h.save).toHaveBeenCalledWith({ paused: true, system_minutes: 2 }))
+  })
+
+  it('without sales.config there is no settings button', async () => {
+    renderAt('/health', <HealthPage />, ['sales.read'])
+    await screen.findByRole('table', { name: 'Scheduled jobs' })
+    expect(screen.queryByRole('button', { name: 'Scheduler settings' })).toBeNull()
+  })
+})
+

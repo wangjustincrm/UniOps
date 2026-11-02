@@ -1,10 +1,11 @@
-import { Badge, CrudPage, useToast, type ColumnDef } from '@/platform-ui'
+import { Badge, CrudPage, DateTimeCell, StatusCell, useToast, type ColumnDef } from '@/platform-ui'
 import { AuditHistory } from '../AuditHistory'
+import { ConnectionSchedule } from './ConnectionSchedule'
 import { ConnectionTools } from './ConnectionTools'
 import { EdiSettingsPanel } from './EdiSettingsPanel'
 import { ShadowPanel } from './ShadowPanel'
 import {
-  connectionsClient, downloadConnections, fetchConnectionAudit,
+  connectionsClient, describeSchedule, downloadConnections, fetchConnectionAudit,
   type ConnectionCreate, type ConnectionRead, type ConnectionUpdate,
 } from './connectionsApi'
 import {
@@ -25,6 +26,16 @@ const columns: ColumnDef<ConnectionRead, unknown>[] = [
           : !c.secret_present ? <Badge variant="warning">Secret missing</Badge>
             : <Badge variant="success">Ready</Badge>,
   },
+  { id: 'schedule', header: 'Schedule', cell: ({ row: { original: c } }) => (
+    <span className="flex items-center gap-1">{describeSchedule(c)}{c.schedule_paused && <Badge variant="warning">Paused</Badge>}</span>
+  ) },
+  { accessorKey: 'last_run_at', header: 'Last run', cell: ({ row: { original: c } }) => !c.last_run_at ? '—' : (
+    <span className="flex flex-col">
+      <span className="flex items-center gap-1"><DateTimeCell value={c.last_run_at} />{c.last_run_status && <StatusCell value={c.last_run_status} />}</span>
+      {c.last_run_summary && <span className="text-xs text-neutral-500">{c.last_run_summary}</span>}
+    </span>
+  ) },
+  { accessorKey: 'next_run_at', header: 'Next run', cell: ({ row }) => <DateTimeCell value={row.original.next_run_at} /> },
 ]
 
 const errorMessages: Record<string, string> = {
@@ -59,6 +70,7 @@ export default function ConnectionsPage() {
       notice={<div className="flex flex-col gap-3"><ShadowPanel /><EdiSettingsPanel /></div>}
       renderDetail={(c) => (
         <div className="flex flex-col gap-6">
+          <ConnectionSchedule connection={c} />
           <ConnectionTools connection={c} />
           <AuditHistory resource="connections" id={c.id} version={c.version} load={fetchConnectionAudit} />
         </div>

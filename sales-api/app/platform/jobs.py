@@ -6,6 +6,12 @@ Single flight: a transaction-scoped advisory lock around claiming the run,
 plus a RUNNING run row with a heartbeat. A RUNNING row whose heartbeat is
 older than `stale_after` is closed as FAILED by the next claim.
 
+A job may have a `scope` (e.g. one connection): single flight is then per
+(job, scope) — the lock and the RUNNING check — so one scope never runs twice
+at once while others may. `due` decides an unforced claim (default: the
+schedule's interval since the last scheduled start, unless paused); `on_closed`
+is called with every closed run (e.g. to record it on what it ran for).
+
 Long-running loops are started with `Background.spawn` in the app lifespan and
 stopped with `Background.drain` before the engine is disposed.
 """
@@ -40,6 +46,8 @@ class RunRecordMixin:
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # What the run was for, when the job has scopes (e.g. "connection:7", "system").
+    scope: Mapped[str | None] = mapped_column(String(60), nullable=True, index=True)
 
 
 @dataclass
@@ -63,7 +71,8 @@ def utcnow() -> datetime:
 
 class ScheduledJob(ABC):
     name: str
-    lock_key: int  # unique per job across the shared database
+    lock_key: int  # unique per job across the shared database (fits a 32-bit int when scoped)
+    scope: str | None = None
 
     def __init__(
         self,
@@ -85,36 +94,51 @@ class ScheduledJob(ABC):
     @abstractmethod
     async def run_once(self, run: Any) -> RunSummary: ...
 
+    def _mine(self):
+        m = self.run_model
+        return (m.job == self.name) & (m.scope == self.scope if self.scope is not None else m.scope.is_(None))
+
+    async def due(self, session, now: datetime) -> bool:
+        """Whether an unforced claim runs now: by default the schedule's
+        interval since the last scheduled start, unless paused."""
+        m = self.run_model
+        sched = await self.schedule()
+        last = (await session.execute(
+            select(m.started_at).where(self._mine(), m.trigger == "SCHEDULE").order_by(m.started_at.desc()).limit(1)
+        )).scalar_one_or_none()
+        return not sched.paused and (last is None or now - last >= sched.interval)
+
+    async def on_closed(self, run: Any) -> None:
+        """Called with every closed run (also a failed one); its failure is logged."""
+
     # ── single flight ────────────────────────────────────────────────────────
     async def _claim(self, trigger: str, force: bool) -> Any | None:
         m = self.run_model
         async with self.uow_factory(SYSTEM_ACTOR) as uow:
             s = uow.session
-            got = (await s.execute(text("SELECT pg_try_advisory_xact_lock(:k)"), {"k": self.lock_key})).scalar_one()
+            if self.scope is None:
+                lock = text("SELECT pg_try_advisory_xact_lock(:k)")
+            else:
+                lock = text("SELECT pg_try_advisory_xact_lock(:k, hashtext(:scope))")
+            got = (await s.execute(lock, {"k": self.lock_key, "scope": self.scope})).scalar_one()
             if not got:
                 return None
             now = self.clock()
             await s.execute(
                 update(m)
-                .where(m.job == self.name, m.status == RUNNING, m.heartbeat_at < now - self.stale_after)
+                .where(self._mine(), m.status == RUNNING, m.heartbeat_at < now - self.stale_after)
                 .values(status=FAILED, finished_at=now, error="stale: heartbeat stopped")
             )
             running = (await s.execute(
-                select(m.id).where(m.job == self.name, m.status == RUNNING).limit(1)
+                select(m.id).where(self._mine(), m.status == RUNNING).limit(1)
             )).scalar_one_or_none()
             if running is not None:
                 await uow.commit()  # keep the stale closure
                 return None
-            if not force:
-                sched = await self.schedule()
-                last = (await s.execute(
-                    select(m.started_at).where(m.job == self.name, m.trigger == "SCHEDULE")
-                    .order_by(m.started_at.desc()).limit(1)
-                )).scalar_one_or_none()
-                if sched.paused or (last is not None and now - last < sched.interval):
-                    await uow.commit()
-                    return None
-            run = m(job=self.name, trigger=trigger, status=RUNNING, started_at=now, heartbeat_at=now)
+            if not force and not await self.due(s, now):
+                await uow.commit()
+                return None
+            run = m(job=self.name, scope=self.scope, trigger=trigger, status=RUNNING, started_at=now, heartbeat_at=now)
             s.add(run)
             await s.flush()
             run_id = run.id
@@ -194,7 +218,13 @@ class ScheduledJob(ABC):
             logger.exception("%s: run %s failed", self.name, run_id)
             error = f"{type(e).__name__}: {e}"
         await self._stop_beat(beat)
-        return await self._close(run_id, status, summary, error)
+        run = await self._close(run_id, status, summary, error)
+        if run is not None:
+            try:
+                await self.on_closed(run)
+            except Exception:  # noqa: BLE001 — the run is closed; recording it elsewhere is best effort
+                logger.exception("%s: on_closed for run %s failed", self.name, run_id)
+        return run
 
     @staticmethod
     async def _stop_beat(beat: asyncio.Future) -> None:

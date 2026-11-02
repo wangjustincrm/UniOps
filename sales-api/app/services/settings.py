@@ -17,7 +17,9 @@ def _uuid_or_none(v: Any) -> uuid.UUID | None:
 SETTINGS = SettingsRegistry(SettingRow)
 
 # FR-OB-07: every 5 minutes by default; can be paused. A bad stored interval
-# reads as paused (safe-off), never as "run constantly".
+# reads as paused (safe-off), never as "run constantly". Superseded by each
+# connection's own schedule and `scheduler.system_minutes` (2026-11-02): no
+# job reads the interval any more; `scheduler.paused` stays the master switch.
 SCHEDULER_INTERVAL_MINUTES = SETTINGS.declare(Setting(
     "scheduler.interval_minutes", 5, int, validate=minimum(1), safe=None,
     description="Minutes between cycles"))
@@ -59,3 +61,9 @@ TASK_AGE_HOURS = SETTINGS.declare(Setting(
 OUTBOX_BACKLOG_MINUTES = SETTINGS.declare(Setting(
     "health.outbox_backlog_minutes", 30, int, validate=minimum(1), safe=30,
     description="Minutes a queued send may wait before the health page warns"))
+# Per-connection scheduling (user 2026-11-02): the system job (queue 940 / 943,
+# the outbox, ACK timeouts, invoice advance, the shadow comparison) runs on its
+# own interval; `scheduler.paused` stays the master switch for every job.
+SYSTEM_MINUTES = SETTINGS.declare(Setting(
+    "scheduler.system_minutes", 1, int, validate=minimum(1), safe=1,
+    description="Minutes between runs of the system job"))

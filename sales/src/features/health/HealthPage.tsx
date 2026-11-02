@@ -9,6 +9,7 @@ import { testConnection, type ConnectionTest } from '@/features/configuration/co
 import { fetchHealth, type CheckRead, type GateEventRead, type HealthRead } from './healthApi'
 import { HealthBadge } from './HealthBadge'
 import { openList } from './openList'
+import { SchedulerSection } from './SchedulerSection'
 
 // FR-OB-52a's count cards, in its order.
 const CARDS: [string, string, string?][] = [
@@ -93,6 +94,7 @@ export default function HealthPage() {
           ['Scheduler (SALES_SCHEDULER_ENABLED)', h.scheduler_enabled ? 'On' : 'Off in this environment'],
         ]} />
       </section>
+      <SchedulerSection health={h} />
       <section aria-label="Checks" className="flex flex-col gap-2">
         <h2 className="font-semibold text-neutral-800">Checks</h2>
         <LocalTable<CheckRead> ariaLabel="Health checks" columns={columns} rows={h.checks} rowKey={(c) => c.key} />

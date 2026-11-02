@@ -49,6 +49,7 @@ class RunRead(BaseModel):
     finished_at: datetime | None
     summary: dict[str, Any] | None
     error: str | None
+    scope: str | None = None  # "connection:<id>" | "system" (none: the one cycle, before per-connection scheduling)
 
 
 class LogRead(BaseModel):
@@ -68,4 +69,4 @@ class LogRead(BaseModel):
 
 
 class RunStarted(BaseModel):
-    run_id: int
+    run_id: int  # the global Run now: the system job's run (each connection runs first, in its own run)

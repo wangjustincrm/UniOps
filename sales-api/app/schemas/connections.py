@@ -3,10 +3,10 @@ itself never appears: `secret_name` names an environment variable, and Read
 says only whether it is present."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, time
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from app.schemas.common import host_key_line, not_excel_number, secret_name
 
@@ -27,6 +27,23 @@ PageSize = Annotated[int, Field(ge=1, le=250)]
 Cutoff = Annotated[int, Field(ge=0)]
 PartnerCode = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
 Seconds = Annotated[int, Field(ge=0)]
+Minutes = Annotated[int, Field(ge=1, le=1440)]
+
+
+def _days(v: str | None) -> str | None:
+    """'mon, fri' → 'Mon,Fri' (week order); empty → None (every day)."""
+    from app.domain.schedule import format_days, parse_days
+    return format_days(parse_days(v)) if v is not None else None
+
+
+Days = Annotated[str, StringConstraints(strip_whitespace=True, max_length=40), AfterValidator(_days)]
+
+
+def _window(m):
+    """Both ends of the active window, or neither."""
+    if (getattr(m, "active_from", None) is None) != (getattr(m, "active_to", None) is None):
+        raise ValueError("give both the start and the end of the active hours, or neither")
+    return m
 
 
 class ConnectionCreate(BaseModel):
@@ -52,7 +69,15 @@ class ConnectionCreate(BaseModel):
     page_size: PageSize | None = None
     order_number_cutoff: Cutoff | None = None
     partner_code: PartnerCode | None = None
+    # Its schedule (user 2026-11-02); minutes default by kind: SFTP 5, Shopify 10.
+    schedule_minutes: Minutes | None = None
+    schedule_paused: bool = False
+    active_from: time | None = None
+    active_to: time | None = None
+    active_days: Days | None = None
     active: bool = True
+
+    _check_window = model_validator(mode="after")(_window)
 
 
 class ConnectionUpdate(BaseModel):
@@ -79,6 +104,11 @@ class ConnectionUpdate(BaseModel):
     page_size: PageSize | None = None
     order_number_cutoff: Cutoff | None = None
     partner_code: PartnerCode | None = None
+    schedule_minutes: Minutes = None  # type: ignore[assignment]
+    schedule_paused: bool = None  # type: ignore[assignment]
+    active_from: time | None = None
+    active_to: time | None = None
+    active_days: Days | None = None
     active: bool = None  # type: ignore[assignment]
 
 
@@ -110,6 +140,17 @@ class ConnectionRead(BaseModel):
     page_size: int | None
     order_number_cutoff: int | None
     partner_code: str | None
+    schedule_minutes: int
+    schedule_paused: bool
+    active_from: time | None
+    active_to: time | None
+    active_days: str | None
+    # Written by the scheduler.
+    last_run_at: datetime | None
+    last_run_status: str | None
+    last_run_summary: str | None
+    last_error: str | None
+    next_run_at: datetime | None
     active: bool
     version: int
     created_at: datetime
@@ -165,3 +206,11 @@ class ShadowSetting(BaseModel):
     shadow_mode: bool
     # In the answer to switching on: the open orders marked as Zoho's.
     marked_orders: int | None = None
+
+
+class SchedulerSettings(BaseModel):
+    """The master switch for every job and the system job's interval (Health → Scheduler)."""
+    model_config = ConfigDict(extra="forbid")
+
+    paused: bool
+    system_minutes: Minutes

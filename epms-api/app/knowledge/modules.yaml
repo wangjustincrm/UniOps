@@ -287,6 +287,8 @@ modules:
       - Check, correct and send an invoice (Invoicing → Invoices), or release one that is on hold; record a retailer return or a cancellation after shipment on the order
       - See what the warehouse shipped for an order (its 945) — every pallet with its lots, expiry and quantities, the checks that flagged something, and whether the shipment was written to Shopify; retry a failed Shopify write
       - Choose the warehouse's SFTP connection and how long to wait for its 997 (Configuration → Connections, Warehouse EDI)
+      - Set how often each connection is read — every N minutes, paused, or only in certain hours and days (Toronto time) — see its last and next run, and run one now (Configuration → Connections, the connection's Schedule)
+      - Pause every scheduled job at once, set how often the system job runs, see each job's last and next run and which are overdue, and run the system job now (Operations → Health, Scheduler)
       - During the shadow run, compare each 940 Zoho sent with the 940 Sales would send for the same order (Operations → Shadow compare), and mark a known difference as expected with a reason
       - See at a glance how many orders are active, on hold, waiting for the warehouse or for invoicing, and what needs a person (Home) — each count opens its list
       - Check the module's health — settings, connections (and test one), the scheduler, failed files, ACKs, sends, old tasks, the send switches and the go-live gate (Operations → Health)
@@ -302,6 +304,13 @@ modules:
         until the release that turns them on; until then the 940s, Shopify
         fulfillments and invoices still come from Zoho — so for a shipment or an
         invoice, look in Zoho.
+      - >-
+        Each connection has its own schedule; its job reads the connection and
+        takes what it stored straight through (orders, acknowledgements,
+        shipments, receipts). A separate system job sends the 940s and 943s,
+        times out acknowledgements and moves invoices on. Pausing the
+        scheduler on the Health page stops every job; Run now still works.
+        In dev and test stacks the scheduler does not run at all.
       - >-
         Who is told about a Sales problem follows Configuration → Notifications.
         With no rule for an event, its task goes to the operator and no email

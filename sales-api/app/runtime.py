@@ -19,7 +19,7 @@ from app.platform.jobs import Background
 from app.platform.outbox import Outbox, OutboxWorker
 from app.services.outbound import SEND_940, Outbound940
 from app.services import oplog
-from app.services.cycle import SalesCycle, settings_schedule
+from app.services.cycle import SalesScheduler
 from app.services.edi_intake import EdiIntake
 from app.services.intake import Intake
 from app.services.shadow import ShadowRun
@@ -38,7 +38,7 @@ class Runtime:
     intake: Intake
     shopify_intake: ShopifyIntake
     edi_intake: EdiIntake
-    cycle: SalesCycle
+    scheduler: SalesScheduler
     background: Background
     outbound: Outbound940 | None = None
     shipments: Shipments | None = None
@@ -82,10 +82,10 @@ def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify:
                                                  CLOSE: shipments.close_kind(), SEND_INVOICE: invoicing.outbox_kind(),
                                                  SEND_943: transfers.outbox_kind(), NOTIFY_EMAIL: email_kind(container.email)},
                           uow_factory)
-    cycle = SalesCycle(intake=intake, shopify_intake=shopify_intake, edi_intake=edi_intake, outbound=outbound,
-                       shadow=shadow, shipments=shipments, invoicing=invoicing, transfers=transfers, outbox_worker=worker, run_model=Run, uow_factory=uow_factory,
-                       schedule=settings_schedule(uow_factory))
-    return Runtime(container, uow_factory, intake, shopify_intake, edi_intake, cycle, Background(), outbound, shipments,
+    scheduler = SalesScheduler(uow_factory=uow_factory, run_model=Run, intake=intake, outbox_worker=worker,
+                               shopify_intake=shopify_intake, edi_intake=edi_intake, outbound=outbound, shadow=shadow,
+                               shipments=shipments, invoicing=invoicing, transfers=transfers)
+    return Runtime(container, uow_factory, intake, shopify_intake, edi_intake, scheduler, Background(), outbound, shipments,
                    invoicing, transfers, tasks)
 
 

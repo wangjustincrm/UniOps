@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { FieldSpec } from '@/platform-ui'
-import { AFTER_READ, FOLDERS, KINDS, MODES, type ConnectionRead } from './connectionsApi'
+import { AFTER_READ, DAYS, FOLDERS, KINDS, MODES, type ConnectionRead } from './connectionsApi'
 
 // Mirrors the API's DTO and the connection rules (sales-api domain/connections.py).
 const optional = (max?: number) => {
@@ -8,6 +8,8 @@ const optional = (max?: number) => {
   return (max ? s.max(max, `At most ${max} characters`) : s).nullable().optional()
 }
 const choice = <T extends readonly [string, ...string[]]>(values: T) => z.enum(values, { error: 'Choose one' })
+const clock = z.string().trim().refine((v) => v === '' || /^([01]\d|2[0-3]):[0-5]\d$/.test(v), 'A time like 06:00')
+  .transform((v) => (v ? `${v}:00` : null)).nullable().optional()
 const SECRET = /^[A-Z][A-Z0-9_]*$/
 const EXCEL_NUMBER = /^[+-]?\d+(\.\d+)?[eE][+-]?\d+$/
 const KEY_LINE = /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/]+={0,3}( .*)?$/
@@ -32,10 +34,15 @@ const fields = {
   page_size: z.number().int().min(1, 'From 1').max(250, 'At most 250').nullable().optional(),
   order_number_cutoff: z.number().int().min(0).nullable().optional(),
   partner_code: optional(50),
+  // The schedule (user 2026-11-02): times as HH:MM (Toronto), days as a list — sent as "06:00:00" and "Mon,Fri".
+  schedule_minutes: z.number({ error: 'Enter minutes' }).int('Whole minutes').min(1, 'At least 1').max(1440, 'At most 1440'),
+  schedule_paused: z.boolean(),
+  active_from: clock, active_to: clock,
+  active_days: z.array(z.enum(DAYS)).transform((d) => (d.length ? DAYS.filter((x) => d.includes(x)).join(',') : null)),
   active: z.boolean(),
 }
 
-type Values = { kind?: string; after_read?: string; processed_folder?: string | null; host_key?: string | null; host?: string | null; partner_code?: string | null } & Record<string, unknown>
+type Values = { kind?: string; after_read?: string; processed_folder?: string | null; host_key?: string | null; host?: string | null; partner_code?: string | null; active_from?: string | null; active_to?: string | null } & Record<string, unknown>
 const SFTP_REQUIRED = ['host', 'username', 'inbound_folder', 'secret_name'] as const
 
 function rules(v: Values, ctx: z.RefinementCtx) {
@@ -54,6 +61,10 @@ function rules(v: Values, ctx: z.RefinementCtx) {
     }
   } else if (String(v.partner_code ?? '').trim()) {
     ctx.addIssue({ code: 'custom', path: ['partner_code'], message: "Only for SHOPIFY; an SFTP channel's partner comes from each file" })
+  }
+  if (!String(v.active_from ?? '').trim() !== !String(v.active_to ?? '').trim()) {
+    const missing = String(v.active_from ?? '').trim() ? 'active_to' : 'active_from'
+    ctx.addIssue({ code: 'custom', path: [missing], message: 'Give both the start and the end, or neither' })
   }
   if (v.after_read === 'MOVE' && !String(v.processed_folder ?? '').trim()) {
     ctx.addIssue({ code: 'custom', path: ['processed_folder'], message: 'Required when after-read is MOVE' })
@@ -87,6 +98,13 @@ export const connectionFields: FieldSpec[] = [
   { name: 'page_size', label: 'Orders per page', type: 'number', hint: 'Shopify only; at most 250 (default 50).' },
   { name: 'order_number_cutoff', label: 'Order number cut-off', type: 'number', hint: 'Shopify only: orders numbered below it are historical and never sent (FR-OB-17).' },
   { name: 'partner_code', label: 'Partner', hint: "Shopify only: whose orders the store's are." },
+  { name: 'schedule_minutes', label: 'Schedule: every (minutes)', type: 'number', required: true,
+    hint: "How often this connection's job runs: it reads the connection and takes what it stored through (850s, 997s, 945s, 944s)." },
+  { name: 'schedule_paused', label: 'Schedule paused', type: 'checkbox' },
+  { name: 'active_from', label: 'Active from (HH:MM, Toronto)', placeholder: '06:00', hint: 'Empty: all day. An end before the start crosses midnight.' },
+  { name: 'active_to', label: 'Active until (HH:MM, Toronto)', placeholder: '22:00' },
+  { name: 'active_days', label: 'Active days', type: 'multiselect', options: DAYS.map((d) => ({ value: d, label: d })),
+    hint: 'None ticked: every day.' },
   { name: 'active', label: 'Active', type: 'checkbox' },
 ]
 
@@ -94,9 +112,13 @@ export const connectionEmptyValues: Record<string, unknown> = {
   name: '', kind: 'SFTP', host: '', port: 22, username: '', inbound_folder: '', outbound_folder: '', processed_folder: '',
   error_folder: '', test_inbound_folder: '', test_outbound_folder: '', after_read: 'LEAVE', stable_seconds: 60,
   mode: 'TEST', secret_name: '', host_key: '', api_version: '', page_size: null, order_number_cutoff: null, partner_code: '',
-  active: true,
+  schedule_minutes: 5, schedule_paused: false, active_from: '', active_to: '', active_days: [], active: true,
 }
 
 export function connectionToFormValues(c: ConnectionRead): Record<string, unknown> {
-  return Object.fromEntries(connectionFields.map((f) => [f.name, c[f.name as keyof ConnectionRead]]))
+  return {
+    ...Object.fromEntries(connectionFields.map((f) => [f.name, c[f.name as keyof ConnectionRead]])),
+    active_from: c.active_from?.slice(0, 5) ?? '', active_to: c.active_to?.slice(0, 5) ?? '',
+    active_days: (c.active_days ?? '').split(',').filter(Boolean),
+  }
 }
