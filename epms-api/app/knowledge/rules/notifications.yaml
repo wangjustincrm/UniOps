@@ -121,3 +121,38 @@ rules:
     provenance: not_built
     test:
       - "tests/test_rule_registry.py::test_no_screen_edits_email_templates"
+  - id: returned_email_names_who_and_why
+    also_in: [pr]
+    asked_as:
+      - PR 被退回的邮件里有退回意见吗？
+      - does the returned PR email say who returned it
+    answer: >
+      Yes. When a purchase request is returned for revision, the requester's
+      email names who returned it and quotes their comment (the comment is
+      required to return), with a link to open and edit the PR. A returned
+      PO sign-off email quotes the comment the same way.
+    provenance: pinned
+    enforced_in: "epms-api app/services/notification.py _document_vars (latest 'return' approval event → {returned_by} / {comment}); app/crud/config.py pr_returned / po_signoff_returned templates"
+    test:
+      - "tests/test_task_email_contents.py::test_returned_pr_email_shows_the_comment_and_who_returned_it"
+      - "tests/test_task_email_contents.py::test_returned_signoff_email_shows_the_comment"
+  - id: what_pr_and_gr_emails_contain
+    also_in: [pr, gr]
+    asked_as:
+      - 收货邮件里有哪些内容？
+      - what does the goods receipt email contain
+    answer: >
+      An approve-PR email gives the PR number, title, requester, vendor,
+      amount with currency, which approval step it is at, and a link to the
+      PR. The Create PO email gives the PR number, title, vendor, amount with
+      currency and a link. The goods receipt email to the requester gives the
+      GR and PO numbers, vendor, delivery date, each received item with its
+      quantity and condition, and a link to acknowledge; the goods ready for
+      collection email gives the storage location and a link.
+    provenance: pinned
+    enforced_in: "epms-api app/services/notification.py _document_vars (PR title / requester / currency / step label; GR PO number / delivery date / items / storage location); app/crud/config.py pr_approval_request / po_creation_request / gr_created / gr_collection_ready"
+    test:
+      - "tests/test_task_email_contents.py::test_approve_pr_email_has_title_requester_currency_and_step"
+      - "tests/test_task_email_contents.py::test_create_po_email_has_the_pr_title_and_currency"
+      - "tests/test_task_email_contents.py::test_gr_created_email_has_po_vendor_date_and_items"
+      - "tests/test_task_email_contents.py::test_collection_email_has_the_storage_location"

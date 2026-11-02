@@ -156,16 +156,23 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
         "{task_description}\n\n<a href=\"{link}\">Open {document_number}</a>\n\n{company_name}",
     ),
     # ── PR ────────────────────────────────────────────────────────────────────
+    # {pr_title} {requester_name} {currency} {step_label} are read from the
+    # document at send time (services/notification._document_vars, ISS-0140).
     "pr_approval_request": _DEFAULT_EMAIL_TEMPLATE(
         "Action Required: Approve PR {pr_number}",
         "Hi {recipient_name},\n\nPurchase Request <b>{pr_number}</b> requires your approval.\n\n"
-        "<b>Vendor:</b> {vendor}\n<b>Amount:</b> CAD {amount}\n\n"
+        "<b>Title:</b> {pr_title}\n<b>Requester:</b> {requester_name}\n"
+        "<b>Vendor:</b> {vendor}\n<b>Amount:</b> {currency} {amount}\n"
+        "<b>Approval step:</b> {step_label}\n\n"
         "<a href=\"{link}\">Review &amp; Approve PR</a>\n\n{company_name}",
     ),
+    # {comment} / {returned_by} come from the return's approval event
+    # (services/notification._document_vars, ISS-0145).
     "pr_returned": _DEFAULT_EMAIL_TEMPLATE(
         "Your PR {pr_number} has been returned for revision",
         "Hi {recipient_name},\n\nYour Purchase Request <b>{pr_number}</b> has been returned for revision.\n\n"
-        "<b>Comment:</b> {comment}\n\n<a href=\"{link}\">View &amp; Edit PR</a>\n\n{company_name}",
+        "<b>Returned by:</b> {returned_by}\n<b>Comment:</b> {comment}\n\n"
+        "<a href=\"{link}\">View &amp; Edit PR</a>\n\n{company_name}",
     ),
     "pr_rejected": _DEFAULT_EMAIL_TEMPLATE(
         "Your PR {pr_number} has been rejected",
@@ -181,7 +188,7 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
     "po_creation_request": _DEFAULT_EMAIL_TEMPLATE(
         "Action Required: Create PO for PR {pr_number}",
         "Hi {recipient_name},\n\nPurchase Request <b>{pr_number}</b> has been fully approved. Please create a Purchase Order.\n\n"
-        "<b>Vendor:</b> {vendor}\n<b>Amount:</b> CAD {amount}\n\n"
+        "<b>Title:</b> {pr_title}\n<b>Vendor:</b> {vendor}\n<b>Amount:</b> {currency} {amount}\n\n"
         "<a href=\"{link}\">View PR &amp; Create PO</a>\n\n{company_name}",
     ),
     "po_approval_request": _DEFAULT_EMAIL_TEMPLATE(
@@ -220,14 +227,19 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
         "<a href=\"{link}\">Place Order</a>\n\n{company_name}",
     ),
     # ── GR ────────────────────────────────────────────────────────────────────
+    # GR-N-001 / PRD 3.9.2. {po_number} {delivery_date} {received_items}
+    # {storage_location} are read from the GR at send time (ISS-0140).
     "gr_created": _DEFAULT_EMAIL_TEMPLATE(
         "Goods Receipt Created — {gr_number}",
         "Hi {recipient_name},\n\nGoods Receipt <b>{gr_number}</b> has been created and requires your acknowledgement.\n\n"
+        "<b>PO:</b> {po_number}\n<b>Vendor:</b> {vendor}\n<b>Delivery date:</b> {delivery_date}\n\n"
+        "<b>Received items:</b>\n{received_items}\n\n"
         "<a href=\"{link}\">View GR</a>\n\n{company_name}",
     ),
     "gr_collection_ready": _DEFAULT_EMAIL_TEMPLATE(
         "Goods Ready for Collection — {gr_number}",
-        "Hi {recipient_name},\n\nThe goods for GR <b>{gr_number}</b> are ready for collection.\n\n"
+        "Hi {recipient_name},\n\nThe goods for GR <b>{gr_number}</b> (PO <b>{po_number}</b>) are ready for collection.\n\n"
+        "<b>Storage location:</b> {storage_location}\n\n"
         "<a href=\"{link}\">Confirm Collection</a>\n\n{company_name}",
     ),
     "service_gr_pending": _DEFAULT_EMAIL_TEMPLATE(
@@ -393,6 +405,35 @@ _SUPERSEDED_EMAIL_TEMPLATE_DEFAULTS: dict = {
         "Hi {recipient_name},\n\nThe assigned matcher has completed matching on invoice <b>{invoice_number}</b> "
         "with a non-zero variance. Please review the allocation and approve or reject it.\n\n"
         "<a href=\"{link}\">Review Match</a>\n\n{company_name}",
+    ),
+    # 2026-11-02 (ISS-0145): now also says who returned the PR.
+    "pr_returned": _DEFAULT_EMAIL_TEMPLATE(
+        "Your PR {pr_number} has been returned for revision",
+        "Hi {recipient_name},\n\nYour Purchase Request <b>{pr_number}</b> has been returned for revision.\n\n"
+        "<b>Comment:</b> {comment}\n\n<a href=\"{link}\">View &amp; Edit PR</a>\n\n{company_name}",
+    ),
+    # 2026-11-02 (ISS-0140): content PRD 3.9.2 / GR-N-001 asks for.
+    "pr_approval_request": _DEFAULT_EMAIL_TEMPLATE(
+        "Action Required: Approve PR {pr_number}",
+        "Hi {recipient_name},\n\nPurchase Request <b>{pr_number}</b> requires your approval.\n\n"
+        "<b>Vendor:</b> {vendor}\n<b>Amount:</b> CAD {amount}\n\n"
+        "<a href=\"{link}\">Review &amp; Approve PR</a>\n\n{company_name}",
+    ),
+    "po_creation_request": _DEFAULT_EMAIL_TEMPLATE(
+        "Action Required: Create PO for PR {pr_number}",
+        "Hi {recipient_name},\n\nPurchase Request <b>{pr_number}</b> has been fully approved. Please create a Purchase Order.\n\n"
+        "<b>Vendor:</b> {vendor}\n<b>Amount:</b> CAD {amount}\n\n"
+        "<a href=\"{link}\">View PR &amp; Create PO</a>\n\n{company_name}",
+    ),
+    "gr_created": _DEFAULT_EMAIL_TEMPLATE(
+        "Goods Receipt Created — {gr_number}",
+        "Hi {recipient_name},\n\nGoods Receipt <b>{gr_number}</b> has been created and requires your acknowledgement.\n\n"
+        "<a href=\"{link}\">View GR</a>\n\n{company_name}",
+    ),
+    "gr_collection_ready": _DEFAULT_EMAIL_TEMPLATE(
+        "Goods Ready for Collection — {gr_number}",
+        "Hi {recipient_name},\n\nThe goods for GR <b>{gr_number}</b> are ready for collection.\n\n"
+        "<a href=\"{link}\">Confirm Collection</a>\n\n{company_name}",
     ),
 }
 
