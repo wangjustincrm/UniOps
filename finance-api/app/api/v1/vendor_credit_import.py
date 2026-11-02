@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.authz import require_permission
+from app.crud import vendor_credit as credit_crud
 from app.crud import vendor_credit_import as crud
 from app.db.base import get_db
 from app.schemas.vendor_credit_import import (
@@ -23,12 +24,17 @@ router = APIRouter(prefix="/qbo-credit-import", tags=["qbo-credit-import"])
 _MANAGE_KEY = "epms.vendor_credit.manage"
 
 
-def _actor(user: dict) -> tuple[uuid.UUID, str | None]:
+async def _actor(db: AsyncSession, user: dict) -> tuple[uuid.UUID, str | None]:
     try:
         uid = uuid.UUID(str(user.get("sub", "")))
     except ValueError:
         raise HTTPException(status_code=401, detail="Token has no usable subject")
-    return uid, user.get("full_name") or user.get("email")
+    # The token has no name claim — look the person up (ISS-0089: the
+    # imported credits' "Recorded by" read "—").
+    name = user.get("full_name") or user.get("email")
+    if not name:
+        name = (await credit_crud.user_names(db, {uid})).get(uid)
+    return uid, name
 
 
 @router.get("/candidates", response_model=ImportCandidatesResponse)
@@ -48,7 +54,7 @@ async def list_vendors(q: str | None = None,
 async def run_import(body: ImportRunRequest,
                      user: dict = Depends(require_permission(_MANAGE_KEY)),
                      db: AsyncSession = Depends(get_db)):
-    uid, name = _actor(user)
+    uid, name = await _actor(db, user)
     result = await crud.run_import(db, mapping=body.mapping, imported_by=uid,
                                    imported_by_name=name, dry_run=body.dry_run)
     if not body.dry_run:
