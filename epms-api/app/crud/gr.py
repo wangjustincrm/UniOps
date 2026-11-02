@@ -396,13 +396,6 @@ async def action(
         await _complete_tasks(db, gr.id)
         gr.acknowledged_at = now
         gr.acknowledged_by = req.acknowledged_by or await _actor_name(db, actor_id)
-        # Best-effort: acknowledging must not fail because the file server is
-        # down — fall back to inline DB storage for the PDF.
-        try:
-            await _attach_gr_pdf(db, gr, company_name, token=token, cfg=cfg)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("GR %s acknowledge: PDF upload failed (%s); storing inline", gr.number, exc)
-            await _attach_gr_pdf(db, gr, company_name, token=None, cfg=cfg)
         requester_id = await _get_pr_requester_id(db, gr)
         if requester_id is None:
             # Legacy no-PR GR (created before requester-less POs skipped the ack
@@ -421,6 +414,14 @@ async def action(
             # Service GR → goes straight to confirmation step
             gr.status = "collection_pending"
             await _create_service_confirm_task(db, gr)
+        # After the status moves on: the PDF footer prints the GR's status
+        # (ISS-0184). Best-effort: acknowledging must not fail because the file
+        # server is down — fall back to inline DB storage for the PDF.
+        try:
+            await _attach_gr_pdf(db, gr, company_name, token=token, cfg=cfg)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("GR %s acknowledge: PDF upload failed (%s); storing inline", gr.number, exc)
+            await _attach_gr_pdf(db, gr, company_name, token=None, cfg=cfg)
 
     elif act == "collect":
         if gr.status != "collection_pending" or gr.gr_type != "physical":
