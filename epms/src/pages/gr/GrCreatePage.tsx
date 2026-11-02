@@ -172,10 +172,9 @@ export default function GrCreatePage() {
     setOverReceiptReason('')
     setTitle(selectedPo.title)
     setReceivedBy((prev) => prev || user?.name || '')
-    // Storage Location / Bay is NOT pre-filled from the PO's delivery address
-    // (ISS-0132): that is where the vendor ships to, not the bay the warehouse
-    // puts the goods in — which is what the collect_goods task and email send
-    // the requester to. The warehouse fills it in (required for physical GRs).
+    // Pre-filled from the PO's delivery address and editable. Whether the
+    // warehouse should fill in the bay instead (ISS-0132) is an open question.
+    if (selectedPo.delivery_address) setStorageLocation(selectedPo.delivery_address)
   }, [selectedPoId, selectedPo, openQtyQuery.isFetched, openQtyQuery.data])
 
   const updateLine = (idx: number, patch: Partial<FormGrLineItem>) => {
