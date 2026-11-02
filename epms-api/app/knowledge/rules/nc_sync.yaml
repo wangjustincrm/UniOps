@@ -90,11 +90,13 @@ rules:
       - what does nc_milk mean
     answer: >
       nc_milk — {nc_milk}. nc_pending — {nc_pending}. A milk order cannot
-      take a goods receipt in EPMS (its receipts are booked in NC), is not
-      offered for invoice matching, and the PO page offers no Create PA; it
-      can be signed off.
+      take a goods receipt in EPMS (its receipts are booked in NC and
+      mirrored here as GRs), but it is offered for invoice matching and its
+      PO page offers Create PA, so milk invoices are matched and paid in
+      UniOps like any open NC order; it can be signed off. An nc_pending
+      order is not offered for matching until NC approves it.
     provenance: derived
     derive: nc_statuses
-    enforced_in: "epms-api app/ontology/epms.yaml purchase_order.status value_labels; app/api/v1/gr.py GR statuses; app/api/v1/invoices.py _MATCHABLE_PO_STATUSES; epms/src/pages/po/PoDetailPage.tsx canCreatePa"
+    enforced_in: "epms-api app/ontology/epms.yaml purchase_order.status value_labels; app/api/v1/gr.py GR statuses; app/api/v1/invoices.py _MATCHABLE_PO_STATUSES; app/services/po_action_check.py PA_PAGE_PO_STATUSES; epms/src/pages/po/PoDetailPage.tsx canCreatePa; epms/src/pages/invoices/InvoiceListPage.tsx MATCHABLE_PO_STATUSES; epms/src/pages/pa/PaCreatePage.tsx eligiblePos"
     test:
-      - "tests/test_rule_registry.py::test_milk_orders_are_kept_out_of_receipts_and_matching"
+      - "tests/test_rule_registry.py::test_milk_orders_take_no_receipts_but_are_matched_and_paid"

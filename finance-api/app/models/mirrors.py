@@ -62,6 +62,15 @@ class BudgetAccount(UUIDPrimaryKey, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 
+class Material(UUIDPrimaryKey, TimestampMixin, Base):
+    """Read-only mirror subset of materials (mdm-api owns schema) — names the
+    item (物料) auxiliary on NC voucher lines; its codes are NC material codes."""
+    __tablename__ = "materials"
+
+    code: Mapped[str] = mapped_column(String(50), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
 class ErpSupplier(UUIDPrimaryKey, TimestampMixin, Base):
     """Read-only mirror of mdm-api's erp_suppliers (integration-API synced).
     Column SUBSET verified against information_schema 2026-07-14 — resolves the
@@ -285,6 +294,9 @@ class PurchaseOrder(UUIDPrimaryKey, Base):
     # "nc" = imported from NC (raw material / packaging). Its payable is made
     # in NC from the purchase invoice (D1), so the AP push must not add an F1.
     source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Budget account code (pure code since the 2026-09-18 clean-up) — the
+    # AP list's GL Code column.
+    budget_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
 
 class PurchaseAgreement(UUIDPrimaryKey, Base):

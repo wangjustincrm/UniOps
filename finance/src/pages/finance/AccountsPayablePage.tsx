@@ -43,6 +43,8 @@ interface ApInvoice {
   nc_docs: NcDoc[]
   /** On a PO imported from NC — NC makes this payable from its purchase invoice; never pushed. */
   nc_flow: boolean
+  /** Budget account code(s) of the invoice's PO(s); null until it is on a PO. */
+  gl_code: string | null
 }
 interface NcDoc {
   bill_no: string
@@ -55,7 +57,7 @@ interface NcDoc {
   hyphen_match: boolean
   nc_invoice_no: string | null
 }
-interface PushResult { ap_id: string; ap_number: string; ok: boolean; message: string; nc_bill_no: string | null }
+interface PushResult { ap_id: string; ap_number: string; ok: boolean; message: string; nc_bill_no: string | null; warning?: string | null }
 interface ApListResp {
   total: number
   items: ApInvoice[]
@@ -70,6 +72,10 @@ type ApSortKey = 'ap_invoice_number' | 'source' | 'vendor_name' | 'vendor_invoic
   | 'invoice_date' | 'due_date' | 'total_amount' | 'outstanding' | 'status' | 'nc_bill_no'
 
 const STATUSES = ['draft', 'posted', 'partially_paid', 'paid', 'void'] as const
+// "posted" means the invoice is matched and accrued in UniOps — not that it is in
+// NC (that is the NC AP Doc column), so the page calls it Matched.
+const STATUS_LABEL: Record<string, string> = { posted: 'matched' }
+const statusLabel = (s: string) => STATUS_LABEL[s] ?? s.replace('_', ' ')
 const SOURCES = ['epms', 'oa'] as const
 
 function fmtMoney(v: string, ccy?: string): string {
@@ -82,7 +88,7 @@ function StatusPill({ status }: { status: string }) {
     partially_paid: 'bg-amber-50 text-amber-700', paid: 'bg-green-50 text-green-700',
     void: 'bg-neutral-100 text-neutral-400',
   }
-  return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', map[status] ?? 'bg-neutral-100 text-neutral-600')}>{status.replace('_', ' ')}</span>
+  return <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', map[status] ?? 'bg-neutral-100 text-neutral-600')}>{statusLabel(status)}</span>
 }
 
 const NC_STATE: Record<NcDoc['state'], { label: string; cls: string; tip: string }> = {
@@ -155,7 +161,7 @@ export default function AccountsPayablePage() {
   const qc = useQueryClient()
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [pushing, setPushing] = useState(false)
-  const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string; lines?: string[] } | null>(null)
+  const [banner, setBanner] = useState<{ kind: 'ok' | 'warn' | 'err'; text: string; lines?: string[] } | null>(null)
 
   const resetPage = () => { setPage(0); setSelected(new Set()) }
   // Server-sorted: the API pages this list, so it must also order it.
@@ -180,10 +186,13 @@ export default function AccountsPayablePage() {
       const r = await financeApi.post<{ results: PushResult[] }>('/ap/nc-push', { ap_ids: picked.map((i) => i.id) })
       const ok = r.results.filter((x) => x.ok)
       const bad = r.results.filter((x) => !x.ok)
+      const warned = ok.filter((x) => x.warning)
       setBanner({
-        kind: bad.length ? 'err' : 'ok',
-        text: `${ok.length} pushed to NC${bad.length ? `, ${bad.length} not pushed` : ''}.`,
-        lines: [...ok.map((x) => `${x.ap_number}: ${x.message}`), ...bad.map((x) => `${x.ap_number}: ${x.message}`)],
+        kind: bad.length ? 'err' : warned.length ? 'warn' : 'ok',
+        text: `${ok.length} pushed to NC${bad.length ? `, ${bad.length} not pushed` : ''}.`
+          + (warned.length ? ` ${warned.length} need the tax corrected in NC.` : ''),
+        lines: [...ok.map((x) => `${x.ap_number}: ${x.message}${x.warning ? ` — ${x.warning}` : ''}`),
+                ...bad.map((x) => `${x.ap_number}: ${x.message}`)],
       })
       setSelected(new Set())
       qc.invalidateQueries({ queryKey: ['ap-invoices'] })
@@ -289,7 +298,7 @@ export default function AccountsPayablePage() {
               </select>
               <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); resetPage() }} className={cn(inputCls, 'w-44')}>
                 <option value="">All statuses</option>
-                {STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+                {STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
               </select>
               <form className="flex items-center gap-1"
                     onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()); resetPage() }}>
@@ -312,7 +321,8 @@ export default function AccountsPayablePage() {
 
             {banner && (
               <div className={cn('mt-3 rounded-md px-3 py-2 text-sm',
-                banner.kind === 'err' ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700')}>
+                banner.kind === 'err' ? 'bg-red-50 text-red-700'
+                  : banner.kind === 'warn' ? 'bg-amber-50 text-amber-800' : 'bg-green-50 text-green-700')}>
                 <div>{banner.text}</div>
                 {banner.lines && banner.lines.length > 0 && (
                   <ul className="mt-1 list-disc pl-5 text-xs">
@@ -337,17 +347,18 @@ export default function AccountsPayablePage() {
                     <SortTh label="Due" sortKey="due_date" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
                     <SortTh label="Total" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-32" />
                     <SortTh label="Outstanding" sortKey="outstanding" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-32" />
+                    <th className="px-3 py-2 w-28 whitespace-nowrap" title="Budget account code — from the PO; for courier / Direct / agreement invoices, the one the NC push uses">GL Code</th>
                     <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-3 py-2 w-28" />
                     <SortTh label="NC AP Doc" sortKey="nc_bill_no" sort={sort} onSort={onSort} className="px-3 py-2 w-48" />
                   </tr>
                 </thead>
                 <tbody>
                   {isFetching && (
-                    <tr><td colSpan={11} className="px-3 py-6 text-center text-neutral-400">
+                    <tr><td colSpan={12} className="px-3 py-6 text-center text-neutral-400">
                       <Loader2 className="mx-auto h-5 w-5 animate-spin" /></td></tr>
                   )}
                   {!isFetching && invoices.length === 0 && (
-                    <tr><td colSpan={11} className="px-3 py-6 text-center text-neutral-400">No AP invoices.</td></tr>
+                    <tr><td colSpan={12} className="px-3 py-6 text-center text-neutral-400">No AP invoices.</td></tr>
                   )}
                   {invoices.map((inv, i) => {
                     const outstanding = Number(inv.total_amount) - Number(inv.paid_amount)
@@ -371,6 +382,7 @@ export default function AccountsPayablePage() {
                         <td className="px-3 py-2 text-xs text-neutral-600">{inv.due_date ?? '—'}</td>
                         <td className="px-3 py-2 text-right font-mono">{fmtMoney(inv.total_amount, inv.currency)}</td>
                         <td className="px-3 py-2 text-right font-mono">{open ? fmtMoney(String(outstanding)) : '—'}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-neutral-600">{inv.gl_code ?? ''}</td>
                         <td className="px-3 py-2"><StatusPill status={inv.status} /></td>
                         <td className="px-3 py-2" onClick={(e) => e.stopPropagation()}>
                           <NcDocCell inv={inv} />

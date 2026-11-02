@@ -604,18 +604,24 @@ def test_nc_create_pa_tasks_go_to_the_erp_pa_officer():
     assert '"erp_pa_officer"' in inspect.getsource(task._backfill_create_pa_tasks)
 
 
-def test_milk_orders_are_kept_out_of_receipts_and_matching():
+def test_milk_orders_take_no_receipts_but_are_matched_and_paid():
     from app.api.v1.gr import PHYSICAL_GR_PO_STATUSES, SERVICE_GR_PO_STATUSES
     from app.api.v1.invoices import _MATCHABLE_PO_STATUSES
     from app.services.po_action_check import PA_PAGE_PO_STATUSES
 
-    for statuses in (PHYSICAL_GR_PO_STATUSES, SERVICE_GR_PO_STATUSES,
-                     _MATCHABLE_PO_STATUSES, PA_PAGE_PO_STATUSES):
+    for statuses in (PHYSICAL_GR_PO_STATUSES, SERVICE_GR_PO_STATUSES):
         assert "nc_milk" not in statuses
+    # Matching and paying: the candidate list, the PO page's Create PA and the
+    # PA editor's PO picker all have to admit milk, or a matched milk invoice
+    # dead-ends. nc_pending stays out of matching until NC approves it.
+    assert "nc_milk" in _MATCHABLE_PO_STATUSES and "nc_milk" in PA_PAGE_PO_STATUSES
+    assert "nc_pending" not in _MATCHABLE_PO_STATUSES and "closed" not in _MATCHABLE_PO_STATUSES
     labels = rule_facts.nc_statuses(None)
     assert "Milk order" in labels["nc_milk"] and "Not yet approved in NC" in labels["nc_pending"]
     page = _src("epms/src/pages/po/PoDetailPage.tsx")
-    assert "['issued', 'partially_received', 'fully_received'].includes(po.status)" in page
+    assert "['issued', 'partially_received', 'fully_received', 'nc_milk'].includes(po.status)" in page
+    assert "'fully_received', 'nc_milk']" in _src("epms/src/pages/invoices/InvoiceListPage.tsx")
+    assert "'closed', 'nc_milk'].includes(p.status)" in _src("epms/src/pages/pa/PaCreatePage.tsx")
 
 
 # ── Goods receipts ───────────────────────────────────────────────────────────
@@ -712,20 +718,23 @@ def test_an_open_prepayment_blocks_a_regular_pa():
 
     create = inspect.getsource(pa_api.create_pa)
     assert "is still open. Settle or cancel it before creating a regular PA" in create
-    assert "A prepayment PA already exists for this PO" in create
+    # Staged prepayments are allowed; what stops a further one is a settlement.
+    assert "No further prepayment can be raised against it" in create
 
 
 def test_prepayment_cap_reads_the_vendor_then_the_system():
     from app.api.v1 import pa as pa_api
 
-    check = inspect.getsource(pa_api._check_prepayment_pct)
-    assert "vendor.max_prepayment_pct" in check
-    assert "This vendor does not allow prepayment" in check
-    # Checked on create and, since ISS-0133, on edit too.
-    for route in (pa_api.create_pa, pa_api.update_pa):
-        assert "_check_prepayment_pct(" in inspect.getsource(route)
+    create = inspect.getsource(pa_api.create_pa)
+    cap = inspect.getsource(pa_api._assert_prepayment_cap)
+    assert "_assert_prepayment_cap(" in create
+    assert "vendor.max_prepayment_pct" in cap
+    assert "This vendor does not allow prepayment" in cap
+    assert "prior_prepayment_pct(" in cap  # cumulative over the PO's stages
+    # Checked when a draft's % is edited too (PP-002, ISS-0133).
+    assert "_assert_prepayment_cap(" in inspect.getsource(pa_api.update_pa)
     # ISS-0066: the Prepaid flag on PRs/POs plays no part in creating a PA.
-    assert "is_prepaid" not in inspect.getsource(pa_api.create_pa) + check
+    assert "is_prepaid" not in create + cap
 
 
 def test_pa_tax_is_on_the_lines_only():

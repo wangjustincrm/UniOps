@@ -237,7 +237,7 @@ function PoPaCreate() {
     user?.role === 'requester' &&
     !myAuthz?.roles?.some((r) => ON_BEHALF_ROLES.includes(r))
   const eligiblePos = allPos.filter((p) =>
-    ['approved', 'issued', 'partially_received', 'fully_received', 'closed'].includes(p.status) &&
+    ['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_milk'].includes(p.status) &&
     (p.is_prepaid || p.has_unpaid_invoice) &&
     (!requesterScoped || p.pr_requester_id === user?.id)
   )
@@ -335,6 +335,9 @@ function PoPaCreate() {
   const linkablePrepayments = (poActivePas?.items ?? []).filter(
     (p) => p.pa_type === 'prepayment' && !['cancelled', 'rejected'].includes(p.status)
   )
+  // A PO may be prepaid in stages (e.g. 30% on order, 70% before shipment); the
+  // vendor cap bounds the SUM of the stages (backend _assert_prepayment_cap).
+  const priorPrepaidPct = linkablePrepayments.reduce((sum, p) => sum + Number(p.prepayment_pct ?? 0), 0)
 
   // Invoices already claimed by an active PA (not cancelled/rejected) — on this
   // PO in PO mode, or on this agreement in agreement mode.
@@ -434,7 +437,19 @@ function PoPaCreate() {
   const selectedPrepaymentPa =
     linkablePrepayments.find((p) => p.id === prepaymentPaId) ??
     (sourcePrepay?.id === prepaymentPaId ? sourcePrepay : undefined)
-  const prepaidAmount = Number(selectedPrepaymentPa?.payment_amount ?? 0)
+  // One settlement reconciles every stage: the referenced prepayment plus every
+  // other PAID, still-pending prepayment on the PO (backend
+  // settlement_prepayment_pool). Its total is the ceiling for what can be applied.
+  const settlementPool = selectedPrepaymentPa
+    ? [selectedPrepaymentPa, ...linkablePrepayments.filter((p) =>
+        p.id !== selectedPrepaymentPa.id && p.status === 'processed' && p.settlement_status === 'pending')]
+    : []
+  // A stage still in draft/approval would be paid after the settlement and never
+  // reconciled — the backend refuses the settlement until it is paid or cancelled.
+  const unpaidStages = selectedPrepaymentPa
+    ? linkablePrepayments.filter((p) => p.id !== selectedPrepaymentPa.id && p.status !== 'processed')
+    : []
+  const prepaidAmount = settlementPool.reduce((sum, p) => sum + Number(p.payment_amount ?? 0), 0)
   // Net payable = 全额 − 预付抵扣(余款);非 settlement 类型即全额
   const netPayable   = isSettlementType ? Math.max(grossTotal - appliedNum, 0) : grossTotal
   const isOverpaid   = isSettlementType && grossTotal - appliedNum < -0.01
@@ -511,6 +526,17 @@ function PoPaCreate() {
     setPrepaymentPaId(sourcePrepay.id)
     setPrepaymentApplied(String(sourcePrepay.payment_amount ?? ''))
   }, [sourcePrepay?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Prefill "Prepayment applied" with the whole pool once per pool — with staged
+  // prepayments that is the sum of every stage, not the one picked. Keyed so a
+  // background refetch does not overwrite an amount the user has since edited.
+  const poolKey = settlementPool.map((p) => p.id).join(',')
+  const prefilledPoolRef = useRef('')
+  useEffect(() => {
+    if (!isSettlementType || !poolKey || prefilledPoolRef.current === poolKey) return
+    prefilledPoolRef.current = poolKey
+    setPrepaymentApplied(prepaidAmount.toFixed(2))
+  }, [isSettlementType, poolKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pre-select the PO's matched invoices (and the GRs they were matched against)
   // once their data has loaded. Matched invoices are the ones ready to pay, so
@@ -686,10 +712,14 @@ function PoPaCreate() {
       if (taxMissing)      errors.push('Tax amount is required — enter 0 if there is no tax')
       if (paType === 'prepayment' && (!prepaymentPct || parseFloat(prepaymentPct) <= 0 || parseFloat(prepaymentPct) > 100))
         errors.push('Prepayment percentage must be between 1 and 100')
+      else if (paType === 'prepayment' && priorPrepaidPct + parseFloat(prepaymentPct) > 100)
+        errors.push(`Prepayment percentage cannot exceed ${100 - priorPrepaidPct}% — ${priorPrepaidPct}% of this PO is already prepaid`)
       if (paType === 'prepayment' && !expectedSettlement)
         errors.push('Expected settlement date is required for prepayment')
       if (isSettlementType && !prepaymentPaId)
         errors.push('Original Prepayment PA is required')
+      if (isSettlementType && unpaidStages.length > 0)
+        errors.push(`Prepayment ${unpaidStages.map((p) => p.pa_number).join(', ')} is not paid yet — wait until it is paid, or cancel it, before settling`)
       // A settlement may net to zero (fully covered by the prepayment — pure
       // reconciliation). Only non-settlement PAs require a positive amount; the
       // invoice value itself is already guarded by the pre-tax check above.
@@ -1358,6 +1388,29 @@ ${submitError}
                         The prepayment this {paType} reconciles. Auto-loaded from the selected PO.
                       </p>
                     </div>
+                    {settlementPool.length > 1 && (
+                      <div className="flex flex-col gap-1 rounded-md border border-amber-200 bg-white px-3 py-2">
+                        <p className="text-xs font-medium text-neutral-700">
+                          This {paType} reconciles all {settlementPool.length} prepayments on this PO:
+                        </p>
+                        {settlementPool.map((p) => (
+                          <p key={p.id} className="text-xs text-neutral-600 flex justify-between gap-3">
+                            <span>{p.pa_number}{p.prepayment_pct != null ? ` · ${Number(p.prepayment_pct)}%` : ''}</span>
+                            <span className="font-mono">{formatAmount(p.payment_amount, p.currency)}</span>
+                          </p>
+                        ))}
+                        <p className="text-xs font-semibold text-neutral-800 flex justify-between gap-3 border-t border-neutral-100 pt-1">
+                          <span>Total prepaid</span>
+                          <span className="font-mono">{formatAmount(prepaidAmount, formCurrency)}</span>
+                        </p>
+                      </div>
+                    )}
+                    {unpaidStages.length > 0 && (
+                      <p className="text-[11px] text-danger-600">
+                        Prepayment {unpaidStages.map((p) => p.pa_number).join(', ')} on this PO is not paid yet.
+                        Wait until it is paid, or cancel it, before settling — the settlement covers every prepayment on the PO.
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -1367,6 +1420,14 @@ ${submitError}
                       <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                       Prepayment requires settlement after goods/services are received and the final invoice is matched.
                     </div>
+                    {linkablePrepayments.length > 0 && (
+                      <p className="text-xs text-info-700">
+                        Already prepaid on this PO: {linkablePrepayments.map((p) =>
+                          `${p.pa_number} (${Number(p.prepayment_pct ?? 0)}%, ${p.status})`).join(', ')}
+                        {' '}— {priorPrepaidPct}% in total. This stage adds to it; all stages are
+                        settled together by one Settlement PA.
+                      </p>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                       <div className="flex flex-col gap-1">
                         <label className="text-xs font-medium text-neutral-700">

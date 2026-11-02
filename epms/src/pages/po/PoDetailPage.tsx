@@ -594,7 +594,7 @@ export default function PoDetailPage() {
   // moment "unpaid" stopped being sufficient.
   const canCreatePa =
     po &&
-    ['issued', 'partially_received', 'fully_received'].includes(po.status) &&
+    ['issued', 'partially_received', 'fully_received', 'nc_milk'].includes(po.status) &&
     (po.is_prepaid || po.has_unpaid_invoice) &&
     (user?.role === 'system_admin' || !!paPerms?.['epms.pa.write'])
   // Types 4 (Service) and 6 (Project-Related) both run the service GR flow —
@@ -812,11 +812,12 @@ export default function PoDetailPage() {
             <PoSignoffPanel poId={po.id} source={po.source ?? null} />
           )}
 
-          {/* Freight & Customs — every NC order (the panel hides itself on a
-              milk order with no Incoterms and nothing linked). Right under the
-              sign-off, above the order details: "are this order's fee invoices
-              in?" is what a raw-material PO is opened to find out. */}
-          {activeTab === 'Details' && po.source === 'nc' && (
+          {/* Freight & Customs — every PO (the panel hides itself on a milk
+              order with no Incoterms and nothing linked, and on an EPMS PO with
+              nothing linked). Right under the sign-off, above the order
+              details: "are this order's fee invoices in?" is what a
+              raw-material PO is opened to find out. */}
+          {activeTab === 'Details' && (
             <PoFeePanel poId={po.id} canEditDetails={canEditImported} />
           )}
 

@@ -5,7 +5,7 @@ import {
   ClipboardList, FolderTree, FlaskConical, SlidersHorizontal, Percent, Coins, Settings,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown, Scale, Target,
   RefreshCw, Wallet, Download, ShieldAlert, ClipboardCheck, HeartPulse, TrendingUp, CopyX,
-  Activity, GitBranch, Network, PieChart, Boxes, Ruler,
+  Activity, GitBranch, Network, PieChart, Boxes, Ruler, Table2,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -59,6 +59,7 @@ const NAV: NavSection[] = [
     title: 'Voucher',
     items: [
       { label: 'Journal Vouchers', href: '/finance/journal-vouchers', icon: FileText, permission: 'view_finance' },
+      { label: 'JV Detail', href: '/finance/jv-lines', icon: Table2, permission: 'view_finance' },
       { label: 'JV Validation', href: '/finance/jv-validation', icon: ShieldAlert, permission: 'view_finance' },
     ],
   },

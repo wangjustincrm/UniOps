@@ -259,6 +259,12 @@ entities:
         kind: enum
         label: "Status"
         values: [draft, posted, paid, void]
+        # The names Finance → Accounts Payable shows (AccountsPayablePage STATUS_LABEL).
+        value_labels:
+          draft: "Draft"
+          posted: "Matched (accrued in UniOps; not necessarily in NC)"
+          paid: "Paid"
+          void: "Void"
       po_number: {kind: text, label: "PO number"}
       created_at: {kind: datetime, label: "Created"}
     metrics:

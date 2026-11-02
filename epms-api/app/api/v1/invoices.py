@@ -653,8 +653,8 @@ async def fee_link_candidates(
     limit: int = Query(default=50, ge=1, le=500),
     fee_type: str | None = Query(default=None, pattern="^(freight|customs|other)$"),
 ):
-    """Raw-material POs (with their arrivals) a freight / customs invoice can be
-    linked to, latest arrival first, plus the total that match — searched by
+    """POs (with their arrivals) a freight / customs invoice can be linked to —
+    NC orders with an arrival and approved EPMS POs — latest arrival first, plus the total that match — searched by
     PO number, vendor or arrival number, never filtered by the invoice's own
     vendor (a forwarder, not the PO's supplier)."""
     return await po_fee_crud.search_candidate_pos(db, q, limit, fee_type)
@@ -1323,7 +1323,9 @@ async def match_invoice(
 
 # 发票可匹配的 PO 状态(与前端 MATCHABLE_PO_STATUSES 一致)。
 # closed 不在其中:已关闭(含 PMS 导入按 PAID 收口)的 PO 不再进入候选(2026-07-10)。
-_MATCHABLE_PO_STATUSES = ("issued", "approved", "partially_received", "fully_received")
+# nc_milk 在其中(2026-10-29):奶单的发票也要在 UniOps 匹配付款;它的 NC 到货照样
+# 镜像成 GR,所以三单匹配、create_pa 都走得通。nc_pending(NC 未审批)仍不在。
+_MATCHABLE_PO_STATUSES = ("issued", "approved", "partially_received", "fully_received", "nc_milk")
 
 
 @router.get("/{invoice_id}/match-candidates", response_model=PoListResponse)

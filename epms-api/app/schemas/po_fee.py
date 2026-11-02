@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 class FeeLinkItem(BaseModel):
     fee_type: str = Field(pattern="^(freight|customs|other)$")
     po_id: uuid.UUID
-    # Omitted only while the PO has no arrival yet (crud.po_fee refuses otherwise).
+    # Omitted only for an EPMS-raised PO with no arrival yet (crud.po_fee refuses otherwise).
     gr_id: uuid.UUID | None = None
     # invoices.line_items[].id; omitted = the whole invoice.
     invoice_line_id: uuid.UUID | None = None

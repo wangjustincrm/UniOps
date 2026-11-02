@@ -318,7 +318,7 @@ async def test_freight_pa_snapshot_and_visibility(admin_client, world):
     assert Decimal(alloc[str(world["qa_lab"])]["amount"]) == Decimal("57.76")
     assert Decimal(alloc[str(world["qa_lab"])]["tax_amount"]) == Decimal("0.84")
     assert Decimal(alloc[str(world["sc_ga"])]["amount"]) == Decimal("27.38")
-    assert {a["budget_code"] for a in pa["cost_allocations"]} == {"CRM0150102"}
+    assert {a["budget_code"] for a in pa["cost_allocations"]} == {"CRM00204"}
 
     listed = (await admin_client.get("/api/v1/pa", params={"search": pa["pa_number"]})).json()
     assert [p["id"] for p in listed["items"]] == [pa_id]

@@ -45,7 +45,9 @@ import { InvoiceChainDrawer } from './InvoiceChainDrawer'
 
 // PO statuses an invoice can be matched/allocated against.
 // closed excluded: closed POs (incl. PMS imports closed by PAID) never enter match candidates
-const MATCHABLE_PO_STATUSES = ['issued', 'approved', 'partially_received', 'fully_received']
+// nc_milk: milk orders' invoices are matched and paid here too (their NC
+// arrivals are mirrored as GRs). Same list as epms-api invoices.py.
+const MATCHABLE_PO_STATUSES = ['issued', 'approved', 'partially_received', 'fully_received', 'nc_milk']
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 

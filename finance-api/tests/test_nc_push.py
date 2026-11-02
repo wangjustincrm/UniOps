@@ -315,7 +315,54 @@ async def test_plan_freight_one_row_per_cost_centre(db_session):
     plan = await svc.plan_bill(db_session, ap, today=date(2026, 10, 27))
     assert plan.summary == "Freight UPS-77"
     got = sorted((str(r.notax), str(r.tax), r.nc_tax_code, r.dims.revexp) for r in plan.rows)
-    assert got == [("100.00", "13.00", "001", "CRM0150102"), ("50.00", "0.00", "006", "CRM0150102")]
+    assert got == [("100.00", "13.00", "001", "CRM00204"), ("50.00", "0.00", "006", "CRM00204")]
+
+
+async def test_plan_mixed_rate_without_tax_lines_infers_the_taxed_part(db_session):
+    """Culligan 64069TP (user, 2026-10-30): 0.98 tax on 197.50 and no tax line.
+    The taxed part is inferred at 13% (7.54), the rest is its own zero-rated row."""
+    vid = _vendor()
+    ap, *_ = await _ap(db_session, vendor_id=vid, amount="197.50", tax="0.98", tax_lines=())
+    plan = await svc.plan_bill(db_session, ap, today=date(2026, 10, 27))
+    got = [(str(r.notax), str(r.tax), r.nc_tax_code, str(r.tax_rate)) for r in plan.rows]
+    assert got == [("7.54", "0.98", "001", "13"), ("189.96", "0", "006", "0")]
+    assert plan.total == ap.total_amount
+
+
+async def test_plan_without_tax_lines_unfit_rate_goes_as_hst_with_a_warning(db_session):
+    """Ecolab-style 14.54% with no tax line (user, 2026-10-30): not split at 15%;
+    pushed as HST at its own rate, and the clerk is told to fix the tax in NC."""
+    vid = _vendor()
+    ap, *_ = await _ap(db_session, vendor_id=vid, amount="2346.54", tax="341.29", tax_lines=())
+    plan = await svc.plan_bill(db_session, ap, today=date(2026, 10, 27))
+    got = [(str(r.notax), str(r.tax), r.nc_tax_code, str(r.tax_rate)) for r in plan.rows]
+    assert got == [("2346.54", "341.29", "001", "14.54")]
+    [w] = plan.warnings
+    assert "14.54%" in w and "correct it on the NC bill" in w
+
+
+async def test_push_unfit_tax_reports_the_warning(db_session):
+    vid = _vendor()
+    ap, *_ = await _ap(db_session, vendor_id=vid, amount="2346.54", tax="341.29", tax_lines=())
+    uid = await _pusher(db_session)
+    [out] = await svc.push_invoices(db_session, [ap.id], uid, lookup=FakeLookup(), client=FakeClient())
+    assert out.ok and "correct it on the NC bill" in (out.warning or "")
+    [log] = (await db_session.execute(select(NcPushLog))).scalars().all()
+    assert "correct it on the NC bill" in log.message
+
+
+async def test_plan_with_a_fitting_tax_has_no_warning(db_session):
+    vid = _vendor()
+    ap, *_ = await _ap(db_session, vendor_id=vid, amount="197.50", tax="0.98", tax_lines=())
+    plan = await svc.plan_bill(db_session, ap, today=date(2026, 10, 27))
+    assert plan.warnings == []
+
+
+async def test_plan_without_tax_lines_at_a_full_rate_stays_one_row(db_session):
+    vid = _vendor()
+    ap, *_ = await _ap(db_session, vendor_id=vid, amount="100.00", tax="13.00", tax_lines=())
+    plan = await svc.plan_bill(db_session, ap, today=date(2026, 10, 27))
+    assert [(str(r.notax), r.nc_tax_code) for r in plan.rows] == [("100.00", "001")]
 
 
 async def test_plan_mixed_rate_splits_untaxed_portion(db_session):
@@ -598,6 +645,59 @@ async def test_list_marks_nc_flow_aps_and_hides_them(client, db_session):
     await db_session.flush()
     r = await client.get("/finance/v1/ap/invoices", headers=_h())
     assert {i["ap_invoice_number"]: i["nc_flow"] for i in r.json()["items"]}["AP-NC"] is True
+
+
+async def test_list_gl_code_is_the_po_budget_code(client, db_session):
+    """User, 2026-10-29: the AP list's GL Code column is the budget account code of
+    the invoice's PO — every PO of a multi-PO invoice — and empty with no PO."""
+    vid = _vendor()
+    _, inv1, *_ = await _ap(db_session, vendor_id=vid, number="AP-ONE", inv_no="G-1")
+    _, inv2, *_ = await _ap(db_session, vendor_id=vid, number="AP-MULTI", inv_no="G-2",
+                            po_titles=(("PO-B", "b"), ("PO-A", "a"), ("PO-A2", "a2")))
+    await _ap(db_session, vendor_id=vid, number="AP-NOPO", inv_no="G-3", route="agreement",
+              po_titles=())
+    codes = {"PO-633-2610-01": "CRM0090201", "PO-B": "CRM00503", "PO-A": "CRM00101",
+             "PO-A2": "CRM00101"}
+    for po in (await db_session.execute(select(PurchaseOrder))).scalars():
+        po.budget_code = codes[po.number]
+    await db_session.flush()
+
+    r = await client.get("/finance/v1/ap/invoices", headers=_h())
+    assert r.status_code == 200, r.text
+    gl = {i["ap_invoice_number"]: i["gl_code"] for i in r.json()["items"]}
+    assert gl == {"AP-ONE": "CRM0090201", "AP-MULTI": "CRM00101, CRM00503", "AP-NOPO": None}
+
+
+async def test_list_gl_code_without_po_follows_the_nc_push(client, db_session):
+    """User, 2026-10-30: a courier / Direct / agreement invoice has no PO, yet its
+    budget account is known — show the one the NC push uses."""
+    vid = _vendor()
+    await _ap(db_session, vendor_id=vid, number="AP-FR", inv_no="UPS-1", route="freight",
+              po_titles=())
+    _, inv_d, cc, dep = await _ap(db_session, vendor_id=vid, number="AP-DIR", inv_no="D-1",
+                                  route="direct", po_titles=())
+    db_session.add(PaymentApplication(pa_number="PA-20261020-0004", title="Hydro October",
+                                      pa_type="regular", status="approved", source="direct",
+                                      vendor_id=vid, vendor_name="Hydro", invoice_ids=[str(inv_d.id)],
+                                      payment_amount=Decimal("1"), currency="CAD",
+                                      cost_center_id=cc.id, department_id=dep.id,
+                                      budget_account_code="CRM00301-Hydro", created_by=uuid.uuid4()))
+    _, inv_a, *_ = await _ap(db_session, vendor_id=vid, number="AP-AGR", inv_no="A-1",
+                             route="agreement", po_titles=())
+    agr = PurchaseAgreement(number="AGR-202607-0003", title="Pest control 2026",
+                            budget_code="CRM01114")
+    db_session.add(agr)
+    await db_session.flush()
+    inv_a.agreement_id = agr.id
+    await _ap(db_session, vendor_id=vid, number="AP-DIR-NOPA", inv_no="D-2", route="direct",
+              po_titles=())
+    await db_session.flush()
+
+    r = await client.get("/finance/v1/ap/invoices", headers=_h())
+    assert r.status_code == 200, r.text
+    gl = {i["ap_invoice_number"]: i["gl_code"] for i in r.json()["items"]}
+    assert gl == {"AP-FR": "CRM00204", "AP-DIR": "CRM00301", "AP-AGR": "CRM01114",
+                  "AP-DIR-NOPA": None}
 
 
 async def test_match_ignores_hyphens_and_says_so(client, db_session):
