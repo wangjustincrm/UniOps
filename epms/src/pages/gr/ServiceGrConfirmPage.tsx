@@ -351,15 +351,15 @@ export default function ServiceGrConfirmPage() {
         <div className="rounded-lg border border-success-200 bg-success-50 p-4 flex gap-3">
           <CheckCircle2 className="h-5 w-5 text-success-600 flex-shrink-0" />
           <p className="text-sm text-success-700">
-            Confirming service completion will mark this GR as <strong>Confirmed</strong> and unlock
-            Payment Application creation.
+            Confirming service completion will mark this GR as <strong>Confirmed</strong> and record the service as
+            received on the PO. The Payment Application follows once the vendor's invoice is matched to this PO.
           </p>
         </div>
       ) : qualityRating === 'issues' ? (
         <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
           <AlertTriangle className="h-5 w-5 text-warning-500 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-warning-700">
-            The GR will still be confirmed and Payment Application can proceed. The issue details are kept in the
+            The GR will still be confirmed; payment follows the matched invoice as usual. The issue details are kept in the
             GR's acceptance notes; the Procurement Officer is not notified, so tell them if the vendor needs to be contacted.
           </p>
         </div>
