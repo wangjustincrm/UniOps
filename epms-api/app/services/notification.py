@@ -108,12 +108,37 @@ def _render_task_body(tpl: dict | None, task: Task, variables: dict[str, Any]) -
     return _render(body, variables, escape=True)
 
 
+# approval-api writes every approval task's description as
+# "Step {n}/{total}: {label} {noun} required." (engine._create_approve_task);
+# the over-budget pre-approval steps replace it with the justification.
+_STEP_RE = re.compile(r"^Step (\d+)/(\d+): (.+) \S+ required\.$")
+_CONDITION_LABELS = {"good": "Good", "discrepancy": "Discrepancy", "damaged": "Damaged"}
+
+
+def _step_label(description: str | None) -> str:
+    m = _STEP_RE.match((description or "").strip())
+    if m:
+        return f"{m.group(3)} (step {m.group(1)} of {m.group(2)})"
+    if (description or "").lstrip("⚠️ ").startswith("OVER-BUDGET"):
+        return "Over-budget pre-approval"
+    return "—"
+
+
+def _qty(value) -> str:
+    """1.0000 → 1, 2.5000 → 2.5 (NUMERIC(15,4) quantities)."""
+    try:
+        return f"{value.normalize():f}"
+    except AttributeError:
+        return str(value)
+
+
 async def _document_vars(db: AsyncSession, task: Task) -> dict[str, Any]:
     """Template variables read from the task's document at send time.
 
     Tasks are written by approval-api (and others) with no room for these
     facts, so the templates' {comment} etc. used to go out as literal braces
-    (ISS-0145). Reading them here covers every path into the dispatcher —
+    (ISS-0145) and the PR / GR emails lacked what PRD 3.9.2 and GR-N-001 list
+    (ISS-0140). Reading them here covers every path into the dispatcher —
     the outbox, Send reminder, re-notification — alike. Call-site extra_vars
     still win. Never raises: a missing fact must not stop the email.
     """
@@ -134,6 +159,45 @@ async def _document_vars(db: AsyncSession, task: Task) -> dict[str, Any]:
             )).first()
             out["comment"] = ((row.comment or "").strip() if row else "") or "—"
             out["returned_by"] = (row.full_name if row else None) or "—"
+
+        dt = (task.document_type or "").lower()
+        if dt == "pr":
+            # PRD 3.9.2: PR emails carry the title, requester and currency.
+            from app.models.pr import PurchaseRequest
+            row = (await db.execute(
+                select(PurchaseRequest.title, PurchaseRequest.currency, User.full_name)
+                .outerjoin(User, User.id == PurchaseRequest.created_by)
+                .where(PurchaseRequest.id == task.document_id)
+            )).first()
+            if row:
+                out.update(pr_title=row.title, currency=row.currency or "CAD",
+                           requester_name=row.full_name or "—")
+            if (task.type or "").startswith("approve"):
+                out["step_label"] = _step_label(task.description)
+        elif dt == "gr":
+            # GR-N-001: PO number, delivery date, received items with
+            # quantity and condition; 3.9.2: storage location for collection.
+            from app.core.delegation import PLANT_TIMEZONE
+            from app.models.gr import GoodsReceipt
+            from zoneinfo import ZoneInfo
+            gr = (await db.execute(
+                select(GoodsReceipt).where(GoodsReceipt.id == task.document_id)
+            )).scalar_one_or_none()
+            if gr is not None:
+                out["po_number"] = gr.po_number
+                out["currency"] = gr.currency or "CAD"
+                out["delivery_date"] = (
+                    gr.received_at.astimezone(ZoneInfo(PLANT_TIMEZONE)).date().isoformat()
+                    if gr.received_at else "—")
+                # Same fallback the collect_goods task description uses.
+                out["storage_location"] = gr.storage_location or "Warehouse"
+                # Plain text, one line per item: values are escaped, and
+                # _build_email_html turns the newlines into <br>.
+                out["received_items"] = "\n".join(
+                    f"• {li.description} — {_qty(li.qty_received)} {li.unit} "
+                    f"({_CONDITION_LABELS.get(li.condition, li.condition)})"
+                    for li in gr.line_items
+                ) or "—"
     except Exception as exc:  # noqa: BLE001
         logger.warning("Task %s: document facts for the email unavailable: %s", task.id, exc)
     return out
