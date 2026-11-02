@@ -535,8 +535,8 @@ async def test_an_850_resend_updates_the_order(env):
 # ── AC-OB-19: manual orders ─────────────────────────────────────────────────
 
 async def test_ac19_a_manual_draft_is_never_queued_and_after_submit_it_is(env):
-    from app.schemas.orders import ManualLineIn, ManualOrderIn
-    data = ManualOrderIn(partner_code="MAN", customer_reference="staff-1", lines=[
+    from app.schemas.orders import AddressIn, ManualLineIn, ManualOrderIn
+    data = ManualOrderIn(partner_code="MAN", customer_reference="staff-1", ship_to=AddressIn(name="Staff shop", address1="1680 Venture Dr", city="Kingston", province="ON", zip="K7P 0E9"), lines=[
         ManualLineIn(item_code="CF0092", quantity=Decimal(2), unit="CASE")])
     async with env.factory(OP) as u:
         o = await ManualOrderService(u).create(data)
@@ -554,10 +554,10 @@ async def test_ac19_a_manual_draft_is_never_queued_and_after_submit_it_is(env):
 
 async def test_a_manual_order_with_a_bad_line_cannot_be_submitted(env):
     from app.platform.errors import InvalidInput
-    from app.schemas.orders import ManualLineIn, ManualOrderIn
+    from app.schemas.orders import AddressIn, ManualLineIn, ManualOrderIn
     async with env.factory(OP) as u:
         preview = await ManualOrderService(u).preview([ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="PALLET")])
-        o = await ManualOrderService(u).create(ManualOrderIn(partner_code="MAN", lines=[
+        o = await ManualOrderService(u).create(ManualOrderIn(partner_code="MAN", ship_to=AddressIn(name="Staff shop", address1="1680 Venture Dr", city="Kingston", province="ON", zip="K7P 0E9"), lines=[
             ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="PALLET")]))
         await u.commit()
     assert preview[0].problem == "no conversion for unit PALLET"
@@ -566,7 +566,7 @@ async def test_a_manual_order_with_a_bad_line_cannot_be_submitted(env):
             await ManualOrderService(u).submit(o.id, o.version)
     async with env.factory(OP) as u:
         with pytest.raises(InvalidInput, match="MANUAL-channel"):
-            await ManualOrderService(u).create(ManualOrderIn(partner_code="SHOP", lines=[
+            await ManualOrderService(u).create(ManualOrderIn(partner_code="SHOP", ship_to=AddressIn(name="Staff shop", address1="1680 Venture Dr", city="Kingston", province="ON", zip="K7P 0E9"), lines=[
                 ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="EA")]))
 
 
@@ -587,3 +587,12 @@ async def test_ac23_a_paid_order_refunded_and_archived_is_suppressed_without_a_t
     o, _ = await env.order(1)
     assert (o.fulfillment_status, o.archive_suppressed) == (F.ARCHIVE_SUPPRESSED, True)
     assert await env.q("SELECT 1 FROM tasks") == []  # refunded or voided orders raise no task (FR-OB-03d)
+
+
+async def test_the_detail_carries_both_addresses_and_the_walmart_dc(env):
+    await run_850(env, {"PurchaseOrder": [po("WMT", "W-DC", [{"Line": 1, "BuyerPart": "W-999", "Quantity": 1, "UOM": "CA"}],
+                                             ship_to_gln="0012345000011")]})
+    o, _ = await env.order("W-DC")
+    async with env.factory(OP) as u:
+        d = await OrderService(u).detail(o.id)
+    assert d.ship_to["gln"] == "0012345000011" and d.dc_number == "6080" and d.source_type == "EDI_850"

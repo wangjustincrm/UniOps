@@ -13,7 +13,7 @@ from app.domain.order_rules import order_state, payment_satisfied, to_ea
 from app.domain.orders import HOLD_REASONS, ORDER_STATES, SOURCE_TYPES
 from app.domain.status import FULFILLMENT, Fulfillment as F
 from app.domain.status import Invoice as Inv
-from app.models.config import Connection, Item, Partner
+from app.models.config import Connection, DcRouting, Item, Partner
 from app.models.documents import Document, DocumentLink
 from app.models.shipments import Shipment, ShipmentRow
 from app.models.orders import Order, OrderLine
@@ -63,6 +63,8 @@ class OrderRepository(Repository[Order]):
         Preset("needs_review", "Needs review", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Review"}]}),
         Preset("payment_hold", "Payment hold", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Payment Hold"}], "hidden": ["review_reason"]}),
         Preset("pending", "Pending (waiting for the 940)", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Pending"}], "hidden": ["review_reason"]}),
+        Preset("manual_drafts", "Manual drafts", {"filters": [{"field": "source_type", "op": "eq", "value": "MANUAL"},
+                                                               {"field": "fulfillment_status", "op": "eq", "value": "Draft"}]}),
         Preset("delivery", "Waiting for delivery confirmation",
                {"filters": [{"field": "invoice_status", "op": "eq", "value": "Waiting for Delivery Confirmation"}]}),
         Preset("archive_suppressed", "Archive suppressed", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Archive Suppressed"}], "hidden": ["review_reason"]}),
@@ -102,6 +104,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
             lines=[LineRead.model_validate(ln) for ln in lines],
             documents=[OrderDocumentRead(**d._asdict()) for d in docs],
             shipments=await self._shipments(id),
+            dc_number=await self._dc_number(o),
             timeline=[TimelineEntry(at=a.at, user_name=a.user_name, entity=a.entity, action=a.action, before=a.before,
                                     after=a.after, reason=a.reason) for a in trail],
         )
@@ -127,6 +130,14 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         order = await self.repo.get(id)
         return {"order": self.to_read(order).model_dump(mode="json"), "document_id": doc.id,
                 "file_status": doc.file_status, "control": doc.st02, "errors": (doc.body_json or {}).get("errors", [])}
+
+    async def _dc_number(self, o: Order) -> str | None:
+        gln = (o.ship_to or {}).get("gln")
+        if not gln:
+            return None
+        return (await self.uow.session.execute(select(DcRouting.dc_number).where(
+            DcRouting.partner_code == o.partner_code, DcRouting.ship_to_gln == str(gln).strip(),
+            DcRouting.active.is_(True)))).scalar_one_or_none()
 
     async def _shipments(self, order_id: int) -> list[ShipmentRead]:
         s = self.uow.session
@@ -210,7 +221,7 @@ class ManualOrderService:
         self.uow.set_reason("manual order: create draft")
         order = Order(partner_code=p.code, source_type="MANUAL", source_order_id=f"MANUAL-{uuid.uuid4().hex}",
                       source_order_number=data.customer_reference, requested_delivery_date=data.requested_delivery_date,
-                      ship_to=data.ship_to, notes=data.notes, fulfillment_status=F.DRAFT.value,
+                      ship_to=data.ship_to.model_dump(exclude_none=True), notes=data.notes, fulfillment_status=F.DRAFT.value,
                       invoice_status=(Inv.NOT_REQUIRED if p.invoice_method == "NONE" else Inv.PENDING).value,
                       first_received_at=datetime.now(timezone.utc), version=1,
                       shadow=await SETTINGS.get(self.s, SHADOW_MODE))
@@ -240,7 +251,7 @@ class ManualOrderService:
         p = await self._partner(data.partner_code)
         self.uow.set_reason("manual order: edit draft")
         o.partner_code, o.source_order_number = p.code, data.customer_reference
-        o.requested_delivery_date, o.ship_to, o.notes = data.requested_delivery_date, data.ship_to, data.notes
+        o.requested_delivery_date, o.ship_to, o.notes = data.requested_delivery_date, data.ship_to.model_dump(exclude_none=True), data.notes
         for ln in (await self.s.execute(select(OrderLine).where(OrderLine.order_id == o.id))).scalars():
             await self.s.delete(ln)
         await self.s.flush()

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Controller, useForm, type FieldValues, type Resolver } from 'react-hook-form'
+import { Controller, useForm, type FieldValues, type Resolver, type UseFormReturn } from 'react-hook-form'
 import type { z } from 'zod'
 import { Autocomplete } from '../primitives/Autocomplete'
 import { Checkbox } from '../primitives/Checkbox'
@@ -7,8 +7,8 @@ import type { ComboOption } from '../primitives/Combobox'
 import { DateInput, NumberInput, Textarea } from '../primitives/FieldInputs'
 import { Select } from '../primitives/Select'
 import { Button, FormField, Input } from '../primitives/shell'
-import { businessErrorOf } from '../resource/businessError'
 import { ErrorMessage } from './ErrorMessage'
+import { applyServerError, blankToEmpty, emptyToNull, prepare } from './formValues'
 import { zodResolver } from './zodResolver'
 
 // Each type has its control: select → Select, checkbox → Checkbox, number →
@@ -78,25 +78,37 @@ export function SchemaForm({
       // A refusal names its field (details.field), or several
       // (details.errors: [{field, message}] for a request the server's
       // schema refused); each message goes next to its input.
-      const be = businessErrorOf(e)
-      const known = (f: unknown): f is string => typeof f === 'string' && fields.some((x) => x.name === f)
-      const listed = Array.isArray(be?.details?.errors)
-        ? (be.details.errors as { field?: unknown; message?: unknown }[]).filter((x) => known(x.field))
-        : []
-      if (be && listed.length > 0) {
-        for (const x of listed) form.setError(x.field as string, { message: String(x.message ?? be.message) })
-      } else if (be && known(be.details?.field)) {
-        form.setError(be.details.field, { message: errorMessages?.[be.code] ?? be.message })
-      } else {
-        setError(e)
-      }
+      if (!applyServerError(form, fields, e, errorMessages)) setError(e)
     }
   })
 
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+      <SchemaFields form={form} fields={fields} readOnly={readOnly} />
+      {typeof errors.root?.message === 'string' && (
+        <p role="alert" className="text-sm text-danger-600">{errors.root.message}</p>
+      )}
+      <ErrorMessage error={error} messages={errorMessages} />
+      <div className="flex justify-end gap-2">
+        {onCancel && (
+          <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>{readOnly ? 'Close' : 'Cancel'}</Button>
+        )}
+        {!readOnly && <Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Saving…' : submitLabel}</Button>}
+      </div>
+    </form>
+  )
+}
+
+/** The fields of a SchemaForm on a react-hook-form form — also the header of
+ *  a MasterDetailForm. Each FieldSpec type has its primitive (see FieldType). */
+export function SchemaFields({ form, fields, readOnly, idPrefix = 'sf' }: {
+  form: UseFormReturn<FieldValues>; fields: FieldSpec[]; readOnly?: boolean; idPrefix?: string
+}) {
+  const { errors } = form.formState
+  return (
+    <>
       {fields.map((f) => {
-        const id = `sf-${f.name}`
+        const id = `${idPrefix}-${f.name}`
         const err = errors[f.name]?.message
         const common = { id, disabled: readOnly || f.readOnly, 'aria-invalid': err ? true : undefined }
         let control
@@ -140,37 +152,6 @@ export function SchemaForm({
           </FormField>
         )
       })}
-      {typeof errors.root?.message === 'string' && (
-        <p role="alert" className="text-sm text-danger-600">{errors.root.message}</p>
-      )}
-      <ErrorMessage error={error} messages={errorMessages} />
-      <div className="flex justify-end gap-2">
-        {onCancel && (
-          <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>{readOnly ? 'Close' : 'Cancel'}</Button>
-        )}
-        {!readOnly && <Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Saving…' : submitLabel}</Button>}
-      </div>
-    </form>
+    </>
   )
-}
-
-function prepare(values: FieldValues, fields: FieldSpec[]): FieldValues {
-  const out: FieldValues = { ...values }
-  for (const f of fields) {
-    const v = out[f.name]
-    if (f.type === 'number') {
-      out[f.name] = v === '' || v === null || v === undefined ? null : typeof v === 'string' ? Number(v) : v
-    } else if (f.type === 'select' || f.type === 'reference' || f.type === 'date') {
-      out[f.name] = v === '' || v === undefined ? null : v
-    }
-  }
-  return out
-}
-
-function blankToEmpty(v: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, x === null || x === undefined ? '' : x]))
-}
-
-function emptyToNull(v: unknown): unknown {
-  return v === '' ? null : v
 }

@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   PermissionProvider, ToastProvider, ViewsProvider, requestView, type ListMeta, type SavedView, type ViewsClient,
 } from '@/platform-ui'
+import { MemoryRouter } from 'react-router-dom'
+import { chooseOption, pickSuggestion } from '@/platform-ui/testing'
 import type { OrderDetail, OrderRead } from './ordersApi'
 
 // Orders with its views (the old Review page is the "Needs review" view) and
@@ -20,7 +22,7 @@ const order: OrderRead = {
 }
 const pending: OrderRead = { ...order, id: 5, order_number: 105, source_order_number: '9303', fulfillment_status: 'Pending',
   order_state: 'Active', review_reason: null }
-const detail: OrderDetail = { ...order, notes: null, shipments: [], documents: [{ id: 9, kind: 'SHOPIFY_ORDER_JSON', direction: 'IN', remote_name: 'orders page 1', created_at: order.created_at,
+const detail: OrderDetail = { ...order, bill_to: null, dc_number: null, notes: null, shipments: [], documents: [{ id: 9, kind: 'SHOPIFY_ORDER_JSON', direction: 'IN', remote_name: 'orders page 1', created_at: order.created_at,
     file_status: null, ack_status: null, st02: null, sent_at: null, error: null, ack_detail: null }],
   timeline: [], lines: [{ id: 1, line_no: 5, item_code: null, source: { sku: 'NOPE' }, ordered_qty: '1', order_unit: 'CASE', factor_ea: null,
     qty_ea: null, unit_price: '1', line_status: 'Active', removed: false, problem: 'item not in the Item Master' }] }
@@ -36,12 +38,23 @@ const meta: ListMeta = {
   ],
 }
 
-const api = vi.hoisted(() => ({ resolve: vi.fn(), fetchOrder: vi.fn(), list: vi.fn(), send: vi.fn(), eligible: vi.fn() }))
+const api = vi.hoisted(() => ({ resolve: vi.fn(), fetchOrder: vi.fn(), list: vi.fn(), send: vi.fn(), eligible: vi.fn(),
+  preview: vi.fn(), create: vi.fn(), submit: vi.fn(), update: vi.fn() }))
 vi.mock('./ordersApi', async (orig) => {
   const real = await orig<typeof import('./ordersApi')>()
   return { ...real, ordersClient: { ...real.ordersClient, list: api.list, meta: async () => meta },
-    fetchOrder: api.fetchOrder, resolveReview: api.resolve, send940: api.send, fetchEligibility: api.eligible }
+    fetchOrder: api.fetchOrder, resolveReview: api.resolve, send940: api.send, fetchEligibility: api.eligible,
+    previewManual: api.preview, createManual: api.create, submitManual: api.submit, updateManual: api.update }
 })
+const look = vi.hoisted(() => ({ customers: vi.fn() }))
+vi.mock('../configuration/lookups', () => ({
+  manualPartnerOptions: look.customers,
+  itemOptions: vi.fn(async (q: string) => [{ value: 'CF0092', label: 'CF0092', hint: 'Formula stage 1' },
+    { value: 'CF0010', label: 'CF0010', hint: `match for ${q}` }]),
+  itemUnits: vi.fn(async (code: string) => code === 'CF0092'
+    ? [{ value: 'EA', label: 'EA (1)' }, { value: '2PACK', label: '2PACK (2 EA)' }, { value: 'CASE', label: 'CASE (6 EA)' }]
+    : [{ value: 'EA', label: 'EA (1)' }, { value: 'CASE', label: 'CASE (12 EA)' }]),
+}))
 const { default: OrdersPage } = await import('./OrdersPage')
 
 function fakeViews(mine: SavedView[] = []): ViewsClient & { rows: SavedView[] } {
@@ -227,5 +240,156 @@ describe('Orders: 940s (P4)', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Next 940s' })
     expect(await within(dialog).findByText('Order 105 · SHOP 9303')).toBeInTheDocument()
     expect(api.send).not.toHaveBeenCalled()
+  })
+})
+
+describe('Orders: manual orders (FR-OB-19a) — New in the standard sheet, drafts as a view', () => {
+  const manualDraft: OrderRead = { ...order, id: 9, order_number: 109, partner_code: 'MAN', source_type: 'MANUAL', source_order_number: 'REF-9',
+    fulfillment_status: 'Draft', order_state: 'Draft', review_reason: null, version: 3,
+    ship_to: { country: 'CA', name: 'Store 12', address1: '1 Main St', city: 'Ottawa', province: 'ON', zip: 'K1A 0B1' } }
+  const shipTo = { country: 'CA', name: 'Jane Doe', address1: '10 King St W', city: 'Toronto', province: 'ON', zip: 'M5H 1A1' }
+  async function fillShipTo(form: HTMLElement) {
+    const st = within(form).getByRole('group', { name: 'Ship to' })
+    fireEvent.change(within(st).getByLabelText(/^Name/), { target: { value: 'Jane Doe' } })
+    fireEvent.change(within(st).getByLabelText(/^Address\b(?! line)/), { target: { value: '10 King St W' } })
+    fireEvent.change(within(st).getByLabelText(/^City/), { target: { value: 'Toronto' } })
+    await chooseOption(within(st).getByRole('combobox', { name: /^Province/ }), 'Ontario (ON)')
+    fireEvent.change(within(st).getByLabelText(/^Postal code/), { target: { value: 'm5h1a1' } })
+  }
+  beforeEach(() => {
+    Object.values(api).forEach((f) => f.mockReset())
+    look.customers.mockReset(); look.customers.mockResolvedValue([{ value: 'MAN', label: 'Manual orders', hint: 'MAN' }])
+    api.list.mockImplementation(async () => ({ items: [manualDraft], total: 1 }))
+    api.fetchOrder.mockResolvedValue({ ...detail, ...manualDraft, requested_delivery_date: null, notes: null, lines: [
+      { ...detail.lines[0], id: 91, item_code: 'CF0092', ordered_qty: '2', order_unit: 'CASE', problem: null }] })
+  })
+
+  it('New manual order needs sales.order.operate; it previews EA and saves only when every line converts', async () => {
+    const { unmount } = renderAs(['sales.read'])
+    await screen.findByText('REF-9')
+    expect(screen.queryByRole('button', { name: 'New manual order' })).toBeNull()
+    unmount()
+    renderAs(['sales.read', 'sales.order.operate'])
+    fireEvent.click(await screen.findByRole('button', { name: 'New manual order' }))
+    const form = await screen.findByRole('dialog', { name: 'New manual order' })
+    // the only MANUAL customer is chosen already, shown with its code
+    expect(await within(form).findByRole('combobox', { name: 'Customer' })).toHaveTextContent('Manual orders — MAN')
+    const unit = within(form).getByRole('combobox', { name: 'Unit 1' })
+    expect(unit).toBeDisabled()  // until an item is chosen
+    await pickSuggestion(within(form).getByRole('combobox', { name: 'Item 1' }), 'formula', /^CF0092/)
+    expect(within(form).getByRole('combobox', { name: 'Item 1' })).toHaveTextContent('CF0092 — Formula stage 1')
+    await waitFor(() => expect(within(form).getByRole('combobox', { name: 'Unit 1' })).toBeEnabled())
+    await chooseOption(within(form).getByRole('combobox', { name: 'Unit 1' }), 'CASE (6 EA)')
+    expect(within(form).getByRole('button', { name: 'Save draft' })).toBeDisabled()  // preview first
+    api.preview.mockResolvedValueOnce([{ item_code: 'CF0092', quantity: '1', unit: 'CASE', qty_ea: null, problem: 'no conversion for unit CASE' }])
+    fireEvent.click(within(form).getByRole('button', { name: 'Preview EA' }))
+    expect(await within(form).findByText('no conversion for unit CASE')).toBeInTheDocument()
+    expect(within(form).getByRole('button', { name: 'Save draft' })).toBeDisabled()
+    api.preview.mockResolvedValueOnce([{ item_code: 'CF0092', quantity: '1', unit: 'CASE', qty_ea: 6, problem: null }])
+    fireEvent.click(within(form).getByRole('button', { name: 'Preview EA' }))
+    expect(await within(form).findByText('6')).toBeInTheDocument()
+    api.create.mockResolvedValue({ ...manualDraft, id: 10, order_number: 110 })
+    fireEvent.click(within(form).getByRole('button', { name: 'Save draft' }))
+    // Ship to is required: nothing is saved without it
+    const st = within(form).getByRole('group', { name: 'Ship to' })
+    expect(await within(st).findAllByText('Required')).toHaveLength(5)
+    expect(api.create).not.toHaveBeenCalled()
+    await fillShipTo(form)
+    fireEvent.click(within(form).getByRole('button', { name: 'Save draft' }))
+    await waitFor(() => expect(api.create).toHaveBeenCalledWith({ partner_code: 'MAN', customer_reference: null,
+      requested_delivery_date: null, notes: null, ship_to: { ...shipTo, zip: 'm5h1a1' }, lines: [{ item_code: 'CF0092', quantity: 1, unit: 'CASE' }] }))
+    expect(await screen.findByRole('dialog', { name: 'Order 110' })).toBeInTheDocument()  // the new draft opens
+  })
+
+  it('a draft is submitted from its row, and edited with the same form in its sheet', async () => {
+    api.submit.mockResolvedValue({ ...manualDraft, fulfillment_status: 'Pending' })
+    api.update.mockResolvedValue({ ...manualDraft, version: 4 })
+    renderAs(['sales.read', 'sales.order.operate'])
+    const row = (await screen.findByText('REF-9')).closest('tr')!
+    fireEvent.click(within(row).getByRole('button', { name: 'Submit' }))
+    await waitFor(() => expect(api.submit).toHaveBeenCalledWith(9, 3))
+    expect(screen.queryByRole('dialog')).toBeNull()  // the row action does not open the order
+    fireEvent.click(within(row).getByText('REF-9'))
+    const sheet = await screen.findByRole('dialog', { name: 'Order 109' })
+    fireEvent.click(await within(sheet).findByRole('button', { name: 'Edit draft' }))
+    expect(await within(sheet).findByLabelText('Quantity 1')).toHaveValue(2)  // the draft's own line
+    expect(within(within(sheet).getByRole('group', { name: 'Ship to' })).getByLabelText(/^City/)).toHaveValue('Ottawa')  // and address
+    api.preview.mockResolvedValueOnce([{ item_code: 'CF0092', quantity: '3', unit: 'CASE', qty_ea: 18, problem: null }])
+    fireEvent.change(within(sheet).getByLabelText('Quantity 1'), { target: { value: '3' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Preview EA' }))
+    expect(await within(sheet).findByText('18')).toBeInTheDocument()
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(api.update).toHaveBeenCalledWith(9, expect.objectContaining({ partner_code: 'MAN', customer_reference: 'REF-9',
+      ship_to: manualDraft.ship_to, lines: [{ item_code: 'CF0092', quantity: 3, unit: 'CASE' }] }), 3))
+  })
+
+  it("the unit offers only the item's units and goes back to EA when the item changes", async () => {
+    renderAs(['sales.read', 'sales.order.operate'])
+    fireEvent.click(await screen.findByRole('button', { name: 'New manual order' }))
+    const form = await screen.findByRole('dialog', { name: 'New manual order' })
+    await pickSuggestion(await within(form).findByRole('combobox', { name: 'Item 1' }), 'CF', /^CF0092/)
+    await waitFor(() => expect(within(form).getByRole('combobox', { name: 'Unit 1' })).toBeEnabled())
+    fireEvent.keyDown(within(form).getByRole('combobox', { name: 'Unit 1' }), { key: 'Enter' })
+    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['EA (1)', '2PACK (2 EA)', 'CASE (6 EA)'])
+    fireEvent.click(screen.getByRole('option', { name: '2PACK (2 EA)' }))
+    await waitFor(() => expect(within(form).getByRole('combobox', { name: 'Unit 1' })).toHaveTextContent('2PACK (2 EA)'))
+    await pickSuggestion(within(form).getByRole('combobox', { name: 'Item 1' }), 'CF', /^CF0010/)  // no 2PACK there
+    await waitFor(() => expect(within(form).getByRole('combobox', { name: 'Unit 1' })).toHaveTextContent('EA (1)'))
+  })
+
+  it('with no MANUAL customer, the form says where to add one instead of an empty list', async () => {
+    look.customers.mockResolvedValue([])
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<MemoryRouter><QueryClientProvider client={qc}><ToastProvider><ViewsProvider client={fakeViews()}>
+      <PermissionProvider can={(k) => ['sales.read', 'sales.order.operate'].includes(k)}><OrdersPage /></PermissionProvider>
+    </ViewsProvider></ToastProvider></QueryClientProvider></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('button', { name: 'New manual order' }))
+    const form = await screen.findByRole('dialog', { name: 'New manual order' })
+    expect(await within(form).findByRole('status')).toHaveTextContent('manual orders use partners whose channel is Manual')
+    expect(within(form).getByRole('link', { name: 'Configuration → Partners' })).toHaveAttribute('href', '/config/partners')
+    expect(within(form).queryByRole('combobox', { name: 'Customer' })).toBeNull()
+  })
+
+  it('with several MANUAL customers none is chosen for you', async () => {
+    look.customers.mockResolvedValue([{ value: 'MAN', label: 'Manual orders', hint: 'MAN' }, { value: 'STAFF', label: 'Staff purchases', hint: 'STAFF' }])
+    renderAs(['sales.read', 'sales.order.operate'])
+    fireEvent.click(await screen.findByRole('button', { name: 'New manual order' }))
+    const form = await screen.findByRole('dialog', { name: 'New manual order' })
+    expect(await within(form).findByRole('combobox', { name: 'Customer' })).not.toHaveTextContent('Manual orders')
+  })
+})
+
+describe('the order detail: Ship to and Bill to with where they came from', () => {
+  beforeEach(() => { Object.values(api).forEach((f) => f.mockReset()); api.list.mockResolvedValue({ items: [pending], total: 1 }) })
+  const open = async (d: Partial<OrderDetail>) => {
+    api.fetchOrder.mockResolvedValue({ ...detail, ...pending, ...d })
+    renderAs(['sales.read'])
+    fireEvent.click(await screen.findByText('9303'))
+    return screen.findByRole('dialog', { name: 'Order 105' })
+  }
+  const value = (sheet: HTMLElement, term: string) => within(sheet).getByText(term, { selector: 'dt' }).nextElementSibling!
+
+  it('an 850: the ShipTo with its GLN and Walmart DC, the BillTo with its code', async () => {
+    const sheet = await open({ source_type: 'EDI_850', dc_number: '6097',
+      ship_to: { gln: '0605388000123', name: 'WALMART DC 6097', address1: '6800 Maritz Dr', city: 'Mississauga', province: 'ON', zip: 'L5W 1W2', country: 'CA' },
+      bill_to: { name: 'Walmart Canada', code: '0605388000000' } })
+    await within(sheet).findByText('6800 Maritz Dr')
+    expect(value(sheet, 'Ship to')).toHaveTextContent('WALMART DC 6097')
+    expect(value(sheet, 'Ship to')).toHaveTextContent('Mississauga ON L5W 1W2')
+    expect(value(sheet, 'Ship to')).toHaveTextContent('From the 850 ShipTo · GLN 0605388000123 · DC 6097')
+    expect(value(sheet, 'Bill to')).toHaveTextContent('Walmart Canada')
+    expect(value(sheet, 'Bill to')).toHaveTextContent('From the 850 BillTo · code 0605388000000')
+  })
+
+  it('Shopify: the shipping address; a manual order: entered by hand, no bill-to', async () => {
+    const shop = await open({ ship_to: { name: 'A B', address1: '5 Rue X', city: 'Montréal', province: 'QC', zip: 'H2X 1Y4', country: 'CA' }, bill_to: null })
+    await within(shop).findByText('5 Rue X')
+    expect(value(shop, 'Ship to')).toHaveTextContent(/5 Rue X.*Montréal QC H2X 1Y4.*From the Shopify shipping address/)
+    cleanup()
+    const manual = await open({ source_type: 'MANUAL', ship_to: { name: 'Jane', address1: '1 Main', city: 'Ottawa', province: 'ON', zip: 'K1A 0B1',
+      country: 'CA', attention: 'Receiving', phone: '613-555-0100' }, bill_to: null })
+    await within(manual).findByText('1 Main')
+    expect(value(manual, 'Ship to')).toHaveTextContent(/Jane.*Attn: Receiving.*1 Main.*613-555-0100.*Entered by hand/)
+    expect(value(manual, 'Bill to')).toHaveTextContent('—None for a manual order')
   })
 })

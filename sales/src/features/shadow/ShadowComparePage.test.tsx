@@ -62,9 +62,11 @@ describe('Shadow compare', () => {
     renderAs(['sales.read', 'sales.order.operate'])
     fireEvent.click(await screen.findByText('9471'))
     const dialog = await screen.findByRole('dialog')
-    const button = await within(dialog).findByRole('button', { name: 'Mark as expected difference' })
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Mark as expected difference' }))
+    const ask = await screen.findByRole('dialog', { name: 'Mark these differences as expected?' })
+    const button = within(ask).getByRole('button', { name: 'Mark as expected' })
     expect(button).toBeDisabled()  // a reason first
-    fireEvent.change(within(dialog).getByLabelText('Why these differences are expected'), { target: { value: 'Zoho rounds up' } })
+    fireEvent.change(within(ask).getByLabelText(/Why these differences are expected/), { target: { value: 'Zoho rounds up' } })
     fireEvent.click(button)
     await waitFor(() => expect(api.mark).toHaveBeenCalledWith(3, 'Zoho rounds up', 2))
   })

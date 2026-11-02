@@ -53,6 +53,15 @@ const RAW_TABLES = [
   },
 ]
 
+// Forms come from the library — SchemaForm (a record's fields) or
+// MasterDetailForm (fields + lines), always in a Sheet or a Dialog; a page
+// never carries a form of its own and "New" is ListPage's create slot (the
+// user's rule, 2026-11-02). The placement half cannot be seen by ESLint across
+// components; it is in platform-ui/README.md.
+const RAW_FORMS = [
+  { selector: "JSXOpeningElement[name.name='form']", message: 'Use SchemaForm or MasterDetailForm from @/platform-ui (in a Sheet or Dialog), not a raw <form>.' },
+]
+
 export default defineConfig([
   globalIgnores(['dist']),
   {
@@ -120,11 +129,11 @@ export default defineConfig([
   },
   {
     files: ['src/pages/**/*.tsx'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...RAW_TABLES] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...RAW_TABLES, ...RAW_FORMS] },
   },
   {
     files: ['src/features/**/*.{ts,tsx}'],
     ignores: ['src/features/**/*.test.{ts,tsx}'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...RAW_TABLES] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...RAW_TABLES, ...RAW_FORMS] },
   },
 ])

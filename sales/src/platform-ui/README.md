@@ -30,6 +30,7 @@ Features (`src/features/<area>/`) and pages build on `@/platform-ui` only. Enfor
 - **No business names.** Permission keys, the status → style map, API types and paths are passed in by the pages.
 - **Shell first.** `Button`, `Badge`, `Card`, `Input`, `Label`, `FormField`, `Pagination` and `Skeleton` come from `@uniops/shell` through `primitives/shell.ts`; nothing here duplicates them, and `packages/shell` is not modified.
 - **Light theme only**, using the shell's tokens.
+- **Making and editing records (the user's rule, 2026-11-02).** A page never carries a form. "New" is ListPage's `create` slot — the standard New button at the end of the toolbar, the form in the standard Sheet; on save the sheet closes, the list refreshes and the new record's detail opens (CrudPage uses the same slot). A record's own form is `SchemaForm`; a record with lines (an order, a transfer, an invoice) is `MasterDetailForm` (header fields + `EditableTable` lines + an optional preview, one submit). Editing opens the same form inside the record's detail Sheet; a step with its own fields (a return, a bulk confirmation) opens a Dialog. An action that needs a reason is `ConfirmAction` with `reason` — never an ad-hoc bordered section. ESLint refuses a raw `<form>` in features and pages; where a form is rendered is reviewed, not linted.
 
 ## Public interface (`@/platform-ui`)
 
@@ -41,12 +42,16 @@ Features (`src/features/<area>/`) and pages build on `@/platform-ui` only. Enfor
 | `DataTable<T>` (primitive) | the table view: sortable header, controlled search, filter slot, paging, empty / error / loading states — no API knowledge |
 | `QueryTable<T>` (pattern) | `DataTable` adapted to `QuerySpec`: sort / page (clamped to 200) / search / filters (`FilterControl`) / error text; `setFilter`, `getFilter`, `clearFilter`, `clampPageSize` |
 | `CrudPage<T>` | list + create/edit sheet + deactivate + CSV import with dry-run preview, for one config table; without the write permission a row opens read-only; `renderDetail(row)` adds a panel under the form (e.g. audit history); `singular` names one record in titles |
-| `SchemaForm` | config forms from a zod schema and a field list; `changesOnly` sends only changed fields, and a cleared field as `null`; a server refusal is shown on the field it names (`details.field`, or each of `details.errors`); `readOnly` disables every input and drops the save button |
+| `SchemaForm` | a record's form from a zod schema and a field list (its fields are `SchemaFields`, shared with MasterDetailForm); `changesOnly` sends only changed fields, and a cleared field as `null`; a server refusal is shown on the field it names (`details.field`, or each of `details.errors`); `readOnly` disables every input and drops the save button |
 | `StatusBadge` | status shown through a map supplied by the page |
 | `ActionButton` | disabled while its action is pending; checks a permission key passed in |
 | `PermissionProvider`, `PermissionGate`, `useCan` | the module passes in one `can(key)` function |
 | `Dialog`, `Sheet`, `Popover`, `Tabs`, `Combobox`, `ToastProvider` / `useToast` | Radix-based overlays and inputs, rendered in portals (primitives) |
-| `ConfirmAction` | confirm dialog that runs an action once (in-flight guard), shows its error (pattern) |
+| `ConfirmAction` | confirm dialog that runs an action once (in-flight guard), shows its error; `reason` asks for a required text first and passes it to `onConfirm` (pattern) |
+| `MasterDetailForm` | a record with lines: SchemaForm-style header fields + optional `addresses` (AddressFields sections) + `EditableTable` lines + optional `preview` / `blocked`; one submit, field and line errors (a server error on `ship_to.zip` lands on that input), a ref-guarded submit; in a Sheet or Dialog only (pattern) |
+| `AddressFields` / `addressSchema()` | an address under one form key, in a fieldset: name, attention, phone, address, line 2, city, province (the Canadian provinces as a Select when the country is Canada, else text), postal code (A1A 1A1 in Canada), country (default CA); `addressSchema()` holds the same rules as the server; `cleanAddress()` drops empty parts before sending (pattern) |
+| `AddressView` | an address shown as its lines, with an optional note under it (where it came from); a dash when empty (primitive) |
+| `ListPage` `create` | the standard New: toolbar button (permission-gated), the form in the standard Sheet, `done(created)` closes, refreshes and opens the record (pattern) |
 | `Button`, `Input`, `Label`, `Badge`, `Card…`, `FormField`, `Pagination`, `Skeleton…` | `@uniops/shell`, re-exported (primitives) |
 | `EmptyState`, `ErrorState(message)`, `ErrorLine` | primitives; `ErrorMessage(error)`, `ErrorView(error)` turn an error into text by `BusinessError` code (patterns); `businessErrorOf`, `errorText` (resource) |
 

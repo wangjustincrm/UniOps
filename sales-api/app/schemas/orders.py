@@ -2,11 +2,12 @@
 manual orders (FR-OB-19a)."""
 from __future__ import annotations
 
+import re
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationInfo, field_validator
 
 Code = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
 Unit = Annotated[str, StringConstraints(strip_whitespace=True, to_upper=True, min_length=1, max_length=20)]
@@ -139,6 +140,8 @@ class OrderDetail(OrderRead):
     department: str | None = None
     order_type: str | None = None
     lines: list[LineRead] = []
+    # The DC a retailer ship-to GLN routes to (Walmart; FR-OB-03), shown with the address.
+    dc_number: str | None = None
     documents: list[OrderDocumentRead] = []
     shipments: list[ShipmentRead] = []
     timeline: list[TimelineEntry] = []
@@ -150,6 +153,46 @@ class ManualLineIn(BaseModel):
     unit: Unit
 
 
+CA_PROVINCES = ("AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE", "QC", "SK", "YT")
+_CA_POSTAL = re.compile(r"^[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z] ?\d[ABCEGHJ-NPRSTV-Z]\d$")
+Line = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
+OptLine = Annotated[str, StringConstraints(strip_whitespace=True, max_length=255)] | None
+
+
+class AddressIn(BaseModel):
+    """A ship-to (or bill-to) entered by hand: what the 940 needs (name,
+    address1, city, province, postal code) is required, so a manual order is
+    refused here, field by field — never by its 940 later (FR-OB-29a). In
+    Canada the province is a code and the postal code A1A 1A1."""
+    model_config = ConfigDict(extra="forbid")
+
+    country: Annotated[str, StringConstraints(strip_whitespace=True, to_upper=True, min_length=2, max_length=2)] = "CA"
+    name: Line
+    attention: OptLine = None
+    phone: Annotated[str, StringConstraints(strip_whitespace=True, max_length=40)] | None = None
+    address1: Line
+    address2: OptLine = None
+    city: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+    province: Annotated[str, StringConstraints(strip_whitespace=True, to_upper=True, min_length=1, max_length=10)]
+    zip: Annotated[str, StringConstraints(strip_whitespace=True, to_upper=True, min_length=1, max_length=20)]
+
+    @field_validator("province")
+    @classmethod
+    def _province(cls, v: str, info: ValidationInfo) -> str:
+        if info.data.get("country") == "CA" and v not in CA_PROVINCES:
+            raise ValueError("a Canadian province code (e.g. ON, QC)")
+        return v
+
+    @field_validator("zip")
+    @classmethod
+    def _zip(cls, v: str, info: ValidationInfo) -> str:
+        if info.data.get("country") == "CA":
+            if not _CA_POSTAL.match(v):
+                raise ValueError("a Canadian postal code: A1A 1A1")
+            v = f"{v.replace(' ', '')[:3]} {v.replace(' ', '')[3:]}"
+        return v
+
+
 class ManualOrderIn(BaseModel):
     """A manual order (sample, phone order, staff purchase) for a MANUAL partner."""
     model_config = ConfigDict(extra="forbid")
@@ -157,7 +200,7 @@ class ManualOrderIn(BaseModel):
     partner_code: Code
     customer_reference: Annotated[str, StringConstraints(strip_whitespace=True, max_length=50)] | None = None
     requested_delivery_date: date | None = None
-    ship_to: dict[str, Any] | None = None
+    ship_to: AddressIn  # required: the 940 cannot go without it
     notes: Text | None = None
     lines: Annotated[list[ManualLineIn], Field(min_length=1, max_length=200)]
 

@@ -10,7 +10,6 @@ import InvoicesPage from '@/features/invoices/InvoicesPage'
 import TransfersPage from '@/features/transfers/TransfersPage'
 import WarehousesPage from '@/features/configuration/warehouses/WarehousesPage'
 import OrdersPage from '@/features/orders/OrdersPage'
-import ManualOrderPage from '@/features/orders/ManualOrderPage'
 import ItemsPage from '@/features/configuration/items/ItemsPage'
 import PartnerCodesPage from '@/features/configuration/partner-codes/PartnerCodesPage'
 import DcRoutingPage from '@/features/configuration/dc-routing/DcRoutingPage'
@@ -39,7 +38,6 @@ export const moduleRoutes: RouteDef[] = [
     tab: { title: 'Documents', icon: 'FileText', keyStrategy: 'static' },
   },
   { path: '/orders', element: <OrdersPage />, tab: { title: 'Orders', icon: 'ShoppingCart', keyStrategy: 'static' } },
-  { path: '/orders/manual', element: <ManualOrderPage />, tab: { title: 'Manual orders', icon: 'PenLine', keyStrategy: 'static' } },
   { path: '/config/items', element: <ItemsPage />, tab: { title: 'Items', icon: 'Package', keyStrategy: 'static' } },
   { path: '/config/partner-codes', element: <PartnerCodesPage />, tab: { title: 'Partner codes', icon: 'Tags', keyStrategy: 'static' } },
   { path: '/config/dc-routing', element: <DcRoutingPage />, tab: { title: 'DC routing', icon: 'Route', keyStrategy: 'static' } },

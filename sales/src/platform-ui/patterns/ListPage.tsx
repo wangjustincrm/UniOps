@@ -6,6 +6,7 @@ import { Sheet } from '../primitives/Sheet'
 import type { ListMeta } from '../resource/listMeta'
 import { queryKeys } from '../resource/queryKeys'
 import type { Filter, Page, QuerySpec } from '../resource/querySpec'
+import { ActionButton } from './ActionButton'
 import { QueryTable } from './QueryTable'
 import { useListView } from './views'
 
@@ -49,6 +50,20 @@ export interface ListPageProps<T extends { id: number }> {
   refetchInterval?: (rows: T[]) => number | false
   /** Extra parts that need the list (dialogs, a second sheet). */
   children?: (ctx: ListContext<T> & { open: T | null; setOpen: (row: T | null) => void }) => ReactNode
+  /** The one way to make a record (the user's rule, 2026-11-02): the New button
+   *  at the end of the toolbar, the form in the standard sheet. `render` gets
+   *  `done(created)` — the sheet closes, the list refreshes and the new record's
+   *  detail opens — and `cancel`. Never a form on the page itself. */
+  create?: ListCreate<T>
+}
+
+export interface ListCreate<T> {
+  label: string
+  permission: string
+  /** The sheet's title (default: the label). */
+  title?: string
+  className?: string
+  render: (done: (created?: T) => void, cancel: () => void) => ReactNode
 }
 
 /** A list page on the platform's list contract (design §13.15 / §13.19): its
@@ -61,6 +76,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   const view = useListView(resource, { fixed })
   const { spec } = view
   const [open, setOpen] = useState<T | null>(null)
+  const [creating, setCreating] = useState(false)
   const list = useQuery({
     queryKey: [...queryKeys.list(resource), spec],
     queryFn: () => resource.list(spec),
@@ -82,6 +98,18 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
       }]
     : columns
   const close = () => setOpen(null)
+  const created = async (row?: T) => {
+    setCreating(false)
+    await ctx.refresh()
+    if (row && renderDetail) setOpen(row)
+  }
+  const create = props.create
+  const toolbar = (
+    <>
+      {props.toolbar?.(ctx)}
+      {create && <ActionButton size="sm" permission={create.permission} onAction={() => setCreating(true)}>{create.label}</ActionButton>}
+    </>
+  )
 
   return (
     <div className="flex flex-col gap-4">
@@ -104,12 +132,17 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
         rowKey={(r) => r.id}
         onRowClick={props.onRowClick ?? (renderDetail ? setOpen : undefined)}
         emptyTitle={props.emptyTitle}
-        toolbar={props.toolbar?.(ctx)}
+        toolbar={props.toolbar || create ? toolbar : undefined}
       />
       {renderDetail && (
         <Sheet open={current !== null} onOpenChange={(o) => { if (!o) close() }}
           title={current ? (props.detailTitle?.(current) ?? `#${current.id}`) : ''} className={props.detailClassName}>
           {current && renderDetail(current, close)}
+        </Sheet>
+      )}
+      {create && (
+        <Sheet open={creating} onOpenChange={setCreating} title={create.title ?? create.label} className={create.className}>
+          {creating && create.render(created, () => setCreating(false))}
         </Sheet>
       )}
       {props.children?.({ ...ctx, open: current, setOpen })}

@@ -435,3 +435,25 @@ async def test_edi_settings_take_only_an_active_sftp_connection_and_need_config(
     with pytest.raises(PermissionDenied):
         async with edi.env.factory(OP) as u:
             await EdiSettingsService(u).update(EdiSettings(connection_id=edi.conn_id, ack_timeout_minutes=120))
+
+
+async def test_a_manual_order_with_its_ship_to_builds_a_valid_940(edi):
+    from app.schemas.orders import AddressIn, ManualLineIn, ManualOrderIn
+    from app.services.order_views import ManualOrderService
+    async with edi.env.factory(OP) as u:
+        o = await ManualOrderService(u).create(ManualOrderIn(
+            partner_code="MAN", customer_reference="phone-7",
+            ship_to=AddressIn(name="Staff shop", attention="J. Doe", address1="1680 Venture Dr", city="Kingston", province="ON", zip="k7p0e9"),
+            lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]))
+        await u.commit()
+    async with edi.env.factory(OP) as u:
+        o = await ManualOrderService(u).submit(o.id, o.version)
+        await u.commit()
+    edi.clock.now = o.paid_at + timedelta(minutes=1)
+    r = await edi.out.queue_due()
+    assert (r.queued, r.invalid) == (1, 0)                     # no ship_to error: the 940 is valid
+    assert (await edi.worker.run_once()).done == 1
+    [(_, content)] = edi.store.files.items()
+    segs = segments(content)
+    assert ["N1", "ST", "Staff shop"] == [s for s in segs if s[0] == "N1" and s[1] == "ST"][0][:3]
+    assert ["N4", "Kingston", "ON", "K7P 0E9"] == [s for s in segs if s[0] == "N4"][0][:4]

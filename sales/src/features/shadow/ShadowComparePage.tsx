@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, DateTimeCell, DiffTable, ErrorMessage, ErrorView, FormField, ListPage, Skeleton, StatusCell, Textarea, queryKeys,
+  ActionButton, ConfirmAction, DateTimeCell, DiffTable, ErrorView, ListPage, Skeleton, StatusCell, queryKeys,
   type ColumnDef,
 } from '@/platform-ui'
 import { SHADOW_STATUSES, fetchShadowCompare, fetchShadowSummary, markExpected, shadowClient, type ShadowMatchRead } from './shadowApi'
@@ -40,24 +40,20 @@ const errorMessages: Record<string, string> = {
 
 function MarkExpected({ m, onDone }: { m: ShadowMatchRead; onDone: () => void }) {
   const qc = useQueryClient()
-  const [reason, setReason] = useState('')
-  const mut = useMutation({
-    mutationFn: () => markExpected(m.id, reason.trim(), m.version),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: queryKeys.list(shadowClient) })
-      await qc.invalidateQueries({ queryKey: SUMMARY_KEY })
-      onDone()
-    },
-  })
+  const [open, setOpen] = useState(false)
   return (
-    <section aria-label="Expected difference" className="flex flex-col gap-2 rounded-md border border-neutral-100 p-2 text-sm">
-      <FormField label="Why these differences are expected" htmlFor="shadow-reason" hint="Kept while the differences stay the same; a new difference sets it back to Differs.">
-        <Textarea id="shadow-reason" rows={2} value={reason} onChange={(e) => setReason(e.target.value)} />
-      </FormField>
-      <ActionButton size="sm" permission="sales.order.operate" disabled={reason.trim().length < 3}
-        onAction={() => mut.mutateAsync().catch(() => {})}>Mark as expected difference</ActionButton>
-      <ErrorMessage error={mut.error} messages={errorMessages} />
-    </section>
+    <>
+      <ActionButton size="sm" variant="secondary" permission="sales.order.operate" onAction={() => setOpen(true)}>Mark as expected difference</ActionButton>
+      <ConfirmAction open={open} onOpenChange={setOpen} title="Mark these differences as expected?"
+        description="Kept while the differences stay the same; a new difference sets it back to Differs."
+        confirmLabel="Mark as expected" reason={{ label: 'Why these differences are expected' }} errorMessages={errorMessages}
+        onConfirm={async (why) => {
+          await markExpected(m.id, why, m.version)
+          await qc.invalidateQueries({ queryKey: queryKeys.list(shadowClient) })
+          await qc.invalidateQueries({ queryKey: SUMMARY_KEY })
+          onDone()
+        }} />
+    </>
   )
 }
 

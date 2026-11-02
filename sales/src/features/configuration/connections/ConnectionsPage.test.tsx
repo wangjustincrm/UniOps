@@ -118,15 +118,17 @@ describe('a Shopify connection', () => {
 describe('Connections page: warehouse EDI settings (P4)', () => {
   it('a reader sees them read-only; sales.config saves the connection and the 997 wait', async () => {
     const { unmount } = renderAs(['sales.read'])
-    let panel = await screen.findByRole('region', { name: 'Warehouse EDI' })
-    expect(await within(panel).findByLabelText('997 wait (minutes)')).toBeDisabled()
-    expect(within(panel).queryByText('Save')).toBeNull()
+    let panel = await screen.findByRole('group', { name: 'Warehouse EDI' })
+    expect(within(panel).getByText('120 minutes')).toBeInTheDocument()
+    expect(within(panel).queryByRole('button', { name: 'Edit' })).toBeNull()  // read only
     unmount()
     api.saveEdi.mockImplementation(async (d) => d)
     renderAs(['sales.read', 'sales.config'])
-    panel = await screen.findByRole('region', { name: 'Warehouse EDI' })
-    fireEvent.change(await within(panel).findByLabelText('997 wait (minutes)'), { target: { value: '90' } })
-    fireEvent.click(within(panel).getByText('Save'))
+    panel = await screen.findByRole('group', { name: 'Warehouse EDI' })
+    fireEvent.click(within(panel).getByRole('button', { name: 'Edit' }))
+    const sheet = await screen.findByRole('dialog', { name: 'Warehouse EDI and 810 invoices' })
+    fireEvent.change(within(sheet).getByLabelText(/997 wait \(minutes\)/), { target: { value: '90' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(api.saveEdi).toHaveBeenCalledWith({ connection_id: null, ack_timeout_minutes: 90, invoice_connection_id: null }))
   })
 })

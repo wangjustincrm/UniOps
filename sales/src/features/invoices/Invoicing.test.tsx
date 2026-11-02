@@ -12,7 +12,7 @@ const order: OrderRead = {
   review_reason: null, historical: false, first_received_at: '2026-10-28T12:00:00Z', paid_at: null, archived_in_shopify_at: null,
   archive_suppressed: false, shopify_financial_status: null, source_updated_at: null, version: 1, created_at: '2026-10-28T12:00:00Z', updated_at: null,
 }
-const detail: OrderDetail = { ...order, notes: null, documents: [], shipments: [], timeline: [], lines: [
+const detail: OrderDetail = { ...order, bill_to: null, dc_number: null, notes: null, documents: [], shipments: [], timeline: [], lines: [
   { id: 70, line_no: 1, item_code: 'CF0092', source: {}, ordered_qty: '10', order_unit: 'CASE', factor_ea: '6', qty_ea: 60, unit_price: '50',
     line_status: 'Active', removed: false, problem: null, shipped_ea: 60, delivered_qty: null }] }
 const inv: InvoiceRead = {
@@ -57,8 +57,10 @@ describe('Delivery confirmation', () => {
     renderAs(['sales.read', 'sales.invoice.manage'], <DeliveryPage />)
     await screen.findByText('PO-1')
     expect(api.list.mock.calls.at(-1)![0].filters).toEqual([{ field: 'invoice_status', op: 'eq', value: 'Waiting for Delivery Confirmation' }])
-    fireEvent.change(screen.getByLabelText('Delivered on'), { target: { value: '2026-11-05' } })
     fireEvent.click(screen.getByRole('button', { name: /Confirm all shown \(1\)/ }))
+    const ask = await screen.findByRole('dialog', { name: 'Confirm 1 deliveries' })
+    fireEvent.change(within(ask).getByLabelText('Delivered on'), { target: { value: '2026-11-05' } })
+    fireEvent.click(within(ask).getByRole('button', { name: 'Confirm' }))
     await waitFor(() => expect(api.bulk).toHaveBeenCalledWith([7], '2026-11-05'))
     expect(await screen.findByRole('status')).toHaveTextContent('1 confirmed')
   })
@@ -68,9 +70,10 @@ describe('Delivery confirmation', () => {
     renderAs(['sales.read', 'sales.invoice.manage'], <DeliveryPage />)
     fireEvent.click(await screen.findByText('PO-1'))
     const dialog = await screen.findByRole('dialog')
-    const form = await within(dialog).findByRole('region', { name: 'Confirm delivery' })
+    const form = dialog
+    await within(form).findByRole('table', { name: 'Delivered quantities' })
     fireEvent.change(within(form).getByLabelText('Delivered CF0092'), { target: { value: '54' } })
-    fireEvent.change(within(form).getByLabelText('Delivered on (the invoice date)'), { target: { value: '2026-11-05' } })
+    fireEvent.change(within(form).getByLabelText(/Delivered on \(the invoice date\)/), { target: { value: '2026-11-05' } })
     fireEvent.click(within(form).getByRole('button', { name: 'Confirm delivery' }))
     await waitFor(() => expect(api.confirm).toHaveBeenCalledWith({ order_id: 7, confirmed_date: '2026-11-05',
       lines: [{ order_line_id: 70, delivered_qty: 54 }] }))
@@ -94,11 +97,12 @@ describe('Invoices', () => {
     renderAs(['sales.read', 'sales.invoice.manage'], <InvoicesPage />)
     fireEvent.click(await screen.findByText('IN-107'))
     const dialog = await screen.findByRole('dialog')
-    const rel = await within(dialog).findByRole('region', { name: 'Release' })
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Release' }))
     expect(within(dialog).queryByRole('button', { name: 'Send' })).toBeNull()
+    const rel = await screen.findByRole('dialog', { name: 'Release invoice IN-107?' })
     const button = within(rel).getByRole('button', { name: 'Release' })
-    expect(button).toBeDisabled()
-    fireEvent.change(within(rel).getByLabelText('Why it can go ahead'), { target: { value: 'customer accepts 9 cases' } })
+    expect(button).toBeDisabled()  // a reason first
+    fireEvent.change(within(rel).getByLabelText(/Why it can go ahead/), { target: { value: 'customer accepts 9 cases' } })
     fireEvent.click(button)
     await waitFor(() => expect(api.release).toHaveBeenCalledWith(7, 'customer accepts 9 cases'))
   })
@@ -110,10 +114,11 @@ describe('Invoices', () => {
     renderAs(['sales.read', 'sales.invoice.manage'], <InvoicesPage />)
     fireEvent.click(await screen.findByText('IN-107'))
     const dialog = await screen.findByRole('dialog')
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Edit invoice' }))
     fireEvent.change(await within(dialog).findByLabelText('Unit price line 1'), { target: { value: '48.5' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }))
     await waitFor(() => expect(api.edit).toHaveBeenCalledWith(3, 1, { invoice_date: '2026-11-05', lines: [{ id: 30, qty: 9, unit_price: '48.5' }] }))
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Send' }))
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Send' }))
     await waitFor(() => expect(api.send).toHaveBeenCalledWith(3))
   })
 })

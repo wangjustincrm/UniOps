@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { z } from 'zod'
 import {
-  ActionButton, Autocomplete, DateCell, DateTimeCell, DetailList, EditableTable, ErrorMessage, ErrorView, FormField,
-  Input, ListPage, LocalTable, Skeleton, StatusCell, numberColumn, queryKeys, useCan,
-  type ColumnDef, type EditableColumn,
+  ActionButton, Autocomplete, ConfirmAction, DateCell, DateTimeCell, DetailList, ErrorMessage, ErrorView, ListPage, LocalTable,
+  MasterDetailForm, Skeleton, StatusCell, numberColumn, queryKeys,
+  type ColumnDef, type EditableColumn, type FieldSpec,
 } from '@/platform-ui'
 import { itemOptions, warehouseOptions } from '../configuration/lookups'
 import {
@@ -55,41 +56,36 @@ const editColumns: EditableColumn<Line>[] = [
 ]
 const lineProblem = (l: Line) => (!l.item_code ? 'choose an item' : Number.isInteger(Number(l.qty_ea)) && Number(l.qty_ea) > 0 ? null : 'at least 1 EA')
 
-/** A Draft transfer (new or edited): warehouses and lines in EA (FR-OB-80). */
-function Editor({ t, onSaved }: { t?: TransferDetail; onSaved: (d: TransferDetail) => void }) {
-  const qc = useQueryClient()
-  const [from, setFrom] = useState<string | null>(t ? String(t.from_warehouse_id) : null)
-  const [to, setTo] = useState<string | null>(t ? String(t.to_warehouse_id) : null)
-  const [notes, setNotes] = useState(t?.notes ?? '')
-  const [lines, setLines] = useState<Line[]>(t ? t.lines.map((l) => ({ item_code: l.item_code, qty_ea: String(l.qty_ea) })) : [{ item_code: '', qty_ea: '' }])
-  const save = useMutation({
-    mutationFn: () => {
-      const body = { from_warehouse_id: Number(from), to_warehouse_id: Number(to), notes: notes || null,
-        lines: lines.map((l) => ({ item_code: l.item_code, qty_ea: Number(l.qty_ea) })) }
-      return t ? updateTransfer(t.id, t.version, body) : createTransfer(body)
-    },
-    onSuccess: async (d) => { await qc.invalidateQueries({ queryKey: queryKeys.list(transfersClient) }); onSaved(d) },
-  })
-  const valid = from && to && from !== to && lines.length > 0 && lines.every((l) => lineProblem(l) === null)
+const headerSchema = z.object({
+  from_warehouse_id: z.string().min(1, 'Choose the warehouse it leaves'),
+  to_warehouse_id: z.string().min(1, 'Choose the warehouse it goes to'),
+  notes: z.string().trim().max(2000).nullable().optional(),
+}).refine((v) => v.from_warehouse_id !== v.to_warehouse_id, { message: 'The two warehouses must differ', path: ['to_warehouse_id'] })
+const headerFields: FieldSpec[] = [
+  { name: 'from_warehouse_id', label: 'From warehouse', type: 'reference', required: true, loadOptions: warehouseOptions },
+  { name: 'to_warehouse_id', label: 'To warehouse', type: 'reference', required: true, loadOptions: warehouseOptions },
+  { name: 'notes', label: 'Notes', type: 'textarea' },
+]
+
+/** A Draft transfer, new or edited (FR-OB-80): the warehouses and lines in EA. */
+function TransferForm({ t, onSaved, onCancel }: { t?: TransferDetail; onSaved: (d: TransferDetail) => void; onCancel: () => void }) {
   return (
-    <section aria-label={t ? 'Edit transfer' : 'New transfer'} className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-4">
-      {!t && <h2 className="font-semibold text-neutral-800">New transfer</h2>}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <FormField label="From warehouse" htmlFor="tr-from" required>
-          <Autocomplete id="tr-from" aria-label="From warehouse" value={from} onChange={setFrom} loadOptions={warehouseOptions} minChars={0} />
-        </FormField>
-        <FormField label="To warehouse" htmlFor="tr-to" required>
-          <Autocomplete id="tr-to" aria-label="To warehouse" value={to} onChange={setTo} loadOptions={warehouseOptions} minChars={0} />
-        </FormField>
-      </div>
-      <EditableTable<Line> ariaLabel="Transfer lines" rows={lines} onChange={setLines} columns={editColumns} errors={lineProblem}
-        onAdd={() => ({ item_code: '', qty_ea: '' })} removable />
-      <FormField label="Notes" htmlFor="tr-notes"><Input id="tr-notes" value={notes} onChange={(e) => setNotes(e.target.value)} /></FormField>
-      <ActionButton size="sm" permission={MANAGE} disabled={!valid} onAction={() => save.mutateAsync().catch(() => {})}>
-        {t ? 'Save changes' : 'Save draft'}
-      </ActionButton>
-      <ErrorMessage error={save.error} messages={errorMessages} />
-    </section>
+    <MasterDetailForm<Line>
+      schema={headerSchema}
+      fields={headerFields}
+      defaultValues={{ from_warehouse_id: t ? String(t.from_warehouse_id) : '', to_warehouse_id: t ? String(t.to_warehouse_id) : '',
+        notes: t?.notes ?? '' }}
+      lines={{ label: 'Transfer lines', columns: editColumns, problem: lineProblem, add: () => ({ item_code: '', qty_ea: '' }),
+        removable: true, initial: t ? t.lines.map((l) => ({ item_code: l.item_code, qty_ea: String(l.qty_ea) })) : [{ item_code: '', qty_ea: '' }] }}
+      submitLabel={t ? 'Save changes' : 'Save draft'}
+      errorMessages={errorMessages}
+      onCancel={onCancel}
+      onSubmit={async (v, lines) => {
+        const body = { from_warehouse_id: Number(v.from_warehouse_id), to_warehouse_id: Number(v.to_warehouse_id),
+          notes: (v.notes as string) ?? null, lines: lines.map((l) => ({ item_code: l.item_code, qty_ea: Number(l.qty_ea) })) }
+        onSaved(t ? await updateTransfer(t.id, t.version, body) : await createTransfer(body))
+      }}
+    />
   )
 }
 
@@ -97,14 +93,14 @@ function Detail({ id }: { id: number }) {
   const qc = useQueryClient()
   const q = useQuery({ queryKey: queryKeys.detail(transfersClient, id), queryFn: () => fetchTransfer(id) })
   const [cancelling, setCancelling] = useState(false)
-  const [reason, setReason] = useState('')
+  const [editing, setEditing] = useState(false)
   const done = async (d: TransferDetail) => {
     qc.setQueryData(queryKeys.detail(transfersClient, id), d)
     await qc.invalidateQueries({ queryKey: queryKeys.list(transfersClient) })
   }
   const ready = useMutation({ mutationFn: () => readyTransfer(id, q.data!.version), onSuccess: done })
   const resend = useMutation({ mutationFn: () => resendTransfer(id, q.data!.version), onSuccess: done })
-  const cancel = useMutation({ mutationFn: () => cancelTransfer(id, q.data!.version, reason.trim()), onSuccess: done })
+
   if (q.isLoading) return <Skeleton className="h-40 w-full" />
   if (q.error || !q.data) return <ErrorView error={q.error} />
   const t = q.data
@@ -114,27 +110,26 @@ function Detail({ id }: { id: number }) {
         ['Status', <StatusCell key="s" value={t.status} />], ['From → to', `${t.from_warehouse} → ${t.to_warehouse}`],
         ['943', t.control ? `${t.control} · file ${t.file_status} · 997 ${t.ack_status}` : null], ['Notes', t.notes], ['Problem', t.error],
       ]} />
-      {t.status !== 'Draft' && (  // a Draft shows its lines in the editor below
+      {!editing && (
         <LocalTable<TransferLineRead> ariaLabel="Transfer lines" columns={lineColumns} rows={t.lines} rowKey={(l) => l.id}
           footer={[null, 'Total', t.lines.reduce((n, l) => n + l.qty_ea, 0), t.lines.reduce((n, l) => n + l.received_ea, 0), null]} />
       )}
-      {t.status === 'Draft' && <Editor key={t.version} t={t} onSaved={done} />}
+      {t.status === 'Draft' && editing && (
+        <TransferForm key={t.version} t={t} onCancel={() => setEditing(false)} onSaved={async (d) => { setEditing(false); await done(d) }} />
+      )}
       <div className="flex flex-wrap gap-2">
-        {t.status === 'Draft' && <ActionButton size="sm" permission={MANAGE} onAction={() => ready.mutateAsync().catch(() => {})}>Ready to send</ActionButton>}
+        {t.status === 'Draft' && !editing && <ActionButton size="sm" permission={MANAGE} onAction={() => ready.mutateAsync().catch(() => {})}>Ready to send</ActionButton>}
+        {t.status === 'Draft' && !editing && <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setEditing(true)}>Edit draft</ActionButton>}
         {t.status === 'Failed' && <ActionButton size="sm" permission={MANAGE} onAction={() => resend.mutateAsync().catch(() => {})}>Resend 943</ActionButton>}
         {CANCELLABLE.includes(t.status) && (
           <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setCancelling(true)}>Cancel transfer</ActionButton>
         )}
       </div>
       <ErrorMessage error={ready.error ?? resend.error} messages={errorMessages} />
-      {cancelling && (
-        <section aria-label="Cancel transfer" className="flex flex-col gap-2 rounded-md border border-neutral-100 p-2">
-          <FormField label="Why" htmlFor="tr-cancel"><Input id="tr-cancel" value={reason} onChange={(e) => setReason(e.target.value)} /></FormField>
-          <ActionButton size="sm" variant="secondary" permission={MANAGE} disabled={reason.trim().length < 3}
-            onAction={() => cancel.mutateAsync().then(() => setCancelling(false)).catch(() => {})}>Cancel it</ActionButton>
-          <ErrorMessage error={cancel.error} messages={errorMessages} />
-        </section>
-      )}
+      <ConfirmAction open={cancelling} onOpenChange={setCancelling} title={`Cancel transfer ${t.transfer_number}?`} destructive
+        confirmLabel="Cancel transfer" reason={{ label: 'Why' }} errorMessages={errorMessages}
+        description="Allowed before its 943 is sent, or after it was rejected. A queued 943 is withdrawn."
+        onConfirm={async (why) => done(await cancelTransfer(id, t.version, why))} />
       {t.receipts.map((r) => (
         <section key={r.id} aria-label={`Receipt ${r.document_name ?? r.id}`} className="flex flex-col gap-2">
           <h3 className="font-semibold text-neutral-800">
@@ -153,22 +148,18 @@ function Detail({ id }: { id: number }) {
 /** Transfers (FR-OB-80 … 84): Draft → Ready to send → the 943 → the 997 → the
  *  944, its lines allocated and summed per lot. */
 export default function TransfersPage() {
-  const can = useCan(MANAGE)
-  const [creating, setCreating] = useState(false)
   return (
-    <div className="flex flex-col gap-4">
-      {creating && <Editor onSaved={() => setCreating(false)} />}
-      <ListPage<TransferRead>
-        resource={transfersClient}
-        title="Transfers"
-        description="Stock moved between warehouses: a 943 goes to the warehouse, its 944 says what arrived."
-        columns={columns}
-        emptyTitle="No transfers yet"
-        toolbar={() => can && !creating ? <ActionButton size="sm" permission={MANAGE} onAction={() => setCreating(true)}>New transfer</ActionButton> : null}
-        detailTitle={(t) => `Transfer ${t.transfer_number}`}
-        detailClassName="max-w-4xl"
-        renderDetail={(t) => <Detail id={t.id} />}
-      />
-    </div>
+    <ListPage<TransferRead>
+      resource={transfersClient}
+      title="Transfers"
+      description="Stock moved between warehouses: a 943 goes to the warehouse, its 944 says what arrived."
+      columns={columns}
+      emptyTitle="No transfers yet"
+      create={{ label: 'New transfer', permission: MANAGE, className: 'max-w-3xl',
+        render: (done, cancel) => <TransferForm onSaved={(d) => done(d)} onCancel={cancel} /> }}
+      detailTitle={(t) => `Transfer ${t.transfer_number}`}
+      detailClassName="max-w-4xl"
+      renderDetail={(t) => <Detail id={t.id} />}
+    />
   )
 }

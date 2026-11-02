@@ -103,6 +103,9 @@ export interface ShipmentRead {
 }
 
 export interface OrderDetail extends OrderRead {
+  bill_to: Record<string, string | null> | null
+  /** The DC a retailer ship-to GLN routes to (Walmart). */
+  dc_number: string | null
   notes: string | null
   lines: LineRead[]
   documents: OrderDocument[]
@@ -116,7 +119,7 @@ export interface ManualOrderIn {
   partner_code: string
   customer_reference?: string | null
   requested_delivery_date?: string | null
-  ship_to?: Record<string, string> | null
+  ship_to: Record<string, string>
   notes?: string | null
   lines: ManualLine[]
 }

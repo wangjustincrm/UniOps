@@ -19,11 +19,11 @@ const detail: TransferDetail = { ...t104, ack_status: 'Accepted', file_status: '
 const draft: TransferRead = { ...t104, id: 2, transfer_number: '00105', status: 'Draft', version: 1 }
 const meta: ListMeta = { version: 1, searchable: true, default_sort: [], fields: [], views: [{ key: 'all', name: 'All', state: { version: 1 } }] }
 
-const api = vi.hoisted(() => ({ list: vi.fn(), fetch: vi.fn(), create: vi.fn(), cancel: vi.fn(), ready: vi.fn() }))
+const api = vi.hoisted(() => ({ list: vi.fn(), fetch: vi.fn(), create: vi.fn(), cancel: vi.fn(), ready: vi.fn(), update: vi.fn() }))
 vi.mock('./transfersApi', async (orig) => {
   const real = await orig<typeof import('./transfersApi')>()
   return { ...real, transfersClient: { ...real.transfersClient, list: api.list, meta: async () => meta },
-    fetchTransfer: api.fetch, createTransfer: api.create, cancelTransfer: api.cancel, readyTransfer: api.ready }
+    fetchTransfer: api.fetch, createTransfer: api.create, cancelTransfer: api.cancel, readyTransfer: api.ready, updateTransfer: api.update }
 })
 vi.mock('../configuration/lookups', () => ({
   itemOptions: async () => [{ value: 'CF0092', label: 'CF0092' }],
@@ -61,17 +61,11 @@ describe('Transfers', () => {
     api.create.mockResolvedValue({ ...detail, ...draft })
     renderAs(['sales.read', 'sales.transfer.manage'])
     fireEvent.click(await screen.findByRole('button', { name: 'New transfer' }))
-    const form = screen.getByRole('region', { name: 'New transfer' })
+    const form = await screen.findByRole('dialog', { name: 'New transfer' })  // the standard sheet
     const save = within(form).getByRole('button', { name: 'Save draft' })
     expect(save).toBeDisabled()
-    const pick = async (label: string, option: string) => {
-      fireEvent.click(within(form).getByLabelText(label))
-      fireEvent.click(await screen.findByRole('option', { name: new RegExp(option) }))
-      await waitFor(() => expect(screen.queryByRole('listbox')).toBeNull())  // closed (focus returns) before the next
-      await new Promise((r) => setTimeout(r, 0))
-    }
-    await pick('From warehouse', 'KGN')
-    await pick('To warehouse', 'CLN02')
+    await pickSuggestion(within(form).getByRole('combobox', { name: 'From warehouse' }), 'K', /^KGN/)
+    await pickSuggestion(within(form).getByRole('combobox', { name: 'To warehouse' }), 'C', /^CLN02/)
     await pickSuggestion(within(form).getByRole('combobox', { name: 'Item 1' }), 'CF00', /^CF0092/)
     expect(within(form).getByRole('alert')).toHaveTextContent('at least 1 EA')
     fireEvent.change(within(form).getByLabelText('EA 1'), { target: { value: '600' } })
@@ -87,15 +81,32 @@ describe('Transfers', () => {
     const { unmount } = renderAs(['sales.read'])
     fireEvent.click(await screen.findByText('00105'))
     let dialog = await screen.findByRole('dialog')
-    await within(dialog).findByRole('table', { name: 'Transfer lines' })  // the draft's editor, read only for a reader
+    await within(dialog).findByRole('table', { name: 'Transfer lines' })
     expect(within(dialog).queryByRole('button', { name: 'Cancel transfer' })).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: 'Edit draft' })).toBeNull()
     unmount()
     renderAs(['sales.read', 'sales.transfer.manage'])
     fireEvent.click(await screen.findByText('00105'))
     dialog = await screen.findByRole('dialog')
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Cancel transfer' }))
-    fireEvent.change(within(dialog).getByLabelText('Why'), { target: { value: 'not needed' } })
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel it' }))
+    const ask = await screen.findByRole('dialog', { name: 'Cancel transfer 00105?' })
+    expect(within(ask).getByRole('button', { name: 'Cancel transfer' })).toBeDisabled()  // a reason first
+    fireEvent.change(within(ask).getByLabelText(/Why/), { target: { value: 'not needed' } })
+    fireEvent.click(within(ask).getByRole('button', { name: 'Cancel transfer' }))
     await waitFor(() => expect(api.cancel).toHaveBeenCalledWith(2, 1, 'not needed'))
+  })
+
+  it('a draft is edited with the same form, inside its sheet', async () => {
+    const d = { ...detail, ...draft, receipts: [], lines: [{ id: 5, line_no: 1, item_code: 'CF0092', qty_ea: 600, received_ea: 0, line_status: 'Open' }] }
+    api.fetch.mockResolvedValue(d)
+    api.update.mockResolvedValue({ ...d, version: 2, lines: [{ ...d.lines[0], qty_ea: 1200 }] })
+    renderAs(['sales.read', 'sales.transfer.manage'])
+    fireEvent.click(await screen.findByText('00105'))
+    const sheet = await screen.findByRole('dialog', { name: 'Transfer 00105' })
+    fireEvent.click(await within(sheet).findByRole('button', { name: 'Edit draft' }))
+    fireEvent.change(await within(sheet).findByLabelText('EA 1'), { target: { value: '1200' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(api.update).toHaveBeenCalledWith(2, 1, { from_warehouse_id: 1, to_warehouse_id: 2, notes: null,
+      lines: [{ item_code: 'CF0092', qty_ea: 1200 }] }))
   })
 })

@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import {
-  Badge, DateTimeCell, DetailList, ErrorView, LocalTable, Skeleton, StatusCell, formatDate, formatDateTime, formatMoney, queryKeys,
+  AddressView, Badge, DateTimeCell, DetailList, ErrorView, LocalTable, Skeleton, StatusCell, formatDate, formatDateTime, formatMoney, queryKeys,
   type ColumnDef,
 } from '@/platform-ui'
-import { fetchOrder, ordersClient, type LineRead, type OrderDocument, type OrderRead } from './ordersApi'
+import { fetchOrder, ordersClient, type LineRead, type OrderDetail, type OrderDocument, type OrderRead } from './ordersApi'
 import { Shipments } from './Shipments'
 
 // The badge shows the fulfillment status in the colour of the derived order state (D17).
@@ -11,6 +11,19 @@ const stateTone = { Draft: 'neutral', Active: 'info', 'On Hold': 'warning', Comp
 
 export function StateBadge({ o }: { o: Pick<OrderRead, 'order_state' | 'fulfillment_status'> }) {
   return <StatusCell value={o.fulfillment_status} tone={stateTone[o.order_state]} />
+}
+
+// Where each address came from, under it (the 850 ship-to also names its GLN and the DC it routes to).
+function shipToOrigin(o: OrderDetail): string {
+  if (o.source_type === 'SHOPIFY') return 'From the Shopify shipping address'
+  if (o.source_type === 'MANUAL') return 'Entered by hand'
+  const gln = o.ship_to?.gln
+  return ['From the 850 ShipTo', gln && `GLN ${gln}`, o.dc_number && `DC ${o.dc_number}`].filter(Boolean).join(' · ')
+}
+function billToOrigin(o: OrderDetail): string {
+  if (o.source_type === 'SHOPIFY') return 'From the Shopify billing address (the shipping address when missing or outside Canada)'
+  if (o.source_type === 'MANUAL') return 'None for a manual order'
+  return ['From the 850 BillTo', o.bill_to?.code && `code ${o.bill_to.code}`].filter(Boolean).join(' · ')
 }
 
 const lineColumns: ColumnDef<LineRead, unknown>[] = [
@@ -56,10 +69,11 @@ export function OrderDetailView({ id }: { id: number }) {
         </section>
       )}
       <DetailList items={[
-        ['Order', `${o.order_number} · ${o.partner_code} ${o.source_order_number ?? ''}`], ['Reference', o.source_reference],
+        ['Order', `${o.order_number} · ${o.partner_code}`], ['Customer PO / reference', o.source_order_number], ['Reference', o.source_reference],
         ['Source', o.source_type], ['Received', formatDateTime(o.first_received_at)], ['Paid (delay start)', formatDateTime(o.paid_at)],
         ['Payment', o.shopify_financial_status], ['Requested delivery', o.requested_delivery_date ? formatDate(o.requested_delivery_date) : null],
-        ['Ship to', o.ship_to ? [o.ship_to.name, o.ship_to.address1, o.ship_to.city, o.ship_to.province, o.ship_to.zip].filter(Boolean).join(', ') : null],
+        ['Ship to', <AddressView key="st" value={o.ship_to} note={shipToOrigin(o)} />],
+        ['Bill to', <AddressView key="bt" value={o.bill_to} note={billToOrigin(o)} />],
         ['Total', formatMoney(o.total, o.currency)], ['Invoice', o.invoice_status],
       ]} />
       <section aria-label="Lines">

@@ -3,7 +3,7 @@ import { NavLink, useLocation, Routes, Route, Navigate } from 'react-router-dom'
 import { TabStoreProvider, TabBar, TabHost, TabRouterSync, useTabStore } from '@uniops/shell'
 import { moduleRoutes } from '@/app/routes'
 import {
-  Home, Building2, Plug, FileText, Activity, GitCompare, ShoppingCart, PenLine, Package, Tags, Route as RouteIcon, Truck, Receipt, ArrowLeftRight, Warehouse,
+  Home, Building2, Plug, FileText, Activity, GitCompare, ShoppingCart, Package, Tags, Route as RouteIcon, Truck, Receipt, ArrowLeftRight, Warehouse,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -14,6 +14,7 @@ import { useBranding } from '@/hooks/useBranding'
 import { usePermissions, MODULE_PERMS } from '@/hooks/usePermissions'
 import { PermissionProvider, ViewsProvider, createViewsClient } from '@/platform-ui'
 import { ViewRedirect } from '@/app/ViewRedirect'
+import { OLD_ADDRESSES } from '@/app/oldAddresses'
 
 // Every list's saved views (design §13.19) go through this one client.
 const views = createViewsClient(api)
@@ -43,7 +44,6 @@ interface NavItem { label: string; href: string; icon: typeof Home; perm: string
 const NAV: NavItem[] = [
   { label: 'Home', href: '/home', icon: Home, perm: MODULE_PERMS[0], section: 'Sales' },
   { label: 'Orders', href: '/orders', icon: ShoppingCart, perm: 'sales.read', section: 'Orders' },
-  { label: 'Manual orders', href: '/orders/manual', icon: PenLine, perm: 'sales.order.operate', section: 'Orders' },
   { label: 'Transfers', href: '/transfers', icon: ArrowLeftRight, perm: 'sales.read', section: 'Transfers' },
   { label: 'Delivery confirmation', href: '/deliveries', icon: Truck, perm: 'sales.read', section: 'Invoicing' },
   { label: 'Invoices', href: '/invoices', icon: Receipt, perm: 'sales.read', section: 'Invoicing' },
@@ -347,10 +347,9 @@ export default function AppLayout() {
   if (location.pathname === '/') {
     return <Navigate to={visibleNav[0].href} replace />
   }
-  // The Review worklist became the Orders view "Needs review" (2026-10-30).
-  if (location.pathname === '/review') {
-    return <ViewRedirect to="/orders" resource="orders" view="needs_review" />
-  }
+  // Old addresses that became a view of another list (src/app/oldAddresses.ts).
+  const moved = OLD_ADDRESSES[location.pathname]
+  if (moved) return <ViewRedirect {...moved} />
 
   // Embedded (iframe): single page, no chrome/tabs — the host owns navigation.
   if (IS_EMBEDDED) {

@@ -19,7 +19,7 @@ export function ShadowPanel() {
   })
   const on = q.data?.shadow_mode
   return (
-    <section aria-label="Shadow run" className="flex flex-col gap-2 rounded-md border border-neutral-200 p-3 text-sm">
+    <section aria-label="Shadow run" className="flex flex-col gap-2 text-sm">
       <h2 className="font-semibold text-neutral-800">Shadow run</h2>
       {q.isLoading ? <Skeleton className="h-8 w-full" /> : q.error ? <ErrorMessage error={q.error} /> : (
         <>

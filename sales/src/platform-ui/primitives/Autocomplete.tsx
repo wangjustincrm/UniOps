@@ -24,8 +24,12 @@ export interface AutocompleteProps {
 }
 
 /** A searchable select whose options come from a query (type to search;
- *  ↑ ↓ Enter Escape). Waits `debounceMs` after typing and `minChars` before
- *  asking; an answer to an older query is dropped. */
+ *  ↑ ↓ Enter Escape). Opened with nothing typed it shows the first page (the
+ *  loader's answer to ""); `minChars` applies to typed text only. Waits
+ *  `debounceMs` after typing; an answer to an older query is dropped. The
+ *  chosen value shows as "label — hint" (e.g. "CF0092 — Formula Stage 1"); a
+ *  value set from outside is looked up once (by its value, else in the first
+ *  page) to show the same. */
 export function Autocomplete({
   value, onChange, loadOptions, selectedLabel, minChars = 1, debounceMs = 250, placeholder = 'Search…',
   emptyText = 'No match', id, disabled, onBlur, className, ...aria
@@ -40,7 +44,19 @@ export function Autocomplete({
   useEffect(() => { load.current = loadOptions }, [loadOptions])
 
   const q = query.trim()
-  const enough = q.length >= minChars
+  const enough = q.length === 0 || q.length >= minChars
+  // The option behind the value, to show its label and hint.
+  const [known, setKnown] = useState<ComboOption | null>(null)
+  useEffect(() => {
+    if (!value || known?.value === value || selectedLabel) return
+    let live = true
+    const find = (opts: ComboOption[]) => opts.find((o) => o.value === value)
+    load.current(value)
+      .then((opts) => find(opts) ?? load.current('').then(find))
+      .then((o) => { if (live && o) setKnown(o) }, () => {})
+    return () => { live = false }
+  }, [value, known, selectedLabel])
+  const shownLabel = selectedLabel ?? (known && known.value === value ? (known.hint ? `${known.label} — ${known.hint}` : known.label) : value)
   useEffect(() => {
     if (!open || !enough) return
     const ticket = ++latest.current
@@ -55,6 +71,7 @@ export function Autocomplete({
 
   const loading = enough && state.query !== q
   const pick = (o: ComboOption) => {
+    setKnown(o)
     onChange(o.value, o)
     setOpen(false)
     setQuery('')
@@ -80,7 +97,7 @@ export function Autocomplete({
             'disabled:cursor-not-allowed disabled:opacity-50', !value && 'text-neutral-400',
             aria['aria-invalid'] && 'border-danger-600 bg-danger-50', className,
           )}>
-          <span className="truncate">{value ? (selectedLabel ?? value) : placeholder}</span>
+          <span className="truncate">{value ? shownLabel : placeholder}</span>
           <ChevronsUpDown className="h-4 w-4 shrink-0 text-neutral-400" />
         </button>
       }
@@ -91,6 +108,7 @@ export function Autocomplete({
         className="mb-1 h-9 w-full rounded-md border border-neutral-200 px-2 text-sm outline-none focus:border-primary-600" />
       <ul id={listId} role="listbox" className="max-h-64 overflow-y-auto">
         {!enough && <li className="px-2 py-2 text-sm text-neutral-400">Type at least {minChars} character{minChars === 1 ? '' : 's'}</li>}
+        {q.length === 0 && !loading && shown.length > 0 && <li aria-hidden className="px-2 py-1 text-xs text-neutral-400">Type to search…</li>}
         {enough && loading && <li className="px-2 py-2 text-sm text-neutral-400">Searching…</li>}
         {enough && !loading && state.error && <li className="px-2 py-2 text-sm text-danger-600">Could not load the options</li>}
         {enough && !loading && !state.error && shown.length === 0 && <li className="px-2 py-2 text-sm text-neutral-400">{emptyText}</li>}

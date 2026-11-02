@@ -3,7 +3,6 @@ import type { FieldValues } from 'react-hook-form'
 import type { z } from 'zod'
 import { Button } from '../primitives/shell'
 import type { ColumnDef } from '../primitives/DataTable'
-import { Sheet } from '../primitives/Sheet'
 import { Dialog } from '../primitives/Dialog'
 import { FilePicker } from '../primitives/FilePicker'
 import { ActionButton } from './ActionButton'
@@ -54,7 +53,6 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
   const { client, writePermission } = props
   const { create, update, deactivate, refresh } = useCrudResource(client)
   const canWrite = useCan(writePermission)
-  const [creating, setCreating] = useState(false)
   const [preview, setPreview] = useState<{ file: File; report: ImportReport } | null>(null)
   const [importError, setImportError] = useState<unknown>(null)
   const singular = props.singular ?? props.title
@@ -91,28 +89,25 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
           {props.csvImport && canWrite && (
             <FilePicker accept=".csv,text/csv" label="CSV file" onFile={pickFile}>Import CSV</FilePicker>
           )}
-          <ActionButton size="sm" permission={writePermission} onAction={() => setCreating(true)}>New</ActionButton>
         </>
       )}
+      create={{
+        label: 'New', permission: writePermission, title: `New ${singular}`,
+        render: (done, cancel) => (
+          <SchemaForm
+            key="new"
+            schema={props.createSchema}
+            fields={props.fields}
+            defaultValues={props.emptyValues}
+            errorMessages={props.errorMessages}
+            onCancel={cancel}
+            onSubmit={async (values) => done(await create.mutateAsync(values as TCreate))}
+          />
+        ),
+      }}
     >
       {() => (
         <>
-          <Sheet open={creating} onOpenChange={setCreating} title={`New ${singular}`}>
-            {creating && (
-              <SchemaForm
-                key="new"
-                schema={props.createSchema}
-                fields={props.fields}
-                defaultValues={props.emptyValues}
-                errorMessages={props.errorMessages}
-                onCancel={() => setCreating(false)}
-                onSubmit={async (values) => {
-                  await create.mutateAsync(values as TCreate)
-                  setCreating(false)
-                }}
-              />
-            )}
-          </Sheet>
           <Dialog
             open={preview !== null}
             onOpenChange={(o) => { if (!o) setPreview(null) }}

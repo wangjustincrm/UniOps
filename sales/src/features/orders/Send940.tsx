@@ -35,7 +35,7 @@ export function Send940({ o }: { o: OrderRead }) {
   const replace = REPLACEABLE.includes(o.fulfillment_status)
   if (!replace && !SENDABLE.includes(o.fulfillment_status)) return null
   return (
-    <section aria-label="Send 940" className="flex flex-col gap-2 rounded-md border border-neutral-100 p-2 text-sm">
+    <section aria-label="Send 940" className="flex flex-col gap-2 text-sm">
       {replace ? (
         <>
           <p className="text-neutral-600">The warehouse has a live 940 for this order. A change is sent only as a confirmed replacement.</p>

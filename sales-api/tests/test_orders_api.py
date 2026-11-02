@@ -63,6 +63,7 @@ async def test_orders_list_detail_and_the_review_worklist(api):
 
 async def test_manual_order_preview_create_submit(api):
     body = {"partner_code": "MAN", "customer_reference": "phone-1",
+            "ship_to": {"name": "A B", "address1": "1 rue", "city": "Montréal", "province": "QC", "zip": "h2x1y4"},
             "lines": [{"item_code": "CF0092", "quantity": 2, "unit": "case"}]}
     assert (await api.post("/api/v1/orders/manual/preview", json=body["lines"], headers=READER)).status_code == 403
     r = await api.post("/api/v1/orders/manual/preview", json=body["lines"], headers=OPERATOR)
@@ -91,3 +92,21 @@ async def test_the_cursor_is_read_only_and_reset_by_an_audited_action(api):
     assert r.status_code == 200 and r.json()["cursor_updated_at"].startswith("2026-10-01")
     trail = (await api.get(f"/api/v1/config/connections/{cid}/audit", headers=READER)).json()
     assert trail[0]["reason"] == "reset cursor" and "cursor_updated_at" in trail[0]["after"]
+
+
+async def test_a_manual_order_needs_the_ship_to_the_940_needs_field_by_field(api):
+    base = {"partner_code": "MAN", "lines": [{"item_code": "CF0092", "quantity": 1, "unit": "EA"}]}
+    r = await api.post("/api/v1/orders/manual", json=base, headers=OPERATOR)
+    assert r.status_code == 422 and {e["field"] for e in r.json()["error"]["details"]["errors"]} == {"ship_to"}
+    r = await api.post("/api/v1/orders/manual", json=base | {"ship_to": {"name": "A B", "city": "Laval", "province": "XX", "zip": "123"}},
+                       headers=OPERATOR)
+    errs = {e["field"]: e["message"] for e in r.json()["error"]["details"]["errors"]}
+    assert r.status_code == 422 and set(errs) == {"ship_to.address1", "ship_to.province", "ship_to.zip"}
+    assert "A1A 1A1" in errs["ship_to.zip"] and "province code" in errs["ship_to.province"]
+    r = await api.post("/api/v1/orders/manual", json=base | {"ship_to": {"name": "A B", "address1": "1 rue", "city": "Laval",
+                                                                         "province": "qc", "zip": "h7n1a1"}}, headers=OPERATOR)
+    assert r.status_code == 201 or r.status_code == 200, r.text
+    assert r.json()["ship_to"] == {"country": "CA", "name": "A B", "address1": "1 rue", "city": "Laval", "province": "QC", "zip": "H7N 1A1"}
+    r = await api.post("/api/v1/orders/manual", json=base | {"ship_to": {"country": "US", "name": "A B", "address1": "1 Main St",
+                                                                         "city": "Buffalo", "province": "NY", "zip": "14201"}}, headers=OPERATOR)
+    assert r.status_code in (200, 201)  # outside Canada: no Canadian rules

@@ -37,7 +37,7 @@ export function Recheck({ o, compact, onResolved }: { o: OrderRead; compact?: bo
     return <div className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>{button}{status}<ErrorMessage error={m.error} /></div>
   }
   return (
-    <section aria-label="Resolve" className="flex flex-col gap-2 rounded-md border border-neutral-100 p-2 text-sm">
+    <section aria-label="Resolve" className="flex flex-col gap-2 text-sm">
       <p className="text-neutral-600">Fix the cause in the Item Master (an item, a unit, a partner code, a DC route), then re-check.</p>
       {button}
       {status}
