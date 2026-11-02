@@ -1395,10 +1395,13 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
           )}
           <div className="flex justify-end gap-3">
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            <Button onClick={handleSubmit} disabled={createInvoice.isPending || createVendorCredit.isPending || matchInvoiceMutation.isPending} className="gap-2">
+            {/* Held while the duplicate check is in flight (ISS-0130) — the
+                first click used to be refused with "Still checking…". */}
+            <Button onClick={handleSubmit} disabled={createInvoice.isPending || createVendorCredit.isPending || matchInvoiceMutation.isPending || (docType === 'invoice' && dup.checking)} className="gap-2">
               <Upload className="h-4 w-4" />
               {createInvoice.isPending || createVendorCredit.isPending || matchInvoiceMutation.isPending
                 ? 'Uploading…'
+                : docType === 'invoice' && dup.checking ? 'Checking…'
                 : docType === 'credit_note' ? 'Upload Credit Note'
                 : queueRemaining > 0 ? 'Upload & next'
                 : 'Upload Invoice'}

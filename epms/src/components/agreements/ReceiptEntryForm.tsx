@@ -30,6 +30,10 @@ interface ReceiptEntryFormProps {
   // visually identical to a failed submit. Optional so this component still
   // works standalone with no caller-visible behavior change.
   onSuccess?: () => void
+  // The agreement's tax rate (0.13 = 13%), when one is set. Only drives the
+  // grey "at 13% ≈ …" hint under Tax (ISS-0130) — never a value filled in:
+  // a slip may mix taxable and exempt items or round differently.
+  taxRate?: number | null
 }
 
 // Entry flow: pick a photo → auto OCR → prefill (still fully editable) →
@@ -68,7 +72,7 @@ const TYPE_COPY = {
   },
 } as const
 
-export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', onSuccess }: ReceiptEntryFormProps) {
+export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', onSuccess, taxRate }: ReceiptEntryFormProps) {
   // Only a counter slip runs OCR, demands a photo-or-reason, and routes to AP
   // review when neither is there.
   const isSlip = receiptType === 'counter_slip'
@@ -179,6 +183,19 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
   }
 
   const isPending = createReceipt.isPending || isUploadingAttachment
+
+  // Reference values only (ISS-0130) — the recorder copies the slip, so
+  // nothing here is written into a field.
+  const amtVal = amount === '' ? NaN : Number(amount)
+  const taxVal = taxAmount === '' ? NaN : Number(taxAmount)
+  const totVal = totalAmount === '' ? NaN : Number(totalAmount)
+  const haveAmt = Number.isFinite(amtVal)
+  const haveSum = haveAmt && Number.isFinite(taxVal)
+  const sumHint = haveSum ? `Amount + Tax = ${((Math.round(amtVal * 100) + Math.round(taxVal * 100)) / 100).toFixed(2)}` : undefined
+  const taxHint = haveAmt && taxRate != null && taxRate > 0
+    ? `At ${Number((taxRate * 100).toFixed(3))}% ≈ ${(Math.round(amtVal * taxRate * 100) / 100).toFixed(2)}`
+    : undefined
+  const totalMismatch = haveSum && Number.isFinite(totVal) && !receiptTotalsMatch(totVal, amtVal, taxVal)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -475,11 +492,17 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
             <FormField label="Amount (before tax)" required htmlFor="receipt-amount">
               <Input id="receipt-amount" type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
             </FormField>
-            <FormField label="Tax" required htmlFor="receipt-tax">
+            <FormField label="Tax" required htmlFor="receipt-tax" hint={taxHint}>
               <Input id="receipt-tax" type="number" step="0.01" value={taxAmount} onChange={(e) => setTaxAmount(e.target.value)} />
             </FormField>
-            <FormField label="Total" required error={amountError ?? undefined} htmlFor="receipt-total">
+            <FormField label="Total" required error={amountError ?? undefined} htmlFor="receipt-total"
+              hint={totalMismatch ? undefined : sumHint}>
               <Input id="receipt-total" type="number" step="0.01" value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} />
+              {/* A heads-up while typing; the save itself still refuses a
+                  total that is not amount + tax (schemas/agreement_receipt.py). */}
+              {totalMismatch && !amountError && (
+                <p className="text-xs text-amber-700">{sumHint} — the Total entered differs. Check the slip.</p>
+              )}
             </FormField>
           </>
         )}
