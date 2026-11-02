@@ -33,6 +33,7 @@ const REFRESHABLE_ROUTES = new Set([
   '/pr', '/pr/:id', '/po', '/po/:id', '/gr', '/gr/report', '/gr/:id',
   '/invoices', '/invoices/:id', '/vendor-credits',
   '/agreements', '/agreements/:id', '/receipts', '/receipts/:id', '/pa', '/pa/:id',
+  '/freight', '/freight/invoices/:id', '/vendors', '/projects', '/parts',
 ])
 const tabRoutes = epmsRoutes.map((r) => REFRESHABLE_ROUTES.has(r.path)
   ? { ...r, element: <TabQueryScope routes={epmsRoutes}>{r.element}</TabQueryScope> }
@@ -115,8 +116,11 @@ export function AppLayout() {
         <div className="flex flex-1 flex-col overflow-hidden">
           <Header onMobileMenuToggle={() => setMobileOpen((v) => !v)} />
           <TabRouterSync routes={epmsRoutes} />
+          {/* The tab strip scrolls sideways only: with overflow-x set, the
+              browser would also make it scroll vertically and show ▲▼
+              arrows beside the horizontal scrollbar. */}
           <div className="flex shrink-0">
-            <div className="min-w-0 flex-1"><TabBar /></div>
+            <div className="min-w-0 flex-1 [&>div]:overflow-y-hidden"><TabBar /></div>
             <TabRefreshButton />
           </div>
           <main id="main-content" className="relative flex-1 overflow-hidden" tabIndex={-1}>

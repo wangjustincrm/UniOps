@@ -11,9 +11,11 @@ rules:
       - why does F5 close all my tabs
     answer: >
       List and detail tabs (dashboard, PR, PO, goods receipt, invoice, vendor
-      credit, agreement, receipt and PA lists and pages) re-read their data
-      when you switch back to them, and the Refresh button at the right of the
-      tab bar re-reads the current tab at once. Other tabs stay open. A reload
+      credit, agreement, receipt, PA and freight lists and pages, and the
+      vendor, project and parts lists) re-read their data when you switch back
+      to them, and the Refresh button at the right of the tab bar re-reads the
+      current tab at once (the Task Inbox has its own Refresh button). Other
+      tabs stay open. A reload
       of the browser (F5) starts again from the pinned tabs only. New and edit
       forms are not refreshed, so what you have typed is kept.
     enforced_in: "epms/src/components/layout/TabQueryScope.tsx (TabQueryScope, TabRefreshButton); epms/src/components/layout/AppLayout.tsx REFRESHABLE_ROUTES; PRD EPMS UI-TAB-003, DSH-010"
