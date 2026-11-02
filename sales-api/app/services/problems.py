@@ -25,6 +25,12 @@ EDI_940_REJECTED = "940_rejected"         # entity: order id (FR-OB-22a, AC-OB-3
 EDI_940_TIMEOUT = "940_timeout"           # entity: order id (FR-OB-23, AC-OB-33)
 EDI_997_UNMATCHED = "997_unmatched"       # entity: document id (FR-OB-22a)
 CHANGED_AFTER_940 = "changed_after_940"   # entity: order id (FR-OB-16, AC-OB-18 / 70)
+# P5 (945 and the Shopify write-back)
+SHORT_SHIPMENT = "short_shipment"          # entity: order id (FR-OB-25, AC-OB-37)
+SECOND_945 = "second_945"                  # entity: order id (FR-OB-25, AC-OB-73)
+EDI_945_NO_ORDER = "945_no_order"          # entity: shipment id (FR-OB-25c / FR-OB-28, AC-OB-38 / 78)
+EDI_945_LINE_UNMATCHED = "945_line"        # entity: shipment id (FR-OB-25a, AC-OB-57)
+SHOPIFY_WRITE_FAILED = "shopify_write"     # entity: shipment id (FR-OB-11 / 11a)
 
 
 async def _operator(session):

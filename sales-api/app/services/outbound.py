@@ -108,11 +108,12 @@ def file_name(abbrev: str | None, order: Order, at: datetime) -> str:
 
 
 class Outbound940:
-    def __init__(self, *, uow_factory, tasks, sftp, clock=now_utc) -> None:
+    def __init__(self, *, uow_factory, tasks, sftp, clock=now_utc, shadow=None) -> None:
         self.uow_factory = uow_factory
         self.tasks = tasks
         self.sftp = sftp
         self.clock = clock
+        self.shadow = shadow  # the shadow-run matcher (ShadowRun), set by the runtime
 
     # ── the outbox kind ──────────────────────────────────────────────────────
     def outbox_kind(self) -> OutboxKind:
@@ -373,9 +374,15 @@ class Outbound940:
                 doc = await uow.session.get(Document, did, with_for_update=True)
                 INBOUND_FILE.transition(doc, InboundFile.PROCESSING, actor=uow.actor, events=uow.events, reason="reading the 997")
                 if doc.shadow or await SETTINGS.get(uow.session, SHADOW_MODE):
-                    # §5.4: it answers a Zoho 940. Kept, not applied; matched against Zoho's 940s in P5.
+                    # §5.4: it answers a Zoho 940. Kept and compared with the Zoho references, never applied.
                     doc.shadow = True
-                    doc.error = "shadow run: stored only (answers a Zoho 940; matched against the Zoho references in P5)"
+                    doc.error = "shadow run: stored and compared with the Zoho references, not applied"
+                    if self.shadow is not None:
+                        content = (await uow.session.execute(select(Document.content).where(Document.id == did))).scalar_one()
+                        try:
+                            await self.shadow.match_997(uow, doc, parse_997(content))
+                        except X12Error as e:
+                            doc.error = f"shadow run: stored, not applied; cannot be read: {e}"
                     INBOUND_FILE.transition(doc, InboundFile.SKIPPED, actor=uow.actor, events=uow.events, reason="shadow run")
                     await oplog.write(uow.session, "INFO", STEP, f"shadow run: 997 {doc.remote_name} stored, not applied",
                                       document_id=doc.id)
@@ -484,13 +491,15 @@ class Outbound940:
         return await changed_after_940(uow, self.tasks, order, new_lines, new_ship_to)
 
 
-async def latest_940(session, order_id: int) -> Document | None:
+async def latest_940(session, order_id: int, *, for_update: bool = False) -> Document | None:
     """The order's newest 940 that still counts (not cancelled or replaced)."""
     q = (select(Document).join(DocumentLink, and_(DocumentLink.document_id == Document.id,
                                                   DocumentLink.entity_type == "order", DocumentLink.entity_id == order_id))
          .where(Document.kind == "940_EDI", Document.direction == "OUT",
                 Document.file_status.not_in((OutboundFile.CANCELLED.value, OutboundFile.REPLACED.value)))
          .order_by(Document.id.desc()).limit(1))
+    if for_update:
+        q = q.with_for_update(of=Document)
     return (await session.execute(q)).scalar_one_or_none()
 
 

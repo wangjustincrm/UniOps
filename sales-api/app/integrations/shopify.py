@@ -1,7 +1,12 @@
 """Shopify integration (design §5.2, FR-OB-10): the Admin REST API, read-only
 in P3 — shop info for the connection test, the order pages for intake and a
 variant's barcode for item matching (read_products; FR-OB-02).
-Writes (fulfillment, tracking, close) arrive in P5 behind the guard.
+
+P5 (FR-OB-11 / 11a): the order's fulfillment orders and fulfillments (reads),
+and three writes behind the guard — create a fulfillment with tracking, add
+tracking to an existing fulfillment, close (archive) the order. A write is
+made once; a refused permission (missing scope) is `ShopifyForbidden`, never
+the login latch.
 
 Authentication (PRD FR-OB-10): the client-credentials grant —
 `<secret_name>_CLIENT_ID` / `_CLIENT_SECRET` are exchanged for a 24-hour
@@ -52,6 +57,11 @@ class ShopifyRefused(ShopifyError):
     """Refused before any request: not a store host, or no credentials."""
 
 
+class ShopifyForbidden(ShopifyError):
+    """A write the app has no permission (scope) for — e.g. closing an order
+    without write_orders. Not a login failure: the connection is not latched."""
+
+
 @dataclass(frozen=True)
 class OrdersPage:
     orders: list[dict[str, Any]]
@@ -65,8 +75,18 @@ class ShopifyGateway(Protocol):
                           page_info: str | None = None, limit: int = 50) -> OrdersPage: ...
 
 
-READS = ("shop", "orders_page", "variant")
-WRITES: tuple[str, ...] = ()  # P5: fulfillment, tracking, close — behind SALES_PARTNER_WRITES_ENABLED
+    async def fulfillment_orders(self, conn: Any, order_id: str) -> list[dict[str, Any]]: ...
+    async def fulfillments(self, conn: Any, order_id: str) -> list[dict[str, Any]]: ...
+    async def locations(self, conn: Any) -> list[dict[str, Any]]: ...
+    async def create_fulfillment(self, conn: Any, items: list[dict[str, Any]], tracking: dict[str, Any] | None,
+                                 notify: bool) -> dict[str, Any]: ...
+    async def update_tracking(self, conn: Any, fulfillment_id: str, tracking: dict[str, Any], notify: bool) -> dict[str, Any]: ...
+    async def close_order(self, conn: Any, order_id: str) -> dict[str, Any]: ...
+
+
+READS = ("shop", "orders_page", "variant", "fulfillment_orders", "fulfillments", "locations")
+# P5: behind SALES_PARTNER_WRITES_ENABLED, and only for a LIVE connection.
+WRITES: tuple[str, ...] = ("create_fulfillment", "update_tracking", "close_order")
 
 
 def guarded(switch: str) -> dict[str, str]:
@@ -153,6 +173,29 @@ class HttpShopify:
             raise ShopifyError(f"the store answered HTTP {r.status_code} for {path}")
         return r
 
+    async def _post(self, conn: Any, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        """One write. 401 is a login failure; 403 a missing permission
+        (ShopifyForbidden, with Shopify's own reason); 422 a refused request."""
+        host = self._host(conn)
+        version = getattr(conn, "api_version", None)
+        if not version:
+            raise ShopifyRefused("the connection has no API version")
+        token = await self._token(conn, host)
+        async with self._client() as c:
+            try:
+                r = await c.post(f"https://{host}/admin/api/{version}/{path}", json=body,
+                                 headers={"X-Shopify-Access-Token": token, "Accept": "application/json"})
+            except httpx.HTTPError as e:
+                raise ShopifyError(readable(e)) from e
+        if r.status_code == 401:
+            self._tokens = {k: v for k, v in self._tokens.items() if k[0] != host}
+            raise ShopifyAuthFailed(f"the store refused the request (HTTP {r.status_code})")
+        if r.status_code == 403:
+            raise ShopifyForbidden(f"the app has no permission for {path} (HTTP 403): {_errors(r)}")
+        if r.status_code in (200, 201):
+            return r.json()
+        raise ShopifyError(f"the store answered HTTP {r.status_code} for {path}: {_errors(r)}")
+
     # ── reads ────────────────────────────────────────────────────────────────
     async def shop(self, conn: Any) -> dict[str, Any]:
         r = await self._get(conn, "shop.json", {"fields": "name,domain,myshopify_domain,currency,iana_timezone,plan_name"})
@@ -180,6 +223,61 @@ class HttpShopify:
         m = _NEXT_LINK.search(r.headers.get("link", ""))
         return OrdersPage(r.json().get("orders", []), m.group(1) if m else None)
 
+    async def fulfillment_orders(self, conn: Any, order_id: str) -> list[dict[str, Any]]:
+        r = await self._get(conn, f"orders/{_digits(order_id)}/fulfillment_orders.json", {})
+        return r.json().get("fulfillment_orders", [])
+
+    async def fulfillments(self, conn: Any, order_id: str) -> list[dict[str, Any]]:
+        r = await self._get(conn, f"orders/{_digits(order_id)}/fulfillments.json", {})
+        return r.json().get("fulfillments", [])
+
+    async def locations(self, conn: Any) -> list[dict[str, Any]]:
+        r = await self._get(conn, "locations.json", {})
+        return r.json().get("locations", [])
+
+    # ── writes (guarded; made once) ──────────────────────────────────────────
+    async def create_fulfillment(self, conn: Any, items: list[dict[str, Any]], tracking: dict[str, Any] | None,
+                                 notify: bool) -> dict[str, Any]:
+        """`items`: [{"fulfillment_order_id", "fulfillment_order_line_items": [{"id", "quantity"}]}]."""
+        body: dict[str, Any] = {"line_items_by_fulfillment_order": items, "notify_customer": notify}
+        if tracking:
+            body["tracking_info"] = tracking
+        return (await self._post(conn, "fulfillments.json", {"fulfillment": body}))["fulfillment"]
+
+    async def update_tracking(self, conn: Any, fulfillment_id: str, tracking: dict[str, Any], notify: bool) -> dict[str, Any]:
+        return (await self._post(conn, f"fulfillments/{_digits(fulfillment_id)}/update_tracking.json",
+                                 {"fulfillment": {"tracking_info": tracking, "notify_customer": notify}}))["fulfillment"]
+
+    async def close_order(self, conn: Any, order_id: str) -> dict[str, Any]:
+        return (await self._post(conn, f"orders/{_digits(order_id)}/close.json", {}))["order"]
+
+
+def _digits(v: Any) -> str:
+    if not str(v).isdigit():
+        raise ShopifyRefused("a Shopify id is digits only")
+    return str(v)
+
+
+def _errors(r: httpx.Response) -> str:
+    """Shopify's error text, short (it names the missing scope)."""
+    try:
+        e = r.json().get("errors")
+    except ValueError:
+        return "no detail"
+    return str(e)[:300] if e else "no detail"
+
+
+def summary(method: str, args: tuple, kwargs: dict) -> dict[str, Any]:
+    """The "would have written" record of a refused write: ids only."""
+    conn = args[0] if args else kwargs.get("conn")
+    out: dict[str, Any] = {"connection": getattr(conn, "id", None), "mode": getattr(conn, "mode", None)}
+    if method == "create_fulfillment":
+        items = args[1] if len(args) > 1 else kwargs.get("items", [])
+        out["fulfillment_orders"] = [i.get("fulfillment_order_id") for i in items]
+    elif method in ("update_tracking", "close_order"):
+        out["id"] = str(args[1] if len(args) > 1 else kwargs.get("fulfillment_id") or kwargs.get("order_id"))
+    return out
+
 
 def readable(e: BaseException) -> str:
     if isinstance(e, ShopifyError):
@@ -200,6 +298,11 @@ class FakeShopify:
     calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     fail: dict[str, BaseException] = field(default_factory=dict)
     page_size: int | None = None
+    # P5: per Shopify order id
+    fulfillment_orders_by_order: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    fulfillments_by_order: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    store_locations: list[dict[str, Any]] = field(default_factory=list)
+    closed: list[str] = field(default_factory=list)
 
     async def shop(self, conn: Any) -> dict[str, Any]:
         self.calls.append(("shop", {}))
@@ -231,3 +334,47 @@ class FakeShopify:
         rows = self._pending[start:start + size]
         nxt = str(start + size) if start + size < len(self._pending) else None
         return OrdersPage(list(rows), nxt)
+
+    async def fulfillment_orders(self, conn: Any, order_id: str) -> list[dict[str, Any]]:
+        self.calls.append(("fulfillment_orders", {"order_id": str(order_id)}))
+        return self.fulfillment_orders_by_order.get(str(order_id), [])
+
+    async def fulfillments(self, conn: Any, order_id: str) -> list[dict[str, Any]]:
+        self.calls.append(("fulfillments", {"order_id": str(order_id)}))
+        if "fulfillments" in self.fail:
+            raise self.fail["fulfillments"]
+        return self.fulfillments_by_order.get(str(order_id), [])
+
+    async def locations(self, conn: Any) -> list[dict[str, Any]]:
+        self.calls.append(("locations", {}))
+        return self.store_locations
+
+    async def create_fulfillment(self, conn: Any, items: list[dict[str, Any]], tracking: dict[str, Any] | None,
+                                 notify: bool) -> dict[str, Any]:
+        self.calls.append(("create_fulfillment", {"items": items, "tracking": tracking, "notify": notify}))
+        if "create_fulfillment" in self.fail:
+            raise self.fail["create_fulfillment"]
+        order_id = next((oid for oid, fos in self.fulfillment_orders_by_order.items()
+                         if any(fo["id"] == items[0]["fulfillment_order_id"] for fo in fos)), "?")
+        f = {"id": 9000 + len(self.calls), "order_id": order_id, "status": "success",
+             "tracking_number": (tracking or {}).get("number")}
+        self.fulfillments_by_order.setdefault(order_id, []).append(f)
+        return f
+
+    async def update_tracking(self, conn: Any, fulfillment_id: str, tracking: dict[str, Any], notify: bool) -> dict[str, Any]:
+        self.calls.append(("update_tracking", {"fulfillment_id": str(fulfillment_id), "tracking": tracking, "notify": notify}))
+        if "update_tracking" in self.fail:
+            raise self.fail["update_tracking"]
+        for fs in self.fulfillments_by_order.values():
+            for f in fs:
+                if str(f["id"]) == str(fulfillment_id):
+                    f["tracking_number"] = tracking.get("number")
+                    return f
+        raise ShopifyError(f"the store has nothing at fulfillments/{fulfillment_id} (HTTP 404)")
+
+    async def close_order(self, conn: Any, order_id: str) -> dict[str, Any]:
+        self.calls.append(("close_order", {"order_id": str(order_id)}))
+        if "close_order" in self.fail:
+            raise self.fail["close_order"]
+        self.closed.append(str(order_id))
+        return {"id": int(order_id), "closed_at": "2026-11-02T12:00:00Z"}

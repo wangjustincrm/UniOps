@@ -16,7 +16,7 @@ from difflib import SequenceMatcher
 
 from app.domain.x12 import X12Error, segments
 
-STATUSES = ("Match", "Differs", "Expected difference", "No Sales order", "Sales only", "Unreadable")
+STATUSES = ("Match", "Differs", "Expected difference", "No Sales order", "Sales only", "Unreadable", "No reference")
 MASK = "<ignored>"
 
 # segment id → element positions (1-based) that differ by design between two

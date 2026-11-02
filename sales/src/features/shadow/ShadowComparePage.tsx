@@ -9,6 +9,7 @@ import { SHADOW_STATUSES, fetchShadowCompare, fetchShadowSummary, markExpected, 
 const SUMMARY_KEY = ['sales', 'shadow-matches', 'summary']
 
 const columns: ColumnDef<ShadowMatchRead, unknown>[] = [
+  { accessorKey: 'kind', header: 'Kind' },
   { accessorKey: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={row.original.status} /> },
   { accessorKey: 'reference_number', header: 'Order no. / PO' },
   { accessorKey: 'partner_code', header: 'Partner' },
@@ -72,7 +73,14 @@ function Detail({ id, close }: { id: number; close: () => void }) {
         <StatusCell value={m.status} /> · {m.reference_name ? `Zoho file ${m.reference_name}` : 'no Zoho file'}
         {m.order_id != null && <> · Sales order {m.order_id}</>}
       </p>
+      {m.document_name && <p>Warehouse file {m.document_name} ({m.kind}) — compared, never applied.</p>}
       {(m.note || m.expected_reason) && <p className="text-neutral-600">{m.expected_reason ?? m.note}</p>}
+      {m.would && (
+        <section aria-label="What Sales would have recorded">
+          <h3 className="mb-1 font-semibold text-neutral-800">What Sales would have recorded</h3>
+          <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded bg-neutral-50 p-2 text-xs">{JSON.stringify(m.would, null, 2)}</pre>
+        </section>
+      )}
       {m.status === 'Differs' && <MarkExpected m={m} onDone={close} />}
       {m.rows.length > 0 && (
         <table aria-label="Segments" className="w-full table-fixed font-mono text-xs">
@@ -87,10 +95,12 @@ function Detail({ id, close }: { id: number; close: () => void }) {
           </tbody>
         </table>
       )}
-      <details className="text-xs text-neutral-500">
-        <summary>Ignored when comparing</summary>
-        <ul>{m.ignored.map((x) => <li key={x}>{x}</li>)}</ul>
-      </details>
+      {m.ignored.length > 0 && (
+        <details className="text-xs text-neutral-500">
+          <summary>Ignored when comparing</summary>
+          <ul>{m.ignored.map((x) => <li key={x}>{x}</li>)}</ul>
+        </details>
+      )}
     </div>
   )
 }
@@ -102,7 +112,7 @@ export default function ShadowComparePage() {
     <ListPage<ShadowMatchRead>
       resource={shadowClient}
       title="Shadow compare"
-      description="Each 940 Zoho sent (from the reference folder) against the 940 Sales would send for the same order. Nothing here is sent; Run now refreshes it."
+      description="Each 940 Zoho sent (from the reference folder) against the 940 Sales would send for the same order, and each 997 / 945 the warehouse returned for Zoho's 940s with what Sales would have recorded. Nothing here is sent or applied; Run now refreshes it."
       columns={columns}
       emptyTitle="Nothing compared yet"
       notice={<Summary />}

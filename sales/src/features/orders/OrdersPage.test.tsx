@@ -20,7 +20,7 @@ const order: OrderRead = {
 }
 const pending: OrderRead = { ...order, id: 5, order_number: 105, source_order_number: '9303', fulfillment_status: 'Pending',
   order_state: 'Active', review_reason: null }
-const detail: OrderDetail = { ...order, notes: null, documents: [{ id: 9, kind: 'SHOPIFY_ORDER_JSON', direction: 'IN', remote_name: 'orders page 1', created_at: order.created_at,
+const detail: OrderDetail = { ...order, notes: null, shipments: [], documents: [{ id: 9, kind: 'SHOPIFY_ORDER_JSON', direction: 'IN', remote_name: 'orders page 1', created_at: order.created_at,
     file_status: null, ack_status: null, st02: null, sent_at: null, error: null, ack_detail: null }],
   timeline: [], lines: [{ id: 1, line_no: 5, item_code: null, source: { sku: 'NOPE' }, ordered_qty: '1', order_unit: 'CASE', factor_ea: null,
     qty_ea: null, unit_price: '1', line_status: 'Active', removed: false, problem: 'item not in the Item Master' }] }

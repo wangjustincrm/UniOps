@@ -67,10 +67,44 @@ export interface OrderDocument {
   ack_detail: string | null
 }
 
+export interface ShipmentRowRead {
+  lx_index: number
+  w12_index: number
+  sscc: string | null
+  item_code: string | null
+  lot: string | null
+  expiry: string | null
+  qty_ordered_ea: number | null
+  qty_shipped_ea: number
+  tracking: string | null
+  needs_review: boolean
+}
+
+/** A 945: applied, or kept (a second 945, a shadow one), with its checks
+ *  (FR-OB-25d) and the Shopify write-back (FR-OB-11). */
+export interface ShipmentRead {
+  id: number
+  document_id: number
+  order_key_received: string | null
+  ship_date: string | null
+  ship_date_source: string | null
+  carrier: string | null
+  mode: string | null
+  tracking: string[] | null
+  bol: string | null
+  applied: boolean
+  shadow: boolean
+  checks: { check: string; message: string }[] | null
+  shopify_status: 'Not needed' | 'Pending' | 'Done' | 'Failed' | 'Suppressed'
+  shopify_error: string | null
+  rows: ShipmentRowRead[]
+}
+
 export interface OrderDetail extends OrderRead {
   notes: string | null
   lines: LineRead[]
   documents: OrderDocument[]
+  shipments: ShipmentRead[]
   timeline: { at: string; user_name: string; entity: string; action: string; before: Record<string, unknown> | null;
     after: Record<string, unknown> | null; reason: string | null }[]
 }
@@ -99,3 +133,5 @@ export interface Send940Result { order: OrderRead; document_id: number; file_sta
 export const send940 = (id: number, replace = false) => api.post<Send940Result>(`/orders/${id}/send-940${replace ? '?replace=true' : ''}`)
 export interface EligibleOrder { order_id: number; order_number: number; partner_code: string; source_order_number: string | null }
 export const fetchEligibility = () => api.get<EligibleOrder[]>('/orders/eligibility-preview')
+export const retryShopify = (shipmentId: number) =>
+  api.post<{ shipment_id: number; shopify_status: string }>(`/orders/shipments/${shipmentId}/shopify-retry`)

@@ -281,16 +281,18 @@ modules:
       - Set up the SFTP and Shopify connections, test them, and see the files received and each run's report
       - See an order's 940s to the warehouse — whether the file was sent, and separately whether the warehouse acknowledged it (997) — and use Send 940 now, or Replace 940 for a live one
       - See which orders the next cycle would send a 940 for (Orders → Next 940s)
+      - See what the warehouse shipped for an order (its 945) — every pallet with its lots, expiry and quantities, the checks that flagged something, and whether the shipment was written to Shopify; retry a failed Shopify write
       - Choose the warehouse's SFTP connection and how long to wait for its 997 (Configuration → Connections, Warehouse EDI)
       - During the shadow run, compare each 940 Zoho sent with the 940 Sales would send for the same order (Operations → Shadow compare), and mark a known difference as expected with a reason
     notes:
       - >-
         Sales is being built in phases. Orders are read from Shopify and from
-        retailer 850s. Sales can build and send the warehouse 940 and read the
-        warehouse's 997, but writing to the warehouse's server is switched off
-        until the release that turns it on; until then the 940s the warehouse
-        receives, and all shipments and invoices, still come from Zoho — so for
-        a shipment or an invoice, look in Zoho.
+        retailer 850s. Sales can build and send the warehouse 940, read the
+        warehouse's 997 and 945 (shipment), and fulfil and archive the order in
+        Shopify, but writing to the warehouse's server and to Shopify is
+        switched off until the release that turns it on; until then the 940s the
+        warehouse receives, Shopify fulfillments, and all invoices still come
+        from Zoho — so for a shipment or an invoice, look in Zoho.
       - >-
         While the shadow run is on (Configuration → Connections, Shadow run),
         Zoho is the live system: Sales reads the partners' folders but leaves
@@ -305,6 +307,23 @@ modules:
         have sent a 940 that has no Zoho file) or Unreadable, and shows both
         files side by side. Control numbers, dates and times, and each
         system's own order number are not compared.
+      - >-
+        A 945 (the warehouse's shipment) closes the order's fulfilment: the order
+        is Shipped and each line shows what shipped, every pallet and lot kept.
+        Less than ordered raises a task (no second 940 is sent). A second,
+        different 945 for the same order changes nothing and puts the order On
+        Hold with a task; a 945 that matches no order is kept and raises a task.
+        The warehouse may add one letter to the order number (1000123a) — it
+        still matches. Checks such as more shipped than ordered, an item not on
+        the 940, an expired or short-dated lot, a different ship-to or an odd
+        ship date are listed on the shipment; an item not on the 940 also needs
+        a decision. For a Shopify order the fulfillment is created in Shopify
+        with the tracking number (the customer is told), or the tracking is
+        added to the fulfillment Zoho made, and then the order is archived
+        there; each is tried once — a failure raises a task with a Retry on the
+        order. During the shadow run a 945 or 997 is never applied and nothing
+        is written to Shopify: it is kept, matched to the Zoho 940 it answers,
+        and Operations → Shadow compare shows what Sales would have recorded.
       - >-
         A 940 shows two statuses: the file (Ready To Send, Sent, Failed when the
         upload failed, Suppressed when sending is switched off, Cancelled when it

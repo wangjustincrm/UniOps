@@ -2,7 +2,7 @@ import { createResourceClient } from '@/platform-ui'
 import { api } from '@/lib/api'
 
 // Mirrors sales-api app/schemas/shadow.py (hand-written, see partnersApi.ts).
-export const SHADOW_STATUSES = ['Match', 'Differs', 'Expected difference', 'No Sales order', 'Sales only', 'Unreadable'] as const
+export const SHADOW_STATUSES = ['Match', 'Differs', 'Expected difference', 'No Sales order', 'Sales only', 'Unreadable', 'No reference'] as const
 
 export interface ShadowMatchRead {
   id: number
@@ -18,10 +18,18 @@ export interface ShadowMatchRead {
   compared_at: string
   version: number
   updated_by_name: string | null
+  document_id?: number | null
 }
 
 export interface ShadowRow { zoho: string | null; sales: string | null; same: boolean }
-export interface ShadowCompare extends ShadowMatchRead { rows: ShadowRow[]; reference_name: string | null; ignored: string[] }
+export interface ShadowCompare extends ShadowMatchRead {
+  rows: ShadowRow[]
+  reference_name: string | null
+  ignored: string[]
+  document_name?: string | null
+  /** 997 / 945 (P5): what Sales would have recorded. */
+  would?: Record<string, unknown> | null
+}
 
 export const shadowClient = createResourceClient<ShadowMatchRead, never>(api, '/shadow-matches')
 export const fetchShadowSummary = () => api.get<Record<string, number>>('/shadow-matches/summary')

@@ -22,6 +22,7 @@ from app.services.cycle import SalesCycle, settings_schedule
 from app.services.edi_intake import EdiIntake
 from app.services.intake import Intake
 from app.services.shadow import ShadowRun
+from app.services.shipments import CLOSE, FULFILL, Shipments
 from app.services.shopify_intake import ShopifyIntake
 from app.services.problems import task_service
 
@@ -36,6 +37,7 @@ class Runtime:
     cycle: SalesCycle
     background: Background
     outbound: Outbound940 | None = None
+    shipments: Shipments | None = None
 
 
 def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify: Any = None) -> Runtime:
@@ -57,13 +59,16 @@ def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify:
     shopify_intake = ShopifyIntake(uow_factory=uow_factory, shopify=container.shopify, tasks=tasks)
     edi_intake = EdiIntake(uow_factory=uow_factory, tasks=tasks)
     outbound = Outbound940(uow_factory=uow_factory, tasks=tasks, sftp=container.sftp)
-    worker = OutboxWorker(Outbox(OutboxRecord), {SEND_940: outbound.outbox_kind()}, uow_factory)
     shadow = ShadowRun(uow_factory=uow_factory, outbound=outbound,
                        reference_dir=getattr(settings, "SALES_ZOHO_REFERENCE_DIR", "") or None)
+    outbound.shadow = shadow
+    shipments = Shipments(uow_factory=uow_factory, tasks=tasks, shopify=container.shopify, outbound=outbound, shadow=shadow)
+    worker = OutboxWorker(Outbox(OutboxRecord), {SEND_940: outbound.outbox_kind(), FULFILL: shipments.fulfill_kind(),
+                                                 CLOSE: shipments.close_kind()}, uow_factory)
     cycle = SalesCycle(intake=intake, shopify_intake=shopify_intake, edi_intake=edi_intake, outbound=outbound,
-                       shadow=shadow, outbox_worker=worker, run_model=Run, uow_factory=uow_factory,
+                       shadow=shadow, shipments=shipments, outbox_worker=worker, run_model=Run, uow_factory=uow_factory,
                        schedule=settings_schedule(uow_factory))
-    return Runtime(container, uow_factory, intake, shopify_intake, edi_intake, cycle, Background(), outbound)
+    return Runtime(container, uow_factory, intake, shopify_intake, edi_intake, cycle, Background(), outbound, shipments)
 
 
 _runtime: Runtime | None = None

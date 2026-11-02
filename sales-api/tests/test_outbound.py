@@ -62,7 +62,7 @@ async def edi(env):  # noqa: F811
     out = Outbound940(uow_factory=env.factory, tasks=env.tasks, sftp=gateways.sftp, clock=lambda: clock.now)
     worker = OutboxWorker(Outbox(OutboxRecord), {SEND_940: out.outbox_kind()}, env.factory)  # real time: rows are stamped now()
     return SimpleNamespace(env=env, out=out, worker=worker, store=store, settings=settings, refused=refused, clock=clock,
-                           conn_id=conn.id)
+                           conn_id=conn.id, gateways=gateways)
 
 
 async def a_paid_order(edi, number=9301, lines=None):

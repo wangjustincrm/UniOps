@@ -36,6 +36,13 @@ async def send_940_now(u: UoW, rt: Rt, id: int, replace: bool = False) -> dict:
     return out
 
 
+@router.post("/shipments/{shipment_id}/shopify-retry")
+async def retry_shopify(u: UoW, rt: Rt, shipment_id: int) -> dict:
+    out = await OrderService(u).retry_shopify(shipment_id, rt.shipments)
+    await u.commit()
+    return out
+
+
 @router.get("/meta")
 async def orders_meta(u: UoW) -> dict:
     return await OrderService(u).meta()

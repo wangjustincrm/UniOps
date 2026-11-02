@@ -15,6 +15,7 @@ from app.domain.status import FULFILLMENT, Fulfillment as F
 from app.domain.status import Invoice as Inv
 from app.models.config import Connection, Item, Partner
 from app.models.documents import Document, DocumentLink
+from app.models.shipments import Shipment, ShipmentRow
 from app.models.orders import Order, OrderLine
 from app.models.records import AuditRecord
 from app.platform.authorization import requires
@@ -24,7 +25,7 @@ from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.schemas.orders import (
     LinePreview, LineRead, ManualLineIn, ManualOrderIn, OrderDetail, OrderDocumentRead, OrderRead, ReviewResult,
-    TimelineEntry,
+    ShipmentRead, ShipmentRowRead, TimelineEntry,
 )
 from app.services.intake import ConnectionSnapshot
 from app.services.orders import BarcodeLookup, OrderSync
@@ -98,6 +99,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                                                    "discount", "department", "order_type")},
             lines=[LineRead.model_validate(ln) for ln in lines],
             documents=[OrderDocumentRead(**d._asdict()) for d in docs],
+            shipments=await self._shipments(id),
             timeline=[TimelineEntry(at=a.at, user_name=a.user_name, entity=a.entity, action=a.action, before=a.before,
                                     after=a.after, reason=a.reason) for a in trail],
         )
@@ -123,6 +125,22 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         order = await self.repo.get(id)
         return {"order": self.to_read(order).model_dump(mode="json"), "document_id": doc.id,
                 "file_status": doc.file_status, "control": doc.st02, "errors": (doc.body_json or {}).get("errors", [])}
+
+    async def _shipments(self, order_id: int) -> list[ShipmentRead]:
+        s = self.uow.session
+        ships = list((await s.execute(select(Shipment).where(Shipment.order_id == order_id).order_by(Shipment.id))).scalars())
+        rows = list((await s.execute(select(ShipmentRow).where(ShipmentRow.shipment_id.in_([x.id for x in ships]))
+                                     .order_by(ShipmentRow.shipment_id, ShipmentRow.lx_index, ShipmentRow.w12_index))).scalars()) if ships else []
+        return [ShipmentRead.model_validate(x).model_copy(update={
+            "rows": [ShipmentRowRead.model_validate(r) for r in rows if r.shipment_id == x.id]}) for x in ships]
+
+    @requires(OPERATE)
+    async def retry_shopify(self, shipment_id: int, shipments) -> dict:
+        """FR-OB-11: a person's retry of a failed / refused Shopify write; the
+        write reads the order's fulfillments first, so nothing is made twice."""
+        self.uow.set_reason("Shopify write-back: retry")
+        sh = await shipments.retry_shopify(self.uow, shipment_id)
+        return {"shipment_id": sh.id, "shopify_status": sh.shopify_status}
 
     @requires(READ)
     async def eligibility_preview(self, outbound) -> list[dict]:

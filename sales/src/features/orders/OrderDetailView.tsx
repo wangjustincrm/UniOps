@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Badge, DateTimeCell, DetailList, ErrorView, Skeleton, StatusCell, formatDate, formatDateTime, formatMoney, queryKeys } from '@/platform-ui'
 import { fetchOrder, ordersClient, type OrderRead } from './ordersApi'
+import { Shipments } from './Shipments'
 
 // The badge shows the fulfillment status in the colour of the derived order state (D17).
 const stateTone = { Draft: 'neutral', Active: 'info', 'On Hold': 'warning', Completed: 'success', Cancelled: 'neutral' } as const
@@ -80,6 +81,7 @@ export function OrderDetailView({ id }: { id: number }) {
           </table>
         </section>
       )}
+      <Shipments shipments={o.shipments ?? []} orderId={o.id} />
       <section aria-label="Timeline">
         <h3 className="mb-1 font-semibold text-neutral-800">Timeline</h3>
         <ol className="flex flex-col gap-1 text-xs">

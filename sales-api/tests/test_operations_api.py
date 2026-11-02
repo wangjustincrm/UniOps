@@ -183,10 +183,11 @@ async def test_documents_register_raw_bytes_and_log(api):
     docs = (await api.get("/api/v1/documents?sort=id", headers=READER)).json()
     assert docs["total"] == 3 and all("content" not in d for d in docs["items"])
     a, b, mine = docs["items"]
-    assert (a["processing_status"], a["has_content"]) == ("Pending", True)
+    # P5 reads 945s in the same run: this stub (no order key, no W12) cannot be applied
+    assert (a["processing_status"], a["has_content"]) == ("Failed", True)
     assert (b["processing_status"], b["has_content"]) == ("Duplicate", False)
     assert (mine["processing_status"], mine["kind"]) == ("Skipped", "940_EDI")
-    r = await api.get("/api/v1/documents?filter=processing_status:eq:Pending", headers=READER)
+    r = await api.get("/api/v1/documents?filter=processing_status:eq:Failed", headers=READER)
     assert [d["id"] for d in r.json()["items"]] == [a["id"]]
 
     r = await api.get(f"/api/v1/documents/{a['id']}/raw", headers=READER)

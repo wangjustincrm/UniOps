@@ -42,13 +42,14 @@ class SalesCycle(ScheduledJob):
     lock_key = CYCLE_LOCK_KEY
 
     def __init__(self, *, intake: Intake, outbox_worker, shopify_intake=None, edi_intake=None, outbound=None,
-                 shadow=None, **kw) -> None:
+                 shadow=None, shipments=None, **kw) -> None:
         super().__init__(stale_after=STALE_AFTER, **kw)
         self.intake = intake
         self.shopify_intake = shopify_intake
         self.edi_intake = edi_intake
         self.outbound = outbound
         self.shadow = shadow
+        self.shipments = shipments
         self.outbox_worker = outbox_worker
 
     async def run_once(self, run) -> RunSummary:
@@ -84,17 +85,23 @@ class SalesCycle(ScheduledJob):
                 trouble += 1
         edi = await self.edi_intake.run_pass(run_id=run.id) if self.edi_intake else {}
         trouble += edi.get("failed", 0)
-        # P4: the orders that qualify get their 940 (queued in the outbox), the
-        # outbox sends, then the 997s that arrived are applied and late ones time out.
+        # P4 / P5: the orders that qualify get their 940 (queued in the outbox);
+        # the 997s and 945s that arrived are applied (a 945 queues its Shopify
+        # write-back); the outbox sends; late 940s time out — after the 945s,
+        # so a 945 that arrived stops the clock.
         edi_out: dict = {}
         if self.outbound:
             queued = await self.outbound.queue_due(run_id=run.id)
             edi_out["queue"] = asdict(queued)
             trouble += queued.failed
+            edi_out["997"] = asdict(await self.outbound.process_997s(run_id=run.id))
+        if self.shipments:
+            s945 = await self.shipments.process_945s(run_id=run.id)
+            edi_out["945"] = asdict(s945)
+            trouble += s945.failed
         outbox = asdict(await self.outbox_worker.run_once())
         trouble += outbox.get("failed", 0)
         if self.outbound:
-            edi_out["997"] = asdict(await self.outbound.process_997s(run_id=run.id))
             edi_out["timeouts"] = asdict(await self.outbound.timeouts(run_id=run.id))
         # The shadow run (§5.4): Zoho's reference files in, then the comparison.
         shadow: dict = {}

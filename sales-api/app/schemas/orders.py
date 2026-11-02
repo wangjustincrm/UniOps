@@ -89,6 +89,43 @@ class TimelineEntry(BaseModel):
     reason: str | None
 
 
+class ShipmentRowRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    lx_index: int
+    w12_index: int
+    sscc: str | None
+    item_code: str | None
+    lot: str | None
+    expiry: date | None
+    qty_ordered_ea: int | None
+    qty_shipped_ea: int
+    tracking: str | None
+    needs_review: bool
+
+
+class ShipmentRead(BaseModel):
+    """A 945 as applied (or kept: a second 945, a shadow one), its rows and
+    checks, and the Shopify write-back (FR-OB-11 / 25 / 25b / 25d)."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    document_id: int
+    order_key_received: str | None
+    ship_date: date | None
+    ship_date_source: str | None
+    carrier: str | None
+    mode: str | None
+    tracking: list[str] | None
+    bol: str | None
+    applied: bool
+    shadow: bool
+    checks: list[dict[str, Any]] | None
+    shopify_status: str
+    shopify_error: str | None
+    rows: list[ShipmentRowRead] = []
+
+
 class OrderDetail(OrderRead):
     bill_to: dict[str, Any] | None = None
     contact: dict[str, Any] | None = None
@@ -101,6 +138,7 @@ class OrderDetail(OrderRead):
     order_type: str | None = None
     lines: list[LineRead] = []
     documents: list[OrderDocumentRead] = []
+    shipments: list[ShipmentRead] = []
     timeline: list[TimelineEntry] = []
 
 

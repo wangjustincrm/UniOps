@@ -1,7 +1,9 @@
 """Shadow-run comparison (design §5.4; migration sales09_shadow).
 
-One row per Zoho reference file (`reference_document_id`), or per Sales order
-no reference matched (`Sales only`, no reference). `rows` is the side-by-side
+One row per Zoho reference 940 (`reference_document_id`), or per Sales order
+no reference matched (`Sales only`, no reference); from P5 also one per real
+997 / 945 read during the shadow run (`document_id`), matched to a reference
+940 (or `No reference`), with what Sales would have recorded (`would`). `rows` is the side-by-side
 diff [{"zoho", "sales", "same"}]; `diff_signature` identifies the set of
 differences, so a person's "expected difference" (`expected_signature`,
 `expected_reason`) holds only while the differences stay the same.
@@ -26,9 +28,11 @@ class ShadowMatch(Audited, Versioned, Base):
     __table_args__ = (
         one_of("status", STATUSES, "ck_sales_shadow_matches_status"),
         Index("uq_sales_shadow_matches_reference", "reference_document_id", unique=True,
-              postgresql_where=text("reference_document_id IS NOT NULL")),
+              postgresql_where=text("reference_document_id IS NOT NULL AND kind = '940'")),
         Index("uq_sales_shadow_matches_sales_only", "order_id", unique=True,
-              postgresql_where=text("reference_document_id IS NULL")),
+              postgresql_where=text("reference_document_id IS NULL AND kind = '940'")),
+        Index("uq_sales_shadow_matches_document", "document_id", unique=True,
+              postgresql_where=text("document_id IS NOT NULL")),
     )
 
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -45,3 +49,6 @@ class ShadowMatch(Audited, Versioned, Base):
     expected_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     compared_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # sales10: a 997 / 945 compared (kind "997" / "945") and what Sales would have recorded.
+    document_id: Mapped[int | None] = mapped_column(ForeignKey("sales_documents.id"), nullable=True)
+    would: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

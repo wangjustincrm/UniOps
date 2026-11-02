@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
@@ -23,6 +23,7 @@ class ShadowMatchRead(BaseModel):
     compared_at: datetime
     version: int
     updated_by_name: str | None
+    document_id: int | None = None   # a 997 / 945 compared (P5)
 
 
 class ShadowRow(BaseModel):
@@ -36,6 +37,8 @@ class ShadowCompare(ShadowMatchRead):
     rows: list[ShadowRow]
     reference_name: str | None
     ignored: list[str]
+    document_name: str | None = None
+    would: dict[str, Any] | None = None   # 997 / 945: what Sales would have recorded
 
 
 class ExpectedIn(BaseModel):

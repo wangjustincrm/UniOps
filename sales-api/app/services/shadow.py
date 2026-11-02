@@ -119,6 +119,7 @@ class ShadowRun:
                                remote_name=rel, size=len(data),
                                remote_mtime=datetime.fromtimestamp(stat.st_mtime, timezone.utc), sha256=sha,
                                content=data, isa13=c.isa13, gs06=c.gs06, st02=c.st02, shadow=True,
+                               body_json=_reference_keys(data) if c.kind == "940_EDI" else None,
                                error=None if c.readable else c.problem)
                 s.add(doc)
                 await s.flush()
@@ -172,8 +173,8 @@ class ShadowRun:
     async def _compare_one(self, uow, ref_id: int) -> tuple[str, int | None]:
         s = uow.session
         content = (await s.execute(select(Document.content).where(Document.id == ref_id))).scalar_one()
-        row = (await s.execute(select(ShadowMatch).where(ShadowMatch.reference_document_id == ref_id)
-                               .with_for_update())).scalar_one_or_none()
+        row = (await s.execute(select(ShadowMatch).where(ShadowMatch.reference_document_id == ref_id,
+                                                         ShadowMatch.kind == "940").with_for_update())).scalar_one_or_none()
         values: dict[str, Any] = dict(kind="940", order_id=None, reference_number=None, partner_code=None,
                                       sales_text=None, rows=None, differences=0, diff_signature=None, note=None)
         try:
@@ -213,7 +214,7 @@ class ShadowRun:
             if o.id not in matched and qualifies(replace(facts, shadow=False), pf, now)[0]:
                 want[o.id] = o
         existing = {r.order_id: r for r in (await s.execute(select(ShadowMatch).where(
-            ShadowMatch.reference_document_id.is_(None)).with_for_update())).scalars()}
+            ShadowMatch.reference_document_id.is_(None), ShadowMatch.kind == "940").with_for_update())).scalars()}
         for oid, r in existing.items():
             if oid not in want:
                 await s.delete(r)  # a reference arrived, or it no longer qualifies
@@ -235,6 +236,93 @@ class ShadowRun:
             for k, v in values.items():
                 setattr(row, k, v)
             row.compared_at = self.clock()
+
+
+    # ── real 997s and 945s against the references (moved from the shadow run to P5) ──
+    async def match_997(self, uow, doc: Document, groups) -> None:
+        """A 997 Radiant sent for a Zoho 940: the reference with that group /
+        set control, and what Sales would have recorded. Never applied."""
+        s = uow.session
+        sets = [(g, st) for g in groups for st in (g.sets or [])]
+        ref = None
+        for g, st in sets:
+            ref = (await s.execute(select(Document).where(
+                Document.origin == "ZOHO_REFERENCE", Document.kind == "940_EDI",
+                func.ltrim(Document.gs06, "0") == g.group_control.lstrip("0"),
+                func.ltrim(Document.st02, "0") == st.control.lstrip("0")).limit(1))).scalar_one_or_none()
+            if ref is not None:
+                break
+        would = {"acks": [{"functional_id": g.functional_id, "group_control": g.group_control, "set": st.type,
+                           "set_control": st.control, "accepted": st.accepted, "code": st.code, "reasons": st.reasons}
+                          for g, st in sets],
+                 "would": ("mark the 940 Accepted" if all(st.accepted for _, st in sets) else
+                           "mark the 940 Rejected and raise a task") if sets else "nothing (no AK2)"}
+        order_id = None
+        if ref is not None and ref.body_json:
+            orders = await _orders_for_reference(s, ref.body_json)
+            order_id = orders[0].id if len(orders) == 1 else None
+        await self._match_row(s, doc, kind="997", ref=ref, order_id=order_id, key=sets[0][1].control if sets else None,
+                              status="Match" if ref is not None else "No reference", would=would)
+
+    async def match_945(self, uow, doc: Document, sets, plans) -> None:
+        """A 945 for a Zoho 940: the reference by W05 (order number / PO) and
+        what applying it would have done (the plan: order, lines, short,
+        checks, status). Never applied."""
+        s = uow.session
+        sh, plan = sets[0], plans[0]
+        ref = await _reference_for_key(s, sh.order_key_raw, sh.po)
+        would = {"sets": [{"order_key": x.order_key_raw, "ship_date": str(x.ship_date) if x.ship_date else None,
+                           "rows": len(x.rows), "shipped_ea": sum(r.qty_shipped for r in x.rows), **p.summary()}
+                          for x, p in zip(sets, plans)]}
+        status = "No reference" if ref is None else ("Match" if plan.order_id is not None else "No Sales order")
+        await self._match_row(s, doc, kind="945", ref=ref, order_id=plan.order_id, key=sh.order_key_raw,
+                              status=status, would=would, note=plan.match_note)
+
+    async def _match_row(self, s, doc: Document, *, kind: str, ref: Document | None, order_id: int | None,
+                         key: str | None, status: str, would: dict, note: str | None = None) -> None:
+        row = (await s.execute(select(ShadowMatch).where(ShadowMatch.document_id == doc.id))).scalar_one_or_none()
+        partner = (await s.execute(select(Order.partner_code).where(Order.id == order_id))).scalar_one_or_none() if order_id else None
+        await self._write(s, row, dict(kind=kind, status=status, order_id=order_id, reference_number=(key or "")[:100] or None,
+                                       partner_code=partner, sales_text=None, rows=None, differences=0, diff_signature=None,
+                                       note=note, document_id=doc.id, would=would),
+                          reference_document_id=ref.id if ref is not None else None)
+        await s.flush()
+
+
+def _reference_keys(data: bytes) -> dict | None:
+    try:
+        r = reference_940(data)
+    except X12Error:
+        return None
+    return {"w05_02": r.order_number, "w05_03": r.po}
+
+
+async def _orders_for_reference(s, keys: dict) -> list[Order]:
+    if keys.get("w05_03"):
+        q = select(Order).where(Order.source_type == "EDI_850", Order.source_order_number == keys["w05_03"])
+    else:
+        q = select(Order).where(Order.source_type == "SHOPIFY",
+                                func.ltrim(Order.source_order_number, "#") == (keys.get("w05_02") or "").lstrip("#"))
+    return list((await s.execute(q.order_by(Order.id))).scalars())
+
+
+async def _reference_for_key(s, key_raw: str | None, po: str | None) -> Document | None:
+    """The Zoho 940 a 945 answers: W06-06 = its W05 03 (PO), else W06-02 = its
+    W05 02 (zero-padding and one trailing letter ignored, FR-OB-28)."""
+    from app.domain.edi945 import order_key
+    refs = list((await s.execute(select(Document).where(
+        Document.origin == "ZOHO_REFERENCE", Document.kind == "940_EDI").order_by(Document.id.desc()))).scalars())
+    want = order_key(key_raw or "")
+    for ref in refs:
+        keys = ref.body_json
+        if keys is None:  # imported before the keys were kept
+            content = (await s.execute(select(Document.content).where(Document.id == ref.id))).scalar_one()
+            keys = ref.body_json = _reference_keys(content) or {}
+        if po and keys.get("w05_03") == po:
+            return ref
+        if want.base is not None and keys.get("w05_02") and order_key(keys["w05_02"]).base == want.base:
+            return ref
+    return None
 
 
 # ── switching the shadow run on ──────────────────────────────────────────────
@@ -268,9 +356,10 @@ async def mark_open_orders(uow, *, run_id: int | None = None) -> int:
 class ShadowMatchRepository(Repository[ShadowMatch]):
     model = ShadowMatch
     search_fields = ("reference_number", "partner_code", "note", "expected_reason")
-    list_fields = ("id", "kind", "status", "reference_document_id", "order_id", "reference_number", "partner_code",
-                   "differences", "expected_reason", "note", "compared_at")
-    labels = {"reference_document_id": "Zoho file", "order_id": "Order", "reference_number": "Order no. / PO",
+    list_fields = ("id", "kind", "status", "reference_document_id", "document_id", "order_id", "reference_number",
+                   "partner_code", "differences", "expected_reason", "note", "compared_at")
+    labels = {"reference_document_id": "Zoho file", "document_id": "Warehouse file", "order_id": "Order",
+              "reference_number": "Order no. / PO",
               "expected_reason": "Why expected"}
     enums = {"status": STATUSES}
     default_sort = ("-compared_at",)
@@ -278,7 +367,9 @@ class ShadowMatchRepository(Repository[ShadowMatch]):
     presets = (
         Preset("all", "All"),
         Preset("to_check", "To check", {"filters": [{"field": "status", "op": "in",
-                                                     "value": ["Differs", "No Sales order", "Sales only", "Unreadable"]}]}),
+                                                     "value": ["Differs", "No Sales order", "Sales only", "Unreadable",
+                                                               "No reference"]}]}),
+        Preset("answers", "997 / 945", {"filters": [{"field": "kind", "op": "in", "value": ["997", "945"]}]}),
         Preset("differs", "Differs", {"filters": [{"field": "status", "op": "eq", "value": "Differs"}]}),
         Preset("match", "Match", {"filters": [{"field": "status", "op": "in", "value": ["Match", "Expected difference"]}]}),
     )
@@ -307,8 +398,13 @@ class ShadowMatchService(ReadOnlyService[ShadowMatch, ShadowMatchRead]):
         if rows is None and m.sales_text:  # Sales only: no Zoho side
             from app.domain.x12 import segments
             rows = [{"zoho": None, "sales": "*".join(seg), "same": False} for seg in segments(m.sales_text)]
+        doc_name = None
+        if m.document_id is not None:
+            doc_name = (await self.uow.session.execute(select(Document.remote_name).where(
+                Document.id == m.document_id))).scalar_one_or_none()
         return ShadowCompare(**ShadowMatchRead.model_validate(m).model_dump(), rows=rows or [],
-                             reference_name=name, ignored=ignore_rules())
+                             reference_name=name, ignored=ignore_rules() if m.kind == "940" else [],
+                             document_name=doc_name, would=m.would)
 
     @requires(OPERATE)
     async def mark_expected(self, id: int, reason: str, version: int | None) -> ShadowMatchRead:

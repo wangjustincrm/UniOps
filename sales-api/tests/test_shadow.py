@@ -2,6 +2,7 @@
 2026-11-02). The fixture is P4's: writes ON, a LIVE connection, its host a
 write host — so a put that happened would be visible in the fake store."""
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
@@ -90,7 +91,7 @@ async def test_a_997_in_the_shadow_run_is_stored_only(edi):
     r = await edi.out.process_997s()
     assert (r.shadow_997, r.acks) == (1, 0)
     [ack] = await edi.env.q("SELECT processing_status, shadow, error FROM sales_documents WHERE kind = '997_EDI'")
-    assert (ack["processing_status"], ack["shadow"]) == ("Skipped", True) and "stored only" in ack["error"]
+    assert (ack["processing_status"], ack["shadow"]) == ("Skipped", True) and "not applied" in ack["error"]
     assert await status(edi, o.id) == F.SENT_940 and await edi.env.q("SELECT 1 FROM tasks") == []
 
 
@@ -245,3 +246,36 @@ async def test_switching_on_marks_every_open_order_and_off_never_clears_it(edi):
     assert [a["entity_id"] for a in audit] == [str(pending.id)]
     [log] = await edi.env.q("SELECT message FROM sales_log WHERE message LIKE 'shadow run on:%'")
     assert log["message"].startswith("shadow run on: 1 open order(s) marked")
+
+
+# ── P5: real 997s and 945s against the references (moved from the shadow run) ─
+
+async def test_a_997_and_a_945_in_the_shadow_run_are_matched_to_the_zoho_940_never_applied(edi, tmp_path):
+    from app.services.shipments import Shipments
+    from tests.test_shipments import store_945, x945
+    await shadow(edi)
+    o = await a_paid_order(edi)
+    (tmp_path / "z.edi").write_bytes(await zoho_940(edi, o.id, ctl=16468))
+    matcher = run(edi, tmp_path)
+    await matcher.run()                                   # the reference is imported and compared
+    edi.out.shadow = matcher
+    await store_997(edi, ack997("000016468"), "997-zoho.edi")
+    await store_997(edi, ack997("000055555"), "997-other.edi")
+    await edi.out.process_997s()
+    ships = Shipments(uow_factory=edi.env.factory, tasks=edi.env.tasks, shopify=edi.gateways.shopify, outbound=edi.out,
+                      shadow=matcher, clock=lambda: edi.clock.now)
+    t = SimpleNamespace(factory=edi.env.factory, edi=edi)
+    await store_945(t, x945("9301", ["LX*1", "W12*CP*12*12*0*EA**VN*CF0092"]), "945-zoho.edi")
+    await ships.process_945s()
+    rows = await edi.env.q("SELECT m.kind, m.status, m.order_id, d.remote_name, m.would FROM sales_shadow_matches m "
+                           "JOIN sales_documents d ON d.id = m.document_id ORDER BY m.id")
+    got = {r["remote_name"]: r for r in rows}
+    assert (got["997-zoho.edi"]["kind"], got["997-zoho.edi"]["status"], got["997-zoho.edi"]["order_id"]) == ("997", "Match", o.id)
+    assert got["997-zoho.edi"]["would"]["would"] == "mark the 940 Accepted"
+    assert got["997-other.edi"]["status"] == "No reference"
+    w945 = got["945-zoho.edi"]
+    assert (w945["kind"], w945["status"], w945["order_id"]) == ("945", "Match", o.id)
+    assert w945["would"]["sets"][0]["shipped_ea"] == 12 and w945["would"]["sets"][0]["lines"]
+    assert await status(edi, o.id) == F.PENDING            # nothing applied
+    assert await edi.env.q("SELECT 1 FROM tasks") == [] and await outbox(edi) == []
+    assert edi.env.shop.calls == [] or all(c[0] in ("orders_page", "variant") for c in edi.env.shop.calls)
