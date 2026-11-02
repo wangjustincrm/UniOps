@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { BackLink, useDocTabTitle } from '@/components/BackLink'
+import { useDocTabTitle } from '@/components/BackLink'
+import { NotFoundState } from '@/components/shared/NotFoundState'
 import {
   ArrowLeft, CheckCircle2, Clock, Truck, Paperclip,
   AlertTriangle, Package, ExternalLink, X, RotateCcw,
@@ -54,8 +55,12 @@ function GrStatusBadge({ status }: { status: GrStatus }) {
 function GrTimeline({ gr }: { gr: ApiGr }) {
   const isPhysical = gr.gr_type === 'physical'
   // A cancelled (or rejected) GR waits on nobody — no step may show Waiting /
-  // Awaiting (ISS-0124).
-  const awaiting = gr.status === 'cancelled' || gr.status === 'rejected' ? undefined : 'Awaiting requester'
+  // Awaiting (ISS-0124). A service GR's steps go to the PR's Service/Project
+  // Owner, not the requester (crud/gr.py _get_pr_owner_id; PRD §3.13.2) —
+  // ISS-0183.
+  const awaiting = gr.status === 'cancelled' || gr.status === 'rejected'
+    ? undefined
+    : isPhysical ? 'Awaiting requester' : 'Awaiting Service/Project Owner'
 
   const steps = [
     {
@@ -197,10 +202,8 @@ export default function GrDetailPage() {
 
   if (!gr) {
     return (
-      <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-lg font-semibold text-neutral-500">GR not found</p>
-        <BackLink to="/gr" className="mt-4 text-sm text-primary-600 hover:underline">← Back to GR List</BackLink>
-      </div>
+      <NotFoundState title="GR Not Found" message="The goods receipt you're looking for doesn't exist."
+                     backTo="/gr" backLabel="Back to GR List" />
     )
   }
 

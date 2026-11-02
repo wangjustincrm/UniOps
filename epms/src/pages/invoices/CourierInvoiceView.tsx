@@ -24,6 +24,27 @@ import {
 } from '@/pages/freight/freightUi'
 import { useStaticTabNav } from '@/hooks/useStaticTabNav'
 
+/** What would free an invoice from its PA, by the PA's status. Only a draft /
+ *  returned PA can be cancelled; one in approval must first be recalled or
+ *  returned; an approved / processed one can no longer let go of it (PRD
+ *  §action table, PA-APR-004). "Cancel or return that PA" was shown even for an
+ *  Approved PA, which offers neither (ISS-0183). */
+function paLockHint(status: string | null): string {
+  switch (status) {
+    case 'draft':
+    case 'returned':
+      return 'Cancel that PA to change the matching.'
+    case 'submitted':
+    case 'in_review':
+      return 'That PA is in approval: it has to be recalled or returned, then cancelled, before the matching can change.'
+    case 'approved':
+    case 'processed':
+      return `That PA is ${status === 'approved' ? 'approved' : 'processed'}, so the matching can no longer be changed.`
+    default:
+      return 'Cancel or return that PA to change the matching.'
+  }
+}
+
 /**
  * A courier invoice (match_route='freight') on its invoice page: the charges,
  * their shipment / cost-centre matching, finalize and Create PA. Rendered by
@@ -249,7 +270,7 @@ export function CourierInvoiceView({ id }: { id: string }) {
               </Button>
             )}
             {inv.status === 'matched' && inv.pa_id && (
-              <p className="text-xs text-neutral-500">This invoice is on <Link to={`/pa/${inv.pa_id}`} className="font-mono text-primary-700 hover:underline">{inv.pa_number}</Link>. Cancel or return that PA to change the matching.</p>
+              <p className="text-xs text-neutral-500">This invoice is on <Link to={`/pa/${inv.pa_id}`} className="font-mono text-primary-700 hover:underline">{inv.pa_number}</Link>. {paLockHint(inv.pa_status)}</p>
             )}
             {editable && canManage && (
               <button onClick={handleDelete} disabled={busy}

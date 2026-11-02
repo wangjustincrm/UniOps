@@ -154,6 +154,7 @@ export interface FreightInvoice {
   lines_tax_total: Money
   pa_id: string | null
   pa_number: string | null
+  pa_status: string | null
   finalize_blockers: string[]
   /** The caller may match it: Freight manage, or the person AP assigned it to. */
   can_match: boolean

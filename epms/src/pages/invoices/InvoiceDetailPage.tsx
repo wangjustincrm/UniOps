@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useParams, Link, useNavigate } from 'react-router-dom'
-import { BackLink, useDocTabTitle } from '@/components/BackLink'
+import { useParams, Link } from 'react-router-dom'
+import { useBack, useDocTabTitle } from '@/components/BackLink'
+import { NotFoundState } from '@/components/shared/NotFoundState'
 import {
   ArrowLeft, FileText, ExternalLink, CheckCircle2,
   AlertTriangle, GitMerge, Paperclip, TrendingUp, Trash2, Pencil, X, Plus, Save, Upload, UserPlus,
@@ -168,7 +169,7 @@ function DirectRouteCard({ inv, pa, canCreatePa, onCreatePa, unmatchAction }: {
 
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
+  const back = useBack()
   const { user } = useAuthStore()
   const perms = useRolePermissions().data?.permissions
   const matchTolerancePct = useConfig().data?.invoice_match_tolerance_pct ?? 5
@@ -337,7 +338,9 @@ export default function InvoiceDetailPage() {
     if (!inv) return
     try {
       await deleteInvoice.mutateAsync(inv.id)
-      navigate('/invoices')
+      // Close this tab, not just navigate away from it: a deleted invoice's tab
+      // otherwise stayed open on a document that no longer exists (ISS-0183).
+      back('/invoices')
     } catch {
       // error displayed via deleteInvoice.isError below
     }
@@ -346,10 +349,8 @@ export default function InvoiceDetailPage() {
   if (isLoading) return <div className="p-8 text-center text-neutral-400">Loading…</div>
   if (!inv) {
     return (
-      <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-lg font-semibold text-neutral-500">Invoice not found</p>
-        <BackLink to="/invoices" className="mt-4 text-sm text-primary-600 hover:underline">← Back to Invoices</BackLink>
-      </div>
+      <NotFoundState title="Invoice Not Found" message="The invoice you're looking for doesn't exist."
+                     backTo="/invoices" backLabel="Back to Invoices" />
     )
   }
 
@@ -650,14 +651,25 @@ export default function InvoiceDetailPage() {
               {inv.status === 'match_review' && isAp && (
                 <div className="sm:col-span-2 rounded-xl border border-primary-200 bg-primary-50 p-4 flex flex-col gap-3">
                   <p className="text-sm font-semibold text-primary-800">Confirm invoice match</p>
+                  {/* An agreement invoice has no PO, GR or variance (AGR-026), so it
+                      is not described in PO / goods-receipt terms (ISS-0183). */}
                   <p className="text-xs text-neutral-500">
-                    This confirms the invoice is linked to the correct PO and goods receipt. It
+                    {isAgreementRoute
+                      ? 'This confirms the invoice is linked to the correct agreement.'
+                      : 'This confirms the invoice is linked to the correct PO and goods receipt.'} It
                     does not approve the payment amount — that happens later, on the Payment
                     Application approval chain.
                   </p>
                   <p className="text-xs text-neutral-600">
-                    This invoice was matched with a variance{varianceScope} of {signed(decidingVariance)}{formatAmount(varianceAbs, inv.currency)}
-                    {' '}against PO reference {formatAmount(Number(inv.po_total ?? 0), inv.currency)}. Confirm to finalize the match,
+                    {isAgreementRoute ? (
+                      <>Matched to Agreement {inv.agreement_number ?? inv.agreement_id?.slice(0, 8)}. </>
+                    ) : (
+                      <>
+                        This invoice was matched with a variance{varianceScope} of {signed(decidingVariance)}{formatAmount(varianceAbs, inv.currency)}
+                        {' '}against PO reference {formatAmount(Number(inv.po_total ?? 0), inv.currency)}.{' '}
+                      </>
+                    )}
+                    Confirm to finalize the match,
                     or reject to send it back to {inv.match_assignee_name ?? 'the assignee'}.
                   </p>
                   <textarea rows={2} value={reviewNote} onChange={(e) => setReviewNote(e.target.value)}

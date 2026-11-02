@@ -88,8 +88,9 @@ def generate_pa_pdf(
     def _cell(lbl: str, val: str | None) -> list:
         return [Paragraph(lbl, lbl_style), Paragraph(esc(val) or "—", val_style)]
 
-    submitted_str = pa.submitted_at.strftime("%Y-%m-%d") if pa.submitted_at else "—"
-    approved_str = pa.approved_at.strftime("%Y-%m-%d") if pa.approved_at else "—"
+    # DD/MM/YYYY like every page of the app (UI-DATE-001, ISS-0183) — format only.
+    submitted_str = pa.submitted_at.strftime("%d/%m/%Y") if pa.submitted_at else "—"
+    approved_str = pa.approved_at.strftime("%d/%m/%Y") if pa.approved_at else "—"
 
     # A PA may settle several POs. `po_numbers` is the transient list attached by
     # crud.pa.attach_po_links; the header snapshot is the fallback for a PA
@@ -251,7 +252,7 @@ def generate_pa_pdf(
         elements.append(Paragraph("Prepayment Details", sec_style))
         prep_data = [
             *_cell("Prepayment %", f"{pa.prepayment_pct}%"),
-            *_cell("Expected Settlement", str(pa.expected_settlement_date) if pa.expected_settlement_date else "—"),
+            *_cell("Expected Settlement", pa.expected_settlement_date.strftime("%d/%m/%Y") if pa.expected_settlement_date else "—"),
         ]
         prep_tbl = Table([prep_data], colWidths=[W * 0.12, W * 0.38, W * 0.12, W * 0.38])
         prep_tbl.setStyle(TableStyle([

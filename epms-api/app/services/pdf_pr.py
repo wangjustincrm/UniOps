@@ -108,10 +108,11 @@ def generate_pr_pdf(
     def _cell(lbl: str, val: str | None) -> list:
         return [Paragraph(lbl, lbl_style), Paragraph(esc(val) or "—", val_style)]
 
-    created_str = pr.created_at.strftime("%Y-%m-%d") if pr.created_at else "—"
-    required_str = pr.required_by.strftime("%Y-%m-%d") if pr.required_by else "—"
+    # DD/MM/YYYY like every page of the app (UI-DATE-001, ISS-0183) — format only.
+    created_str = pr.created_at.strftime("%d/%m/%Y") if pr.created_at else "—"
+    required_str = pr.required_by.strftime("%d/%m/%Y") if pr.required_by else "—"
     pr_type_str = PR_TYPES.get(pr.type, str(pr.type))
-    submitted_str = pr.submitted_at.strftime("%Y-%m-%d") if pr.submitted_at else "—"
+    submitted_str = pr.submitted_at.strftime("%d/%m/%Y") if pr.submitted_at else "—"
     # "CRM00901 — Building Repairs & maintenance", the same code-and-name form
     # the PR Detail page shows. The name is resolved by the caller (budget-api
     # owns the catalog); when it can't be, the code alone still stands.
@@ -136,7 +137,7 @@ def generate_pr_pdf(
     owner_row = []
     if is_service(pr.type):
         completion_str = (
-            pr.service_completion_date.strftime("%Y-%m-%d")
+            pr.service_completion_date.strftime("%d/%m/%Y")
             if pr.service_completion_date else "—"
         )
         owner_row = [[

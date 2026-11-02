@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
+import { NotFoundState } from '@/components/shared/NotFoundState'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, CheckCircle2, AlertTriangle, Upload, X, FileText } from 'lucide-react'
@@ -56,10 +57,8 @@ export default function ServiceGrConfirmPage() {
 
   if (!gr) {
     return (
-      <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-lg font-semibold text-neutral-500">GR not found</p>
-        <BackLink to="/gr" className="mt-4 text-sm text-primary-600 hover:underline">← Back to GR List</BackLink>
-      </div>
+      <NotFoundState title="GR Not Found" message="The goods receipt you're looking for doesn't exist."
+                     backTo="/gr" backLabel="Back to GR List" />
     )
   }
 
@@ -194,7 +193,8 @@ export default function ServiceGrConfirmPage() {
 
         {gr.notes && (
           <div className="mt-3 rounded-lg bg-neutral-50 border border-neutral-200 px-4 py-2.5 text-xs text-neutral-600">
-            <span className="font-medium">Vendor notes: </span>{gr.notes}
+            {/* Written by whoever recorded the receipt, not the vendor (ISS-0183). */}
+            <span className="font-medium">Receipt notes: </span>{gr.notes}
           </div>
         )}
       </div>

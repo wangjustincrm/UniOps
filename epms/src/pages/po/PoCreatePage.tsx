@@ -360,7 +360,9 @@ export default function PoCreatePage() {
                     </>
                   )}
                 </div>
-                {selectedVendor && <p className="text-xs text-success-600">✓ {selectedVendor.name} ({selectedVendor.code})</p>}
+                {/* A vendor prefilled from the PR may not be in the loaded page of the
+                    list, so its code is unknown — no empty "()" (ISS-0183). */}
+                {selectedVendor && <p className="text-xs text-success-600">✓ {selectedVendor.name}{selectedVendor.code ? ` (${selectedVendor.code})` : ''}</p>}
                 {errors.vendor && <p className="text-xs text-danger-600">{errors.vendor}</p>}
               </div>
 

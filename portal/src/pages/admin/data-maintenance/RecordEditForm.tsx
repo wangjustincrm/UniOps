@@ -34,8 +34,12 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
   useEffect(() => {
     if (!full) return
     setForm(Object.fromEntries(schema.fields.map((f) => [f.name, full[f.name] == null ? '' : String(full[f.name])])))
+    // A user reference has no name column; the server resolves its label
+    // (service._ref_labels) so the person is named, not their uuid (UI-USER-001,
+    // ISS-0183). Systems that don't send it keep the raw value.
+    const refNames = (full._ref_labels ?? {}) as Record<string, string>
     setRefLabels(Object.fromEntries(schema.fields.filter((f) => f.type === 'reference')
-      .map((f) => [f.name, f.ref_name_field ? String(full[f.ref_name_field] ?? '') : String(full[f.name] ?? '')])))
+      .map((f) => [f.name, f.ref_name_field ? String(full[f.ref_name_field] ?? '') : (refNames[f.name] ?? String(full[f.name] ?? ''))])))
     setLines((full.line_items as LineRow[] | undefined) ?? [])
     setLinesDirty(false)
     setAcceptLineTotal(false)

@@ -26,6 +26,7 @@ import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { useGrs } from '@/hooks/useGrs'
 
 import { useTasks } from '@/hooks/useTasks'
+import { useCloseOnEscape } from '@/hooks/useCloseOnEscape'
 import { poService } from '@/services/po'
 import type { ApiPo, ApiPoLineItem } from '@/services/po'
 import { useApprovalReminder } from '@/hooks/useApprovalReminder'
@@ -523,6 +524,7 @@ export default function PoDetailPage() {
   const [showPlaceOrder, setShowPlaceOrder] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement>(null)
+  useCloseOnEscape(moreOpen, () => setMoreOpen(false))
 
   const isProcurementOfficer = user?.role === 'procurement_officer' || user?.role === 'procurement_manager' || user?.role === 'system_admin'
 
@@ -839,7 +841,13 @@ export default function PoDetailPage() {
                     ['Budget Code', po.budget_code ?? '—'],
                     ['Created', formatDate(po.created_at)],
                     ['Expected Delivery', expectedDeliveryDisplay],
-                    ['Delivery Address', po.delivery_address || '—'],
+                    // PO-IMP-002: an NC PO's Delivery Address defaults to the company
+                    // delivery address until the buyer edits it — Edit Details
+                    // pre-fills it, so the detail shows it too (ISS-0183). Display
+                    // only; nothing is written to the PO.
+                    ['Delivery Address', po.delivery_address
+                      || (po.source === 'nc' && config?.delivery_address
+                        ? `${config.delivery_address} (company default)` : '—')],
                     ['PR Reference', po.pr_number || '—'],
                   ] as [string, string][]).map(([label, value]) => (
                     <div key={label} className="flex flex-col gap-0.5">

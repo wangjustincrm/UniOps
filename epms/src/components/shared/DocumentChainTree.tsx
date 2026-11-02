@@ -29,7 +29,7 @@ import {
   FileText, FileSignature, Package, Warehouse, CreditCard, Receipt, Ticket,
   ArrowRight, ChevronRight, Paperclip, AlertTriangle,
 } from 'lucide-react'
-import { cn, formatAmount } from '@/lib/utils'
+import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/badge'
 import { ChainAttachmentsPanel } from '@/components/shared/ChainAttachmentsPanel'
 import { usePr } from '@/hooks/usePrs'
@@ -638,7 +638,7 @@ function ChainForPo({ currentType, id, poIdOverride }: DocumentChainTreeProps & 
               icon={<Warehouse className="h-3 w-3" />}
               label="Goods Receipt"
               number={gr.number}
-              meta={`${gr.gr_type === 'physical' ? 'Physical' : 'Service'} · ${new Date(gr.received_at).toLocaleDateString('en-CA')}`}
+              meta={`${gr.gr_type === 'physical' ? 'Physical' : 'Service'} · ${formatDate(gr.received_at)}`}
               statusDoc={grStatusToDoc(gr.status)}
               statusLabel={GR_STATUS_LABELS[gr.status]}
               extraBadge={gr.notes?.includes('NC Paid') ? <StatusBadge status="paid" label="Paid" /> : undefined}

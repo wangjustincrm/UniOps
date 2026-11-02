@@ -34,6 +34,16 @@ export function configuredStepLabel(e: ApiEvent, steps?: readonly StepDef[] | nu
   return matches ? step.label : null
 }
 
+/** A return / reject is recorded with the actor's own role (only an approval
+ *  records the step's role — crud/pr.py, crud/po.py), so a system admin acting
+ *  at the department-manager step read "Reject by system admin" while the
+ *  approvals around it named their step (ISS-0183). Name the step it happened
+ *  at, as the approval timeline does. */
+function returnRejectStepLabel(e: ApiEvent, steps?: readonly StepDef[] | null): string | null {
+  if (e.action !== 'reject' && e.action !== 'return') return null
+  return steps?.[e.step_idx]?.label || null
+}
+
 /** Reads the event's `kind` (derived once by epms-api), never its comment text.
  *
  *  A skipped step is stored as an "approve" whose actor is whoever triggered
@@ -42,7 +52,7 @@ export function configuredStepLabel(e: ApiEvent, steps?: readonly StepDef[] | nu
  *  A skip names the step and the reason, never a person; a PMS-import backfill
  *  drops the import account's name for the same reason the PDF does. */
 export function historyLine(e: ApiEvent, steps?: readonly StepDef[] | null): HistoryLine {
-  const configured = configuredStepLabel(e, steps)
+  const configured = configuredStepLabel(e, steps) ?? returnRejectStepLabel(e, steps)
   const role = configured ?? words(e.actor_role)
   if (e.kind === 'skipped') {
     return { action: 'Skipped', role: `${role} step`, actorName: null, note: e.skip_reason ?? null }

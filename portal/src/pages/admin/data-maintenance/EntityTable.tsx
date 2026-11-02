@@ -5,6 +5,26 @@ import { adminApi } from '@/services/adminApi'
 import { useAdminList } from '@/hooks/useAdmin'
 import { BulkDeleteConfirm } from './BulkDeleteConfirm'
 
+// Column headers were the raw field names ("VENDOR_NAME", ISS-0183).
+const columnLabel = (c: string) => c.replace(/_/g, ' ')
+
+// ISO dates / timestamps print as DD/MM/YYYY [HH:MM] (UI-DATE-001, ISS-0183).
+// Format only: a timestamp keeps the zone the API sent it in (UTC) and says
+// so — no conversion. Plain dates are not run through new Date() (no shift).
+const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
+const ISO_TS = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:\d{2})?$/
+function cellText(v: unknown): string {
+  const s = String(v ?? '')
+  const d = ISO_DATE.exec(s)
+  if (d) return `${d[3]}/${d[2]}/${d[1]}`
+  const t = ISO_TS.exec(s)
+  if (t) {
+    const zone = !t[6] ? '' : t[6] === 'Z' || t[6] === '+00:00' ? ' UTC' : ` (UTC${t[6]})`
+    return `${t[3]}/${t[2]}/${t[1]} ${t[4]}:${t[5]}${zone}`
+  }
+  return s
+}
+
 interface Props {
   schema: EntitySchema
   onEdit: (record: Record<string, unknown>) => void
@@ -114,10 +134,10 @@ export function EntityTable({ schema, onEdit, onDelete }: Props) {
                 </th>
               )}
               {cols.map((c) => sortable.has(c) ? (
-                <SortTh key={c} label={c} sortKey={c} sort={sort} onSort={onSort}
+                <SortTh key={c} label={columnLabel(c)} sortKey={c} sort={sort} onSort={onSort}
                   className="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-500" />
               ) : (
-                <th key={c} className="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-500">{c}</th>
+                <th key={c} className="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-500">{columnLabel(c)}</th>
               ))}
               <th className="px-3 py-2" />
             </tr>
@@ -136,7 +156,7 @@ export function EntityTable({ schema, onEdit, onDelete }: Props) {
                     </td>
                   )}
                   {cols.map((c) => (
-                    <td key={c} className="px-3 py-2 text-neutral-800">{String(row[c] ?? '')}</td>
+                    <td key={c} className="px-3 py-2 text-neutral-800">{cellText(row[c])}</td>
                   ))}
                   <td className="px-3 py-2 text-right whitespace-nowrap">
                     {schema.allow_edit !== false && (
