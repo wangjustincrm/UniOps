@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useParams, Link, useNavigate } from 'react-router-dom'
-import { BackLink, useDocTabTitle } from '@/components/BackLink'
+import { useParams, Link } from 'react-router-dom'
+import { BackLink, useBack, useDocTabTitle } from '@/components/BackLink'
+import { NotFoundState } from '@/components/shared/NotFoundState'
 import {
   ArrowLeft, FileText, ExternalLink, CheckCircle2,
   AlertTriangle, GitMerge, Paperclip, TrendingUp, Trash2, Pencil, X, Plus, Save, Upload, UserPlus,
@@ -168,7 +169,7 @@ function DirectRouteCard({ inv, pa, canCreatePa, onCreatePa, unmatchAction }: {
 
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
+  const back = useBack()
   const { user } = useAuthStore()
   const perms = useRolePermissions().data?.permissions
   const matchTolerancePct = useConfig().data?.invoice_match_tolerance_pct ?? 5
@@ -337,7 +338,9 @@ export default function InvoiceDetailPage() {
     if (!inv) return
     try {
       await deleteInvoice.mutateAsync(inv.id)
-      navigate('/invoices')
+      // Close this tab, not just navigate away from it: a deleted invoice's tab
+      // otherwise stayed open on a document that no longer exists (ISS-0183).
+      back('/invoices')
     } catch {
       // error displayed via deleteInvoice.isError below
     }
@@ -346,10 +349,8 @@ export default function InvoiceDetailPage() {
   if (isLoading) return <div className="p-8 text-center text-neutral-400">Loading…</div>
   if (!inv) {
     return (
-      <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-lg font-semibold text-neutral-500">Invoice not found</p>
-        <BackLink to="/invoices" className="mt-4 text-sm text-primary-600 hover:underline">← Back to Invoices</BackLink>
-      </div>
+      <NotFoundState title="Invoice Not Found" message="The invoice you're looking for doesn't exist."
+                     backTo="/invoices" backLabel="Back to Invoices" />
     )
   }
 

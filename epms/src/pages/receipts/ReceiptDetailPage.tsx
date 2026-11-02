@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
+import { NotFoundState } from '@/components/shared/NotFoundState'
 import {
   ArrowLeft, Trash2, CheckCircle2, XCircle, Paperclip, Upload, X,
   AlertTriangle, Lock, ExternalLink,
@@ -89,17 +90,13 @@ export default function ReceiptDetailPage() {
 
   if (isError || !receipt) {
     return (
-      <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-lg font-semibold text-neutral-500">Receipt not found</p>
-        {isError && (
-          <p className="mt-2 text-sm text-neutral-400">
-            {error instanceof Error ? error.message : 'It may have been removed.'}
-          </p>
-        )}
-        <BackLink to="/receipts" className="mt-4 text-sm text-primary-600 hover:underline">
-          ← Back to Agreement Receipts
-        </BackLink>
-      </div>
+      <NotFoundState
+        title="Receipt Not Found"
+        message={isError
+          ? (error instanceof Error ? error.message : 'It may have been removed.')
+          : "The agreement receipt you're looking for doesn't exist."}
+        backTo="/receipts" backLabel="Back to Agreement Receipts"
+      />
     )
   }
 

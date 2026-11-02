@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
+import { NotFoundState } from '@/components/shared/NotFoundState'
 import {
   ArrowLeft, CheckCircle2, Clock, Truck, Paperclip,
   AlertTriangle, Package, ExternalLink, X, RotateCcw,
@@ -201,10 +202,8 @@ export default function GrDetailPage() {
 
   if (!gr) {
     return (
-      <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-lg font-semibold text-neutral-500">GR not found</p>
-        <BackLink to="/gr" className="mt-4 text-sm text-primary-600 hover:underline">← Back to GR List</BackLink>
-      </div>
+      <NotFoundState title="GR Not Found" message="The goods receipt you're looking for doesn't exist."
+                     backTo="/gr" backLabel="Back to GR List" />
     )
   }
 

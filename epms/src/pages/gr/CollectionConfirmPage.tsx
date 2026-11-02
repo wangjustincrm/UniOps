@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
+import { NotFoundState } from '@/components/shared/NotFoundState'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, Truck, CheckCircle2, AlertTriangle, Package } from 'lucide-react'
@@ -63,10 +64,8 @@ export default function CollectionConfirmPage() {
 
   if (!gr) {
     return (
-      <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-lg font-semibold text-neutral-500">GR not found</p>
-        <BackLink to="/gr" className="mt-4 text-sm text-primary-600 hover:underline">← Back to GR List</BackLink>
-      </div>
+      <NotFoundState title="GR Not Found" message="The goods receipt you're looking for doesn't exist."
+                     backTo="/gr" backLabel="Back to GR List" />
     )
   }
 

@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { DirectPaBudgetPanel } from '@/components/pa/DirectPaBudgetPanel'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
+import { NotFoundState } from '@/components/shared/NotFoundState'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { financeApi } from '@/lib/api'
@@ -473,10 +474,8 @@ export default function PaDetailPage() {
 
   if (!pa) {
     return (
-      <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-neutral-500">Payment Application not found.</p>
-        <BackLink to="/pa" className="mt-4"><Button variant="secondary">Back to PA List</Button></BackLink>
-      </div>
+      <NotFoundState title="PA Not Found" message="The payment application you're looking for doesn't exist."
+                     backTo="/pa" backLabel="Back to PA List" />
     )
   }
 
