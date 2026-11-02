@@ -384,7 +384,8 @@ export default function GrDetailPage() {
                   <MetaRow label="GR Type"     value={gr.gr_type === 'physical' ? 'Physical Goods' : 'Service'} />
                   <MetaRow label="Received By" value={gr.received_by} />
                   <MetaRow label="Received On" value={formatDate(gr.received_at)} />
-                  {gr.storage_location && gr.storage_location !== '—' && (
+                  {/* Not applicable to a service GR — older ones carry the PO delivery address (ISS-0132) */}
+                  {gr.gr_type === 'physical' && gr.storage_location && gr.storage_location !== '—' && (
                     <MetaRow label="Storage Location" value={gr.storage_location} />
                   )}
                   {gr.notes && <MetaRow label="Notes" value={gr.notes} />}

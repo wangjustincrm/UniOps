@@ -164,7 +164,7 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
                     on the two halves of this feature. */}
                 <SortTh label="Total" sortKey="total" sort={sort} onSort={onSort} align="right"
                   className="px-4 py-2.5 text-right text-xs font-semibold text-neutral-500" />
-                <SortTh label="Picked up by" sortKey="received_by" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
+                <SortTh label="Received by" sortKey="received_by" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
                 <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Attachments</th>
                 {!readOnly && <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Actions</th>}

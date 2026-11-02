@@ -441,6 +441,9 @@ export default function PrDetailPage() {
                     ...(pr.type === 6 ? [['Project No.', pr.project_code || '—'] as [string, string]] : []),
                     ['Currency', pr.currency ?? 'CAD'],
                     [`Total Amount (${pr.currency ?? 'CAD'})`, formatAmount(pr.amount, pr.currency ?? 'CAD')],
+                    // Approvers need to see this purchase is paid in advance;
+                    // before ISS-0132 it first showed up on the PO.
+                    ...(pr.is_prepaid ? [['Prepayment Required', 'Yes'] as [string, string]] : []),
                     ['Required By Date', formatDate(pr.required_by ?? '')],
                     ...(pr.type === 4 || pr.type === 6
                       ? [['Service/Project Expected Completion Date',

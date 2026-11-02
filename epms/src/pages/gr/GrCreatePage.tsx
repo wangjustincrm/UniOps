@@ -172,7 +172,10 @@ export default function GrCreatePage() {
     setOverReceiptReason('')
     setTitle(selectedPo.title)
     setReceivedBy((prev) => prev || user?.name || '')
-    if (selectedPo.delivery_address) setStorageLocation(selectedPo.delivery_address)
+    // Storage Location / Bay is NOT pre-filled from the PO's delivery address
+    // (ISS-0132): that is where the vendor ships to, not the bay the warehouse
+    // puts the goods in — which is what the collect_goods task and email send
+    // the requester to. The warehouse fills it in (required for physical GRs).
   }, [selectedPoId, selectedPo, openQtyQuery.isFetched, openQtyQuery.data])
 
   const updateLine = (idx: number, patch: Partial<FormGrLineItem>) => {
@@ -265,7 +268,8 @@ export default function GrCreatePage() {
         title: title.trim(),
         currency: selectedPo.currency,
         po_id: selectedPo.id,
-        storage_location: storageLocation.trim() || undefined,
+        // Not applicable to a service / project GR (the field is disabled there).
+        storage_location: isPhysicalGr(selectedPo.type) ? storageLocation.trim() || undefined : undefined,
         received_by: receivedBy.trim() || undefined,
         line_items: receivedLines.map((l) => ({
           po_line_id: l.po_line_id,

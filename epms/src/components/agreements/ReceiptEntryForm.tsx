@@ -53,7 +53,9 @@ const TYPE_COPY = {
     dateLabel: 'Receipt date',
     refLabel: 'Reference #',
     refPlaceholder: 'Receipt number',
-    byLabel: 'Picked up by',
+    // One name for this person everywhere — receipt detail, the receipt
+    // lists and AGR-030 all say received-by (ISS-0132).
+    byLabel: 'Received by',
     byHint: 'The person who brought the receipt in — not a sign-off or approval.',
   },
   delivery: {
