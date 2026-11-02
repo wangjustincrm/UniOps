@@ -89,19 +89,19 @@ rules:
     asked_as:
       - how do I find a task in the Task Inbox
       - 已完成的任务是谁关掉的？
-      - why does a completed task say Closed automatically
+      - why does a completed task not say who closed it
     answer: >
       The Task Inbox has a search box (document number, vendor or title) and
       a task-type filter, and each group can be collapsed; a group longer than
       20 shows its first 20 with "Show all". An approval card names its step
       (e.g. "Step 1/2: Department Manager review"), so the steps of one
       document can be told apart. The Completed tab lists only today's
-      completed tasks, and each says when it was closed and by whom.
-      "Closed automatically" means no one closed it by hand: the system closed
-      it when the document moved on — an approval task, for example, closes
-      when the approver approves, returns or rejects, and that approver is
-      shown in the document's approval history rather than on the task.
-    enforced_in: "epms/src/pages/tasks/TaskInboxPage.tsx (search, type filter, GROUP_PREVIEW, approval step, Closed … by / Closed automatically); epms-api app/api/v1/tasks.py list_tasks completed_by_name; approval-api app/crud/engine.py closes tasks without completed_by"
+      completed tasks, and each says when it was closed, and by whom when
+      that was recorded. Approval tasks are closed by the approval engine,
+      which does not record a closer on the task, so they show only the time;
+      who approved, returned or rejected is in the document's approval
+      history.
+    enforced_in: "epms/src/pages/tasks/TaskInboxPage.tsx (search, type filter, GROUP_PREVIEW, approval step, Closed … [by …]); epms-api app/api/v1/tasks.py list_tasks completed_by_name; approval-api app/crud/engine.py closes tasks without completed_by"
     provenance: pinned
     test:
       - "tests/test_task_inbox_completed_by.py::test_completed_tasks_name_who_closed_them"

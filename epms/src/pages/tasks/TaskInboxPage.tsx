@@ -191,12 +191,13 @@ function FullTaskCard({ task }: FullTaskCardProps) {
             </div>
           )}
 
-          {/* Completed info — when, and by whom. No closer recorded means the
-              system closed it when the document moved on (ISS-0131). */}
+          {/* Completed info — when, and by whom when that was recorded. The
+              approval engine closes approval tasks without a closer, so an
+              unknown closer is left out rather than called automatic (ISS-0131). */}
           {isDone && task.completed_at && (
             <p className="mt-1 text-xs text-neutral-400">
               Closed {formatDateTime(task.completed_at)}
-              {task.completed_by_name ? ` by ${task.completed_by_name}` : ' · Closed automatically'}
+              {task.completed_by_name ? ` by ${task.completed_by_name}` : ''}
             </p>
           )}
         </div>

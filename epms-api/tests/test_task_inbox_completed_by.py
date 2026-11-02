@@ -2,7 +2,7 @@
 
 GET /tasks?is_completed=true carries completed_by / completed_by_name. A task
 the system closed (approval engine, self-healing) has no completed_by; the
-inbox shows it as "Closed automatically".
+inbox then shows only when it was closed.
 """
 import uuid
 from datetime import datetime, timezone
