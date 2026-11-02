@@ -543,10 +543,13 @@ export default function PaDetailPage() {
   const nodeStates = approvalNodeStates(
     wfNodes.length, pa.status, stepIdx, events ?? [], ['approved', 'processed'])
   const submitEvent = (events ?? []).find((e) => e.action === 'submit')
+  // A draft (never submitted, or recalled) — or one cancelled before it was
+  // ever submitted — is only "Created" (ISS-0183).
+  const notSubmitted = pa.status === 'draft' || (pa.status === 'cancelled' && !submitEvent)
 
   const steps = [
     {
-      label: 'PA Created & Submitted',
+      label: notSubmitted ? 'PA Created' : 'PA Created & Submitted',
       // Prefer the document's creator (always set, incl. imported data); fall back
       // to the submit event's actor for records created before created_by tracking.
       actor: pa.created_by_name ?? submitEvent?.actor_name ?? undefined,
