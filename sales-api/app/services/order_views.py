@@ -63,6 +63,8 @@ class OrderRepository(Repository[Order]):
         Preset("needs_review", "Needs review", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Review"}]}),
         Preset("payment_hold", "Payment hold", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Payment Hold"}], "hidden": ["review_reason"]}),
         Preset("pending", "Pending (waiting for the 940)", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Pending"}], "hidden": ["review_reason"]}),
+        Preset("delivery", "Waiting for delivery confirmation",
+               {"filters": [{"field": "invoice_status", "op": "eq", "value": "Waiting for Delivery Confirmation"}]}),
         Preset("archive_suppressed", "Archive suppressed", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Archive Suppressed"}], "hidden": ["review_reason"]}),
         Preset("historical", "Historical", {"filters": [{"field": "historical", "op": "eq", "value": "true"}], "includeHistorical": True, "hidden": ["review_reason"]}),
     )

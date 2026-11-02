@@ -40,6 +40,11 @@ EDI_CONNECTION_ID = SETTINGS.declare(Setting(
 # tasks. A bad stored value reads as ON — the restrictive side.
 SHADOW_MODE = SETTINGS.declare(Setting(
     "shadow_mode", False, as_bool, safe=True, description="Shadow run: read only, send nothing (Zoho is live)"))
+# P6: the SFTP connection 810 JSON invoices are put to (TrueCommerce Import);
+# TEST mode: its test outbound folder. Unset: an 810 is not sent (it fails with a task).
+INVOICE_CONNECTION_ID = SETTINGS.declare(Setting(
+    "invoice.connection_id", None, lambda v: None if v in (None, "") else int(v), safe=None,
+    description="SFTP connection for 810 invoices"))
 # FR-OB-23: no 997 within this time → Timeout and a task.
 ACK_TIMEOUT_MINUTES = SETTINGS.declare(Setting(
     "edi.ack_timeout_minutes", 120, int, validate=minimum(1), safe=120,

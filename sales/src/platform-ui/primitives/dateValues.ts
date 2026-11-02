@@ -25,3 +25,10 @@ export function localInputToIso(local: string): string | null {
   const d = new Date(local)  // has a time, so it is read as local time
   return Number.isNaN(d.getTime()) ? null : d.toISOString()
 }
+
+/** Today in the viewer's own calendar as "YYYY-MM-DD" (never via UTC:
+ *  toISOString() gives tomorrow's date in the evening west of Greenwich). */
+export function todayDate(now: Date = new Date()): string {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}`
+}

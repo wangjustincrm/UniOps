@@ -413,7 +413,8 @@ async def test_edi_settings_take_only_an_active_sftp_connection_and_need_config(
     from app.schemas.connections import EdiSettings
     from app.services.connections import EdiSettingsService
     async with edi.env.factory(OP) as u:
-        assert await EdiSettingsService(u).get() == EdiSettings(connection_id=edi.conn_id, ack_timeout_minutes=120)
+        assert await EdiSettingsService(u).get() == EdiSettings(connection_id=edi.conn_id, ack_timeout_minutes=120,
+                                                                 invoice_connection_id=None)
         shop = (await u.session.execute(sa.select(Connection.id).where(Connection.kind == "SHOPIFY").limit(1))).scalar()
         if shop is not None:
             with pytest.raises(InvalidInput):

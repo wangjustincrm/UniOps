@@ -1,0 +1,80 @@
+"""Delivery confirmation, invoices and returns (design §3.2; migration
+sales11_invoicing; FR-OB-19, 30 … 35).
+
+The order's `invoice_status` is the invoice state machine (PRD 9.1, with the
+Blocked hold); these rows hold what was confirmed and what was invoiced.
+"""
+from __future__ import annotations
+
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any
+
+from sqlalchemy import DateTime, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db.base import Base
+from app.models.config import one_of
+from app.platform.entities import Audited, CreationAudited, Versioned
+
+RETURN_KINDS = ("Cancelled after shipment", "Returned")
+
+
+class DeliveryConfirmation(Audited, Versioned, Base):
+    """FR-OB-31: the confirmed date becomes the invoice date; the delivered
+    quantities are on the order lines (`delivered_qty`)."""
+    __tablename__ = "sales_delivery_confirmations"
+    __table_args__ = (UniqueConstraint("order_id", name="uq_sales_delivery_confirmations_order"),)
+
+    order_id: Mapped[int] = mapped_column(ForeignKey("sales_orders.id"), nullable=False)
+    confirmed_date: Mapped[date] = mapped_column(Date, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class Invoice(Audited, Versioned, Base):
+    __tablename__ = "sales_invoices"
+    __table_args__ = (UniqueConstraint("invoice_number", name="uq_sales_invoices_number"),
+                      UniqueConstraint("order_id", name="uq_sales_invoices_order"))
+
+    invoice_number: Mapped[str] = mapped_column(String(40), nullable=False)  # IN-<order number>
+    order_id: Mapped[int] = mapped_column(ForeignKey("sales_orders.id"), nullable=False)
+    method: Mapped[str] = mapped_column(String(20), nullable=False)          # the partner's, when built
+    invoice_date: Mapped[date] = mapped_column(Date, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    payment_terms: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    subtotal: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    total: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    document_id: Mapped[int | None] = mapped_column(ForeignKey("sales_documents.id"), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    send_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class InvoiceLine(Base):
+    __tablename__ = "sales_invoice_lines"
+    __table_args__ = (UniqueConstraint("invoice_id", "line_no", name="uq_sales_invoice_lines_line"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("sales_invoices.id"), nullable=False)
+    line_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    order_line_id: Mapped[int | None] = mapped_column(ForeignKey("sales_order_lines.id"), nullable=True)
+    item_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    buyer_part: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    uom: Mapped[str] = mapped_column(String(10), nullable=False)
+    qty: Mapped[int] = mapped_column(Integer, nullable=False)
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(14, 5), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+
+
+class OrderReturn(CreationAudited, Base):
+    """FR-OB-19: cancelled or returned after shipment — `lines`
+    [{"order_line_id", "qty_ea"}]; it stops or flags invoicing."""
+    __tablename__ = "sales_order_returns"
+    __table_args__ = (one_of("kind", RETURN_KINDS, "ck_sales_order_returns_kind"),)
+
+    order_id: Mapped[int] = mapped_column(ForeignKey("sales_orders.id"), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    lines: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)

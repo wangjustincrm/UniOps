@@ -31,6 +31,11 @@ SECOND_945 = "second_945"                  # entity: order id (FR-OB-25, AC-OB-7
 EDI_945_NO_ORDER = "945_no_order"          # entity: shipment id (FR-OB-25c / FR-OB-28, AC-OB-38 / 78)
 EDI_945_LINE_UNMATCHED = "945_line"        # entity: shipment id (FR-OB-25a, AC-OB-57)
 SHOPIFY_WRITE_FAILED = "shopify_write"     # entity: shipment id (FR-OB-11 / 11a)
+# P6 (invoicing, cancellation / return after shipment)
+INVOICE_HOLD = "invoice_hold"              # entity: order id (FR-OB-25 lot exception, part case, no price)
+INVOICE_FAILED = "invoice_failed"          # entity: order id (FR-OB-30)
+ORDER_RETURN = "order_return"              # entity: order id (FR-OB-19)
+CANCELLED_AFTER_940 = "cancel_after_940"   # entity: order id (FR-OB-18, AC-OB-40; the email is P8)
 
 
 async def _operator(session):

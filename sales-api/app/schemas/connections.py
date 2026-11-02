@@ -154,6 +154,8 @@ class EdiSettings(BaseModel):
 
     connection_id: int | None
     ack_timeout_minutes: Annotated[int, Field(ge=1, le=10080)]
+    # P6: where 810 JSON invoices are put (TrueCommerce Import); none: an 810 is not sent.
+    invoice_connection_id: int | None = None
 
 
 class ShadowSetting(BaseModel):

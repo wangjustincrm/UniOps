@@ -127,7 +127,7 @@ describe('Connections page: warehouse EDI settings (P4)', () => {
     panel = await screen.findByRole('region', { name: 'Warehouse EDI' })
     fireEvent.change(await within(panel).findByLabelText('997 wait (minutes)'), { target: { value: '90' } })
     fireEvent.click(within(panel).getByText('Save'))
-    await waitFor(() => expect(api.saveEdi).toHaveBeenCalledWith({ connection_id: null, ack_timeout_minutes: 90 }))
+    await waitFor(() => expect(api.saveEdi).toHaveBeenCalledWith({ connection_id: null, ack_timeout_minutes: 90, invoice_connection_id: null }))
   })
 })
 

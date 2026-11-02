@@ -555,6 +555,12 @@ services:
       SALES_SFTP_ALLOWED_HOSTS: sftp-test
       # The only host a write may touch here: the test container (P4).
       SALES_SFTP_WRITE_HOSTS: sftp-test
+      # P6: this stack's mail catcher — never a real mail server (and the
+      # external-email switch above stays false).
+      SALES_SMTP_HOST: mailhog
+      SALES_SMTP_PORT: "1025"
+      SALES_SMTP_STARTTLS: "false"
+      SALES_SMTP_FROM: sales@uniops.local
       # The test container's password, under the name its connection row uses
       # (secret_name = SALES_SECRET_SFTP_TEST). A throwaway container on the
       # stack's own network: no port is published.

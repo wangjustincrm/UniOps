@@ -1,0 +1,119 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { PermissionProvider, ToastProvider, ViewsProvider, type ListMeta, type ViewsClient } from '@/platform-ui'
+import type { OrderDetail, OrderRead } from '@/features/orders/ordersApi'
+import type { InvoiceDetail, InvoiceRead } from './invoicesApi'
+
+const order: OrderRead = {
+  id: 7, order_number: 107, partner_code: 'LBL', source_type: 'EDI_850', source_order_id: 'PO-1', source_order_number: 'PO-1',
+  source_reference: null, order_date: '2026-10-28', requested_delivery_date: '2026-11-05', ship_to: null, currency: 'CAD', total: '500.00',
+  fulfillment_status: 'Shipped', invoice_status: 'Waiting for Delivery Confirmation', order_state: 'Active', hold_reason: null,
+  review_reason: null, historical: false, first_received_at: '2026-10-28T12:00:00Z', paid_at: null, archived_in_shopify_at: null,
+  archive_suppressed: false, shopify_financial_status: null, source_updated_at: null, version: 1, created_at: '2026-10-28T12:00:00Z', updated_at: null,
+}
+const detail: OrderDetail = { ...order, notes: null, documents: [], shipments: [], timeline: [], lines: [
+  { id: 70, line_no: 1, item_code: 'CF0092', source: {}, ordered_qty: '10', order_unit: 'CASE', factor_ea: '6', qty_ea: 60, unit_price: '50',
+    line_status: 'Active', removed: false, problem: null, shipped_ea: 60, delivered_qty: null }] }
+const inv: InvoiceRead = {
+  id: 3, invoice_number: 'IN-107', order_id: 7, method: '810_JSON', invoice_date: '2026-11-05', currency: 'CAD', payment_terms: 'Net 30',
+  subtotal: '450.00', total: '450.00', document_id: null, sent_at: null, send_count: 0, error: null, version: 1, created_at: '2026-11-05T12:00:00Z',
+  updated_by_name: null, order_number: 107, partner_code: 'LBL', po: 'PO-1', status: 'Blocked',
+}
+const invDetail: InvoiceDetail = { ...inv, confirmed_date: '2026-11-05', lines: [
+  { id: 30, line_no: 1, item_code: 'CF0092', buyer_part: 'L-555', description: null, uom: 'CA', qty: 9, unit_price: '50.00000', amount: '450.00' }] }
+const meta: ListMeta = { version: 1, searchable: true, default_sort: [], fields: [], views: [{ key: 'all', name: 'All', state: { version: 1 } }] }
+
+const api = vi.hoisted(() => ({ list: vi.fn(), fetchOrder: vi.fn(), bulk: vi.fn(), confirm: vi.fn(), invList: vi.fn(),
+  fetchInvoice: vi.fn(), send: vi.fn(), edit: vi.fn(), release: vi.fn() }))
+vi.mock('@/features/orders/ordersApi', async (orig) => {
+  const real = await orig<typeof import('@/features/orders/ordersApi')>()
+  return { ...real, ordersClient: { ...real.ordersClient, list: api.list, meta: async () => meta }, fetchOrder: api.fetchOrder }
+})
+vi.mock('./invoicesApi', async (orig) => {
+  const real = await orig<typeof import('./invoicesApi')>()
+  return { ...real, invoicesClient: { ...real.invoicesClient, list: api.invList, meta: async () => meta },
+    confirmBulk: api.bulk, confirmDelivery: api.confirm, fetchInvoice: api.fetchInvoice, sendInvoice: api.send,
+    editInvoice: api.edit, releaseInvoice: api.release }
+})
+const { default: DeliveryPage } = await import('./DeliveryPage')
+const { default: InvoicesPage } = await import('./InvoicesPage')
+
+const views: ViewsClient = { list: vi.fn(async () => []), create: vi.fn(), update: vi.fn(), remove: vi.fn(), setDefault: vi.fn() }
+function renderAs(keys: string[], page: React.ReactNode) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(<QueryClientProvider client={qc}><ToastProvider><ViewsProvider client={views}>
+    <PermissionProvider can={(k) => keys.includes(k)}>{page}</PermissionProvider></ViewsProvider></ToastProvider></QueryClientProvider>)
+}
+
+describe('Delivery confirmation', () => {
+  beforeEach(() => {
+    Object.values(api).forEach((f) => f.mockReset())
+    api.list.mockResolvedValue({ items: [order], total: 1 }); api.fetchOrder.mockResolvedValue(detail)
+  })
+
+  it('lists only orders waiting for confirmation and confirms the shown ones in bulk', async () => {
+    api.bulk.mockResolvedValue([{ order_id: 7, ok: true, invoice_id: 3, status: 'Ready', error: null }])
+    renderAs(['sales.read', 'sales.invoice.manage'], <DeliveryPage />)
+    await screen.findByText('PO-1')
+    expect(api.list.mock.calls.at(-1)![0].filters).toEqual([{ field: 'invoice_status', op: 'eq', value: 'Waiting for Delivery Confirmation' }])
+    fireEvent.change(screen.getByLabelText('Delivered on'), { target: { value: '2026-11-05' } })
+    fireEvent.click(screen.getByRole('button', { name: /Confirm all shown \(1\)/ }))
+    await waitFor(() => expect(api.bulk).toHaveBeenCalledWith([7], '2026-11-05'))
+    expect(await screen.findByRole('status')).toHaveTextContent('1 confirmed')
+  })
+
+  it('one order: the delivered quantity per line, less than shipped allowed', async () => {
+    api.confirm.mockResolvedValue(invDetail)
+    renderAs(['sales.read', 'sales.invoice.manage'], <DeliveryPage />)
+    fireEvent.click(await screen.findByText('PO-1'))
+    const dialog = await screen.findByRole('dialog')
+    const form = await within(dialog).findByRole('region', { name: 'Confirm delivery' })
+    fireEvent.change(within(form).getByLabelText('Delivered CF0092'), { target: { value: '54' } })
+    fireEvent.change(within(form).getByLabelText('Delivered on (the invoice date)'), { target: { value: '2026-11-05' } })
+    fireEvent.click(within(form).getByRole('button', { name: 'Confirm delivery' }))
+    await waitFor(() => expect(api.confirm).toHaveBeenCalledWith({ order_id: 7, confirmed_date: '2026-11-05',
+      lines: [{ order_line_id: 70, delivered_qty: 54 }] }))
+  })
+
+  it('a reader cannot confirm', async () => {
+    renderAs(['sales.read'], <DeliveryPage />)
+    await screen.findByText('PO-1')
+    expect(screen.queryByRole('button', { name: /Confirm all shown/ })).toBeNull()
+  })
+})
+
+describe('Invoices', () => {
+  beforeEach(() => {
+    Object.values(api).forEach((f) => f.mockReset())
+    api.invList.mockResolvedValue({ items: [inv], total: 1 }); api.fetchInvoice.mockResolvedValue(invDetail)
+  })
+
+  it('a held invoice is released with a reason; it is not sendable while held', async () => {
+    api.release.mockResolvedValue({ order_id: 7, invoice_status: 'Ready' })
+    renderAs(['sales.read', 'sales.invoice.manage'], <InvoicesPage />)
+    fireEvent.click(await screen.findByText('IN-107'))
+    const dialog = await screen.findByRole('dialog')
+    const rel = await within(dialog).findByRole('region', { name: 'Release' })
+    expect(within(dialog).queryByRole('button', { name: 'Send' })).toBeNull()
+    const button = within(rel).getByRole('button', { name: 'Release' })
+    expect(button).toBeDisabled()
+    fireEvent.change(within(rel).getByLabelText('Why it can go ahead'), { target: { value: 'customer accepts 9 cases' } })
+    fireEvent.click(button)
+    await waitFor(() => expect(api.release).toHaveBeenCalledWith(7, 'customer accepts 9 cases'))
+  })
+
+  it('a ready invoice is edited, then sent', async () => {
+    api.fetchInvoice.mockResolvedValue({ ...invDetail, status: 'Ready' })
+    api.edit.mockResolvedValue({ ...invDetail, status: 'Ready', version: 2 })
+    api.send.mockResolvedValue({ ...invDetail, status: 'Queued' })
+    renderAs(['sales.read', 'sales.invoice.manage'], <InvoicesPage />)
+    fireEvent.click(await screen.findByText('IN-107'))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(await within(dialog).findByLabelText('Unit price line 1'), { target: { value: '48.5' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+    await waitFor(() => expect(api.edit).toHaveBeenCalledWith(3, 1, { invoice_date: '2026-11-05', lines: [{ id: 30, qty: 9, unit_price: '48.5' }] }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Send' }))
+    await waitFor(() => expect(api.send).toHaveBeenCalledWith(3))
+  })
+})

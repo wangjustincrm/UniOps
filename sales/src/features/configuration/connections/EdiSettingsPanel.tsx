@@ -14,12 +14,15 @@ function Form({ saved, options }: { saved: EdiSettings; options: { value: string
   const canWrite = useCan('sales.config')
   const [conn, setConn] = useState<string | null>(saved.connection_id == null ? null : String(saved.connection_id))
   const [minutes, setMinutes] = useState(String(saved.ack_timeout_minutes))
+  const [inv, setInv] = useState<string | null>(saved.invoice_connection_id == null ? null : String(saved.invoice_connection_id))
   const m = useMutation({
-    mutationFn: () => saveEdiSettings({ connection_id: conn == null ? null : Number(conn), ack_timeout_minutes: Number(minutes) }),
+    mutationFn: () => saveEdiSettings({ connection_id: conn == null ? null : Number(conn), ack_timeout_minutes: Number(minutes),
+      invoice_connection_id: inv == null ? null : Number(inv) }),
     onSuccess: (r) => qc.setQueryData(KEY, r),
   })
   const valid = Number.isInteger(Number(minutes)) && Number(minutes) >= 1
   const dirty = conn !== (saved.connection_id == null ? null : String(saved.connection_id)) || minutes !== String(saved.ack_timeout_minutes)
+    || inv !== (saved.invoice_connection_id == null ? null : String(saved.invoice_connection_id))
   return (
     <div className="flex flex-wrap items-end gap-3">
       <FormField label="Warehouse connection" htmlFor="edi-conn" hint="940s go to its outbound folder (TEST mode: its test outbound folder); 997s are read from it. None: no 940 is made.">
@@ -27,6 +30,9 @@ function Form({ saved, options }: { saved: EdiSettings; options: { value: string
       </FormField>
       <FormField label="997 wait (minutes)" htmlFor="edi-wait" hint="No 997 in this time: Timeout and a task.">
         <NumberInput id="edi-wait" value={minutes} min={1} onChange={(e) => setMinutes(e.target.value)} disabled={!canWrite} className="w-28" />
+      </FormField>
+      <FormField label="810 invoice connection" htmlFor="edi-inv" hint="810 JSON invoices are put in its outbound folder (TEST mode: its test outbound folder). None: no 810 is sent.">
+        <Select id="edi-inv" value={inv} onChange={setInv} options={options} emptyLabel="None" disabled={!canWrite} className="w-64" />
       </FormField>
       <ActionButton size="sm" permission="sales.config" disabled={!dirty || !valid} onAction={() => m.mutateAsync().catch(() => {})}>Save</ActionButton>
       <ErrorMessage error={m.error} messages={errorMessages} />
@@ -44,7 +50,7 @@ export function EdiSettingsPanel() {
   })
   return (
     <section aria-label="Warehouse EDI" className="flex flex-col gap-2 rounded-md border border-neutral-200 p-3 text-sm">
-      <h2 className="font-semibold text-neutral-800">Warehouse EDI (940 / 997)</h2>
+      <h2 className="font-semibold text-neutral-800">Warehouse EDI (940 / 997) and 810 invoices</h2>
       {settings.isLoading || conns.isLoading ? <Skeleton className="h-10 w-full" /> : settings.error || conns.error ? (
         <ErrorMessage error={settings.error ?? conns.error} />
       ) : settings.data && conns.data && (

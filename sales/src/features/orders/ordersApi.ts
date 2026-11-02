@@ -49,6 +49,8 @@ export interface LineRead {
   line_status: string
   removed: boolean
   problem: string | null
+  shipped_ea?: number | null
+  delivered_qty?: number | null
 }
 
 /** A source document, or a 940 sent to the warehouse: its file status and

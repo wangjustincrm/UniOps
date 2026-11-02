@@ -42,7 +42,7 @@ class SalesCycle(ScheduledJob):
     lock_key = CYCLE_LOCK_KEY
 
     def __init__(self, *, intake: Intake, outbox_worker, shopify_intake=None, edi_intake=None, outbound=None,
-                 shadow=None, shipments=None, **kw) -> None:
+                 shadow=None, shipments=None, invoicing=None, **kw) -> None:
         super().__init__(stale_after=STALE_AFTER, **kw)
         self.intake = intake
         self.shopify_intake = shopify_intake
@@ -50,6 +50,7 @@ class SalesCycle(ScheduledJob):
         self.outbound = outbound
         self.shadow = shadow
         self.shipments = shipments
+        self.invoicing = invoicing
         self.outbox_worker = outbox_worker
 
     async def run_once(self, run) -> RunSummary:
@@ -99,6 +100,8 @@ class SalesCycle(ScheduledJob):
             s945 = await self.shipments.process_945s(run_id=run.id)
             edi_out["945"] = asdict(s945)
             trouble += s945.failed
+        if self.invoicing:  # P6: shipped orders move toward the delivery-confirmation worklist
+            edi_out["invoices"] = asdict(await self.invoicing.advance(run_id=run.id))
         outbox = asdict(await self.outbox_worker.run_once())
         trouble += outbox.get("failed", 0)
         if self.outbound:

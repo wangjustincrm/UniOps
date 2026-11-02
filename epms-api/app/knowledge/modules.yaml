@@ -281,6 +281,8 @@ modules:
       - Set up the SFTP and Shopify connections, test them, and see the files received and each run's report
       - See an order's 940s to the warehouse — whether the file was sent, and separately whether the warehouse acknowledged it (997) — and use Send 940 now, or Replace 940 for a live one
       - See which orders the next cycle would send a 940 for (Orders → Next 940s)
+      - Confirm what was delivered (Invoicing → Delivery confirmation, one by one or all shown at once) — nothing is invoiced before that
+      - Check, correct and send an invoice (Invoicing → Invoices), or release one that is on hold; record a retailer return or a cancellation after shipment on the order
       - See what the warehouse shipped for an order (its 945) — every pallet with its lots, expiry and quantities, the checks that flagged something, and whether the shipment was written to Shopify; retry a failed Shopify write
       - Choose the warehouse's SFTP connection and how long to wait for its 997 (Configuration → Connections, Warehouse EDI)
       - During the shadow run, compare each 940 Zoho sent with the 940 Sales would send for the same order (Operations → Shadow compare), and mark a known difference as expected with a reason
@@ -288,11 +290,12 @@ modules:
       - >-
         Sales is being built in phases. Orders are read from Shopify and from
         retailer 850s. Sales can build and send the warehouse 940, read the
-        warehouse's 997 and 945 (shipment), and fulfil and archive the order in
-        Shopify, but writing to the warehouse's server and to Shopify is
-        switched off until the release that turns it on; until then the 940s the
-        warehouse receives, Shopify fulfillments, and all invoices still come
-        from Zoho — so for a shipment or an invoice, look in Zoho.
+        warehouse's 997 and 945 (shipment), fulfil and archive the order in
+        Shopify, and invoice retailers, but writing to the warehouse's and
+        TrueCommerce's servers, to Shopify, and sending email are switched off
+        until the release that turns them on; until then the 940s, Shopify
+        fulfillments and invoices still come from Zoho — so for a shipment or an
+        invoice, look in Zoho.
       - >-
         While the shadow run is on (Configuration → Connections, Shadow run),
         Zoho is the live system: Sales reads the partners' folders but leaves
@@ -307,6 +310,20 @@ modules:
         have sent a 940 that has no Zoho file) or Unreadable, and shows both
         files side by side. Control numbers, dates and times, and each
         system's own order number are not compared.
+      - >-
+        Invoicing: a shipped retailer order appears under Delivery confirmation
+        once its requested delivery date is reached (Walmart: its
+        do-not-deliver-after date); it stays there, without reminders, until
+        someone confirms what was delivered — the confirmed date becomes the
+        invoice date and the invoice states the delivered quantity, in cases at
+        the price on the retailer's order. An invoice is sent only when someone
+        presses Send (an 810 to TrueCommerce, or an email with the invoice, PO
+        and packing-list PDFs to the retailer's invoice address with the
+        internal copy). It goes on hold with a task when a quantity is not a
+        whole number of cases, a shipped item matched no order line, or a
+        return or cancellation after shipment was recorded; Release continues
+        after the decision. A cancellation at source after the 940 puts the
+        order On Hold with a task saying whether anything already shipped.
       - >-
         A 945 (the warehouse's shipment) closes the order's fulfilment: the order
         is Shipped and each line shows what shipped, every pallet and lot kept.

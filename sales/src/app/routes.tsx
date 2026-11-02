@@ -5,6 +5,8 @@ import ConnectionsPage from '@/features/configuration/connections/ConnectionsPag
 import DocumentsPage from '@/features/operations/DocumentsPage'
 import RunsPage from '@/features/operations/RunsPage'
 import ShadowComparePage from '@/features/shadow/ShadowComparePage'
+import DeliveryPage from '@/features/invoices/DeliveryPage'
+import InvoicesPage from '@/features/invoices/InvoicesPage'
 import OrdersPage from '@/features/orders/OrdersPage'
 import ManualOrderPage from '@/features/orders/ManualOrderPage'
 import ItemsPage from '@/features/configuration/items/ItemsPage'
@@ -45,4 +47,6 @@ export const moduleRoutes: RouteDef[] = [
     tab: { title: 'Runs and log', icon: 'Activity', keyStrategy: 'static' },
   },
   { path: '/shadow', element: <ShadowComparePage />, tab: { title: 'Shadow compare', icon: 'GitCompare', keyStrategy: 'static' } },
+  { path: '/deliveries', element: <DeliveryPage />, tab: { title: 'Delivery confirmation', icon: 'Truck', keyStrategy: 'static' } },
+  { path: '/invoices', element: <InvoicesPage />, tab: { title: 'Invoices', icon: 'Receipt', keyStrategy: 'static' } },
 ]

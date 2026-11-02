@@ -23,7 +23,7 @@ from app.schemas.connections import (
 )
 from app.services.intake import ConnectionSnapshot
 from app.services.problems import SFTP_AUTH_FAILED
-from app.services.settings import ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, SETTINGS, SHADOW_MODE
+from app.services.settings import ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, INVOICE_CONNECTION_ID, SETTINGS, SHADOW_MODE
 
 logger = logging.getLogger(__name__)
 
@@ -166,19 +166,21 @@ class EdiSettingsService:
     async def get(self) -> EdiSettings:
         s = self.uow.session
         return EdiSettings(connection_id=await SETTINGS.get(s, EDI_CONNECTION_ID),
-                           ack_timeout_minutes=await SETTINGS.get(s, ACK_TIMEOUT_MINUTES))
+                           ack_timeout_minutes=await SETTINGS.get(s, ACK_TIMEOUT_MINUTES),
+                           invoice_connection_id=await SETTINGS.get(s, INVOICE_CONNECTION_ID))
 
     @requires(CONFIG)
     async def update(self, body: EdiSettings) -> EdiSettings:
         s = self.uow.session
-        if body.connection_id is not None:
-            conn = await s.get(Connection, body.connection_id)
-            if conn is None or conn.kind != "SFTP" or not conn.active:
-                raise InvalidInput("edi.connection", "choose an active SFTP connection",
-                                   {"connection_id": body.connection_id})
+        for field_, cid in (("connection_id", body.connection_id), ("invoice_connection_id", body.invoice_connection_id)):
+            if cid is not None:
+                conn = await s.get(Connection, cid)
+                if conn is None or conn.kind != "SFTP" or not conn.active:
+                    raise InvalidInput("edi.connection", "choose an active SFTP connection", {field_: cid})
         self.uow.set_reason("EDI settings")
         await SETTINGS.set(s, EDI_CONNECTION_ID, body.connection_id)
         await SETTINGS.set(s, ACK_TIMEOUT_MINUTES, body.ack_timeout_minutes)
+        await SETTINGS.set(s, INVOICE_CONNECTION_ID, body.invoice_connection_id)
         return body
 
 

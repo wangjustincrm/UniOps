@@ -374,6 +374,13 @@ services:
       SALES_SFTP_ALLOWED_HOSTS: ${SALES_SFTP_ALLOWED_HOSTS:-}
       # SFTP hosts a write may touch; empty = no write anywhere (fail closed, P4).
       SALES_SFTP_WRITE_HOSTS: ${SALES_SFTP_WRITE_HOSTS:-}
+      # P6: the external mail account (X3 revised: env); password in SALES_SECRET_SMTP.
+      SALES_SMTP_HOST: ${SALES_SMTP_HOST:-}
+      SALES_SMTP_PORT: ${SALES_SMTP_PORT:-587}
+      SALES_SMTP_USER: ${SALES_SMTP_USER:-}
+      SALES_SMTP_FROM: ${SALES_SMTP_FROM:-}
+      SALES_SMTP_STARTTLS: ${SALES_SMTP_STARTTLS:-true}
+      SALES_SECRET_SMTP: ${SALES_SECRET_SMTP:-}
     ports: ["8014:8014"]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8014
     healthcheck:

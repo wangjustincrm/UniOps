@@ -85,6 +85,14 @@ class Settings(BaseSettings):
     # stored once as a ZOHO_REFERENCE document — never parsed into orders,
     # never sent. Empty = the import step is off.
     SALES_ZOHO_REFERENCE_DIR: str = ""
+    # P6: the external mail account (spec X3, revised: env; the password is
+    # the SALES_SECRET_SMTP variable, read when sending). Empty host = no mail
+    # server: a send fails NotAccepted (and the switch is off outside prod).
+    SALES_SMTP_HOST: str = ""
+    SALES_SMTP_PORT: int = 587
+    SALES_SMTP_USER: str = ""
+    SALES_SMTP_FROM: str = ""
+    SALES_SMTP_STARTTLS: bool = True
 
     @property
     def sftp_write_hosts(self) -> frozenset[str]:

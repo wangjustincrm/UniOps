@@ -3,7 +3,7 @@ import { NavLink, useLocation, Routes, Route, Navigate } from 'react-router-dom'
 import { TabStoreProvider, TabBar, TabHost, TabRouterSync, useTabStore } from '@uniops/shell'
 import { moduleRoutes } from '@/app/routes'
 import {
-  Home, Building2, Plug, FileText, Activity, GitCompare, ShoppingCart, PenLine, Package, Tags, Route as RouteIcon,
+  Home, Building2, Plug, FileText, Activity, GitCompare, ShoppingCart, PenLine, Package, Tags, Route as RouteIcon, Truck, Receipt,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -44,6 +44,8 @@ const NAV: NavItem[] = [
   { label: 'Home', href: '/home', icon: Home, perm: MODULE_PERMS[0], section: 'Sales' },
   { label: 'Orders', href: '/orders', icon: ShoppingCart, perm: 'sales.read', section: 'Orders' },
   { label: 'Manual orders', href: '/orders/manual', icon: PenLine, perm: 'sales.order.operate', section: 'Orders' },
+  { label: 'Delivery confirmation', href: '/deliveries', icon: Truck, perm: 'sales.read', section: 'Invoicing' },
+  { label: 'Invoices', href: '/invoices', icon: Receipt, perm: 'sales.read', section: 'Invoicing' },
   { label: 'Documents', href: '/documents', icon: FileText, perm: 'sales.read', section: 'Operations' },
   { label: 'Runs and log', href: '/runs', icon: Activity, perm: 'sales.read', section: 'Operations' },
   { label: 'Shadow compare', href: '/shadow', icon: GitCompare, perm: 'sales.read', section: 'Operations' },

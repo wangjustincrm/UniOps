@@ -38,7 +38,7 @@ from app.models.config import DcRouting, Item, ItemPartnerCode, Partner
 from app.models.documents import DocumentLink
 from app.models.orders import Order, OrderLine
 from app.services.outbound import changed_after_940
-from app.services.problems import ORDER_ARCHIVED, ORDER_REVIEW, problem
+from app.services.problems import CANCELLED_AFTER_940, ORDER_ARCHIVED, ORDER_REVIEW, problem
 from app.services.settings import SETTINGS, SHADOW_MODE
 
 UPDATABLE = {F.REVIEW, F.PAYMENT_HOLD, F.PENDING, F.ARCHIVE_SUPPRESSED, F.DRAFT}
@@ -296,6 +296,8 @@ class OrderSync:
         order.source_updated_at = src.updated_at or order.source_updated_at
         if order.historical is False and h.get("historical"):
             order.historical = True
+        if h.get("source_cancelled_at") and order.source_cancelled_at is None and await self._cancelled_after_940(order, h):
+            return
         after_940 = order.fulfillment_status in {s.value for s in AFTER_940}
         if order.fulfillment_status not in {s.value for s in UPDATABLE} and not after_940:
             return  # shipped, cancelled, on hold: the lines are never rebuilt (FR-OB-16)
@@ -369,6 +371,32 @@ class OrderSync:
             await self._resolve(ORDER_ARCHIVED, order)
         elif status == F.ARCHIVE_SUPPRESSED and not paid:
             await self._resolve(ORDER_ARCHIVED, order)  # refunded or voided: the condition is gone
+
+    async def _cancelled_after_940(self, order: Order, h: dict) -> bool:
+        """FR-OB-18 / AC-OB-40: cancelled at source after the 940 was made. Not
+        sent yet → cancelled with it. Sent, accepted or shipped → On Hold and
+        one task stating what shipped ("nothing shipped" reads differently from
+        "N EA shipped"). The email to the warehouse and the owner is P8."""
+        status = F(order.fulfillment_status)
+        if status in (F.GENERATED_940, F.REJECTED_940, F.FAILED_940):  # nothing reached the warehouse
+            order.source_cancelled_at = h["source_cancelled_at"]
+            self._to(order, F.CANCELLED, "cancelled at source; no 940 reached the warehouse (FR-OB-18)")
+            return True
+        if status not in (F.SENT_940, F.ACCEPTED_940, F.TIMEOUT_940, F.SHIPPED):
+            return False
+        order.source_cancelled_at = h["source_cancelled_at"]
+        self._to(order, F.ON_HOLD, "cancelled at source after the 940 (FR-OB-18)")
+        lines = list((await self.s.execute(select(OrderLine).where(OrderLine.order_id == order.id,
+                                                                   OrderLine.removed.is_(False)))).scalars())
+        shipped = sum(int(ln.shipped_ea or 0) for ln in lines)
+        what = ("Nothing has shipped yet: tell the warehouse not to ship it." if shipped == 0 else
+                f"{shipped} EA already shipped (" + ", ".join(f"{ln.item_code} {ln.shipped_ea}" for ln in lines if ln.shipped_ea)
+                + "): decide on a return or a credit.")
+        await self.tasks.raise_problem(self.s, CANCELLED_AFTER_940, order.id, problem(
+            CANCELLED_AFTER_940, f"Cancelled after the 940: order {order.order_number}",
+            f"Order {order.order_number} ({order.partner_code} {order.source_order_number}) was cancelled at source "
+            f"after its 940. {what} The order is On Hold.", urgent=True))
+        return True
 
     async def _raise_review(self, order: Order, reasons: list[str]) -> None:
         await self.tasks.raise_problem(self.s, ORDER_REVIEW, order.id, problem(

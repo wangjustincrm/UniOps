@@ -61,6 +61,8 @@ class LineRead(BaseModel):
     line_status: str
     removed: bool
     problem: str | None
+    shipped_ea: int | None = None     # P5: from the 945
+    delivered_qty: int | None = None  # P6: confirmed delivery (EA)
 
 
 class OrderDocumentRead(BaseModel):

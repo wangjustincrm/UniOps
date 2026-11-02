@@ -572,6 +572,22 @@ the first Sales release:
    `SALES_SFTP_WRITE_HOSTS=commhub.wheelsgroup.com` (TrueCommerce is added only
    when 810s go out, P6). Dev stacks list only their test container.
 
+4b. **Invoices (the release that sends invoices, P6)** —
+   - The image now carries ReportLab, aiosmtplib and `fonts-wqy-zenhei` (the
+     embedded CJK font for the PDFs): rebuild `sales-api`, do not retag.
+   - Mail account (spec X3, revised: env, to keep the module boundary): copy
+     the outbound account from epms → Admin → company_config `po_smtp_*`
+     into `.env` as `SALES_SMTP_HOST` / `SALES_SMTP_PORT` / `SALES_SMTP_USER`
+     / `SALES_SMTP_FROM` / `SALES_SMTP_STARTTLS`, the password as
+     `SALES_SECRET_SMTP`. Invoice emails go out only with
+     `SALES_EXTERNAL_EMAIL_ENABLED=true`.
+   - 810 JSON: add TrueCommerce to `SALES_SFTP_WRITE_HOSTS`
+     (`commhub.wheelsgroup.com,sftp.truecommerce.com`), set its connection
+     LIVE with the Import folder as its outbound folder, and choose it as the
+     "810 invoice connection" on Configuration → Connections.
+   - Nothing is invoiced while the shadow run is on; orders received during
+     it are never invoiced by Sales.
+
 5. **Grant access** — Portal → Admin → Access Control: assign `sales_operator`
    (or single `sales.*` keys) to the people who need them. The Sales card and
    nav entry stay invisible until then.

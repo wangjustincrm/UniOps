@@ -2,7 +2,8 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends gcc libpq-dev \
+# fonts-wqy-zenhei: a TrueType CJK font ReportLab can embed (Noto CJK is CFF and cannot be)
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libpq-dev fonts-wqy-zenhei \
     && rm -rf /var/lib/apt/lists/*
 
 COPY packages/authz /packages/authz

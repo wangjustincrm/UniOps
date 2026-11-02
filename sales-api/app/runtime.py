@@ -11,6 +11,7 @@ from typing import Any
 
 from app.container import Container, RefusalRecord, build_container
 from app.integrations.sftp import AsyncsshSftp
+from app.integrations.email import SmtpEmail
 from app.integrations.shopify import HttpShopify
 from app.models.documents import Run
 from app.models.records import OutboxRecord
@@ -22,6 +23,7 @@ from app.services.cycle import SalesCycle, settings_schedule
 from app.services.edi_intake import EdiIntake
 from app.services.intake import Intake
 from app.services.shadow import ShadowRun
+from app.services.invoicing import SEND_INVOICE, Invoicing
 from app.services.shipments import CLOSE, FULFILL, Shipments
 from app.services.shopify_intake import ShopifyIntake
 from app.services.problems import task_service
@@ -38,6 +40,7 @@ class Runtime:
     background: Background
     outbound: Outbound940 | None = None
     shipments: Shipments | None = None
+    invoicing: Invoicing | None = None
 
 
 def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify: Any = None) -> Runtime:
@@ -48,6 +51,11 @@ def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify:
         settings,
         real_sftp=lambda: AsyncsshSftp(allowed_hosts=settings.sftp_allowed_hosts, secret=os.environ.get),
         real_shopify=lambda: HttpShopify(secret=os.environ.get),
+        real_email=lambda: SmtpEmail(
+            host=getattr(settings, "SALES_SMTP_HOST", ""), port=getattr(settings, "SALES_SMTP_PORT", 587),
+            username=getattr(settings, "SALES_SMTP_USER", "") or None,
+            password=lambda: os.environ.get("SALES_SECRET_SMTP"), sender=getattr(settings, "SALES_SMTP_FROM", ""),
+            starttls=getattr(settings, "SALES_SMTP_STARTTLS", True)),
         refusal_sink=refusal_sink,
     )
     if sftp is not None:
@@ -63,12 +71,15 @@ def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify:
                        reference_dir=getattr(settings, "SALES_ZOHO_REFERENCE_DIR", "") or None)
     outbound.shadow = shadow
     shipments = Shipments(uow_factory=uow_factory, tasks=tasks, shopify=container.shopify, outbound=outbound, shadow=shadow)
+    invoicing = Invoicing(uow_factory=uow_factory, tasks=tasks, sftp=container.sftp, email=container.email)
     worker = OutboxWorker(Outbox(OutboxRecord), {SEND_940: outbound.outbox_kind(), FULFILL: shipments.fulfill_kind(),
-                                                 CLOSE: shipments.close_kind()}, uow_factory)
+                                                 CLOSE: shipments.close_kind(), SEND_INVOICE: invoicing.outbox_kind()},
+                          uow_factory)
     cycle = SalesCycle(intake=intake, shopify_intake=shopify_intake, edi_intake=edi_intake, outbound=outbound,
-                       shadow=shadow, shipments=shipments, outbox_worker=worker, run_model=Run, uow_factory=uow_factory,
+                       shadow=shadow, shipments=shipments, invoicing=invoicing, outbox_worker=worker, run_model=Run, uow_factory=uow_factory,
                        schedule=settings_schedule(uow_factory))
-    return Runtime(container, uow_factory, intake, shopify_intake, edi_intake, cycle, Background(), outbound, shipments)
+    return Runtime(container, uow_factory, intake, shopify_intake, edi_intake, cycle, Background(), outbound, shipments,
+                   invoicing)
 
 
 _runtime: Runtime | None = None
