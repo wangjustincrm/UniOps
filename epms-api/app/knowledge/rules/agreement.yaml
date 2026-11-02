@@ -73,12 +73,16 @@ rules:
       agreement's owner (no owner: a manager of the agreement's department;
       neither: the AP pool). It closes on its own once receipts are attached or
       the invoice is settled without receipt evidence, and it moves with the
-      agreement if the owner changes.
-    enforced_in: "epms-api app/api/v1/invoices.py _require_invoice_receipt_access; app/crud/attach_receipts_task.py; PRD EPMS AGR-032"
+      agreement if the owner changes. When the attached receipts' total differs
+      from the invoice total, a reason is required before the receipt evidence
+      can be saved (receipts without an amount, such as delivery notes, are not
+      compared); the PA shows the reason with the difference.
+    enforced_in: "epms-api app/api/v1/invoices.py _require_invoice_receipt_access; app/crud/attach_receipts_task.py; app/crud/invoice.py set_receipts (reason for a difference); PRD EPMS AGR-032"
     provenance: pinned
     test:
       - "tests/test_attach_receipts_task.py::test_matching_to_a_house_account_raises_a_task_for_the_owner"
       - "tests/test_attach_receipts_task.py::test_someone_unrelated_is_refused_with_receipt_wording"
+      - "tests/test_invoice_receipts.py::test_a_difference_without_a_reason_is_refused_and_nothing_is_claimed"
   - id: who_records_agreement_receipts
     asked_as:
       - who can record agreement receipts

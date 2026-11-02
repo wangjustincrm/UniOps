@@ -297,6 +297,8 @@ function InvoiceReceiptsPanelBody({
   // crud/invoice.py stores the reason as NULL, never ''.
   const persistedReceiptIds = invoice.receipt_ids ?? []
   const nextVariance = varianceIsZero ? '' : varianceReason.trim()
+  // A difference needs its reason before it can be saved (ISS-0116).
+  const varianceReasonMissing = !varianceIsZero && !varianceReason.trim()
   const receiptsDirty =
     persistedReceiptIds.length !== selectedReceiptIds.length ||
     !selectedReceiptIds.every((id) => heldIds.has(id)) ||
@@ -449,13 +451,16 @@ function InvoiceReceiptsPanelBody({
             </span>
           </div>
           )}
-          {/* A non-zero difference asks for an explanation but never blocks
-              submit — counter purchases routinely differ from the receipt
-              total by freight, discounts, or tax. */}
+          {/* A non-zero difference is allowed — counter purchases routinely
+              differ from the receipt total by freight, discounts, or tax — but
+              only with a reason (PRD AGR-032, ISS-0116): Save stays disabled
+              until it is filled, and the server refuses it too
+              (crud/invoice.py set_receipts). The PA shows it with the
+              difference. */}
           {!varianceIsZero && (
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-neutral-700">
-                Explain the difference <span className="text-warning-700">(recommended)</span>
+                Explain the difference <span className="text-danger-600">*</span>
               </label>
               <textarea
                 rows={2}
@@ -478,7 +483,7 @@ function InvoiceReceiptsPanelBody({
                 {setReceiptsMutation.isSuccess ? 'Receipt evidence saved' : 'Saved — no changes to submit'}
               </span>
             )}
-            <Button size="sm" onClick={handleSaveReceipts} disabled={pending || !receiptsDirty}>
+            <Button size="sm" onClick={handleSaveReceipts} disabled={pending || !receiptsDirty || varianceReasonMissing}>
               {setReceiptsMutation.isPending ? 'Saving…' : 'Save Receipt Evidence'}
             </Button>
           </div>

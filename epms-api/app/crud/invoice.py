@@ -1063,8 +1063,25 @@ async def set_receipts(
 
     if receipt_ids:
         claimed = await agreement_receipt_crud.claim(db, agr, receipt_ids, invoice)
+        reason = (variance_reason or "").strip() or None
+        # PRD AGR-032 "with a reason if amounts differ" (ISS-0116). Same
+        # comparison InvoiceReceiptsPanel shows and the PA's "Receipts differ
+        # from invoice by …" line reads (matchVariance.ts receiptSummary):
+        # tax-inclusive totals, only receipts that carry an amount, to the cent.
+        # Nothing priced selected = nothing to compare. Raised after the claim
+        # on purpose: the request session rolls the release + claim back.
+        priced = [r.total_amount for r in claimed if r.total_amount is not None]
+        if priced and reason is None:
+            selected = sum(priced, Decimal("0")).quantize(Decimal("0.01"))
+            billed = Decimal(invoice.total_amount).quantize(Decimal("0.01"))
+            if selected != billed:
+                raise ValueError(
+                    f"The selected receipts total {invoice.currency} {selected} but the "
+                    f"invoice is {invoice.currency} {billed} (difference "
+                    f"{selected - billed:+}). Explain the difference before saving "
+                    f"the receipt evidence.")
         invoice.receipt_ids = [str(r.id) for r in claimed]
-        invoice.receipt_variance_reason = (variance_reason or "").strip() or None
+        invoice.receipt_variance_reason = reason
         # 挂上了凭证就不再是无凭证结算 —— 这两个状态互斥,协议详情页那个
         # 健康度计数依赖它们互斥才有意义。
         invoice.legacy_settlement = False
