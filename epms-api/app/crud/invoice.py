@@ -159,8 +159,8 @@ async def attach_claimed_receipts(db: AsyncSession, invoices: list) -> None:
 
 
 async def attach_allocation_display_fields(db: AsyncSession, invoices: list) -> None:
-    """Inject `po_number` + `po_line_description` onto each invoice's
-    allocation rows, batched — display-only fields resolved at read time,
+    """Inject `po_number` + `po_line_description` + `po_reference` onto each
+    invoice's allocation rows, batched — display-only fields resolved at read time,
     never stored on `InvoicePoAllocation` (see that model).
 
     Same batching shape as `attach_claimed_receipts` above: every `po_id`
@@ -183,20 +183,30 @@ async def attach_allocation_display_fields(db: AsyncSession, invoices: list) -> 
     line_ids = {a.po_line_id for a in all_allocs if a.po_line_id is not None}
 
     po_numbers: dict = {}
+    po_subtotals: dict = {}
     if po_ids:
-        po_numbers = dict((await db.execute(
-            select(PurchaseOrder.id, PurchaseOrder.number).where(PurchaseOrder.id.in_(po_ids))
-        )).all())
+        for pid, number, subtotal in (await db.execute(
+            select(PurchaseOrder.id, PurchaseOrder.number, PurchaseOrder.subtotal)
+            .where(PurchaseOrder.id.in_(po_ids))
+        )).all():
+            po_numbers[pid] = number
+            po_subtotals[pid] = subtotal
 
     line_descs: dict = {}
+    line_totals: dict = {}
     if line_ids:
-        line_descs = dict((await db.execute(
-            select(PoLineItem.id, PoLineItem.description).where(PoLineItem.id.in_(line_ids))
-        )).all())
+        for lid, desc, total in (await db.execute(
+            select(PoLineItem.id, PoLineItem.description, PoLineItem.line_total)
+            .where(PoLineItem.id.in_(line_ids))
+        )).all():
+            line_descs[lid] = desc
+            line_totals[lid] = total
 
     for a in all_allocs:
         a.po_number = po_numbers.get(a.po_id)
         a.po_line_description = line_descs.get(a.po_line_id) if a.po_line_id else None
+        a.po_reference = (line_totals.get(a.po_line_id) if a.po_line_id
+                          else po_subtotals.get(a.po_id))
 
 
 # ── Number generation ──────────────────────────────────────────────────────────

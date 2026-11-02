@@ -776,6 +776,24 @@ export default function InvoiceDetailPage() {
                         </div>
                       )
                     }
+                    // Direct route (DPA-009): matched, with no PO, agreement or goods
+                    // receipt to wait for — not "Not yet matched" / "No GR linked" (ISS-0190).
+                    if (isDirectRoute && inv.status !== 'unmatched') {
+                      return (
+                        <div className="col-span-2 rounded-lg border border-neutral-200 px-3 py-2.5 flex flex-col gap-1">
+                          <p className="text-xs text-neutral-400">Direct PA</p>
+                          <p className="text-sm text-neutral-700">Matched for a Direct PA — no PO, agreement or goods receipt needed</p>
+                          {directPa && (
+                            <Link
+                              to={`/pa/${directPa.id}`}
+                              className="text-sm font-mono font-medium text-primary-600 hover:underline inline-flex items-center gap-1"
+                            >
+                              {directPa.number} <ExternalLink className="h-3 w-3" />
+                            </Link>
+                          )}
+                        </div>
+                      )
+                    }
                     const linkedPos = Array.from(
                       new Map(
                         (inv.allocations ?? []).map((a) => [a.po_id, a.po_number ?? a.po_id.slice(0, 8)]),
@@ -807,7 +825,7 @@ export default function InvoiceDetailPage() {
                       </div>
                     )
                   })()}
-                  {inv.match_route === 'agreement' ? null : gr ? (
+                  {inv.match_route === 'agreement' || (isDirectRoute && inv.status !== 'unmatched') ? null : gr ? (
                     <div className="flex items-center justify-between rounded-lg border border-neutral-200 px-3 py-2.5">
                       <div>
                         <p className="text-xs text-neutral-400">Goods Receipt</p>
@@ -1357,23 +1375,48 @@ export default function InvoiceDetailPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        <MatchRow
-                          icon={<FileText className="h-4 w-4 text-neutral-400" />}
-                          label="Purchase Order"
-                          docRef={inv.po_number}
-                          href={`/po/${inv.po_id}`}
-                          amount={inv.po_total}
-                          currency={inv.currency}
-                          note="Authorised PO total"
-                          ok={true}
-                          action={canUnmatch && (
-                            <UnmatchButton
-                              label="Unmatch"
-                              blockedReason={unmatchBlockedReason}
-                              onClick={() => setUnmatchScope('po')}
+                        {(() => {
+                          // A multi-PO invoice lists each PO with its own reference
+                          // (ISS-0190) — po_total is their sum, which one row under the
+                          // primary PO's number misread as that PO's amount. Summed the
+                          // way match() sums po_total: once per (PO, PO line).
+                          const perPo = new Map<string, { number: string; amount: number; seen: Set<string> }>()
+                          const allocs = inv.allocations ?? []
+                          if (allocs.every((a) => a.po_reference != null)) {
+                            for (const a of allocs) {
+                              const row = perPo.get(a.po_id) ?? { number: a.po_number ?? a.po_id.slice(0, 8), amount: 0, seen: new Set<string>() }
+                              const key = a.po_line_id ?? 'header'
+                              if (!row.seen.has(key)) {
+                                row.seen.add(key)
+                                row.amount += Number(a.po_reference)
+                              }
+                              perPo.set(a.po_id, row)
+                            }
+                          }
+                          const poRows = perPo.size > 1
+                            ? Array.from(perPo, ([pid, r]) => ({ pid, number: r.number, amount: r.amount }))
+                            : [{ pid: inv.po_id, number: inv.po_number, amount: inv.po_total }]
+                          return poRows.map((r, i) => (
+                            <MatchRow
+                              key={r.pid ?? 'po'}
+                              icon={<FileText className="h-4 w-4 text-neutral-400" />}
+                              label="Purchase Order"
+                              docRef={r.number ?? undefined}
+                              href={`/po/${r.pid}`}
+                              amount={r.amount ?? undefined}
+                              currency={inv.currency}
+                              note="Authorised PO total"
+                              ok={true}
+                              action={i === 0 && canUnmatch && (
+                                <UnmatchButton
+                                  label="Unmatch"
+                                  blockedReason={unmatchBlockedReason}
+                                  onClick={() => setUnmatchScope('po')}
+                                />
+                              )}
                             />
-                          )}
-                        />
+                          ))
+                        })()}
                         <MatchRow
                           icon={<TrendingUp className="h-4 w-4 text-neutral-400" />}
                           label="Goods / Service Receipt"
