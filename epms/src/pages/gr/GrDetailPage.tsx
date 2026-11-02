@@ -240,13 +240,13 @@ export default function GrDetailPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between flex-wrap gap-4">
         <div className="flex items-start gap-4">
           <Link to="/gr" className="mt-1 text-neutral-400 hover:text-neutral-600 transition-colors">
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-2xl font-bold text-neutral-900 font-mono">{gr.number}</h1>
               <GrStatusBadge status={gr.status} />
             </div>
@@ -255,7 +255,7 @@ export default function GrDetailPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-wrap">
           {canAcknowledge && (
             <Button onClick={() => setShowAckModal(true)} className="gap-2">
               <CheckCircle2 className="h-4 w-4" />
@@ -352,7 +352,7 @@ export default function GrDetailPage() {
         </div>
       )}
 
-      <div className="flex gap-6 items-start">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
         {/* Main content */}
         <div className="flex-1 min-w-0 flex flex-col gap-4">
           {/* Tabs */}
@@ -543,7 +543,7 @@ export default function GrDetailPage() {
         </div>
 
         {/* Right sidebar — Timeline */}
-        <div className="w-64 flex-shrink-0">
+        <div className="w-full lg:w-64 flex-shrink-0">
           <GrTimeline gr={gr} />
         </div>
       </div>

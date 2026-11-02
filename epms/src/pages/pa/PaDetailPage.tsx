@@ -607,13 +607,13 @@ export default function PaDetailPage() {
   return (
     <div className={cn('flex flex-col gap-6 p-6', canApprove && 'pb-16')}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/pa')} className="p-2 rounded-lg hover:bg-neutral-100 text-neutral-500">
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl font-bold text-neutral-900">{pa.pa_number}</h1>
               <PaStatusBadge status={pa.status} />
               {pa.pa_type === 'prepayment' && (
@@ -631,7 +631,7 @@ export default function PaDetailPage() {
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {(['draft', 'returned'] as PaStatus[]).includes(pa.status) && (
             <Button variant="secondary" onClick={() => navigate(`/pa/${pa.id}/edit`)} className="gap-2">
               <Pencil className="h-4 w-4" />
@@ -711,9 +711,9 @@ export default function PaDetailPage() {
         </p>
       )}
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Main content */}
-        <div className="col-span-2 flex flex-col gap-5">
+        <div className="lg:col-span-2 min-w-0 flex flex-col gap-5">
           {/* Tabs */}
           <div className="flex gap-1 border-b border-neutral-200">
             {(['details', 'attachments', 'history'] as const).map((t) => (
