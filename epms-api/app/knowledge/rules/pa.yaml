@@ -181,8 +181,9 @@ rules:
       No. While a PO has a prepayment PA that is not cancelled, rejected or
       processed (paid), a regular PA cannot be created on that PO — the
       system refuses and names the open prepayment PA. Settlement and
-      balance PAs are exempt. A PO can have only one prepayment PA: a second
-      one is refused even after the first has been paid.
+      balance PAs are exempt. A PO may be prepaid in several stages (each its
+      own prepayment PA, the cap counting them together), but no further
+      prepayment is accepted once the PO has a settlement or balance PA.
     enforced_in: "epms-api app/api/v1/pa.py create_pa (PP-008 regular branch; PP-004 prepayment branch)"
     provenance: pinned
     test:
