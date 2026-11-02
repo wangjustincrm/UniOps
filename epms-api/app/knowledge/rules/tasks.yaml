@@ -3,6 +3,23 @@ label: Tasks in the Task Inbox
 covers: >
   Overdue and urgent tasks, closing a task, why a task reached you.
 rules:
+  # ISS-0131: open tabs re-read their data without F5.
+  - id: open_tabs_refresh_themselves
+    asked_as:
+      - my tab still shows the old status after I did something in another tab
+      - 怎么刷新页面又不关掉其他页签？
+      - why does F5 close all my tabs
+    answer: >
+      List and detail tabs (dashboard, PR, PO, goods receipt, invoice, vendor
+      credit, agreement, receipt and PA lists and pages) re-read their data
+      when you switch back to them, and the Refresh button at the right of the
+      tab bar re-reads the current tab at once. Other tabs stay open. A reload
+      of the browser (F5) starts again from the pinned tabs only. New and edit
+      forms are not refreshed, so what you have typed is kept.
+    enforced_in: "epms/src/components/layout/TabQueryScope.tsx (TabQueryScope, TabRefreshButton); epms/src/components/layout/AppLayout.tsx REFRESHABLE_ROUTES; PRD EPMS UI-TAB-003, DSH-010"
+    provenance: pinned
+    test:
+      - "epms/src/components/layout/TabQueryScope.test.ts"
   - id: tasks_have_no_due_date
     asked_as:
       - 我有哪些待办已经超时了？
