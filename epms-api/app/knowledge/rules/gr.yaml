@@ -68,6 +68,19 @@ rules:
     enforced_in: "epms-api app/api/v1/gr.py create_gr (PHYSICAL_GR_PO_STATUSES / SERVICE_GR_PO_STATUSES)"
     test:
       - "tests/test_rule_registry.py::test_gr_statuses_are_the_routes"
+  - id: a_receipt_needs_a_received_line
+    asked_as:
+      - 收货单可以不填收货数量吗？
+      - can I save a GR with zero quantities
+    answer: >
+      No. A goods receipt — physical or service — needs at least one line
+      with a received quantity greater than 0. The New GR form says so before
+      it is sent, and the server refuses a receipt with no lines or with every
+      line at 0, whoever records it.
+    enforced_in: "epms-api app/api/v1/gr.py create_gr; epms GrCreatePage"
+    provenance: pinned
+    test:
+      - "tests/test_gr.py::test_create_gr_needs_a_received_line"
   - id: damaged_goods
     asked_as:
       - 收货时发现货物损坏会怎样？

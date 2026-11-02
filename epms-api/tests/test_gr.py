@@ -189,6 +189,37 @@ async def test_create_gr_requires_issued_po(admin_client):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("po_type, with_pr", [(3, True), (3, False), (4, True), (4, False)])
+async def test_create_gr_needs_a_received_line(admin_client, test_engine, po_type, with_pr):
+    """ISS-0181: POST /gr with the lines under a misspelt key ("lines") was saved
+    as a GR with no lines — on a PO with no PR, straight to Collected. Physical
+    and service POs, with and without a PR, all go through the same create; the
+    New GR form's rule (one line received above 0) is the server's too."""
+    po, _ = await _make_issued_po(
+        admin_client, test_engine, f"VND-GR-EMPTY-{po_type}{int(with_pr)}",
+        po_type=po_type, with_pr=with_pr)
+    zero_line = {**_gr_payload(po["id"])["line_items"][0], "qty_received": "0"}
+    for body in (
+        {k: v for k, v in _gr_payload(po["id"]).items() if k != "line_items"},
+        {**_gr_payload(po["id"], line_items=[]),
+         "lines": _gr_payload(po["id"])["line_items"]},
+        _gr_payload(po["id"], line_items=[zero_line]),
+    ):
+        r = await admin_client.post(GR_URL, json=body)
+        assert r.status_code == 422, r.text
+        assert r.json()["detail"] == (
+            "At least one line must have a received quantity greater than 0.")
+    listed = await admin_client.get(GR_URL, params={"po_id": po["id"]})
+    assert listed.json()["total"] == 0
+
+    # A zero line beside a received one is fine — the form sends only received
+    # lines, but the rule is "at least one".
+    gr = await _create_gr(admin_client, po["id"], line_items=[
+        zero_line, _gr_payload(po["id"])["line_items"][0]])
+    assert len(gr["line_items"]) == 2
+
+
+@pytest.mark.asyncio
 async def test_get_gr(admin_client, test_engine):
     po, _ = await _make_issued_po(admin_client, test_engine, "VND-GR-GET-01")
     gr = await _create_gr(admin_client, po["id"])
