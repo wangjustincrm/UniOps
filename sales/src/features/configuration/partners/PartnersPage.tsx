@@ -35,7 +35,6 @@ export default function PartnersPage() {
       description="Trading partners: channel, settlement, sending and invoicing rules."
       client={partnersClient}
       columns={columns}
-      sortable={['code', 'name', 'channel', 'settlement_mode', 'active']}
       writePermission="sales.config"
       createSchema={partnerCreateSchema}
       updateSchema={partnerUpdateSchema}

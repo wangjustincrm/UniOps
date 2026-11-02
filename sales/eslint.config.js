@@ -13,6 +13,16 @@ const SHELL = {
   group: ['@uniops/shell', '@uniops/shell/*'],
   message: "Import components from '@/platform-ui' (platform-ui/primitives re-exports @uniops/shell).",
 }
+// Pages show dates, times and amounts through the platform's cells and
+// formatters (DateTimeCell, DateCell, MoneyCell, formatDateTime…), never by
+// hand: one format everywhere, and a date-only value never goes through
+// `new Date("YYYY-MM-DD")`, which loses a day west of Greenwich.
+const DATES = [
+  { selector: "CallExpression[callee.property.name=/^toLocale(String|DateString|TimeString)$/]",
+    message: 'Use DateTimeCell / DateCell / MoneyCell or formatDateTime / formatDate / formatTime / formatMoney from @/platform-ui.' },
+  { selector: "NewExpression[callee.name='Date']",
+    message: 'Use the date cells and formatters from @/platform-ui (Date.now() for "now").' },
+]
 // The app shell may import @uniops/shell directly (tabs, routes).
 const SHELL_LAYER = ['src/main.tsx', 'src/components/layout/**', 'src/app/**']
 // Form controls come from the primitives (Select, Checkbox, CheckboxList,
@@ -90,9 +100,16 @@ export default defineConfig([
     ignores: ['src/platform-ui/**', ...SHELL_LAYER],
     rules: { 'no-restricted-imports': ['error', { patterns: [SHELL] }] },
   },
+  // One block per file group for no-restricted-syntax (a later block would
+  // replace, not add to, an earlier one's list).
   {
     files: ['src/**/*.tsx'],
-    ignores: ['src/platform-ui/primitives/**'],
+    ignores: ['src/platform-ui/primitives/**', 'src/features/**'],
     rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS] },
+  },
+  {
+    files: ['src/features/**/*.{ts,tsx}'],
+    ignores: ['src/features/**/*.test.{ts,tsx}'],
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES] },
   },
 ])

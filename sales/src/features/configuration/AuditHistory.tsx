@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { EmptyState, ErrorView, Skeleton } from '@/platform-ui'
+import { EmptyState, ErrorView, Skeleton, formatDateTime, queryKeys } from '@/platform-ui'
 
 /** One entry of a record's audit history (sales-api schemas/audit.py). */
 export interface AuditEntry {
@@ -34,7 +34,7 @@ export function AuditHistory({ resource, id, version, load }: {
   version?: number
   load: (id: number) => Promise<AuditEntry[]>
 }) {
-  const q = useQuery({ queryKey: ['audit', resource, id, version], queryFn: () => load(id) })
+  const q = useQuery({ queryKey: [...queryKeys.audit({ basePath: resource }, id), version], queryFn: () => load(id) })
   return (
     <section aria-label="History" className="flex flex-col gap-2">
       <h3 className="text-sm font-semibold text-neutral-800">History</h3>
@@ -45,7 +45,7 @@ export function AuditHistory({ resource, id, version, load }: {
           {q.data.map((e) => (
             <li key={e.id} className="rounded-md border border-neutral-100 p-2">
               <p className="text-neutral-800">
-                {new Date(e.at).toLocaleString()} · {e.user_name}
+                {formatDateTime(e.at)} · {e.user_name}
                 {e.reason && <span className="text-neutral-400"> · {e.reason}</span>}
               </p>
               <Changes e={e} />

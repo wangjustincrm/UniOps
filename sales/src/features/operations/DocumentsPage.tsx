@@ -1,40 +1,31 @@
 import { useState } from 'react'
-import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
-  ActionButton, Badge, ErrorMessage, QueryTable, useListView, Sheet, type ColumnDef,
+  ActionButton, DateTimeCell, DetailList, ErrorMessage, ListPage, StatusCell, formatDateTime, type ColumnDef,
 } from '@/platform-ui'
 import { documentsClient, downloadOriginal, type DocumentRead } from './operationsApi'
 
-const statusVariant: Record<string, 'success' | 'warning' | 'danger' | 'neutral' | 'info'> = {
-  Pending: 'info', Processing: 'info', Processed: 'success', Failed: 'danger', Skipped: 'neutral', Duplicate: 'neutral',
-}
-const status = (d: DocumentRead) => d.processing_status ?? d.file_status ?? '—'
-const when = (s: string | null) => (s ? new Date(s).toLocaleString() : '—')
+const status = (d: DocumentRead) => d.processing_status ?? d.file_status
 
 const columns: ColumnDef<DocumentRead, unknown>[] = [
-  { accessorKey: 'created_at', header: 'Received', cell: ({ row }) => when(row.original.created_at) },
+  { accessorKey: 'created_at', header: 'Received', cell: ({ row }) => <DateTimeCell value={row.original.created_at} /> },
   { accessorKey: 'remote_name', header: 'File' },
   { accessorKey: 'kind', header: 'Kind' },
-  { id: 'status', header: 'Status', cell: ({ row }) => <Badge variant={statusVariant[status(row.original)] ?? 'neutral'}>{status(row.original)}</Badge> },
+  { id: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={status(row.original)} /> },
   { accessorKey: 'size', header: 'Bytes' },
   { accessorKey: 'error', header: 'Note', cell: ({ row }) => <span className="line-clamp-1 text-neutral-500">{row.original.error ?? ''}</span> },
 ]
 
 function Detail({ d }: { d: DocumentRead }) {
   const [error, setError] = useState<unknown>(null)
-  const rows: [string, string | number | null][] = [
-    ['Direction / origin', `${d.direction} · ${d.origin}`], ['System', d.system], ['Kind', d.kind],
-    ['Status', status(d)], ['File', d.remote_name], ['Bytes', d.size], ['Remote modified', when(d.remote_mtime)],
-    ['Received', `${when(d.created_at)} · ${d.created_by_name}`], ['SHA-256', d.sha256],
-    ['ISA13 / GS06 / ST02', [d.isa13, d.gs06, d.st02].filter(Boolean).join(' / ') || null], ['Note', d.error],
-  ]
   return (
     <div className="flex flex-col gap-4 text-sm">
-      <dl className="grid grid-cols-[10rem_1fr] gap-x-3 gap-y-1">
-        {rows.map(([k, v]) => (
-          <div key={k} className="contents"><dt className="text-neutral-500">{k}</dt><dd className="break-all">{v ?? '—'}</dd></div>
-        ))}
-      </dl>
+      <DetailList items={[
+        ['Direction / origin', `${d.direction} · ${d.origin}`], ['System', d.system], ['Kind', d.kind],
+        ['Status', <StatusCell key="s" value={status(d)} />], ['File', <span key="f" className="break-all">{d.remote_name}</span>],
+        ['Bytes', d.size], ['Remote modified', formatDateTime(d.remote_mtime)],
+        ['Received', `${formatDateTime(d.created_at)} · ${d.created_by_name}`], ['SHA-256', <span key="h" className="break-all">{d.sha256}</span>],
+        ['ISA13 / GS06 / ST02', [d.isa13, d.gs06, d.st02].filter(Boolean).join(' / ') || null], ['Note', d.error],
+      ]} />
       {d.has_content ? (
         <ActionButton size="sm" variant="secondary" onAction={() => downloadOriginal(d).catch(setError)}>Download original</ActionButton>
       ) : (
@@ -47,36 +38,15 @@ function Detail({ d }: { d: DocumentRead }) {
 
 /** Operations → Documents: every file read or written, its original bytes kept (FR-OB-05). */
 export default function DocumentsPage() {
-  const view = useListView(documentsClient)
-  const { spec } = view
-  const [open, setOpen] = useState<DocumentRead | null>(null)
-  const list = useQuery({ queryKey: ['documents', spec], queryFn: () => documentsClient.list(spec), placeholderData: keepPreviousData, enabled: view.ready })
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-xl font-semibold text-neutral-900">Documents</h1>
-        <p className="text-sm text-neutral-500">Every file read from or sent to a partner, with its original bytes. Nothing is ever deleted.</p>
-      </div>
-      <QueryTable<DocumentRead>
-        columns={columns}
-        resource={documentsClient}
-        rows={list.data?.items ?? []}
-        total={list.data?.total ?? 0}
-        groups={list.data?.groups}
-        groupsTruncated={list.data?.groups_truncated}
-        {...view.tableProps}
-        sortable={['created_at', 'remote_name', 'kind', 'size']}
-        searchable
-        loading={list.isLoading}
-        error={list.error}
-        onRetry={() => list.refetch()}
-        rowKey={(d) => d.id}
-        onRowClick={setOpen}
-        emptyTitle="No documents yet"
-      />
-      <Sheet open={open !== null} onOpenChange={(o) => { if (!o) setOpen(null) }} title={open?.remote_name ?? `Document ${open?.id ?? ''}`}>
-        {open && <Detail d={open} />}
-      </Sheet>
-    </div>
+    <ListPage<DocumentRead>
+      resource={documentsClient}
+      title="Documents"
+      description="Every file read from or sent to a partner, with its original bytes. Nothing is ever deleted."
+      columns={columns}
+      emptyTitle="No documents yet"
+      detailTitle={(d) => d.remote_name ?? `Document ${d.id}`}
+      renderDetail={(d) => <Detail d={d} />}
+    />
   )
 }

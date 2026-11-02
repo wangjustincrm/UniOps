@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, Badge, DateTimeInput, ErrorMessage } from '@/platform-ui'
-import { clearAuthLatch, pinHostKey, resetCursor, testConnection, type ConnectionRead, type ConnectionTest } from './connectionsApi'
+import { ActionButton, Badge, DateTimeInput, ErrorMessage, formatDateTime, queryKeys } from '@/platform-ui'
+import { clearAuthLatch, connectionsClient, pinHostKey, resetCursor, testConnection, type ConnectionRead, type ConnectionTest } from './connectionsApi'
 
 const CONFIG = 'sales.config'
 
@@ -11,7 +11,7 @@ function Cursor({ c, onDone }: { c: ConnectionRead; onDone: () => void }) {
   const reset = useMutation({ mutationFn: (v: string | null) => resetCursor(c.id, v), onSuccess: () => { setValue(null); onDone() } })
   return (
     <div className="flex flex-col gap-1">
-      <p>Next pull from: <span className="font-medium">{c.cursor_updated_at ? new Date(c.cursor_updated_at).toLocaleString() : 'not set — nothing is pulled'}</span></p>
+      <p>Next pull from: <span className="font-medium">{c.cursor_updated_at ? formatDateTime(c.cursor_updated_at) : 'not set — nothing is pulled'}</span></p>
       <div className="flex flex-wrap items-center gap-2">
         <DateTimeInput aria-label="New cursor" value={value} onChange={setValue} className="h-8 max-w-[14rem] text-xs" />
         <ActionButton size="sm" variant="secondary" permission={CONFIG} disabled={!value}
@@ -27,7 +27,7 @@ function Cursor({ c, onDone }: { c: ConnectionRead; onDone: () => void }) {
  *  which shows the server's host key for pinning (no trust on first use). */
 export function ConnectionTools({ connection: c }: { connection: ConnectionRead }) {
   const qc = useQueryClient()
-  const refresh = () => qc.invalidateQueries({ queryKey: ['platform-crud', '/config/connections'] })
+  const refresh = () => qc.invalidateQueries({ queryKey: queryKeys.list(connectionsClient) })
   const [result, setResult] = useState<ConnectionTest | null>(null)
   const test = useMutation({ mutationFn: () => testConnection(c.id), onSuccess: setResult })
   const pin = useMutation({ mutationFn: (line: string) => pinHostKey(c, line), onSuccess: () => { setResult(null); refresh() } })
@@ -45,7 +45,7 @@ export function ConnectionTools({ connection: c }: { connection: ConnectionRead 
       )}
       {c.auth_failed_at && (
         <div role="alert" className="rounded-md border border-danger-200 bg-danger-50 p-2">
-          <p className="font-medium text-danger-700">Login refused — skipped since {new Date(c.auth_failed_at).toLocaleString()}</p>
+          <p className="font-medium text-danger-700">Login refused — skipped since {formatDateTime(c.auth_failed_at)}</p>
           <p className="text-xs text-danger-700">{c.auth_failed_reason}</p>
           <ActionButton size="sm" className="mt-2" permission={CONFIG} onAction={() => clear.mutateAsync().catch(() => {})}>
             Clear and try again next cycle

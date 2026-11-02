@@ -26,7 +26,7 @@ export default function ItemsPage() {
     <CrudPage<ItemRead, ItemCreate, ItemUpdate>
       title="Items" singular="item"
       description="The Item Master: identifiers used to match order lines, and each item's units in EA."
-      client={itemsClient} columns={columns} sortable={['item_code', 'description', 'active']}
+      client={itemsClient} columns={columns}
       writePermission="sales.config" createSchema={itemCreateSchema} updateSchema={itemUpdateSchema}
       fields={itemFields} immutableOnEdit={['item_code']} emptyValues={itemEmptyValues} toFormValues={itemToFormValues}
       onExport={(path) => { downloadItems(path).catch((e: unknown) => toast({ variant: 'error', title: 'Export failed', description: e instanceof Error ? e.message : String(e) })) }}

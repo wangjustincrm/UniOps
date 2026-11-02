@@ -335,11 +335,14 @@ TS
       control_probe src/features/__eslint_probe__.tsx "<textarea />" fires
       control_probe src/pages/__eslint_probe__.tsx "<input type=\"datetime-local\" />" fires
       control_probe src/platform-ui/primitives/__eslint_probe__.tsx "<select />" passes
+      # Dates are shown through the platform cells and formatters in features.
+      control_probe src/features/__eslint_probe__.tsx "<p>{new Date().toISOString()}</p>" fires
+      control_probe src/features/__eslint_probe__.tsx "<p>{(1).toLocaleString()}</p>" fires
       npx vite build >/tmp/b.log 2>&1 || { echo "build failed"; tail -10 /tmp/b.log; exit 16; }
       grep -q "radix-popover-trigger-width" dist/assets/*.css || { echo "platform-ui classes missing from the built CSS"; exit 17; }
       # As written in CSS: hover:x → .hover\:x
       grep -qF "$SHELL_SELECTOR" dist/assets/*.css || { echo "shell-only class $SHELL_SENTINEL missing from the built CSS"; exit 19; }
-      echo "probe reported; 0 other type errors; import + layer rules pass; 7 planted import violations and 4 raw form controls caught, a primitive admitted; library and shell classes in CSS"
+      echo "probe reported; 0 other type errors; import + layer rules pass; 7 planted import violations, 4 raw form controls and 2 hand-made dates caught, a primitive admitted; library and shell classes in CSS"
     '
   rc=$?
   if [[ $rc == 0 ]]; then ok "sales: TS5101 trap, import + layer rules, ESLint probes (imports, raw controls), library + shell CSS"; else fail "sales checks (code $rc)"; fi

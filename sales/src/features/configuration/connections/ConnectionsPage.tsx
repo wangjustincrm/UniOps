@@ -41,7 +41,6 @@ export default function ConnectionsPage() {
       description="SFTP and Shopify connections. Passwords stay on the server; only their names are kept here."
       client={connectionsClient}
       columns={columns}
-      sortable={['name', 'kind', 'mode', 'active']}
       writePermission="sales.config"
       createSchema={connectionCreateSchema}
       updateSchema={connectionUpdateSchema}

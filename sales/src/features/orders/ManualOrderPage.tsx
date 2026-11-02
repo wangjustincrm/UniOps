@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, Autocomplete, Button, ErrorMessage, FormField, Input, NumberInput, useToast } from '@/platform-ui'
+import { ActionButton, Autocomplete, Button, ErrorMessage, FormField, Input, NumberInput, queryKeys, useToast } from '@/platform-ui'
 import { itemOptions, manualPartnerOptions } from '../configuration/lookups'
 import { OrderList } from './OrdersPage'
 import {
-  cancelManual, createManual, previewManual, submitManual,
+  cancelManual, createManual, ordersClient, previewManual, submitManual,
   type LinePreview, type ManualLine, type OrderRead,
 } from './ordersApi'
 
@@ -29,7 +29,7 @@ function NewManualOrder() {
     onSuccess: async (o) => {
       toast({ variant: 'success', title: `Draft ${o.order_number} saved` })
       setLines([{ ...blank }]); setPreview(null); setReference('')
-      await qc.invalidateQueries({ queryKey: ['orders'] })
+      await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
     },
   })
   const clean = preview !== null && preview.every((p) => p.problem === null)
@@ -67,7 +67,7 @@ function NewManualOrder() {
 
 function DraftActions({ o, close }: { o: OrderRead; close: () => void }) {
   const qc = useQueryClient()
-  const done = async () => { await qc.invalidateQueries({ queryKey: ['orders'] }); close() }
+  const done = async () => { await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) }); close() }
   const submit = useMutation({ mutationFn: () => submitManual(o.id, o.version), onSuccess: done })
   const cancel = useMutation({ mutationFn: () => cancelManual(o.id, o.version), onSuccess: done })
   return (

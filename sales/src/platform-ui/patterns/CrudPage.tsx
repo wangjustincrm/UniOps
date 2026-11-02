@@ -3,17 +3,16 @@ import type { FieldValues } from 'react-hook-form'
 import type { z } from 'zod'
 import { Button } from '../primitives/shell'
 import type { ColumnDef } from '../primitives/DataTable'
-import { QueryTable } from './QueryTable'
-import { ActionButton } from './ActionButton'
 import { Sheet } from '../primitives/Sheet'
 import { Dialog } from '../primitives/Dialog'
 import { FilePicker } from '../primitives/FilePicker'
+import { ActionButton } from './ActionButton'
 import { ConfirmAction } from './ConfirmAction'
+import { ListPage } from './ListPage'
 import { SchemaForm, type FieldSpec } from './SchemaForm'
 import { useCrudResource } from '../resource/useCrudResource'
 import type { ImportReport, ResourceClient } from '../resource/ResourceClient'
 import { useCan } from './permissions'
-import { useListView } from './views'
 import { ErrorMessage } from './ErrorMessage'
 
 interface Row {
@@ -29,7 +28,6 @@ export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
   description?: string
   client: ResourceClient<T, TCreate, TUpdate>
   columns: ColumnDef<T, unknown>[]
-  sortable?: string[]
   writePermission: string
   createSchema: z.ZodType<FieldValues, FieldValues>
   updateSchema: z.ZodType<FieldValues, FieldValues>
@@ -47,29 +45,17 @@ export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
 }
 
 /** List + create/edit form + deactivate + CSV import with a dry-run preview,
- *  for one config table served by the back end's crud_router. A user without
- *  the write permission opens a record read-only (no save, no deactivate). */
+ *  for one config table served by the back end's crud_router — a ListPage
+ *  whose detail is the record's form. A user without the write permission
+ *  opens a record read-only (no save, no deactivate). */
 export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T, TCreate, TUpdate>) {
   const { client, writePermission } = props
-  const view = useListView(client)
-  const { spec } = view
-  const { list, create, update, deactivate } = useCrudResource(client, spec, { enabled: view.ready })
+  const { create, update, deactivate, refresh } = useCrudResource(client)
   const canWrite = useCan(writePermission)
-  const [editing, setEditing] = useState<T | 'new' | null>(null)
-  const [confirmDeactivate, setConfirmDeactivate] = useState(false)
+  const [creating, setCreating] = useState(false)
   const [preview, setPreview] = useState<{ file: File; report: ImportReport } | null>(null)
   const [importError, setImportError] = useState<unknown>(null)
-
-  // The open record as the list now has it: an action in the detail panel
-  // (or another user) may have changed it, and a save needs its current version.
-  const editRow = editing && editing !== 'new'
-    ? (list.data?.items.find((r) => r.id === editing.id) ?? editing)
-    : null
-  const viewOnly = editRow !== null && !canWrite
   const singular = props.singular ?? props.title
-  const fields = editRow
-    ? props.fields.map((f) => (props.immutableOnEdit?.includes(f.name) ? { ...f, readOnly: true } : f))
-    : props.fields
 
   const pickFile = async (file: File | undefined) => {
     if (!file) return
@@ -82,117 +68,134 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-xl font-semibold text-neutral-900">{props.title}</h1>
-        {props.description && <p className="text-sm text-neutral-500">{props.description}</p>}
-      </div>
-      <ErrorMessage error={importError} messages={props.errorMessages} />
-      <QueryTable<T>
-        columns={props.columns}
-        rows={list.data?.items ?? []}
-        total={list.data?.total ?? 0}
-        groups={list.data?.groups}
-        groupsTruncated={list.data?.groups_truncated}
-        {...view.tableProps}
-        resource={client}
-        sortable={props.sortable}
-        searchable
-        loading={list.isLoading}
-        error={list.error}
+    <ListPage<T>
+      resource={client}
+      title={props.title}
+      description={props.description}
+      columns={props.columns}
+      errorMessages={props.errorMessages}
+      notice={<ErrorMessage error={importError} messages={props.errorMessages} />}
+      detailTitle={() => (canWrite ? `Edit ${singular}` : `${singular} (read only)`)}
+      renderDetail={(row, close) => (
+        <RecordForm row={row} close={close} canWrite={canWrite} props={props}
+          save={(values) => update.mutateAsync({ id: row.id, data: values as Partial<TUpdate>, version: row.version })}
+          deactivate={() => deactivate.mutateAsync(row.id)} />
+      )}
+      toolbar={({ spec }) => (
+        <>
+          {props.onExport && (
+            <Button variant="secondary" size="sm" onClick={() => props.onExport?.(client.exportPath(spec))}>Export CSV</Button>
+          )}
+          {props.csvImport && canWrite && (
+            <FilePicker accept=".csv,text/csv" label="CSV file" onFile={pickFile}>Import CSV</FilePicker>
+          )}
+          <ActionButton size="sm" permission={writePermission} onAction={() => setCreating(true)}>New</ActionButton>
+        </>
+      )}
+    >
+      {() => (
+        <>
+          <Sheet open={creating} onOpenChange={setCreating} title={`New ${singular}`}>
+            {creating && (
+              <SchemaForm
+                key="new"
+                schema={props.createSchema}
+                fields={props.fields}
+                defaultValues={props.emptyValues}
+                errorMessages={props.errorMessages}
+                onCancel={() => setCreating(false)}
+                onSubmit={async (values) => {
+                  await create.mutateAsync(values as TCreate)
+                  setCreating(false)
+                }}
+              />
+            )}
+          </Sheet>
+          <Dialog
+            open={preview !== null}
+            onOpenChange={(o) => { if (!o) setPreview(null) }}
+            title="Import preview"
+            description={preview?.file.name}
+            className="max-w-2xl"
+            footer={
+              <>
+                <Button variant="secondary" onClick={() => setPreview(null)}>Cancel</Button>
+                <ActionButton
+                  permission={writePermission}
+                  disabled={!preview?.report.ok}
+                  onAction={async () => {
+                    if (!preview) return
+                    try {
+                      const done = await client.importCsv(preview.file, false)
+                      setPreview(done.ok ? null : { ...preview, report: done })
+                      if (done.ok) await refresh()
+                    } catch (e) {
+                      setImportError(e)
+                      setPreview(null)
+                    }
+                  }}
+                >
+                  Import
+                </ActionButton>
+              </>
+            }
+          >
+            {preview && <ImportSummary report={preview.report} />}
+          </Dialog>
+        </>
+      )}
+    </ListPage>
+  )
+}
+
+/** An existing record: its form (read-only without the write permission),
+ *  the page's extra detail, and Deactivate. */
+function RecordForm<T extends Row, TCreate, TUpdate>({ row, close, canWrite, props, save, deactivate }: {
+  row: T
+  close: () => void
+  canWrite: boolean
+  props: CrudPageProps<T, TCreate, TUpdate>
+  save: (values: Record<string, unknown>) => Promise<unknown>
+  deactivate: () => Promise<unknown>
+}) {
+  const [confirm, setConfirm] = useState(false)
+  const fields = props.fields.map((f) => (props.immutableOnEdit?.includes(f.name) ? { ...f, readOnly: true } : f))
+  return (
+    <>
+      <SchemaForm
+        key={`${row.id}:${row.version ?? ''}`}
+        schema={props.updateSchema}
+        fields={fields}
+        defaultValues={props.toFormValues(row)}
+        changesOnly
+        readOnly={!canWrite}
         errorMessages={props.errorMessages}
-        onRetry={() => list.refetch()}
-        rowKey={(r) => r.id}
-        onRowClick={(r) => setEditing(r)}
-        toolbar={
-          <>
-            {props.onExport && (
-              <Button variant="secondary" size="sm" onClick={() => props.onExport?.(client.exportPath(spec))}>Export CSV</Button>
-            )}
-            {props.csvImport && canWrite && (
-              <FilePicker accept=".csv,text/csv" label="CSV file" onFile={pickFile}>Import CSV</FilePicker>
-            )}
-            <ActionButton size="sm" permission={writePermission} onAction={() => setEditing('new')}>New</ActionButton>
-          </>
-        }
+        onCancel={close}
+        onSubmit={async (values) => {
+          await save(values)
+          close()
+        }}
       />
-
-      <Sheet
-        open={editing !== null}
-        onOpenChange={(o) => { if (!o) setEditing(null) }}
-        title={editRow ? `${viewOnly ? '' : 'Edit '}${singular}${viewOnly ? ' (read only)' : ''}` : `New ${singular}`}
-      >
-        {editing !== null && (
-          <SchemaForm
-            key={editRow ? `${editRow.id}:${editRow.version ?? ''}` : 'new'}
-            schema={editRow ? props.updateSchema : props.createSchema}
-            fields={fields}
-            defaultValues={editRow ? props.toFormValues(editRow) : props.emptyValues}
-            changesOnly={!!editRow}
-            readOnly={viewOnly}
-            errorMessages={props.errorMessages}
-            onCancel={() => setEditing(null)}
-            onSubmit={async (values) => {
-              if (editRow) await update.mutateAsync({ id: editRow.id, data: values as Partial<TUpdate>, version: editRow.version })
-              else await create.mutateAsync(values as TCreate)
-              setEditing(null)
-            }}
-          />
-        )}
-        {editRow && props.renderDetail && <div className="mt-6 border-t border-neutral-100 pt-4">{props.renderDetail(editRow)}</div>}
-        {editRow && !viewOnly && editRow.active !== false && (
-          <div className="mt-6 border-t border-neutral-100 pt-4">
-            <Button variant="destructive" size="sm" onClick={() => setConfirmDeactivate(true)}>Deactivate</Button>
-          </div>
-        )}
-      </Sheet>
-
+      {props.renderDetail && <div className="mt-6 border-t border-neutral-100 pt-4">{props.renderDetail(row)}</div>}
+      {canWrite && row.active !== false && (
+        <div className="mt-6 border-t border-neutral-100 pt-4">
+          <Button variant="destructive" size="sm" onClick={() => setConfirm(true)}>Deactivate</Button>
+        </div>
+      )}
       <ConfirmAction
-        open={confirmDeactivate}
-        onOpenChange={setConfirmDeactivate}
+        open={confirm}
+        onOpenChange={setConfirm}
         title="Deactivate this record?"
         description="It stays on existing records but can no longer be chosen. It is never deleted."
         confirmLabel="Deactivate"
         destructive
         errorMessages={props.errorMessages}
         onConfirm={async () => {
-          if (editRow) await deactivate.mutateAsync(editRow.id)
-          setEditing(null)
+          await deactivate()
+          close()
         }}
       />
-
-      <Dialog
-        open={preview !== null}
-        onOpenChange={(o) => { if (!o) setPreview(null) }}
-        title="Import preview"
-        description={preview?.file.name}
-        className="max-w-2xl"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setPreview(null)}>Cancel</Button>
-            <ActionButton
-              permission={writePermission}
-              disabled={!preview?.report.ok}
-              onAction={async () => {
-                if (!preview) return
-                try {
-                  const done = await client.importCsv(preview.file, false)
-                  setPreview(done.ok ? null : { ...preview, report: done })
-                  if (done.ok) await list.refetch()
-                } catch (e) {
-                  setImportError(e)
-                  setPreview(null)
-                }
-              }}
-            >
-              Import
-            </ActionButton>
-          </>
-        }
-      >
-        {preview && <ImportSummary report={preview.report} />}
-      </Dialog>
-    </div>
+    </>
   )
 }
 

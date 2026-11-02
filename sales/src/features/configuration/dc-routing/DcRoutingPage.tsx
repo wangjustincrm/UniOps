@@ -33,7 +33,7 @@ export default function DcRoutingPage() {
     <CrudPage<DcRoutingRead, DcRoutingCreate, DcRoutingUpdate>
       title="DC routing" singular="DC route"
       description="For partners that require it (Walmart), an order whose ship-to has no route goes to review."
-      client={dcRoutingClient} columns={columns} sortable={['partner_code', 'ship_to_gln', 'dc_number', 'active']}
+      client={dcRoutingClient} columns={columns}
       writePermission="sales.config" createSchema={createSchema} updateSchema={updateSchema} fields={fields}
       immutableOnEdit={['partner_code', 'ship_to_gln']}
       emptyValues={{ partner_code: '', ship_to_gln: '', dc_number: '', notes: '', active: true }}

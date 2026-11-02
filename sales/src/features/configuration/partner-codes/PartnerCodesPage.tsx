@@ -28,7 +28,7 @@ export default function PartnerCodesPage() {
     <CrudPage<PartnerCodeRead, PartnerCodeCreate, PartnerCodeUpdate>
       title="Partner codes" singular="partner code"
       description="Each retailer's own part numbers for our items. A key is partner + buyer part."
-      client={partnerCodesClient} columns={columns} sortable={['partner_code', 'buyer_part', 'item_code']}
+      client={partnerCodesClient} columns={columns}
       writePermission="sales.config" createSchema={createSchema} updateSchema={updateSchema} fields={fields}
       immutableOnEdit={['partner_code', 'buyer_part']}
       emptyValues={{ partner_code: '', buyer_part: '', item_code: '' }}
