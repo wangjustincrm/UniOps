@@ -119,7 +119,8 @@ class ShadowRun:
                                remote_name=rel, size=len(data),
                                remote_mtime=datetime.fromtimestamp(stat.st_mtime, timezone.utc), sha256=sha,
                                content=data, isa13=c.isa13, gs06=c.gs06, st02=c.st02, shadow=True,
-                               body_json=_reference_keys(data) if c.kind == "940_EDI" else None,
+                               body_json=(_reference_keys(data) if c.kind == "940_EDI"
+                                          else _reference_943_keys(data) if c.kind == "943_EDI" else None),
                                error=None if c.readable else c.problem)
                 s.add(doc)
                 await s.flush()
@@ -278,6 +279,29 @@ class ShadowRun:
         await self._match_row(s, doc, kind="945", ref=ref, order_id=plan.order_id, key=sh.order_key_raw,
                               status=status, would=would, note=plan.match_note)
 
+    async def match_944(self, uow, doc: Document, receipt, transfer, allocation) -> None:
+        """A 944 for a Zoho 943: the reference by W06-02 = W17-04, and what
+        applying it would have done (the allocation and outcome). Never applied."""
+        s = uow.session
+        key = (receipt.transfer_key or "").lstrip("0")
+        refs = list((await s.execute(select(Document).where(
+            Document.origin == "ZOHO_REFERENCE", Document.kind == "943_EDI").order_by(Document.id.desc()))).scalars())
+        ref = None
+        for r in refs:
+            keys = r.body_json
+            if keys is None:
+                content = (await s.execute(select(Document.content).where(Document.id == r.id))).scalar_one()
+                keys = r.body_json = _reference_943_keys(content) or {}
+            if (keys.get("w06_02") or "").lstrip("0") == key:
+                ref = r
+                break
+        would = {"transfer": transfer.transfer_number if transfer else None, "outcome": allocation.outcome if transfer else None,
+                 "received": {str(k): v for k, v in allocation.received.items()}, "discrepancies": allocation.discrepancies,
+                 "rows": len(receipt.rows), "total": receipt.total}
+        status = "No reference" if ref is None else ("Match" if transfer is not None else "No Sales order")
+        await self._match_row(s, doc, kind="944", ref=ref, order_id=None, key=receipt.transfer_key, status=status, would=would,
+                              note=None if transfer else f"no transfer {receipt.transfer_key} in Sales")
+
     async def _match_row(self, s, doc: Document, *, kind: str, ref: Document | None, order_id: int | None,
                          key: str | None, status: str, would: dict, note: str | None = None) -> None:
         row = (await s.execute(select(ShadowMatch).where(ShadowMatch.document_id == doc.id))).scalar_one_or_none()
@@ -287,6 +311,15 @@ class ShadowRun:
                                        note=note, document_id=doc.id, would=would),
                           reference_document_id=ref.id if ref is not None else None)
         await s.flush()
+
+
+def _reference_943_keys(data: bytes) -> dict | None:
+    from app.domain.x12 import segments
+    try:
+        w06 = next((s for s in segments(data) if s[0] == "W06"), None)
+    except X12Error:
+        return None
+    return {"w06_02": w06[2].strip() if w06 and len(w06) > 2 else None}
 
 
 def _reference_keys(data: bytes) -> dict | None:

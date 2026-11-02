@@ -146,6 +146,9 @@ TRANSFER_ADDITIONS = {
     # rejected). An ACK timeout leaves the transfer in Waiting for 997; only
     # its ACK line goes to Timeout.
     T.FAILED: {T.GENERATED_943, T.CANCELLED},
+    # FR-OB-81 / FR-OB-24 (P7, 2026-11-02): a 943 that fails its checks, or whose
+    # put fails or is refused, is Failed — then resent by the user or cancelled.
+    T.GENERATED_943: {T.FAILED},
 }
 TRANSFER_HOLD_ENTRIES = {
     # On Hold when a second, different 944 arrives (FR-OB-80 to FR-OB-84).

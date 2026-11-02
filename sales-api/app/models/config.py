@@ -131,6 +131,14 @@ class Warehouse(Audited, Versioned, Deactivatable, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     address_lines: Mapped[str | None] = mapped_column(Text, nullable=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
+    # sales12: the 943's party (FR-OB-27): N1 qualifier and id (94 / CRM), N3, N4.
+    edi_id_qualifier: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    edi_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    address1: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    province: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    zip: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(5), nullable=True)
 
 
 class Connection(Audited, Versioned, Deactivatable, Base):

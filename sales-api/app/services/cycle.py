@@ -42,7 +42,7 @@ class SalesCycle(ScheduledJob):
     lock_key = CYCLE_LOCK_KEY
 
     def __init__(self, *, intake: Intake, outbox_worker, shopify_intake=None, edi_intake=None, outbound=None,
-                 shadow=None, shipments=None, invoicing=None, **kw) -> None:
+                 shadow=None, shipments=None, invoicing=None, transfers=None, **kw) -> None:
         super().__init__(stale_after=STALE_AFTER, **kw)
         self.intake = intake
         self.shopify_intake = shopify_intake
@@ -51,6 +51,7 @@ class SalesCycle(ScheduledJob):
         self.shadow = shadow
         self.shipments = shipments
         self.invoicing = invoicing
+        self.transfers = transfers
         self.outbox_worker = outbox_worker
 
     async def run_once(self, run) -> RunSummary:
@@ -95,17 +96,27 @@ class SalesCycle(ScheduledJob):
             queued = await self.outbound.queue_due(run_id=run.id)
             edi_out["queue"] = asdict(queued)
             trouble += queued.failed
+            if self.transfers:  # P7: Ready To Send transfers get their 943
+                t943 = await self.transfers.queue_ready(run_id=run.id)
+                edi_out["943"] = asdict(t943)
+                trouble += t943.failed
             edi_out["997"] = asdict(await self.outbound.process_997s(run_id=run.id))
         if self.shipments:
             s945 = await self.shipments.process_945s(run_id=run.id)
             edi_out["945"] = asdict(s945)
             trouble += s945.failed
+        if self.transfers:  # P7: the 944s
+            r944 = await self.transfers.process_944s(run_id=run.id)
+            edi_out["944"] = asdict(r944)
+            trouble += r944.failed
         if self.invoicing:  # P6: shipped orders move toward the delivery-confirmation worklist
             edi_out["invoices"] = asdict(await self.invoicing.advance(run_id=run.id))
         outbox = asdict(await self.outbox_worker.run_once())
         trouble += outbox.get("failed", 0)
         if self.outbound:
             edi_out["timeouts"] = asdict(await self.outbound.timeouts(run_id=run.id))
+        if self.transfers:
+            edi_out["943_timeouts"] = asdict(await self.transfers.timeouts(run_id=run.id))
         # The shadow run (§5.4): Zoho's reference files in, then the comparison.
         shadow: dict = {}
         if self.shadow:

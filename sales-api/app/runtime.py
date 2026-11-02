@@ -24,6 +24,7 @@ from app.services.edi_intake import EdiIntake
 from app.services.intake import Intake
 from app.services.shadow import ShadowRun
 from app.services.invoicing import SEND_INVOICE, Invoicing
+from app.services.transfers import SEND_943, Transfers
 from app.services.shipments import CLOSE, FULFILL, Shipments
 from app.services.shopify_intake import ShopifyIntake
 from app.services.problems import task_service
@@ -41,6 +42,7 @@ class Runtime:
     outbound: Outbound940 | None = None
     shipments: Shipments | None = None
     invoicing: Invoicing | None = None
+    transfers: Transfers | None = None
 
 
 def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify: Any = None) -> Runtime:
@@ -72,14 +74,17 @@ def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify:
     outbound.shadow = shadow
     shipments = Shipments(uow_factory=uow_factory, tasks=tasks, shopify=container.shopify, outbound=outbound, shadow=shadow)
     invoicing = Invoicing(uow_factory=uow_factory, tasks=tasks, sftp=container.sftp, email=container.email)
+    transfers = Transfers(uow_factory=uow_factory, tasks=tasks, sftp=container.sftp, shadow=shadow)
+    outbound.transfers = transfers
     worker = OutboxWorker(Outbox(OutboxRecord), {SEND_940: outbound.outbox_kind(), FULFILL: shipments.fulfill_kind(),
-                                                 CLOSE: shipments.close_kind(), SEND_INVOICE: invoicing.outbox_kind()},
+                                                 CLOSE: shipments.close_kind(), SEND_INVOICE: invoicing.outbox_kind(),
+                                                 SEND_943: transfers.outbox_kind()},
                           uow_factory)
     cycle = SalesCycle(intake=intake, shopify_intake=shopify_intake, edi_intake=edi_intake, outbound=outbound,
-                       shadow=shadow, shipments=shipments, invoicing=invoicing, outbox_worker=worker, run_model=Run, uow_factory=uow_factory,
+                       shadow=shadow, shipments=shipments, invoicing=invoicing, transfers=transfers, outbox_worker=worker, run_model=Run, uow_factory=uow_factory,
                        schedule=settings_schedule(uow_factory))
     return Runtime(container, uow_factory, intake, shopify_intake, edi_intake, cycle, Background(), outbound, shipments,
-                   invoicing)
+                   invoicing, transfers)
 
 
 _runtime: Runtime | None = None

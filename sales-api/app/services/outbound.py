@@ -114,6 +114,7 @@ class Outbound940:
         self.sftp = sftp
         self.clock = clock
         self.shadow = shadow  # the shadow-run matcher (ShadowRun), set by the runtime
+        self.transfers = None  # P7: the 943's 997s go to Transfers.apply_997 (set by the runtime)
 
     # ── the outbox kind ──────────────────────────────────────────────────────
     def outbox_kind(self) -> OutboxKind:
@@ -413,8 +414,16 @@ class Outbound940:
 
     async def _apply_ack(self, uow, ack_doc: Document, g, st) -> int:
         s = uow.session
+        if g.functional_id == "OW" and st.type == "943" and self.transfers is not None:
+            matched = await self.transfers.apply_997(uow, ack_doc, g, st)  # P7: FR-OB-82
+            if not matched:
+                await self.tasks.raise_problem(s, EDI_997_UNMATCHED, ack_doc.id, problem(
+                    EDI_997_UNMATCHED, "997 matches no 943",
+                    f"997 file {ack_doc.remote_name}: AK1 {g.group_control} / AK2 943 {st.control} matches no outbound "
+                    "943 (FR-OB-22a). Review it."))
+            return matched
         if g.functional_id != "OW" or st.type != "940":
-            return 0  # a 943's 997 (P7) or another group
+            return 0  # another group
         candidates = list((await s.execute(select(Document).where(
             Document.kind == "940_EDI", Document.direction == "OUT", Document.system == "RADIANT",
             func.ltrim(Document.gs06, "0") == g.group_control.lstrip("0"),

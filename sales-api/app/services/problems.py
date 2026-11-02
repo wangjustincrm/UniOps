@@ -36,6 +36,13 @@ INVOICE_HOLD = "invoice_hold"              # entity: order id (FR-OB-25 lot exce
 INVOICE_FAILED = "invoice_failed"          # entity: order id (FR-OB-30)
 ORDER_RETURN = "order_return"              # entity: order id (FR-OB-19)
 CANCELLED_AFTER_940 = "cancel_after_940"   # entity: order id (FR-OB-18, AC-OB-40; the email is P8)
+# P7 (transfers)
+TRANSFER_FAILED = "transfer_failed"        # entity: transfer id (FR-OB-81: checks / upload)
+EDI_943_REJECTED = "943_rejected"          # entity: transfer id (FR-OB-82, AC-OB-65)
+EDI_943_TIMEOUT = "943_timeout"            # entity: transfer id (FR-OB-82 / FR-OB-23)
+TRANSFER_DISCREPANCY = "transfer_discrepancy"  # entity: transfer id (FR-OB-84, AC-OB-67 / 76)
+SECOND_944 = "second_944"                  # entity: transfer id (FR-OB-83, AC-OB-68)
+EDI_944_NO_TRANSFER = "944_no_transfer"    # entity: receipt id (FR-OB-84)
 
 
 async def _operator(session):

@@ -1,6 +1,7 @@
 import type { ComboOption, Filter } from '@/platform-ui'
 import { itemsClient } from './items/itemsApi'
 import { partnersClient } from './partners/partnersApi'
+import { warehousesClient } from './warehouses/warehousesApi'
 
 // Options for reference fields (Autocomplete): what the user typed goes to
 // the list endpoint's quick search; active records only, 20 at most.
@@ -18,4 +19,10 @@ export const manualPartnerOptions = (query: string) => partnerOptions(query, [{ 
 export async function itemOptions(query: string): Promise<ComboOption[]> {
   const page = await itemsClient.list({ page: 1, pageSize: 20, search: query, filters: [ACTIVE], sort: [{ field: 'item_code' }] })
   return page.items.map((i) => ({ value: i.item_code, label: i.item_code, hint: i.description ?? undefined }))
+}
+
+/** Active warehouses, by id (transfers). */
+export async function warehouseOptions(query: string): Promise<ComboOption[]> {
+  const page = await warehousesClient.list({ page: 1, pageSize: 20, search: query, filters: [ACTIVE], sort: [{ field: 'code' }] })
+  return page.items.map((w) => ({ value: String(w.id), label: w.code, hint: w.name }))
 }

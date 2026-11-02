@@ -3,7 +3,7 @@ import { NavLink, useLocation, Routes, Route, Navigate } from 'react-router-dom'
 import { TabStoreProvider, TabBar, TabHost, TabRouterSync, useTabStore } from '@uniops/shell'
 import { moduleRoutes } from '@/app/routes'
 import {
-  Home, Building2, Plug, FileText, Activity, GitCompare, ShoppingCart, PenLine, Package, Tags, Route as RouteIcon, Truck, Receipt,
+  Home, Building2, Plug, FileText, Activity, GitCompare, ShoppingCart, PenLine, Package, Tags, Route as RouteIcon, Truck, Receipt, ArrowLeftRight, Warehouse,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -44,6 +44,7 @@ const NAV: NavItem[] = [
   { label: 'Home', href: '/home', icon: Home, perm: MODULE_PERMS[0], section: 'Sales' },
   { label: 'Orders', href: '/orders', icon: ShoppingCart, perm: 'sales.read', section: 'Orders' },
   { label: 'Manual orders', href: '/orders/manual', icon: PenLine, perm: 'sales.order.operate', section: 'Orders' },
+  { label: 'Transfers', href: '/transfers', icon: ArrowLeftRight, perm: 'sales.read', section: 'Transfers' },
   { label: 'Delivery confirmation', href: '/deliveries', icon: Truck, perm: 'sales.read', section: 'Invoicing' },
   { label: 'Invoices', href: '/invoices', icon: Receipt, perm: 'sales.read', section: 'Invoicing' },
   { label: 'Documents', href: '/documents', icon: FileText, perm: 'sales.read', section: 'Operations' },
@@ -54,6 +55,7 @@ const NAV: NavItem[] = [
   { label: 'Items', href: '/config/items', icon: Package, perm: 'sales.read', section: 'Configuration' },
   { label: 'Partner codes', href: '/config/partner-codes', icon: Tags, perm: 'sales.read', section: 'Configuration' },
   { label: 'DC routing', href: '/config/dc-routing', icon: RouteIcon, perm: 'sales.read', section: 'Configuration' },
+  { label: 'Warehouses', href: '/config/warehouses', icon: Warehouse, perm: 'sales.read', section: 'Configuration' },
 ]
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
