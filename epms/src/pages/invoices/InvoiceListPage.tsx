@@ -31,6 +31,7 @@ import type { ApiPo } from '@/services/po'
 import { InvoiceAllocationPanel, type AllocationAssignment } from './InvoiceAllocationPanel'
 import { MatchPanel } from './MatchPanel'
 import { FilePreviewPanel } from './FilePreviewPanel'
+import { INVOICE_FILE_RULE, uploadProblem } from '@/lib/uploadLimits'
 import { PdfSplitPanel } from './PdfSplitPanel'
 import { readPageCount, splitPdf, type PageGroup } from '@/lib/pdf-split'
 import { AssignMatchDialog } from './AssignMatchDialog'
@@ -167,6 +168,8 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
 
   const [dragging, setDragging] = useState(false)
   const [file, setFile] = useState<{ name: string; size: string; raw: File } | null>(null)
+  // A file refused before it reaches the form (INV-001: type / size).
+  const [fileError, setFileError] = useState<string | null>(null)
   const [selectedVendor, setSelectedVendor] = useState<{ id: string; name: string; code: string } | null>(null)
   const [vendorQuery, setVendorQuery] = useState('')
   const [vendorOpen, setVendorOpen] = useState(false)
@@ -373,6 +376,11 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
    *  one-page PDF, or a PDF pdf-lib cannot read) goes straight into the form,
    *  exactly as it always has. */
   const handleFile = async (f: File) => {
+    // The picker's `accept` is only a filter — drag & drop and "All files"
+    // bypass it, which is how a .zip became an invoice (ISS-0093).
+    const problem = uploadProblem(f, INVOICE_FILE_RULE)
+    setFileError(problem)
+    if (problem) return
     setQueue([]); setQueueIndex(0); setCreatedIds([]); setPendingSplit(null)
     const pages = await readPageCount(f)
     if (pages !== null && pages > 1) {
@@ -640,6 +648,9 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
         due_date: dueDate || new Date(new Date(invoiceDate).getTime() + 30 * 86400000).toISOString().slice(0, 10),
         notes: notes.trim() || undefined,
         line_items: lineItems.length > 0 ? lineItems : undefined,
+        // The server checks the name against INV-001 too (ISS-0093).
+        file_name: file?.name ?? undefined,
+        file_size: file?.size ?? undefined,
       })
 
       // Save file binary as attachment in unified invoice storage (expense-api)
@@ -890,12 +901,17 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
                 <p className="text-sm text-neutral-500">
                   <span className="font-medium text-primary-600">Click to upload</span> or drag & drop
                 </p>
-                <p className="text-xs text-neutral-400">PDF, JPG, PNG · Max 25 MB</p>
+                <p className="text-xs text-neutral-400">{INVOICE_FILE_RULE.hint}</p>
               </>
             )}
-            <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f) }} />
+            <input ref={fileRef} type="file" accept={INVOICE_FILE_RULE.accept} className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void handleFile(f) }} />
           </div>
+          {fileError && (
+            <p role="alert" className="flex shrink-0 items-center gap-1.5 text-xs text-danger-600">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />{fileError}
+            </p>
+          )}
 
           {/* AI parse error */}
           {parseError && (

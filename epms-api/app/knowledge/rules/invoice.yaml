@@ -269,6 +269,23 @@ rules:
     test:
       - "tests/test_invoice_history.py::test_history_keeps_assign_review_unmatch_and_rematch"
       - "tests/test_invoice_history.py::test_history_records_decline_and_exception_resolution"
+  - id: invoice_file_types
+    asked_as:
+      - 发票可以上传什么格式的文件？
+      - can I upload a zip or Excel file as an invoice
+      - what file types does Upload Invoice accept
+    answer: >
+      Upload Invoice accepts PDF, JPG, JPEG and PNG files of at most 25 MB.
+      Any other file is refused before an invoice is created, with the reason
+      shown. Supporting documents on purchase requests, orders, goods receipts
+      and payment applications take PDF, images, Excel, Word, CSV, text and
+      saved emails (.msg / .eml), at most 25 MB per file.
+    enforced_in: "epms-api app/schemas/invoice.py InvoiceCreate._invoice_file_type; expense-api invoice_attachments MAX_FILE_BYTES; epms/src/lib/uploadLimits.ts; file-api ALLOWED_CONTENT_TYPES; epms-api *_attachments.py MAX_FILE_SIZE; PRD INV-001, §3.4.1"
+    provenance: pinned
+    test:
+      - "tests/test_invoice_upload_file_type.py::test_zip_invoice_is_refused_and_not_created"
+      - "tests/test_invoice_upload_file_type.py::test_inv001_types_and_manual_entry_are_accepted"
+      - "epms/src/lib/uploadLimits.test.ts"
   - id: one_invoice_one_pa
     also_in: [pa]
     asked_as:

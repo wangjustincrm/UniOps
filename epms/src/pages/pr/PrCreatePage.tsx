@@ -30,6 +30,7 @@ import { userService, type ApiUserBrief } from '@/services/users'
 import type { ApiVendor } from '@/services/vendors'
 import type { ProcurementType, PrLineItem, Currency } from '@/types'
 import { enabledCurrencyOptions } from '@/lib/currencies'
+import { ATTACHMENT_RULE, partitionUploads } from '@/lib/uploadLimits'
 
 const prSchema = z.object({
   title: z.string().min(3, 'Title is required'),
@@ -162,6 +163,7 @@ export default function PrCreatePage() {
   const [departmentError, setDepartmentError] = useState<string | null>(null)
   const [budgetError, setBudgetError] = useState<string | null>(null)
   const [attachments, setAttachments] = useState<File[]>([])
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [currency, setCurrency] = useState<Currency>('CAD')
   const [lineItems, setLineItems] = useState<PrLineItem[]>([defaultLine()])
   const [lineErrors, setLineErrors] = useState<Record<string, { description?: string; qty?: string; unitPrice?: string }>>({})
@@ -533,8 +535,11 @@ export default function PrCreatePage() {
   }
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
-    setAttachments((prev) => [...prev, ...files])
+    // Checked when picked: the document is saved before its files are sent,
+    // so a refused file would otherwise be found missing only afterwards.
+    const { ok, problems } = partitionUploads(Array.from(e.target.files ?? []), ATTACHMENT_RULE)
+    setAttachmentError(problems.length ? problems.join(' ') : null)
+    setAttachments((prev) => [...prev, ...ok])
     e.target.value = ''
   }
 
@@ -1003,10 +1008,11 @@ export default function PrCreatePage() {
                       <Upload className="h-8 w-8 text-neutral-400" />
                       <div>
                         <p className="text-sm font-medium text-neutral-700">Drag &amp; drop or click to upload</p>
-                        <p className="text-xs text-neutral-400 mt-1">Any format · Max 25 MB per file</p>
+                        <p className="text-xs text-neutral-400 mt-1">{ATTACHMENT_RULE.hint}</p>
                       </div>
-                      <input id="file-upload" type="file" multiple className="sr-only" onChange={handleFileInput} />
+                      <input id="file-upload" type="file" multiple accept={ATTACHMENT_RULE.accept} className="sr-only" onChange={handleFileInput} />
                     </label>
+                    {attachmentError && <p role="alert" className="text-xs text-danger-600">{attachmentError}</p>}
                     {attachments.map((f, i) => (
                       <div key={i} className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
                         <span className="flex-1 truncate text-neutral-700">📎 {f.name}</span>

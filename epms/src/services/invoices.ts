@@ -142,6 +142,9 @@ export interface CreateInvoiceBody {
   due_date: string
   line_items?: InvoiceLineItem[]
   notes?: string
+  /** The uploaded document's name; refused unless PDF / JPG / JPEG / PNG (INV-001). */
+  file_name?: string
+  file_size?: string
 }
 
 export interface UpdateInvoiceBody {
