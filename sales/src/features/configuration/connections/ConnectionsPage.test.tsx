@@ -16,6 +16,7 @@ const LINE = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample'
 
 const api = vi.hoisted(() => ({
   test: vi.fn(), pin: vi.fn(), clear: vi.fn(), importCsv: vi.fn(),
+  edi: vi.fn(async () => ({ connection_id: null, ack_timeout_minutes: 120 })), saveEdi: vi.fn(),
 }))
 vi.mock('./connectionsApi', async (orig) => {
   const real = await orig<typeof import('./connectionsApi')>()
@@ -24,6 +25,7 @@ vi.mock('./connectionsApi', async (orig) => {
     connectionsClient: { ...real.connectionsClient, list: vi.fn(async () => ({ items: [conn], total: 1 })), importCsv: api.importCsv },
     fetchConnectionAudit: vi.fn(async () => []),
     testConnection: api.test, pinHostKey: api.pin, clearAuthLatch: api.clear,
+    fetchEdiSettings: api.edi, saveEdiSettings: api.saveEdi,
   }
 })
 const { default: ConnectionsPage } = await import('./ConnectionsPage')
@@ -108,5 +110,21 @@ describe('a Shopify connection', () => {
     status = await within(await screen.findByRole('dialog')).findByRole('region', { name: 'Connection status' })
     expect(within(status).getByText('Reset cursor')).toBeDisabled()  // until a date is chosen
     expect(within(status).getByText(/Reads the store's name/)).toBeInTheDocument()
+  })
+})
+
+describe('Connections page: warehouse EDI settings (P4)', () => {
+  it('a reader sees them read-only; sales.config saves the connection and the 997 wait', async () => {
+    const { unmount } = renderAs(['sales.read'])
+    let panel = await screen.findByRole('region', { name: 'Warehouse EDI' })
+    expect(await within(panel).findByLabelText('997 wait (minutes)')).toBeDisabled()
+    expect(within(panel).queryByText('Save')).toBeNull()
+    unmount()
+    api.saveEdi.mockImplementation(async (d) => d)
+    renderAs(['sales.read', 'sales.config'])
+    panel = await screen.findByRole('region', { name: 'Warehouse EDI' })
+    fireEvent.change(await within(panel).findByLabelText('997 wait (minutes)'), { target: { value: '90' } })
+    fireEvent.click(within(panel).getByText('Save'))
+    await waitFor(() => expect(api.saveEdi).toHaveBeenCalledWith({ connection_id: null, ack_timeout_minutes: 90 }))
   })
 })

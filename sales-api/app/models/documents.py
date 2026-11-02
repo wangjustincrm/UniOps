@@ -81,6 +81,8 @@ class Document(CreationAudited, Base):
     partner_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     replaced_by_id: Mapped[int | None] = mapped_column(ForeignKey("sales_documents.id"), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # sales08: the 997 clock
+    ack_detail: Mapped[str | None] = mapped_column(Text, nullable=True)  # the 997's codes, or the accepting 945
     zoho_file_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     has_content: Mapped[bool] = column_property(content.column.is_not(None))

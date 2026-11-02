@@ -96,6 +96,10 @@ FULFILLMENT_ADDITIONS = {
     F.PENDING: {F.REVIEW},
     F.PAYMENT_HOLD: {F.REVIEW},
     F.REVIEW: {F.PAYMENT_HOLD},
+    # FR-OB-03c (P4): a confirmed replacement 940 after a source change starts
+    # over from 940 Generated; the previous file becomes Replaced.
+    F.SENT_940: {F.GENERATED_940},
+    F.ACCEPTED_940: {F.GENERATED_940},
 }
 FULFILLMENT_HOLD_ENTRIES = {
     # 9.1 lists Shipped → On Hold (second 945, FR-OB-25). FR-OB-18: a source

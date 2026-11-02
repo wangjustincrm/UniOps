@@ -24,6 +24,18 @@ async def list_orders(u: UoW, spec: Spec) -> dict:
     return page_body(await OrderService(u).list(spec))
 
 
+@router.get("/eligibility-preview")
+async def eligibility_preview(u: UoW, rt: Rt) -> list[dict]:
+    return await OrderService(u).eligibility_preview(rt.outbound)
+
+
+@router.post("/{id}/send-940")
+async def send_940_now(u: UoW, rt: Rt, id: int, replace: bool = False) -> dict:
+    out = await OrderService(u).send_940_now(id, rt.outbound, replace=replace)
+    await u.commit()
+    return out
+
+
 @router.get("/meta")
 async def orders_meta(u: UoW) -> dict:
     return await OrderService(u).meta()

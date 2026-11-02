@@ -19,6 +19,12 @@ ORDER_ARCHIVED = "order_archived"        # entity: order id (FR-OB-03d)
 SHOPIFY_FETCH_FAILED = "shopify_fetch_failed"  # entity: connection id (FR-OB-51)
 SHOPIFY_AUTH_FAILED = "shopify_auth_failed"    # entity: connection id (FR-OB-50)
 ORDER_FILE_UNREADABLE = "order_file_bad"       # entity: document id (FR-OB-70)
+# P4 (940 / 997)
+EDI_940_FAILED = "940_failed"             # entity: order id (FR-OB-24, FR-OB-29a)
+EDI_940_REJECTED = "940_rejected"         # entity: order id (FR-OB-22a, AC-OB-32)
+EDI_940_TIMEOUT = "940_timeout"           # entity: order id (FR-OB-23, AC-OB-33)
+EDI_997_UNMATCHED = "997_unmatched"       # entity: document id (FR-OB-22a)
+CHANGED_AFTER_940 = "changed_after_940"   # entity: order id (FR-OB-16, AC-OB-18 / 70)
 
 
 async def _operator(session):

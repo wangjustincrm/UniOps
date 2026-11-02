@@ -41,11 +41,13 @@ class SalesCycle(ScheduledJob):
     name = "sales_cycle"
     lock_key = CYCLE_LOCK_KEY
 
-    def __init__(self, *, intake: Intake, outbox_worker, shopify_intake=None, edi_intake=None, **kw) -> None:
+    def __init__(self, *, intake: Intake, outbox_worker, shopify_intake=None, edi_intake=None, outbound=None,
+                 **kw) -> None:
         super().__init__(stale_after=STALE_AFTER, **kw)
         self.intake = intake
         self.shopify_intake = shopify_intake
         self.edi_intake = edi_intake
+        self.outbound = outbound
         self.outbox_worker = outbox_worker
 
     async def run_once(self, run) -> RunSummary:
@@ -81,7 +83,18 @@ class SalesCycle(ScheduledJob):
                 trouble += 1
         edi = await self.edi_intake.run_pass(run_id=run.id) if self.edi_intake else {}
         trouble += edi.get("failed", 0)
+        # P4: the orders that qualify get their 940 (queued in the outbox), the
+        # outbox sends, then the 997s that arrived are applied and late ones time out.
+        edi_out: dict = {}
+        if self.outbound:
+            queued = await self.outbound.queue_due(run_id=run.id)
+            edi_out["queue"] = asdict(queued)
+            trouble += queued.failed
         outbox = asdict(await self.outbox_worker.run_once())
-        counts = {"connections": per, "shopify": shopify, "edi_850": edi, "outbox": outbox}
+        trouble += outbox.get("failed", 0)
+        if self.outbound:
+            edi_out["997"] = asdict(await self.outbound.process_997s(run_id=run.id))
+            edi_out["timeouts"] = asdict(await self.outbound.timeouts(run_id=run.id))
+        counts = {"connections": per, "shopify": shopify, "edi_850": edi, "940": edi_out, "outbox": outbox}
         await oplog.write_alone(self.uow_factory, "INFO", "cycle", "cycle finished", run_id=run.id, context=counts)
         return RunSummary(counts=counts, partial=trouble > 0)

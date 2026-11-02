@@ -553,6 +553,8 @@ services:
       # Fail closed (design §5.1): this stack's only SFTP host is its own test
       # container below — never a partner's server, whatever a connection row says.
       SALES_SFTP_ALLOWED_HOSTS: sftp-test
+      # The only host a write may touch here: the test container (P4).
+      SALES_SFTP_WRITE_HOSTS: sftp-test
       # The test container's password, under the name its connection row uses
       # (secret_name = SALES_SECRET_SFTP_TEST). A throwaway container on the
       # stack's own network: no port is published.

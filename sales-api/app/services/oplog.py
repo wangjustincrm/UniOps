@@ -8,11 +8,11 @@ from app.platform.actors import SYSTEM_ACTOR
 
 
 async def write(session, level: str, step: str, message: str, *, run_id: int | None = None,
-                connection_id: int | None = None, document_id: int | None = None,
+                connection_id: int | None = None, document_id: int | None = None, order_id: int | None = None,
                 context: dict[str, Any] | None = None) -> None:
     """In the caller's unit of work (it commits with the unit's own writes)."""
     session.add(LogEntry(level=level, step=step, message=message[:4000], run_id=run_id,
-                         connection_id=connection_id, document_id=document_id, context=context))
+                         connection_id=connection_id, document_id=document_id, order_id=order_id, context=context))
     await session.flush()
 
 

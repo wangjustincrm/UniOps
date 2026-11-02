@@ -42,6 +42,8 @@ export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
   errorMessages?: Record<string, string>
   /** Shown under the form of an existing record (e.g. its audit history). */
   renderDetail?: (row: T) => ReactNode
+  /** Shown between the header and the list (e.g. a related setting). */
+  notice?: ReactNode
 }
 
 /** List + create/edit form + deactivate + CSV import with a dry-run preview,
@@ -74,7 +76,7 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
       description={props.description}
       columns={props.columns}
       errorMessages={props.errorMessages}
-      notice={<ErrorMessage error={importError} messages={props.errorMessages} />}
+      notice={<>{props.notice}<ErrorMessage error={importError} messages={props.errorMessages} /></>}
       detailTitle={() => (canWrite ? `Edit ${singular}` : `${singular} (read only)`)}
       renderDetail={(row, close) => (
         <RecordForm row={row} close={close} canWrite={canWrite} props={props}

@@ -26,3 +26,13 @@ SCHEDULER_PAUSED = SETTINGS.declare(Setting(
 # X2: every Action Required task goes to the operator.
 OPERATOR_USER_ID = SETTINGS.declare(Setting(
     "operator_user_id", None, _uuid_or_none, safe=None, description="User who receives Action Required tasks"))
+# P4: the warehouse's SFTP connection — 940s are put in its outbound folder
+# (TEST mode: test_outbound_folder), its 997s are read from it. Unset: no 940
+# is generated (fail closed); every queued order says why.
+EDI_CONNECTION_ID = SETTINGS.declare(Setting(
+    "edi.warehouse_connection_id", None, lambda v: None if v in (None, "") else int(v), safe=None,
+    description="Warehouse SFTP connection for 940s and 997s"))
+# FR-OB-23: no 997 within this time → Timeout and a task.
+ACK_TIMEOUT_MINUTES = SETTINGS.declare(Setting(
+    "edi.ack_timeout_minutes", 120, int, validate=minimum(1), safe=120,
+    description="Minutes to wait for a 997 before Timeout"))

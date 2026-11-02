@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Badge, DetailList, ErrorView, Skeleton, StatusCell, formatDate, formatDateTime, formatMoney, queryKeys } from '@/platform-ui'
+import { Badge, DateTimeCell, DetailList, ErrorView, Skeleton, StatusCell, formatDate, formatDateTime, formatMoney, queryKeys } from '@/platform-ui'
 import { fetchOrder, ordersClient, type OrderRead } from './ordersApi'
 
 // The badge shows the fulfillment status in the colour of the derived order state (D17).
@@ -15,6 +15,8 @@ export function OrderDetailView({ id }: { id: number }) {
   if (q.isLoading) return <Skeleton className="h-40 w-full" />
   if (q.error || !q.data) return <ErrorView error={q.error} />
   const o = q.data
+  const sent = o.documents.filter((d) => d.direction === 'OUT' && d.kind === '940_EDI')
+  const sources = o.documents.filter((d) => d.direction === 'IN')
   return (
     <div className="flex flex-col gap-5 text-sm">
       <div className="flex flex-wrap items-center gap-2">
@@ -55,10 +57,29 @@ export function OrderDetailView({ id }: { id: number }) {
       </section>
       <section aria-label="Documents">
         <h3 className="mb-1 font-semibold text-neutral-800">Source documents</h3>
-        {o.documents.length === 0 ? <p className="text-neutral-500">None (entered by hand).</p> : (
-          <ul className="text-xs">{o.documents.map((d) => <li key={d.id}>#{d.id} {d.kind} · {d.remote_name} · {formatDateTime(d.created_at)}</li>)}</ul>
+        {sources.length === 0 ? <p className="text-neutral-500">None (entered by hand).</p> : (
+          <ul className="text-xs">{sources.map((d) => <li key={d.id}>#{d.id} {d.kind} · {d.remote_name} · {formatDateTime(d.created_at)}</li>)}</ul>
         )}
       </section>
+      {sent.length > 0 && (
+        <section aria-label="Warehouse 940s">
+          <h3 className="mb-1 font-semibold text-neutral-800">Warehouse 940s</h3>
+          <table className="w-full text-xs">
+            <thead><tr className="text-left text-neutral-500"><th>Control</th><th>File</th><th>997</th><th>Sent</th><th>Note</th></tr></thead>
+            <tbody>
+              {sent.map((d) => (
+                <tr key={d.id} className="border-t border-neutral-100 align-top">
+                  <td className="py-1">{d.st02}</td>
+                  <td><StatusCell value={d.file_status} /></td>
+                  <td>{d.file_status === 'Sent' || d.ack_status !== 'Waiting' ? <StatusCell value={d.ack_status} /> : '—'}</td>
+                  <td><DateTimeCell value={d.sent_at} /></td>
+                  <td className="break-words">{d.error ?? d.ack_detail ?? ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
       <section aria-label="Timeline">
         <h3 className="mb-1 font-semibold text-neutral-800">Timeline</h3>
         <ol className="flex flex-col gap-1 text-xs">

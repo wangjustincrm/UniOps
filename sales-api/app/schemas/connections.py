@@ -145,3 +145,12 @@ class ConnectionTestRead(BaseModel):
     folders: list[FolderCheckRead]
     error: str | None = None
     shop: dict | None = None  # Shopify: the store's name, domain and currency
+
+
+class EdiSettings(BaseModel):
+    """P4: the warehouse SFTP connection 940s are put to and 997s read from
+    (none: no 940 is generated), and the 997 wait before Timeout (FR-OB-23)."""
+    model_config = ConfigDict(extra="forbid")
+
+    connection_id: int | None
+    ack_timeout_minutes: Annotated[int, Field(ge=1, le=10080)]

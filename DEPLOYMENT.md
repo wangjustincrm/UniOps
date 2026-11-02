@@ -565,6 +565,13 @@ the first Sales release:
    Connections, run **Test connection**, compare the SHA256 fingerprint with
    the partner's and **Pin this key** — an unpinned connection never logs in.
 
+4a. **SFTP writes (the release that sends 940s, P4)** — a put / move / delete
+   needs all three guards: `SALES_PARTNER_WRITES_ENABLED=true`, the connection
+   in mode LIVE, and its host in `SALES_SFTP_WRITE_HOSTS` (empty = no write
+   anywhere, fail closed). At that release list **Radiant only**:
+   `SALES_SFTP_WRITE_HOSTS=commhub.wheelsgroup.com` (TrueCommerce is added only
+   when 810s go out, P6). Dev stacks list only their test container.
+
 5. **Grant access** — Portal → Admin → Access Control: assign `sales_operator`
    (or single `sales.*` keys) to the people who need them. The Sales card and
    nav entry stay invisible until then.

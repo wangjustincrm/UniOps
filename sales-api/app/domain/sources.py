@@ -98,6 +98,7 @@ def from_shopify(o: dict[str, Any], *, partner_code: str, partner_abbrev: str | 
         "ship_to": ship_to, "bill_to": bill_to,
         "contact": {"email": o.get("email"), "phone": o.get("phone")},
         "notes": notes or None,
+        "shipping_method": method,
         "currency": o.get("currency") or "CAD",
         "subtotal": _dec(o.get("subtotal_price")), "tax": _dec(o.get("total_tax")),
         "discount": _dec(o.get("total_discounts")), "shipping": _dec(shipping_amount),

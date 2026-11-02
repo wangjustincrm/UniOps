@@ -30,6 +30,9 @@ from app.services.intake import ConnectionSnapshot
 from app.services.orders import BarcodeLookup, OrderSync
 
 READ = "sales.read"
+_DOC_COLUMNS = (Document.id, Document.kind, Document.direction, Document.remote_name, Document.created_at,
+                Document.file_status, Document.ack_status, Document.st02, Document.sent_at, Document.error,
+                Document.ack_detail)
 OPERATE = "sales.order.operate"
 
 
@@ -79,7 +82,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         s = self.uow.session
         o = await self.repo.get(id)
         lines = list((await s.execute(select(OrderLine).where(OrderLine.order_id == id).order_by(OrderLine.line_no))).scalars())
-        docs = (await s.execute(select(Document.id, Document.kind, Document.remote_name, Document.created_at)
+        docs = (await s.execute(select(*_DOC_COLUMNS)
                                 .join(DocumentLink, DocumentLink.document_id == Document.id)
                                 .where(DocumentLink.entity_type == "order", DocumentLink.entity_id == id)
                                 .order_by(Document.id))).all()
@@ -93,7 +96,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
             **base, **{k: getattr(o, k) for k in ("bill_to", "contact", "notes", "subtotal", "tax", "shipping",
                                                    "discount", "department", "order_type")},
             lines=[LineRead.model_validate(ln) for ln in lines],
-            documents=[OrderDocumentRead(id=d.id, kind=d.kind, remote_name=d.remote_name, created_at=d.created_at) for d in docs],
+            documents=[OrderDocumentRead(**d._asdict()) for d in docs],
             timeline=[TimelineEntry(at=a.at, user_name=a.user_name, entity=a.entity, action=a.action, before=a.before,
                                     after=a.after, reason=a.reason) for a in trail],
         )
@@ -108,6 +111,22 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         remaining = await OrderSync(self.uow, tasks).recheck(o, await self._barcodes(o, shopify))
         return ReviewResult(order=self.to_read(o), remaining=remaining)
 
+
+    @requires(OPERATE)
+    async def send_940_now(self, id: int, outbound, *, replace: bool = False) -> dict:
+        """FR-OB-03c: generate and queue the 940 now (any delay, a manual-mode
+        partner, a resend after a rejection / failure / timeout, or a confirmed
+        replacement). Audited through the order's transitions."""
+        self.uow.set_reason("Send 940 now (replacement)" if replace else "Send 940 now")
+        doc = await outbound.send_now(self.uow, id, replace=replace)
+        order = await self.repo.get(id)
+        return {"order": self.to_read(order).model_dump(mode="json"), "document_id": doc.id,
+                "file_status": doc.file_status, "control": doc.st02, "errors": (doc.body_json or {}).get("errors", [])}
+
+    @requires(READ)
+    async def eligibility_preview(self, outbound) -> list[dict]:
+        """AC-OB-21: the orders the next cycle would send a 940 for (writes nothing)."""
+        return await outbound.preview(self.uow.session)
 
     async def _barcodes(self, o: Order, shopify) -> BarcodeLookup | None:
         """The store the order came from: the active SHOPIFY connection of its

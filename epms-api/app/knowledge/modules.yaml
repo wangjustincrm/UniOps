@@ -279,12 +279,26 @@ modules:
       - Enter a manual order (sample, phone order, staff purchase) as a draft and submit it
       - Maintain the partners, items with their units, retailer part numbers and DC routing, also by CSV
       - Set up the SFTP and Shopify connections, test them, and see the files received and each run's report
+      - See an order's 940s to the warehouse — whether the file was sent, and separately whether the warehouse acknowledged it (997) — and use Send 940 now, or Replace 940 for a live one
+      - See which orders the next cycle would send a 940 for (Orders → Next 940s)
+      - Choose the warehouse's SFTP connection and how long to wait for its 997 (Configuration → Connections, Warehouse EDI)
     notes:
       - >-
         Sales is being built in phases. Orders are read from Shopify and from
-        retailer 850s, but Sales does not send anything to the warehouse yet:
-        940s, shipments and invoices still run in Zoho until those parts go
-        live — so for a shipment or an invoice, look in Zoho.
+        retailer 850s. Sales can build and send the warehouse 940 and read the
+        warehouse's 997, but writing to the warehouse's server is switched off
+        until the release that turns it on; until then the 940s the warehouse
+        receives, and all shipments and invoices, still come from Zoho — so for
+        a shipment or an invoice, look in Zoho.
+      - >-
+        A 940 shows two statuses: the file (Ready To Send, Sent, Failed when the
+        upload failed, Suppressed when sending is switched off, Cancelled when it
+        did not pass its checks — the order then shows 940 Failed and the reason)
+        and the warehouse's 997 (Waiting, Accepted, Rejected, Timeout when none
+        came in time). Sent is not accepted. A rejected, failed or timed-out 940 is never
+        resent by itself: each raises a task, and Send 940 now sends a new one.
+        A live 940 is changed only by Replace 940 (after a confirmation); a change
+        to the order after its 940 updates the order and raises a task instead.
       - >-
         Passwords and tokens are never entered in Sales: a connection only
         names the server setting that holds them.

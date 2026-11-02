@@ -24,7 +24,7 @@ class DocumentRepository(Repository[Document]):
     search_fields = ("remote_name", "sha256", "error")
     list_fields = ("id", "direction", "origin", "system", "connection_id", "kind", "remote_name", "size",
                    "remote_mtime", "sha256", "processing_status", "file_status", "ack_status", "isa13", "gs06",
-                   "st02", "partner_code", "error", "created_at")
+                   "st02", "partner_code", "error", "sent_at", "created_at")
     labels = {"remote_name": "File", "remote_mtime": "Modified on the server", "isa13": "ISA13", "gs06": "GS06",
               "st02": "ST02", "sha256": "SHA-256"}
     enums = {"direction": DIRECTIONS, "origin": ORIGINS, "system": SYSTEMS, "kind": KINDS,

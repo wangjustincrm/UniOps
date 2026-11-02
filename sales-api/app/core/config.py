@@ -73,6 +73,18 @@ class Settings(BaseSettings):
     def sftp_allowed_hosts(self) -> frozenset[str]:
         return frozenset(h.strip().lower() for h in self.SALES_SFTP_ALLOWED_HOSTS.split(",") if h.strip())
 
+    # ── SFTP hosts a put / move / delete may touch (fail closed) ─────────────
+    # The third guard on partner writes, beside SALES_PARTNER_WRITES_ENABLED and
+    # a LIVE connection (P4, 2026-10-30). Empty or unset: no SFTP write
+    # anywhere. A host may be readable (SALES_SFTP_ALLOWED_HOSTS) and still not
+    # writable: dev lists only its test container; production lists Radiant at
+    # release (DEPLOYMENT.md).
+    SALES_SFTP_WRITE_HOSTS: str = ""
+
+    @property
+    def sftp_write_hosts(self) -> frozenset[str]:
+        return frozenset(h.strip().lower() for h in self.SALES_SFTP_WRITE_HOSTS.split(",") if h.strip())
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -430,3 +430,25 @@ async def test_requeue_refuses_rows_that_are_not_failed_or_suppressed(uow_factor
         with pytest.raises(BusinessError) as e:
             await OUTBOX.requeue(uow.session, rid)
     assert e.value.code == "outbox.not_requeueable"
+
+
+async def test_on_done_records_success_in_the_same_transaction_and_cannot_undo_it(uow_factory):
+    """P4: the document is marked Sent with the row DONE — and a failing hook
+    leaves the row DONE (the file is out; never sent again)."""
+    seen = []
+
+    async def ok(payload, ctx):
+        return None
+
+    async def record(row, exc, uow):
+        seen.append((row.status, exc))
+
+    async def broken(row, exc, uow):
+        raise RuntimeError("hook bug")
+
+    worker = OutboxWorker(OUTBOX, {"good": OutboxKind(ok, ONCE, on_done=record), "bad": OutboxKind(ok, ONCE, on_done=broken)},
+                          uow_factory, clock=Clock())
+    good, bad = await _queue(uow_factory, "good"), await _queue(uow_factory, "bad")
+    summary = await worker.run_once()
+    assert summary.done == 2 and seen == [(DONE, None)]
+    assert (await _row(uow_factory, good)).status == DONE and (await _row(uow_factory, bad)).status == DONE

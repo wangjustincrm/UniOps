@@ -67,3 +67,8 @@ export const resetCursor = (id: number, cursor: string | null) =>
 export const pinHostKey = (c: ConnectionRead, line: string) =>
   connectionsClient.update(c.id, { host_key: line }, c.version)
 export const downloadConnections = (path: string) => api.download(path, 'connections.csv')
+
+/** P4: the warehouse SFTP connection for 940s and 997s, and the 997 wait. */
+export interface EdiSettings { connection_id: number | null; ack_timeout_minutes: number }
+export const fetchEdiSettings = () => api.get<EdiSettings>('/config/edi-settings')
+export const saveEdiSettings = (data: EdiSettings) => api.put<EdiSettings>('/config/edi-settings', data)

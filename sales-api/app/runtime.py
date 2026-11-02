@@ -16,6 +16,7 @@ from app.models.documents import Run
 from app.models.records import OutboxRecord
 from app.platform.jobs import Background
 from app.platform.outbox import Outbox, OutboxWorker
+from app.services.outbound import SEND_940, Outbound940
 from app.services import oplog
 from app.services.cycle import SalesCycle, settings_schedule
 from app.services.edi_intake import EdiIntake
@@ -33,6 +34,7 @@ class Runtime:
     edi_intake: EdiIntake
     cycle: SalesCycle
     background: Background
+    outbound: Outbound940 | None = None
 
 
 def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify: Any = None) -> Runtime:
@@ -53,10 +55,12 @@ def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify:
     intake = Intake(uow_factory=uow_factory, sftp=container.sftp, tasks=tasks)
     shopify_intake = ShopifyIntake(uow_factory=uow_factory, shopify=container.shopify, tasks=tasks)
     edi_intake = EdiIntake(uow_factory=uow_factory, tasks=tasks)
-    worker = OutboxWorker(Outbox(OutboxRecord), {}, uow_factory)  # no outbox kinds before P4
-    cycle = SalesCycle(intake=intake, shopify_intake=shopify_intake, edi_intake=edi_intake, outbox_worker=worker,
-                       run_model=Run, uow_factory=uow_factory, schedule=settings_schedule(uow_factory))
-    return Runtime(container, uow_factory, intake, shopify_intake, edi_intake, cycle, Background())
+    outbound = Outbound940(uow_factory=uow_factory, tasks=tasks, sftp=container.sftp)
+    worker = OutboxWorker(Outbox(OutboxRecord), {SEND_940: outbound.outbox_kind()}, uow_factory)
+    cycle = SalesCycle(intake=intake, shopify_intake=shopify_intake, edi_intake=edi_intake, outbound=outbound,
+                       outbox_worker=worker, run_model=Run, uow_factory=uow_factory,
+                       schedule=settings_schedule(uow_factory))
+    return Runtime(container, uow_factory, intake, shopify_intake, edi_intake, cycle, Background(), outbound)
 
 
 _runtime: Runtime | None = None

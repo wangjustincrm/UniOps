@@ -60,6 +60,7 @@ class Order(Audited, Versioned, Base):
     bill_to: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     contact: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    shipping_method: Mapped[str | None] = mapped_column(String(255), nullable=True)  # sales08: W66 GND / EXP
     currency: Mapped[str] = mapped_column(String(3), nullable=False, server_default="CAD")
     subtotal: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
     tax: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)

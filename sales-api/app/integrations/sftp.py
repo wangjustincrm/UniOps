@@ -120,6 +120,22 @@ def live_only(method: str, args: tuple, kwargs: dict) -> str | None:  # noqa: AR
     return None if getattr(conn, "mode", None) == "LIVE" else "connection not LIVE"
 
 
+def writes_allowed(settings: Any) -> Callable[[str, tuple, dict], str | None]:
+    """The guard's allow check for SFTP writes: a LIVE connection AND its host
+    listed in SALES_SFTP_WRITE_HOSTS — read at call time, so switching it off
+    takes effect at once; empty = no write anywhere. Runs before any traffic."""
+    def allow(method: str, args: tuple, kwargs: dict) -> str | None:
+        reason = live_only(method, args, kwargs)
+        if reason:
+            return reason
+        conn = args[0] if args else kwargs.get("conn")
+        host = (getattr(conn, "host", None) or "").strip().lower()
+        if not host or host not in settings.sftp_write_hosts:
+            return "host not in SALES_SFTP_WRITE_HOSTS"
+        return None
+    return allow
+
+
 def summary(method: str, args: tuple, kwargs: dict) -> dict[str, Any]:
     """The "would have written" record: never the file's bytes."""
     names = {"put": ("conn", "folder", "name", "data"), "move": ("conn", "src", "dst"), "delete": ("conn", "path")}

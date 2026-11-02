@@ -51,10 +51,26 @@ export interface LineRead {
   problem: string | null
 }
 
+/** A source document, or a 940 sent to the warehouse: its file status and
+ *  its 997 status are separate (Sent is not Accepted, FR-OB-22). */
+export interface OrderDocument {
+  id: number
+  kind: string
+  direction: 'IN' | 'OUT'
+  remote_name: string | null
+  created_at: string
+  file_status: string | null
+  ack_status: string | null
+  st02: string | null
+  sent_at: string | null
+  error: string | null
+  ack_detail: string | null
+}
+
 export interface OrderDetail extends OrderRead {
   notes: string | null
   lines: LineRead[]
-  documents: { id: number; kind: string; remote_name: string | null; created_at: string }[]
+  documents: OrderDocument[]
   timeline: { at: string; user_name: string; entity: string; action: string; before: Record<string, unknown> | null;
     after: Record<string, unknown> | null; reason: string | null }[]
 }
@@ -78,3 +94,8 @@ export const createManual = (data: ManualOrderIn) => api.post<OrderRead>('/order
 export const updateManual = (id: number, data: ManualOrderIn, version: number) => api.put<OrderRead>(`/orders/manual/${id}?version=${version}`, data)
 export const submitManual = (id: number, version: number) => api.post<OrderRead>(`/orders/manual/${id}/submit?version=${version}`)
 export const cancelManual = (id: number, version: number) => api.post<OrderRead>(`/orders/manual/${id}/cancel?version=${version}`)
+
+export interface Send940Result { order: OrderRead; document_id: number; file_status: string; control: string; errors: string[] }
+export const send940 = (id: number, replace = false) => api.post<Send940Result>(`/orders/${id}/send-940${replace ? '?replace=true' : ''}`)
+export interface EligibleOrder { order_id: number; order_number: number; partner_code: string; source_order_number: string | null }
+export const fetchEligibility = () => api.get<EligibleOrder[]>('/orders/eligibility-preview')

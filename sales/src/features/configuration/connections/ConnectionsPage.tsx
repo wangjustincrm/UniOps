@@ -1,6 +1,7 @@
 import { Badge, CrudPage, useToast, type ColumnDef } from '@/platform-ui'
 import { AuditHistory } from '../AuditHistory'
 import { ConnectionTools } from './ConnectionTools'
+import { EdiSettingsPanel } from './EdiSettingsPanel'
 import {
   connectionsClient, downloadConnections, fetchConnectionAudit,
   type ConnectionCreate, type ConnectionRead, type ConnectionUpdate,
@@ -54,6 +55,7 @@ export default function ConnectionsPage() {
       }}
       csvImport
       errorMessages={errorMessages}
+      notice={<EdiSettingsPanel />}
       renderDetail={(c) => (
         <div className="flex flex-col gap-6">
           <ConnectionTools connection={c} />

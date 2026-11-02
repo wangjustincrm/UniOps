@@ -37,13 +37,18 @@ from app.integrations.shopify import readable
 from app.models.config import DcRouting, Item, ItemPartnerCode, Partner
 from app.models.documents import DocumentLink
 from app.models.orders import Order, OrderLine
+from app.services.outbound import changed_after_940
 from app.services.problems import ORDER_ARCHIVED, ORDER_REVIEW, problem
 
 UPDATABLE = {F.REVIEW, F.PAYMENT_HOLD, F.PENDING, F.ARCHIVE_SUPPRESSED, F.DRAFT}
+# After a 940 the order is still updated, but what the 940 carried stays locked
+# on the 940 record and a difference raises a task (FR-OB-16). Shipped / On
+# Hold lines carry 945 data and are never rebuilt.
+AFTER_940 = {F.GENERATED_940, F.SENT_940, F.ACCEPTED_940, F.REJECTED_940, F.TIMEOUT_940, F.FAILED_940}
 _HEADER_COLUMNS = (
     "order_type", "department", "order_date", "requested_delivery_date", "do_not_deliver_after", "cancel_date",
     "ship_to", "bill_to", "contact", "notes", "currency", "subtotal", "tax", "shipping", "discount", "total",
-    "shopify_financial_status", "shopify_fulfillment_status", "source_reference",
+    "shopify_financial_status", "shopify_fulfillment_status", "source_reference", "shipping_method",
 )
 
 
@@ -289,7 +294,8 @@ class OrderSync:
         order.source_updated_at = src.updated_at or order.source_updated_at
         if order.historical is False and h.get("historical"):
             order.historical = True
-        if order.fulfillment_status not in {s.value for s in UPDATABLE}:
+        after_940 = order.fulfillment_status in {s.value for s in AFTER_940}
+        if order.fulfillment_status not in {s.value for s in UPDATABLE} and not after_940:
             return  # shipped, cancelled, on hold: the lines are never rebuilt (FR-OB-16)
         # Lines before the 940: updated, added, or marked removed when gone.
         existing = {ln.line_no: ln for ln in (await self.s.execute(
@@ -309,6 +315,13 @@ class OrderSync:
         for no, cur in existing.items():
             if no not in seen and not cur.removed:
                 cur.removed, cur.line_status = True, "Cancelled"
+        if after_940:  # FR-OB-16 / AC-OB-18 / AC-OB-70: compare with the 940's locked values
+            held = {i.item_code for i in (await self.s.execute(select(Item).where(
+                Item.item_code.in_({p.item_code for p in plans if p.item_code}), Item.warehouse_held.is_(True)))).scalars()}
+            now_lines = {str(p.line.line_no): {"item_code": p.item_code, "qty_ea": p.qty_ea}
+                         for p in plans if p.item_code in held and p.qty_ea and not p.line.excluded}
+            await changed_after_940(self.uow, self.tasks, order, now_lines, h.get("ship_to", order.ship_to))
+            return
         order.review_reason = "\n".join(reasons) or None
         paid = self._paid(partner, src.source_type, h.get("shopify_financial_status"))
         if paid and order.paid_at is None and partner is not None and partner.settlement_mode == "PREPAID":

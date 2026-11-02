@@ -19,10 +19,11 @@ from app.platform.repository import Repository
 from app.platform.services import CrudService
 from app.platform.views import Preset
 from app.schemas.connections import (
-    ConnectionCreate, ConnectionRead, ConnectionTestRead, ConnectionUpdate, FolderCheckRead, HostKeyRead,
+    ConnectionCreate, ConnectionRead, ConnectionTestRead, ConnectionUpdate, EdiSettings, FolderCheckRead, HostKeyRead,
 )
 from app.services.intake import ConnectionSnapshot
 from app.services.problems import SFTP_AUTH_FAILED
+from app.services.settings import ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, SETTINGS
 
 logger = logging.getLogger(__name__)
 
@@ -151,3 +152,31 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
         await self.uow.session.flush()
         await tasks.resolve_problem(self.uow.session, SFTP_AUTH_FAILED, entity.id, by=self.uow.actor.user_id)
         return self.to_read(entity)
+
+
+class EdiSettingsService:
+    """The two P4 settings, and only those: the scheduler's settings are not
+    editable here (it stays off until the release says otherwise). Changes
+    are audited (sales_settings is Audited)."""
+
+    def __init__(self, uow) -> None:
+        self.uow = uow
+
+    @requires(READ)
+    async def get(self) -> EdiSettings:
+        s = self.uow.session
+        return EdiSettings(connection_id=await SETTINGS.get(s, EDI_CONNECTION_ID),
+                           ack_timeout_minutes=await SETTINGS.get(s, ACK_TIMEOUT_MINUTES))
+
+    @requires(CONFIG)
+    async def update(self, body: EdiSettings) -> EdiSettings:
+        s = self.uow.session
+        if body.connection_id is not None:
+            conn = await s.get(Connection, body.connection_id)
+            if conn is None or conn.kind != "SFTP" or not conn.active:
+                raise InvalidInput("edi.connection", "choose an active SFTP connection",
+                                   {"connection_id": body.connection_id})
+        self.uow.set_reason("EDI settings")
+        await SETTINGS.set(s, EDI_CONNECTION_ID, body.connection_id)
+        await SETTINGS.set(s, ACK_TIMEOUT_MINUTES, body.ack_timeout_minutes)
+        return body

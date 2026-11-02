@@ -2,17 +2,17 @@
 checked by the services; each write endpoint commits once."""
 from typing import Annotated, Any
 
-from fastapi import Depends, Response
+from fastapi import APIRouter, Depends, Response
 
 from app.core.deps import get_uow
 from app.models.config import Connection
 from app.platform.crud_router import crud_router, read_router
 from app.runtime import Runtime, get_runtime
 from app.schemas.audit import AuditEntryRead
-from app.schemas.connections import ConnectionRead, ConnectionTestRead, CursorReset
+from app.schemas.connections import ConnectionRead, ConnectionTestRead, CursorReset, EdiSettings
 from app.schemas.operations import RunStarted
 from app.services import audit
-from app.services.connections import READ, ConnectionService
+from app.services.connections import READ, ConnectionService, EdiSettingsService
 from app.services.operations import DocumentService, LogService, RunService
 
 UoW = Annotated[Any, Depends(get_uow)]
@@ -66,3 +66,18 @@ async def run_now(u: UoW, rt: Rt):
 
 
 log = read_router("/log", LogService, uow=get_uow, tags=["log"])
+
+
+edi_settings = APIRouter(prefix="/config/edi-settings", tags=["connections"])
+
+
+@edi_settings.get("", response_model=EdiSettings)
+async def get_edi_settings(u: UoW):
+    return await EdiSettingsService(u).get()
+
+
+@edi_settings.put("", response_model=EdiSettings)
+async def put_edi_settings(u: UoW, body: EdiSettings):
+    out = await EdiSettingsService(u).update(body)
+    await u.commit()
+    return out

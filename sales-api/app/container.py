@@ -87,7 +87,7 @@ def build_container(settings: Any, *, real_sftp=None, real_email=None, real_shop
     return Container(
         sftp=gateway(
             settings, real=real_sftp or _not_built_yet("SFTP", "P2"), fake=FakeSftp,
-            guarded=sftp.guarded(PARTNER_WRITES_SWITCH), reads=sftp.READS, allow=sftp.live_only, name="sftp",
+            guarded=sftp.guarded(PARTNER_WRITES_SWITCH), reads=sftp.READS, allow=sftp.writes_allowed(settings), name="sftp",
             summarise=sftp.summary, on_refused=on_refused,
         ),
         email=gateway(

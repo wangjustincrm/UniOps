@@ -64,10 +64,19 @@ class LineRead(BaseModel):
 
 
 class OrderDocumentRead(BaseModel):
+    """A source document, or an outbound 940 with its file and 997 status
+    (kept apart: Sent is not Accepted, FR-OB-22)."""
     id: int
     kind: str
+    direction: str
     remote_name: str | None
     created_at: datetime
+    file_status: str | None = None
+    ack_status: str | None = None
+    st02: str | None = None
+    sent_at: datetime | None = None
+    error: str | None = None
+    ack_detail: str | None = None
 
 
 class TimelineEntry(BaseModel):

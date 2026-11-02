@@ -127,7 +127,7 @@ class OutboxContext:
 
 
 Effect = Callable[[dict[str, Any], OutboxContext], Awaitable[None]]
-Hook = Callable[[Any, BaseException, Any], Awaitable[None]]  # (row, exc, uow)
+Hook = Callable[[Any, BaseException | None, Any], Awaitable[None]]  # (row, exc, uow); exc None for on_done
 PreCheck = Callable[[dict[str, Any], Any], Awaitable[str | None]]  # (payload, uow) → skip reason
 
 
@@ -140,6 +140,10 @@ class OutboxKind:
     # cancels the row instead.
     pre_check: PreCheck | None = None
     on_suppressed: Hook | None = None
+    # Records a success in the same transaction that marks the row DONE (e.g.
+    # the document Sent); called with exc=None. Its failure is logged and does
+    # not undo DONE — the effect has happened.
+    on_done: Hook | None = None
 
 
 def entity_ref(entity: Any) -> tuple[str, str]:
@@ -355,7 +359,10 @@ class OutboxWorker:
 
     async def _apply(self, uow, row, exc: BaseException | None, kind: OutboxKind, now: datetime) -> str:
         if exc is None:
-            return self._done(row, now)
+            outcome = self._done(row, now)
+            await uow.session.flush()  # DONE is written before the hook, which cannot undo it
+            await _hook(uow, kind.on_done, row, None)
+            return outcome
         if isinstance(exc, AcceptedThenFailed):
             # Delivered: never resend. The error is kept for the log only.
             logger.warning("outbox %s (%s) delivered, later step failed: %s", row.id, row.kind, exc)

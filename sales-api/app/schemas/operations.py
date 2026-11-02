@@ -25,6 +25,9 @@ class DocumentRead(BaseModel):
     processing_status: str | None
     file_status: str | None
     ack_status: str | None
+    sent_at: datetime | None = None
+    ack_detail: str | None = None
+    replaced_by_id: int | None = None
     isa13: str | None
     gs06: str | None
     st02: str | None

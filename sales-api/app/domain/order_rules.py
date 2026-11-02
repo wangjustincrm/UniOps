@@ -11,6 +11,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 from app.domain.items import title_key
 from app.domain.orders import PAYMENT_SATISFIED
@@ -65,6 +66,14 @@ class PartnerFacts:
     settlement_mode: str
     sending_mode: str
     delay_minutes: int
+
+
+def facts_of(order: Any, partner: Any) -> tuple[OrderFacts, PartnerFacts]:
+    """The eligibility facts of an order row and its partner row."""
+    return (OrderFacts(order.fulfillment_status, order.invoice_status, order.source_type, order.shopify_financial_status,
+                       order.shopify_fulfillment_status, order.archived_in_shopify_at is not None, order.historical,
+                       order.first_received_at, order.paid_at),
+            PartnerFacts(partner.settlement_mode, partner.sending_mode, partner.delay_minutes))
 
 
 def delay_start(o: OrderFacts, p: PartnerFacts) -> datetime | None:

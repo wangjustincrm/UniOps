@@ -20,7 +20,8 @@ const order: OrderRead = {
 }
 const pending: OrderRead = { ...order, id: 5, order_number: 105, source_order_number: '9303', fulfillment_status: 'Pending',
   order_state: 'Active', review_reason: null }
-const detail: OrderDetail = { ...order, notes: null, documents: [{ id: 9, kind: 'SHOPIFY_ORDER_JSON', remote_name: 'orders page 1', created_at: order.created_at }],
+const detail: OrderDetail = { ...order, notes: null, documents: [{ id: 9, kind: 'SHOPIFY_ORDER_JSON', direction: 'IN', remote_name: 'orders page 1', created_at: order.created_at,
+    file_status: null, ack_status: null, st02: null, sent_at: null, error: null, ack_detail: null }],
   timeline: [], lines: [{ id: 1, line_no: 5, item_code: null, source: { sku: 'NOPE' }, ordered_qty: '1', order_unit: 'CASE', factor_ea: null,
     qty_ea: null, unit_price: '1', line_status: 'Active', removed: false, problem: 'item not in the Item Master' }] }
 const meta: ListMeta = {
@@ -35,11 +36,11 @@ const meta: ListMeta = {
   ],
 }
 
-const api = vi.hoisted(() => ({ resolve: vi.fn(), fetchOrder: vi.fn(), list: vi.fn() }))
+const api = vi.hoisted(() => ({ resolve: vi.fn(), fetchOrder: vi.fn(), list: vi.fn(), send: vi.fn(), eligible: vi.fn() }))
 vi.mock('./ordersApi', async (orig) => {
   const real = await orig<typeof import('./ordersApi')>()
   return { ...real, ordersClient: { ...real.ordersClient, list: api.list, meta: async () => meta },
-    fetchOrder: api.fetchOrder, resolveReview: api.resolve }
+    fetchOrder: api.fetchOrder, resolveReview: api.resolve, send940: api.send, fetchEligibility: api.eligible }
 })
 const { default: OrdersPage } = await import('./OrdersPage')
 
@@ -160,5 +161,71 @@ describe('Orders: views', () => {
     requestView('orders', 'needs_review')  // e.g. the old /review address
     renderAs(['sales.read'], views)
     expect(await screen.findByRole('button', { name: 'View: Needs review' })).toBeInTheDocument()
+  })
+})
+
+describe('Orders: 940s (P4)', () => {
+  const sentOrder: OrderRead = { ...pending, id: 6, order_number: 106, source_order_number: '9304', fulfillment_status: '940 Sent' }
+  const out = (id: number, file_status: string, ack_status: string, st02: string) => ({ id, kind: '940_EDI', direction: 'OUT' as const,
+    remote_name: `940-SHOP-${st02}.edi`, created_at: order.created_at, file_status, ack_status, st02, sent_at: '2026-10-30T14:00:00Z',
+    error: null, ack_detail: null })
+  beforeEach(() => {
+    api.send.mockReset(); api.eligible.mockReset()
+    api.list.mockReset(); api.list.mockImplementation(async () => ({ items: [pending, sentOrder], total: 2 }))
+  })
+
+  it('Send 940 now needs sales.order.operate and says the 940 is queued', async () => {
+    api.fetchOrder.mockResolvedValue({ ...detail, ...pending, documents: [] })
+    const { unmount } = renderAs(['sales.read'])
+    fireEvent.click(await screen.findByText('9303'))
+    let dialog = await screen.findByRole('dialog')
+    await within(dialog).findByText('Timeline')
+    expect(within(dialog).queryByText('Send 940 now')).toBeNull()
+    unmount()
+    api.send.mockResolvedValue({ order: pending, document_id: 20, file_status: 'Ready To Send', control: '000000123', errors: [] })
+    renderAs(['sales.read', 'sales.order.operate'])
+    fireEvent.click(await screen.findByText('9303'))
+    dialog = await screen.findByRole('dialog')
+    fireEvent.click(await within(dialog).findByText('Send 940 now'))
+    await waitFor(() => expect(api.send).toHaveBeenCalledWith(5, false))
+    expect(await within(dialog).findByRole('status')).toHaveTextContent('940 000000123 queued')
+  })
+
+  it('a sent 940 shows Sent and the 997 apart; a change goes only through a confirmed replacement', async () => {
+    api.fetchOrder.mockResolvedValue({ ...detail, ...sentOrder, documents: [out(30, 'Sent', 'Waiting', '000000122')] })
+    api.send.mockResolvedValue({ order: sentOrder, document_id: 31, file_status: 'Ready To Send', control: '000000124', errors: [] })
+    renderAs(['sales.read', 'sales.order.operate'])
+    fireEvent.click(await screen.findByText('9304'))
+    const dialog = await screen.findByRole('dialog', { name: 'Order 106' })
+    const table = await within(dialog).findByRole('region', { name: 'Warehouse 940s' })
+    const row = within(table).getByText('000000122').closest('tr')!
+    expect(within(row).getByText('Sent')).toBeInTheDocument()
+    expect(within(row).getByText('Waiting')).toBeInTheDocument()  // sent, not accepted
+    expect(within(dialog).queryByText('Send 940 now')).toBeNull()
+    fireEvent.click(within(dialog).getByText('Replace 940'))
+    const confirm = await screen.findByRole('dialog', { name: 'Replace the live 940?' })
+    expect(api.send).not.toHaveBeenCalled()
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Replace 940' }))
+    await waitFor(() => expect(api.send).toHaveBeenCalledWith(6, true))
+  })
+
+  it('a 940 that fails its checks says why and that it was not sent', async () => {
+    api.fetchOrder.mockResolvedValue({ ...detail, ...pending, documents: [] })
+    api.send.mockResolvedValue({ order: pending, document_id: 21, file_status: 'Cancelled', control: '000000125',
+      errors: ['ship_to.zip is empty'] })
+    renderAs(['sales.read', 'sales.order.operate'])
+    fireEvent.click(await screen.findByText('9303'))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(await within(dialog).findByText('Send 940 now'))
+    expect(await within(dialog).findByRole('status')).toHaveTextContent(/failed its checks and was not sent.*ship_to.zip is empty/)
+  })
+
+  it('Next 940s lists what the next cycle would send, writing nothing', async () => {
+    api.eligible.mockResolvedValue([{ order_id: 5, order_number: 105, partner_code: 'SHOP', source_order_number: '9303' }])
+    renderAs(['sales.read'])
+    fireEvent.click(await screen.findByRole('button', { name: 'Next 940s' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Next 940s' })
+    expect(await within(dialog).findByText('Order 105 · SHOP 9303')).toBeInTheDocument()
+    expect(api.send).not.toHaveBeenCalled()
   })
 })
