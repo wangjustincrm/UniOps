@@ -40,6 +40,7 @@ async def items(user: CurrentUser,
                 currency: str = Query(...),
                 bucket: str | None = Query(None),
                 supplier_code: str | None = Query(None),
+                q: str | None = Query(None, max_length=100),
                 limit: int = Query(500, ge=1, le=2000),
                 offset: int = Query(0, ge=0),
                 sort: str | None = Query(None),
@@ -52,7 +53,7 @@ async def items(user: CurrentUser,
         raise HTTPException(status_code=422,
                             detail=f"bucket must be one of {sorted(svc.BUCKET_KEYS)}")
     order = order_sql(sort, dir, svc.ITEM_SORT, tiebreak=svc.ITEM_TIEBREAK)
-    return await svc.items(db, currency, bucket=bucket, supplier_code=supplier_code,
+    return await svc.items(db, currency, bucket=bucket, supplier_code=supplier_code, q=q,
                            limit=limit, offset=offset, order=order)
 
 
