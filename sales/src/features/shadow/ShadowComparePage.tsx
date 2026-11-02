@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, DateTimeCell, ErrorMessage, ErrorView, FormField, ListPage, Skeleton, StatusCell, Textarea, cn, queryKeys,
+  ActionButton, DateTimeCell, DiffTable, ErrorMessage, ErrorView, FormField, ListPage, Skeleton, StatusCell, Textarea, queryKeys,
   type ColumnDef,
 } from '@/platform-ui'
 import { SHADOW_STATUSES, fetchShadowCompare, fetchShadowSummary, markExpected, shadowClient, type ShadowMatchRead } from './shadowApi'
@@ -83,17 +83,8 @@ function Detail({ id, close }: { id: number; close: () => void }) {
       )}
       {m.status === 'Differs' && <MarkExpected m={m} onDone={close} />}
       {m.rows.length > 0 && (
-        <table aria-label="Segments" className="w-full table-fixed font-mono text-xs">
-          <thead><tr className="text-left text-neutral-500"><th className="w-1/2">Zoho sent</th><th className="w-1/2">Sales would send (dry run)</th></tr></thead>
-          <tbody>
-            {m.rows.map((r, i) => (
-              <tr key={i} data-differs={!r.same || undefined} className={cn('align-top', !r.same && 'bg-warning-50 text-warning-700')}>
-                <td className="break-all py-0.5 pr-2">{r.zoho ?? '—'}</td>
-                <td className="break-all py-0.5">{r.sales ?? '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <DiffTable ariaLabel="Segments" leftLabel="Zoho sent" rightLabel="Sales would send (dry run)"
+          rows={m.rows.map((r) => ({ left: r.zoho, right: r.sales, same: r.same }))} />
       )}
       {m.ignored.length > 0 && (
         <details className="text-xs text-neutral-500">

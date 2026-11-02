@@ -1,6 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
-import { Badge, DateTimeCell, DetailList, ErrorView, Skeleton, StatusCell, formatDate, formatDateTime, formatMoney, queryKeys } from '@/platform-ui'
-import { fetchOrder, ordersClient, type OrderRead } from './ordersApi'
+import {
+  Badge, DateTimeCell, DetailList, ErrorView, LocalTable, Skeleton, StatusCell, formatDate, formatDateTime, formatMoney, queryKeys,
+  type ColumnDef,
+} from '@/platform-ui'
+import { fetchOrder, ordersClient, type LineRead, type OrderDocument, type OrderRead } from './ordersApi'
 import { Shipments } from './Shipments'
 
 // The badge shows the fulfillment status in the colour of the derived order state (D17).
@@ -9,6 +12,26 @@ const stateTone = { Draft: 'neutral', Active: 'info', 'On Hold': 'warning', Comp
 export function StateBadge({ o }: { o: Pick<OrderRead, 'order_state' | 'fulfillment_status'> }) {
   return <StatusCell value={o.fulfillment_status} tone={stateTone[o.order_state]} />
 }
+
+const lineColumns: ColumnDef<LineRead, unknown>[] = [
+  { accessorKey: 'line_no', header: '#' },
+  { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => row.original.item_code ?? <span className="text-danger-600">unmatched</span> },
+  { id: 'ordered', header: 'Ordered', cell: ({ row }) => `${Number(row.original.ordered_qty)} ${row.original.order_unit ?? '?'}` },
+  { accessorKey: 'qty_ea', header: 'EA', cell: ({ row }) => row.original.qty_ea ?? '—' },
+  { accessorKey: 'problem', header: 'Note', cell: ({ row }) => (
+    <span className={row.original.problem && !row.original.removed ? 'text-danger-600' : ''}>{row.original.problem ?? ''}</span>
+  ) },
+]
+
+// File and 997 status apart: Sent is not Accepted (FR-OB-22); no 997 column until the file is sent.
+const sentColumns: ColumnDef<OrderDocument, unknown>[] = [
+  { accessorKey: 'st02', header: 'Control' },
+  { accessorKey: 'file_status', header: 'File', cell: ({ row }) => <StatusCell value={row.original.file_status} /> },
+  { accessorKey: 'ack_status', header: '997', cell: ({ row: { original: d } }) => (
+    d.file_status === 'Sent' || d.ack_status !== 'Waiting' ? <StatusCell value={d.ack_status} /> : '—') },
+  { accessorKey: 'sent_at', header: 'Sent', cell: ({ row }) => <DateTimeCell value={row.original.sent_at} /> },
+  { id: 'note', header: 'Note', cell: ({ row }) => <span className="break-words">{row.original.error ?? row.original.ack_detail ?? ''}</span> },
+]
 
 /** One order: why it is held, its lines in EA, its source documents and what happened (FR-OB-53). */
 export function OrderDetailView({ id }: { id: number }) {
@@ -41,20 +64,8 @@ export function OrderDetailView({ id }: { id: number }) {
       ]} />
       <section aria-label="Lines">
         <h3 className="mb-1 font-semibold text-neutral-800">Lines</h3>
-        <table className="w-full text-xs">
-          <thead><tr className="text-left text-neutral-500"><th>#</th><th>Item</th><th>Ordered</th><th>EA</th><th>Note</th></tr></thead>
-          <tbody>
-            {o.lines.map((ln) => (
-              <tr key={ln.id} className={ln.removed ? 'border-t border-neutral-100 text-neutral-400' : 'border-t border-neutral-100'}>
-                <td className="py-1">{ln.line_no}</td>
-                <td>{ln.item_code ?? <span className="text-danger-600">unmatched</span>}</td>
-                <td>{Number(ln.ordered_qty)} {ln.order_unit ?? '?'}</td>
-                <td>{ln.qty_ea ?? '—'}</td>
-                <td className={ln.problem && !ln.removed ? 'text-danger-600' : ''}>{ln.problem ?? ''}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <LocalTable<LineRead> ariaLabel="Order lines" columns={lineColumns} rows={o.lines} rowKey={(ln) => ln.id}
+          rowAttrs={(ln) => (ln.removed ? { className: 'text-neutral-400', 'data-removed': true } : {})} />
       </section>
       <section aria-label="Documents">
         <h3 className="mb-1 font-semibold text-neutral-800">Source documents</h3>
@@ -65,20 +76,7 @@ export function OrderDetailView({ id }: { id: number }) {
       {sent.length > 0 && (
         <section aria-label="Warehouse 940s">
           <h3 className="mb-1 font-semibold text-neutral-800">Warehouse 940s</h3>
-          <table className="w-full text-xs">
-            <thead><tr className="text-left text-neutral-500"><th>Control</th><th>File</th><th>997</th><th>Sent</th><th>Note</th></tr></thead>
-            <tbody>
-              {sent.map((d) => (
-                <tr key={d.id} className="border-t border-neutral-100 align-top">
-                  <td className="py-1">{d.st02}</td>
-                  <td><StatusCell value={d.file_status} /></td>
-                  <td>{d.file_status === 'Sent' || d.ack_status !== 'Waiting' ? <StatusCell value={d.ack_status} /> : '—'}</td>
-                  <td><DateTimeCell value={d.sent_at} /></td>
-                  <td className="break-words">{d.error ?? d.ack_detail ?? ''}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <LocalTable<OrderDocument> ariaLabel="Warehouse 940s" columns={sentColumns} rows={sent} rowKey={(d) => d.id} />
         </section>
       )}
       <Shipments shipments={o.shipments ?? []} orderId={o.id} />

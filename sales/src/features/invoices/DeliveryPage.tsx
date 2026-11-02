@@ -1,23 +1,40 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, DateInput, ErrorMessage, FormField, NumberInput, Skeleton, queryKeys, todayDate } from '@/platform-ui'
+import {
+  ActionButton, DateInput, EditableTable, ErrorMessage, FormField, Skeleton, numberColumn, queryKeys, readColumn, todayDate,
+} from '@/platform-ui'
 import { OrderList } from '@/features/orders/OrdersPage'
-import { fetchOrder, ordersClient, type OrderRead } from '@/features/orders/ordersApi'
+import { fetchOrder, ordersClient, type LineRead, type OrderRead } from '@/features/orders/ordersApi'
 import { confirmBulk, confirmDelivery, invoicesClient, type ConfirmResult } from './invoicesApi'
 
 const MANAGE = 'sales.invoice.manage'
 const WAITING = [{ field: 'invoice_status', op: 'eq' as const, value: 'Waiting for Delivery Confirmation' }]
 
+type Delivered = { line: LineRead; delivered: string }
+
+const deliveredColumns = [
+  readColumn<Delivered>('item', 'Item', (d) => d.line.item_code),
+  readColumn<Delivered>('shipped', 'Shipped EA', (d) => d.line.shipped_ea),
+  numberColumn<Delivered>('delivered', 'Delivered EA', { label: (d) => `Delivered ${d.line.item_code}`, get: (d) => d.delivered,
+    set: (v) => ({ delivered: v }), min: 0, max: (d) => d.line.shipped_ea ?? undefined }),
+]
+
+function deliveredProblem(d: Delivered): string | null {
+  const n = Number(d.delivered)
+  return Number.isInteger(n) && n >= 0 && n <= (d.line.shipped_ea ?? 0) ? null : `0 … ${d.line.shipped_ea} EA (the shipped quantity)`
+}
+
 function ConfirmOne({ o, close }: { o: OrderRead; close: () => void }) {
   const qc = useQueryClient()
   const q = useQuery({ queryKey: queryKeys.detail(ordersClient, o.id), queryFn: () => fetchOrder(o.id) })
   const [date, setDate] = useState(() => todayDate())
-  const [qty, setQty] = useState<Record<number, string>>({})
+  const [edited, setEdited] = useState<Delivered[] | null>(null)
+  const rows: Delivered[] = edited ?? (q.data?.lines ?? []).filter((l) => l.shipped_ea != null)
+    .map((line) => ({ line, delivered: String(line.shipped_ea) }))
   const m = useMutation({
     mutationFn: () => confirmDelivery({
       order_id: o.id, confirmed_date: date,
-      lines: (q.data?.lines ?? []).filter((l) => l.shipped_ea != null)
-        .map((l) => ({ order_line_id: l.id, delivered_qty: Number(qty[l.id] ?? l.shipped_ea) })),
+      lines: rows.map((d) => ({ order_line_id: d.line.id, delivered_qty: Number(d.delivered) })),
     }),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
@@ -26,23 +43,13 @@ function ConfirmOne({ o, close }: { o: OrderRead; close: () => void }) {
     },
   })
   if (q.isLoading || !q.data) return <Skeleton className="h-20 w-full" />
-  const shipped = q.data.lines.filter((l) => l.shipped_ea != null)
   return (
     <section aria-label="Confirm delivery" className="flex flex-col gap-2 rounded-md border border-neutral-100 p-2 text-sm">
       <FormField label="Delivered on (the invoice date)" htmlFor="dlv-date"><DateInput id="dlv-date" value={date} onChange={(e) => setDate(e.target.value)} /></FormField>
-      <table className="w-full text-xs">
-        <thead><tr className="text-left text-neutral-500"><th>Item</th><th>Shipped EA</th><th>Delivered EA</th></tr></thead>
-        <tbody>
-          {shipped.map((l) => (
-            <tr key={l.id} className="border-t border-neutral-100">
-              <td className="py-1">{l.item_code}</td><td>{l.shipped_ea}</td>
-              <td><NumberInput aria-label={`Delivered ${l.item_code}`} min={0} max={l.shipped_ea ?? undefined} value={qty[l.id] ?? String(l.shipped_ea)}
-                onChange={(e) => setQty((x) => ({ ...x, [l.id]: e.target.value }))} className="w-24" /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <ActionButton size="sm" permission={MANAGE} onAction={() => m.mutateAsync().catch(() => {})}>Confirm delivery</ActionButton>
+      <EditableTable<Delivered> ariaLabel="Delivered quantities" rows={rows} onChange={setEdited} columns={deliveredColumns}
+        rowKey={(d) => d.line.id} errors={deliveredProblem} />
+      <ActionButton size="sm" permission={MANAGE} disabled={rows.some((d) => deliveredProblem(d) !== null)}
+        onAction={() => m.mutateAsync().catch(() => {})}>Confirm delivery</ActionButton>
       <ErrorMessage error={m.error} />
     </section>
   )

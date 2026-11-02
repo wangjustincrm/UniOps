@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, DateCell, DateInput, DetailList, ErrorMessage, ErrorView, FormField, Input, ListPage, MoneyCell, NumberInput,
-  Skeleton, StatusCell, formatDate, formatDateTime, formatMoney, queryKeys, type ColumnDef,
+  ActionButton, DateCell, DateInput, DetailList, EditableTable, ErrorMessage, ErrorView, FormField, Input, ListPage, MoneyCell,
+  Skeleton, StatusCell, formatDate, formatDateTime, formatMoney, numberColumn, queryKeys, readColumn, textColumn,
+  type ColumnDef, type EditableColumn,
 } from '@/platform-ui'
 import { editInvoice, fetchInvoice, invoicesClient, releaseInvoice, sendInvoice, type InvoiceDetail, type InvoiceRead } from './invoicesApi'
 
@@ -27,34 +28,40 @@ const columns: ColumnDef<InvoiceRead, unknown>[] = [
   { accessorKey: 'send_count', header: 'Sent', cell: ({ row }) => row.original.sent_at ? `${row.original.send_count}× · ${formatDateTime(row.original.sent_at)}` : '—' },
 ]
 
+type EditLine = { id: number; line_no: number; item: string; amount: string; qty: string; unit_price: string }
+
+const editColumns = (currency: string): EditableColumn<EditLine>[] => [
+  readColumn<EditLine>('line_no', '#', (l) => l.line_no),
+  readColumn<EditLine>('item', 'Item', (l) => l.item),
+  numberColumn<EditLine>('qty', 'Qty (CA)', { label: (l) => `Quantity line ${l.line_no}`, get: (l) => l.qty, set: (v) => ({ qty: v }), min: 0, className: 'w-20' }),
+  textColumn<EditLine>('unit_price', 'Unit price', { label: (l) => `Unit price line ${l.line_no}`, get: (l) => l.unit_price, set: (v) => ({ unit_price: v }) }),
+  readColumn<EditLine>('amount', 'Amount', (l) => formatMoney(l.amount, currency)),
+]
+
+function lineProblem(l: EditLine): string | null {
+  if (!Number.isInteger(Number(l.qty)) || Number(l.qty) < 0) return 'a whole number of cases, 0 or more'
+  if (l.unit_price.trim() === '' || Number.isNaN(Number(l.unit_price)) || Number(l.unit_price) < 0) return 'a price of 0 or more'
+  return null
+}
+
 function Editor({ inv }: { inv: InvoiceDetail }) {
   const qc = useQueryClient()
   const [date, setDate] = useState(inv.invoice_date)
-  const [lines, setLines] = useState(() => inv.lines.map((l) => ({ id: l.id, qty: String(l.qty), unit_price: String(Number(l.unit_price)) })))
+  const [lines, setLines] = useState<EditLine[]>(() => inv.lines.map((l) => ({
+    id: l.id, line_no: l.line_no, item: `${l.item_code ?? ''}${l.buyer_part ? ` (${l.buyer_part})` : ''}`, amount: l.amount,
+    qty: String(l.qty), unit_price: String(Number(l.unit_price)) })))
   const save = useMutation({
     mutationFn: () => editInvoice(inv.id, inv.version, {
       invoice_date: date, lines: lines.map((l) => ({ id: l.id, qty: Number(l.qty), unit_price: l.unit_price })),
     }),
     onSuccess: (r) => { qc.setQueryData(queryKeys.detail(invoicesClient, inv.id), r); return qc.invalidateQueries({ queryKey: queryKeys.list(invoicesClient) }) },
   })
-  const valid = lines.every((l) => Number.isInteger(Number(l.qty)) && Number(l.qty) >= 0 && Number(l.unit_price) >= 0)
+  const valid = lines.every((l) => lineProblem(l) === null)
   return (
     <section aria-label="Edit invoice" className="flex flex-col gap-2">
       <FormField label="Invoice date" htmlFor="inv-date"><DateInput id="inv-date" value={date} onChange={(e) => setDate(e.target.value)} /></FormField>
-      <table className="w-full text-xs">
-        <thead><tr className="text-left text-neutral-500"><th>#</th><th>Item</th><th>Qty (CA)</th><th>Unit price</th><th>Amount</th></tr></thead>
-        <tbody>
-          {inv.lines.map((l, i) => (
-            <tr key={l.id} className="border-t border-neutral-100">
-              <td className="py-1">{l.line_no}</td>
-              <td>{l.item_code} {l.buyer_part ? `(${l.buyer_part})` : ''}</td>
-              <td><NumberInput aria-label={`Quantity line ${l.line_no}`} value={lines[i].qty} onChange={(e) => setLines((xs) => xs.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} className="w-20" /></td>
-              <td><Input aria-label={`Unit price line ${l.line_no}`} value={lines[i].unit_price} onChange={(e) => setLines((xs) => xs.map((x, j) => j === i ? { ...x, unit_price: e.target.value } : x))} className="w-28" /></td>
-              <td>{formatMoney(l.amount, inv.currency)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <EditableTable<EditLine> ariaLabel="Invoice lines" rows={lines} onChange={setLines} columns={editColumns(inv.currency)}
+        rowKey={(l) => l.id} errors={lineProblem} footer={[null, null, null, 'Total', formatMoney(inv.total, inv.currency)]} />
       <ActionButton size="sm" variant="secondary" permission={MANAGE} disabled={!valid} onAction={() => save.mutateAsync().catch(() => {})}>Save changes</ActionButton>
       <ErrorMessage error={save.error} messages={errorMessages} />
     </section>

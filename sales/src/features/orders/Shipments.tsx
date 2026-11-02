@@ -1,12 +1,21 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, Badge, DateCell, ErrorMessage, StatusCell, queryKeys } from '@/platform-ui'
-import { ordersClient, retryShopify, type ShipmentRead } from './ordersApi'
+import { ActionButton, Badge, DateCell, ErrorMessage, LocalTable, StatusCell, queryKeys, type ColumnDef } from '@/platform-ui'
+import { ordersClient, retryShopify, type ShipmentRead, type ShipmentRowRead } from './ordersApi'
 
 const errorMessages: Record<string, string> = {
   'shipment.shadow': 'The shadow run is on (or this 945 came during it): nothing is written to Shopify.',
   'shipment.not_failed': 'The Shopify write is not failed.',
   'auth.forbidden': 'You do not have permission to retry Shopify writes.',
 }
+
+const rowColumns: ColumnDef<ShipmentRowRead, unknown>[] = [
+  { id: 'pallet', header: 'Pallet (SSCC)', cell: ({ row }) => row.original.sscc ?? `LX ${row.original.lx_index}` },
+  { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => row.original.item_code ?? '—' },
+  { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => row.original.lot ?? '—' },
+  { accessorKey: 'expiry', header: 'Expiry', cell: ({ row }) => <DateCell value={row.original.expiry} /> },
+  { id: 'qty', header: 'Shipped / ordered EA', cell: ({ row }) => `${row.original.qty_shipped_ea} / ${row.original.qty_ordered_ea ?? '—'}` },
+  { id: 'review', header: '', cell: ({ row }) => row.original.needs_review && <Badge variant="danger">matches no order line</Badge> },
+]
 
 function Retry({ s, orderId }: { s: ShipmentRead; orderId: number }) {
   const qc = useQueryClient()
@@ -43,21 +52,9 @@ export function Shipments({ shipments, orderId }: { shipments: ShipmentRead[]; o
             {(s.shopify_status === 'Failed' || s.shopify_status === 'Suppressed') && !s.shadow && <Retry s={s} orderId={orderId} />}
           </div>
           {s.shopify_error && <p className="text-danger-600">{s.shopify_error}</p>}
-          <table className="w-full">
-            <thead><tr className="text-left text-neutral-500"><th>Pallet (SSCC)</th><th>Item</th><th>Lot</th><th>Expiry</th><th>Shipped / ordered EA</th><th /></tr></thead>
-            <tbody>
-              {s.rows.map((r) => (
-                <tr key={`${r.lx_index}-${r.w12_index}`} className="border-t border-neutral-100">
-                  <td className="py-0.5">{r.sscc ?? `LX ${r.lx_index}`}</td>
-                  <td>{r.item_code ?? '—'}</td>
-                  <td>{r.lot ?? '—'}</td>
-                  <td><DateCell value={r.expiry} /></td>
-                  <td>{r.qty_shipped_ea} / {r.qty_ordered_ea ?? '—'}</td>
-                  <td>{r.needs_review && <Badge variant="danger">matches no order line</Badge>}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <LocalTable<ShipmentRowRead> ariaLabel={`Shipment ${s.id} rows`} columns={rowColumns} rows={s.rows}
+            rowKey={(r) => `${r.lx_index}-${r.w12_index}`}
+            footer={[null, null, null, 'Total', `${s.rows.reduce((n, r) => n + r.qty_shipped_ea, 0)} EA`, null]} />
           {s.checks && s.checks.length > 0 && (
             <ul aria-label="945 checks" className="text-warning-700">
               {s.checks.map((c, i) => <li key={i}>{c.check}: {c.message}</li>)}

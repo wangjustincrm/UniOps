@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
-  ActionButton, DateTimeCell, ErrorMessage, ListPage, PageHeader, StatusCell, Tabs, formatDateTime, useToast, type ColumnDef,
-  type QuerySpec,
+  ActionButton, DateTimeCell, ErrorMessage, ListPage, LocalTable, PageHeader, StatusCell, Tabs, formatDateTime, useToast,
+  type ColumnDef, type QuerySpec,
 } from '@/platform-ui'
 import { logClient, runNow, runsClient, type LogRead, type PassReport, type RunRead } from './operationsApi'
 
@@ -35,8 +35,16 @@ function LogTable({ fixed, searchable = true }: { fixed?: QuerySpec['filters']; 
   return <ListPage<LogRead> resource={logClient} fixed={fixed} searchable={searchable} columns={logColumns} emptyTitle="Nothing logged" />
 }
 
+type Pass = PassReport & { name: string }
+
+const passColumns: ColumnDef<Pass, unknown>[] = [
+  { accessorKey: 'name', header: 'Connection', cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
+  ...PASS_COLUMNS.map((k): ColumnDef<Pass, unknown> => ({ accessorKey: k, header: k.replace('_', ' ') })),
+  { accessorKey: 'status', header: 'State' },
+]
+
 function RunDetail({ run }: { run: RunRead }) {
-  const passes = Object.entries(run.summary?.connections ?? {})
+  const passes: Pass[] = Object.entries(run.summary?.connections ?? {}).map(([name, p]) => ({ ...p, name }))
   return (
     <div className="flex flex-col gap-4 text-sm">
       <p>{run.trigger} · started {formatDateTime(run.started_at)} · finished {formatDateTime(run.finished_at)}</p>
@@ -44,16 +52,7 @@ function RunDetail({ run }: { run: RunRead }) {
       <section aria-label="Pass report">
         <h3 className="mb-1 font-semibold text-neutral-800">Pass report</h3>
         {passes.length === 0 ? <p className="text-neutral-500">No connection was read.</p> : (
-          <table className="w-full text-xs">
-            <thead><tr className="text-left text-neutral-500"><th>Connection</th>{PASS_COLUMNS.map((k) => <th key={k}>{k.replace('_', ' ')}</th>)}<th>State</th></tr></thead>
-            <tbody>
-              {passes.map(([name, p]) => (
-                <tr key={name} className="border-t border-neutral-100">
-                  <td className="py-1 font-medium">{name}</td>{PASS_COLUMNS.map((k) => <td key={k}>{p[k]}</td>)}<td>{p.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <LocalTable<Pass> ariaLabel="Pass report" columns={passColumns} rows={passes} rowKey={(p) => p.name} />
         )}
       </section>
       <section aria-label="Run log">

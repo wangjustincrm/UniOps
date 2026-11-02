@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, Autocomplete, Button, ErrorMessage, FormField, Input, NumberInput, queryKeys, useToast } from '@/platform-ui'
+import {
+  ActionButton, Autocomplete, EditableTable, ErrorMessage, FormField, Input, numberColumn, queryKeys, readColumn, textColumn, useToast,
+  type EditableColumn,
+} from '@/platform-ui'
 import { itemOptions, manualPartnerOptions } from '../configuration/lookups'
 import { OrderList } from './OrdersPage'
 import {
@@ -19,10 +22,17 @@ function NewManualOrder() {
   const [reference, setReference] = useState('')
   const [lines, setLines] = useState<ManualLine[]>([{ ...blank }])
   const [preview, setPreview] = useState<LinePreview[] | null>(null)
-  const set = (i: number, k: keyof ManualLine, v: string) => {
-    setPreview(null)
-    setLines(lines.map((l, j) => (j === i ? { ...l, [k]: k === 'quantity' ? Number(v) : v } : l)))
-  }
+  const change = (next: ManualLine[]) => { setPreview(null); setLines(next) }
+  const columns: EditableColumn<ManualLine>[] = [
+    { id: 'item', header: 'Item', cell: ({ row, index, update, invalid }) => (
+      <Autocomplete aria-label={`Item ${index + 1}`} aria-invalid={invalid || undefined} value={row.item_code || null}
+        onChange={(v) => update({ item_code: v ?? '' })} loadOptions={itemOptions} />
+    ) },
+    numberColumn<ManualLine>('quantity', 'Quantity', { label: (_, i) => `Quantity ${i + 1}`, get: (r) => r.quantity,
+      set: (v) => ({ quantity: Number(v) }), className: 'w-24' }),
+    textColumn<ManualLine>('unit', 'Unit', { label: (_, i) => `Unit ${i + 1}`, get: (r) => r.unit, set: (v) => ({ unit: v }), className: 'w-24' }),
+    readColumn<ManualLine>('ea', 'EA', (r) => preview?.[lines.indexOf(r)]?.qty_ea ?? ''),
+  ]
   const check = useMutation({ mutationFn: () => previewManual(lines), onSuccess: setPreview })
   const save = useMutation({
     mutationFn: () => createManual({ partner_code: partner, customer_reference: reference || null, lines }),
@@ -42,21 +52,9 @@ function NewManualOrder() {
         </FormField>
         <FormField label="Customer reference" htmlFor="m-ref"><Input id="m-ref" value={reference} onChange={(e) => setReference(e.target.value)} /></FormField>
       </div>
-      <table className="w-full text-sm">
-        <thead><tr className="text-left text-xs text-neutral-500"><th>Item</th><th>Quantity</th><th>Unit</th><th>EA</th></tr></thead>
-        <tbody>
-          {lines.map((l, i) => (
-            <tr key={i}>
-              <td><Autocomplete aria-label={`Item ${i + 1}`} value={l.item_code || null} onChange={(v) => set(i, 'item_code', v ?? '')} loadOptions={itemOptions} /></td>
-              <td><NumberInput aria-label={`Quantity ${i + 1}`} value={l.quantity} onChange={(e) => set(i, 'quantity', e.target.value)} /></td>
-              <td><Input aria-label={`Unit ${i + 1}`} value={l.unit} onChange={(e) => set(i, 'unit', e.target.value)} /></td>
-              <td className="px-2 text-xs">{preview?.[i] ? (preview[i].problem ? <span className="text-danger-600">{preview[i].problem}</span> : preview[i].qty_ea) : ''}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <EditableTable<ManualLine> ariaLabel="Order lines" rows={lines} onChange={change} columns={columns}
+        errors={(_, i) => preview?.[i]?.problem} onAdd={() => ({ ...blank })} removable />
       <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="secondary" size="sm" onClick={() => { setLines([...lines, { ...blank }]); setPreview(null) }}>Add line</Button>
         <ActionButton size="sm" variant="secondary" permission={OPERATE} onAction={() => check.mutateAsync().catch(() => {})}>Preview EA</ActionButton>
         <ActionButton size="sm" permission={OPERATE} disabled={!clean || !partner} onAction={() => save.mutateAsync().catch(() => {})}>Save draft</ActionButton>
       </div>

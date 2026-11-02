@@ -42,6 +42,17 @@ const RAW_CONTROLS = [
   },
 ]
 
+// Tables in features and pages come from the library: LocalTable (rows in
+// memory), EditableTable (rows edited in place), DiffTable (side by side),
+// ListPage / QueryTable (server lists) — never hand-made (the user's rule,
+// 2026-11-02). Only platform-ui/primitives renders the elements.
+const RAW_TABLES = [
+  {
+    selector: "JSXOpeningElement[name.name=/^(table|thead|tbody|tfoot|tr|td|th)$/]",
+    message: 'Use LocalTable, EditableTable or DiffTable from @/platform-ui (ListPage for a server list), not a raw table element.',
+  },
+]
+
 export default defineConfig([
   globalIgnores(['dist']),
   {
@@ -104,12 +115,16 @@ export default defineConfig([
   // replace, not add to, an earlier one's list).
   {
     files: ['src/**/*.tsx'],
-    ignores: ['src/platform-ui/primitives/**', 'src/features/**'],
+    ignores: ['src/platform-ui/primitives/**', 'src/features/**', 'src/pages/**'],
     rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS] },
+  },
+  {
+    files: ['src/pages/**/*.tsx'],
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...RAW_TABLES] },
   },
   {
     files: ['src/features/**/*.{ts,tsx}'],
     ignores: ['src/features/**/*.test.{ts,tsx}'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...RAW_TABLES] },
   },
 ])

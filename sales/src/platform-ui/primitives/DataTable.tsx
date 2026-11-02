@@ -70,7 +70,17 @@ export interface DataTableProps<T> {
     onPageChange: (page: number) => void
     onPageSizeChange: (size: number) => void
   }
+  /** The table's accessible name. */
+  ariaLabel?: string
+  /** `compact`: the tighter cells of a panel inside a page (LocalTable). */
+  density?: 'normal' | 'compact'
+  /** One cell per column under the rows (e.g. totals). */
+  footer?: ReactNode[]
+  /** Per-row class and data-* attributes (e.g. a highlighted row). */
+  rowAttrs?: (row: T) => RowAttrs
 }
+
+export type RowAttrs = { className?: string } & { [data: `data-${string}`]: string | boolean | undefined }
 
 /** The table view: rows, a sortable header, a search box, paging and the
  *  empty / loading / error states. It knows nothing about the API or the
@@ -78,8 +88,9 @@ export interface DataTableProps<T> {
 export function DataTable<T>({
   columns, rows, rowKey, onRowClick, loading, errorMessage, onRetry, emptyTitle = 'Nothing here yet',
   sort, sortable = [], onSortChange, headerAddon, leadingHeader, chips, grouping, leading, onColumnMove, search, filters,
-  toolbar, pagination,
+  toolbar, pagination, ariaLabel, density = 'normal', footer, rowAttrs,
 }: DataTableProps<T>) {
+  const cellPad = density === 'compact' ? 'px-2 py-1' : 'px-3 py-2'
   const [dragging, setDragging] = useState<string | null>(null)
   const [dropOn, setDropOn] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -137,7 +148,7 @@ export function DataTable<T>({
         <ErrorState message={errorMessage} onRetry={onRetry} />
       ) : (
         <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
-          <table className="w-full text-sm">
+          <table aria-label={ariaLabel} className={cn('w-full', density === 'compact' ? 'text-xs' : 'text-sm')}>
             <thead className="bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500">
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
@@ -149,7 +160,7 @@ export function DataTable<T>({
                     return (
                       <th
                         key={h.id}
-                        className={cn('px-3 py-2 font-medium',
+                        className={cn(cellPad, 'font-medium',
                           dragging === h.column.id && 'opacity-40', dropOn === h.column.id && dragging !== h.column.id && 'shadow-[inset_2px_0_0_0_var(--color-primary-600,#0a7c7c)]')}
                         aria-sort={dir ? (dir === 'desc' ? 'descending' : 'ascending') : undefined}
                         onDragOver={onColumnMove ? (e) => { if (dragging) { e.preventDefault(); setDropOn(h.column.id) } } : undefined}
@@ -206,15 +217,17 @@ export function DataTable<T>({
               {loading && rows.length === 0
                 ? Array.from({ length: 5 }, (_, i) => <SkeletonRow key={i} cols={columns.length + (leadingHeader !== undefined ? 1 : 0)} />)
                 : table.getRowModel().rows.map((r, i, all) => {
+                  const { className: rowClass, ...rowData } = rowAttrs?.(r.original) ?? {}
                   const row = (
                     <tr
                       key={r.id}
+                      {...rowData}
                       onClick={onRowClick ? () => onRowClick(r.original) : undefined}
-                      className={cn('border-t border-neutral-100', onRowClick && 'cursor-pointer hover:bg-neutral-50')}
+                      className={cn('border-t border-neutral-100', onRowClick && 'cursor-pointer hover:bg-neutral-50', rowClass)}
                     >
                       {leadingHeader !== undefined && <td />}
                       {r.getVisibleCells().map((c) => (
-                        <td key={c.id} className="px-3 py-2 text-neutral-700">
+                        <td key={c.id} className={cn(cellPad, 'text-neutral-700')}>
                           {flexRender(c.column.columnDef.cell, c.getContext())}
                         </td>
                       ))}
@@ -255,6 +268,14 @@ export function DataTable<T>({
                   return <Fragment key={r.id}>{headers}{!rowHidden && row}</Fragment>
                 })}
             </tbody>
+            {footer && rows.length > 0 && (
+              <tfoot className="border-t border-neutral-200 bg-neutral-50 font-medium">
+                <tr>
+                  {leadingHeader !== undefined && <td />}
+                  {footer.map((f, i) => <td key={i} className={cn(cellPad, 'text-neutral-800')}>{f}</td>)}
+                </tr>
+              </tfoot>
+            )}
           </table>
           {!loading && rows.length === 0 && <EmptyState title={emptyTitle} className="border-0" />}
           {grouping?.truncated && (
