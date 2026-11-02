@@ -8,7 +8,7 @@ import { cn, todayISODate } from '@/lib/utils'
 import { useUserDirectory } from '@/hooks/useUsers'
 import { useCreateReceipt, invalidateReceiptViews } from '@/hooks/useAgreementReceipts'
 import { agreementReceiptAttachmentService, receiptAttachmentsQueryKey } from '@/services/agreementReceiptAttachments'
-import { agreementReceiptService, ocrService, receiptTotalsMatch, type ReceiptType } from '@/services/agreementReceipts'
+import { agreementReceiptService, ocrService, receiptTotalsMatch, type ApiReceipt, type ReceiptType } from '@/services/agreementReceipts'
 import {
   ReceiptVendorPicker,
   type ReceiptVendorSuggestion,
@@ -112,6 +112,11 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
   const [amountError, setAmountError] = useState<string | null>(null)
   const [receivedByError, setReceivedByError] = useState<string | null>(null)
   const [reasonError, setReasonError] = useState<string | null>(null)
+  // A save the server refused. A duplicate reference is shown at Reference #
+  // like any other field check (ISS-0115); anything else next to the button —
+  // never a browser alert.
+  const [refError, setRefError] = useState<string | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false)
 
   const resetForm = () => {
@@ -131,6 +136,8 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
     setAmountError(null)
     setReceivedByError(null)
     setReasonError(null)
+    setRefError(null)
+    setSubmitError(null)
   }
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -208,32 +215,48 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
       setAmountError(null)
     }
     if (!receiptDate) hasError = true
+    setRefError(null)
+    setSubmitError(null)
     if (hasError) return
 
-    const receipt = await createReceipt.mutateAsync({
-      receipt_type: receiptType,
-      receipt_date: receiptDate,
-      receipt_ref: receiptRef.trim() || undefined,
-      // Vendor, like the amounts, is a counter-slip question: a slip can come
-      // from any merchant and be filed against the wrong house account, which
-      // is what the mismatch check exists to catch. A delivery note against
-      // an agreement comes from that agreement's supplier by construction —
-      // asking again only invites a wrong answer. Omitted entirely (an empty
-      // vendor is never reported as a mismatch — schemas/agreement_receipt.py).
-      vendor_id: isSlip ? vendor.vendorId ?? undefined : undefined,
-      vendor_name: isSlip ? vendor.vendorName.trim() || undefined : undefined,
-      // Omitted, not zeroed — 0 is a value the reconciliation would sum.
-      amount: isSlip ? amt : undefined,
-      tax_amount: isSlip ? tax : undefined,
-      total_amount: isSlip ? tot : undefined,
-      received_by: receivedBy,
-      // Only a counter slip can be "missing" its evidence — the attachment is
-      // optional on the other two, so there is nothing to explain and nothing
-      // for AP to review (crud/agreement_receipt.py routes to
-      // pending_ap_review on this field alone).
-      missing_receipt_reason: isSlip && !file ? missingReceiptReason.trim() || undefined : undefined,
-      notes: notes.trim() || undefined,
-    })
+    let receipt: ApiReceipt
+    try {
+      receipt = await createReceipt.mutateAsync({
+        receipt_type: receiptType,
+        receipt_date: receiptDate,
+        receipt_ref: receiptRef.trim() || undefined,
+        // Vendor, like the amounts, is a counter-slip question: a slip can come
+        // from any merchant and be filed against the wrong house account, which
+        // is what the mismatch check exists to catch. A delivery note against
+        // an agreement comes from that agreement's supplier by construction —
+        // asking again only invites a wrong answer. Omitted entirely (an empty
+        // vendor is never reported as a mismatch — schemas/agreement_receipt.py).
+        vendor_id: isSlip ? vendor.vendorId ?? undefined : undefined,
+        vendor_name: isSlip ? vendor.vendorName.trim() || undefined : undefined,
+        // Omitted, not zeroed — 0 is a value the reconciliation would sum.
+        amount: isSlip ? amt : undefined,
+        tax_amount: isSlip ? tax : undefined,
+        total_amount: isSlip ? tot : undefined,
+        received_by: receivedBy,
+        // Only a counter slip can be "missing" its evidence — the attachment is
+        // optional on the other two, so there is nothing to explain and nothing
+        // for AP to review (crud/agreement_receipt.py routes to
+        // pending_ap_review on this field alone).
+        missing_receipt_reason: isSlip && !file ? missingReceiptReason.trim() || undefined : undefined,
+        notes: notes.trim() || undefined,
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create receipt'
+      const ref = receiptRef.trim()
+      // epms-api's duplicate-reference 409 names the reference it collided on
+      // (agreement_receipts.py _receipt_integrity_error).
+      if ((err as { status?: number }).status === 409 && ref && msg.includes(`Reference # ${ref} `)) {
+        setRefError(msg)
+      } else {
+        setSubmitError(msg)
+      }
+      return
+    }
 
     if (file) {
       setIsUploadingAttachment(true)
@@ -418,13 +441,14 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
         <FormField label={copy.dateLabel} required htmlFor="receipt-date">
           <Input id="receipt-date" type="date" value={receiptDate} onChange={(e) => setReceiptDate(e.target.value)} required />
         </FormField>
-        <FormField label={copy.refLabel} htmlFor="receipt-ref">
+        <FormField label={copy.refLabel} htmlFor="receipt-ref" error={refError ?? undefined}>
           {/* DB column is String(64) — a paste that overflows it raises a
               psycopg StringDataRightTruncation (DataError), not an
               IntegrityError, so create_receipt's `except IntegrityError` for the
               friendly 409 doesn't catch it and it falls through to a bare 500.
               maxLength stops the overflow from ever reaching the request. */}
-          <Input id="receipt-ref" value={receiptRef} onChange={(e) => setReceiptRef(e.target.value)} placeholder={copy.refPlaceholder} maxLength={64} />
+          <Input id="receipt-ref" value={receiptRef} onChange={(e) => { setReceiptRef(e.target.value); setRefError(null) }}
+            placeholder={copy.refPlaceholder} maxLength={64} error={!!refError} aria-invalid={!!refError} />
         </FormField>
         {isSlip && (
         <FormField
@@ -505,7 +529,8 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
         />
       </FormField>
 
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-3">
+        {submitError && <p className="text-sm text-danger-600" role="alert">{submitError}</p>}
         <Button type="submit" size="sm" disabled={isPending} className={cn(isPending && 'cursor-not-allowed')}>
           {isPending ? 'Recording…' : 'Record Receipt'}
         </Button>

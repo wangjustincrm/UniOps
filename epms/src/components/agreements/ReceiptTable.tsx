@@ -8,6 +8,7 @@ import { formatAmount, formatDate, cn } from '@/lib/utils'
 import { useVoidReceipt, useApReviewReceipt } from '@/hooks/useAgreementReceipts'
 import { agreementReceiptAttachmentService, receiptAttachmentsQueryKey } from '@/services/agreementReceiptAttachments'
 import { receiptTotal, type ApiReceipt } from '@/services/agreementReceipts'
+import { RejectReceiptDialog } from '@/components/agreements/RejectReceiptDialog'
 import type { ApiUserBrief } from '@/services/users'
 import type { DocumentStatus } from '@/types'
 
@@ -125,6 +126,10 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
     voidReceipt.mutate(receiptId, { onSettled: () => setPendingVoidId(null) })
   }
 
+  // Reject is final (status "rejected" is RETIRED) — ask first, in-page, as
+  // the Agreement Receipts list and receipt detail do (ISS-0115).
+  const [rejectTarget, setRejectTarget] = useState<ApiReceipt | null>(null)
+
   const handleReview = (receiptId: string, action: 'approve' | 'reject') => {
     setPendingReviewKey(`${receiptId}:${action}`)
     apReview.mutate({ receiptId, action }, { onSettled: () => setPendingReviewKey(null) })
@@ -232,7 +237,7 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
                               <Button
                                 size="sm"
                                 variant="secondary"
-                                onClick={() => handleReview(receipt.id, 'reject')}
+                                onClick={() => setRejectTarget(receipt)}
                                 disabled={apReview.isPending}
                               >
                                 <XCircle className="h-3.5 w-3.5" />
@@ -263,6 +268,13 @@ export function ReceiptTable({ agreementId, receipts, users, currency, canWrite,
           </table>
         </div>
       </div>
+      {rejectTarget && (
+        <RejectReceiptDialog
+          receiptLabel={rejectTarget.receipt_ref ?? '(no reference #)'}
+          onClose={() => setRejectTarget(null)}
+          onConfirm={() => { handleReview(rejectTarget.id, 'reject'); setRejectTarget(null) }}
+        />
+      )}
     </div>
   )
 }

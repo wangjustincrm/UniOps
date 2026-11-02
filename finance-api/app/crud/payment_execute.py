@@ -126,17 +126,15 @@ async def _sod_enabled(db: AsyncSession, rule_code: str) -> bool:
 
 
 async def _check_self_payment(db: AsyncSession, payer_id: uuid.UUID,
-                              counterparty_id: uuid.UUID | None, what: str) -> None:
+                              counterparty_id: uuid.UUID | None, message: str) -> None:
     """FIN-AUD-003 self_payment: the document creator / claimant cannot execute
     its own payment. Rule is config (identity-owned sod_rules) — disabling it
-    is an audited act, never a code change."""
+    is an audited act, never a code change. `message` is what the payer reads
+    — plain words, not the rule code (ISS-0115)."""
     if counterparty_id is None or payer_id != counterparty_id:
         return
     if await _sod_enabled(db, "self_payment"):
-        raise PaymentPermissionError(
-            f"SoD violation (self_payment): the {what} cannot execute payment "
-            "of their own document"
-        )
+        raise PaymentPermissionError(message)
 
 
 async def _complete_open_tasks(db: AsyncSession, doc_types: list[str], doc_id: uuid.UUID) -> None:
@@ -451,7 +449,8 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
         )).scalar_one_or_none()
         if pa is None:
             raise LookupError("Payment application not found")
-        await _check_self_payment(db, recorded_by, pa.created_by, "PA creator")
+        await _check_self_payment(db, recorded_by, pa.created_by,
+                                  "You created this PA — another payment officer must pay it.")
         if pa.status != "approved":
             raise ValueError(f"Cannot pay PA in status '{pa.status}'")
         await _refuse_second_payment(db, "pa_id", pa.id, pa.pa_number)
@@ -570,7 +569,8 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
     )).scalar_one_or_none()
     if claim is None:
         raise LookupError("Expense claim not found")
-    await _check_self_payment(db, recorded_by, claim.employee_id, "claimant")
+    await _check_self_payment(db, recorded_by, claim.employee_id,
+                              "This is your own expense claim — another payment officer must pay it.")
     if claim.claim_type in NON_PAYABLE_CLAIM_TYPES:
         raise ValueError("Travel Applications are not payable")
     if claim.status != "approved":

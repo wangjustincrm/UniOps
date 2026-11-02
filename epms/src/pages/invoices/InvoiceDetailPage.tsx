@@ -184,7 +184,7 @@ export default function InvoiceDetailPage() {
 
   const { data: inv, isLoading } = useInvoice(id ?? '')
   useDocTabTitle(inv?.internal_ref)
-  const { data: gr } = useGr(inv?.gr_id ?? '')
+  const { data: gr, isError: grUnreadable } = useGr(inv?.gr_id ?? '')
   // The blocking condition for an unmatch is "a non-cancelled PA still claims
   // this invoice", which lives in payment_applications.invoice_ids and cannot
   // be read off the invoice. The chain endpoint already resolves exactly that,
@@ -819,7 +819,10 @@ export default function InvoiceDetailPage() {
                     </div>
                   ) : (
                     <div className="flex items-center justify-center rounded-lg border border-dashed border-neutral-200 px-3 py-4">
-                      <p className="text-xs text-neutral-400">No GR linked</p>
+                      {/* gr_id set but the GR did not load: this user may not view GRs (§1.3) — it is still linked (ISS-0115) */}
+                      <p className="text-xs text-neutral-400">
+                        {!inv.gr_id ? 'No GR linked' : grUnreadable ? 'Goods receipt linked (no permission to view)' : 'Loading…'}
+                      </p>
                     </div>
                   )}
                 </div>

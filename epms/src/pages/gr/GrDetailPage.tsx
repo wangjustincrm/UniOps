@@ -335,7 +335,7 @@ export default function GrDetailPage() {
             <div>
               <p className="text-sm font-semibold text-warning-700">Collection Required</p>
               <p className="text-sm text-warning-600 mt-0.5">
-                Please go to <strong>{gr.storage_location}</strong> to collect your goods, then record the collection.
+                Please go to <strong>{gr.storage_location || 'Warehouse'}</strong> to collect your goods, then record the collection.
               </p>
             </div>
           </div>

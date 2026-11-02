@@ -349,7 +349,9 @@ function PoPaEditPage() {
     if (!isAgreementMode && !po) return
     if (!isAgreementMode && poIds.length === 0) return
     if (!title.trim() || subtotalNum <= 0 || taxNum < 0 || taxMissing || paymentTotal <= 0) return
-    if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement)) return
+    // Same bounds as the on-page message above (ISS-0115: 120% reached the
+    // server and came back as a raw pop-up).
+    if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement || prepayPctNum <= 0 || prepayPctNum > 100)) return
     // PO route only — agreement PAs are exempt. The notice under the invoice
     // list already names the two ends.
     if (!isAgreementMode && dueWindowViolation(poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id)))) return
@@ -821,7 +823,7 @@ function PoPaEditPage() {
                           onChange={(e) => setPrepaymentPct(e.target.value)}
                           className={cn(
                             'h-9 w-full pl-3 pr-8 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
-                            submitted && (!prepaymentPct || parseFloat(prepaymentPct) <= 0) ? 'border-danger-400' : 'border-neutral-300'
+                            submitted && (!prepaymentPct || parseFloat(prepaymentPct) <= 0 || parseFloat(prepaymentPct) > 100) ? 'border-danger-400' : 'border-neutral-300'
                           )}
                         />
                         <span className="absolute right-3 top-2 text-sm text-neutral-400">%</span>

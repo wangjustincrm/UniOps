@@ -147,7 +147,8 @@ export function useCreateReceipt(agreementId: string) {
     onSuccess: async () => {
       await invalidateReceiptViews(queryClient, agreementId)
     },
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to create receipt'),
+    // No onError alert: ReceiptEntryForm shows the refusal on the form itself —
+    // a duplicate reference at the Reference # field (ISS-0115).
   })
 }
 

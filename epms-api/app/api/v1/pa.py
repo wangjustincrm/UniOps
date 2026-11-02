@@ -216,7 +216,8 @@ async def _assert_invoices_belong_to_pos(
         return
     po_ids = [p.id for p in pos]
     rows = (await db.execute(
-        select(Invoice.id, Invoice.po_id).where(Invoice.id.in_(invoice_ids))
+        select(Invoice.id, Invoice.po_id, Invoice.internal_ref, Invoice.vendor_invoice_number)
+        .where(Invoice.id.in_(invoice_ids))
     )).all()
     found_ids = {r.id for r in rows}
     not_found = len(set(invoice_ids)) - len(found_ids)
@@ -234,10 +235,13 @@ async def _assert_invoices_belong_to_pos(
         )
         need_alloc_check -= set(alloc_rows.scalars().all())
     if need_alloc_check:
+        # Named as the invoice list shows them, never by UUID (ISS-0115).
+        refs = sorted(f"{r.internal_ref} ({r.vendor_invoice_number})"
+                      for r in rows if r.id in need_alloc_check)
         raise HTTPException(
             status_code=422,
             detail=f"Invoice(s) do not belong to {', '.join(p.number for p in pos)}: "
-                   f"{', '.join(str(i) for i in need_alloc_check)}",
+                   f"{', '.join(refs)}",
         )
 
 
