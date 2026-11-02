@@ -50,7 +50,7 @@ export interface MasterDetailFormProps<L> {
   readOnly?: boolean
   /** Address sections after the header fields (e.g. Ship to): AddressFields
    *  under `name`; their rules go in `schema` (addressSchema()). */
-  addresses?: { name: string; legend: string }[]
+  addresses?: { name: string; legend: string; phoneRequired?: boolean }[]
 }
 
 /** A record with lines — a manual order, a transfer, an invoice: the header's
@@ -104,7 +104,8 @@ export function MasterDetailForm<L>({
     <form onSubmit={submit} noValidate className="flex flex-col gap-4"
       onChange={() => onChange?.({ values: form.getValues(), lines: latestLines.current })}>
       <SchemaFields form={form} fields={fields} readOnly={readOnly} idPrefix="md" />
-      {addresses.map((a) => <AddressFields key={a.name} form={form} name={a.name} legend={a.legend} readOnly={readOnly} />)}
+      {addresses.map((a) => <AddressFields key={a.name} form={form} name={a.name} legend={a.legend} readOnly={readOnly}
+        phoneRequired={a.phoneRequired} />)}
       <EditableTable<L> ariaLabel={spec.label} rows={lines} onChange={changeLines} columns={spec.columns}
         rowKey={spec.rowKey} errors={spec.problem ? (_, i) => lineProblems[i] : undefined}
         onAdd={readOnly ? undefined : spec.add} addLabel={spec.addLabel} removable={!readOnly && spec.removable}

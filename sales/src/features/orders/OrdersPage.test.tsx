@@ -246,13 +246,14 @@ describe('Orders: 940s (P4)', () => {
 describe('Orders: manual orders (FR-OB-19a) — New in the standard sheet, drafts as a view', () => {
   const manualDraft: OrderRead = { ...order, id: 9, order_number: 109, partner_code: 'MAN', source_type: 'MANUAL', source_order_number: 'REF-9',
     fulfillment_status: 'Draft', order_state: 'Draft', review_reason: null, version: 3,
-    ship_to: { country: 'CA', name: 'Store 12', address1: '1 Main St', city: 'Ottawa', province: 'ON', zip: 'K1A 0B1' } }
-  const shipTo = { country: 'CA', name: 'Jane Doe', address1: '10 King St W', city: 'Toronto', province: 'ON', zip: 'M5H 1A1' }
+    ship_to: { country: 'CA', name: 'Store 12', phone: '613-555-0100', address1: '1 Main St', city: 'Ottawa', province: 'ON', zip: 'K1A 0B1' } }
+  const shipTo = { country: 'CA', name: 'Jane Doe', phone: '416-555-0100', address1: '10 King St W', city: 'Toronto', province: 'ON', zip: 'M5H 1A1' }
   async function fillShipTo(form: HTMLElement) {
     const st = within(form).getByRole('group', { name: 'Ship to' })
     fireEvent.change(within(st).getByLabelText(/^Name/), { target: { value: 'Jane Doe' } })
     fireEvent.change(within(st).getByLabelText(/^Address\b(?! line)/), { target: { value: '10 King St W' } })
     fireEvent.change(within(st).getByLabelText(/^City/), { target: { value: 'Toronto' } })
+    fireEvent.change(within(st).getByLabelText(/^Phone/), { target: { value: '416-555-0100' } })
     await chooseOption(within(st).getByRole('combobox', { name: /^Province/ }), 'Ontario (ON)')
     fireEvent.change(within(st).getByLabelText(/^Postal code/), { target: { value: 'm5h1a1' } })
   }
@@ -292,7 +293,7 @@ describe('Orders: manual orders (FR-OB-19a) — New in the standard sheet, draft
     fireEvent.click(within(form).getByRole('button', { name: 'Save draft' }))
     // Ship to is required: nothing is saved without it
     const st = within(form).getByRole('group', { name: 'Ship to' })
-    expect(await within(st).findAllByText('Required')).toHaveLength(5)
+    expect(await within(st).findAllByText('Required')).toHaveLength(6)  // the phone too: carriers need it
     expect(api.create).not.toHaveBeenCalled()
     await fillShipTo(form)
     fireEvent.click(within(form).getByRole('button', { name: 'Save draft' }))
@@ -385,11 +386,24 @@ describe('the order detail: Ship to and Bill to with where they came from', () =
     const shop = await open({ ship_to: { name: 'A B', address1: '5 Rue X', city: 'Montréal', province: 'QC', zip: 'H2X 1Y4', country: 'CA' }, bill_to: null })
     await within(shop).findByText('5 Rue X')
     expect(value(shop, 'Ship to')).toHaveTextContent(/5 Rue X.*Montréal QC H2X 1Y4.*From the Shopify shipping address/)
+    expect(within(shop).queryByText(/PO box/)).toBeNull()
     cleanup()
     const manual = await open({ source_type: 'MANUAL', ship_to: { name: 'Jane', address1: '1 Main', city: 'Ottawa', province: 'ON', zip: 'K1A 0B1',
       country: 'CA', attention: 'Receiving', phone: '613-555-0100' }, bill_to: null })
     await within(manual).findByText('1 Main')
     expect(value(manual, 'Ship to')).toHaveTextContent(/Jane.*Attn: Receiving.*1 Main.*613-555-0100.*Entered by hand/)
     expect(value(manual, 'Bill to')).toHaveTextContent('—None for a manual order')
+  })
+})
+
+describe('an imported order shipping to a PO box', () => {
+  beforeEach(() => { Object.values(api).forEach((f) => f.mockReset()); api.list.mockResolvedValue({ items: [pending], total: 1 }) })
+  it('is flagged next to its Ship to, without holding it', async () => {
+    api.fetchOrder.mockResolvedValue({ ...detail, ...pending, ship_to: { name: 'A B', address1: 'C.P. 220', city: 'Gatineau', province: 'QC', zip: 'J8T 7H2' },
+      ship_to_flags: ['PO box: the carrier may not deliver there'] })
+    renderAs(['sales.read'])
+    fireEvent.click(await screen.findByText('9303'))
+    const sheet = await screen.findByRole('dialog', { name: 'Order 105' })
+    expect(await within(sheet).findByText('PO box: the carrier may not deliver there')).toBeInTheDocument()
   })
 })

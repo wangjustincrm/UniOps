@@ -9,6 +9,7 @@ from decimal import Decimal
 
 from sqlalchemy import or_, select
 
+from app.domain.address import address_flags
 from app.domain.order_rules import order_state, payment_satisfied, to_ea
 from app.domain.orders import HOLD_REASONS, ORDER_STATES, SOURCE_TYPES
 from app.domain.status import FULFILLMENT, Fulfillment as F
@@ -104,7 +105,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
             lines=[LineRead.model_validate(ln) for ln in lines],
             documents=[OrderDocumentRead(**d._asdict()) for d in docs],
             shipments=await self._shipments(id),
-            dc_number=await self._dc_number(o),
+            dc_number=await self._dc_number(o), ship_to_flags=address_flags(o.ship_to),
             timeline=[TimelineEntry(at=a.at, user_name=a.user_name, entity=a.entity, action=a.action, before=a.before,
                                     after=a.after, reason=a.reason) for a in trail],
         )

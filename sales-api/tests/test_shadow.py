@@ -17,7 +17,7 @@ from app.platform.errors import BusinessError
 from app.services.outbound import TORONTO
 from app.services.settings import SETTINGS, SHADOW_MODE
 from app.services.shadow import ShadowMatchService, ShadowRun
-from tests.test_orders import OP, T0, env  # noqa: F401 — env is a fixture (p4_edi needs it)
+from tests.test_orders import OP, T0, env, shopify_order  # noqa: F401 — env is a fixture (p4_edi needs it)
 from tests.test_outbound import a_paid_order, ack997, send_now, sent_order, status, store_997
 from tests.test_outbound import edi as p4_edi  # noqa: F401 — a fixture
 
@@ -279,3 +279,14 @@ async def test_a_997_and_a_945_in_the_shadow_run_are_matched_to_the_zoho_940_nev
     assert await status(edi, o.id) == F.PENDING            # nothing applied
     assert await edi.env.q("SELECT 1 FROM tasks") == [] and await outbox(edi) == []
     assert edi.env.shop.calls == [] or all(c[0] in ("orders_page", "variant") for c in edi.env.shop.calls)
+
+
+async def test_an_imported_postal_code_mismatch_in_the_shadow_run_is_review_without_a_task(edi):
+    await shadow(edi)
+    o = shopify_order(1, 9301)
+    o["shipping_address"] |= {"zip": "V6B 1A1"}  # Vancouver's, with QC
+    edi.env.shop.orders = [o]
+    await edi.env.pull()
+    order, _ = await edi.env.order(1)
+    assert order.fulfillment_status == F.REVIEW and "is in BC, not QC" in order.review_reason
+    assert await edi.env.q("SELECT 1 FROM tasks") == []

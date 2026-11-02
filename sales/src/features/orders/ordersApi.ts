@@ -106,6 +106,8 @@ export interface OrderDetail extends OrderRead {
   bill_to: Record<string, string | null> | null
   /** The DC a retailer ship-to GLN routes to (Walmart). */
   dc_number: string | null
+  /** Non-blocking warnings about the ship-to (a PO box). */
+  ship_to_flags?: string[]
   notes: string | null
   lines: LineRead[]
   documents: OrderDocument[]

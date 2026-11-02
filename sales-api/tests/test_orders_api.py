@@ -63,7 +63,7 @@ async def test_orders_list_detail_and_the_review_worklist(api):
 
 async def test_manual_order_preview_create_submit(api):
     body = {"partner_code": "MAN", "customer_reference": "phone-1",
-            "ship_to": {"name": "A B", "address1": "1 rue", "city": "Montréal", "province": "QC", "zip": "h2x1y4"},
+            "ship_to": {"name": "A B", "phone": "514-555-0100", "address1": "1 rue", "city": "Montréal", "province": "QC", "zip": "h2x1y4"},
             "lines": [{"item_code": "CF0092", "quantity": 2, "unit": "case"}]}
     assert (await api.post("/api/v1/orders/manual/preview", json=body["lines"], headers=READER)).status_code == 403
     r = await api.post("/api/v1/orders/manual/preview", json=body["lines"], headers=OPERATOR)
@@ -101,12 +101,26 @@ async def test_a_manual_order_needs_the_ship_to_the_940_needs_field_by_field(api
     r = await api.post("/api/v1/orders/manual", json=base | {"ship_to": {"name": "A B", "city": "Laval", "province": "XX", "zip": "123"}},
                        headers=OPERATOR)
     errs = {e["field"]: e["message"] for e in r.json()["error"]["details"]["errors"]}
-    assert r.status_code == 422 and set(errs) == {"ship_to.address1", "ship_to.province", "ship_to.zip"}
+    assert r.status_code == 422 and set(errs) == {"ship_to.address1", "ship_to.phone", "ship_to.province", "ship_to.zip"}
     assert "A1A 1A1" in errs["ship_to.zip"] and "province code" in errs["ship_to.province"]
-    r = await api.post("/api/v1/orders/manual", json=base | {"ship_to": {"name": "A B", "address1": "1 rue", "city": "Laval",
+    r = await api.post("/api/v1/orders/manual", json=base | {"ship_to": {"name": "A B", "phone": "450-555-0100", "address1": "1 rue", "city": "Laval",
                                                                          "province": "qc", "zip": "h7n1a1"}}, headers=OPERATOR)
     assert r.status_code == 201 or r.status_code == 200, r.text
-    assert r.json()["ship_to"] == {"country": "CA", "name": "A B", "address1": "1 rue", "city": "Laval", "province": "QC", "zip": "H7N 1A1"}
-    r = await api.post("/api/v1/orders/manual", json=base | {"ship_to": {"country": "US", "name": "A B", "address1": "1 Main St",
+    assert r.json()["ship_to"] == {"country": "CA", "name": "A B", "phone": "450-555-0100", "address1": "1 rue", "city": "Laval",
+                                   "province": "QC", "zip": "H7N 1A1"}
+    r = await api.post("/api/v1/orders/manual", json=base | {"ship_to": {"country": "US", "name": "A B", "phone": "716-555-0100", "address1": "1 Main St",
                                                                          "city": "Buffalo", "province": "NY", "zip": "14201"}}, headers=OPERATOR)
     assert r.status_code in (200, 201)  # outside Canada: no Canadian rules
+
+
+async def test_a_manual_order_postal_code_must_be_in_its_province_and_a_po_box_is_accepted(api):
+    base = {"partner_code": "MAN", "lines": [{"item_code": "CF0092", "quantity": 1, "unit": "EA"}]}
+    addr = {"name": "A B", "phone": "613-555-0100", "address1": "1 Main St", "city": "Ottawa", "province": "QC", "zip": "K1A 0B1"}
+    r = await api.post("/api/v1/orders/manual", json=base | {"ship_to": addr}, headers=OPERATOR)
+    errs = {e["field"]: e["message"] for e in r.json()["error"]["details"]["errors"]}
+    assert r.status_code == 422 and set(errs) == {"ship_to.zip"} and "is in ON, not QC" in errs["ship_to.zip"]
+    r = await api.post("/api/v1/orders/manual", json=base | {"ship_to": addr | {"province": "ON", "address2": "PO Box 12"}},
+                       headers=OPERATOR)
+    assert r.status_code in (200, 201), r.text  # a PO box is a warning on the form, never a refusal
+    detail = (await api.get(f"/api/v1/orders/{r.json()['id']}", headers=READER)).json()
+    assert detail["ship_to_flags"] == ["PO box: the carrier may not deliver there"]

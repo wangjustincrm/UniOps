@@ -19,7 +19,7 @@ const schema = z.object({
   customer_reference: z.string().trim().max(100).nullable().optional(),
   requested_delivery_date: z.string().nullable().optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
-  ship_to: addressSchema(),
+  ship_to: addressSchema({ phone: true }),
 })
 // The form's ship-to: a draft's own, else blank in Canada (every part a string for the inputs).
 const shipToDefaults = (a: Record<string, string | null> | null | undefined) =>
@@ -78,7 +78,7 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
       fields={fields}
       defaultValues={{ partner_code: draft?.partner_code ?? single, customer_reference: draft?.source_order_number ?? '',
         requested_delivery_date: draft?.requested_delivery_date ?? '', notes: draft?.notes ?? '', ship_to: shipToDefaults(draft?.ship_to) }}
-      addresses={[{ name: 'ship_to', legend: 'Ship to' }]}
+      addresses={[{ name: 'ship_to', legend: 'Ship to', phoneRequired: true }]}
       lines={{ label: 'Order lines', columns, initial: lines, add: () => ({ ...blank }), removable: true,
         problem: (l, i) => lineProblem(l) ?? preview?.[i]?.problem ?? null }}
       // The EA depends on the lines only: a header or address change keeps the preview.

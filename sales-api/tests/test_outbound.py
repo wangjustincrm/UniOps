@@ -443,7 +443,7 @@ async def test_a_manual_order_with_its_ship_to_builds_a_valid_940(edi):
     async with edi.env.factory(OP) as u:
         o = await ManualOrderService(u).create(ManualOrderIn(
             partner_code="MAN", customer_reference="phone-7",
-            ship_to=AddressIn(name="Staff shop", attention="J. Doe", address1="1680 Venture Dr", city="Kingston", province="ON", zip="k7p0e9"),
+            ship_to=AddressIn(name="Staff shop", phone="613-555-0100", attention="J. Doe", address1="1680 Venture Dr", city="Kingston", province="ON", zip="k7p0e9"),
             lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]))
         await u.commit()
     async with edi.env.factory(OP) as u:

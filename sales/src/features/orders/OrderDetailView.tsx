@@ -72,7 +72,8 @@ export function OrderDetailView({ id }: { id: number }) {
         ['Order', `${o.order_number} · ${o.partner_code}`], ['Customer PO / reference', o.source_order_number], ['Reference', o.source_reference],
         ['Source', o.source_type], ['Received', formatDateTime(o.first_received_at)], ['Paid (delay start)', formatDateTime(o.paid_at)],
         ['Payment', o.shopify_financial_status], ['Requested delivery', o.requested_delivery_date ? formatDate(o.requested_delivery_date) : null],
-        ['Ship to', <AddressView key="st" value={o.ship_to} note={shipToOrigin(o)} />],
+        ['Ship to', <span key="st" className="flex flex-col gap-1"><AddressView value={o.ship_to} note={shipToOrigin(o)} />
+          {(o.ship_to_flags ?? []).map((f) => <Badge key={f} variant="warning">{f}</Badge>)}</span>],
         ['Bill to', <AddressView key="bt" value={o.bill_to} note={billToOrigin(o)} />],
         ['Total', formatMoney(o.total, o.currency)], ['Invoice', o.invoice_status],
       ]} />

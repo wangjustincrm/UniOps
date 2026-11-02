@@ -275,8 +275,8 @@ modules:
       invoices, configuration — has its own permission; reading needs one too.
     typical:
       - Look up an order from the Shopify store or a retailer and see its lines in EA, its Ship to and Bill to (with where each came from: Shopify, the retailer's 850 with its GLN and DC, or entered by hand), where it came from and what happened to it
-      - Work the orders that need review (Orders → view "Needs review") — held because an item, unit, case pack, partner or DC route needs a decision — and Re-check them after fixing the cause
-      - Enter a manual order (sample, phone order, staff purchase) as a draft and submit it — Orders → New manual order (the customer is a partner whose channel is Manual; the Ship to address is required — name, address, city, province, postal code; each line's unit is chosen from that item's own units); the drafts are the Orders view "Manual drafts"
+      - Work the orders that need review (Orders → view "Needs review") — held because an item, unit, case pack, partner, DC route or a ship-to postal code from another province needs a decision — and Re-check them after fixing the cause
+      - Enter a manual order (sample, phone order, staff purchase) as a draft and submit it — Orders → New manual order (the customer is a partner whose channel is Manual; the Ship to address is required — name, phone, address, city, province, and a postal code in that province; a PO box needs a confirmation; each line's unit is chosen from that item's own units); the drafts are the Orders view "Manual drafts"
       - Maintain the partners, items with their units, retailer part numbers and DC routing, also by CSV
       - Set up the SFTP and Shopify connections, test them, and see the files received and each run's report
       - See an order's 940s to the warehouse — whether the file was sent, and separately whether the warehouse acknowledged it (997) — and use Send 940 now, or Replace 940 for a live one

@@ -2,12 +2,13 @@
 manual orders (FR-OB-19a)."""
 from __future__ import annotations
 
-import re
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationInfo, field_validator
+
+from app.domain.address import CA_POSTAL, CA_PROVINCES, postal_mismatch
 
 Code = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
 Unit = Annotated[str, StringConstraints(strip_whitespace=True, to_upper=True, min_length=1, max_length=20)]
@@ -142,6 +143,8 @@ class OrderDetail(OrderRead):
     lines: list[LineRead] = []
     # The DC a retailer ship-to GLN routes to (Walmart; FR-OB-03), shown with the address.
     dc_number: str | None = None
+    # Non-blocking warnings about the ship-to (a PO box), shown with it.
+    ship_to_flags: list[str] = []
     documents: list[OrderDocumentRead] = []
     shipments: list[ShipmentRead] = []
     timeline: list[TimelineEntry] = []
@@ -153,8 +156,6 @@ class ManualLineIn(BaseModel):
     unit: Unit
 
 
-CA_PROVINCES = ("AB", "BC", "MB", "NB", "NL", "NS", "NT", "NU", "ON", "PE", "QC", "SK", "YT")
-_CA_POSTAL = re.compile(r"^[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z] ?\d[ABCEGHJ-NPRSTV-Z]\d$")
 Line = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
 OptLine = Annotated[str, StringConstraints(strip_whitespace=True, max_length=255)] | None
 
@@ -163,13 +164,15 @@ class AddressIn(BaseModel):
     """A ship-to (or bill-to) entered by hand: what the 940 needs (name,
     address1, city, province, postal code) is required, so a manual order is
     refused here, field by field — never by its 940 later (FR-OB-29a). In
-    Canada the province is a code and the postal code A1A 1A1."""
+    Canada the province is a code and the postal code A1A 1A1 in that
+    province; the phone is required (carriers need it). A PO box is not
+    refused here (the form warns)."""
     model_config = ConfigDict(extra="forbid")
 
     country: Annotated[str, StringConstraints(strip_whitespace=True, to_upper=True, min_length=2, max_length=2)] = "CA"
     name: Line
     attention: OptLine = None
-    phone: Annotated[str, StringConstraints(strip_whitespace=True, max_length=40)] | None = None
+    phone: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
     address1: Line
     address2: OptLine = None
     city: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
@@ -187,9 +190,11 @@ class AddressIn(BaseModel):
     @classmethod
     def _zip(cls, v: str, info: ValidationInfo) -> str:
         if info.data.get("country") == "CA":
-            if not _CA_POSTAL.match(v):
+            if not CA_POSTAL.match(v):
                 raise ValueError("a Canadian postal code: A1A 1A1")
             v = f"{v.replace(' ', '')[:3]} {v.replace(' ', '')[3:]}"
+            if why := postal_mismatch(info.data.get("province"), v):
+                raise ValueError(f"the {why}")
         return v
 
 

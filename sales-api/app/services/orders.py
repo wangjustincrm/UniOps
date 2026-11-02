@@ -28,6 +28,7 @@ from typing import Any
 
 from sqlalchemy import select
 
+from app.domain.address import address_problem
 from app.domain.items import barcode_key, titles_list
 from app.domain.order_rules import payment_satisfied, to_ea, unit_from_title
 from app.domain.sources import SourceLine, SourceOrder
@@ -198,6 +199,8 @@ def review_reasons(src: SourceOrder, partner: Partner | None, plans: list[LinePl
         gln = str((src.header.get("ship_to") or {}).get("gln") or "").strip()
         if (partner.code.casefold(), gln) not in catalog.dc_glns:
             reasons.append(f"no DC routing for ship-to {gln or '(none)'}")
+    if why := address_problem(src.header.get("ship_to")):  # FR-OB-29a: checked before any 940, offline
+        reasons.append(f"ship-to {why}")
     for p in plans:
         if p.problem:
             ids = ", ".join(f"{k}={v}" for k, v in p.line.identifiers.items()

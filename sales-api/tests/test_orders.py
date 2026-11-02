@@ -536,7 +536,7 @@ async def test_an_850_resend_updates_the_order(env):
 
 async def test_ac19_a_manual_draft_is_never_queued_and_after_submit_it_is(env):
     from app.schemas.orders import AddressIn, ManualLineIn, ManualOrderIn
-    data = ManualOrderIn(partner_code="MAN", customer_reference="staff-1", ship_to=AddressIn(name="Staff shop", address1="1680 Venture Dr", city="Kingston", province="ON", zip="K7P 0E9"), lines=[
+    data = ManualOrderIn(partner_code="MAN", customer_reference="staff-1", ship_to=AddressIn(name="Staff shop", phone="613-555-0100", address1="1680 Venture Dr", city="Kingston", province="ON", zip="K7P 0E9"), lines=[
         ManualLineIn(item_code="CF0092", quantity=Decimal(2), unit="CASE")])
     async with env.factory(OP) as u:
         o = await ManualOrderService(u).create(data)
@@ -557,7 +557,7 @@ async def test_a_manual_order_with_a_bad_line_cannot_be_submitted(env):
     from app.schemas.orders import AddressIn, ManualLineIn, ManualOrderIn
     async with env.factory(OP) as u:
         preview = await ManualOrderService(u).preview([ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="PALLET")])
-        o = await ManualOrderService(u).create(ManualOrderIn(partner_code="MAN", ship_to=AddressIn(name="Staff shop", address1="1680 Venture Dr", city="Kingston", province="ON", zip="K7P 0E9"), lines=[
+        o = await ManualOrderService(u).create(ManualOrderIn(partner_code="MAN", ship_to=AddressIn(name="Staff shop", phone="613-555-0100", address1="1680 Venture Dr", city="Kingston", province="ON", zip="K7P 0E9"), lines=[
             ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="PALLET")]))
         await u.commit()
     assert preview[0].problem == "no conversion for unit PALLET"
@@ -566,7 +566,7 @@ async def test_a_manual_order_with_a_bad_line_cannot_be_submitted(env):
             await ManualOrderService(u).submit(o.id, o.version)
     async with env.factory(OP) as u:
         with pytest.raises(InvalidInput, match="MANUAL-channel"):
-            await ManualOrderService(u).create(ManualOrderIn(partner_code="SHOP", ship_to=AddressIn(name="Staff shop", address1="1680 Venture Dr", city="Kingston", province="ON", zip="K7P 0E9"), lines=[
+            await ManualOrderService(u).create(ManualOrderIn(partner_code="SHOP", ship_to=AddressIn(name="Staff shop", phone="613-555-0100", address1="1680 Venture Dr", city="Kingston", province="ON", zip="K7P 0E9"), lines=[
                 ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="EA")]))
 
 
@@ -596,3 +596,27 @@ async def test_the_detail_carries_both_addresses_and_the_walmart_dc(env):
     async with env.factory(OP) as u:
         d = await OrderService(u).detail(o.id)
     assert d.ship_to["gln"] == "0012345000011" and d.dc_number == "6080" and d.source_type == "EDI_850"
+
+
+async def test_fr29a_an_imported_postal_code_outside_its_province_goes_to_review_a_po_box_only_flags(env):
+    bad = shopify_order(1, 9301)
+    bad["shipping_address"] |= {"zip": "K1A 0B1"}                                # Ottawa's, with QC
+    boxed = shopify_order(2, 9302)
+    boxed["shipping_address"] |= {"address1": "C.P. 220"}                       # case postale: deliverable or not, it goes
+    env.shop.orders = [bad, boxed]
+    await env.pull()
+    o, _ = await env.order(1)
+    assert o.fulfillment_status == F.REVIEW and o.review_reason == "ship-to postal code K1A 0B1 is in ON, not QC"
+    assert [t["type"] for t in await env.q("SELECT type FROM tasks")] == ["sales_order_review"]
+    p, _ = await env.order(2)
+    assert p.fulfillment_status == F.PENDING and p.review_reason is None
+    from app.domain.address import address_flags
+    assert address_flags(p.ship_to) == ["PO box: the carrier may not deliver there"]
+
+
+async def test_fr29a_an_850_ship_to_outside_its_province_goes_to_review(env):
+    body = po("LBL", "L-ADDR", [{"Line": 1, "BuyerPart": "L-555", "Quantity": 1, "UOM": "CA"}])
+    body |= {"ShipToAddress1": "1 Main St", "ShipToCity": "Calgary", "ShipToState": "BC", "ShipToZip": "T2P 1J9"}
+    await run_850(env, {"PurchaseOrder": [body]})
+    o, _ = await env.order("L-ADDR")
+    assert o.fulfillment_status == F.REVIEW and "ship-to postal code T2P 1J9 is in AB, not BC" in o.review_reason

@@ -1,16 +1,20 @@
 import { Controller, useWatch, type FieldValues, type UseFormReturn } from 'react-hook-form'
+import { Checkbox } from '../primitives/Checkbox'
 import { Select } from '../primitives/Select'
 import { FormField, Input } from '../primitives/shell'
-import { ADDRESS_FIELDS, CA_PROVINCES, COUNTRIES } from './address'
+import { ADDRESS_FIELDS, CA_PROVINCES, COUNTRIES, isPoBox } from './address'
 
 /** The address under `name` (e.g. "ship_to") on a react-hook-form form, in a
  *  fieldset: name, attention, phone, address lines, city, province (the
  *  Canadian provinces when the country is Canada), postal code, country.
+ *  A PO box is a warning with a confirm box (carriers may not deliver there).
  *  Its rules are addressSchema(); MasterDetailForm renders it (`addresses`). */
-export function AddressFields({ form, name, legend, readOnly }: {
-  form: UseFormReturn<FieldValues>; name: string; legend: string; readOnly?: boolean
+export function AddressFields({ form, name, legend, readOnly, phoneRequired }: {
+  form: UseFormReturn<FieldValues>; name: string; legend: string; readOnly?: boolean; phoneRequired?: boolean
 }) {
-  const country = useWatch({ control: form.control, name: `${name}.country` }) as string | undefined
+  const [country, line1, line2] = useWatch({ control: form.control, name: [`${name}.country`, `${name}.address1`, `${name}.address2`] }) as
+    (string | undefined)[]
+  const poBox = isPoBox(line1, line2)
   const errors = (form.formState.errors[name] ?? {}) as Record<string, { message?: unknown } | undefined>
   const err = (f: string) => (typeof errors[f]?.message === 'string' ? (errors[f]!.message as string) : undefined)
   const id = (f: string) => `addr-${name}-${f}`
@@ -25,7 +29,7 @@ export function AddressFields({ form, name, legend, readOnly }: {
       <div className="grid gap-3 sm:grid-cols-2">
         {text('name', 'Name', true)}
         {text('attention', 'Attention / contact')}
-        {text('phone', 'Phone')}
+        {text('phone', 'Phone', phoneRequired)}
         <FormField label="Country" htmlFor={id('country')} required error={err('country')}>
           <Controller control={form.control} name={`${name}.country`} render={({ field }) => (
             <Select id={id('country')} value={field.value || null} onChange={(v) => field.onChange(v ?? '')} options={COUNTRIES}
@@ -47,6 +51,16 @@ export function AddressFields({ form, name, legend, readOnly }: {
         </FormField>
         {text('zip', country === 'CA' ? 'Postal code (A1A 1A1)' : 'Postal code', true)}
       </div>
+      {poBox && (
+        <div role="note" className="flex flex-col gap-1 rounded-md bg-warning-50 p-2 text-sm text-warning-700">
+          <span>This looks like a PO box: carriers may not deliver there.</span>
+          <Controller control={form.control} name={`${name}.po_box_ok`} render={({ field }) => (
+            <Checkbox checked={!!field.value} onCheckedChange={field.onChange} disabled={readOnly}
+              aria-invalid={err('po_box_ok') ? true : undefined} label="Ship to this PO box anyway" />
+          )} />
+          {err('po_box_ok') && <span role="alert" className="text-danger-600">{err('po_box_ok')}</span>}
+        </div>
+      )}
     </fieldset>
   )
 }
