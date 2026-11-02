@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
-import { BackLink, useBack, useDocTabTitle } from '@/components/BackLink'
+import { useBack, useDocTabTitle } from '@/components/BackLink'
 import { NotFoundState } from '@/components/shared/NotFoundState'
 import {
   ArrowLeft, FileText, ExternalLink, CheckCircle2,

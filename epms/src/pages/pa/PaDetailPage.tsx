@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { DirectPaBudgetPanel } from '@/components/pa/DirectPaBudgetPanel'
-import { BackLink, useDocTabTitle } from '@/components/BackLink'
+import { useDocTabTitle } from '@/components/BackLink'
 import { NotFoundState } from '@/components/shared/NotFoundState'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
