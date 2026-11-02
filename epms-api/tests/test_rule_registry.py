@@ -451,6 +451,10 @@ def test_pr_line_prices_may_be_zero_or_negative():
         PrLineItemIn(**base, qty=Decimal("0"), unit_price=Decimal("1"))
     page = _src("epms/src/pages/pr/PrCreatePage.tsx")
     assert "estimatedAmount === 0" in page and "At least one line must have a price" in page
+    # The form keeps a typed 0: `value={item.unitPrice || ''}` emptied the box (ISS-0083).
+    lines = _src("epms/src/components/pr/PrLineItems.tsx")
+    assert "item.unitPrice || ''" not in lines
+    assert lines.count("<UnitPriceInput") == 2
 
 
 def test_changing_the_department_clears_the_budget_fields():
@@ -478,7 +482,12 @@ def test_pr_list_filters():
 
 def test_a_pr_is_copied_from_the_list():
     assert "/pr/new?copyFrom=" in _src("epms/src/pages/pr/PrListPage.tsx")
-    assert "Copy of " in _src("epms/src/pages/pr/PrCreatePage.tsx")
+    page = _src("epms/src/pages/pr/PrCreatePage.tsx")
+    assert "Copy of " in page
+    # The copied vendor is a starting value, applied once: it must not come
+    # back each time the user empties the field (ISS-0151).
+    effect = page.split("const match = vendorsData?.items.find((v) => v.id === copyVendorId)")[1][:200]
+    assert "setCopyVendorId(null)" in effect
 
 
 def test_the_pr_pdf_is_made_on_approval():
@@ -1063,3 +1072,34 @@ def test_a_refused_submit_takes_the_user_to_the_saved_draft():
     assert "rememberSubmitFailure(\n            newAgreement.id" in agr_create
     assert "peekSubmitFailure(id)" in _src("epms/src/pages/pr/PrEditPage.tsx")
     assert "peekSubmitFailure(id)" in _src("epms/src/pages/agreements/AgreementDetailPage.tsx")
+
+
+def test_currency_lists_follow_currency_settings():
+    """currencies_on_a_pr_or_po (ISS-0118): every PR / PO / agreement currency
+    list is built from the enabled list, not by filtering the four presets."""
+    helper = _src("epms/src/lib/currencies.ts")
+    assert "config?.enabled_currencies" in helper and "custom_currencies" in helper
+    for page in ("pr/PrCreatePage.tsx", "pr/PrEditPage.tsx", "po/PoCreatePage.tsx",
+                 "po/PoEditPage.tsx", "agreements/AgreementCreatePage.tsx"):
+        src = _src(f"epms/src/pages/{page}")
+        assert "enabledCurrencyOptions(config" in src, page
+        assert "CURRENCIES.filter" not in src, page
+
+
+def test_the_budget_panel_is_on_new_and_edit_pr():
+    """modules.yaml budget note (ISS-0142, OBG-001): Edit PR shows the same
+    budget panel as New PR, fed by the form's own amount before saving."""
+    for page in ("PrCreatePage.tsx", "PrEditPage.tsx"):
+        src = _src(f"epms/src/pages/pr/{page}")
+        assert "<BudgetBalanceWidget" in src, page
+        assert "thisAmount={estimatedAmount}" in src, page
+
+
+def test_new_po_links_a_pr_through_the_create_po_path():
+    """linking_a_po_to_a_pr (ISS-0087): New PO's Linked PR offers approved PRs
+    without a PO and re-opens the form as /po/new?prId=, the Create PO path."""
+    page = _src("epms/src/pages/po/PoCreatePage.tsx")
+    assert "usePrs({ status: 'approved', has_po: false })" in page
+    assert "navigate(e.target.value ? `/po/new?prId=${e.target.value}` : '/po/new')" in page
+    assert "Create PO" in _src("epms/src/pages/pr/PrDetailPage.tsx")
+    assert "pr.status === 'approved' && !pr.po_id" in _src("epms/src/pages/pr/PrDetailPage.tsx")

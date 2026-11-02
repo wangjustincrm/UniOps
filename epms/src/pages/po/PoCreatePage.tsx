@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams, Link } from 'react-router-dom'
+import { useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, Upload, X, Calendar, Search, Receipt } from 'lucide-react'
@@ -11,10 +11,10 @@ import { BudgetAccountSelect } from '@/components/budget/BudgetAccountSelect'
 import { useConfig } from '@/hooks/useConfig'
 import { formatAmount, cn } from '@/lib/utils'
 import type { ProcurementType, PrLineItem, Currency } from '@/types'
-import { CURRENCIES } from '@/types'
+import { enabledCurrencyOptions } from '@/lib/currencies'
 import { useCreatePo } from '@/hooks/usePos'
 import { poService } from '@/services/po'
-import { usePr } from '@/hooks/usePrs'
+import { usePr, usePrs } from '@/hooks/usePrs'
 import { useVendors } from '@/hooks/useVendors'
 import type { ApiVendor } from '@/services/vendors'
 import { useTaxCodes } from '@/hooks/useTaxCodes'
@@ -70,6 +70,14 @@ export default function PoCreatePage() {
   const createPo = useCreatePo()
   const { data: config } = useConfig()
   const { data: linkedPrData } = usePr(prId ?? '')
+  // Linked PR selector (PRD §3.12.1; ISS-0087): the approved PRs no PO has been
+  // raised from yet — one PR, one PO — exactly where a PR's Create PO button
+  // is shown. Picking one opens this page as /po/new?prId=…, the same path as
+  // Create PO, so it is pre-filled by the same code (PO-002); "None" opens a
+  // blank New PO.
+  const navigate = useNavigate()
+  const { data: linkablePrsData } = usePrs({ status: 'approved', has_po: false })
+  const linkablePrs = linkablePrsData?.items ?? []
 
   // Form state
   const [title, setTitle] = useState('')
@@ -257,6 +265,25 @@ export default function PoCreatePage() {
           <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
             <h2 className="text-base font-semibold text-neutral-900">Order Details</h2>
 
+            <FormField label="Linked PR" htmlFor="linkedPr" hint="Optional. Pre-fills the vendor, lines, budget code and other fields from the PR.">
+              <select
+                id="linkedPr"
+                value={prId ?? ''}
+                onChange={(e) => navigate(e.target.value ? `/po/new?prId=${e.target.value}` : '/po/new')}
+                className="h-10 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+              >
+                <option value="">None</option>
+                {prId && linkedPrData && !linkablePrs.some((p) => p.id === prId) && (
+                  <option value={prId}>{linkedPrData.number} — {linkedPrData.title}</option>
+                )}
+                {linkablePrs.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.number} — {p.title}{p.vendor_name ? ` (${p.vendor_name})` : ''}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+
             {/* Title */}
             <FormField label="PO Title / Description" required htmlFor="title" error={errors.title}>
               <Input
@@ -415,9 +442,7 @@ export default function PoCreatePage() {
                   }}
                   className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 >
-                  {[
-                    ...CURRENCIES.filter((c) => (config?.enabled_currencies ?? ['CAD','USD','EUR','RMB']).includes(c.value)),
-                  ].map((c) => (
+                  {enabledCurrencyOptions(config, currency).map((c) => (
                     <option key={c.value} value={c.value}>{c.value} — {c.label}</option>
                   ))}
                 </select>

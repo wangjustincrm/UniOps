@@ -10,7 +10,7 @@ import { FormField } from '@/components/ui/form-field'
 import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import { useConfig } from '@/hooks/useConfig'
 import { cn } from '@/lib/utils'
-import { CURRENCIES } from '@/types'
+import { enabledCurrencyOptions } from '@/lib/currencies'
 import type { Currency } from '@/types'
 import { useCreateAgreement } from '@/hooks/useAgreements'
 import { agreementService, type AgreementType, type CreateAgreementBody, type MilestoneRowIn } from '@/services/agreement'
@@ -452,7 +452,7 @@ export default function AgreementCreatePage() {
                   }}
                   className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 >
-                  {CURRENCIES.filter((c) => (config?.enabled_currencies ?? ['CAD', 'USD', 'EUR', 'RMB']).includes(c.value)).map((c) => (
+                  {enabledCurrencyOptions(config).map((c) => (
                     <option key={c.value} value={c.value}>{c.value} — {c.label}</option>
                   ))}
                 </select>

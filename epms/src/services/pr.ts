@@ -136,6 +136,8 @@ export interface PrFilters {
   department_id?: string
   is_prepaid?: boolean
   created_by?: string
+  /** false = only PRs no PO has been raised from yet. */
+  has_po?: boolean
   search?: string
   page?: number
   page_size?: number

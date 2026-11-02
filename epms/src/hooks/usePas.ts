@@ -24,16 +24,11 @@ export function usePas(filters?: PaFilters, enabled = true) {
 // usePas({ po_id }) so the caches are shared. De-duplicated by id — a PA that
 // already covers two of the selected POs comes back from both queries, and
 // counting it twice would double its invoices in the "already claimed" lock.
-export function usePasForPos(poIds: string[], enabled = true) {
-  const results = useQueries({
-    queries: poIds.map((poId) => ({
-      queryKey: ['pas', { po_id: poId }],
-      queryFn: () => paService.listAll({ po_id: poId }),
-      enabled,
-    })),
-  })
-  const settled = poIds.length === 0 || results.every((r) => r.data !== undefined)
-  if (!settled) return { items: undefined as ApiPa[] | undefined, isLoading: true }
+//
+// `combine` is module-level so the result keeps its identity until the data
+// changes — see combineGrs in useGrs.ts (ISS-0097).
+function combinePas(results: { data?: { items: ApiPa[] } }[]) {
+  if (!results.every((r) => r.data !== undefined)) return { items: undefined as ApiPa[] | undefined, isLoading: true }
   const seen = new Set<string>()
   const items: ApiPa[] = []
   for (const r of results) {
@@ -43,7 +38,18 @@ export function usePasForPos(poIds: string[], enabled = true) {
       items.push(pa)
     }
   }
-  return { items, isLoading: false }
+  return { items: items as ApiPa[] | undefined, isLoading: false }
+}
+
+export function usePasForPos(poIds: string[], enabled = true) {
+  return useQueries({
+    queries: poIds.map((poId) => ({
+      queryKey: ['pas', { po_id: poId }],
+      queryFn: () => paService.listAll({ po_id: poId }),
+      enabled,
+    })),
+    combine: combinePas,
+  })
 }
 
 export function usePa(id: string) {

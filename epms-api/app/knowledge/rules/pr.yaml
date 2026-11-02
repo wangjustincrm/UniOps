@@ -279,3 +279,20 @@ rules:
     test:
       - "tests/test_scope_wide_role_view_keys.py::test_requester_plus_payment_officer_sees_only_own_prs_and_grs"
       - "tests/test_scope_wide_role_view_keys.py::test_requester_plus_role_holding_view_pr_still_sees_everything"
+  - id: currencies_on_a_pr_or_po
+    also_in: [po]
+    asked_as:
+      - 新建请购单 / PO 时为什么选不到某个币种？
+      - which currencies can I choose on a PR or PO
+    answer: >
+      The Currency list on New / Edit PR, New / Edit PO and New Agreement
+      offers exactly the currencies enabled in Portal → Admin → Currency
+      Settings — any of them, not only CAD, USD, EUR and CNY. To use another
+      currency, ask an administrator to enable it there. A PR or PO already
+      saved in a currency that has since been disabled keeps it on its edit
+      page.
+    enforced_in: "epms/src/lib/currencies.ts enabledCurrencyOptions (company_config.enabled_currencies, names from custom_currencies); used by pages/pr/PrCreatePage.tsx, PrEditPage.tsx, pages/po/PoCreatePage.tsx, PoEditPage.tsx, pages/agreements/AgreementCreatePage.tsx"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_currency_lists_follow_currency_settings"
+      - "epms/src/lib/currencies.test.ts"

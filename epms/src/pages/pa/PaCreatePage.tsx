@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { FreightPaCreate } from './FreightPaCreate'
 import { DirectPaCreate } from './DirectPaCreate'
@@ -301,11 +301,17 @@ function PoPaCreate() {
   // Kept under the old names so the effects below still read as "wait until the
   // lists for this selection have resolved" — undefined until every PO's query
   // has landed, exactly as a single useQuery's `data` behaved.
-  const invoicesData = isAgreementMode
+  // Memoised: the effects below list these as dependencies and the GR effect
+  // sets state, so a fresh wrapper object each render re-ran it on every
+  // render — an endless render loop for as long as New PA was open, which
+  // starved every router navigation (sidebar links changed the URL but not
+  // the page) until the tab was closed (ISS-0097).
+  const invoicesData = useMemo(() => (isAgreementMode
     ? agreementInvoicesData
-    : (poInvoices.items === undefined ? undefined : { items: poInvoices.items })
-  const grsData = poGrsQuery.items === undefined ? undefined : { items: poGrsQuery.items }
-  const poActivePas = poPasQuery.items === undefined ? undefined : { items: poPasQuery.items }
+    : (poInvoices.items === undefined ? undefined : { items: poInvoices.items })),
+  [isAgreementMode, agreementInvoicesData, poInvoices.items])
+  const grsData = useMemo(() => (poGrsQuery.items === undefined ? undefined : { items: poGrsQuery.items }), [poGrsQuery.items])
+  const poActivePas = useMemo(() => (poPasQuery.items === undefined ? undefined : { items: poPasQuery.items }), [poPasQuery.items])
   // GET /pa has no agreement_id filter — narrow server-side via `search` on the
   // agreement number (matches PaymentApplication.agreement_number ilike), then
   // re-filter client-side on the real agreement_id column below.

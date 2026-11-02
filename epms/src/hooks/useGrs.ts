@@ -22,18 +22,26 @@ export function useGrs(filters?: GrFilters, enabled = true) {
 // Multi-PO payment: one query per PO, keyed identically to useGrs({ po_id })
 // so the caches are shared and existing ['grs'] invalidations still apply.
 // GR ids are unique per PO, so no de-duplication is needed here.
+//
+// `combine` is a module-level function on purpose: TanStack then hands back the
+// SAME result object until a query's data really changes. Built inline, `items`
+// was a new array on every render, and New PA — whose effects depend on it —
+// re-rendered itself forever (ISS-0097).
+function combineGrs(results: { data?: { items: ApiGr[] } }[]) {
+  if (!results.every((r) => r.data !== undefined)) return { items: undefined as ApiGr[] | undefined, isLoading: true }
+  return { items: results.flatMap((r) => r.data?.items ?? []) as ApiGr[] | undefined, isLoading: false }
+}
+
 export function useGrsForPos(poIds: string[], enabled = true) {
-  const results = useQueries({
+  return useQueries({
     queries: poIds.map((poId) => ({
       queryKey: ['grs', { po_id: poId }],
       queryFn: () => grService.listAll({ po_id: poId }),
       enabled,
       staleTime: 30_000,
     })),
+    combine: combineGrs,
   })
-  const settled = poIds.length === 0 || results.every((r) => r.data !== undefined)
-  if (!settled) return { items: undefined as ApiGr[] | undefined, isLoading: true }
-  return { items: results.flatMap((r) => r.data?.items ?? []), isLoading: false }
 }
 
 // Keyed under 'grs' so every GR create/action invalidation refreshes it.

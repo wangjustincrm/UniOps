@@ -104,17 +104,11 @@ export function useInvoices(filters?: InvoiceFilters, enabled = true) {
 // is offered twice for ticking and double-counts in the charge breakdown.
 // `isLoading` is undefined-until-resolved, matching the `data === undefined`
 // guard the create page's auto-selection effects use.
-export function useInvoicesForPos(poIds: string[], enabled = true) {
-  const results = useQueries({
-    queries: poIds.map((poId) => ({
-      queryKey: ['invoices', { po_id: poId }],
-      queryFn: () => invoiceService.listAll({ po_id: poId }),
-      enabled,
-      staleTime: 30_000,
-    })),
-  })
-  const settled = poIds.length === 0 || results.every((r) => r.data !== undefined)
-  if (!settled) return { items: undefined as ApiInvoice[] | undefined, isLoading: true }
+//
+// `combine` is module-level so the result keeps its identity until the data
+// changes — see combineGrs in useGrs.ts (ISS-0097).
+function combineInvoices(results: { data?: { items: ApiInvoice[] } }[]) {
+  if (!results.every((r) => r.data !== undefined)) return { items: undefined as ApiInvoice[] | undefined, isLoading: true }
   const seen = new Set<string>()
   const items: ApiInvoice[] = []
   for (const r of results) {
@@ -124,7 +118,19 @@ export function useInvoicesForPos(poIds: string[], enabled = true) {
       items.push(inv)
     }
   }
-  return { items, isLoading: false }
+  return { items: items as ApiInvoice[] | undefined, isLoading: false }
+}
+
+export function useInvoicesForPos(poIds: string[], enabled = true) {
+  return useQueries({
+    queries: poIds.map((poId) => ({
+      queryKey: ['invoices', { po_id: poId }],
+      queryFn: () => invoiceService.listAll({ po_id: poId }),
+      enabled,
+      staleTime: 30_000,
+    })),
+    combine: combineInvoices,
+  })
 }
 
 // A Direct PA's invoices: no PO or agreement to list them by, so one detail
