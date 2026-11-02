@@ -264,6 +264,21 @@ export const agreementReceiptService = {
 
   apReview: (agreementId: string, receiptId: string, action: ReceiptApReviewAction) =>
     api.post<ApiReceipt>(`/agreements/${agreementId}/receipts/${receiptId}/ap-review`, { action }),
+
+  // GET /agreements/{id}/receipts/vendor-check — would this merchant be
+  // flagged on this agreement? The New / Edit Receipt form's live flag
+  // (ISS-0114): the same server verdict a saved receipt carries as
+  // vendor_mismatch, asked before saving rather than recomputed here.
+  vendorCheck: (agreementId: string, params: { vendor_id?: string; vendor_name?: string }) =>
+    api.get<ReceiptVendorCheck>(
+      `/agreements/${agreementId}/receipts/vendor-check`,
+      params as Record<string, string | undefined>,
+    ),
+}
+
+export interface ReceiptVendorCheck {
+  vendor_mismatch: boolean
+  agreement_vendor_name: string
 }
 
 // ─── OCR (expense-api) ──────────────────────────────────────────────────────

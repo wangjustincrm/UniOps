@@ -42,12 +42,32 @@ router = APIRouter(prefix="/vendor-credits", tags=["vendor-credits"])
 _MANAGE_KEY = "epms.vendor_credit.manage"
 
 
-def _actor(user: dict) -> tuple[uuid.UUID, str | None]:
+async def _actor(db: AsyncSession, user: dict) -> tuple[uuid.UUID, str | None]:
     try:
         uid = uuid.UUID(str(user.get("sub", "")))
     except ValueError:
         raise HTTPException(status_code=401, detail="Token has no usable subject")
-    return uid, user.get("full_name") or user.get("email")
+    # The token has no name claim — look the person up (ISS-0089).
+    name = user.get("full_name") or user.get("email")
+    if not name:
+        name = (await crud.user_names(db, {uid})).get(uid)
+    return uid, name
+
+
+async def _named(db: AsyncSession, credits) -> list[VendorCreditResponse]:
+    """Responses with "Recorded by" / "Reviewed by" names filled in for rows
+    whose stored name is empty — every credit recorded before ISS-0089 was
+    fixed. Read-side only; the rows are not rewritten."""
+    out = [VendorCreditResponse.model_validate(c) for c in credits]
+    missing = {r.uploaded_by for r in out if not r.uploaded_by_name}
+    missing |= {r.reviewed_by for r in out if r.reviewed_by and not r.reviewed_by_name}
+    names = await crud.user_names(db, missing)
+    for r in out:
+        if not r.uploaded_by_name:
+            r.uploaded_by_name = names.get(r.uploaded_by)
+        if r.reviewed_by and not r.reviewed_by_name:
+            r.reviewed_by_name = names.get(r.reviewed_by)
+    return out
 
 
 async def _load(db: AsyncSession, credit_id: uuid.UUID):
@@ -70,7 +90,7 @@ async def _load_for_update(db: AsyncSession, credit_id: uuid.UUID):
 @router.post("", response_model=VendorCreditResponse, status_code=201)
 async def create_vendor_credit(payload: VendorCreditCreate, user: CurrentUser,
                                db: AsyncSession = Depends(get_db)):
-    uid, name = _actor(user)
+    uid, name = await _actor(db, user)
     try:
         credit = await crud.create(db, payload=payload, uploaded_by=uid,
                                    uploaded_by_name=name, source=payload.source)
@@ -80,7 +100,7 @@ async def create_vendor_credit(payload: VendorCreditCreate, user: CurrentUser,
         raise HTTPException(status_code=422, detail=str(exc))
     await db.commit()
     await db.refresh(credit)
-    return credit
+    return (await _named(db, [credit]))[0]
 
 
 @router.get("", response_model=VendorCreditListResponse)
@@ -101,7 +121,7 @@ async def list_vendor_credits(user: CurrentUser,
                                           sort=sort, dir=dir, limit=limit, offset=offset)
     except crud.UnknownSortKey as exc:
         raise HTTPException(status_code=422, detail=str(exc))
-    return VendorCreditListResponse(items=items, total=total)
+    return VendorCreditListResponse(items=await _named(db, items), total=total)
 
 
 @router.get("/suggest", response_model=CreditSuggestResponse)
@@ -155,7 +175,7 @@ async def suggest_credits(user: CurrentUser,
 @router.get("/{credit_id}", response_model=VendorCreditResponse)
 async def get_vendor_credit(credit_id: uuid.UUID, user: CurrentUser,
                             db: AsyncSession = Depends(get_db)):
-    return await _load(db, credit_id)
+    return (await _named(db, [await _load(db, credit_id)]))[0]
 
 
 @router.get("/{credit_id}/applications",
@@ -231,7 +251,7 @@ async def approve_vendor_credit(credit_id: uuid.UUID, body: VendorCreditReview,
                                 user: dict = Depends(require_permission(_MANAGE_KEY)),
                                 db: AsyncSession = Depends(get_db)):
     credit = await _load_for_update(db, credit_id)
-    uid, name = _actor(user)
+    uid, name = await _actor(db, user)
     try:
         credit = await crud.approve(db, credit, reviewed_by=uid,
                                     reviewed_by_name=name, note=body.note)
@@ -239,7 +259,7 @@ async def approve_vendor_credit(credit_id: uuid.UUID, body: VendorCreditReview,
         raise HTTPException(status_code=409, detail=str(exc))
     await db.commit()
     await db.refresh(credit)
-    return credit
+    return (await _named(db, [credit]))[0]
 
 
 @router.post("/{credit_id}/reject", response_model=VendorCreditResponse)
@@ -247,7 +267,7 @@ async def reject_vendor_credit(credit_id: uuid.UUID, body: VendorCreditReject,
                                user: dict = Depends(require_permission(_MANAGE_KEY)),
                                db: AsyncSession = Depends(get_db)):
     credit = await _load_for_update(db, credit_id)
-    uid, name = _actor(user)
+    uid, name = await _actor(db, user)
     try:
         credit = await crud.reject(db, credit, reviewed_by=uid,
                                    reviewed_by_name=name, note=body.note)
@@ -255,7 +275,7 @@ async def reject_vendor_credit(credit_id: uuid.UUID, body: VendorCreditReject,
         raise HTTPException(status_code=409, detail=str(exc))
     await db.commit()
     await db.refresh(credit)
-    return credit
+    return (await _named(db, [credit]))[0]
 
 
 @router.post("/{credit_id}/void", response_model=VendorCreditResponse)
@@ -263,7 +283,7 @@ async def void_vendor_credit(credit_id: uuid.UUID, body: VendorCreditReject,
                              user: dict = Depends(require_permission(_MANAGE_KEY)),
                              db: AsyncSession = Depends(get_db)):
     credit = await _load_for_update(db, credit_id)
-    uid, name = _actor(user)
+    uid, name = await _actor(db, user)
     try:
         credit = await crud.void(db, credit, reviewed_by=uid,
                                  reviewed_by_name=name, note=body.note)
@@ -271,4 +291,4 @@ async def void_vendor_credit(credit_id: uuid.UUID, body: VendorCreditReject,
         raise HTTPException(status_code=409, detail=str(exc))
     await db.commit()
     await db.refresh(credit)
-    return credit
+    return (await _named(db, [credit]))[0]

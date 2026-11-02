@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud._numbering import next_number
+from app.models.mirrors import User
 from app.models.vendor_credit import (
     AVAILABLE, EXHAUSTED, PENDING_REVIEW, SOURCE_UPLOAD, VOID, VendorCredit,
 )
@@ -145,6 +146,22 @@ async def create(db: AsyncSession, *, payload: VendorCreditCreate,
             raise DuplicateCredit(dup) from None
         raise
     return vc
+
+
+async def user_names(db: AsyncSession, ids) -> dict[uuid.UUID, str]:
+    """Full names for user ids, from the shared users table (ISS-0089).
+
+    The access token carries only `sub` and `role` (identity-api
+    create_access_token), so a name read off the token was always None and
+    "Recorded by" / "Reviewed by" showed "—". PRD UI-USER-001: a user actor is
+    shown by full name."""
+    ids = {i for i in ids if i is not None}
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        select(User.id, User.full_name, User.email).where(User.id.in_(ids))
+    )).all()
+    return {r.id: r.full_name or r.email for r in rows}
 
 
 class InvalidTransition(Exception):

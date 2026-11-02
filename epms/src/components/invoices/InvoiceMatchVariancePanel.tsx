@@ -125,6 +125,15 @@ function HouseAccountReceiptPanel({ invoice }: { invoice: ApiInvoice }): JSX.Ele
           </span>
         </Button>
       </div>
+      {/* The reason given when the receipts were attached (PRD AGR-032,
+          ISS-0116) — shown with the difference, not behind the expander, since
+          it is what the approver needs to read. Evidence saved before the
+          reason became required may have none; say so rather than nothing. */}
+      <p className="px-4 pb-2 text-xs text-danger-700">
+        {invoice.receipt_variance_reason
+          ? <>Reason: <span className="text-neutral-800">{invoice.receipt_variance_reason}</span></>
+          : <span className="italic">No reason was given for the difference</span>}
+      </p>
 
       {expanded && (
         <div className="border-t border-inherit px-4 py-4 bg-white flex flex-col gap-4">
