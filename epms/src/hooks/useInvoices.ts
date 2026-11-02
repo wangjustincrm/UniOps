@@ -161,6 +161,16 @@ export function useInvoiceChain(id: string | null) {
   })
 }
 
+// Under ['invoices', id] so every invoice mutation's invalidation refreshes it.
+export function useInvoiceHistory(id: string, enabled = true) {
+  return useQuery({
+    queryKey: ['invoices', id, 'history'],
+    queryFn: () => invoiceService.history(id),
+    enabled: Boolean(id) && enabled,
+    staleTime: 30_000,
+  })
+}
+
 export type UnmatchScope = 'po' | 'gr' | 'direct'
 
 export function useUnmatchInvoice() {

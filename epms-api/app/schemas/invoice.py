@@ -325,6 +325,20 @@ class UnmatchRequest(BaseModel):
         return v.strip()
 
 
+class InvoiceHistoryEntry(BaseModel):
+    """One recorded step on an invoice's History tab (ISS-0170): an assignment,
+    a match, an AP review, an exception resolution or an unmatch. Read from
+    admin_audit_log, which is written at the moment of the step and never
+    rewritten — the invoice's own matched_* fields only ever hold the latest."""
+    id: uuid.UUID
+    action: str
+    created_at: datetime
+    actor_id: uuid.UUID
+    actor_name: str | None = None
+    before: dict | None = None
+    after: dict | None = None
+
+
 # ── Document chain (Invoice List due-date drawer) ─────────────────────────────
 
 class ChainStepRef(BaseModel):
