@@ -54,8 +54,12 @@ function GrStatusBadge({ status }: { status: GrStatus }) {
 function GrTimeline({ gr }: { gr: ApiGr }) {
   const isPhysical = gr.gr_type === 'physical'
   // A cancelled (or rejected) GR waits on nobody — no step may show Waiting /
-  // Awaiting (ISS-0124).
-  const awaiting = gr.status === 'cancelled' || gr.status === 'rejected' ? undefined : 'Awaiting requester'
+  // Awaiting (ISS-0124). A service GR's steps go to the PR's Service/Project
+  // Owner, not the requester (crud/gr.py _get_pr_owner_id; PRD §3.13.2) —
+  // ISS-0183.
+  const awaiting = gr.status === 'cancelled' || gr.status === 'rejected'
+    ? undefined
+    : isPhysical ? 'Awaiting requester' : 'Awaiting Service/Project Owner'
 
   const steps = [
     {

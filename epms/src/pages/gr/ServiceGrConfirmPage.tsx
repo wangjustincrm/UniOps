@@ -194,7 +194,8 @@ export default function ServiceGrConfirmPage() {
 
         {gr.notes && (
           <div className="mt-3 rounded-lg bg-neutral-50 border border-neutral-200 px-4 py-2.5 text-xs text-neutral-600">
-            <span className="font-medium">Vendor notes: </span>{gr.notes}
+            {/* Written by whoever recorded the receipt, not the vendor (ISS-0183). */}
+            <span className="font-medium">Receipt notes: </span>{gr.notes}
           </div>
         )}
       </div>
