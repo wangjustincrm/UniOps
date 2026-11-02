@@ -94,6 +94,31 @@ export function useInvoices(filters?: InvoiceFilters, enabled = true) {
   })
 }
 
+// The Invoices page's stat cards and tab badges (ISS-0127, PGN-001): one
+// page_size=1 request per figure, read off the server's `total`, instead of
+// downloading every invoice to count them in the browser. Same scope as the
+// list itself, since it is the list endpoint.
+const COUNTED_STATUSES = [undefined, 'unmatched', 'exception', 'matched', 'paid'] as const
+
+export function useInvoiceStatusCounts() {
+  return useQueries({
+    queries: COUNTED_STATUSES.map((status) => {
+      const filters: InvoiceFilters = { ...(status ? { status } : {}), page: 1, page_size: 1 }
+      return {
+        queryKey: ['invoices', filters],
+        queryFn: () => invoiceService.list(filters),
+        staleTime: 30_000,
+      }
+    }),
+    combine: combineCounts,
+  })
+}
+
+function combineCounts(results: { data?: { total: number } }[]) {
+  const [all, unmatched, exception, matched, paid] = results.map((r) => r.data?.total ?? 0)
+  return { all, unmatched, exception, matched, paid }
+}
+
 // One query per PO rather than a widened endpoint: the keys are IDENTICAL to
 // useInvoices({ po_id }) above, so adding a second PO to a payment reuses the
 // first PO's cached list instead of refetching everything, and any mutation

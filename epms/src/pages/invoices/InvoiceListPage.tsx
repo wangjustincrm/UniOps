@@ -16,7 +16,7 @@ import { AiBadge } from '@/components/ui/AiBadge'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { dueInfo, type DueTone } from '@/lib/dueDate'
 import { computeSla, type InvoiceStatus } from '@/stores/invoice.store'
-import { useInvoices, useCreateInvoice, useMatchInvoice, useDeleteInvoice, useMarkInvoiceDirect } from '@/hooks/useInvoices'
+import { useInvoices, useInvoiceStatusCounts, useCreateInvoice, useMatchInvoice, useDeleteInvoice, useMarkInvoiceDirect } from '@/hooks/useInvoices'
 import { useStaticTabNav } from '@/hooks/useStaticTabNav'
 import { ResolveExceptionPanel } from '@/components/invoices/ResolveExceptionPanel'
 import { useCreateVendorCredit } from '@/hooks/useVendorCredits'
@@ -2001,8 +2001,8 @@ function OaInvoicesTab() {
 }
 
 export default function InvoiceListPage() {
-  const { data: allData } = useInvoices()
-  const invoices = allData?.items ?? []
+  // Server-side counts only (ISS-0127): the tables below page themselves.
+  const counts = useInvoiceStatusCounts()
   const { user } = useAuthStore()
   const perms = useRolePermissions().data?.permissions
   const navigate = useNavigate()
@@ -2027,8 +2027,8 @@ export default function InvoiceListPage() {
   // The freight manager may upload courier invoices without invoice_upload.
   const canCourier = !!useFreightAccess().data?.manage
 
-  const unmatchedCount  = invoices.filter((i) => i.status === 'unmatched').length
-  const exceptionCount  = invoices.filter((i) => i.status === 'exception').length
+  const unmatchedCount  = counts.unmatched
+  const exceptionCount  = counts.exception
 
   const tabs: { key: Tab; label: string; count?: number; danger?: boolean }[] = [
     { key: 'all',        label: 'All Invoices' },
@@ -2061,11 +2061,11 @@ export default function InvoiceListPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         {[
-          { label: 'Total Invoices',  value: allData?.total ?? 0,                                   color: 'text-neutral-900' },
+          { label: 'Total Invoices',  value: counts.all,                                            color: 'text-neutral-900' },
           { label: 'Unmatched',       value: unmatchedCount,                                        color: unmatchedCount > 0 ? 'text-warning-600' : 'text-neutral-900' },
           { label: 'Exceptions',      value: exceptionCount,                                        color: exceptionCount > 0 ? 'text-danger-600'  : 'text-neutral-900' },
-          { label: 'Matched / Ready', value: invoices.filter((i) => i.status === 'matched').length, color: 'text-success-600' },
-          { label: 'Paid',            value: invoices.filter((i) => i.status === 'paid').length,    color: 'text-primary-600' },
+          { label: 'Matched / Ready', value: counts.matched,                                        color: 'text-success-600' },
+          { label: 'Paid',            value: counts.paid,                                           color: 'text-primary-600' },
         ].map((s) => (
           <div key={s.label} className="rounded-xl border border-neutral-200 bg-white p-4">
             <p className="text-xs text-neutral-400">{s.label}</p>
