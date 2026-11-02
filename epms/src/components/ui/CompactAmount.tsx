@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
-import { formatCAD, formatCADCompact } from '@/lib/utils'
+import { formatAmount, formatCADCompact } from '@/lib/utils'
 
 /**
  * A CAD amount shown compactly (CA$11K) to save space, with the full value
@@ -16,7 +16,7 @@ export function CompactAmount({ value, hint, className }: {
 }) {
   const [at, setAt] = useState<{ x: number; y: number } | null>(null)
   const compact = formatCADCompact(value)
-  const full = formatCAD(value)
+  const full = formatAmount(value, 'CAD')
   const hasTip = compact !== full || !!hint
 
   return (

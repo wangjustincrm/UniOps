@@ -1388,9 +1388,12 @@ async def match(
         invoice.exception_reason = None
     elif any_exception:
         invoice.status = "exception"
+        # Pre-tax on both sides, the figures the variance is measured on
+        # (INV-3WM-001) — total_amount includes tax, the PO reference does not.
         invoice.exception_reason = (
             "One or more PO lines are outside tolerance "
-            f"(invoice total {invoice.total_amount} vs reference {summary_reference})"
+            f"(invoice pre-tax {summary_reference + invoice.variance:.2f} "
+            f"vs PO pre-tax {summary_reference:.2f})"
         )
     else:
         invoice.status = "matched"
@@ -1609,9 +1612,12 @@ async def review_match(
         )
         if any_exception:
             invoice.status = "exception"
+            # Pre-tax on both sides, as in match() (INV-3WM-001).
+            po_pre_tax = invoice.po_total or Decimal("0")
             invoice.exception_reason = (
                 "Reviewed: variance outside tolerance "
-                f"(invoice total {invoice.total_amount} vs reference {invoice.po_total})"
+                f"(invoice pre-tax {po_pre_tax + (invoice.variance or Decimal('0')):.2f} "
+                f"vs PO pre-tax {po_pre_tax:.2f})"
             )
         else:
             invoice.status = "matched"

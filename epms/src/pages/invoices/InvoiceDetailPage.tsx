@@ -583,7 +583,7 @@ export default function InvoiceDetailPage() {
           <AlertTriangle className="h-5 w-5 text-danger-600 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="text-sm font-semibold text-danger-700">
-              Variance{varianceScope}: {signed(decidingVariance)}{inv.currency} {formatAmount(varianceAbs, inv.currency)}
+              Variance{varianceScope}: {signed(decidingVariance)}{formatAmount(varianceAbs, inv.currency)}
               {' '}({variancePctAbs.toFixed(1)}% {decidingVariance < 0 ? 'below' : 'over'} PO)
             </p>
             {otherInvoices.length > 0 && (
@@ -1333,11 +1333,11 @@ export default function InvoiceDetailPage() {
                         hasException ? 'text-danger-700' : exceptionAccepted || overBilledSince ? 'text-warning-700'
                           : partiallyInvoiced || awaitingGr ? 'text-primary-700' : 'text-success-700')}>
                         {hasException || exceptionAccepted
-                          ? `${matchLabel}: ${hasException ? 'Exception' : 'Exception accepted'} — Variance${varianceScope} ${decidingPct > 0 ? '+' : ''}${decidingPct.toFixed(1)}% (${inv.currency} ${formatAmount(decidingVariance, inv.currency)})`
+                          ? `${matchLabel}: ${hasException ? 'Exception' : 'Exception accepted'} — Variance${varianceScope} ${decidingPct > 0 ? '+' : ''}${decidingPct.toFixed(1)}% (${formatAmount(decidingVariance, inv.currency)})`
                           : overBilledSince
-                          ? `${matchLabel}: Matched — the PO line is now billed ${decidingPct.toFixed(1)}% over (${inv.currency} ${formatAmount(decidingVariance, inv.currency)}) together with ${otherInvoices.join(', ')}`
+                          ? `${matchLabel}: Matched — the PO line is now billed ${decidingPct.toFixed(1)}% over (${formatAmount(decidingVariance, inv.currency)}) together with ${otherInvoices.join(', ')}`
                           : partiallyInvoiced
-                          ? `${matchLabel}: Partially invoiced — ${inv.currency} ${formatAmount(varianceAbs, inv.currency)} (${variancePctAbs.toFixed(1)}%) below PO${awaitingGr ? ' · awaiting goods receipt' : ''}`
+                          ? `${matchLabel}: Partially invoiced — ${formatAmount(varianceAbs, inv.currency)} (${variancePctAbs.toFixed(1)}%) below PO${awaitingGr ? ' · awaiting goods receipt' : ''}`
                           : awaitingGr
                           ? `2-Way Match: Invoice within ${matchTolerancePct}% tolerance of PO · awaiting goods receipt`
                           : `3-Way Match: ✓ Passed — Invoice within ${matchTolerancePct}% tolerance of PO`

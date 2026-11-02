@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
 import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import { useConfig } from '@/hooks/useConfig'
-import { cn } from '@/lib/utils'
+import { cn, formatBytes } from '@/lib/utils'
 import { enabledCurrencyOptions } from '@/lib/currencies'
 import type { Currency } from '@/types'
 import { useCreateAgreement } from '@/hooks/useAgreements'
@@ -617,7 +617,7 @@ export default function AgreementCreatePage() {
             {attachments.map((f, i) => (
               <div key={i} className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
                 <span className="flex-1 truncate text-neutral-700">📎 {f.name}</span>
-                <span className="text-neutral-400 text-xs">{(f.size / 1024 / 1024).toFixed(1)} MB</span>
+                <span className="text-neutral-400 text-xs">{formatBytes(f.size)}</span>
                 <button
                   type="button"
                   onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}

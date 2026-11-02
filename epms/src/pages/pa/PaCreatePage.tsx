@@ -8,7 +8,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDot } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
-import { cn, formatAmount, formatDate } from '@/lib/utils'
+import { cn, formatAmount, formatDate, formatQty } from '@/lib/utils'
 import { useCreatePa, usePas, usePasForPos, usePa } from '@/hooks/usePas'
 import { paService } from '@/services/pa'
 import { usePos } from '@/hooks/usePos'
@@ -1319,7 +1319,7 @@ ${submitError}
                                 {isReceived ? `Received (${receivedQty} ${line.unit})` : 'Not yet received'}
                               </div>
                             </td>
-                            <td className="px-3 py-2.5 text-right font-mono text-neutral-500">{line.qty} {line.unit}</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-neutral-500">{formatQty(line.qty)} {line.unit}</td>
                             <td className="px-3 py-2.5 text-right font-mono font-medium text-neutral-700">
                               {receivedQty > 0 ? `${receivedQty} ${line.unit}` : '—'}
                             </td>

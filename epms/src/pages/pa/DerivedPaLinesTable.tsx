@@ -1,5 +1,5 @@
 import { CircleDot } from 'lucide-react'
-import { formatAmount } from '@/lib/utils'
+import { formatAmount, formatQty } from '@/lib/utils'
 import { derivedLinesTotal, type DerivedPaLine } from '@/lib/paLinesFromInvoices'
 
 // Read-only line table for a PA whose invoices were matched line by line: the
@@ -37,7 +37,7 @@ export function DerivedPaLinesTable({ lines, currency, fromInvoiceLines = false 
                     {l.po_line_id || fromInvoiceLines ? l.notes : `Non-PO fee · ${l.notes}`}
                   </div>
                 </td>
-                <td className="px-3 py-2.5 text-right font-mono text-neutral-500">{l.qty} {l.unit}</td>
+                <td className="px-3 py-2.5 text-right font-mono text-neutral-500">{formatQty(l.qty)} {l.unit}</td>
                 <td className="px-3 py-2.5 text-right font-mono text-neutral-500">{l.unit_price}</td>
                 <td className="px-3 py-2.5 text-right font-mono font-semibold text-neutral-900">
                   {formatAmount(l.line_total, currency)}
