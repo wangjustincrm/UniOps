@@ -121,3 +121,18 @@ rules:
     provenance: not_built
     test:
       - "tests/test_rule_registry.py::test_no_screen_edits_email_templates"
+  - id: returned_email_names_who_and_why
+    also_in: [pr]
+    asked_as:
+      - PR 被退回的邮件里有退回意见吗？
+      - does the returned PR email say who returned it
+    answer: >
+      Yes. When a purchase request is returned for revision, the requester's
+      email names who returned it and quotes their comment (the comment is
+      required to return), with a link to open and edit the PR. A returned
+      PO sign-off email quotes the comment the same way.
+    provenance: pinned
+    enforced_in: "epms-api app/services/notification.py _document_vars (latest 'return' approval event → {returned_by} / {comment}); app/crud/config.py pr_returned / po_signoff_returned templates"
+    test:
+      - "tests/test_task_email_contents.py::test_returned_pr_email_shows_the_comment_and_who_returned_it"
+      - "tests/test_task_email_contents.py::test_returned_signoff_email_shows_the_comment"

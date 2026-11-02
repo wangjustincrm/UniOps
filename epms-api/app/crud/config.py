@@ -162,10 +162,13 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
         "<b>Vendor:</b> {vendor}\n<b>Amount:</b> CAD {amount}\n\n"
         "<a href=\"{link}\">Review &amp; Approve PR</a>\n\n{company_name}",
     ),
+    # {comment} / {returned_by} come from the return's approval event
+    # (services/notification._document_vars, ISS-0145).
     "pr_returned": _DEFAULT_EMAIL_TEMPLATE(
         "Your PR {pr_number} has been returned for revision",
         "Hi {recipient_name},\n\nYour Purchase Request <b>{pr_number}</b> has been returned for revision.\n\n"
-        "<b>Comment:</b> {comment}\n\n<a href=\"{link}\">View &amp; Edit PR</a>\n\n{company_name}",
+        "<b>Returned by:</b> {returned_by}\n<b>Comment:</b> {comment}\n\n"
+        "<a href=\"{link}\">View &amp; Edit PR</a>\n\n{company_name}",
     ),
     "pr_rejected": _DEFAULT_EMAIL_TEMPLATE(
         "Your PR {pr_number} has been rejected",
@@ -393,6 +396,12 @@ _SUPERSEDED_EMAIL_TEMPLATE_DEFAULTS: dict = {
         "Hi {recipient_name},\n\nThe assigned matcher has completed matching on invoice <b>{invoice_number}</b> "
         "with a non-zero variance. Please review the allocation and approve or reject it.\n\n"
         "<a href=\"{link}\">Review Match</a>\n\n{company_name}",
+    ),
+    # 2026-11-02 (ISS-0145): now also says who returned the PR.
+    "pr_returned": _DEFAULT_EMAIL_TEMPLATE(
+        "Your PR {pr_number} has been returned for revision",
+        "Hi {recipient_name},\n\nYour Purchase Request <b>{pr_number}</b> has been returned for revision.\n\n"
+        "<b>Comment:</b> {comment}\n\n<a href=\"{link}\">View &amp; Edit PR</a>\n\n{company_name}",
     ),
 }
 

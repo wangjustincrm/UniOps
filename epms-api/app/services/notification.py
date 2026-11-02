@@ -108,6 +108,37 @@ def _render_task_body(tpl: dict | None, task: Task, variables: dict[str, Any]) -
     return _render(body, variables, escape=True)
 
 
+async def _document_vars(db: AsyncSession, task: Task) -> dict[str, Any]:
+    """Template variables read from the task's document at send time.
+
+    Tasks are written by approval-api (and others) with no room for these
+    facts, so the templates' {comment} etc. used to go out as literal braces
+    (ISS-0145). Reading them here covers every path into the dispatcher —
+    the outbox, Send reminder, re-notification — alike. Call-site extra_vars
+    still win. Never raises: a missing fact must not stop the email.
+    """
+    out: dict[str, Any] = {}
+    try:
+        if (task.type or "").startswith("revise"):
+            # Returned for revision: the engine records the return as an
+            # approval event in the same transaction that creates this task.
+            from app.models.approval import ApprovalEvent
+            row = (await db.execute(
+                select(ApprovalEvent.comment, User.full_name)
+                .outerjoin(User, User.id == ApprovalEvent.actor_id)
+                .where(ApprovalEvent.document_type == task.document_type,
+                       ApprovalEvent.document_id == task.document_id,
+                       ApprovalEvent.action == "return")
+                .order_by(ApprovalEvent.created_at.desc())
+                .limit(1)
+            )).first()
+            out["comment"] = ((row.comment or "").strip() if row else "") or "—"
+            out["returned_by"] = (row.full_name if row else None) or "—"
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Task %s: document facts for the email unavailable: %s", task.id, exc)
+    return out
+
+
 def _build_email_html(body_text: str) -> str:
     """Wrap plain-text/simple-HTML body in a basic styled container."""
     return f"""
@@ -374,6 +405,7 @@ async def _dispatch(
         "amount": str(task.amount) if task.amount else "",
         "task_title": task.title,
         "task_description": task.description or "",
+        **await _document_vars(db, task),
         **extra_vars,
     }
 
