@@ -23,11 +23,13 @@ from app.platform.services import MAX_IMPORT_BYTES, CrudService, ReadOnlyService
 
 def page_body(page: Page) -> dict:
     """A list response: `{items, total}`, plus `groups` and `groups_truncated`
-    when the query grouped (design §13.19)."""
+    when the query grouped (design §13.19), and `totals` when the resource sums fields."""
     body: dict = {"items": [i.model_dump(mode="json") for i in page.items], "total": page.total}
     if page.groups is not None:
         body["groups"] = [g.model_dump(mode="json") for g in page.groups]
         body["groups_truncated"] = page.groups_truncated
+    if page.totals is not None:
+        body["totals"] = [t.model_dump(mode="json") for t in page.totals]
     return body
 
 

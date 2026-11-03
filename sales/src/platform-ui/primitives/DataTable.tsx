@@ -23,6 +23,8 @@ export interface Grouping<T> {
   format?: (id: string, value: unknown) => ReactNode
   /** More groups exist than the counts cover. */
   truncated?: boolean
+  /** What a group header shows after its count (e.g. its totals), by the same key. */
+  summary?: Map<string, ReactNode>
 }
 
 export interface SortValue {
@@ -78,6 +80,8 @@ export interface DataTableProps<T> {
   footer?: ReactNode[]
   /** Per-row class and data-* attributes (e.g. a highlighted row). */
   rowAttrs?: (row: T) => RowAttrs
+  /** A row's detail under it, opened by the ▸ in its first cell; null = nothing to open. */
+  expand?: (row: T) => ReactNode | null
 }
 
 export type RowAttrs = { className?: string } & { [data: `data-${string}`]: string | boolean | undefined }
@@ -88,12 +92,21 @@ export type RowAttrs = { className?: string } & { [data: `data-${string}`]: stri
 export function DataTable<T>({
   columns, rows, rowKey, onRowClick, loading, errorMessage, onRetry, emptyTitle = 'Nothing here yet',
   sort, sortable = [], onSortChange, headerAddon, leadingHeader, chips, grouping, leading, onColumnMove, search, filters,
-  toolbar, pagination, ariaLabel, density = 'normal', footer, rowAttrs,
+  toolbar, pagination, ariaLabel, density = 'normal', footer, rowAttrs, expand,
 }: DataTableProps<T>) {
   const cellPad = density === 'compact' ? 'px-2 py-1' : 'px-3 py-2'
   const [dragging, setDragging] = useState<string | null>(null)
   const [dropOn, setDropOn] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const toggleRow = (k: string) => setExpanded((s) => {
+    const next = new Set(s)
+    if (next.has(k)) next.delete(k)
+    else next.add(k)
+    return next
+  })
+  // The leading cell: the header's (e.g. the column chooser) and each row's ▸.
+  const leadCell = leadingHeader !== undefined || !!expand
   const toggle = (k: string) => setCollapsed((s) => {
     const next = new Set(s)
     if (next.has(k)) next.delete(k)
@@ -152,7 +165,7 @@ export function DataTable<T>({
             <thead className="bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500">
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
-                  {leadingHeader !== undefined && <th className="w-8 px-2 py-2">{leadingHeader}</th>}
+                  {leadCell && <th className="w-8 px-2 py-2">{leadingHeader}</th>}
                   {hg.headers.map((h) => {
                     const canSort = sortableSet.has(h.column.id) && !!onSortChange
                     const dir = h.column.getIsSorted()
@@ -215,23 +228,42 @@ export function DataTable<T>({
             </thead>
             <tbody>
               {loading && rows.length === 0
-                ? Array.from({ length: 5 }, (_, i) => <SkeletonRow key={i} cols={columns.length + (leadingHeader !== undefined ? 1 : 0)} />)
+                ? Array.from({ length: 5 }, (_, i) => <SkeletonRow key={i} cols={columns.length + (leadCell ? 1 : 0)} />)
                 : table.getRowModel().rows.map((r, i, all) => {
                   const { className: rowClass, ...rowData } = rowAttrs?.(r.original) ?? {}
+                  const detail = expand?.(r.original) ?? null
+                  const isOpen = detail !== null && expanded.has(r.id)
                   const row = (
+                    <Fragment key={r.id}>
                     <tr
                       key={r.id}
                       {...rowData}
                       onClick={onRowClick ? () => onRowClick(r.original) : undefined}
                       className={cn('border-t border-neutral-100', onRowClick && 'cursor-pointer hover:bg-neutral-50', rowClass)}
                     >
-                      {leadingHeader !== undefined && <td />}
+                      {leadCell && (
+                        <td className="w-8 px-2">
+                          {detail !== null && (
+                            <button type="button" aria-expanded={isOpen} aria-label={isOpen ? 'Hide details' : 'Show details'}
+                              onClick={(e) => { e.stopPropagation(); toggleRow(r.id) }}
+                              className="rounded p-0.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-800">
+                              {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                            </button>
+                          )}
+                        </td>
+                      )}
                       {r.getVisibleCells().map((c) => (
                         <td key={c.id} className={cn(cellPad, 'text-neutral-700')}>
                           {flexRender(c.column.columnDef.cell, c.getContext())}
                         </td>
                       ))}
                     </tr>
+                    {isOpen && (
+                      <tr data-row-detail className="bg-neutral-50/60">
+                        <td colSpan={columns.length + 1} className="px-3 py-2 pl-10">{detail}</td>
+                      </tr>
+                    )}
+                    </Fragment>
                   )
                   if (!grouping) return row
                   // A header for each level whose value changes at this row;
@@ -239,7 +271,7 @@ export function DataTable<T>({
                   const values = grouping.levels.map((l) => grouping.value(r.original, l.id))
                   const prev = i > 0 ? grouping.levels.map((l) => grouping.value(all[i - 1].original, l.id)) : null
                   const first = prev === null ? 0 : values.findIndex((v, j) => String(v ?? null) !== String(prev[j] ?? null))
-                  const span = columns.length + (leadingHeader !== undefined ? 1 : 0)
+                  const span = columns.length + (leadCell ? 1 : 0)
                   const headers: ReactNode[] = []
                   if (first !== -1) {
                     for (let level = first; level < values.length; level++) {
@@ -247,6 +279,7 @@ export function DataTable<T>({
                       const hiddenByParent = values.slice(0, level).some((_, j) => collapsed.has(groupKey(values.slice(0, j + 1))))
                       if (hiddenByParent) break
                       const count = grouping.counts.get(key)
+                      const summary = grouping.summary?.get(key)
                       const open = !collapsed.has(key)
                       const { id, label } = grouping.levels[level]
                       headers.push(
@@ -259,6 +292,7 @@ export function DataTable<T>({
                               {grouping.format ? grouping.format(id, values[level]) : String(values[level] ?? '(empty)')}
                               {count !== undefined && <span className="rounded-full bg-neutral-200 px-1.5 text-xs text-neutral-600">{count}</span>}
                             </button>
+                            {summary && <span data-group-summary className="ml-3 text-xs font-medium text-neutral-600">{summary}</span>}
                           </td>
                         </tr>,
                       )
@@ -271,7 +305,7 @@ export function DataTable<T>({
             {footer && rows.length > 0 && (
               <tfoot className="border-t border-neutral-200 bg-neutral-50 font-medium">
                 <tr>
-                  {leadingHeader !== undefined && <td />}
+                  {leadCell && <td />}
                   {footer.map((f, i) => <td key={i} className={cn(cellPad, 'text-neutral-800')}>{f}</td>)}
                 </tr>
               </tfoot>

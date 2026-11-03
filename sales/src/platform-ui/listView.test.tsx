@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import {
   QueryTable, flipSort, parseView, removeSort, serializeView, setFieldFilters, sortBy, toSearchParams, viewStateOf,
-  type ColumnDef, type GroupCount, type ListMeta, type QuerySpec,
+  type ColumnDef, type GroupCount, type ListMeta, type ListTotal, type QuerySpec,
 } from './index'
 import { chooseOption } from './testing'
 
@@ -31,13 +31,14 @@ const columns: ColumnDef<Row, unknown>[] = [
 ]
 const resource = { basePath: '/things', meta: async () => meta }
 
-function Harness({ initial, locked, onSpec, data = rows, groups, truncated }: {
+function Harness({ initial, locked, onSpec, data = rows, groups, truncated, totals }: {
   initial?: QuerySpec; locked?: string[]; onSpec: (s: QuerySpec) => void; data?: Row[]; groups?: GroupCount[]; truncated?: boolean
+  totals?: ListTotal[]
 }) {
   const [spec, setSpec] = useState<QuerySpec>(initial ?? { page: 3, pageSize: 50 })
   return (
     <QueryTable<Row> columns={columns} rows={data} total={data.length} spec={spec} resource={resource} locked={locked} searchable
-      groups={groups} groupsTruncated={truncated}
+      groups={groups} groupsTruncated={truncated} totals={totals}
       rowKey={(r) => r.id} onSpecChange={(s) => { setSpec(s); onSpec(s) }} />
   )
 }
@@ -211,5 +212,32 @@ describe('QueryTable with /meta', () => {
     fireEvent.click(review)
     expect(screen.getByText('1.10')).toBeInTheDocument()
     expect(screen.getByText(/counts are shown for the first 500/)).toBeInTheDocument()
+  })
+})
+
+describe('list totals (summed by the server over the whole filtered result)', () => {
+  it('a footer under each summed column, one line per currency, and each group header its own', async () => {
+    const data: Row[] = [
+      { id: 1, code: 'A', price: '1.10', status: 'Review', sku: 's1' }, { id: 2, code: 'B', price: '3.30', status: 'Shipped', sku: 's2' },
+    ]
+    const totals: ListTotal[] = [{ currency: 'CAD', count: 30, sums: { price: '1234.5' } }, { currency: 'USD', count: 2, sums: { price: '10' } }]
+    const groups: GroupCount[] = [
+      { key: ['Review'], count: 20, totals: [{ currency: 'CAD', count: 20, sums: { price: '1000' } }] },
+      { key: ['Shipped'], count: 12, totals: [{ currency: 'CAD', count: 10, sums: { price: '234.5' } }, { currency: 'USD', count: 2, sums: { price: '10' } }] },
+    ]
+    renderTable({ data, groups, totals, initial: { page: 1, pageSize: 50, group: [{ field: 'status' }] } })
+    const foot = (await screen.findByText('1,234.50 CAD')).closest('tfoot')!
+    expect(foot).toHaveTextContent('Total · 32 rows')
+    expect(within(foot).getByText('10.00 USD')).toBeInTheDocument()  // never added to CAD
+    const shipped = (await screen.findByRole('button', { name: /Status:\s*Shipped\s*12/ })).closest('td')!
+    expect(shipped.querySelector('[data-group-summary]')).toHaveTextContent('Total 234.50 CAD · 10.00 USD')
+    const review = screen.getByRole('button', { name: /Status:\s*Review\s*20/ }).closest('td')!
+    expect(review.querySelector('[data-group-summary]')).toHaveTextContent('Total 1,000.00 CAD')
+  })
+
+  it('no summed column shown: no footer', async () => {
+    renderTable({ totals: [{ currency: null, count: 1, sums: { sku_count: '3' } }] })
+    await screen.findByText('CF0092')
+    expect(document.querySelector('tfoot')).toBeNull()
   })
 })

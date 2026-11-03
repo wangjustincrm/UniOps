@@ -285,7 +285,9 @@ modules:
       - Keep the warehouses' names and addresses that the transfer file uses (Configuration → Warehouses)
       - Confirm what was delivered (Invoicing → Delivery confirmation, one by one or all shown at once) — nothing is invoiced before that
       - Check, correct and send an invoice (Invoicing → Invoices) — its prices beside the PO's (a changed price needs a reason), the delivery date and the retailer's delivery number — or release one that is on hold; record a retailer return or a cancellation after shipment on the order
-      - See what the warehouse shipped for an order (its 945) — every pallet with its lots, expiry and quantities, the checks that flagged something, and whether the shipment was written to Shopify; retry a failed Shopify write
+      - See what became of each line of an order in one table — ordered, shipped (945), delivered and invoiced, with its status — and open a line to see the pallets, lots, expiry, tracking and ship date packed for it; see the checks a 945 flagged and whether it was written to Shopify, retry a failed Shopify write, and print a shipment's packing list (Orders → the order → Shipments, Packing list)
+      - Trace a lot or run a recall (Operations → Lots) — every pallet row the warehouse shipped with its lot, expiry, quantity, order, customer, ship-to city and postal code and tracking; views "Expiring soon" and "By lot"; Recall… takes one lot or a pasted list and shows every order and customer they went to, with Export CSV
+      - See list totals — the sum of the amounts (the Total of Orders, the Amount of Invoices) or quantities (Lots) for everything the filter finds, per currency, under the list and in each group's header
       - Choose the warehouse's SFTP connection and how long to wait for its 997 (Configuration → Connections, Warehouse EDI)
       - Set how often each connection is read — every N minutes, paused, or only in certain hours and days (Toronto time) — see its last and next run, and pause, resume or run one now (Configuration → Connections: the icons on its row, or the connection's Schedule)
       - Pause every scheduled job at once, set how often the system job runs, see each job's last and next run and which are overdue, and run the system job now (Operations → Health, Scheduler)
@@ -311,8 +313,16 @@ modules:
         never changes, even if the abbreviation changes later. The internal
         number is still shown as Internal no. and used in the 940 and on the
         invoice number. Every partner needs an abbreviation; one without it
-        gets a task, and its new orders wait in review. Partners are shown by
-        name with the code beside it, and lists can be searched by either.
+        gets a task, and its new orders wait in review. Lists show partners by
+        name (the code is in the name's tooltip and on the detail), and can be
+        searched by either.
+      - >-
+        An order's Total is the source's total (Shopify) or, for a retailer or
+        manual order, its lines at the PO price. List totals are summed over
+        everything the filter finds, not just the page, and amounts in
+        different currencies are never added together. Lots lists every 945
+        row, also those of a shadow-run or second 945 (marked): those goods went
+        out too. Shipment rows and the original 945 files are never deleted.
       - >-
         Each connection has its own schedule; its job reads the connection and
         takes what it stored straight through (orders, acknowledgements,

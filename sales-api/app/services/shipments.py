@@ -405,7 +405,7 @@ class Shipments:
             document_id=doc.id, set_index=set_index, set_control=sh.control[:9] or None, order_id=p.order_id,
             order_key_received=(sh.order_key_raw or "")[:40] or None, ship_date=sh.ship_date,
             ship_date_source=sh.ship_date_source, carrier=sh.carrier, mode=sh.mode, tracking=sh.tracking or None,
-            bol=sh.bol, carrier_ref=sh.carrier_ref,
+            bol=sh.bol, carrier_ref=sh.carrier_ref, our_reference=(sh.reference or "")[:80] or None,
             ship_to=asdict(sh.parties["ST"]) if "ST" in sh.parties else None, applied=applied, shadow=shadow,
             checks=p.checks or None, shopify_status="Not needed", version=1)
         s.add(shipment)

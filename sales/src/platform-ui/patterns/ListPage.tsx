@@ -136,6 +136,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
         total={list.data?.total ?? 0}
         groups={list.data?.groups}
         groupsTruncated={list.data?.groups_truncated}
+        totals={list.data?.totals}
         {...view.tableProps}
         searchable={props.searchable ?? true}
         loading={list.isLoading || !view.ready}

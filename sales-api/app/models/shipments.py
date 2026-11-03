@@ -42,6 +42,7 @@ class Shipment(Audited, Versioned, Base):
     mode: Mapped[str | None] = mapped_column(String(10), nullable=True)
     tracking: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     bol: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    our_reference: Mapped[str | None] = mapped_column(String(80), nullable=True)  # header N9*E1: the 940's reference
     carrier_ref: Mapped[str | None] = mapped_column(String(80), nullable=True)
     ship_to: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     applied: Mapped[bool] = mapped_column(Boolean, nullable=False)

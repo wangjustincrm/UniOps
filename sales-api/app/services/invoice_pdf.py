@@ -125,3 +125,75 @@ def render(doc: PdfDoc) -> bytes:
     SimpleDocTemplate(buf, pagesize=LETTER, title=f"{doc.title} {doc.number}",
                       leftMargin=15 * mm, rightMargin=15 * mm, topMargin=15 * mm, bottomMargin=15 * mm).build(story)
     return buf.getvalue()
+
+
+@dataclass
+class PackRow:
+    sscc: str | None
+    pallet: int            # LX position: rows of one pallet together
+    item_code: str | None
+    description: str | None
+    lot: str | None
+    expiry: date | None
+    qty_ea: int
+    tracking: str | None
+
+
+@dataclass
+class PackingList:
+    """One shipment (a 945 set) as packed: pallets → items → lots → expiry → qty."""
+    number: str                      # the Order ref
+    order_number: int
+    po: str | None
+    ship_date: date | None
+    carrier: str | None
+    bol: str | None
+    tracking: list[str]
+    our_reference: str | None        # N9*E1
+    document_id: int
+    seller: Party
+    ship_to: Party
+    rows: list[PackRow]
+    note: str | None = None          # a shadow-run or second 945
+
+
+def render_packing(pl: PackingList) -> bytes:
+    """The shipment's packing list: each pallet with its rows and a pallet
+    total, then the shipment total; tracking, BOL and the 945 in the header."""
+    buf = io.BytesIO()
+    styles = getSampleStyleSheet()
+    p = lambda v, st="BodyText": Paragraph(text(v), styles[st])  # noqa: E731
+    head = (f"Ship date: {pl.ship_date or ''}    Order: {pl.number}    Internal no.: {pl.order_number}    PO: {pl.po or ''}")
+    refs = (f"Carrier: {pl.carrier or '—'}    BOL: {pl.bol or '—'}    Tracking: {', '.join(pl.tracking) or '—'}    "
+            f"945: #{pl.document_id}" + (f"    940 ref.: {pl.our_reference}" if pl.our_reference else ""))
+    story = [p(f"Packing list {pl.number}", "Title"), p(head), p(refs)]
+    if pl.note:
+        story.append(p(pl.note))
+    story.append(Spacer(1, 4 * mm))
+    def block(party: Party) -> Paragraph:
+        return Paragraph("<br/>".join(text(x) for x in [party.name, *party.lines] if x), styles["BodyText"])
+    story += [Table([[p("From", "Heading4"), p("Ship to", "Heading4")], [block(pl.seller), block(pl.ship_to)]],
+                    colWidths=[90 * mm] * 2), Spacer(1, 4 * mm)]
+    rows = [[p(h, "Heading5") for h in ("Pallet (SSCC)", "Item", "Description", "Lot", "Expiry", "Qty EA", "Tracking")]]
+    totals: list[int] = []
+    bold = lambda v: Paragraph(f"<b>{text(v)}</b>", styles["BodyText"])  # noqa: E731
+    pallets: dict[int, list[PackRow]] = {}
+    for r in pl.rows:
+        pallets.setdefault(r.pallet, []).append(r)
+    for _, prs in sorted(pallets.items()):
+        for i, r in enumerate(prs):
+            rows.append([p(r.sscc if i == 0 else ""), p(r.item_code), p(r.description), p(r.lot),
+                         p(r.expiry.isoformat() if r.expiry else ""), p(r.qty_ea), p(r.tracking)])
+        rows.append(["", "", "", bold("Pallet total"), "", bold(sum(r.qty_ea for r in prs)), ""])
+        totals.append(len(rows) - 1)
+    rows.append(["", "", "", bold("Shipment total"), "", bold(sum(r.qty_ea for r in pl.rows)), ""])
+    t = Table(rows, colWidths=[46 * mm, 22 * mm, 26 * mm, 22 * mm, 26 * mm, 16 * mm, 28 * mm], repeatRows=1)
+    style = [("GRID", (0, 0), (-1, -1), 0.25, colors.grey), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+             ("BACKGROUND", (0, 0), (-1, 0), colors.whitesmoke), ("BACKGROUND", (0, len(rows) - 1), (-1, len(rows) - 1), colors.whitesmoke)]
+    style += [("BACKGROUND", (0, i), (-1, i), colors.HexColor("#f6f6f6")) for i in totals]
+    style += [("SPAN", (3, i), (4, i)) for i in [*totals, len(rows) - 1]]  # the label over Lot and Expiry
+    t.setStyle(TableStyle(style))
+    story.append(t)
+    SimpleDocTemplate(buf, pagesize=LETTER, title=f"Packing list {pl.number}",
+                      leftMargin=10 * mm, rightMargin=10 * mm, topMargin=15 * mm, bottomMargin=15 * mm).build(story)
+    return buf.getvalue()

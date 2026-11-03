@@ -1,6 +1,6 @@
 import { ArrowDown, ArrowUp, Eye } from 'lucide-react'
-import { Checkbox } from '../primitives/Checkbox'
-import { Popover } from '../primitives/Popover'
+import { Checkbox } from './Checkbox'
+import { Popover } from './Popover'
 
 export interface ColumnChoice {
   id: string

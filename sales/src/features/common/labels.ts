@@ -1,4 +1,4 @@
-/** "Loblaws (AC-9898)" — a partner as text (titles, toasts); the code alone without a name. */
+/** "Loblaws (AC-9898)" — a partner as text with its code (detail rows, titles); the code alone without a name. */
 export function partnerLabel(name: string | null | undefined, code: string | null | undefined): string {
   return name ? `${name}${code ? ` (${code})` : ''}` : (code ?? '')
 }

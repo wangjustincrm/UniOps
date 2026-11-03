@@ -22,6 +22,8 @@ export interface OrderRead {
   ship_to: Record<string, string | null> | null
   currency: string
   total: string | null
+  /** The source's total, else the lines at the PO price (what lists show and sum). */
+  total_amount?: string | null
   fulfillment_status: string
   invoice_status: string
   order_state: 'Draft' | 'Active' | 'On Hold' | 'Completed' | 'Cancelled'
@@ -54,6 +56,28 @@ export interface LineRead {
   problem: string | null
   shipped_ea?: number | null
   delivered_qty?: number | null
+  // The detail's lifecycle: the invoice's lines for it, its state, the 945 rows packed for it.
+  invoiced_qty?: number | null
+  invoice_unit?: string | null
+  invoice_price?: string | null
+  invoice_amount?: string | null
+  state?: string | null
+  packing?: PackingRead[]
+}
+
+/** A 945 row packed for an order line, with its shipment's date and tracking. */
+export interface PackingRead {
+  shipment_id: number
+  document_id: number
+  sscc: string | null
+  lot: string | null
+  expiry: string | null
+  qty_shipped_ea: number
+  tracking: string | null
+  ship_date: string | null
+  /** Applied, or kept only (a shadow-run or second 945). */
+  applied: boolean
+  shadow: boolean
 }
 
 /** A source document, or a 940 sent to the warehouse: its file status and
@@ -97,6 +121,8 @@ export interface ShipmentRead {
   mode: string | null
   tracking: string[] | null
   bol: string | null
+  /** the 945's N9*E1: the reference the 940 was sent with */
+  our_reference?: string | null
   applied: boolean
   shadow: boolean
   checks: { check: string; message: string }[] | null
@@ -145,5 +171,8 @@ export interface EligibleOrder {
   order_id: number; order_number: number; source_reference: string | null; partner_code: string; source_order_number: string | null
 }
 export const fetchEligibility = () => api.get<EligibleOrder[]>('/orders/eligibility-preview')
+/** One shipment's packing list (PDF): pallets → items → lots → expiry → qty, tracking and BOL. */
+export const downloadPackingList = (orderId: number, shipmentId: number) =>
+  api.download(`/orders/${orderId}/shipments/${shipmentId}/packing-list.pdf`, `PackingList-${shipmentId}.pdf`)
 export const retryShopify = (shipmentId: number) =>
   api.post<{ shipment_id: number; shopify_status: string }>(`/orders/shipments/${shipmentId}/shopify-retry`)

@@ -25,6 +25,31 @@ describe('LocalTable', () => {
     expect(within(t).queryByRole('button', { name: /Item/ })).toBeNull()  // not sortable: no button
   })
 
+  it('expands a row to its detail; a row with nothing to show has no ▸', () => {
+    render(<LocalTable<Row> ariaLabel="Lines" columns={columns} rows={rows} rowKey={(r) => r.id}
+      expand={(r) => (r.qty > 10 ? <p>lots of {r.item}</p> : null)} />)
+    const t = screen.getByRole('table', { name: 'Lines' })
+    const opens = within(t).getAllByRole('button', { name: 'Show details' })
+    expect(opens).toHaveLength(2)
+    fireEvent.click(opens[0])
+    expect(within(t).getByText('lots of CF0092')).toBeInTheDocument()
+    fireEvent.click(within(t).getByRole('button', { name: 'Hide details' }))
+    expect(within(t).queryByText('lots of CF0092')).toBeNull()
+  })
+
+  it('starts with some columns hidden; the eye shows them, and the footer follows the columns', async () => {
+    render(<LocalTable<Row> ariaLabel="Lines" columns={columns} rows={rows} rowKey={(r) => r.id} initiallyHidden={['item']}
+      footer={['Total', '44']} />)
+    const t = screen.getByRole('table', { name: 'Lines' })
+    expect(within(t).queryByText('CF0092')).toBeNull()
+    expect(within(t).queryByText('Total')).toBeNull()  // its footer cell is hidden with it
+    expect(t.querySelector('tfoot')).toHaveTextContent('44')
+    fireEvent.click(within(t).getByRole('button', { name: 'Show, hide or move columns' }))
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Item' }))
+    expect(within(t).getByText('CF0092')).toBeInTheDocument()
+    expect(t.querySelector('tfoot')).toHaveTextContent('Total44')
+  })
+
   it('an empty table says so and has no footer', () => {
     render(<LocalTable<Row> ariaLabel="Lines" columns={columns} rows={[]} rowKey={(r) => r.id} footer={['Total', '0']} emptyTitle="No lines" />)
     expect(screen.getByText('No lines')).toBeInTheDocument()

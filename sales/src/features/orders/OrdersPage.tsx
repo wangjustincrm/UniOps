@@ -16,7 +16,7 @@ const orderColumns: ColumnDef<OrderRead, unknown>[] = [
   { accessorKey: 'source_order_number', header: 'Customer PO / ref.' },
   { accessorKey: 'order_date', header: 'Ordered', cell: ({ row }) => <DateCell value={row.original.order_date} /> },
   { accessorKey: 'fulfillment_status', header: 'Status', cell: ({ row }) => <StateBadge o={row.original} /> },
-  { accessorKey: 'total', header: 'Total', cell: ({ row }) => <MoneyCell amount={row.original.total} currency={row.original.currency} /> },
+  { accessorKey: 'total_amount', header: 'Total', cell: ({ row }) => <MoneyCell amount={row.original.total_amount} currency={row.original.currency} /> },
   { accessorKey: 'review_reason', header: 'Review reason', cell: ({ row }) => (
     <span className="line-clamp-2 max-w-md whitespace-pre-line text-xs text-neutral-600">{row.original.review_reason ?? ''}</span>
   ) },
@@ -44,7 +44,7 @@ export function OrderList({ fixed, title, description, emptyTitle, detailExtra, 
       rowActions={(o) => (o.fulfillment_status === 'Review' ? <Recheck o={o} compact />
         : isDraft(o) ? <SubmitDraft o={o} /> : null)}
       detailTitle={(o) => `Order ${orderRef(o)}`}
-      detailClassName="max-w-3xl"
+      detailClassName="max-w-5xl"
       renderDetail={(o, close) => (
         <div className="flex flex-col gap-4">
           {o.fulfillment_status === 'Review' && <Recheck o={o} onResolved={close} />}

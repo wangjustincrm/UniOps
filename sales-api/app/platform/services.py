@@ -75,7 +75,7 @@ class ReadOnlyService(Generic[T, R]):
         await self._authorize(self.read_permission)
         page = await self.repo.list(spec)
         return Page[Any](items=[self.to_read(e) for e in page.items], total=page.total,
-                         groups=page.groups, groups_truncated=page.groups_truncated)
+                         groups=page.groups, groups_truncated=page.groups_truncated, totals=page.totals)
 
     META_VERSION: ClassVar[int] = 1
 

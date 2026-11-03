@@ -17,6 +17,8 @@ export interface FieldMeta {
   sortable: boolean
   groupable: boolean
   operators: FilterOp[]
+  /** Summed in the list's `totals` (the footer and group headers). */
+  summable?: boolean
 }
 
 /** A system view: declared with the list on the server, not editable. */

@@ -8,7 +8,7 @@ import pytest_asyncio
 
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.errors import InvalidInput
-from app.platform.query import QuerySpec, parse_filter, split_values
+from app.platform.query import QuerySpec, parse_filter, parse_sort, split_values
 from app.platform.repository import Repository
 from tests.platform.conftest import Widget, WidgetRead
 
@@ -205,3 +205,48 @@ async def test_what_cannot_be_grouped_is_refused(uow_factory, seeded):
         query_spec(group="active,email,price,code")
     assert e.value.code == "query.too_many_groups"
     assert [k.field for k in query_spec(group="active,-email,price").group] == ["active", "email", "price"]
+
+
+# ── totals (the list footer and group headers) ───────────────────────────────
+class SummedWidgets(Widgets):
+    summable = ("price",)
+
+
+class SummedPerEmail(Widgets):  # `email` stands in for a currency column
+    summable = ("price",)
+    sum_currency = "email"
+
+
+async def summed(uow_factory, repo=SummedWidgets, **kw):
+    async with uow_factory(SYSTEM_ACTOR) as uow:
+        return await repo(uow).list(QuerySpec(**kw))
+
+
+async def test_totals_cover_the_whole_filtered_result_not_the_page(uow_factory, seeded):
+    p = await summed(uow_factory, page_size=1)
+    assert len(p.items) == 1 and [(t.currency, t.count, t.sums) for t in p.totals] == [(None, 4, {"price": "14.49"})]
+    p = await summed(uow_factory, filters=[parse_filter("active:eq:true")], search="an")
+    assert [(t.count, t.sums["price"]) for t in p.totals] == [(2, "1.50")]  # Banana + banana split
+    assert (await summed(uow_factory, filters=[parse_filter("code:eq:A1"), parse_filter("active:eq:false")])).totals == []
+    async with uow_factory(SYSTEM_ACTOR) as uow:  # nothing summable: no totals at all
+        assert (await Widgets(uow).list(QuerySpec())).totals is None
+
+
+async def test_totals_are_never_added_across_currencies(uow_factory, seeded):
+    p = await summed(uow_factory, SummedPerEmail)
+    assert [(t.currency, t.sums["price"]) for t in p.totals] == [
+        ("a@x.example", "3.00"), ("c%@x.example", "9.99"), ("n@y.example", "0.00"), (None, "1.50")]
+
+
+async def test_each_group_carries_its_own_totals(uow_factory, seeded):
+    p = await summed(uow_factory, group=parse_sort("active"), page_size=1)
+    assert [(g.key, [(t.count, t.sums["price"]) for t in g.totals]) for g in p.groups] == [
+        ([False], [(1, "9.99")]), ([True], [(3, "4.50")])]
+    p = await summed(uow_factory, SummedPerEmail, group=parse_sort("active"))
+    assert [(t.currency, t.sums["price"]) for t in p.groups[1].totals] == [
+        ("a@x.example", "3.00"), ("n@y.example", "0.00"), (None, "1.50")]
+
+
+def test_summable_fields_say_so_in_meta():
+    meta = {f["name"]: f for f in SummedWidgets.field_meta(WidgetRead)}
+    assert meta["price"]["summable"] is True and "summable" not in meta["code"]

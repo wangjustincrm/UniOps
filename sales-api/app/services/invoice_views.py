@@ -31,10 +31,12 @@ class InvoiceRepository(Repository[Invoice]):
     filterable = {"order_ref": FilterRule(Invoice.order_ref_sql, kind="text"),
                   "partner_name": FilterRule(Invoice.partner_name_sql, kind="text")}
     labels = {"invoice_number": "Invoice", "order_ref": "Order ref", "partner_name": "Partner",
-              "delivery_number": "Delivery no.", "invoice_date": "Invoice date", "send_count": "Times sent"}
+              "delivery_number": "Delivery no.", "invoice_date": "Invoice date", "total": "Amount", "send_count": "Times sent"}
     enums = {"method": ("810_JSON", "EMAIL", "NONE")}
     default_sort = ("-invoice_date", "-id")
     groupable = ("partner_name", "method", "currency")
+    summable = ("total",)
+    sum_currency = "currency"
     presets = (Preset("all", "All"),
                Preset("not_sent", "Not sent", {"filters": [{"field": "sent_at", "op": "null", "value": None}]}),
                Preset("failed", "Failed", {"filters": [{"field": "error", "op": "not_null", "value": None}]}))

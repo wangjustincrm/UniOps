@@ -417,18 +417,67 @@ describe('Orders: the Order ref, the partner by name, and the PO prices', () => 
       { ...detail.lines[0], id: 2, line_no: 2, item_code: 'CF0093', ordered_qty: '40', order_unit: 'CASE', unit_price: '150.00', problem: null }] })
     renderAs(['sales.read'])
     const row = (await screen.findByText('SHOP-9303')).closest('tr')!
-    expect(row).toHaveTextContent('Shopify (SHOP)')
+    expect(row).toHaveTextContent('Shopify')
+    expect(row).not.toHaveTextContent('(SHOP)')  // the code is in the name's tooltip
     fireEvent.click(within(row).getByText('SHOP-9303'))
     const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
     const value = (term: string) => within(sheet).getByText(term, { selector: 'dt' }).nextElementSibling!
     await within(sheet).findByRole('table', { name: 'Order lines' })
     expect(value('Order ref')).toHaveTextContent('SHOP-9303')
     expect(value('Internal no.')).toHaveTextContent('105')
+    expect(value('Partner')).toHaveTextContent('Shopify (SHOP)')  // the detail keeps both
     const lines = within(sheet).getByRole('table', { name: 'Order lines' })
     expect(lines).toHaveTextContent('179.94')
     expect(lines).toHaveTextContent('35,988.00')   // 200 × 179.94
-    expect(lines).toHaveTextContent('Lines total')
+    expect(lines).toHaveTextContent('Total')
     expect(lines).toHaveTextContent('41,988.00')   // + 40 × 150
+  })
+
+  it('one lifecycle row per line: shipped, delivered, invoiced and its state; ▸ shows the pallets and lots', async () => {
+    const packed = { shipment_id: 7, document_id: 40, sscc: '00077777770077782891', lot: 'LOT-A', expiry: '2028-05-19', qty_shipped_ea: 1100,
+      tracking: '1Z-TRACK', ship_date: '2026-11-02', applied: true, shadow: false }
+    api.fetchOrder.mockResolvedValue({ ...detail, ...pending, currency: 'CAD', lines: [
+      { ...detail.lines[0], id: 1, line_no: 1, item_code: 'CF0092', ordered_qty: '200', order_unit: 'CASE', unit_price: '179.94', problem: null,
+        qty_ea: 1200, shipped_ea: 1200, delivered_qty: 1200, invoiced_qty: 200, invoice_unit: 'CA', invoice_price: '175.00',
+        invoice_amount: '35000.00', state: 'Invoiced', packing: [packed, { ...packed, sscc: '00077777770077782907', lot: 'LOT-B', qty_shipped_ea: 100, shadow: true, applied: false }] },
+      { ...detail.lines[0], id: 2, line_no: 2, item_code: 'CF0093', ordered_qty: '40', order_unit: 'CASE', unit_price: '150.00', problem: null,
+        qty_ea: 480, shipped_ea: 400, delivered_qty: null, state: 'Short shipped', packing: [] }] })
+    renderAs(['sales.read'])
+    fireEvent.click(await screen.findByText('SHOP-9303'))
+    const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
+    const lines = await within(sheet).findByRole('table', { name: 'Order lines' })
+    const first = within(lines).getByText('CF0092').closest('tr')!
+    expect(first).toHaveTextContent('Invoiced')
+    expect(first).toHaveTextContent('200 CA')
+    expect(first).toHaveTextContent('35,000.00')
+    expect(within(lines).getByText('CF0093').closest('tr')).toHaveTextContent('Short shipped')
+    // less-used columns start hidden; the eye shows them
+    expect(within(lines).queryByText('Invoice price')).toBeNull()
+    // footer: EA, shipped, delivered and invoiced totals
+    const foot = lines.querySelector('tfoot')!
+    expect(foot).toHaveTextContent('1680')
+    expect(foot).toHaveTextContent('1600')
+    expect(foot).toHaveTextContent('35,000.00')
+    // a line with nothing packed has no ▸
+    expect(within(lines).getAllByRole('button', { name: 'Show details' })).toHaveLength(1)
+    fireEvent.click(within(first).getByRole('button', { name: 'Show details' }))
+    const packing = await within(sheet).findByRole('table', { name: 'Packed for this line' })
+    expect(within(packing).getByText('LOT-A').closest('tr')).toHaveTextContent('00077777770077782891')
+    expect(within(packing).getByText('LOT-A').closest('tr')).toHaveTextContent('1Z-TRACK')
+    expect(within(packing).getByText('LOT-B').closest('tr')).toHaveTextContent('Shadow run')
+    expect(packing.querySelector('tfoot')).toHaveTextContent('1200')
+  })
+
+  it('the list has the Total column and a footer summed by the server per currency; group headers have theirs', async () => {
+    api.list.mockResolvedValue({ items: [{ ...pending, total_amount: '35988.00' }], total: 3,
+      totals: [{ currency: 'CAD', count: 2, sums: { total_amount: '36088.00' } }, { currency: 'USD', count: 1, sums: { total_amount: '120.00' } }] })
+    renderAs(['sales.read'])
+    const row = (await screen.findByText('SHOP-9303')).closest('tr')!
+    expect(row).toHaveTextContent('35,988.00 CAD')
+    const foot = row.closest('table')!.querySelector('tfoot')!
+    expect(foot).toHaveTextContent('Total · 3 rows')
+    expect(within(foot).getByText('36,088.00 CAD')).toBeInTheDocument()
+    expect(within(foot).getByText('120.00 USD')).toBeInTheDocument()  // never added to CAD
   })
 })
 

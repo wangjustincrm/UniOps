@@ -1,6 +1,7 @@
+import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ActionButton, Badge, DateCell, ErrorMessage, LocalTable, StatusCell, queryKeys, type ColumnDef } from '@/platform-ui'
-import { ordersClient, retryShopify, type ShipmentRead, type ShipmentRowRead } from './ordersApi'
+import { downloadPackingList, ordersClient, retryShopify, type ShipmentRead, type ShipmentRowRead } from './ordersApi'
 
 const errorMessages: Record<string, string> = {
   'shipment.shadow': 'The shadow run is on (or this 945 came during it): nothing is written to Shopify.',
@@ -16,6 +17,18 @@ const rowColumns: ColumnDef<ShipmentRowRead, unknown>[] = [
   { id: 'qty', header: 'Shipped / ordered EA', cell: ({ row }) => `${row.original.qty_shipped_ea} / ${row.original.qty_ordered_ea ?? '—'}` },
   { id: 'review', header: '', cell: ({ row }) => row.original.needs_review && <Badge variant="danger">matches no order line</Badge> },
 ]
+
+function PackingListButton({ s, orderId }: { s: ShipmentRead; orderId: number }) {
+  const [error, setError] = useState<unknown>(null)
+  return (
+    <span className="inline-flex flex-col gap-1">
+      <ActionButton size="sm" variant="secondary" onAction={() => downloadPackingList(orderId, s.id).catch(setError)}>
+        Packing list (PDF)
+      </ActionButton>
+      <ErrorMessage error={error} />
+    </span>
+  )
+}
 
 function Retry({ s, orderId }: { s: ShipmentRead; orderId: number }) {
   const qc = useQueryClient()
@@ -33,8 +46,10 @@ function Retry({ s, orderId }: { s: ShipmentRead; orderId: number }) {
   )
 }
 
-/** The order's 945s: every pallet row with its lot (FR-OB-25b), the checks
- *  that notified (FR-OB-25d) and the Shopify write-back (FR-OB-11). */
+/** The order's 945s: date, carrier, tracking, the checks that notified
+ *  (FR-OB-25d) and the Shopify write-back (FR-OB-11). The pallet rows with
+ *  their lots (FR-OB-25b) are under each line in Lines; a row matching no
+ *  line is listed here. */
 export function Shipments({ shipments, orderId }: { shipments: ShipmentRead[]; orderId: number }) {
   if (shipments.length === 0) return null
   return (
@@ -50,11 +65,15 @@ export function Shipments({ shipments, orderId }: { shipments: ShipmentRead[]; o
             {!s.shadow && !s.applied && <Badge variant="warning">Not applied (second 945)</Badge>}
             <span>· Shopify <StatusCell value={s.shopify_status} /></span>
             {(s.shopify_status === 'Failed' || s.shopify_status === 'Suppressed') && !s.shadow && <Retry s={s} orderId={orderId} />}
+            <span className="ml-auto"><PackingListButton s={s} orderId={orderId} /></span>
           </div>
           {s.shopify_error && <p className="text-danger-600">{s.shopify_error}</p>}
-          <LocalTable<ShipmentRowRead> ariaLabel={`Shipment ${s.id} rows`} columns={rowColumns} rows={s.rows}
-            rowKey={(r) => `${r.lx_index}-${r.w12_index}`}
-            footer={[null, null, null, 'Total', `${s.rows.reduce((n, r) => n + r.qty_shipped_ea, 0)} EA`, null]} />
+          <span>{s.rows.length} {s.rows.length === 1 ? 'row' : 'rows'} · {s.rows.reduce((n, r) => n + r.qty_shipped_ea, 0)} EA
+            {s.bol && <> · BOL {s.bol}</>}{s.our_reference && <> · 940 ref. {s.our_reference}</>} (by line in Lines ▸)</span>
+          {s.rows.some((r) => r.needs_review) && (
+            <LocalTable<ShipmentRowRead> ariaLabel={`Shipment ${s.id} rows matching no line`} columns={rowColumns}
+              rows={s.rows.filter((r) => r.needs_review)} rowKey={(r) => `${r.lx_index}-${r.w12_index}`} />
+          )}
           {s.checks && s.checks.length > 0 && (
             <ul aria-label="945 checks" className="text-warning-700">
               {s.checks.map((c, i) => <li key={i}>{c.check}: {c.message}</li>)}

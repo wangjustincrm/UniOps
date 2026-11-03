@@ -22,7 +22,7 @@ class OrderRead(BaseModel):
     id: int
     order_number: int
     partner_code: str
-    partner_name: str | None = None  # the partner's name (lists show "Loblaws (AC-9898)")
+    partner_name: str | None = None  # the partner's name (lists show it; the code in its tooltip)
     source_type: str
     source_order_id: str
     source_order_number: str | None
@@ -32,6 +32,7 @@ class OrderRead(BaseModel):
     ship_to: dict[str, Any] | None
     currency: str
     total: Decimal | None
+    total_amount: Decimal | None = None  # the source's total, else the lines at the PO price
     fulfillment_status: str
     invoice_status: str
     order_state: str = ""           # derived (D17), filled by the service
@@ -47,6 +48,22 @@ class OrderRead(BaseModel):
     version: int
     created_at: datetime
     updated_at: datetime | None
+
+
+class PackingRead(BaseModel):
+    """A 945 row packed for an order line, with its shipment's date and
+    tracking (the line's expandable detail; lots for a recall)."""
+    shipment_id: int
+    document_id: int
+    sscc: str | None
+    lot: str | None
+    expiry: date | None
+    qty_shipped_ea: int
+    tracking: str | None
+    ship_date: date | None
+    # Applied, or kept only: a shadow-run 945, a second 945 (FR-OB-25)
+    applied: bool
+    shadow: bool
 
 
 class LineRead(BaseModel):
@@ -66,6 +83,14 @@ class LineRead(BaseModel):
     problem: str | None
     shipped_ea: int | None = None     # P5: from the 945
     delivered_qty: int | None = None  # P6: confirmed delivery (EA)
+    # The detail's lifecycle (filled by the service): the invoice's lines for
+    # this line, its state, and the 945 rows (pallet, lot, expiry) packed for it.
+    invoiced_qty: int | None = None
+    invoice_unit: str | None = None
+    invoice_price: Decimal | None = None
+    invoice_amount: Decimal | None = None
+    state: str | None = None
+    packing: list[PackingRead] = []
 
 
 class OrderDocumentRead(BaseModel):
@@ -123,6 +148,7 @@ class ShipmentRead(BaseModel):
     mode: str | None
     tracking: list[str] | None
     bol: str | None
+    our_reference: str | None = None  # header N9*E1: the reference the 940 was sent with
     applied: bool
     shadow: bool
     checks: list[dict[str, Any]] | None

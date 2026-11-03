@@ -2,7 +2,7 @@
 Permissions are checked by the services; each write commits once."""
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 
 from app.core.deps import get_uow
 from app.platform.crud_router import page_body
@@ -34,6 +34,12 @@ async def send_940_now(u: UoW, rt: Rt, id: int, replace: bool = False) -> dict:
     out = await OrderService(u).send_940_now(id, rt.outbound, replace=replace)
     await u.commit()
     return out
+
+
+@router.get("/{id}/shipments/{shipment_id}/packing-list.pdf")
+async def packing_list(u: UoW, id: int, shipment_id: int) -> Response:
+    name, pdf = await OrderService(u).packing_list(id, shipment_id)
+    return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{name}"'})
 
 
 @router.post("/shipments/{shipment_id}/shopify-retry")

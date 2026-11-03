@@ -2,14 +2,15 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
 import { DataTable, type ColumnDef, type Grouping } from '../primitives/DataTable'
 import { groupKey } from '../primitives/groupKey'
+import { formatMoney } from '../primitives/format'
 import { Button } from '../primitives/shell'
 import { useListMeta, type FieldMeta, type ListMeta } from '../resource/listMeta'
 import {
-  MAX_GROUP_KEYS, clampPageSize, groupBy, sortBy, type Filter, type GroupCount, type QuerySpec,
+  MAX_GROUP_KEYS, clampPageSize, groupBy, sortBy, type Filter, type GroupCount, type ListTotal, type QuerySpec,
 } from '../resource/querySpec'
 import { viewStateOf, type Layout, type ViewState } from '../resource/viewState'
 import { errorText } from '../resource/businessError'
-import { ColumnChooser } from './ColumnChooser'
+import { ColumnChooser } from '../primitives/ColumnChooser'
 import { ViewPicker } from './ViewPicker'
 import type { ViewPickerModel } from './views'
 import { ColumnMenu } from './ColumnMenu'
@@ -24,6 +25,9 @@ export interface QueryTableProps<T> {
   /** The list response's `groups` / `groups_truncated` (when spec.group is set). */
   groups?: GroupCount[]
   groupsTruncated?: boolean
+  /** The list response's `totals`: a footer row under the visible summable
+   *  columns, and each group's totals in its header. */
+  totals?: ListTotal[]
   /** Server-side paging / sorting / search / filters: the table only edits the spec. */
   spec: QuerySpec
   onSpecChange: (spec: QuerySpec) => void
@@ -68,6 +72,27 @@ function formatValue(field: FieldMeta, v: unknown): ReactNode {
   return String(v)
 }
 
+/** Totals in several lists of per-currency sums, added per currency. */
+function mergeTotals(lists: ListTotal[][]): ListTotal[] {
+  const by = new Map<string, ListTotal>()
+  for (const t of lists.flat()) {
+    const k = t.currency ?? ''
+    const cur = by.get(k) ?? { currency: t.currency, count: 0, sums: {} }
+    cur.count += t.count
+    for (const [f, v] of Object.entries(t.sums)) cur.sums[f] = String(Number(cur.sums[f] ?? 0) + Number(v))
+    by.set(k, cur)
+  }
+  return [...by.values()]
+}
+
+/** A sum: money in its currency; without a currency, a plain number (a quantity). */
+const formatSum = (v: string, currency: string | null) =>
+  currency ? formatMoney(v, currency) : Number(v).toLocaleString('en-CA', { maximumFractionDigits: 4 })
+
+/** One field's sum in every currency: "35,988.00 CAD · 120.00 USD". */
+const sumText = (totals: ListTotal[], field: string): string =>
+  totals.filter((t) => field in t.sums).map((t) => formatSum(t.sums[field], t.currency)).join(' · ')
+
 /** The DataTable view on the back end's list query contract (design §13.19):
  *  column menus (search · sort · hide), chips for what is active, a search
  *  panel over every filterable field, a column chooser, multi-sort, paging
@@ -88,7 +113,7 @@ function WithMeta<T>({ resource, ...props }: ViewProps<T> & { resource: NonNulla
 }
 
 function QueryTableView<T>({
-  columns, spec, onSpecChange, meta, locked = [], sortable = [], total, groups, groupsTruncated, searchable, error,
+  columns, spec, onSpecChange, meta, locked = [], sortable = [], total, groups, groupsTruncated, totals, searchable, error,
   errorMessages, toolbar, onViewChange, layout: layoutProp, onLayoutChange, picker, ...view
 }: ViewProps<T> & { meta: ListMeta | undefined }) {
   const fields = useMemo(() => new Map((meta?.fields ?? []).map((f) => [f.name, f])), [meta])
@@ -138,18 +163,30 @@ function QueryTableView<T>({
   const byId = new Map(allColumns.map((c) => [columnId(c), c]))
   const visible = order.filter((id) => !isHidden(id)).map((id) => byId.get(id)!)
 
-  // Counts per group prefix (level 0…n), from the whole-result group list.
+  // The summed fields, in the response's order; labelled when there are several.
+  const summed = useMemo(() => [...new Set((totals ?? []).flatMap((t) => Object.keys(t.sums)))], [totals])
+
+  // Counts (and totals) per group prefix (level 0…n), from the whole-result group list.
   const grouping = useMemo<Grouping<T> | undefined>(() => {
     const levels = spec.group ?? []
     if (levels.length === 0 || !groups) return undefined
     const counts = new Map<string, number>()
+    const sums = new Map<string, ListTotal[][]>()
     for (const g of groups) {
       for (let i = 0; i < levels.length; i++) {
         const k = groupKey(g.key.slice(0, i + 1))
         counts.set(k, (counts.get(k) ?? 0) + g.count)
+        if (g.totals) sums.set(k, [...(sums.get(k) ?? []), g.totals])
       }
     }
+    const label = (f: string) => summed.length > 1 ? `${fields.get(f)?.label ?? f} ` : 'Total '
+    const summary = new Map<string, ReactNode>()
+    for (const [k, lists] of sums) {
+      const merged = mergeTotals(lists)
+      summary.set(k, summed.map((f) => `${label(f)}${sumText(merged, f)}`).join(' · '))
+    }
     return {
+      summary,
       levels: levels.map((g) => ({ id: g.field, label: fields.get(g.field)?.label ?? g.field })),
       value: (row, id) => (row as Record<string, unknown>)[id],
       counts,
@@ -160,7 +197,22 @@ function QueryTableView<T>({
         return f ? formatValue(f, v) : String(v)
       },
     }
-  }, [spec.group, groups, groupsTruncated, fields])
+  }, [spec.group, groups, groupsTruncated, fields, summed])
+
+  // The footer: each visible summed column's total over the whole filtered
+  // result (one line per currency); the first column says what the row is.
+  const rowsCounted = (totals ?? []).reduce((n, t) => n + t.count, 0)
+  const footer = totals && totals.length > 0 && visible.some((c) => summed.includes(columnId(c)))
+    ? visible.map((c, i) => {
+      const id = columnId(c)
+      if (summed.includes(id)) {
+        return <span data-total={id} className="flex flex-col">
+          {totals.filter((t) => id in t.sums).map((t) => <span key={t.currency ?? ''}>{formatSum(t.sums[id], t.currency)}</span>)}
+        </span>
+      }
+      return i === 0 ? <span className="text-neutral-500">Total · {rowsCounted} {rowsCounted === 1 ? 'row' : 'rows'}</span> : null
+    })
+    : undefined
 
   return (
     <>
@@ -168,6 +220,7 @@ function QueryTableView<T>({
         {...view}
         columns={visible}
         grouping={grouping}
+        footer={footer}
         errorMessage={error ? errorText(error, errorMessages) : null}
         sort={(spec.sort ?? []).map((s) => ({ id: s.field, desc: !!s.desc }))}
         sortable={sortableIds}

@@ -8,3 +8,4 @@ from app.models import shadow  # noqa: F401,E402  — sales09_shadow
 from app.models import shipments  # noqa: F401,E402  — sales10_shipments
 from app.models import invoices  # noqa: F401,E402  — sales11_invoicing
 from app.models import transfers  # noqa: F401,E402  — sales12_transfers
+from app.models import lots  # noqa: F401,E402  — a read model (no table)

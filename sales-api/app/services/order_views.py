@@ -10,26 +10,31 @@ from decimal import Decimal
 from sqlalchemy import and_, case, or_, select
 
 from app.domain.address import address_flags
+from app.domain.lifecycle import line_state
 from app.domain.order_rules import ON_HOLD_FULFILLMENT, order_state, payment_satisfied, to_ea
 from app.domain.orders import HOLD_REASONS, ORDER_STATES, SOURCE_TYPES
 from app.domain.status import FULFILLMENT, Fulfillment as F
 from app.domain.status import Invoice as Inv
 from app.models.config import Connection, DcRouting, Item, Partner
 from app.models.documents import Document, DocumentLink
+from app.models.invoices import InvoiceLine
 from app.models.shipments import Shipment, ShipmentRow
 from app.models.orders import Order, OrderLine
 from app.models.records import AuditRecord
 from app.platform.authorization import requires
-from app.platform.errors import BusinessError, InvalidInput
+from app.platform.errors import BusinessError, InvalidInput, NotFound
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.schemas.orders import (
-    LinePreview, LineRead, ManualLineIn, ManualOrderIn, OrderDetail, OrderDocumentRead, OrderRead, ReviewResult,
-    ShipmentRead, ShipmentRowRead, TimelineEntry,
+    LinePreview, LineRead, ManualLineIn, ManualOrderIn, OrderDetail, OrderDocumentRead, OrderRead, PackingRead,
+    ReviewResult, ShipmentRead, ShipmentRowRead, TimelineEntry,
 )
 from app.services.intake import ConnectionSnapshot
+from app.services.invoice_pdf import PackingList, PackRow, render_packing
+from app.services.invoice_pdf import Party as PdfParty
+from app.services.invoicing import SELLER
 from app.services.orders import BarcodeLookup, OrderSync, order_ref
 from app.services.settings import SETTINGS, SHADOW_MODE
 
@@ -64,15 +69,19 @@ class OrderRepository(Repository[Order]):
                    "source_cancelled_at", "archived_in_shopify_at", "archive_suppressed", "shopify_financial_status",
                    "shopify_fulfillment_status", "created_at", "updated_at")
     labels = {"order_number": "Internal no.", "source_reference": "Order ref", "partner_name": "Partner",
-              "partner_code": "Partner code", "source_order_number": "Source no.", "source_order_id": "Source ID",
+              "partner_code": "Partner code", "total_amount": "Total", "total": "Source total", "source_order_number": "Source no.", "source_order_id": "Source ID",
               "fulfillment_status": "Status", "first_received_at": "Received", "paid_at": "Paid",
               "shopify_financial_status": "Shopify payment", "shopify_fulfillment_status": "Shopify fulfillment"}
     enums = {"source_type": SOURCE_TYPES, "fulfillment_status": tuple(s.value for s in F),
              "invoice_status": tuple(s.value for s in Inv), "hold_reason": HOLD_REASONS,
              "order_state": ORDER_STATES}
-    sortable = {"order_state": ORDER_STATE_SQL, "partner_name": Order.partner_name_sql}
+    sortable = {"order_state": ORDER_STATE_SQL, "partner_name": Order.partner_name_sql,
+                "total_amount": Order.total_amount_sql}
     filterable = {"order_state": FilterRule(ORDER_STATE_SQL, kind="text"),
-                  "partner_name": FilterRule(Order.partner_name_sql, kind="text")}
+                  "partner_name": FilterRule(Order.partner_name_sql, kind="text"),
+                  "total_amount": FilterRule(Order.total_amount_sql, kind="number", cast=lambda v: Decimal(str(v)))}
+    summable = ("total_amount",)
+    sum_currency = "currency"
     default_sort = ("-order_number",)
     groupable = ("order_state", "partner_name", "partner_code", "source_type", "fulfillment_status", "invoice_status", "hold_reason", "order_date",
                  "currency", "historical", "archive_suppressed", "shopify_financial_status")
@@ -120,7 +129,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         return OrderDetail(
             **base, **{k: getattr(o, k) for k in ("bill_to", "contact", "notes", "subtotal", "tax", "shipping",
                                                    "discount", "department", "order_type")},
-            lines=[LineRead.model_validate(ln) for ln in lines],
+            lines=await self._lifecycle(lines),
             documents=[OrderDocumentRead(**d._asdict()) for d in docs],
             shipments=await self._shipments(id),
             dc_number=await self._dc_number(o), ship_to_flags=address_flags(o.ship_to),
@@ -158,6 +167,39 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
             DcRouting.partner_code == o.partner_code, DcRouting.ship_to_gln == str(gln).strip(),
             DcRouting.active.is_(True)))).scalar_one_or_none()
 
+    async def _lifecycle(self, lines: list[OrderLine]) -> list[LineRead]:
+        """Each line with what became of it: invoiced (the invoice's lines for
+        it), its state, and the 945 rows packed for it (every 945 kept — a
+        shadow-run or second one is marked, not hidden: the lots went out)."""
+        s = self.uow.session
+        ids = [ln.id for ln in lines]
+        inv: dict[int, list[InvoiceLine]] = {}
+        packed: dict[int, list[PackingRead]] = {}
+        if ids:
+            for il in (await s.execute(select(InvoiceLine).where(InvoiceLine.order_line_id.in_(ids))
+                                       .order_by(InvoiceLine.line_no))).scalars():
+                inv.setdefault(il.order_line_id, []).append(il)
+            for r, sh in (await s.execute(select(ShipmentRow, Shipment).join(Shipment, Shipment.id == ShipmentRow.shipment_id)
+                                          .where(ShipmentRow.order_line_id.in_(ids))
+                                          .order_by(Shipment.id, ShipmentRow.lx_index, ShipmentRow.w12_index))).all():
+                packed.setdefault(r.order_line_id, []).append(PackingRead(
+                    shipment_id=sh.id, document_id=sh.document_id, sscc=r.sscc, lot=r.lot, expiry=r.expiry,
+                    qty_shipped_ea=r.qty_shipped_ea, tracking=r.tracking or ", ".join(sh.tracking or []) or None,
+                    ship_date=sh.ship_date, applied=sh.applied, shadow=sh.shadow))
+        out = []
+        for ln in lines:
+            ils = inv.get(ln.id, [])
+            out.append(LineRead.model_validate(ln).model_copy(update={
+                "invoiced_qty": sum(il.qty for il in ils) if ils else None,
+                "invoice_unit": ils[0].uom if ils else None,
+                "invoice_price": ils[0].unit_price if ils else None,
+                "invoice_amount": sum((il.amount for il in ils), Decimal(0)) if ils else None,
+                "state": line_state(removed=ln.removed, qty_ea=ln.qty_ea, shipped_ea=ln.shipped_ea,
+                                    delivered_ea=ln.delivered_qty, invoiced=bool(ils)),
+                "packing": packed.get(ln.id, []),
+            }))
+        return out
+
     async def _shipments(self, order_id: int) -> list[ShipmentRead]:
         s = self.uow.session
         ships = list((await s.execute(select(Shipment).where(Shipment.order_id == order_id).order_by(Shipment.id))).scalars())
@@ -165,6 +207,33 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                                      .order_by(ShipmentRow.shipment_id, ShipmentRow.lx_index, ShipmentRow.w12_index))).scalars()) if ships else []
         return [ShipmentRead.model_validate(x).model_copy(update={
             "rows": [ShipmentRowRead.model_validate(r) for r in rows if r.shipment_id == x.id]}) for x in ships]
+
+    @requires(READ)
+    async def packing_list(self, order_id: int, shipment_id: int) -> tuple[str, bytes]:
+        """One shipment's packing list (PDF): pallets → items → lots → expiry →
+        qty, with tracking, BOL and its 945. Any 945 kept — a shadow-run or
+        second one says so on the page."""
+        s = self.uow.session
+        o = await self.repo.get(order_id)
+        sh = (await s.execute(select(Shipment).where(Shipment.id == shipment_id, Shipment.order_id == order_id))).scalar_one_or_none()
+        if sh is None:
+            raise NotFound("Shipment", shipment_id)
+        rows = list((await s.execute(select(ShipmentRow).where(ShipmentRow.shipment_id == sh.id)
+                                     .order_by(ShipmentRow.lx_index, ShipmentRow.w12_index))).scalars())
+        names = {i.item_code: i.description for i in (await s.execute(select(Item).where(
+            Item.item_code.in_({r.item_code for r in rows if r.item_code})))).scalars()} if rows else {}
+        st = sh.ship_to or o.ship_to or {}
+        ship_to = PdfParty(st.get("name"), [x for x in (st.get("address1"), " ".join(filter(None, (
+            st.get("city"), st.get("province"), st.get("zip"))))) if x])
+        note = ("Shadow run: this 945 was kept, not applied." if sh.shadow
+                else None if sh.applied else "A second 945 for this order: kept, not applied.")
+        pdf = render_packing(PackingList(
+            number=o.ref, order_number=o.order_number, po=o.source_order_number, ship_date=sh.ship_date, carrier=sh.carrier,
+            bol=sh.bol, tracking=list(sh.tracking or []), our_reference=sh.our_reference, document_id=sh.document_id,
+            seller=SELLER, ship_to=ship_to, note=note, rows=[PackRow(
+                sscc=r.sscc, pallet=r.lx_index, item_code=r.item_code, description=names.get(r.item_code), lot=r.lot,
+                expiry=r.expiry, qty_ea=r.qty_shipped_ea, tracking=r.tracking) for r in rows]))
+        return f"PackingList-{o.ref}-{sh.id}.pdf", pdf
 
     @requires(OPERATE)
     async def retry_shopify(self, shipment_id: int, shipments) -> dict:

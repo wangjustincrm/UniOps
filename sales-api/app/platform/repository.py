@@ -8,6 +8,7 @@
         labels = {"code": "Partner code"}                      # else humanised from the name
         enums = {"channel": CHANNELS}                          # an enum field and its values
         groupable = ("channel", "active")                      # fields rows can be grouped by
+        summable = ("total",); sum_currency = "currency"       # list totals, per currency
 
 The same declaration drives the list query and `/meta` (field_meta), from
 which the client builds its column menus and search panel.
@@ -30,8 +31,8 @@ from app.platform.entities import SoftDeletable
 from app.platform.errors import InvalidInput, NotFound
 from app.platform.views import Preset
 from app.platform.query import (  # noqa: F401 — FilterRule, parse_bool re-exported
-    MAX_GROUPS, NO_VALUE_OPS, OPS_BY_KIND, RANGE_OPS, Filter, FilterRule, Group, Page, QuerySpec, kind_for, parse_bool,
-    parse_sort,
+    MAX_GROUPS, NO_VALUE_OPS, OPS_BY_KIND, RANGE_OPS, Filter, FilterRule, Group, Page, QuerySpec, Total, kind_for,
+    parse_bool, parse_sort,
 )
 
 T = TypeVar("T")
@@ -54,6 +55,10 @@ class Repository(Generic[T]):
     # Fields the list can be grouped by (sortable or filterable keys): the
     # values that repeat — a status, a partner, a flag — not free text.
     groupable: ClassVar[tuple[str, ...]] = ()
+    # Numeric fields (sortable keys) summed over the whole filtered result —
+    # the list footer and the group headers — per value of `sum_currency`.
+    summable: ClassVar[tuple[str, ...]] = ()
+    sum_currency: ClassVar[str | None] = None
     # System views (design §13.19): named partial view states, in /meta.
     presets: ClassVar[tuple[Preset, ...]] = ()
     default_sort: ClassVar[tuple[str, ...]] = ()  # sortable keys, "-" for descending
@@ -98,9 +103,31 @@ class Repository(Generic[T]):
             select(func.count()).select_from(q.order_by(None).subquery())
         )).scalar_one()
         groups, truncated = (await self._groups(q, spec)) if spec.group else (None, False)
+        totals = (await self._totals(q)) if self.summable else None
         q = self._order(q, spec).offset((spec.page - 1) * spec.page_size).limit(spec.page_size)
         items = list((await self.session.execute(q)).scalars().all())
-        return Page[Any](items=items, total=total, groups=groups, groups_truncated=truncated)
+        return Page[Any](items=items, total=total, groups=groups, groups_truncated=truncated, totals=totals)
+
+    # ── totals (the list footer) ─────────────────────────────────────────────
+    def _sum_columns(self) -> tuple[Any, list[Any]]:
+        cur = self.sortable[self.sum_currency] if self.sum_currency else None
+        return cur, [func.sum(self.sortable[f]) for f in self.summable]
+
+    def _total_of(self, currency: Any, count: int, sums: Sequence[Any]) -> Total:
+        return Total(currency=currency, count=count,
+                     sums={f: str(v if v is not None else 0) for f, v in zip(self.summable, sums)})
+
+    async def _totals(self, q: Select) -> list[Total]:
+        """The summable fields' sums over the whole filtered result, per currency."""
+        cur, sums = self._sum_columns()
+        cols = [cur] if cur is not None else []
+        tq = q.with_only_columns(*cols, func.count(), *sums).order_by(None)
+        if cur is not None:
+            tq = tq.group_by(cur).order_by(cur.asc().nulls_last())
+        rows = (await self.session.execute(tq)).all()
+        if cur is None:
+            return [self._total_of(None, r[0], r[1:]) for r in rows if r[0]]
+        return [self._total_of(r[0], r[1], r[2:]) for r in rows]
 
     # ── grouping (design §13.19) ─────────────────────────────────────────────
     def _group_order(self, spec: QuerySpec) -> list[tuple[Any, Any]]:
@@ -128,7 +155,26 @@ class Repository(Generic[T]):
               .order_by(*(o for _, o in order)).limit(MAX_GROUPS + 1))
         rows = (await self.session.execute(gq)).all()
         groups = [Group(key=[_json_key(v) for v in r[:-1]], count=r[-1]) for r in rows[:MAX_GROUPS]]
+        if self.summable and groups:
+            await self._group_totals(q, cols, groups)
         return groups, len(rows) > MAX_GROUPS
+
+    async def _group_totals(self, q: Select, cols: list[Any], groups: list[Group]) -> None:
+        """Each group's sums, per currency (one more GROUP BY over the same rows)."""
+        cur, sums = self._sum_columns()
+        by = [*cols, *([cur] if cur is not None else [])]
+        rows = (await self.session.execute(
+            q.with_only_columns(*by, func.count(), *sums).group_by(*by)
+            .order_by(*([cur.asc().nulls_last()] if cur is not None else [])))).all()
+        index = {tuple(g.key): g for g in groups}
+        n = len(cols)
+        for r in rows:
+            g = index.get(tuple(_json_key(v) for v in r[:n]))
+            if g is None:  # beyond MAX_GROUPS
+                continue
+            currency = r[n] if cur is not None else None
+            rest = r[n + (1 if cur is not None else 0):]
+            g.totals = [*(g.totals or []), self._total_of(currency, rest[0], rest[1:])]
 
     async def add(self, entity: T) -> T:
         self.session.add(entity)
@@ -195,6 +241,7 @@ class Repository(Generic[T]):
                 "name": n, "label": cls.labels.get(n) or _humanise(n), "type": cls.field_kind(n),
                 "enum_values": list(cls.enums.get(n, ())), "filterable": n in cls.filterable,
                 "sortable": n in cls.sortable, "groupable": n in cls.groupable, "operators": list(cls.field_ops(n)),
+                **({"summable": True} if n in cls.summable else {}),
             })
         return out
 

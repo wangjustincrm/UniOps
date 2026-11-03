@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger, Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, Sequence, String, Text,
-    UniqueConstraint, false, select, text,
+    UniqueConstraint, false, func, select, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, column_property, mapped_column
@@ -104,6 +104,11 @@ class Order(Audited, Versioned, Base):
         """The partner's name as loaded with the row (`partner_name_sql`); never a lazy load."""
         return self.__dict__.get("partner_name_sql")
 
+    @property
+    def total_amount(self) -> Decimal | None:
+        """The order's amount as loaded with the row (`total_amount_sql`); never a lazy load."""
+        return self.__dict__.get("total_amount_sql")
+
 
 FULFILLMENT.bind(Order)
 INVOICE.bind(Order)
@@ -134,3 +139,11 @@ class OrderLine(Audited, Base):
     delivered_qty: Mapped[int | None] = mapped_column(Integer, nullable=True)
     removed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=false())
     problem: Mapped[str | None] = mapped_column(Text, nullable=True)  # why this line holds the order in Review
+
+
+# The order's amount: the source's total (Shopify: current_total_price, after
+# refunds), else its lines at the PO price (850 and manual orders carry no
+# total) — what the Total column shows and the list sums.
+Order.total_amount_sql = column_property(func.coalesce(Order.total, select(
+    func.round(func.sum(OrderLine.ordered_qty * OrderLine.unit_price), 2)).where(
+    OrderLine.order_id == Order.id, OrderLine.removed.is_(False)).correlate_except(OrderLine).scalar_subquery()))

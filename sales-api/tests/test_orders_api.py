@@ -45,8 +45,11 @@ async def test_orders_list_detail_and_the_review_worklist(api):
     assert [(o["source_order_number"], o["fulfillment_status"], o["order_state"]) for o in r["items"]] == [
         ("9301", "Pending", "Active"), ("9302", "Review", "On Hold")]
     g = (await api.get("/api/v1/orders?group=fulfillment_status,partner_code&page_size=1", headers=READER)).json()
-    assert g["groups"] == [{"key": ["Pending", "SHOP"], "count": 1}, {"key": ["Review", "SHOP"], "count": 1}]
+    assert [(x["key"], x["count"]) for x in g["groups"]] == [(["Pending", "SHOP"], 1), (["Review", "SHOP"], 1)]
     assert g["groups_truncated"] is False and len(g["items"]) == 1 and g["total"] == 2
+    # the Total column's sums: over the whole result (not the page), per currency, and per group
+    assert g["totals"] == [{"currency": "CAD", "count": 2, "sums": {"total_amount": "200.00"}}]
+    assert g["groups"][0]["totals"] == [{"currency": "CAD", "count": 1, "sums": {"total_amount": "100.00"}}]
     r = await api.get("/api/v1/orders?group=review_reason", headers=READER)
     assert r.status_code == 422 and r.json()["error"]["code"] == "query.not_groupable"
     assert "groups" not in (await api.get("/api/v1/orders", headers=READER)).json()  # only when asked

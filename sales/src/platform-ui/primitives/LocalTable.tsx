@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { DataTable, type ColumnDef, type RowAttrs, type SortValue } from './DataTable'
+import { ColumnChooser } from './ColumnChooser'
 
 export interface LocalTableProps<T> {
   columns: ColumnDef<T, unknown>[]
@@ -16,7 +17,14 @@ export interface LocalTableProps<T> {
   emptyTitle?: string
   rowAttrs?: (row: T) => RowAttrs
   onRowClick?: (row: T) => void
+  /** A row's detail under it (DataTable `expand`). */
+  expand?: (row: T) => ReactNode | null
+  /** The eye in the header: these column ids start hidden and can be shown
+   *  (a wide panel stays readable on a laptop). The footer follows the columns. */
+  initiallyHidden?: string[]
 }
+
+const idOf = <T,>(c: ColumnDef<T, unknown>): string => c.id ?? (c as { accessorKey?: string }).accessorKey ?? ''
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
@@ -39,9 +47,11 @@ function compare(a: unknown, b: unknown): number {
  *  by default. Never fetches; for a server list use QueryTable / ListPage. */
 export function LocalTable<T>({
   columns, rows, rowKey, ariaLabel, sortable = [], initialSort, footer, density = 'compact', emptyTitle = 'Nothing here',
-  rowAttrs, onRowClick,
+  rowAttrs, onRowClick, expand, initiallyHidden,
 }: LocalTableProps<T>) {
   const [sort, setSort] = useState<SortValue | null>(initialSort ?? null)
+  const [hidden, setHidden] = useState<string[]>(initiallyHidden ?? [])
+  const shown = columns.map((c, i) => ({ c, i })).filter(({ c }) => !hidden.includes(idOf(c)))
   const keyed = useMemo(() => rows.map((row, i) => ({ row, key: rowKey(row, i) })), [rows, rowKey])
   const sorted = useMemo(() => {
     if (!sort) return keyed
@@ -51,12 +61,17 @@ export function LocalTable<T>({
   const byRow = useMemo(() => new Map(sorted.map((x) => [x.row, x.key])), [sorted])
   return (
     <DataTable<T>
-      columns={columns}
+      columns={initiallyHidden ? shown.map((x) => x.c) : columns}
       rows={sorted.map((x) => x.row)}
       rowKey={(row) => byRow.get(row) ?? ''}
       ariaLabel={ariaLabel}
       density={density}
-      footer={footer}
+      footer={footer && initiallyHidden ? shown.map((x) => footer[x.i]) : footer}
+      expand={expand}
+      leadingHeader={initiallyHidden ? (
+        <ColumnChooser columns={columns.map((c) => ({ id: idOf(c), label: typeof c.header === 'string' ? c.header : idOf(c) }))}
+          hidden={hidden} onChange={setHidden} />
+      ) : undefined}
       emptyTitle={emptyTitle}
       rowAttrs={rowAttrs}
       onRowClick={onRowClick}

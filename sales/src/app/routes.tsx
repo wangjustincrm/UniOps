@@ -3,6 +3,7 @@ import HomePage from '@/pages/HomePage'
 import PartnersPage from '@/features/configuration/partners/PartnersPage'
 import ConnectionsPage from '@/features/configuration/connections/ConnectionsPage'
 import DocumentsPage from '@/features/operations/DocumentsPage'
+import LotsPage from '@/features/lots/LotsPage'
 import RunsPage from '@/features/operations/RunsPage'
 import ShadowComparePage from '@/features/shadow/ShadowComparePage'
 import DeliveryPage from '@/features/invoices/DeliveryPage'
@@ -49,6 +50,7 @@ export const moduleRoutes: RouteDef[] = [
     element: <RunsPage />,
     tab: { title: 'Runs and log', icon: 'Activity', keyStrategy: 'static' },
   },
+  { path: '/lots', element: <LotsPage />, tab: { title: 'Lots', icon: 'Boxes', keyStrategy: 'static' } },
   { path: '/shadow', element: <ShadowComparePage />, tab: { title: 'Shadow compare', icon: 'GitCompare', keyStrategy: 'static' } },
   { path: '/deliveries', element: <DeliveryPage />, tab: { title: 'Delivery confirmation', icon: 'Truck', keyStrategy: 'static' } },
   { path: '/invoices', element: <InvoicesPage />, tab: { title: 'Invoices', icon: 'Receipt', keyStrategy: 'static' } },

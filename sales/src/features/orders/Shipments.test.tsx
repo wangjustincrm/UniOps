@@ -30,12 +30,14 @@ function renderAs(keys: string[], shipments: ShipmentRead[]) {
 }
 
 describe('Order shipments (945)', () => {
-  it('shows every pallet row with its lot, the checks, the row to review and the Shopify failure with Retry', async () => {
+  it('sums its rows, lists the row matching no line, the checks and the Shopify failure with Retry', async () => {
     api.retry.mockResolvedValue({ shipment_id: 7, shopify_status: 'Pending' })
     renderAs(['sales.read', 'sales.order.operate'], [base])
     const group = screen.getByRole('group', { name: 'Shipment 7' })
-    expect(within(group).getAllByText('00077777770077782891')).toHaveLength(2)  // leading zeros kept
+    expect(group).toHaveTextContent('2 rows · 11 EA')  // the rows by line are in the order's Lines
+    expect(within(group).getAllByText('00077777770077782891')).toHaveLength(1)  // only the row to review; leading zeros kept
     expect(within(group).getByText('LOT-B').closest('tr')).toHaveTextContent('matches no order line')
+    expect(within(group).queryByText('LOT-A')).toBeNull()
     expect(within(group).getByRole('list', { name: '945 checks' })).toHaveTextContent('over-shipment: CF0092: shipped 14 EA')
     expect(within(group).getByText('archiving the order: requires write_orders')).toBeInTheDocument()
     fireEvent.click(within(group).getByRole('button', { name: 'Retry in Shopify' }))

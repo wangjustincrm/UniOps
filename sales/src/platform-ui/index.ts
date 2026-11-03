@@ -57,6 +57,7 @@ export type { EditableColumn, EditableTableProps, EditCell } from './primitives/
 export { StatusBadge } from './primitives/StatusBadge'
 export { StatCard } from './primitives/StatCard'
 export { IconButton } from './primitives/IconButton'
+export { Tooltip } from './primitives/Tooltip'
 export type { StatusStyle, BadgeVariant } from './primitives/StatusBadge'
 export { EmptyState, ErrorState, ErrorLine } from './primitives/States'
 
@@ -66,7 +67,7 @@ export {
   setFieldFilters, removeFilterAt, sortBy, flipSort, removeSort, escapeValue, groupBy, flipGroup, removeGroup,
   MAX_GROUP_KEYS,
 } from './resource/querySpec'
-export type { QuerySpec, SortKey, Filter, FilterOp, FilterValue, Page, GroupCount } from './resource/querySpec'
+export type { QuerySpec, SortKey, Filter, FilterOp, FilterValue, Page, GroupCount, ListTotal } from './resource/querySpec'
 export { useListMeta } from './resource/listMeta'
 export type { FieldMeta, FieldKind, ListMeta, SystemView } from './resource/listMeta'
 export { VIEW_STATE_VERSION, viewStateOf, specOf, layoutOf, normalizeView, sameView, serializeView, parseView } from './resource/viewState'
@@ -107,7 +108,7 @@ export { useListView } from './patterns/views'
 export type { ListView, ViewPickerModel, CurrentView } from './patterns/views'
 export type { QueryTableProps } from './patterns/QueryTable'
 export { ColumnMenu } from './patterns/ColumnMenu'
-export { ColumnChooser } from './patterns/ColumnChooser'
+export { ColumnChooser } from './primitives/ColumnChooser'
 export { FilterChips } from './patterns/FilterChips'
 export { SearchPanel } from './patterns/SearchPanel'
 export { filterText, opLabel, panelOps, PANEL_OPS } from './patterns/listView'

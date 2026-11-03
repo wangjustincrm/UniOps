@@ -39,10 +39,21 @@ export interface QuerySpec {
   group?: SortKey[]
 }
 
+/** The sums of a list's summable fields over some rows in one currency
+ *  (amounts in different currencies are never added together). */
+export interface ListTotal {
+  currency: string | null
+  count: number
+  /** field → sum, as text */
+  sums: Record<string, string>
+}
+
 export interface GroupCount {
   /** One value per group field. */
   key: (string | number | boolean | null)[]
   count: number
+  /** The group's sums, per currency (when the list has summable fields). */
+  totals?: ListTotal[]
 }
 
 export interface Page<T> {
@@ -51,6 +62,8 @@ export interface Page<T> {
   /** Only when grouped: every group of the whole result, in group order. */
   groups?: GroupCount[]
   groups_truncated?: boolean
+  /** The summable fields over the whole filtered result, per currency. */
+  totals?: ListTotal[]
 }
 
 export const MAX_GROUP_KEYS = 3

@@ -14,6 +14,10 @@ sends reaches SQL as an identifier.
     sort=a,-b   search=…   page=…   page_size=…
     group=a,-b               up to 3 groupable fields; rows come grouped, and
                              `groups` counts each key over the whole result
+
+A resource that declares `summable` fields also returns `totals`: their sums
+over the whole filtered result, one entry per currency (amounts in different
+currencies are never added together), and the same per group.
 """
 from __future__ import annotations
 
@@ -85,9 +89,18 @@ class QuerySpec(BaseModel):
     group: list[SortKey] = Field(default_factory=list, max_length=MAX_GROUP_KEYS)
 
 
+class Total(BaseModel):
+    """The sums of the summable fields over some rows sharing one currency
+    (None when the resource has no currency, or the rows have none)."""
+    currency: str | None = None
+    count: int
+    sums: dict[str, str]  # field → sum as text (no float rounding on the way)
+
+
 class Group(BaseModel):
     key: list[Any]  # one value per group field, JSON-ready (dates ISO, decimals as text)
     count: int
+    totals: list[Total] | None = None
 
 
 class Page(BaseModel, Generic[T]):
@@ -97,6 +110,8 @@ class Page(BaseModel, Generic[T]):
     # (not just this page), in group order; at most MAX_GROUPS.
     groups: list[Group] | None = None
     groups_truncated: bool = False
+    # Only when the resource declares summable fields: over the whole filtered result.
+    totals: list[Total] | None = None
 
 
 @dataclass(frozen=True)

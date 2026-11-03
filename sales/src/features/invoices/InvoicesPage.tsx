@@ -8,6 +8,7 @@ import {
 } from '@/platform-ui'
 import { editInvoice, fetchInvoice, invoicesClient, releaseInvoice, sendInvoice, type InvoiceDetail, type InvoiceRead } from './invoicesApi'
 import { PartnerCell } from '@/features/common/PartnerCell'
+import { partnerLabel } from '@/features/common/labels'
 
 const MANAGE = 'sales.invoice.manage'
 const errorMessages: Record<string, string> = {
@@ -28,7 +29,7 @@ const columns: ColumnDef<InvoiceRead, unknown>[] = [
   { accessorKey: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={row.original.status} /> },
   { accessorKey: 'method', header: 'Method' },
   { accessorKey: 'invoice_date', header: 'Date', cell: ({ row }) => <DateCell value={row.original.invoice_date} /> },
-  { accessorKey: 'total', header: 'Total', cell: ({ row }) => <MoneyCell amount={row.original.total} currency={row.original.currency} /> },
+  { accessorKey: 'total', header: 'Amount', cell: ({ row }) => <MoneyCell amount={row.original.total} currency={row.original.currency} /> },
   { accessorKey: 'send_count', header: 'Sent', cell: ({ row }) => row.original.sent_at ? `${row.original.send_count}× · ${formatDateTime(row.original.sent_at)}` : '—' },
 ]
 
@@ -131,7 +132,7 @@ function Detail({ id }: { id: number }) {
       <DetailList items={[
         ['Status', <StatusCell key="s" value={inv.status} />],
         ['Order', `${inv.order_ref ?? inv.order_number}${inv.po ? ` · PO ${inv.po}` : ''}`],
-        ['Partner', <PartnerCell key="p" name={inv.partner_name} code={inv.partner_code} />],
+        ['Partner', partnerLabel(inv.partner_name, inv.partner_code)],
         ['Delivery number', inv.delivery_number],
         ['Method', inv.method], ['Delivery confirmed (the invoice date)', inv.confirmed_date ? formatDate(inv.confirmed_date) : null],
         ['Invoice date', formatDate(inv.invoice_date)], ['Terms', inv.payment_terms], ['Total', formatMoney(inv.total, inv.currency)],
