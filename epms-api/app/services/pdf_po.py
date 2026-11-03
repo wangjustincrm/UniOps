@@ -70,8 +70,15 @@ def generate_po_pdf(
     logo_data_url: str | None = None,
     signatory_name: str | None = None,
     signatures: list[dict] | None = None,
+    default_delivery_address: str | None = None,
 ) -> bytes:
-    """Render an approved PurchaseOrder to PDF applying Admin Panel → PDF Templates settings."""
+    """Render an approved PurchaseOrder to PDF applying Admin Panel → PDF Templates settings.
+
+    `default_delivery_address` is the company delivery address (Admin → Company
+    Config). PO-IMP-002: an NC PO's Delivery Address defaults to it until the
+    buyer edits it, so the PDF prints it when the PO has none — the same as PO
+    Detail and Edit Details show (ISS-0183). Nothing is written to the PO.
+    """
     tmpl = get_tmpl(pdf_templates, "po")
     buf = BytesIO()
     W = A4[0] - 40 * mm
@@ -124,11 +131,15 @@ def generate_po_pdf(
         ]
         delivery_str = str(min(line_dates)) if line_dates else "—"
 
+    delivery_address = po.delivery_address or (
+        default_delivery_address if po.source == "nc" and default_delivery_address else "—"
+    )
+
     meta = Table(
         [
             [_cell("Vendor",    po.vendor_name or "—"), _cell("PO Date",   now_str)],
             [_cell("PO Number", po.number      or "—"), _cell("Delivery",  delivery_str)],
-            [_cell("Delivery Address", po.delivery_address or "—"), _cell("Currency", po.currency or "CAD")],
+            [_cell("Delivery Address", delivery_address), _cell("Currency", po.currency or "CAD")],
         ],
         colWidths=[W * 0.55, W * 0.45],
     )

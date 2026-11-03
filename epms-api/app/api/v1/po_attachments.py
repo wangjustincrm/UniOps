@@ -146,6 +146,7 @@ async def regenerate_pdf(
         cfg.logo_data_url if cfg else None,
         signatory_name,
         signatures,
+        cfg.delivery_address if cfg else None,
     )
 
     existing = (await db.execute(

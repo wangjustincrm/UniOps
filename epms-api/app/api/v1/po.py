@@ -354,6 +354,7 @@ async def _generate_po_pdf_background(
                 cfg.logo_data_url if cfg else None,
                 signatory_name,
                 signatures,
+                cfg.delivery_address if cfg else None,
             )
             storage_key = await upload_to_file_server(
                 pdf_bytes, f"{po_number}.pdf", "application/pdf", "po", po_id, token,
