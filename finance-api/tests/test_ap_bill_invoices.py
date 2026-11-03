@@ -86,6 +86,24 @@ def _vendor():
     _exec("insert into vendors values (%s,'S9','net30',true,now())", (uuid.uuid4(),))
 
 
+def _approved_pa(pa_number, erp_id, invoice_no):
+    """An approved EPMS PA over one invoice of the vendor holding `erp_id` —
+    the cash flow only counts NC lines such a PA is about to pay."""
+    iid, pid = uuid.uuid4(), uuid.uuid4()
+    _exec("insert into invoices (id, internal_ref, vendor_invoice_number, vendor_id, "
+          "vendor_name, amount, tax_amount, total_amount, currency, invoice_date, due_date, "
+          "status, created_at, updated_at) select %s, %s, %s, id, 'V', 0, 0, 0, 'CAD', "
+          "current_date, current_date, 'matched', now(), now() "
+          "from vendors where erp_id = %s limit 1",
+          (iid, f"INV-{iid.hex[:8]}", invoice_no, erp_id))
+    _exec("insert into payment_applications (id, pa_number, title, pa_type, status, source, "
+          "vendor_id, vendor_name, invoice_ids, payment_amount, currency, created_by, "
+          "created_at, updated_at) select %s, %s, 't', 'regular', 'approved', 'po', id, 'V', "
+          "jsonb_build_array(%s::text), 0, 'CAD', %s, now(), now() "
+          "from vendors where erp_id = %s limit 1",
+          (pid, pa_number, str(iid), uuid.uuid4(), erp_id))
+
+
 def _assert_breakdown(row, *, open_only):
     """The invoices, in NC's order, with their own money — and they add up."""
     got = row["invoices"]
@@ -123,11 +141,21 @@ def test_invoices_merges_split_lines_and_keeps_order():
 async def test_cash_flow_rows_carry_every_invoice(client, db_session):
     _vendor()
     _bill("D1")
+    # Every numbered invoice is on an approved PA; the unnumbered line cannot
+    # be, so the cash flow carries the other lines only — and adds up to them.
+    _approved_pa("PA-1", "S9", "3417820")
+    _approved_pa("PA-2", "S9", "3418010")
+    _approved_pa("PA-3", "S9", "3416653")
     r = await client.get("/finance/v1/ap-cash-flow/items", params={"currency": "CAD"})
     assert r.status_code == 200, r.text
     (row,) = r.json()["items"]
-    _, bal = _assert_breakdown(row, open_only=True)
-    assert bal == Decimal(row["open_bal"]) == Decimal("957.50")
+    got = row["invoices"]
+    assert [i["invoice_no"] for i in got] == ["3417820", "3418010"]
+    split = next(i for i in got if i["invoice_no"] == "3418010")
+    assert split["lines"] == 2 and split["purchase_orders"] == ["PO-7", "PO-8"]
+    bal = sum(Decimal(i["money_bal"]) for i in got)
+    assert bal == Decimal(row["open_bal"]) == Decimal("947.50")
+    assert row["pa_numbers"] == ["PA-1", "PA-2"]
 
 
 async def test_ledger_health_bills_by_date_rows_carry_every_invoice(client, db_session):

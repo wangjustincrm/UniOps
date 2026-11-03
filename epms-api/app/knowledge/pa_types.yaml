@@ -84,7 +84,11 @@ values:
         Create Direct PA (or Create Direct PA on the invoice) picks one or more
         such invoices of the same vendor and currency, and the department
         (defaulting to your own), cost center, budget account and the reason
-        for paying without a PO are filled in. A Direct PA is a regular PA
+        for paying without a PO are filled in. If the invoice was linked to a
+        PO with Link to PO (not Match to PO), the department, cost center and
+        budget account default to that PO's instead (department and cost
+        center from its PR, budget account from the PO, else the PR) — you
+        can still change them; NC orders carry none of this. A Direct PA is a regular PA
         approved on the "PA (Direct)" workflow in Portal → Admin → Approval
         Workflows. Its amounts come from the invoices; the title, reason,
         department, cost center and budget account stay editable until it is

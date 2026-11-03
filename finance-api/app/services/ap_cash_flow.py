@@ -27,6 +27,23 @@ page, and each of them would make a naive forecast wrong:
   table to resolve them against (checked when the mirror was built). So the
   term comes from our vendor master, where it is editable per supplier.
 
+Two rules finance set on 2026-11-02 decide what counts at all:
+
+  **Only bills an approved EPMS PA is about to pay.** An open NC line is cash
+  flow when its invoice is on a PA in `approved` — not drafted or in review
+  (no commitment yet), not `processed` (already paid; NC catches up later).
+  Measured that day: 525,334.73 of 2,143,856.51 CAD open, and 285,284.58 more
+  sat on processed PAs that NC had not yet recorded as paid.
+
+  **Reversal pairs net out.** A reversal posted but never offset against its
+  original in NC leaves both open. Lines with the same supplier, currency and
+  invoice number whose open balances add to zero are left out (8 pairs, 16
+  bills that day; none was on an approved PA, so the rule above already drops
+  them — this keeps a future one from splitting across two buckets).
+
+The figures in the three findings above were measured before those rules, on
+every approved NC bill.
+
 Currency is never mixed. Everything is derived on read — there is no forecast
 table to go stale.
 """
@@ -84,6 +101,13 @@ _TERM_CASE = (
     + " ".join(f"when v.payment_terms = '{k}' then {n}" for k, n in NON_DAY_TERMS.items())
     + " end")
 
+PA_APPROVED = "approved"
+# The AP <-> NC invoice-number match (nc_push.match_invoice_no and its SQL twin
+# LINE_MATCH_SQL): upper-case, no whitespace, no hyphens.
+INV_KEY_NC = "nullif(replace(l.invoice_no_norm, '-', ''), '')"
+INV_KEY_EPMS = (r"nullif(replace(upper(regexp_replace("
+                r"coalesce(i.vendor_invoice_number, ''), '\s', '', 'g')), '-', ''), '')")
+
 _DAYS_SQL = "(t.due_date - current_date)"
 _BUCKET_CASE = ("case when t.due_date is null then '" + UNDATED + "' " + " ".join(
     f"when {pred.format(d=_DAYS_SQL)} then '{key}'"
@@ -93,11 +117,54 @@ _BASE = f"""
 with dismissed as (
     select bill_no from nc_ap_bill_dismissals where restored_at is null
 ),
+open_lines as (
+    -- `money_bal` is the open amount per LINE, and a bill carries one invoice
+    -- per line, often several, so everything below is decided per line.
+    select l.*, b.currency, b.trade_type as bill_trade_type,
+           {INV_KEY_NC} as inv_key
+      from nc_ap_bill_lines l
+      join nc_ap_bills b on b.id = l.bill_id
+     where b.bill_status = 1 and b.approve_status = 1
+       and l.money_bal <> 0
+       -- Bills finance has judged not to be real debt never reach the
+       -- forecast. That is the whole point of having judged them.
+       and not exists (select 1 from dismissed x where x.bill_no = l.bill_no)
+),
+-- A reversal finance posted but never offset against its original in NC:
+-- same supplier, currency and invoice number, open balances that add to zero.
+-- Both stay open in NC; neither is money to pay (finance, 2026-11-02).
+offset_pairs as (
+    select supplier_code, currency, inv_key
+      from open_lines
+     where inv_key is not null
+     group by supplier_code, currency, inv_key
+    having count(*) > 1 and sum(money_bal) = 0
+),
+-- Only what an approved EPMS PA is about to pay is cash flow (finance,
+-- 2026-11-02). `processed` is already paid; earlier states are not yet a
+-- commitment. The NC line is found the way the AP list finds it: invoice
+-- number ignoring case, spaces and hyphens, for the same NC supplier.
+approved_pa as (
+    select distinct p.pa_number, v.erp_id, {INV_KEY_EPMS} as inv_key
+      from payment_applications p
+      cross join lateral jsonb_array_elements_text(p.invoice_ids) x(invoice_id)
+      join invoices i on i.id::text = x.invoice_id
+      join vendors v on v.id = i.vendor_id
+     where p.status = '{PA_APPROVED}'
+),
+line_pa as (
+    select o.id as line_id, o.bill_no, a.pa_number
+      from open_lines o
+      join approved_pa a on a.inv_key = o.inv_key and a.erp_id = o.supplier_code
+     where not exists (select 1 from offset_pairs k
+                        where k.supplier_code = o.supplier_code
+                          and k.currency = o.currency and k.inv_key = o.inv_key)
+),
 open_bills as (
-    -- One row per NC document. `money_bal` is the open amount per LINE, so it
-    -- sums; everything else on a payable is a header property and is taken
-    -- with min() rather than repeated per line.
-    select l.bill_no, b.currency,
+    -- One row per NC document, over its PA-linked lines only. Everything else
+    -- on a payable is a header property and is taken with min() rather than
+    -- repeated per line.
+    select l.bill_no, l.currency,
            min(l.bill_date)::date as bill_date,
            min(l.supplier_code) as supplier_code,
            min(l.supplier_name) as supplier_name,
@@ -106,16 +173,15 @@ open_bills as (
            min(l.invoice_no) as invoice_no,
            min(l.purchase_order) as purchase_order,
            {lines_agg()} as invoice_lines,
-           min(b.trade_type) as trade_type,
-           sum(l.money_bal) as open_bal
-      from nc_ap_bill_lines l
-      join nc_ap_bills b on b.id = l.bill_id
-     where b.bill_status = 1 and b.approve_status = 1
-       and l.money_bal <> 0
-       -- Bills finance has judged not to be real debt never reach the
-       -- forecast. That is the whole point of having judged them.
-       and not exists (select 1 from dismissed x where x.bill_no = l.bill_no)
-     group by l.bill_no, b.currency
+           min(l.bill_trade_type) as trade_type,
+           sum(l.money_bal) as open_bal,
+           -- Search text only: every invoice number on the bill's lines.
+           string_agg(l.invoice_no, ' ') as invoice_search,
+           (select string_agg(distinct p.pa_number, ', ' order by p.pa_number)
+              from line_pa p where p.bill_no = l.bill_no) as pa_numbers
+      from open_lines l
+     where l.id in (select line_id from line_pa)
+     group by l.bill_no, l.currency
 ),
 termed as (
     select o.*,
@@ -214,12 +280,13 @@ ITEM_SORT = {
     "payment_terms": "lower(nullif(payment_terms, ''))",
     "due_date": "due_date",
     "open_bal": "open_bal",
+    "pa": "pa_numbers",
 }
 ITEM_TIEBREAK = "bill_no"
 
 
 async def items(db: AsyncSession, currency: str, bucket: str | None = None,
-                supplier_code: str | None = None,
+                supplier_code: str | None = None, q: str | None = None,
                 limit: int = 500, offset: int = 0, order: str | None = None) -> dict:
     """The documents behind a bucket, soonest due first — which is also the
     order they have to be paid in.
@@ -237,10 +304,16 @@ async def items(db: AsyncSession, currency: str, bucket: str | None = None,
     if supplier_code:
         where.append("supplier_code = :supplier_code")
         params["supplier_code"] = supplier_code
+    if q and q.strip():
+        # Bill no, any invoice number on it, supplier name or code, PA number.
+        where.append("concat_ws(' ', bill_no, invoice_search, supplier_name, supplier_code,"
+                     " pa_numbers) ilike :q escape '\\'")
+        params["q"] = "%" + (q.strip().replace("\\", "\\\\").replace("%", "\\%")
+                             .replace("_", "\\_")) + "%"
     clause = " where " + " and ".join(where)
     rows = (await db.execute(text(_BASE + f"""
         select bill_no, currency, bill_date, supplier_code, supplier_name,
-               invoice_lines, trade_type, open_bal,
+               invoice_lines, trade_type, open_bal, pa_numbers,
                payment_terms, term_days, due_date, days_to_due, bucket,
                no_vendor_record
           from bucketed {clause}
@@ -264,6 +337,8 @@ async def items(db: AsyncSession, currency: str, bucket: str | None = None,
             "invoices": invoices(r["invoice_lines"]),
             "trade_type": r["trade_type"],
             "open_bal": str(r["open_bal"]),
+            # The approved PA(s) that put this bill on the forecast.
+            "pa_numbers": r["pa_numbers"].split(", ") if r["pa_numbers"] else [],
             "payment_terms": r["payment_terms"],
             "term_days": r["term_days"],
             "due_date": r["due_date"].isoformat() if r["due_date"] else None,

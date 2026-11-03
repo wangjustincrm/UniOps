@@ -1,9 +1,15 @@
 # Finance — Product Requirements Document
 
-**Version:** 2.16
-**Date:** 2026-10-30
+**Version:** 2.17
+**Date:** 2026-11-02
 **Status:** Current. Describes the system as built on the main line, under the 2026-09-20 positioning decision.
 **Scope:** The UniOps Finance module: Finance web app and finance service. Covers the NC65 data mirror, the checks and reports built on it, AP handoff to NC, payments, remittance, vendor credits, bank reconciliation and the remaining finance-held records.
+
+**What changed in version 2.17** (2026-11-02)
+
+- AP Cash Flow counts only NC payable lines whose invoice is on an **approved** EPMS PA (FIN-CF-01). Lines on no PA, on a PA still in draft or review, or on a PA already processed (paid) are left out. At measurement: 525,334.73 of 2,143,856.51 CAD open.
+- A reversal posted in NC but never offset against its original (same supplier, currency and invoice number, open balances netting to zero) is left out of AP Cash Flow (FIN-CF-07). At measurement: 8 pairs, 16 bills.
+- The AP Cash Flow bill list shows the linked PA number(s), and a search box finds bills by AP (NC bill) number, invoice number, supplier or PA number (FIN-CF-08).
 
 **What changed in version 2.16** (2026-10-30)
 
@@ -406,11 +412,13 @@ Budget planning, the dashboard, catalog, factors and budget settings (including 
 
 | FR ID | Requirement |
 |---|---|
-| FIN-CF-01 | Based on NC's **approved open balance**, per currency, excluding dismissed bills. |
+| FIN-CF-01 | Based on NC's **approved open balance**, per currency, excluding dismissed bills, and counting **only the lines an approved EPMS PA is about to pay**: an open NC line counts when its invoice number (case, spaces and hyphens ignored) is on an EPMS invoice of the same NC supplier that sits on a PA in status **approved**. Lines on no PA, on a PA in draft / submitted / in review / returned, or on a processed (paid) PA are left out; an unnumbered line can never count. A bill's open amount in the cash flow is the sum of its counted lines. Decided with finance on 2026-11-02. |
 | FIN-CF-02 | Due date = NC bill date + the **vendor master payment term** (`net<N>` = N days for any N in 1–365, not only the Net 15/30/60/90 presets; COD and prepayment = 0). An unknown or missing term is **not** defaulted to net30. Such bills are reported as **undated** ("No payment term on file") with the amount and the supplier list. |
 | FIN-CF-03 | Buckets: overdue >180 / 91–180 / 31–90 / ≤30 days; due within 7 / 8–30 / 31–60 / 61–90 / beyond 90 days; undated. Clicking a figure lists its bills. |
 | FIN-CF-04 | Missing-terms panel lists NC suppliers with no vendor record, and the largest single-date amount, which is typically NC's go-live opening load. |
 | FIN-CF-06 | The drill-down shows every invoice on a bill with its own open amount, as in FIN-APH-05. The due date stays per bill (NC bill date + vendor term). |
+| FIN-CF-07 | **Reversal pairs net out.** Open lines with the same supplier, currency and invoice number whose open balances add up to exactly zero are left out, even if they are on an approved PA. Matched per line, not per bill: a reversal bill covering several invoices drops only the matched lines. Finance should still offset such pairs in NC. |
+| FIN-CF-08 | The bill list shows the **PA number(s)** that put each bill on the forecast (also in the CSV export, sortable). A **search box** finds bills by AP (NC bill) number, any invoice number on the bill, supplier name or code, or PA number. It searches inside the selected bucket or supplier, or across the currency when nothing is selected. |
 | FIN-CF-05 | **Not implemented:** invoice-level term precedence (invoice term → vendor term → "term unknown"); further layers (UniOps invoices not yet in NC, received-not-invoiced, ordered-not-received, recurring agreement schedules, a monthly milk layer). See FIN-OI-12. |
 
 ---

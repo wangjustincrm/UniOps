@@ -188,6 +188,24 @@ def _vendors(*codes):
         _exec("insert into vendors values (%s,%s,'net30',true,now())", (uuid.uuid4(), code))
 
 
+def _approved_pa(pa_number, erp_id, invoice_no):
+    """An approved EPMS PA over one invoice of the vendor holding `erp_id` —
+    the cash flow only counts NC lines such a PA is about to pay."""
+    iid, pid = uuid.uuid4(), uuid.uuid4()
+    _exec("insert into invoices (id, internal_ref, vendor_invoice_number, vendor_id, "
+          "vendor_name, amount, tax_amount, total_amount, currency, invoice_date, due_date, "
+          "status, created_at, updated_at) select %s, %s, %s, id, 'V', 0, 0, 0, 'CAD', "
+          "current_date, current_date, 'matched', now(), now() "
+          "from vendors where erp_id = %s limit 1",
+          (iid, f"INV-{iid.hex[:8]}", invoice_no, erp_id))
+    _exec("insert into payment_applications (id, pa_number, title, pa_type, status, source, "
+          "vendor_id, vendor_name, invoice_ids, payment_amount, currency, created_by, "
+          "created_at, updated_at) select %s, %s, 't', 'regular', 'approved', 'po', id, 'V', "
+          "jsonb_build_array(%s::text), 0, 'CAD', %s, now(), now() "
+          "from vendors where erp_id = %s limit 1",
+          (pid, pa_number, str(iid), uuid.uuid4(), erp_id))
+
+
 def _seed_open_bills():
     """Five open approved bills, five suppliers (one with no name), some with
     no invoice number / PO — so every column has something to sort and empties
@@ -209,6 +227,10 @@ def _seed_open_bills():
 async def test_ap_cash_flow_items_paged_and_sorted(client, db_session):
     _vendors("S1", "S2", "S3", "S4", "S5")
     _seed_open_bills()
+    # B03 carries no invoice number, so no PA can reach it: four bills count.
+    for pa, sc, inv in (("PA-3", "S5", "X-10"), ("PA-1", "S1", "X-9"),
+                        ("PA-4", "S2", "X-11"), ("PA-2", "S4", "X-12")):
+        _approved_pa(pa, sc, inv)
     await _check(client, "/finance/v1/ap-cash-flow/items", {"currency": "CAD"}, {
         "bill_no": lambda r: r["bill_no"],
         "supplier": lambda r: _low(r["supplier_name"] or r["supplier_code"]),
@@ -217,7 +239,8 @@ async def test_ap_cash_flow_items_paged_and_sorted(client, db_session):
         "bill_date": lambda r: r["bill_date"],
         "due_date": lambda r: r["due_date"],
         "open_bal": lambda r: Decimal(r["open_bal"]),
-    }, n=5, ident=lambda r: r["bill_no"], nullable=("purchase_order",))
+        "pa": lambda r: ", ".join(r["pa_numbers"]),
+    }, n=4, ident=lambda r: r["bill_no"], nullable=("purchase_order",))
 
 
 # ── GET /ap-ledger-health/{bills,items,abandoned} ────────────────────────────

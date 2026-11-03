@@ -3,6 +3,16 @@ import type { ApiEvent } from './pr'
 import type { ApiInvoice } from './invoices'
 import type { WorkflowNodeDef, CurrentStep } from '@/types'
 
+/** What a Direct PA defaults to from the PO its invoice is linked to (Link to PO). */
+export interface LinkedPoDefaults {
+  po_number: string
+  department_id: string | null
+  cost_center_id: string | null
+  budget_code: string | null
+}
+
+export type DirectPaCandidate = ApiInvoice & { linked_po?: LinkedPoDefaults | null }
+
 export type PaStatus =
   | 'draft'
   | 'submitted'
@@ -274,7 +284,7 @@ export const paService = {
   // Invoices matched to the Direct route that no live PA lists yet, within the
   // caller's invoice scope — what Create Direct PA offers.
   directCandidates: (vendorId?: string) =>
-    api.get<{ items: ApiInvoice[]; total: number }>('/pa/direct/candidates',
+    api.get<{ items: DirectPaCandidate[]; total: number }>('/pa/direct/candidates',
       vendorId ? { vendor_id: vendorId } : undefined),
 
   update: (id: string, body: UpdatePaBody) =>
