@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ListPage } from './patterns/ListPage'
+import { RecordSheet } from './patterns/RecordSheet'
 import { ViewsProvider } from './patterns/ViewsProvider'
 import { requestOpen, requestView } from './resource/viewRequests'
 import type { ListMeta } from './resource/listMeta'
@@ -26,7 +27,7 @@ function setup() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(<QueryClientProvider client={qc}><ViewsProvider client={views}>
     <ListPage<Rec> resource={resource} title="Things" columns={[{ accessorKey: 'name', header: 'Name' }]}
-      detailTitle={(r) => `Thing ${r.name}`} renderDetail={(r) => <p>detail of {r.name}</p>} />
+      renderDetail={(r) => <RecordSheet title={`Thing ${r.name}`} tabs={[{ id: 'd', label: 'Detail', render: () => <p>detail of {r.name}</p> }]} />} />
   </ViewsProvider></QueryClientProvider>)
   return resource
 }

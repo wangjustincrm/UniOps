@@ -50,7 +50,7 @@ describe('Runs page', () => {
   it('a run shows its pass report per connection', async () => {
     renderAs(['sales.read'])
     fireEvent.click(await screen.findByText('PARTIAL', { selector: 'span' }))  // the badge, not the filter option
-    const report = await within(await screen.findByRole('dialog')).findByRole('region', { name: 'Pass report' })
+    const report = await within(await screen.findByRole('dialog')).findByRole('table', { name: 'Pass report' })
     const rows = within(report).getAllByRole('row').slice(1).map((r) => r.textContent)
     expect(rows).toEqual(['radiant4011110ok', 'truecommerce0000000list_failed'])
   })
@@ -65,7 +65,7 @@ describe('Runs page', () => {
     expect(await within(table).findByText('System job')).toBeInTheDocument()
     expect(within(table).getByText('1 files, 0 errors')).toBeInTheDocument()
     fireEvent.click(within(table).getByText('radiant'))
-    const report = await within(await screen.findByRole('dialog')).findByRole('region', { name: 'Pass report' })
+    const report = await within(await screen.findByRole('dialog')).findByRole('table', { name: 'Pass report' })
     expect(within(report).getAllByRole('row').slice(1).map((r) => r.textContent)).toEqual(['radiant2000110ok'])
   })
 })

@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { z } from 'zod'
 import { ListPage } from './ListPage'
+import { RecordSheet } from './RecordSheet'
 import { MasterDetailForm } from './MasterDetailForm'
 import { PermissionProvider } from './PermissionGate'
 import { ViewsProvider } from './ViewsProvider'
@@ -27,7 +28,7 @@ describe('ListPage create', () => {
     const resource = { basePath: '/things', list: vi.fn(async () => ({ items: [...rows], total: rows.length })), meta: async () => meta }
     const page = (
       <ListPage<Rec> resource={resource} title="Things" columns={[{ accessorKey: 'name', header: 'Name' }]}
-        detailTitle={(r) => `Thing ${r.name}`} renderDetail={(r) => <p>detail of {r.name}</p>}
+        renderDetail={(r) => <RecordSheet title={`Thing ${r.name}`} tabs={[{ id: 'd', label: 'Detail', render: () => <p>detail of {r.name}</p> }]} />}
         create={{ label: 'New thing', permission: 'things.make',
           render: (done, cancel) => (
             <div>

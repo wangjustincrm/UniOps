@@ -76,7 +76,8 @@ export interface LogRead {
 export const documentsClient = createResourceClient<DocumentRead, never>(api, '/documents')
 export const runsClient = createResourceClient<RunRead, never>(api, '/runs')
 export const logClient = createResourceClient<LogRead, never>(api, '/log')
-export const downloadOriginal = (d: DocumentRead) => api.download(`/documents/${d.id}/raw`, d.remote_name ?? `document-${d.id}`)
+export const downloadDocument = (id: number, name: string) => api.download(`/documents/${id}/raw`, name)
+export const downloadOriginal = (d: DocumentRead) => downloadDocument(d.id, d.remote_name ?? `document-${d.id}`)
 export const runNow = () => api.post<{ run_id: number }>('/runs/run-now')
 /** The system job alone, now (Health). */
 export const runSystemNow = () => api.post<{ run_id: number }>('/runs/run-now/system')

@@ -1,3 +1,4 @@
+import { openTab } from '@/platform-ui/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -57,6 +58,13 @@ async function open() {
 }
 
 beforeEach(() => { api.list.mockResolvedValue({ items: [conn], total: 1 }) })
+
+/** The open connection's "Schedule & runs" tab. */
+async function scheduleOf() {
+  const sheet = await screen.findByRole('dialog')
+  await openTab(sheet, 'Schedule')
+  return within(sheet).findByRole('region', { name: 'Schedule' })
+}
 
 describe('Connections page', () => {
   it('a reader sees the status but cannot test, pin or clear', async () => {
@@ -193,6 +201,7 @@ describe("a connection's schedule", () => {
     renderAs(['sales.read', 'sales.config'])
     fireEvent.click(await screen.findByText('sftp-test'))
     const sheet = await screen.findByRole('dialog')
+    await openTab(sheet, 'Settings')  // the form (Overview comes first)
     expect(within(sheet).getByLabelText(/^Active from/)).toHaveValue('06:00')
     fireEvent.change(within(sheet).getByLabelText(/^Schedule: every/), { target: { value: '15' } })
     fireEvent.change(within(sheet).getByLabelText(/^Active until/), { target: { value: '' } })
@@ -209,7 +218,7 @@ describe("a connection's schedule", () => {
     api.list.mockResolvedValue({ items: [ran], total: 1 })
     const { unmount } = renderAs(['sales.read'])
     fireEvent.click(await screen.findByText('sftp-test'))
-    const read = await within(await screen.findByRole('dialog')).findByRole('region', { name: 'Schedule' })
+    const read = await scheduleOf()
     expect(within(read).queryByRole('button', { name: 'Run now' })).toBeNull()
     unmount()
     api.runNow.mockResolvedValue({ run_id: 31 })
@@ -220,7 +229,7 @@ describe("a connection's schedule", () => {
         summary: { text: '2 files, 0 errors' } }], total: 1 })
     renderAs(['sales.read', 'sales.retry', 'sales.file.retry'])
     fireEvent.click(await screen.findByText('sftp-test'))
-    const sched = await within(await screen.findByRole('dialog')).findByRole('region', { name: 'Schedule' })
+    const sched = await scheduleOf()
     expect(within(sched).getByText('every 5 min, Mon–Fri 06:00–22:00')).toBeInTheDocument()
     fireEvent.click(within(sched).getByRole('button', { name: 'Run now' }))
     expect(await within(sched).findByText('Run 31 is running…')).toBeInTheDocument()

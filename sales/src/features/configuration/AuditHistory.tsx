@@ -56,3 +56,4 @@ export function AuditHistory({ resource, id, version, load }: {
     </section>
   )
 }
+

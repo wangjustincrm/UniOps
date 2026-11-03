@@ -94,7 +94,7 @@ describe('Health (FR-OB-52a)', () => {
     expect(h.test).toHaveBeenCalledWith(7)
     fireEvent.click(within(row).getByRole('button', { name: 'Open' }))
     expect(await screen.findByText('at /config/connections')).toBeInTheDocument()
-    expect(takeOpenRequest('/config/connections')).toBe(7)
+    expect(takeOpenRequest('/config/connections')).toEqual({ id: 7 })
   })
 
   it('the failed-inbound card opens the documents with its filters', async () => {
@@ -106,12 +106,12 @@ describe('Health (FR-OB-52a)', () => {
 })
 
 describe('a Task Inbox link', () => {
-  it('/inbox/<key> asks which record, asks its list to open it, and goes there', async () => {
-    h.resolve.mockResolvedValue({ page: '/orders', resource: '/orders', id: 23 })
+  it('/inbox/<key> asks which record and tab, asks its list to open it there, and goes there', async () => {
+    h.resolve.mockResolvedValue({ page: '/orders', resource: '/orders', id: 23, tab: 'shipments' })
     renderAt('/inbox/SALES:order_review:23', <InboxRedirect taskKey="SALES:order_review:23" />)
     expect(await screen.findByText('at /orders')).toBeInTheDocument()
     expect(h.resolve).toHaveBeenCalledWith('SALES:order_review:23')
-    await waitFor(() => expect(takeOpenRequest('/orders')).toBe(23))
+    await waitFor(() => expect(takeOpenRequest('/orders')).toEqual({ id: 23, tab: 'shipments' }))
   })
 })
 

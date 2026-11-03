@@ -88,3 +88,4 @@ class InboxTarget(BaseModel):
     page: str
     resource: str | None
     id: int | None
+    tab: str | None = None  # the record sheet's tab the task is about (e.g. an order's "shipments")

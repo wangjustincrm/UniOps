@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  ActionButton, DateTimeCell, ErrorMessage, ListPage, LocalTable, PageHeader, StatusCell, Tabs, formatDateTime, useToast,
+  ActionButton, DateTimeCell, ErrorMessage, ListPage, LocalTable, PageHeader, RecordSheet, StatusCell, Tabs, formatDateTime, useToast,
   type ColumnDef, type QuerySpec,
 } from '@/platform-ui'
 import { logClient, runFor, runNow, runsClient, type LogRead, type PassReport, type RunRead } from './operationsApi'
@@ -53,22 +53,32 @@ const passColumns: ColumnDef<Pass, unknown>[] = [
 
 function RunDetail({ run }: { run: RunRead }) {
   const passes: Pass[] = Object.entries(passesOf(run)).map(([name, p]) => ({ ...p, name }))
+  const failed = passes.reduce((n, p) => n + p.failed, 0)
   return (
-    <div className="flex flex-col gap-4 text-sm">
-      <p>{runFor(run)} · {run.trigger} · started {formatDateTime(run.started_at)} · finished {formatDateTime(run.finished_at)}</p>
-      {run.summary?.text && <p>{run.summary.text}</p>}
-      {run.error && <p role="alert" className="text-danger-600">{run.error}</p>}
-      <section aria-label="Pass report">
-        <h3 className="mb-1 font-semibold text-neutral-800">Pass report</h3>
-        {passes.length === 0 ? <p className="text-neutral-500">{run.scope === 'system' ? 'The system job reads no connection.' : 'No connection was read.'}</p> : (
-          <LocalTable<Pass> ariaLabel="Pass report" columns={passColumns} rows={passes} rowKey={(p) => p.name} />
-        )}
-      </section>
-      <section aria-label="Run log">
-        <h3 className="mb-1 font-semibold text-neutral-800">Log</h3>
-        <LogTable fixed={[{ field: 'run_id', op: 'eq', value: String(run.id) }]} searchable={false} />
-      </section>
-    </div>
+    <RecordSheet
+      title={`Run ${run.id}`}
+      subtitle={`${runFor(run)} · ${run.trigger}`}
+      badges={<StatusCell value={run.status} />}
+      facts={[
+        { label: 'Status', value: run.status, tone: run.status === 'FAILED' ? 'danger' : run.status === 'PARTIAL' ? 'warning' : run.status === 'SUCCEEDED' ? 'success' : 'info' },
+        { label: 'Started', value: formatDateTime(run.started_at) },
+        { label: 'Finished', value: run.finished_at ? formatDateTime(run.finished_at) : 'Running…' },
+        { label: 'Stored', value: passes.reduce((n, p) => n + p.stored, 0) },
+        { label: 'Failed files', value: failed, tone: failed ? 'danger' : 'neutral' },
+      ]}
+      tabs={[
+        { id: 'report', label: 'Pass report', count: passes.length, tone: run.error ? 'danger' : undefined, render: () => (
+          <>
+            {run.summary?.text && <p className="text-sm">{run.summary.text}</p>}
+            {run.error && <p role="alert" className="text-sm text-danger-600">{run.error}</p>}
+            {passes.length === 0 ? <p className="text-sm text-neutral-500">{run.scope === 'system' ? 'The system job reads no connection.' : 'No connection was read.'}</p> : (
+              <LocalTable<Pass> ariaLabel="Pass report" columns={passColumns} rows={passes} rowKey={(p) => p.name} />
+            )}
+          </>
+        ) },
+        { id: 'log', label: 'Log', render: () => <LogTable fixed={[{ field: 'run_id', op: 'eq', value: String(run.id) }]} searchable={false} /> },
+      ]}
+    />
   )
 }
 
@@ -83,8 +93,6 @@ function Runs() {
       emptyTitle="No runs yet"
       notice={<ErrorMessage error={error} />}
       refetchInterval={(rows) => (rows.some((r) => r.status === 'RUNNING') ? 3000 : false)}
-      detailTitle={(r) => `Run ${r.id}`}
-      detailClassName="max-w-3xl"
       renderDetail={(r) => <RunDetail run={r} />}
       toolbar={({ refresh }) => (
         <ActionButton size="sm" permission={RETRY} onAction={async () => {

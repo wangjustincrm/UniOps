@@ -5,7 +5,7 @@ import {
   PermissionProvider, ToastProvider, ViewsProvider, requestView, type ListMeta, type SavedView, type ViewsClient,
 } from '@/platform-ui'
 import { MemoryRouter } from 'react-router-dom'
-import { chooseOption, pickSuggestion } from '@/platform-ui/testing'
+import { chooseOption, openTab, pickSuggestion } from '@/platform-ui/testing'
 import type { OrderDetail, OrderRead } from './ordersApi'
 
 // Orders with its views (the old Review page is the "Needs review" view) and
@@ -72,10 +72,15 @@ function fakeViews(mine: SavedView[] = []): ViewsClient & { rows: SavedView[] } 
 
 function renderAs(keys: string[], views: ViewsClient = fakeViews()) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={qc}><ToastProvider><ViewsProvider client={views}>
-    <PermissionProvider can={(k) => keys.includes(k)}><OrdersPage /></PermissionProvider></ViewsProvider></ToastProvider></QueryClientProvider>)
+  return render(<MemoryRouter><QueryClientProvider client={qc}><ToastProvider><ViewsProvider client={views}>
+    <PermissionProvider can={(k) => keys.includes(k)}><OrdersPage /></PermissionProvider></ViewsProvider></ToastProvider></QueryClientProvider></MemoryRouter>)
 }
 const lastFilters = () => (api.list.mock.calls.at(-1)![0].filters ?? [])
+/** The order sheet's Lines tab, and its lifecycle table. */
+const linesOf = async (sheet: HTMLElement) => {
+  await openTab(sheet, 'Lines')
+  return within(sheet).findByRole('table', { name: 'Order lines' })
+}
 
 describe('Orders: Re-check on Review orders', () => {
   beforeEach(() => {
@@ -87,7 +92,8 @@ describe('Orders: Re-check on Review orders', () => {
     const { unmount } = renderAs(['sales.read'])
     fireEvent.click(await screen.findByText('9302'))
     let dialog = await screen.findByRole('dialog')
-    expect(await within(dialog).findByText(/item not in the Item Master \(sku=NOPE/)).toBeInTheDocument()
+    expect(await within(dialog).findByText(/item not in the Item Master \(sku=NOPE/)).toBeInTheDocument()  // Overview: the banner
+    await openTab(dialog, 'Lines')
     expect(within(dialog).getByText('unmatched')).toBeInTheDocument()
     expect(within(dialog).queryByText('Re-check')).not.toBeInTheDocument()
     unmount()
@@ -95,7 +101,7 @@ describe('Orders: Re-check on Review orders', () => {
     renderAs(['sales.read', 'sales.order.operate'])
     fireEvent.click(await screen.findByText('9302'))
     dialog = await screen.findByRole('dialog')
-    fireEvent.click(within(dialog).getByText('Re-check'))
+    fireEvent.click(await within(dialog).findByText('Re-check'))
     await waitFor(() => expect(api.resolve).toHaveBeenCalledWith(4))
     expect(await within(dialog).findByText('line 5: item not in the Item Master')).toBeInTheDocument()
     expect(within(dialog).getByRole('status')).toHaveTextContent(/Re-checked at .*: still 1 problem/)
@@ -114,6 +120,7 @@ describe('Orders: Re-check on Review orders', () => {
     expect(await within(dialog).findByText(/item not in the Item Master \(sku=NOPE/)).toBeInTheDocument()
     fireEvent.click(within(dialog).getByText('Re-check'))
     await waitFor(() => expect(within(dialog).queryByText(/item not in the Item Master \(sku=NOPE/)).not.toBeInTheDocument())
+    await openTab(dialog, 'Lines')
     expect(within(dialog).getByText('CF0092')).toBeInTheDocument()
   })
 
@@ -193,7 +200,7 @@ describe('Orders: 940s (P4)', () => {
     const { unmount } = renderAs(['sales.read'])
     fireEvent.click(await screen.findByText('9303'))
     let dialog = await screen.findByRole('dialog')
-    await within(dialog).findByText('Timeline')
+    await within(dialog).findByRole('tab', { name: /^Activity/ })  // the detail has loaded
     expect(within(dialog).queryByText('Send 940 now')).toBeNull()
     unmount()
     api.send.mockResolvedValue({ order: pending, document_id: 20, file_status: 'Ready To Send', control: '000000123', errors: [] })
@@ -210,9 +217,10 @@ describe('Orders: 940s (P4)', () => {
     api.send.mockResolvedValue({ order: sentOrder, document_id: 31, file_status: 'Ready To Send', control: '000000124', errors: [] })
     renderAs(['sales.read', 'sales.order.operate'])
     fireEvent.click(await screen.findByText('9304'))
-    const dialog = await screen.findByRole('dialog', { name: 'Order SHOP-9304' })
-    const table = await within(dialog).findByRole('region', { name: 'Warehouse 940s' })
-    const row = within(table).getByText('000000122').closest('tr')!
+    const dialog = await screen.findByRole('dialog', { name: 'SHOP-9304' })
+    await openTab(dialog, 'Documents')
+    const table = within(dialog).getByRole('table', { name: 'Documents' })
+    const row = within(table).getByText('940-SHOP-000000122.edi').closest('tr')!
     expect(within(row).getByText('Sent')).toBeInTheDocument()
     expect(within(row).getByText('Waiting')).toBeInTheDocument()  // sent, not accepted
     expect(within(dialog).queryByText('Send 940 now')).toBeNull()
@@ -300,7 +308,7 @@ describe('Orders: manual orders (FR-OB-19a) — New in the standard sheet, draft
     fireEvent.click(within(form).getByRole('button', { name: 'Save draft' }))
     await waitFor(() => expect(api.create).toHaveBeenCalledWith({ partner_code: 'MAN', customer_reference: null,
       requested_delivery_date: null, notes: null, ship_to: { ...shipTo, zip: 'm5h1a1' }, lines: [{ item_code: 'CF0092', quantity: 1, unit: 'CASE' }] }))
-    expect(await screen.findByRole('dialog', { name: 'Order MAN-110' })).toBeInTheDocument()  // the new draft opens
+    expect(await screen.findByRole('dialog', { name: 'MAN-110' })).toBeInTheDocument()  // the new draft opens
   })
 
   it('a draft is submitted from its row, and edited with the same form in its sheet', async () => {
@@ -312,7 +320,7 @@ describe('Orders: manual orders (FR-OB-19a) — New in the standard sheet, draft
     await waitFor(() => expect(api.submit).toHaveBeenCalledWith(9, 3))
     expect(screen.queryByRole('dialog')).toBeNull()  // the row action does not open the order
     fireEvent.click(within(row).getByText('REF-9'))
-    const sheet = await screen.findByRole('dialog', { name: 'Order MAN-109' })
+    const sheet = await screen.findByRole('dialog', { name: 'MAN-109' })
     fireEvent.click(await within(sheet).findByRole('button', { name: 'Edit draft' }))
     expect(await within(sheet).findByLabelText('Quantity 1')).toHaveValue(2)  // the draft's own line
     expect(within(within(sheet).getByRole('group', { name: 'Ship to' })).getByLabelText(/^City/)).toHaveValue('Ottawa')  // and address
@@ -367,9 +375,10 @@ describe('the order detail: Ship to and Bill to with where they came from', () =
     api.fetchOrder.mockResolvedValue({ ...detail, ...pending, ...d })
     renderAs(['sales.read'])
     fireEvent.click(await screen.findByText('9303'))
-    return screen.findByRole('dialog', { name: 'Order SHOP-9303' })
+    return screen.findByRole('dialog', { name: 'SHOP-9303' })
   }
-  const value = (sheet: HTMLElement, term: string) => within(sheet).getByText(term, { selector: 'dt' }).nextElementSibling!
+  // Overview: Ship to and Bill to side by side, each a card
+  const value = (sheet: HTMLElement, term: string) => within(sheet).getByRole('region', { name: term })
 
   it('an 850: the ShipTo with its GLN and Walmart DC, the BillTo with its code', async () => {
     const sheet = await open({ source_type: 'EDI_850', dc_number: '6097',
@@ -404,7 +413,7 @@ describe('an imported order shipping to a PO box', () => {
       ship_to_flags: ['PO box: the carrier may not deliver there'] })
     renderAs(['sales.read'])
     fireEvent.click(await screen.findByText('9303'))
-    const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
+    const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
     expect(await within(sheet).findByText('PO box: the carrier may not deliver there')).toBeInTheDocument()
   })
 })
@@ -422,13 +431,13 @@ describe('Orders: the Order ref, the partner by name, and the PO prices', () => 
     expect(within(row).getByText('105')).toBeInTheDocument()  // the Internal no. beside the Order ref
     expect(row).not.toHaveTextContent('(SHOP)')  // the code is in the name's tooltip
     fireEvent.click(within(row).getByText('SHOP-9303'))
-    const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
+    const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
     const value = (term: string) => within(sheet).getByText(term, { selector: 'dt' }).nextElementSibling!
-    await within(sheet).findByRole('table', { name: 'Order lines' })
+    await within(sheet).findByText('Order ref', { selector: 'dt' })  // Overview
     expect(value('Order ref')).toHaveTextContent('SHOP-9303')
     expect(value('Internal no.')).toHaveTextContent('105')
     expect(value('Partner')).toHaveTextContent('Shopify (SHOP)')  // the detail keeps both
-    const lines = within(sheet).getByRole('table', { name: 'Order lines' })
+    const lines = await linesOf(sheet)
     expect(lines).toHaveTextContent('179.94')
     expect(lines).toHaveTextContent('35,988.00')   // 200 × 179.94
     expect(lines).toHaveTextContent('Total')
@@ -446,8 +455,8 @@ describe('Orders: the Order ref, the partner by name, and the PO prices', () => 
         qty_ea: 480, shipped_ea: 400, delivered_qty: null, state: 'Short shipped', packing: [] }] })
     renderAs(['sales.read'])
     fireEvent.click(await screen.findByText('SHOP-9303'))
-    const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
-    const lines = await within(sheet).findByRole('table', { name: 'Order lines' })
+    const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
+    const lines = await linesOf(sheet)
     const first = within(lines).getByText('CF0092').closest('tr')!
     expect(first).toHaveTextContent('Invoiced')
     expect(first).toHaveTextContent('200 CA')
@@ -505,7 +514,8 @@ describe('Orders: the Order ref, the partner by name, and the PO prices', () => 
     expect(row).toHaveTextContent('76.00 CAD')
     expect(row).toHaveTextContent('partially refunded')
     fireEvent.click(within(row).getByText('SHOP-9303'))
-    const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
+    const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
+    await openTab(sheet, 'Payments')
     const money = await within(sheet).findByRole('region', { name: 'Payments and refunds' })
     const value = (term: string) => within(money).getByText(term, { selector: 'dt' }).nextElementSibling!
     expect(value('Sales channel')).toHaveTextContent('web')
@@ -528,15 +538,18 @@ describe('Orders: the Order ref, the partner by name, and the PO prices', () => 
     api.fetchOrder.mockResolvedValue({ ...detail, ...pending, source_type: 'EDI_850' })
     renderAs(['sales.read'])
     fireEvent.click(await screen.findByText('SHOP-9303'))
-    const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
-    await within(sheet).findByRole('table', { name: 'Order lines' })
+    const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
+    await within(sheet).findByRole('tab', { name: /^Lines/ })
+    expect(within(sheet).queryByRole('tab', { name: /^Payments/ })).toBeNull()  // a Shopify order's tab only
     expect(within(sheet).queryByRole('region', { name: 'Payments and refunds' })).toBeNull()
   })
 })
 
 describe('Orders: backordered quantities and the invoice price before the invoice', () => {
   beforeEach(() => { Object.values(api).forEach((f) => f.mockReset()) })
-  const shipped = { ...pending, fulfillment_status: 'Shipped', order_state: 'Active' as const, backordered_ea: 80 }
+  // invoiced here (an order whose invoice is Not Required has no invoice price)
+  const shipped = { ...pending, fulfillment_status: 'Shipped', order_state: 'Active' as const, backordered_ea: 80,
+    invoice_status: 'Waiting for Delivery Confirmation' }
   const line = { ...detail.lines[0], id: 2, line_no: 2, item_code: 'CF0093', ordered_qty: '40', order_unit: 'CASE', unit_price: '150.00',
     problem: null, qty_ea: 480, shipped_ea: 400, backordered_ea: 80, state: 'Short shipped', invoice_price: '150.00', packing: [] }
 
@@ -548,8 +561,8 @@ describe('Orders: backordered quantities and the invoice price before the invoic
     expect(row).toHaveTextContent('Partially shipped')
     expect(row).toHaveTextContent('80')
     fireEvent.click(within(row).getByText('SHOP-9303'))
-    const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
-    const lines = await within(sheet).findByRole('table', { name: 'Order lines' })
+    const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
+    const lines = await linesOf(sheet)
     expect(within(lines).getByText('Backordered EA')).toBeInTheDocument()
     expect(within(lines).getByText('CF0093').closest('tr')).toHaveTextContent('80')
     expect(lines.querySelector('tfoot')).toHaveTextContent('80')
@@ -563,7 +576,7 @@ describe('Orders: backordered quantities and the invoice price before the invoic
       lines: [{ ...line, invoice_unit_price: '145', invoice_price: '145' }] })
     renderAs(['sales.read', 'sales.invoice.manage'])
     fireEvent.click(await screen.findByText('SHOP-9303'))
-    const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
+    const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
     fireEvent.click(await within(sheet).findByRole('button', { name: 'Edit invoice prices' }))
     const price = await within(sheet).findByRole('textbox', { name: 'Invoice price line 2' })
     expect(price).toHaveValue('150')
@@ -574,7 +587,7 @@ describe('Orders: backordered quantities and the invoice price before the invoic
     fireEvent.change(within(sheet).getByLabelText(/Reason for a price different from the PO/), { target: { value: 'agreed promo' } })
     fireEvent.click(within(sheet).getByRole('button', { name: 'Save prices' }))
     await waitFor(() => expect(api.prices).toHaveBeenCalledWith(5, { reason: 'agreed promo', lines: [{ id: 2, invoice_unit_price: '145' }] }))
-    const lines = await within(sheet).findByRole('table', { name: 'Order lines' })
+    const lines = await linesOf(sheet)
     expect(within(lines).getByText('CF0093').closest('tr')).toHaveTextContent('145.00 CAD /CASE')
   })
 
@@ -583,8 +596,8 @@ describe('Orders: backordered quantities and the invoice price before the invoic
     api.fetchOrder.mockResolvedValue({ ...detail, ...shipped, currency: 'CAD', has_invoice: true, lines: [line] })
     renderAs(['sales.read', 'sales.invoice.manage'])
     fireEvent.click(await screen.findByText('SHOP-9303'))
-    const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
-    await within(sheet).findByRole('table', { name: 'Order lines' })
+    const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
+    await linesOf(sheet)
     expect(within(sheet).queryByRole('button', { name: 'Edit invoice prices' })).toBeNull()
     expect(within(sheet).getByText(/change its prices on the invoice/)).toBeInTheDocument()
   })
@@ -594,9 +607,73 @@ describe('Orders: backordered quantities and the invoice price before the invoic
     api.fetchOrder.mockResolvedValue({ ...detail, ...shipped, currency: 'CAD', has_invoice: false, lines: [line] })
     renderAs(['sales.read'])
     fireEvent.click(await screen.findByText('SHOP-9303'))
-    const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
-    await within(sheet).findByRole('table', { name: 'Order lines' })
+    const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
+    await linesOf(sheet)
     const edit = within(sheet).queryByRole('button', { name: 'Edit invoice prices' })
     expect(edit === null || (edit as HTMLButtonElement).disabled).toBe(true)
+  })
+})
+
+describe('the order sheet: facts, actions and tabs', () => {
+  beforeEach(() => { Object.values(api).forEach((f) => f.mockReset()) })
+  const shipped = { ...pending, fulfillment_status: 'Shipped', order_state: 'Active' as const, backordered_ea: 80 }
+  const line = { ...detail.lines[0], id: 2, line_no: 2, item_code: 'CF0093', ordered_qty: '40', order_unit: 'CASE', unit_price: '150.00',
+    problem: null, qty_ea: 480, shipped_ea: 400, backordered_ea: 80, state: 'Short shipped', invoice_price: '150.00', packing: [
+      { shipment_id: 7, document_id: 40, sscc: '00077777770077782891', lot: 'LOT-A', expiry: '2028-05-19', qty_shipped_ea: 400,
+        tracking: '1Z-TRACK', ship_date: '2026-11-02', applied: true, shadow: false }] }
+  const shipment = { id: 7, document_id: 40, order_key_received: '105', ship_date: '2026-11-02', ship_date_source: 'G62', carrier: 'PRLA',
+    mode: 'U', tracking: ['1Z-TRACK'], bol: null, our_reference: 'SHOP-9303', applied: true, shadow: false, checks: [],
+    shopify_status: 'Done', shopify_error: null, rows: [] }
+  const timeline = [{ at: '2026-11-02T15:00:00Z', user_name: 'System', entity: 'sales_orders', action: 'update',
+    before: { fulfillment_status: '940 Sent' }, after: { fulfillment_status: 'Shipped' }, reason: '945 945-1.edi (short)' }]
+
+  it('a Shopify order: facts in tiles, Payments shown, Invoice hidden; a short line dots Lines; tracking and lots are copyable chips', async () => {
+    api.list.mockResolvedValue({ items: [shipped], total: 1 })
+    api.fetchOrder.mockResolvedValue({ ...detail, ...shipped, currency: 'CAD', has_invoice: false, total_amount: '6000.00',
+      net_amount: '5963.00', total_refunded: '37.00', lines: [line], shipments: [shipment], timeline, payments: [], refunds: [] })
+    renderAs(['sales.read', 'sales.invoice.manage'])
+    fireEvent.click(await screen.findByText('SHOP-9303'))
+    const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
+    expect(within(sheet).getByText('Internal no. 105 · Shopify · PO 9303')).toBeInTheDocument()  // the subtitle, the name said once
+    const facts = await within(sheet).findByLabelText('Key facts')
+    expect(facts).toHaveTextContent('Total6,000.00 CAD')
+    expect(facts).toHaveTextContent('Net5,963.00 CAD37.00 CAD refunded')
+    expect(facts).toHaveTextContent('Ordered EA480')
+    expect(facts).toHaveTextContent('Backordered EA80')
+    expect(within(facts).getByText('Backordered EA').closest('[data-tone]')).toHaveAttribute('data-tone', 'warning')
+    expect(within(sheet).getByRole('tab', { name: /^Payments/ })).toBeInTheDocument()
+    expect(within(sheet).queryByRole('tab', { name: /^Invoice/ })).toBeNull()  // Not Required, none built
+    expect(within(sheet).queryByRole('button', { name: 'Edit invoice prices' })).toBeNull()  // never invoiced here
+    expect(within(within(sheet).getByRole('tab', { name: /^Lines/ })).getByRole('img', { name: 'needs attention' })).toBeInTheDocument()
+    await openTab(sheet, 'Shipments & lots')
+    expect(within(sheet).getAllByRole('button', { name: 'Copy 1Z-TRACK' }).length).toBeGreaterThan(0)
+    const lots = within(sheet).getByRole('table', { name: 'Pallets and lots' })
+    expect(within(lots).getByRole('button', { name: 'Copy LOT-A' })).toBeInTheDocument()
+    await openTab(sheet, 'Activity')
+    const activity = within(sheet).getByRole('list', { name: 'Activity' })
+    expect(activity).toHaveTextContent('945 945-1.edi (short)')
+    expect(activity).toHaveTextContent('fulfillment status: 940 Sent → Shipped')
+  })
+
+  it('a retailer order: no Payments; Invoice and Documents tabs; a document downloads; no 945 yet is said in its tab', async () => {
+    const ops = await import('@/features/operations/operationsApi')
+    const download = vi.spyOn(ops, 'downloadDocument').mockResolvedValue(undefined)
+    api.list.mockResolvedValue({ items: [{ ...pending, source_type: 'EDI_850' as const, invoice_status: 'Pending' }], total: 1 })
+    api.fetchOrder.mockResolvedValue({ ...detail, ...pending, source_type: 'EDI_850', invoice_status: 'Pending', has_invoice: false,
+      documents: [{ id: 9, kind: '850_JSON', direction: 'IN', remote_name: 'PO-1.json', created_at: order.created_at,
+        file_status: null, ack_status: null, st02: null, sent_at: null, error: null, ack_detail: null }] })
+    renderAs(['sales.read'])
+    fireEvent.click(await screen.findByText('SHOP-9303'))
+    const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
+    await within(sheet).findByRole('tab', { name: /^Invoice/ })
+    expect(within(sheet).queryByRole('tab', { name: /^Payments/ })).toBeNull()
+    await openTab(sheet, 'Shipments & lots')
+    expect(within(sheet).getByText('No 945 yet: the warehouse has not reported a shipment.')).toBeInTheDocument()
+    await openTab(sheet, 'Documents')
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Download PO-1.json' }))
+    expect(download).toHaveBeenCalledWith(9, 'PO-1.json')
+    await openTab(sheet, 'Invoice')
+    expect(within(sheet).getByText('Not built yet (built at delivery confirmation)')).toBeInTheDocument()
+    download.mockRestore()
   })
 })

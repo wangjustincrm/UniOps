@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { PartnerCell } from '@/features/common/PartnerCell'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, ConfirmAction, DateTimeCell, DiffTable, ErrorView, ListPage, Skeleton, StatusCell, queryKeys,
-  type ColumnDef,
+  ActionButton, ConfirmAction, DateTimeCell, DetailList, DiffTable, ListPage, RecordSheet, Section, StatusCell, queryKeys,
+  type ColumnDef, type RecordTab,
 } from '@/platform-ui'
 import { SHADOW_STATUSES, fetchShadowCompare, fetchShadowSummary, markExpected, shadowClient, type ShadowMatchRead } from './shadowApi'
 
@@ -61,37 +61,54 @@ function MarkExpected({ m, onDone }: { m: ShadowMatchRead; onDone: () => void })
 }
 
 /** Both files side by side; differing segments highlighted (§5.4). */
-function Detail({ id, close }: { id: number; close: () => void }) {
-  const q = useQuery({ queryKey: queryKeys.detail(shadowClient, id), queryFn: () => fetchShadowCompare(id) })
-  if (q.isLoading) return <Skeleton className="h-40 w-full" />
-  if (q.error || !q.data) return <ErrorView error={q.error} />
+function Detail({ row, close }: { row: ShadowMatchRead; close: () => void }) {
+  const q = useQuery({ queryKey: queryKeys.detail(shadowClient, row.id), queryFn: () => fetchShadowCompare(row.id) })
   const m = q.data
-  return (
-    <div className="flex flex-col gap-4 text-sm">
-      <p>
-        <StatusCell value={m.status} /> · {m.reference_name ? `Zoho file ${m.reference_name}` : 'no Zoho file'}
-        {m.order_id != null && <> · Sales order {m.order_id}</>}
-      </p>
-      {m.document_name && <p>Warehouse file {m.document_name} ({m.kind}) — compared, never applied.</p>}
-      {(m.note || m.expected_reason) && <p className="text-neutral-600">{m.expected_reason ?? m.note}</p>}
-      {m.would && (
-        <section aria-label="What Sales would have recorded">
-          <h3 className="mb-1 font-semibold text-neutral-800">What Sales would have recorded</h3>
-          <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded bg-neutral-50 p-2 text-xs">{JSON.stringify(m.would, null, 2)}</pre>
-        </section>
-      )}
-      {m.status === 'Differs' && <MarkExpected m={m} onDone={close} />}
-      {m.rows.length > 0 && (
+  const differing = m ? m.rows.filter((r) => !r.same).length : 0
+  const tabs: RecordTab[] = !m ? [] : [
+    { id: 'overview', label: 'Overview', render: () => (
+      <Section title="Comparison">
+        <DetailList items={[
+          ['Zoho file', m.reference_name ?? 'no Zoho file'],
+          ['Warehouse file', m.document_name ? `${m.document_name} (${m.kind}) — compared, never applied` : null],
+          ['Order ref', row.order_ref], ['Internal no.', row.order_number == null ? null : String(row.order_number)],
+          ['Zoho order no. / PO', row.reference_number],
+          ['Note', m.expected_reason ?? m.note],
+        ]} />
+        {m.ignored.length > 0 && (
+          <details className="text-xs text-neutral-500">
+            <summary>Ignored when comparing</summary>
+            <ul>{m.ignored.map((x) => <li key={x}>{x}</li>)}</ul>
+          </details>
+        )}
+      </Section>
+    ) },
+    { id: 'segments', label: 'Segments', count: differing || undefined, tone: differing ? 'warning' : undefined, hidden: m.rows.length === 0,
+      render: () => (
         <DiffTable ariaLabel="Segments" leftLabel="Zoho sent" rightLabel="Sales would send (dry run)"
           rows={m.rows.map((r) => ({ left: r.zoho, right: r.sales, same: r.same }))} />
-      )}
-      {m.ignored.length > 0 && (
-        <details className="text-xs text-neutral-500">
-          <summary>Ignored when comparing</summary>
-          <ul>{m.ignored.map((x) => <li key={x}>{x}</li>)}</ul>
-        </details>
-      )}
-    </div>
+      ) },
+    { id: 'would', label: 'What Sales would record', hidden: !m.would, render: () => (
+      <pre aria-label="What Sales would have recorded" className="max-h-[32rem] overflow-auto whitespace-pre-wrap rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-xs">{JSON.stringify(m.would, null, 2)}</pre>
+    ) },
+  ]
+  return (
+    <RecordSheet
+      title={row.order_ref ?? row.reference_number ?? `Comparison ${row.id}`}
+      subtitle={[row.kind, row.order_number != null && `internal no. ${row.order_number}`, row.reference_number && `Zoho ${row.reference_number}`,
+        row.partner_name].filter(Boolean).join(' · ')}
+      badges={<StatusCell value={m?.status ?? row.status} />}
+      size="xl" loading={q.isLoading} error={q.error}
+      onRefresh={() => q.refetch()} updatedAt={q.dataUpdatedAt}
+      facts={m ? [
+        { label: 'Status', value: m.status, tone: m.status === 'Match' || m.status === 'Expected difference' ? 'success' : 'warning' },
+        { label: 'Differences', value: differing, tone: differing ? 'warning' : 'neutral' },
+        { label: 'Segments', value: m.rows.length },
+        { label: 'Kind', value: m.kind },
+      ] : undefined}
+      actions={m?.status === 'Differs' ? <MarkExpected m={m} onDone={close} /> : undefined}
+      tabs={tabs}
+    />
   )
 }
 
@@ -106,9 +123,7 @@ export default function ShadowComparePage() {
       columns={columns}
       emptyTitle="Nothing compared yet"
       notice={<Summary />}
-      detailTitle={(m) => `Comparison ${m.reference_number ?? m.id}`}
-      detailClassName="max-w-5xl"
-      renderDetail={(m, close) => <Detail id={m.id} close={close} />}
+      renderDetail={(m, close) => <Detail row={m} close={close} />}
     />
   )
 }

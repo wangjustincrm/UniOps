@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
-import { ActionButton, DetailList, ErrorMessage, SchemaForm, Sheet, Skeleton, type FieldSpec } from '@/platform-ui'
+import { ActionButton, DetailList, ErrorMessage, SchemaForm, FormSheet, Skeleton, type FieldSpec } from '@/platform-ui'
 import { connectionsClient, fetchEdiSettings, saveEdiSettings } from './connectionsApi'
 
 const KEY = ['sales', 'config', 'edi-settings']
@@ -46,7 +46,7 @@ export function EdiSettingsPanel() {
           ['810 invoice connection', name(s.invoice_connection_id)]]} />
       </div>
       <ActionButton size="sm" variant="secondary" permission="sales.config" onAction={() => setEditing(true)}>Edit</ActionButton>
-      <Sheet open={editing} onOpenChange={setEditing} title="Warehouse EDI and 810 invoices">
+      <FormSheet open={editing} onOpenChange={setEditing} title="Warehouse EDI and 810 invoices">
         {editing && (
           <SchemaForm schema={schema} fields={fields} errorMessages={errorMessages} onCancel={() => setEditing(false)}
             defaultValues={{ connection_id: s.connection_id == null ? '' : String(s.connection_id), ack_timeout_minutes: s.ack_timeout_minutes,
@@ -58,7 +58,7 @@ export function EdiSettingsPanel() {
               setEditing(false)
             }} />
         )}
-      </Sheet>
+      </FormSheet>
     </div>
   )
 }

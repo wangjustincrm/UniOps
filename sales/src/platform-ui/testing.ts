@@ -33,3 +33,11 @@ export async function pickSuggestion(trigger: HTMLElement, query: string, label:
   // before the next control is used.
   await settled(() => document.getElementById(listId))
 }
+
+/** Chooses a record sheet's tab by its label (its count and dot may follow), the way a pointer does (Radix: on mouse down). */
+export async function openTab(container: HTMLElement, label: string) {
+  const tab = await within(container).findByRole('tab', { name: new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) })
+  fireEvent.mouseDown(tab, { button: 0 })
+  await waitFor(() => expect(tab).toHaveAttribute('aria-selected', 'true'))
+  return tab
+}

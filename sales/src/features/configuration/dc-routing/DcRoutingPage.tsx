@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { Badge, CrudPage, useToast, type ColumnDef, type FieldSpec } from '@/platform-ui'
-import { AuditHistory } from '../AuditHistory'
+import { historyTab } from '../historyTab'
 import { partnerOptions } from '../lookups'
 import {
   dcRoutingClient, downloadDcRouting, fetchDcRoutingAudit,
@@ -41,7 +41,9 @@ export default function DcRoutingPage() {
       onExport={(path) => { downloadDcRouting(path).catch((e: unknown) => toast({ variant: 'error', title: 'Export failed', description: e instanceof Error ? e.message : String(e) })) }}
       csvImport
       errorMessages={{ 'dc_routing.taken': 'This partner already routes this ship-to GLN.' }}
-      renderDetail={(r) => <AuditHistory resource="dc-routing" id={r.id} version={r.version} load={fetchDcRoutingAudit} />}
+      recordTitle={(r) => `GLN ${r.ship_to_gln}`}
+      recordSubtitle={(r) => `${r.partner_code} → DC ${r.dc_number}`}
+      detailTabs={(r, details) => [details, historyTab('dc-routing', r.id, r.version, fetchDcRoutingAudit)]}
     />
   )
 }

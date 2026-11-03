@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { CrudPage, useToast, type ColumnDef, type FieldSpec } from '@/platform-ui'
-import { AuditHistory } from '../AuditHistory'
+import { historyTab } from '../historyTab'
 import { itemOptions, partnerOptions } from '../lookups'
 import {
   downloadPartnerCodes, fetchPartnerCodeAudit, partnerCodesClient,
@@ -36,7 +36,9 @@ export default function PartnerCodesPage() {
       onExport={(path) => { downloadPartnerCodes(path).catch((e: unknown) => toast({ variant: 'error', title: 'Export failed', description: e instanceof Error ? e.message : String(e) })) }}
       csvImport
       errorMessages={{ 'partner_code.taken': 'This partner already uses this buyer part.' }}
-      renderDetail={(r) => <AuditHistory resource="partner-codes" id={r.id} version={r.version} load={fetchPartnerCodeAudit} />}
+      recordTitle={(r) => `${r.partner_code} ${r.buyer_part}`}
+      recordSubtitle={(r) => `→ ${r.item_code}`}
+      detailTabs={(r, details) => [details, historyTab('partner-codes', r.id, r.version, fetchPartnerCodeAudit)]}
     />
   )
 }

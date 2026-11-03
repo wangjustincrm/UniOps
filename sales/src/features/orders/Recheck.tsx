@@ -6,7 +6,8 @@ import { ordersClient, resolveReview, type OrderRead } from './ordersApi'
 /** Re-check a Review order against today's Item Master (FR-OB-15;
  *  sales.order.operate). Always says that the check ran: a reason that is
  *  still true reads the same as before. `compact` is the list's row action. */
-export function Recheck({ o, compact, onResolved }: { o: OrderRead; compact?: boolean; onResolved?: () => void }) {
+/** `compact`: in a list row; `bare`: the button and its result only (a sheet's action bar). */
+export function Recheck({ o, compact, bare, onResolved }: { o: OrderRead; compact?: boolean; bare?: boolean; onResolved?: () => void }) {
   const qc = useQueryClient()
   const [remaining, setRemaining] = useState<string[] | null>(null)
   const [checkedAt, setCheckedAt] = useState<number | null>(null)
@@ -32,6 +33,7 @@ export function Recheck({ o, compact, onResolved }: { o: OrderRead; compact?: bo
     <ActionButton size="sm" variant={compact ? 'secondary' : undefined} permission="sales.order.operate"
       onAction={() => m.mutateAsync().catch(() => {})}>Re-check</ActionButton>
   )
+  if (bare) return <span className="inline-flex flex-col gap-1">{button}{status}<ErrorMessage error={m.error} /></span>
   if (compact) {
     // In a row: clicking the button must not open the order.
     return <div className="flex flex-col gap-1" onClick={(e) => e.stopPropagation()}>{button}{status}<ErrorMessage error={m.error} /></div>

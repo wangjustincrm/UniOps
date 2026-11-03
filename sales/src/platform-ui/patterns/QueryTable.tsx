@@ -151,11 +151,11 @@ function QueryTableView<T>({
   }
   // Showing or hiding writes the whole order down, so an extra column shown
   // stays shown (named in `columns`, not in `hidden`).
-  const setHidden = (ids: string[]) => setLayout({ columns: order, hidden: ids })
+  const setHidden = (ids: string[]) => setLayout({ ...layout, columns: order, hidden: ids })
   const move = (id: string, to: number) => {
     const next = order.filter((x) => x !== id)
     next.splice(Math.max(0, Math.min(to, next.length)), 0, id)
-    setLayout({ columns: next, hidden })
+    setLayout({ ...layout, columns: next, hidden })
   }
 
   const sortableIds = [...sortable, ...(meta?.fields ?? []).filter((f) => f.sortable).map((f) => f.name)]

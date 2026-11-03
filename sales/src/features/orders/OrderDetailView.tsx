@@ -1,15 +1,23 @@
-import { useState } from 'react'
+import { useContext, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
+import { Download } from 'lucide-react'
 import {
-  ActionButton, AddressView, Badge, DateCell, DateTimeCell, DetailList, ErrorView, LocalTable, MoneyCell, Skeleton, StatusCell, formatDate, formatDateTime, formatMoney,
-  queryKeys,
-  type ColumnDef,
+  ActionButton, AddressView, Badge, Button, ConfirmAction, CopyChip, DateCell, DateTimeCell, DetailList, ErrorMessage, IconButton,
+  LocalTable, MoneyCell, RecordSheet, RecordSheetHostContext, Section, StatusCell, Timeline, formatDate, formatDateTime, formatMoney,
+  queryKeys, requestOpen,
+  type ColumnDef, type RecordFact, type RecordTab, type TimelineItem,
 } from '@/platform-ui'
 import { fetchOrder, ordersClient, type LineRead, type OrderDetail, type OrderDocument, type OrderRead, type PackingRead } from './ordersApi'
 import { Shipments } from './Shipments'
 import { PaymentsAndRefunds } from './PaymentsAndRefunds'
 import { InvoicePricesForm, VsPo } from './InvoicePrices'
+import { Recheck } from './Recheck'
+import { DraftActions } from './DraftActions'
+import { Send940 } from './Send940'
 import { partnerLabel } from '@/features/common/labels'
+import { invoicesClient, releaseInvoice } from '@/features/invoices/invoicesApi'
+import { downloadDocument } from '@/features/operations/operationsApi'
 
 // The badge shows the fulfillment status in the colour of the derived order state (D17).
 const stateTone = { Draft: 'neutral', Active: 'info', 'On Hold': 'warning', Completed: 'success', Cancelled: 'neutral' } as const
@@ -128,109 +136,284 @@ function LifecycleTable({ o }: { o: OrderDetail }) {
   )
 }
 
-// File and 997 status apart: Sent is not Accepted (FR-OB-22); no 997 column until the file is sent.
-const sentColumns: ColumnDef<OrderDocument, unknown>[] = [
-  { accessorKey: 'st02', header: 'Control' },
-  { accessorKey: 'file_status', header: 'File', cell: ({ row }) => <StatusCell value={row.original.file_status} /> },
-  { accessorKey: 'ack_status', header: '997', cell: ({ row: { original: d } }) => (
-    d.file_status === 'Sent' || d.ack_status !== 'Waiting' ? <StatusCell value={d.ack_status} /> : '—') },
-  { accessorKey: 'sent_at', header: 'Sent', cell: ({ row }) => <DateTimeCell value={row.original.sent_at} /> },
-  { id: 'note', header: 'Note', cell: ({ row }) => <span className="break-words">{row.original.error ?? row.original.ack_detail ?? ''}</span> },
+
+// The order's files: the sources (Shopify page, 850), the 940s with their 997
+// apart (Sent is not Accepted, FR-OB-22), each downloadable.
+function DocumentsTable({ docs }: { docs: OrderDocument[] }) {
+  const [error, setError] = useState<unknown>(null)
+  const columns: ColumnDef<OrderDocument, unknown>[] = [
+    { accessorKey: 'created_at', header: 'Created', cell: ({ row }) => <DateTimeCell value={row.original.created_at} /> },
+    { accessorKey: 'kind', header: 'Kind', cell: ({ row: { original: d } }) => <span className="whitespace-nowrap">{d.kind}{d.direction === 'OUT' ? ' (sent)' : ''}</span> },
+    { accessorKey: 'remote_name', header: 'File', cell: ({ row }) => <span className="break-all">{row.original.remote_name ?? '—'}</span> },
+    { accessorKey: 'st02', header: 'Control', cell: ({ row }) => row.original.st02 ?? '' },
+    { accessorKey: 'file_status', header: 'File status', cell: ({ row }) => (row.original.file_status ? <StatusCell value={row.original.file_status} /> : '') },
+    { accessorKey: 'ack_status', header: '997', cell: ({ row: { original: d } }) => (
+      d.direction !== 'OUT' ? '' : d.file_status === 'Sent' || d.ack_status !== 'Waiting' ? <StatusCell value={d.ack_status} /> : '—') },
+    { accessorKey: 'sent_at', header: 'Sent', cell: ({ row }) => <DateTimeCell value={row.original.sent_at} /> },
+    { id: 'note', header: 'Note', cell: ({ row }) => <span className="break-words text-xs">{row.original.error ?? row.original.ack_detail ?? ''}</span> },
+    { id: 'download', header: '', cell: ({ row: { original: d } }) => (
+      <IconButton label={`Download ${d.remote_name ?? d.kind}`} icon={<Download className="h-4 w-4" />}
+        onClick={() => { downloadDocument(d.id, d.remote_name ?? `document-${d.id}`).catch(setError) }} />) },
+  ]
+  return (
+    <>
+      <LocalTable<OrderDocument> ariaLabel="Documents" columns={columns} rows={docs} rowKey={(d) => d.id} initiallyHidden={['st02']} />
+      <ErrorMessage error={error} />
+    </>
+  )
+}
+
+// Every pallet row the warehouse packed for the order, with its lot and
+// tracking (a recall's view of this order).
+const lotColumns: ColumnDef<PackingRead & { item: string | null }, unknown>[] = [
+  { accessorKey: 'item', header: 'Item' },
+  { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => row.original.lot ? <CopyChip text={row.original.lot} /> : '—' },
+  { accessorKey: 'expiry', header: 'Expiry', cell: ({ row }) => <DateCell value={row.original.expiry} /> },
+  { accessorKey: 'qty_shipped_ea', header: 'Qty EA', cell: ({ row }) => <span className="tabular-nums">{row.original.qty_shipped_ea}</span> },
+  { accessorKey: 'sscc', header: 'Pallet (SSCC)', cell: ({ row }) => row.original.sscc ?? '—' },
+  { accessorKey: 'tracking', header: 'Tracking', cell: ({ row }) => row.original.tracking
+    ? <span className="flex flex-wrap gap-1">{row.original.tracking.split(', ').map((t) => <CopyChip key={t} text={t} />)}</span> : '—' },
+  { accessorKey: 'ship_date', header: 'Ship date', cell: ({ row }) => <DateCell value={row.original.ship_date} /> },
+  { id: 'doc', header: '945', cell: ({ row: { original: p } }) => (
+    <span className="inline-flex items-center gap-1">#{p.document_id}
+      {p.shadow ? <Badge variant="neutral">Shadow run</Badge> : !p.applied && <Badge variant="warning">Second 945</Badge>}
+    </span>) },
 ]
 
-/** The lines' lifecycle; before the invoice exists their invoice prices are
- *  edited here (the draft takes them), after it on the invoice — one place each. */
-function Lines({ o }: { o: OrderDetail }) {
-  const qc = useQueryClient()
-  const [editing, setEditing] = useState(false)
-  const priceable = !o.has_invoice && o.fulfillment_status !== 'Cancelled' && o.lines.some((ln) => !ln.removed)
+function Lots({ o }: { o: OrderDetail }) {
+  const rows = o.lines.flatMap((ln) => (ln.packing ?? []).map((p) => ({ ...p, item: ln.item_code })))
+  if (rows.length === 0) return null
   return (
-    <section aria-label="Lines">
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <h3 className="font-semibold text-neutral-800">Lines</h3>
-        {priceable && !editing && (
-          <ActionButton size="sm" variant="secondary" permission="sales.invoice.manage" onAction={() => setEditing(true)}>
-            Edit invoice prices
-          </ActionButton>
+    <Section title="Pallets and lots">
+      <LocalTable ariaLabel="Pallets and lots" columns={lotColumns} rows={rows} rowKey={(p, i) => `${p.shipment_id}-${i}`}
+        sortable={['item', 'lot', 'expiry', 'ship_date']}
+        footer={[null, null, 'Total', rows.reduce((n, p) => n + p.qty_shipped_ea, 0), null, null, null, null]} />
+    </Section>
+  )
+}
+
+/** The order's invoice: status, number, method, total, the file it was sent as; opened on Invoices. */
+function OrderInvoice({ o }: { o: OrderDetail }) {
+  const navigate = useNavigate()
+  const [error, setError] = useState<unknown>(null)
+  const q = useQuery({
+    queryKey: [...queryKeys.list(invoicesClient), 'order', o.id],
+    queryFn: () => invoicesClient.list({ page: 1, pageSize: 1, filters: [{ field: 'order_id', op: 'eq', value: String(o.id) }] }),
+    enabled: !!o.has_invoice,
+  })
+  const inv = q.data?.items[0]
+  return (
+    <Section title="Invoice">
+      <DetailList items={[
+        ['Invoice status', <StatusCell key="s" value={o.invoice_status} />],
+        ['Invoice', inv ? inv.invoice_number : o.has_invoice ? (q.isLoading ? 'Loading…' : '—') : 'Not built yet (built at delivery confirmation)'],
+        ['Method', inv?.method ?? null], ['Invoice date', inv ? formatDate(inv.invoice_date) : null],
+        ['Total', inv ? formatMoney(inv.total, inv.currency) : null], ['Delivery number', inv?.delivery_number ?? null],
+        ['Sent', inv?.sent_at ? `${inv.send_count}× · last ${formatDateTime(inv.sent_at)}` : inv ? 'Not yet' : null],
+        ['Problem', inv?.error ?? null],
+      ]} />
+      {inv && (
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="secondary" onClick={() => { requestOpen('/invoices', inv.id); navigate('/invoices') }}>Open invoice {inv.invoice_number}</Button>
+          {inv.document_id != null && (
+            <Button size="sm" variant="secondary" onClick={() => { downloadDocument(inv.document_id!, `${inv.invoice_number}-${inv.method}`).catch(setError) }}>
+              <Download className="mr-1 h-3.5 w-3.5" />The file sent ({inv.method === '810_JSON' ? '810' : inv.method})
+            </Button>
+          )}
+        </div>
+      )}
+      <ErrorMessage error={q.error ?? error} />
+    </Section>
+  )
+}
+
+const timelineTone = (e: OrderDetail['timeline'][number]): TimelineItem['tone'] => {
+  const st = String(e.after?.fulfillment_status ?? e.after?.invoice_status ?? '')
+  if (e.action === 'create') return 'success'
+  if (['On Hold', 'Review', 'Blocked', 'Failed', '940 Rejected', '940 Failed', '940 Timeout'].includes(st)) return 'warning'
+  if (st === 'Cancelled') return 'danger'
+  return st ? 'info' : 'neutral'
+}
+const ENTITY: Record<string, string> = { sales_orders: 'Order', sales_order_lines: 'Line', sales_invoices: 'Invoice', sales_shipments: 'Shipment' }
+const ACTION: Record<string, string> = { create: 'created', update: 'updated', delete: 'deleted' }
+const show = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v))
+
+function Activity({ o }: { o: OrderDetail }) {
+  return (
+    <Timeline items={o.timeline.map((e, i) => {
+      const keys = Object.keys(e.after ?? {}).filter((k) => !['version', 'updated_at', 'updated_by', 'updated_by_name'].includes(k))
+      return {
+        key: i, when: formatDateTime(e.at), who: e.user_name, tone: timelineTone(e),
+        title: e.reason ?? `${ENTITY[e.entity] ?? e.entity.replace('sales_', '').replace(/_/g, ' ')} ${ACTION[e.action] ?? e.action}`,
+        body: e.action === 'update' && keys.length > 0 ? (
+          <ul>{keys.slice(0, 6).map((k) => <li key={k} className="break-all"><span className="font-medium">{k.replace(/_/g, ' ')}</span>: {show(e.before?.[k])} → {show(e.after?.[k])}</li>)}</ul>
+        ) : undefined,
+      }
+    })} />
+  )
+}
+
+const MANAGE_INVOICE = 'sales.invoice.manage'
+
+export interface OrderSheetProps {
+  o: OrderRead
+  close: () => void
+  /** More buttons for the action bar (e.g. Record a return). */
+  extraActions?: ReactNode
+  /** Tabs before the order's own (e.g. Confirm delivery). */
+  extraTabs?: RecordTab[]
+}
+
+/** One order in the standard record sheet (FR-OB-53): the key numbers, the
+ *  actions for its state, and its sections as tabs — Overview, Lines,
+ *  Shipments & lots, Documents, Invoice, Payments (Shopify) and Activity. */
+export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderSheetProps) {
+  const qc = useQueryClient()
+  const host = useContext(RecordSheetHostContext)
+  const q = useQuery({ queryKey: queryKeys.detail(ordersClient, o.id), queryFn: () => fetchOrder(o.id) })
+  const [pricing, setPricing] = useState(false)
+  const [releasing, setReleasing] = useState(false)
+  const d = q.data
+  const live = d ?? o  // the list's row until the detail arrives
+  const open = d ? d.lines.filter((ln) => !ln.removed) : []
+  const unmatched = open.some((ln) => !ln.item_code || (ln.problem && !ln.removed))
+  const backordered = live.backordered_ea ?? null
+  const orderedEa = open.reduce((n, ln) => n + (ln.qty_ea ?? 0), 0)
+  const shippedEa = open.some((ln) => ln.shipped_ea != null) ? open.reduce((n, ln) => n + (ln.shipped_ea ?? 0), 0) : null
+  const shipmentTrouble = !!d?.shipments.some((s) => (s.checks?.length ?? 0) > 0 || s.rows.some((r) => r.needs_review)
+    || (s.shopify_status === 'Failed' && !s.shadow))
+  // A 940 that failed or was refused (a source file's note — e.g. a shadow-run 945 kept, not applied — is not a problem).
+  const docTrouble = !!d?.documents.some((x) => x.direction === 'OUT'
+    && (['Rejected', 'Failed'].includes(x.file_status ?? '') || x.ack_status === 'Rejected' || !!x.error))
+  // Only an order that is invoiced here (not a Shopify order: Not Required) has an invoice price.
+  const priceable = !!d && !d.has_invoice && d.invoice_status !== 'Not Required' && d.fulfillment_status !== 'Cancelled' && open.length > 0
+  const refresh = async () => {
+    await q.refetch()
+  }
+
+  const tabs: RecordTab[] = !d ? [] : [
+    ...extraTabs,
+    { id: 'overview', label: 'Overview', tone: d.review_reason ? 'warning' : undefined, render: () => (
+      <>
+        {d.review_reason && (
+          <section aria-label="Review reason" className="flex flex-col gap-1 rounded-lg border border-warning-200 bg-warning-50 p-3">
+            <p className="font-medium text-warning-700">Needs review</p>
+            <pre className="whitespace-pre-wrap text-xs text-warning-700">{d.review_reason}</pre>
+            <p className="text-xs text-warning-700">Fix the cause in the Item Master (an item, a unit, a partner code, a DC route), then Re-check.</p>
+          </section>
         )}
-      </div>
-      {editing ? (
-        <InvoicePricesForm o={o} onCancel={() => setEditing(false)} onSaved={async (d) => {
-          qc.setQueryData(queryKeys.detail(ordersClient, o.id), d)
-          setEditing(false)
+        <Section title="Order">
+          <DetailList items={[
+            ['Order ref', d.source_reference], ['Internal no.', String(d.order_number)],
+            ['Partner', partnerLabel(d.partner_name, d.partner_code)], ['Customer PO / reference', d.source_order_number],
+            ['Source', d.source_type], ['Received', formatDateTime(d.first_received_at)], ['Paid (delay start)', formatDateTime(d.paid_at)],
+            ['Requested delivery', d.requested_delivery_date ? formatDate(d.requested_delivery_date) : null],
+            ['Total', formatMoney(d.total_amount ?? d.total, d.currency)], ['Invoice', d.invoice_status],
+            ['Notes', d.notes],
+          ]} />
+        </Section>
+        <div className="grid gap-4 md:grid-cols-2">
+          <Section title="Ship to">
+            <AddressView value={d.ship_to} note={shipToOrigin(d)} />
+            {(d.ship_to_flags ?? []).map((f) => <Badge key={f} variant="warning">{f}</Badge>)}
+          </Section>
+          <Section title="Bill to"><AddressView value={d.bill_to} note={billToOrigin(d)} /></Section>
+        </div>
+      </>
+    ) },
+    { id: 'lines', label: 'Lines', count: open.length, tone: unmatched || (backordered ?? 0) > 0 ? 'warning' : undefined, render: () => (
+      pricing ? (
+        <InvoicePricesForm o={d} onCancel={() => setPricing(false)} onSaved={async (next) => {
+          qc.setQueryData(queryKeys.detail(ordersClient, o.id), next)
+          setPricing(false)
           await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
         }} />
       ) : (
         <>
-          <p className="mb-1 text-xs text-neutral-500">
+          <p className="text-xs text-neutral-500">
             Ordered → shipped (945) → delivered → invoiced. ▸ shows the pallets and lots packed for a line.
-            {o.has_invoice ? ' The invoice is drafted: change its prices on the invoice.'
+            {d.has_invoice ? ' The invoice is drafted: change its prices on the invoice.'
               : ' The invoice price starts as the PO price; the invoice draft takes it.'}
           </p>
-          <LifecycleTable o={o} />
+          <LifecycleTable o={d} />
         </>
+      )
+    ) },
+    { id: 'shipments', label: 'Shipments & lots', count: d.shipments.length, tone: shipmentTrouble ? 'warning' : undefined,
+      empty: d.shipments.length === 0 && 'No 945 yet: the warehouse has not reported a shipment.',
+      render: () => (
+        <>
+          <Shipments shipments={d.shipments} orderId={d.id} />
+          <Lots o={d} />
+        </>
+      ) },
+    { id: 'documents', label: 'Documents', count: d.documents.length, tone: docTrouble ? 'danger' : undefined,
+      empty: d.documents.length === 0 && 'No document: entered by hand and not sent yet.',
+      render: () => <DocumentsTable docs={d.documents} /> },
+    { id: 'invoice', label: 'Invoice', hidden: d.invoice_status === 'Not Required' && !d.has_invoice,
+      tone: ['Blocked', 'Failed'].includes(d.invoice_status) ? 'warning' : undefined, render: () => <OrderInvoice o={d} /> },
+    { id: 'payments', label: 'Payments', hidden: d.source_type !== 'SHOPIFY', count: (d.payments?.length ?? 0) || undefined,
+      tone: Number(d.total_refunded ?? 0) > 0 ? 'warning' : undefined, render: () => <PaymentsAndRefunds o={d} /> },
+    { id: 'activity', label: 'Activity', count: d.timeline.length, empty: d.timeline.length === 0 && 'Nothing recorded yet',
+      render: () => <Activity o={d} /> },
+  ]
+
+  const facts: RecordFact[] = !d ? [] : [
+    { label: 'Total', value: formatMoney(d.total_amount ?? d.total, d.currency), hint: d.currency },
+    ...(d.source_type === 'SHOPIFY' && d.net_amount != null ? [{
+      label: 'Net', value: formatMoney(d.net_amount, d.currency), tone: Number(d.total_refunded ?? 0) > 0 ? 'warning' as const : 'neutral' as const,
+      hint: Number(d.total_refunded ?? 0) > 0 ? `${formatMoney(d.total_refunded!, d.currency)} refunded` : 'nothing refunded' }] : []),
+    { label: 'Ordered EA', value: orderedEa },
+    { label: 'Shipped EA', value: shippedEa == null ? '—' : shippedEa, hint: shippedEa == null ? 'no 945 applied' : undefined },
+    ...(backordered != null ? [{ label: 'Backordered EA', value: backordered, tone: backordered > 0 ? 'warning' as const : 'neutral' as const }] : []),
+    { label: 'Invoice', value: d.invoice_status, tone: ['Blocked', 'Failed'].includes(d.invoice_status) ? 'warning' : d.invoice_status === 'Sent' ? 'success' : 'neutral' },
+    { label: 'Requested delivery', value: d.requested_delivery_date ? formatDate(d.requested_delivery_date) : '—' },
+  ]
+
+  const isDraft = live.source_type === 'MANUAL' && live.fulfillment_status === 'Draft'
+  const actions = d ? (
+    <>
+      {d.fulfillment_status === 'Review' && <Recheck o={d} bare onResolved={close} />}
+      {isDraft && <DraftActions o={d} close={close} />}
+      <Send940 o={d} />
+      {priceable && !pricing && (
+        <ActionButton size="sm" variant="secondary" permission={MANAGE_INVOICE}
+          onAction={() => { setPricing(true); host?.onTabChange?.('lines') }}>Edit invoice prices</ActionButton>
       )}
-    </section>
+      {d.invoice_status === 'Blocked' && (
+        <ActionButton size="sm" permission={MANAGE_INVOICE} onAction={() => setReleasing(true)}>Release invoice…</ActionButton>
+      )}
+      {extraActions}
+    </>
+  ) : undefined
+
+  return (
+    <>
+      <RecordSheet
+        title={live.source_reference ?? `#${live.order_number}`}
+        subtitle={[...new Set([`Internal no. ${live.order_number}`, live.partner_name ?? live.partner_code,
+          SOURCE_LABEL[live.source_type] ?? live.source_type])].concat(live.source_order_number ? [`PO ${live.source_order_number}`] : []).join(' · ')}
+        badges={<>
+          <StateBadge o={live} />
+          <span className="text-xs text-neutral-500">{live.order_state}</span>
+          {live.historical && <Badge variant="neutral">Historical</Badge>}
+          {live.archive_suppressed && <Badge variant="warning">Archived in Shopify</Badge>}
+        </>}
+        size="xl" loading={q.isLoading} error={q.error}
+        onRefresh={refresh} updatedAt={q.dataUpdatedAt}
+        facts={facts} actions={actions} tabs={tabs}
+      />
+      {d && (
+        <ConfirmAction open={releasing} onOpenChange={setReleasing} title={`Release the invoice of ${live.source_reference ?? live.order_number}?`}
+          description="It goes back to Ready, to be sent." confirmLabel="Release" reason={{ label: 'Why it can go ahead' }}
+          onConfirm={async (why) => {
+            await releaseInvoice(d.id, why)
+            await qc.invalidateQueries({ queryKey: queryKeys.detail(ordersClient, o.id) })
+            await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
+          }} />
+      )}
+    </>
   )
 }
 
-/** One order: why it is held, its lines in EA, its source documents and what happened (FR-OB-53). */
-export function OrderDetailView({ id }: { id: number }) {
-  const q = useQuery({ queryKey: queryKeys.detail(ordersClient, id), queryFn: () => fetchOrder(id) })
-  if (q.isLoading) return <Skeleton className="h-40 w-full" />
-  if (q.error || !q.data) return <ErrorView error={q.error} />
-  const o = q.data
-  const sent = o.documents.filter((d) => d.direction === 'OUT' && d.kind === '940_EDI')
-  const sources = o.documents.filter((d) => d.direction === 'IN')
-  return (
-    <div className="flex flex-col gap-5 text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <StateBadge o={o} />
-        <span className="text-neutral-500">{o.order_state}</span>
-        {o.historical && <Badge variant="neutral">Historical</Badge>}
-        {o.archive_suppressed && <Badge variant="warning">Archived in Shopify</Badge>}
-      </div>
-      {o.review_reason && (
-        <section aria-label="Review reason" className="rounded-md border border-warning-200 bg-warning-50 p-2">
-          <p className="font-medium text-warning-700">Needs review</p>
-          <pre className="whitespace-pre-wrap text-xs text-warning-700">{o.review_reason}</pre>
-        </section>
-      )}
-      <DetailList items={[
-        ['Order ref', o.source_reference], ['Partner', partnerLabel(o.partner_name, o.partner_code)],
-        ['Customer PO / reference', o.source_order_number], ['Internal no.', String(o.order_number)],
-        ['Source', o.source_type], ['Received', formatDateTime(o.first_received_at)], ['Paid (delay start)', formatDateTime(o.paid_at)],
-        ['Payment', o.shopify_financial_status], ['Requested delivery', o.requested_delivery_date ? formatDate(o.requested_delivery_date) : null],
-        ['Ship to', <span key="st" className="flex flex-col gap-1"><AddressView value={o.ship_to} note={shipToOrigin(o)} />
-          {(o.ship_to_flags ?? []).map((f) => <Badge key={f} variant="warning">{f}</Badge>)}</span>],
-        ['Bill to', <AddressView key="bt" value={o.bill_to} note={billToOrigin(o)} />],
-        ['Total', formatMoney(o.total_amount ?? o.total, o.currency)], ['Invoice', o.invoice_status],
-      ]} />
-      <Lines o={o} />
-      <section aria-label="Documents">
-        <h3 className="mb-1 font-semibold text-neutral-800">Source documents</h3>
-        {sources.length === 0 ? <p className="text-neutral-500">None (entered by hand).</p> : (
-          <ul className="text-xs">{sources.map((d) => <li key={d.id}>#{d.id} {d.kind} · {d.remote_name} · {formatDateTime(d.created_at)}</li>)}</ul>
-        )}
-      </section>
-      {sent.length > 0 && (
-        <section aria-label="Warehouse 940s">
-          <h3 className="mb-1 font-semibold text-neutral-800">Warehouse 940s</h3>
-          <LocalTable<OrderDocument> ariaLabel="Warehouse 940s" columns={sentColumns} rows={sent} rowKey={(d) => d.id} />
-        </section>
-      )}
-      <Shipments shipments={o.shipments ?? []} orderId={o.id} />
-      <PaymentsAndRefunds o={o} />
-      <section aria-label="Timeline">
-        <h3 className="mb-1 font-semibold text-neutral-800">Timeline</h3>
-        <ol className="flex flex-col gap-1 text-xs">
-          {o.timeline.map((e, i) => (
-            <li key={i}>{formatDateTime(e.at)} · {e.user_name} · {e.reason ?? e.action}
-              {e.after && 'fulfillment_status' in e.after && <> · {String(e.before?.fulfillment_status ?? '—')} → {String(e.after.fulfillment_status)}</>}
-            </li>
-          ))}
-        </ol>
-      </section>
-    </div>
-  )
-}
+const SOURCE_LABEL: Record<string, string> = { SHOPIFY: 'Shopify', EDI_850: 'Retailer 850', MANUAL: 'Manual' }

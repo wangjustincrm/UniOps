@@ -82,6 +82,8 @@ export interface InboxTarget {
   page: string
   resource: string | null
   id: number | null
+  /** The record sheet's tab the task is about. */
+  tab?: string | null
 }
 
 export const fetchHealth = () => api.get<HealthRead>('/operations/health')

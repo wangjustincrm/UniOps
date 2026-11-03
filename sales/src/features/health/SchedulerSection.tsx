@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { z } from 'zod'
 import {
-  ActionButton, Badge, Button, DateTimeCell, ErrorMessage, LocalTable, RowActions, SchemaForm, Sheet, StatusCell, businessErrorOf,
+  ActionButton, Badge, Button, DateTimeCell, ErrorMessage, LocalTable, RowActions, SchemaForm, FormSheet, StatusCell, businessErrorOf,
   requestOpen, useCan, useToast, type ColumnDef, type FieldSpec,
 } from '@/platform-ui'
 import { RefreshCw } from 'lucide-react'
@@ -87,13 +87,13 @@ export function SchedulerSection({ health: h }: { health: HealthRead }) {
         {canConfig && <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>Scheduler settings</Button>}
       </div>
       <ErrorMessage error={error} messages={{ 'run.already_running': 'The system job is running; wait for it to finish.' }} />
-      <Sheet open={editing} onOpenChange={setEditing} title="Scheduler settings">
+      <FormSheet open={editing} onOpenChange={setEditing} title="Scheduler settings">
         {editing && (
           <SchemaForm schema={schema} fields={fields} defaultValues={{ paused: h.scheduler_paused, system_minutes: h.system_minutes }}
             onCancel={() => setEditing(false)}
             onSubmit={async (v) => { await saveScheduler(v as { paused: boolean; system_minutes: number }); setEditing(false); await refresh() }} />
         )}
-      </Sheet>
+      </FormSheet>
     </section>
   )
 }

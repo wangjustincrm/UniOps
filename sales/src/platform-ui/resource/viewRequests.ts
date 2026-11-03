@@ -37,20 +37,26 @@ export function useViewRequest(resource: string): ViewRequest | undefined {
 }
 
 // ── open a record ────────────────────────────────────────────────────────────
-const opening = new Map<string, number>()
+export interface OpenRequest {
+  id: number
+  /** The record sheet's tab to show (a Task Inbox link to "Shipments"). */
+  tab?: string
+}
+const opening = new Map<string, OpenRequest>()
 
-/** Ask the list at `basePath` (e.g. "/orders") to open record `id` in its sheet. */
-export function requestOpen(basePath: string, id: number): void {
-  opening.set(basePath, id)
+/** Ask the list at `basePath` (e.g. "/orders") to open record `id` in its
+ *  sheet, on `tab` when given (an unknown or hidden tab: the first one). */
+export function requestOpen(basePath: string, id: number, tab?: string): void {
+  opening.set(basePath, tab ? { id, tab } : { id })
   notify()
 }
 
-export function takeOpenRequest(basePath: string): number | undefined {
-  const id = opening.get(basePath)
+export function takeOpenRequest(basePath: string): OpenRequest | undefined {
+  const r = opening.get(basePath)
   opening.delete(basePath)
-  return id
+  return r
 }
 
-export function useOpenRequest(basePath: string): number | undefined {
+export function useOpenRequest(basePath: string): OpenRequest | undefined {
   return useSyncExternalStore(subscribe, () => opening.get(basePath))
 }

@@ -1,3 +1,4 @@
+import { openTab } from '@/platform-ui/testing'
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -56,11 +57,14 @@ describe('Configuration → Notifications (FR-OB-56)', () => {
     api.test.mockResolvedValue({ rule: { ...rule, tested_at: '2026-11-02T20:00:00Z' }, result: 'task written; email queued to 2 address(es) (outbox #5)' })
     const { unmount } = renderAs(['sales.read'])
     fireEvent.click(await screen.findByText('Cancelled at source after the 940'))
-    expect(within(await screen.findByRole('dialog')).queryByRole('button', { name: 'Send test notification' })).toBeNull()
+    const read = await screen.findByRole('dialog')
+    await openTab(read, 'Send a test')
+    expect(within(read).queryByRole('button', { name: 'Send test notification' })).toBeNull()
     unmount()
     renderAs(['sales.read', 'sales.config'])
     fireEvent.click(await screen.findByText('Cancelled at source after the 940'))
     const sheet = await screen.findByRole('dialog')
+    await openTab(sheet, 'Send a test')
     fireEvent.click(within(sheet).getByRole('button', { name: 'Send test notification' }))
     expect(await within(sheet).findByText('task written; email queued to 2 address(es) (outbox #5)')).toBeInTheDocument()
     expect(api.test).toHaveBeenCalledWith(3)

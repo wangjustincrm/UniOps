@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, Badge, DateCell, ErrorMessage, LocalTable, StatusCell, queryKeys, type ColumnDef } from '@/platform-ui'
+import { ActionButton, Badge, CopyChip, DateCell, ErrorMessage, LocalTable, StatusCell, queryKeys, type ColumnDef } from '@/platform-ui'
 import { downloadPackingList, ordersClient, retryShopify, type ShipmentRead, type ShipmentRowRead } from './ordersApi'
 
 const errorMessages: Record<string, string> = {
@@ -54,13 +54,13 @@ export function Shipments({ shipments, orderId }: { shipments: ShipmentRead[]; o
   if (shipments.length === 0) return null
   return (
     <section aria-label="Shipments" className="flex flex-col gap-3">
-      <h3 className="font-semibold text-neutral-800">Shipments (945)</h3>
       {shipments.map((s) => (
-        <div key={s.id} aria-label={`Shipment ${s.id}`} role="group" className="flex flex-col gap-2 rounded-md border border-neutral-100 p-2 text-xs">
+        <div key={s.id} aria-label={`Shipment ${s.id}`} role="group" className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-3 text-xs">
           <div className="flex flex-wrap items-center gap-2">
             <span>Shipped <DateCell value={s.ship_date} /> ({s.ship_date_source ?? 'no date'})</span>
             {s.carrier && <span>· {s.carrier} {s.mode ?? ''}</span>}
-            {s.tracking?.length ? <span>· tracking {s.tracking.join(', ')}</span> : <span>· no tracking</span>}
+            {s.tracking?.length ? <span className="inline-flex flex-wrap items-center gap-1">· tracking {s.tracking.map((t) => <CopyChip key={t} text={t} />)}</span>
+              : <span>· no tracking</span>}
             {s.shadow && <Badge variant="neutral">Shadow run: not applied</Badge>}
             {!s.shadow && !s.applied && <Badge variant="warning">Not applied (second 945)</Badge>}
             <span>· Shopify <StatusCell value={s.shopify_status} /></span>

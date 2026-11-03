@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef } from '../primitives/DataTable'
 import { PageHeader } from '../primitives/PageHeader'
@@ -8,7 +8,10 @@ import { queryKeys } from '../resource/queryKeys'
 import { takeOpenRequest, useOpenRequest } from '../resource/viewRequests'
 import type { Filter, Page, QuerySpec } from '../resource/querySpec'
 import { ActionButton } from './ActionButton'
+import { ListRefresh } from './ListRefresh'
+import { storeAutoRefresh, storedAutoRefresh } from './autoRefresh'
 import { QueryTable } from './QueryTable'
+import { RecordSheetHostContext, type RecordSheetHost, type RecordSheetSize } from './recordSheetHost'
 import { useListView } from './views'
 
 /** What a list needs from its resource client. */
@@ -33,10 +36,11 @@ export interface ListPageProps<T extends { id: number }> {
   title?: string
   description?: ReactNode
   columns: ColumnDef<T, unknown>[]
-  /** The open record — always as the list now has it — in a sheet. */
+  /** The open record — always as the list now has it — as a RecordSheet (the
+   *  list is its host: open / close, previous / next, the tab, refresh). */
   renderDetail?: (row: T, close: () => void) => ReactNode
-  detailTitle?: (row: T) => string
-  detailClassName?: string
+  /** The detail's default width (default lg). */
+  detailSize?: RecordSheetSize
   /** Opening a row: by default the detail sheet (when renderDetail is given). */
   onRowClick?: (row: T) => void
   /** Per-row buttons in a last column (a click there never opens the row). */
@@ -78,14 +82,28 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   const qc = useQueryClient()
   const view = useListView(resource, { fixed })
   const { spec } = view
-  const [open, setOpen] = useState<T | null>(null)
+  const [open, setOpenRaw] = useState<T | null>(null)
+  // The detail's tab: kept from record to record; a linked one replaces it.
+  const [tab, setTab] = useState<string | undefined>(undefined)
+  const [opening, setOpening] = useState(0)  // a new open request remounts the sheet
   const [creating, setCreating] = useState(false)
+  // Auto-refresh: the view's (saved with it), else what this user chose for the list.
+  const [storedAuto, setStoredAuto] = useState(() => storedAutoRefresh(resource.basePath))
+  const auto = view.layout.refresh ?? storedAuto
+  const setAuto = (seconds: number) => {
+    storeAutoRefresh(resource.basePath, seconds)
+    setStoredAuto(seconds)
+    view.setLayout({ ...view.layout, refresh: seconds || undefined })
+  }
   const list = useQuery({
     queryKey: [...queryKeys.list(resource), spec],
     queryFn: () => resource.list(spec),
     placeholderData: keepPreviousData,
     enabled: view.ready,
-    refetchInterval: props.refetchInterval ? (q) => props.refetchInterval!(q.state.data?.items ?? []) : undefined,
+    // The page's own polling (something running) wins; else the chosen auto-refresh.
+    refetchInterval: (q) => props.refetchInterval?.(q.state.data?.items ?? []) || (auto ? auto * 1000 : false),
+    // Back to the window: refetch only rows older than 30 s (or a failed load).
+    refetchOnWindowFocus: (q) => q.state.status === 'error' || Date.now() - q.state.dataUpdatedAt > 30_000,
   })
   const rows = list.data?.items ?? []
   // A record asked for from elsewhere (a Task Inbox link): fetched by its id
@@ -93,11 +111,17 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   const asked = useOpenRequest(resource.basePath)
   useEffect(() => {
     if (asked === undefined || !renderDetail) return
-    const id = takeOpenRequest(resource.basePath)
-    if (id === undefined) return
-    const stub = { id } as T
-    ;(resource.get ? resource.get(id) : Promise.resolve(stub)).then(setOpen, () => setOpen(stub))
+    const req = takeOpenRequest(resource.basePath)
+    if (req === undefined) return
+    const stub = { id: req.id } as T
+    const show = (row: T) => {
+      setTab(req.tab)
+      setOpening((n) => n + 1)
+      setOpenRaw(row)
+    }
+    ;(resource.get ? resource.get(req.id) : Promise.resolve(stub)).then(show, () => show(stub))
   }, [asked, renderDetail, resource])
+  const setOpen = (row: T | null) => setOpenRaw(row)
   // The open record as the list now has it: an action, a re-check or another
   // user may have changed it since it was clicked.
   const current = open ? (rows.find((r) => r.id === open.id) ?? open) : null
@@ -111,6 +135,14 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
       }]
     : columns
   const close = () => setOpen(null)
+  const at = current ? rows.findIndex((r) => r.id === current.id) : -1
+  const host: RecordSheetHost = {
+    open: current !== null, close, tab, onTabChange: setTab, size: props.detailSize,
+    prev: at > 0 ? () => setOpen(rows[at - 1]) : undefined,
+    next: at >= 0 && at < rows.length - 1 ? () => setOpen(rows[at + 1]) : undefined,
+    position: at >= 0 ? `${(spec.page - 1) * spec.pageSize + at + 1} of ${list.data?.total ?? rows.length}` : undefined,
+    refreshList: () => list.refetch(),
+  }
   const created = async (row?: T) => {
     setCreating(false)
     await ctx.refresh()
@@ -119,6 +151,8 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   const create = props.create
   const toolbar = (
     <>
+      <ListRefresh onRefresh={() => { void list.refetch() }} fetching={list.isFetching} updatedAt={list.dataUpdatedAt}
+        auto={auto} onAutoChange={setAuto} />
       {props.toolbar?.(ctx)}
       {create && <ActionButton size="sm" permission={create.permission} onAction={() => setCreating(true)}>{create.label}</ActionButton>}
     </>
@@ -146,13 +180,12 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
         rowKey={(r) => r.id}
         onRowClick={props.onRowClick ?? (renderDetail ? setOpen : undefined)}
         emptyTitle={props.emptyTitle}
-        toolbar={props.toolbar || create ? toolbar : undefined}
+        toolbar={toolbar}
       />
-      {renderDetail && (
-        <Sheet open={current !== null} onOpenChange={(o) => { if (!o) close() }}
-          title={current ? (props.detailTitle?.(current) ?? `#${current.id}`) : ''} className={props.detailClassName}>
-          {current && renderDetail(current, close)}
-        </Sheet>
+      {renderDetail && current && (
+        <RecordSheetHostContext.Provider value={host}>
+          <Fragment key={opening}>{renderDetail(current, close)}</Fragment>
+        </RecordSheetHostContext.Provider>
       )}
       {create && (
         <Sheet open={creating} onOpenChange={setCreating} title={create.title ?? create.label} className={create.className}>

@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, ConfirmAction, DateCell, DetailList, ErrorMessage, ErrorView, ListPage, LocalTable, MasterDetailForm, MoneyCell,
-  Skeleton, StatusCell, formatDate, formatDateTime, formatMoney, numberColumn, queryKeys, readColumn, textColumn,
-  type ColumnDef, type EditableColumn, type FieldSpec,
+  ActionButton, ConfirmAction, DateCell, DetailList, ErrorMessage, ListPage, LocalTable, MasterDetailForm, MoneyCell,
+  RecordSheet, Section, StatusCell, formatDate, formatDateTime, formatMoney, numberColumn, queryKeys, readColumn, textColumn,
+  type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab,
 } from '@/platform-ui'
 import { editInvoice, fetchInvoice, invoicesClient, releaseInvoice, sendInvoice, type InvoiceDetail, type InvoiceRead } from './invoicesApi'
 import { PartnerCell } from '@/features/common/PartnerCell'
@@ -110,7 +110,8 @@ function InvoiceForm({ inv, onSaved, onCancel }: { inv: InvoiceDetail; onSaved: 
   )
 }
 
-function Detail({ id }: { id: number }) {
+function Detail({ row }: { row: InvoiceRead }) {
+  const id = row.id
   const qc = useQueryClient()
   const q = useQuery({ queryKey: queryKeys.detail(invoicesClient, id), queryFn: () => fetchInvoice(id) })
   const [editing, setEditing] = useState(false)
@@ -120,46 +121,78 @@ function Detail({ id }: { id: number }) {
     await qc.invalidateQueries({ queryKey: queryKeys.list(invoicesClient) })
   }
   const send = useMutation({ mutationFn: () => sendInvoice(id), onSuccess: refresh })
-  if (q.isLoading) return <Skeleton className="h-40 w-full" />
-  if (q.error || !q.data) return <ErrorView error={q.error} />
   const inv = q.data
-  const sendable = inv.status === 'Ready' || inv.status === 'Failed' || inv.status === 'Sent'
-  if (editing) {
-    return <InvoiceForm inv={inv} onCancel={() => setEditing(false)}
-      onSaved={async (d) => { qc.setQueryData(queryKeys.detail(invoicesClient, id), d); setEditing(false); await refresh() }} />
-  }
-  return (
-    <div className="flex flex-col gap-4 text-sm">
-      <DetailList items={[
-        ['Status', <StatusCell key="s" value={inv.status} />],
-        ['Order ref', inv.order_ref], ['Internal no.', inv.order_number == null ? null : String(inv.order_number)], ['PO', inv.po],
-        ['Partner', partnerLabel(inv.partner_name, inv.partner_code)],
-        ['Delivery number', inv.delivery_number],
-        ['Method', inv.method], ['Delivery confirmed (the invoice date)', inv.confirmed_date ? formatDate(inv.confirmed_date) : null],
-        ['Invoice date', formatDate(inv.invoice_date)], ['Terms', inv.payment_terms], ['Total', formatMoney(inv.total, inv.currency)],
-        ['Sent', inv.sent_at ? `${inv.send_count}× · last ${formatDateTime(inv.sent_at)}` : null], ['Problem', inv.error],
-      ]} />
-      {inv.status === 'Blocked' && <p className="text-warning-700">On hold: see the task for why. Release it once decided.</p>}
+  const sendable = inv && (inv.status === 'Ready' || inv.status === 'Failed' || inv.status === 'Sent')
+  const tabs: RecordTab[] = !inv ? [] : editing ? [{
+    id: 'edit', label: 'Edit invoice', render: () => (
+      <InvoiceForm inv={inv} onCancel={() => setEditing(false)}
+        onSaved={async (d) => { qc.setQueryData(queryKeys.detail(invoicesClient, id), d); setEditing(false); await refresh() }} />),
+  }] : [
+    { id: 'overview', label: 'Overview', tone: inv.status === 'Blocked' || inv.error ? 'warning' : undefined, render: () => (
+      <>
+        {inv.status === 'Blocked' && (
+          <p role="status" className="rounded-md border border-warning-200 bg-warning-50 p-2 text-sm text-warning-700">
+            On hold: see the task for why. Release it once decided.
+          </p>
+        )}
+        <Section title="Invoice">
+          <DetailList items={[
+            ['Order ref', inv.order_ref], ['Internal no.', inv.order_number == null ? null : String(inv.order_number)], ['PO', inv.po],
+            ['Partner', partnerLabel(inv.partner_name, inv.partner_code)],
+            ['Delivery number', inv.delivery_number],
+            ['Method', inv.method], ['Delivery confirmed (the invoice date)', inv.confirmed_date ? formatDate(inv.confirmed_date) : null],
+            ['Invoice date', formatDate(inv.invoice_date)], ['Terms', inv.payment_terms],
+            ['Sent', inv.sent_at ? `${inv.send_count}× · last ${formatDateTime(inv.sent_at)}` : null], ['Problem', inv.error],
+          ]} />
+        </Section>
+      </>
+    ) },
+    { id: 'lines', label: 'Lines', count: inv.lines.length, render: () => (
       <LocalTable ariaLabel="Invoice lines" columns={lineColumns(inv.currency)} rows={inv.lines} rowKey={(l) => l.id}
         footer={[null, null, null, null, 'Total', formatMoney(inv.total, inv.currency)]} />
-      <div className="flex flex-wrap gap-2">
-        {sendable && (
-          <ActionButton size="sm" permission={MANAGE} onAction={() => send.mutateAsync().catch(() => {})}>
-            {inv.status === 'Sent' ? 'Send again' : 'Send'}
-          </ActionButton>
-        )}
-        {['Ready', 'Failed', 'Sent', 'Blocked'].includes(inv.status ?? '') && (
-          <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setEditing(true)}>Edit invoice</ActionButton>
-        )}
-        {inv.status === 'Blocked' && (
-          <ActionButton size="sm" permission={MANAGE} onAction={() => setReleasing(true)}>Release</ActionButton>
-        )}
-      </div>
-      <ErrorMessage error={send.error} messages={errorMessages} />
-      <ConfirmAction open={releasing} onOpenChange={setReleasing} title={`Release invoice ${inv.invoice_number}?`}
-        description="It goes back to Ready, to be sent." confirmLabel="Release" reason={{ label: 'Why it can go ahead' }}
-        errorMessages={errorMessages} onConfirm={async (why) => { await releaseInvoice(inv.order_id, why); await refresh() }} />
-    </div>
+    ) },
+  ]
+  return (
+    <>
+      <RecordSheet
+        title={inv?.invoice_number ?? row.invoice_number}
+        subtitle={[row.order_ref, row.order_number != null && `internal no. ${row.order_number}`,
+          partnerLabel(row.partner_name, row.partner_code)].filter(Boolean).join(' · ')}
+        badges={<StatusCell value={inv?.status ?? row.status} />}
+        loading={q.isLoading} error={q.error} errorMessages={errorMessages}
+        onRefresh={() => q.refetch()} updatedAt={q.dataUpdatedAt}
+        facts={inv ? [
+          { label: 'Total', value: formatMoney(inv.total, inv.currency), hint: inv.currency },
+          { label: 'Status', value: inv.status ?? '—', tone: inv.status === 'Blocked' || inv.status === 'Failed' ? 'warning' : inv.status === 'Sent' ? 'success' : 'neutral' },
+          { label: 'Method', value: inv.method },
+          { label: 'Invoice date', value: formatDate(inv.invoice_date) },
+          { label: 'Delivery no.', value: inv.delivery_number ?? '—' },
+          { label: 'Sent', value: inv.sent_at ? `${inv.send_count}×` : 'Not yet', hint: inv.sent_at ? formatDateTime(inv.sent_at) : undefined },
+        ] : undefined}
+        actions={inv && !editing ? (
+          <>
+            {sendable && (
+              <ActionButton size="sm" permission={MANAGE} onAction={() => send.mutateAsync().catch(() => {})}>
+                {inv.status === 'Sent' ? 'Send again' : 'Send'}
+              </ActionButton>
+            )}
+            {['Ready', 'Failed', 'Sent', 'Blocked'].includes(inv.status ?? '') && (
+              <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setEditing(true)}>Edit invoice</ActionButton>
+            )}
+            {inv.status === 'Blocked' && (
+              <ActionButton size="sm" permission={MANAGE} onAction={() => setReleasing(true)}>Release</ActionButton>
+            )}
+            <ErrorMessage error={send.error} messages={errorMessages} />
+          </>
+        ) : undefined}
+        tabs={tabs}
+      />
+      {inv && (
+        <ConfirmAction open={releasing} onOpenChange={setReleasing} title={`Release invoice ${inv.invoice_number}?`}
+          description="It goes back to Ready, to be sent." confirmLabel="Release" reason={{ label: 'Why it can go ahead' }}
+          errorMessages={errorMessages} onConfirm={async (why) => { await releaseInvoice(inv.order_id, why); await refresh() }} />
+      )}
+    </>
   )
 }
 
@@ -173,9 +206,7 @@ export default function InvoicesPage() {
       description="One per confirmed order, priced per case at the 850 price. Edit before sending; send by the partner's method (810 or email with PDFs)."
       columns={columns}
       emptyTitle="No invoices yet"
-      detailTitle={(i) => `Invoice ${i.invoice_number}`}
-      detailClassName="max-w-3xl"
-      renderDetail={(i) => <Detail id={i.id} />}
+      renderDetail={(i) => <Detail row={i} />}
     />
   )
 }

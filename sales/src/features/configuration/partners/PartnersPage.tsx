@@ -1,5 +1,5 @@
 import { Badge, CrudPage, useToast, type ColumnDef } from '@/platform-ui'
-import { AuditHistory } from '../AuditHistory'
+import { historyTab } from '../historyTab'
 import { downloadPartners, fetchPartnerAudit, partnersClient, type PartnerCreate, type PartnerRead, type PartnerUpdate } from './partnersApi'
 import {
   partnerCreateSchema, partnerEmptyValues, partnerFields, partnerToFormValues, partnerUpdateSchema,
@@ -48,7 +48,9 @@ export default function PartnersPage() {
       }}
       csvImport
       errorMessages={errorMessages}
-      renderDetail={(p) => <AuditHistory resource="partners" id={p.id} version={p.version} load={fetchPartnerAudit} />}
+      recordTitle={(p) => p.name}
+      recordSubtitle={(p) => `${p.code} · ${p.channel}`}
+      detailTabs={(p, details) => [details, historyTab('partners', p.id, p.version, fetchPartnerAudit)]}
     />
   )
 }

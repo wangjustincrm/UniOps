@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  ActionButton, DateTimeCell, DetailList, ErrorMessage, ListPage, StatusCell, formatDateTime, type ColumnDef,
+  ActionButton, DateTimeCell, DetailList, ErrorMessage, ListPage, RecordSheet, Section, StatusCell, formatDateTime, type ColumnDef,
 } from '@/platform-ui'
 import { documentsClient, downloadOriginal, type DocumentRead } from './operationsApi'
 
@@ -17,8 +17,27 @@ const columns: ColumnDef<DocumentRead, unknown>[] = [
 
 function Detail({ d }: { d: DocumentRead }) {
   const [error, setError] = useState<unknown>(null)
+  const st = status(d)
   return (
-    <div className="flex flex-col gap-4 text-sm">
+    <RecordSheet
+      title={d.remote_name ?? `Document ${d.id}`}
+      subtitle={[`#${d.id}`, d.kind, d.direction === 'IN' ? 'received' : 'sent', d.system].filter(Boolean).join(' · ')}
+      badges={<StatusCell value={st} />}
+      facts={[
+        { label: 'Kind', value: d.kind },
+        { label: 'Status', value: st ?? '—', tone: st === 'Failed' ? 'danger' : 'neutral' },
+        { label: 'Bytes', value: d.size ?? '—' },
+        { label: 'Received', value: formatDateTime(d.created_at) },
+        ...(d.ack_status ? [{ label: '997', value: d.ack_status }] : []),
+      ]}
+      actions={d.has_content ? (
+        <>
+          <ActionButton size="sm" variant="secondary" onAction={() => downloadOriginal(d).catch(setError)}>Download original</ActionButton>
+          <ErrorMessage error={error} />
+        </>
+      ) : undefined}
+      tabs={[{ id: 'overview', label: 'Overview', tone: d.error ? 'warning' : undefined, render: () => (
+        <Section title="File">
       <DetailList items={[
         ['Direction / origin', `${d.direction} · ${d.origin}`], ['System', d.system], ['Kind', d.kind],
         ['Status', <StatusCell key="s" value={status(d)} />], ['File', <span key="f" className="break-all">{d.remote_name}</span>],
@@ -26,13 +45,10 @@ function Detail({ d }: { d: DocumentRead }) {
         ['Received', `${formatDateTime(d.created_at)} · ${d.created_by_name}`], ['SHA-256', <span key="h" className="break-all">{d.sha256}</span>],
         ['ISA13 / GS06 / ST02', [d.isa13, d.gs06, d.st02].filter(Boolean).join(' / ') || null], ['Note', d.error],
       ]} />
-      {d.has_content ? (
-        <ActionButton size="sm" variant="secondary" onAction={() => downloadOriginal(d).catch(setError)}>Download original</ActionButton>
-      ) : (
-        <p className="text-neutral-500">This record keeps no bytes of its own (see the note).</p>
-      )}
-      <ErrorMessage error={error} />
-    </div>
+      {!d.has_content && <p className="text-neutral-500">This record keeps no bytes of its own (see the note).</p>}
+        </Section>
+      ) }]}
+    />
   )
 }
 
@@ -45,7 +61,6 @@ export default function DocumentsPage() {
       description="Every file read from or sent to a partner, with its original bytes. Nothing is ever deleted."
       columns={columns}
       emptyTitle="No documents yet"
-      detailTitle={(d) => d.remote_name ?? `Document ${d.id}`}
       renderDetail={(d) => <Detail d={d} />}
     />
   )

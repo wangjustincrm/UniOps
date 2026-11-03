@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
 import {
-  ListPage, ViewsProvider, queryKeys, type ColumnDef, type ListMeta, type QuerySpec, type ViewsClient,
+  ListPage, RecordSheet, ViewsProvider, queryKeys, type ColumnDef, type ListMeta, type QuerySpec, type ViewsClient,
 } from './index'
 
 // ListPage (design §13.15): the one list implementation — its query keyed by
@@ -38,7 +38,7 @@ describe('ListPage', () => {
     const resource = makeResource([[{ id: 1, code: 'A1', status: 'Review' }], [{ id: 1, code: 'A1', status: 'Pending' }]])
     renderWith(<>
       <ListPage<Row> resource={resource} title="Things" description="All of them" columns={columns}
-        detailTitle={(r) => `Thing ${r.code}`} renderDetail={(r) => <p>detail says {r.status}</p>} />
+        renderDetail={(r) => <RecordSheet title={`Thing ${r.code}`} tabs={[{ id: 'd', label: 'Detail', render: () => <p>detail says {r.status}</p> }]} />} />
       <Refresh resource={resource} />
     </>)
     expect(await screen.findByRole('heading', { name: 'Things' })).toBeInTheDocument()  // the page header
@@ -52,7 +52,7 @@ describe('ListPage', () => {
   it('row actions sit in their own column and never open the row', async () => {
     const act = vi.fn()
     const resource = makeResource([[{ id: 1, code: 'A1', status: 'Review' }, { id: 2, code: 'B2', status: 'Pending' }]])
-    renderWith(<ListPage<Row> resource={resource} columns={columns} renderDetail={() => <p>opened</p>}
+    renderWith(<ListPage<Row> resource={resource} columns={columns} renderDetail={() => <RecordSheet title="Opened" tabs={[{ id: 'd', label: 'Detail', render: () => <p>opened</p> }]} />}
       rowActions={(r) => (r.status === 'Review' ? <button type="button" onClick={() => act(r.id)}>Fix</button> : null)} />)
     const row = (await screen.findByText('A1')).closest('tr')!
     expect(within(screen.getByText('B2').closest('tr')!).queryByText('Fix')).toBeNull()

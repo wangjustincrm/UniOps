@@ -3,7 +3,7 @@ import { z } from 'zod'
 import {
   ActionButton, Badge, CrudPage, DetailList, ErrorMessage, formatDateTime, queryKeys, type ColumnDef, type FieldSpec,
 } from '@/platform-ui'
-import { AuditHistory } from '../AuditHistory'
+import { historyTab } from '../historyTab'
 import {
   CHANNELS, fetchEvents, fetchRuleAudit, fetchUsers, rulesClient, sendTest,
   type NotificationRuleCreate, type NotificationRuleRead, type NotificationRuleUpdate,
@@ -90,12 +90,10 @@ export default function NotificationRulesPage() {
       emptyValues={{ event_type: '', channel: 'TASK', users: [], emails: '', active: true }}
       toFormValues={(r) => ({ ...r, emails: r.emails.join('\n') })}
       errorMessages={errorMessages}
-      renderDetail={(r) => (
-        <div className="flex flex-col gap-4">
-          <TestRule rule={r} />
-          <AuditHistory resource="notification-rules" id={r.id} version={r.version} load={fetchRuleAudit} />
-        </div>
-      )}
+      recordTitle={(r) => r.event_label}
+      recordSubtitle={(r) => `${r.event_type} · ${r.channel}`}
+      detailTabs={(r, details) => [details, { id: 'test', label: 'Send a test', render: () => <TestRule rule={r} /> },
+        historyTab('notification-rules', r.id, r.version, fetchRuleAudit)]}
     />
   )
 }

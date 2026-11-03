@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { Badge, CrudPage, useToast, type ColumnDef, type FieldSpec } from '@/platform-ui'
-import { AuditHistory } from '../AuditHistory'
+import { historyTab } from '../historyTab'
 import {
   WAREHOUSE_ROLES, downloadWarehouses, fetchWarehouseAudit, warehousesClient,
   type WarehouseCreate, type WarehouseRead, type WarehouseUpdate,
@@ -55,7 +55,9 @@ export default function WarehousesPage() {
       onExport={(path) => { downloadWarehouses(path).catch((e: unknown) => toast({ variant: 'error', title: 'Export failed', description: e instanceof Error ? e.message : String(e) })) }}
       csvImport
       errorMessages={{ 'warehouse.code_taken': 'A warehouse with this code already exists.' }}
-      renderDetail={(r) => <AuditHistory resource="warehouses" id={r.id} version={r.version} load={fetchWarehouseAudit} />}
+      recordTitle={(r) => r.name}
+      recordSubtitle={(r) => r.code}
+      detailTabs={(r, details) => [details, historyTab('warehouses', r.id, r.version, fetchWarehouseAudit)]}
     />
   )
 }

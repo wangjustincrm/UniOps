@@ -62,6 +62,18 @@ const RAW_FORMS = [
   { selector: "JSXOpeningElement[name.name='form']", message: 'Use SchemaForm or MasterDetailForm from @/platform-ui (in a Sheet or Dialog), not a raw <form>.' },
 ]
 
+// A record's detail is a RecordSheet (the user's ask, 2026-11-03: one detail
+// frame — header, facts, actions, tabs); a settings form is a FormSheet.
+// ListPage / CrudPage open the record's sheet; nothing in features or pages
+// draws a raw Sheet.
+const RAW_SHEETS = [
+  { selector: "JSXOpeningElement[name.name='Sheet']", message: 'A record detail is a RecordSheet (a form: FormSheet) from @/platform-ui, not a raw Sheet.' },
+]
+const NO_RAW_SHEET_IMPORT = {
+  name: '@/platform-ui', importNames: ['Sheet'],
+  message: 'A record detail is a RecordSheet (a form: FormSheet) from @/platform-ui, not a raw Sheet.',
+}
+
 export default defineConfig([
   globalIgnores(['dist']),
   {
@@ -118,7 +130,7 @@ export default defineConfig([
   {
     files: ['src/**/*.{ts,tsx}'],
     ignores: ['src/platform-ui/**', ...SHELL_LAYER],
-    rules: { 'no-restricted-imports': ['error', { patterns: [SHELL] }] },
+    rules: { 'no-restricted-imports': ['error', { patterns: [SHELL], paths: [NO_RAW_SHEET_IMPORT] }] },
   },
   // One block per file group for no-restricted-syntax (a later block would
   // replace, not add to, an earlier one's list).
@@ -129,11 +141,11 @@ export default defineConfig([
   },
   {
     files: ['src/pages/**/*.tsx'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...RAW_TABLES, ...RAW_FORMS] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS] },
   },
   {
     files: ['src/features/**/*.{ts,tsx}'],
     ignores: ['src/features/**/*.test.{ts,tsx}'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...RAW_TABLES, ...RAW_FORMS] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS] },
   },
 ])

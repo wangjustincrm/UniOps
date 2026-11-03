@@ -1,3 +1,4 @@
+import { openTab } from '@/platform-ui/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -49,12 +50,14 @@ describe('Transfers', () => {
     renderAs(['sales.read', 'sales.transfer.manage'])
     fireEvent.click(await screen.findByText('00104'))
     const dialog = await screen.findByRole('dialog')
+    await openTab(dialog, 'Lines')
     const lines = await within(dialog).findByRole('table', { name: 'Transfer lines' })
     expect(within(lines).getByText('CF0093').closest('tr')).toHaveTextContent('Open')
+    await openTab(dialog, 'Receipts')
     const rows = within(dialog).getByRole('table', { name: '944 944-16468.edi lines' })
     expect(within(rows).getByText('CF0103').closest('tr')).toHaveTextContent('not on the transfer')
     expect(within(dialog).getByText('CF0103 7200 EA received but not on the transfer')).toBeInTheDocument()
-    expect(within(dialog).queryByRole('button', { name: 'Cancel transfer' })).toBeNull()  // the 943 is sent
+    expect(within(dialog).queryByRole('button', { name: 'More actions' })).toBeNull()  // no Cancel: the 943 is sent
   })
 
   it('a new draft: warehouses and lines; Save needs both warehouses and a quantity', async () => {
@@ -81,14 +84,15 @@ describe('Transfers', () => {
     const { unmount } = renderAs(['sales.read'])
     fireEvent.click(await screen.findByText('00105'))
     let dialog = await screen.findByRole('dialog')
-    await within(dialog).findByRole('table', { name: 'Transfer lines' })
-    expect(within(dialog).queryByRole('button', { name: 'Cancel transfer' })).toBeNull()
+    await within(dialog).findByRole('tab', { name: /^Lines/ })
+    expect(within(dialog).queryByRole('button', { name: 'More actions' })).toBeNull()  // Cancel is under More, with the permission
     expect(within(dialog).queryByRole('button', { name: 'Edit draft' })).toBeNull()
     unmount()
     renderAs(['sales.read', 'sales.transfer.manage'])
     fireEvent.click(await screen.findByText('00105'))
     dialog = await screen.findByRole('dialog')
-    fireEvent.click(await within(dialog).findByRole('button', { name: 'Cancel transfer' }))
+    fireEvent.keyDown(await within(dialog).findByRole('button', { name: 'More actions' }), { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Cancel transfer' }))
     const ask = await screen.findByRole('dialog', { name: 'Cancel transfer 00105?' })
     expect(within(ask).getByRole('button', { name: 'Cancel transfer' })).toBeDisabled()  // a reason first
     fireEvent.change(within(ask).getByLabelText(/Why/), { target: { value: 'not needed' } })
@@ -102,7 +106,7 @@ describe('Transfers', () => {
     api.update.mockResolvedValue({ ...d, version: 2, lines: [{ ...d.lines[0], qty_ea: 1200 }] })
     renderAs(['sales.read', 'sales.transfer.manage'])
     fireEvent.click(await screen.findByText('00105'))
-    const sheet = await screen.findByRole('dialog', { name: 'Transfer 00105' })
+    const sheet = await screen.findByRole('dialog', { name: '00105' })
     fireEvent.click(await within(sheet).findByRole('button', { name: 'Edit draft' }))
     fireEvent.change(await within(sheet).findByLabelText('EA 1'), { target: { value: '1200' } })
     fireEvent.click(within(sheet).getByRole('button', { name: 'Save changes' }))

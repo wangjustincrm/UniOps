@@ -21,12 +21,19 @@ export interface ViewState {
   includeHistorical?: boolean
   columns: string[]
   hidden: string[]
+  /** Auto-refresh every N seconds (absent: off). */
+  refresh?: number
 }
 
 export interface Layout {
   columns: string[]
   hidden: string[]
+  /** Auto-refresh every N seconds (absent: off). */
+  refresh?: number
 }
+
+/** The auto-refresh choices, in seconds (0 = off). */
+export const AUTO_REFRESH = [0, 30, 60, 300] as const
 
 export const emptyLayout = (): Layout => ({ columns: [], hidden: [] })
 
@@ -34,7 +41,7 @@ export function viewStateOf(spec: QuerySpec, layout: Layout): ViewState {
   return normalizeView({
     version: VIEW_STATE_VERSION, sort: spec.sort ?? [], group: spec.group ?? [], filters: spec.filters ?? [],
     search: spec.search, pageSize: spec.pageSize, includeHistorical: spec.includeHistorical,
-    columns: layout.columns, hidden: layout.hidden,
+    columns: layout.columns, hidden: layout.hidden, refresh: layout.refresh,
   })
 }
 
@@ -46,7 +53,8 @@ export function specOf(view: ViewState): QuerySpec {
   }
 }
 
-export const layoutOf = (view: ViewState): Layout => ({ columns: view.columns, hidden: view.hidden })
+export const layoutOf = (view: ViewState): Layout => ({ columns: view.columns, hidden: view.hidden,
+  ...(view.refresh ? { refresh: view.refresh } : {}) })
 
 /** Every part present and in one shape, so two states compare as text. */
 export function normalizeView(v: Partial<ViewState>): ViewState {
@@ -61,6 +69,7 @@ export function normalizeView(v: Partial<ViewState>): ViewState {
     ...(v.includeHistorical ? { includeHistorical: true } : {}),
     columns: v.columns ?? [],
     hidden: v.hidden ?? [],
+    ...(v.refresh ? { refresh: v.refresh } : {}),
   }
 }
 

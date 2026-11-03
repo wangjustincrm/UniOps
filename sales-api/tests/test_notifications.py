@@ -318,11 +318,15 @@ async def test_every_dashboard_card_is_the_total_of_the_list_it_opens(api):
 async def test_a_task_opens_its_record_in_sales(api):
     async def go(key):
         return (await api.get(f"/api/v1/inbox/{key}", headers=READER)).json()
-    assert await go("SALES:order_review:23") == {"page": "/orders", "resource": "/orders", "id": 23}
-    assert await go("SALES:sftp_auth_failed:2") == {"page": "/config/connections", "resource": "/config/connections", "id": 2}
-    assert await go("SALES:partial_receipt:5") == {"page": "/transfers", "resource": "/transfers", "id": 5}
-    assert await go("SALES:test:3") == {"page": "/config/notifications", "resource": "/config/notification-rules", "id": 3}
-    assert await go("SALES:somethingnew:3") == {"page": "/home", "resource": None, "id": None}
+    # ... and the tab of its sheet the task is about
+    assert await go("SALES:order_review:23") == {"page": "/orders", "resource": "/orders", "id": 23, "tab": "overview"}
+    assert (await go("SALES:short_shipment:23"))["tab"] == "shipments"
+    assert (await go("SALES:940_rejected:23"))["tab"] == "documents"
+    assert (await go("SALES:invoice_hold:23"))["tab"] == "invoice"
+    assert await go("SALES:sftp_auth_failed:2") == {"page": "/config/connections", "resource": "/config/connections", "id": 2, "tab": "overview"}
+    assert await go("SALES:partial_receipt:5") == {"page": "/transfers", "resource": "/transfers", "id": 5, "tab": "receipts"}
+    assert await go("SALES:test:3") == {"page": "/config/notifications", "resource": "/config/notification-rules", "id": 3, "tab": None}
+    assert await go("SALES:somethingnew:3") == {"page": "/home", "resource": None, "id": None, "tab": None}
     assert (await api.get("/api/v1/inbox/VMS:x:1", headers=READER)).status_code == 422
 
 

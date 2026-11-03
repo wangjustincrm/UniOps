@@ -7,18 +7,28 @@ export interface TabItem {
   label: ReactNode
   content: ReactNode
   disabled?: boolean
+  /** A count beside the label (e.g. how many documents). */
+  count?: number
+  /** A dot beside the label: something in the tab needs attention. */
+  attention?: 'warning' | 'danger'
 }
 
+const DOT = { warning: 'bg-warning-500', danger: 'bg-danger-600' } as const
+
 /** In-page tabs (sections of one record). Module-level navigation stays with
- *  the shell's tab host. */
+ *  the shell's tab host. Only the selected tab's content is rendered (lazy);
+ *  ←/→, Home and End move between tabs (Radix). */
 export function Tabs({
-  items, value, defaultValue, onValueChange, className,
+  items, value, defaultValue, onValueChange, className, listClassName, ariaLabel,
 }: {
   items: TabItem[]
   value?: string
   defaultValue?: string
   onValueChange?: (v: string) => void
   className?: string
+  /** E.g. sticky under a sheet's header. */
+  listClassName?: string
+  ariaLabel?: string
 }) {
   return (
     <RTabs.Root
@@ -27,19 +37,25 @@ export function Tabs({
       onValueChange={onValueChange}
       className={className}
     >
-      <RTabs.List className="mb-4 flex gap-1 border-b border-neutral-200">
+      <RTabs.List aria-label={ariaLabel} className={cn('mb-4 flex gap-1 overflow-x-auto border-b border-neutral-200', listClassName)}>
         {items.map((t) => (
           <RTabs.Trigger
             key={t.value}
             value={t.value}
             disabled={t.disabled}
             className={cn(
-              '-mb-px border-b-2 border-transparent px-3 py-2 text-sm text-neutral-500 hover:text-neutral-800',
+              '-mb-px inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-3 py-2 text-sm text-neutral-500 hover:text-neutral-800',
               'data-[state=active]:border-primary-600 data-[state=active]:font-medium data-[state=active]:text-primary-700',
-              'disabled:opacity-50',
+              'focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600 disabled:opacity-50',
             )}
           >
             {t.label}
+            {t.count !== undefined && (
+              <span className="rounded-full bg-neutral-100 px-1.5 text-xs font-medium tabular-nums text-neutral-600">{t.count}</span>
+            )}
+            {t.attention && (
+              <span className={cn('h-1.5 w-1.5 rounded-full', DOT[t.attention])} aria-label="needs attention" role="img" />
+            )}
           </RTabs.Trigger>
         ))}
       </RTabs.List>

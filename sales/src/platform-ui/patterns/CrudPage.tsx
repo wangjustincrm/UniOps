@@ -1,7 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import type { FieldValues } from 'react-hook-form'
 import type { z } from 'zod'
-import { Button } from '../primitives/shell'
 import type { ColumnDef } from '../primitives/DataTable'
 import { Dialog } from '../primitives/Dialog'
 import { FilePicker } from '../primitives/FilePicker'
@@ -13,6 +12,8 @@ import { useCrudResource } from '../resource/useCrudResource'
 import type { ImportReport, ResourceClient } from '../resource/ResourceClient'
 import { useCan } from './permissions'
 import { ErrorMessage } from './ErrorMessage'
+import { RecordSheet, type RecordFact, type RecordTab } from './RecordSheet'
+import { Badge, Button } from '../primitives/shell'
 
 interface Row {
   id: number
@@ -39,8 +40,12 @@ export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
   onExport?: (path: string) => void
   csvImport?: boolean
   errorMessages?: Record<string, string>
-  /** Shown under the form of an existing record (e.g. its audit history). */
-  renderDetail?: (row: T) => ReactNode
+  /** The record's sheet: its title (default "<singular> #id"), subtitle and key facts. */
+  recordTitle?: (row: T) => string
+  recordSubtitle?: (row: T) => ReactNode
+  recordFacts?: (row: T) => RecordFact[]
+  /** The sheet's tabs, given "Details" (the form): e.g. [details, history]. Default [details]. */
+  detailTabs?: (row: T, details: RecordTab) => RecordTab[]
   /** Each row's own actions (e.g. RowActions icons); never open the row. */
   rowActions?: (row: T) => ReactNode
   /** Shown between the header and the list (e.g. a related setting). */
@@ -78,7 +83,7 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
       rowActions={props.rowActions}
       errorMessages={props.errorMessages}
       notice={<>{props.notice}<ErrorMessage error={importError} messages={props.errorMessages} /></>}
-      detailTitle={() => (canWrite ? `Edit ${singular}` : `${singular} (read only)`)}
+      detailSize="md"
       renderDetail={(row, close) => (
         <RecordForm row={row} close={close} canWrite={canWrite} props={props}
           save={(values) => update.mutateAsync({ id: row.id, data: values as Partial<TUpdate>, version: row.version })}
@@ -148,8 +153,8 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
   )
 }
 
-/** An existing record: its form (read-only without the write permission),
- *  the page's extra detail, and Deactivate. */
+/** An existing record in its RecordSheet: the form (read-only without the
+ *  write permission) as "Details", the page's own tabs, Deactivate in "More". */
 function RecordForm<T extends Row, TCreate, TUpdate>({ row, close, canWrite, props, save, deactivate }: {
   row: T
   close: () => void
@@ -160,8 +165,9 @@ function RecordForm<T extends Row, TCreate, TUpdate>({ row, close, canWrite, pro
 }) {
   const [confirm, setConfirm] = useState(false)
   const fields = props.fields.map((f) => (props.immutableOnEdit?.includes(f.name) ? { ...f, readOnly: true } : f))
-  return (
-    <>
+  const singular = props.singular ?? props.title
+  const details: RecordTab = {
+    id: 'details', label: 'Details', render: () => (
       <SchemaForm
         key={`${row.id}:${row.version ?? ''}`}
         schema={props.updateSchema}
@@ -176,12 +182,22 @@ function RecordForm<T extends Row, TCreate, TUpdate>({ row, close, canWrite, pro
           close()
         }}
       />
-      {props.renderDetail && <div className="mt-6 border-t border-neutral-100 pt-4">{props.renderDetail(row)}</div>}
-      {canWrite && row.active !== false && (
-        <div className="mt-6 border-t border-neutral-100 pt-4">
-          <Button variant="destructive" size="sm" onClick={() => setConfirm(true)}>Deactivate</Button>
-        </div>
-      )}
+    ),
+  }
+  return (
+    <>
+      <RecordSheet
+        title={props.recordTitle?.(row) ?? `${singular[0].toUpperCase()}${singular.slice(1)} #${row.id}`}
+        subtitle={props.recordSubtitle?.(row)}
+        badges={<>
+          {row.active === false && <Badge variant="neutral">Inactive</Badge>}
+          {!canWrite && <Badge variant="neutral">Read only</Badge>}
+        </>}
+        facts={props.recordFacts?.(row)}
+        more={canWrite && row.active !== false
+          ? [{ label: 'Deactivate', onSelect: () => setConfirm(true), opensDialog: true }] : undefined}
+        tabs={props.detailTabs ? props.detailTabs(row, details) : [details]}
+      />
       <ConfirmAction
         open={confirm}
         onOpenChange={setConfirm}

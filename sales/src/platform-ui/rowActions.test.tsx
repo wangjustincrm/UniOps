@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ListPage } from './patterns/ListPage'
+import { RecordSheet } from './patterns/RecordSheet'
 import { PermissionProvider } from './patterns/PermissionGate'
 import { RowActions } from './patterns/RowActions'
 import type { ListMeta } from './resource/listMeta'
@@ -17,7 +18,7 @@ function page(keys: string[], onAction: () => Promise<unknown>, confirm?: () => 
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={qc}><PermissionProvider can={(k) => keys.includes(k)}>
     <ListPage<{ id: number; name: string }> resource={resource} title="Things" columns={[{ accessorKey: 'name', header: 'Name' }]}
-      detailTitle={(r) => `Thing ${r.name}`} renderDetail={(r) => <p>detail of {r.name}</p>}
+      renderDetail={(r) => <RecordSheet title={`Thing ${r.name}`} tabs={[{ id: 'd', label: 'Detail', render: () => <p>detail of {r.name}</p> }]} />}
       rowActions={() => <RowActions actions={[
         { key: 'go', label: 'Go now', icon: <span>⟳</span>, permission: 'x.run', onAction, confirm },
         { key: 'gone', label: 'Hidden one', icon: <span>×</span>, hidden: true, onAction },

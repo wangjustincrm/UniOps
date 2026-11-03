@@ -2,9 +2,9 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, Autocomplete, ConfirmAction, DateCell, DateTimeCell, DetailList, ErrorMessage, ErrorView, ListPage, LocalTable,
-  MasterDetailForm, Skeleton, StatusCell, numberColumn, queryKeys,
-  type ColumnDef, type EditableColumn, type FieldSpec,
+  ActionButton, Autocomplete, ConfirmAction, DateCell, DateTimeCell, DetailList, ErrorMessage, ListPage, LocalTable,
+  MasterDetailForm, RecordSheet, Section, StatusCell, numberColumn, queryKeys,
+  type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab,
 } from '@/platform-ui'
 import { itemOptions, warehouseOptions } from '../configuration/lookups'
 import {
@@ -89,7 +89,8 @@ function TransferForm({ t, onSaved, onCancel }: { t?: TransferDetail; onSaved: (
   )
 }
 
-function Detail({ id }: { id: number }) {
+function Detail({ row }: { row: TransferRead }) {
+  const id = row.id
   const qc = useQueryClient()
   const q = useQuery({ queryKey: queryKeys.detail(transfersClient, id), queryFn: () => fetchTransfer(id) })
   const [cancelling, setCancelling] = useState(false)
@@ -100,48 +101,70 @@ function Detail({ id }: { id: number }) {
   }
   const ready = useMutation({ mutationFn: () => readyTransfer(id, q.data!.version), onSuccess: done })
   const resend = useMutation({ mutationFn: () => resendTransfer(id, q.data!.version), onSuccess: done })
-
-  if (q.isLoading) return <Skeleton className="h-40 w-full" />
-  if (q.error || !q.data) return <ErrorView error={q.error} />
   const t = q.data
-  return (
-    <div className="flex flex-col gap-4 text-sm">
-      <DetailList items={[
-        ['Status', <StatusCell key="s" value={t.status} />], ['From → to', `${t.from_warehouse} → ${t.to_warehouse}`],
-        ['943', t.control ? `${t.control} · file ${t.file_status} · 997 ${t.ack_status}` : null], ['Notes', t.notes], ['Problem', t.error],
-      ]} />
-      {!editing && (
-        <LocalTable<TransferLineRead> ariaLabel="Transfer lines" columns={lineColumns} rows={t.lines} rowKey={(l) => l.id}
-          footer={[null, 'Total', t.lines.reduce((n, l) => n + l.qty_ea, 0), t.lines.reduce((n, l) => n + l.received_ea, 0), null]} />
-      )}
-      {t.status === 'Draft' && editing && (
-        <TransferForm key={t.version} t={t} onCancel={() => setEditing(false)} onSaved={async (d) => { setEditing(false); await done(d) }} />
-      )}
-      <div className="flex flex-wrap gap-2">
-        {t.status === 'Draft' && !editing && <ActionButton size="sm" permission={MANAGE} onAction={() => ready.mutateAsync().catch(() => {})}>Ready to send</ActionButton>}
-        {t.status === 'Draft' && !editing && <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setEditing(true)}>Edit draft</ActionButton>}
-        {t.status === 'Failed' && <ActionButton size="sm" permission={MANAGE} onAction={() => resend.mutateAsync().catch(() => {})}>Resend 943</ActionButton>}
-        {CANCELLABLE.includes(t.status) && (
-          <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setCancelling(true)}>Cancel transfer</ActionButton>
-        )}
-      </div>
-      <ErrorMessage error={ready.error ?? resend.error} messages={errorMessages} />
-      <ConfirmAction open={cancelling} onOpenChange={setCancelling} title={`Cancel transfer ${t.transfer_number}?`} destructive
-        confirmLabel="Cancel transfer" reason={{ label: 'Why' }} errorMessages={errorMessages}
-        description="Allowed before its 943 is sent, or after it was rejected. A queued 943 is withdrawn."
-        onConfirm={async (why) => done(await cancelTransfer(id, t.version, why))} />
-      {t.receipts.map((r) => (
-        <section key={r.id} aria-label={`Receipt ${r.document_name ?? r.id}`} className="flex flex-col gap-2">
-          <h3 className="font-semibold text-neutral-800">
-            944 {r.document_name} · <DateCell value={r.receipt_date} /> · {r.applied ? r.outcome : r.shadow ? 'shadow run: not applied' : 'not applied (second 944)'}
-          </h3>
+  const sent = t ? t.lines.reduce((n, l) => n + l.qty_ea, 0) : 0
+  const received = t ? t.lines.reduce((n, l) => n + l.received_ea, 0) : 0
+  const discrepant = !!t?.receipts.some((r) => r.discrepancies && r.discrepancies.length > 0)
+  const tabs: RecordTab[] = !t ? [] : editing ? [{
+    id: 'edit', label: 'Edit draft', render: () => (
+      <TransferForm key={t.version} t={t} onCancel={() => setEditing(false)} onSaved={async (d) => { setEditing(false); await done(d) }} />),
+  }] : [
+    { id: 'overview', label: 'Overview', tone: t.error ? 'danger' : undefined, render: () => (
+      <Section title="Transfer">
+        <DetailList items={[
+          ['From → to', `${t.from_warehouse} → ${t.to_warehouse}`],
+          ['943', t.control ? `${t.control} · file ${t.file_status} · 997 ${t.ack_status}` : null], ['Notes', t.notes], ['Problem', t.error],
+        ]} />
+      </Section>
+    ) },
+    { id: 'lines', label: 'Lines', count: t.lines.length, render: () => (
+      <LocalTable<TransferLineRead> ariaLabel="Transfer lines" columns={lineColumns} rows={t.lines} rowKey={(l) => l.id}
+        footer={[null, 'Total', sent, received, null]} />
+    ) },
+    { id: 'receipts', label: 'Receipts (944)', count: t.receipts.length, tone: discrepant ? 'warning' : undefined,
+      empty: t.receipts.length === 0 && 'No 944 yet', render: () => t.receipts.map((r) => (
+        <Section key={r.id} title={<>944 {r.document_name} · <DateCell value={r.receipt_date} /> · {r.applied ? r.outcome : r.shadow ? 'shadow run: not applied' : 'not applied (second 944)'}</>}>
           {r.discrepancies && r.discrepancies.length > 0 && <ul className="text-xs text-danger-600">{r.discrepancies.map((x) => <li key={x}>{x}</li>)}</ul>}
           <LocalTable<ReceiptRowRead> ariaLabel={`944 ${r.document_name ?? r.id} lines`} columns={rowColumns} rows={r.rows}
             rowKey={(x) => x.position} sortable={['item_code', 'lot', 'transfer_line_no']}
             footer={[null, null, 'Total', null, r.rows.reduce((n, x) => n + x.qty_ea, 0), null]} />
-        </section>
-      ))}
-    </div>
+        </Section>
+      )) },
+  ]
+  return (
+    <>
+      <RecordSheet
+        title={row.transfer_number}
+        subtitle={`${row.from_warehouse ?? '?'} → ${row.to_warehouse ?? '?'}`}
+        badges={<StatusCell value={t?.status ?? row.status} />}
+        loading={q.isLoading} error={q.error} errorMessages={errorMessages}
+        onRefresh={() => q.refetch()} updatedAt={q.dataUpdatedAt}
+        facts={t ? [
+          { label: 'Status', value: t.status, tone: ['Failed', 'Discrepancy'].includes(t.status) ? 'danger' : t.status === 'Partially Received' ? 'warning' : 'neutral' },
+          { label: 'Sent EA', value: sent },
+          { label: 'Received EA', value: received, tone: t.receipts.length > 0 && received < sent ? 'warning' : 'neutral' },
+          { label: '943', value: t.control ?? '—', hint: t.file_status ?? undefined },
+          { label: '997', value: t.ack_status ?? '—' },
+        ] : undefined}
+        actions={t && !editing ? (
+          <>
+            {t.status === 'Draft' && <ActionButton size="sm" permission={MANAGE} onAction={() => ready.mutateAsync().catch(() => {})}>Ready to send</ActionButton>}
+            {t.status === 'Draft' && <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setEditing(true)}>Edit draft</ActionButton>}
+            {t.status === 'Failed' && <ActionButton size="sm" permission={MANAGE} onAction={() => resend.mutateAsync().catch(() => {})}>Resend 943</ActionButton>}
+            <ErrorMessage error={ready.error ?? resend.error} messages={errorMessages} />
+          </>
+        ) : undefined}
+        more={t && !editing && CANCELLABLE.includes(t.status)
+          ? [{ label: 'Cancel transfer', permission: MANAGE, onSelect: () => setCancelling(true), opensDialog: true }] : undefined}
+        tabs={tabs}
+      />
+      {t && (
+        <ConfirmAction open={cancelling} onOpenChange={setCancelling} title={`Cancel transfer ${t.transfer_number}?`} destructive
+          confirmLabel="Cancel transfer" reason={{ label: 'Why' }} errorMessages={errorMessages}
+          description="Allowed before its 943 is sent, or after it was rejected. A queued 943 is withdrawn."
+          onConfirm={async (why) => done(await cancelTransfer(id, t.version, why))} />
+      )}
+    </>
   )
 }
 
@@ -157,9 +180,7 @@ export default function TransfersPage() {
       emptyTitle="No transfers yet"
       create={{ label: 'New transfer', permission: MANAGE, className: 'max-w-3xl',
         render: (done, cancel) => <TransferForm onSaved={(d) => done(d)} onCancel={cancel} /> }}
-      detailTitle={(t) => `Transfer ${t.transfer_number}`}
-      detailClassName="max-w-4xl"
-      renderDetail={(t) => <Detail id={t.id} />}
+      renderDetail={(t) => <Detail row={t} />}
     />
   )
 }

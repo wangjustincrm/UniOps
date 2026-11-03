@@ -93,7 +93,7 @@ export default function DeliveryPage() {
       description="Shipped orders whose requested delivery date is reached (Walmart: do-not-deliver-after). Confirm what was delivered: the date becomes the invoice date."
       emptyTitle="Nothing waits for a delivery confirmation"
       toolbar={(ctx) => <ConfirmShown rows={ctx.rows} refresh={ctx.refresh} />}
-      detailExtra={(o, close) => <ConfirmOne o={o} close={close} />}
+      detailTabs={(o, close) => [{ id: 'confirm', label: 'Confirm delivery', render: () => <ConfirmOne o={o} close={close} /> }]}
     />
   )
 }

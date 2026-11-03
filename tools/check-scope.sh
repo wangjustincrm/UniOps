@@ -352,14 +352,17 @@ TS
       # A form is SchemaForm / MasterDetailForm (in a Sheet or Dialog): a raw <form> is refused in features and pages.
       control_probe src/features/__eslint_probe__.tsx "<form><button>x</button></form>" fires
       control_probe src/pages/__eslint_probe__.tsx "<form />" fires
+      # A record detail is a RecordSheet (a form: FormSheet): a raw Sheet is refused in features and pages.
+      control_probe src/features/__eslint_probe__.tsx "<Sheet open title=\"x\" onOpenChange={() => {}} />" fires
+      probe src/features/__eslint_probe__.ts "import { Sheet } from \"@/platform-ui\""
       npx vite build >/tmp/b.log 2>&1 || { echo "build failed"; tail -10 /tmp/b.log; exit 16; }
       grep -q "radix-popover-trigger-width" dist/assets/*.css || { echo "platform-ui classes missing from the built CSS"; exit 17; }
       # As written in CSS: hover:x → .hover\:x
       grep -qF "$SHELL_SELECTOR" dist/assets/*.css || { echo "shell-only class $SHELL_SENTINEL missing from the built CSS"; exit 19; }
-      echo "probe reported; 0 other type errors; import + layer rules pass; 7 planted import violations, 4 raw form controls, 2 hand-made dates, 2 raw tables and 2 raw forms caught, primitives admitted; library and shell classes in CSS"
+      echo "probe reported; 0 other type errors; import + layer rules pass; 7 planted import violations, 4 raw form controls, 2 hand-made dates, 2 raw tables, 2 raw forms and 2 raw sheets caught, primitives admitted; library and shell classes in CSS"
     '
   rc=$?
-  if [[ $rc == 0 ]]; then ok "sales: TS5101 trap, import + layer rules, ESLint probes (imports, raw controls, raw tables, raw forms), library + shell CSS"; else fail "sales checks (code $rc)"; fi
+  if [[ $rc == 0 ]]; then ok "sales: TS5101 trap, import + layer rules, ESLint probes (imports, raw controls, raw tables, raw forms, raw sheets), library + shell CSS"; else fail "sales checks (code $rc)"; fi
 fi
 
 echo
