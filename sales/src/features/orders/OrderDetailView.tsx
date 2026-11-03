@@ -359,7 +359,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
   ]
 
   const facts: RecordFact[] = !d ? [] : [
-    { label: 'Total', value: formatMoney(d.total_amount ?? d.total, d.currency), hint: d.currency },
+    { label: 'Total', value: formatMoney(d.total_amount ?? d.total, d.currency), hint: `${open.length} ${open.length === 1 ? 'line' : 'lines'}` },
     ...(d.source_type === 'SHOPIFY' && d.net_amount != null ? [{
       label: 'Net', value: formatMoney(d.net_amount, d.currency), tone: Number(d.total_refunded ?? 0) > 0 ? 'warning' as const : 'neutral' as const,
       hint: Number(d.total_refunded ?? 0) > 0 ? `${formatMoney(d.total_refunded!, d.currency)} refunded` : 'nothing refunded' }] : []),
@@ -391,13 +391,13 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
     <>
       <RecordSheet
         title={live.source_reference ?? `#${live.order_number}`}
-        subtitle={[...new Set([`Internal no. ${live.order_number}`, live.partner_name ?? live.partner_code,
+        subtitle={[...new Set([live.order_state, `Internal no. ${live.order_number}`, live.partner_name ?? live.partner_code,
           SOURCE_LABEL[live.source_type] ?? live.source_type])].concat(live.source_order_number ? [`PO ${live.source_order_number}`] : []).join(' · ')}
         badges={<>
           <StateBadge o={live} />
-          <span className="text-xs text-neutral-500">{live.order_state}</span>
           {live.historical && <Badge variant="neutral">Historical</Badge>}
-          {live.archive_suppressed && <Badge variant="warning">Archived in Shopify</Badge>}
+          {/* the status already says Archive Suppressed; the flag shows only when the status moved on */}
+          {live.archive_suppressed && live.fulfillment_status !== 'Archive Suppressed' && <Badge variant="warning">Archived in Shopify</Badge>}
         </>}
         size="xl" loading={q.isLoading} error={q.error}
         onRefresh={refresh} updatedAt={q.dataUpdatedAt}

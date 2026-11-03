@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, Badge, CopyChip, DateCell, ErrorMessage, LocalTable, StatusCell, queryKeys, type ColumnDef } from '@/platform-ui'
+import { ActionButton, Badge, CopyChip, DateCell, Tooltip, ErrorMessage, LocalTable, StatusCell, queryKeys, type ColumnDef } from '@/platform-ui'
 import { downloadPackingList, ordersClient, retryShopify, type ShipmentRead, type ShipmentRowRead } from './ordersApi'
 
 const errorMessages: Record<string, string> = {
@@ -50,26 +50,52 @@ function Retry({ s, orderId }: { s: ShipmentRead; orderId: number }) {
  *  (FR-OB-25d) and the Shopify write-back (FR-OB-11). The pallet rows with
  *  their lots (FR-OB-25b) are under each line in Lines; a row matching no
  *  line is listed here. */
+// Where the ship date came from, and the 945's W27 mode, in words (the codes in a tooltip).
+const DATE_SOURCE: Record<string, string> = { G62: "From the 945's G62*11 (ship date)", DTM: "From the 945's DTM*011 (shipped)" }
+const MODE: Record<string, string> = { U: 'Parcel', LT: 'LTL', M: 'Truck' }
+
+function Pair({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <dt className="text-xs text-neutral-500">{label}</dt>
+      <dd className="min-w-0 break-words text-neutral-800">{children}</dd>
+    </div>
+  )
+}
+
 export function Shipments({ shipments, orderId }: { shipments: ShipmentRead[]; orderId: number }) {
   if (shipments.length === 0) return null
   return (
     <section aria-label="Shipments" className="flex flex-col gap-3">
       {shipments.map((s) => (
-        <div key={s.id} aria-label={`Shipment ${s.id}`} role="group" className="flex flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-3 text-xs">
+        <div key={s.id} aria-label={`Shipment ${s.id}`} role="group" className="flex flex-col gap-3 rounded-lg border border-neutral-200 bg-white p-3 text-sm">
           <div className="flex flex-wrap items-center gap-2">
-            <span>Shipped <DateCell value={s.ship_date} /> ({s.ship_date_source ?? 'no date'})</span>
-            {s.carrier && <span>· {s.carrier} {s.mode ?? ''}</span>}
-            {s.tracking?.length ? <span className="inline-flex flex-wrap items-center gap-1">· tracking {s.tracking.map((t) => <CopyChip key={t} text={t} />)}</span>
-              : <span>· no tracking</span>}
+            <span className="font-medium text-neutral-800">945 #{s.document_id}</span>
             {s.shadow && <Badge variant="neutral">Shadow run: not applied</Badge>}
             {!s.shadow && !s.applied && <Badge variant="warning">Not applied (second 945)</Badge>}
-            <span>· Shopify <StatusCell value={s.shopify_status} /></span>
-            {(s.shopify_status === 'Failed' || s.shopify_status === 'Suppressed') && !s.shadow && <Retry s={s} orderId={orderId} />}
             <span className="ml-auto"><PackingListButton s={s} orderId={orderId} /></span>
           </div>
-          {s.shopify_error && <p className="text-danger-600">{s.shopify_error}</p>}
-          <span>{s.rows.length} {s.rows.length === 1 ? 'row' : 'rows'} · {s.rows.reduce((n, r) => n + r.qty_shipped_ea, 0)} EA
-            {s.bol && <> · BOL {s.bol}</>}{s.our_reference && <> · 940 ref. {s.our_reference}</>} (by line in Lines ▸)</span>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
+            <Pair label="Ship date">
+              {s.ship_date ? <Tooltip tip={DATE_SOURCE[s.ship_date_source ?? ''] ?? 'From the 945'}><DateCell value={s.ship_date} /></Tooltip> : '—'}
+            </Pair>
+            <Pair label="Carrier">
+              {s.carrier ? <>{s.carrier}{s.mode && <> · <Tooltip tip={`W27 mode ${s.mode}`}>{MODE[s.mode] ?? s.mode}</Tooltip></>}</> : '—'}
+            </Pair>
+            <Pair label="Tracking">
+              {s.tracking?.length ? <span className="flex flex-wrap gap-1">{s.tracking.map((t) => <CopyChip key={t} text={t} />)}</span> : 'None'}
+            </Pair>
+            <Pair label="Packed">{s.rows.length} {s.rows.length === 1 ? 'row' : 'rows'} · {s.rows.reduce((n, r) => n + r.qty_shipped_ea, 0)} EA</Pair>
+            <Pair label="BOL">{s.bol ?? '—'}</Pair>
+            <Pair label="940 ref">{s.our_reference ?? '—'}</Pair>
+            <Pair label="Shopify">
+              <span className="inline-flex flex-wrap items-center gap-1">
+                <StatusCell value={s.shopify_status} />
+                {(s.shopify_status === 'Failed' || s.shopify_status === 'Suppressed') && !s.shadow && <Retry s={s} orderId={orderId} />}
+              </span>
+            </Pair>
+          </dl>
+          {s.shopify_error && <p className="text-xs text-danger-600">{s.shopify_error}</p>}
           {s.rows.some((r) => r.needs_review) && (
             <LocalTable<ShipmentRowRead> ariaLabel={`Shipment ${s.id} rows matching no line`} columns={rowColumns}
               rows={s.rows.filter((r) => r.needs_review)} rowKey={(r) => `${r.lx_index}-${r.w12_index}`} />

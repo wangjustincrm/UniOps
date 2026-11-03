@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   flexRender, getCoreRowModel, useReactTable,
   type ColumnDef, type SortingState, type Updater,
@@ -160,7 +160,7 @@ export function DataTable<T>({
       {errorMessage ? (
         <ErrorState message={errorMessage} onRetry={onRetry} />
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">
+        <ScrollX>
           <table aria-label={ariaLabel} className={cn('w-full', density === 'compact' ? 'text-xs' : 'text-sm')}>
             <thead className="bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500">
               {table.getHeaderGroups().map((hg) => (
@@ -317,7 +317,7 @@ export function DataTable<T>({
               Too many groups to count them all: counts are shown for the first 500.
             </p>
           )}
-        </div>
+        </ScrollX>
       )}
 
       {pagination && pagination.total > 0 && (
@@ -328,6 +328,40 @@ export function DataTable<T>({
           onPageChange={pagination.onPageChange}
           onPageSizeChange={pagination.onPageSizeChange}
         />
+      )}
+    </div>
+  )
+}
+
+/** The table's card, scrolling sideways when its columns do not fit (a phone):
+ *  a fade and "More columns →" on the right say there is more, until the end. */
+function ScrollX({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [more, setMore] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const check = () => setMore(el.scrollWidth - el.clientWidth - el.scrollLeft > 4)
+    check()
+    el.addEventListener('scroll', check, { passive: true })
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(check)
+    ro?.observe(el)
+    if (el.firstElementChild) ro?.observe(el.firstElementChild)
+    return () => { el.removeEventListener('scroll', check); ro?.disconnect() }
+  }, [])
+  return (
+    <div className="relative">
+      <div ref={ref} className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">{children}</div>
+      {more && (
+        <>
+          <div aria-hidden className="pointer-events-none absolute right-px top-px h-[calc(100%-2px-1.75rem)] w-10 rounded-r-lg bg-gradient-to-l from-white to-transparent" />
+          <div className="mt-1 flex justify-end">
+            <button type="button" onClick={() => ref.current?.scrollBy({ left: ref.current.clientWidth * 0.8, behavior: 'smooth' })}
+              className="rounded-full px-2 py-0.5 text-xs text-neutral-500 hover:bg-neutral-100 hover:text-neutral-800">
+              More columns →
+            </button>
+          </div>
+        </>
       )}
     </div>
   )

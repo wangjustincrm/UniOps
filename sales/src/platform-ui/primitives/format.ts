@@ -10,6 +10,9 @@ import type { BadgeVariant } from './StatusBadge'
 
 const DATE_TIME = new Intl.DateTimeFormat('en-CA', { dateStyle: 'medium', timeStyle: 'short' })
 const TIME = new Intl.DateTimeFormat('en-CA', { timeStyle: 'medium' })
+// A calendar day in the same style as a date-time ("Nov 18, 2026"), read in UTC
+// from its own Y-M-D parts: the day never moves with the user's time zone.
+const DAY = new Intl.DateTimeFormat('en-CA', { dateStyle: 'medium', timeZone: 'UTC' })
 
 /** An ISO date-time in the user's local time, e.g. "Oct 30, 2026, 2:05 p.m.". */
 export function formatDateTime(iso: string | null | undefined): string {
@@ -19,10 +22,13 @@ export function formatDateTime(iso: string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? iso : DATE_TIME.format(d)
 }
 
-/** A date-only value as written ("2026-10-30"); a date-time keeps its date part. */
+/** A date-only value ("2026-10-30" → "Oct 30, 2026"), in the style of
+ *  formatDateTime; a date-time keeps its date part as written. */
 export function formatDate(day: string | null | undefined): string {
   if (!day) return '—'
-  return day.slice(0, 10)
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(day)
+  if (!m) return day
+  return DAY.format(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
 }
 
 /** The time of a moment (ms since epoch), e.g. "2:05:31 p.m.". */

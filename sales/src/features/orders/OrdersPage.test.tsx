@@ -634,9 +634,9 @@ describe('the order sheet: facts, actions and tabs', () => {
     renderAs(['sales.read', 'sales.invoice.manage'])
     fireEvent.click(await screen.findByText('SHOP-9303'))
     const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
-    expect(within(sheet).getByText('Internal no. 105 · Shopify · PO 9303')).toBeInTheDocument()  // the subtitle, the name said once
+    expect(within(sheet).getByText('Active · Internal no. 105 · Shopify · PO 9303')).toBeInTheDocument()  // the subtitle: state, the name said once
     const facts = await within(sheet).findByLabelText('Key facts')
-    expect(facts).toHaveTextContent('Total6,000.00 CAD')
+    expect(facts).toHaveTextContent('Total6,000.00 CAD1 line')
     expect(facts).toHaveTextContent('Net5,963.00 CAD37.00 CAD refunded')
     expect(facts).toHaveTextContent('Ordered EA480')
     expect(facts).toHaveTextContent('Backordered EA80')
@@ -647,6 +647,10 @@ describe('the order sheet: facts, actions and tabs', () => {
     expect(within(within(sheet).getByRole('tab', { name: /^Lines/ })).getByRole('img', { name: 'needs attention' })).toBeInTheDocument()
     await openTab(sheet, 'Shipments & lots')
     expect(within(sheet).getAllByRole('button', { name: 'Copy 1Z-TRACK' }).length).toBeGreaterThan(0)
+    const card = within(sheet).getByRole('group', { name: 'Shipment 7' })
+    expect(card).toHaveTextContent('Ship dateNov 2, 2026')  // label: value; the X12 source in a tooltip, not the text
+    expect(card).not.toHaveTextContent('G62')
+    expect(card).toHaveTextContent('CarrierPRLA · Parcel')
     const lots = within(sheet).getByRole('table', { name: 'Pallets and lots' })
     expect(within(lots).getByRole('button', { name: 'Copy LOT-A' })).toBeInTheDocument()
     await openTab(sheet, 'Activity')

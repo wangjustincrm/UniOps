@@ -1,6 +1,7 @@
 /** "Loblaws (AC-9898)" — a partner as text with its code (detail rows, titles); the code alone without a name. */
 export function partnerLabel(name: string | null | undefined, code: string | null | undefined): string {
-  return name ? `${name}${code ? ` (${code})` : ''}` : (code ?? '')
+  // A partner whose name is its code (Shopify, Manual) is said once.
+  return name ? `${name}${code && code.toLowerCase() !== name.toLowerCase() ? ` (${code})` : ''}` : (code ?? '')
 }
 
 /** An order's visible identifier: its Order ref (A.3, "LCL-4887314746"); the internal number before refs existed. */

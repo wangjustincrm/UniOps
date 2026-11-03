@@ -4,5 +4,6 @@ import { Tooltip } from '@/platform-ui'
  *  shows both); the code alone when the name is not known. */
 export function PartnerCell({ name, code }: { name: string | null | undefined; code: string | null | undefined }) {
   if (!name) return <>{code ?? '—'}</>
-  return code ? <Tooltip tip={`Partner code ${code}`}>{name}</Tooltip> : <>{name}</>
+  // A partner whose name is its code (Shopify, Manual): no tooltip repeating it.
+  return code && code.toLowerCase() !== name.toLowerCase() ? <Tooltip tip={`Partner code ${code}`}>{name}</Tooltip> : <>{name}</>
 }
