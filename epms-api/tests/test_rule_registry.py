@@ -848,7 +848,7 @@ def test_settle_is_offered_only_where_new_pa_accepts_the_po():
     server = inspect.getsource(pa_api._may_create_pa_on_behalf)
     detail = _src("epms/src/pages/pa/PaDetailPage.tsx")
     assert "const settleScoped = isPaRequesterScoped(user?.role, myAuthz?.roles)" in detail
-    assert "linkedPos.items.every((p) => p.pr_requester_id === user?.id)" in detail
+    assert "linkedPos.items.every((p) => scopedRequesterMayPay(p, user?.id, myAuthz?.roles))" in detail
     assert "myAuthz?.permissions?.['epms.pa.write']" in detail
     scope = _src("epms/src/lib/paCreateScope.ts")
     roles = re.search(r"const ON_BEHALF_ROLES = \[([^\]]*)\]", scope).group(1)
@@ -856,6 +856,10 @@ def test_settle_is_offered_only_where_new_pa_accepts_the_po():
         assert f'"{role}" in roles' in server
     create = _src("epms/src/pages/pa/PaCreatePage.tsx")
     assert "isPaRequesterScoped(user?.role, myAuthz?.roles)" in create
+    assert "scopedRequesterMayPay(p, user?.id, myAuthz?.roles)" in create
+    # ERP PA Officer: only PR-less NC POs, on the server and in the shared rule.
+    assert '"erp_pa_officer" in roles and po.pr_id is None and po.source == "nc"' in server
+    assert "roles?.includes('erp_pa_officer') && !po.pr_id && po.source === 'nc'" in scope
 
 
 # ── Invoices ─────────────────────────────────────────────────────────────────

@@ -18,7 +18,7 @@ import { useGrsForPos } from '@/hooks/useGrs'
 import { useAgreement } from '@/hooks/useAgreements'
 import { useConfig, useRolePermissions } from '@/hooks/useConfig'
 import { errorMessage, rememberSubmitFailure } from '@/lib/submitFailure'
-import { isPaRequesterScoped } from '@/lib/paCreateScope'
+import { isPaRequesterScoped, scopedRequesterMayPay } from '@/lib/paCreateScope'
 import type { ApiPo } from '@/services/po'
 import type { ApiInvoice } from '@/services/invoices'
 import type { DocumentStatus } from '@/types'
@@ -241,7 +241,7 @@ function PoPaCreate() {
   const eligiblePos = allPos.filter((p) =>
     ['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_milk'].includes(p.status) &&
     (p.is_prepaid || p.has_unpaid_invoice) &&
-    (!requesterScoped || p.pr_requester_id === user?.id)
+    (!requesterScoped || scopedRequesterMayPay(p, user?.id, myAuthz?.roles))
   )
 
   const filteredPos = eligiblePos.filter((p) =>

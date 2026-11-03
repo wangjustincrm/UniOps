@@ -32,7 +32,7 @@ import {
 import { InvoiceMatchVariancePanel } from '@/components/invoices/InvoiceMatchVariancePanel'
 import { canRecallDocument, canWithdrawDocument } from '@/lib/documentActions'
 import { useConfig, useRolePermissions } from '@/hooks/useConfig'
-import { isPaRequesterScoped } from '@/lib/paCreateScope'
+import { isPaRequesterScoped, scopedRequesterMayPay } from '@/lib/paCreateScope'
 import { clearSubmitFailure, peekSubmitFailure } from '@/lib/submitFailure'
 import type { ApiPa } from '@/services/pa'
 import { historyLine } from '@/lib/approvalHistory'
@@ -527,7 +527,8 @@ export default function PaDetailPage() {
   const canRecall   = canRecallDocument(pa, user ?? {})
   // PP-015 offers Settle to a primary-role Requester or System Admin — and only
   // where New PA could then create the settlement (§3.15.2 Who can create:
-  // epms.pa.write, and a plain Requester only on POs from their own PRs).
+  // epms.pa.write, and a plain Requester only on POs from their own PRs, or as
+  // ERP PA Officer on PR-less NC POs).
   // Offering it more widely led to a refusal after the form was filled in
   // (ISS-0158).
   const settleScoped = isPaRequesterScoped(user?.role, myAuthz?.roles)
@@ -535,7 +536,7 @@ export default function PaDetailPage() {
     && (user?.role === 'system_admin' || !!myAuthz?.permissions?.['epms.pa.write'])
     && (!settleScoped || (linkedPos.items !== undefined
       && linkedPos.items.length > 0
-      && linkedPos.items.every((p) => p.pr_requester_id === user?.id)))
+      && linkedPos.items.every((p) => scopedRequesterMayPay(p, user?.id, myAuthz?.roles))))
 
   const handleConfirm = (action: ApprovalAction, comment: string) => {
     paAction.mutate(
