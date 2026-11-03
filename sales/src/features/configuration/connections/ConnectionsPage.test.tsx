@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { PermissionProvider, ToastProvider } from '@/platform-ui'
 import { MemoryRouter } from 'react-router-dom'
@@ -22,7 +22,7 @@ const api = vi.hoisted(() => ({
   edi: vi.fn(async () => ({ connection_id: null, ack_timeout_minutes: 120 })), saveEdi: vi.fn(),
   shadow: vi.fn(async () => ({ shadow_mode: true })), saveShadow: vi.fn(),
   runNow: vi.fn(), runs: vi.fn(async (): Promise<{ items: unknown[]; total: number }> => ({ items: [], total: 0 })), update: vi.fn(),
-  list: vi.fn(),
+  list: vi.fn(), getRun: vi.fn(),
 }))
 vi.mock('./connectionsApi', async (orig) => {
   const real = await orig<typeof import('./connectionsApi')>()
@@ -38,7 +38,7 @@ vi.mock('./connectionsApi', async (orig) => {
 })
 vi.mock('@/features/operations/operationsApi', async (orig) => {
   const real = await orig<typeof import('@/features/operations/operationsApi')>()
-  return { ...real, runsClient: { ...real.runsClient, list: api.runs } }
+  return { ...real, runsClient: { ...real.runsClient, list: api.runs, get: api.getRun } }
 })
 const { default: ConnectionsPage } = await import('./ConnectionsPage')
 
@@ -227,6 +227,85 @@ describe("a connection's schedule", () => {
     expect(api.runNow).toHaveBeenCalledWith(7)
     expect(await within(sched).findByText('Run 31: SUCCEEDED — 2 files, 0 errors', {}, { timeout: 6000 })).toBeInTheDocument()
     expect(api.runs).toHaveBeenCalledWith(expect.objectContaining({ filters: [{ field: 'scope', op: 'eq', value: 'connection:7' }] }))
+  })
+})
+
+describe('the row icons on Connections', () => {
+  const row = (c: ConnectionRead) => screen.getByText(c.host!).closest('tr')!
+
+  it('shows only what the permissions allow; an inactive connection has no Run now', async () => {
+    api.list.mockResolvedValue({ items: [conn, { ...conn, id: 8, host: 'old-host', active: false }], total: 2 })
+    const { unmount } = renderAs(['sales.read'])
+    await screen.findByText('sftp-test')
+    expect(within(row(conn)).queryAllByRole('button')).toEqual([])
+    unmount()
+    renderAs(['sales.read', 'sales.config'])
+    await screen.findByText('sftp-test')
+    expect(within(row(conn)).getByRole('button', { name: 'Pause schedule' })).toBeInTheDocument()
+    expect(within(row(conn)).queryByRole('button', { name: 'Run now' })).toBeNull()
+    cleanup()
+    renderAs(['sales.read', 'sales.file.retry'])
+    await screen.findByText('sftp-test')
+    expect(within(row(conn)).getByRole('button', { name: 'Run now' })).toBeInTheDocument()
+    expect(within(row(conn)).queryByRole('button', { name: 'Pause schedule' })).toBeNull()
+    expect(within(screen.getByText('old-host').closest('tr')!).queryByRole('button', { name: 'Run now' })).toBeNull()
+  })
+
+  it('Pause sends the versioned update without opening the row; Resume outside the window asks first', async () => {
+    api.list.mockResolvedValue({ items: [conn], total: 1 })
+    api.update.mockResolvedValue({ ...conn, schedule_paused: true, version: 4 })
+    const { unmount } = renderAs(['sales.read', 'sales.config'])
+    await screen.findByText('sftp-test')
+    fireEvent.click(within(row(conn)).getByRole('button', { name: 'Pause schedule' }))
+    await waitFor(() => expect(api.update).toHaveBeenCalledWith(7, { schedule_paused: true }, 3))
+    expect(screen.queryByRole('dialog', { name: /connection/ })).toBeNull()  // the row did not open
+    expect(await screen.findByText('radiant: schedule paused')).toBeInTheDocument()
+    unmount()
+    api.update.mockClear()
+    // paused, and its window is one minute a day: resuming asks first
+    const closed = { ...conn, schedule_paused: true, active_from: '03:00:00', active_to: '03:01:00' }
+    api.list.mockResolvedValue({ items: [closed], total: 1 })
+    renderAs(['sales.read', 'sales.config'])
+    await screen.findByText('sftp-test')
+    fireEvent.click(within(row(closed)).getByRole('button', { name: 'Resume schedule' }))
+    const ask = await screen.findByRole('dialog', { name: 'Resume radiant?' })
+    expect(api.update).not.toHaveBeenCalled()
+    fireEvent.click(within(ask).getByRole('button', { name: 'Resume' }))
+    await waitFor(() => expect(api.update).toHaveBeenCalledWith(7, { schedule_paused: false }, 3))
+  })
+
+  it('Run now is followed to its end, blocked meanwhile, and its summary toasted', async () => {
+    api.list.mockResolvedValue({ items: [conn], total: 1 })
+    api.runNow.mockReset()
+    api.runNow.mockResolvedValue({ run_id: 12 })
+    const run = { id: 12, job: 'sales_connection', scope: 'connection:7', trigger: 'MANUAL', started_at: '2026-11-03T10:00:00Z',
+      heartbeat_at: '2026-11-03T10:00:00Z', finished_at: null, error: null, summary: null }
+    let release: () => void = () => {}
+    const finished = new Promise<void>((r) => { release = r })
+    api.getRun.mockImplementation(async () => {
+      await finished
+      return { ...run, status: 'SUCCEEDED', finished_at: '2026-11-03T10:00:03Z', summary: { text: '3 files, 0 errors' } }
+    })
+    renderAs(['sales.read', 'sales.file.retry'])
+    await screen.findByText('sftp-test')
+    const go = within(row(conn)).getByRole('button', { name: 'Run now' })
+    fireEvent.click(go)
+    await waitFor(() => expect(go).toBeDisabled())
+    expect(api.runNow).toHaveBeenCalledWith(7)
+    fireEvent.click(go)
+    expect(api.runNow).toHaveBeenCalledOnce()
+    release()
+    expect(await screen.findByText('Run 12: 3 files, 0 errors')).toBeInTheDocument()
+    await waitFor(() => expect(go).toBeEnabled())
+  })
+
+  it('a run refused because it is already running says so', async () => {
+    api.list.mockResolvedValue({ items: [conn], total: 1 })
+    api.runNow.mockRejectedValue(Object.assign(new Error('running'), { body: { error: { code: 'run.already_running', message: 'radiant is running' } } }))
+    renderAs(['sales.read', 'sales.file.retry'])
+    await screen.findByText('sftp-test')
+    fireEvent.click(within(row(conn)).getByRole('button', { name: 'Run now' }))
+    expect(await screen.findByText('radiant is running; wait for it to finish.')).toBeInTheDocument()
   })
 })
 

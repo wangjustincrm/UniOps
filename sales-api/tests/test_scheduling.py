@@ -239,3 +239,14 @@ async def test_a_job_overdue_by_more_than_three_intervals_is_flagged(http):
     [job] = [j for j in h.jobs if j.connection_id == c["id"]]
     assert job.overdue is True
     assert next(x for x in h.checks if x.key == "scheduler").result == "WARNING"
+
+
+async def test_pause_and_resume_from_the_row_are_versioned_audited_updates(http):
+    c = await make_conn(http)
+    r = await http.put(f"{C}/{c['id']}?version=1", json={"schedule_paused": True}, headers=OP)
+    assert r.status_code == 200 and r.json()["schedule_paused"] is True and r.json()["version"] == 2
+    stale = await http.put(f"{C}/{c['id']}?version=1", json={"schedule_paused": False}, headers=OP)
+    assert stale.status_code == 409 and stale.json()["error"]["code"] == "entity.stale"  # someone else's change wins
+    assert (await http.put(f"{C}/{c['id']}?version=2", json={"schedule_paused": False}, headers=OP)).json()["schedule_paused"] is False
+    trail = (await http.get(f"{C}/{c['id']}/audit", headers=READER)).json()
+    assert [(t["before"]["schedule_paused"], t["after"]["schedule_paused"]) for t in trail[:2]] == [(True, False), (False, True)]

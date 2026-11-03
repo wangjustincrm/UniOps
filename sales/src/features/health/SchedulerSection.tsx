@@ -3,9 +3,12 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { z } from 'zod'
 import {
-  ActionButton, Badge, Button, DateTimeCell, ErrorMessage, LocalTable, SchemaForm, Sheet, StatusCell, requestOpen, useCan,
-  useToast, type ColumnDef, type FieldSpec,
+  ActionButton, Badge, Button, DateTimeCell, ErrorMessage, LocalTable, RowActions, SchemaForm, Sheet, StatusCell, businessErrorOf,
+  requestOpen, useCan, useToast, type ColumnDef, type FieldSpec,
 } from '@/platform-ui'
+import { RefreshCw } from 'lucide-react'
+import { runConnectionNow } from '@/features/configuration/connections/connectionsApi'
+import { followRun, runToast } from '@/features/operations/followRun'
 import { runSystemNow } from '@/features/operations/operationsApi'
 import { saveScheduler, type HealthRead, type JobRead } from './healthApi'
 
@@ -28,6 +31,18 @@ export function SchedulerSection({ health: h }: { health: HealthRead }) {
   const [editing, setEditing] = useState(false)
   const [error, setError] = useState<unknown>(null)
   const refresh = () => qc.invalidateQueries({ queryKey: ['sales', 'health'] })
+  // A job's Run now: followed to its end, then a toast with its summary.
+  const runJob = async (j: JobRead) => {
+    try {
+      const { run_id } = j.connection_id === null ? await runSystemNow() : await runConnectionNow(j.connection_id)
+      toast(runToast(await followRun(run_id)))
+    } catch (e) {
+      const be = businessErrorOf(e)
+      toast({ variant: 'error', title: `Not run: ${j.label}`,
+        description: be?.code === 'run.already_running' ? `${j.label} is running; wait for it to finish.` : (be?.message ?? String(e)) })
+    }
+    await refresh()
+  }
   const columns: ColumnDef<JobRead, unknown>[] = [
     { accessorKey: 'label', header: 'Job', cell: ({ row: { original: j } }) => j.connection_id === null ? j.label : (
       <Button size="sm" variant="ghost" onClick={() => { requestOpen('/config/connections', j.connection_id!); navigate('/config/connections') }}>
@@ -46,6 +61,10 @@ export function SchedulerSection({ health: h }: { health: HealthRead }) {
     { accessorKey: 'next_run_at', header: 'Next run', cell: ({ row: { original: j } }) => (
       <span className="flex items-center gap-1">{j.next_run_at ? <DateTimeCell value={j.next_run_at} /> : 'at the next tick'}
         {j.overdue && <Badge variant="danger">Overdue</Badge>}</span>
+    ) },
+    { id: 'actions', header: '', cell: ({ row: { original: j } }) => (
+      <RowActions actions={[{ key: 'run', label: `Run now: ${j.label}`, icon: <RefreshCw className="h-4 w-4" />,
+        permission: 'sales.file.retry', onAction: () => runJob(j) }]} />
     ) },
   ]
   return (

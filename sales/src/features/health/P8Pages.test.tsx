@@ -36,11 +36,13 @@ const dashboard: DashboardRead = {
   runs: [{ id: 9, trigger: 'SCHEDULED', status: 'SUCCEEDED', started_at: '2026-11-02T19:55:00Z', finished_at: null, error: null }],
 }
 
-const h = vi.hoisted(() => ({ health: vi.fn(), dash: vi.fn(), resolve: vi.fn(), test: vi.fn(), save: vi.fn(), system: vi.fn() }))
+const h = vi.hoisted(() => ({ health: vi.fn(), dash: vi.fn(), resolve: vi.fn(), test: vi.fn(), save: vi.fn(), system: vi.fn(), getRun: vi.fn() }))
 vi.mock('./healthApi', async (orig) => ({ ...(await orig<typeof import('./healthApi')>()),
   fetchHealth: h.health, fetchDashboard: h.dash, resolveInbox: h.resolve, saveScheduler: h.save }))
 vi.mock('@/features/operations/operationsApi', async (orig) => ({
   ...(await orig<typeof import('@/features/operations/operationsApi')>()), runSystemNow: h.system }))
+vi.mock('@/features/operations/followRun', async (orig) => ({
+  ...(await orig<typeof import('@/features/operations/followRun')>()), followRun: async (id: number) => ({ ...(await h.getRun()), id }) }))
 vi.mock('@/features/configuration/connections/connectionsApi', async (orig) => ({
   ...(await orig<typeof import('@/features/configuration/connections/connectionsApi')>()), testConnection: h.test }))
 vi.mock('@/features/configuration/notifications/notificationsApi', async (orig) => ({
@@ -126,6 +128,14 @@ describe('Health → Scheduler', () => {
     expect(within(within(jobs).getByText('System job').closest('tr')!).queryByText('Overdue')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Run the system job now' }))
     await waitFor(() => expect(h.system).toHaveBeenCalledOnce())
+    // each job row has its own Run now icon (the system job's here), followed to a toast
+    h.system.mockResolvedValue({ run_id: 51 })
+    h.getRun.mockResolvedValue({ id: 51, job: 'sales_system', scope: 'system', trigger: 'MANUAL', status: 'SUCCEEDED',
+      started_at: '2026-11-02T20:00:00Z', heartbeat_at: '2026-11-02T20:00:00Z', finished_at: '2026-11-02T20:00:01Z', error: null,
+      summary: { text: '0 940s queued, 0 sent, 0 problems' } })
+    fireEvent.click(within(within(jobs).getByText('System job').closest('tr')!).getByRole('button', { name: 'Run now: System job' }))
+    expect(await screen.findByText('Run 51: 0 940s queued, 0 sent, 0 problems')).toBeInTheDocument()
+    expect(within(radiant).getByRole('button', { name: 'Run now: radiant' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Scheduler settings' }))
     const sheet = await screen.findByRole('dialog', { name: 'Scheduler settings' })
     fireEvent.click(within(sheet).getByRole('checkbox', { name: /Pause every job/ }))

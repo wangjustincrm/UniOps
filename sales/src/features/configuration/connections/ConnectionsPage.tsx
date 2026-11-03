@@ -1,5 +1,6 @@
 import { Badge, CrudPage, DateTimeCell, StatusCell, useToast, type ColumnDef } from '@/platform-ui'
 import { AuditHistory } from '../AuditHistory'
+import { ConnectionRowActions } from './ConnectionRowActions'
 import { ConnectionSchedule } from './ConnectionSchedule'
 import { ConnectionTools } from './ConnectionTools'
 import { EdiSettingsPanel } from './EdiSettingsPanel'
@@ -54,6 +55,7 @@ export default function ConnectionsPage() {
       description="SFTP and Shopify connections. Passwords stay on the server; only their names are kept here."
       client={connectionsClient}
       columns={columns}
+      rowActions={(c) => <ConnectionRowActions connection={c} />}
       writePermission="sales.config"
       createSchema={connectionCreateSchema}
       updateSchema={connectionUpdateSchema}

@@ -108,3 +108,28 @@ export function describeSchedule(c: Pick<ConnectionRead, 'schedule_minutes' | 'a
   if (c.active_from && c.active_to) out += ` ${c.active_from.slice(0, 5)}–${c.active_to.slice(0, 5)}`
   return out
 }
+
+const TORONTO_PARTS = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Toronto', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+})
+
+/** Whether `at` (ms) is inside the connection's active window — the same rule
+ *  as sales-api's domain/schedule.py (Toronto time; an end before the start
+ *  crosses midnight and belongs to the day it started). */
+export function insideWindow(c: Pick<ConnectionRead, 'active_from' | 'active_to' | 'active_days'>, at: number): boolean {
+  const parts = Object.fromEntries(TORONTO_PARTS.formatToParts(at).map((p) => [p.type, p.value]))
+  let day = DAYS.indexOf(parts.weekday as (typeof DAYS)[number])
+  const t = `${parts.hour}:${parts.minute}`
+  const start = c.active_from?.slice(0, 5), end = c.active_to?.slice(0, 5)
+  if (start && end && start !== end) {
+    if (start < end) {
+      if (!(start <= t && t < end)) return false
+    } else if (t < end) {
+      day = (day + 6) % 7  // the early-morning part belongs to yesterday's window
+    } else if (t < start) {
+      return false
+    }
+  }
+  const days = (c.active_days ?? '').split(',').filter(Boolean)
+  return days.length === 0 || days.includes(DAYS[day])
+}

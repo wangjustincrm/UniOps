@@ -41,6 +41,8 @@ export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
   errorMessages?: Record<string, string>
   /** Shown under the form of an existing record (e.g. its audit history). */
   renderDetail?: (row: T) => ReactNode
+  /** Each row's own actions (e.g. RowActions icons); never open the row. */
+  rowActions?: (row: T) => ReactNode
   /** Shown between the header and the list (e.g. a related setting). */
   notice?: ReactNode
 }
@@ -73,6 +75,7 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
       title={props.title}
       description={props.description}
       columns={props.columns}
+      rowActions={props.rowActions}
       errorMessages={props.errorMessages}
       notice={<>{props.notice}<ErrorMessage error={importError} messages={props.errorMessages} /></>}
       detailTitle={() => (canWrite ? `Edit ${singular}` : `${singular} (read only)`)}
