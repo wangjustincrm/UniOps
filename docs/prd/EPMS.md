@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.46
-**Date:** 2026-10-30
+**Version:** 2.47
+**Date:** 2026-11-03
 **Status:** In Production
+
+> **v2.47 (2026-11-03)** — Users and Departments moved in Portal from Admin to the new **MDM** group (PORTAL.md v2.5). The EPMS Admin "User Management has moved" card now opens Portal → MDM → Users (§3.6.3, §3.6.3a).
 
 > **v2.46 (2026-10-30)** — Direct PA (§3.22, DPA-004): an invoice linked to a PO with **Link to PO** defaults the Direct PA's department and cost center to the PO's PR and its budget account to the PO's budget code (the PR's when the PO has none); still editable. NC orders carry none of this, so their invoices keep the creator's department.
 
@@ -897,16 +899,16 @@ SMTP configuration is no longer part of Security: the task-notification SMTP pro
 
 #### 3.6.3 User Management
 
-Moved to **Portal → Admin → User Management** (EPMS shows a "moved" card).
+Moved to **Portal → MDM → Users** (EPMS shows a "moved" card that opens it).
 - Full user table: name, email, role, department, Teams account, active status, created date
 - Add user / edit user / deactivate / delete with confirmation
 - **Reset Password**: portal modal (rendered via `createPortal` into `document.body`) to prevent browser password-manager autofill from targeting the user search box; `autoComplete="new-password"` on input; supports Enter key. Any admin-set, reset or imported password forces the user to choose a new password at next sign-in (§3.1)
 - **CSV Export / Import**: export to `users.csv`; import matches by email, creates or updates; new accounts receive the company-standard initial password if the column is blank
 - **Automatic approval re-sync:** changing a user's role, department, supervisor or active flag, or deactivating the user, automatically re-routes that user's in-flight approvals (department-level approval tasks pinned to the old holder move to the new holder). The save reports how many documents were re-synced; a re-sync failure does not undo the user edit. The same re-sync runs when roles are granted in Access Control and when Approval Routing is saved (§3.3.8).
 
-#### 3.6.3a Departments — MOVED to Portal → Admin → Departments
+#### 3.6.3a Departments — MOVED to Portal → MDM → Departments
 
-As of 2026-05-27 ownership of Departments has moved to **mdm-api** (the master-data service) and the management UI lives in **Portal → Admin → Departments**. The EPMS Admin Panel no longer exposes Departments.
+As of 2026-05-27 ownership of Departments has moved to **mdm-api** (the master-data service) and the management UI lives in **Portal → MDM → Departments** (Portal → Admin until 2026-11-03). The EPMS Admin Panel no longer exposes Departments.
 
 - Source of truth: `mdm-api` — endpoints `GET|POST|PATCH|DELETE /mdm/v1/departments`
 - Write access: `system_admin | finance_manager | ap_clerk` (configured on the mdm-api endpoint dependencies)

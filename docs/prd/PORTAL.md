@@ -1,9 +1,13 @@
 # UniOps Portal — Product Requirements Document
 
-**Version:** 2.4
-**Date:** 2026-10-21
+**Version:** 2.5
+**Date:** 2026-11-03
 **Status:** In Production
 **Scope:** Portal web app (sign-in, launcher, Task Inbox, platform administration) and the platform services it administers: identity service (sign-in, MFA, password policy, users, roles, access control), approval engine (workflows, routing, delegation, re-sync), task-notification outbox, master-data service (MDM), file service, Data Maintenance and the AI Assistant panel.
+
+**What changed in version 2.5** (2026-11-03)
+
+- New expandable **MDM** group in the Portal sidebar, between MODULES and ADMIN, gathering master-data pages. **Users** and **Departments** moved there from the Admin Panel, as their own pages (`/mdm/users`, `/mdm/departments`) with the standard Portal layout. Access is unchanged (System Admin). Old links `/admin?section=users` and `/admin?section=departments` open the new pages, and the Admin Panel lists both under "More admin pages" (§3.1, §5.1, §10). Staff, the employee master (EMPLOYEES.md), will join this group when built.
 
 **What changed in version 2.4** (2026-10-21)
 
@@ -183,6 +187,9 @@ MODULES
   Meeting Rooms→ Booking                any of view_booking, manage_meeting_rooms
   MRP          → MRP                    mrp.report.view
   Inventory    → Inventory              inventory.view
+MDM  (expandable group)
+  Users        → /mdm/users             System Admin
+  Departments  → /mdm/departments       System Admin
 ADMIN
   Admin                                 System Admin
   Data Maintenance                      data_maintenance
@@ -199,6 +206,7 @@ ADMIN
 | **PL-004** | On mobile (<768 px) the sidebar is hidden and opens from a hamburger button in the header, over a dimmed backdrop. Tapping the backdrop or a link closes it. |
 | **PL-005** | Sidebar branding (name, tagline, logo) comes from the company settings, using the Portal tagline. |
 | **PL-006** | *The OA entry and the OA card open OA's retired Payment Application route* (**Defect**, §14). |
+| **PL-007** | **MDM** is one expandable entry. Clicking it shows or hides its pages. It starts closed, except on one of its own pages, where it starts open. In the collapsed (icon-only) sidebar its pages are shown as icons directly. The group is hidden when the user can see none of its pages. |
 
 Agreements is not a Portal entry; it is reached inside EPMS.
 
@@ -270,7 +278,7 @@ Portal itself has no tabs and embeds no module. The conventions that apply acros
 
 ### 4.1 Users
 
-User records live in a shared users table, administered in Admin → User Management (§5.5). Additional roles are kept in the identity service.
+User records live in a shared users table, administered in Portal → MDM → Users (§5.5). Additional roles are kept in the identity service.
 
 | Field | Notes |
 |---|---|
@@ -366,11 +374,13 @@ The identity service holds switchable separation-of-duties rules. Anyone can rea
 
 ### 5.1 Navigation and access
 
-`/admin` is for System Admin only; anyone else is sent to Home. It has its own section menu, and `?section=<key>` opens a section directly. Four further admin pages are separate routes, reached from the Portal sidebar:
+`/admin` is for System Admin only; anyone else is sent to Home. It has its own section menu, and `?section=<key>` opens a section directly. Further admin pages are separate routes, reached from the Portal sidebar and listed in the panel under "More admin pages":
 
 | Section / page | Route | Access |
 |---|---|---|
-| Company Settings, Security, Departments, Units of Measure, User Management, Currency Settings, Notification Settings (incl. Task Notifications), Remittance Advice, Approval Workflows, ERP MDM, NC Sync, WMS Sync | `/admin` | System Admin |
+| Company Settings, Security, Units of Measure, Currency Settings, Notification Settings (incl. Task Notifications), Remittance Advice, Approval Workflows, ERP MDM, NC Sync, WMS Sync | `/admin` | System Admin |
+| Users (§5.5) — MDM group | `/mdm/users` | System Admin |
+| Departments (§5.4) — MDM group | `/mdm/departments` | System Admin |
 | Data Maintenance (§5.14) | `/admin/data-maintenance` | System Admin or `data_maintenance` |
 | Access Control (§4.3) | `/admin/access-control` | System Admin |
 | Approval Routing (§5.9) | `/admin/approval-routing` | System Admin |
@@ -393,7 +403,7 @@ SMTP settings are not part of Security (§5.7).
 
 ### 5.4 Departments, Units of Measure and Cost Centres
 
-**Departments** have a code (upper-cased), a name and an active flag, and are shared by every module. They are owned by MDM (§8).
+**Departments** have a code (upper-cased), a name and an active flag, and are shared by every module. They are owned by MDM (§8) and managed in Portal → MDM → Departments (`/mdm/departments`; `/admin?section=departments` still opens it).
 
 | FR ID | Requirement |
 |---|---|
@@ -405,6 +415,8 @@ SMTP settings are not part of Security (§5.7).
 **Cost Centres** are now managed in the Finance app → Budget Config (BUDGET.md). They are owned by MDM, need `mdm.finance.write` to write, and cannot be deleted while a PR references them. The **Factor Library** also moved to the Finance app. Portal no longer has Finance or Budget pages.
 
 ### 5.5 User Management
+
+Portal → MDM → Users (`/mdm/users`). Until 2026-11-03 this was a section of the Admin Panel; `/admin?section=users` still opens it.
 
 | FR ID | Requirement |
 |---|---|
@@ -674,7 +686,9 @@ The file service stores the attachments of every module (PR/PO/PA/GR/agreement d
 |---|---|---|
 | `/login` | Public (a signed-in user is redirected to Home) | Login |
 | `/` | Signed in | Home (handles `returnUrl`) |
-| `/admin` | System Admin | Admin Panel (`?section=` deep link) |
+| `/admin` | System Admin | Admin Panel (`?section=` deep link; `users` and `departments` redirect to the MDM pages) |
+| `/mdm/users` | System Admin | MDM → Users |
+| `/mdm/departments` | System Admin | MDM → Departments |
 | `/admin/data-maintenance` | System Admin or `data_maintenance` | Data Maintenance |
 | `/admin/access-control` | System Admin | Access Control |
 | `/admin/approval-routing` | System Admin | Approval Routing |

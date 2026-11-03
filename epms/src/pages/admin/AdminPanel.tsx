@@ -2200,7 +2200,14 @@ export default function AdminPanel() {
       case 'currency':            return <MovedToPortal section="Currency Settings" />
       case 'email_templates':     return <EmailTemplates />
       case 'pdf_templates':       return <PdfTemplates />
-      case 'users':               return <MovedToPortal section="User Management" />
+      case 'users':               return (
+        <MovedToPortal
+          section="User Management"
+          path="/mdm/users"
+          linkLabel="Open Users in Portal"
+          description="Users are now managed in the UniOps Portal under MDM → Users, shared across all modules."
+        />
+      )
       case 'workflows':           return <MovedToPortal section="Approval Workflows" />
       case 'service_gr_sla':        return <ServiceGrSla />
       case 'gr_notification_sla': return <GrNotificationSla />

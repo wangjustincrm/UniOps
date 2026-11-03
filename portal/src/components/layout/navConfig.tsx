@@ -13,7 +13,7 @@
  */
 import {
   Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark, CalendarClock, ShieldCheck, GitBranch,
-  Network, Repeat, Warehouse,
+  Network, Repeat, Warehouse, Layers, Users, Building2,
 } from 'lucide-react'
 
 // MRP has no single landing tile like the other modules — Portal links
@@ -54,6 +54,10 @@ export const BOOKING_ACCESS_PERMS = ['view_booking', 'manage_meeting_rooms']
 
 export interface NavSectionDef {
   title?: string
+  /** Render as one expandable sidebar entry (label = title) instead of a
+   *  heading with the items always listed. Opens by itself when the current
+   *  page is one of its items. */
+  collapsible?: { icon: React.ComponentType<{ className?: string }> }
   items: NavItemDef[]
 }
 
@@ -90,6 +94,17 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
       // inventory.view; cost columns and Settings writes have their own keys
       // and are gated inside the module.
       { label: 'Inventory',   icon: Warehouse,    href: 'inventory', permission: 'inventory.view' },
+    ],
+  },
+  {
+    // Master data, gathered in one place. Users and Departments moved here
+    // from the Admin Panel; Staff (employee master, docs/prd/EMPLOYEES.md) and
+    // the other MDM pages follow as they are built or moved.
+    title: 'MDM',
+    collapsible: { icon: Layers },
+    items: [
+      { label: 'Users',       icon: Users,     href: 'portal:/mdm/users',       adminOnly: true },
+      { label: 'Departments', icon: Building2, href: 'portal:/mdm/departments', adminOnly: true },
     ],
   },
   {
@@ -135,10 +150,14 @@ export function adminPageLinks(
   userRole: string | null,
   perms: Record<string, boolean> | undefined,
 ): NavItemDef[] {
-  const admin = PORTAL_NAV_SECTIONS.find((s) => s.title === 'ADMIN')
-  return (admin?.items ?? []).filter(
-    (item) => item.href.startsWith('portal:/admin/') && isNavItemVisible(item, userRole, perms),
-  )
+  // MDM pages are listed too: Users and Departments used to be panel sections,
+  // and an admin inside the panel must still find them (same reason as above).
+  return PORTAL_NAV_SECTIONS
+    .filter((s) => s.title === 'MDM' || s.title === 'ADMIN')
+    .flatMap((s) => s.items)
+    .filter((item) =>
+      (item.href.startsWith('portal:/mdm/') || item.href.startsWith('portal:/admin/'))
+      && isNavItemVisible(item, userRole, perms))
 }
 
 export interface HrefContext {

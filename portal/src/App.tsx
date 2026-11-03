@@ -13,6 +13,8 @@ import ForcePasswordChangePage from '@/pages/ForcePasswordChangePage'
 import AccessControl from '@/pages/admin/AccessControl'
 import ApprovalRouting from '@/pages/admin/ApprovalRouting'
 import ApprovalDelegation from '@/pages/admin/ApprovalDelegation'
+import MdmUsers from '@/pages/mdm/MdmUsers'
+import MdmDepartments from '@/pages/mdm/MdmDepartments'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } },
@@ -97,6 +99,8 @@ export default function App() {
             element={<ProtectedRoute><ApprovalDelegation /></ProtectedRoute>}
           />
           {/* Public logout route — clears Portal session, no auth guard */}
+          <Route path="/mdm/users" element={<ProtectedRoute><MdmUsers /></ProtectedRoute>} />
+          <Route path="/mdm/departments" element={<ProtectedRoute><MdmDepartments /></ProtectedRoute>} />
           <Route path="/logout" element={<LogoutPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

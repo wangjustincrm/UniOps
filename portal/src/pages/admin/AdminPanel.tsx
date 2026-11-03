@@ -2,7 +2,7 @@ import { useState, useRef } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Building2, ShieldCheck, Users, CreditCard, Bell, Landmark,
+  Building2, ShieldCheck, CreditCard, Bell,
   Plus, Pencil, Trash2, X, Check, Eye, EyeOff, Search,
   CheckCircle2, AlertCircle, Loader2, ArrowLeft,
   Download, Upload, ChevronLeft, ChevronRight, FileText,
@@ -380,7 +380,7 @@ function SecuritySettings() {
 
 // ── 3. Department Management ──────────────────────────────────────────────────
 
-function DepartmentManagement() {
+export function DepartmentManagement() {
   // Source of truth lives in mdm-api (master-data service). The shared Postgres
   // DB means epms-api / budget-api still read the same physical rows.
   const qc = useQueryClient()
@@ -502,7 +502,7 @@ const PAGE_SIZE = 20
 
 interface ImportResult { created: number; updated: number; errors: string[] }
 
-function UserManagement() {
+export function UserManagement() {
   const qc = useQueryClient()
 
   // ── Filters + pagination ──
@@ -2303,9 +2303,7 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
 const SECTIONS = [
   { key: 'company',      label: 'Company Settings',     icon: Building2 },
   { key: 'security',     label: 'Security',             icon: ShieldCheck },
-  { key: 'departments',  label: 'Departments',          icon: Landmark },
   { key: 'uom',          label: 'Units of Measure',     icon: Ruler },
-  { key: 'users',        label: 'User Management',      icon: Users },
   { key: 'currency',     label: 'Currency Settings',    icon: CreditCard },
   { key: 'notifications',label: 'Notification Settings',icon: Bell },
   { key: 'remittance',   label: 'Remittance Advice',    icon: Mail },
@@ -2315,8 +2313,16 @@ const SECTIONS = [
   { key: 'wms_sync',     label: 'WMS Sync',             icon: Warehouse },
 ]
 
+// Sections that moved to Portal → MDM. Old deep links (/admin?section=users)
+// land on the new page instead of silently falling back to Company Settings.
+const MOVED_SECTIONS: Record<string, string> = {
+  users: '/mdm/users',
+  departments: '/mdm/departments',
+}
+
 export default function AdminPanel() {
   const { user } = useAuthStore()
+  const movedTo = MOVED_SECTIONS[new URLSearchParams(window.location.search).get('section') ?? '']
   // ?section=<key> makes each panel deep-linkable — the NC sync error tasks in
   // the Task Inbox link straight to /admin?section=nc_sync. An unknown or absent
   // key falls back to the default panel.
@@ -2328,6 +2334,7 @@ export default function AdminPanel() {
   const perms = useRolePermissions().data?.permissions
 
   if (user?.role !== 'system_admin') return <Navigate to="/" replace />
+  if (movedTo) return <Navigate to={movedTo} replace />
 
   // Pages that live outside this panel but belong to administration — listed
   // here too, or an admin who comes in through "Portal → Admin" never finds
@@ -2418,9 +2425,7 @@ export default function AdminPanel() {
         <main className="flex-1 overflow-y-auto p-6">
           {section === 'company'       && <CompanySettings />}
           {section === 'security'      && <SecuritySettings />}
-          {section === 'departments'   && <DepartmentManagement />}
           {section === 'uom'           && <UnitsOfMeasure />}
-          {section === 'users'         && <UserManagement />}
           {section === 'currency'      && <CurrencySettings />}
           {section === 'notifications' && <><NotificationSettings /><TaskNotificationPolicies /></>}
           {section === 'remittance'    && <RemittanceSettings />}
