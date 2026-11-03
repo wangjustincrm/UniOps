@@ -138,7 +138,7 @@ function Detail({ row }: { row: TransferRead }) {
         subtitle={`${row.from_warehouse ?? '?'} → ${row.to_warehouse ?? '?'}`}
         badges={<StatusCell value={t?.status ?? row.status} />}
         loading={q.isLoading} error={q.error} errorMessages={errorMessages}
-        onRefresh={() => q.refetch()} updatedAt={q.dataUpdatedAt} fetching={q.isFetching}
+        onRefresh={() => q.refetch()} updatedAt={q.dataUpdatedAt} fetching={q.isFetching} snapshot={t as unknown as Record<string, unknown> | undefined}
         facts={t ? [
           { label: 'Status', value: t.status, tone: ['Failed', 'Discrepancy'].includes(t.status) ? 'danger' : t.status === 'Partially Received' ? 'warning' : 'neutral' },
           { label: 'Sent EA', value: sent },

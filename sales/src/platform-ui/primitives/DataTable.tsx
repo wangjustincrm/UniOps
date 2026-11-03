@@ -45,6 +45,10 @@ export interface DataTableProps<T> {
   fetching?: boolean
   /** The rows shown belong to the previous query (kept while the new one loads): dimmed, with "Updating…". */
   stale?: boolean
+  /** A user's own Refresh: the bar at once (no delay), for as long as the caller keeps it on. */
+  busyNow?: boolean
+  /** Rows (by rowKey) a refresh brought or changed: a brief highlight. */
+  highlight?: ReadonlySet<string | number>
   /** Shown instead of the table when set. */
   errorMessage?: string | null
   onRetry?: () => void
@@ -97,7 +101,7 @@ export type RowAttrs = { className?: string } & { [data: `data-${string}`]: stri
  *  empty / loading / error states. It knows nothing about the API or the
  *  query contract — QueryTable (patterns) adapts it to a QuerySpec. */
 export function DataTable<T>({
-  columns, rows, rowKey, onRowClick, loading, fetching, stale, errorMessage, onRetry, emptyTitle = 'Nothing here yet',
+  columns, rows, rowKey, onRowClick, loading, fetching, stale, busyNow, highlight, errorMessage, onRetry, emptyTitle = 'Nothing here yet',
   sort, sortable = [], onSortChange, headerAddon, leadingHeader, chips, grouping, leading, onColumnMove, search, filters,
   toolbar, pagination, ariaLabel, density = 'normal', footer, rowAttrs, expand,
 }: DataTableProps<T>) {
@@ -124,7 +128,8 @@ export function DataTable<T>({
   const sorting: SortingState = useMemo(() => (Array.isArray(sort) ? sort : sort ? [sort] : []), [sort])
   const sortableSet = useMemo(() => new Set(sortable), [sortable])
   // A refetch over rows already shown: the bar (after 200 ms); the first load keeps its skeleton rows.
-  const busy = useDelayed(!!fetching && !(loading && rows.length === 0) && rows.length > 0)
+  const delayed = useDelayed(!!fetching && !(loading && rows.length === 0) && rows.length > 0)
+  const busy = delayed || (!!busyNow && rows.length > 0)
   // Rows of the previous query (another page / sort / filter) while the new one loads: dimmed.
   const dim = busy && !!stale
 
@@ -242,6 +247,7 @@ export function DataTable<T>({
                 ? Array.from({ length: 5 }, (_, i) => <SkeletonRow key={i} cols={columns.length + (leadCell ? 1 : 0)} />)
                 : table.getRowModel().rows.map((r, i, all) => {
                   const { className: rowClass, ...rowData } = rowAttrs?.(r.original) ?? {}
+                  const flash = !!highlight?.has(rowKey(r.original))
                   const detail = expand?.(r.original) ?? null
                   const isOpen = detail !== null && expanded.has(r.id)
                   const row = (
@@ -249,8 +255,10 @@ export function DataTable<T>({
                     <tr
                       key={r.id}
                       {...rowData}
+                      data-highlight={flash || undefined}
                       onClick={onRowClick ? () => onRowClick(r.original) : undefined}
-                      className={cn('border-t border-neutral-100', onRowClick && 'cursor-pointer hover:bg-neutral-50', rowClass)}
+                      className={cn('border-t border-neutral-100', onRowClick && 'cursor-pointer hover:bg-neutral-50', rowClass,
+                        flash && 'bg-primary-50 animate-[platform-flash_2s_ease-out_forwards] motion-reduce:animate-none')}
                     >
                       {leadCell && (
                         <td className="w-8 px-2">

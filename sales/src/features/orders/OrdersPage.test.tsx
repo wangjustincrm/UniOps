@@ -335,6 +335,8 @@ describe('Orders: manual orders (FR-OB-19a) — New in the standard sheet, draft
 
   it("the unit offers only the item's units and goes back to EA when the item changes", async () => {
     renderAs(['sales.read', 'sales.order.operate'])
+    // the list's first page lands before the form opens (its arrival mid-pick re-renders the page under the open popover)
+    await waitFor(() => expect(screen.getByRole('table')).not.toHaveAttribute('aria-busy'))
     fireEvent.click(await screen.findByRole('button', { name: 'New manual order' }))
     const form = await screen.findByRole('dialog', { name: 'New manual order' })
     await pickSuggestion(await within(form).findByRole('combobox', { name: 'Item 1' }), 'CF', /^CF0092/)

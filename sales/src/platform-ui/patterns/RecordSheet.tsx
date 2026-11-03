@@ -12,6 +12,7 @@ import { BusyBar } from '../primitives/BusyBar'
 import { useDelayed } from '../primitives/useDelayed'
 import { cn } from '../lib/cn'
 import { ErrorView } from './ErrorMessage'
+import { describeRecordChange } from './refreshDiff'
 import { PermissionContext } from './permissions'
 import { RecordSheetHostContext, type RecordSheetSize } from './recordSheetHost'
 
@@ -65,6 +66,8 @@ export interface RecordSheetProps {
   onRefresh?: () => Promise<unknown> | void
   /** When the record's data was fetched (ms since epoch). */
   updatedAt?: number
+  /** The record as fetched (its top-level fields): a Refresh says which of them changed. */
+  snapshot?: Record<string, unknown>
   loading?: boolean
   /** The record is being fetched again: a bar under the header. */
   fetching?: boolean
@@ -149,8 +152,18 @@ export function RecordSheet(props: RecordSheetProps) {
   const [refreshing, setRefreshing] = useState(false)
   const ago = useAgo(props.updatedAt)
   // A refetch of a record already shown (Refresh, an action's invalidation), after 200 ms; the first load has its skeleton.
-  const showBar = useDelayed((!!props.fetching || refreshing) && !props.loading)
+  // A user's Refresh shows the bar at once (≥ 600 ms); a background refetch after 200 ms.
+  const backgroundBar = useDelayed(!!props.fetching && !props.loading)
+  const showBar = refreshing || backgroundBar
   const busy = useRef(false)
+  const [message, setMessage] = useState<{ text: string; tone: 'info' | 'danger' } | null>(null)
+  const msgTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(msgTimer.current), [])
+  // The record and its tab counts as last rendered (read after a refresh).
+  const seen = useRef<{ fields?: Record<string, unknown>; counts: Record<string, number | undefined> }>({ counts: {} })
+  const counts = JSON.stringify(Object.fromEntries(visible.map((t) => [t.id, t.count])))
+  useEffect(() => { seen.current = { fields: props.snapshot, counts: JSON.parse(counts) } }, [props.snapshot, counts])
+  const labels = Object.fromEntries(visible.map((t) => [t.id, t.label]))
 
   const open = host ? host.open : !!props.open
   const close = () => (host ? host.close() : props.onOpenChange?.(false))
@@ -160,12 +173,25 @@ export function RecordSheet(props: RecordSheetProps) {
     if (busy.current) return
     busy.current = true
     setRefreshing(true)
+    const started = Date.now()
+    const before = seen.current
+    let failed: boolean
     try {
-      await Promise.all([props.onRefresh?.(), host?.refreshList?.()])
+      const [r] = await Promise.all([props.onRefresh?.(), host?.refreshList?.()])
+      failed = !!r && typeof r === 'object' && 'status' in r && (r as { status: unknown }).status === 'error'
+    } catch {
+      failed = true
     } finally {
+      await new Promise((ok) => setTimeout(ok, Math.max(0, 600 - (Date.now() - started))))
       busy.current = false
       setRefreshing(false)
     }
+    // by now the new record has rendered (seen.current is the fresh one)
+    const what = failed ? null : describeRecordChange(before.fields, seen.current.fields, before.counts, seen.current.counts, labels)
+    setMessage(failed ? { text: 'Refresh failed: try again', tone: 'danger' }
+      : { text: what ? `Updated: ${what}` : 'Up to date', tone: 'info' })
+    clearTimeout(msgTimer.current)
+    msgTimer.current = setTimeout(() => setMessage(null), 4000)
   }
   const choose = (id: string) => (host?.onTabChange ? host.onTabChange(id) : setOwn(id))
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -188,7 +214,10 @@ export function RecordSheet(props: RecordSheetProps) {
         <div className="flex shrink-0 items-center gap-0.5">
           {(props.onRefresh || host?.refreshList) && (
             <>
-              {ago && <span className="mr-1 hidden text-xs text-neutral-400 sm:inline" aria-live="polite">{ago}</span>}
+              <span aria-live="polite" data-refresh-message
+                className={cn('mr-1 max-w-[18rem] truncate text-xs', message?.tone === 'danger' ? 'text-danger-600' : 'text-primary-700',
+                  !message && 'sr-only')}>{message?.text ?? ''}</span>
+              {ago && !message && <span className="mr-1 hidden text-xs text-neutral-400 sm:inline">{ago}</span>}
               <IconButton label="Refresh" icon={<RefreshCw className="h-4 w-4" />} pending={refreshing} onClick={() => { void refresh() }} />
             </>
           )}

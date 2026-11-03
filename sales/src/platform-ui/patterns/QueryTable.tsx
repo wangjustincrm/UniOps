@@ -43,6 +43,10 @@ export interface QueryTableProps<T> {
   /** Fetching again over rows shown, and whether those rows are the previous query's (DataTable). */
   fetching?: boolean
   stale?: boolean
+  /** A user's Refresh: the bar at once. */
+  busyNow?: boolean
+  /** Rows a refresh brought or changed (by rowKey): highlighted briefly. */
+  highlight?: ReadonlySet<string | number>
   error?: unknown
   errorMessages?: Record<string, string>
   onRetry?: () => void

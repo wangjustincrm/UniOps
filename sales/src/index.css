@@ -13,3 +13,9 @@
   0% { transform: translateX(-100%); }
   100% { transform: translateX(300%); }
 }
+
+/* platform-ui: a row a refresh brought or changed, fading back (static, then cleared, with reduced motion). */
+@keyframes platform-flash {
+  0% { background-color: var(--color-primary-100, #d7eeee); }
+  100% { background-color: transparent; }
+}

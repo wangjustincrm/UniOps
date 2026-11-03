@@ -287,9 +287,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
     && (['Rejected', 'Failed'].includes(x.file_status ?? '') || x.ack_status === 'Rejected' || !!x.error))
   // Only an order that is invoiced here (not a Shopify order: Not Required) has an invoice price.
   const priceable = !!d && !d.has_invoice && d.invoice_status !== 'Not Required' && d.fulfillment_status !== 'Cancelled' && open.length > 0
-  const refresh = async () => {
-    await q.refetch()
-  }
+  const refresh = () => q.refetch()
 
   const tabs: RecordTab[] = !d ? [] : [
     ...extraTabs,
@@ -400,7 +398,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
           {live.archive_suppressed && live.fulfillment_status !== 'Archive Suppressed' && <Badge variant="warning">Archived in Shopify</Badge>}
         </>}
         size="xl" loading={q.isLoading} error={q.error}
-        onRefresh={refresh} updatedAt={q.dataUpdatedAt} fetching={q.isFetching}
+        onRefresh={refresh} updatedAt={q.dataUpdatedAt} fetching={q.isFetching} snapshot={d as unknown as Record<string, unknown> | undefined}
         facts={facts} actions={actions} tabs={tabs}
       />
       {d && (

@@ -99,7 +99,7 @@ function Detail({ row, close }: { row: ShadowMatchRead; close: () => void }) {
         row.partner_name].filter(Boolean).join(' · ')}
       badges={<StatusCell value={m?.status ?? row.status} />}
       size="xl" loading={q.isLoading} error={q.error}
-      onRefresh={() => q.refetch()} updatedAt={q.dataUpdatedAt} fetching={q.isFetching}
+      onRefresh={() => q.refetch()} updatedAt={q.dataUpdatedAt} fetching={q.isFetching} snapshot={m as unknown as Record<string, unknown> | undefined}
       facts={m ? [
         { label: 'Status', value: m.status, tone: m.status === 'Match' || m.status === 'Expected difference' ? 'success' : 'warning' },
         { label: 'Differences', value: differing, tone: differing ? 'warning' : 'neutral' },
