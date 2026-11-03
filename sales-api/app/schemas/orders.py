@@ -44,6 +44,13 @@ class OrderRead(BaseModel):
     archived_in_shopify_at: datetime | None
     archive_suppressed: bool
     shopify_financial_status: str | None
+    # Shopify finance (sales17): the sales channel and tags ("groups"), the original
+    # total, the successful refunds and the net (original − refunded)
+    source_name: str | None = None
+    tags: str | None = None
+    original_total: Decimal | None = None
+    total_refunded: Decimal | None = None
+    net_amount: Decimal | None = None
     source_updated_at: datetime | None
     version: int
     created_at: datetime
@@ -81,6 +88,9 @@ class LineRead(BaseModel):
     line_status: str
     removed: bool
     problem: str | None
+    tax_amount: Decimal | None = None       # Shopify: the line's taxes (sales17)
+    discount_amount: Decimal | None = None  # Shopify: the line's discounts
+    tax_lines: list[dict[str, Any]] | None = None
     shipped_ea: int | None = None     # P5: from the 945
     delivered_qty: int | None = None  # P6: confirmed delivery (EA)
     # The detail's lifecycle (filled by the service): the invoice's lines for
@@ -157,6 +167,65 @@ class ShipmentRead(BaseModel):
     rows: list[ShipmentRowRead] = []
 
 
+class PaymentRead(BaseModel):
+    """A Shopify transaction (sale, authorization, capture, refund, void). No card data."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    shopify_id: int
+    parent_id: int | None
+    refund_id: int | None
+    kind: str
+    gateway: str | None
+    status: str | None
+    amount: Decimal
+    currency: str | None
+    processed_at: datetime | None
+    authorization: str | None
+    payment_id: str | None
+    error_code: str | None
+    test: bool
+
+
+class RefundLineRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    line_item_id: int | None
+    order_line_id: int | None
+    sku: str | None
+    title: str | None
+    quantity: int
+    subtotal: Decimal
+    total_tax: Decimal
+    restock_type: str | None
+
+
+class RefundAdjustmentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    kind: str | None
+    reason: str | None
+    amount: Decimal
+    tax_amount: Decimal
+
+
+class RefundRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    shopify_id: int
+    refunded_at: datetime | None
+    processed_at: datetime | None
+    note: str | None
+    restock: bool | None
+    lines_amount: Decimal
+    shipping_amount: Decimal
+    adjustments_amount: Decimal
+    amount: Decimal
+    lines: list[RefundLineRead] = []
+    adjustments: list[RefundAdjustmentRead] = []
+
+
 class OrderDetail(OrderRead):
     bill_to: dict[str, Any] | None = None
     contact: dict[str, Any] | None = None
@@ -174,6 +243,13 @@ class OrderDetail(OrderRead):
     ship_to_flags: list[str] = []
     documents: list[OrderDocumentRead] = []
     shipments: list[ShipmentRead] = []
+    # Shopify finance (sales17): gateways, discount codes, the order's tax lines,
+    # its transactions and refunds
+    payment_gateways: list[str] | None = None
+    discount_codes: list[dict[str, Any]] | None = None
+    tax_lines: list[dict[str, Any]] | None = None
+    payments: list[PaymentRead] = []
+    refunds: list[RefundRead] = []
     timeline: list[TimelineEntry] = []
 
 

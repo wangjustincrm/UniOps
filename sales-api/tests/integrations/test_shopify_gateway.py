@@ -107,3 +107,59 @@ async def test_a_variant_is_read_for_its_barcode_and_a_missing_one_is_a_readable
     with pytest.raises(ShopifyRefused):
         await gw.variant(CONN, "1/../../shop")  # only digits reach the URL
     assert len(store.requests) == 3  # token + two reads; the refused id sent nothing
+
+
+CARD_TX = {"id": 7001, "kind": "sale", "gateway": "shopify_payments", "status": "success", "amount": "100.00",
+           "currency": "CAD", "payment_id": "c1.1", "receipt": {"payment_id": "x"},
+           "payment_details": {"credit_card_bin": "424242", "credit_card_number": "•••• •••• •••• 4242",
+                               "credit_card_name": "A B", "credit_card_expiration_month": 1, "avs_result_code": "Y"},
+           "credit_card_company": "Visa"}
+
+
+async def test_finance_reads_strip_card_data_everywhere_and_keep_gift_card():
+    def store(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/admin/oauth/access_token":
+            return httpx.Response(200, json={"access_token": "tok", "expires_in": 86399})
+        if request.url.path.endswith("/orders/1/transactions.json"):
+            return httpx.Response(200, json={"transactions": [CARD_TX]})
+        order = {"id": 1, "line_items": [{"id": 11, "gift_card": False}],
+                 "refunds": [{"id": 9, "transactions": [CARD_TX | {"id": 7002, "kind": "refund"}]}]}
+        if request.url.path.endswith("/orders/1.json"):
+            assert "source_name" in request.url.params["fields"] and "customer" not in request.url.params["fields"]
+            return httpx.Response(200, json={"order": order})
+        return httpx.Response(200, json={"orders": [order]})
+    gw = client(store)
+    for got in (await gw.transactions(CONN, "1"), await gw.order(CONN, "1"), (await gw.orders_page(CONN, updated_at_min="x")).orders):
+        text = str(got)
+        for banned in ("payment_details", "credit_card", "424242", "4242", "receipt", "avs_result_code"):
+            assert banned not in text, banned
+    [tx] = await gw.transactions(CONN, "1")
+    assert (tx["id"], tx["kind"], tx["amount"], tx["payment_id"]) == (7001, "sale", "100.00", "c1.1")  # the rest is kept
+    assert (await gw.order(CONN, "1"))["line_items"][0]["gift_card"] is False  # FR-OB-11b reads it
+    with pytest.raises(ShopifyRefused):
+        await gw.transactions(CONN, "1/../2")
+
+
+async def test_a_full_rate_limit_bucket_is_waited_out_then_given_up():
+    calls, waits = [], []
+
+    def store(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/admin/oauth/access_token":
+            return httpx.Response(200, json={"access_token": "tok", "expires_in": 86399})
+        calls.append(request.url.path)
+        if len(calls) <= 2:
+            return httpx.Response(429, headers={"Retry-After": "2.0"}, json={"errors": "Exceeded 2 calls per second"})
+        return httpx.Response(200, json={"transactions": [{"id": 1, "kind": "sale"}]})
+
+    async def sleep(s):
+        waits.append(s)
+    gw = HttpShopify(secret=SECRETS.get, transport=httpx.MockTransport(store), sleep=sleep)
+    assert (await gw.transactions(CONN, "5"))[0]["id"] == 1 and waits == [2.0, 2.0]
+    calls.clear()
+    waits.clear()
+    always = HttpShopify(secret=SECRETS.get, sleep=sleep, transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, json={"access_token": "t", "expires_in": 86399}) if r.url.path.endswith("access_token")
+        else httpx.Response(429, json={})))
+    with pytest.raises(ShopifyError, match="rate limit"):
+        await always.transactions(CONN, "5")
+    assert len(waits) == 4  # RATE_LIMIT_RETRIES, then the error

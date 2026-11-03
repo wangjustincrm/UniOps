@@ -89,6 +89,18 @@ class Order(Audited, Versioned, Base):
     archived_in_shopify_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     archive_suppressed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=false())
     shopify_financial_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Shopify finance (sales17; read-only, app/services/shopify_finance.py): the sales
+    # channel, tags, gateways, discount codes and tax lines; the original total, the
+    # successful refunds and the net (original − refunded); the source update they are from.
+    source_name: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    tags: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payment_gateways: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    discount_codes: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
+    tax_lines: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
+    original_total: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    total_refunded: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    net_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    finance_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     shopify_fulfillment_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
     shopify_fulfillment_id: Mapped[str | None] = mapped_column(String(40), nullable=True)  # AC-OB-72
     warehouse_order_number_received: Mapped[str | None] = mapped_column(String(40), nullable=True)  # FR-OB-28
@@ -139,6 +151,10 @@ class OrderLine(Audited, Base):
     delivered_qty: Mapped[int | None] = mapped_column(Integer, nullable=True)
     removed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=false())
     problem: Mapped[str | None] = mapped_column(Text, nullable=True)  # why this line holds the order in Review
+    # Shopify (sales17): the line's taxes and discounts as the store gives them
+    tax_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    discount_amount: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    tax_lines: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
 
 
 # The order's amount: the source's total (Shopify: current_total_price, after

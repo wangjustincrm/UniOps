@@ -143,7 +143,8 @@ async def test_ac10_the_boundary_order_returns_and_is_recognised(env):
     r = await env.pull()  # the boundary order (updated_at == cursor) comes back
     assert (r.orders, r.unchanged, r.created, r.updated) == (1, 1, 0, 0)
     assert len(await env.q("SELECT 1 FROM sales_orders")) == 2
-    assert all(c[1]["page_info"] or c[1]["updated_at_min"] for c in env.shop.calls)
+    pages = [c for c in env.shop.calls if c[0] == "orders_page"]
+    assert pages and all(c[1]["page_info"] or c[1]["updated_at_min"] for c in pages)
 
 
 async def test_ac10_a_failure_part_way_leaves_the_cursor(env):

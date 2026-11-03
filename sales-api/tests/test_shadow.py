@@ -278,7 +278,7 @@ async def test_a_997_and_a_945_in_the_shadow_run_are_matched_to_the_zoho_940_nev
     assert w945["would"]["sets"][0]["shipped_ea"] == 12 and w945["would"]["sets"][0]["lines"]
     assert await status(edi, o.id) == F.PENDING            # nothing applied
     assert await edi.env.q("SELECT 1 FROM tasks") == [] and await outbox(edi) == []
-    assert edi.env.shop.calls == [] or all(c[0] in ("orders_page", "variant") for c in edi.env.shop.calls)
+    assert edi.env.shop.calls == [] or all(c[0] in ("orders_page", "order", "transactions", "variant") for c in edi.env.shop.calls)  # reads only
 
 
 async def test_an_imported_postal_code_mismatch_in_the_shadow_run_is_review_without_a_task(edi):

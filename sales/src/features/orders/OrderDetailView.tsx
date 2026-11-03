@@ -6,6 +6,7 @@ import {
 } from '@/platform-ui'
 import { fetchOrder, ordersClient, type LineRead, type OrderDetail, type OrderDocument, type OrderRead, type PackingRead } from './ordersApi'
 import { Shipments } from './Shipments'
+import { PaymentsAndRefunds } from './PaymentsAndRefunds'
 import { orderRef, partnerLabel } from '@/features/common/labels'
 
 // The badge shows the fulfillment status in the colour of the derived order state (D17).
@@ -54,6 +55,10 @@ const lineColumns = (currency: string): ColumnDef<LineRead, unknown>[] => [
     const a = lineAmount(row.original)
     return a == null ? '—' : <MoneyCell amount={a.toFixed(2)} currency={currency} />
   } },
+  { accessorKey: 'discount_amount', header: 'Discount', cell: ({ row }) => row.original.discount_amount == null ? '—'
+    : <MoneyCell amount={row.original.discount_amount} currency={currency} /> },
+  { accessorKey: 'tax_amount', header: 'Tax', cell: ({ row }) => row.original.tax_amount == null ? '—'
+    : <MoneyCell amount={row.original.tax_amount} currency={currency} /> },
   { accessorKey: 'qty_ea', header: 'EA', cell: ({ row }) => ea(row.original.qty_ea) },
   { accessorKey: 'shipped_ea', header: 'Shipped EA', cell: ({ row }) => ea(row.original.shipped_ea) },
   { accessorKey: 'delivered_qty', header: 'Delivered EA', cell: ({ row }) => ea(row.original.delivered_qty) },
@@ -69,7 +74,7 @@ const lineColumns = (currency: string): ColumnDef<LineRead, unknown>[] => [
     <span className={row.original.problem && !row.original.removed ? 'text-danger-600' : ''}>{row.original.problem ?? ''}</span>
   ) },
 ]
-const HIDDEN_LINE_COLUMNS = ['line_no', 'order_unit', 'invoice_price']
+const HIDDEN_LINE_COLUMNS = ['line_no', 'order_unit', 'invoice_price', 'discount_amount', 'tax_amount']
 
 const packingColumns: ColumnDef<PackingRead, unknown>[] = [
   { accessorKey: 'sscc', header: 'Pallet (SSCC)', cell: ({ row }) => row.original.sscc ?? '—' },
@@ -100,7 +105,7 @@ function LifecycleTable({ o }: { o: OrderDetail }) {
       rowAttrs={(ln) => (ln.removed ? { className: 'text-neutral-400', 'data-removed': true } : {})}
       initiallyHidden={hasNotes ? HIDDEN_LINE_COLUMNS : [...HIDDEN_LINE_COLUMNS, 'problem']}
       expand={(ln) => (ln.packing?.length ? <Packing rows={ln.packing} /> : null)}
-      footer={[null, 'Total', null, null, null, money(sum(o.lines, lineAmount)), sum(o.lines, (ln) => ln.qty_ea),
+      footer={[null, 'Total', null, null, null, money(sum(o.lines, lineAmount)), null, null, sum(o.lines, (ln) => ln.qty_ea),
         sum(o.lines, (ln) => ln.shipped_ea), sum(o.lines, (ln) => ln.delivered_qty), null, null,
         o.lines.some((ln) => ln.invoice_amount != null) ? money(sum(o.lines, (ln) => Number(ln.invoice_amount ?? 0))) : null,
         null, null]} />
@@ -167,6 +172,7 @@ export function OrderDetailView({ id }: { id: number }) {
         </section>
       )}
       <Shipments shipments={o.shipments ?? []} orderId={o.id} />
+      <PaymentsAndRefunds o={o} />
       <section aria-label="Timeline">
         <h3 className="mb-1 font-semibold text-neutral-800">Timeline</h3>
         <ol className="flex flex-col gap-1 text-xs">

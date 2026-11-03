@@ -17,9 +17,16 @@ fallback, logged once). Secret values never appear in a message or a log.
 The host must be a `*.myshopify.com` store, so a token is never sent anywhere
 else. The order query never asks for `customer` (FR-OB-10: without
 read_customers Shopify fails the whole page).
+
+Finance (user 2026-11-03, read_orders): one order and its transactions. No
+card data is kept anywhere: every JSON this client returns has the card
+fields stripped (`strip_card_data`) — a transaction's `payment_details`
+(BIN, masked number, holder, expiry, AVS / CVV results), `receipt` and any
+`credit_card_*` key — so neither a stored page nor a payment row carries them.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
@@ -32,6 +39,9 @@ import httpx
 logger = logging.getLogger(__name__)
 
 RENEW_BEFORE_SECONDS = 600
+# A read answered 429 (the REST bucket is full) waits Retry-After and tries again, a few times.
+RATE_LIMIT_RETRIES = 4
+MAX_RETRY_AFTER = 10.0
 TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 _STORE_HOST = re.compile(r"^[a-z0-9][a-z0-9-]*\.myshopify\.com$")
 _NEXT_LINK = re.compile(r'<[^>]*[?&]page_info=([^&>]+)[^>]*>;\s*rel="next"')
@@ -42,7 +52,23 @@ ORDER_FIELDS = (
     "closed_at", "financial_status", "fulfillment_status", "currency", "current_total_price", "total_price",
     "subtotal_price", "total_tax", "total_discounts", "total_shipping_price_set", "email", "phone", "note",
     "tags", "test", "shipping_address", "billing_address", "line_items", "refunds", "shipping_lines",
+    # finance (user 2026-11-03)
+    "source_name", "payment_gateway_names", "discount_codes", "tax_lines",
 )
+
+# Card data, never kept: dropped wherever it appears in a response.
+CARD_KEYS = frozenset({"payment_details", "receipt", "avs_result_code", "cvv_result_code", "buyer_action_info",
+                       "extended_authorization_attributes", "payment_method_name"})
+
+
+def strip_card_data(value: Any) -> Any:
+    """The JSON without card data: the CARD_KEYS and any `credit_card_*` key,
+    at any depth (never `gift_card`: FR-OB-11b reads it)."""
+    if isinstance(value, dict):
+        return {k: strip_card_data(v) for k, v in value.items() if k not in CARD_KEYS and not k.startswith("credit_card")}
+    if isinstance(value, list):
+        return [strip_card_data(v) for v in value]
+    return value
 
 
 class ShopifyError(Exception):
@@ -75,6 +101,8 @@ class ShopifyGateway(Protocol):
                           page_info: str | None = None, limit: int = 50) -> OrdersPage: ...
 
 
+    async def order(self, conn: Any, order_id: str) -> dict[str, Any]: ...
+    async def transactions(self, conn: Any, order_id: str) -> list[dict[str, Any]]: ...
     async def fulfillment_orders(self, conn: Any, order_id: str) -> list[dict[str, Any]]: ...
     async def fulfillments(self, conn: Any, order_id: str) -> list[dict[str, Any]]: ...
     async def locations(self, conn: Any) -> list[dict[str, Any]]: ...
@@ -84,7 +112,7 @@ class ShopifyGateway(Protocol):
     async def close_order(self, conn: Any, order_id: str) -> dict[str, Any]: ...
 
 
-READS = ("shop", "orders_page", "variant", "fulfillment_orders", "fulfillments", "locations")
+READS = ("shop", "orders_page", "order", "transactions", "variant", "fulfillment_orders", "fulfillments", "locations")
 # P5: behind SALES_PARTNER_WRITES_ENABLED, and only for a LIVE connection.
 WRITES: tuple[str, ...] = ("create_fulfillment", "update_tracking", "close_order")
 
@@ -101,8 +129,9 @@ class _Token:
 
 class HttpShopify:
     def __init__(self, *, secret: Callable[[str], str | None], transport: httpx.AsyncBaseTransport | None = None,
-                 clock: Callable[[], float] = time.monotonic) -> None:
+                 clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], Any] = asyncio.sleep) -> None:
         self.secret = secret
+        self.sleep = sleep
         self.transport = transport
         self.clock = clock
         self._tokens: dict[tuple[str, str], _Token] = {}
@@ -157,11 +186,15 @@ class HttpShopify:
             raise ShopifyRefused("the connection has no API version")
         token = await self._token(conn, host)
         async with self._client() as c:
-            try:
-                r = await c.get(f"https://{host}/admin/api/{version}/{path}", params=params,
-                                headers={"X-Shopify-Access-Token": token, "Accept": "application/json"})
-            except httpx.HTTPError as e:
-                raise ShopifyError(readable(e)) from e
+            for attempt in range(RATE_LIMIT_RETRIES + 1):
+                try:
+                    r = await c.get(f"https://{host}/admin/api/{version}/{path}", params=params,
+                                    headers={"X-Shopify-Access-Token": token, "Accept": "application/json"})
+                except httpx.HTTPError as e:
+                    raise ShopifyError(readable(e)) from e
+                if r.status_code != 429 or attempt == RATE_LIMIT_RETRIES:
+                    break
+                await self.sleep(_retry_after(r))  # the store's bucket refills at 2 calls a second
         if r.status_code in (401, 403):
             self._tokens = {k: v for k, v in self._tokens.items() if k[0] != host}  # a fresh token next time
             raise ShopifyAuthFailed(f"the store refused the request (HTTP {r.status_code})")
@@ -221,7 +254,17 @@ class HttpShopify:
                 params["updated_at_min"] = updated_at_min
         r = await self._get(conn, "orders.json", params)
         m = _NEXT_LINK.search(r.headers.get("link", ""))
-        return OrdersPage(r.json().get("orders", []), m.group(1) if m else None)
+        return OrdersPage(strip_card_data(r.json().get("orders", [])), m.group(1) if m else None)
+
+    async def order(self, conn: Any, order_id: str) -> dict[str, Any]:
+        """One order, the same fields as the pages (a finance refresh of an order already here)."""
+        r = await self._get(conn, f"orders/{_digits(order_id)}.json", {"fields": ",".join(ORDER_FIELDS)})
+        return strip_card_data(r.json()["order"])
+
+    async def transactions(self, conn: Any, order_id: str) -> list[dict[str, Any]]:
+        """The order's payments: sales, authorizations, captures, refunds, voids (read_orders)."""
+        r = await self._get(conn, f"orders/{_digits(order_id)}/transactions.json", {})
+        return strip_card_data(r.json().get("transactions", []))
 
     async def fulfillment_orders(self, conn: Any, order_id: str) -> list[dict[str, Any]]:
         r = await self._get(conn, f"orders/{_digits(order_id)}/fulfillment_orders.json", {})
@@ -250,6 +293,13 @@ class HttpShopify:
 
     async def close_order(self, conn: Any, order_id: str) -> dict[str, Any]:
         return (await self._post(conn, f"orders/{_digits(order_id)}/close.json", {}))["order"]
+
+
+def _retry_after(r: httpx.Response) -> float:
+    try:
+        return min(max(float(r.headers.get("Retry-After", "1")), 0.5), MAX_RETRY_AFTER)
+    except ValueError:
+        return 1.0
 
 
 def _digits(v: Any) -> str:
@@ -298,6 +348,8 @@ class FakeShopify:
     calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     fail: dict[str, BaseException] = field(default_factory=dict)
     page_size: int | None = None
+    # finance: per Shopify order id (returned as the real client would: card data stripped)
+    transactions_by_order: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     # P5: per Shopify order id
     fulfillment_orders_by_order: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     fulfillments_by_order: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
@@ -333,7 +385,22 @@ class FakeShopify:
             start = int(page_info)
         rows = self._pending[start:start + size]
         nxt = str(start + size) if start + size < len(self._pending) else None
-        return OrdersPage(list(rows), nxt)
+        return OrdersPage(strip_card_data(list(rows)), nxt)
+
+    async def order(self, conn: Any, order_id: str) -> dict[str, Any]:
+        self.calls.append(("order", {"order_id": str(order_id)}))
+        if "order" in self.fail:
+            raise self.fail["order"]
+        found = next((o for o in self.orders if str(o.get("id")) == str(order_id)), None)
+        if found is None:
+            raise ShopifyError(f"the store has nothing at orders/{order_id}.json (HTTP 404)")
+        return strip_card_data(found)
+
+    async def transactions(self, conn: Any, order_id: str) -> list[dict[str, Any]]:
+        self.calls.append(("transactions", {"order_id": str(order_id)}))
+        if "transactions" in self.fail:
+            raise self.fail["transactions"]
+        return strip_card_data(self.transactions_by_order.get(str(order_id), []))
 
     async def fulfillment_orders(self, conn: Any, order_id: str) -> list[dict[str, Any]]:
         self.calls.append(("fulfillment_orders", {"order_id": str(order_id)}))

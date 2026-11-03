@@ -12,6 +12,13 @@ connection (FR-OB-50). Read-only: nothing is written to Shopify in P3.
 The cursor is system-written: advanced with a plain UPDATE (no version bump
 or audit row every five minutes) and logged; a person resets it through the
 audited "reset cursor" action.
+
+Finance (user 2026-11-03): with every order it imports, the pass reads the
+order's transactions and stores its payments, refunds and summary
+(services/shopify_finance.py); a failure there fails the order like any other
+(the cursor stays). After the pages it fills the finance of up to
+REFRESH_PER_PASS orders already here whose finance is missing or older than
+the order (each GETs the order and its transactions). Reads only.
 """
 from __future__ import annotations
 
@@ -37,6 +44,7 @@ from app.services.settings import SETTINGS, SHADOW_MODE
 from app.services.intake import ConnectionSnapshot
 from app.services.orders import BarcodeLookup, OrderSync
 from app.services.problems import SHOPIFY_AUTH_FAILED, SHOPIFY_FETCH_FAILED, problem
+from app.services.shopify_finance import REFRESH_PER_PASS, stale_finance, store_finance
 
 STEP = "shopify"
 DEFAULT_PAGE_SIZE = 50
@@ -50,6 +58,8 @@ class ShopifyReport:
     updated: int = 0
     unchanged: int = 0
     failed: int = 0
+    finance_refreshed: int = 0  # orders already here whose finance was filled
+    finance_failed: int = 0
     status: str = "ok"  # ok | cursor_not_set | latched | fetch_failed | not_advanced
     cursor_before: str | None = None
     cursor_after: str | None = None
@@ -117,6 +127,7 @@ class ShopifyIntake:
             page_info = page.next_page_info
             if not page_info:
                 break
+        await self._refresh_finance(conn, report, run_id)
         if report.failed:
             report.status = "not_advanced"  # AC-OB-10: a failure leaves the cursor where it was
             return report
@@ -134,13 +145,44 @@ class ShopifyIntake:
 
     async def _one(self, uow, conn: ConnectionSnapshot, o: dict, abbrev, doc_id, barcodes: BarcodeLookup) -> str:
         src = from_shopify(o, partner_code=conn.partner_code, partner_abbrev=abbrev, cutoff=conn.order_number_cutoff)
-        existing = (await uow.session.execute(select(Order.source_updated_at).where(
-            Order.partner_code == src.partner_code, Order.source_order_id == src.source_order_id))).one_or_none()
+        key = (Order.partner_code == src.partner_code, Order.source_order_id == src.source_order_id)
+        existing = (await uow.session.execute(select(Order.source_updated_at, Order.finance_updated_at).where(*key))).one_or_none()
         if existing is not None and existing[0] is not None and src.updated_at == existing[0]:
+            if existing[1] != existing[0]:  # here before its finance was read
+                await self._finance(uow, conn, o, key)
             return "unchanged"  # the boundary order, seen again (AC-OB-10)
         await OrderSync(uow, self.tasks).upsert(src, connection_id=conn.id, document_id=doc_id, received_at=self.clock(),
                                                 barcodes=barcodes)
+        await self._finance(uow, conn, o, key)
         return "updated" if existing is not None else "created"
+
+    async def _finance(self, uow, conn, o: dict, key) -> None:
+        order = (await uow.session.execute(select(Order).where(*key))).scalar_one()
+        await store_finance(uow, order, o, await self.shopify.transactions(conn, str(o["id"])))
+
+    async def _refresh_finance(self, conn: ConnectionSnapshot, report: ShopifyReport, run_id) -> None:
+        """Up to REFRESH_PER_PASS orders already here whose finance is missing or stale."""
+        async with self.uow_factory(SYSTEM_ACTOR) as uow:
+            todo = (await uow.session.execute(stale_finance(conn.id).limit(REFRESH_PER_PASS))).all()
+
+        async def one(uow, order_id: int, source_id: str) -> bool:
+            o = await self.shopify.order(conn, source_id)
+            order = await uow.session.get(Order, order_id)
+            changed = datetime.fromisoformat(o["updated_at"]) if o.get("updated_at") else None
+            if changed is not None and order.source_updated_at is not None and changed != order.source_updated_at:
+                return False  # changed since it was imported: the next pass's pages bring it whole
+            await store_finance(uow, order, o, await self.shopify.transactions(conn, source_id))
+            return True
+
+        for order_id, source_id in todo:
+            outcome = await isolated(f"{conn.name}:finance {source_id}", lambda uow, i=order_id, sid=source_id: one(uow, i, sid),
+                                     uow_factory=self.uow_factory, log=self._finance_failed(conn, source_id, run_id))
+            if outcome.ok:
+                report.finance_refreshed += int(bool(outcome.result))
+            else:
+                report.finance_failed += 1
+                if isinstance(outcome.error, ShopifyAuthFailed):
+                    break  # the pages already latched or will; no point asking again
 
     async def _store_page(self, conn, orders: list[dict], n: int) -> int | None:
         """The page as received (FR-OB-05). Identical bytes are kept once: a page
@@ -169,6 +211,12 @@ class ShopifyIntake:
                             conn, run_id, order_id=o.get("id"))
             await self._raise(SHOPIFY_FETCH_FAILED, conn.id, f"Shopify order failed: {conn.name}",
                               f"Order {o.get('name') or o.get('id')}: {why}. The cursor stays until it imports.")
+        return log
+
+    def _finance_failed(self, conn, source_id: str, run_id):
+        async def log(outcome) -> None:
+            await self._log("ERROR", f"{conn.name}: payments and refunds of Shopify order {source_id} not read: "
+                            f"{outcome.error_type}: {outcome.message}", conn, run_id, order_id=source_id)
         return log
 
     async def _raise(self, event, entity, title, description) -> None:

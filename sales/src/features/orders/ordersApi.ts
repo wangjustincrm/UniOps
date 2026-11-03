@@ -15,7 +15,7 @@ export interface OrderRead {
   source_order_number: string | null
   /** The Order ref (A.3): partner abbreviation + "-" + source number — the visible identifier. */
   source_reference: string | null
-  /** The partner's name (lists show "Loblaws (AC-9898)"). */
+  /** The partner's name (lists show it; the code in its tooltip). */
   partner_name: string | null
   order_date: string | null
   requested_delivery_date: string | null
@@ -35,6 +35,12 @@ export interface OrderRead {
   archived_in_shopify_at: string | null
   archive_suppressed: boolean
   shopify_financial_status: string | null
+  // Shopify finance: the sales channel and tags, the original total, refunds and the net (original − refunded)
+  source_name?: string | null
+  tags?: string | null
+  original_total?: string | null
+  total_refunded?: string | null
+  net_amount?: string | null
   source_updated_at: string | null
   version: number
   created_at: string
@@ -56,6 +62,9 @@ export interface LineRead {
   problem: string | null
   shipped_ea?: number | null
   delivered_qty?: number | null
+  /** Shopify: the line's taxes and discounts */
+  tax_amount?: string | null
+  discount_amount?: string | null
   // The detail's lifecycle: the invoice's lines for it, its state, the 945 rows packed for it.
   invoiced_qty?: number | null
   invoice_unit?: string | null
@@ -138,11 +147,56 @@ export interface OrderDetail extends OrderRead {
   /** Non-blocking warnings about the ship-to (a PO box). */
   ship_to_flags?: string[]
   notes: string | null
+  subtotal?: string | null
+  tax?: string | null
+  shipping?: string | null
+  discount?: string | null
   lines: LineRead[]
   documents: OrderDocument[]
   shipments: ShipmentRead[]
+  // Shopify finance: gateways, discount codes, tax lines, transactions and refunds (no card data)
+  payment_gateways?: string[] | null
+  discount_codes?: { code: string | null; type: string | null; amount: string }[] | null
+  tax_lines?: { title: string | null; rate: number | null; amount: string }[] | null
+  payments?: PaymentRead[]
+  refunds?: RefundRead[]
   timeline: { at: string; user_name: string; entity: string; action: string; before: Record<string, unknown> | null;
     after: Record<string, unknown> | null; reason: string | null }[]
+}
+
+/** A Shopify transaction: sale, authorization, capture, refund or void. */
+export interface PaymentRead {
+  id: number
+  shopify_id: number
+  parent_id: number | null
+  refund_id: number | null
+  kind: string
+  gateway: string | null
+  status: string | null
+  amount: string
+  currency: string | null
+  processed_at: string | null
+  authorization: string | null
+  payment_id: string | null
+  error_code: string | null
+  test: boolean
+}
+
+export interface RefundRead {
+  id: number
+  shopify_id: number
+  refunded_at: string | null
+  processed_at: string | null
+  note: string | null
+  restock: boolean | null
+  lines_amount: string
+  shipping_amount: string
+  adjustments_amount: string
+  /** Its successful refund transactions. */
+  amount: string
+  lines: { line_item_id: number | null; order_line_id: number | null; sku: string | null; title: string | null; quantity: number;
+    subtotal: string; total_tax: string; restock_type: string | null }[]
+  adjustments: { kind: string | null; reason: string | null; amount: string; tax_amount: string }[]
 }
 
 export interface ManualLine { item_code: string; quantity: number; unit: string }

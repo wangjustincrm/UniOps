@@ -18,6 +18,7 @@ from app.domain.status import Invoice as Inv
 from app.models.config import Connection, DcRouting, Item, Partner
 from app.models.documents import Document, DocumentLink
 from app.models.invoices import InvoiceLine
+from app.models.payments import OrderPayment, OrderRefund, OrderRefundAdjustment, OrderRefundLine
 from app.models.shipments import Shipment, ShipmentRow
 from app.models.orders import Order, OrderLine
 from app.models.records import AuditRecord
@@ -29,7 +30,8 @@ from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.schemas.orders import (
     LinePreview, LineRead, ManualLineIn, ManualOrderIn, OrderDetail, OrderDocumentRead, OrderRead, PackingRead,
-    ReviewResult, ShipmentRead, ShipmentRowRead, TimelineEntry,
+    PaymentRead, RefundAdjustmentRead, RefundLineRead, RefundRead, ReviewResult, ShipmentRead, ShipmentRowRead,
+    TimelineEntry,
 )
 from app.services.intake import ConnectionSnapshot
 from app.services.invoice_pdf import PackingList, PackRow, render_packing
@@ -60,18 +62,21 @@ ORDER_STATE_SQL = case(
 
 class OrderRepository(Repository[Order]):
     model = Order
-    search_fields = ("source_reference", "source_order_number", "source_order_id", "partner_name_sql", "review_reason")
+    search_fields = ("source_reference", "source_order_number", "source_order_id", "partner_name_sql", "review_reason", "tags")
     list_fields = ("order_number", "partner_code", "connection_id", "source_type", "source_order_id",
                    "source_order_number", "source_reference", "order_type", "department", "order_date",
                    "requested_delivery_date", "do_not_deliver_after", "cancel_date", "currency", "subtotal", "tax",
                    "shipping", "discount", "total", "fulfillment_status", "invoice_status", "hold_reason",
                    "review_reason", "historical", "first_received_at", "paid_at", "source_updated_at",
                    "source_cancelled_at", "archived_in_shopify_at", "archive_suppressed", "shopify_financial_status",
-                   "shopify_fulfillment_status", "created_at", "updated_at")
+                   "shopify_fulfillment_status", "source_name", "tags", "original_total", "total_refunded", "net_amount",
+                   "created_at", "updated_at")
     labels = {"order_number": "Internal no.", "source_reference": "Order ref", "partner_name": "Partner",
               "partner_code": "Partner code", "total_amount": "Total", "total": "Source total", "source_order_number": "Source no.", "source_order_id": "Source ID",
               "fulfillment_status": "Status", "first_received_at": "Received", "paid_at": "Paid",
-              "shopify_financial_status": "Shopify payment", "shopify_fulfillment_status": "Shopify fulfillment"}
+              "shopify_financial_status": "Payment status", "shopify_fulfillment_status": "Shopify fulfillment",
+              "source_name": "Sales channel", "tags": "Tags", "original_total": "Original total",
+              "total_refunded": "Refunded", "net_amount": "Net"}
     enums = {"source_type": SOURCE_TYPES, "fulfillment_status": tuple(s.value for s in F),
              "invoice_status": tuple(s.value for s in Inv), "hold_reason": HOLD_REASONS,
              "order_state": ORDER_STATES}
@@ -80,11 +85,11 @@ class OrderRepository(Repository[Order]):
     filterable = {"order_state": FilterRule(ORDER_STATE_SQL, kind="text"),
                   "partner_name": FilterRule(Order.partner_name_sql, kind="text"),
                   "total_amount": FilterRule(Order.total_amount_sql, kind="number", cast=lambda v: Decimal(str(v)))}
-    summable = ("total_amount",)
+    summable = ("total_amount", "net_amount", "total_refunded")
     sum_currency = "currency"
     default_sort = ("-order_number",)
     groupable = ("order_state", "partner_name", "partner_code", "source_type", "fulfillment_status", "invoice_status", "hold_reason", "order_date",
-                 "currency", "historical", "archive_suppressed", "shopify_financial_status")
+                 "currency", "historical", "archive_suppressed", "shopify_financial_status", "source_name")
     # System views (§13.19). Review reason is shown where it says something.
     presets = (
         Preset("all", "All", {"hidden": ["review_reason"]}),
@@ -96,6 +101,10 @@ class OrderRepository(Repository[Order]):
         Preset("delivery", "Waiting for delivery confirmation",
                {"filters": [{"field": "invoice_status", "op": "eq", "value": "Waiting for Delivery Confirmation"}]}),
         Preset("archive_suppressed", "Archive suppressed", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Archive Suppressed"}], "hidden": ["review_reason"]}),
+        Preset("refunded", "Refunded", {"filters": [{"field": "shopify_financial_status", "op": "eq", "value": "refunded"}],
+                                        "hidden": ["review_reason"]}),
+        Preset("partially_refunded", "Partially refunded", {
+            "filters": [{"field": "shopify_financial_status", "op": "eq", "value": "partially_refunded"}], "hidden": ["review_reason"]}),
         Preset("historical", "Historical", {"filters": [{"field": "historical", "op": "eq", "value": "true"}], "includeHistorical": True, "hidden": ["review_reason"]}),
     )
     historical_column = "historical"
@@ -132,6 +141,8 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
             lines=await self._lifecycle(lines),
             documents=[OrderDocumentRead(**d._asdict()) for d in docs],
             shipments=await self._shipments(id),
+            payment_gateways=o.payment_gateways, discount_codes=o.discount_codes, tax_lines=o.tax_lines,
+            **await self._payments(id),
             dc_number=await self._dc_number(o), ship_to_flags=address_flags(o.ship_to),
             timeline=[TimelineEntry(at=a.at, user_name=a.user_name, entity=a.entity, action=a.action, before=a.before,
                                     after=a.after, reason=a.reason) for a in trail],
@@ -199,6 +210,24 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                 "packing": packed.get(ln.id, []),
             }))
         return out
+
+    async def _payments(self, order_id: int) -> dict:
+        """The order's Shopify transactions and refunds (lines, adjustments), oldest first."""
+        s = self.uow.session
+        pays = (await s.execute(select(OrderPayment).where(OrderPayment.order_id == order_id)
+                                .order_by(OrderPayment.processed_at.asc().nulls_last(), OrderPayment.shopify_id))).scalars()
+        refunds = list((await s.execute(select(OrderRefund).where(OrderRefund.order_id == order_id)
+                                        .order_by(OrderRefund.refunded_at.asc().nulls_last(), OrderRefund.shopify_id))).scalars())
+        ids = [r.id for r in refunds]
+        lines = list((await s.execute(select(OrderRefundLine).where(OrderRefundLine.refund_id.in_(ids))
+                                      .order_by(OrderRefundLine.id))).scalars()) if ids else []
+        adjs = list((await s.execute(select(OrderRefundAdjustment).where(OrderRefundAdjustment.refund_id.in_(ids))
+                                     .order_by(OrderRefundAdjustment.id))).scalars()) if ids else []
+        return {"payments": [PaymentRead.model_validate(p) for p in pays],
+                "refunds": [RefundRead.model_validate(r).model_copy(update={
+                    "lines": [RefundLineRead.model_validate(x) for x in lines if x.refund_id == r.id],
+                    "adjustments": [RefundAdjustmentRead.model_validate(x) for x in adjs if x.refund_id == r.id]})
+                    for r in refunds]}
 
     async def _shipments(self, order_id: int) -> list[ShipmentRead]:
         s = self.uow.session

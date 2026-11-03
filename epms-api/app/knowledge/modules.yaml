@@ -287,6 +287,7 @@ modules:
       - Check, correct and send an invoice (Invoicing → Invoices) — its prices beside the PO's (a changed price needs a reason), the delivery date and the retailer's delivery number — or release one that is on hold; record a retailer return or a cancellation after shipment on the order
       - See what became of each line of an order in one table — ordered, shipped (945), delivered and invoiced, with its status — and open a line to see the pallets, lots, expiry, tracking and ship date packed for it; see the checks a 945 flagged and whether it was written to Shopify, retry a failed Shopify write, and print a shipment's packing list (Orders → the order → Shipments, Packing list)
       - Trace a lot or run a recall (Operations → Lots) — every pallet row the warehouse shipped with its lot, expiry, quantity, order, customer, ship-to city and postal code and tracking; views "Expiring soon" and "By lot"; Recall… takes one lot or a pasted list and shows every order and customer they went to, with Export CSV
+      - See what a Shopify order was paid and refunded (Orders → the order → Payments & refunds) — payment status, sales channel, tags, gateways, discount codes, subtotal, discounts, shipping, taxes, original total, refunded and net; every payment with its gateway, status and authorization; every refund with its lines, shipping and adjustments; and find refunded orders with the views "Refunded" and "Partially refunded" and the Net and Refunded columns
       - See list totals — the sum of the amounts (the Total of Orders, the Amount of Invoices) or quantities (Lots) for everything the filter finds, per currency, under the list and in each group's header
       - Choose the warehouse's SFTP connection and how long to wait for its 997 (Configuration → Connections, Warehouse EDI)
       - Set how often each connection is read — every N minutes, paused, or only in certain hours and days (Toronto time) — see its last and next run, and pause, resume or run one now (Configuration → Connections: the icons on its row, or the connection's Schedule)
@@ -323,6 +324,13 @@ modules:
         different currencies are never added together. Lots lists every 945
         row, also those of a shadow-run or second 945 (marked): those goods went
         out too. Shipment rows and the original 945 files are never deleted.
+      - >-
+        A Shopify order's payments and refunds are read from the store with
+        the order (and refreshed when a refund changes it); nothing is written
+        back. Net is the original total minus the successful refunds. The
+        order's "groups" are its Shopify tags and its sales channel; Shopify
+        customer groups are not read. No card details are kept — not the card
+        number, its first digits, the holder or the expiry.
       - >-
         Each connection has its own schedule; its job reads the connection and
         takes what it stored straight through (orders, acknowledgements,

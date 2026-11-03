@@ -48,8 +48,8 @@ async def test_orders_list_detail_and_the_review_worklist(api):
     assert [(x["key"], x["count"]) for x in g["groups"]] == [(["Pending", "SHOP"], 1), (["Review", "SHOP"], 1)]
     assert g["groups_truncated"] is False and len(g["items"]) == 1 and g["total"] == 2
     # the Total column's sums: over the whole result (not the page), per currency, and per group
-    assert g["totals"] == [{"currency": "CAD", "count": 2, "sums": {"total_amount": "200.00"}}]
-    assert g["groups"][0]["totals"] == [{"currency": "CAD", "count": 1, "sums": {"total_amount": "100.00"}}]
+    assert [(t["currency"], t["count"], t["sums"]["total_amount"]) for t in g["totals"]] == [("CAD", 2, "200.00")]
+    assert [(t["count"], t["sums"]["total_amount"]) for t in g["groups"][0]["totals"]] == [(1, "100.00")]
     r = await api.get("/api/v1/orders?group=review_reason", headers=READER)
     assert r.status_code == 422 and r.json()["error"]["code"] == "query.not_groupable"
     assert "groups" not in (await api.get("/api/v1/orders", headers=READER)).json()  # only when asked

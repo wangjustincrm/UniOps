@@ -479,5 +479,54 @@ describe('Orders: the Order ref, the partner by name, and the PO prices', () => 
     expect(within(foot).getByText('36,088.00 CAD')).toBeInTheDocument()
     expect(within(foot).getByText('120.00 USD')).toBeInTheDocument()  // never added to CAD
   })
-})
 
+  it('a Shopify order: payments & refunds — summary, channel, tags, transactions, a refund with its lines; list Net and Refunded', async () => {
+    api.list.mockResolvedValue({ items: [{ ...pending, total_amount: '113.00', total_refunded: '37.00', net_amount: '76.00',
+      shopify_financial_status: 'partially_refunded' }], total: 1 })
+    api.fetchOrder.mockResolvedValue({ ...detail, ...pending, currency: 'CAD', source_name: 'web', tags: 'wholesale, vip',
+      payment_gateways: ['shopify_payments'], discount_codes: [{ code: 'WELCOME5', type: 'fixed_amount', amount: '5.00' }],
+      tax_lines: [{ title: 'HST', rate: 0.13, amount: '13.00' }], subtotal: '100.00', discount: '5.00', shipping: '7.75', tax: '13.00',
+      original_total: '113.00', total_refunded: '37.00', net_amount: '76.00', shopify_financial_status: 'partially_refunded',
+      payments: [
+        { id: 1, shopify_id: 7001, parent_id: null, refund_id: null, kind: 'sale', gateway: 'shopify_payments', status: 'success', amount: '113.00',
+          currency: 'CAD', processed_at: '2026-10-29T12:01:00Z', authorization: 'ch_1', payment_id: 'c1.1', error_code: null, test: false },
+        { id: 2, shopify_id: 7002, parent_id: 7001, refund_id: 5, kind: 'refund', gateway: 'shopify_payments', status: 'success', amount: '37.00',
+          currency: 'CAD', processed_at: '2026-10-30T13:00:00Z', authorization: null, payment_id: null, error_code: null, test: false }],
+      refunds: [{ id: 5, shopify_id: 901, refunded_at: '2026-10-30T13:00:00Z', processed_at: null, note: 'damaged in transit', restock: false,
+        lines_amount: '28.25', shipping_amount: '8.75', adjustments_amount: '0.00', amount: '37.00',
+        lines: [{ line_item_id: 11, order_line_id: 1, sku: 'CF0092-SKU', title: 'Formula', quantity: 1, subtotal: '25.00', total_tax: '3.25', restock_type: 'no_restock' }],
+        adjustments: [{ kind: 'shipping_refund', reason: 'Shipping refund', amount: '-7.75', tax_amount: '-1.00' }] }] })
+    renderAs(['sales.read'])
+    const row = (await screen.findByText('SHOP-9303')).closest('tr')!
+    expect(row).toHaveTextContent('37.00 CAD')
+    expect(row).toHaveTextContent('76.00 CAD')
+    expect(row).toHaveTextContent('partially refunded')
+    fireEvent.click(within(row).getByText('SHOP-9303'))
+    const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
+    const money = await within(sheet).findByRole('region', { name: 'Payments and refunds' })
+    const value = (term: string) => within(money).getByText(term, { selector: 'dt' }).nextElementSibling!
+    expect(value('Sales channel')).toHaveTextContent('web')
+    expect(value('Tags')).toHaveTextContent('wholesale')
+    expect(value('Tags')).toHaveTextContent('vip')
+    expect(value('Discount codes')).toHaveTextContent('WELCOME5 (5.00 CAD)')
+    expect(value('Tax')).toHaveTextContent('HST 13%: 13.00 CAD')
+    expect(value('Net')).toHaveTextContent('76.00 CAD')
+    const pays = within(money).getByRole('table', { name: 'Payments' })
+    expect(within(pays).getByText('ch_1').closest('tr')).toHaveTextContent('113.00 CAD')
+    expect(within(pays).getAllByRole('row')[2]).toHaveTextContent('-37.00 CAD')
+    const refunds = within(money).getByRole('table', { name: 'Refunds' })
+    expect(within(refunds).getByText('damaged in transit').closest('tr')).toHaveTextContent('8.75 CAD')
+    fireEvent.click(within(refunds).getByRole('button', { name: 'Show details' }))
+    expect(within(refunds).getByRole('list', { name: 'Refunded lines' })).toHaveTextContent('1 × CF0092-SKU — 25.00 CAD + 3.25 CAD tax · no restock')
+    expect(within(refunds).getByRole('list', { name: 'Refund adjustments' })).toHaveTextContent('shipping refund (Shipping refund): -7.75 CAD')
+  })
+
+  it('a retailer order has no Payments & refunds section', async () => {
+    api.fetchOrder.mockResolvedValue({ ...detail, ...pending, source_type: 'EDI_850' })
+    renderAs(['sales.read'])
+    fireEvent.click(await screen.findByText('SHOP-9303'))
+    const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
+    await within(sheet).findByRole('table', { name: 'Order lines' })
+    expect(within(sheet).queryByRole('region', { name: 'Payments and refunds' })).toBeNull()
+  })
+})
