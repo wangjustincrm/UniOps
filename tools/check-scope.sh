@@ -274,6 +274,99 @@ PY
   fi
 fi
 
+# ── the saved-view contract: front end ↔ sales-api (2026-11-03) ──────────────
+# ViewState's keys = check_state's _STATE_KEYS, and AUTO_REFRESH = AUTO_REFRESH_SECONDS
+# (the vitest suite mocks the API: a key only the front end knows broke Save view).
+VIEW_CONTRACT=$(cat <<'PY'
+"""The saved-view contract between the Sales front end and sales-api (2026-11-03:
+"Save view" failed with "unknown parts of the state: refresh" — the front end's
+ViewState had grown a key the server's check_state did not know, and the vitest
+suite mocks the API, so nothing caught it).
+
+Compares, as text (no imports, nothing installed):
+- the keys of `export interface ViewState { … }` in sales/src/platform-ui/resource/viewState.ts
+  with `_STATE_KEYS` in sales-api/app/platform/views.py;
+- the auto-refresh choices `AUTO_REFRESH` (0 = off, never stored) with `AUTO_REFRESH_SECONDS`.
+Arguments: <views.py> <viewState.ts>; exit 0 when they agree.
+"""
+import ast
+import re
+import sys
+from pathlib import Path
+
+
+def server(path: str) -> tuple[set[str], set[int]]:
+    tree = ast.parse(Path(path).read_text())
+    found: dict[str, object] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            if node.targets[0].id in ("_STATE_KEYS", "AUTO_REFRESH_SECONDS"):
+                found[node.targets[0].id] = ast.literal_eval(node.value)
+    if "_STATE_KEYS" not in found:
+        sys.exit(f"view contract: {path} has no _STATE_KEYS (literal) — the check cannot run")
+    return set(found["_STATE_KEYS"]), set(found.get("AUTO_REFRESH_SECONDS", ()))  # none: no choice accepted
+
+
+def client(path: str) -> tuple[set[str], set[int]]:
+    text = Path(path).read_text()
+    body = re.search(r"export interface ViewState\s*\{(.*?)\n\}", text, re.S)
+    choices = re.search(r"export const AUTO_REFRESH\s*=\s*\[([^\]]*)\]", text)
+    if not body or not choices:
+        sys.exit(f"view contract: {path} has no `export interface ViewState` / `export const AUTO_REFRESH` — the check cannot run")
+    keys = set(re.findall(r"^\s*(\w+)\??\s*:", body.group(1), re.M))
+    seconds = {int(x) for x in re.findall(r"\d+", choices.group(1))} - {0}  # 0 = off: never stored
+    return keys, seconds
+
+
+def main(views_py: str, view_state_ts: str) -> int:
+    s_keys, s_secs = server(views_py)
+    c_keys, c_secs = client(view_state_ts)
+    problems = []
+    if c_keys - s_keys:
+        problems.append(f"the front end saves {sorted(c_keys - s_keys)} but sales-api _STATE_KEYS refuses them")
+    if s_keys - c_keys:
+        problems.append(f"sales-api _STATE_KEYS accepts {sorted(s_keys - c_keys)} that ViewState does not have")
+    if c_secs != s_secs:
+        problems.append(f"auto-refresh choices differ: front end {sorted(c_secs)}, sales-api AUTO_REFRESH_SECONDS {sorted(s_secs)}")
+    for p in problems:
+        print(f"  view contract: {p}")
+    if not problems:
+        print(f"  view contract: {len(c_keys)} keys and auto-refresh {sorted(c_secs)} agree")
+    return 1 if problems else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(*sys.argv[1:3]))
+PY
+)
+VIEWS_PY="$ROOT/sales-api/app/platform/views.py"
+VIEW_TS="$ROOT/sales/src/platform-ui/resource/viewState.ts"
+if [[ ! -f $VIEWS_PY || ! -f $VIEW_TS ]]; then
+  fail "the saved-view contract check cannot find views.py / viewState.ts"
+else
+  VC_TMP=$(mktemp -d)
+  # Planted mismatches must be caught: a key the server does not know, a different interval.
+  sed 's/"includeHistorical",/"includeHistorical", "planted",/; s/^_STATE_KEYS = {/_STATE_KEYS = {"planted_server_only", /' "$VIEWS_PY" > "$VC_TMP/server_extra.py"
+  python3 -I - "$VIEWS_PY" "$VC_TMP/server_missing.py" <<'PY'
+import re, sys
+text = open(sys.argv[1]).read()
+open(sys.argv[2], "w").write(re.sub(r',?\s*"refresh"', "", text, count=1))  # the server forgets "refresh" (today's bug)
+PY
+  sed 's/export const AUTO_REFRESH = \[0, 30, 60, 300\]/export const AUTO_REFRESH = [0, 30, 60, 120]/' "$VIEW_TS" > "$VC_TMP/interval.ts"
+  if ! python3 -I -c "$VIEW_CONTRACT" "$VIEWS_PY" "$VIEW_TS"; then
+    fail "the saved-view contract: ViewState / AUTO_REFRESH and sales-api check_state disagree"
+  elif python3 -I -c "$VIEW_CONTRACT" "$VC_TMP/server_missing.py" "$VIEW_TS" >/dev/null; then
+    fail "the view contract check did NOT catch a key the server forgot (refresh)"
+  elif python3 -I -c "$VIEW_CONTRACT" "$VC_TMP/server_extra.py" "$VIEW_TS" >/dev/null; then
+    fail "the view contract check did NOT catch a key only the server knows"
+  elif python3 -I -c "$VIEW_CONTRACT" "$VIEWS_PY" "$VC_TMP/interval.ts" >/dev/null; then
+    fail "the view contract check did NOT catch different auto-refresh choices"
+  else
+    ok "saved-view contract: ViewState keys = _STATE_KEYS, AUTO_REFRESH = AUTO_REFRESH_SECONDS (3 planted mismatches caught)"
+  fi
+  rm -rf "$VC_TMP"
+fi
+
 # ── sales: import rule, TS5101 trap, CSS ──────────────────────────────
 # A class that only packages/shell uses (the primary Button's hover): if it is
 # in the built CSS, Tailwind scanned the shell source (§13.15).
