@@ -21,7 +21,7 @@ from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import LETTER
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
@@ -137,6 +137,7 @@ class PackRow:
     expiry: date | None
     qty_ea: int
     tracking: str | None
+    tracking_url: str | None = None  # from the carrier's template (sales19): printed under the number
 
 
 @dataclass
@@ -155,6 +156,7 @@ class PackingList:
     ship_to: Party
     rows: list[PackRow]
     note: str | None = None          # a shadow-run or second 945
+    carrier_name: str | None = None  # Configuration → Carriers (by the 945's SCAC)
 
 
 def render_packing(pl: PackingList) -> bytes:
@@ -164,7 +166,8 @@ def render_packing(pl: PackingList) -> bytes:
     styles = getSampleStyleSheet()
     p = lambda v, st="BodyText": Paragraph(text(v), styles[st])  # noqa: E731
     head = (f"Ship date: {pl.ship_date or ''}    Order: {pl.number}    Internal no.: {pl.order_number}    PO: {pl.po or ''}")
-    refs = (f"Carrier: {pl.carrier or '—'}    BOL: {pl.bol or '—'}    Tracking: {', '.join(pl.tracking) or '—'}    "
+    carrier = f"{pl.carrier_name} ({pl.carrier})" if pl.carrier_name and pl.carrier else (pl.carrier or '—')
+    refs = (f"Carrier: {carrier}    BOL: {pl.bol or '—'}    Tracking: {', '.join(pl.tracking) or '—'}    "
             f"945: #{pl.document_id}" + (f"    940 ref.: {pl.our_reference}" if pl.our_reference else ""))
     story = [p(f"Packing list {pl.number}", "Title"), p(head), p(refs)]
     if pl.note:
@@ -177,13 +180,19 @@ def render_packing(pl: PackingList) -> bytes:
     rows = [[p(h, "Heading5") for h in ("Pallet (SSCC)", "Item", "Description", "Lot", "Expiry", "Qty EA", "Tracking")]]
     totals: list[int] = []
     bold = lambda v: Paragraph(f"<b>{text(v)}</b>", styles["BodyText"])  # noqa: E731
+    # A tracking number, and under it its link when the carrier has a template: small, breaking anywhere.
+    small = ParagraphStyle("link", parent=styles["BodyText"], fontSize=6, leading=7, wordWrap="CJK")
+    def track(r: PackRow):
+        if not r.tracking_url:
+            return p(r.tracking)
+        return [p(r.tracking), Paragraph(text(r.tracking_url), small)]
     pallets: dict[int, list[PackRow]] = {}
     for r in pl.rows:
         pallets.setdefault(r.pallet, []).append(r)
     for _, prs in sorted(pallets.items()):
         for i, r in enumerate(prs):
             rows.append([p(r.sscc if i == 0 else ""), p(r.item_code), p(r.description), p(r.lot),
-                         p(r.expiry.isoformat() if r.expiry else ""), p(r.qty_ea), p(r.tracking)])
+                         p(r.expiry.isoformat() if r.expiry else ""), p(r.qty_ea), track(r)])
         rows.append(["", "", "", bold("Pallet total"), "", bold(sum(r.qty_ea for r in prs)), ""])
         totals.append(len(rows) - 1)
     rows.append(["", "", "", bold("Shipment total"), "", bold(sum(r.qty_ea for r in pl.rows)), ""])

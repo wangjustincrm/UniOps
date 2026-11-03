@@ -1,3 +1,5 @@
 # features/orders
 
 Orders (P3): `OrdersPage` (every order, with the derived state and the detail: lines in EA, source documents, timeline), with system views (All, Needs review — the old Review worklist, now also at /review —, Payment hold, Pending, Archive suppressed, Historical) and "Re-check" on Review orders in the list and the detail (`sales.order.operate`), `ManualOrderPage` (Draft → Submit with the EA preview, FR-OB-19a). Built from `@/platform-ui` only. 940s, shipments and invoices join the detail in P4–P6.
+
+Shipments & lots (2026-11-03): each 945 is a card with its ship-to (N1 ST), carrier in words, BOL, 940 ref, ISA13/GS06/ST02, received time, its source file (opens it on Documents) and "no 997 sent back" (Sales sends none for 945s), then its line items one table per pallet (LX) with a subtotal, each row matched to its order line. A split shipment's parts ("9451a", "9451b") are cards Part a, Part b. During the shadow run the lines show the 945's figures as "N (shadow)" in Shipped EA and Backordered EA (derived from the shadow 945 rows linked to the line; never applied, never written to shipped_ea).

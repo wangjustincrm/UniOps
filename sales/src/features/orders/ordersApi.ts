@@ -78,6 +78,9 @@ export interface LineRead {
   state?: string | null
   /** Ordered − shipped EA once an applied 945 set the shipped quantity. */
   backordered_ea?: number | null
+  /** The shadow run's 945s for this line (Zoho is live): shown, never applied */
+  shipped_shadow_ea?: number | null
+  backordered_shadow_ea?: number | null
   packing?: PackingRead[]
 }
 
@@ -123,6 +126,21 @@ export interface ShipmentRowRead {
   qty_shipped_ea: number
   tracking: string | null
   needs_review: boolean
+  // The line it was matched to, what the Item Master says, the parcel's link
+  lx_number?: string | null
+  upc?: string | null
+  order_line_id?: number | null
+  line_no?: number | null
+  description?: string | null
+  /** EA in a case: the cases shipped, when known */
+  case_factor?: number | null
+  tracking_url?: string | null
+}
+
+/** A tracking number and the carrier's link for it (none for an unknown carrier). */
+export interface TrackingLinkRead {
+  number: string
+  url: string | null
 }
 
 /** A 945: applied, or kept (a second 945, a shadow one), with its checks
@@ -145,6 +163,19 @@ export interface ShipmentRead {
   shopify_status: 'Not needed' | 'Pending' | 'Done' | 'Failed' | 'Suppressed'
   shopify_error: string | null
   rows: ShipmentRowRead[]
+  // The 945 as received: its ship-to (N1 ST), the carrier by name, its control numbers, when it came
+  ship_to?: Record<string, string | null> | null
+  carrier_name?: string | null
+  tracking_links?: TrackingLinkRead[]
+  set_control?: string | null
+  isa13?: string | null
+  gs06?: string | null
+  document_name?: string | null
+  received_at?: string | null
+  /** A split shipment's part ("a", "b"), from the order key's letter */
+  part?: string | null
+  /** The 997 Sales sent back for it (none: Sales does not send 997s for 945s) */
+  ack_sent?: string | null
 }
 
 export interface OrderDetail extends OrderRead {

@@ -60,6 +60,7 @@ const NAV: NavItem[] = [
   { label: 'Partner codes', href: '/config/partner-codes', icon: Tags, perm: 'sales.read', section: 'Configuration' },
   { label: 'DC routing', href: '/config/dc-routing', icon: RouteIcon, perm: 'sales.read', section: 'Configuration' },
   { label: 'Warehouses', href: '/config/warehouses', icon: Warehouse, perm: 'sales.read', section: 'Configuration' },
+  { label: 'Carriers', href: '/config/carriers', icon: Truck, perm: 'sales.read', section: 'Configuration' },
   { label: 'Notifications', href: '/config/notifications', icon: Bell, perm: 'sales.read', section: 'Configuration' },
 ]
 

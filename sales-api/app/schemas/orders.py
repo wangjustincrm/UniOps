@@ -103,6 +103,10 @@ class LineRead(BaseModel):
     invoice_amount: Decimal | None = None
     state: str | None = None
     backordered_ea: int | None = None  # ordered − shipped EA once an applied 945 set shipped_ea
+    # The shadow run's 945s (not applied, Zoho is live): what their rows linked to this line shipped,
+    # and what that leaves backordered — derived, never written into shipped_ea.
+    shipped_shadow_ea: int | None = None
+    backordered_shadow_ea: int | None = None
     packing: list[PackingRead] = []
 
 
@@ -145,6 +149,19 @@ class ShipmentRowRead(BaseModel):
     qty_shipped_ea: int
     tracking: str | None
     needs_review: bool
+    # The line it was matched to, what the Item Master says, and the parcel's link (filled by the service).
+    lx_number: str | None = None
+    upc: str | None = None
+    order_line_id: int | None = None
+    line_no: int | None = None
+    description: str | None = None
+    case_factor: int | None = None    # EA in a case: the cases shipped, when known
+    tracking_url: str | None = None
+
+
+class TrackingLinkRead(BaseModel):
+    number: str
+    url: str | None = None  # from the carrier's template (Configuration → Carriers); none for an unknown carrier
 
 
 class ShipmentRead(BaseModel):
@@ -168,6 +185,18 @@ class ShipmentRead(BaseModel):
     shopify_status: str
     shopify_error: str | None
     rows: list[ShipmentRowRead] = []
+    # The 945 as received (filled by the service): ship-to (N1 ST), the carrier's name, its tracking links,
+    # its control numbers, when it came, and the part of a split shipment ("a", "b" from the key).
+    ship_to: dict[str, Any] | None = None
+    carrier_name: str | None = None
+    tracking_links: list[TrackingLinkRead] = []
+    set_control: str | None = None
+    isa13: str | None = None
+    gs06: str | None = None
+    document_name: str | None = None
+    received_at: datetime | None = None
+    part: str | None = None
+    ack_sent: str | None = None  # the 997 Sales sent back for it (none: Sales does not send 997s for 945s)
 
 
 class PaymentRead(BaseModel):

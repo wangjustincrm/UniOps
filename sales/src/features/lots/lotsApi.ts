@@ -11,6 +11,9 @@ export interface LotRead {
   qty_shipped_ea: number
   sscc: string | null
   tracking: string | null
+  /** The 945's carrier (SCAC) and its link for this parcel (Configuration → Carriers) */
+  carrier?: string | null
+  tracking_url?: string | null
   shipment_id: number
   document_id: number
   ship_date: string | null

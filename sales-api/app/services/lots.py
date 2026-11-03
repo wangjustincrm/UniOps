@@ -13,7 +13,9 @@ from app.platform.query import FilterRule, QuerySpec
 from app.platform.repository import Repository
 from app.platform.services import EXPORT_PAGE, ReadOnlyService, _csv_cell
 from app.platform.views import Preset
+from app.domain.carriers import tracking_url
 from app.schemas.lots import LotRead
+from app.services.carriers import carriers_by_scac
 
 READ = "sales.read"
 EXPIRING_DAYS = 30  # "Expiring soon": expiring within this many days (user 2026-11-03)
@@ -50,6 +52,15 @@ class LotService(ReadOnlyService[LotRow, LotRead]):
     repo_cls = LotRepository
     read_schema = LotRead
     read_permission = READ
+
+    async def list(self, spec: QuerySpec):
+        """The rows, each with its parcel's tracking link when its carrier has a template."""
+        page = await super().list(spec)
+        carriers = await carriers_by_scac(self.uow.session, {r.carrier for r in page.items})
+        for r in page.items:
+            c = carriers.get((r.carrier or "").strip().upper())
+            r.tracking_url = tracking_url(c.tracking_url if c else None, r.tracking)
+        return page
 
     @requires(READ)
     async def export_csv(self, spec: QuerySpec) -> bytes:

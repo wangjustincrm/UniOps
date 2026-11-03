@@ -21,6 +21,8 @@ class LotRead(BaseModel):
     document_id: int
     ship_date: date | None
     bol: str | None
+    carrier: str | None = None
+    tracking_url: str | None = None  # the carrier's link for this parcel (Configuration → Carriers)
     our_reference: str | None
     applied: bool
     shadow: bool

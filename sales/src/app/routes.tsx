@@ -10,6 +10,7 @@ import DeliveryPage from '@/features/invoices/DeliveryPage'
 import InvoicesPage from '@/features/invoices/InvoicesPage'
 import TransfersPage from '@/features/transfers/TransfersPage'
 import WarehousesPage from '@/features/configuration/warehouses/WarehousesPage'
+import CarriersPage from '@/features/configuration/carriers/CarriersPage'
 import OrdersPage from '@/features/orders/OrdersPage'
 import ItemsPage from '@/features/configuration/items/ItemsPage'
 import PartnerCodesPage from '@/features/configuration/partner-codes/PartnerCodesPage'
@@ -56,6 +57,7 @@ export const moduleRoutes: RouteDef[] = [
   { path: '/invoices', element: <InvoicesPage />, tab: { title: 'Invoices', icon: 'Receipt', keyStrategy: 'static' } },
   { path: '/transfers', element: <TransfersPage />, tab: { title: 'Transfers', icon: 'ArrowLeftRight', keyStrategy: 'static' } },
   { path: '/config/warehouses', element: <WarehousesPage />, tab: { title: 'Warehouses', icon: 'Warehouse', keyStrategy: 'static' } },
+  { path: '/config/carriers', element: <CarriersPage />, tab: { title: 'Carriers', icon: 'Truck', keyStrategy: 'static' } },
   { path: '/health', element: <HealthPage />, tab: { title: 'Health', icon: 'HeartPulse', keyStrategy: 'static' } },
   { path: '/notifications', element: <NotificationHistoryPage />, tab: { title: 'Notification history', icon: 'Mail', keyStrategy: 'static' } },
   { path: '/config/notifications', element: <NotificationRulesPage />, tab: { title: 'Notifications', icon: 'Bell', keyStrategy: 'static' } },

@@ -10,12 +10,13 @@ from decimal import Decimal
 from sqlalchemy import and_, case, or_, select
 
 from app.domain.address import address_flags
+from app.domain.carriers import tracking_url
 from app.domain.lifecycle import backordered, line_state
 from app.domain.order_rules import ON_HOLD_FULFILLMENT, order_state, payment_satisfied, to_ea
 from app.domain.orders import HOLD_REASONS, ORDER_STATES, SOURCE_TYPES
 from app.domain.status import FULFILLMENT, Fulfillment as F
 from app.domain.status import Invoice as Inv
-from app.models.config import Connection, DcRouting, Item, Partner
+from app.models.config import Connection, DcRouting, Item, ItemUnit, Partner
 from app.models.documents import Document, DocumentLink
 from app.models.invoices import Invoice, InvoiceLine
 from app.models.payments import OrderPayment, OrderRefund, OrderRefundAdjustment, OrderRefundLine
@@ -31,9 +32,10 @@ from app.platform.views import Preset
 from app.schemas.orders import (
     InvoicePricesIn, LinePreview, LineRead, ManualLineIn, ManualOrderIn, OrderDetail, OrderDocumentRead, OrderRead, PackingRead,
     PaymentRead, RefundAdjustmentRead, RefundLineRead, RefundRead, ReviewResult, ShipmentRead, ShipmentRowRead,
-    TimelineEntry,
+    TimelineEntry, TrackingLinkRead,
 )
 from app.services import oplog
+from app.services.carriers import carriers_by_scac
 from app.services.intake import ConnectionSnapshot
 from app.services.invoice_pdf import PackingList, PackRow, render_packing
 from app.services.invoice_pdf import Party as PdfParty
@@ -115,6 +117,16 @@ class OrderRepository(Repository[Order]):
         Preset("historical", "Historical", {"filters": [{"field": "historical", "op": "eq", "value": "true"}], "includeHistorical": True, "hidden": ["review_reason"]}),
     )
     historical_column = "historical"
+
+
+def shadow_figures(ln: OrderLine, packing: list[PackingRead]) -> dict:
+    """What the shadow run's 945s shipped for a line (their rows linked to it), and
+    what that leaves backordered — shown as the shadow run's, never applied."""
+    rows = [p for p in packing if p.shadow]
+    if not rows:
+        return {}
+    got = sum(p.qty_shipped_ea for p in rows)
+    return {"shipped_shadow_ea": got, "backordered_shadow_ea": backordered(ln.qty_ea, got, ln.removed)}
 
 
 class OrderService(ReadOnlyService[Order, OrderRead]):
@@ -254,6 +266,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                 "invoice_price": ils[0].unit_price if ils else (
                     None if ln.removed else ln.invoice_unit_price if ln.invoice_unit_price is not None else ln.unit_price),
                 "backordered_ea": backordered(ln.qty_ea, ln.shipped_ea, ln.removed),
+                **shadow_figures(ln, packed.get(ln.id, [])),
                 "invoice_amount": sum((il.amount for il in ils), Decimal(0)) if ils else None,
                 "state": line_state(removed=ln.removed, qty_ea=ln.qty_ea, shipped_ea=ln.shipped_ea,
                                     delivered_ea=ln.delivered_qty, invoiced=bool(ils)),
@@ -280,12 +293,44 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                     for r in refunds]}
 
     async def _shipments(self, order_id: int) -> list[ShipmentRead]:
+        """The order's 945s with what a person needs to read them: the ship-to, the
+        carrier by name and its tracking links, the control numbers, when each came,
+        its part of a split shipment, and each row's line, item and cases."""
         s = self.uow.session
         ships = list((await s.execute(select(Shipment).where(Shipment.order_id == order_id).order_by(Shipment.id))).scalars())
+        if not ships:
+            return []
         rows = list((await s.execute(select(ShipmentRow).where(ShipmentRow.shipment_id.in_([x.id for x in ships]))
-                                     .order_by(ShipmentRow.shipment_id, ShipmentRow.lx_index, ShipmentRow.w12_index))).scalars()) if ships else []
-        return [ShipmentRead.model_validate(x).model_copy(update={
-            "rows": [ShipmentRowRead.model_validate(r) for r in rows if r.shipment_id == x.id]}) for x in ships]
+                                     .order_by(ShipmentRow.shipment_id, ShipmentRow.lx_index, ShipmentRow.w12_index))).scalars())
+        docs = {d.id: d for d in (await s.execute(select(Document.id, Document.remote_name, Document.created_at, Document.isa13,
+                                                         Document.gs06).where(Document.id.in_({x.document_id for x in ships})))).all()}
+        carriers = await carriers_by_scac(s, [x.carrier for x in ships])
+        codes = {r.item_code for r in rows if r.item_code}
+        items = {i.item_code: i for i in (await s.execute(select(Item).where(Item.item_code.in_(codes)))).scalars()} if codes else {}
+        cases = dict((await s.execute(select(ItemUnit.item_code, ItemUnit.factor_ea).where(
+            ItemUnit.item_code.in_(codes), ItemUnit.unit == "CASE", ItemUnit.active.is_(True)))).all()) if codes else {}
+        line_no = dict((await s.execute(select(OrderLine.id, OrderLine.line_no).where(OrderLine.order_id == order_id))).all())
+        parts = [(x.order_key_received or "")[-1:].lower() for x in ships]
+        split = len(ships) > 1 and all(p.isalpha() for p in parts)
+        out = []
+        for x, part in zip(ships, parts):
+            carrier = carriers.get((x.carrier or "").strip().upper())
+            template = carrier.tracking_url if carrier else None
+            d = docs.get(x.document_id)
+            out.append(ShipmentRead.model_validate(x).model_copy(update={
+                "carrier_name": carrier.name if carrier else None,
+                "tracking_links": [TrackingLinkRead(number=t, url=tracking_url(template, t)) for t in (x.tracking or [])],
+                "isa13": d.isa13 if d else None, "gs06": d.gs06 if d else None,
+                "document_name": d.remote_name if d else None, "received_at": d.created_at if d else None,
+                "part": part if (split or (part.isalpha() and (x.order_key_received or "")[:-1].isdigit())) else None,
+                "rows": [ShipmentRowRead.model_validate(r).model_copy(update={
+                    "line_no": line_no.get(r.order_line_id) if r.order_line_id else None,
+                    "description": items[r.item_code].description if r.item_code in items else None,
+                    "case_factor": int(cases[r.item_code]) if r.item_code in cases else None,
+                    "tracking_url": tracking_url(template, r.tracking),
+                }) for r in rows if r.shipment_id == x.id],
+            }))
+        return out
 
     @requires(READ)
     async def packing_list(self, order_id: int, shipment_id: int) -> tuple[str, bytes]:
@@ -304,14 +349,17 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         st = sh.ship_to or o.ship_to or {}
         ship_to = PdfParty(st.get("name"), [x for x in (st.get("address1"), " ".join(filter(None, (
             st.get("city"), st.get("province"), st.get("zip"))))) if x])
+        carrier = (await carriers_by_scac(s, [sh.carrier])).get((sh.carrier or "").strip().upper())
+        template = carrier.tracking_url if carrier else None
         note = ("Shadow run: this 945 was kept, not applied." if sh.shadow
                 else None if sh.applied else "A second 945 for this order: kept, not applied.")
         pdf = render_packing(PackingList(
             number=o.ref, order_number=o.order_number, po=o.source_order_number, ship_date=sh.ship_date, carrier=sh.carrier,
             bol=sh.bol, tracking=list(sh.tracking or []), our_reference=sh.our_reference, document_id=sh.document_id,
-            seller=SELLER, ship_to=ship_to, note=note, rows=[PackRow(
+            seller=SELLER, ship_to=ship_to, note=note, carrier_name=carrier.name if carrier else None, rows=[PackRow(
                 sscc=r.sscc, pallet=r.lx_index, item_code=r.item_code, description=names.get(r.item_code), lot=r.lot,
-                expiry=r.expiry, qty_ea=r.qty_shipped_ea, tracking=r.tracking) for r in rows]))
+                expiry=r.expiry, qty_ea=r.qty_shipped_ea, tracking=r.tracking,
+                tracking_url=tracking_url(template, r.tracking)) for r in rows]))
         return f"PackingList-{o.ref}-{sh.id}.pdf", pdf
 
     @requires(OPERATE)

@@ -5,7 +5,7 @@ import { Download } from 'lucide-react'
 import {
   ActionButton, AddressView, Badge, Button, ConfirmAction, CopyChip, DateCell, DateTimeCell, DetailList, ErrorMessage, IconButton,
   LocalTable, MoneyCell, RecordSheet, RecordSheetHostContext, Section, StatusCell, Timeline, formatDate, formatDateTime, formatMoney,
-  queryKeys, requestOpen,
+  queryKeys, requestOpen, Tooltip, TrackingLink,
   type ColumnDef, type RecordFact, type RecordTab, type TimelineItem,
   compareRecord, useRefresh, useNotices,
 } from '@/platform-ui'
@@ -59,6 +59,18 @@ const ea = (n: number | null | undefined) => (n == null ? '—' : n)
 const sum = (lines: LineRead[], f: (ln: LineRead) => number | null | undefined) =>
   lines.filter((ln) => !ln.removed).reduce((t, ln) => t + Number(f(ln) ?? 0), 0)
 
+// A figure from the shadow run's 945s: shown beside the line, never applied.
+const SHADOW_TIP = 'From the 945, not applied: Zoho is still the live system'
+function Shadow({ value, warn }: { value: number; warn?: boolean }) {
+  return (
+    <Tooltip tip={SHADOW_TIP}>
+      <span data-shadow className="whitespace-nowrap italic text-neutral-500">
+        <span className={warn && value > 0 ? 'font-medium text-warning-700' : undefined}>{value}</span> <span className="text-xs">(shadow)</span>
+      </span>
+    </Tooltip>
+  )
+}
+
 // One row per line, ordered → shipped (945) → delivered → invoiced; its ▸ opens
 // the 945 rows packed for it. The less-used columns start hidden (the eye shows them).
 const lineColumns = (currency: string): ColumnDef<LineRead, unknown>[] => [
@@ -77,9 +89,11 @@ const lineColumns = (currency: string): ColumnDef<LineRead, unknown>[] => [
   { accessorKey: 'tax_amount', header: 'Tax', cell: ({ row }) => row.original.tax_amount == null ? '—'
     : <MoneyCell amount={row.original.tax_amount} currency={currency} /> },
   { accessorKey: 'qty_ea', header: 'EA', cell: ({ row }) => ea(row.original.qty_ea) },
-  { accessorKey: 'shipped_ea', header: 'Shipped EA', cell: ({ row }) => ea(row.original.shipped_ea) },
-  { accessorKey: 'backordered_ea', header: 'Backordered EA', cell: ({ row }) => (row.original.backordered_ea
-    ? <span className="font-medium text-warning-700">{row.original.backordered_ea}</span> : ea(row.original.backordered_ea)) },
+  { accessorKey: 'shipped_ea', header: 'Shipped EA', cell: ({ row: { original: ln } }) => ln.shipped_ea == null && ln.shipped_shadow_ea != null
+    ? <Shadow value={ln.shipped_shadow_ea} /> : ea(ln.shipped_ea) },
+  { accessorKey: 'backordered_ea', header: 'Backordered EA', cell: ({ row: { original: ln } }) => ln.backordered_ea == null && ln.backordered_shadow_ea != null
+    ? <Shadow value={ln.backordered_shadow_ea} warn />
+    : ln.backordered_ea ? <span className="font-medium text-warning-700">{ln.backordered_ea}</span> : ea(ln.backordered_ea) },
   { accessorKey: 'delivered_qty', header: 'Delivered EA', cell: ({ row }) => ea(row.original.delivered_qty) },
   { id: 'invoiced', header: 'Invoiced', cell: ({ row }) => row.original.invoiced_qty == null ? '—'
     : `${row.original.invoiced_qty} ${row.original.invoice_unit ?? ''}` },
@@ -166,14 +180,14 @@ function DocumentsTable({ docs }: { docs: OrderDocument[] }) {
 
 // Every pallet row the warehouse packed for the order, with its lot and
 // tracking (a recall's view of this order).
-const lotColumns: ColumnDef<PackingRead & { item: string | null }, unknown>[] = [
+const lotColumns: ColumnDef<PackingRead & { item: string | null; links: Map<string, string | null> }, unknown>[] = [
   { accessorKey: 'item', header: 'Item' },
   { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => row.original.lot ? <CopyChip text={row.original.lot} /> : '—' },
   { accessorKey: 'expiry', header: 'Expiry', cell: ({ row }) => <DateCell value={row.original.expiry} /> },
   { accessorKey: 'qty_shipped_ea', header: 'Qty EA', cell: ({ row }) => <span className="tabular-nums">{row.original.qty_shipped_ea}</span> },
   { accessorKey: 'sscc', header: 'Pallet (SSCC)', cell: ({ row }) => row.original.sscc ?? '—' },
-  { accessorKey: 'tracking', header: 'Tracking', cell: ({ row }) => row.original.tracking
-    ? <span className="flex flex-wrap gap-1">{row.original.tracking.split(', ').map((t) => <CopyChip key={t} text={t} />)}</span> : '—' },
+  { accessorKey: 'tracking', header: 'Tracking', cell: ({ row: { original: p } }) => p.tracking
+    ? <span className="flex flex-wrap gap-1">{p.tracking.split(', ').map((t) => <TrackingLink key={t} number={t} url={p.links.get(t)} />)}</span> : '—' },
   { accessorKey: 'ship_date', header: 'Ship date', cell: ({ row }) => <DateCell value={row.original.ship_date} /> },
   { id: 'doc', header: '945', cell: ({ row: { original: p } }) => (
     <span className="inline-flex items-center gap-1">#{p.document_id}
@@ -182,7 +196,10 @@ const lotColumns: ColumnDef<PackingRead & { item: string | null }, unknown>[] = 
 ]
 
 function Lots({ o }: { o: OrderDetail }) {
-  const rows = o.lines.flatMap((ln) => (ln.packing ?? []).map((p) => ({ ...p, item: ln.item_code })))
+  // the carrier's link per tracking number, from the shipment it came on
+  const links = new Map(o.shipments.map((s) => [s.id, new Map((s.tracking_links ?? []).map((t) => [t.number, t.url] as const))]))
+  const none = new Map<string, string | null>()
+  const rows = o.lines.flatMap((ln) => (ln.packing ?? []).map((p) => ({ ...p, item: ln.item_code, links: links.get(p.shipment_id) ?? none })))
   if (rows.length === 0) return null
   return (
     <Section title="Pallets and lots">

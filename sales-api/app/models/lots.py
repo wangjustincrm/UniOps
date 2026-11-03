@@ -36,6 +36,7 @@ _TRACE = (
         Shipment.document_id.label("document_id"),
         Shipment.ship_date.label("ship_date"),
         Shipment.bol.label("bol"),
+        Shipment.carrier.label("carrier"),
         Shipment.our_reference.label("our_reference"),
         Shipment.applied.label("applied"),
         Shipment.shadow.label("shadow"),

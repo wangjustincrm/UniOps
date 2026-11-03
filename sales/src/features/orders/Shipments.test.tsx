@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { MemoryRouter } from 'react-router-dom'
 import { PermissionProvider, ToastProvider } from '@/platform-ui'
 import type { ShipmentRead } from './ordersApi'
 
@@ -24,9 +25,9 @@ const base: ShipmentRead = {
 
 function renderAs(keys: string[], shipments: ShipmentRead[]) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(<QueryClientProvider client={qc}><ToastProvider>
+  return render(<MemoryRouter><QueryClientProvider client={qc}><ToastProvider>
     <PermissionProvider can={(k) => keys.includes(k)}><Shipments shipments={shipments} orderId={3} /></PermissionProvider>
-  </ToastProvider></QueryClientProvider>)
+  </ToastProvider></QueryClientProvider></MemoryRouter>)
 }
 
 describe('Order shipments (945)', () => {
@@ -34,10 +35,9 @@ describe('Order shipments (945)', () => {
     api.retry.mockResolvedValue({ shipment_id: 7, shopify_status: 'Pending' })
     renderAs(['sales.read', 'sales.order.operate'], [base])
     const group = screen.getByRole('group', { name: 'Shipment 7' })
-    expect(group).toHaveTextContent('2 rows · 11 EA')  // the rows by line are in the order's Lines
-    expect(within(group).getAllByText('00077777770077782891')).toHaveLength(1)  // only the row to review; leading zeros kept
+    expect(group).toHaveTextContent('2 rows · 11 EA')
     expect(within(group).getByText('LOT-B').closest('tr')).toHaveTextContent('matches no order line')
-    expect(within(group).queryByText('LOT-A')).toBeNull()
+    expect(within(group).getByText('LOT-A').closest('tr')).toHaveTextContent('Not linked')
     expect(within(group).getByRole('list', { name: '945 checks' })).toHaveTextContent('over-shipment: CF0092: shipped 14 EA')
     expect(within(group).getByText('archiving the order: requires write_orders')).toBeInTheDocument()
     fireEvent.click(within(group).getByRole('button', { name: 'Retry in Shopify' }))
@@ -48,5 +48,33 @@ describe('Order shipments (945)', () => {
     renderAs(['sales.read', 'sales.order.operate'], [{ ...base, shadow: true, applied: false, shopify_status: 'Suppressed', shopify_error: null }])
     expect(screen.getByText('Shadow run: not applied')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Retry in Shopify' })).toBeNull()
+  })
+
+  it('the card says where it went, by whom (in words), its control numbers, its file, and no 997 back', () => {
+    renderAs(['sales.read'], [{ ...base, shopify_status: 'Done', shopify_error: null, checks: null, carrier: 'PRLA', carrier_name: 'Purolator', mode: 'U',
+      bol: 'BOL-1', our_reference: '9301', isa13: '000000781', gs06: '781', set_control: '0001', received_at: '2026-11-02T14:05:00Z',
+      document_name: 'CRM-945_X.edi', ship_to: { name: 'Store 12', city: 'Toronto', province: 'ON', zip: 'M5V 1A1' },
+      tracking_links: [{ number: '1Z-TRACK', url: 'https://t.example/?pin=1Z-TRACK' }] }])
+    const group = screen.getByRole('group', { name: 'Shipment 7' })
+    for (const text of ['Store 12', 'Toronto ON M5V 1A1', 'Purolator', '(PRLA)', 'Parcel', 'BOL-1', '000000781 / 781 / 0001', 'CRM-945_X.edi',
+      'None: Sales does not send 997s for 945s']) expect(group).toHaveTextContent(text)
+    expect(within(group).getByRole('button', { name: 'CRM-945_X.edi' })).toBeInTheDocument()  // opens it on Documents
+  })
+
+  it('the line items: a table per pallet with its subtotal, each row with its line, cases and match', () => {
+    const rows: ShipmentRead['rows'] = [
+      { ...base.rows[0], lx_number: '1', line_no: 11, order_line_id: 5, description: 'Milk powder', case_factor: 6, qty_shipped_ea: 12, needs_review: false, upc: '062639300012' },
+      { ...base.rows[0], w12_index: 2, lot: 'LOT-C', lx_number: '1', line_no: 12, order_line_id: 6, item_code: 'CF0010', qty_shipped_ea: 5, needs_review: false },
+      { ...base.rows[0], lx_index: 2, w12_index: 1, sscc: '00077777770077782907', lot: 'LOT-D', lx_number: '2', line_no: 11, order_line_id: 5, qty_shipped_ea: 3, needs_review: false },
+    ]
+    renderAs(['sales.read'], [{ ...base, shadow: true, applied: false, shopify_status: 'Suppressed', shopify_error: null, checks: null, rows, part: 'a' }])
+    expect(screen.getByText('Part a')).toBeInTheDocument()
+    const p1 = screen.getByRole('table', { name: 'Shipment 7 pallet 1 line items' })
+    const p2 = screen.getByRole('table', { name: 'Shipment 7 pallet 2 line items' })
+    expect(within(p1).getAllByRole('row').filter((r) => r.closest('tbody'))).toHaveLength(2)
+    expect(within(p1).getByText('LOT-A').closest('tr')).toHaveTextContent(/#11 · CF0092.*Milk powder.*12 \(2 CS\).*Matched \(shadow\)/)
+    expect(p1.querySelector('tfoot')).toHaveTextContent(/Pallet subtotal\s*17/)
+    expect(p2.querySelector('tfoot')).toHaveTextContent(/Pallet subtotal\s*3/)
+    expect(screen.getByRole('region', { name: 'Pallet 2' })).toHaveTextContent('SSCC 00077777770077782907 · 3 EA')
   })
 })

@@ -109,6 +109,9 @@ def _check(kind: str, message: str, **values: Any) -> dict[str, Any]:
     return {"check": kind, "message": message, **{k: (str(v) if isinstance(v, (date, datetime)) else v) for k, v in values.items()}}
 
 
+# The made-up 945s fed to the dev servers by hand; the backfill never links them.
+SYNTHETIC_PREFIX = "SYNTHETIC-"
+
 class Shipments:
     def __init__(self, *, uow_factory, tasks, shopify, outbound, shadow=None,
                  clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
@@ -446,12 +449,17 @@ class Shipments:
         945 (the same matching, earlier parts first) and its rows get their order
         line. Nothing else is written: no status, no quantity, no task, no Shopify
         write, no check. Idempotent: a shipment whose rows are linked is skipped.
-        With `dry_run` the links are made and rolled back, and the counts reported."""
+        A synthetic test 945 (its file named SYNTHETIC-…) is left alone. With
+        `dry_run` the links are made and rolled back, and the counts reported."""
         s = uow.session
-        counts = {"shipments": 0, "skipped_linked": 0, "no_order": 0, "rows_linked": 0, "rows_unmatched": 0}
+        counts = {"shipments": 0, "skipped_linked": 0, "skipped_synthetic": 0, "no_order": 0, "rows_linked": 0, "rows_unmatched": 0}
         ships = list((await s.execute(select(Shipment).where(Shipment.shadow.is_(True))
                                       .order_by(Shipment.document_id, Shipment.set_index))).scalars())
         for shp in ships:
+            doc = await s.get(Document, shp.document_id)
+            if (doc.remote_name or "").startswith(SYNTHETIC_PREFIX):  # a made-up test 945: no figures on a real order
+                counts["skipped_synthetic"] += 1
+                continue
             if shp.order_id is None:
                 counts["no_order"] += 1
                 continue
@@ -459,7 +467,6 @@ class Shipments:
             if all(r.order_line_id is not None for r in rows):
                 counts["skipped_linked"] += 1
                 continue
-            doc = await s.get(Document, shp.document_id)
             content = (await s.execute(select(Document.content).where(Document.id == doc.id))).scalar_one()
             sh = parse_945(content)[shp.set_index - 1]
             p = await self.plan(s, doc, sh)
