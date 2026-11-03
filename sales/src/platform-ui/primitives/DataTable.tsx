@@ -1,6 +1,6 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, createElement, isValidElement, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import {
-  flexRender, getCoreRowModel, useReactTable,
+  getCoreRowModel, useReactTable,
   type ColumnDef, type SortingState, type Updater,
 } from '@tanstack/react-table'
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, GripVertical } from 'lucide-react'
@@ -227,12 +227,12 @@ export function DataTable<T>({
                               className="inline-flex items-center gap-1 uppercase hover:text-neutral-800"
                               onClick={() => onSortChange?.({ id: h.column.id, desc: dir === 'asc' })}
                             >
-                              {flexRender(h.column.columnDef.header, h.getContext())}
+                              <Render def={h.column.columnDef.header} ctx={h.getContext()} />
                               {dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : dir === 'desc' ? <ArrowDown className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3 opacity-40" />}
                               {priority > 0 && <sup className="text-[10px] text-neutral-400">{priority}</sup>}
                             </button>
                           ) : (
-                            flexRender(h.column.columnDef.header, h.getContext())
+                            <Render def={h.column.columnDef.header} ctx={h.getContext()} />
                           )}
                           {headerAddon?.(h.column.id)}
                         </span>
@@ -273,7 +273,7 @@ export function DataTable<T>({
                       )}
                       {r.getVisibleCells().map((c) => (
                         <td key={c.id} className={cn(cellPad, 'text-neutral-700')}>
-                          {flexRender(c.column.columnDef.cell, c.getContext())}
+                          <Render def={c.column.columnDef.cell} ctx={c.getContext()} />
                         </td>
                       ))}
                     </tr>
@@ -386,4 +386,22 @@ function ScrollX({ children, busy }: { children: ReactNode; busy?: boolean }) {
       )}
     </div>
   )
+}
+
+/** A column's header or cell. TanStack's flexRender makes a function a
+ *  component type, and pages build their columns on every render: each render
+ *  was a new type, so the cell remounted and lost its state (an open
+ *  Autocomplete closed when the list behind it refetched). Here the function
+ *  is called inside one stable component instead: same cell, same state. */
+function Render<C>({ def, ctx }: { def: unknown; ctx: C }) {
+  if (def === null || def === undefined) return null
+  if (typeof def === 'function') {
+    const proto = (def as { prototype?: { isReactComponent?: unknown } }).prototype
+    if (proto?.isReactComponent) return createElement(def as ComponentType<C & object>, ctx as C & object)  // a class component
+    return <>{(def as (c: C) => ReactNode)(ctx)}</>
+  }
+  if (typeof def === 'object' && !isValidElement(def) && '$$typeof' in (def as object)) {
+    return createElement(def as ComponentType<C & object>, ctx as C & object)  // memo / forwardRef
+  }
+  return <>{def as ReactNode}</>
 }
