@@ -223,3 +223,13 @@ class NotificationRule(Audited, Versioned, Deactivatable, Base):
     # The last test notification (go-live gate, PRD section 11; sales13).
     tested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     test_result: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class Carrier(Audited, Versioned, Deactivatable, Base):
+    """A carrier the warehouse names in its 945 (W27-02, its SCAC, e.g. PRLA)
+    and how to follow a parcel: `tracking_url` with `{tracking}` (sales19)."""
+    __tablename__ = "sales_carriers"
+
+    scac: Mapped[str] = mapped_column(String(10), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    tracking_url: Mapped[str | None] = mapped_column(String(500), nullable=True)

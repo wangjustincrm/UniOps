@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, ConfirmAction, ErrorMessage, Skeleton, queryKeys } from '@/platform-ui'
+import { ActionButton, ConfirmAction, Skeleton, queryKeys } from '@/platform-ui'
 import { ManualOrderForm } from './ManualOrderForm'
 import { cancelManual, fetchOrder, ordersClient, submitManual, type OrderRead } from './ordersApi'
 
@@ -29,11 +29,10 @@ export function DraftActions({ o, close }: { o: OrderRead; close: () => void }) 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex gap-2">
-        <ActionButton size="sm" permission={OPERATE} onAction={() => submit.mutateAsync().catch(() => {})}>Submit</ActionButton>
+        <ActionButton size="sm" permission={OPERATE} onAction={() => submit.mutateAsync()}>Submit</ActionButton>
         <ActionButton size="sm" variant="secondary" permission={OPERATE} onAction={() => setEditing(true)}>Edit draft</ActionButton>
         <ActionButton size="sm" variant="secondary" permission={OPERATE} onAction={() => setCancelling(true)}>Cancel draft</ActionButton>
       </div>
-      <ErrorMessage error={submit.error} />
       <ConfirmAction open={cancelling} onOpenChange={setCancelling} title="Cancel this draft?" destructive confirmLabel="Cancel draft"
         description="The draft is kept as Cancelled; it is never sent." onConfirm={async () => { await cancelManual(o.id, o.version); await done() }} />
     </div>
@@ -47,8 +46,7 @@ export function SubmitDraft({ o }: { o: OrderRead }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) }) })
   return (
     <span className="inline-flex flex-col gap-1">
-      <ActionButton size="sm" variant="secondary" permission={OPERATE} onAction={() => m.mutateAsync().catch(() => {})}>Submit</ActionButton>
-      <ErrorMessage error={m.error} />
+      <ActionButton size="sm" variant="secondary" permission={OPERATE} done={`${o.source_reference ?? `#${o.order_number}`} submitted`} onAction={() => m.mutateAsync()}>Submit</ActionButton>
     </span>
   )
 }

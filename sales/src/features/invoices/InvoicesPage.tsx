@@ -2,10 +2,10 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, ConfirmAction, DateCell, DetailList, ErrorMessage, ListPage, LocalTable, MasterDetailForm, MoneyCell,
+  ActionButton, ConfirmAction, DateCell, DetailList, ListPage, LocalTable, MasterDetailForm, MoneyCell,
   RecordSheet, Section, StatusCell, formatDate, formatDateTime, formatMoney, numberColumn, queryKeys, readColumn, textColumn,
   type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab,
-  compareRecord, useRefresh,
+  compareRecord, useRefresh, Callout,
 } from '@/platform-ui'
 import { editInvoice, fetchInvoice, invoicesClient, releaseInvoice, sendInvoice, type InvoiceDetail, type InvoiceRead } from './invoicesApi'
 import { PartnerCell } from '@/features/common/PartnerCell'
@@ -133,9 +133,7 @@ function Detail({ row }: { row: InvoiceRead }) {
     { id: 'overview', label: 'Overview', tone: inv.status === 'Blocked' || inv.error ? 'warning' : undefined, render: () => (
       <>
         {inv.status === 'Blocked' && (
-          <p role="status" className="rounded-md border border-warning-200 bg-warning-50 p-2 text-sm text-warning-700">
-            On hold: see the task for why. Release it once decided.
-          </p>
+          <Callout label="On hold">On hold: see the task for why. Release it once decided.</Callout>
         )}
         <Section title="Invoice">
           <DetailList items={[
@@ -174,7 +172,8 @@ function Detail({ row }: { row: InvoiceRead }) {
         actions={inv && !editing ? (
           <>
             {sendable && (
-              <ActionButton size="sm" permission={MANAGE} onAction={() => send.mutateAsync().catch(() => {})}>
+              <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done={`Invoice ${inv.invoice_number} queued to send`}
+                onAction={() => send.mutateAsync()}>
                 {inv.status === 'Sent' ? 'Send again' : 'Send'}
               </ActionButton>
             )}
@@ -184,7 +183,6 @@ function Detail({ row }: { row: InvoiceRead }) {
             {inv.status === 'Blocked' && (
               <ActionButton size="sm" permission={MANAGE} onAction={() => setReleasing(true)}>Release</ActionButton>
             )}
-            <ErrorMessage error={send.error} messages={errorMessages} />
           </>
         ) : undefined}
         tabs={tabs}

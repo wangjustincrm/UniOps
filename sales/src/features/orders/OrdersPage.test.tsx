@@ -5,7 +5,7 @@ import {
   PermissionProvider, ToastProvider, ViewsProvider, requestView, type ListMeta, type SavedView, type ViewsClient,
 } from '@/platform-ui'
 import { MemoryRouter } from 'react-router-dom'
-import { chooseOption, openTab, pickSuggestion } from '@/platform-ui/testing'
+import { chooseOption, noticeIn, openTab, pickSuggestion } from '@/platform-ui/testing'
 import type { OrderDetail, OrderRead } from './ordersApi'
 
 // Orders with its views (the old Review page is the "Needs review" view) and
@@ -103,8 +103,8 @@ describe('Orders: Re-check on Review orders', () => {
     dialog = await screen.findByRole('dialog')
     fireEvent.click(await within(dialog).findByText('Re-check'))
     await waitFor(() => expect(api.resolve).toHaveBeenCalledWith(4))
-    expect(await within(dialog).findByText('line 5: item not in the Item Master')).toBeInTheDocument()
-    expect(within(dialog).getByRole('status')).toHaveTextContent(/Re-checked at .*: still 1 problem/)
+    // the sheet's status row: that it ran, and what is still wrong
+    await waitFor(() => expect(noticeIn(dialog)).toHaveTextContent(/re-checked at .*: still 1 problem — line 5: item not in the Item Master/))
   })
 
   it('a re-check shows the new reason and lines at once, without reopening or reloading', async () => {
@@ -132,7 +132,7 @@ describe('Orders: Re-check on Review orders', () => {
     expect(within(pendingRow).queryByText('Re-check')).toBeNull()
     fireEvent.click(within(reviewRow).getByText('Re-check'))
     await waitFor(() => expect(api.resolve).toHaveBeenCalledWith(4))
-    expect(await within(reviewRow).findByRole('status')).toHaveTextContent(/still 1 problem/)
+    await waitFor(() => expect(noticeIn()).toHaveTextContent(/still 1 problem/))  // the list's status row
     expect(screen.queryByRole('dialog')).toBeNull()
   })
 })
@@ -210,7 +210,7 @@ describe('Orders: 940s (P4)', () => {
     dialog = await screen.findByRole('dialog')
     fireEvent.click(await within(dialog).findByText('Send 940 now'))
     await waitFor(() => expect(api.send).toHaveBeenCalledWith(5, false))
-    expect(await within(dialog).findByRole('status')).toHaveTextContent('940 000000123 queued')
+    await waitFor(() => expect(noticeIn(dialog)).toHaveTextContent('940 000000123 queued'))
   })
 
   it('a sent 940 shows Sent and the 997 apart; a change goes only through a confirmed replacement', async () => {
@@ -240,7 +240,7 @@ describe('Orders: 940s (P4)', () => {
     fireEvent.click(await screen.findByText('9303'))
     const dialog = await screen.findByRole('dialog')
     fireEvent.click(await within(dialog).findByText('Send 940 now'))
-    expect(await within(dialog).findByRole('status')).toHaveTextContent(/failed its checks and was not sent.*ship_to.zip is empty/)
+    await waitFor(() => expect(noticeIn(dialog)).toHaveTextContent(/failed its checks and was not sent.*ship_to.zip is empty/))
   })
 
   it('Next 940s lists what the next cycle would send, writing nothing', async () => {
@@ -356,7 +356,7 @@ describe('Orders: manual orders (FR-OB-19a) — New in the standard sheet, draft
     </ViewsProvider></ToastProvider></QueryClientProvider></MemoryRouter>)
     fireEvent.click(await screen.findByRole('button', { name: 'New manual order' }))
     const form = await screen.findByRole('dialog', { name: 'New manual order' })
-    expect(await within(form).findByRole('status')).toHaveTextContent('manual orders use partners whose channel is Manual')
+    expect(await within(form).findByText(/manual orders use partners whose channel is Manual/)).toBeInTheDocument()
     expect(within(form).getByRole('link', { name: 'Configuration → Partners' })).toHaveAttribute('href', '/config/partners')
     expect(within(form).queryByRole('combobox', { name: 'Customer' })).toBeNull()
   })

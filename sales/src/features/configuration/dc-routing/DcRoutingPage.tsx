@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { Badge, CrudPage, useToast, type ColumnDef, type FieldSpec } from '@/platform-ui'
+import { Badge, CrudPage, type ColumnDef, type FieldSpec } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import { partnerOptions } from '../lookups'
 import {
@@ -28,7 +28,6 @@ const columns: ColumnDef<DcRoutingRead, unknown>[] = [
 
 /** Configuration → DC routing (FR-OB-03): a ship-to GLN to its DC, per partner. */
 export default function DcRoutingPage() {
-  const toast = useToast()
   return (
     <CrudPage<DcRoutingRead, DcRoutingCreate, DcRoutingUpdate>
       title="DC routing" singular="DC route"
@@ -38,7 +37,7 @@ export default function DcRoutingPage() {
       immutableOnEdit={['partner_code', 'ship_to_gln']}
       emptyValues={{ partner_code: '', ship_to_gln: '', dc_number: '', notes: '', active: true }}
       toFormValues={(r) => ({ partner_code: r.partner_code, ship_to_gln: r.ship_to_gln, dc_number: r.dc_number, notes: r.notes, active: r.active })}
-      onExport={(path) => { downloadDcRouting(path).catch((e: unknown) => toast({ variant: 'error', title: 'Export failed', description: e instanceof Error ? e.message : String(e) })) }}
+      onExport={(path) => downloadDcRouting(path)}
       csvImport
       errorMessages={{ 'dc_routing.taken': 'This partner already routes this ship-to GLN.' }}
       recordTitle={(r) => `GLN ${r.ship_to_gln}`}

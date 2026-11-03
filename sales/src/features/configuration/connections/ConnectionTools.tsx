@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, Badge, DateTimeInput, ErrorMessage, formatDateTime, queryKeys } from '@/platform-ui'
+import { ActionButton, Badge, DateTimeInput, formatDateTime, queryKeys, Callout } from '@/platform-ui'
 import { clearAuthLatch, connectionsClient, pinHostKey, resetCursor, testConnection, type ConnectionRead, type ConnectionTest } from './connectionsApi'
 
 const CONFIG = 'sales.config'
@@ -15,9 +15,8 @@ function Cursor({ c, onDone }: { c: ConnectionRead; onDone: () => void }) {
       <div className="flex flex-wrap items-center gap-2">
         <DateTimeInput aria-label="New cursor" value={value} onChange={setValue} className="h-8 max-w-[14rem] text-xs" />
         <ActionButton size="sm" variant="secondary" permission={CONFIG} disabled={!value}
-          onAction={() => reset.mutateAsync(value).catch(() => {})}>Reset cursor</ActionButton>
+          done="Cursor reset: the next pass reads from there" onAction={() => reset.mutateAsync(value)}>Reset cursor</ActionButton>
       </div>
-      <ErrorMessage error={reset.error} />
     </div>
   )
 }
@@ -44,31 +43,29 @@ export function ConnectionTools({ connection: c }: { connection: ConnectionRead 
         <p>Host key: {c.host_key ? <Badge variant="success">pinned</Badge> : <Badge variant="warning">not pinned</Badge>}</p>
       )}
       {c.auth_failed_at && (
-        <div role="alert" className="rounded-md border border-danger-200 bg-danger-50 p-2">
-          <p className="font-medium text-danger-700">Login refused — skipped since {formatDateTime(c.auth_failed_at)}</p>
-          <p className="text-xs text-danger-700">{c.auth_failed_reason}</p>
-          <ActionButton size="sm" className="mt-2" permission={CONFIG} onAction={() => clear.mutateAsync().catch(() => {})}>
+        <Callout tone="danger" title={`Login refused — skipped since ${formatDateTime(c.auth_failed_at)}`}>
+          <p className="text-xs">{c.auth_failed_reason}</p>
+          <ActionButton size="sm" className="mt-2" permission={CONFIG} done="Cleared: it is tried again on the next cycle" onAction={() => clear.mutateAsync()}>
             Clear and try again next cycle
           </ActionButton>
-        </div>
+        </Callout>
       )}
       {c.kind === 'SHOPIFY' && <Cursor c={c} onDone={refresh} />}
       <div>
-        <ActionButton size="sm" variant="secondary" permission={CONFIG} onAction={() => test.mutateAsync().catch(() => {})}>
+        <ActionButton size="sm" variant="secondary" permission={CONFIG} onAction={() => test.mutateAsync()}>
           Test connection
         </ActionButton>
         <p className="mt-1 text-xs text-neutral-500">
           {c.kind === 'SFTP' ? 'Lists the folders. Nothing is created, moved or deleted.' : "Reads the store's name and currency. Nothing is written."}
         </p>
       </div>
-      <ErrorMessage error={test.error ?? pin.error ?? clear.error} />
       {result && (
         <div className="flex flex-col gap-2 rounded-md border border-neutral-100 p-2">
           {result.host_key && (
             <div>
               <p>Server host key: <code className="break-all text-xs">{result.host_key.fingerprint}</code></p>
               {!result.host_key.matches && (
-                <ActionButton size="sm" className="mt-1" permission={CONFIG} onAction={() => pin.mutateAsync(result.host_key!.line).catch(() => {})}>
+                <ActionButton size="sm" className="mt-1" permission={CONFIG} done="Host key pinned" onAction={() => pin.mutateAsync(result.host_key!.line)}>
                   {result.host_key.pinned ? 'Replace the pinned key with this one' : 'Pin this key'}
                 </ActionButton>
               )}

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { Badge, CrudPage, useToast, type ColumnDef, type FieldSpec } from '@/platform-ui'
+import { Badge, CrudPage, type ColumnDef, type FieldSpec } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import {
   WAREHOUSE_ROLES, downloadWarehouses, fetchWarehouseAudit, warehousesClient,
@@ -43,7 +43,6 @@ const empty = { code: '', name: '', role: 'WAREHOUSE', edi_id_qualifier: '94', e
 /** Configuration → Warehouses (FR-OB-27): the 943's ship-from and ship-to,
  *  no longer written into the code. */
 export default function WarehousesPage() {
-  const toast = useToast()
   return (
     <CrudPage<WarehouseRead, WarehouseCreate, WarehouseUpdate>
       title="Warehouses" singular="warehouse"
@@ -52,7 +51,7 @@ export default function WarehousesPage() {
       writePermission="sales.config" createSchema={createSchema} updateSchema={updateSchema} fields={fields}
       immutableOnEdit={['code']} emptyValues={empty}
       toFormValues={(r) => ({ ...r })}
-      onExport={(path) => { downloadWarehouses(path).catch((e: unknown) => toast({ variant: 'error', title: 'Export failed', description: e instanceof Error ? e.message : String(e) })) }}
+      onExport={(path) => downloadWarehouses(path)}
       csvImport
       errorMessages={{ 'warehouse.code_taken': 'A warehouse with this code already exists.' }}
       recordTitle={(r) => r.name}

@@ -2,6 +2,7 @@ import { useContext, useEffect, useRef, useState } from 'react'
 import { hashKey, useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { RecordSheetHostContext } from './recordSheetHost'
 import { changed, describeDiff, describeRecordChange, diffRows, type Key } from './refreshDiff'
+import { createNoticeStore, type NoticeStore, type NoticeTone } from './notices'
 
 // THE one way to refresh what a user sees (the user, 2026-11-03: one reusable
 // refresh). A click, an auto-refresh tick, a record sheet's refresh, and the
@@ -13,8 +14,6 @@ import { changed, describeDiff, describeRecordChange, diffRows, type Key } from 
 // speaks only when something changed. Features never call refetch() themselves
 // (ESLint).
 
-export interface RefreshMessage { text: string; tone: 'info' | 'muted' | 'danger' }
-
 /** What a refresh found: words (null: nothing changed) and the rows to highlight. */
 export interface Comparison { text: string | null; highlight?: Key[] }
 
@@ -25,7 +24,8 @@ export interface RefreshState {
   busy: boolean
   /** Any fetch is running (incidental ones too: the bar after 200 ms). */
   fetching: boolean
-  message: RefreshMessage | null
+  /** Where it reports (the list's or the sheet's status row): Updating…, what changed, a failure. */
+  notices: NoticeStore
   highlight: ReadonlySet<Key>
   updatedAt: number
   /** Auto-refresh, in seconds (0: off). */
@@ -54,10 +54,11 @@ export interface RefreshOptions<D> {
    *  that opened this record (its RecordSheetHost). */
   auto?: number | 'follow'
   setAuto?: (seconds: number) => void
+  /** The scope it reports into (a ListPage passes its own); else one of its own (a record sheet shows it). */
+  notices?: NoticeStore
 }
 
 const MIN_BUSY = 600
-const SHOWN = 3000
 const LIT = 2000
 
 /** A list page's rows ({ items, total }), by key; the total tells new rows beyond the page. */
@@ -78,21 +79,18 @@ export function useRefresh<D>(query: QueryLike<D>, opts: RefreshOptions<D>): Ref
   const host = useContext(RecordSheetHostContext)
   const hash = hashKey(opts.queryKey)
   const [busy, setBusy] = useState(false)
-  const [message, setMessage] = useState<RefreshMessage | null>(null)
+  const [ownNotices] = useState(createNoticeStore)
+  const notices = opts.notices ?? ownNotices
   const [highlight, setHighlight] = useState<ReadonlySet<Key>>(new Set())
   const [tick, setTick] = useState(0)
   const asking = useRef<'visible' | null>(null)
   const last = useRef<{ hash: string; data: D } | null>(null)
-  const timers = useRef<{ msg?: ReturnType<typeof setTimeout>; lit?: ReturnType<typeof setTimeout> }>({})
+  const timers = useRef<{ lit?: ReturnType<typeof setTimeout> }>({})
   const latest = useRef(opts)
   useEffect(() => { latest.current = opts })
-  useEffect(() => () => { clearTimeout(timers.current.msg); clearTimeout(timers.current.lit) }, [])
-
-  const say = (text: string, tone: RefreshMessage['tone']) => {
-    setMessage({ text, tone })
-    clearTimeout(timers.current.msg)
-    timers.current.msg = setTimeout(() => setMessage(null), SHOWN)
-  }
+  useEffect(() => () => { clearTimeout(timers.current.lit) }, [])
+  // Every refresh notice has the key 'refresh': the next one replaces it, and one that works clears a failure.
+  const say = (tone: NoticeTone, text: string) => notices.notify({ key: 'refresh', tone, text })
   const sayRef = useRef(say)
   useEffect(() => { sayRef.current = say })
 
@@ -109,8 +107,8 @@ export function useRefresh<D>(query: QueryLike<D>, opts: RefreshOptions<D>): Ref
       asking.current = null
       if (!prev || prev.hash !== hash) return  // the first page of a query: nothing to compare
       const c = latest.current.compare(prev.data, data)
-      if (visible) sayRef.current(c.text ?? latest.current.noChange ?? 'Up to date: no changes', c.text ? 'info' : 'muted')
-      else if (c.text) sayRef.current(c.text, 'info')  // incidental: only when something changed
+      if (visible) sayRef.current(c.text ? 'success' : 'info', c.text ?? latest.current.noChange ?? 'Up to date: no changes')
+      else if (c.text) sayRef.current('info', c.text)  // incidental: only when something changed
       if (c.highlight?.length) {
         setHighlight(new Set(c.highlight))
         clearTimeout(timers.current.lit)
@@ -123,10 +121,14 @@ export function useRefresh<D>(query: QueryLike<D>, opts: RefreshOptions<D>): Ref
   const refresh = async () => {
     asking.current = 'visible'
     setBusy(true)
+    notices.notify({ key: 'refresh', tone: 'info', text: 'Updating…', sticky: true })
     const started = Date.now()
     try {
       const r = await query.refetch()
-      if (r.isError) { asking.current = null; say('Refresh failed: try again', 'danger') }
+      if (r.isError) {
+        asking.current = null
+        notices.notify({ key: 'refresh', tone: 'error', text: 'Refresh failed', action: { label: 'Try again', onClick: () => { void refreshRef.current() } } })
+      }
     } finally {
       await new Promise((ok) => setTimeout(ok, Math.max(0, MIN_BUSY - (Date.now() - started))))
       setBusy(false)
@@ -172,7 +174,7 @@ export function useRefresh<D>(query: QueryLike<D>, opts: RefreshOptions<D>): Ref
   }, [follow])
 
   return {
-    refresh, busy, fetching: query.isFetching, message, highlight, updatedAt: query.dataUpdatedAt,
+    refresh, busy, fetching: query.isFetching, notices, highlight, updatedAt: query.dataUpdatedAt,
     auto: opts.auto === 'follow' ? (host?.auto ?? 0) : seconds, setAuto: opts.setAuto, tick,
   }
 }

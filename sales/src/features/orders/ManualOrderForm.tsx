@@ -54,7 +54,7 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
   if (!draft && customers.isLoading) return <Skeleton className="h-40 w-full" />
   if (!draft && customers.data && customers.data.length === 0) {
     return (
-      <p role="status" className="text-sm text-neutral-700">
+      <p className="text-sm text-neutral-700">
         No customer can take a manual order yet: manual orders use partners whose channel is Manual. Add one under{' '}
         <Link to="/config/partners" className="font-medium text-primary-700 underline">Configuration → Partners</Link>, then come back.
       </p>

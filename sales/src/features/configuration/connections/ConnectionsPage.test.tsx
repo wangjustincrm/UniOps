@@ -1,4 +1,4 @@
-import { openTab } from '@/platform-ui/testing'
+import { noticeIn, openTab } from '@/platform-ui/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -158,7 +158,7 @@ describe('Connections page: the shadow run switch', () => {
   it('says what it does; only sales.config turns it off, after a confirmation', async () => {
     const { unmount } = renderAs(['sales.read'])
     let panel = await screen.findByRole('region', { name: 'Shadow run' })
-    expect(await within(panel).findByRole('status')).toHaveTextContent(/On: Zoho is live/)
+    expect(await within(panel).findByText(/On: Zoho is live/)).toBeInTheDocument()
     expect(within(panel).queryByText('Turn the shadow run off')).toBeNull()
     unmount()
     api.saveShadow.mockImplementation(async (d) => d)
@@ -233,9 +233,10 @@ describe("a connection's schedule", () => {
     const sched = await scheduleOf()
     expect(within(sched).getByText('every 5 min, Mon–Fri 06:00–22:00')).toBeInTheDocument()
     fireEvent.click(within(sched).getByRole('button', { name: 'Run now' }))
-    expect(await within(sched).findByText('Run 31 is running…')).toBeInTheDocument()
+    const sheet = screen.getByRole('dialog')
+    await waitFor(() => expect(noticeIn(sheet)).toHaveTextContent('Run 31 is running…'))  // the sheet's status row
     expect(api.runNow).toHaveBeenCalledWith(7)
-    expect(await within(sched).findByText('Run 31: SUCCEEDED — 2 files, 0 errors', {}, { timeout: 6000 })).toBeInTheDocument()
+    await waitFor(() => expect(noticeIn(sheet)).toHaveTextContent('Run 31: SUCCEEDED — 2 files, 0 errors'), { timeout: 6000 })
     expect(api.runs).toHaveBeenCalledWith(expect.objectContaining({ filters: [{ field: 'scope', op: 'eq', value: 'connection:7' }] }))
   })
 })

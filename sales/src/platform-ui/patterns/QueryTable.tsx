@@ -41,6 +41,9 @@ export interface QueryTableProps<T> {
   /** Fetching again over rows shown, and whether those rows are the previous query's (DataTable). */
   fetching?: boolean
   stale?: boolean
+  /** The card's height (DataTable `fit`) and its status row (TableStatusBar, with the pages). */
+  fit?: 'viewport' | number
+  statusBar?: (pagination: ReactNode) => ReactNode
   /** A user's Refresh: the bar at once. */
   busyNow?: boolean
   /** Rows a refresh brought or changed (by rowKey): highlighted briefly. */

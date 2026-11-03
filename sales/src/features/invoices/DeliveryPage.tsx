@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
   ActionButton, Button, DateInput, Dialog, ErrorMessage, FormField, MasterDetailForm, Skeleton, numberColumn, queryKeys, readColumn,
-  todayDate, useCan, type FieldSpec,
+  todayDate, useCan, type FieldSpec, useNotices,
 } from '@/platform-ui'
 import { OrderList } from '@/features/orders/OrdersPage'
 import { fetchOrder, ordersClient, type LineRead, type OrderRead } from '@/features/orders/ordersApi'
@@ -57,15 +57,20 @@ function ConfirmOne({ o, close }: { o: OrderRead; close: () => void }) {
 function ConfirmShown({ rows, refresh }: { rows: OrderRead[]; refresh: () => Promise<void> }) {
   const [open, setOpen] = useState(false)
   const [date, setDate] = useState(() => todayDate())
-  const [result, setResult] = useState<ConfirmResult[] | null>(null)
+  const notices = useNotices()
   const m = useMutation({
     mutationFn: () => confirmBulk(rows.map((r) => r.id), date),
-    onSuccess: async (r) => { setResult(r); setOpen(false); await refresh() },
+    onSuccess: async (r: ConfirmResult[]) => {
+      // The outcome in the list's status row: a warning while some were not confirmed.
+      const failed = r.filter((x) => !x.ok)
+      notices.notify({ key: 'confirm', tone: failed.length ? 'warning' : 'success',
+        text: `${r.length - failed.length} confirmed${failed.length ? `, ${failed.length} not: ${failed.map((f) => `#${f.order_id} ${f.error}`).join('; ')}` : ''}` })
+      setOpen(false)
+      await refresh()
+    },
   })
-  const failed = result?.filter((r) => !r.ok) ?? []
   return (
     <>
-      {result && <p role="status" className="text-xs">{result.length - failed.length} confirmed{failed.length ? `, ${failed.length} not: ${failed.map((f) => `#${f.order_id} ${f.error}`).join('; ')}` : ''}</p>}
       <ActionButton size="sm" permission={MANAGE} disabled={rows.length === 0} onAction={() => setOpen(true)}>
         Confirm all shown ({rows.length})…
       </ActionButton>

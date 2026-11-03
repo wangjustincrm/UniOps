@@ -1,3 +1,4 @@
+import { noticeIn } from '@/platform-ui/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -63,7 +64,7 @@ describe('Delivery confirmation', () => {
     fireEvent.change(within(ask).getByLabelText('Delivered on'), { target: { value: '2026-11-05' } })
     fireEvent.click(within(ask).getByRole('button', { name: 'Confirm' }))
     await waitFor(() => expect(api.bulk).toHaveBeenCalledWith([7], '2026-11-05'))
-    expect(await screen.findByRole('status')).toHaveTextContent('1 confirmed')
+    await waitFor(() => expect(noticeIn()).toHaveTextContent('1 confirmed'))  // the list's status row
   })
 
   it('one order: the delivered quantity per line, less than shipped allowed', async () => {

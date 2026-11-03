@@ -15,7 +15,8 @@ import { SchemaForm, type FieldSpec } from './SchemaForm'
 import { useCrudResource } from '../resource/useCrudResource'
 import type { ImportReport, ResourceClient } from '../resource/ResourceClient'
 import { useCan } from './permissions'
-import { ErrorMessage } from './ErrorMessage'
+import { createNoticeStore } from './notices'
+import { errorText } from '../resource/businessError'
 import { RecordSheet, type RecordFact, type RecordTab } from './RecordSheet'
 import { Badge, Button } from '../primitives/shell'
 
@@ -40,8 +41,8 @@ export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
   immutableOnEdit?: string[]
   emptyValues: Record<string, unknown>
   toFormValues: (row: T) => Record<string, unknown>
-  /** CSV export needs the business client's authenticated download. */
-  onExport?: (path: string) => void
+  /** CSV export needs the business client's authenticated download (its promise: the result is said in the status row). */
+  onExport?: (path: string) => Promise<unknown> | void
   csvImport?: boolean
   errorMessages?: Record<string, string>
   /** The record's sheet: its title (default "<singular> #id"), subtitle and key facts. */
@@ -65,16 +66,26 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
   const { create, update, deactivate, refresh } = useCrudResource(client)
   const canWrite = useCan(writePermission)
   const [preview, setPreview] = useState<{ file: File; report: ImportReport } | null>(null)
-  const [importError, setImportError] = useState<unknown>(null)
+  // The list's status row: import and export say there what they did.
+  const [notices] = useState(createNoticeStore)
+  const failed = (what: string, e: unknown) => notices.notify({ key: 'csv', tone: 'error', text: `${what} failed: ${errorText(e, props.errorMessages)}` })
   const singular = props.singular ?? props.title
 
   const pickFile = async (file: File | undefined) => {
     if (!file) return
-    setImportError(null)
+    notices.clear('csv')
     try {
       setPreview({ file, report: await client.importCsv(file, true) })
     } catch (e) {
-      setImportError(e)
+      failed('Import', e)
+    }
+  }
+  const exportCsv = async (path: string) => {
+    try {
+      await props.onExport?.(path)
+      notices.notify({ key: 'csv', tone: 'success', text: 'CSV exported' })
+    } catch (e) {
+      failed('Export', e)
     }
   }
 
@@ -86,7 +97,8 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
       columns={props.columns}
       rowActions={props.rowActions}
       errorMessages={props.errorMessages}
-      notice={<>{props.notice}<ErrorMessage error={importError} messages={props.errorMessages} /></>}
+      notice={props.notice}
+      notices={notices}
       detailSize="md"
       renderDetail={(row, close) => (
         <RecordForm row={row} close={close} canWrite={canWrite} props={props}
@@ -97,7 +109,7 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
         <>
           {props.onExport && (
             <IconButton label="Export CSV" icon={<Download className="h-4 w-4" />} className={TOOL}
-              onClick={() => props.onExport?.(client.exportPath(spec))} />
+              onClick={() => { void exportCsv(client.exportPath(spec)) }} />
           )}
           {props.csvImport && canWrite && (
             <FilePicker accept=".csv,text/csv" label="CSV file" onFile={pickFile} icon={<Upload className="h-4 w-4" />}>Import CSV</FilePicker>
@@ -138,9 +150,13 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
                     try {
                       const done = await client.importCsv(preview.file, false)
                       setPreview(done.ok ? null : { ...preview, report: done })
-                      if (done.ok) await refresh()
+                      if (done.ok) {
+                        await refresh()
+                        notices.notify({ key: 'csv', tone: 'success',
+                          text: `Imported ${preview.file.name}: ${done.counts.create} new · ${done.counts.update} changed · ${done.counts.unchanged} unchanged` })
+                      }
                     } catch (e) {
-                      setImportError(e)
+                      failed('Import', e)
                       setPreview(null)
                     }
                   }}

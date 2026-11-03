@@ -1,6 +1,5 @@
-import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, Badge, CopyChip, DateCell, Tooltip, ErrorMessage, LocalTable, StatusCell, queryKeys, type ColumnDef } from '@/platform-ui'
+import { ActionButton, Badge, CopyChip, DateCell, Tooltip, LocalTable, StatusCell, queryKeys, type ColumnDef } from '@/platform-ui'
 import { downloadPackingList, ordersClient, retryShopify, type ShipmentRead, type ShipmentRowRead } from './ordersApi'
 
 const errorMessages: Record<string, string> = {
@@ -19,13 +18,11 @@ const rowColumns: ColumnDef<ShipmentRowRead, unknown>[] = [
 ]
 
 function PackingListButton({ s, orderId }: { s: ShipmentRead; orderId: number }) {
-  const [error, setError] = useState<unknown>(null)
   return (
     <span className="inline-flex flex-col gap-1">
-      <ActionButton size="sm" variant="secondary" onAction={() => downloadPackingList(orderId, s.id).catch(setError)}>
+      <ActionButton size="sm" variant="secondary" onAction={() => downloadPackingList(orderId, s.id)}>
         Packing list (PDF)
       </ActionButton>
-      <ErrorMessage error={error} />
     </span>
   )
 }
@@ -38,10 +35,10 @@ function Retry({ s, orderId }: { s: ShipmentRead; orderId: number }) {
   })
   return (
     <span className="inline-flex flex-col gap-1">
-      <ActionButton size="sm" variant="secondary" permission="sales.order.operate" onAction={() => m.mutateAsync().catch(() => {})}>
+      <ActionButton size="sm" variant="secondary" permission="sales.order.operate" errorMessages={errorMessages} done="Shopify write queued again"
+        onAction={() => m.mutateAsync()}>
         Retry in Shopify
       </ActionButton>
-      <ErrorMessage error={m.error} messages={errorMessages} />
     </span>
   )
 }

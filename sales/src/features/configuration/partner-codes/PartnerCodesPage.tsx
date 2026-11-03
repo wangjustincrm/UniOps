@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { CrudPage, useToast, type ColumnDef, type FieldSpec } from '@/platform-ui'
+import { CrudPage, type ColumnDef, type FieldSpec } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import { itemOptions, partnerOptions } from '../lookups'
 import {
@@ -23,7 +23,6 @@ const columns: ColumnDef<PartnerCodeRead, unknown>[] = [
 
 /** Configuration → Partner codes (FR-OB-02): buyer part numbers per partner. */
 export default function PartnerCodesPage() {
-  const toast = useToast()
   return (
     <CrudPage<PartnerCodeRead, PartnerCodeCreate, PartnerCodeUpdate>
       title="Partner codes" singular="partner code"
@@ -33,7 +32,7 @@ export default function PartnerCodesPage() {
       immutableOnEdit={['partner_code', 'buyer_part']}
       emptyValues={{ partner_code: '', buyer_part: '', item_code: '' }}
       toFormValues={(r) => ({ partner_code: r.partner_code, buyer_part: r.buyer_part, item_code: r.item_code })}
-      onExport={(path) => { downloadPartnerCodes(path).catch((e: unknown) => toast({ variant: 'error', title: 'Export failed', description: e instanceof Error ? e.message : String(e) })) }}
+      onExport={(path) => downloadPartnerCodes(path)}
       csvImport
       errorMessages={{ 'partner_code.taken': 'This partner already uses this buyer part.' }}
       recordTitle={(r) => `${r.partner_code} ${r.buyer_part}`}

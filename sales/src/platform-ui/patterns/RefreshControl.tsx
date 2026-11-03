@@ -13,20 +13,14 @@ const LONG: Record<number, string> = { 0: 'Off', 30: 'Every 30s', 60: 'Every 1m'
  *  refreshes and spins while a refresh runs — a click and an auto-refresh
  *  tick look the same; with auto on, its interval sits on the icon ("30",
  *  "1m") and the button is tinted. The chevron (lists only) chooses Off / 30s
- *  / 1m / 5m. Beside it, briefly, what the last refresh found. */
+ *  / 1m / 5m. No words beside it: what a refresh found is in the status row. */
 export function RefreshControl({ state }: { state: RefreshState }) {
   const { auto, busy, setAuto } = state
   const when = state.updatedAt ? formatTime(state.updatedAt) : null
   const tip = ['Refresh', auto ? `auto every ${LONG[auto]?.replace('Every ', '') ?? `${auto}s`}` : null, when && `updated ${when}`]
     .filter(Boolean).join(' · ')
-  const tone = state.message?.tone
   return (
     <span className="inline-flex items-center gap-2">
-      <span aria-live="polite" data-refresh-message
-        className={cn('max-w-[16rem] truncate text-xs transition-opacity', state.message ? 'opacity-100' : 'opacity-0',
-          tone === 'danger' ? 'text-danger-600' : tone === 'muted' ? 'text-neutral-500' : 'text-primary-700')}>
-        {state.message?.text ?? ''}
-      </span>
       <span className={cn('inline-flex h-8 items-stretch rounded-lg border', auto ? 'border-primary-200 bg-primary-50' : 'border-neutral-200 bg-white')}>
         <TipButton label={tip} aria-busy={busy || undefined} disabled={busy}
           onClick={() => { void state.refresh() }}

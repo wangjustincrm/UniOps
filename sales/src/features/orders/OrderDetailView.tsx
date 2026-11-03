@@ -7,7 +7,7 @@ import {
   LocalTable, MoneyCell, RecordSheet, RecordSheetHostContext, Section, StatusCell, Timeline, formatDate, formatDateTime, formatMoney,
   queryKeys, requestOpen,
   type ColumnDef, type RecordFact, type RecordTab, type TimelineItem,
-  compareRecord, useRefresh,
+  compareRecord, useRefresh, useNotices,
 } from '@/platform-ui'
 import { fetchOrder, ordersClient, type LineRead, type OrderDetail, type OrderDocument, type OrderRead, type PackingRead } from './ordersApi'
 import { Shipments } from './Shipments'
@@ -141,7 +141,8 @@ function LifecycleTable({ o }: { o: OrderDetail }) {
 // The order's files: the sources (Shopify page, 850), the 940s with their 997
 // apart (Sent is not Accepted, FR-OB-22), each downloadable.
 function DocumentsTable({ docs }: { docs: OrderDocument[] }) {
-  const [error, setError] = useState<unknown>(null)
+  const notices = useNotices()
+  const failed = (e: unknown) => notices.notify({ tone: 'error', text: `Download failed: ${e instanceof Error ? e.message : String(e)}` })
   const columns: ColumnDef<OrderDocument, unknown>[] = [
     { accessorKey: 'created_at', header: 'Created', cell: ({ row }) => <DateTimeCell value={row.original.created_at} /> },
     { accessorKey: 'kind', header: 'Kind', cell: ({ row: { original: d } }) => <span className="whitespace-nowrap">{d.kind}{d.direction === 'OUT' ? ' (sent)' : ''}</span> },
@@ -154,12 +155,11 @@ function DocumentsTable({ docs }: { docs: OrderDocument[] }) {
     { id: 'note', header: 'Note', cell: ({ row }) => <span className="break-words text-xs">{row.original.error ?? row.original.ack_detail ?? ''}</span> },
     { id: 'download', header: '', cell: ({ row: { original: d } }) => (
       <IconButton label={`Download ${d.remote_name ?? d.kind}`} icon={<Download className="h-4 w-4" />}
-        onClick={() => { downloadDocument(d.id, d.remote_name ?? `document-${d.id}`).catch(setError) }} />) },
+        onClick={() => { downloadDocument(d.id, d.remote_name ?? `document-${d.id}`).catch(failed) }} />) },
   ]
   return (
     <>
       <LocalTable<OrderDocument> ariaLabel="Documents" columns={columns} rows={docs} rowKey={(d) => d.id} initiallyHidden={['st02']} />
-      <ErrorMessage error={error} />
     </>
   )
 }
@@ -196,7 +196,7 @@ function Lots({ o }: { o: OrderDetail }) {
 /** The order's invoice: status, number, method, total, the file it was sent as; opened on Invoices. */
 function OrderInvoice({ o }: { o: OrderDetail }) {
   const navigate = useNavigate()
-  const [error, setError] = useState<unknown>(null)
+  const notices = useNotices()
   const q = useQuery({
     queryKey: [...queryKeys.list(invoicesClient), 'order', o.id],
     queryFn: () => invoicesClient.list({ page: 1, pageSize: 1, filters: [{ field: 'order_id', op: 'eq', value: String(o.id) }] }),
@@ -217,13 +217,14 @@ function OrderInvoice({ o }: { o: OrderDetail }) {
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="secondary" onClick={() => { requestOpen('/invoices', inv.id); navigate('/invoices') }}>Open invoice {inv.invoice_number}</Button>
           {inv.document_id != null && (
-            <Button size="sm" variant="secondary" onClick={() => { downloadDocument(inv.document_id!, `${inv.invoice_number}-${inv.method}`).catch(setError) }}>
+            <Button size="sm" variant="secondary" onClick={() => { downloadDocument(inv.document_id!, `${inv.invoice_number}-${inv.method}`).catch((e: unknown) =>
+              notices.notify({ tone: 'error', text: `Download failed: ${e instanceof Error ? e.message : String(e)}` })) }}>
               <Download className="mr-1 h-3.5 w-3.5" />The file sent ({inv.method === '810_JSON' ? '810' : inv.method})
             </Button>
           )}
         </div>
       )}
-      <ErrorMessage error={q.error ?? error} />
+      <ErrorMessage error={q.error} />
     </Section>
   )
 }

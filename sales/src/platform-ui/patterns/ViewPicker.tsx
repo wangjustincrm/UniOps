@@ -9,6 +9,7 @@ import { Button, Input } from '../primitives/shell'
 import { cn } from '../lib/cn'
 import { errorText } from '../resource/businessError'
 import { ConfirmAction } from './ConfirmAction'
+import { useNotices } from './notices'
 import type { CurrentView, ViewPickerModel } from './views'
 
 const ERRORS = { 'view.name_taken': 'You already have a view with that name.' }
@@ -17,6 +18,17 @@ const ERRORS = { 'view.name_taken': 'You already have a view with that name.' }
  *  my views; a dot when the list differs from the chosen view, then Save /
  *  Save as new / Reset; per view of mine: Rename, Set as default, Delete. */
 export function ViewPicker({ model }: { model: ViewPickerModel }) {
+  // What a view action did, in the list's status row (a name the server refuses stays at its field).
+  const notices = useNotices()
+  const said = <A extends unknown[]>(fn: (...a: A) => Promise<void>, text: (...a: A) => string) => async (...a: A) => {
+    try {
+      await fn(...a)
+      notices.notify({ key: 'view', tone: 'success', text: text(...a) })
+    } catch (e) {
+      notices.notify({ key: 'view', tone: 'error', text: `The view was not saved: ${errorText(e, ERRORS)}` })
+      throw e
+    }
+  }
   const [open, setOpen] = useState(false)
   const [naming, setNaming] = useState<{ title: string; initial: string; done: (name: string) => Promise<void> } | null>(null)
   const [deleting, setDeleting] = useState<{ id: number; name: string } | null>(null)
@@ -58,8 +70,9 @@ export function ViewPicker({ model }: { model: ViewPickerModel }) {
                     align="end"
                     items={[
                       { label: 'Rename', opensDialog: true,
-                        onSelect: () => { setOpen(false); setNaming({ title: 'Rename the view', initial: m.name, done: (n) => model.rename(m.id, n) }) } },
-                      { label: m.is_default ? 'Remove as default' : 'Set as default', onSelect: () => { void model.setDefault(m.id, !m.is_default) } },
+                        onSelect: () => { setOpen(false); setNaming({ title: 'Rename the view', initial: m.name, done: said((n: string) => model.rename(m.id, n), (n) => `View renamed to "${n}"`) }) } },
+                      { label: m.is_default ? 'Remove as default' : 'Set as default', onSelect: () => { void said(() => model.setDefault(m.id, !m.is_default),
+                        () => (m.is_default ? `"${m.name}" no longer opens the list` : `"${m.name}" now opens the list`))().catch(() => {}) } },
                       { label: 'Delete', opensDialog: true, separated: true, onSelect: () => { setOpen(false); setDeleting({ id: m.id, name: m.name }) } },
                     ]}
                     trigger={
@@ -79,9 +92,9 @@ export function ViewPicker({ model }: { model: ViewPickerModel }) {
         <span className="inline-flex items-center gap-1">
           {current?.kind === 'mine' && (
             <IconButton label="Save view" icon={<Save className="h-4 w-4" />} disabled={model.busy} className={TOOL}
-              onClick={() => { void model.save() }} />
+              onClick={() => { void said(() => model.save(), () => `View "${current.name}" saved`)().catch(() => {}) }} />
           )}
-          <SaveAsNew busy={model.busy} save={model.saveAs} />
+          <SaveAsNew busy={model.busy} save={said(model.saveAs, (n) => `Saved as the view "${n}"`)} />
           <IconButton label="Reset to the saved view" icon={<RotateCcw className="h-4 w-4" />} disabled={model.busy} className={TOOL}
             onClick={model.reset} />
         </span>
@@ -89,7 +102,6 @@ export function ViewPicker({ model }: { model: ViewPickerModel }) {
       {model.stale && !dirty && (
         <span role="status" className="text-xs text-warning-700">Saved by an older version: review it, then Save.</span>
       )}
-      {model.error != null && !naming && <span role="alert" className="text-xs text-danger-600">{errorText(model.error, ERRORS)}</span>}
       {naming && <NameDialog {...naming} onClose={() => setNaming(null)} />}
       <ConfirmAction
         open={deleting !== null}
@@ -98,7 +110,7 @@ export function ViewPicker({ model }: { model: ViewPickerModel }) {
         description="Only the view is deleted; nothing in the list changes."
         confirmLabel="Delete"
         destructive
-        onConfirm={async () => { if (deleting) await model.remove(deleting.id) }}
+        onConfirm={async () => { if (deleting) await said(() => model.remove(deleting.id), () => `View "${deleting.name}" deleted`)() }}
       />
     </div>
   )

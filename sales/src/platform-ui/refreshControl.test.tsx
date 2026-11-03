@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-quer
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  ListPage, RecordSheet, RefreshControl, ViewsProvider, compareRecord, compareRows, useRefresh,
+  ListPage, RecordSheet, RefreshControl, TableStatusBar, ViewsProvider, compareRecord, compareRows, useRefresh,
   type ColumnDef, type ListMeta, type ViewsClient,
 } from './index'
 
@@ -21,7 +21,8 @@ const meta: ListMeta = {
 }
 const views: ViewsClient = { list: async () => [], create: vi.fn(async (resource, name, state) => ({ id: 9, resource, name, state, is_default: false, sort: 0, version: 1, stale: false })),
   update: vi.fn(), remove: vi.fn(), setDefault: vi.fn() }
-const message = (within_: HTMLElement | Document = document) => within_.querySelector('[data-refresh-message]')!
+// The status row's current notice (an empty node when there is none).
+const message = (root: ParentNode = document) => root.querySelector('[data-status-bar] [data-tone]') ?? document.createElement('div')
 const refreshButton = () => screen.getByRole('button', { name: /^Refresh/ })
 
 let visibility: DocumentVisibilityState = 'visible'
@@ -41,6 +42,7 @@ function Harness({ list, spy, initialAuto = 0 }: { list: () => Promise<{ items: 
   return (
     <>
       <RefreshControl state={r} />
+      <TableStatusBar store={r.notices} />
       <ul>{(q.data?.items ?? []).map((x) => <li key={x.id} data-lit={r.highlight.has(x.id) || undefined}>{x.code}</li>)}</ul>
     </>
   )

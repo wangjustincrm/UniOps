@@ -23,19 +23,18 @@ export function ShadowPanel() {
       <h2 className="font-semibold text-neutral-800">Shadow run</h2>
       {q.isLoading ? <Skeleton className="h-8 w-full" /> : q.error ? <ErrorMessage error={q.error} /> : (
         <>
-          <p role="status" className={on ? 'text-warning-700' : 'text-neutral-600'}>
+          <p className={on ? 'text-warning-700' : 'text-neutral-600'}>
             {on ? 'On: Zoho is live. Files are read and left in place, orders open at the switch-on and received since are Zoho\'s, no 940 is made or sent, and only intake problems raise tasks.'
               : 'Off: Sales works the orders it receives and sends their 940s.'}
           </p>
           {on && marked != null && <p className="text-xs text-neutral-600">{marked} open order(s) were marked as Zoho's.</p>}
           <ActionButton size="sm" variant="secondary" permission="sales.config"
-            onAction={() => (on ? setConfirming(true) : m.mutateAsync({ shadow_mode: true }).catch(() => {}))}>
+            onAction={() => (on ? setConfirming(true) : m.mutateAsync({ shadow_mode: true }))}>
             {on ? 'Turn the shadow run off' : 'Turn the shadow run on'}
           </ActionButton>
           <ConfirmAction open={confirming} onOpenChange={setConfirming} title="Turn the shadow run off?" destructive
             description="Sales then moves or deletes files after reading them as each connection says, and sends 940s for the orders it receives from now on. Orders marked during the shadow run stay Zoho's."
             confirmLabel="Turn off" onConfirm={() => m.mutateAsync({ shadow_mode: false })} />
-          {!confirming && <ErrorMessage error={m.error} />}
         </>
       )}
     </section>

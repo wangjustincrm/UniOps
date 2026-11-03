@@ -41,3 +41,8 @@ export async function openTab(container: HTMLElement, label: string) {
   await waitFor(() => expect(tab).toHaveAttribute('aria-selected', 'true'))
   return tab
 }
+
+/** The current notice in the status row inside `root` (a list page, a sheet): its chip, or an empty node. */
+export function noticeIn(root: ParentNode = document): Element {
+  return root.querySelector('[data-status-bar] [data-tone]') ?? document.createElement('div')
+}

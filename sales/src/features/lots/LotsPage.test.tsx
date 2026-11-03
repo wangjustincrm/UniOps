@@ -53,7 +53,7 @@ describe('Lots: tracing and recall', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Recall: find where lots went' })
     fireEvent.change(within(dialog).getByLabelText('Lots'), { target: { value: 'LOT-A\nLOT-B, LOT-A' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Find 2 lots' }))
-    const banner = await screen.findByRole('status', { name: 'Recall' })
+    const banner = await screen.findByRole('region', { name: 'Recall' })  // a standing fact: a Callout
     expect(banner).toHaveTextContent('Recall: LOT-A, LOT-B')
     await waitFor(() => expect(banner).toHaveTextContent('3 rows · 2 orders · 1 customer'))
     await waitFor(() => expect(lotFilter(api.list.mock.calls.at(-1)![0])).toEqual({ field: 'lot', op: 'in', value: ['LOT-A', 'LOT-B'] }))
@@ -61,7 +61,7 @@ describe('Lots: tracing and recall', () => {
     await waitFor(() => expect(api.download).toHaveBeenCalled())
     expect(lotFilter(api.download.mock.calls[0][0])).toEqual({ field: 'lot', op: 'in', value: ['LOT-A', 'LOT-B'] })
     fireEvent.click(screen.getByRole('button', { name: 'Clear recall' }))
-    await waitFor(() => expect(screen.queryByRole('status', { name: 'Recall' })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('region', { name: 'Recall' })).toBeNull())
   })
 
   it('pasted lots split on lines, commas, semicolons and spaces, each once', () => {

@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
-  ActionButton, Button, DateTimeCell, DetailList, ErrorMessage, LocalTable, StatusCell, formatDateTime, queryKeys,
-  requestView, type ColumnDef,
+  ActionButton, Button, DateTimeCell, DetailList, LocalTable, StatusCell, formatDateTime, queryKeys,
+  requestView, type ColumnDef, useNotices,
 } from '@/platform-ui'
 import { runsClient, type RunRead } from '@/features/operations/operationsApi'
 import { connectionsClient, describeSchedule, runConnectionNow, type ConnectionRead } from './connectionsApi'
@@ -39,10 +39,17 @@ export function ConnectionSchedule({ connection: c }: { connection: ConnectionRe
   const mine = started !== null ? runs.data?.items.find((r) => r.id === started) : undefined
   const running = started !== null && (!mine || mine.status === 'RUNNING')
   const done = mine && mine.status !== 'RUNNING' ? mine : undefined
-  // When it ends, the list's last run / next run columns are refreshed.
+  // Its progress in the sheet's status row; when it ends, the list's last run / next run columns are refreshed.
+  const notices = useNotices()
   useEffect(() => {
-    if (done) void qc.invalidateQueries({ queryKey: queryKeys.list(connectionsClient) })
-  }, [done, qc])
+    if (running && started !== null) notices.notify({ key: `run:${c.id}`, tone: 'info', text: `Run ${started} is running…`, sticky: true })
+  }, [running, started])  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!done) return
+    notices.notify({ key: `run:${c.id}`, tone: done.status === 'SUCCEEDED' ? 'success' : done.status === 'PARTIAL' ? 'warning' : 'error',
+      text: `Run ${done.id}: ${done.status}${done.summary?.text ? ` — ${done.summary.text}` : done.error ? ` — ${done.error}` : ''}` })
+    void qc.invalidateQueries({ queryKey: queryKeys.list(connectionsClient) })
+  }, [done, qc])  // eslint-disable-line react-hooks/exhaustive-deps
   const run = useMutation({
     mutationFn: () => runConnectionNow(c.id),
     onSuccess: async ({ run_id }) => {
@@ -61,13 +68,8 @@ export function ConnectionSchedule({ connection: c }: { connection: ConnectionRe
       ]} />
       <div className="flex flex-wrap items-center gap-2">
         <ActionButton size="sm" permission={RETRY} disabled={!c.active || running}
-          onAction={() => run.mutateAsync().catch(() => {})}>Run now</ActionButton>
-        {running && <span role="status">Run {started} is running…</span>}
-        {done && (
-          <span role="status">Run {done.id}: {done.status}{done.summary?.text ? ` — ${done.summary.text}` : done.error ? ` — ${done.error}` : ''}</span>
-        )}
+          errorMessages={{ 'run.already_running': `${c.name} is running; wait for it to finish.` }} onAction={() => run.mutateAsync()}>Run now</ActionButton>
       </div>
-      <ErrorMessage error={run.error} messages={{ 'run.already_running': `${c.name} is running; wait for it to finish.` }} />
       <LocalTable<RunRead> ariaLabel="Last runs" columns={runColumns} rows={runs.data?.items ?? []} rowKey={(r) => r.id}
         emptyTitle="No run yet" />
       <span>

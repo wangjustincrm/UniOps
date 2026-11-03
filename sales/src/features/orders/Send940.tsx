@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, ConfirmAction, ErrorMessage, queryKeys } from '@/platform-ui'
+import { ActionButton, ConfirmAction, queryKeys, useNotices } from '@/platform-ui'
 import { ordersClient, send940, type OrderRead, type Send940Result } from './ordersApi'
 
 const OPERATE = 'sales.order.operate'
@@ -23,11 +23,14 @@ const errorMessages: Record<string, string> = {
 export function Send940({ o }: { o: OrderRead }) {
   const qc = useQueryClient()
   const [confirming, setConfirming] = useState(false)
-  const [result, setResult] = useState<Send940Result | null>(null)
+  const notices = useNotices()
   const m = useMutation({
     mutationFn: (replace: boolean) => send940(o.id, replace),
-    onSuccess: async (r) => {
-      setResult(r)
+    onSuccess: async (r: Send940Result) => {
+      // What happened, in the sheet's (or list's) status row.
+      notices.notify(r.errors.length > 0
+        ? { key: `send940:${o.id}`, tone: 'error', text: `The 940 failed its checks and was not sent: ${r.errors.join('; ')}` }
+        : { key: `send940:${o.id}`, tone: 'success', text: `940 ${r.control} queued: it is sent on the next outbox pass.` })
       await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
       await qc.invalidateQueries({ queryKey: queryKeys.detail(ordersClient, o.id) })
     },
@@ -52,15 +55,8 @@ export function Send940({ o }: { o: OrderRead }) {
           />
         </>
       ) : (
-        <ActionButton size="sm" permission={OPERATE} onAction={() => m.mutateAsync(false).catch(() => {})}>Send 940 now</ActionButton>
+        <ActionButton size="sm" permission={OPERATE} errorMessages={errorMessages} onAction={() => m.mutateAsync(false)}>Send 940 now</ActionButton>
       )}
-      {result && (result.errors.length > 0 ? (
-        <div role="status" className="text-xs text-danger-600">
-          <p className="font-medium">The 940 failed its checks and was not sent:</p>
-          <ul>{result.errors.map((e) => <li key={e}>{e}</li>)}</ul>
-        </div>
-      ) : <p role="status" className="text-xs text-success-700">940 {result.control} queued: it is sent on the next outbox pass.</p>)}
-      {!confirming && <ErrorMessage error={m.error} messages={errorMessages} />}
     </section>
   )
 }

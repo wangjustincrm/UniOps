@@ -1,4 +1,4 @@
-import { Badge, CrudPage, useToast, type ColumnDef } from '@/platform-ui'
+import { Badge, CrudPage, type ColumnDef } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import { downloadPartners, fetchPartnerAudit, partnersClient, type PartnerCreate, type PartnerRead, type PartnerUpdate } from './partnersApi'
 import {
@@ -27,7 +27,6 @@ const errorMessages: Record<string, string> = {
 /** Configuration → Partners (FR-OB-03). Everyone with sales.read sees the
  *  list and each partner read-only; sales.config edits, deactivates and imports. */
 export default function PartnersPage() {
-  const toast = useToast()
   return (
     <CrudPage<PartnerRead, PartnerCreate, PartnerUpdate>
       title="Partners"
@@ -42,10 +41,7 @@ export default function PartnersPage() {
       immutableOnEdit={['code']}
       emptyValues={partnerEmptyValues}
       toFormValues={partnerToFormValues}
-      onExport={(path) => {
-        downloadPartners(path).catch((e: unknown) =>
-          toast({ variant: 'error', title: 'Export failed', description: e instanceof Error ? e.message : String(e) }))
-      }}
+      onExport={(path) => downloadPartners(path)}
       csvImport
       errorMessages={errorMessages}
       recordTitle={(p) => p.name}

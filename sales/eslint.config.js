@@ -75,6 +75,13 @@ const RAW_SHEETS = [
 const DIRECT_REFETCH = [
   { selector: "CallExpression[callee.property.name='refetch']", message: 'Refresh through useRefresh (and RefreshControl) from @/platform-ui, not refetch().' },
 ]
+// What happened is said through useNotices (the list's or the sheet's status
+// row, the user's ask 2026-11-03); a standing fact is a Callout. Features never
+// make their own live / status / alert elements (Health, a dashboard, aside).
+const AD_HOC_MESSAGES = [
+  { selector: "JSXAttribute[name.name='aria-live']", message: 'Say it with useNotices (the status row) from @/platform-ui, not an aria-live element.' },
+  { selector: "JSXAttribute[name.name='role'][value.value=/^(status|alert)$/]", message: 'Say it with useNotices (the status row), or show a standing fact with Callout, from @/platform-ui — not role="status" / role="alert".' },
+]
 const NO_RAW_SHEET_IMPORT = {
   name: '@/platform-ui', importNames: ['Sheet'],
   message: 'A record detail is a RecordSheet (a form: FormSheet) from @/platform-ui, not a raw Sheet.',
@@ -151,6 +158,12 @@ export default defineConfig([
   },
   {
     files: ['src/features/**/*.{ts,tsx}'],
+    ignores: ['src/features/**/*.test.{ts,tsx}'],
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...AD_HOC_MESSAGES] },
+  },
+  {
+    // Health is a dashboard (no list or sheet scope): its own result text may still be read aloud.
+    files: ['src/features/health/**/*.{ts,tsx}'],
     ignores: ['src/features/**/*.test.{ts,tsx}'],
     rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH] },
   },

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DataTable, ListPage, LocalTable, RecordSheet, ViewsProvider, type ColumnDef, type ListMeta, type RefreshState, type ViewsClient } from './index'
+import { DataTable, ListPage, LocalTable, RecordSheet, ViewsProvider, type ColumnDef, type ListMeta, type RefreshState, createNoticeStore, type ViewsClient } from './index'
 
 // Loading feedback (the user, 2026-11-03: "tables show nothing while loading"):
 // a refetch over rows shown puts a thin bar on the card's top edge (after
@@ -17,7 +17,7 @@ afterEach(() => { vi.useRealTimers() })
 
 
 const stub = (p: Partial<RefreshState> = {}): RefreshState => ({
-  refresh: vi.fn(async () => {}), busy: false, fetching: false, message: null, highlight: new Set(), updatedAt: 0, auto: 0, tick: 0, ...p,
+  refresh: vi.fn(async () => {}), busy: false, fetching: false, notices: createNoticeStore(), highlight: new Set(), updatedAt: 0, auto: 0, tick: 0, ...p,
 })
 
 describe('DataTable while fetching', () => {
@@ -48,7 +48,6 @@ describe('DataTable while fetching', () => {
     expect(table.querySelector('tbody')).toHaveAttribute('data-stale', 'true')
     expect(table.querySelector('tbody')).toHaveClass('opacity-60')
     expect(table.querySelector('tfoot')).toHaveClass('opacity-60')
-    expect(screen.getByText('Updating…')).toBeInTheDocument()
   })
 
   it('the first load: skeleton rows, no bar', async () => {
@@ -86,7 +85,7 @@ describe('a list changing page: the old rows dimmed until the new ones arrive', 
     fireEvent.click(screen.getByRole('button', { name: /next/i }))
     await waitFor(() => expect(screen.getByText('Updating…')).toBeInTheDocument(), { timeout: 2000 })
     expect(screen.getByText('A1')).toBeInTheDocument()  // the old page, dimmed, still there
-    expect(screen.getByRole('table').querySelector('tbody')).toHaveAttribute('data-stale', 'true')
+    await waitFor(() => expect(screen.getByRole('table').querySelector('tbody')).toHaveAttribute('data-stale', 'true'))
     act(() => release!())
     expect(await screen.findByText('P2')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByText('Updating…')).toBeNull())

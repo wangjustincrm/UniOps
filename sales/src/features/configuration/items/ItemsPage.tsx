@@ -1,4 +1,4 @@
-import { Badge, CrudPage, useToast, type ColumnDef } from '@/platform-ui'
+import { Badge, CrudPage, type ColumnDef } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import { downloadItems, fetchItemAudit, itemsClient, unitsText, type ItemCreate, type ItemRead, type ItemUpdate } from './itemsApi'
 import { itemCreateSchema, itemEmptyValues, itemFields, itemToFormValues, itemUpdateSchema } from './itemSchema'
@@ -21,7 +21,6 @@ const errorMessages: Record<string, string> = {
 
 /** Configuration → Items (FR-OB-02): the Item Master with each item's units. */
 export default function ItemsPage() {
-  const toast = useToast()
   return (
     <CrudPage<ItemRead, ItemCreate, ItemUpdate>
       title="Items" singular="item"
@@ -29,7 +28,7 @@ export default function ItemsPage() {
       client={itemsClient} columns={columns}
       writePermission="sales.config" createSchema={itemCreateSchema} updateSchema={itemUpdateSchema}
       fields={itemFields} immutableOnEdit={['item_code']} emptyValues={itemEmptyValues} toFormValues={itemToFormValues}
-      onExport={(path) => { downloadItems(path).catch((e: unknown) => toast({ variant: 'error', title: 'Export failed', description: e instanceof Error ? e.message : String(e) })) }}
+      onExport={(path) => downloadItems(path)}
       csvImport errorMessages={errorMessages}
       recordTitle={(i) => i.item_code}
       recordSubtitle={(i) => [i.description, i.units.map((u) => `${u.unit} ${Number(u.factor_ea)} EA`).join(' · ')].filter(Boolean).join(' — ')}

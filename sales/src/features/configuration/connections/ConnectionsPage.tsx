@@ -1,4 +1,4 @@
-import { Badge, CrudPage, DateTimeCell, StatusCell, formatDateTime, useToast, type ColumnDef } from '@/platform-ui'
+import { Badge, CrudPage, DateTimeCell, StatusCell, formatDateTime, type ColumnDef } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import { ConnectionFiles } from './ConnectionFiles'
 import { NextRun, SchedulerOffBanner } from './SchedulerState'
@@ -49,7 +49,6 @@ const errorMessages: Record<string, string> = {
 
 /** Configuration → Connections (design §3.1, §5.1, §5.3). */
 export default function ConnectionsPage() {
-  const toast = useToast()
   return (
     <CrudPage<ConnectionRead, ConnectionCreate, ConnectionUpdate>
       title="Connections"
@@ -65,10 +64,7 @@ export default function ConnectionsPage() {
       immutableOnEdit={['name']}
       emptyValues={connectionEmptyValues}
       toFormValues={connectionToFormValues}
-      onExport={(path) => {
-        downloadConnections(path).catch((e: unknown) =>
-          toast({ variant: 'error', title: 'Export failed', description: e instanceof Error ? e.message : String(e) }))
-      }}
+      onExport={(path) => downloadConnections(path)}
       csvImport
       errorMessages={errorMessages}
       notice={<div className="flex flex-col gap-3"><SchedulerOffBanner /><ShadowPanel /><EdiSettingsPanel /></div>}

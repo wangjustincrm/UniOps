@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ListPage, PermissionProvider, RecordSheet, ViewsProvider, type ListMeta, type RefreshState, type RecordTab, type ViewsClient } from './index'
+import { ListPage, PermissionProvider, RecordSheet, ViewsProvider, type ListMeta, type RefreshState, createNoticeStore, type RecordTab, type ViewsClient } from './index'
 import { requestOpen } from './resource/viewRequests'
 import { openTab } from './testing'
 
@@ -37,7 +37,7 @@ afterEach(() => { vi.useRealTimers() })
 
 
 const stub = (p: Partial<RefreshState> = {}): RefreshState => ({
-  refresh: vi.fn(async () => {}), busy: false, fetching: false, message: null, highlight: new Set(), updatedAt: 0, auto: 0, tick: 0, ...p,
+  refresh: vi.fn(async () => {}), busy: false, fetching: false, notices: createNoticeStore(), highlight: new Set(), updatedAt: 0, auto: 0, tick: 0, ...p,
 })
 
 describe('RecordSheet in a ListPage', () => {

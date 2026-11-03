@@ -17,6 +17,8 @@ export interface SheetProps {
   size?: SheetSize
   /** Replaces the default header (title + close); it must render a SheetTitle. */
   header?: ReactNode
+  /** A row pinned under the body, outside its scroll (a record sheet's status row). */
+  statusBar?: ReactNode
   /** The body's own classes (default: padded and scrolling). */
   bodyClassName?: string
   onKeyDown?: (e: KeyboardEvent<HTMLDivElement>) => void
@@ -37,7 +39,7 @@ export const SheetClose = ({ children, label = 'Close' }: { children?: ReactNode
 
 /** Side panel for forms and details; a Radix dialog anchored right, in a portal. */
 export function Sheet({
-  open, onOpenChange, title, description, children, footer, className, size = 'md', header, bodyClassName, onKeyDown,
+  open, onOpenChange, title, description, children, footer, className, size = 'md', header, bodyClassName, onKeyDown, statusBar,
 }: SheetProps) {
   return (
     <RD.Root open={open} onOpenChange={onOpenChange}>
@@ -62,6 +64,7 @@ export function Sheet({
           )}
           {(header || !description) && <RD.Description className="sr-only">{description ?? title}</RD.Description>}
           <div className={bodyClassName ?? 'flex-1 overflow-y-auto px-6 py-4'}>{children}</div>
+          {statusBar}
           {footer && <div className="flex justify-end gap-2 border-t border-neutral-100 px-6 py-4">{footer}</div>}
         </RD.Content>
       </RD.Portal>

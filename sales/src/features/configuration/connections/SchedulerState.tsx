@@ -1,4 +1,4 @@
-import { Badge, DateTimeCell, Tooltip } from '@/platform-ui'
+import { Badge, DateTimeCell, Tooltip, Callout } from '@/platform-ui'
 import type { ConnectionRead } from './connectionsApi'
 import { useSchedulerEnabled } from './schedulerEnabled'
 
@@ -9,10 +9,10 @@ const OFF_TIP = 'SALES_SCHEDULER_ENABLED is off in this environment: no connecti
 export function SchedulerOffBanner() {
   if (useSchedulerEnabled()) return null
   return (
-    <p role="status" className="rounded-lg border border-warning-200 bg-warning-50 px-3 py-2 text-sm text-warning-700">
+    <Callout label="Automatic runs off">
       Automatic runs are off in this environment (SALES_SCHEDULER_ENABLED). The next run times below never come:
       use Run now on a connection to read it.
-    </p>
+    </Callout>
   )
 }
 

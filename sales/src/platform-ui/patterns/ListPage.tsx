@@ -10,6 +10,9 @@ import type { Filter, Page, QuerySpec } from '../resource/querySpec'
 import { ActionButton } from './ActionButton'
 import { RefreshControl } from './RefreshControl'
 import { compareRows, useRefresh } from './useRefresh'
+import { NoticesContext, createNoticeStore, type NoticeStore } from './notices'
+import { TableStatusBar } from './TableStatusBar'
+import { errorText } from '../resource/businessError'
 import { storeAutoRefresh, storedAutoRefresh } from './autoRefresh'
 import { QueryTable } from './QueryTable'
 import { RecordSheetHostContext, type RecordSheetHost, type RecordSheetSize } from './recordSheetHost'
@@ -56,6 +59,11 @@ export interface ListPageProps<T extends { id: number }> {
   notice?: ReactNode
   /** Poll while something is running, e.g. rows => rows.some(running) ? 3000 : false. */
   refetchInterval?: (rows: T[]) => number | false
+  /** The table card's height: 'viewport' (default) fills what is left of the page's view, the status
+   *  row always on screen; a number caps it (a list inside another page). */
+  fit?: 'viewport' | number
+  /** The list's notice scope, when the page around it reports too (CrudPage's import / export); else its own. */
+  notices?: NoticeStore
   /** Extra parts that need the list (dialogs, a second sheet). */
   children?: (ctx: ListContext<T> & { open: T | null; setOpen: (row: T | null) => void }) => ReactNode
   /** The one way to make a record (the user's rule, 2026-11-02): the New button
@@ -109,8 +117,22 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
     // Back to the window: refetch only rows older than 30 s (or a failed load).
     refetchOnWindowFocus: (q) => q.state.status === 'error' || Date.now() - q.state.dataUpdatedAt > 30_000,
   })
-  // THE refresh: the button, the auto ticks, what changed, the highlight.
-  const refresh = useRefresh(list, { queryKey: listKey, compare: compareRows<T>((r) => r.id), auto, setAuto })
+  // THE list's notices (its status row) and THE refresh: the button, the auto ticks, what changed, the highlight.
+  const [ownNotices] = useState(createNoticeStore)
+  const notices = props.notices ?? ownNotices
+  const refresh = useRefresh(list, { queryKey: listKey, compare: compareRows<T>((r) => r.id), auto, setAuto, notices })
+  // A new page / sort / filter / view on its way, and a load that failed over rows already shown: in the status row.
+  const stale = list.isPlaceholderData && list.isFetching
+  useEffect(() => {
+    if (stale) notices.notify({ key: 'refresh', tone: 'info', text: 'Updating…', sticky: true })
+    else if (!refresh.busy) notices.clear('refresh')
+  }, [stale])  // eslint-disable-line react-hooks/exhaustive-deps
+  const loadError = list.error && list.data ? list.error : null
+  useEffect(() => {
+    // The same key as a refresh's: one failure shown, and the next load that works clears it.
+    if (loadError) notices.notify({ key: 'refresh', tone: 'error', text: `Could not load the list: ${errorText(loadError, props.errorMessages)}`,
+      action: { label: 'Try again', onClick: () => { void refresh.refresh() } } })
+  }, [loadError])  // eslint-disable-line react-hooks/exhaustive-deps
   const rows = list.data?.items ?? []
   // A record asked for from elsewhere (a Task Inbox link): fetched by its id
   // when the client can, then opened like a clicked row.
@@ -164,6 +186,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   )
 
   return (
+    <NoticesContext.Provider value={notices}>
     <div className="flex flex-col gap-4">
       {props.title && <PageHeader title={props.title} description={props.description} />}
       {props.notice}
@@ -183,9 +206,11 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
         stale={list.isPlaceholderData}
         busyNow={refresh.busy}
         highlight={refresh.highlight}
-        error={list.error}
+        error={list.data ? undefined : list.error}  // the first load: its error in place of the rows; later: in the status row
         errorMessages={props.errorMessages}
-        onRetry={() => list.refetch()}
+        onRetry={() => { void refresh.refresh() }}
+        fit={props.fit ?? 'viewport'}
+        statusBar={(pager) => <TableStatusBar store={notices} right={pager} />}
         rowKey={(r) => r.id}
         onRowClick={props.onRowClick ?? (renderDetail ? setOpen : undefined)}
         emptyTitle={props.emptyTitle}
@@ -203,5 +228,6 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
       )}
       {props.children?.({ ...ctx, open: current, setOpen })}
     </div>
+    </NoticesContext.Provider>
   )
 }

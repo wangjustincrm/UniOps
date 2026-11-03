@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   ActionButton, DateTimeCell, ErrorMessage, ListPage, LocalTable, PageHeader, RecordSheet, StatusCell, Tabs, formatDateTime, useToast,
-  type ColumnDef, type QuerySpec,
+  type ColumnDef, type QuerySpec, Callout,
 } from '@/platform-ui'
 import { logClient, runFor, runNow, runsClient, type LogRead, type PassReport, type RunRead } from './operationsApi'
 
@@ -70,7 +70,7 @@ function RunDetail({ run }: { run: RunRead }) {
         { id: 'report', label: 'Pass report', count: passes.length, tone: run.error ? 'danger' : undefined, render: () => (
           <>
             {run.summary?.text && <p className="text-sm">{run.summary.text}</p>}
-            {run.error && <p role="alert" className="text-sm text-danger-600">{run.error}</p>}
+            {run.error && <Callout tone="danger" label="Run error">{run.error}</Callout>}
             {passes.length === 0 ? <p className="text-sm text-neutral-500">{run.scope === 'system' ? 'The system job reads no connection.' : 'No connection was read.'}</p> : (
               <LocalTable<Pass> ariaLabel="Pass report" columns={passColumns} rows={passes} rowKey={(p) => p.name} />
             )}

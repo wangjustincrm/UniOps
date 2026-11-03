@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Download } from 'lucide-react'
 import {
-  Badge, Button, DateCell, Dialog, ErrorMessage, ListPage, Textarea, type ColumnDef, type Filter,
-  IconButton,
+  Badge, Button, DateCell, Dialog, ListPage, Textarea, type ColumnDef, type Filter,
+  IconButton, Callout, useNotices,
 } from '@/platform-ui'
 import { PartnerCell } from '@/features/common/PartnerCell'
 import { exportLots, lotsClient, parseLots, type LotRead } from './lotsApi'
@@ -64,10 +64,21 @@ function RecallDialog({ open, onOpenChange, onApply }: { open: boolean; onOpenCh
  *  customer it went to — for tracing and recalls. A recall (one lot or a
  *  pasted list) lists every order and customer they reached, as CSV too.
  *  Nothing here is ever deleted (FR-OB-05). */
+/** Export CSV of what the list shows; the result in its status row. */
+function ExportLots({ spec }: { spec: Parameters<typeof exportLots>[0] }) {
+  const notices = useNotices()
+  return (
+    <IconButton label="Export CSV" icon={<Download className="h-4 w-4" />} className="h-8 w-8 rounded-lg border border-neutral-200 bg-white"
+      onClick={() => {
+        exportLots(spec).then(() => notices.notify({ key: 'csv', tone: 'success', text: 'CSV exported' }),
+          (e: unknown) => notices.notify({ key: 'csv', tone: 'error', text: `Export failed: ${e instanceof Error ? e.message : String(e)}` }))
+      }} />
+  )
+}
+
 export default function LotsPage() {
   const [recall, setRecall] = useState<string[] | null>(null)
   const [asking, setAsking] = useState(false)
-  const [error, setError] = useState<unknown>(null)
   const fixed: Filter[] | undefined = recall ? [{ field: 'lot', op: 'in', value: recall }] : undefined
   return (
     <>
@@ -80,21 +91,21 @@ export default function LotsPage() {
         fixed={fixed}
         emptyTitle={recall ? 'None of these lots has shipped' : 'No 945 rows yet'}
         notice={recall && (
-          <div role="status" aria-label="Recall" className="flex flex-wrap items-center gap-2 rounded-md border border-warning-200 bg-warning-50 p-2 text-sm text-warning-800">
-            <span className="font-medium">Recall: {recall.join(', ')}</span>
-            <span>—</span><RecallReach lots={recall} />
-            <Button size="sm" variant="secondary" className="ml-auto" onClick={() => setRecall(null)}>Clear recall</Button>
-          </div>
+          <Callout label="Recall">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">Recall: {recall.join(', ')}</span>
+              <span>—</span><RecallReach lots={recall} />
+              <Button size="sm" variant="secondary" className="ml-auto" onClick={() => setRecall(null)}>Clear recall</Button>
+            </span>
+          </Callout>
         )}
         toolbar={(ctx) => (
           <>
             <Button size="sm" variant="secondary" onClick={() => setAsking(true)}>Recall…</Button>
-            <IconButton label="Export CSV" icon={<Download className="h-4 w-4" />} className="h-8 w-8 rounded-lg border border-neutral-200 bg-white"
-              onClick={() => { exportLots(ctx.spec).catch(setError) }} />
+            <ExportLots spec={ctx.spec} />
           </>
         )}
       />
-      <ErrorMessage error={error} />
       <RecallDialog open={asking} onOpenChange={setAsking} onApply={setRecall} />
     </>
   )

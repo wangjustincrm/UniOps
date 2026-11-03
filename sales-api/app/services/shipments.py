@@ -246,7 +246,10 @@ class Shipments:
         # what a W12 shipped fills them up to each line's quantity — the line whose 940 LX is
         # the W12's LX first, then in line order — and only what is left over is over-shipped.
         # (In Radiant's real 945s an LX is a pallet, so its number rarely names a 940 line.)
-        shipped: dict[int, int] = {}
+        # A shadow-run 945 may be one part of a split shipment (Radiant / Zoho: "9451a", "9451b"):
+        # what the earlier parts of this order shipped (their rows linked to the lines) counts first,
+        # so the parts add up. Never for an applied 945 (one 945 per order: D18).
+        shipped: dict[int, int] = await self._shadow_shipped(s, order.id, doc.id) if doc.shadow else {}
         for r in sh.rows:
             ident = {str(v).strip().lstrip("0") for v in (r.item_code, r.upc) if v}
             cands = [ln for ln in lines if ident & ids_of(ln)]
@@ -417,7 +420,9 @@ class Shipments:
                 shipment_id=shipment.id, lx_index=r.lx_index, w12_index=r.w12_index, lx_number=r.lx_number, sscc=r.sscc,
                 item_code=r.item_code, upc=r.upc, lot=r.lot, expiry=r.expiry, qty_ordered_ea=r.qty_ordered,
                 qty_shipped_ea=r.qty_shipped, weight=r.weight, tracking=r.tracking,
-                order_line_id=rp.order_line_id if rp and applied else None,
+                # A shadow-run 945's rows are linked to the lines too (user 2026-11-03): its quantities show,
+                # marked as the shadow run's, without applying anything (applied stays false).
+                order_line_id=rp.order_line_id if rp else None,
                 needs_review=bool(applied and rp is not None and rp.order_line_id is None)))
         if p.order_id is not None and (await s.execute(select(DocumentLink.id).where(
                 DocumentLink.document_id == doc.id, DocumentLink.entity_type == "order",
@@ -425,6 +430,55 @@ class Shipments:
             s.add(DocumentLink(document_id=doc.id, entity_type="order", entity_id=p.order_id))
         await s.flush()
         return shipment
+
+    async def _shadow_shipped(self, s, order_id: int, doc_id: int) -> dict[int, int]:
+        """EA per order line that the order's other shadow-run 945s (earlier parts) shipped."""
+        rows = (await s.execute(select(ShipmentRow.order_line_id, func.sum(ShipmentRow.qty_shipped_ea))
+                                .join(Shipment, Shipment.id == ShipmentRow.shipment_id)
+                                .where(Shipment.order_id == order_id, Shipment.shadow.is_(True), Shipment.document_id != doc_id,
+                                       ShipmentRow.order_line_id.is_not(None))
+                                .group_by(ShipmentRow.order_line_id))).all()
+        return {lid: int(n) for lid, n in rows}
+
+    async def link_shadow_rows(self, uow, *, dry_run: bool) -> dict[str, int]:
+        """Once, for the shadow-run 945s stored before their rows were linked: each
+        shipment with an order and unlinked rows is planned again from its stored
+        945 (the same matching, earlier parts first) and its rows get their order
+        line. Nothing else is written: no status, no quantity, no task, no Shopify
+        write, no check. Idempotent: a shipment whose rows are linked is skipped.
+        With `dry_run` the links are made and rolled back, and the counts reported."""
+        s = uow.session
+        counts = {"shipments": 0, "skipped_linked": 0, "no_order": 0, "rows_linked": 0, "rows_unmatched": 0}
+        ships = list((await s.execute(select(Shipment).where(Shipment.shadow.is_(True))
+                                      .order_by(Shipment.document_id, Shipment.set_index))).scalars())
+        for shp in ships:
+            if shp.order_id is None:
+                counts["no_order"] += 1
+                continue
+            rows = list((await s.execute(select(ShipmentRow).where(ShipmentRow.shipment_id == shp.id))).scalars())
+            if all(r.order_line_id is not None for r in rows):
+                counts["skipped_linked"] += 1
+                continue
+            doc = await s.get(Document, shp.document_id)
+            content = (await s.execute(select(Document.content).where(Document.id == doc.id))).scalar_one()
+            sh = parse_945(content)[shp.set_index - 1]
+            p = await self.plan(s, doc, sh)
+            by_pos = {(r.lx_index, r.w12_index): r.order_line_id for r in p.rows}
+            counts["shipments"] += 1
+            for r in rows:
+                lid = by_pos.get((r.lx_index, r.w12_index))
+                if lid is None:
+                    counts["rows_unmatched"] += 1
+                elif r.order_line_id is None:
+                    r.order_line_id = lid
+                    counts["rows_linked"] += 1
+            await s.flush()  # the next part of the same order counts these
+        if dry_run:
+            await s.rollback()
+        else:
+            await oplog.write(s, "INFO", STEP, "shadow-run 945 rows linked to their order lines: " + ", ".join(
+                f"{k} {v}" for k, v in counts.items()), context=counts)
+        return counts
 
     # ── Shopify write-back (outbox) ──────────────────────────────────────────
     def fulfill_kind(self) -> OutboxKind:

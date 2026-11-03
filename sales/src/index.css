@@ -19,3 +19,15 @@
   0% { background-color: var(--color-primary-100, #d7eeee); }
   100% { background-color: transparent; }
 }
+
+/* platform-ui status row: a notice comes in; an info / success one fades out at the end of its ~4 s. */
+@keyframes platform-notice-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes platform-notice-life {
+  0% { opacity: 0; }
+  4% { opacity: 1; }
+  92% { opacity: 1; }
+  100% { opacity: 0; }
+}

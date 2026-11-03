@@ -5,11 +5,12 @@ from typing import Annotated, Any
 from fastapi import Depends
 
 from app.core.deps import get_uow
-from app.models.config import DcRouting, Item, ItemPartnerCode, Warehouse
+from app.models.config import Carrier, DcRouting, Item, ItemPartnerCode, Warehouse
 from app.platform.crud_router import crud_router
 from app.schemas.audit import AuditEntryRead
 from app.services import audit
 from app.services.items import READ, DcRoutingService, ItemService, PartnerCodeService
+from app.services.carriers import CarrierService
 from app.services.warehouses import WarehouseService
 
 UoW = Annotated[Any, Depends(get_uow)]
@@ -18,6 +19,12 @@ items = crud_router("/config/items", ItemService, uow=get_uow, tags=["items"])
 partner_codes = crud_router("/config/partner-codes", PartnerCodeService, uow=get_uow, tags=["partner-codes"])
 dc_routing = crud_router("/config/dc-routing", DcRoutingService, uow=get_uow, tags=["dc-routing"])
 warehouses = crud_router("/config/warehouses", WarehouseService, uow=get_uow, tags=["warehouses"])
+carriers = crud_router("/config/carriers", CarrierService, uow=get_uow, tags=["carriers"])
+
+
+@carriers.get("/{id}/audit", response_model=list[AuditEntryRead])
+async def carrier_audit(u: UoW, id: int):
+    return await audit.history(u, Carrier, id, permission=READ)
 
 
 @warehouses.get("/{id}/audit", response_model=list[AuditEntryRead])

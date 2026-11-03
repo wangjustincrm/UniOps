@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, Autocomplete, ConfirmAction, DateCell, DateTimeCell, DetailList, ErrorMessage, ListPage, LocalTable,
+  ActionButton, Autocomplete, ConfirmAction, DateCell, DateTimeCell, DetailList, ListPage, LocalTable,
   MasterDetailForm, RecordSheet, Section, StatusCell, numberColumn, queryKeys,
   type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab,
   compareRecord, useRefresh,
@@ -150,10 +150,9 @@ function Detail({ row }: { row: TransferRead }) {
         ] : undefined}
         actions={t && !editing ? (
           <>
-            {t.status === 'Draft' && <ActionButton size="sm" permission={MANAGE} onAction={() => ready.mutateAsync().catch(() => {})}>Ready to send</ActionButton>}
+            {t.status === 'Draft' && <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done="Ready to send: the 943 goes on the next pass" onAction={() => ready.mutateAsync()}>Ready to send</ActionButton>}
             {t.status === 'Draft' && <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setEditing(true)}>Edit draft</ActionButton>}
-            {t.status === 'Failed' && <ActionButton size="sm" permission={MANAGE} onAction={() => resend.mutateAsync().catch(() => {})}>Resend 943</ActionButton>}
-            <ErrorMessage error={ready.error ?? resend.error} messages={errorMessages} />
+            {t.status === 'Failed' && <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done="943 queued again" onAction={() => resend.mutateAsync()}>Resend 943</ActionButton>}
           </>
         ) : undefined}
         more={t && !editing && CANCELLABLE.includes(t.status)

@@ -15,7 +15,8 @@ const columns: ColumnDef<Row, unknown>[] = [{ accessorKey: 'code', header: 'Code
 const meta: ListMeta = { version: 1, searchable: true, default_sort: [], fields: [], views: [{ key: 'all', name: 'All', state: { version: 1 } }] }
 const views: ViewsClient = { list: async () => [], create: vi.fn(), update: vi.fn(), remove: vi.fn(), setDefault: vi.fn() }
 const bar = () => document.querySelector('main [data-busy-bar], [data-busy-bar]')
-const message = () => document.querySelector('[data-refresh-message]')
+// The status row's current notice (an empty node when there is none).
+const message = (root: ParentNode = document) => root.querySelector('[data-status-bar] [data-tone]') ?? document.createElement('div')
 
 function mount(list: (spec: { search?: string }) => Promise<{ items: Row[]; total: number }>, path = `/r${Math.random()}`) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -57,7 +58,7 @@ describe('a list refreshed', () => {
     expect(bar()).not.toBeNull()  // the fetch is long done; the bar stays to 600 ms
     await waitFor(() => expect(bar()).toBeNull(), { timeout: 1500 })
     expect(message()).toHaveTextContent('Up to date: no changes')
-    expect(message()).toHaveAttribute('aria-live', 'polite')
+    expect(message().closest('[aria-live]')).toHaveAttribute('aria-live', 'polite')
   })
 
   it('new, updated and gone rows: said, and the new and changed ones highlighted, cleared after 2 s', async () => {
@@ -82,7 +83,7 @@ describe('a list refreshed', () => {
     mount(list)
     await screen.findByText('A1')
     refresh()
-    await waitFor(() => expect(message()).toHaveTextContent('Refresh failed: try again'), { timeout: 1500 })
+    await waitFor(() => expect(message()).toHaveTextContent(/^Refresh failedTry again/), { timeout: 1500 })
   })
 
   it('a new search is a new query: no highlight, no message', async () => {

@@ -12,6 +12,8 @@ import { useDelayed } from '../primitives/useDelayed'
 import { cn } from '../lib/cn'
 import { ErrorView } from './ErrorMessage'
 import { RefreshControl } from './RefreshControl'
+import { TableStatusBar } from './TableStatusBar'
+import { NoticesContext, createNoticeStore } from './notices'
 import type { RefreshState } from './useRefresh'
 import { PermissionContext } from './permissions'
 import { RecordSheetHostContext, type RecordSheetSize } from './recordSheetHost'
@@ -133,6 +135,10 @@ export function RecordSheet(props: RecordSheetProps) {
   // auto tick look the same: the bar under the header and the spin at once (≥ 600 ms);
   // a background refetch shows the bar after 200 ms.
   const r = props.refresh ?? host?.refresh
+  // The sheet's own notices (its status row, pinned at its bottom): its refresh's, and what the
+  // actions inside it report (useNotices). A sheet refreshed by its list has a scope of its own.
+  const [ownNotices] = useState(createNoticeStore)
+  const notices = props.refresh?.notices ?? ownNotices
   const backgroundBar = useDelayed(!!r?.fetching && !props.loading)
   const showBar = !!r?.busy || backgroundBar
   const open = host ? host.open : !!props.open
@@ -221,8 +227,9 @@ export function RecordSheet(props: RecordSheetProps) {
 
   return (
     <Sheet open={open} onOpenChange={(o) => { if (!o) close() }} title={props.title || 'Record'} size={size}
-      header={header} onKeyDown={onKeyDown} bodyClassName="flex-1 overflow-y-auto px-4 pb-6 pt-4 sm:px-6">
-      {body}
+      header={header} onKeyDown={onKeyDown} bodyClassName="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4 sm:px-6"
+      statusBar={<TableStatusBar store={notices} className="shrink-0 px-4 sm:px-6" />}>
+      <NoticesContext.Provider value={notices}>{body}</NoticesContext.Provider>
     </Sheet>
   )
 }

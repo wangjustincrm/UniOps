@@ -1,6 +1,5 @@
-import { useState } from 'react'
 import {
-  ActionButton, DateTimeCell, DetailList, ErrorMessage, ListPage, RecordSheet, Section, StatusCell, formatDateTime, type ColumnDef,
+  ActionButton, DateTimeCell, DetailList, ListPage, RecordSheet, Section, StatusCell, formatDateTime, type ColumnDef,
 } from '@/platform-ui'
 import { documentsClient, downloadOriginal, type DocumentRead } from './operationsApi'
 
@@ -16,7 +15,6 @@ const columns: ColumnDef<DocumentRead, unknown>[] = [
 ]
 
 function Detail({ d }: { d: DocumentRead }) {
-  const [error, setError] = useState<unknown>(null)
   const st = status(d)
   return (
     <RecordSheet
@@ -32,8 +30,7 @@ function Detail({ d }: { d: DocumentRead }) {
       ]}
       actions={d.has_content ? (
         <>
-          <ActionButton size="sm" variant="secondary" onAction={() => downloadOriginal(d).catch(setError)}>Download original</ActionButton>
-          <ErrorMessage error={error} />
+          <ActionButton size="sm" variant="secondary" onAction={() => downloadOriginal(d)}>Download original</ActionButton>
         </>
       ) : undefined}
       tabs={[{ id: 'overview', label: 'Overview', tone: d.error ? 'warning' : undefined, render: () => (
