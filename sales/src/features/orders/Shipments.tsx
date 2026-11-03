@@ -4,6 +4,7 @@ import {
   ActionButton, AddressView, Badge, Button, DateCell, DateTimeCell, Tooltip, LocalTable, StatusCell, TrackingLink, queryKeys, requestOpen,
   type ColumnDef,
 } from '@/platform-ui'
+import { LineNo } from './LineNo'
 import { downloadPackingList, ordersClient, retryShopify, type ShipmentRead, type ShipmentRowRead } from './ordersApi'
 
 const errorMessages: Record<string, string> = {
@@ -26,9 +27,9 @@ function Match({ r, shadow }: { r: ShipmentRowRead; shadow: boolean }) {
   return <Badge variant="neutral">Not linked</Badge>
 }
 
-const rowColumns = (shadow: boolean): ColumnDef<ShipmentRowRead, unknown>[] => [
+const rowColumns = (shadow: boolean, numbers: Map<number, number>): ColumnDef<ShipmentRowRead, unknown>[] => [
   { id: 'line', header: 'Line', cell: ({ row: { original: r } }) => r.line_no != null
-    ? <span className="whitespace-nowrap">#{r.line_no} · {r.item_code ?? '?'}</span> : '—' },
+    ? <span className="whitespace-nowrap">#<LineNo lineNo={r.line_no} numbers={numbers} /> · {r.item_code ?? '?'}</span> : '—' },
   { accessorKey: 'item_code', header: 'Item code', cell: ({ row }) => row.original.item_code ?? '—' },
   { accessorKey: 'upc', header: 'UPC', cell: ({ row }) => <span className="tabular-nums">{row.original.upc ?? '—'}</span> },
   { accessorKey: 'description', header: 'Description', cell: ({ row }) => row.original.description ?? '—' },
@@ -44,9 +45,9 @@ const rowColumns = (shadow: boolean): ColumnDef<ShipmentRowRead, unknown>[] => [
 ]
 
 /** The 945's line items, one table per pallet (LX) with its subtotal. */
-function LineItems({ s }: { s: ShipmentRead }) {
+function LineItems({ s, numbers }: { s: ShipmentRead; numbers: Map<number, number> }) {
   const pallets = [...new Set(s.rows.map((r) => r.lx_index))]
-  const columns = rowColumns(s.shadow)
+  const columns = rowColumns(s.shadow, numbers)
   return (
     <div className="flex flex-col gap-2">
       {pallets.map((lx) => {
@@ -99,11 +100,16 @@ function Pair({ label, children }: { label: string; children: React.ReactNode })
 }
 
 /** The order's 945s, each as the warehouse sent it: where it went, by which
- *  carrier (in words, its tracking linked), its control numbers and file, the
+ *  carrier (in words, its tracking linked), its control numbers and file (a 997
+ *  sent back only when there is one: Sales sends none for 945s today), the
  *  checks that notified (FR-OB-25d), the Shopify write-back (FR-OB-11), and its
  *  line items pallet by pallet, each matched to its order line. A split
  *  shipment's parts ("9451a", "9451b") are cards Part a, Part b. */
-export function Shipments({ shipments, orderId }: { shipments: ShipmentRead[]; orderId: number }) {
+export function Shipments({ shipments, orderId, lineNumbers = new Map() }: {
+  shipments: ShipmentRead[]; orderId: number
+  /** The order's line numbers as shown (`lineNumbers` in ordersApi); none: the line_no as is. */
+  lineNumbers?: Map<number, number>
+}) {
   const navigate = useNavigate()
   if (shipments.length === 0) return null
   return (
@@ -148,7 +154,7 @@ export function Shipments({ shipments, orderId }: { shipments: ShipmentRead[]; o
                 <span className="break-all">{s.document_name ?? `Document #${s.document_id}`}</span>
               </Button>
             </Pair>
-            <Pair label="997 sent back">{s.ack_sent ?? <span className="text-neutral-500">None: Sales does not send 997s for 945s</span>}</Pair>
+            {s.ack_sent && <Pair label="997 sent back">{s.ack_sent}</Pair>}
             <Pair label="Shopify">
               <span className="inline-flex flex-wrap items-center gap-1">
                 <StatusCell value={s.shopify_status} />
@@ -162,7 +168,7 @@ export function Shipments({ shipments, orderId }: { shipments: ShipmentRead[]; o
               {s.checks.map((c, i) => <li key={i}>{c.check}: {c.message}</li>)}
             </ul>
           )}
-          {s.rows.length > 0 && <LineItems s={s} />}
+          {s.rows.length > 0 && <LineItems s={s} numbers={lineNumbers} />}
         </div>
       ))}
     </section>

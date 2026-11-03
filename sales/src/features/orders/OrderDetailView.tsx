@@ -9,7 +9,8 @@ import {
   type ColumnDef, type RecordFact, type RecordTab, type TimelineItem,
   compareRecord, useRefresh, useNotices,
 } from '@/platform-ui'
-import { fetchOrder, ordersClient, type LineRead, type OrderDetail, type OrderDocument, type OrderRead, type PackingRead } from './ordersApi'
+import { LineNo } from './LineNo'
+import { fetchOrder, lineNumbers, ordersClient, type LineRead, type OrderDetail, type OrderDocument, type OrderRead, type PackingRead } from './ordersApi'
 import { Shipments } from './Shipments'
 import { PaymentsAndRefunds } from './PaymentsAndRefunds'
 import { InvoicePricesForm, VsPo } from './InvoicePrices'
@@ -73,8 +74,8 @@ function Shadow({ value, warn }: { value: number; warn?: boolean }) {
 
 // One row per line, ordered → shipped (945) → delivered → invoiced; its ▸ opens
 // the 945 rows packed for it. The less-used columns start hidden (the eye shows them).
-const lineColumns = (currency: string): ColumnDef<LineRead, unknown>[] => [
-  { accessorKey: 'line_no', header: '#' },
+const lineColumns = (currency: string, numbers: Map<number, number>): ColumnDef<LineRead, unknown>[] => [
+  { accessorKey: 'line_no', header: '#', cell: ({ row }) => <LineNo lineNo={row.original.line_no} numbers={numbers} /> },
   { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => row.original.item_code ?? <span className="text-danger-600">unmatched</span> },
   { id: 'ordered', header: 'Ordered', cell: ({ row }) => `${Number(row.original.ordered_qty)} ${row.original.order_unit ?? '?'}` },
   { accessorKey: 'order_unit', header: 'Unit', cell: ({ row }) => row.original.order_unit ?? '?' },
@@ -138,7 +139,7 @@ function LifecycleTable({ o }: { o: OrderDetail }) {
   const money = (n: number) => formatMoney(n.toFixed(2), o.currency)
   const hasNotes = o.lines.some((ln) => ln.problem && !ln.removed)
   return (
-    <LocalTable<LineRead> ariaLabel="Order lines" columns={lineColumns(o.currency)} rows={o.lines} rowKey={(ln) => ln.id}
+    <LocalTable<LineRead> ariaLabel="Order lines" columns={lineColumns(o.currency, lineNumbers(o))} rows={o.lines} rowKey={(ln) => ln.id}
       rowAttrs={(ln) => (ln.removed ? { className: 'text-neutral-400', 'data-removed': true } : {})}
       initiallyHidden={hasNotes ? HIDDEN_LINE_COLUMNS : [...HIDDEN_LINE_COLUMNS, 'problem']}
       expand={(ln) => (ln.packing?.length ? <Packing rows={ln.packing} /> : null)}
@@ -360,7 +361,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
       empty: d.shipments.length === 0 && 'No 945 yet: the warehouse has not reported a shipment.',
       render: () => (
         <>
-          <Shipments shipments={d.shipments} orderId={d.id} />
+          <Shipments shipments={d.shipments} orderId={d.id} lineNumbers={lineNumbers(d)} />
           <Lots o={d} />
         </>
       ) },

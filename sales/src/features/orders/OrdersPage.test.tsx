@@ -579,7 +579,7 @@ describe('Orders: backordered quantities and the invoice price before the invoic
     fireEvent.click(await screen.findByText('SHOP-9303'))
     const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
     fireEvent.click(await within(sheet).findByRole('button', { name: 'Edit invoice prices' }))
-    const price = await within(sheet).findByRole('textbox', { name: 'Invoice price line 2' })
+    const price = await within(sheet).findByRole('textbox', { name: 'Invoice price line 1' })  // a Shopify line by its position (line_no 2 is its only line)
     expect(price).toHaveValue('150')
     fireEvent.change(price, { target: { value: '145' } })
     expect(within(sheet).getByText(/vs PO/)).toBeInTheDocument()

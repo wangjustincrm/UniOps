@@ -1,8 +1,8 @@
 """sales19_carriers — carriers and their tracking links (user 2026-11-03).
 
 `sales_carriers`: the SCAC a 945 names (W27-02), the carrier's name and its
-tracking link template with `{tracking}`. Seeded with Purolator (PRLA, the
-carrier on Radiant's real 945s).
+tracking link template with `{tracking}`. The table only: no seed data
+(FR-OB-09) — carriers are added on Configuration → Carriers.
 
 Revision id "sales19_carriers" is 15 characters (limit 32).
 """
@@ -32,10 +32,6 @@ def upgrade() -> None:
         sa.Column('active', sa.Boolean(), server_default=sa.text('true'), nullable=False),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('scac', name='sales_carriers_scac_key'),
-    )
-    op.execute(
-        "INSERT INTO sales_carriers (scac, name, tracking_url, created_by_name, version, active) VALUES "
-        "('PRLA', 'Purolator', 'https://www.purolator.com/en/shipping/tracker?pin={tracking}', 'migration sales19', 1, true)"
     )
 
 

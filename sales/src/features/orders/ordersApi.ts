@@ -272,3 +272,12 @@ export interface InvoicePricesBody { reason: string | null; lines: { id: number;
 export const setInvoicePrices = (id: number, body: InvoicePricesBody) => api.put<OrderDetail>(`/orders/${id}/invoice-prices`, body)
 export const retryShopify = (shipmentId: number) =>
   api.post<{ shipment_id: number; shopify_status: string }>(`/orders/shipments/${shipmentId}/shopify-retry`)
+
+/** The line number a person sees, by the line's line_no: an 850's PO line
+ *  number as is; a Shopify order's position (1, 2, 3 in line_no order), since
+ *  its line_no is Shopify's line-item id (kept in a tooltip, see LineNo). */
+export function lineNumbers(o: Pick<OrderDetail, 'source_type' | 'lines'>): Map<number, number> {
+  const nos = o.lines.map((ln) => ln.line_no)
+  if (o.source_type !== 'SHOPIFY') return new Map(nos.map((n) => [n, n]))
+  return new Map([...nos].sort((a, b) => a - b).map((n, i) => [n, i + 1]))
+}

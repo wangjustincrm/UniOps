@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { PermissionProvider, ToastProvider } from '@/platform-ui'
-import type { ShipmentRead } from './ordersApi'
+import type { OrderDetail, ShipmentRead } from './ordersApi'
 
 const api = vi.hoisted(() => ({ retry: vi.fn() }))
 vi.mock('./ordersApi', async (orig) => {
@@ -56,8 +56,9 @@ describe('Order shipments (945)', () => {
       document_name: 'CRM-945_X.edi', ship_to: { name: 'Store 12', city: 'Toronto', province: 'ON', zip: 'M5V 1A1' },
       tracking_links: [{ number: '1Z-TRACK', url: 'https://t.example/?pin=1Z-TRACK' }] }])
     const group = screen.getByRole('group', { name: 'Shipment 7' })
-    for (const text of ['Store 12', 'Toronto ON M5V 1A1', 'Purolator', '(PRLA)', 'Parcel', 'BOL-1', '000000781 / 781 / 0001', 'CRM-945_X.edi',
-      'None: Sales does not send 997s for 945s']) expect(group).toHaveTextContent(text)
+    for (const text of ['Store 12', 'Toronto ON M5V 1A1', 'Purolator', '(PRLA)', 'Parcel', 'BOL-1', '000000781 / 781 / 0001', 'CRM-945_X.edi'])
+      expect(group).toHaveTextContent(text)
+    expect(group).not.toHaveTextContent('997')  // never one for a 945: no field at all
     expect(within(group).getByRole('button', { name: 'CRM-945_X.edi' })).toBeInTheDocument()  // opens it on Documents
   })
 
@@ -76,5 +77,28 @@ describe('Order shipments (945)', () => {
     expect(p1.querySelector('tfoot')).toHaveTextContent(/Pallet subtotal\s*17/)
     expect(p2.querySelector('tfoot')).toHaveTextContent(/Pallet subtotal\s*3/)
     expect(screen.getByRole('region', { name: 'Pallet 2' })).toHaveTextContent('SSCC 00077777770077782907 · 3 EA')
+  })
+
+  it("a Shopify order's line by its position (the line-item id in a tooltip); an 850's by its PO line number", () => {
+    const rows: ShipmentRead['rows'] = [{ ...base.rows[0], line_no: 51697745592626, order_line_id: 5, needs_review: false }]
+    const qc = new QueryClient()
+    const { unmount } = render(<MemoryRouter><QueryClientProvider client={qc}><ToastProvider><PermissionProvider can={() => true}>
+      <Shipments shipments={[{ ...base, checks: null, rows }]} orderId={3} lineNumbers={new Map([[51697745559858, 1], [51697745592626, 2]])} />
+    </PermissionProvider></ToastProvider></QueryClientProvider></MemoryRouter>)
+    const cell = screen.getByText('LOT-A').closest('tr')!
+    expect(cell).toHaveTextContent('#2 · CF0092')
+    expect(cell.querySelector('[data-line-id="51697745592626"]')).not.toBeNull()
+    unmount()
+    renderAs(['sales.read'], [{ ...base, checks: null, rows: [{ ...rows[0], line_no: 11 }] }])
+    expect(screen.getByText('LOT-A').closest('tr')).toHaveTextContent('#11 · CF0092')
+  })
+})
+
+describe('lineNumbers', () => {
+  it('Shopify: positions in line_no order; an 850: the PO line number as is', async () => {
+    const { lineNumbers } = await import('./ordersApi')
+    const lines = [{ line_no: 51697745953074 }, { line_no: 51697745559858 }, { line_no: 51697745592626 }] as OrderDetail['lines']
+    expect([...lineNumbers({ source_type: 'SHOPIFY', lines })]).toEqual([[51697745559858, 1], [51697745592626, 2], [51697745953074, 3]])
+    expect([...lineNumbers({ source_type: 'EDI_850', lines: [{ line_no: 11 }, { line_no: 3 }] as OrderDetail['lines'] })]).toEqual([[11, 11], [3, 3]])
   })
 })

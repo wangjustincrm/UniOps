@@ -3,7 +3,7 @@ import {
   MasterDetailForm, formatMoney, readColumn, textColumn,
   type EditableColumn, type FieldSpec,
 } from '@/platform-ui'
-import { setInvoicePrices, type OrderDetail } from './ordersApi'
+import { lineNumbers, setInvoicePrices, type OrderDetail } from './ordersApi'
 
 const errorMessages: Record<string, string> = {
   'invoice.reason_required': 'An invoice price differs from the PO: give the reason.',
@@ -47,11 +47,12 @@ const fields: FieldSpec[] = [
  *  PO price. After the draft exists, prices are changed on the invoice. */
 export function InvoicePricesForm({ o, onSaved, onCancel }: { o: OrderDetail; onSaved: (d: OrderDetail) => void; onCancel: () => void }) {
   const open = o.lines.filter((ln) => !ln.removed)
+  const numbers = lineNumbers(o)  // a Shopify line by its position, as on Lines
   return (
     <MasterDetailForm<PriceLine>
       schema={schema} fields={fields} defaultValues={{ reason: '' }}
       lines={{ label: 'Invoice prices', columns: columns(o.currency), rowKey: (l) => l.id, problem, minRows: 0,
-        initial: open.map((ln) => ({ id: ln.id, line_no: ln.line_no, item: ln.item_code ?? 'unmatched',
+        initial: open.map((ln) => ({ id: ln.id, line_no: numbers.get(ln.line_no) ?? ln.line_no, item: ln.item_code ?? 'unmatched',
           ordered: `${Number(ln.ordered_qty)} ${ln.order_unit ?? '?'}`, po_price: ln.unit_price,
           price: ln.invoice_price == null ? '' : String(Number(ln.invoice_price)) })) }}
       // A price that differs from the PO needs its reason (the server refuses it without one).
