@@ -744,6 +744,7 @@ services:
       VITE_EPMS_API_URL: http://${LAN_HOST:-localhost}:${EPMS_API_PORT:-8000}
       VITE_BUDGET_API_URL: http://${LAN_HOST:-localhost}:${BUDGET_API_PORT:-8007}
       VITE_FINANCE_API_URL: http://${LAN_HOST:-localhost}:${FINANCE_API_PORT:-8004}
+      VITE_MDM_API_URL: http://${LAN_HOST:-localhost}:${MDM_API_PORT:-8002}
     command: sh -c "npm install --install-links && npm run dev -- --host 0.0.0.0 --port 5175"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:5175"]
