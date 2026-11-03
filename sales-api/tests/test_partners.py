@@ -53,8 +53,8 @@ BASE = "/api/v1/config/partners"
 
 def partner(code="WMT", **over):
     body = {
-        "code": code, "name": "Walmart Canada", "channel": "TRUECOMMERCE",
-        "settlement_mode": "INVOICE", "sending_mode": "AUTOMATIC", "delay_minutes": 0,
+        "code": code, "name": "Walmart Canada", "abbrev": "".join(ch for ch in code if ch.isalnum())[:10] or "X",
+        "channel": "TRUECOMMERCE", "settlement_mode": "INVOICE", "sending_mode": "AUTOMATIC", "delay_minutes": 0,
         "invoice_method": "810_JSON", "dc_routing_required": True,
     }
     return {**body, **over}
@@ -244,7 +244,7 @@ async def test_csv_round_trip(http, db_engine):
     assert rep["ok"] and rep["counts"] == {"create": 0, "update": 0, "unchanged": 2}
 
     rows[1]["name"] = "Walmart"
-    rows.append({**rows[1], "code": "COSTCO", "name": "Costco", "version": "", "active": "false"})
+    rows.append({**rows[1], "code": "COSTCO", "name": "Costco", "abbrev": "COS", "version": "", "active": "false"})
     data = _csv(rows)
     rep = await _import(http, data, dry_run=True)
     assert rep["ok"] and not rep["written"] and rep["counts"] == {"create": 1, "update": 1, "unchanged": 1}

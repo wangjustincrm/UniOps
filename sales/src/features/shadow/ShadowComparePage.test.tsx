@@ -8,7 +8,7 @@ import type { ShadowCompare, ShadowMatchRead } from './shadowApi'
 // side with the differing segments marked, and "expected difference".
 
 const differs: ShadowMatchRead = {
-  id: 3, kind: '940', status: 'Differs', reference_document_id: 40, order_id: 23, reference_number: '9471', partner_code: 'Shopify',
+  id: 3, kind: '940', status: 'Differs', reference_document_id: 40, order_id: 23, reference_number: '9471', partner_code: 'Shopify', partner_name: 'Shopify',
   differences: 1, expected_reason: null, note: null, compared_at: '2026-11-02T14:00:00Z', version: 2, updated_by_name: null,
 }
 const match: ShadowMatchRead = { ...differs, id: 4, status: 'Match', reference_number: '9473', differences: 0 }

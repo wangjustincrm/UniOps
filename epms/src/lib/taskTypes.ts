@@ -117,6 +117,7 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   sales_partial_receipt: 'Sales: Transfer partially received',
   sales_second_944: 'Sales: A second, different 944',
   sales_944_no_transfer: 'Sales: 944 with no transfer',
+  sales_partner_no_abbrev: 'Sales: Partner without an abbreviation',
   sales_test: 'Sales: Test notification',
 }
 

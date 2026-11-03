@@ -7,10 +7,12 @@ import { NextSends } from './NextSends'
 import { Recheck } from './Recheck'
 import { Send940 } from './Send940'
 import { ordersClient, type OrderRead } from './ordersApi'
+import { PartnerCell } from '@/features/common/PartnerCell'
+import { orderRef } from '@/features/common/labels'
 
 const orderColumns: ColumnDef<OrderRead, unknown>[] = [
-  { accessorKey: 'order_number', header: 'Order' },
-  { accessorKey: 'partner_code', header: 'Partner' },
+  { accessorKey: 'source_reference', header: 'Order ref', cell: ({ row }) => <span className="font-medium">{orderRef(row.original)}</span> },
+  { accessorKey: 'partner_name', header: 'Partner', cell: ({ row }) => <PartnerCell name={row.original.partner_name} code={row.original.partner_code} /> },
   { accessorKey: 'source_order_number', header: 'Customer PO / ref.' },
   { accessorKey: 'order_date', header: 'Ordered', cell: ({ row }) => <DateCell value={row.original.order_date} /> },
   { accessorKey: 'fulfillment_status', header: 'Status', cell: ({ row }) => <StateBadge o={row.original} /> },
@@ -41,7 +43,7 @@ export function OrderList({ fixed, title, description, emptyTitle, detailExtra, 
       create={create}
       rowActions={(o) => (o.fulfillment_status === 'Review' ? <Recheck o={o} compact />
         : isDraft(o) ? <SubmitDraft o={o} /> : null)}
-      detailTitle={(o) => `Order ${o.order_number}`}
+      detailTitle={(o) => `Order ${orderRef(o)}`}
       detailClassName="max-w-3xl"
       renderDetail={(o, close) => (
         <div className="flex flex-col gap-4">

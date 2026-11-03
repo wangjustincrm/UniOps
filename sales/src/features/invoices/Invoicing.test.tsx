@@ -7,7 +7,7 @@ import type { InvoiceDetail, InvoiceRead } from './invoicesApi'
 
 const order: OrderRead = {
   id: 7, order_number: 107, partner_code: 'LBL', source_type: 'EDI_850', source_order_id: 'PO-1', source_order_number: 'PO-1',
-  source_reference: null, order_date: '2026-10-28', requested_delivery_date: '2026-11-05', ship_to: null, currency: 'CAD', total: '500.00',
+  source_reference: 'LBL-PO-1', partner_name: 'Loblaws', order_date: '2026-10-28', requested_delivery_date: '2026-11-05', ship_to: null, currency: 'CAD', total: '500.00',
   fulfillment_status: 'Shipped', invoice_status: 'Waiting for Delivery Confirmation', order_state: 'Active', hold_reason: null,
   review_reason: null, historical: false, first_received_at: '2026-10-28T12:00:00Z', paid_at: null, archived_in_shopify_at: null,
   archive_suppressed: false, shopify_financial_status: null, source_updated_at: null, version: 1, created_at: '2026-10-28T12:00:00Z', updated_at: null,
@@ -18,10 +18,11 @@ const detail: OrderDetail = { ...order, bill_to: null, dc_number: null, notes: n
 const inv: InvoiceRead = {
   id: 3, invoice_number: 'IN-107', order_id: 7, method: '810_JSON', invoice_date: '2026-11-05', currency: 'CAD', payment_terms: 'Net 30',
   subtotal: '450.00', total: '450.00', document_id: null, sent_at: null, send_count: 0, error: null, version: 1, created_at: '2026-11-05T12:00:00Z',
-  updated_by_name: null, order_number: 107, partner_code: 'LBL', po: 'PO-1', status: 'Blocked',
+  updated_by_name: null, order_number: 107, partner_code: 'LBL', po: 'PO-1', status: 'Blocked', order_ref: 'LBL-PO-1', partner_name: 'Loblaws', delivery_number: null,
 }
 const invDetail: InvoiceDetail = { ...inv, confirmed_date: '2026-11-05', lines: [
-  { id: 30, line_no: 1, item_code: 'CF0092', buyer_part: 'L-555', description: null, uom: 'CA', qty: 9, unit_price: '50.00000', amount: '450.00' }] }
+  { id: 30, line_no: 1, item_code: 'CF0092', buyer_part: 'L-555', description: null, uom: 'CA', qty: 9, unit_price: '50.00000', amount: '450.00',
+    po_price: '50.00000' }] }
 const meta: ListMeta = { version: 1, searchable: true, default_sort: [], fields: [], views: [{ key: 'all', name: 'All', state: { version: 1 } }] }
 
 const api = vi.hoisted(() => ({ list: vi.fn(), fetchOrder: vi.fn(), bulk: vi.fn(), confirm: vi.fn(), invList: vi.fn(),
@@ -115,9 +116,17 @@ describe('Invoices', () => {
     fireEvent.click(await screen.findByText('IN-107'))
     const dialog = await screen.findByRole('dialog')
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Edit invoice' }))
+    // the PO price stays beside the invoice price; a different price is marked and needs a reason
     fireEvent.change(await within(dialog).findByLabelText('Unit price line 1'), { target: { value: '48.5' } })
+    const lines = within(dialog).getByRole('table', { name: 'Invoice lines' })
+    expect(within(lines).getByText(/vs PO/)).toHaveTextContent('-1.50 CAD vs PO')
+    expect(within(dialog).getByRole('button', { name: 'Save changes' })).toBeDisabled()
+    expect(within(dialog).getByText('An invoice price changed: give the reason for the price change.')).toBeInTheDocument()
+    fireEvent.change(within(dialog).getByLabelText(/^Delivery number/), { target: { value: 'POD-4471' } })
+    fireEvent.change(within(dialog).getByLabelText(/^Reason for a price change/), { target: { value: 'agreed promo' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save changes' }))
-    await waitFor(() => expect(api.edit).toHaveBeenCalledWith(3, 1, { invoice_date: '2026-11-05', lines: [{ id: 30, qty: 9, unit_price: '48.5' }] }))
+    await waitFor(() => expect(api.edit).toHaveBeenCalledWith(3, 1, { invoice_date: '2026-11-05', delivery_number: 'POD-4471',
+      reason: 'agreed promo', lines: [{ id: 30, qty: 9, unit_price: '48.5' }] }))
     fireEvent.click(await within(dialog).findByRole('button', { name: 'Send' }))
     await waitFor(() => expect(api.send).toHaveBeenCalledWith(3))
   })

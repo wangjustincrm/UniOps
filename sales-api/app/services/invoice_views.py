@@ -3,12 +3,16 @@ every change, sales.read to look), the list and detail. The work is in
 app/services/invoicing.py."""
 from __future__ import annotations
 
+from decimal import Decimal
+
 from sqlalchemy import select
 
+from app.models.config import ItemUnit
 from app.models.invoices import DeliveryConfirmation, Invoice, InvoiceLine
-from app.models.orders import Order
+from app.models.orders import Order, OrderLine
 from app.platform.authorization import requires
 from app.platform.errors import BusinessError
+from app.platform.query import FilterRule
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
@@ -20,16 +24,36 @@ MANAGE = "sales.invoice.manage"
 
 class InvoiceRepository(Repository[Invoice]):
     model = Invoice
-    search_fields = ("invoice_number",)
-    list_fields = ("id", "invoice_number", "order_id", "method", "invoice_date", "currency", "total", "sent_at",
-                   "send_count", "error", "created_at")
-    labels = {"invoice_number": "Invoice", "invoice_date": "Invoice date", "send_count": "Times sent"}
+    search_fields = ("invoice_number", "order_ref_sql", "partner_name_sql", "delivery_number")
+    list_fields = ("id", "invoice_number", "order_id", "delivery_number", "method",
+                   "invoice_date", "currency", "total", "sent_at", "send_count", "error", "created_at")
+    sortable = {"order_ref": Invoice.order_ref_sql, "partner_name": Invoice.partner_name_sql}
+    filterable = {"order_ref": FilterRule(Invoice.order_ref_sql, kind="text"),
+                  "partner_name": FilterRule(Invoice.partner_name_sql, kind="text")}
+    labels = {"invoice_number": "Invoice", "order_ref": "Order ref", "partner_name": "Partner",
+              "delivery_number": "Delivery no.", "invoice_date": "Invoice date", "send_count": "Times sent"}
     enums = {"method": ("810_JSON", "EMAIL", "NONE")}
     default_sort = ("-invoice_date", "-id")
-    groupable = ("method", "currency")
+    groupable = ("partner_name", "method", "currency")
     presets = (Preset("all", "All"),
                Preset("not_sent", "Not sent", {"filters": [{"field": "sent_at", "op": "null", "value": None}]}),
                Preset("failed", "Failed", {"filters": [{"field": "error", "op": "not_null", "value": None}]}))
+
+
+async def po_prices(s, order_line_ids: list[int]) -> dict[int, Decimal]:
+    """The PO price per invoice unit (CASE) of each order line — the price the
+    invoice was built with (A.9): 850 price × CASE factor ÷ the order unit's factor."""
+    if not order_line_ids:
+        return {}
+    lines = list((await s.execute(select(OrderLine).where(OrderLine.id.in_(order_line_ids)))).scalars())
+    cases = {u.item_code: u.factor_ea for u in (await s.execute(select(ItemUnit).where(
+        ItemUnit.item_code.in_([ln.item_code for ln in lines if ln.item_code]), ItemUnit.unit == "CASE"))).scalars()}
+    out = {}
+    for ln in lines:
+        case, factor = cases.get(ln.item_code), ln.factor_ea
+        if ln.unit_price is not None and case and factor:
+            out[ln.id] = (Decimal(ln.unit_price) * Decimal(case) / Decimal(factor)).quantize(Decimal("0.00001"))
+    return out
 
 
 class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
@@ -59,8 +83,10 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
         lines = (await s.execute(select(InvoiceLine).where(InvoiceLine.invoice_id == id).order_by(InvoiceLine.line_no))).scalars()
         confirmed = (await s.execute(select(DeliveryConfirmation.confirmed_date).where(
             DeliveryConfirmation.order_id == inv.order_id))).scalar_one_or_none()
-        return InvoiceDetail(**base.model_dump(), lines=[InvoiceLineRead.model_validate(x) for x in lines],
-                             confirmed_date=confirmed)
+        lines = list(lines)
+        po = await po_prices(s, [x.order_line_id for x in lines if x.order_line_id])
+        return InvoiceDetail(**base.model_dump(), confirmed_date=confirmed, lines=[
+            InvoiceLineRead.model_validate(x).model_copy(update={"po_price": po.get(x.order_line_id)}) for x in lines])
 
     @requires(MANAGE)
     async def confirm(self, invoicing, body) -> InvoiceDetail:
@@ -85,8 +111,9 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
 
     @requires(MANAGE)
     async def edit(self, invoicing, id: int, body, version: int | None) -> InvoiceDetail:
-        await invoicing.edit(self.uow, id, version=version, invoice_date=body.invoice_date,
-                             lines=[x.model_dump(exclude_none=True) for x in body.lines])
+        extra = {"delivery_number": body.delivery_number} if "delivery_number" in body.model_fields_set else {}
+        await invoicing.edit(self.uow, id, version=version, invoice_date=body.invoice_date, reason=body.reason,
+                             lines=[x.model_dump(exclude_none=True) for x in body.lines], **extra)
         return await self._detail_after(id)
 
     @requires(MANAGE)

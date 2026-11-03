@@ -13,14 +13,14 @@ import type { OrderDetail, OrderRead } from './ordersApi'
 
 const order: OrderRead = {
   id: 4, order_number: 104, partner_code: 'SHOP', source_type: 'SHOPIFY', source_order_id: '1', source_order_number: '9302',
-  source_reference: 'SHOP-9302', order_date: '2026-10-29', requested_delivery_date: null, ship_to: { name: 'A B', city: 'Montréal' },
+  source_reference: 'SHOP-9302', partner_name: 'Shopify', order_date: '2026-10-29', requested_delivery_date: null, ship_to: { name: 'A B', city: 'Montréal' },
   currency: 'CAD', total: '100.00', fulfillment_status: 'Review', invoice_status: 'Not Required', order_state: 'On Hold',
   hold_reason: null, review_reason: 'line 5: item not in the Item Master (sku=NOPE; 1 CASE)', historical: false,
   first_received_at: '2026-10-29T12:00:00Z', paid_at: '2026-10-29T12:00:00Z', archived_in_shopify_at: null,
   archive_suppressed: false, shopify_financial_status: 'paid', source_updated_at: null, version: 1,
   created_at: '2026-10-29T12:00:00Z', updated_at: null,
 }
-const pending: OrderRead = { ...order, id: 5, order_number: 105, source_order_number: '9303', fulfillment_status: 'Pending',
+const pending: OrderRead = { ...order, id: 5, order_number: 105, source_order_number: '9303', source_reference: 'SHOP-9303', fulfillment_status: 'Pending',
   order_state: 'Active', review_reason: null }
 const detail: OrderDetail = { ...order, bill_to: null, dc_number: null, notes: null, shipments: [], documents: [{ id: 9, kind: 'SHOPIFY_ORDER_JSON', direction: 'IN', remote_name: 'orders page 1', created_at: order.created_at,
     file_status: null, ack_status: null, st02: null, sent_at: null, error: null, ack_detail: null }],
@@ -178,7 +178,7 @@ describe('Orders: views', () => {
 })
 
 describe('Orders: 940s (P4)', () => {
-  const sentOrder: OrderRead = { ...pending, id: 6, order_number: 106, source_order_number: '9304', fulfillment_status: '940 Sent' }
+  const sentOrder: OrderRead = { ...pending, id: 6, order_number: 106, source_order_number: '9304', source_reference: 'SHOP-9304', fulfillment_status: '940 Sent' }
   const out = (id: number, file_status: string, ack_status: string, st02: string) => ({ id, kind: '940_EDI', direction: 'OUT' as const,
     remote_name: `940-SHOP-${st02}.edi`, created_at: order.created_at, file_status, ack_status, st02, sent_at: '2026-10-30T14:00:00Z',
     error: null, ack_detail: null })
@@ -209,7 +209,7 @@ describe('Orders: 940s (P4)', () => {
     api.send.mockResolvedValue({ order: sentOrder, document_id: 31, file_status: 'Ready To Send', control: '000000124', errors: [] })
     renderAs(['sales.read', 'sales.order.operate'])
     fireEvent.click(await screen.findByText('9304'))
-    const dialog = await screen.findByRole('dialog', { name: 'Order 106' })
+    const dialog = await screen.findByRole('dialog', { name: 'Order SHOP-9304' })
     const table = await within(dialog).findByRole('region', { name: 'Warehouse 940s' })
     const row = within(table).getByText('000000122').closest('tr')!
     expect(within(row).getByText('Sent')).toBeInTheDocument()
@@ -234,17 +234,17 @@ describe('Orders: 940s (P4)', () => {
   })
 
   it('Next 940s lists what the next cycle would send, writing nothing', async () => {
-    api.eligible.mockResolvedValue([{ order_id: 5, order_number: 105, partner_code: 'SHOP', source_order_number: '9303' }])
+    api.eligible.mockResolvedValue([{ order_id: 5, order_number: 105, source_reference: 'SHOP-9303', partner_code: 'SHOP', source_order_number: '9303' }])
     renderAs(['sales.read'])
     fireEvent.click(await screen.findByRole('button', { name: 'Next 940s' }))
     const dialog = await screen.findByRole('dialog', { name: 'Next 940s' })
-    expect(await within(dialog).findByText('Order 105 · SHOP 9303')).toBeInTheDocument()
+    expect(await within(dialog).findByText('Order SHOP-9303 · SHOP')).toBeInTheDocument()
     expect(api.send).not.toHaveBeenCalled()
   })
 })
 
 describe('Orders: manual orders (FR-OB-19a) — New in the standard sheet, drafts as a view', () => {
-  const manualDraft: OrderRead = { ...order, id: 9, order_number: 109, partner_code: 'MAN', source_type: 'MANUAL', source_order_number: 'REF-9',
+  const manualDraft: OrderRead = { ...order, id: 9, order_number: 109, partner_code: 'MAN', partner_name: 'Manual orders', source_reference: 'MAN-109', source_type: 'MANUAL', source_order_number: 'REF-9',
     fulfillment_status: 'Draft', order_state: 'Draft', review_reason: null, version: 3,
     ship_to: { country: 'CA', name: 'Store 12', phone: '613-555-0100', address1: '1 Main St', city: 'Ottawa', province: 'ON', zip: 'K1A 0B1' } }
   const shipTo = { country: 'CA', name: 'Jane Doe', phone: '416-555-0100', address1: '10 King St W', city: 'Toronto', province: 'ON', zip: 'M5H 1A1' }
@@ -289,7 +289,7 @@ describe('Orders: manual orders (FR-OB-19a) — New in the standard sheet, draft
     api.preview.mockResolvedValueOnce([{ item_code: 'CF0092', quantity: '1', unit: 'CASE', qty_ea: 6, problem: null }])
     fireEvent.click(within(form).getByRole('button', { name: 'Preview EA' }))
     expect(await within(form).findByText('6')).toBeInTheDocument()
-    api.create.mockResolvedValue({ ...manualDraft, id: 10, order_number: 110 })
+    api.create.mockResolvedValue({ ...manualDraft, id: 10, order_number: 110, source_reference: 'MAN-110' })
     fireEvent.click(within(form).getByRole('button', { name: 'Save draft' }))
     // Ship to is required: nothing is saved without it
     const st = within(form).getByRole('group', { name: 'Ship to' })
@@ -299,7 +299,7 @@ describe('Orders: manual orders (FR-OB-19a) — New in the standard sheet, draft
     fireEvent.click(within(form).getByRole('button', { name: 'Save draft' }))
     await waitFor(() => expect(api.create).toHaveBeenCalledWith({ partner_code: 'MAN', customer_reference: null,
       requested_delivery_date: null, notes: null, ship_to: { ...shipTo, zip: 'm5h1a1' }, lines: [{ item_code: 'CF0092', quantity: 1, unit: 'CASE' }] }))
-    expect(await screen.findByRole('dialog', { name: 'Order 110' })).toBeInTheDocument()  // the new draft opens
+    expect(await screen.findByRole('dialog', { name: 'Order MAN-110' })).toBeInTheDocument()  // the new draft opens
   })
 
   it('a draft is submitted from its row, and edited with the same form in its sheet', async () => {
@@ -311,7 +311,7 @@ describe('Orders: manual orders (FR-OB-19a) — New in the standard sheet, draft
     await waitFor(() => expect(api.submit).toHaveBeenCalledWith(9, 3))
     expect(screen.queryByRole('dialog')).toBeNull()  // the row action does not open the order
     fireEvent.click(within(row).getByText('REF-9'))
-    const sheet = await screen.findByRole('dialog', { name: 'Order 109' })
+    const sheet = await screen.findByRole('dialog', { name: 'Order MAN-109' })
     fireEvent.click(await within(sheet).findByRole('button', { name: 'Edit draft' }))
     expect(await within(sheet).findByLabelText('Quantity 1')).toHaveValue(2)  // the draft's own line
     expect(within(within(sheet).getByRole('group', { name: 'Ship to' })).getByLabelText(/^City/)).toHaveValue('Ottawa')  // and address
@@ -366,7 +366,7 @@ describe('the order detail: Ship to and Bill to with where they came from', () =
     api.fetchOrder.mockResolvedValue({ ...detail, ...pending, ...d })
     renderAs(['sales.read'])
     fireEvent.click(await screen.findByText('9303'))
-    return screen.findByRole('dialog', { name: 'Order 105' })
+    return screen.findByRole('dialog', { name: 'Order SHOP-9303' })
   }
   const value = (sheet: HTMLElement, term: string) => within(sheet).getByText(term, { selector: 'dt' }).nextElementSibling!
 
@@ -403,7 +403,32 @@ describe('an imported order shipping to a PO box', () => {
       ship_to_flags: ['PO box: the carrier may not deliver there'] })
     renderAs(['sales.read'])
     fireEvent.click(await screen.findByText('9303'))
-    const sheet = await screen.findByRole('dialog', { name: 'Order 105' })
+    const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
     expect(await within(sheet).findByText('PO box: the carrier may not deliver there')).toBeInTheDocument()
   })
 })
+
+describe('Orders: the Order ref, the partner by name, and the PO prices', () => {
+  beforeEach(() => { Object.values(api).forEach((f) => f.mockReset()); api.list.mockResolvedValue({ items: [pending], total: 1 }) })
+
+  it('the list leads with the Order ref and names the partner; the detail has the internal number and priced lines', async () => {
+    api.fetchOrder.mockResolvedValue({ ...detail, ...pending, currency: 'CAD', lines: [
+      { ...detail.lines[0], id: 1, line_no: 1, item_code: 'CF0092', ordered_qty: '200', order_unit: 'CASE', unit_price: '179.94', problem: null },
+      { ...detail.lines[0], id: 2, line_no: 2, item_code: 'CF0093', ordered_qty: '40', order_unit: 'CASE', unit_price: '150.00', problem: null }] })
+    renderAs(['sales.read'])
+    const row = (await screen.findByText('SHOP-9303')).closest('tr')!
+    expect(row).toHaveTextContent('Shopify (SHOP)')
+    fireEvent.click(within(row).getByText('SHOP-9303'))
+    const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
+    const value = (term: string) => within(sheet).getByText(term, { selector: 'dt' }).nextElementSibling!
+    await within(sheet).findByRole('table', { name: 'Order lines' })
+    expect(value('Order ref')).toHaveTextContent('SHOP-9303')
+    expect(value('Internal no.')).toHaveTextContent('105')
+    const lines = within(sheet).getByRole('table', { name: 'Order lines' })
+    expect(lines).toHaveTextContent('179.94')
+    expect(lines).toHaveTextContent('35,988.00')   // 200 × 179.94
+    expect(lines).toHaveTextContent('Lines total')
+    expect(lines).toHaveTextContent('41,988.00')   // + 40 × 150
+  })
+})
+

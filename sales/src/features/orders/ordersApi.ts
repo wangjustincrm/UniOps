@@ -13,7 +13,10 @@ export interface OrderRead {
   source_type: (typeof SOURCE_TYPES)[number]
   source_order_id: string
   source_order_number: string | null
+  /** The Order ref (A.3): partner abbreviation + "-" + source number — the visible identifier. */
   source_reference: string | null
+  /** The partner's name (lists show "Loblaws (AC-9898)"). */
+  partner_name: string | null
   order_date: string | null
   requested_delivery_date: string | null
   ship_to: Record<string, string | null> | null
@@ -138,7 +141,9 @@ export const cancelManual = (id: number, version: number) => api.post<OrderRead>
 
 export interface Send940Result { order: OrderRead; document_id: number; file_status: string; control: string; errors: string[] }
 export const send940 = (id: number, replace = false) => api.post<Send940Result>(`/orders/${id}/send-940${replace ? '?replace=true' : ''}`)
-export interface EligibleOrder { order_id: number; order_number: number; partner_code: string; source_order_number: string | null }
+export interface EligibleOrder {
+  order_id: number; order_number: number; source_reference: string | null; partner_code: string; source_order_number: string | null
+}
 export const fetchEligibility = () => api.get<EligibleOrder[]>('/orders/eligibility-preview')
 export const retryShopify = (shipmentId: number) =>
   api.post<{ shipment_id: number; shopify_status: string }>(`/orders/shipments/${shipmentId}/shopify-retry`)

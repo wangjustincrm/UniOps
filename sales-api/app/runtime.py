@@ -84,7 +84,7 @@ def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify:
                           uow_factory)
     scheduler = SalesScheduler(uow_factory=uow_factory, run_model=Run, intake=intake, outbox_worker=worker,
                                shopify_intake=shopify_intake, edi_intake=edi_intake, outbound=outbound, shadow=shadow,
-                               shipments=shipments, invoicing=invoicing, transfers=transfers)
+                               shipments=shipments, invoicing=invoicing, transfers=transfers, tasks=tasks)
     return Runtime(container, uow_factory, intake, shopify_intake, edi_intake, scheduler, Background(), outbound, shipments,
                    invoicing, transfers, tasks)
 

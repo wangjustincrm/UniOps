@@ -22,6 +22,7 @@ class OrderRead(BaseModel):
     id: int
     order_number: int
     partner_code: str
+    partner_name: str | None = None  # the partner's name (lists show "Loblaws (AC-9898)")
     source_type: str
     source_order_id: str
     source_order_number: str | None

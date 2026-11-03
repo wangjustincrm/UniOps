@@ -50,8 +50,16 @@ AFTER_940 = {F.GENERATED_940, F.SENT_940, F.ACCEPTED_940, F.REJECTED_940, F.TIME
 _HEADER_COLUMNS = (
     "order_type", "department", "order_date", "requested_delivery_date", "do_not_deliver_after", "cancel_date",
     "ship_to", "bill_to", "contact", "notes", "currency", "subtotal", "tax", "shipping", "discount", "total",
-    "shopify_financial_status", "shopify_fulfillment_status", "source_reference", "shipping_method",
+    "shopify_financial_status", "shopify_fulfillment_status", "shipping_method",
 )
+
+
+def order_ref(partner: Partner | None, number: str | None) -> str | None:
+    """The Order ref (A.3, user 2026-11-03): the partner's abbreviation, "-", the source
+    order number. None without an abbreviation (the order goes to review). Set at
+    creation only — a later abbreviation change leaves existing refs as they are."""
+    abbrev = (partner.abbrev or "").strip() if partner is not None else ""
+    return f"{abbrev}-{number}" if abbrev and number else None
 
 
 def now() -> datetime:
@@ -197,6 +205,9 @@ def review_reasons(src: SourceOrder, partner: Partner | None, plans: list[LinePl
         reasons.append("the order has no lines (none found in the source file)")
     if partner is None:
         reasons.append(f"unknown partner {src.partner_code}")
+    elif not (partner.abbrev or "").strip():
+        reasons.append(f"partner {partner.code} has no abbreviation: the order has no Order ref (set it under "
+                       "Configuration → Partners)")
     elif partner.dc_routing_required and src.source_type == "EDI_850":  # FR-OB-03: Walmart
         gln = str((src.header.get("ship_to") or {}).get("gln") or "").strip()
         if (partner.code.casefold(), gln) not in catalog.dc_glns:
@@ -260,6 +271,7 @@ class OrderSync:
         order = Order(
             partner_code=src.partner_code, connection_id=connection_id, source_type=src.source_type,
             source_order_id=src.source_order_id, source_order_number=src.source_order_number,
+            source_reference=order_ref(partner, src.source_order_number),
             **{k: h.get(k) for k in _HEADER_COLUMNS if k in h},
             fulfillment_status=status.value,
             invoice_status=(Inv.NOT_REQUIRED if partner is not None and partner.invoice_method == "NONE"
@@ -367,8 +379,8 @@ class OrderSync:
             self._to(order, F.ARCHIVE_SUPPRESSED, "archived in Shopify before any 940 (FR-OB-03d)")
             if paid and not order.historical:
                 await self.tasks.raise_problem(self.s, ORDER_ARCHIVED, order.id, problem(
-                    ORDER_ARCHIVED, f"Archived in Shopify before shipping: order {order.source_order_number}",
-                    f"Order {order.order_number} (Shopify {order.source_order_number}), paid "
+                    ORDER_ARCHIVED, f"Archived in Shopify before shipping: order {order.ref}",
+                    f"Order {order.ref}, paid "
                     f"{order.total} {order.currency}, was archived in Shopify at {archived_at.isoformat()} "
                     "before any 940. Confirm the archive was intended, or un-archive it in Shopify."))
         elif not archived_at and status == F.ARCHIVE_SUPPRESSED:
@@ -398,15 +410,15 @@ class OrderSync:
                 f"{shipped} EA already shipped (" + ", ".join(f"{ln.item_code} {ln.shipped_ea}" for ln in lines if ln.shipped_ea)
                 + "): decide on a return or a credit.")
         await self.tasks.raise_problem(self.s, CANCELLED_AFTER_940, order.id, problem(
-            CANCELLED_AFTER_940, f"Cancelled after the 940: order {order.order_number}",
-            f"Order {order.order_number} ({order.partner_code} {order.source_order_number}) was cancelled at source "
+            CANCELLED_AFTER_940, f"Cancelled after the 940: order {order.ref}",
+            f"Order {order.ref} was cancelled at source "
             f"after its 940. {what} The order is On Hold.", urgent=True))
         return True
 
     async def _raise_review(self, order: Order, reasons: list[str]) -> None:
         await self.tasks.raise_problem(self.s, ORDER_REVIEW, order.id, problem(
-            ORDER_REVIEW, f"Order {order.source_order_number or order.order_number} needs review",
-            f"Order {order.order_number} ({order.partner_code} {order.source_order_number}):\n" + "\n".join(reasons)))
+            ORDER_REVIEW, f"Order {order.ref} needs review",
+            f"Order {order.ref}:\n" + "\n".join(reasons)))
 
     async def _resolve(self, event: str, order: Order) -> None:
         await self.tasks.resolve_problem(self.s, event, order.id, by=self.uow.actor.user_id)

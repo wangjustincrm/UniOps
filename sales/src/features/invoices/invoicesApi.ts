@@ -23,6 +23,11 @@ export interface InvoiceRead {
   partner_code: string | null
   po: string | null
   status: string | null
+  /** The order's ref (A.3) and the partner's name. */
+  order_ref: string | null
+  partner_name: string | null
+  /** The retailer's proof-of-delivery / receiving number (record and PDF; the 810 has no field for it). */
+  delivery_number: string | null
 }
 export interface InvoiceLineRead {
   id: number
@@ -34,6 +39,8 @@ export interface InvoiceLineRead {
   qty: number
   unit_price: string
   amount: string
+  /** The PO's price for one invoice unit (CASE), from the order line now; read only. */
+  po_price: string | null
 }
 export interface InvoiceDetail extends InvoiceRead { lines: InvoiceLineRead[]; confirmed_date: string | null }
 export interface ConfirmResult { order_id: number; ok: boolean; invoice_id: number | null; status: string | null; error: string | null }
@@ -44,7 +51,14 @@ export const confirmDelivery = (body: { order_id: number; confirmed_date: string
   api.post<InvoiceDetail>('/invoices/confirm', body)
 export const confirmBulk = (order_ids: number[], confirmed_date: string) =>
   api.post<ConfirmResult[]>('/invoices/confirm-bulk', { order_ids, confirmed_date })
-export const editInvoice = (id: number, version: number, body: { invoice_date?: string | null; lines: { id: number; qty?: number; unit_price?: string }[] }) =>
+export interface InvoiceEditBody {
+  invoice_date?: string | null
+  delivery_number?: string | null
+  /** Needed when a unit price changes; kept in the audit. */
+  reason?: string | null
+  lines: { id: number; qty?: number; unit_price?: string }[]
+}
+export const editInvoice = (id: number, version: number, body: InvoiceEditBody) =>
   api.put<InvoiceDetail>(`/invoices/${id}?version=${version}`, body)
 export const sendInvoice = (id: number) => api.post<InvoiceDetail>(`/invoices/${id}/send`)
 export const releaseInvoice = (order_id: number, reason: string) => api.post<{ order_id: number; invoice_status: string }>('/invoices/release', { order_id, reason })

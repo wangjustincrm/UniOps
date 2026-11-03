@@ -38,6 +38,8 @@ def one_of(column: str, values: tuple[str, ...], name: str) -> CheckConstraint:
 class Partner(Audited, Versioned, Deactivatable, Base):
     __tablename__ = "sales_partners"
     __table_args__ = (
+        Index("uq_sales_partners_abbrev", text("upper(abbrev)"), unique=True,
+              postgresql_where=text("abbrev IS NOT NULL AND abbrev <> ''")),
         one_of("channel", CHANNELS, "ck_sales_partners_channel"),
         one_of("settlement_mode", SETTLEMENT_MODES, "ck_sales_partners_settlement_mode"),
         one_of("sending_mode", SENDING_MODES, "ck_sales_partners_sending_mode"),

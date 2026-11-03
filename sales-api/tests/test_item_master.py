@@ -41,7 +41,7 @@ async def http(db_engine):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         for code in ("WMT", "LBL"):
             r = await c.post("/api/v1/config/partners", headers=OP, json={
-                "code": code, "name": code, "channel": "TRUECOMMERCE", "settlement_mode": "INVOICE",
+                "code": code, "name": code, "abbrev": code, "channel": "TRUECOMMERCE", "settlement_mode": "INVOICE",
                 "sending_mode": "AUTOMATIC", "delay_minutes": 0, "invoice_method": "810_JSON",
                 "dc_routing_required": code == "WMT"})
             assert r.status_code == 201, r.text

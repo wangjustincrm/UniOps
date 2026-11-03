@@ -68,7 +68,7 @@ async def test_secret_name_and_excel_numbers_get_a_clear_message(api):  # noqa: 
     assert field_errors(r) == {"username": EXCEL_MESSAGE}
     for code in ("1.22E+11", "6.28e10"):
         r = await api.post("/api/v1/config/partners", headers=OP, json={
-            "code": code, "name": "X", "channel": "MANUAL", "settlement_mode": "INVOICE", "sending_mode": "MANUAL",
+            "code": code, "name": "X", "abbrev": "X", "channel": "MANUAL", "settlement_mode": "INVOICE", "sending_mode": "MANUAL",
             "delay_minutes": 0, "invoice_method": "NONE", "dc_routing_required": False})
         assert field_errors(r) == {"code": EXCEL_MESSAGE}
     assert (await api.post(C, json=conn_body(username="122000000000"), headers=OP)).status_code == 201

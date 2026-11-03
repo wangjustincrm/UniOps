@@ -349,7 +349,7 @@ class Shipments:
             await self.tasks.raise_problem(s, EDI_945_VALIDATION, shipment.id, problem(
                 EDI_945_VALIDATION, f"945 checks: {len(p.checks)} on shipment {shipment.id} ({doc.remote_name})"[:255],
                 f"945 file {doc.remote_name}, shipment {shipment.id}"
-                + (f", order {order.order_number} ({order.partner_code} {order.source_order_number})" if order else "")
+                + (f", order {order.ref}" if order else "")
                 + ". Applied as received; these checks only notify (FR-OB-25d):\n"
                 + "\n".join(f"- {c['check']}: {c['message']}" for c in p.checks)))
         if order is None:
@@ -367,8 +367,8 @@ class Shipments:
                 FULFILLMENT.transition(order, F.ON_HOLD, actor=uow.actor, events=uow.events,
                                        reason="a second, different 945 (FR-OB-25)")
             await self.tasks.raise_problem(s, SECOND_945, order.id, problem(
-                SECOND_945, f"Second 945 for order {order.order_number}",
-                f"Order {order.order_number} ({order.partner_code} {order.source_order_number}) already shipped by "
+                SECOND_945, f"Second 945 for order {order.ref}",
+                f"Order {order.ref} already shipped by "
                 f"{', '.join(p.second_of)}; {doc.remote_name} differs and was stored without changing any quantity. "
                 "The order is On Hold: compare both 945s and decide.", urgent=True))
             return shipment
@@ -383,13 +383,13 @@ class Shipments:
                                    reason=f"945 {doc.remote_name}" + (" (short)" if p.short else ""))
         if p.short:
             await self.tasks.raise_problem(s, SHORT_SHIPMENT, order.id, problem(
-                SHORT_SHIPMENT, f"Short shipment: order {order.order_number}",
-                f"Order {order.order_number} ({order.partner_code} {order.source_order_number}): " + "; ".join(p.short)
+                SHORT_SHIPMENT, f"Short shipment: order {order.ref}",
+                f"Order {order.ref}: " + "; ".join(p.short)
                 + f". 945 {doc.remote_name} closed the fulfilment; no second 940 is sent. Decide whether to send the rest."))
         if p.unmatched:
             await self.tasks.raise_problem(s, EDI_945_LINE_UNMATCHED, shipment.id, problem(
-                EDI_945_LINE_UNMATCHED, f"945 line matches no order line: order {order.order_number}",
-                f"945 {doc.remote_name} for order {order.order_number}: " + "; ".join(p.unmatched)
+                EDI_945_LINE_UNMATCHED, f"945 line matches no order line: order {order.ref}",
+                f"945 {doc.remote_name} for order {order.ref}: " + "; ".join(p.unmatched)
                 + ". It was stored but cannot be invoiced until someone decides."))
         if order.source_type == "SHOPIFY":
             shipment.shopify_status = "Pending"
@@ -457,7 +457,7 @@ class Shipments:
             order = await s.get(Order, sh.order_id)
             conn = await s.get(Connection, order.connection_id) if order.connection_id else None
             if conn is None or conn.kind != "SHOPIFY":
-                raise BusinessError("shopify.no_connection", f"order {order.order_number} has no Shopify connection")
+                raise BusinessError("shopify.no_connection", f"order {order.ref} has no Shopify connection")
             lines = list((await s.execute(select(OrderLine).where(OrderLine.order_id == order.id))).scalars())
             return sh, order, ConnectionSnapshot.of(conn), lines
 
@@ -541,8 +541,8 @@ class Shipments:
                 if isinstance(exc, ShopifyForbidden) else " Check the order in Shopify, then Retry.")
         sh.shopify_status, sh.shopify_error = "Failed", f"{what}: {why}"[:2000]
         await self.tasks.raise_problem(s, SHOPIFY_WRITE_FAILED, sh.id, problem(
-            SHOPIFY_WRITE_FAILED, f"Shopify {what} failed: order {order.order_number}"[:255],
-            f"Order {order.order_number} (Shopify {order.source_order_number}): {what} failed: {why}.{hint} "
+            SHOPIFY_WRITE_FAILED, f"Shopify {what} failed: order {order.ref}"[:255],
+            f"Order {order.ref}: {what} failed: {why}.{hint} "
             "It is not retried automatically."))
 
     async def _suppressed(self, row, exc, uow) -> None:

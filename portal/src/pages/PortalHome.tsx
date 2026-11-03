@@ -276,6 +276,7 @@ const EPMS_TYPE_LABELS: Record<string, string> = {
   sales_partial_receipt: 'Transfer partially received',
   sales_second_944: 'A second, different 944',
   sales_944_no_transfer: '944 with no transfer',
+  sales_partner_no_abbrev: 'Partner without an abbreviation',
   sales_test: 'Test notification',
   create_pr: 'Create Purchase Request',
   create_po: 'Create Purchase Order',

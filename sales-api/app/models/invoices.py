@@ -10,12 +10,13 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import DateTime, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, select
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, column_property, mapped_column
 
 from app.db.base import Base
-from app.models.config import one_of
+from app.models.config import Partner, one_of
+from app.models.orders import Order
 from app.platform.entities import Audited, CreationAudited, Versioned
 
 RETURN_KINDS = ("Cancelled after shipment", "Returned")
@@ -43,12 +44,30 @@ class Invoice(Audited, Versioned, Base):
     invoice_date: Mapped[date] = mapped_column(Date, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     payment_terms: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # The retailer's proof-of-delivery / receiving number (sales15): record and PDF (A.9 has no 810 field).
+    delivery_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
     subtotal: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     total: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     document_id: Mapped[int | None] = mapped_column(ForeignKey("sales_documents.id"), nullable=True)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     send_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    @property
+    def order_ref(self) -> str | None:  # loaded with the row (order_ref_sql); never a lazy load
+        return self.__dict__.get("order_ref_sql")
+
+    @property
+    def partner_name(self) -> str | None:
+        return self.__dict__.get("partner_name_sql")
+
+
+# The order's ref and partner name on the invoice's row (the list searches and sorts by them).
+Invoice.order_ref_sql = column_property(
+    select(Order.source_reference).where(Order.id == Invoice.order_id).correlate_except(Order).scalar_subquery())
+Invoice.partner_name_sql = column_property(
+    select(Partner.name).join(Order, Order.partner_code == Partner.code).where(Order.id == Invoice.order_id)
+    .correlate_except(Order, Partner).scalar_subquery())
 
 
 class InvoiceLine(Base):

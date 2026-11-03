@@ -7,6 +7,7 @@ import {
   type ColumnDef, type EditableColumn, type FieldSpec,
 } from '@/platform-ui'
 import { editInvoice, fetchInvoice, invoicesClient, releaseInvoice, sendInvoice, type InvoiceDetail, type InvoiceRead } from './invoicesApi'
+import { PartnerCell } from '@/features/common/PartnerCell'
 
 const MANAGE = 'sales.invoice.manage'
 const errorMessages: Record<string, string> = {
@@ -16,11 +17,13 @@ const errorMessages: Record<string, string> = {
   'invoice.not_editable': 'The invoice cannot be edited in its current status.',
   'entity.stale': 'Someone else changed this invoice. Close it and open it again.',
   'auth.forbidden': 'You do not have permission to manage invoices.',
+  'invoice.reason_required': 'An invoice price changed: give the reason for the price change.',
 }
 
 const columns: ColumnDef<InvoiceRead, unknown>[] = [
   { accessorKey: 'invoice_number', header: 'Invoice' },
-  { accessorKey: 'partner_code', header: 'Partner' },
+  { accessorKey: 'order_ref', header: 'Order ref', cell: ({ row }) => row.original.order_ref ?? row.original.order_number ?? '' },
+  { accessorKey: 'partner_name', header: 'Partner', cell: ({ row }) => <PartnerCell name={row.original.partner_name} code={row.original.partner_code} /> },
   { accessorKey: 'po', header: 'PO' },
   { accessorKey: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={row.original.status} /> },
   { accessorKey: 'method', header: 'Method' },
@@ -29,13 +32,26 @@ const columns: ColumnDef<InvoiceRead, unknown>[] = [
   { accessorKey: 'send_count', header: 'Sent', cell: ({ row }) => row.original.sent_at ? `${row.original.send_count}× · ${formatDateTime(row.original.sent_at)}` : '—' },
 ]
 
-type EditLine = { id: number; line_no: number; item: string; amount: string; qty: string; unit_price: string }
+type EditLine = { id: number; line_no: number; item: string; amount: string; qty: string; unit_price: string; was: string; po_price: string | null }
+
+// Prices compare as numbers ("48.50000" is 48.5).
+const differs = (a: string | null | undefined, b: string | null | undefined) =>
+  a != null && b != null && a.trim() !== '' && Number(a) !== Number(b)
+
+/** The PO's price beside the invoice's, marked when they differ. */
+function PriceVsPo({ price, po, currency }: { price: string; po: string | null; currency: string }) {
+  if (!differs(price, po)) return null
+  const d = Number(price) - Number(po)
+  return <span className="ml-1 text-xs font-medium text-warning-700">{d > 0 ? '+' : ''}{formatMoney(d.toFixed(2), currency)} vs PO</span>
+}
 
 const editColumns = (currency: string): EditableColumn<EditLine>[] => [
   readColumn<EditLine>('line_no', '#', (l) => l.line_no),
   readColumn<EditLine>('item', 'Item', (l) => l.item),
   numberColumn<EditLine>('qty', 'Qty (CA)', { label: (l) => `Quantity line ${l.line_no}`, get: (l) => l.qty, set: (v) => ({ qty: v }), min: 0, className: 'w-20' }),
-  textColumn<EditLine>('unit_price', 'Unit price', { label: (l) => `Unit price line ${l.line_no}`, get: (l) => l.unit_price, set: (v) => ({ unit_price: v }) }),
+  readColumn<EditLine>('po_price', 'PO price', (l) => (l.po_price == null ? '—' : formatMoney(l.po_price, currency))),
+  textColumn<EditLine>('unit_price', 'Invoice price', { label: (l) => `Unit price line ${l.line_no}`, get: (l) => l.unit_price, set: (v) => ({ unit_price: v }) }),
+  readColumn<EditLine>('vs', '', (l) => <PriceVsPo price={l.unit_price} po={l.po_price} currency={currency} />),
   readColumn<EditLine>('amount', 'Amount', (l) => formatMoney(l.amount, currency)),
 ]
 
@@ -45,14 +61,28 @@ function lineProblem(l: EditLine): string | null {
   return null
 }
 
-const editSchema = z.object({ invoice_date: z.string().min(1, 'Required') })
-const editFields: FieldSpec[] = [{ name: 'invoice_date', label: 'Invoice date', type: 'date', required: true }]
+const editSchema = z.object({
+  invoice_date: z.string().min(1, 'Required'),
+  delivery_number: z.string().trim().max(50, 'At most 50 characters').nullable().optional(),
+  reason: z.string().trim().max(500).nullable().optional(),
+})
+const editFields: FieldSpec[] = [
+  { name: 'invoice_date', label: 'Delivery date (the invoice date)', type: 'date', required: true },
+  { name: 'delivery_number', label: 'Delivery number', hint: "The retailer's proof-of-delivery or receiving number. On the invoice PDF (the 810 has no field for it)." },
+  { name: 'reason', label: 'Reason for a price change', type: 'textarea', hint: 'Needed when an invoice price changes; kept in the history.' },
+]
 
 const lineColumns = (currency: string): ColumnDef<InvoiceDetail['lines'][number], unknown>[] => [
   { accessorKey: 'line_no', header: '#' },
   { id: 'item', header: 'Item', cell: ({ row: { original: l } }) => `${l.item_code ?? ''}${l.buyer_part ? ` (${l.buyer_part})` : ''}` },
   { accessorKey: 'qty', header: 'Qty (CA)' },
-  { accessorKey: 'unit_price', header: 'Unit price', cell: ({ row }) => <MoneyCell amount={row.original.unit_price} currency={currency} /> },
+  { accessorKey: 'po_price', header: 'PO price', cell: ({ row }) => (row.original.po_price == null ? '—'
+    : <MoneyCell amount={row.original.po_price} currency={currency} />) },
+  { accessorKey: 'unit_price', header: 'Invoice price', cell: ({ row: { original: l } }) => (
+    <span className={differs(l.unit_price, l.po_price) ? 'rounded bg-warning-50 px-1' : ''}>
+      <MoneyCell amount={l.unit_price} currency={currency} /><PriceVsPo price={l.unit_price} po={l.po_price} currency={currency} />
+    </span>
+  ) },
   { accessorKey: 'amount', header: 'Amount', cell: ({ row }) => <MoneyCell amount={row.original.amount} currency={currency} /> },
 ]
 
@@ -60,13 +90,20 @@ const lineColumns = (currency: string): ColumnDef<InvoiceDetail['lines'][number]
 function InvoiceForm({ inv, onSaved, onCancel }: { inv: InvoiceDetail; onSaved: (d: InvoiceDetail) => void; onCancel: () => void }) {
   return (
     <MasterDetailForm<EditLine>
-      schema={editSchema} fields={editFields} defaultValues={{ invoice_date: inv.invoice_date }}
+      schema={editSchema} fields={editFields}
+      defaultValues={{ invoice_date: inv.invoice_date, delivery_number: inv.delivery_number ?? '', reason: '' }}
       lines={{ label: 'Invoice lines', columns: editColumns(inv.currency), rowKey: (l) => l.id, problem: lineProblem, minRows: 0,
         initial: inv.lines.map((l) => ({ id: l.id, line_no: l.line_no, item: `${l.item_code ?? ''}${l.buyer_part ? ` (${l.buyer_part})` : ''}`,
-          amount: l.amount, qty: String(l.qty), unit_price: String(Number(l.unit_price)) })) }}
+          amount: l.amount, qty: String(l.qty), unit_price: String(Number(l.unit_price)), was: String(Number(l.unit_price)),
+          po_price: l.po_price })) }}
+      // A changed price needs its reason (the server refuses it without one).
+      blocked={({ values, lines }) => (lines.some((l) => differs(l.unit_price, l.was)) && !String(values.reason ?? '').trim()
+        ? 'An invoice price changed: give the reason for the price change.' : null)}
       submitLabel="Save changes" errorMessages={errorMessages} onCancel={onCancel}
       onSubmit={async (v, lines) => onSaved(await editInvoice(inv.id, inv.version, {
-        invoice_date: String(v.invoice_date), lines: lines.map((l) => ({ id: l.id, qty: Number(l.qty), unit_price: l.unit_price })) }))}
+        invoice_date: String(v.invoice_date), delivery_number: (v.delivery_number as string | null) ?? null,
+        reason: (v.reason as string | null) ?? null,
+        lines: lines.map((l) => ({ id: l.id, qty: Number(l.qty), unit_price: l.unit_price })) }))}
     />
   )
 }
@@ -92,14 +129,17 @@ function Detail({ id }: { id: number }) {
   return (
     <div className="flex flex-col gap-4 text-sm">
       <DetailList items={[
-        ['Status', <StatusCell key="s" value={inv.status} />], ['Order', `${inv.order_number} · ${inv.partner_code} PO ${inv.po ?? ''}`],
-        ['Method', inv.method], ['Delivery confirmed', inv.confirmed_date ? formatDate(inv.confirmed_date) : null],
+        ['Status', <StatusCell key="s" value={inv.status} />],
+        ['Order', `${inv.order_ref ?? inv.order_number}${inv.po ? ` · PO ${inv.po}` : ''}`],
+        ['Partner', <PartnerCell key="p" name={inv.partner_name} code={inv.partner_code} />],
+        ['Delivery number', inv.delivery_number],
+        ['Method', inv.method], ['Delivery confirmed (the invoice date)', inv.confirmed_date ? formatDate(inv.confirmed_date) : null],
         ['Invoice date', formatDate(inv.invoice_date)], ['Terms', inv.payment_terms], ['Total', formatMoney(inv.total, inv.currency)],
         ['Sent', inv.sent_at ? `${inv.send_count}× · last ${formatDateTime(inv.sent_at)}` : null], ['Problem', inv.error],
       ]} />
       {inv.status === 'Blocked' && <p className="text-warning-700">On hold: see the task for why. Release it once decided.</p>}
       <LocalTable ariaLabel="Invoice lines" columns={lineColumns(inv.currency)} rows={inv.lines} rowKey={(l) => l.id}
-        footer={[null, null, null, 'Total', formatMoney(inv.total, inv.currency)]} />
+        footer={[null, null, null, null, 'Total', formatMoney(inv.total, inv.currency)]} />
       <div className="flex flex-wrap gap-2">
         {sendable && (
           <ActionButton size="sm" permission={MANAGE} onAction={() => send.mutateAsync().catch(() => {})}>

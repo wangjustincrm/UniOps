@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { PartnerCell } from '@/features/common/PartnerCell'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ActionButton, ConfirmAction, DateTimeCell, DiffTable, ErrorView, ListPage, Skeleton, StatusCell, queryKeys,
@@ -12,7 +13,7 @@ const columns: ColumnDef<ShadowMatchRead, unknown>[] = [
   { accessorKey: 'kind', header: 'Kind' },
   { accessorKey: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={row.original.status} /> },
   { accessorKey: 'reference_number', header: 'Order no. / PO' },
-  { accessorKey: 'partner_code', header: 'Partner' },
+  { accessorKey: 'partner_name', header: 'Partner', cell: ({ row }) => <PartnerCell name={row.original.partner_name} code={row.original.partner_code} /> },
   { accessorKey: 'differences', header: 'Differences' },
   { accessorKey: 'note', header: 'Note', cell: ({ row }) => (
     <span className="line-clamp-1 text-neutral-500">{row.original.expected_reason ?? row.original.note ?? ''}</span>

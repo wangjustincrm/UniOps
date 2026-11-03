@@ -119,7 +119,7 @@ async def test_ac37_a_short_shipment_closes_the_fulfilment_and_raises_one_task(p
     o, _, _ = await shipped_order(p5, x945("9301", ["LX*1", "W12*CP*12*10*0*EA**VN*CF0092"]))
     assert await status(p5.edi, o.id) == F.SHIPPED
     [t] = await tasks(p5, "short_shipment")
-    assert "CF0092: 2 EA not shipped (10 of 12)" in t and str(o.order_number) in t and "no second 940" in t
+    assert "CF0092: 2 EA not shipped (10 of 12)" in t and o.source_reference in t and "no second 940" in t
     assert await p5.q("SELECT count(*) n FROM sales_documents WHERE kind = '940_EDI'") == [{"n": 1}]
 
 

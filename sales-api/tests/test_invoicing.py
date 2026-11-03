@@ -173,11 +173,11 @@ async def test_fr35_an_edit_is_audited_and_the_amount_follows(p6):
     await p6.inv.advance()
     out = await confirm(p6, o.id)
     async with p6.factory(OP) as u:
-        ed = await InvoiceService(u).edit(p6.inv, out.id, InvoiceEdit(lines=[{"id": out.lines[0].id, "unit_price": "48.5"}]),
-                                          out.version)
+        ed = await InvoiceService(u).edit(p6.inv, out.id, InvoiceEdit(lines=[{"id": out.lines[0].id, "unit_price": "48.5"}],
+                                                                       reason="agreed promo price"), out.version)
         await u.commit()
     assert ed.lines[0].amount == Decimal("485.00") and ed.total == Decimal("485.00")
-    assert await p6.q("SELECT 1 FROM sales_audit WHERE entity = 'sales_invoice_lines' OR reason = 'invoice edited'")
+    assert await p6.q("SELECT 1 FROM sales_audit WHERE reason = 'invoice edited: agreed promo price'")
 
 
 async def test_confirming_needs_the_invoice_permission(p6):

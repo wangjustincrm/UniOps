@@ -284,7 +284,7 @@ modules:
       - Move stock between warehouses (Transfers): create a draft with its lines in EA, set it Ready to send, and follow the 943 and the warehouse's 944; resend a failed one or cancel it before it is sent
       - Keep the warehouses' names and addresses that the transfer file uses (Configuration → Warehouses)
       - Confirm what was delivered (Invoicing → Delivery confirmation, one by one or all shown at once) — nothing is invoiced before that
-      - Check, correct and send an invoice (Invoicing → Invoices), or release one that is on hold; record a retailer return or a cancellation after shipment on the order
+      - Check, correct and send an invoice (Invoicing → Invoices) — its prices beside the PO's (a changed price needs a reason), the delivery date and the retailer's delivery number — or release one that is on hold; record a retailer return or a cancellation after shipment on the order
       - See what the warehouse shipped for an order (its 945) — every pallet with its lots, expiry and quantities, the checks that flagged something, and whether the shipment was written to Shopify; retry a failed Shopify write
       - Choose the warehouse's SFTP connection and how long to wait for its 997 (Configuration → Connections, Warehouse EDI)
       - Set how often each connection is read — every N minutes, paused, or only in certain hours and days (Toronto time) — see its last and next run, and pause, resume or run one now (Configuration → Connections: the icons on its row, or the connection's Schedule)
@@ -304,6 +304,15 @@ modules:
         until the release that turns them on; until then the 940s, Shopify
         fulfillments and invoices still come from Zoho — so for a shipment or an
         invoice, look in Zoho.
+      - >-
+        An order is known by its Order ref: the partner's abbreviation, a
+        hyphen and the source order number (LCL-4887314746, SHP-9471; a manual
+        order uses its internal number). It is set when the order arrives and
+        never changes, even if the abbreviation changes later. The internal
+        number is still shown as Internal no. and used in the 940 and on the
+        invoice number. Every partner needs an abbreviation; one without it
+        gets a task, and its new orders wait in review. Partners are shown by
+        name with the code beside it, and lists can be searched by either.
       - >-
         Each connection has its own schedule; its job reads the connection and
         takes what it stored straight through (orders, acknowledgements,

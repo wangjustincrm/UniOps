@@ -30,7 +30,7 @@ from app.schemas.orders import (
     ShipmentRead, ShipmentRowRead, TimelineEntry,
 )
 from app.services.intake import ConnectionSnapshot
-from app.services.orders import BarcodeLookup, OrderSync
+from app.services.orders import BarcodeLookup, OrderSync, order_ref
 from app.services.settings import SETTINGS, SHADOW_MODE
 
 READ = "sales.read"
@@ -55,7 +55,7 @@ ORDER_STATE_SQL = case(
 
 class OrderRepository(Repository[Order]):
     model = Order
-    search_fields = ("source_order_number", "source_reference", "source_order_id", "review_reason")
+    search_fields = ("source_reference", "source_order_number", "source_order_id", "partner_name_sql", "review_reason")
     list_fields = ("order_number", "partner_code", "connection_id", "source_type", "source_order_id",
                    "source_order_number", "source_reference", "order_type", "department", "order_date",
                    "requested_delivery_date", "do_not_deliver_after", "cancel_date", "currency", "subtotal", "tax",
@@ -63,16 +63,18 @@ class OrderRepository(Repository[Order]):
                    "review_reason", "historical", "first_received_at", "paid_at", "source_updated_at",
                    "source_cancelled_at", "archived_in_shopify_at", "archive_suppressed", "shopify_financial_status",
                    "shopify_fulfillment_status", "created_at", "updated_at")
-    labels = {"order_number": "Order", "source_order_number": "Source no.", "source_order_id": "Source ID",
+    labels = {"order_number": "Internal no.", "source_reference": "Order ref", "partner_name": "Partner",
+              "partner_code": "Partner code", "source_order_number": "Source no.", "source_order_id": "Source ID",
               "fulfillment_status": "Status", "first_received_at": "Received", "paid_at": "Paid",
               "shopify_financial_status": "Shopify payment", "shopify_fulfillment_status": "Shopify fulfillment"}
     enums = {"source_type": SOURCE_TYPES, "fulfillment_status": tuple(s.value for s in F),
              "invoice_status": tuple(s.value for s in Inv), "hold_reason": HOLD_REASONS,
              "order_state": ORDER_STATES}
-    sortable = {"order_state": ORDER_STATE_SQL}
-    filterable = {"order_state": FilterRule(ORDER_STATE_SQL, kind="text")}
+    sortable = {"order_state": ORDER_STATE_SQL, "partner_name": Order.partner_name_sql}
+    filterable = {"order_state": FilterRule(ORDER_STATE_SQL, kind="text"),
+                  "partner_name": FilterRule(Order.partner_name_sql, kind="text")}
     default_sort = ("-order_number",)
-    groupable = ("order_state", "partner_code", "source_type", "fulfillment_status", "invoice_status", "hold_reason", "order_date",
+    groupable = ("order_state", "partner_name", "partner_code", "source_type", "fulfillment_status", "invoice_status", "hold_reason", "order_date",
                  "currency", "historical", "archive_suppressed", "shopify_financial_status")
     # System views (§13.19). Review reason is shown where it says something.
     presets = (
@@ -203,6 +205,9 @@ class ManualOrderService:
         if p.channel != "MANUAL":
             raise InvalidInput("order.manual_partner", "manual orders are for a MANUAL-channel partner",
                                {"field": "partner_code"})
+        if not (p.abbrev or "").strip():
+            raise InvalidInput("partner.no_abbrev", f"partner {p.code} has no abbreviation: set it under "
+                               "Configuration → Partners (it starts the Order ref)", {"field": "partner_code"})
         return p
 
     async def _preview(self, lines: list[ManualLineIn]) -> list[LinePreview]:
@@ -244,7 +249,7 @@ class ManualOrderService:
                       shadow=await SETTINGS.get(self.s, SHADOW_MODE))
         self.s.add(order)
         await self.s.flush()
-        order.source_reference = f"{p.abbrev or p.code}-M{order.order_number}"
+        order.source_reference = order_ref(p, str(order.order_number))  # a manual order: <abbrev>-<internal number>
         for ln in self._lines(order, await self._preview(data.lines)):
             self.s.add(ln)
         await self.s.flush()

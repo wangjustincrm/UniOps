@@ -106,7 +106,7 @@ class Invoicing:
                 if review:
                     await self._hold(uow, order, "a 945 line matches no order line (FR-OB-25: lot exception)",
                                      f"945 item(s) {', '.join(x or '?' for x in review)} match no line of order "
-                                     f"{order.order_number}. Decide (correct the order or the shipment), then Release.")
+                                     f"{order.ref}. Decide (correct the order or the shipment), then Release.")
                     report.held += 1
                     continue
                 due = order.do_not_deliver_after if partner.dc_routing_required else order.requested_delivery_date
@@ -127,7 +127,7 @@ class Invoicing:
         if order.invoice_status != Inv.BLOCKED.value:
             INVOICE.transition(order, Inv.BLOCKED, actor=uow.actor, events=uow.events, reason=reason)
         await self.tasks.raise_problem(uow.session, INVOICE_HOLD, order.id, problem(
-            INVOICE_HOLD, f"Invoice on hold: order {order.order_number}", description))
+            INVOICE_HOLD, f"Invoice on hold: order {order.ref}", description))
 
     async def _refuse_shadow(self, s, order: Order) -> None:
         if await _shadow(s):
@@ -194,9 +194,11 @@ class Invoicing:
         return inv, built.problems
 
     async def edit(self, uow, invoice_id: int, *, version: int | None, invoice_date: date | None,
-                   lines: list[dict[str, Any]]) -> Invoice:
-        """FR-OB-35: quantities, unit prices and the date, before it is sent —
-        or a correction after (then Send again). Every change is audited."""
+                   lines: list[dict[str, Any]], reason: str | None = None, **delivery: Any) -> Invoice:
+        """FR-OB-35: quantities, unit prices, the date and the delivery number,
+        before it is sent — or a correction after (then Send again). Every change
+        is audited; a changed unit price needs a reason (user 2026-11-03), which
+        the audit row carries, and each line's old and new price is logged."""
         s = uow.session
         inv = await s.get(Invoice, invoice_id, with_for_update=True)
         if inv is None:
@@ -207,7 +209,18 @@ class Invoicing:
         if Inv(order.invoice_status) not in EDITABLE:
             raise BusinessError("invoice.not_editable", f"the invoice is {order.invoice_status}")
         mine = {ln.id: ln for ln in (await s.execute(select(InvoiceLine).where(InvoiceLine.invoice_id == inv.id))).scalars()}
-        uow.set_reason("invoice edited")
+        repriced = [(mine[int(c["id"])], Decimal(str(c["unit_price"]))) for c in lines
+                    if "unit_price" in c and int(c["id"]) in mine and Decimal(str(c["unit_price"])) != mine[int(c["id"])].unit_price]
+        if repriced and len((reason or "").strip()) < 3:
+            raise BusinessError("invoice.reason_required", "say why the price changes (a few words)",
+                                {"field": "reason"}, status_code=422)
+        uow.set_reason(f"invoice edited: {reason.strip()}" if reason and reason.strip() else "invoice edited")
+        if repriced:
+            await oplog.write(s, "INFO", STEP, f"invoice {inv.invoice_number}: price changed — {reason.strip()}: "
+                              + "; ".join(f"line {ln.line_no} {ln.item_code or ''} {ln.unit_price} → {p}" for ln, p in repriced),
+                              order_id=order.id, context={"invoice_id": inv.id, "reason": reason.strip()})
+        if "delivery_number" in delivery:
+            inv.delivery_number = (delivery["delivery_number"] or "").strip() or None
         for change in lines:
             ln = mine.get(int(change["id"]))
             if ln is None:
@@ -279,8 +292,8 @@ class Invoicing:
             INVOICE.transition(order, Inv.BLOCKED, actor=uow.actor, events=uow.events, reason=f"{kind} (FR-OB-19)")
         desc = ", ".join(f"line {known[int(x['order_line_id'])].line_no}: {x['qty_ea']} EA" for x in lines)
         await self.tasks.raise_problem(s, ORDER_RETURN, order.id, problem(
-            ORDER_RETURN, f"{kind}: order {order.order_number}",
-            f"Order {order.order_number} ({order.partner_code} {order.source_order_number}): {kind.lower()} — {desc}. "
+            ORDER_RETURN, f"{kind}: order {order.ref}",
+            f"Order {order.ref}: {kind.lower()} — {desc}. "
             f"Reason: {reason}. " + ("The invoice is on hold: decide on a credit or a corrected invoice, then Release."
                                     if stop else "The invoice was not affected.")))
         await s.flush()
@@ -372,7 +385,8 @@ class Invoicing:
                                        .order_by(OrderLine.line_no))).scalars())
         rows = (await s.execute(select(ShipmentRow).join(Shipment, Shipment.id == ShipmentRow.shipment_id).where(
             Shipment.order_id == order.id, Shipment.applied.is_(True)).order_by(ShipmentRow.lx_index, ShipmentRow.w12_index))).scalars().all()
-        common = dict(po=order.source_order_number, order_number=order.order_number, seller=SELLER, buyer=party(bt),
+        common = dict(po=order.source_order_number, order_number=order.order_number, order_ref=order.source_reference,
+                      delivery_number=inv.delivery_number, seller=SELLER, buyer=party(bt),
                       ship_to=party(st))
         invoice_pdf = render(PdfDoc(title="Invoice", number=inv.invoice_number, when=inv.invoice_date, terms=inv.payment_terms,
                                     currency=inv.currency, total=inv.total, lines=[
@@ -418,7 +432,7 @@ class Invoicing:
             INVOICE.transition(order, Inv.FAILED, actor=uow.actor, events=uow.events, reason=str(exc)[:200])
         await self.tasks.raise_problem(uow.session, INVOICE_FAILED, order.id, problem(
             INVOICE_FAILED, f"Invoice not sent: {inv.invoice_number}",
-            f"Invoice {inv.invoice_number} (order {order.order_number}, {inv.method}) was not sent: {exc}. "
+            f"Invoice {inv.invoice_number} (order {order.ref}, {inv.method}) was not sent: {exc}. "
             "It is not retried automatically — fix the cause, then Send again."))
 
     async def _suppressed(self, row, exc, uow) -> None:
@@ -427,5 +441,5 @@ class Invoicing:
         if order.invoice_status == Inv.QUEUED.value:
             INVOICE.transition(order, Inv.FAILED, actor=uow.actor, events=uow.events, reason="refused by the outbound guard")
         await oplog.write(uow.session, "INFO", STEP, f"invoice {inv.invoice_number} refused by the guard: {exc}", order_id=order.id)
-        await send_refused(self.tasks, uow.session, row, f"invoice {inv.invoice_number} (order {order.order_number})", exc)
+        await send_refused(self.tasks, uow.session, row, f"invoice {inv.invoice_number} (order {order.ref})", exc)
 

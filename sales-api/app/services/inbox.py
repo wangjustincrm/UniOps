@@ -86,4 +86,6 @@ class InboxService:
             return InboxTarget(page="/runs", resource=None, id=None)
         if event == "test":
             return _target(RULES, n)
+        if event == "partner_no_abbrev":
+            return _target(("/config/partners", "/config/partners"), n)
         return InboxTarget(page="/home", resource=None, id=None)

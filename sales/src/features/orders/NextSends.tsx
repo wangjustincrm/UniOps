@@ -16,7 +16,7 @@ export function NextSends() {
         {q.isLoading ? <Skeleton className="h-20 w-full" /> : q.error ? <ErrorMessage error={q.error} /> : (
           q.data && q.data.length > 0 ? (
             <ul className="max-h-80 overflow-auto text-sm">
-              {q.data.map((e) => <li key={e.order_id}>Order {e.order_number} · {e.partner_code} {e.source_order_number ?? ''}</li>)}
+              {q.data.map((e) => <li key={e.order_id}>Order {e.source_reference ?? e.order_number} · {e.partner_code}</li>)}
             </ul>
           ) : <p className="text-sm text-neutral-500">No order qualifies right now.</p>
         )}

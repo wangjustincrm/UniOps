@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { orderRef } from '@/features/common/labels'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
@@ -42,7 +43,7 @@ export function ReturnAfterShipment({ o }: { o: OrderRead }) {
   return (
     <>
       <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setOpen(true)}>Record a return or cancellation…</ActionButton>
-      <Dialog open={open} onOpenChange={setOpen} title={`Order ${o.order_number}: return or cancellation after shipment`} className="max-w-2xl">
+      <Dialog open={open} onOpenChange={setOpen} title={`Order ${orderRef(o)}: return or cancellation after shipment`} className="max-w-2xl">
         {open && q.data && (
           <MasterDetailForm<Back>
             schema={schema} fields={fields} defaultValues={{ kind: 'Returned', reason: '' }}

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, StringConstraints
 class ShadowMatchRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    partner_name: str | None = None
     id: int
     kind: str
     status: str

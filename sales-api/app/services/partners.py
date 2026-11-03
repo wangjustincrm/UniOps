@@ -49,7 +49,8 @@ class PartnerService(CrudService[Partner, PartnerRead, PartnerCreate, PartnerUpd
     read_permission = READ
     write_permission = CONFIG
     csv_key = "code"
-    unique_constraints = {"uq_sales_partners_code_ci": ("partner.code_taken", "code")}
+    unique_constraints = {"uq_sales_partners_code_ci": ("partner.code_taken", "code"),
+                          "uq_sales_partners_abbrev": ("partner.abbrev_taken", "abbrev")}
     csv_columns = (
         "code", "name", "abbrev", "channel", "settlement_mode", "sending_mode", "delay_minutes",
         "invoice_method", "invoice_email", "invoice_cc", "payment_terms", "dc_routing_required",
@@ -70,3 +71,7 @@ class PartnerService(CrudService[Partner, PartnerRead, PartnerCreate, PartnerUpd
 
     async def before_update(self, entity: Partner, changes: dict[str, Any]) -> None:
         check_partner({**{k: getattr(entity, k) for k in _RULE_FIELDS}, **changes})
+        if changes.get("abbrev"):  # its "needs an abbreviation" task is done (Order refs, 2026-11-03)
+            from app.services.problems import PARTNER_NO_ABBREV, task_service  # problems → models: imported when used
+            await task_service(lambda: False).resolve_problem(  # a resolve sends no mail: notify is not read
+                self.uow.session, PARTNER_NO_ABBREV, entity.id, by=self.uow.actor.user_id)

@@ -155,7 +155,7 @@ async def test_a_write_is_suppressed_without_live_or_without_a_write_host(edi):
     assert [d["file_status"] for d in await docs(edi)] == ["Suppressed"] and await status(edi, o.id) == F.GENERATED_940
     assert edi.refused[-1].context["reason"] == "connection not LIVE"
     [t] = await tasks_of(edi, "send_refused")  # P8: a refused send is a task, not only a log row
-    assert f"the 940 for order {o.order_number} was not sent" in t["description"]
+    assert f"the 940 for order {o.source_reference} was not sent" in t["description"]
     # LIVE, switch on, but the host is not a write host (e.g. Radiant on a dev stack)
     async with edi.env.factory(SYSTEM_ACTOR) as u:
         (await u.session.get(Connection, edi.conn_id)).mode = "LIVE"

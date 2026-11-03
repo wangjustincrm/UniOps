@@ -151,8 +151,10 @@ class SystemJob(ScheduledJob):
     lock_key = SYSTEM_LOCK_KEY
     scope = SYSTEM
 
-    def __init__(self, *, outbox_worker, outbound=None, shadow=None, invoicing=None, transfers=None, **kw) -> None:
+    def __init__(self, *, outbox_worker, outbound=None, shadow=None, invoicing=None, transfers=None, tasks=None,
+                 **kw) -> None:
         super().__init__(stale_after=STALE_AFTER, **kw)
+        self.tasks = tasks
         self.outbox_worker, self.outbound, self.shadow = outbox_worker, outbound, shadow
         self.invoicing, self.transfers = invoicing, transfers
 
@@ -160,6 +162,11 @@ class SystemJob(ScheduledJob):
         await oplog.write_alone(self.uow_factory, "INFO", "cycle", f"run started ({run.trigger}): system job", run_id=run.id)
         out: dict = {}
         trouble = 0
+        if self.tasks is not None:  # partners whose orders would get no Order ref
+            from app.services.problems import partners_without_abbreviation
+            async with self.uow_factory(SYSTEM_ACTOR) as uow:
+                out["partners_without_abbreviation"] = await partners_without_abbreviation(uow.session, self.tasks)
+                await uow.commit()
         if self.outbound:  # the orders that qualify get their 940 (queued)
             q = await self.outbound.queue_due(run_id=run.id)
             out["940"] = asdict(q)
@@ -197,12 +204,12 @@ class SalesScheduler:
     job — each through its own single flight."""
 
     def __init__(self, *, uow_factory, run_model, intake: Intake, outbox_worker, shopify_intake=None, edi_intake=None,
-                 outbound=None, shadow=None, shipments=None, invoicing=None, transfers=None) -> None:
+                 outbound=None, shadow=None, shipments=None, invoicing=None, transfers=None, tasks=None) -> None:
         self.uow_factory, self.run_model = uow_factory, run_model
         self.intake, self.shopify_intake, self.edi_intake = intake, shopify_intake, edi_intake
         self.outbound, self.shadow, self.shipments = outbound, shadow, shipments
         self.invoicing, self.transfers, self.outbox_worker = invoicing, transfers, outbox_worker
-        self.system = SystemJob(outbox_worker=outbox_worker, outbound=outbound, shadow=shadow, invoicing=invoicing,
+        self.system = SystemJob(outbox_worker=outbox_worker, outbound=outbound, shadow=shadow, invoicing=invoicing, tasks=tasks,
                                 transfers=transfers, run_model=run_model, uow_factory=uow_factory,
                                 schedule=system_schedule(uow_factory))
 

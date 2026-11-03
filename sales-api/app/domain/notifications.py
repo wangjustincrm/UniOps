@@ -61,6 +61,8 @@ EVENT_TYPES: tuple[EventType, ...] = (
     EventType("partial_receipt", "Transfer partially received", kind=NOTIFY),
     EventType("second_944", "A second, different 944"),
     EventType("944_no_transfer", "944 with no transfer"),
+    # configuration (user 2026-11-03)
+    EventType("partner_no_abbrev", "Partner without an abbreviation"),
 )
 BY_KEY = {e.key: e for e in EVENT_TYPES}
 EVENT_KEYS = tuple(BY_KEY)

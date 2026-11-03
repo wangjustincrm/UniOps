@@ -33,6 +33,9 @@ class InvoiceRead(BaseModel):
     order_number: int | None = None
     partner_code: str | None = None
     po: str | None = None
+    order_ref: str | None = None      # the order's ref (A.3)
+    partner_name: str | None = None
+    delivery_number: str | None = None
     status: str | None = None
 
 
@@ -48,6 +51,9 @@ class InvoiceLineRead(BaseModel):
     qty: int
     unit_price: Decimal
     amount: Decimal
+    # The price the PO gives for one invoice unit (CASE): 850 price × CASE factor ÷ the
+    # order unit's factor, from the order line now (read only; filled by the service).
+    po_price: Decimal | None = None
 
 
 class InvoiceDetail(InvoiceRead):
@@ -91,8 +97,12 @@ class EditLine(BaseModel):
 
 
 class InvoiceEdit(BaseModel):
+    """`delivery_number` set (even to null) changes it; left out keeps it. A
+    changed unit price needs `reason` (≥ 3 characters), kept in the audit."""
     model_config = ConfigDict(extra="forbid")
     invoice_date: date | None = None
+    delivery_number: Annotated[str, StringConstraints(strip_whitespace=True, max_length=50)] | None = None
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] | None = None
     lines: list[EditLine] = []
 
 

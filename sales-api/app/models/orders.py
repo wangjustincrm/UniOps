@@ -17,15 +17,15 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger, Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, Sequence, String, Text,
-    UniqueConstraint, false,
+    UniqueConstraint, false, select, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, column_property, mapped_column
 
 from app.db.base import Base
 from app.domain.orders import HOLD_REASONS, LINE_STATUSES, SOURCE_TYPES
 from app.domain.status import FULFILLMENT, INVOICE, Fulfillment, Invoice
-from app.models.config import one_of
+from app.models.config import Partner, one_of
 from app.platform.entities import Audited, Versioned
 
 ORDER_NUMBER_SEQ = Sequence("sales_order_number_seq", start=1)  # P9 sets it above Zoho's highest
@@ -40,6 +40,9 @@ class Order(Audited, Versioned, Base):
         one_of("invoice_status", tuple(s.value for s in Invoice), "ck_sales_orders_invoice_status"),
         one_of("hold_reason", HOLD_REASONS, "ck_sales_orders_hold_reason"),
         Index("ix_sales_orders_fulfillment_status", "fulfillment_status"),
+        # The Order ref (A.3 source reference), unique (sales15).
+        Index("uq_sales_orders_source_reference", "source_reference", unique=True,
+              postgresql_where=text("source_reference IS NOT NULL")),
     )
 
     order_number: Mapped[int] = mapped_column(BigInteger, ORDER_NUMBER_SEQ, nullable=False, unique=True,
@@ -49,6 +52,9 @@ class Order(Audited, Versioned, Base):
     source_type: Mapped[str] = mapped_column(String(10), nullable=False)
     source_order_id: Mapped[str] = mapped_column(String(64), nullable=False)
     source_order_number: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # The Order ref — the order's visible identifier (A.3 source reference, user 2026-11-03):
+    # partner abbreviation, "-", the source order number (a manual order: its internal
+    # number). Set once at creation and never changed (a later abbreviation change leaves it).
     source_reference: Mapped[str | None] = mapped_column(String(80), nullable=True)
     order_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     department: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -88,9 +94,23 @@ class Order(Audited, Versioned, Base):
     warehouse_order_number_received: Mapped[str | None] = mapped_column(String(40), nullable=True)  # FR-OB-28
     zoho_order_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
+    @property
+    def ref(self) -> str:
+        """The Order ref; the internal number for an order created before it existed."""
+        return self.source_reference or str(self.order_number)
+
+    @property
+    def partner_name(self) -> str | None:
+        """The partner's name as loaded with the row (`partner_name_sql`); never a lazy load."""
+        return self.__dict__.get("partner_name_sql")
+
 
 FULFILLMENT.bind(Order)
 INVOICE.bind(Order)
+
+# The partner's name on the order's row (lists sort, filter, group and search by it).
+Order.partner_name_sql = column_property(
+    select(Partner.name).where(Partner.code == Order.partner_code).correlate_except(Partner).scalar_subquery())
 
 
 class OrderLine(Audited, Base):

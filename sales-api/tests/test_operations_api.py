@@ -213,7 +213,7 @@ async def test_documents_register_raw_bytes_and_log(api):
 
 async def shopify_partner(api):
     r = await api.post("/api/v1/config/partners", headers=OP, json={
-        "code": "SHOP", "name": "Shopify", "channel": "SHOPIFY", "settlement_mode": "PREPAID",
+        "code": "SHOP", "name": "Shopify", "abbrev": "SHP", "channel": "SHOPIFY", "settlement_mode": "PREPAID",
         "sending_mode": "AUTOMATIC", "delay_minutes": 180, "invoice_method": "NONE", "dc_routing_required": False})
     assert r.status_code == 201, r.text
 

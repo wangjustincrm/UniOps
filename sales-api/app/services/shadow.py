@@ -38,6 +38,7 @@ from app.models.shadow import ShadowMatch
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.authorization import requires
 from app.platform.errors import BusinessError
+from app.platform.query import FilterRule
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
@@ -187,7 +188,7 @@ class ShadowRun:
         if orders is not None:
             if len(orders) != 1:
                 values |= dict(status="No Sales order",
-                               note=None if not orders else f"{len(orders)} orders match: {', '.join(str(o.order_number) for o in orders)}")
+                               note=None if not orders else f"{len(orders)} orders match: {', '.join(o.ref for o in orders)}")
             else:
                 order = orders[0]
                 sales = await self._dry_run(s, order)
@@ -392,15 +393,17 @@ async def mark_open_orders(uow, *, run_id: int | None = None) -> int:
 
 class ShadowMatchRepository(Repository[ShadowMatch]):
     model = ShadowMatch
-    search_fields = ("reference_number", "partner_code", "note", "expected_reason")
+    search_fields = ("reference_number", "partner_code", "partner_name_sql", "note", "expected_reason")
     list_fields = ("id", "kind", "status", "reference_document_id", "document_id", "order_id", "reference_number",
                    "partner_code", "differences", "expected_reason", "note", "compared_at")
+    sortable = {"partner_name": ShadowMatch.partner_name_sql}
+    filterable = {"partner_name": FilterRule(ShadowMatch.partner_name_sql, kind="text")}
     labels = {"reference_document_id": "Zoho file", "document_id": "Warehouse file", "order_id": "Order",
               "reference_number": "Order no. / PO",
               "expected_reason": "Why expected"}
     enums = {"status": STATUSES}
     default_sort = ("-compared_at",)
-    groupable = ("status", "partner_code", "kind")
+    groupable = ("status", "partner_name", "partner_code", "kind")
     presets = (
         Preset("all", "All"),
         Preset("to_check", "To check", {"filters": [{"field": "status", "op": "in",

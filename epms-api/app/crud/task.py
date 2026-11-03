@@ -321,7 +321,8 @@ _TASK_NO_STATUS_INVARIANT: dict[str, str] = {
                  "sales_945_no_order", "sales_945_line", "sales_shopify_write", "sales_invoice_hold",
                  "sales_invoice_failed", "sales_order_return", "sales_cancel_after_940", "sales_transfer_failed",
                  "sales_943_rejected", "sales_943_timeout", "sales_transfer_discrepancy", "sales_partial_receipt",
-                 "sales_second_944", "sales_944_no_transfer", "sales_test")},
+                 "sales_second_944", "sales_944_no_transfer", "sales_test",
+                 "sales_partner_no_abbrev")},
 }
 
 # ★覆盖边界:上表只能覆盖 EPMS 自己有 model 的表(pr/po/pa/agr/invoice/gr)。

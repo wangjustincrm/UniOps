@@ -35,6 +35,9 @@ def _json_object(v: Any) -> Any:
 Code = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50), AfterValidator(not_excel_number)]
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
 Short = Annotated[str, StringConstraints(strip_whitespace=True, max_length=50)]
+# The abbreviation starts every Order ref ("LCL-4887314746", A.3): required, letters and digits.
+Abbrev = Annotated[str, StringConstraints(strip_whitespace=True, to_upper=True, min_length=1, max_length=10,
+                                          pattern=r"^[A-Za-z0-9]+$")]
 LabelCode = Annotated[str, StringConstraints(strip_whitespace=True, max_length=50), AfterValidator(not_excel_number)]
 Terms = Annotated[str, StringConstraints(strip_whitespace=True, max_length=100)]
 Email = Annotated[str, StringConstraints(strip_whitespace=True, max_length=255, pattern=EMAIL_PATTERN)]
@@ -48,7 +51,7 @@ class PartnerCreate(BaseModel):
 
     code: Code
     name: Name
-    abbrev: Short | None = None
+    abbrev: Abbrev
     channel: Channel
     settlement_mode: SettlementMode
     sending_mode: SendingMode
@@ -73,7 +76,8 @@ class PartnerUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: Name = None  # type: ignore[assignment]
-    abbrev: Short | None = None
+    # Required: it can change (existing Order refs keep the old one), never be cleared.
+    abbrev: Abbrev = None  # type: ignore[assignment]
     channel: Channel = None  # type: ignore[assignment]
     settlement_mode: SettlementMode = None  # type: ignore[assignment]
     sending_mode: SendingMode = None  # type: ignore[assignment]

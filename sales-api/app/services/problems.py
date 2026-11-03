@@ -50,6 +50,24 @@ EDI_944_NO_TRANSFER = "944_no_transfer"    # entity: receipt id (FR-OB-84)
 SEND_REFUSED = "send_refused"              # entity: outbox row id (§5.5: a send refused by the write guard)
 EDI_945_VALIDATION = "945_validation"      # entity: shipment id (FR-OB-25d; notify only)
 PARTIAL_RECEIPT = "partial_receipt"        # entity: transfer id (FR-OB-84; notify only)
+# Order refs (user 2026-11-03)
+PARTNER_NO_ABBREV = "partner_no_abbrev"    # entity: partner id (its orders get no Order ref)
+
+
+async def partners_without_abbreviation(session, tasks) -> int:
+    """One task per active partner with no abbreviation (raised by the system
+    job; completed when the abbreviation is set). Returns how many."""
+    from sqlalchemy import or_, select
+
+    from app.models.config import Partner
+    missing = list((await session.execute(select(Partner).where(
+        Partner.active.is_(True), or_(Partner.abbrev.is_(None), Partner.abbrev == "")))).scalars())
+    for p in missing:
+        await tasks.raise_problem(session, PARTNER_NO_ABBREV, p.id, problem(
+            PARTNER_NO_ABBREV, f"Partner {p.code} needs an abbreviation",
+            f"Partner {p.name} ({p.code}) has no abbreviation. It starts every Order ref (e.g. LCL-4887314746, A.3): "
+            "its new orders go to review until it is set under Configuration → Partners."))
+    return len(missing)
 
 
 async def _operator(session):

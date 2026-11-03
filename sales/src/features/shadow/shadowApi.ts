@@ -12,6 +12,7 @@ export interface ShadowMatchRead {
   order_id: number | null
   reference_number: string | null
   partner_code: string | null
+  partner_name: string | null
   differences: number
   expected_reason: string | null
   note: string | null

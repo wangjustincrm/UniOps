@@ -89,6 +89,8 @@ class PdfDoc:
     currency: str = "CAD"
     total: Decimal | None = None
     priced: bool = True
+    order_ref: str | None = None          # the Order ref (A.3), shown before the internal number
+    delivery_number: str | None = None    # the retailer's proof-of-delivery / receiving number
 
 
 def render(doc: PdfDoc) -> bytes:
@@ -96,7 +98,9 @@ def render(doc: PdfDoc) -> bytes:
     styles = getSampleStyleSheet()
     p = lambda v, st="BodyText": Paragraph(text(v), styles[st])  # noqa: E731
     story = [p(f"{doc.title} {doc.number}", "Title"),
-             p(f"Date: {doc.when or ''}    PO: {doc.po or ''}    Order: {doc.order_number}"
+             p(f"Date: {doc.when or ''}    PO: {doc.po or ''}    Order: {doc.order_ref or doc.order_number}"
+               + (f"    Internal no.: {doc.order_number}" if doc.order_ref else "")
+               + (f"    Delivery no.: {doc.delivery_number}" if doc.delivery_number else "")
                + (f"    Terms: {doc.terms}" if doc.terms else "")),
              Spacer(1, 4 * mm)]
     def block(party: Party) -> Paragraph:  # each value escaped; the line breaks are ours
