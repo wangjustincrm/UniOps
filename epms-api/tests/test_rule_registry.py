@@ -802,6 +802,30 @@ def test_one_invoice_one_pa_is_refused_by_the_server():
     assert "other.id === pa?.id || ['cancelled', 'rejected'].includes(other.status)" in edit
 
 
+def test_new_pa_warns_of_uncollected_goods_with_the_servers_rule():
+    """ISS-0188: New PA says "not collected yet" (and offers the receipt
+    override) on the same rule POST /pa refuses with — po_collection_cleared."""
+    from app.api.v1 import pa as pa_api
+    from app.crud import po as po_crud
+    from app.crud.gr import COUNTED_GR_STATUSES
+    from app.schemas.gr import PHYSICAL_TYPES
+
+    src = inspect.getsource(po_crud.po_collection_cleared)
+    assert "is_physical(po.type)" in src and "COUNTED_GR_STATUSES" in src
+    assert "PoLineItem.received_qty > 0" in src
+    # One override for both refusals, behind the same permission.
+    create = inspect.getsource(pa_api.create_pa)
+    assert "po_collection_cleared" in create and '"pa_override_receipt"' in create
+    page = _src("epms/src/pages/pa/PaCreatePage.tsx")
+    assert f"[{', '.join(str(t) for t in sorted(PHYSICAL_TYPES))}].includes(p.type)" in page
+    assert ("[" + ", ".join(f"'{s}'" for s in COUNTED_GR_STATUSES) + "].includes(g.status)") in page
+    assert "Number(l.received_qty) > 0" in page
+    assert "collection_config?.collection_gate_enabled" in page
+    # Server refusals show in the page, not in a browser pop-up.
+    assert "alert(" not in _src("epms/src/hooks/usePas.ts")
+    assert "alert(" not in page
+
+
 # ── Invoices ─────────────────────────────────────────────────────────────────
 
 async def test_match_tolerance_is_read_and_not_editable():

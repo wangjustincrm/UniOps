@@ -16,7 +16,8 @@ import { useAuthStore } from '@/stores/auth.store'
 import { useInvoices, useInvoicesForPos } from '@/hooks/useInvoices'
 import { useGrsForPos } from '@/hooks/useGrs'
 import { useAgreement } from '@/hooks/useAgreements'
-import { useRolePermissions } from '@/hooks/useConfig'
+import { useConfig, useRolePermissions } from '@/hooks/useConfig'
+import { errorMessage, rememberSubmitFailure } from '@/lib/submitFailure'
 import type { ApiPo } from '@/services/po'
 import type { ApiInvoice } from '@/services/invoices'
 import type { DocumentStatus } from '@/types'
@@ -347,7 +348,22 @@ function PoPaCreate() {
   )
   const isPrepayment = paType === 'prepayment'
   const canOverride = user?.role === 'system_admin' || !!perms?.pa_override_receipt
-  const receiptBlocked = !isAgreementMode && !isPrepayment && !hasThreeWay
+  // Admin → Collection Config "Collection Confirmation Required" (ISS-0146):
+  // the server also refuses a physical PO whose goods nothing has collected —
+  // the same rule as epms-api crud/po.py po_collection_cleared (physical types
+  // 1/2/3/5; a GR collected / confirmed / discrepancy, or a received quantity),
+  // and the same receipt override. Said here as soon as the PO is chosen
+  // instead of only after Submit (ISS-0188).
+  const collectionGateOn = !!useConfig().data?.collection_config?.collection_gate_enabled
+  const uncollectedPos = (!isAgreementMode && !isPrepayment && collectionGateOn && grsData !== undefined)
+    ? selectedPos.filter((p) =>
+        [1, 2, 3, 5].includes(p.type)
+        && !grsData.items.some((g) => g.po_id === p.id && ['collected', 'confirmed', 'discrepancy'].includes(g.status))
+        && !p.line_items.some((l) => Number(l.received_qty) > 0))
+    : []
+  const receiptBlocked = !isAgreementMode && !isPrepayment && (!hasThreeWay || uncollectedPos.length > 0)
+  // Which of the two the warning names — the server reports "no receipt" first.
+  const blockedByCollection = receiptBlocked && hasThreeWay
   const receiptOverrideMissing = receiptBlocked && (!canOverride || !receiptOverride || !receiptOverrideReason.trim())
 
   // settlement/balance「Original Prepayment PA」下拉数据源:本 PO 下未作废的预付 PA
@@ -749,12 +765,20 @@ function PoPaCreate() {
         errors.push('Prepayment applied cannot exceed the invoice total')
       if (receiptOverrideMissing)
         errors.push(
-          canOverride
-            ? 'Check the override box and provide a reason to proceed without a goods receipt'
-            : 'No goods receipt linked to a matched invoice — create a Goods Receipt first',
+          blockedByCollection
+            ? (canOverride
+              ? 'Check the override box and provide a reason to proceed before the goods are collected'
+              : `The goods for ${uncollectedPos.map((p) => p.number).join(', ')} have not been collected yet — the requester records the collection on the goods receipt`)
+            : canOverride
+              ? 'Check the override box and provide a reason to proceed without a goods receipt'
+              : 'No goods receipt linked to a matched invoice — create a Goods Receipt first',
         )
     }
   }
+
+  const shownErrors = createPa.isError
+    ? [...errors, errorMessage(createPa.error, 'Failed to create payment application')]
+    : errors
 
   // Drives the red styling on the invoice block — same condition the validation
   // above pushes an error for, kept in one place so they can never disagree.
@@ -808,13 +832,11 @@ function PoPaCreate() {
     await queryClient.invalidateQueries({ queryKey: ['pas'] })
     if (isAgreementMode) await queryClient.invalidateQueries({ queryKey: ['agreements'] })
     if (submitError) {
-      alert(
-        `Payment application created, but it could not be submitted for approval:
-
-${submitError}
-
-` +
-        'It has been saved as a draft — open it and use Submit to try again.'
+      // Said on the draft's page, not in a browser pop-up (ISS-0188).
+      rememberSubmitFailure(
+        newPa.id,
+        `Payment application created, but it could not be submitted for approval: ${submitError} ` +
+        'It has been saved as a draft — use Submit to try again.',
       )
       replaceTab(`/pa/${newPa.id}`)
       return
@@ -1752,13 +1774,27 @@ ${submitError}
             </div>
           )}
 
-          {/* Receipt gate — no matched, GR-backed invoice on this PO */}
+          {/* Receipt gate — no matched, GR-backed invoice on this PO, or (with
+              Collection Confirmation Required on) goods not collected yet */}
           {receiptBlocked && (
             <div className="rounded-md border border-warning-300 bg-warning-50 px-4 py-3 flex flex-col gap-2">
-              <p className="text-sm font-medium text-warning-800">No goods receipt linked to a matched invoice yet.</p>
-              <p className="text-xs text-warning-700">
-                A Payment Application normally requires goods to be received. Create a Goods Receipt first.
-              </p>
+              {blockedByCollection ? (
+                <>
+                  <p className="text-sm font-medium text-warning-800">
+                    The goods for {uncollectedPos.map((p) => p.number).join(', ')} have not been collected yet.
+                  </p>
+                  <p className="text-xs text-warning-700">
+                    Collection Confirmation is required before a PA. The requester records it on the goods receipt.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium text-warning-800">No goods receipt linked to a matched invoice yet.</p>
+                  <p className="text-xs text-warning-700">
+                    A Payment Application normally requires goods to be received. Create a Goods Receipt first.
+                  </p>
+                </>
+              )}
               {canOverride && (
                 <label className="flex items-start gap-2 text-xs text-warning-800">
                   <input
@@ -1767,7 +1803,11 @@ ${submitError}
                     onChange={(e) => setReceiptOverride(e.target.checked)}
                     className="mt-0.5"
                   />
-                  <span>Override — proceed without goods receipt (a reason is required).</span>
+                  <span>
+                    {blockedByCollection
+                      ? 'Override — proceed before the goods are collected (a reason is required).'
+                      : 'Override — proceed without goods receipt (a reason is required).'}
+                  </span>
                 </label>
               )}
               {canOverride && receiptOverride && (
@@ -1782,10 +1822,11 @@ ${submitError}
             </div>
           )}
 
-          {/* Errors */}
-          {errors.length > 0 && (
-            <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 flex flex-col gap-1">
-              {errors.map((e) => (
+          {/* Errors — the form's own checks, then the server's refusal of the
+              last Submit (shown here, not as a browser pop-up — ISS-0188) */}
+          {shownErrors.length > 0 && (
+            <div role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 flex flex-col gap-1">
+              {shownErrors.map((e) => (
                 <p key={e} className="text-xs text-danger-700 flex items-center gap-1.5">
                   <AlertTriangle className="h-3 w-3 shrink-0" /> {e}
                 </p>

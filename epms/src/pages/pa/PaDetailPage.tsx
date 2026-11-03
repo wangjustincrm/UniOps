@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { DirectPaBudgetPanel } from '@/components/pa/DirectPaBudgetPanel'
 import { useDocTabTitle } from '@/components/BackLink'
@@ -32,6 +32,7 @@ import {
 import { InvoiceMatchVariancePanel } from '@/components/invoices/InvoiceMatchVariancePanel'
 import { canRecallDocument, canWithdrawDocument } from '@/lib/documentActions'
 import { useConfig } from '@/hooks/useConfig'
+import { clearSubmitFailure, peekSubmitFailure } from '@/lib/submitFailure'
 import type { ApiPa } from '@/services/pa'
 import { historyLine } from '@/lib/approvalHistory'
 import { approvalNodeStates } from '@/lib/approvalTimeline'
@@ -395,6 +396,10 @@ export default function PaDetailPage() {
   // Withdraw / Recall get their own mutation so their refusal shows in the
   // header and not in the approval or payment dialogs.
   const paHeaderAction = usePaAction(id ?? '')
+  // Why New PA's submit was refused, when it brought the saved draft here
+  // instead (ISS-0188 — was a browser pop-up).
+  const [createSubmitError] = useState<string | null>(() => peekSubmitFailure(id))
+  useEffect(() => { clearSubmitFailure(id) }, [id])
   const confirmSettlement = useConfirmSettlement(id ?? '')
   // Assigned below paPoLinks so it covers EVERY PO on the payment — the line
   // variance panel matches an invoice line to its PO line by id, and an invoice
@@ -712,6 +717,11 @@ export default function PaDetailPage() {
       {paHeaderAction.isError && (
         <p role="alert" className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
           {paHeaderAction.error instanceof Error ? paHeaderAction.error.message : 'The action was refused'}
+        </p>
+      )}
+      {createSubmitError && pa.status === 'draft' && !paHeaderAction.isError && (
+        <p role="alert" className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+          {createSubmitError}
         </p>
       )}
 
