@@ -18,6 +18,7 @@ import { useGrsForPos } from '@/hooks/useGrs'
 import { useAgreement } from '@/hooks/useAgreements'
 import { useConfig, useRolePermissions } from '@/hooks/useConfig'
 import { errorMessage, rememberSubmitFailure } from '@/lib/submitFailure'
+import { isPaRequesterScoped } from '@/lib/paCreateScope'
 import type { ApiPo } from '@/services/po'
 import type { ApiInvoice } from '@/services/invoices'
 import type { DocumentStatus } from '@/types'
@@ -232,25 +233,11 @@ function PoPaCreate() {
   // ── Derived ────────────────────────────────────────────────────────────────
   const myAuthz = useRolePermissions().data
   const perms = myAuthz?.permissions
-  // A plain requester may only pay against POs linked to a PR they raised — even
-  // if a special role assignment (e.g. finance_bp via Role Management) widened
-  // their backend PO scope to all POs — UNLESS they hold a role that authorises
-  // paying on someone else's behalf (see epms-api pa.py::_may_create_pa_on_behalf,
-  // which this list MUST stay in step with, or the picker offers POs the POST
-  // rejects / hides POs it would accept). Privileged roles keep full visibility.
-  //
-  //   procurement_officer — any PO, company-wide.
-  //   dept_admin          — their own department's requisitions. Dropping the
-  //     own-requisition filter is right for them because the PO list the API
-  //     returns to a dept_admin is ALREADY department-scoped server-side
-  //     (access_scope.visible_po_subquery via visible_pr_subquery's dept branch),
-  //     so what is left is what the backend accepts. The one residual gap is a PO
-  //     pulled in by the scope's task-chain OR-condition from another department;
-  //     that one still 403s on submit rather than silently paying.
-  const ON_BEHALF_ROLES = ['procurement_officer', 'dept_admin']
-  const requesterScoped =
-    user?.role === 'requester' &&
-    !myAuthz?.roles?.some((r) => ON_BEHALF_ROLES.includes(r))
+  // A plain requester may only pay against POs linked to a PR they raised,
+  // unless they also hold a role that pays on someone else's behalf (§3.15.2;
+  // the rule and its exceptions live in lib/paCreateScope, shared with PA
+  // Detail's Settle). Privileged roles keep full visibility.
+  const requesterScoped = isPaRequesterScoped(user?.role, myAuthz?.roles)
   const eligiblePos = allPos.filter((p) =>
     ['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_milk'].includes(p.status) &&
     (p.is_prepaid || p.has_unpaid_invoice) &&
