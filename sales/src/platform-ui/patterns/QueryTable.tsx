@@ -40,6 +40,9 @@ export interface QueryTableProps<T> {
   sortable?: string[]
   searchable?: boolean
   loading?: boolean
+  /** Fetching again over rows shown, and whether those rows are the previous query's (DataTable). */
+  fetching?: boolean
+  stale?: boolean
   error?: unknown
   errorMessages?: Record<string, string>
   onRetry?: () => void

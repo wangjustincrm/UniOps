@@ -24,12 +24,13 @@ const api = vi.hoisted(() => ({
   shadow: vi.fn(async () => ({ shadow_mode: true })), saveShadow: vi.fn(),
   runNow: vi.fn(), runs: vi.fn(async (): Promise<{ items: unknown[]; total: number }> => ({ items: [], total: 0 })), update: vi.fn(),
   list: vi.fn(), getRun: vi.fn(),
+  meta: vi.fn(async () => ({ version: 1, searchable: true, default_sort: [], fields: [], views: [], scheduler_enabled: true })),
 }))
 vi.mock('./connectionsApi', async (orig) => {
   const real = await orig<typeof import('./connectionsApi')>()
   return {
     ...real,
-    connectionsClient: { ...real.connectionsClient, list: api.list, importCsv: api.importCsv, update: api.update },
+    connectionsClient: { ...real.connectionsClient, list: api.list, importCsv: api.importCsv, update: api.update, meta: api.meta },
     runConnectionNow: api.runNow,
     fetchConnectionAudit: vi.fn(async () => []),
     testConnection: api.test, pinHostKey: api.pin, clearAuthLatch: api.clear,
@@ -318,3 +319,32 @@ describe('the row icons on Connections', () => {
   })
 })
 
+
+describe('when nothing runs by itself, and a run that is overdue', () => {
+  const ran = { ...conn, schedule_minutes: 5, next_run_at: '2026-11-02T20:05:00Z' }
+  const offMeta = { version: 1, searchable: true, default_sort: [], fields: [], views: [], scheduler_enabled: false }
+
+  it('the scheduler off: a banner, and Next run says to use Run now (in the list and the Schedule tab)', async () => {
+    api.meta.mockResolvedValueOnce(offMeta)
+    api.list.mockResolvedValue({ items: [{ ...ran, overdue: false }], total: 1 })
+    renderAs(['sales.read'])
+    expect(await screen.findByText(/Automatic runs are off in this environment \(SALES_SCHEDULER_ENABLED\)/)).toBeInTheDocument()
+    const row = (await screen.findByText('sftp-test')).closest('tr')!
+    expect(within(row).getByText('Automatic runs off: use Run now')).toBeInTheDocument()
+    expect(within(row).queryByText(/2026|Nov/)).toBeNull()  // no next-run time that never comes
+    fireEvent.click(within(row).getByText('sftp-test'))
+    const sheet = await screen.findByRole('dialog')
+    await openTab(sheet, 'Schedule')
+    expect(within(sheet).getByText(/Automatic runs are off in this environment/)).toBeInTheDocument()
+    expect(within(within(sheet).getByRole('region', { name: 'Schedule' })).getByText('Automatic runs off: use Run now')).toBeInTheDocument()
+  })
+
+  it('the scheduler on: no banner; an overdue connection is marked Overdue beside its next run', async () => {
+    api.list.mockResolvedValue({ items: [{ ...ran, overdue: true }], total: 1 })
+    renderAs(['sales.read'])
+    const row = (await screen.findByText('sftp-test')).closest('tr')!
+    await waitFor(() => expect(within(row).getByText('Overdue')).toBeInTheDocument())
+    expect(screen.queryByText(/Automatic runs are off/)).toBeNull()
+    expect(within(row).queryByText('Automatic runs off: use Run now')).toBeNull()
+  })
+})

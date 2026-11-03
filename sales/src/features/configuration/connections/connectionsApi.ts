@@ -49,6 +49,8 @@ export interface ConnectionRead {
   last_run_summary: string | null
   last_error: string | null
   next_run_at: string | null
+  /** The next run is overdue (the scheduler on, not paused, in its hours). */
+  overdue?: boolean
   active: boolean
   version: number
   created_at: string

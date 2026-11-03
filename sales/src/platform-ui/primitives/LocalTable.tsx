@@ -8,6 +8,8 @@ export interface LocalTableProps<T> {
   rowKey: (row: T, index: number) => string | number
   /** The table's accessible name. */
   ariaLabel: string
+  /** Its rows are being fetched again (the bar on the card's edge). */
+  fetching?: boolean
   /** Column ids sortable in the browser (by the column's accessorKey value). */
   sortable?: string[]
   initialSort?: SortValue
@@ -47,7 +49,7 @@ function compare(a: unknown, b: unknown): number {
  *  by default. Never fetches; for a server list use QueryTable / ListPage. */
 export function LocalTable<T>({
   columns, rows, rowKey, ariaLabel, sortable = [], initialSort, footer, density = 'compact', emptyTitle = 'Nothing here',
-  rowAttrs, onRowClick, expand, initiallyHidden,
+  rowAttrs, onRowClick, expand, initiallyHidden, fetching,
 }: LocalTableProps<T>) {
   const [sort, setSort] = useState<SortValue | null>(initialSort ?? null)
   const [hidden, setHidden] = useState<string[]>(initiallyHidden ?? [])
@@ -65,6 +67,7 @@ export function LocalTable<T>({
       rows={sorted.map((x) => x.row)}
       rowKey={(row) => byRow.get(row) ?? ''}
       ariaLabel={ariaLabel}
+      fetching={fetching}
       density={density}
       footer={footer && initiallyHidden ? shown.map((x) => footer[x.i]) : footer}
       expand={expand}

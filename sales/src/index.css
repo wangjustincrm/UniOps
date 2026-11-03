@@ -7,3 +7,9 @@
    dev container, where the package is mounted alongside the app. */
 @source "../../packages/shell/src";
 @import "@uniops/shell/tokens.css";
+
+/* platform-ui BusyBar: the indeterminate stripe sweeping across (none with reduced motion). */
+@keyframes platform-busy {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}

@@ -250,3 +250,62 @@ async def test_pause_and_resume_from_the_row_are_versioned_audited_updates(http)
     assert (await http.put(f"{C}/{c['id']}?version=2", json={"schedule_paused": False}, headers=OP)).json()["schedule_paused"] is False
     trail = (await http.get(f"{C}/{c['id']}/audit", headers=READER)).json()
     assert [(t["before"]["schedule_paused"], t["after"]["schedule_paused"]) for t in trail[:2]] == [(True, False), (False, True)]
+
+
+# ── overdue (user 2026-11-03): 2 intervals, at least 10 minutes; paused, inactive or outside hours: never ──
+def test_overdue_needs_two_intervals_or_ten_minutes_and_respects_pause_and_hours():
+    from app.domain.schedule import is_overdue
+    now = datetime(2026, 11, 4, 15, 0, tzinfo=UTC)  # Wed 10:00 in Toronto
+    any_time = Window()
+
+    def late(minutes, by, **kw):
+        args = dict(active=True, paused=False, window=any_time) | kw
+        return is_overdue(now, next_run_at=now - timedelta(minutes=by), minutes=minutes, **args)
+    assert late(5, 11) and not late(5, 9)            # 5-min schedule: 10 minutes is the floor
+    assert late(30, 61) and not late(30, 59)         # 30-min schedule: 2 intervals
+    assert not late(5, 60, paused=True)
+    assert not late(5, 60, active=False)
+    assert not late(5, 60, window=Window(time(18, 0), time(22, 0)))           # outside its hours now
+    assert late(5, 60, window=Window(time(6, 0), time(22, 0), ("Wed",)))       # inside them
+    assert not late(5, 60, window=Window(days=("Mon",)))                       # not one of its days
+    assert not is_overdue(now, next_run_at=None, minutes=5, active=True, paused=False, window=any_time)
+
+
+async def test_connections_say_whether_the_scheduler_runs_and_which_are_overdue(http, monkeypatch):
+    from types import SimpleNamespace
+    from app.services.connections import ConnectionService
+    c = await make_conn(http)
+    p = await make_conn(http, name="paused-one")
+    async with http.runtime.uow_factory(SYSTEM_ACTOR) as u:
+        await u.session.execute(sa.update(Connection.__table__).values(next_run_at=datetime.now(UTC) - timedelta(minutes=30)))
+        await u.session.execute(sa.update(Connection.__table__).where(Connection.__table__.c.id == p["id"]).values(schedule_paused=True))
+        await u.commit()
+    # off (dev and test): nothing ever runs by itself — said once, in the list's meta; no row is "overdue"
+    assert (await http.get(f"{C}/meta", headers=READER)).json()["scheduler_enabled"] is False
+    rows = {x["id"]: x for x in (await http.get(C, headers=READER)).json()["items"]}
+    assert rows[c["id"]]["overdue"] is False
+    monkeypatch.setattr(ConnectionService, "settings", SimpleNamespace(SALES_SCHEDULER_ENABLED=True))
+    assert (await http.get(f"{C}/meta", headers=READER)).json()["scheduler_enabled"] is True
+    rows = {x["id"]: x for x in (await http.get(C, headers=READER)).json()["items"]}
+    assert rows[c["id"]]["overdue"] is True
+    assert rows[p["id"]]["overdue"] is False  # paused: never overdue
+    async with http.runtime.uow_factory(SYSTEM_ACTOR) as u:  # the whole scheduler paused: none is
+        await SETTINGS.set(u.session, SCHEDULER_PAUSED, True)
+        await u.commit()
+    assert not any(x["overdue"] for x in (await http.get(C, headers=READER)).json()["items"])
+
+
+async def test_health_lists_each_overdue_connection_as_an_error(http):
+    c = await make_conn(http)
+    async with http.runtime.uow_factory(SYSTEM_ACTOR) as u:
+        await u.session.execute(sa.update(Connection.__table__).where(Connection.__table__.c.id == c["id"]).values(
+            next_run_at=datetime.now(UTC) - timedelta(minutes=30)))
+        await u.commit()
+    from app.core.config import settings
+    from app.services.health import Health
+    async with http.runtime.uow_factory(SYSTEM_ACTOR) as u:
+        on = await Health(u, settings.model_copy(update={"SALES_SCHEDULER_ENABLED": True})).checks()
+        off = await Health(u, settings.model_copy(update={"SALES_SCHEDULER_ENABLED": False})).checks()
+    row = next(x for x in on.checks if x.key == f"overdue:{c['id']}")
+    assert row.result == "FAILED" and row.label == f"Connection {c['name']} overdue" and row.detail.startswith("overdue since ")
+    assert not any(x.key.startswith("overdue:") for x in off.checks)  # off: the Scheduler row says it, once

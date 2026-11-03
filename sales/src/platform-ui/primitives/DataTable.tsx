@@ -9,6 +9,8 @@ import { cn } from '../lib/cn'
 import { EmptyState, ErrorState } from './States'
 import { useSynced } from './useSynced'
 import { groupKey } from './groupKey'
+import { BusyBar } from './BusyBar'
+import { useDelayed } from './useDelayed'
 
 export type { ColumnDef } from '@tanstack/react-table'
 
@@ -38,6 +40,11 @@ export interface DataTableProps<T> {
   rowKey: (row: T) => string | number
   onRowClick?: (row: T) => void
   loading?: boolean
+  /** Rows are being fetched again (a refresh, a new page / sort / filter): a bar
+   *  on the card's top edge and aria-busy, after a short delay. */
+  fetching?: boolean
+  /** The rows shown belong to the previous query (kept while the new one loads): dimmed, with "Updating…". */
+  stale?: boolean
   /** Shown instead of the table when set. */
   errorMessage?: string | null
   onRetry?: () => void
@@ -90,7 +97,7 @@ export type RowAttrs = { className?: string } & { [data: `data-${string}`]: stri
  *  empty / loading / error states. It knows nothing about the API or the
  *  query contract — QueryTable (patterns) adapts it to a QuerySpec. */
 export function DataTable<T>({
-  columns, rows, rowKey, onRowClick, loading, errorMessage, onRetry, emptyTitle = 'Nothing here yet',
+  columns, rows, rowKey, onRowClick, loading, fetching, stale, errorMessage, onRetry, emptyTitle = 'Nothing here yet',
   sort, sortable = [], onSortChange, headerAddon, leadingHeader, chips, grouping, leading, onColumnMove, search, filters,
   toolbar, pagination, ariaLabel, density = 'normal', footer, rowAttrs, expand,
 }: DataTableProps<T>) {
@@ -116,6 +123,10 @@ export function DataTable<T>({
   const [searchDraft, setSearchDraft] = useSynced(search?.value ?? '')
   const sorting: SortingState = useMemo(() => (Array.isArray(sort) ? sort : sort ? [sort] : []), [sort])
   const sortableSet = useMemo(() => new Set(sortable), [sortable])
+  // A refetch over rows already shown: the bar (after 200 ms); the first load keeps its skeleton rows.
+  const busy = useDelayed(!!fetching && !(loading && rows.length === 0) && rows.length > 0)
+  // Rows of the previous query (another page / sort / filter) while the new one loads: dimmed.
+  const dim = busy && !!stale
 
   const table = useReactTable({
     data: rows,
@@ -160,8 +171,8 @@ export function DataTable<T>({
       {errorMessage ? (
         <ErrorState message={errorMessage} onRetry={onRetry} />
       ) : (
-        <ScrollX>
-          <table aria-label={ariaLabel} className={cn('w-full', density === 'compact' ? 'text-xs' : 'text-sm')}>
+        <ScrollX busy={busy}>
+          <table aria-label={ariaLabel} aria-busy={busy || (loading && rows.length === 0) || undefined} className={cn('w-full', density === 'compact' ? 'text-xs' : 'text-sm')}>
             <thead className="bg-neutral-50 text-left text-xs uppercase tracking-wide text-neutral-500">
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
@@ -226,7 +237,7 @@ export function DataTable<T>({
                 </tr>
               ))}
             </thead>
-            <tbody>
+            <tbody data-stale={dim || undefined} className={cn('transition-opacity', dim && 'opacity-60')}>
               {loading && rows.length === 0
                 ? Array.from({ length: 5 }, (_, i) => <SkeletonRow key={i} cols={columns.length + (leadCell ? 1 : 0)} />)
                 : table.getRowModel().rows.map((r, i, all) => {
@@ -303,7 +314,7 @@ export function DataTable<T>({
                 })}
             </tbody>
             {footer && rows.length > 0 && (
-              <tfoot className="border-t border-neutral-200 bg-neutral-50 font-medium">
+              <tfoot data-stale={dim || undefined} className={cn('border-t border-neutral-200 bg-neutral-50 font-medium transition-opacity', dim && 'opacity-60')}>
                 <tr>
                   {leadCell && <td />}
                   {footer.map((f, i) => <td key={i} className={cn(cellPad, 'text-neutral-800')}>{f}</td>)}
@@ -320,6 +331,7 @@ export function DataTable<T>({
         </ScrollX>
       )}
 
+      {dim && <p className="-mb-2 self-end text-xs text-neutral-500">Updating…</p>}
       {pagination && pagination.total > 0 && (
         <Pagination
           page={pagination.page}
@@ -335,7 +347,7 @@ export function DataTable<T>({
 
 /** The table's card, scrolling sideways when its columns do not fit (a phone):
  *  a fade and "More columns →" on the right say there is more, until the end. */
-function ScrollX({ children }: { children: ReactNode }) {
+function ScrollX({ children, busy }: { children: ReactNode; busy?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
   const [more, setMore] = useState(false)
   useEffect(() => {
@@ -352,6 +364,7 @@ function ScrollX({ children }: { children: ReactNode }) {
   return (
     <div className="relative">
       <div ref={ref} className="overflow-x-auto rounded-lg border border-neutral-200 bg-white">{children}</div>
+      <BusyBar active={!!busy} className="rounded-t-lg" />
       {more && (
         <>
           <div aria-hidden className="pointer-events-none absolute right-px top-px h-[calc(100%-2px-1.75rem)] w-10 rounded-r-lg bg-gradient-to-l from-white to-transparent" />

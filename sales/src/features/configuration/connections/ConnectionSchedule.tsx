@@ -7,6 +7,7 @@ import {
 } from '@/platform-ui'
 import { runsClient, type RunRead } from '@/features/operations/operationsApi'
 import { connectionsClient, describeSchedule, runConnectionNow, type ConnectionRead } from './connectionsApi'
+import { NextRun } from './SchedulerState'
 
 const RETRY = 'sales.file.retry'
 
@@ -53,7 +54,7 @@ export function ConnectionSchedule({ connection: c }: { connection: ConnectionRe
         ['Runs', `${describeSchedule(c)}${c.schedule_paused ? ' — paused' : ''}`],
         ['Last run', c.last_run_at ? `${formatDateTime(c.last_run_at)} · ${c.last_run_status ?? ''}${c.last_run_summary ? ` · ${c.last_run_summary}` : ''}` : 'never'],
         ['Last error', c.last_error],
-        ['Next run', c.next_run_at ? formatDateTime(c.next_run_at) : c.active ? 'at the next tick' : '—'],
+        ['Next run', <NextRun key="n" c={c} />],
       ]} />
       <div className="flex flex-wrap items-center gap-2">
         <ActionButton size="sm" permission={RETRY} disabled={!c.active || running}

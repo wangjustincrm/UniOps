@@ -160,7 +160,7 @@ function Detail({ row }: { row: InvoiceRead }) {
           partnerLabel(row.partner_name, row.partner_code)].filter(Boolean).join(' · ')}
         badges={<StatusCell value={inv?.status ?? row.status} />}
         loading={q.isLoading} error={q.error} errorMessages={errorMessages}
-        onRefresh={() => q.refetch()} updatedAt={q.dataUpdatedAt}
+        onRefresh={() => q.refetch()} updatedAt={q.dataUpdatedAt} fetching={q.isFetching}
         facts={inv ? [
           { label: 'Total', value: formatMoney(inv.total, inv.currency), hint: inv.currency },
           { label: 'Status', value: inv.status ?? '—', tone: inv.status === 'Blocked' || inv.status === 'Failed' ? 'warning' : inv.status === 'Sent' ? 'success' : 'neutral' },

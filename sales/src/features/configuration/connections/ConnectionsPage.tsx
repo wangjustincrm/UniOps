@@ -1,6 +1,7 @@
 import { Badge, CrudPage, DateTimeCell, StatusCell, formatDateTime, useToast, type ColumnDef } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import { ConnectionFiles } from './ConnectionFiles'
+import { NextRun, SchedulerOffBanner } from './SchedulerState'
 import { ConnectionRowActions } from './ConnectionRowActions'
 import { ConnectionSchedule } from './ConnectionSchedule'
 import { ConnectionTools } from './ConnectionTools'
@@ -37,7 +38,7 @@ const columns: ColumnDef<ConnectionRead, unknown>[] = [
       {c.last_run_summary && <span className="text-xs text-neutral-500">{c.last_run_summary}</span>}
     </span>
   ) },
-  { accessorKey: 'next_run_at', header: 'Next run', cell: ({ row }) => <DateTimeCell value={row.original.next_run_at} /> },
+  { accessorKey: 'next_run_at', header: 'Next run', cell: ({ row }) => <NextRun c={row.original} /> },
 ]
 
 const errorMessages: Record<string, string> = {
@@ -70,7 +71,7 @@ export default function ConnectionsPage() {
       }}
       csvImport
       errorMessages={errorMessages}
-      notice={<div className="flex flex-col gap-3"><ShadowPanel /><EdiSettingsPanel /></div>}
+      notice={<div className="flex flex-col gap-3"><SchedulerOffBanner /><ShadowPanel /><EdiSettingsPanel /></div>}
       recordTitle={(c) => c.name}
       recordSubtitle={(c) => [c.kind, c.host, c.partner_code].filter(Boolean).join(' · ')}
       recordFacts={(c) => [
@@ -80,14 +81,14 @@ export default function ConnectionsPage() {
         { label: 'Schedule', value: c.schedule_paused ? 'Paused' : `Every ${c.schedule_minutes} min`, tone: c.schedule_paused ? 'warning' : 'neutral' },
         { label: 'Last run', value: c.last_run_status ?? '—', tone: c.last_run_status === 'FAILED' ? 'danger' : c.last_run_status === 'PARTIAL' ? 'warning' : 'neutral',
           hint: c.last_run_at ? formatDateTime(c.last_run_at) : undefined },
-        { label: 'Next run', value: c.next_run_at ? formatDateTime(c.next_run_at) : '—' },
+        { label: 'Next run', value: <NextRun c={c} />, tone: c.overdue ? 'danger' : 'neutral' },
       ]}
       detailTabs={(c, details) => [
         { id: 'overview', label: 'Overview', tone: c.auth_failed_at ? 'danger' : !c.secret_present ? 'warning' : undefined,
           render: () => <ConnectionTools connection={c} /> },
         { ...details, label: 'Settings' },
         { id: 'schedule', label: 'Schedule & runs', tone: c.last_run_status === 'FAILED' ? 'danger' : undefined,
-          render: () => <ConnectionSchedule connection={c} /> },
+          render: () => <><SchedulerOffBanner /><ConnectionSchedule connection={c} /></> },
         { id: 'files', label: 'Files', render: () => <ConnectionFiles connection={c} /> },
         historyTab('connections', c.id, c.version, fetchConnectionAudit),
       ]}

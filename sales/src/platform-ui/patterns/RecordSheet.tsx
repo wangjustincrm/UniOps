@@ -8,6 +8,8 @@ import { Button, Skeleton } from '../primitives/shell'
 import { EmptyState } from '../primitives/States'
 import { formatTime } from '../primitives/format'
 import { Tabs } from '../primitives/Tabs'
+import { BusyBar } from '../primitives/BusyBar'
+import { useDelayed } from '../primitives/useDelayed'
 import { cn } from '../lib/cn'
 import { ErrorView } from './ErrorMessage'
 import { PermissionContext } from './permissions'
@@ -64,6 +66,8 @@ export interface RecordSheetProps {
   /** When the record's data was fetched (ms since epoch). */
   updatedAt?: number
   loading?: boolean
+  /** The record is being fetched again: a bar under the header. */
+  fetching?: boolean
   error?: unknown
   errorMessages?: Record<string, string>
   size?: RecordSheetSize
@@ -144,6 +148,8 @@ export function RecordSheet(props: RecordSheetProps) {
   const [expanded, setExpanded] = useState(readExpanded)
   const [refreshing, setRefreshing] = useState(false)
   const ago = useAgo(props.updatedAt)
+  // A refetch of a record already shown (Refresh, an action's invalidation), after 200 ms; the first load has its skeleton.
+  const showBar = useDelayed((!!props.fetching || refreshing) && !props.loading)
   const busy = useRef(false)
 
   const open = host ? host.open : !!props.open
@@ -172,7 +178,7 @@ export function RecordSheet(props: RecordSheetProps) {
   const more = (props.more ?? []).filter((m) => !m.permission || can(m.permission))
 
   const header = (
-    <div className="flex flex-col gap-1 border-b border-neutral-200 bg-white px-4 py-3 sm:px-6">
+    <div className="relative flex flex-col gap-1 border-b border-neutral-200 bg-white px-4 py-3 sm:px-6">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <SheetTitle className="truncate text-lg">{props.title}</SheetTitle>
@@ -200,6 +206,7 @@ export function RecordSheet(props: RecordSheetProps) {
         </div>
       </div>
       {props.subtitle && <p className="truncate text-sm text-neutral-500">{props.subtitle}</p>}
+      <BusyBar active={showBar} className="bottom-0 top-auto -mb-px" />
     </div>
   )
 

@@ -174,6 +174,8 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
         {...view.tableProps}
         searchable={props.searchable ?? true}
         loading={list.isLoading || !view.ready}
+        fetching={list.isFetching}
+        stale={list.isPlaceholderData}
         error={list.error}
         errorMessages={props.errorMessages}
         onRetry={() => list.refetch()}

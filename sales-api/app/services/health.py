@@ -32,7 +32,7 @@ from app.models.shipments import Shipment, ShipmentRow
 from app.models.transfers import Receipt
 from app.platform.authorization import requires
 from app.platform.query import Filter, QuerySpec
-from app.domain.schedule import describe
+from app.domain.schedule import describe, is_overdue
 from app.schemas.health import CardRead, CheckRead, DashboardRead, HealthRead, JobRead, RunBrief, TaskCount
 from app.services.cycle import SYSTEM as SYSTEM_SCOPE
 from app.services.cycle import window_of
@@ -181,9 +181,18 @@ class Health:
             add("scheduler", "Scheduler", WARNING, f"not running in this environment (SALES_SCHEDULER_ENABLED off); {last}",
                 link="/runs")
         elif overdue:
-            add("scheduler", "Scheduler", WARNING, f"overdue by more than 3 intervals: {', '.join(overdue)}; {last}", link="/runs")
+            add("scheduler", "Scheduler", WARNING, f"overdue: {', '.join(overdue)}; {last}", link="/runs")
         else:
             add("scheduler", "Scheduler", PASSED, f"{len(jobs)} jobs on schedule; {last}", link="/runs")
+
+        # each overdue connection, as an error (user 2026-11-03): it should have run and did not
+        if enabled and not paused:
+            for j in jobs:
+                if j.overdue and j.connection_id is not None:
+                    add(f"overdue:{j.connection_id}", f"Connection {j.label} overdue", FAILED,
+                        f"overdue since {j.next_run_at:%Y-%m-%d %H:%M} UTC (every {j.interval_minutes} min); last run "
+                        + (f"{j.last_run_at:%Y-%m-%d %H:%M} UTC {j.last_run_status or ''}".strip() if j.last_run_at else "none"),
+                        link="/config/connections")
 
         # files and ACKs
         cards: dict[str, int] = {}
@@ -255,12 +264,12 @@ class Health:
         for c in (await self.s.execute(select(Connection).where(Connection.active.is_(True)).order_by(Connection.name))).scalars():
             w = window_of(c)
             paused = master or c.schedule_paused
-            late = c.next_run_at is not None and now > c.next_run_at + timedelta(minutes=3 * c.schedule_minutes)
             out.append(JobRead(scope=f"connection:{c.id}", label=c.name, connection_id=c.id,
                                interval_minutes=c.schedule_minutes, schedule=describe(c.schedule_minutes, w),
                                paused=paused, last_run_at=c.last_run_at, last_run_status=c.last_run_status,
                                last_run_summary=c.last_run_summary, next_run_at=c.next_run_at,
-                               overdue=not paused and late and w.contains(now)))
+                               overdue=is_overdue(now, next_run_at=c.next_run_at, minutes=c.schedule_minutes,
+                                                  active=c.active, paused=paused, window=w)))
         return out
 
     # ── FR-OB-52b ────────────────────────────────────────────────────────────

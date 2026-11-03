@@ -57,6 +57,20 @@ def is_due(now: datetime, *, next_run_at: datetime | None, paused: bool, window:
     return not paused and window.contains(now) and (next_run_at is None or now >= next_run_at)
 
 
+def overdue_after(minutes: int) -> timedelta:
+    """How late a run may be before it counts as overdue: 2 intervals, at least 10 minutes."""
+    return timedelta(minutes=max(2 * minutes, 10))
+
+
+def is_overdue(now: datetime, *, next_run_at: datetime | None, minutes: int, active: bool, paused: bool,
+               window: Window) -> bool:
+    """A job that should have run and did not (user 2026-11-03): active, not paused,
+    inside its window now, and its next run more than overdue_after(minutes) ago.
+    (Whether the scheduler runs at all is the caller's question.)"""
+    return (active and not paused and next_run_at is not None and window.contains(now)
+            and now > next_run_at + overdue_after(minutes))
+
+
 def next_run(started_at: datetime, minutes: int) -> datetime:
     """The cadence runs from the start of the last run."""
     return started_at + timedelta(minutes=minutes)

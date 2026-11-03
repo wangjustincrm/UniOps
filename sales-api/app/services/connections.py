@@ -4,7 +4,12 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import datetime, timezone
 from typing import Any, ClassVar
+
+from app.core.config import settings as app_settings
+from app.domain.schedule import is_overdue
+from app.platform.query import QuerySpec
 
 from app.domain.config import AFTER_READ, CONNECTION_KINDS, CONNECTION_MODES
 from app.domain.connections import check_connection
@@ -23,6 +28,7 @@ from app.schemas.connections import (
     ConnectionCreate, ConnectionRead, ConnectionTestRead, ConnectionUpdate, EdiSettings, FolderCheckRead, HostKeyRead,
     SchedulerSettings, ShadowSetting,
 )
+from app.services.cycle import window_of
 from app.services.intake import ConnectionSnapshot
 from app.services.problems import SFTP_AUTH_FAILED
 from app.services.settings import (
@@ -89,6 +95,28 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
     unique_constraints = {"sales_connections_name_key": ("connection.name_taken", "name")}
     # Where secrets live (§5.3): the server environment, read for presence only.
     environ: ClassVar[Any] = os.environ
+    # The environment's switches (SALES_SCHEDULER_ENABLED): whether next runs ever happen.
+    settings: ClassVar[Any] = app_settings
+    clock: ClassVar[Any] = staticmethod(lambda: datetime.now(timezone.utc))
+
+    def scheduler_enabled(self) -> bool:
+        return bool(getattr(self.settings, "SALES_SCHEDULER_ENABLED", False))
+
+    async def meta(self) -> dict[str, Any]:
+        """The list's fields, and whether the scheduler runs here at all (when it
+        does not, a Next run never comes: the page says so)."""
+        return {**await super().meta(), "scheduler_enabled": self.scheduler_enabled()}
+
+    async def list(self, spec: QuerySpec):
+        """Each row says whether its next run is overdue: only when the scheduler
+        runs and is not paused as a whole (Health, Scheduler)."""
+        page = await super().list(spec)
+        if self.scheduler_enabled() and not await SETTINGS.get(self.uow.session, SCHEDULER_PAUSED):
+            now = self.clock()
+            for c in page.items:
+                c.overdue = is_overdue(now, next_run_at=c.next_run_at, minutes=c.schedule_minutes, active=c.active,
+                                       paused=c.schedule_paused, window=window_of(c))
+        return page
 
     def to_read(self, entity: Connection) -> ConnectionRead:
         out = super().to_read(entity)

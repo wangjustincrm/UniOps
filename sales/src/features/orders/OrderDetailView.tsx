@@ -400,7 +400,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
           {live.archive_suppressed && live.fulfillment_status !== 'Archive Suppressed' && <Badge variant="warning">Archived in Shopify</Badge>}
         </>}
         size="xl" loading={q.isLoading} error={q.error}
-        onRefresh={refresh} updatedAt={q.dataUpdatedAt}
+        onRefresh={refresh} updatedAt={q.dataUpdatedAt} fetching={q.isFetching}
         facts={facts} actions={actions} tabs={tabs}
       />
       {d && (

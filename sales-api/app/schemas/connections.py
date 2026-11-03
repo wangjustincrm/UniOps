@@ -151,6 +151,8 @@ class ConnectionRead(BaseModel):
     last_run_summary: str | None
     last_error: str | None
     next_run_at: datetime | None
+    # Filled by the list: the next run is overdue (scheduler on, not paused, in its hours; domain/schedule.is_overdue).
+    overdue: bool = False
     active: bool
     version: int
     created_at: datetime

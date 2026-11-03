@@ -62,6 +62,8 @@ export type { EditableColumn, EditableTableProps, EditCell } from './primitives/
 export { StatusBadge } from './primitives/StatusBadge'
 export { StatCard } from './primitives/StatCard'
 export { IconButton } from './primitives/IconButton'
+export { BusyBar } from './primitives/BusyBar'
+export { useDelayed } from './primitives/useDelayed'
 export { Tooltip } from './primitives/Tooltip'
 export type { StatusStyle, BadgeVariant } from './primitives/StatusBadge'
 export { EmptyState, ErrorState, ErrorLine } from './primitives/States'
