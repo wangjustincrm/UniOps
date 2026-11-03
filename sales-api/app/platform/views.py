@@ -33,7 +33,10 @@ from app.platform.query import MAX_FILTERS, MAX_GROUP_KEYS, MAX_PAGE_SIZE
 
 VIEW_STATE_VERSION = 1
 MAX_VIEWS_PER_LIST = 50
-_STATE_KEYS = {"version", "sort", "group", "filters", "search", "pageSize", "columns", "hidden", "includeHistorical"}
+_STATE_KEYS = {"version", "sort", "group", "filters", "search", "pageSize", "columns", "hidden", "includeHistorical",
+               "refresh"}
+# Auto-refresh every N seconds, as the list's refresh control offers them (absent: off).
+AUTO_REFRESH_SECONDS = (30, 60, 300)
 
 
 class UserViewMixin(Audited, Versioned):
@@ -97,6 +100,8 @@ def check_state(state: Any, repo: Any) -> dict[str, Any]:
             raise ValueError(f"pageSize is 1…{MAX_PAGE_SIZE}")
         if out.get("search") is not None and not isinstance(out["search"], str):
             raise ValueError("search is text")
+        if "refresh" in out and out["refresh"] not in AUTO_REFRESH_SECONDS:
+            raise ValueError(f"refresh is one of {', '.join(map(str, AUTO_REFRESH_SECONDS))} seconds")
     except ValueError as e:
         raise InvalidInput("view.bad_state", f"the view's state is not valid: {e}", {"field": "state"}) from e
     missing = (set(sort) - set(repo.sortable)) | (set(group) - set(repo.groupable)) | (set(filters) - set(repo.filterable))

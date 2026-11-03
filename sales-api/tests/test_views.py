@@ -106,12 +106,21 @@ async def test_one_default_per_list_and_a_name_once_whatever_its_case(http):
     ({"sort": []}, "view.bad_state"),
     ({"version": VIEW_STATE_VERSION, "colour": "red"}, "view.bad_state"),
     ({"version": VIEW_STATE_VERSION, "pageSize": 1000}, "view.bad_state"),
+    ({"version": VIEW_STATE_VERSION, "refresh": 7}, "view.bad_state"),
     ({"version": VIEW_STATE_VERSION, "filters": [{"field": "secret_name", "op": "eq", "value": "x"}]}, "view.unknown_field"),
     ({"version": VIEW_STATE_VERSION, "group": [{"field": "review_reason"}]}, "view.unknown_field"),  # not groupable
 ])
 async def test_a_state_this_version_cannot_read_is_refused(http, state, code):
     r = await new(http, state=state)
     assert r.status_code == 422 and r.json()["error"]["code"] == code
+
+
+async def test_a_view_keeps_its_auto_refresh(http):
+    """The refresh control's choice is part of a saved view (regression: saving
+    a view with auto-refresh on was refused as an unknown part of the state)."""
+    r = await new(http, state={"version": VIEW_STATE_VERSION, "refresh": 30})
+    assert r.status_code == 201, r.text
+    assert r.json()["state"]["refresh"] == 30
 
 
 async def test_a_view_that_no_longer_fits_is_flagged_stale_not_dropped(http):
