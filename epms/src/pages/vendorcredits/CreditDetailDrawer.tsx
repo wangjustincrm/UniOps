@@ -101,7 +101,8 @@ export function CreditDetailDrawer({
             {row('Tax', <span className="font-mono">{money(credit.tax_amount)}</span>)}
             {row('Total', <span className="font-mono font-semibold">{money(credit.total_amount)}</span>)}
             {row('Applied', <span className="font-mono">{money(credit.applied_amount)}</span>)}
-            {row('Remaining', <span className="font-mono font-semibold">{money(credit.remaining_amount)}</span>)}
+            {/* Voided: nothing left to apply (ISS-0189); display only. */}
+            {row('Remaining', <span className="font-mono font-semibold">{money(credit.status === 'void' ? '0' : credit.remaining_amount)}</span>)}
             {row('PO', credit.po_number ?? '—')}
             {row('Recorded by', `${credit.uploaded_by_name ?? '—'} · ${formatDate(credit.uploaded_at)}`)}
             {credit.reviewed_at && row('Reviewed by', `${credit.reviewed_by_name ?? '—'} · ${formatDate(credit.reviewed_at)}`)}
