@@ -1,4 +1,11 @@
-"""997 functional acknowledgements (Appendix A.5, FR-OB-22a)."""
+"""997 functional acknowledgements (Appendix A.5, FR-OB-22a).
+
+VERIFIED AGAINST REAL FILES (2026-11-03: Radiant's 8 real 997s on dev2):
+Radiant acknowledges at the GROUP level only — `AK1*OW*<GS06>` and
+`AK9*A*1*1*1*6`, no AK2 / AK5. A group without AK2 stands for every set in it:
+the 940 (or 943) is found by its GS06 alone and accepted or rejected by AK9
+(`GroupAck.group_only`). An AK2 / AK5, when present, still decides per set.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -30,6 +37,11 @@ class GroupAck:
     @property
     def accepted(self) -> bool:
         return (self.code or "") in ACCEPTED_CODES
+
+    @property
+    def group_only(self) -> bool:
+        """No AK2: the AK9 answers for every set of the group (Radiant's real 997s)."""
+        return not self.sets
 
 
 def parse_997(data: bytes) -> list[GroupAck]:

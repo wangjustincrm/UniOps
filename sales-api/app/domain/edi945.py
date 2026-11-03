@@ -1,18 +1,32 @@
 """945 warehouse shipping advice (Appendix A.6; FR-OB-25b, FR-OB-28).
 
 Every W12 under every LX is one row — never only the first (FR-OB-25b). The
-pallet's SSCC (`MAN*GM`) stays a string with its leading zeros. The ship date
-is DTM's, else G62's. Radiant works in EA, so W12 quantities are EA.
+pallet's SSCC (`MAN*GM`) stays a string with its leading zeros. Radiant works
+in EA, so W12 quantities are EA.
 
-ASSUMPTIONS to check against real Radiant 945s (no real file on this machine,
-2026-11-02 — as for the 940's, listed in the report):
-- header ship date: the first DTM before the first LX with a date in DTM-02
-  (any qualifier, 011 "shipped" preferred), else the first G62 there (G62-02);
-- per W12: the lot is `N9*LT` after it, else W12-09; the expiry is a `DTM*036`
-  after it, else `G62*??` is NOT used; weight is W12-10;
-- `N9*2I` / `N9*MB` / `N9*BM` before the first LX are the shipment's, inside an
-  LX the pallet's (tracking per parcel);
-- W27-01 is the mode, W27-02 the carrier (SCAC).
+VERIFIED AGAINST REAL FILES (2026-11-03: Radiant's 11 real 945s on dev2 —
+nine Shopify orders, one Zoho manual order "C0031", one Sobeys order; the
+anonymised shape is tests/fixtures/radiant_945_real_shape.edi):
+- W06: W06-02 the order key (Shopify order number; Zoho's own number for a
+  retailer or manual order, e.g. "001008597", "C0031"), W06-04 Radiant's
+  shipment id, W06-06 the PO (the Shopify number again, the retailer PO, or
+  absent for a manual order). Header `N9*PO` repeats the PO; header `N9*E1` is
+  Zoho's reference ("SHP-9497", or its 940 file name
+  "CRM-940_<number>_<partner>_<PO>"). Both are kept (`po`, `reference`).
+- header: N1*ST (name, 94 id) + N3 + N4; `N9*MB` and `N9*BM` (master bill,
+  bill of lading); the ship date is `G62*11` (no DTM in the real files — DTM
+  is still read first when present); W27-01 the mode (U parcel, LT LTL),
+  W27-02 the carrier (PRLA, WIFS).
+- an LX is a PALLET (`LX` + `MAN*GM` SSCC + `PAL` weight), not the 940's line:
+  several W12s follow one LX. `N9*PKG` repeats the SSCC.
+- W12: W12-01 "CC", W12-02 ordered, W12-03 shipped, W12-05 "EA", W12-06 the
+  UPC, W12-07 "VN", W12-08 our item code; W12-09 / W12-10 empty.
+- after each W12: `G69` (description), `N9*LT` lot, `N9*2I` the parcel's
+  tracking (per W12, not per pallet), `N9*PKG`, `N9*E1/E2/E3` (description,
+  case GTIN, buyer part), and the expiry as `G62*36` — not `DTM*036` (still
+  read); "19000101" means none. An item without a lot (CRMMARK002) has no
+  `N9*LT` and the 19000101 expiry.
+- every file is one ST per order; W03 holds the totals.
 """
 from __future__ import annotations
 
@@ -51,7 +65,7 @@ class Row945:
     lot: str | None = None
     expiry: date | None = None
     weight: Decimal | None = None
-    tracking: str | None = None  # the pallet's N9*2I
+    tracking: str | None = None  # the parcel's N9*2I (after its W12), else the pallet's
 
 
 @dataclass
@@ -68,12 +82,18 @@ class Shipment945:
     tracking: list[str] = field(default_factory=list)
     carrier_ref: str | None = None   # N9*MB
     bol: str | None = None           # N9*BM
+    reference: str | None = None     # header N9*E1: Zoho's reference (its 940 name, or "SHP-<n>")
     parties: dict[str, Party] = field(default_factory=dict)  # N1-01 → party
     rows: list[Row945] = field(default_factory=list)
 
 
+NO_DATE = "19000101"  # Radiant's "no expiry" (an item without a lot)
+
+
 def _date(v: str | None) -> date | None:
     v = (v or "").strip()
+    if v == NO_DATE:
+        return None
     if re.fullmatch(r"\d{8}", v):
         try:
             return date(int(v[:4]), int(v[4:6]), int(v[6:]))
@@ -111,7 +131,7 @@ def parse_945(data: bytes) -> list[Shipment945]:
     out: list[Shipment945] = []
     cur: Shipment945 | None = None
     header_dtm: list[tuple[str | None, date]] = []
-    header_g62: date | None = None
+    header_g62: list[tuple[str | None, date]] = []
     lx_n = 0
     sscc: str | None = None
     lx_number: str | None = None
@@ -127,7 +147,7 @@ def parse_945(data: bytes) -> list[Shipment945]:
             cur = Shipment945(control=control(_get(s, 2) or ""), group_control=gs06, order_key_raw=None, po=None,
                               shipment_id=None, ship_date=None, ship_date_source=None)
             out.append(cur)
-            header_dtm, header_g62, lx_n, sscc, lx_number, pallet_tracking, row, party = [], None, 0, None, None, None, None, None
+            header_dtm, header_g62, lx_n, sscc, lx_number, pallet_tracking, row, party = [], [], 0, None, None, None, None, None
             continue
         if cur is None:
             continue
@@ -176,17 +196,20 @@ def parse_945(data: bytes) -> list[Shipment945]:
             if q == "LT" and row is not None:
                 row.lot = v
             elif q == "2I":
-                if lx_n:
+                if row is not None:  # after a W12: that parcel's (the real files)
+                    row.tracking = v
+                elif lx_n:  # after the LX, before its first W12: the pallet's
                     pallet_tracking = v
-                    for r in cur.rows:
-                        if r.lx_index == lx_n:
-                            r.tracking = v
-                elif v:
+                if v and v not in cur.tracking:
                     cur.tracking.append(v)
             elif q == "MB" and not lx_n:
                 cur.carrier_ref = v
             elif q == "BM" and not lx_n:
                 cur.bol = v
+            elif q == "PO" and not lx_n and v:
+                cur.po = cur.po or v
+            elif q == "E1" and not lx_n:
+                cur.reference = v
         elif tag == "DTM":
             d = _date(_get(s, 2))
             if lx_n == 0:
@@ -194,8 +217,13 @@ def parse_945(data: bytes) -> list[Shipment945]:
                     header_dtm.append((_get(s, 1), d))
             elif row is not None and _get(s, 1) == "036":
                 row.expiry = d
-        elif tag == "G62" and lx_n == 0 and header_g62 is None:
-            header_g62 = _date(_get(s, 2))
+        elif tag == "G62":
+            d = _date(_get(s, 2))
+            if lx_n == 0:
+                if d is not None:
+                    header_g62.append((_get(s, 1), d))
+            elif row is not None and _get(s, 1) == "36":  # the real files' expiry (19000101: none)
+                row.expiry = d
     if cur is not None:
         raise X12Error("945 set without SE")
     if not out:
@@ -208,12 +236,12 @@ def parse_945(data: bytes) -> list[Shipment945]:
     return out
 
 
-def _finish(sh: Shipment945, dtm: list[tuple[str | None, date]], g62: date | None) -> None:
+def _finish(sh: Shipment945, dtm: list[tuple[str | None, date]], g62: list[tuple[str | None, date]]) -> None:
     shipped = next((d for q, d in dtm if q == "011"), None) or (dtm[0][1] if dtm else None)
     if shipped is not None:
         sh.ship_date, sh.ship_date_source = shipped, "DTM"
-    elif g62 is not None:
-        sh.ship_date, sh.ship_date_source = g62, "G62"
+    elif g62:  # G62*11 "shipped on" (the real files), else the first
+        sh.ship_date, sh.ship_date_source = next((d for q, d in g62 if q == "11"), g62[0][1]), "G62"
 
 
 # ── FR-OB-28: the order key ──────────────────────────────────────────────────

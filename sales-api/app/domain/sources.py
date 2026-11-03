@@ -132,8 +132,21 @@ def from_shopify(o: dict[str, Any], *, partner_code: str, partner_abbrev: str | 
 
 
 # ── retailer 850 JSON (PRD A.8) ──────────────────────────────────────────────
-# Every key the parser reads, in one place: the names follow PRD A.8 and are
-# to be confirmed against an archived TrueCommerce file (OB-OI-18).
+# Every key the parser reads, in one place.
+#
+# VERIFIED AGAINST REAL FILES (2026-11-03: TrueCommerce's 2 real Loblaws
+# 850s, AC-9898, on dev2; anonymised shape tests/fixtures/truecommerce_850_real_shape.json):
+# - the lines are under "Item" (not "Lines" as PRD A.8 had it): Line "00010",
+#   BuyerPart (zero-padded), UPC, GTIN#, Description, Quantity "200" (text),
+#   UOM "Case", UnitPrice, ofInnerPacks;
+# - the ship-to and bill-to are nested objects: "ShipTo" {ShipToCode (the
+#   GLN), ShipToName, ShipToAddress-LineOne / -LineTwo, ShipToCity,
+#   ShipToState, ShipToZipCode, ShipToCountry}, "BillTo" {BillToCode,
+#   BillToName, BillTo… address}; also "Buying Party", unused;
+# - dates: PODate "2026-11-03T00:00:00", RequestedDeliveryDate "11/10/2026";
+#   empty values are "" (or null).
+# The flat keys of A.8 (ShipToAddress1, …, "Lines") are still read when the
+# nested ones are absent (older fixtures; the A.8 sample).
 K = {
     "orders": "PurchaseOrder", "partner": "TradingPartner", "po": "PurchaseOrderNumber", "po_date": "PODate",
     "requested": "RequestedDeliveryDate", "dnda": "DoNotDeliverAfter", "cancel": "CancelDate",
@@ -143,11 +156,17 @@ K = {
     "ship_to_country": "ShipToCountry", "bill_to_name": "BillToName", "bill_to_code": "BillToCode",
     "contact_name": "BuyerName", "contact_phone": "BuyerPhone", "contact_email": "BuyerEmail",
     "notes": ("Note1", "Note2", "Note3", "Note4"),
-    "lines": "Lines", "line": "Line", "vendor_part": "VendorPart", "buyer_part": "BuyerPart", "upc": "UPC",
+    "lines": "Item", "lines_a8": "Lines", "line": "Line", "vendor_part": "VendorPart", "buyer_part": "BuyerPart", "upc": "UPC",
     "gtin": "GTIN#", "quantity": "Quantity", "uom": "UOM", "unit_price": "UnitPrice", "inner_packs": "ofInnerPacks",
+    "description": "Description",
 }
-# The 850's unit of measure → the Item Master's unit names.
-UOM = {"CA": "CASE", "CS": "CASE", "EA": "EA"}
+# The real files' nested parties (see above) → the flat names K reads.
+SHIP_TO_NESTED = {"ShipToCode": "ShipToCode", "ShipToName": "ShipToName", "ShipToAddress-LineOne": "ShipToAddress1",
+                  "ShipToAddress-LineTwo": "ShipToAddress2", "ShipToCity": "ShipToCity", "ShipToState": "ShipToState",
+                  "ShipToZipCode": "ShipToZip", "ShipToCountry": "ShipToCountry"}
+BILL_TO_NESTED = {"BillToCode": "BillToCode", "BillToName": "BillToName"}
+# The 850's unit of measure → the Item Master's unit names ("Case" in the real files).
+UOM = {"CA": "CASE", "CS": "CASE", "CASE": "CASE", "EA": "EA", "EACH": "EA"}
 
 
 def from_850(body: dict[str, Any]) -> list[SourceOrder]:
@@ -158,7 +177,21 @@ def from_850(body: dict[str, Any]) -> list[SourceOrder]:
     return [_po(po) for po in pos]
 
 
+def _flatten(po: dict[str, Any]) -> dict[str, Any]:
+    """The real files' nested ShipTo / BillTo read as A.8's flat keys (a flat
+    key already there wins)."""
+    out = dict(po)
+    for obj, names in (("ShipTo", SHIP_TO_NESTED), ("BillTo", BILL_TO_NESTED)):
+        nested = po.get(obj)
+        if isinstance(nested, dict):
+            for src, flat in names.items():
+                if out.get(flat) in (None, "") and nested.get(src) not in (None, ""):
+                    out[flat] = nested[src]
+    return out
+
+
 def _po(po: dict[str, Any]) -> SourceOrder:
+    po = _flatten(po)
     partner = str(po.get(K["partner"]) or "").strip()
     number = str(po.get(K["po"]) or "").strip()
     if not partner or not number:
@@ -179,13 +212,14 @@ def _po(po: dict[str, Any]) -> SourceOrder:
         "source_reference": number,
     }
     lines = []
-    for i, ln in enumerate(po.get(K["lines"]) or [], start=1):
+    for i, ln in enumerate(po.get(K["lines"]) or po.get(K["lines_a8"]) or [], start=1):
         uom = str(ln.get(K["uom"]) or "").strip().upper()
         lines.append(SourceLine(
             line_no=int(ln.get(K["line"]) or i), quantity=_dec(ln.get(K["quantity"])) or Decimal(0),
             unit=UOM.get(uom, uom or None), unit_price=_dec(ln.get(K["unit_price"])),
             inner_packs=_dec(ln.get(K["inner_packs"])),
             identifiers={"gtin": ln.get(K["gtin"]), "upc": ln.get(K["upc"]), "buyer_part": ln.get(K["buyer_part"]),
-                         "vendor_part": ln.get(K["vendor_part"]), "uom": uom or None},
+                         "vendor_part": ln.get(K["vendor_part"]), "uom": uom or None,
+                         "description": ln.get(K["description"]) or None},
         ))
     return SourceOrder("EDI_850", partner, number, number, header, lines)

@@ -400,7 +400,7 @@ class Outbound940:
                     return "failed"
                 matched = 0
                 for g in groups:
-                    for st in g.sets or []:
+                    for st in g.sets or [None]:  # None: a group-level ack (no AK2) — Radiant's real 997s
                         matched += await self._apply_ack(uow, doc, g, st)
                 INBOUND_FILE.transition(doc, InboundFile.PROCESSED, actor=uow.actor, events=uow.events, reason="997 applied")
                 return "ack" if matched else "unmatched"
@@ -416,37 +416,55 @@ class Outbound940:
         return report
 
     async def _apply_ack(self, uow, ack_doc: Document, g, st) -> int:
+        """One acknowledged set — or, with `st` None, the group (no AK2): the
+        940 or 943 is then the one with that GS06, answered by AK9."""
         s = uow.session
-        if g.functional_id == "OW" and st.type == "943" and self.transfers is not None:
-            matched = await self.transfers.apply_997(uow, ack_doc, g, st)  # P7: FR-OB-82
-            if not matched:
-                await self.tasks.raise_problem(s, EDI_997_UNMATCHED, ack_doc.id, problem(
-                    EDI_997_UNMATCHED, "997 matches no 943",
-                    f"997 file {ack_doc.remote_name}: AK1 {g.group_control} / AK2 943 {st.control} matches no outbound "
-                    "943 (FR-OB-22a). Review it."))
-            return matched
-        if g.functional_id != "OW" or st.type != "940":
+        if st is None and g.functional_id == "OW" and self.transfers is not None:
+            kind = (await s.execute(select(Document.kind).where(
+                Document.direction == "OUT", Document.kind.in_(("940_EDI", "943_EDI")),
+                func.ltrim(Document.gs06, "0") == g.group_control.lstrip("0")).limit(1))).scalar_one_or_none()
+            if kind == "943_EDI":
+                return await self._apply_ack_943(uow, ack_doc, g, st)
+        if g.functional_id == "OW" and st is not None and st.type == "943" and self.transfers is not None:
+            return await self._apply_ack_943(uow, ack_doc, g, st)
+        if g.functional_id != "OW" or (st is not None and st.type != "940"):
             return 0  # another group
         candidates = list((await s.execute(select(Document).where(
             Document.kind == "940_EDI", Document.direction == "OUT", Document.system == "RADIANT",
             func.ltrim(Document.gs06, "0") == g.group_control.lstrip("0"),
-            func.ltrim(Document.st02, "0") == st.control.lstrip("0")).with_for_update())).scalars())
+            *([func.ltrim(Document.st02, "0") == st.control.lstrip("0")] if st is not None else [])).with_for_update())).scalars())
+        set_ref = f"AK2 {st.control}" if st is not None else "no AK2"
         if len(candidates) != 1:
             await self.tasks.raise_problem(s, EDI_997_UNMATCHED, ack_doc.id, problem(
                 EDI_997_UNMATCHED, f"997 matches {'no' if not candidates else 'several'} 940s",
-                f"997 file {ack_doc.remote_name}: AK1 {g.group_control} / AK2 {st.control} matches "
+                f"997 file {ack_doc.remote_name}: AK1 {g.group_control} / {set_ref} matches "
                 f"{len(candidates)} outbound 940s (FR-OB-22a). Review it."))
             return 0
-        doc = candidates[0]
+        return await self._apply_ack_940(uow, ack_doc, g, st, candidates[0])
+
+    async def _apply_ack_943(self, uow, ack_doc: Document, g, st) -> int:
+        s = uow.session
+        matched = await self.transfers.apply_997(uow, ack_doc, g, st)  # P7: FR-OB-82
+        if not matched:
+            await self.tasks.raise_problem(s, EDI_997_UNMATCHED, ack_doc.id, problem(
+                EDI_997_UNMATCHED, "997 matches no 943",
+                f"997 file {ack_doc.remote_name}: AK1 {g.group_control} / {f'AK2 943 {st.control}' if st else 'no AK2'} "
+                "matches no outbound 943 (FR-OB-22a). Review it."))
+        return matched
+
+    async def _apply_ack_940(self, uow, ack_doc: Document, g, st, doc: Document) -> int:
+        """The 940's 997: per set (AK5) when there is an AK2, else the group's AK9."""
+        s = uow.session
         order = (await s.execute(select(Order).join(DocumentLink, and_(
             DocumentLink.entity_id == Order.id, DocumentLink.entity_type == "order", DocumentLink.document_id == doc.id))
             .with_for_update())).scalar_one()
         s.add(DocumentLink(document_id=ack_doc.id, entity_type="order", entity_id=order.id))
-        accepted = st.accepted if st.code else g.accepted
+        accepted = st.accepted if st is not None and st.code else g.accepted
         if doc.ack_status not in (Ack.WAITING, Ack.TIMEOUT):
             await oplog.write(s, "INFO", STEP, f"997 for a 940 already {doc.ack_status}: no change", document_id=doc.id)
             return 1
-        codes = f"AK5 {st.code or '-'} {' '.join(st.reasons)} / AK9 {g.code or '-'}".strip()
+        codes = (f"AK5 {st.code or '-'} {' '.join(st.reasons)} / AK9 {g.code or '-'}".strip() if st is not None
+                 else f"AK9 {g.code or '-'} (group level, no AK2)")
         doc.ack_detail = f"997 {ack_doc.remote_name}: {codes}"
         await self.tasks.resolve_problem(s, EDI_940_TIMEOUT, order.id)
         if accepted:
@@ -460,7 +478,7 @@ class Outbound940:
             await self._task(uow, EDI_940_REJECTED, order, f"940 rejected: order {order.order_number}",
                              f"Radiant rejected the 940 for order {order.order_number} ({order.partner_code} "
                              f"{order.source_order_number}), control {doc.st02}: {codes}"
-                             f"{' — reason ' + ', '.join(st.reasons) if st.reasons else ''}. "
+                             f"{' — reason ' + ', '.join(st.reasons) if st is not None and st.reasons else ''}. "
                              "It is not resent automatically; correct it, then use Send 940 now.")
         return 1
 

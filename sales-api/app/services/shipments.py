@@ -200,6 +200,16 @@ class Shipments:
         key = order_key(sh.order_key_raw or "")
         p = Plan(key=key)
         orders = await self.find_orders(s, key)
+        if not orders and doc.shadow and sh.po:
+            # The shadow run: W06-02 is Zoho's own order number (e.g. "001008597"), which Sales
+            # does not know. The PO (W06-06 / N9*PO) is then tried as the order's source number
+            # (real files, 2026-11-03). A key with neither (a Zoho manual order, "C0031") stays
+            # unmatched until Zoho's reference 940 maps it (its W05-02 / W05-03).
+            by_po = list((await s.execute(select(Order).where(
+                func.nullif(func.ltrim(Order.source_order_number, "0"), "") == sh.po.strip().lstrip("0")).order_by(Order.id))).scalars())
+            if len(by_po) == 1:
+                orders = by_po
+                p.match_note = f"matched by its PO {sh.po} (shadow run: {sh.order_key_raw} is Zoho's number)"
         if len(orders) != 1:
             p.match_note = ("two trailing letters or no number" if key.base is None
                             else f"{len(orders)} orders match {key.base}" if orders else f"no order matches {key.base}")
@@ -232,21 +242,36 @@ class Shipments:
                     item.upc if item else None, item.gtin if item else None}
             return {str(v).strip().lstrip("0") for v in vals if v}
 
+        # Several lines of the same item (a Shopify order's "Trial Can" and "Can", both CF0102):
+        # what a W12 shipped fills them up to each line's quantity — the line whose 940 LX is
+        # the W12's LX first, then in line order — and only what is left over is over-shipped.
+        # (In Radiant's real 945s an LX is a pallet, so its number rarely names a 940 line.)
         shipped: dict[int, int] = {}
         for r in sh.rows:
             ident = {str(v).strip().lstrip("0") for v in (r.item_code, r.upc) if v}
             cands = [ln for ln in lines if ident & ids_of(ln)]
             if len(cands) > 1 and r.lx_number:
-                by_lx = [ln for ln in cands if lx_of.get(str(ln.line_no)) == str(r.lx_number).lstrip("0")]
-                cands = by_lx or cands
-            line = cands[0] if cands else None
-            p.rows.append(RowPlan(r.lx_index, r.w12_index, line.id if line else None))
-            if line is None:
+                lx = str(r.lx_number).lstrip("0")
+                cands = sorted(cands, key=lambda ln: lx_of.get(str(ln.line_no)) != lx)  # stable: line order otherwise
+            if not cands:
+                p.rows.append(RowPlan(r.lx_index, r.w12_index, None))
                 p.unmatched.append(f"LX {r.lx_number or r.lx_index} W12 {r.item_code or r.upc}: {r.qty_shipped} EA")
                 p.checks.append(_check("extra or substituted item", f"{r.item_code or r.upc} was not on the 940",
                                        found=r.item_code or r.upc, expected=None))
                 continue
-            shipped[line.id] = shipped.get(line.id, 0) + r.qty_shipped
+            left, first = r.qty_shipped, None
+            for ln in cands:
+                take = min(left, max(ordered.get(ln.id, 0) - shipped.get(ln.id, 0), 0))
+                if take > 0:
+                    shipped[ln.id] = shipped.get(ln.id, 0) + take
+                    left -= take
+                    first = first or ln
+                if left == 0:
+                    break
+            if left > 0:  # more than every candidate line ordered: over-shipped on the first
+                shipped[cands[0].id] = shipped.get(cands[0].id, 0) + left
+                first = first or cands[0]
+            p.rows.append(RowPlan(r.lx_index, r.w12_index, first.id))
         for ln in lines:
             if not ln.item_code or not (items.get(ln.item_code) and items[ln.item_code].warehouse_held):
                 continue
@@ -257,7 +282,7 @@ class Shipments:
             elif got > want:
                 p.checks.append(_check("over-shipment", f"{ln.item_code}: shipped {got} EA against {want} on the 940",
                                        line=ln.line_no, found=got, expected=want))
-        await self._checks(s, order, sh, sent, locked, p)
+        await self._checks(s, order, sh, sent, locked, p, shadow=doc.shadow)
         status = F(order.fulfillment_status)
         if status in SHIPPABLE:
             p.status_to = F.SHIPPED.value
@@ -265,7 +290,8 @@ class Shipments:
             p.accept_940 = True
         return p
 
-    async def _checks(self, s, order: Order, sh: Shipment945, sent: Document | None, locked: dict, p: Plan) -> None:
+    async def _checks(self, s, order: Order, sh: Shipment945, sent: Document | None, locked: dict, p: Plan, *,
+                      shadow: bool = False) -> None:
         """FR-OB-25d (3) – (6); (1) and (2) are found with the lines."""
         partner = (await s.execute(select(Partner).where(Partner.code == order.partner_code))).scalar_one_or_none()
         ship = sh.ship_date
@@ -283,7 +309,9 @@ class Shipments:
         if status == F.CANCELLED:
             p.checks.append(_check("order state", "the order is cancelled", found=status.value, expected="not cancelled"))
         if sent is None:
-            p.checks.append(_check("order state", "no 940 was sent by Sales for this order", found=None, expected="a sent 940"))
+            if not shadow:  # the shadow run: Zoho sent the 940 — compared on Shadow compare instead
+                p.checks.append(_check("order state", "no 940 was sent by Sales for this order", found=None,
+                                       expected="a sent 940"))
         elif sent.ack_status not in (Ack.ACCEPTED.value, Ack.ACCEPTED_BY_945.value):
             p.checks.append(_check("order state", "no 997 has accepted the 940 yet", found=sent.ack_status,
                                    expected="Accepted"))

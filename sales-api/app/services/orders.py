@@ -193,6 +193,8 @@ def plan_lines(src: SourceOrder, catalog: Catalog) -> list[LinePlan]:
 
 def review_reasons(src: SourceOrder, partner: Partner | None, plans: list[LinePlan], catalog: Catalog) -> list[str]:
     reasons = []
+    if not plans:  # no line at all (e.g. a source file read under the wrong key): never a 940 with nothing in it
+        reasons.append("the order has no lines (none found in the source file)")
     if partner is None:
         reasons.append(f"unknown partner {src.partner_code}")
     elif partner.dc_routing_required and src.source_type == "EDI_850":  # FR-OB-03: Walmart

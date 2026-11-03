@@ -332,22 +332,25 @@ class Transfers:
         await oplog.write(uow.session, "INFO", STEP, f"943 {doc.remote_name} refused by the guard: {exc}", document_id=doc.id)
         await send_refused(self.tasks, uow.session, row, f"the 943 for transfer {t.transfer_number}", exc)
 
-    # ── the 997 (called by the 997 step for an AK2 943) ──────────────────────
+    # ── the 997 (called by the 997 step for an AK2 943, or a group-level ack) ─
     async def apply_997(self, uow, ack_doc: Document, g, st) -> int:
+        """`st` None: a group-level ack (no AK2, Radiant's real 997s) — the 943
+        with that GS06, answered by AK9."""
         s = uow.session
         docs = list((await s.execute(select(Document).where(
             Document.kind == "943_EDI", Document.direction == "OUT", Document.origin == "UNIOPS",
             func.ltrim(Document.gs06, "0") == g.group_control.lstrip("0"),
-            func.ltrim(Document.st02, "0") == st.control.lstrip("0")).with_for_update())).scalars())
+            *([func.ltrim(Document.st02, "0") == st.control.lstrip("0")] if st is not None else [])).with_for_update())).scalars())
         if len(docs) != 1:
             return 0
         doc = docs[0]
         t = (await s.execute(select(Transfer).join(DocumentLink, (DocumentLink.entity_id == Transfer.id) &
                                                    (DocumentLink.entity_type == "transfer"))
                              .where(DocumentLink.document_id == doc.id).with_for_update())).scalar_one()
-        codes = " ".join(x for x in [st.code or "", *st.reasons] if x)
+        codes = (" ".join(x for x in [st.code or "", *st.reasons] if x) if st is not None
+                 else f"- / AK9 {g.code or '-'} (group level)")
         doc.ack_detail = f"997 {ack_doc.remote_name}: AK5 {codes}".strip()
-        if st.accepted and g.accepted:
+        if (st is None or st.accepted) and g.accepted:
             if doc.ack_status in (Ack.WAITING.value, Ack.TIMEOUT.value):
                 ACK.transition(doc, Ack.ACCEPTED, actor=uow.actor, events=uow.events, reason="997 accepted")
             if t.status == T.WAITING_FOR_997.value:

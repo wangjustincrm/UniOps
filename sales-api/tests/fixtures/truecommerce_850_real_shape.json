@@ -1,0 +1,27 @@
+{"PurchaseOrder": [{
+  "TransactionType": "850", "ISA_ControlNumber": "", "ISA_Date": "", "ISA_Time": "", "TradingPartner": "LBL",
+  "CustomerID": "", "PurchaseOrderNumber": "4800000001", "OrderType": "Stand-alone Order", "PODate": "2026-11-03T00:00:00",
+  "SalesOrigin": "", "Routing": "", "SCAC": "", "ModeOfDelivery": "", "ShipDate": null, "Terms": "",
+  "Note1": "", "Note2": "", "Note3": "", "Note4": "", "DepartmentNumber": "", "CancelDate": null, "DoNotShipBefore": "",
+  "AllowancePercent1": 0.0, "AllowanceAmount1": 0.0, "AllowancePercent2": 0.0, "AllowanceAmount2": 0.0,
+  "DoNotDeliverAfter": "", "ShipNoLaterThan": "", "RequestedDeliveryDate": "11/10/2026", "Agreement ID": "SAMPLE0001",
+  "EDIMailbox": "",
+  "ShipTo": {"ShipToCode": "0000000000028", "ShipToName": "SAMPLE DISTRIBUTION CENTRE", "ShipToAddress-LineOne": "3 SAMPLE AVENUE",
+             "ShipToAddress-LineTwo": "", "ShipToZipCode": "L6T 1A1", "ShipToState": "ON", "ShipToCity": "BRAMPTON",
+             "ShipToCountry": "CA", "MarkFor": ""},
+  "BillTo": {"BillToCode": "0000000000099", "BillToName": "SAMPLE BUYER", "BillToAddress-LineOne": "4 SAMPLE STREET",
+             "BillToAddress-LineTwo": "", "BillToZipCode": "M1M 1M1", "BillToCity": "TORONTO", "BillToState": "ON",
+             "BillToCountry": "CA"},
+  "Buying Party": {"BuyingPartyCode1": "0000000000028", "BuyingPartyName": "SAMPLE DISTRIBUTION CENTRE",
+                   "BuyingPartyAddress-LineOne": "3 SAMPLE AVENUE", "BuyingPartyAddress-LineTwo": "",
+                   "BuyingPartyZipCode": "L6T 1A1", "BuyingPartyState": "ON", "BuyingPartyCity": "BRAMPTON",
+                   "BuyingPartyCountry": "CA", "BuyingPartyCodeType": "", "BuyingPartyCode2": "", "BuyingPartyContactName": ""},
+  "Item": [
+    {"Line": "00010", "VendorPart": "", "BuyerPart": "000000000000000555", "UPC": "628347940140", "Description": "SAMPLE ITEM ONE",
+     "Quantity": "200", "UOM": "Case", "UnitPrice": "179.94", "ofInnerPacks": "6", "ItemAllowancePercent1": "",
+     "ItemAllowanceAmount1": "", "GTIN#": "10062639300019"},
+    {"Line": "00020", "VendorPart": "", "BuyerPart": "000000000000000556", "UPC": "062639300029", "Description": "SAMPLE ITEM TWO",
+     "Quantity": "12", "UOM": "Case", "UnitPrice": "40.00", "ofInnerPacks": "12", "ItemAllowancePercent1": "",
+     "ItemAllowanceAmount1": "", "GTIN#": ""}
+  ]
+}]}

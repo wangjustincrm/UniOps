@@ -244,25 +244,29 @@ class ShadowRun:
         """A 997 Radiant sent for a Zoho 940: the reference with that group /
         set control, and what Sales would have recorded. Never applied."""
         s = uow.session
-        sets = [(g, st) for g in groups for st in (g.sets or [])]
+        # A group without AK2 (Radiant's real 997s) answers for its group: matched by GS06, decided by AK9.
+        sets = [(g, st) for g in groups for st in (g.sets or [None])]
         ref = None
         for g, st in sets:
             ref = (await s.execute(select(Document).where(
                 Document.origin == "ZOHO_REFERENCE", Document.kind == "940_EDI",
                 func.ltrim(Document.gs06, "0") == g.group_control.lstrip("0"),
-                func.ltrim(Document.st02, "0") == st.control.lstrip("0")).limit(1))).scalar_one_or_none()
+                *([func.ltrim(Document.st02, "0") == st.control.lstrip("0")] if st is not None else [])).limit(1))
+            ).scalar_one_or_none()
             if ref is not None:
                 break
-        would = {"acks": [{"functional_id": g.functional_id, "group_control": g.group_control, "set": st.type,
-                           "set_control": st.control, "accepted": st.accepted, "code": st.code, "reasons": st.reasons}
-                          for g, st in sets],
-                 "would": ("mark the 940 Accepted" if all(st.accepted for _, st in sets) else
-                           "mark the 940 Rejected and raise a task") if sets else "nothing (no AK2)"}
+        ok = [(st.accepted if st is not None and st.code else g.accepted) for g, st in sets]
+        would = {"acks": [{"functional_id": g.functional_id, "group_control": g.group_control,
+                           "set": st.type if st else None, "set_control": st.control if st else None,
+                           "accepted": a, "code": st.code if st else g.code, "reasons": st.reasons if st else [],
+                           "level": "set" if st else "group"} for (g, st), a in zip(sets, ok)],
+                 "would": "mark the 940 Accepted" if all(ok) else "mark the 940 Rejected and raise a task"}
         order_id = None
         if ref is not None and ref.body_json:
             orders = await _orders_for_reference(s, ref.body_json)
             order_id = orders[0].id if len(orders) == 1 else None
-        await self._match_row(s, doc, kind="997", ref=ref, order_id=order_id, key=sets[0][1].control if sets else None,
+        key = (sets[0][1].control if sets[0][1] is not None else sets[0][0].group_control) if sets else None
+        await self._match_row(s, doc, kind="997", ref=ref, order_id=order_id, key=key,
                               status="Match" if ref is not None else "No reference", would=would)
 
     async def match_945(self, uow, doc: Document, sets, plans) -> None:
