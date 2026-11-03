@@ -23,7 +23,7 @@ from app.crud import agreement as agr_crud
 from app.crud import pa as pa_crud
 from app.crud._list_order import sort_clauses
 from app.crud import po as po_crud
-from app.crud.pa_links import pa_ids_for_po, pa_ids_for_pos
+from app.crud.pa_links import pa_ids_for_po, pa_ids_for_pos, po_ids_of_pa
 from app.crud.current_step import enrich_current_step
 from app.models.agreement_schedule import AgreementPaymentSchedule
 from app.models.config import CompanyConfig
@@ -1171,6 +1171,13 @@ async def pa_action(
         raise HTTPException(status_code=502, detail=str(exc))
 
     await db.refresh(pa)
+    # Rejected / cancelled: the PA no longer covers its PO(s). Where no other
+    # live PA does, the create_pa prompt comes back (§3.14.2, INV-013;
+    # ISS-0172) — the same reopen as a PO dropped from a draft.
+    if pa.status in _RELEASED_PA_STATUSES:
+        for pid in (await db.execute(po_ids_of_pa(pa.id))).scalars().all():
+            if pid is not None:
+                await pa_crud.reopen_create_pa_tasks_if_unpaid(db, pid)
     # Generate PDF when PA transitions to approved
     if result.get("new_status") == "approved":
         # ISS-0137: email the requester, if Notification Settings say so.
