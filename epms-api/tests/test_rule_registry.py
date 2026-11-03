@@ -405,6 +405,19 @@ def test_the_task_inbox_has_no_mark_done():
     assert "/complete" not in tasks_ts
 
 
+def test_portal_home_task_links_match_the_epms_task_inbox():
+    """ISS-0186: Portal home opens the same action page as EPMS's taskHref —
+    New PA for create_pa / create_prepayment_pa, New GR for confirm_receipt."""
+    epms = _src("epms/src/lib/taskTypes.ts")
+    portal = _src("portal/src/pages/PortalHome.tsx")
+    for cond, target in (
+        ("t.type === 'create_pa' || t.type === 'create_prepayment_pa'", "/pa/create?poId="),
+        ("t.type === 'confirm_receipt'", "/gr/new?poId="),
+    ):
+        assert cond.replace("t.", "task.") in epms and f"`{target}${{task.document_id}}`" in epms
+        assert cond in portal and f"`{target}${{t.document_id}}`" in portal
+
+
 def test_task_inbox_groups_follow_dsh_001():
     """ISS-0131: every type in its DSH-001 category, revisions last."""
     import re
