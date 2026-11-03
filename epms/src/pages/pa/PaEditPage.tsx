@@ -420,9 +420,14 @@ function PoPaEditPage() {
         replaceTab(`/pa/${pa.id}`)
       }
     } catch {
-      // error handled by mutation
+      // the refusal shows in the error box from updatePa's error state
     }
   }
+
+  const shownErrors = updatePa.isError
+    ? [...errors, updatePa.error instanceof Error && updatePa.error.message
+      ? updatePa.error.message : 'Failed to update payment application']
+    : errors
 
   if (isLoading || !initialized) {
     return (
@@ -1010,10 +1015,11 @@ function PoPaEditPage() {
             />
           </div>
 
-          {/* Errors */}
-          {errors.length > 0 && (
-            <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 flex flex-col gap-1">
-              {errors.map((e) => (
+          {/* Errors — the form's own checks, then the server's refusal of the
+              last save (shown here, not as a browser pop-up — ISS-0188) */}
+          {shownErrors.length > 0 && (
+            <div role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 flex flex-col gap-1">
+              {shownErrors.map((e) => (
                 <p key={e} className="text-xs text-danger-700 flex items-center gap-1.5">
                   <AlertTriangle className="h-3 w-3 shrink-0" /> {e}
                 </p>

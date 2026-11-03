@@ -405,6 +405,19 @@ def test_the_task_inbox_has_no_mark_done():
     assert "/complete" not in tasks_ts
 
 
+def test_portal_home_task_links_match_the_epms_task_inbox():
+    """ISS-0186: Portal home opens the same action page as EPMS's taskHref —
+    New PA for create_pa / create_prepayment_pa, New GR for confirm_receipt."""
+    epms = _src("epms/src/lib/taskTypes.ts")
+    portal = _src("portal/src/pages/PortalHome.tsx")
+    for cond, target in (
+        ("t.type === 'create_pa' || t.type === 'create_prepayment_pa'", "/pa/create?poId="),
+        ("t.type === 'confirm_receipt'", "/gr/new?poId="),
+    ):
+        assert cond.replace("t.", "task.") in epms and f"`{target}${{task.document_id}}`" in epms
+        assert cond in portal and f"`{target}${{t.document_id}}`" in portal
+
+
 def test_task_inbox_groups_follow_dsh_001():
     """ISS-0131: every type in its DSH-001 category, revisions last."""
     import re
@@ -800,6 +813,49 @@ def test_one_invoice_one_pa_is_refused_by_the_server():
     assert "lockedInvoiceIds" in page
     edit = _src("epms/src/pages/pa/PaEditPage.tsx")
     assert "other.id === pa?.id || ['cancelled', 'rejected'].includes(other.status)" in edit
+
+
+def test_new_pa_warns_of_uncollected_goods_with_the_servers_rule():
+    """ISS-0188: New PA says "not collected yet" (and offers the receipt
+    override) on the same rule POST /pa refuses with — po_collection_cleared."""
+    from app.api.v1 import pa as pa_api
+    from app.crud import po as po_crud
+    from app.crud.gr import COUNTED_GR_STATUSES
+    from app.schemas.gr import PHYSICAL_TYPES
+
+    src = inspect.getsource(po_crud.po_collection_cleared)
+    assert "is_physical(po.type)" in src and "COUNTED_GR_STATUSES" in src
+    assert "PoLineItem.received_qty > 0" in src
+    # One override for both refusals, behind the same permission.
+    create = inspect.getsource(pa_api.create_pa)
+    assert "po_collection_cleared" in create and '"pa_override_receipt"' in create
+    page = _src("epms/src/pages/pa/PaCreatePage.tsx")
+    assert f"[{', '.join(str(t) for t in sorted(PHYSICAL_TYPES))}].includes(p.type)" in page
+    assert ("[" + ", ".join(f"'{s}'" for s in COUNTED_GR_STATUSES) + "].includes(g.status)") in page
+    assert "Number(l.received_qty) > 0" in page
+    assert "collection_config?.collection_gate_enabled" in page
+    # Server refusals show in the page, not in a browser pop-up.
+    assert "alert(" not in _src("epms/src/hooks/usePas.ts")
+    assert "alert(" not in page
+
+
+def test_settle_is_offered_only_where_new_pa_accepts_the_po():
+    """ISS-0158: Settle on a prepayment PA follows §3.15.2 Who can create — the
+    same requester-ownership rule (and exemptions) as POST /pa and New PA's
+    PO picker — on top of PP-015's primary Requester / System Admin."""
+    from app.api.v1 import pa as pa_api
+
+    server = inspect.getsource(pa_api._may_create_pa_on_behalf)
+    detail = _src("epms/src/pages/pa/PaDetailPage.tsx")
+    assert "const settleScoped = isPaRequesterScoped(user?.role, myAuthz?.roles)" in detail
+    assert "linkedPos.items.every((p) => p.pr_requester_id === user?.id)" in detail
+    assert "myAuthz?.permissions?.['epms.pa.write']" in detail
+    scope = _src("epms/src/lib/paCreateScope.ts")
+    roles = re.search(r"const ON_BEHALF_ROLES = \[([^\]]*)\]", scope).group(1)
+    for role in re.findall(r"'([a-z_]+)'", roles):
+        assert f'"{role}" in roles' in server
+    create = _src("epms/src/pages/pa/PaCreatePage.tsx")
+    assert "isPaRequesterScoped(user?.role, myAuthz?.roles)" in create
 
 
 # ── Invoices ─────────────────────────────────────────────────────────────────

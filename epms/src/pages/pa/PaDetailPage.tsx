@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { DirectPaBudgetPanel } from '@/components/pa/DirectPaBudgetPanel'
 import { useDocTabTitle } from '@/components/BackLink'
@@ -31,7 +31,9 @@ import {
 } from '@/services/vendorCredits'
 import { InvoiceMatchVariancePanel } from '@/components/invoices/InvoiceMatchVariancePanel'
 import { canRecallDocument, canWithdrawDocument } from '@/lib/documentActions'
-import { useConfig } from '@/hooks/useConfig'
+import { useConfig, useRolePermissions } from '@/hooks/useConfig'
+import { isPaRequesterScoped } from '@/lib/paCreateScope'
+import { clearSubmitFailure, peekSubmitFailure } from '@/lib/submitFailure'
 import type { ApiPa } from '@/services/pa'
 import { historyLine } from '@/lib/approvalHistory'
 import { approvalNodeStates } from '@/lib/approvalTimeline'
@@ -395,6 +397,10 @@ export default function PaDetailPage() {
   // Withdraw / Recall get their own mutation so their refusal shows in the
   // header and not in the approval or payment dialogs.
   const paHeaderAction = usePaAction(id ?? '')
+  // Why New PA's submit was refused, when it brought the saved draft here
+  // instead (ISS-0188 — was a browser pop-up).
+  const [createSubmitError] = useState<string | null>(() => peekSubmitFailure(id))
+  useEffect(() => { clearSubmitFailure(id) }, [id])
   const confirmSettlement = useConfirmSettlement(id ?? '')
   // Assigned below paPoLinks so it covers EVERY PO on the payment — the line
   // variance panel matches an invoice line to its PO line by id, and an invoice
@@ -437,6 +443,7 @@ export default function PaDetailPage() {
       : (poInvoices.items ?? [])
   const linkedInvoices = invoiceCandidates.filter((inv) => pa?.invoice_ids.includes(inv.id))
   const { user } = useAuthStore()
+  const myAuthz = useRolePermissions().data
   // Same hook/pattern InvoiceDetailPage.tsx uses for its 3-way-match tolerance.
   const matchTolerancePct = useConfig().data?.invoice_match_tolerance_pct ?? 5
 
@@ -518,7 +525,17 @@ export default function PaDetailPage() {
   // rules, PRD §3.3.3 / PA-APR-004 (ISS-0082, ISS-0119).
   const canWithdraw = canWithdrawDocument('pa', pa, user ?? {})
   const canRecall   = canRecallDocument(pa, user ?? {})
-  const canSettle   = user?.role === 'requester' || user?.role === 'system_admin'
+  // PP-015 offers Settle to a primary-role Requester or System Admin — and only
+  // where New PA could then create the settlement (§3.15.2 Who can create:
+  // epms.pa.write, and a plain Requester only on POs from their own PRs).
+  // Offering it more widely led to a refusal after the form was filled in
+  // (ISS-0158).
+  const settleScoped = isPaRequesterScoped(user?.role, myAuthz?.roles)
+  const canSettle   = (user?.role === 'requester' || user?.role === 'system_admin')
+    && (user?.role === 'system_admin' || !!myAuthz?.permissions?.['epms.pa.write'])
+    && (!settleScoped || (linkedPos.items !== undefined
+      && linkedPos.items.length > 0
+      && linkedPos.items.every((p) => p.pr_requester_id === user?.id)))
 
   const handleConfirm = (action: ApprovalAction, comment: string) => {
     paAction.mutate(
@@ -712,6 +729,11 @@ export default function PaDetailPage() {
       {paHeaderAction.isError && (
         <p role="alert" className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
           {paHeaderAction.error instanceof Error ? paHeaderAction.error.message : 'The action was refused'}
+        </p>
+      )}
+      {createSubmitError && pa.status === 'draft' && !paHeaderAction.isError && (
+        <p role="alert" className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+          {createSubmitError}
         </p>
       )}
 

@@ -130,6 +130,10 @@ values:
         reconciles immediately — no approval, no payment, no bank movement.
       - If the prepayment was too large, a finance confirmation task gates the
         reconciliation rather than it going through silently.
+      - The paid prepayment PA offers Settle Prepayment / Settle Now to a System
+        Admin, and to a user whose primary role is Requester who may create PAs
+        and either raised the order's PR or also holds Procurement Officer or
+        Dept Admin — the same people New PA accepts for that order.
 
   - value: balance
     label: Balance

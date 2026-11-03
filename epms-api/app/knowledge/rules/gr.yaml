@@ -137,8 +137,9 @@ rules:
       application for a physical PO (and the Create PA task) waits until goods
       on that PO have been collected — the PR's requester records the
       collection on the goods receipt (Confirm Collection); a receipt that is
-      only recorded or acknowledged is not enough. Someone with the
-      receipt-override permission can still override with a reason. Service
+      only recorded or acknowledged is not enough. New PA says so as soon as
+      the PO is chosen. Someone with the receipt-override permission can still
+      override with a reason (the override box on New PA). Service
       and project POs, and prepayment PAs, are not affected. When it is off, a
       PA is allowed as soon as a goods receipt is recorded and matched to an
       invoice. While it is on, the timers on the same page also run, once a day
@@ -150,13 +151,14 @@ rules:
       Warehouse dashboard.
     provenance: derived
     derive: collection_gate
-    enforced_in: "epms-api app/crud/po.py collection_gate_on / po_collection_cleared / po_ready_for_pa (collection_config.collection_gate_enabled, default off); app/api/v1/pa.py receipt gate; app/crud/gr.py _on_three_way_reached + _after_receipt_posted; app/api/v1/invoices.py create_pa; app/services/po_action_check.py goods_collected; app/tasks/gr_collect_due.py (collection timers); app/crud/dashboard.py warehouse Collection Overdue"
+    enforced_in: "epms-api app/crud/po.py collection_gate_on / po_collection_cleared / po_ready_for_pa (collection_config.collection_gate_enabled, default off); app/api/v1/pa.py receipt gate; app/crud/gr.py _on_three_way_reached + _after_receipt_posted; app/api/v1/invoices.py create_pa; app/services/po_action_check.py goods_collected; app/tasks/gr_collect_due.py (collection timers); app/crud/dashboard.py warehouse Collection Overdue; epms/src/pages/pa/PaCreatePage.tsx uncollectedPos (warning + override)"
     test:
       - "tests/test_collection_gate.py::test_off_by_default_even_with_the_legacy_key_true"
       - "tests/test_collection_gate.py::test_on_waits_for_collection_then_raises_create_pa"
       - "tests/test_collection_gate.py::test_on_does_not_hold_back_service_pos"
       - "tests/test_gr_collect_due.py::test_reminds_escalates_and_alerts_once"
       - "tests/test_gr_collect_due.py::test_inactive_while_collection_not_required"
+      - "tests/test_rule_registry.py::test_new_pa_warns_of_uncollected_goods_with_the_servers_rule"
   - id: gr_acknowledgement_reminders
     also_in: [notifications]
     asked_as:

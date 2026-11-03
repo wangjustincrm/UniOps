@@ -17,7 +17,7 @@ from app.models.freight import PaCostAllocation
 from app.models.invoice import Invoice
 from app.models.pa import PaLineItem, PaymentApplication
 from app.models.pa_po_link import PaPoLink
-from app.crud.pa_links import pa_ids_for_po, pa_ids_for_pos, po_ids_of_pa
+from app.crud.pa_links import pa_ids_for_po, pa_ids_for_pos, pa_is_live, po_ids_of_pa
 from app.crud.pa_lines import derive_lines, invoice_lines
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
@@ -839,19 +839,21 @@ async def reopen_create_pa_tasks_if_unpaid(
     """Undo _complete_create_pa_tasks for a PO that no PA covers any more.
 
     Creating a PA COMPLETES the PO's create_pa prompt, so a PO that later drops
-    out of every PA (removed from a draft's PO set, or its only PA deleted in
-    Data Maintenance) is left with a done prompt and no payment — and a
-    requester, whose only entry point is that prompt, can no longer raise one.
+    out of every PA (removed from a draft's PO set, its only PA deleted in
+    Data Maintenance, or its only live PA rejected / cancelled) is left with a
+    done prompt and no payment — and a requester, whose only entry point is
+    that prompt, can no longer raise one.
 
-    Returns the number of tasks reopened; 0 when another PA still covers the PO.
-    Shared by Data Maintenance's PA delete and the PATCH PO-set edit so both
-    self-heal identically.
+    Returns the number of tasks reopened; 0 when another live PA still covers
+    the PO (a cancelled / rejected PA covers nothing — ISS-0172). Shared by
+    Data Maintenance's PA delete, the PATCH PO-set edit and the PA action that
+    cancels, so all self-heal identically.
     """
     from app.models.gr import GoodsReceipt
 
     remaining = (
         select(func.count()).select_from(PaymentApplication)
-        .where(PaymentApplication.id.in_(pa_ids_for_po(po_id)))
+        .where(PaymentApplication.id.in_(pa_ids_for_po(po_id)), pa_is_live())
     )
     if exclude_pa_id is not None:
         remaining = remaining.where(PaymentApplication.id != exclude_pa_id)

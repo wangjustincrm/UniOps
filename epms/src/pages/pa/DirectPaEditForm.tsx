@@ -67,7 +67,7 @@ export function DirectPaEditForm({ pa }: { pa: ApiPa }) {
       }
       replaceTab(`/pa/${pa.id}`)
     } catch {
-      // useUpdatePa alerts the server error
+      // the refusal shows below the buttons from updatePa's error state
     }
   }
 
@@ -132,6 +132,12 @@ export function DirectPaEditForm({ pa }: { pa: ApiPa }) {
           {submitting ? 'Submitting…' : 'Save & Submit'}
         </Button>
       </div>
+      {updatePa.isError && (
+        <p role="alert" className="text-right text-sm text-danger-600">
+          {updatePa.error instanceof Error && updatePa.error.message
+            ? updatePa.error.message : 'Failed to update payment application'}
+        </p>
+      )}
       {submitError && (
         <p role="alert" className="text-right text-sm text-danger-600">
           Saved as a draft but not submitted: {submitError}

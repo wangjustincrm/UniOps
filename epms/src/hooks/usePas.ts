@@ -85,9 +85,8 @@ export function useCreatePa() {
       queryClient.invalidateQueries({ queryKey: ['pas'] })
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
     },
-    // Surface the server error (e.g. a 422 validation failure) rather than
-    // swallowing it — the create pages catch the throw silently.
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to create payment application'),
+    // No onError alert: New PA shows the server's refusal (e.g. a 422) in its
+    // red error box from the mutation's error state (ISS-0188).
   })
 }
 
@@ -120,9 +119,8 @@ export function useUpdatePa() {
       queryClient.invalidateQueries({ queryKey: ['pas'] })
       queryClient.invalidateQueries({ queryKey: ['pas', id] })
     },
-    // Surface the server error (e.g. a 422 validation failure) rather than
-    // swallowing it — the edit page catches the throw silently.
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to update payment application'),
+    // No onError alert: the edit pages show the server's refusal inline from
+    // the mutation's error state (ISS-0188).
   })
 }
 

@@ -45,12 +45,15 @@ rules:
       You cannot mark a task done by hand — the Task Inbox has no Mark Done
       (it was removed). A task closes by itself when the work it asks for is
       done: the document approved or returned, the receipt confirmed, the PA
-      created, and so on. Open the task's document and do that.
-    enforced_in: "epms/src/services/tasks.ts (no complete() on purpose); epms/src/pages/tasks/TaskInboxPage.tsx; epms-api app/api/v1/tasks.py complete refuses approval tasks"
+      created, and so on. Open the task's document and do that. If that PA is
+      later rejected (cancelled) and no other live PA covers the order, the
+      Create Payment Application task comes back; a returned PA still counts.
+    enforced_in: "epms/src/services/tasks.ts (no complete() on purpose); epms/src/pages/tasks/TaskInboxPage.tsx; epms-api app/api/v1/tasks.py complete refuses approval tasks; app/api/v1/pa.py pa_action → crud/pa.py reopen_create_pa_tasks_if_unpaid (live PAs only, crud/pa_links.py pa_is_live)"
     provenance: pinned
     test:
       - "tests/test_task_complete_rejects_approvals.py::test_complete_rejects_approval_tasks"
       - "tests/test_rule_registry.py::test_the_task_inbox_has_no_mark_done"
+      - "tests/test_pa_cancel_reopens_create_pa.py::test_rejecting_the_only_pa_reopens_create_pa"
   # ISS-0131 follow-up: the groups' order is DSH-001's.
   - id: task_inbox_group_order
     asked_as:
