@@ -1,19 +1,27 @@
-import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  AddressView, Badge, DateCell, DateTimeCell, DetailList, ErrorView, LocalTable, MoneyCell, Skeleton, StatusCell, formatDate, formatDateTime, formatMoney,
+  ActionButton, AddressView, Badge, DateCell, DateTimeCell, DetailList, ErrorView, LocalTable, MoneyCell, Skeleton, StatusCell, formatDate, formatDateTime, formatMoney,
   queryKeys,
   type ColumnDef,
 } from '@/platform-ui'
 import { fetchOrder, ordersClient, type LineRead, type OrderDetail, type OrderDocument, type OrderRead, type PackingRead } from './ordersApi'
 import { Shipments } from './Shipments'
 import { PaymentsAndRefunds } from './PaymentsAndRefunds'
-import { orderRef, partnerLabel } from '@/features/common/labels'
+import { InvoicePricesForm, VsPo } from './InvoicePrices'
+import { partnerLabel } from '@/features/common/labels'
 
 // The badge shows the fulfillment status in the colour of the derived order state (D17).
 const stateTone = { Draft: 'neutral', Active: 'info', 'On Hold': 'warning', Completed: 'success', Cancelled: 'neutral' } as const
 
-export function StateBadge({ o }: { o: Pick<OrderRead, 'order_state' | 'fulfillment_status'> }) {
-  return <StatusCell value={o.fulfillment_status} tone={stateTone[o.order_state]} />
+// A short 945 closes the fulfilment (Shipped, FR-OB-25); what it left unshipped is marked beside it.
+export function StateBadge({ o }: { o: Pick<OrderRead, 'order_state' | 'fulfillment_status' | 'backordered_ea'> }) {
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      <StatusCell value={o.fulfillment_status} tone={stateTone[o.order_state]} />
+      {o.fulfillment_status === 'Shipped' && (o.backordered_ea ?? 0) > 0 && <Badge variant="warning">Partially shipped</Badge>}
+    </span>
+  )
 }
 
 // Where each address came from, under it (the 850 ship-to also names its GLN and the DC it routes to).
@@ -61,11 +69,17 @@ const lineColumns = (currency: string): ColumnDef<LineRead, unknown>[] => [
     : <MoneyCell amount={row.original.tax_amount} currency={currency} /> },
   { accessorKey: 'qty_ea', header: 'EA', cell: ({ row }) => ea(row.original.qty_ea) },
   { accessorKey: 'shipped_ea', header: 'Shipped EA', cell: ({ row }) => ea(row.original.shipped_ea) },
+  { accessorKey: 'backordered_ea', header: 'Backordered EA', cell: ({ row }) => (row.original.backordered_ea
+    ? <span className="font-medium text-warning-700">{row.original.backordered_ea}</span> : ea(row.original.backordered_ea)) },
   { accessorKey: 'delivered_qty', header: 'Delivered EA', cell: ({ row }) => ea(row.original.delivered_qty) },
   { id: 'invoiced', header: 'Invoiced', cell: ({ row }) => row.original.invoiced_qty == null ? '—'
     : `${row.original.invoiced_qty} ${row.original.invoice_unit ?? ''}` },
-  { accessorKey: 'invoice_price', header: 'Invoice price', cell: ({ row }) => row.original.invoice_price == null ? '—'
-    : <MoneyCell amount={row.original.invoice_price} currency={currency} /> },
+  // Invoiced: the invoice's price per its unit (CA). Before: what the draft will take, per order unit.
+  { accessorKey: 'invoice_price', header: 'Invoice price', cell: ({ row: { original: ln } }) => ln.invoice_price == null ? '—' : (
+    <span className="whitespace-nowrap"><MoneyCell amount={ln.invoice_price} currency={currency} />
+      <span className="text-xs text-neutral-500"> /{ln.invoiced_qty != null ? ln.invoice_unit : (ln.order_unit ?? '?')}</span>
+      {ln.invoiced_qty == null && <VsPo price={ln.invoice_price} po={ln.unit_price} currency={currency} />}
+    </span>) },
   { accessorKey: 'invoice_amount', header: 'Invoice amount', cell: ({ row }) => row.original.invoice_amount == null ? '—'
     : <MoneyCell amount={row.original.invoice_amount} currency={currency} /> },
   { accessorKey: 'state', header: 'Line status', cell: ({ row }) => row.original.state
@@ -74,7 +88,7 @@ const lineColumns = (currency: string): ColumnDef<LineRead, unknown>[] => [
     <span className={row.original.problem && !row.original.removed ? 'text-danger-600' : ''}>{row.original.problem ?? ''}</span>
   ) },
 ]
-const HIDDEN_LINE_COLUMNS = ['line_no', 'order_unit', 'invoice_price', 'discount_amount', 'tax_amount']
+const HIDDEN_LINE_COLUMNS = ['line_no', 'order_unit', 'discount_amount', 'tax_amount']
 
 const packingColumns: ColumnDef<PackingRead, unknown>[] = [
   { accessorKey: 'sscc', header: 'Pallet (SSCC)', cell: ({ row }) => row.original.sscc ?? '—' },
@@ -106,7 +120,9 @@ function LifecycleTable({ o }: { o: OrderDetail }) {
       initiallyHidden={hasNotes ? HIDDEN_LINE_COLUMNS : [...HIDDEN_LINE_COLUMNS, 'problem']}
       expand={(ln) => (ln.packing?.length ? <Packing rows={ln.packing} /> : null)}
       footer={[null, 'Total', null, null, null, money(sum(o.lines, lineAmount)), null, null, sum(o.lines, (ln) => ln.qty_ea),
-        sum(o.lines, (ln) => ln.shipped_ea), sum(o.lines, (ln) => ln.delivered_qty), null, null,
+        sum(o.lines, (ln) => ln.shipped_ea),
+        o.lines.some((ln) => ln.backordered_ea != null) ? sum(o.lines, (ln) => ln.backordered_ea) : null,
+        sum(o.lines, (ln) => ln.delivered_qty), null, null,
         o.lines.some((ln) => ln.invoice_amount != null) ? money(sum(o.lines, (ln) => Number(ln.invoice_amount ?? 0))) : null,
         null, null]} />
   )
@@ -121,6 +137,42 @@ const sentColumns: ColumnDef<OrderDocument, unknown>[] = [
   { accessorKey: 'sent_at', header: 'Sent', cell: ({ row }) => <DateTimeCell value={row.original.sent_at} /> },
   { id: 'note', header: 'Note', cell: ({ row }) => <span className="break-words">{row.original.error ?? row.original.ack_detail ?? ''}</span> },
 ]
+
+/** The lines' lifecycle; before the invoice exists their invoice prices are
+ *  edited here (the draft takes them), after it on the invoice — one place each. */
+function Lines({ o }: { o: OrderDetail }) {
+  const qc = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const priceable = !o.has_invoice && o.fulfillment_status !== 'Cancelled' && o.lines.some((ln) => !ln.removed)
+  return (
+    <section aria-label="Lines">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <h3 className="font-semibold text-neutral-800">Lines</h3>
+        {priceable && !editing && (
+          <ActionButton size="sm" variant="secondary" permission="sales.invoice.manage" onAction={() => setEditing(true)}>
+            Edit invoice prices
+          </ActionButton>
+        )}
+      </div>
+      {editing ? (
+        <InvoicePricesForm o={o} onCancel={() => setEditing(false)} onSaved={async (d) => {
+          qc.setQueryData(queryKeys.detail(ordersClient, o.id), d)
+          setEditing(false)
+          await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
+        }} />
+      ) : (
+        <>
+          <p className="mb-1 text-xs text-neutral-500">
+            Ordered → shipped (945) → delivered → invoiced. ▸ shows the pallets and lots packed for a line.
+            {o.has_invoice ? ' The invoice is drafted: change its prices on the invoice.'
+              : ' The invoice price starts as the PO price; the invoice draft takes it.'}
+          </p>
+          <LifecycleTable o={o} />
+        </>
+      )}
+    </section>
+  )
+}
 
 /** One order: why it is held, its lines in EA, its source documents and what happened (FR-OB-53). */
 export function OrderDetailView({ id }: { id: number }) {
@@ -145,7 +197,7 @@ export function OrderDetailView({ id }: { id: number }) {
         </section>
       )}
       <DetailList items={[
-        ['Order ref', orderRef(o)], ['Partner', partnerLabel(o.partner_name, o.partner_code)],
+        ['Order ref', o.source_reference], ['Partner', partnerLabel(o.partner_name, o.partner_code)],
         ['Customer PO / reference', o.source_order_number], ['Internal no.', String(o.order_number)],
         ['Source', o.source_type], ['Received', formatDateTime(o.first_received_at)], ['Paid (delay start)', formatDateTime(o.paid_at)],
         ['Payment', o.shopify_financial_status], ['Requested delivery', o.requested_delivery_date ? formatDate(o.requested_delivery_date) : null],
@@ -154,11 +206,7 @@ export function OrderDetailView({ id }: { id: number }) {
         ['Bill to', <AddressView key="bt" value={o.bill_to} note={billToOrigin(o)} />],
         ['Total', formatMoney(o.total_amount ?? o.total, o.currency)], ['Invoice', o.invoice_status],
       ]} />
-      <section aria-label="Lines">
-        <h3 className="mb-1 font-semibold text-neutral-800">Lines</h3>
-        <p className="mb-1 text-xs text-neutral-500">Ordered → shipped (945) → delivered → invoiced. ▸ shows the pallets and lots packed for a line.</p>
-        <LifecycleTable o={o} />
-      </section>
+      <Lines o={o} />
       <section aria-label="Documents">
         <h3 className="mb-1 font-semibold text-neutral-800">Source documents</h3>
         {sources.length === 0 ? <p className="text-neutral-500">None (entered by hand).</p> : (

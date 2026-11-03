@@ -10,14 +10,14 @@ from decimal import Decimal
 from sqlalchemy import and_, case, or_, select
 
 from app.domain.address import address_flags
-from app.domain.lifecycle import line_state
+from app.domain.lifecycle import backordered, line_state
 from app.domain.order_rules import ON_HOLD_FULFILLMENT, order_state, payment_satisfied, to_ea
 from app.domain.orders import HOLD_REASONS, ORDER_STATES, SOURCE_TYPES
 from app.domain.status import FULFILLMENT, Fulfillment as F
 from app.domain.status import Invoice as Inv
 from app.models.config import Connection, DcRouting, Item, Partner
 from app.models.documents import Document, DocumentLink
-from app.models.invoices import InvoiceLine
+from app.models.invoices import Invoice, InvoiceLine
 from app.models.payments import OrderPayment, OrderRefund, OrderRefundAdjustment, OrderRefundLine
 from app.models.shipments import Shipment, ShipmentRow
 from app.models.orders import Order, OrderLine
@@ -29,10 +29,11 @@ from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.schemas.orders import (
-    LinePreview, LineRead, ManualLineIn, ManualOrderIn, OrderDetail, OrderDocumentRead, OrderRead, PackingRead,
+    InvoicePricesIn, LinePreview, LineRead, ManualLineIn, ManualOrderIn, OrderDetail, OrderDocumentRead, OrderRead, PackingRead,
     PaymentRead, RefundAdjustmentRead, RefundLineRead, RefundRead, ReviewResult, ShipmentRead, ShipmentRowRead,
     TimelineEntry,
 )
+from app.services import oplog
 from app.services.intake import ConnectionSnapshot
 from app.services.invoice_pdf import PackingList, PackRow, render_packing
 from app.services.invoice_pdf import Party as PdfParty
@@ -45,6 +46,7 @@ _DOC_COLUMNS = (Document.id, Document.kind, Document.direction, Document.remote_
                 Document.file_status, Document.ack_status, Document.st02, Document.sent_at, Document.error,
                 Document.ack_detail)
 OPERATE = "sales.order.operate"
+INVOICE_MANAGE = "sales.invoice.manage"  # the invoice price is an invoicing decision
 
 
 # The derived order state (D17) in SQL: the same rule as order_rules.order_state
@@ -63,6 +65,7 @@ ORDER_STATE_SQL = case(
 class OrderRepository(Repository[Order]):
     model = Order
     search_fields = ("source_reference", "source_order_number", "source_order_id", "partner_name_sql", "review_reason", "tags")
+    search_numbers = ("order_number",)  # the Internal no., matched exactly
     list_fields = ("order_number", "partner_code", "connection_id", "source_type", "source_order_id",
                    "source_order_number", "source_reference", "order_type", "department", "order_date",
                    "requested_delivery_date", "do_not_deliver_after", "cancel_date", "currency", "subtotal", "tax",
@@ -76,15 +79,16 @@ class OrderRepository(Repository[Order]):
               "fulfillment_status": "Status", "first_received_at": "Received", "paid_at": "Paid",
               "shopify_financial_status": "Payment status", "shopify_fulfillment_status": "Shopify fulfillment",
               "source_name": "Sales channel", "tags": "Tags", "original_total": "Original total",
-              "total_refunded": "Refunded", "net_amount": "Net"}
+              "total_refunded": "Refunded", "net_amount": "Net", "backordered_ea": "Backordered EA"}
     enums = {"source_type": SOURCE_TYPES, "fulfillment_status": tuple(s.value for s in F),
              "invoice_status": tuple(s.value for s in Inv), "hold_reason": HOLD_REASONS,
              "order_state": ORDER_STATES}
     sortable = {"order_state": ORDER_STATE_SQL, "partner_name": Order.partner_name_sql,
-                "total_amount": Order.total_amount_sql}
+                "total_amount": Order.total_amount_sql, "backordered_ea": Order.backordered_ea_sql}
     filterable = {"order_state": FilterRule(ORDER_STATE_SQL, kind="text"),
                   "partner_name": FilterRule(Order.partner_name_sql, kind="text"),
-                  "total_amount": FilterRule(Order.total_amount_sql, kind="number", cast=lambda v: Decimal(str(v)))}
+                  "total_amount": FilterRule(Order.total_amount_sql, kind="number", cast=lambda v: Decimal(str(v))),
+                  "backordered_ea": FilterRule(Order.backordered_ea_sql, kind="number", cast=int)}
     summable = ("total_amount", "net_amount", "total_refunded")
     sum_currency = "currency"
     default_sort = ("-order_number",)
@@ -98,6 +102,9 @@ class OrderRepository(Repository[Order]):
         Preset("pending", "Pending (waiting for the 940)", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Pending"}], "hidden": ["review_reason"]}),
         Preset("manual_drafts", "Manual drafts", {"filters": [{"field": "source_type", "op": "eq", "value": "MANUAL"},
                                                                {"field": "fulfillment_status", "op": "eq", "value": "Draft"}]}),
+        # FR-OB-25: a short 945 closes the fulfilment (Shipped) — what it left unshipped stays visible here.
+        Preset("backordered", "Backordered (partially shipped)",
+               {"filters": [{"field": "backordered_ea", "op": "gt", "value": 0}], "hidden": ["review_reason"]}),
         Preset("delivery", "Waiting for delivery confirmation",
                {"filters": [{"field": "invoice_status", "op": "eq", "value": "Waiting for Delivery Confirmation"}]}),
         Preset("archive_suppressed", "Archive suppressed", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Archive Suppressed"}], "hidden": ["review_reason"]}),
@@ -125,6 +132,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         s = self.uow.session
         o = await self.repo.get(id)
         lines = list((await s.execute(select(OrderLine).where(OrderLine.order_id == id).order_by(OrderLine.line_no))).scalars())
+        has_invoice = (await s.execute(select(Invoice.id).where(Invoice.order_id == id))).first() is not None
         docs = (await s.execute(select(*_DOC_COLUMNS)
                                 .join(DocumentLink, DocumentLink.document_id == Document.id)
                                 .where(DocumentLink.entity_type == "order", DocumentLink.entity_id == id)
@@ -138,7 +146,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         return OrderDetail(
             **base, **{k: getattr(o, k) for k in ("bill_to", "contact", "notes", "subtotal", "tax", "shipping",
                                                    "discount", "department", "order_type")},
-            lines=await self._lifecycle(lines),
+            lines=await self._lifecycle(lines), has_invoice=has_invoice,
             documents=[OrderDocumentRead(**d._asdict()) for d in docs],
             shipments=await self._shipments(id),
             payment_gateways=o.payment_gateways, discount_codes=o.discount_codes, tax_lines=o.tax_lines,
@@ -147,6 +155,44 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
             timeline=[TimelineEntry(at=a.at, user_name=a.user_name, entity=a.entity, action=a.action, before=a.before,
                                     after=a.after, reason=a.reason) for a in trail],
         )
+
+    @requires(INVOICE_MANAGE)
+    async def set_invoice_prices(self, id: int, body: InvoicePricesIn) -> OrderDetail:
+        """The invoice price per order line before the invoice exists (user
+        2026-11-03): the draft copies it instead of the PO price. Equal to the PO
+        price (or null) means "the PO price". A price that differs from the PO
+        needs a reason (as on the invoice), kept in the audit and the log. Once the
+        draft exists the invoice is the one place to change it."""
+        s = self.uow.session
+        o = await self.repo.get(id, for_update=True)
+        if (await s.execute(select(Invoice.id).where(Invoice.order_id == id))).first() is not None:
+            raise BusinessError("order.invoice_exists", "the invoice is drafted: change the price on the invoice")
+        if o.fulfillment_status == F.CANCELLED:
+            raise BusinessError("order.cancelled", "the order is cancelled")
+        mine = {ln.id: ln for ln in (await s.execute(select(OrderLine).where(
+            OrderLine.order_id == id, OrderLine.removed.is_(False)).with_for_update())).scalars()}
+        changed: list[tuple[OrderLine, Decimal | None]] = []
+        for c in body.lines:
+            ln = mine.get(c.id)
+            if ln is None:
+                raise BusinessError("order.line", f"line {c.id} is not an open line of this order", {"line_id": c.id})
+            new = None if c.invoice_unit_price is None or c.invoice_unit_price == ln.unit_price else c.invoice_unit_price
+            if new != ln.invoice_unit_price:
+                changed.append((ln, new))
+        reason = (body.reason or "").strip()
+        if any(new is not None for _, new in changed) and len(reason) < 3:
+            raise BusinessError("invoice.reason_required", "say why the invoice price differs from the PO (a few words)",
+                                {"field": "reason"}, status_code=422)
+        if changed:
+            self.uow.set_reason(f"invoice price: {reason}" if reason else "invoice price back to the PO price")
+            await oplog.write(s, "INFO", "invoice", f"order {o.label}: invoice price " + "; ".join(
+                f"line {ln.line_no} {ln.item_code or ''} {ln.invoice_unit_price if ln.invoice_unit_price is not None else ln.unit_price}"
+                f" → {new if new is not None else ln.unit_price}{'' if new is not None else ' (PO)'}" for ln, new in changed)
+                + (f" — {reason}" if reason else ""), order_id=o.id, context={"reason": reason or None})
+            for ln, new in changed:
+                ln.invoice_unit_price = new
+            await s.flush()
+        return await self.detail(id)
 
     @requires(OPERATE)
     async def resolve_review(self, id: int, tasks, shopify=None) -> ReviewResult:
@@ -202,8 +248,12 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
             ils = inv.get(ln.id, [])
             out.append(LineRead.model_validate(ln).model_copy(update={
                 "invoiced_qty": sum(il.qty for il in ils) if ils else None,
+                # Invoiced: the invoice's price per its unit (CA). Before: the price the
+                # draft will take, per order unit — the line's own, else the PO's.
                 "invoice_unit": ils[0].uom if ils else None,
-                "invoice_price": ils[0].unit_price if ils else None,
+                "invoice_price": ils[0].unit_price if ils else (
+                    None if ln.removed else ln.invoice_unit_price if ln.invoice_unit_price is not None else ln.unit_price),
+                "backordered_ea": backordered(ln.qty_ea, ln.shipped_ea, ln.removed),
                 "invoice_amount": sum((il.amount for il in ils), Decimal(0)) if ils else None,
                 "state": line_state(removed=ln.removed, qty_ea=ln.qty_ea, shipped_ea=ln.shipped_ea,
                                     delivered_ea=ln.delivered_qty, invoiced=bool(ils)),

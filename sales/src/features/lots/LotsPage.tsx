@@ -15,6 +15,7 @@ const columns: ColumnDef<LotRead, unknown>[] = [
   { accessorKey: 'qty_shipped_ea', header: 'Qty EA' },
   { accessorKey: 'ship_date', header: 'Ship date', cell: ({ row }) => <DateCell value={row.original.ship_date} /> },
   { accessorKey: 'order_ref', header: 'Order ref' },
+  { accessorKey: 'order_number', header: 'Internal no.' },
   { accessorKey: 'partner_name', header: 'Partner', cell: ({ row }) => <PartnerCell name={row.original.partner_name} code={row.original.partner_code} /> },
   { accessorKey: 'ship_to_city', header: 'Ship to', cell: ({ row }) => [row.original.ship_to_city, row.original.ship_to_postal].filter(Boolean).join(' · ') },
   { accessorKey: 'tracking', header: 'Tracking', cell: ({ row }) => row.original.tracking ?? '—' },

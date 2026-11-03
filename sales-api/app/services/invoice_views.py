@@ -25,12 +25,14 @@ MANAGE = "sales.invoice.manage"
 class InvoiceRepository(Repository[Invoice]):
     model = Invoice
     search_fields = ("invoice_number", "order_ref_sql", "partner_name_sql", "delivery_number")
+    search_numbers = ("order_number_sql",)  # the Internal no., matched exactly
     list_fields = ("id", "invoice_number", "order_id", "delivery_number", "method",
                    "invoice_date", "currency", "total", "sent_at", "send_count", "error", "created_at")
-    sortable = {"order_ref": Invoice.order_ref_sql, "partner_name": Invoice.partner_name_sql}
+    sortable = {"order_ref": Invoice.order_ref_sql, "order_number": Invoice.order_number_sql, "partner_name": Invoice.partner_name_sql}
     filterable = {"order_ref": FilterRule(Invoice.order_ref_sql, kind="text"),
+                  "order_number": FilterRule(Invoice.order_number_sql, kind="number", cast=int),
                   "partner_name": FilterRule(Invoice.partner_name_sql, kind="text")}
-    labels = {"invoice_number": "Invoice", "order_ref": "Order ref", "partner_name": "Partner",
+    labels = {"invoice_number": "Invoice", "order_ref": "Order ref", "order_number": "Internal no.", "partner_name": "Partner",
               "delivery_number": "Delivery no.", "invoice_date": "Invoice date", "total": "Amount", "send_count": "Times sent"}
     enums = {"method": ("810_JSON", "EMAIL", "NONE")}
     default_sort = ("-invoice_date", "-id")

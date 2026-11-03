@@ -11,12 +11,15 @@ import { PartnerCell } from '@/features/common/PartnerCell'
 import { orderRef } from '@/features/common/labels'
 
 const orderColumns: ColumnDef<OrderRead, unknown>[] = [
-  { accessorKey: 'source_reference', header: 'Order ref', cell: ({ row }) => <span className="font-medium">{orderRef(row.original)}</span> },
+  { accessorKey: 'source_reference', header: 'Order ref', cell: ({ row }) => <span className="font-medium">{row.original.source_reference ?? ''}</span> },
+  { accessorKey: 'order_number', header: 'Internal no.' },
   { accessorKey: 'partner_name', header: 'Partner', cell: ({ row }) => <PartnerCell name={row.original.partner_name} code={row.original.partner_code} /> },
   { accessorKey: 'source_order_number', header: 'Customer PO / ref.' },
   { accessorKey: 'order_date', header: 'Ordered', cell: ({ row }) => <DateCell value={row.original.order_date} /> },
   { accessorKey: 'fulfillment_status', header: 'Status', cell: ({ row }) => <StateBadge o={row.original} /> },
   { accessorKey: 'total_amount', header: 'Total', cell: ({ row }) => <MoneyCell amount={row.original.total_amount} currency={row.original.currency} /> },
+  { accessorKey: 'backordered_ea', header: 'Backordered EA', cell: ({ row }) => row.original.backordered_ea
+    ? <span className="font-medium text-warning-700">{row.original.backordered_ea}</span> : '' },
   { accessorKey: 'total_refunded', header: 'Refunded', cell: ({ row }) => Number(row.original.total_refunded ?? 0)
     ? <MoneyCell amount={row.original.total_refunded} currency={row.original.currency} /> : '' },
   { accessorKey: 'net_amount', header: 'Net', cell: ({ row }) => <MoneyCell amount={row.original.net_amount} currency={row.original.currency} /> },

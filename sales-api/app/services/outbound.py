@@ -127,7 +127,7 @@ class Outbound940:
         if doc is None or order is None:
             return "the document or the order is gone"
         if await SETTINGS.get(uow.session, SHADOW_MODE):  # second barrier: a row queued before the switch-on
-            await oplog.write(uow.session, "WARNING", STEP, f"shadow run: 940 {doc.st02} for order {order.ref} "
+            await oplog.write(uow.session, "WARNING", STEP, f"shadow run: 940 {doc.st02} for order {order.label} "
                               "not sent (outbox row cancelled)", order_id=order.id, document_id=doc.id)
             return "the shadow run is on: nothing is sent"
         if doc.file_status not in (OutboundFile.READY_TO_SEND, OutboundFile.SUPPRESSED):
@@ -162,8 +162,8 @@ class Outbound940:
         doc.error = str(exc)
         if order.fulfillment_status == F.GENERATED_940:
             FULFILLMENT.transition(order, F.FAILED_940, actor=uow.actor, events=uow.events, reason="940 not sent (FR-OB-24)")
-        await self._task(uow, EDI_940_FAILED, order, f"940 not sent: order {order.ref}",
-                         f"The 940 for order {order.ref} "
+        await self._task(uow, EDI_940_FAILED, order, f"940 not sent: order {order.label}",
+                         f"The 940 for order {order.label} "
                          f"could not be sent: {exc}. It is not retried automatically — check, then use Send 940 now.")
 
     async def _on_suppressed(self, row, exc, uow) -> None:
@@ -171,9 +171,9 @@ class Outbound940:
         if doc.file_status == OutboundFile.SENDING:
             OUTBOUND_FILE.transition(doc, OutboundFile.SUPPRESSED, actor=uow.actor, events=uow.events,
                                      reason=f"refused by the write guard: {exc}")
-        await oplog.write(uow.session, "WARNING", STEP, f"940 for order {order.ref} suppressed: {exc}",
+        await oplog.write(uow.session, "WARNING", STEP, f"940 for order {order.label} suppressed: {exc}",
                           document_id=doc.id, order_id=order.id)
-        await send_refused(self.tasks, uow.session, row, f"the 940 for order {order.ref}", exc)
+        await send_refused(self.tasks, uow.session, row, f"the 940 for order {order.label}", exc)
 
     async def _pair(self, row, uow) -> tuple[Document, Order]:
         p = row.payload
@@ -259,8 +259,8 @@ class Outbound940:
                                      reason="failed validation (FR-OB-29a)")
             FULFILLMENT.transition(order, F.FAILED_940, actor=uow.actor, events=uow.events,
                                    reason="940 failed validation (FR-OB-29a)")
-            await self._task(uow, EDI_940_FAILED, order, f"940 not valid: order {order.ref}",
-                             f"The 940 for order {order.ref} "
+            await self._task(uow, EDI_940_FAILED, order, f"940 not valid: order {order.label}",
+                             f"The 940 for order {order.label} "
                              "failed validation and was not sent: " + "; ".join(problems)
                              + ". Correct the order or the Item Master, then use Send 940 now.")
         await s.flush()
@@ -476,8 +476,8 @@ class Outbound940:
             ACK.transition(doc, Ack.REJECTED, actor=uow.actor, events=uow.events, reason=f"997 rejected ({codes})")
             if order.fulfillment_status in (F.SENT_940, F.TIMEOUT_940):
                 FULFILLMENT.transition(order, F.REJECTED_940, actor=uow.actor, events=uow.events, reason="997 rejected")
-            await self._task(uow, EDI_940_REJECTED, order, f"940 rejected: order {order.ref}",
-                             f"Radiant rejected the 940 for order {order.ref} ({order.partner_code} "
+            await self._task(uow, EDI_940_REJECTED, order, f"940 rejected: order {order.label}",
+                             f"Radiant rejected the 940 for order {order.label} ({order.partner_code} "
                              f"{order.source_order_number}), control {doc.st02}: {codes}"
                              f"{' — reason ' + ', '.join(st.reasons) if st is not None and st.reasons else ''}. "
                              "It is not resent automatically; correct it, then use Send 940 now.")
@@ -509,8 +509,8 @@ class Outbound940:
                 if order.fulfillment_status == F.SENT_940:
                     FULFILLMENT.transition(order, F.TIMEOUT_940, actor=uow.actor, events=uow.events, reason="no 997 (FR-OB-23)")
                 sent = doc.sent_at.astimezone(TORONTO).strftime("%Y-%m-%d %H:%M")
-                await self._task(uow, EDI_940_TIMEOUT, order, f"No 997 for order {order.ref}",
-                                 f"No 997 arrived within {minutes} minutes for the 940 of order {order.ref} "
+                await self._task(uow, EDI_940_TIMEOUT, order, f"No 997 for order {order.label}",
+                                 f"No 997 arrived within {minutes} minutes for the 940 of order {order.label} "
                                  f"sent {sent} Toronto time "
                                  f"(control {doc.st02}). It is not resent automatically; check with Radiant.")
                 report.timeouts += 1
@@ -561,8 +561,8 @@ async def changed_after_940(uow, tasks, order: Order, new_lines: dict[str, dict[
     if not changes:
         return False
     await tasks.raise_problem(uow.session, CHANGED_AFTER_940, order.id, problem(
-        CHANGED_AFTER_940, f"Order changed after its 940: {order.ref}",
-        f"Order {order.ref} changed at the source after "
+        CHANGED_AFTER_940, f"Order changed after its 940: {order.label}",
+        f"Order {order.label} changed at the source after "
         f"its 940 (control {doc.st02}, {doc.file_status}). The 940 values stay as sent:\n" + "\n".join(changes)
         + "\nAgree any change with Radiant; a replacement 940 is sent only with Send 940 now → confirm replacement "
         "(FR-OB-03c).", urgent=True))

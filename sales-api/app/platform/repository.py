@@ -45,6 +45,8 @@ def _like_escape(s: str) -> str:
 class Repository(Generic[T]):
     model: ClassVar[type]
     search_fields: ClassVar[tuple[str, ...]] = ()
+    # Integer columns a search of digits only matches exactly (an internal number).
+    search_numbers: ClassVar[tuple[str, ...]] = ()
     sortable: ClassVar[Mapping[str, Any]] = {}
     filterable: ClassVar[Mapping[str, FilterRule]] = {}
     # Model columns that are both sortable and filterable (merged into the two
@@ -196,11 +198,14 @@ class Repository(Generic[T]):
             col = getattr(self.model, self.historical_column)
             if open_work or not spec.include_historical:
                 q = q.where(col.is_(False))
-        if spec.search and self.search_fields:
-            pattern = f"%{_like_escape(spec.search.strip())}%"
-            q = q.where(or_(*(
-                getattr(self.model, f).ilike(pattern, escape="\\") for f in self.search_fields
-            )))
+        if spec.search and (self.search_fields or self.search_numbers):
+            text = spec.search.strip()
+            pattern = f"%{_like_escape(text)}%"
+            number = int(text) if text.isdigit() and len(text) <= 18 else None
+            q = q.where(or_(
+                *(getattr(self.model, f).ilike(pattern, escape="\\") for f in self.search_fields),
+                *(getattr(self.model, f) == number for f in self.search_numbers if number is not None),
+            ))
         for f in spec.filters:
             q = q.where(self._filter(f))
         return q

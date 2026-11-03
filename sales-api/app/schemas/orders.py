@@ -51,6 +51,7 @@ class OrderRead(BaseModel):
     original_total: Decimal | None = None
     total_refunded: Decimal | None = None
     net_amount: Decimal | None = None
+    backordered_ea: int | None = None  # what the applied 945 left unshipped (none before a 945)
     source_updated_at: datetime | None
     version: int
     created_at: datetime
@@ -85,6 +86,7 @@ class LineRead(BaseModel):
     factor_ea: Decimal | None
     qty_ea: int | None
     unit_price: Decimal | None
+    invoice_unit_price: Decimal | None = None  # the line's own invoice price per order unit (None = the PO price)
     line_status: str
     removed: bool
     problem: str | None
@@ -97,9 +99,10 @@ class LineRead(BaseModel):
     # this line, its state, and the 945 rows (pallet, lot, expiry) packed for it.
     invoiced_qty: int | None = None
     invoice_unit: str | None = None
-    invoice_price: Decimal | None = None
+    invoice_price: Decimal | None = None   # the invoice's (per invoice unit); before it, the draft's per order unit
     invoice_amount: Decimal | None = None
     state: str | None = None
+    backordered_ea: int | None = None  # ordered − shipped EA once an applied 945 set shipped_ea
     packing: list[PackingRead] = []
 
 
@@ -237,6 +240,7 @@ class OrderDetail(OrderRead):
     department: str | None = None
     order_type: str | None = None
     lines: list[LineRead] = []
+    has_invoice: bool = False  # the draft exists: invoice prices are edited on the invoice
     # The DC a retailer ship-to GLN routes to (Walmart; FR-OB-03), shown with the address.
     dc_number: str | None = None
     # Non-blocking warnings about the ship-to (a PO box), shown with it.
@@ -311,6 +315,21 @@ class ManualOrderIn(BaseModel):
     ship_to: AddressIn  # required: the 940 cannot go without it
     notes: Text | None = None
     lines: Annotated[list[ManualLineIn], Field(min_length=1, max_length=200)]
+
+
+class InvoicePriceIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: int
+    # per order unit; null (or the PO price) = the PO price
+    invoice_unit_price: Annotated[Decimal, Field(ge=0, max_digits=14, decimal_places=5)] | None
+
+
+class InvoicePricesIn(BaseModel):
+    """The order lines' invoice prices before the invoice exists; a price that
+    differs from the PO needs `reason` (≥ 3 characters)."""
+    model_config = ConfigDict(extra="forbid")
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] | None = None
+    lines: Annotated[list[InvoicePriceIn], Field(min_length=1, max_length=500)]
 
 
 class LinePreview(BaseModel):

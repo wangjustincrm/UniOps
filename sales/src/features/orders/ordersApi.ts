@@ -41,6 +41,8 @@ export interface OrderRead {
   original_total?: string | null
   total_refunded?: string | null
   net_amount?: string | null
+  /** What the applied 945 left unshipped, in EA (none before a 945). */
+  backordered_ea?: number | null
   source_updated_at: string | null
   version: number
   created_at: string
@@ -57,6 +59,8 @@ export interface LineRead {
   factor_ea: string | null
   qty_ea: number | null
   unit_price: string | null
+  /** The line's own invoice price per order unit (null = the PO price). */
+  invoice_unit_price?: string | null
   line_status: string
   removed: boolean
   problem: string | null
@@ -68,9 +72,12 @@ export interface LineRead {
   // The detail's lifecycle: the invoice's lines for it, its state, the 945 rows packed for it.
   invoiced_qty?: number | null
   invoice_unit?: string | null
+  /** Invoiced: the invoice's price per its unit (CA); before: the price the draft takes, per order unit. */
   invoice_price?: string | null
   invoice_amount?: string | null
   state?: string | null
+  /** Ordered − shipped EA once an applied 945 set the shipped quantity. */
+  backordered_ea?: number | null
   packing?: PackingRead[]
 }
 
@@ -152,6 +159,8 @@ export interface OrderDetail extends OrderRead {
   shipping?: string | null
   discount?: string | null
   lines: LineRead[]
+  /** The invoice draft exists: prices are changed on the invoice. */
+  has_invoice?: boolean
   documents: OrderDocument[]
   shipments: ShipmentRead[]
   // Shopify finance: gateways, discount codes, tax lines, transactions and refunds (no card data)
@@ -228,5 +237,7 @@ export const fetchEligibility = () => api.get<EligibleOrder[]>('/orders/eligibil
 /** One shipment's packing list (PDF): pallets → items → lots → expiry → qty, tracking and BOL. */
 export const downloadPackingList = (orderId: number, shipmentId: number) =>
   api.download(`/orders/${orderId}/shipments/${shipmentId}/packing-list.pdf`, `PackingList-${shipmentId}.pdf`)
+export interface InvoicePricesBody { reason: string | null; lines: { id: number; invoice_unit_price: string | null }[] }
+export const setInvoicePrices = (id: number, body: InvoicePricesBody) => api.put<OrderDetail>(`/orders/${id}/invoice-prices`, body)
 export const retryShopify = (shipmentId: number) =>
   api.post<{ shipment_id: number; shopify_status: string }>(`/orders/shipments/${shipmentId}/shopify-retry`)

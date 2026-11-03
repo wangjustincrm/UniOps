@@ -112,6 +112,13 @@ class Order(Audited, Versioned, Base):
         return self.source_reference or str(self.order_number)
 
     @property
+    def label(self) -> str:
+        """Both identifiers, for task, notification and log text (user 2026-11-03):
+        "LCL-4887314746 (internal no. 7)"; the internal number alone before refs."""
+        n = f"internal no. {self.order_number}"
+        return f"{self.source_reference} ({n})" if self.source_reference else n
+
+    @property
     def partner_name(self) -> str | None:
         """The partner's name as loaded with the row (`partner_name_sql`); never a lazy load."""
         return self.__dict__.get("partner_name_sql")
@@ -120,6 +127,12 @@ class Order(Audited, Versioned, Base):
     def total_amount(self) -> Decimal | None:
         """The order's amount as loaded with the row (`total_amount_sql`); never a lazy load."""
         return self.__dict__.get("total_amount_sql")
+
+    @property
+    def backordered_ea(self) -> int | None:
+        """What the 945 left unshipped, in EA (`backordered_ea_sql`); never a lazy load."""
+        v = self.__dict__.get("backordered_ea_sql")
+        return None if v is None else int(v)
 
 
 FULFILLMENT.bind(Order)
@@ -146,6 +159,9 @@ class OrderLine(Audited, Base):
     factor_ea: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
     qty_ea: Mapped[int | None] = mapped_column(Integer, nullable=True)
     unit_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 5), nullable=True)
+    # sales18: the price the invoice will carry, per order unit; NULL = the PO price.
+    # Set before an invoice exists; the draft copies it, then the invoice is edited.
+    invoice_unit_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 5), nullable=True)
     line_status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="Active")
     shipped_ea: Mapped[int | None] = mapped_column(Integer, nullable=True)
     delivered_qty: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -163,3 +179,11 @@ class OrderLine(Audited, Base):
 Order.total_amount_sql = column_property(func.coalesce(Order.total, select(
     func.round(func.sum(OrderLine.ordered_qty * OrderLine.unit_price), 2)).where(
     OrderLine.order_id == Order.id, OrderLine.removed.is_(False)).correlate_except(OrderLine).scalar_subquery()))
+
+
+# The order's backordered EA: the sum over its lines with an applied 945 (NULL
+# before any) — the list's Backordered column and view.
+Order.backordered_ea_sql = column_property(select(
+    func.sum(func.greatest(OrderLine.qty_ea - OrderLine.shipped_ea, 0))).where(
+    OrderLine.order_id == Order.id, OrderLine.removed.is_(False), OrderLine.shipped_ea.is_not(None),
+    OrderLine.qty_ea.is_not(None)).correlate_except(OrderLine).scalar_subquery())

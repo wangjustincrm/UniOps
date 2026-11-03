@@ -379,8 +379,8 @@ class OrderSync:
             self._to(order, F.ARCHIVE_SUPPRESSED, "archived in Shopify before any 940 (FR-OB-03d)")
             if paid and not order.historical:
                 await self.tasks.raise_problem(self.s, ORDER_ARCHIVED, order.id, problem(
-                    ORDER_ARCHIVED, f"Archived in Shopify before shipping: order {order.ref}",
-                    f"Order {order.ref}, paid "
+                    ORDER_ARCHIVED, f"Archived in Shopify before shipping: order {order.label}",
+                    f"Order {order.label}, paid "
                     f"{order.total} {order.currency}, was archived in Shopify at {archived_at.isoformat()} "
                     "before any 940. Confirm the archive was intended, or un-archive it in Shopify."))
         elif not archived_at and status == F.ARCHIVE_SUPPRESSED:
@@ -410,15 +410,15 @@ class OrderSync:
                 f"{shipped} EA already shipped (" + ", ".join(f"{ln.item_code} {ln.shipped_ea}" for ln in lines if ln.shipped_ea)
                 + "): decide on a return or a credit.")
         await self.tasks.raise_problem(self.s, CANCELLED_AFTER_940, order.id, problem(
-            CANCELLED_AFTER_940, f"Cancelled after the 940: order {order.ref}",
-            f"Order {order.ref} was cancelled at source "
+            CANCELLED_AFTER_940, f"Cancelled after the 940: order {order.label}",
+            f"Order {order.label} was cancelled at source "
             f"after its 940. {what} The order is On Hold.", urgent=True))
         return True
 
     async def _raise_review(self, order: Order, reasons: list[str]) -> None:
         await self.tasks.raise_problem(self.s, ORDER_REVIEW, order.id, problem(
-            ORDER_REVIEW, f"Order {order.ref} needs review",
-            f"Order {order.ref}:\n" + "\n".join(reasons)))
+            ORDER_REVIEW, f"Order {order.label} needs review",
+            f"Order {order.label}:\n" + "\n".join(reasons)))
 
     async def _resolve(self, event: str, order: Order) -> None:
         await self.tasks.resolve_problem(self.s, event, order.id, by=self.uow.actor.user_id)

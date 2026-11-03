@@ -22,6 +22,8 @@ export interface LotRead {
   shadow: boolean
   order_id: number | null
   order_ref: string | null
+  /** The order's Internal no. */
+  order_number?: number | null
   partner_code: string | null
   partner_name: string | null
   ship_to_city: string | null

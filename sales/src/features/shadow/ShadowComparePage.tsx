@@ -12,7 +12,9 @@ const SUMMARY_KEY = ['sales', 'shadow-matches', 'summary']
 const columns: ColumnDef<ShadowMatchRead, unknown>[] = [
   { accessorKey: 'kind', header: 'Kind' },
   { accessorKey: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={row.original.status} /> },
-  { accessorKey: 'reference_number', header: 'Order no. / PO' },
+  { accessorKey: 'reference_number', header: 'Zoho order no. / PO' },
+  { accessorKey: 'order_ref', header: 'Order ref', cell: ({ row }) => row.original.order_ref ?? '' },
+  { accessorKey: 'order_number', header: 'Internal no.', cell: ({ row }) => row.original.order_number ?? '' },
   { accessorKey: 'partner_name', header: 'Partner', cell: ({ row }) => <PartnerCell name={row.original.partner_name} code={row.original.partner_code} /> },
   { accessorKey: 'differences', header: 'Differences' },
   { accessorKey: 'note', header: 'Note', cell: ({ row }) => (

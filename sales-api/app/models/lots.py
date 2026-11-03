@@ -9,7 +9,7 @@ it went out either way.
 """
 from __future__ import annotations
 
-from sqlalchemy import Integer, String, cast, func, select
+from sqlalchemy import Integer, cast, func, select
 
 from app.db.base import Base
 from app.models.config import Partner
@@ -40,7 +40,8 @@ _TRACE = (
         Shipment.applied.label("applied"),
         Shipment.shadow.label("shadow"),
         Order.id.label("order_id"),
-        func.coalesce(Order.source_reference, cast(Order.order_number, String)).label("order_ref"),
+        Order.source_reference.label("order_ref"),
+        Order.order_number.label("order_number"),
         Order.partner_code.label("partner_code"),
         Partner.name.label("partner_name"),
         _ship_to("city").label("ship_to_city"),

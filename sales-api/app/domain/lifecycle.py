@@ -22,3 +22,13 @@ def line_state(*, removed: bool, qty_ea: int | None, shipped_ea: int | None, del
             return "Over shipped"
         return "Shipped"
     return "Open"
+
+
+def backordered(qty_ea: int | None, shipped_ea: int | None, removed: bool) -> int | None:
+    """A line's backordered EA: ordered − shipped once an applied 945 set the
+    shipped quantity (never below 0); none before, for a removed line, or
+    without an EA quantity. Shadow-run and second 945s never set it."""
+    if removed or qty_ea is None or shipped_ea is None:
+        return None
+    return max(qty_ea - shipped_ea, 0)
+

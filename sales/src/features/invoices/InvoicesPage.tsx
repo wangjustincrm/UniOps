@@ -23,7 +23,8 @@ const errorMessages: Record<string, string> = {
 
 const columns: ColumnDef<InvoiceRead, unknown>[] = [
   { accessorKey: 'invoice_number', header: 'Invoice' },
-  { accessorKey: 'order_ref', header: 'Order ref', cell: ({ row }) => row.original.order_ref ?? row.original.order_number ?? '' },
+  { accessorKey: 'order_ref', header: 'Order ref', cell: ({ row }) => row.original.order_ref ?? '' },
+  { accessorKey: 'order_number', header: 'Internal no.' },
   { accessorKey: 'partner_name', header: 'Partner', cell: ({ row }) => <PartnerCell name={row.original.partner_name} code={row.original.partner_code} /> },
   { accessorKey: 'po', header: 'PO' },
   { accessorKey: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={row.original.status} /> },
@@ -131,7 +132,7 @@ function Detail({ id }: { id: number }) {
     <div className="flex flex-col gap-4 text-sm">
       <DetailList items={[
         ['Status', <StatusCell key="s" value={inv.status} />],
-        ['Order', `${inv.order_ref ?? inv.order_number}${inv.po ? ` · PO ${inv.po}` : ''}`],
+        ['Order ref', inv.order_ref], ['Internal no.', inv.order_number == null ? null : String(inv.order_number)], ['PO', inv.po],
         ['Partner', partnerLabel(inv.partner_name, inv.partner_code)],
         ['Delivery number', inv.delivery_number],
         ['Method', inv.method], ['Delivery confirmed (the invoice date)', inv.confirmed_date ? formatDate(inv.confirmed_date) : null],

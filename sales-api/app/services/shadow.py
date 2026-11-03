@@ -188,7 +188,7 @@ class ShadowRun:
         if orders is not None:
             if len(orders) != 1:
                 values |= dict(status="No Sales order",
-                               note=None if not orders else f"{len(orders)} orders match: {', '.join(o.ref for o in orders)}")
+                               note=None if not orders else f"{len(orders)} orders match: {', '.join(o.label for o in orders)}")
             else:
                 order = orders[0]
                 sales = await self._dry_run(s, order)
@@ -393,13 +393,15 @@ async def mark_open_orders(uow, *, run_id: int | None = None) -> int:
 
 class ShadowMatchRepository(Repository[ShadowMatch]):
     model = ShadowMatch
-    search_fields = ("reference_number", "partner_code", "partner_name_sql", "note", "expected_reason")
+    search_fields = ("reference_number", "partner_code", "partner_name_sql", "note", "expected_reason", "order_ref_sql")
+    search_numbers = ("order_number_sql",)  # the Internal no., matched exactly
     list_fields = ("id", "kind", "status", "reference_document_id", "document_id", "order_id", "reference_number",
                    "partner_code", "differences", "expected_reason", "note", "compared_at")
-    sortable = {"partner_name": ShadowMatch.partner_name_sql}
+    sortable = {"partner_name": ShadowMatch.partner_name_sql, "order_ref": ShadowMatch.order_ref_sql,
+                "order_number": ShadowMatch.order_number_sql}
     filterable = {"partner_name": FilterRule(ShadowMatch.partner_name_sql, kind="text")}
     labels = {"reference_document_id": "Zoho file", "document_id": "Warehouse file", "order_id": "Order",
-              "reference_number": "Order no. / PO",
+              "reference_number": "Zoho order no. / PO", "order_ref": "Order ref", "order_number": "Internal no.",
               "expected_reason": "Why expected"}
     enums = {"status": STATUSES}
     default_sort = ("-compared_at",)

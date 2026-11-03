@@ -106,7 +106,7 @@ class Invoicing:
                 if review:
                     await self._hold(uow, order, "a 945 line matches no order line (FR-OB-25: lot exception)",
                                      f"945 item(s) {', '.join(x or '?' for x in review)} match no line of order "
-                                     f"{order.ref}. Decide (correct the order or the shipment), then Release.")
+                                     f"{order.label}. Decide (correct the order or the shipment), then Release.")
                     report.held += 1
                     continue
                 due = order.do_not_deliver_after if partner.dc_routing_required else order.requested_delivery_date
@@ -127,7 +127,7 @@ class Invoicing:
         if order.invoice_status != Inv.BLOCKED.value:
             INVOICE.transition(order, Inv.BLOCKED, actor=uow.actor, events=uow.events, reason=reason)
         await self.tasks.raise_problem(uow.session, INVOICE_HOLD, order.id, problem(
-            INVOICE_HOLD, f"Invoice on hold: order {order.ref}", description))
+            INVOICE_HOLD, f"Invoice on hold: order {order.label}", description))
 
     async def _refuse_shadow(self, s, order: Order) -> None:
         if await _shadow(s):
@@ -181,7 +181,10 @@ class Invoicing:
             gtin=items[ln.item_code].gtin if ln.item_code in items else None,
             description=items[ln.item_code].description if ln.item_code in items else None,
             delivered_ea=int(ln.delivered_qty or 0), case_factor=int(cases[ln.item_code]) if ln.item_code in cases else None,
-            order_factor=ln.factor_ea, unit_price=ln.unit_price) for ln in lines if ln.delivered_qty])
+            order_factor=ln.factor_ea,
+            # the line's invoice price, set before the draft (sales18); else the PO price
+            unit_price=ln.invoice_unit_price if ln.invoice_unit_price is not None else ln.unit_price)
+            for ln in lines if ln.delivered_qty])
         inv = Invoice(invoice_number=f"IN-{order.order_number}", order_id=order.id, method=partner.invoice_method,
                       invoice_date=when, currency=order.currency or "CAD", payment_terms=partner.payment_terms,
                       subtotal=built.subtotal, total=built.subtotal, version=1, send_count=0)
@@ -292,8 +295,8 @@ class Invoicing:
             INVOICE.transition(order, Inv.BLOCKED, actor=uow.actor, events=uow.events, reason=f"{kind} (FR-OB-19)")
         desc = ", ".join(f"line {known[int(x['order_line_id'])].line_no}: {x['qty_ea']} EA" for x in lines)
         await self.tasks.raise_problem(s, ORDER_RETURN, order.id, problem(
-            ORDER_RETURN, f"{kind}: order {order.ref}",
-            f"Order {order.ref}: {kind.lower()} — {desc}. "
+            ORDER_RETURN, f"{kind}: order {order.label}",
+            f"Order {order.label}: {kind.lower()} — {desc}. "
             f"Reason: {reason}. " + ("The invoice is on hold: decide on a credit or a corrected invoice, then Release."
                                     if stop else "The invoice was not affected.")))
         await s.flush()
@@ -432,7 +435,7 @@ class Invoicing:
             INVOICE.transition(order, Inv.FAILED, actor=uow.actor, events=uow.events, reason=str(exc)[:200])
         await self.tasks.raise_problem(uow.session, INVOICE_FAILED, order.id, problem(
             INVOICE_FAILED, f"Invoice not sent: {inv.invoice_number}",
-            f"Invoice {inv.invoice_number} (order {order.ref}, {inv.method}) was not sent: {exc}. "
+            f"Invoice {inv.invoice_number} (order {order.label}, {inv.method}) was not sent: {exc}. "
             "It is not retried automatically — fix the cause, then Send again."))
 
     async def _suppressed(self, row, exc, uow) -> None:
@@ -441,5 +444,5 @@ class Invoicing:
         if order.invoice_status == Inv.QUEUED.value:
             INVOICE.transition(order, Inv.FAILED, actor=uow.actor, events=uow.events, reason="refused by the outbound guard")
         await oplog.write(uow.session, "INFO", STEP, f"invoice {inv.invoice_number} refused by the guard: {exc}", order_id=order.id)
-        await send_refused(self.tasks, uow.session, row, f"invoice {inv.invoice_number} (order {order.ref})", exc)
+        await send_refused(self.tasks, uow.session, row, f"invoice {inv.invoice_number} (order {order.label})", exc)
 

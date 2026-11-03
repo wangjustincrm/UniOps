@@ -39,12 +39,13 @@ const meta: ListMeta = {
 }
 
 const api = vi.hoisted(() => ({ resolve: vi.fn(), fetchOrder: vi.fn(), list: vi.fn(), send: vi.fn(), eligible: vi.fn(),
-  preview: vi.fn(), create: vi.fn(), submit: vi.fn(), update: vi.fn() }))
+  preview: vi.fn(), create: vi.fn(), submit: vi.fn(), update: vi.fn(), prices: vi.fn() }))
 vi.mock('./ordersApi', async (orig) => {
   const real = await orig<typeof import('./ordersApi')>()
   return { ...real, ordersClient: { ...real.ordersClient, list: api.list, meta: async () => meta },
     fetchOrder: api.fetchOrder, resolveReview: api.resolve, send940: api.send, fetchEligibility: api.eligible,
-    previewManual: api.preview, createManual: api.create, submitManual: api.submit, updateManual: api.update }
+    previewManual: api.preview, createManual: api.create, submitManual: api.submit, updateManual: api.update,
+    setInvoicePrices: api.prices }
 })
 const look = vi.hoisted(() => ({ customers: vi.fn() }))
 vi.mock('../configuration/lookups', () => ({
@@ -238,7 +239,7 @@ describe('Orders: 940s (P4)', () => {
     renderAs(['sales.read'])
     fireEvent.click(await screen.findByRole('button', { name: 'Next 940s' }))
     const dialog = await screen.findByRole('dialog', { name: 'Next 940s' })
-    expect(await within(dialog).findByText('Order SHOP-9303 · SHOP')).toBeInTheDocument()
+    expect(await within(dialog).findByText('Order SHOP-9303 · internal no. 105 · SHOP')).toBeInTheDocument()
     expect(api.send).not.toHaveBeenCalled()
   })
 })
@@ -418,6 +419,7 @@ describe('Orders: the Order ref, the partner by name, and the PO prices', () => 
     renderAs(['sales.read'])
     const row = (await screen.findByText('SHOP-9303')).closest('tr')!
     expect(row).toHaveTextContent('Shopify')
+    expect(within(row).getByText('105')).toBeInTheDocument()  // the Internal no. beside the Order ref
     expect(row).not.toHaveTextContent('(SHOP)')  // the code is in the name's tooltip
     fireEvent.click(within(row).getByText('SHOP-9303'))
     const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
@@ -452,7 +454,8 @@ describe('Orders: the Order ref, the partner by name, and the PO prices', () => 
     expect(first).toHaveTextContent('35,000.00')
     expect(within(lines).getByText('CF0093').closest('tr')).toHaveTextContent('Short shipped')
     // less-used columns start hidden; the eye shows them
-    expect(within(lines).queryByText('Invoice price')).toBeNull()
+    expect(within(lines).queryByText('Discount')).toBeNull()
+    expect(first).toHaveTextContent('175.00 CAD /CA')  // invoiced: the invoice's price per its unit
     // footer: EA, shipped, delivered and invoiced totals
     const foot = lines.querySelector('tfoot')!
     expect(foot).toHaveTextContent('1680')
@@ -528,5 +531,72 @@ describe('Orders: the Order ref, the partner by name, and the PO prices', () => 
     const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
     await within(sheet).findByRole('table', { name: 'Order lines' })
     expect(within(sheet).queryByRole('region', { name: 'Payments and refunds' })).toBeNull()
+  })
+})
+
+describe('Orders: backordered quantities and the invoice price before the invoice', () => {
+  beforeEach(() => { Object.values(api).forEach((f) => f.mockReset()) })
+  const shipped = { ...pending, fulfillment_status: 'Shipped', order_state: 'Active' as const, backordered_ea: 80 }
+  const line = { ...detail.lines[0], id: 2, line_no: 2, item_code: 'CF0093', ordered_qty: '40', order_unit: 'CASE', unit_price: '150.00',
+    problem: null, qty_ea: 480, shipped_ea: 400, backordered_ea: 80, state: 'Short shipped', invoice_price: '150.00', packing: [] }
+
+  it('a partial 945: Backordered EA on the line, in the footer and the list; the order is marked partially shipped', async () => {
+    api.list.mockResolvedValue({ items: [shipped], total: 1 })
+    api.fetchOrder.mockResolvedValue({ ...detail, ...shipped, currency: 'CAD', has_invoice: false, lines: [line] })
+    renderAs(['sales.read'])
+    const row = (await screen.findByText('SHOP-9303')).closest('tr')!
+    expect(row).toHaveTextContent('Partially shipped')
+    expect(row).toHaveTextContent('80')
+    fireEvent.click(within(row).getByText('SHOP-9303'))
+    const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
+    const lines = await within(sheet).findByRole('table', { name: 'Order lines' })
+    expect(within(lines).getByText('Backordered EA')).toBeInTheDocument()
+    expect(within(lines).getByText('CF0093').closest('tr')).toHaveTextContent('80')
+    expect(lines.querySelector('tfoot')).toHaveTextContent('80')
+    expect(within(lines).getByText('CF0093').closest('tr')).toHaveTextContent('150.00 CAD /CASE')  // the PO price, per order unit
+  })
+
+  it('the invoice price is edited before the invoice: a price other than the PO needs a reason; it is saved per line', async () => {
+    api.list.mockResolvedValue({ items: [shipped], total: 1 })
+    api.fetchOrder.mockResolvedValue({ ...detail, ...shipped, currency: 'CAD', has_invoice: false, lines: [line] })
+    api.prices.mockResolvedValue({ ...detail, ...shipped, currency: 'CAD', has_invoice: false,
+      lines: [{ ...line, invoice_unit_price: '145', invoice_price: '145' }] })
+    renderAs(['sales.read', 'sales.invoice.manage'])
+    fireEvent.click(await screen.findByText('SHOP-9303'))
+    const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
+    fireEvent.click(await within(sheet).findByRole('button', { name: 'Edit invoice prices' }))
+    const price = await within(sheet).findByRole('textbox', { name: 'Invoice price line 2' })
+    expect(price).toHaveValue('150')
+    fireEvent.change(price, { target: { value: '145' } })
+    expect(within(sheet).getByText(/vs PO/)).toBeInTheDocument()
+    expect(within(sheet).getByText('An invoice price differs from the PO: give the reason.')).toBeInTheDocument()
+    expect(within(sheet).getByRole('button', { name: 'Save prices' })).toBeDisabled()
+    fireEvent.change(within(sheet).getByLabelText(/Reason for a price different from the PO/), { target: { value: 'agreed promo' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save prices' }))
+    await waitFor(() => expect(api.prices).toHaveBeenCalledWith(5, { reason: 'agreed promo', lines: [{ id: 2, invoice_unit_price: '145' }] }))
+    const lines = await within(sheet).findByRole('table', { name: 'Order lines' })
+    expect(within(lines).getByText('CF0093').closest('tr')).toHaveTextContent('145.00 CAD /CASE')
+  })
+
+  it('once the invoice is drafted the prices are changed on the invoice: no edit on the order', async () => {
+    api.list.mockResolvedValue({ items: [shipped], total: 1 })
+    api.fetchOrder.mockResolvedValue({ ...detail, ...shipped, currency: 'CAD', has_invoice: true, lines: [line] })
+    renderAs(['sales.read', 'sales.invoice.manage'])
+    fireEvent.click(await screen.findByText('SHOP-9303'))
+    const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
+    await within(sheet).findByRole('table', { name: 'Order lines' })
+    expect(within(sheet).queryByRole('button', { name: 'Edit invoice prices' })).toBeNull()
+    expect(within(sheet).getByText(/change its prices on the invoice/)).toBeInTheDocument()
+  })
+
+  it('without sales.invoice.manage there is no price edit', async () => {
+    api.list.mockResolvedValue({ items: [shipped], total: 1 })
+    api.fetchOrder.mockResolvedValue({ ...detail, ...shipped, currency: 'CAD', has_invoice: false, lines: [line] })
+    renderAs(['sales.read'])
+    fireEvent.click(await screen.findByText('SHOP-9303'))
+    const sheet = await screen.findByRole('dialog', { name: 'Order SHOP-9303' })
+    await within(sheet).findByRole('table', { name: 'Order lines' })
+    const edit = within(sheet).queryByRole('button', { name: 'Edit invoice prices' })
+    expect(edit === null || (edit as HTMLButtonElement).disabled).toBe(true)
   })
 })

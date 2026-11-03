@@ -16,6 +16,8 @@ class ShadowMatchRead(BaseModel):
     status: str
     reference_document_id: int | None
     order_id: int | None
+    order_ref: str | None = None      # the Sales order's Order ref
+    order_number: int | None = None   # and its Internal no.
     reference_number: str | None
     partner_code: str | None
     differences: int

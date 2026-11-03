@@ -26,6 +26,7 @@ class LotRead(BaseModel):
     shadow: bool
     order_id: int | None
     order_ref: str | None
+    order_number: int | None = None  # the Internal no.
     partner_code: str | None
     partner_name: str | None
     ship_to_city: str | None

@@ -18,19 +18,20 @@ from app.schemas.lots import LotRead
 READ = "sales.read"
 EXPIRING_DAYS = 30  # "Expiring soon": expiring within this many days (user 2026-11-03)
 
-CSV_COLUMNS = ("lot", "item_code", "expiry", "qty_shipped_ea", "ship_date", "order_ref", "partner_code", "partner_name",
+CSV_COLUMNS = ("lot", "item_code", "expiry", "qty_shipped_ea", "ship_date", "order_ref", "order_number", "partner_code", "partner_name",
                "ship_to_city", "ship_to_postal", "tracking", "sscc", "bol", "our_reference", "document_id", "applied", "shadow")
 
 
 class LotRepository(Repository[LotRow]):
     model = LotRow
     search_fields = ("lot", "item_code", "order_ref", "partner_name", "tracking", "sscc", "ship_to_postal")
+    search_numbers = ("order_number",)  # the Internal no., matched exactly
     list_fields = ("lot", "item_code", "expiry", "days_to_expiry", "qty_shipped_ea", "sscc", "tracking", "ship_date",
-                   "bol", "our_reference", "applied", "shadow", "order_ref", "partner_code", "partner_name",
+                   "bol", "our_reference", "applied", "shadow", "order_ref", "order_number", "partner_code", "partner_name",
                    "ship_to_city", "ship_to_postal", "document_id", "shipment_id")
     filterable = {"order_id": FilterRule(LotRow.order_id)}
     labels = {"item_code": "Item", "qty_shipped_ea": "Qty EA", "sscc": "Pallet (SSCC)", "days_to_expiry": "Days to expiry",
-              "order_ref": "Order ref", "partner_name": "Partner", "partner_code": "Partner code",
+              "order_ref": "Order ref", "order_number": "Internal no.", "partner_name": "Partner", "partner_code": "Partner code",
               "ship_to_city": "Ship-to city", "ship_to_postal": "Ship-to postal code", "document_id": "945 document",
               "our_reference": "940 reference (N9*E1)", "bol": "BOL", "applied": "Applied", "shadow": "Shadow run"}
     groupable = ("lot", "item_code", "expiry", "ship_date", "partner_name", "order_ref", "ship_to_city")

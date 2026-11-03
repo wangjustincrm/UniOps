@@ -61,10 +61,16 @@ class Invoice(Audited, Versioned, Base):
     def partner_name(self) -> str | None:
         return self.__dict__.get("partner_name_sql")
 
+    @property
+    def order_number(self) -> int | None:  # the order's Internal no. (order_number_sql)
+        return self.__dict__.get("order_number_sql")
+
 
 # The order's ref and partner name on the invoice's row (the list searches and sorts by them).
 Invoice.order_ref_sql = column_property(
     select(Order.source_reference).where(Order.id == Invoice.order_id).correlate_except(Order).scalar_subquery())
+Invoice.order_number_sql = column_property(
+    select(Order.order_number).where(Order.id == Invoice.order_id).correlate_except(Order).scalar_subquery())
 Invoice.partner_name_sql = column_property(
     select(Partner.name).join(Order, Order.partner_code == Partner.code).where(Order.id == Invoice.order_id)
     .correlate_except(Order, Partner).scalar_subquery())

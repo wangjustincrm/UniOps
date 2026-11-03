@@ -20,6 +20,7 @@ from sqlalchemy.orm import Mapped, column_property, mapped_column
 from app.db.base import Base
 from app.domain.shadow import STATUSES
 from app.models.config import Partner, one_of
+from app.models.orders import Order
 from app.platform.entities import Audited, Versioned
 
 
@@ -57,7 +58,22 @@ class ShadowMatch(Audited, Versioned, Base):
     def partner_name(self) -> str | None:  # loaded with the row (partner_name_sql); never a lazy load
         return self.__dict__.get("partner_name_sql")
 
+    @property
+    def order_ref(self) -> str | None:  # the Sales order's Order ref (order_ref_sql)
+        return self.__dict__.get("order_ref_sql")
+
+    @property
+    def order_number(self) -> int | None:  # the Sales order's Internal no. (order_number_sql)
+        return self.__dict__.get("order_number_sql")
+
 
 # The partner's name on the match's row (Shadow compare shows and searches it).
 ShadowMatch.partner_name_sql = column_property(
     select(Partner.name).where(Partner.code == ShadowMatch.partner_code).correlate_except(Partner).scalar_subquery())
+
+
+# The Sales order's two identifiers on the match's row (user 2026-11-03: both shown).
+ShadowMatch.order_ref_sql = column_property(
+    select(Order.source_reference).where(Order.id == ShadowMatch.order_id).correlate_except(Order).scalar_subquery())
+ShadowMatch.order_number_sql = column_property(
+    select(Order.order_number).where(Order.id == ShadowMatch.order_id).correlate_except(Order).scalar_subquery())

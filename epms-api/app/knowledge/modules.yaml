@@ -285,7 +285,10 @@ modules:
       - Keep the warehouses' names and addresses that the transfer file uses (Configuration → Warehouses)
       - Confirm what was delivered (Invoicing → Delivery confirmation, one by one or all shown at once) — nothing is invoiced before that
       - Check, correct and send an invoice (Invoicing → Invoices) — its prices beside the PO's (a changed price needs a reason), the delivery date and the retailer's delivery number — or release one that is on hold; record a retailer return or a cancellation after shipment on the order
-      - See what became of each line of an order in one table — ordered, shipped (945), delivered and invoiced, with its status — and open a line to see the pallets, lots, expiry, tracking and ship date packed for it; see the checks a 945 flagged and whether it was written to Shopify, retry a failed Shopify write, and print a shipment's packing list (Orders → the order → Shipments, Packing list)
+      - See what became of each line of an order in one table — ordered, shipped (945), backordered, delivered and invoiced, with its status — and open a line to see the pallets, lots, expiry, tracking and ship date packed for it; see the checks a 945 flagged and whether it was written to Shopify, retry a failed Shopify write, and print a shipment's packing list (Orders → the order → Shipments, Packing list)
+      - Set the invoice price of an order's lines before the invoice exists (Orders → the order → Lines, Edit invoice prices) — it starts as the PO price; a different price needs a reason and is kept in the history; the invoice draft takes it, after that the price is changed on the invoice
+      - Find the orders the warehouse shipped short (Orders → view "Backordered (partially shipped)", the Backordered EA column) — the order is Shipped and marked Partially shipped; the shortfall task says what was not shipped
+      - Find an order by its internal number — type it in the search of Orders, Invoices, Lots or Shadow compare (the Internal no. column is beside the Order ref)
       - Trace a lot or run a recall (Operations → Lots) — every pallet row the warehouse shipped with its lot, expiry, quantity, order, customer, ship-to city and postal code and tracking; views "Expiring soon" and "By lot"; Recall… takes one lot or a pasted list and shows every order and customer they went to, with Export CSV
       - See what a Shopify order was paid and refunded (Orders → the order → Payments & refunds) — payment status, sales channel, tags, gateways, discount codes, subtotal, discounts, shipping, taxes, original total, refunded and net; every payment with its gateway, status and authorization; every refund with its lines, shipping and adjustments; and find refunded orders with the views "Refunded" and "Partially refunded" and the Net and Refunded columns
       - See list totals — the sum of the amounts (the Total of Orders, the Amount of Invoices) or quantities (Lots) for everything the filter finds, per currency, under the list and in each group's header
@@ -312,8 +315,9 @@ modules:
         hyphen and the source order number (LCL-4887314746, SHP-9471; a manual
         order uses its internal number). It is set when the order arrives and
         never changes, even if the abbreviation changes later. The internal
-        number is still shown as Internal no. and used in the 940 and on the
-        invoice number. Every partner needs an abbreviation; one without it
+        number is still shown as Internal no. — beside the Order ref in every
+        list, task and email about the order, and on the invoice and packing
+        list PDFs — and used in the 940 and the invoice number. Every partner needs an abbreviation; one without it
         gets a task, and its new orders wait in review. Lists show partners by
         name (the code is in the name's tooltip and on the detail), and can be
         searched by either.
@@ -324,6 +328,15 @@ modules:
         different currencies are never added together. Lots lists every 945
         row, also those of a shadow-run or second 945 (marked): those goods went
         out too. Shipment rows and the original 945 files are never deleted.
+      - >-
+        Backordered is what the warehouse's 945 did not ship: the line's EA
+        ordered minus shipped, once a 945 is applied (empty before; a removed
+        line, a shadow-run or a second 945 count nothing). The warehouse sends
+        one 945 per order, so a short one still closes the fulfilment —
+        the order is Shipped, marked Partially shipped, and the shortfall task
+        asks whether to send the rest; nothing is re-sent by itself. A line's
+        invoice price is per the unit it was ordered in, like the PO price;
+        the invoice is per case and converts it.
       - >-
         A Shopify order's payments and refunds are read from the store with
         the order (and refreshed when a refund changes it); nothing is written

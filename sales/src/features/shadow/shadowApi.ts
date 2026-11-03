@@ -10,6 +10,9 @@ export interface ShadowMatchRead {
   status: (typeof SHADOW_STATUSES)[number]
   reference_document_id: number | null
   order_id: number | null
+  /** The Sales order's Order ref and Internal no. */
+  order_ref?: string | null
+  order_number?: number | null
   reference_number: string | null
   partner_code: string | null
   partner_name: string | null
