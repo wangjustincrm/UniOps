@@ -45,7 +45,10 @@ export function ConnectionSchedule({ connection: c }: { connection: ConnectionRe
   }, [done, qc])
   const run = useMutation({
     mutationFn: () => runConnectionNow(c.id),
-    onSuccess: async ({ run_id }) => { setStarted(run_id); await runs.refetch() },
+    onSuccess: async ({ run_id }) => {
+      setStarted(run_id)
+      await qc.invalidateQueries({ queryKey: [...queryKeys.list(runsClient), 'connection', c.id] })  // follow it now
+    },
   })
   return (
     <section aria-label="Schedule" className="flex flex-col gap-3 text-sm">

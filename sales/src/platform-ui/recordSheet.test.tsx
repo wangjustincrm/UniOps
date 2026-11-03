@@ -1,9 +1,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ListPage, PermissionProvider, RecordSheet, ViewsProvider, type ListMeta, type RecordTab, type ViewsClient } from './index'
+import { ListPage, PermissionProvider, RecordSheet, ViewsProvider, type ListMeta, type RefreshState, type RecordTab, type ViewsClient } from './index'
 import { requestOpen } from './resource/viewRequests'
-import { chooseOption, openTab } from './testing'
+import { openTab } from './testing'
 
 // RecordSheet (the user's ask, 2026-11-03): one detail frame for every record —
 // header (title + copy, refresh, previous / next, width, close), facts,
@@ -34,6 +34,11 @@ const tabsOf = (r: Row, rendered: string[] = []): RecordTab[] => [
 
 beforeEach(() => { try { localStorage.clear() } catch { /* none */ } })
 afterEach(() => { vi.useRealTimers() })
+
+
+const stub = (p: Partial<RefreshState> = {}): RefreshState => ({
+  refresh: vi.fn(async () => {}), busy: false, fetching: false, message: null, highlight: new Set(), updatedAt: 0, auto: 0, tick: 0, ...p,
+})
 
 describe('RecordSheet in a ListPage', () => {
   it('a header with the title (copyable), the facts, and tabs with counts, a dot, a hidden one, a lazy one and an empty one', async () => {
@@ -91,20 +96,17 @@ describe('RecordSheet in a ListPage', () => {
     expect(within(sheet).getByText('payments of C3')).toBeInTheDocument()
   })
 
-  it('Refresh refetches the record and the list; Full width is remembered; More shows only permitted actions', async () => {
+  it('a sheet without a query of its own refreshes with its list; Full width is remembered; More shows only permitted actions', async () => {
     const res = resource()
-    const onRefresh = vi.fn(async () => undefined)
     const archive = vi.fn()
     wrap(<ListPage<Row> resource={res} title="Things" columns={[{ accessorKey: 'code', header: 'Code' }]}
-      renderDetail={(r) => <RecordSheet title={r.code} tabs={tabsOf(r)} onRefresh={onRefresh} updatedAt={Date.now()}
+      renderDetail={(r) => <RecordSheet title={r.code} tabs={tabsOf(r)}
         more={[{ label: 'Archive', onSelect: archive }, { label: 'Purge', permission: 'things.purge', onSelect: vi.fn() }]} />} />,
     (k) => k !== 'things.purge')
     fireEvent.click(await screen.findByText('A1'))
     const sheet = await screen.findByRole('dialog', { name: 'A1' })
-    expect(within(sheet).getByText('updated just now')).toBeInTheDocument()
     const before = res.list.mock.calls.length
-    fireEvent.click(within(sheet).getByRole('button', { name: 'Refresh' }))
-    await waitFor(() => expect(onRefresh).toHaveBeenCalledOnce())
+    fireEvent.click(within(sheet).getByRole('button', { name: /^Refresh/ }))
     await waitFor(() => expect(res.list.mock.calls.length).toBeGreaterThan(before))
     fireEvent.click(within(sheet).getByRole('button', { name: 'Full width' }))
     expect(localStorage.getItem('platform-ui.recordSheet.expanded')).toBe('1')
@@ -118,9 +120,9 @@ describe('RecordSheet in a ListPage', () => {
 
   it('while loading a skeleton; a failed load says why and tries again', async () => {
     const retry = vi.fn()
-    const { rerender } = render(<RecordSheet open onOpenChange={() => {}} title="A1" loading tabs={[]} onRefresh={retry} />)
+    const { rerender } = render(<RecordSheet open onOpenChange={() => {}} title="A1" loading tabs={[]} refresh={stub({ refresh: retry })} />)
     expect(screen.getByLabelText('Loading')).toHaveAttribute('aria-busy', 'true')
-    rerender(<RecordSheet open onOpenChange={() => {}} title="A1" error={new Error('boom')} tabs={[]} onRefresh={retry} />)
+    rerender(<RecordSheet open onOpenChange={() => {}} title="A1" error={new Error('boom')} tabs={[]} refresh={stub({ refresh: retry })} />)
     expect(await screen.findByText(/boom/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
     await waitFor(() => expect(retry).toHaveBeenCalledOnce())
@@ -133,11 +135,12 @@ describe('every list: Refresh and auto-refresh', () => {
     wrap(<ListPage<Row> resource={res} title="Things" columns={[{ accessorKey: 'code', header: 'Code' }]} />)
     await screen.findByText('A1')
     const n = res.list.mock.calls.length
-    fireEvent.click(screen.getByRole('button', { name: /^Refresh · Updated / }))
+    fireEvent.click(screen.getByRole('button', { name: /^Refresh · updated / }))
     await waitFor(() => expect(res.list.mock.calls.length).toBe(n + 1))
     expect(screen.getByText('A1')).toBeInTheDocument()  // the rows stay while fetching
     vi.useFakeTimers({ shouldAdvanceTime: true })
-    await chooseOption(screen.getByRole('combobox', { name: 'Auto-refresh' }), 'Every 30s')
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Auto-refresh' }), { key: 'Enter' })
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Every 30s' }))
     expect(localStorage.getItem('platform-ui.autoRefresh./auto')).toBe('30')
     const m = res.list.mock.calls.length
     await act(() => vi.advanceTimersByTimeAsync(31_000))
@@ -148,6 +151,6 @@ describe('every list: Refresh and auto-refresh', () => {
     localStorage.setItem('platform-ui.autoRefresh./again', '300')
     wrap(<ListPage<Row> resource={resource('/again')} title="Things" columns={[{ accessorKey: 'code', header: 'Code' }]} />)
     await screen.findByText('A1')
-    expect(screen.getByRole('combobox', { name: 'Auto-refresh' })).toHaveTextContent('Every 5m')
+    expect(document.querySelector('[data-auto-interval]')).toHaveTextContent('5m')  // on the refresh icon
   })
 })

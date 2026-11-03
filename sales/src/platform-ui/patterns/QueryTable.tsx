@@ -1,9 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { SlidersHorizontal } from 'lucide-react'
 import { DataTable, type ColumnDef, type Grouping } from '../primitives/DataTable'
 import { groupKey } from '../primitives/groupKey'
 import { formatMoney } from '../primitives/format'
-import { Button } from '../primitives/shell'
 import { useListMeta, type FieldMeta, type ListMeta } from '../resource/listMeta'
 import {
   MAX_GROUP_KEYS, clampPageSize, groupBy, sortBy, type Filter, type GroupCount, type ListTotal, type QuerySpec,
@@ -266,9 +264,17 @@ function QueryTableView<T>({
         toolbar={(panelFields.length > 0 || toolbar) ? (
           <>
             {panelFields.length > 0 && (
-              <Button variant="secondary" size="sm" onClick={() => setPanel({ open: true, focus: null })}>
-                <SlidersHorizontal className="mr-1 h-3.5 w-3.5" />Search
-              </Button>
+              <SearchPanel
+                open={panel.open}
+                onOpenChange={(open) => setPanel((p) => ({ open, focus: open ? p.focus : null }))}
+                fields={panelFields}
+                filters={(spec.filters ?? []).filter((f) => !locked.includes(f.field))}
+                focusField={panel.focus}
+                onApply={(next: Filter[]) => {
+                  const keep = (spec.filters ?? []).filter((f) => locked.includes(f.field) || !panelFields.some((p) => p.name === f.field))
+                  change({ ...spec, page: 1, filters: [...keep, ...next] })
+                }}
+              />
             )}
             {toolbar}
           </>
@@ -279,17 +285,6 @@ function QueryTableView<T>({
           total,
           onPageChange: (page) => onSpecChange({ ...spec, page }),
           onPageSizeChange: (size) => change({ ...spec, page: 1, pageSize: clampPageSize(size) }),
-        }}
-      />
-      <SearchPanel
-        open={panel.open}
-        onOpenChange={(open) => setPanel((p) => ({ ...p, open }))}
-        fields={panelFields}
-        filters={(spec.filters ?? []).filter((f) => !locked.includes(f.field))}
-        focusField={panel.focus}
-        onApply={(next: Filter[]) => {
-          const keep = (spec.filters ?? []).filter((f) => locked.includes(f.field) || !panelFields.some((p) => p.name === f.field))
-          change({ ...spec, page: 1, filters: [...keep, ...next] })
         }}
       />
     </>

@@ -71,7 +71,7 @@ describe('view picker', () => {
     expect(await screen.findByRole('button', { name: 'View: Cheap' })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'x' } })
     fireEvent.keyDown(screen.getByLabelText('Search'), { key: 'Enter' })
-    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Save view' }))  // an icon now
     await waitFor(() => expect(views.update).toHaveBeenCalledWith(3, { state: expect.objectContaining({ search: 'x' }) }, 1))
     expect(await screen.findByRole('button', { name: 'View: Cheap' })).toBeInTheDocument()  // saved: no longer unsaved
 
@@ -113,7 +113,7 @@ describe('column order', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Move Price up' }))
     await waitFor(() => expect(headers()).toEqual(['Code', 'Price', 'Name']))
     expect(screen.getByRole('button', { name: 'Move Code up' })).toBeDisabled()
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save view' }))
     await waitFor(() => expect(views.update).toHaveBeenCalledWith(3, { state: expect.objectContaining({ columns: ['code', 'price', 'name'] }) }, 1))
   })
 

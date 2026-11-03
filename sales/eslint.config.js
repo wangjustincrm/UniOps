@@ -69,6 +69,12 @@ const RAW_FORMS = [
 const RAW_SHEETS = [
   { selector: "JSXOpeningElement[name.name='Sheet']", message: 'A record detail is a RecordSheet (a form: FormSheet) from @/platform-ui, not a raw Sheet.' },
 ]
+// A refresh the user sees goes through useRefresh (the user, 2026-11-03: one
+// reusable refresh — the busy time, what changed, the highlight): features
+// never call a query's refetch() themselves.
+const DIRECT_REFETCH = [
+  { selector: "CallExpression[callee.property.name='refetch']", message: 'Refresh through useRefresh (and RefreshControl) from @/platform-ui, not refetch().' },
+]
 const NO_RAW_SHEET_IMPORT = {
   name: '@/platform-ui', importNames: ['Sheet'],
   message: 'A record detail is a RecordSheet (a form: FormSheet) from @/platform-ui, not a raw Sheet.',
@@ -141,11 +147,11 @@ export default defineConfig([
   },
   {
     files: ['src/pages/**/*.tsx'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH] },
   },
   {
     files: ['src/features/**/*.{ts,tsx}'],
     ignores: ['src/features/**/*.test.{ts,tsx}'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH] },
   },
 ])

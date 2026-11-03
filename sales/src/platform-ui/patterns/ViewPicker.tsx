@@ -1,8 +1,10 @@
 import { useState } from 'react'
-import { Check, ChevronDown, MoreHorizontal, Star } from 'lucide-react'
+import { Check, ChevronDown, CopyPlus, MoreHorizontal, RotateCcw, Save, Star } from 'lucide-react'
 import { Dialog } from '../primitives/Dialog'
 import { DropdownMenu } from '../primitives/DropdownMenu'
+import { IconButton } from '../primitives/IconButton'
 import { Popover } from '../primitives/Popover'
+import { ToolbarPopover } from './ToolbarPopover'
 import { Button, Input } from '../primitives/shell'
 import { cn } from '../lib/cn'
 import { errorText } from '../resource/businessError'
@@ -22,7 +24,6 @@ export function ViewPicker({ model }: { model: ViewPickerModel }) {
   const isCurrent = (v: CurrentView) => current?.kind === v.kind &&
     (v.kind === 'system' ? current.kind === 'system' && current.key === v.key : current.kind === 'mine' && current.id === v.id)
   const choose = (v: CurrentView) => { model.select(v); setOpen(false) }
-  const saveAs = () => setNaming({ title: 'Save as a new view', initial: '', done: model.saveAs })
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -74,13 +75,16 @@ export function ViewPicker({ model }: { model: ViewPickerModel }) {
         </Section>
       </Popover>
       {dirty && (
-        <>
-          <span className="text-xs text-warning-700">Unsaved changes</span>
-          <Button size="sm" variant="secondary" disabled={model.busy}
-            onClick={() => (current?.kind === 'mine' ? void model.save() : saveAs())}>Save</Button>
-          <Button size="sm" variant="secondary" disabled={model.busy} onClick={saveAs}>Save as new</Button>
-          <Button size="sm" variant="ghost" disabled={model.busy} onClick={model.reset}>Reset</Button>
-        </>
+        // The dot on the picker says "unsaved"; Save (mine) / Save as new / Reset are icons.
+        <span className="inline-flex items-center gap-1">
+          {current?.kind === 'mine' && (
+            <IconButton label="Save view" icon={<Save className="h-4 w-4" />} disabled={model.busy} className={TOOL}
+              onClick={() => { void model.save() }} />
+          )}
+          <SaveAsNew busy={model.busy} save={model.saveAs} />
+          <IconButton label="Reset to the saved view" icon={<RotateCcw className="h-4 w-4" />} disabled={model.busy} className={TOOL}
+            onClick={model.reset} />
+        </span>
       )}
       {model.stale && !dirty && (
         <span role="status" className="text-xs text-warning-700">Saved by an older version: review it, then Save.</span>
@@ -155,5 +159,43 @@ function NameDialog({ title, initial, done, onClose }: {
         {error != null && <p role="alert" className="text-sm text-danger-600">{errorText(error, ERRORS)}</p>}
       </form>
     </Dialog>
+  )
+}
+
+// Toolbar icons share one size with the other toolbar controls.
+const TOOL = 'h-8 w-8 rounded-lg border border-neutral-200 bg-white'
+
+/** Save as new: an icon opening a small popover with the name. */
+function SaveAsNew({ busy, save }: { busy: boolean; save: (name: string) => Promise<void> }) {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [error, setError] = useState<unknown>(null)
+  const [pending, setPending] = useState(false)
+  const submit = async () => {
+    if (!name.trim() || pending) return
+    setPending(true)
+    setError(null)
+    try {
+      await save(name.trim())
+      setOpen(false)
+      setName('')
+    } catch (e) {
+      setError(e)
+    } finally {
+      setPending(false)
+    }
+  }
+  return (
+    <ToolbarPopover label="Save as a new view" icon={<CopyPlus className="h-4 w-4" />} title="Save as a new view" open={open}
+      onOpenChange={(o) => { setOpen(o); if (!o) setError(null) }} disabled={busy} width="w-72"
+      actions={<>
+        <Button size="sm" variant="secondary" onClick={() => setOpen(false)} disabled={pending}>Cancel</Button>
+        <Button size="sm" onClick={() => void submit()} disabled={pending || !name.trim()}>Save</Button>
+      </>}>
+      <form onSubmit={(e) => { e.preventDefault(); void submit() }}>
+        <Input aria-label="View name" placeholder="Name of the view" value={name} autoFocus maxLength={80} onChange={(e) => setName(e.target.value)} />
+      </form>
+      {error != null && <p role="alert" className="text-sm text-danger-600">{errorText(error, ERRORS)}</p>}
+    </ToolbarPopover>
   )
 }

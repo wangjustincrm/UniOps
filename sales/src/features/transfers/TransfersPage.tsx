@@ -5,6 +5,7 @@ import {
   ActionButton, Autocomplete, ConfirmAction, DateCell, DateTimeCell, DetailList, ErrorMessage, ListPage, LocalTable,
   MasterDetailForm, RecordSheet, Section, StatusCell, numberColumn, queryKeys,
   type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab,
+  compareRecord, useRefresh,
 } from '@/platform-ui'
 import { itemOptions, warehouseOptions } from '../configuration/lookups'
 import {
@@ -93,6 +94,7 @@ function Detail({ row }: { row: TransferRead }) {
   const id = row.id
   const qc = useQueryClient()
   const q = useQuery({ queryKey: queryKeys.detail(transfersClient, id), queryFn: () => fetchTransfer(id) })
+  const sheetRefresh = useRefresh(q, { queryKey: queryKeys.detail(transfersClient, id), compare: compareRecord, noChange: 'Up to date', auto: 'follow' })
   const [cancelling, setCancelling] = useState(false)
   const [editing, setEditing] = useState(false)
   const done = async (d: TransferDetail) => {
@@ -138,7 +140,7 @@ function Detail({ row }: { row: TransferRead }) {
         subtitle={`${row.from_warehouse ?? '?'} → ${row.to_warehouse ?? '?'}`}
         badges={<StatusCell value={t?.status ?? row.status} />}
         loading={q.isLoading} error={q.error} errorMessages={errorMessages}
-        onRefresh={() => q.refetch()} updatedAt={q.dataUpdatedAt} fetching={q.isFetching} snapshot={t as unknown as Record<string, unknown> | undefined}
+        refresh={sheetRefresh}
         facts={t ? [
           { label: 'Status', value: t.status, tone: ['Failed', 'Discrepancy'].includes(t.status) ? 'danger' : t.status === 'Partially Received' ? 'warning' : 'neutral' },
           { label: 'Sent EA', value: sent },

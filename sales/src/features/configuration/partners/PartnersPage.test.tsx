@@ -52,9 +52,9 @@ describe('Partners page', () => {
   it('a reader without sales.config sees the list and a read-only partner with its history', async () => {
     renderAs(['sales.read'])
     expect(await screen.findByText('Walmart Canada')).toBeInTheDocument()
-    expect(screen.getByText('Export CSV')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeInTheDocument()  // an icon with its tooltip
     expect(screen.queryByText('New')).not.toBeInTheDocument()
-    expect(screen.queryByText('Import CSV')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Import CSV' })).not.toBeInTheDocument()
 
     const sheet = await openPartner()
     expect(within(sheet).getAllByText(/read only/i).length).toBeGreaterThan(0)
@@ -70,7 +70,7 @@ describe('Partners page', () => {
   it('with sales.config the same partner opens for editing (the admitted half)', async () => {
     renderAs(['sales.read', 'sales.config'])
     expect(await screen.findByText('New')).toBeInTheDocument()
-    expect(screen.getByText('Import CSV')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Import CSV' })).toBeInTheDocument()
     const sheet = await openPartner()
     expect(within(sheet).queryAllByText(/read only/i)).toHaveLength(0)
     expect(within(sheet).getByLabelText(/^Name/)).toBeEnabled()

@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Download } from 'lucide-react'
 import {
-  ActionButton, Badge, Button, DateCell, Dialog, ErrorMessage, ListPage, Textarea, type ColumnDef, type Filter,
+  Badge, Button, DateCell, Dialog, ErrorMessage, ListPage, Textarea, type ColumnDef, type Filter,
+  IconButton,
 } from '@/platform-ui'
 import { PartnerCell } from '@/features/common/PartnerCell'
 import { exportLots, lotsClient, parseLots, type LotRead } from './lotsApi'
@@ -87,7 +89,8 @@ export default function LotsPage() {
         toolbar={(ctx) => (
           <>
             <Button size="sm" variant="secondary" onClick={() => setAsking(true)}>Recall…</Button>
-            <ActionButton size="sm" variant="secondary" onAction={() => exportLots(ctx.spec).catch(setError)}>Export CSV</ActionButton>
+            <IconButton label="Export CSV" icon={<Download className="h-4 w-4" />} className="h-8 w-8 rounded-lg border border-neutral-200 bg-white"
+              onClick={() => { exportLots(ctx.spec).catch(setError) }} />
           </>
         )}
       />

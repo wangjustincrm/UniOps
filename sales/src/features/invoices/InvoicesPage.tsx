@@ -5,6 +5,7 @@ import {
   ActionButton, ConfirmAction, DateCell, DetailList, ErrorMessage, ListPage, LocalTable, MasterDetailForm, MoneyCell,
   RecordSheet, Section, StatusCell, formatDate, formatDateTime, formatMoney, numberColumn, queryKeys, readColumn, textColumn,
   type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab,
+  compareRecord, useRefresh,
 } from '@/platform-ui'
 import { editInvoice, fetchInvoice, invoicesClient, releaseInvoice, sendInvoice, type InvoiceDetail, type InvoiceRead } from './invoicesApi'
 import { PartnerCell } from '@/features/common/PartnerCell'
@@ -114,6 +115,7 @@ function Detail({ row }: { row: InvoiceRead }) {
   const id = row.id
   const qc = useQueryClient()
   const q = useQuery({ queryKey: queryKeys.detail(invoicesClient, id), queryFn: () => fetchInvoice(id) })
+  const sheetRefresh = useRefresh(q, { queryKey: queryKeys.detail(invoicesClient, id), compare: compareRecord, noChange: 'Up to date', auto: 'follow' })
   const [editing, setEditing] = useState(false)
   const [releasing, setReleasing] = useState(false)
   const refresh = async () => {
@@ -160,7 +162,7 @@ function Detail({ row }: { row: InvoiceRead }) {
           partnerLabel(row.partner_name, row.partner_code)].filter(Boolean).join(' · ')}
         badges={<StatusCell value={inv?.status ?? row.status} />}
         loading={q.isLoading} error={q.error} errorMessages={errorMessages}
-        onRefresh={() => q.refetch()} updatedAt={q.dataUpdatedAt} fetching={q.isFetching} snapshot={inv as unknown as Record<string, unknown> | undefined}
+        refresh={sheetRefresh}
         facts={inv ? [
           { label: 'Total', value: formatMoney(inv.total, inv.currency), hint: inv.currency },
           { label: 'Status', value: inv.status ?? '—', tone: inv.status === 'Blocked' || inv.status === 'Failed' ? 'warning' : inv.status === 'Sent' ? 'success' : 'neutral' },

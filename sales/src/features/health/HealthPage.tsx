@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   ActionButton, Badge, Button, DetailList, ErrorMessage, ErrorView, LocalTable, PageHeader, Skeleton, StatCard, formatDateTime,
   requestOpen, type ColumnDef,
+  useRefresh,
 } from '@/platform-ui'
 import { testConnection, type ConnectionTest } from '@/features/configuration/connections/connectionsApi'
 import { fetchHealth, type CheckRead, type GateEventRead, type HealthRead } from './healthApi'
@@ -45,8 +46,9 @@ function TestConnection({ id }: { id: number }) {
 export default function HealthPage() {
   const navigate = useNavigate()
   const q = useQuery({ queryKey: ['sales', 'health'], queryFn: fetchHealth, refetchInterval: 60_000 })
+  const refresh = useRefresh(q, { queryKey: ['sales', 'health'], compare: () => ({ text: null }) })
   if (q.isLoading) return <Skeleton className="h-60 w-full" />
-  if (q.error || !q.data) return <ErrorView error={q.error} onRetry={() => q.refetch()} />
+  if (q.error || !q.data) return <ErrorView error={q.error} onRetry={() => { void refresh.refresh() }} />
   const h: HealthRead = q.data
   const byKey = Object.fromEntries(h.checks.map((c) => [c.key, c]))
   const open = (c: CheckRead) => {

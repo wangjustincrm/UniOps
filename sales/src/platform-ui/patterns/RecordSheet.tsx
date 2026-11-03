@@ -1,18 +1,18 @@
-import { useContext, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { ChevronDown, ChevronUp, Maximize2, Minimize2, MoreHorizontal, RefreshCw } from 'lucide-react'
+import { useContext, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { ChevronDown, ChevronUp, Maximize2, Minimize2, MoreHorizontal } from 'lucide-react'
 import { CopyButton } from '../primitives/Copy'
 import { DropdownMenu, type MenuItem } from '../primitives/DropdownMenu'
 import { IconButton } from '../primitives/IconButton'
 import { Sheet, SheetClose, SheetTitle, type SheetSize } from '../primitives/Sheet'
 import { Button, Skeleton } from '../primitives/shell'
 import { EmptyState } from '../primitives/States'
-import { formatTime } from '../primitives/format'
 import { Tabs } from '../primitives/Tabs'
 import { BusyBar } from '../primitives/BusyBar'
 import { useDelayed } from '../primitives/useDelayed'
 import { cn } from '../lib/cn'
 import { ErrorView } from './ErrorMessage'
-import { describeRecordChange } from './refreshDiff'
+import { RefreshControl } from './RefreshControl'
+import type { RefreshState } from './useRefresh'
 import { PermissionContext } from './permissions'
 import { RecordSheetHostContext, type RecordSheetSize } from './recordSheetHost'
 
@@ -62,15 +62,10 @@ export interface RecordSheetProps {
   tabs: RecordTab[]
   /** Under the tabs, outside them (e.g. a form's own buttons are inside a tab instead). */
   footer?: ReactNode
-  /** The record's own refetch; the host's list is refreshed with it. */
-  onRefresh?: () => Promise<unknown> | void
-  /** When the record's data was fetched (ms since epoch). */
-  updatedAt?: number
-  /** The record as fetched (its top-level fields): a Refresh says which of them changed. */
-  snapshot?: Record<string, unknown>
+  /** The record's refresh (useRefresh over its query, auto: 'follow'). Without it, the
+   *  list's (the host's): the record is one of its rows. */
+  refresh?: RefreshState
   loading?: boolean
-  /** The record is being fetched again: a bar under the header. */
-  fetching?: boolean
   error?: unknown
   errorMessages?: Record<string, string>
   size?: RecordSheetSize
@@ -88,21 +83,6 @@ function writeExpanded(on: boolean): void {
   try { localStorage.setItem(EXPANDED_KEY, on ? '1' : '0') } catch { /* no storage (private mode): not remembered */ }
 }
 
-/** "updated 12s ago", ticking. */
-function useAgo(at: number | undefined): string | null {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    if (!at) return
-    const t = setInterval(() => setNow(Date.now()), 5000)
-    return () => clearInterval(t)
-  }, [at])
-  if (!at) return null
-  const s = Math.max(0, Math.round((Math.max(now, at) - at) / 1000))
-  if (s < 5) return 'updated just now'
-  if (s < 60) return `updated ${s}s ago`
-  if (s < 3600) return `updated ${Math.floor(s / 60)}m ago`
-  return `updated ${formatTime(at)}`
-}
 
 const FACT_TONE: Record<FactTone, string> = {
   neutral: 'border-neutral-200 bg-white',
@@ -149,50 +129,16 @@ export function RecordSheet(props: RecordSheetProps) {
   const chosen = host ? host.tab : own
   const tab = visible.some((t) => t.id === chosen) ? chosen! : visible[0]?.id
   const [expanded, setExpanded] = useState(readExpanded)
-  const [refreshing, setRefreshing] = useState(false)
-  const ago = useAgo(props.updatedAt)
-  // A refetch of a record already shown (Refresh, an action's invalidation), after 200 ms; the first load has its skeleton.
-  // A user's Refresh shows the bar at once (≥ 600 ms); a background refetch after 200 ms.
-  const backgroundBar = useDelayed(!!props.fetching && !props.loading)
-  const showBar = refreshing || backgroundBar
-  const busy = useRef(false)
-  const [message, setMessage] = useState<{ text: string; tone: 'info' | 'danger' } | null>(null)
-  const msgTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  useEffect(() => () => clearTimeout(msgTimer.current), [])
-  // The record and its tab counts as last rendered (read after a refresh).
-  const seen = useRef<{ fields?: Record<string, unknown>; counts: Record<string, number | undefined> }>({ counts: {} })
-  const counts = JSON.stringify(Object.fromEntries(visible.map((t) => [t.id, t.count])))
-  useEffect(() => { seen.current = { fields: props.snapshot, counts: JSON.parse(counts) } }, [props.snapshot, counts])
-  const labels = Object.fromEntries(visible.map((t) => [t.id, t.label]))
-
+  // THE refresh (useRefresh): the record's own, else its list's. A click and an
+  // auto tick look the same: the bar under the header and the spin at once (≥ 600 ms);
+  // a background refetch shows the bar after 200 ms.
+  const r = props.refresh ?? host?.refresh
+  const backgroundBar = useDelayed(!!r?.fetching && !props.loading)
+  const showBar = !!r?.busy || backgroundBar
   const open = host ? host.open : !!props.open
   const close = () => (host ? host.close() : props.onOpenChange?.(false))
   const size: SheetSize = expanded ? 'full' : (props.size ?? host?.size ?? 'lg')
 
-  const refresh = async () => {
-    if (busy.current) return
-    busy.current = true
-    setRefreshing(true)
-    const started = Date.now()
-    const before = seen.current
-    let failed: boolean
-    try {
-      const [r] = await Promise.all([props.onRefresh?.(), host?.refreshList?.()])
-      failed = !!r && typeof r === 'object' && 'status' in r && (r as { status: unknown }).status === 'error'
-    } catch {
-      failed = true
-    } finally {
-      await new Promise((ok) => setTimeout(ok, Math.max(0, 600 - (Date.now() - started))))
-      busy.current = false
-      setRefreshing(false)
-    }
-    // by now the new record has rendered (seen.current is the fresh one)
-    const what = failed ? null : describeRecordChange(before.fields, seen.current.fields, before.counts, seen.current.counts, labels)
-    setMessage(failed ? { text: 'Refresh failed: try again', tone: 'danger' }
-      : { text: what ? `Updated: ${what}` : 'Up to date', tone: 'info' })
-    clearTimeout(msgTimer.current)
-    msgTimer.current = setTimeout(() => setMessage(null), 4000)
-  }
   const choose = (id: string) => (host?.onTabChange ? host.onTabChange(id) : setOwn(id))
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (typing(e.target) || e.ctrlKey || e.metaKey) return
@@ -212,15 +158,7 @@ export function RecordSheet(props: RecordSheetProps) {
           {props.badges}
         </div>
         <div className="flex shrink-0 items-center gap-0.5">
-          {(props.onRefresh || host?.refreshList) && (
-            <>
-              <span aria-live="polite" data-refresh-message
-                className={cn('mr-1 max-w-[18rem] truncate text-xs', message?.tone === 'danger' ? 'text-danger-600' : 'text-primary-700',
-                  !message && 'sr-only')}>{message?.text ?? ''}</span>
-              {ago && !message && <span className="mr-1 hidden text-xs text-neutral-400 sm:inline">{ago}</span>}
-              <IconButton label="Refresh" icon={<RefreshCw className="h-4 w-4" />} pending={refreshing} onClick={() => { void refresh() }} />
-            </>
-          )}
+          {r && <RefreshControl state={{ ...r, setAuto: undefined }} />}
           {host && (host.prev || host.next) && (
             <>
               <IconButton label="Previous record (K)" icon={<ChevronUp className="h-4 w-4" />} disabled={!host.prev} onClick={() => host.prev?.()} />
@@ -244,7 +182,7 @@ export function RecordSheet(props: RecordSheetProps) {
     body = (
       <div className="flex flex-col items-start gap-2">
         <ErrorView error={props.error} messages={props.errorMessages} />
-        {props.onRefresh && <Button variant="secondary" size="sm" onClick={() => { void refresh() }}>Try again</Button>}
+        {r && <Button variant="secondary" size="sm" onClick={() => { void r.refresh() }}>Try again</Button>}
       </div>
     )
   } else if (props.loading) {

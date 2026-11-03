@@ -1,13 +1,14 @@
 import { useState } from 'react'
+import { SlidersHorizontal } from 'lucide-react'
 import { Checkbox, CheckboxList } from '../primitives/Checkbox'
 import { DateInput, DateTimeInput, NumberInput } from '../primitives/FieldInputs'
 import { Select } from '../primitives/Select'
-import { Sheet } from '../primitives/Sheet'
 import { Button } from '../primitives/shell'
 import { TagInput } from '../primitives/TagInput'
 import type { FieldMeta } from '../resource/listMeta'
 import type { Filter, FilterOp } from '../resource/querySpec'
 import { opLabel, panelOps } from './listView'
+import { ToolbarPopover } from './ToolbarPopover'
 
 interface Draft {
   on: boolean
@@ -67,11 +68,15 @@ export interface SearchPanelProps {
  *  values (any of them matches; for "not" operators none may). Different
  *  fields must all match. */
 export function SearchPanel({ open, onOpenChange, ...rest }: SearchPanelProps) {
+  // The toolbar's Search icon; its badge counts the conditions set here.
+  const active = new Set(rest.filters.map((f) => f.field)).size
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title="Search" description="Values of one field: any of them. Different fields: all of them." className="max-w-md">
+    <ToolbarPopover label="Search on any field" icon={<SlidersHorizontal className="h-4 w-4" />} badge={active || undefined}
+      title="Search" open={open} onOpenChange={onOpenChange} width="w-[26rem]">
+      <p className="text-xs text-neutral-500">Values of one field: any of them. Different fields: all of them.</p>
       {/* Remounted on every open, so the drafts start from the current filters. */}
       {open && <SearchForm {...rest} close={() => onOpenChange(false)} />}
-    </Sheet>
+    </ToolbarPopover>
   )
 }
 
@@ -112,7 +117,7 @@ function SearchForm({ fields, filters, focusField, onApply, close }: Omit<Search
           )
         })}
       </ul>
-      <div className="sticky bottom-0 flex justify-end gap-2 border-t border-neutral-100 bg-white pt-3">
+      <div className="sticky -bottom-3 -mb-3 flex justify-end gap-2 border-t border-neutral-100 bg-white pb-3 pt-3">
         <Button type="button" variant="secondary" size="sm" onClick={() => setDrafts((all) => Object.fromEntries(
           Object.entries(all).map(([k, v]) => [k, { ...v, on: false, values: [], draft: '', low: '', high: '' }])))}>Clear</Button>
         <Button type="submit" size="sm">Search</Button>

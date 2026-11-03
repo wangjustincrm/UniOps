@@ -7,6 +7,7 @@ import {
   LocalTable, MoneyCell, RecordSheet, RecordSheetHostContext, Section, StatusCell, Timeline, formatDate, formatDateTime, formatMoney,
   queryKeys, requestOpen,
   type ColumnDef, type RecordFact, type RecordTab, type TimelineItem,
+  compareRecord, useRefresh,
 } from '@/platform-ui'
 import { fetchOrder, ordersClient, type LineRead, type OrderDetail, type OrderDocument, type OrderRead, type PackingRead } from './ordersApi'
 import { Shipments } from './Shipments'
@@ -271,6 +272,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
   const qc = useQueryClient()
   const host = useContext(RecordSheetHostContext)
   const q = useQuery({ queryKey: queryKeys.detail(ordersClient, o.id), queryFn: () => fetchOrder(o.id) })
+  const sheetRefresh = useRefresh(q, { queryKey: queryKeys.detail(ordersClient, o.id), compare: compareRecord, noChange: 'Up to date', auto: 'follow' })
   const [pricing, setPricing] = useState(false)
   const [releasing, setReleasing] = useState(false)
   const d = q.data
@@ -287,7 +289,6 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
     && (['Rejected', 'Failed'].includes(x.file_status ?? '') || x.ack_status === 'Rejected' || !!x.error))
   // Only an order that is invoiced here (not a Shopify order: Not Required) has an invoice price.
   const priceable = !!d && !d.has_invoice && d.invoice_status !== 'Not Required' && d.fulfillment_status !== 'Cancelled' && open.length > 0
-  const refresh = () => q.refetch()
 
   const tabs: RecordTab[] = !d ? [] : [
     ...extraTabs,
@@ -398,7 +399,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
           {live.archive_suppressed && live.fulfillment_status !== 'Archive Suppressed' && <Badge variant="warning">Archived in Shopify</Badge>}
         </>}
         size="xl" loading={q.isLoading} error={q.error}
-        onRefresh={refresh} updatedAt={q.dataUpdatedAt} fetching={q.isFetching} snapshot={d as unknown as Record<string, unknown> | undefined}
+        refresh={sheetRefresh}
         facts={facts} actions={actions} tabs={tabs}
       />
       {d && (

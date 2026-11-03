@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ActionButton, ConfirmAction, DateTimeCell, DetailList, DiffTable, ListPage, RecordSheet, Section, StatusCell, queryKeys,
   type ColumnDef, type RecordTab,
+  compareRecord, useRefresh,
 } from '@/platform-ui'
 import { SHADOW_STATUSES, fetchShadowCompare, fetchShadowSummary, markExpected, shadowClient, type ShadowMatchRead } from './shadowApi'
 
@@ -63,6 +64,7 @@ function MarkExpected({ m, onDone }: { m: ShadowMatchRead; onDone: () => void })
 /** Both files side by side; differing segments highlighted (§5.4). */
 function Detail({ row, close }: { row: ShadowMatchRead; close: () => void }) {
   const q = useQuery({ queryKey: queryKeys.detail(shadowClient, row.id), queryFn: () => fetchShadowCompare(row.id) })
+  const sheetRefresh = useRefresh(q, { queryKey: queryKeys.detail(shadowClient, row.id), compare: compareRecord, noChange: 'Up to date', auto: 'follow' })
   const m = q.data
   const differing = m ? m.rows.filter((r) => !r.same).length : 0
   const tabs: RecordTab[] = !m ? [] : [
@@ -99,7 +101,7 @@ function Detail({ row, close }: { row: ShadowMatchRead; close: () => void }) {
         row.partner_name].filter(Boolean).join(' · ')}
       badges={<StatusCell value={m?.status ?? row.status} />}
       size="xl" loading={q.isLoading} error={q.error}
-      onRefresh={() => q.refetch()} updatedAt={q.dataUpdatedAt} fetching={q.isFetching} snapshot={m as unknown as Record<string, unknown> | undefined}
+      refresh={sheetRefresh}
       facts={m ? [
         { label: 'Status', value: m.status, tone: m.status === 'Match' || m.status === 'Expected difference' ? 'success' : 'warning' },
         { label: 'Differences', value: differing, tone: differing ? 'warning' : 'neutral' },

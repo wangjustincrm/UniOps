@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef } from '../primitives/DataTable'
 import { PageHeader } from '../primitives/PageHeader'
@@ -8,9 +8,9 @@ import { queryKeys } from '../resource/queryKeys'
 import { takeOpenRequest, useOpenRequest } from '../resource/viewRequests'
 import type { Filter, Page, QuerySpec } from '../resource/querySpec'
 import { ActionButton } from './ActionButton'
-import { ListRefresh } from './ListRefresh'
+import { RefreshControl } from './RefreshControl'
+import { compareRows, useRefresh } from './useRefresh'
 import { storeAutoRefresh, storedAutoRefresh } from './autoRefresh'
-import { changed, describeDiff, diffRows } from './refreshDiff'
 import { QueryTable } from './QueryTable'
 import { RecordSheetHostContext, type RecordSheetHost, type RecordSheetSize } from './recordSheetHost'
 import { useListView } from './views'
@@ -96,64 +96,21 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
     setStoredAuto(seconds)
     view.setLayout({ ...view.layout, refresh: seconds || undefined })
   }
-  // What a refresh changed (the user: "I can not see any changes"): the page as
-  // last fetched for this query, compared when the same query arrives again —
-  // a new page / sort / filter / view is a new query, not a refresh.
-  const last = useRef<{ key: string; rows: T[]; total: number } | null>(null)
-  const manual = useRef(false)
-  const [manualBusy, setManualBusy] = useState(false)
-  const [highlight, setHighlight] = useState<ReadonlySet<string | number>>(new Set())
-  const [message, setMessage] = useState<{ text: string; tone: 'info' | 'danger' } | null>(null)
-  const timers = useRef<{ msg?: ReturnType<typeof setTimeout>; hl?: ReturnType<typeof setTimeout> }>({})
-  useEffect(() => () => { clearTimeout(timers.current.msg); clearTimeout(timers.current.hl) }, [])
-  const say = (text: string, tone: 'info' | 'danger' = 'info') => {
-    setMessage({ text, tone })
-    clearTimeout(timers.current.msg)
-    timers.current.msg = setTimeout(() => setMessage(null), 4000)
-  }
-  const arrived = (key: string, page: Page<T>) => {
-    const prev = last.current
-    last.current = { key, rows: page.items, total: page.total }
-    const asked = manual.current
-    manual.current = false
-    if (!prev || prev.key !== key) return
-    const d = diffRows(prev.rows, page.items, (r) => r.id, { before: prev.total, after: page.total })
-    const text = describeDiff(d)
-    if (asked) say(text ?? 'Up to date: no changes')
-    else if (text) say(text)  // an automatic refresh speaks only when something changed
-    if (changed(d)) {
-      setHighlight(new Set([...d.added, ...d.updated]))
-      clearTimeout(timers.current.hl)
-      timers.current.hl = setTimeout(() => setHighlight(new Set()), 2000)
-    }
-  }
-  // A user's Refresh: the bar and the spinning button at once, for at least 600 ms, then what changed.
-  const refreshNow = async () => {
-    manual.current = true
-    setManualBusy(true)
-    const started = Date.now()
-    try {
-      const r = await list.refetch()
-      if (r.isError) { manual.current = false; say('Refresh failed: try again', 'danger') }
-    } finally {
-      await new Promise((ok) => setTimeout(ok, Math.max(0, 600 - (Date.now() - started))))
-      setManualBusy(false)
-    }
-  }
+  const listKey = [...queryKeys.list(resource), spec]
   const list = useQuery({
-    queryKey: [...queryKeys.list(resource), spec],
-    queryFn: async () => {
-      const page = await resource.list(spec)
-      arrived(JSON.stringify(spec), page)
-      return page
-    },
+    queryKey: listKey,
+    queryFn: () => resource.list(spec),
     placeholderData: keepPreviousData,
     enabled: view.ready,
-    // The page's own polling (something running) wins; else the chosen auto-refresh.
-    refetchInterval: (q) => props.refetchInterval?.(q.state.data?.items ?? []) || (auto ? auto * 1000 : false),
+    // Only the page's own polling (something running) is TanStack's interval — an
+    // incidental fetch, quiet unless something changed. Auto-refresh is useRefresh's.
+    refetchInterval: (q) => props.refetchInterval?.(q.state.data?.items ?? []) || false,
+    refetchIntervalInBackground: false,
     // Back to the window: refetch only rows older than 30 s (or a failed load).
     refetchOnWindowFocus: (q) => q.state.status === 'error' || Date.now() - q.state.dataUpdatedAt > 30_000,
   })
+  // THE refresh: the button, the auto ticks, what changed, the highlight.
+  const refresh = useRefresh(list, { queryKey: listKey, compare: compareRows<T>((r) => r.id), auto, setAuto })
   const rows = list.data?.items ?? []
   // A record asked for from elsewhere (a Task Inbox link): fetched by its id
   // when the client can, then opened like a clicked row.
@@ -190,7 +147,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
     prev: at > 0 ? () => setOpen(rows[at - 1]) : undefined,
     next: at >= 0 && at < rows.length - 1 ? () => setOpen(rows[at + 1]) : undefined,
     position: at >= 0 ? `${(spec.page - 1) * spec.pageSize + at + 1} of ${list.data?.total ?? rows.length}` : undefined,
-    refreshList: () => list.refetch(),
+    refresh, auto, autoTick: refresh.tick,
   }
   const created = async (row?: T) => {
     setCreating(false)
@@ -200,8 +157,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   const create = props.create
   const toolbar = (
     <>
-      <ListRefresh onRefresh={() => { void refreshNow() }} fetching={list.isFetching || manualBusy} updatedAt={list.dataUpdatedAt}
-        auto={auto} onAutoChange={setAuto} message={message} />
+      <RefreshControl state={refresh} />
       {props.toolbar?.(ctx)}
       {create && <ActionButton size="sm" permission={create.permission} onAction={() => setCreating(true)}>{create.label}</ActionButton>}
     </>
@@ -225,8 +181,8 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
         loading={list.isLoading || !view.ready}
         fetching={list.isFetching}
         stale={list.isPlaceholderData}
-        busyNow={manualBusy}
-        highlight={highlight}
+        busyNow={refresh.busy}
+        highlight={refresh.highlight}
         error={list.error}
         errorMessages={props.errorMessages}
         onRetry={() => list.refetch()}

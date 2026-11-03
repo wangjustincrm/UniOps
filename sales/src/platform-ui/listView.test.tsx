@@ -122,7 +122,7 @@ describe('QueryTable with /meta', () => {
   it('the search panel builds the query: values of a field OR, fields AND', async () => {
     const t = renderTable({ locked: ['status'] })
     fireEvent.click(within(await openMenu('Item code')).getByText('Search'))  // opens on that field, ticked
-    const panel = await screen.findByRole('dialog', { name: 'Search' })
+    const panel = await screen.findByRole('dialog', { name: 'Search on any field' })
     expect(within(panel).queryByText('Status')).toBeNull()  // locked by the page
     await chooseOption(within(panel).getByLabelText('Item code: how to compare'), 'starts with')
     const code = within(panel).getByLabelText('Item code: value')
@@ -135,13 +135,13 @@ describe('QueryTable with /meta', () => {
     fireEvent.change(within(panel).getByLabelText('Price: to'), { target: { value: '10' } })
     fireEvent.click(within(panel).getByRole('button', { name: 'Search' }))
     expect(t.request().getAll('filter')).toEqual(['code:starts_with:CF|S0', 'price:between:1..10'])
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Search' })).toBeNull())
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Search on any field' })).toBeNull())
   })
 
   it('an enum field is chosen from its values; Clear resets the panel', async () => {
     const t = renderTable()
-    fireEvent.click(await screen.findByRole('button', { name: 'Search' }))
-    const panel = await screen.findByRole('dialog', { name: 'Search' })
+    fireEvent.click(await screen.findByRole('button', { name: /^Search on any field/ }))
+    const panel = await screen.findByRole('dialog', { name: 'Search on any field' })
     fireEvent.click(within(panel).getByLabelText('Status'))
     const values = within(panel).getByRole('group', { name: 'Status: value' })
     fireEvent.click(within(values).getByLabelText('Pending'))
@@ -149,8 +149,8 @@ describe('QueryTable with /meta', () => {
     await chooseOption(within(panel).getByLabelText('Status: how to compare'), 'is not')
     fireEvent.click(within(panel).getByRole('button', { name: 'Search' }))
     expect(t.request().getAll('filter')).toEqual(['status:not_in:Pending|Review'])
-    fireEvent.click(await screen.findByRole('button', { name: 'Search' }))
-    const again = await screen.findByRole('dialog', { name: 'Search' })
+    fireEvent.click(await screen.findByRole('button', { name: /^Search on any field/ }))
+    const again = await screen.findByRole('dialog', { name: 'Search on any field' })
     expect(within(again).getByLabelText('Status')).toBeChecked()  // starts from the current filters
     fireEvent.click(within(again).getByText('Clear'))
     fireEvent.click(within(again).getByRole('button', { name: 'Search' }))

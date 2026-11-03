@@ -159,12 +159,13 @@ describe('Orders: views', () => {
     fireEvent.change(screen.getByLabelText('Search'), { target: { value: '9302' } })
     fireEvent.keyDown(screen.getByLabelText('Search'), { key: 'Enter' })
     expect(await screen.findByRole('button', { name: 'View: All (unsaved changes)' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Reset to the saved view' }))
     await waitFor(() => expect(api.list.mock.calls.at(-1)![0].search).toBeUndefined())
     expect(screen.getByRole('button', { name: 'View: All' })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Search'), { target: { value: '9302' } })
     fireEvent.keyDown(screen.getByLabelText('Search'), { key: 'Enter' })
-    fireEvent.click(await screen.findByRole('button', { name: 'Save' }))  // a system view: Save = Save as new
+    expect(screen.queryByRole('button', { name: 'Save view' })).toBeNull()  // a system view: only Save as new
+    fireEvent.click(await screen.findByRole('button', { name: 'Save as a new view' }))
     const dialog = await screen.findByRole('dialog', { name: 'Save as a new view' })
     fireEvent.change(within(dialog).getByLabelText('View name'), { target: { value: 'Mine 9302' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }))

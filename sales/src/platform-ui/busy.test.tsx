@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DataTable, ListPage, LocalTable, RecordSheet, ViewsProvider, type ColumnDef, type ListMeta, type ViewsClient } from './index'
+import { DataTable, ListPage, LocalTable, RecordSheet, ViewsProvider, type ColumnDef, type ListMeta, type RefreshState, type ViewsClient } from './index'
 
 // Loading feedback (the user, 2026-11-03: "tables show nothing while loading"):
 // a refetch over rows shown puts a thin bar on the card's top edge (after
@@ -14,6 +14,11 @@ const rows: Row[] = [{ id: 1, code: 'A1' }, { id: 2, code: 'B2' }]
 const bar = () => document.querySelector('[data-busy-bar]')
 
 afterEach(() => { vi.useRealTimers() })
+
+
+const stub = (p: Partial<RefreshState> = {}): RefreshState => ({
+  refresh: vi.fn(async () => {}), busy: false, fetching: false, message: null, highlight: new Set(), updatedAt: 0, auto: 0, tick: 0, ...p,
+})
 
 describe('DataTable while fetching', () => {
   it('a refetch over rows shown: the bar and aria-busy after 200 ms — not for a quicker fetch', async () => {
@@ -91,10 +96,10 @@ describe('a list changing page: the old rows dimmed until the new ones arrive', 
 describe('RecordSheet while the record refetches', () => {
   it('the bar under its header; none while it first loads (skeleton)', async () => {
     vi.useFakeTimers()
-    const { rerender } = render(<RecordSheet open onOpenChange={() => {}} title="A1" loading fetching tabs={[]} />)
+    const { rerender } = render(<RecordSheet open onOpenChange={() => {}} title="A1" loading refresh={stub({ fetching: true })} tabs={[]} />)
     act(() => { vi.advanceTimersByTime(300) })
     expect(bar()).toBeNull()
-    rerender(<RecordSheet open onOpenChange={() => {}} title="A1" fetching tabs={[{ id: 'a', label: 'Overview', render: () => <p>x</p> }]} />)
+    rerender(<RecordSheet open onOpenChange={() => {}} title="A1" refresh={stub({ fetching: true })} tabs={[{ id: 'a', label: 'Overview', render: () => <p>x</p> }]} />)
     act(() => { vi.advanceTimersByTime(210) })
     expect(within(screen.getByRole('dialog')).getByText('Loading…')).toBeInTheDocument()
     expect(bar()).not.toBeNull()

@@ -1,7 +1,7 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DataTable, ListPage, RecordSheet, ViewsProvider, type ColumnDef, type ListMeta, type ViewsClient } from './index'
+import { DataTable, ListPage, ViewsProvider, type ColumnDef, type ListMeta, type ViewsClient } from './index'
 import { describeDiff, describeRecordChange, diffRows } from './patterns/refreshDiff'
 
 // A refresh says what it did (the user, 2026-11-03: "reloading is too fast, I
@@ -123,23 +123,5 @@ describe('a background fetch', () => {
     rerender(<DataTable<Row> ariaLabel="T" columns={columns} rows={rows} rowKey={(r) => r.id} fetching={false} />)
     act(() => { vi.advanceTimersByTime(500) })
     expect(bar()).toBeNull()
-  })
-})
-
-describe('a record refreshed', () => {
-  it('"Up to date", or "Updated: <what>" with the fields and tab counts that moved', async () => {
-    let rec = { status: 'Pending', version: 1 }
-    let count = 2
-    function Sheet() {
-      return <RecordSheet open onOpenChange={() => {}} title="A1" snapshot={rec} onRefresh={async () => { rec = { status: 'Shipped', version: 2 }; count = 3 }}
-        tabs={[{ id: 'lines', label: 'Lines', count, render: () => <p>lines</p> }]} />
-    }
-    const { rerender } = render(<Sheet />)
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
-    rerender(<Sheet />)  // the new record arrives
-    await waitFor(() => expect(within(screen.getByRole('dialog')).getByText(/^Updated: /)).toHaveTextContent('Updated: Lines (2→3), status'),
-      { timeout: 1500 })
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
-    await waitFor(() => expect(within(screen.getByRole('dialog')).getByText('Up to date')).toBeInTheDocument(), { timeout: 1500 })
   })
 })

@@ -4,6 +4,10 @@ import type { z } from 'zod'
 import type { ColumnDef } from '../primitives/DataTable'
 import { Dialog } from '../primitives/Dialog'
 import { FilePicker } from '../primitives/FilePicker'
+import { IconButton } from '../primitives/IconButton'
+import { Download, Upload } from 'lucide-react'
+
+const TOOL = 'h-8 w-8 rounded-lg border border-neutral-200 bg-white'
 import { ActionButton } from './ActionButton'
 import { ConfirmAction } from './ConfirmAction'
 import { ListPage } from './ListPage'
@@ -92,10 +96,11 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
       toolbar={({ spec }) => (
         <>
           {props.onExport && (
-            <Button variant="secondary" size="sm" onClick={() => props.onExport?.(client.exportPath(spec))}>Export CSV</Button>
+            <IconButton label="Export CSV" icon={<Download className="h-4 w-4" />} className={TOOL}
+              onClick={() => props.onExport?.(client.exportPath(spec))} />
           )}
           {props.csvImport && canWrite && (
-            <FilePicker accept=".csv,text/csv" label="CSV file" onFile={pickFile}>Import CSV</FilePicker>
+            <FilePicker accept=".csv,text/csv" label="CSV file" onFile={pickFile} icon={<Upload className="h-4 w-4" />}>Import CSV</FilePicker>
           )}
         </>
       )}

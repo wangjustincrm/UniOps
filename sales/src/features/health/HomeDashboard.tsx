@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   DateTimeCell, ErrorView, LocalTable, PageHeader, Skeleton, StatCard, StatusCell, requestView, type ColumnDef,
+  useRefresh,
 } from '@/platform-ui'
 import { fetchEvents } from '@/features/configuration/notifications/notificationsApi'
 import { fetchDashboard, fetchHealth, type DashboardRead } from './healthApi'
@@ -24,13 +25,14 @@ export function HomeDashboard() {
   const navigate = useNavigate()
   const dash = useQuery({ queryKey: ['sales', 'dashboard'], queryFn: fetchDashboard, refetchInterval: 60_000 })
   const health = useQuery({ queryKey: ['sales', 'health'], queryFn: fetchHealth, refetchInterval: 60_000 })
+  const refresh = useRefresh(dash, { queryKey: ['sales', 'dashboard'], compare: () => ({ text: null }) })
   const events = useQuery({ queryKey: ['sales', 'notification-events'], queryFn: fetchEvents, staleTime: 300_000 })
   const label = (type: string) => events.data?.find((e) => `sales_${e.key}` === type)?.label
     ?? (type === 'sales_test' ? 'Test notification' : type)
   const go = (page: string) => navigate(page)
 
   if (dash.isLoading) return <Skeleton className="h-60 w-full" />
-  if (dash.error || !dash.data) return <ErrorView error={dash.error} onRetry={() => dash.refetch()} />
+  if (dash.error || !dash.data) return <ErrorView error={dash.error} onRetry={() => { void refresh.refresh() }} />
   const d = dash.data
   const h = health.data
   return (
