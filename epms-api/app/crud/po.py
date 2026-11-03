@@ -733,14 +733,16 @@ async def _create_revise_task(db: AsyncSession, po: PurchaseOrder) -> None:
     ))
 
 
-async def _complete_tasks(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -> None:
-    result = await db.execute(
-        select(Task).where(
-            Task.document_type == doc_type,
-            Task.document_id == doc_id,
-            Task.is_completed.is_(False),
-        )
+async def _complete_tasks(db: AsyncSession, doc_type: str, doc_id: uuid.UUID,
+                          task_type: str | None = None) -> None:
+    q = select(Task).where(
+        Task.document_type == doc_type,
+        Task.document_id == doc_id,
+        Task.is_completed.is_(False),
     )
+    if task_type is not None:
+        q = q.where(Task.type == task_type)
+    result = await db.execute(q)
     now = datetime.now(timezone.utc)
     for task in result.scalars().all():
         task.is_completed = True
@@ -775,7 +777,10 @@ async def place_order(
     from app.crud.gr import sync_po_receipt_status
     await sync_po_receipt_status(db, po.id)
 
-    await _complete_tasks(db, "po", po.id)
+    # Only the place_order task is done now. Other PO tasks have their own
+    # close condition — create_prepayment_pa closes when a prepayment PA
+    # exists (§3.7.1), not when the order is placed (ISS-0135).
+    await _complete_tasks(db, "po", po.id, task_type="place_order")
 
     db.add(ApprovalEvent(
         document_type="po",
