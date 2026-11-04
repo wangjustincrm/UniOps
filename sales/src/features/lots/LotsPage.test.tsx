@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { PermissionProvider, ToastProvider, type ListMeta, type QuerySpec } from '@/platform-ui'
+import { PermissionProvider, ToastProvider, type QuerySpec } from '@/platform-ui'
+import { type ListMeta } from '@/platform-ui/resource/listMeta'
 import type { LotRead } from './lotsApi'
 
 const row: LotRead = {

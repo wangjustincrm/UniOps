@@ -5,7 +5,7 @@ import {
   ActionButton, Autocomplete, ConfirmAction, DateCell, DateTimeCell, DetailList, ListPage, LocalTable,
   MasterDetailForm, RecordSheet, Section, StatusCell, numberColumn, queryKeys,
   type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab,
-  compareRecord, useRefresh,
+  compareRecord, useRefresh, Muted,
 } from '@/platform-ui'
 import { itemOptions, warehouseOptions } from '../configuration/lookups'
 import {
@@ -29,7 +29,7 @@ const columns: ColumnDef<TransferRead, unknown>[] = [
   { accessorKey: 'to_warehouse', header: 'To' },
   { accessorKey: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={row.original.status} /> },
   { accessorKey: 'created_at', header: 'Created', cell: ({ row }) => <DateTimeCell value={row.original.created_at} /> },
-  { accessorKey: 'error', header: 'Note', cell: ({ row }) => <span className="line-clamp-1 text-neutral-500">{row.original.error ?? ''}</span> },
+  { accessorKey: 'error', header: 'Note', cell: ({ row }) => <Muted className="line-clamp-1">{row.original.error ?? ''}</Muted> },
 ]
 const lineColumns: ColumnDef<TransferLineRead, unknown>[] = [
   { accessorKey: 'line_no', header: '#' },

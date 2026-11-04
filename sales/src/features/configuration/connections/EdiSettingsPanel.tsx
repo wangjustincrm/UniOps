@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
-import { ActionButton, DetailList, ErrorMessage, SchemaForm, FormSheet, Skeleton, type FieldSpec } from '@/platform-ui'
+import { ActionButton, DetailList, ErrorMessage, SchemaForm, FormSheet, Section, Skeleton, type FieldSpec } from '@/platform-ui'
 import { connectionsClient, fetchEdiSettings, saveEdiSettings } from './connectionsApi'
 
 const KEY = ['sales', 'config', 'edi-settings']
@@ -40,11 +40,10 @@ export function EdiSettingsPanel() {
   ]
   return (
     <div aria-label="Warehouse EDI" role="group" className="flex flex-wrap items-start justify-between gap-3 text-sm">
-      <div>
-        <h2 className="font-semibold text-neutral-800">Warehouse EDI (940 / 943 / 997) and 810 invoices</h2>
+      <Section title="Warehouse EDI (940 / 943 / 997) and 810 invoices" plain level={2} label="EDI settings">
         <DetailList items={[['Warehouse connection', name(s.connection_id)], ['997 wait', `${s.ack_timeout_minutes} minutes`],
           ['810 invoice connection', name(s.invoice_connection_id)]]} />
-      </div>
+      </Section>
       <ActionButton size="sm" variant="secondary" permission="sales.config" onAction={() => setEditing(true)}>Edit</ActionButton>
       <FormSheet open={editing} onOpenChange={setEditing} title="Warehouse EDI and 810 invoices">
         {editing && (

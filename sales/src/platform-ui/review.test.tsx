@@ -4,10 +4,9 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { useState } from 'react'
-import {
-  ActionButton, ConfirmAction, QueryTable, PermissionProvider, SchemaForm, clampPageSize, clearFilter, getFilter,
-  setFilter, type ColumnDef, type QuerySpec,
-} from './index'
+import { ActionButton, ConfirmAction, PermissionProvider, SchemaForm, type ColumnDef, type QuerySpec } from './index'
+import { QueryTable } from './patterns/QueryTable'
+import { clampPageSize, clearFilter, getFilter, setFilter } from './resource/querySpec'
 import { zodResolver } from './patterns/zodResolver'
 import { chooseOption } from './testing'
 

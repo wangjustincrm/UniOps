@@ -1,7 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ListPage, PermissionProvider, RecordSheet, ViewsProvider, type ListMeta, type RefreshState, createNoticeStore, type RecordTab, type ViewsClient } from './index'
+import { ListPage, PermissionProvider, RecordSheet, ViewsProvider, type RecordTab } from './index'
+import { type ListMeta } from './resource/listMeta'
+import { type RefreshState } from './patterns/useRefresh'
+import { createNoticeStore } from './patterns/notices'
+import { type ViewsClient } from './resource/viewsApi'
 import { requestOpen } from './resource/viewRequests'
 import { openTab } from './testing'
 

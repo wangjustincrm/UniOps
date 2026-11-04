@@ -228,6 +228,9 @@ describe("a connection's schedule", () => {
     api.runs.mockResolvedValueOnce({ items: [], total: 0 }).mockResolvedValueOnce({ items: [running], total: 1 })
       .mockResolvedValue({ items: [{ ...running, status: 'SUCCEEDED', finished_at: '2026-11-02T20:10:03Z',
         summary: { text: '2 files, 0 errors' } }], total: 1 })
+    api.getRun.mockReset()
+    api.getRun.mockResolvedValueOnce(running).mockResolvedValue({ ...running, status: 'SUCCEEDED', finished_at: '2026-11-02T20:10:03Z',
+      summary: { text: '2 files, 0 errors' } })
     renderAs(['sales.read', 'sales.retry', 'sales.file.retry'])
     fireEvent.click(await screen.findByText('sftp-test'))
     const sched = await scheduleOf()
@@ -236,7 +239,7 @@ describe("a connection's schedule", () => {
     const sheet = screen.getByRole('dialog')
     await waitFor(() => expect(noticeIn(sheet)).toHaveTextContent('Run 31 is running…'))  // the sheet's status row
     expect(api.runNow).toHaveBeenCalledWith(7)
-    await waitFor(() => expect(noticeIn(sheet)).toHaveTextContent('Run 31: SUCCEEDED — 2 files, 0 errors'), { timeout: 6000 })
+    await waitFor(() => expect(noticeIn(sheet)).toHaveTextContent('Run 31: 2 files, 0 errors'), { timeout: 6000 })
     expect(api.runs).toHaveBeenCalledWith(expect.objectContaining({ filters: [{ field: 'scope', op: 'eq', value: 'connection:7' }] }))
   })
 })

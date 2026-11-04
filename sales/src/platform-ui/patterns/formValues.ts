@@ -26,6 +26,11 @@ export function applyServerError(form: UseFormReturn<FieldValues>, fields: Field
 
 
 
+/** The fields that do not apply to these values (`showWhen`). */
+export function hiddenFields(fields: FieldSpec[], values: FieldValues): string[] {
+  return fields.filter((f) => f.showWhen && !f.showWhen(values)).map((f) => f.name)
+}
+
 /** Before validation: an empty number or select is null, a number input's text a number. */
 export function prepare(values: FieldValues, fields: FieldSpec[]): FieldValues {
   const out: FieldValues = { ...values }
@@ -33,7 +38,7 @@ export function prepare(values: FieldValues, fields: FieldSpec[]): FieldValues {
     const v = out[f.name]
     if (f.type === 'number') {
       out[f.name] = v === '' || v === null || v === undefined ? null : typeof v === 'string' ? Number(v) : v
-    } else if (f.type === 'select' || f.type === 'reference' || f.type === 'date') {
+    } else if (f.type === 'select' || f.type === 'segmented' || f.type === 'reference' || f.type === 'date') {
       out[f.name] = v === '' || v === undefined ? null : v
     }
   }

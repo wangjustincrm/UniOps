@@ -1,4 +1,4 @@
-import { Badge, CrudPage, DateTimeCell, StatusCell, formatDateTime, type ColumnDef } from '@/platform-ui'
+import { Badge, CrudPage, DateTimeCell, StatusCell, formatDateTime, type ColumnDef, Hint } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import { ConnectionFiles } from './ConnectionFiles'
 import { NextRun, SchedulerOffBanner } from './SchedulerState'
@@ -35,7 +35,7 @@ const columns: ColumnDef<ConnectionRead, unknown>[] = [
   { accessorKey: 'last_run_at', header: 'Last run', cell: ({ row: { original: c } }) => !c.last_run_at ? '—' : (
     <span className="flex flex-col">
       <span className="flex items-center gap-1"><DateTimeCell value={c.last_run_at} />{c.last_run_status && <StatusCell value={c.last_run_status} />}</span>
-      {c.last_run_summary && <span className="text-xs text-neutral-500">{c.last_run_summary}</span>}
+      {c.last_run_summary && <Hint>{c.last_run_summary}</Hint>}
     </span>
   ) },
   { accessorKey: 'next_run_at', header: 'Next run', cell: ({ row }) => <NextRun c={row.original} /> },

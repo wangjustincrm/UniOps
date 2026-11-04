@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import {
-  PermissionProvider, ToastProvider, ViewsProvider, requestView, type ListMeta, type SavedView, type ViewsClient,
-} from '@/platform-ui'
+import { PermissionProvider, ToastProvider, ViewsProvider, requestView } from '@/platform-ui'
+import { type ListMeta } from '@/platform-ui/resource/listMeta'
+import { type SavedView, type ViewsClient } from '@/platform-ui/resource/viewsApi'
 import { MemoryRouter } from 'react-router-dom'
 import { chooseOption, noticeIn, openTab, pickSuggestion } from '@/platform-ui/testing'
 import type { OrderDetail, OrderRead } from './ordersApi'

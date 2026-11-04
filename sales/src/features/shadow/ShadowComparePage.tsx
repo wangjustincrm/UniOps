@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ActionButton, ConfirmAction, DateTimeCell, DetailList, DiffTable, ListPage, RecordSheet, Section, StatusCell, queryKeys,
   type ColumnDef, type RecordTab,
-  compareRecord, useRefresh,
+  compareRecord, useRefresh, Muted,
 } from '@/platform-ui'
 import { SHADOW_STATUSES, fetchShadowCompare, fetchShadowSummary, markExpected, shadowClient, type ShadowMatchRead } from './shadowApi'
 
@@ -19,7 +19,7 @@ const columns: ColumnDef<ShadowMatchRead, unknown>[] = [
   { accessorKey: 'partner_name', header: 'Partner', cell: ({ row }) => <PartnerCell name={row.original.partner_name} code={row.original.partner_code} /> },
   { accessorKey: 'differences', header: 'Differences' },
   { accessorKey: 'note', header: 'Note', cell: ({ row }) => (
-    <span className="line-clamp-1 text-neutral-500">{row.original.expected_reason ?? row.original.note ?? ''}</span>
+    <Muted className="line-clamp-1">{row.original.expected_reason ?? row.original.note ?? ''}</Muted>
   ) },
   { accessorKey: 'compared_at', header: 'Compared', cell: ({ row }) => <DateTimeCell value={row.original.compared_at} /> },
 ]

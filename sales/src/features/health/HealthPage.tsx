@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
-  ActionButton, Badge, Button, DetailList, ErrorMessage, ErrorView, LocalTable, PageHeader, Skeleton, StatCard, formatDateTime,
+  ActionButton, Badge, Button, DetailList, ErrorMessage, ErrorView, LocalTable, PageHeader, Section, Skeleton, StatCard, formatDateTime,
   requestOpen, type ColumnDef,
   useRefresh,
 } from '@/platform-ui'
@@ -97,18 +97,17 @@ export default function HealthPage() {
         ]} />
       </section>
       <SchedulerSection health={h} />
-      <section aria-label="Checks" className="flex flex-col gap-2">
-        <h2 className="font-semibold text-neutral-800">Checks</h2>
+      <Section title="Checks" plain level={2}>
         <LocalTable<CheckRead> ariaLabel="Health checks" columns={columns} rows={h.checks} rowKey={(c) => c.key} />
-      </section>
-      <section aria-label="Go-live gate" className="flex flex-col gap-2">
-        <h2 className="font-semibold text-neutral-800">Go-live gate {h.gate_ok ? <Badge variant="success">Ready</Badge> : <Badge variant="danger">Not ready</Badge>}</h2>
+      </Section>
+      <Section label="Go-live gate" plain level={2}
+        title={<>Go-live gate {h.gate_ok ? <Badge variant="success">Ready</Badge> : <Badge variant="danger">Not ready</Badge>}</>}>
         <p className="text-sm text-neutral-600">
           A channel goes LIVE only when each of these events has recipients and a test notification was sent (Configuration → Notifications).
         </p>
         <LocalTable<GateEventRead> ariaLabel="Go-live gate" columns={gateColumns} rows={h.gate} rowKey={(g) => g.event_type} />
         <span><Button size="sm" variant="secondary" onClick={() => navigate('/config/notifications')}>Open the notification rules</Button></span>
-      </section>
+      </Section>
     </div>
   )
 }

@@ -1,7 +1,10 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DataTable, ListPage, ViewsProvider, type ColumnDef, type ListMeta, type ViewsClient } from './index'
+import { ListPage, ViewsProvider, type ColumnDef } from './index'
+import { DataTable } from './primitives/DataTable'
+import { type ListMeta } from './resource/listMeta'
+import { type ViewsClient } from './resource/viewsApi'
 import { describeDiff, describeRecordChange, diffRows } from './patterns/refreshDiff'
 
 // A refresh says what it did (the user, 2026-11-03: "reloading is too fast, I

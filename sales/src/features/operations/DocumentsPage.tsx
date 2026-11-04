@@ -1,5 +1,5 @@
 import {
-  ActionButton, DateTimeCell, DetailList, ListPage, RecordSheet, Section, StatusCell, formatDateTime, type ColumnDef,
+  ActionButton, DateTimeCell, DetailList, ListPage, RecordSheet, Section, StatusCell, formatDateTime, type ColumnDef, Muted,
 } from '@/platform-ui'
 import { documentsClient, downloadOriginal, type DocumentRead } from './operationsApi'
 
@@ -11,7 +11,7 @@ const columns: ColumnDef<DocumentRead, unknown>[] = [
   { accessorKey: 'kind', header: 'Kind' },
   { id: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={status(row.original)} /> },
   { accessorKey: 'size', header: 'Bytes' },
-  { accessorKey: 'error', header: 'Note', cell: ({ row }) => <span className="line-clamp-1 text-neutral-500">{row.original.error ?? ''}</span> },
+  { accessorKey: 'error', header: 'Note', cell: ({ row }) => <Muted className="line-clamp-1">{row.original.error ?? ''}</Muted> },
 ]
 
 function Detail({ d }: { d: DocumentRead }) {
@@ -42,7 +42,7 @@ function Detail({ d }: { d: DocumentRead }) {
         ['Received', `${formatDateTime(d.created_at)} · ${d.created_by_name}`], ['SHA-256', <span key="h" className="break-all">{d.sha256}</span>],
         ['ISA13 / GS06 / ST02', [d.isa13, d.gs06, d.st02].filter(Boolean).join(' / ') || null], ['Note', d.error],
       ]} />
-      {!d.has_content && <p className="text-neutral-500">This record keeps no bytes of its own (see the note).</p>}
+      {!d.has_content && <Muted as="p">This record keeps no bytes of its own (see the note).</Muted>}
         </Section>
       ) }]}
     />

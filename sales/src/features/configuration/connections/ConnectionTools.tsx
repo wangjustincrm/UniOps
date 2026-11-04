@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, Badge, DateTimeInput, formatDateTime, queryKeys, Callout } from '@/platform-ui'
+import { ActionButton, Badge, DateTimeInput, Hint, Section, formatDateTime, queryKeys, Callout } from '@/platform-ui'
 import { clearAuthLatch, connectionsClient, pinHostKey, resetCursor, testConnection, type ConnectionRead, type ConnectionTest } from './connectionsApi'
 
 const CONFIG = 'sales.config'
@@ -33,8 +33,7 @@ export function ConnectionTools({ connection: c }: { connection: ConnectionRead 
   const clear = useMutation({ mutationFn: () => clearAuthLatch(c.id), onSuccess: refresh })
 
   return (
-    <section aria-label="Connection status" className="flex flex-col gap-3 text-sm">
-      <h3 className="font-semibold text-neutral-800">Status</h3>
+    <Section title="Status" label="Connection status" plain className="gap-3 text-sm">
       <p>
         Secret <code className="text-xs">{c.secret_name ?? '—'}</code>:{' '}
         <Badge variant={c.secret_present ? 'success' : 'warning'}>{c.secret_present ? 'present' : 'missing'}</Badge>
@@ -55,9 +54,9 @@ export function ConnectionTools({ connection: c }: { connection: ConnectionRead 
         <ActionButton size="sm" variant="secondary" permission={CONFIG} onAction={() => test.mutateAsync()}>
           Test connection
         </ActionButton>
-        <p className="mt-1 text-xs text-neutral-500">
+        <Hint as="p" className="mt-1">
           {c.kind === 'SFTP' ? 'Lists the folders. Nothing is created, moved or deleted.' : "Reads the store's name and currency. Nothing is written."}
-        </p>
+        </Hint>
       </div>
       {result && (
         <div className="flex flex-col gap-2 rounded-md border border-neutral-100 p-2">
@@ -86,6 +85,6 @@ export function ConnectionTools({ connection: c }: { connection: ConnectionRead 
           )}
         </div>
       )}
-    </section>
+    </Section>
   )
 }

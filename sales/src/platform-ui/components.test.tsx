@@ -2,10 +2,12 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { useState } from 'react'
-import {
-  ActionButton, Combobox, ConfirmAction, QueryTable, PermissionGate, PermissionProvider, SchemaForm,
-  StatusBadge, ToastProvider, useToast, type ColumnDef, type QuerySpec,
-} from './index'
+import { ActionButton, ConfirmAction, PermissionProvider, SchemaForm, ToastProvider, type ColumnDef, type QuerySpec } from './index'
+import { Combobox } from './primitives/Combobox'
+import { QueryTable } from './patterns/QueryTable'
+import { PermissionGate } from './patterns/PermissionGate'
+import { StatusBadge } from './primitives/StatusBadge'
+import { useToast } from './primitives/toastContext'
 
 const allow = (keys: string[]) => (k: string) => keys.includes(k)
 

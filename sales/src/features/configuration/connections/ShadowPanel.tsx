@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ActionButton, ConfirmAction, ErrorMessage, Skeleton } from '@/platform-ui'
+import { ActionButton, ConfirmAction, ErrorMessage, Section, Skeleton } from '@/platform-ui'
 import { fetchShadowSetting, saveShadowSetting } from './connectionsApi'
 
 const KEY = ['sales', 'config', 'shadow']
@@ -19,8 +19,7 @@ export function ShadowPanel() {
   })
   const on = q.data?.shadow_mode
   return (
-    <section aria-label="Shadow run" className="flex flex-col gap-2 text-sm">
-      <h2 className="font-semibold text-neutral-800">Shadow run</h2>
+    <Section title="Shadow run" plain level={2} className="text-sm">
       {q.isLoading ? <Skeleton className="h-8 w-full" /> : q.error ? <ErrorMessage error={q.error} /> : (
         <>
           <p className={on ? 'text-warning-700' : 'text-neutral-600'}>
@@ -37,6 +36,6 @@ export function ShadowPanel() {
             confirmLabel="Turn off" onConfirm={() => m.mutateAsync({ shadow_mode: false })} />
         </>
       )}
-    </section>
+    </Section>
   )
 }

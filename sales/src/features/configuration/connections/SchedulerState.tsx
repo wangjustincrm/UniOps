@@ -1,4 +1,4 @@
-import { Badge, DateTimeCell, Tooltip, Callout } from '@/platform-ui'
+import { Badge, DateTimeCell, Tooltip, Callout, Muted } from '@/platform-ui'
 import type { ConnectionRead } from './connectionsApi'
 import { useSchedulerEnabled } from './schedulerEnabled'
 
@@ -21,9 +21,9 @@ export function SchedulerOffBanner() {
 export function NextRun({ c }: { c: ConnectionRead }) {
   const enabled = useSchedulerEnabled()
   if (!enabled) {
-    return <Tooltip tip={OFF_TIP}><span className="text-neutral-500">Automatic runs off: use Run now</span></Tooltip>
+    return <Tooltip tip={OFF_TIP}><Muted>Automatic runs off: use Run now</Muted></Tooltip>
   }
-  if (!c.next_run_at) return <span className="text-neutral-500">{c.active ? 'at the next tick' : '—'}</span>
+  if (!c.next_run_at) return <Muted>{c.active ? 'at the next tick' : '—'}</Muted>
   return (
     <span className="inline-flex flex-wrap items-center gap-1">
       <DateTimeCell value={c.next_run_at} />

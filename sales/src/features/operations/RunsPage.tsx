@@ -1,7 +1,6 @@
-import { useState } from 'react'
 import {
-  ActionButton, DateTimeCell, ErrorMessage, ListPage, LocalTable, PageHeader, RecordSheet, StatusCell, Tabs, formatDateTime, useToast,
-  type ColumnDef, type QuerySpec, Callout,
+  ActionButton, DateTimeCell, ListPage, LocalTable, PageHeader, RecordSheet, StatusCell, Tabs, formatDateTime,
+  type ColumnDef, type QuerySpec, Callout, Muted,
 } from '@/platform-ui'
 import { logClient, runFor, runNow, runsClient, type LogRead, type PassReport, type RunRead } from './operationsApi'
 
@@ -71,7 +70,7 @@ function RunDetail({ run }: { run: RunRead }) {
           <>
             {run.summary?.text && <p className="text-sm">{run.summary.text}</p>}
             {run.error && <Callout tone="danger" label="Run error">{run.error}</Callout>}
-            {passes.length === 0 ? <p className="text-sm text-neutral-500">{run.scope === 'system' ? 'The system job reads no connection.' : 'No connection was read.'}</p> : (
+            {passes.length === 0 ? <Muted as="p" className="text-sm">{run.scope === 'system' ? 'The system job reads no connection.' : 'No connection was read.'}</Muted> : (
               <LocalTable<Pass> ariaLabel="Pass report" columns={passColumns} rows={passes} rowKey={(p) => p.name} />
             )}
           </>
@@ -83,27 +82,19 @@ function RunDetail({ run }: { run: RunRead }) {
 }
 
 function Runs() {
-  const toast = useToast()
-  const [error, setError] = useState<unknown>(null)
   return (
     <ListPage<RunRead>
       resource={runsClient}
       columns={runColumns}
       searchable={false}
       emptyTitle="No runs yet"
-      notice={<ErrorMessage error={error} />}
       refetchInterval={(rows) => (rows.some((r) => r.status === 'RUNNING') ? 3000 : false)}
       renderDetail={(r) => <RunDetail run={r} />}
       toolbar={({ refresh }) => (
-        <ActionButton size="sm" permission={RETRY} onAction={async () => {
-          setError(null)
-          try {
-            const { run_id } = await runNow()
-            toast({ variant: 'success', title: `Run ${run_id} started` })
-            await refresh()
-          } catch (e) {
-            setError(e)
-          }
+        <ActionButton size="sm" permission={RETRY} done={(r) => `Run ${(r as { run_id: number }).run_id} started`} onAction={async () => {
+          const started = await runNow()
+          await refresh()
+          return started
         }}>
           Run now
         </ActionButton>

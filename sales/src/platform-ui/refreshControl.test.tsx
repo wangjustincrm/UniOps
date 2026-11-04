@@ -2,10 +2,12 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  ListPage, RecordSheet, RefreshControl, TableStatusBar, ViewsProvider, compareRecord, compareRows, useRefresh,
-  type ColumnDef, type ListMeta, type ViewsClient,
-} from './index'
+import { ListPage, RecordSheet, ViewsProvider, compareRecord, useRefresh, type ColumnDef } from './index'
+import { RefreshControl } from './patterns/RefreshControl'
+import { TableStatusBar } from './patterns/TableStatusBar'
+import { compareRows } from './patterns/useRefresh'
+import { type ListMeta } from './resource/listMeta'
+import { type ViewsClient } from './resource/viewsApi'
 
 // ONE refresh (the user, 2026-11-03): a click, an auto-refresh tick and a record
 // sheet's refresh go through useRefresh's one function — the same spin, the

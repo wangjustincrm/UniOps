@@ -1,11 +1,11 @@
-import { useEffect, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
-  ActionButton, Button, DateTimeCell, DetailList, LocalTable, StatusCell, formatDateTime, queryKeys,
-  requestView, type ColumnDef, useNotices,
+  ActionButton, Button, DateTimeCell, DetailList, LocalTable, Section, StatusCell, formatDateTime, queryKeys,
+  requestView, type ColumnDef,
 } from '@/platform-ui'
 import { runsClient, type RunRead } from '@/features/operations/operationsApi'
+import { useRunFollower } from '@/features/operations/useRunFollower'
 import { connectionsClient, describeSchedule, runConnectionNow, type ConnectionRead } from './connectionsApi'
 import { NextRun } from './SchedulerState'
 
@@ -26,40 +26,21 @@ export function ConnectionSchedule({ connection: c }: { connection: ConnectionRe
   const qc = useQueryClient()
   const navigate = useNavigate()
   const scope = `connection:${c.id}`
-  const [started, setStarted] = useState<number | null>(null)
+  const follower = useRunFollower()
   const spec = { page: 1, pageSize: 5, filters: [{ field: 'scope', op: 'eq' as const, value: scope }], sort: [{ field: 'started_at', desc: true }] }
-  const finished = (items: RunRead[] | undefined, id: number | null) =>
-    id !== null && !!items?.some((r) => r.id === id && r.status !== 'RUNNING')
   const runs = useQuery({
     queryKey: [...queryKeys.list(runsClient), 'connection', c.id], queryFn: () => runsClient.list(spec),
-    // While the run started here (or any) is going, follow it until it ends.
-    refetchInterval: (q) => (q.state.data?.items.some((r) => r.status === 'RUNNING')
-      || (started !== null && !finished(q.state.data?.items, started)) ? 2000 : false),
+    // While the run started here (or any) is going, the table follows it too.
+    refetchInterval: (q) => (follower.running || q.state.data?.items.some((r) => r.status === 'RUNNING') ? 2000 : false),
   })
-  const mine = started !== null ? runs.data?.items.find((r) => r.id === started) : undefined
-  const running = started !== null && (!mine || mine.status === 'RUNNING')
-  const done = mine && mine.status !== 'RUNNING' ? mine : undefined
   // Its progress in the sheet's status row; when it ends, the list's last run / next run columns are refreshed.
-  const notices = useNotices()
-  useEffect(() => {
-    if (running && started !== null) notices.notify({ key: `run:${c.id}`, tone: 'info', text: `Run ${started} is running…`, sticky: true })
-  }, [running, started])  // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!done) return
-    notices.notify({ key: `run:${c.id}`, tone: done.status === 'SUCCEEDED' ? 'success' : done.status === 'PARTIAL' ? 'warning' : 'error',
-      text: `Run ${done.id}: ${done.status}${done.summary?.text ? ` — ${done.summary.text}` : done.error ? ` — ${done.error}` : ''}` })
-    void qc.invalidateQueries({ queryKey: queryKeys.list(connectionsClient) })
-  }, [done, qc])  // eslint-disable-line react-hooks/exhaustive-deps
-  const run = useMutation({
-    mutationFn: () => runConnectionNow(c.id),
-    onSuccess: async ({ run_id }) => {
-      setStarted(run_id)
-      await qc.invalidateQueries({ queryKey: [...queryKeys.list(runsClient), 'connection', c.id] })  // follow it now
-    },
-  })
+  const runNow = async () => {
+    await follower.run(() => runConnectionNow(c.id))
+    await Promise.all([qc.invalidateQueries({ queryKey: queryKeys.list(connectionsClient) }),
+      qc.invalidateQueries({ queryKey: [...queryKeys.list(runsClient), 'connection', c.id] })])
+  }
   return (
-    <section aria-label="Schedule" className="flex flex-col gap-3 text-sm">
-      <h3 className="font-semibold text-neutral-800">Schedule</h3>
+    <Section title="Schedule" plain className="gap-3 text-sm">
       <DetailList items={[
         ['Runs', `${describeSchedule(c)}${c.schedule_paused ? ' — paused' : ''}`],
         ['Last run', c.last_run_at ? `${formatDateTime(c.last_run_at)} · ${c.last_run_status ?? ''}${c.last_run_summary ? ` · ${c.last_run_summary}` : ''}` : 'never'],
@@ -67,8 +48,8 @@ export function ConnectionSchedule({ connection: c }: { connection: ConnectionRe
         ['Next run', <NextRun key="n" c={c} />],
       ]} />
       <div className="flex flex-wrap items-center gap-2">
-        <ActionButton size="sm" permission={RETRY} disabled={!c.active || running}
-          errorMessages={{ 'run.already_running': `${c.name} is running; wait for it to finish.` }} onAction={() => run.mutateAsync()}>Run now</ActionButton>
+        <ActionButton size="sm" permission={RETRY} disabled={!c.active}
+          errorMessages={{ 'run.already_running': `${c.name} is running; wait for it to finish.` }} onAction={runNow}>Run now</ActionButton>
       </div>
       <LocalTable<RunRead> ariaLabel="Last runs" columns={runColumns} rows={runs.data?.items ?? []} rowKey={(r) => r.id}
         emptyTitle="No run yet" />
@@ -78,6 +59,6 @@ export function ConnectionSchedule({ connection: c }: { connection: ConnectionRe
           navigate('/runs')
         }}>All runs of {c.name}</Button>
       </span>
-    </section>
+    </Section>
   )
 }

@@ -239,26 +239,6 @@ function TabBody({ render }: { render: () => ReactNode }) {
   return <div className="flex flex-col gap-4">{render()}</div>
 }
 
-// ── sections inside a tab ────────────────────────────────────────────────────
-
-/** A titled card inside a tab (an address, a group of facts, a table). */
-export function Section({ title, actions, children, className }: {
-  title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string
-}) {
-  return (
-    <section aria-label={typeof title === 'string' ? title : undefined}
-      className={cn('flex min-w-0 flex-col gap-2 rounded-lg border border-neutral-200 bg-white p-3 sm:p-4', className)}>
-      {(title || actions) && (
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          {title && <h3 className="text-sm font-semibold text-neutral-800">{title}</h3>}
-          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
-        </div>
-      )}
-      {children}
-    </section>
-  )
-}
-
 /** A form in the standard sheet (settings, an edit that is not a record's
  *  detail). A record's detail is a RecordSheet. */
 export function FormSheet({ open, onOpenChange, title, description, children, size = 'md' }: {

@@ -82,6 +82,12 @@ const AD_HOC_MESSAGES = [
   { selector: "JSXAttribute[name.name='aria-live']", message: 'Say it with useNotices (the status row) from @/platform-ui, not an aria-live element.' },
   { selector: "JSXAttribute[name.name='role'][value.value=/^(status|alert)$/]", message: 'Say it with useNotices (the status row), or show a standing fact with Callout, from @/platform-ui — not role="status" / role="alert".' },
 ]
+// Toasts are gone from the features for the same reason: a result is said in
+// the status row, where it stays in the session's history (the bell).
+const NO_TOAST_IMPORT = {
+  name: '@/platform-ui', importNames: ['useToast'],
+  message: 'Say it with useNotices (the status row) from @/platform-ui, not a toast.',
+}
 const NO_RAW_SHEET_IMPORT = {
   name: '@/platform-ui', importNames: ['Sheet'],
   message: 'A record detail is a RecordSheet (a form: FormSheet) from @/platform-ui, not a raw Sheet.',
@@ -143,7 +149,10 @@ export default defineConfig([
   {
     files: ['src/**/*.{ts,tsx}'],
     ignores: ['src/platform-ui/**', ...SHELL_LAYER],
-    rules: { 'no-restricted-imports': ['error', { patterns: [SHELL], paths: [NO_RAW_SHEET_IMPORT] }] },
+    rules: { 'no-restricted-imports': ['error', {
+      patterns: [SHELL, { group: ['@/platform-ui/primitives/toastContext'], message: NO_TOAST_IMPORT.message }],
+      paths: [NO_RAW_SHEET_IMPORT, NO_TOAST_IMPORT],
+    }] },
   },
   // One block per file group for no-restricted-syntax (a later block would
   // replace, not add to, an earlier one's list).

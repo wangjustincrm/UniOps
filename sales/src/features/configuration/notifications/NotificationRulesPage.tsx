@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, Badge, CrudPage, DetailList, ErrorMessage, formatDateTime, queryKeys, type ColumnDef, type FieldSpec,
+  ActionButton, Badge, CrudPage, DetailList, ErrorMessage, formatDateTime, queryKeys, type ColumnDef, type FieldSpec, Hint,
 } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import {
@@ -22,7 +22,7 @@ const columns: ColumnDef<NotificationRuleRead, unknown>[] = [
   { accessorKey: 'event_type', header: 'Event', cell: ({ row: { original: r } }) => (
     <span className="flex flex-col">
       <span>{r.event_label}</span>
-      <span className="text-xs text-neutral-500">{r.kind === 'action' ? 'needs someone to act: always a task' : 'notify only'}{r.gate ? ' · go-live gate' : ''}</span>
+      <Hint>{r.kind === 'action' ? 'needs someone to act: always a task' : 'notify only'}{r.gate ? ' · go-live gate' : ''}</Hint>
     </span>
   ) },
   { accessorKey: 'channel', header: 'Channel', cell: ({ row }) => CHANNEL_LABELS[row.original.channel] },

@@ -1,22 +1,25 @@
-import { useMemo, useState } from 'react'
-import { Controller, useForm, type FieldValues, type Resolver, type UseFormReturn } from 'react-hook-form'
+import { useMemo, useState, type ReactNode } from 'react'
+import { Controller, useForm, useWatch, type FieldValues, type Resolver, type UseFormReturn } from 'react-hook-form'
 import type { z } from 'zod'
 import { Autocomplete } from '../primitives/Autocomplete'
 import { Checkbox, CheckboxList } from '../primitives/Checkbox'
+import { DayChips, Segmented } from '../primitives/ChoiceControls'
 import type { ComboOption } from '../primitives/Combobox'
 import { DateInput, NumberInput, Textarea } from '../primitives/FieldInputs'
 import { Select } from '../primitives/Select'
 import { Button, FormField, Input } from '../primitives/shell'
 import { ErrorMessage } from './ErrorMessage'
-import { applyServerError, blankToEmpty, emptyToNull, prepare } from './formValues'
+import { applyServerError, blankToEmpty, emptyToNull, hiddenFields, prepare } from './formValues'
+import { Section } from './Section'
 import { zodResolver } from './zodResolver'
 
 // Each type has its control: select → Select, checkbox → Checkbox, number →
 // NumberInput, date → DateInput ("YYYY-MM-DD", a string), textarea →
 // Textarea, reference → Autocomplete over `loadOptions` (a code of another
 // record, e.g. an item or a partner), multiselect → CheckboxList over
-// `options` (an array of values).
-export type FieldType = 'text' | 'email' | 'number' | 'textarea' | 'checkbox' | 'select' | 'date' | 'reference' | 'multiselect'
+// `options` (an array of values), segmented → Segmented over a few short
+// `options`, days → DayChips (an array of values; `options` default to the week).
+export type FieldType = 'text' | 'email' | 'number' | 'textarea' | 'checkbox' | 'select' | 'date' | 'reference' | 'multiselect' | 'segmented' | 'days'
 
 export interface FieldSpec {
   name: string
@@ -30,6 +33,14 @@ export interface FieldSpec {
   placeholder?: string
   /** Shown but not editable (e.g. a code that is immutable after creation). */
   readOnly?: boolean
+  /** The titled group it is in (in the order the groups first appear). */
+  section?: string
+  /** In the collapsed "Advanced" group of its section (it opens by itself on an error). */
+  advanced?: boolean
+  /** Whether it applies to these values. When not, it is neither shown nor
+   *  validated, and its value is not sent; what was typed comes back if it
+   *  applies again. */
+  showWhen?: (values: FieldValues) => boolean
 }
 
 export interface SchemaFormProps {
@@ -58,7 +69,7 @@ export function SchemaForm({
   schema, fields, defaultValues, onSubmit, changesOnly, submitLabel = 'Save', onCancel, errorMessages, readOnly,
 }: SchemaFormProps) {
   const resolver = useMemo<Resolver<FieldValues>>(() => {
-    const inner = zodResolver(schema)
+    const inner = zodResolver(schema, (v) => hiddenFields(fields, v))
     return (values, ctx, opts) => inner(prepare(values, fields), ctx, opts)
   }, [schema, fields])
   const form = useForm<FieldValues>({
@@ -70,8 +81,9 @@ export function SchemaForm({
 
   const submit = form.handleSubmit(async (values) => {
     setError(null)
+    const off = hiddenFields(fields, form.getValues())
     const out = changesOnly
-      ? Object.fromEntries(Object.keys(dirtyFields).map((k) => [k, emptyToNull(values[k])]))
+      ? Object.fromEntries(Object.keys(dirtyFields).filter((k) => !off.includes(k)).map((k) => [k, emptyToNull(values[k])]))
       : Object.fromEntries(Object.entries(values).map(([k, v]) => [k, emptyToNull(v)]))
     try {
       await onSubmit(out)
@@ -100,15 +112,30 @@ export function SchemaForm({
   )
 }
 
+/** The collapsed part of a group; it opens by itself when a field in it has an error. */
+function Advanced({ failed, children }: { failed: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <details open={open || failed} onToggle={(e) => setOpen(e.currentTarget.open)} className="flex flex-col">
+      <summary className="cursor-pointer text-sm font-medium text-neutral-600">Advanced</summary>
+      <div className="mt-3 flex flex-col gap-4">{children}</div>
+    </details>
+  )
+}
+
 /** The fields of a SchemaForm on a react-hook-form form — also the header of
- *  a MasterDetailForm. Each FieldSpec type has its primitive (see FieldType). */
+ *  a MasterDetailForm. Each FieldSpec type has its primitive (see FieldType);
+ *  those with a `section` are grouped under its title, `advanced` ones collapsed,
+ *  and one whose `showWhen` says no is left out. */
 export function SchemaFields({ form, fields, readOnly, idPrefix = 'sf' }: {
   form: UseFormReturn<FieldValues>; fields: FieldSpec[]; readOnly?: boolean; idPrefix?: string
 }) {
   const { errors } = form.formState
-  return (
+  const hidden = hiddenFields(fields, useWatch({ control: form.control }))
+  const shown = fields.filter((f) => !hidden.includes(f.name))
+  const renderFields = (group: FieldSpec[]) => (
     <>
-      {fields.map((f) => {
+      {group.map((f) => {
         const id = `${idPrefix}-${f.name}`
         const err = errors[f.name]?.message
         const common = { id, disabled: readOnly || f.readOnly, 'aria-invalid': err ? true : undefined }
@@ -125,6 +152,20 @@ export function SchemaFields({ form, fields, readOnly, idPrefix = 'sf' }: {
             <Controller control={form.control} name={f.name} render={({ field }) => (
               <CheckboxList label={f.label} options={f.options ?? []} values={Array.isArray(field.value) ? field.value : []}
                 onChange={field.onChange} disabled={common.disabled} />
+            )} />
+          )
+        } else if (f.type === 'segmented') {
+          control = (
+            <Controller control={form.control} name={f.name} render={({ field }) => (
+              <Segmented id={id} value={field.value || null} onChange={field.onChange} onBlur={field.onBlur} options={f.options ?? []}
+                disabled={common.disabled} aria-label={f.label} aria-invalid={common['aria-invalid']} />
+            )} />
+          )
+        } else if (f.type === 'days') {
+          control = (
+            <Controller control={form.control} name={f.name} render={({ field }) => (
+              <DayChips values={Array.isArray(field.value) ? field.value : []} onChange={field.onChange} options={f.options}
+                disabled={common.disabled} aria-label={f.label} />
             )} />
           )
         } else if (f.type === 'select') {
@@ -159,6 +200,25 @@ export function SchemaFields({ form, fields, readOnly, idPrefix = 'sf' }: {
             {control}
           </FormField>
         )
+      })}
+    </>
+  )
+  const body = (group: FieldSpec[]) => {
+    const advanced = group.filter((f) => f.advanced)
+    return (
+      <>
+        {renderFields(group.filter((f) => !f.advanced))}
+        {advanced.length > 0 && <Advanced failed={advanced.some((f) => errors[f.name])}>{renderFields(advanced)}</Advanced>}
+      </>
+    )
+  }
+  if (!fields.some((f) => f.section)) return body(shown)
+  const titles = [...new Set(shown.map((f) => f.section))]
+  return (
+    <>
+      {titles.map((t) => {
+        const group = shown.filter((f) => f.section === t)
+        return t ? <Section key={t} title={t} className="gap-4">{body(group)}</Section> : <div key="" className="flex flex-col gap-4">{body(group)}</div>
       })}
     </>
   )

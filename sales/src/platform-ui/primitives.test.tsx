@@ -1,10 +1,12 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import {
-  Autocomplete, Checkbox, CheckboxList, DateInput, DateTimeInput, NumberInput, Select, Sheet, Textarea,
-  isoToLocalInput, localInputToIso,
-} from './index'
+import { Autocomplete, DateInput, DateTimeInput, Textarea } from './index'
+import { Checkbox, CheckboxList } from './primitives/Checkbox'
+import { NumberInput } from './primitives/FieldInputs'
+import { Select } from './primitives/Select'
+import { Sheet } from './primitives/Sheet'
+import { isoToLocalInput, localInputToIso } from './primitives/dateValues'
 import { chooseOption, pickSuggestion } from './testing'
 
 // The form primitives (2026-10-30): keyboard, accessible names and values.

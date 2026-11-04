@@ -1,25 +1,23 @@
 import { useContext, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
-import { Download } from 'lucide-react'
 import {
-  ActionButton, AddressView, Badge, Button, ConfirmAction, CopyChip, DateCell, DateTimeCell, DetailList, ErrorMessage, IconButton,
-  LocalTable, MoneyCell, RecordSheet, RecordSheetHostContext, Section, StatusCell, Timeline, formatDate, formatDateTime, formatMoney,
-  queryKeys, requestOpen, Tooltip, TrackingLink,
-  type ColumnDef, type RecordFact, type RecordTab, type TimelineItem,
-  compareRecord, useRefresh, useNotices,
+  ActionButton, Badge, ConfirmAction, RecordSheet, RecordSheetHostContext, StatusCell, formatDate, formatMoney,
+  queryKeys, type RecordFact, type RecordTab,
+  compareRecord, useRefresh,
 } from '@/platform-ui'
-import { LineNo } from './LineNo'
-import { fetchOrder, lineNumbers, ordersClient, type LineRead, type OrderDetail, type OrderDocument, type OrderRead, type PackingRead } from './ordersApi'
-import { Shipments } from './Shipments'
+import { fetchOrder, ordersClient, type OrderRead } from './ordersApi'
 import { PaymentsAndRefunds } from './PaymentsAndRefunds'
-import { InvoicePricesForm, VsPo } from './InvoicePrices'
+import { InvoicePricesForm } from './InvoicePrices'
 import { Recheck } from './Recheck'
 import { DraftActions } from './DraftActions'
 import { Send940 } from './Send940'
-import { partnerLabel } from '@/features/common/labels'
-import { invoicesClient, releaseInvoice } from '@/features/invoices/invoicesApi'
-import { downloadDocument } from '@/features/operations/operationsApi'
+import { ActivityTab } from './tabs/ActivityTab'
+import { DocumentsTab } from './tabs/DocumentsTab'
+import { InvoiceTab } from './tabs/InvoiceTab'
+import { LinesTab } from './tabs/LinesTab'
+import { OverviewTab } from './tabs/OverviewTab'
+import { ShipmentsTab } from './tabs/ShipmentsTab'
+import { releaseInvoice } from '@/features/invoices/invoicesApi'
 
 // The badge shows the fulfillment status in the colour of the derived order state (D17).
 const stateTone = { Draft: 'neutral', Active: 'info', 'On Hold': 'warning', Completed: 'success', Cancelled: 'neutral' } as const
@@ -31,245 +29,6 @@ export function StateBadge({ o }: { o: Pick<OrderRead, 'order_state' | 'fulfillm
       <StatusCell value={o.fulfillment_status} tone={stateTone[o.order_state]} />
       {o.fulfillment_status === 'Shipped' && (o.backordered_ea ?? 0) > 0 && <Badge variant="warning">Partially shipped</Badge>}
     </span>
-  )
-}
-
-// Where each address came from, under it (the 850 ship-to also names its GLN and the DC it routes to).
-function shipToOrigin(o: OrderDetail): string {
-  if (o.source_type === 'SHOPIFY') return 'From the Shopify shipping address'
-  if (o.source_type === 'MANUAL') return 'Entered by hand'
-  const gln = o.ship_to?.gln
-  return ['From the 850 ShipTo', gln && `GLN ${gln}`, o.dc_number && `DC ${o.dc_number}`].filter(Boolean).join(' · ')
-}
-function billToOrigin(o: OrderDetail): string {
-  if (o.source_type === 'SHOPIFY') return 'From the Shopify billing address (the shipping address when missing or outside Canada)'
-  if (o.source_type === 'MANUAL') return 'None for a manual order'
-  return ['From the 850 BillTo', o.bill_to?.code && `code ${o.bill_to.code}`].filter(Boolean).join(' · ')
-}
-
-/** A line's amount at the PO price: ordered quantity × unit price (in the order's unit). */
-function lineAmount(ln: LineRead): number | null {
-  return ln.unit_price == null || ln.removed ? null : Number(ln.ordered_qty) * Number(ln.unit_price)
-}
-
-const stateTones: Record<string, 'neutral' | 'info' | 'warning' | 'success' | 'danger'> = {
-  Removed: 'neutral', Open: 'neutral', Shipped: 'info', 'Short shipped': 'warning', 'Over shipped': 'warning',
-  Delivered: 'info', 'Short delivered': 'warning', Invoiced: 'success',
-}
-const ea = (n: number | null | undefined) => (n == null ? '—' : n)
-const sum = (lines: LineRead[], f: (ln: LineRead) => number | null | undefined) =>
-  lines.filter((ln) => !ln.removed).reduce((t, ln) => t + Number(f(ln) ?? 0), 0)
-
-// A figure from the shadow run's 945s: shown beside the line, never applied.
-const SHADOW_TIP = 'From the 945, not applied: Zoho is still the live system'
-function Shadow({ value, warn }: { value: number; warn?: boolean }) {
-  return (
-    <Tooltip tip={SHADOW_TIP}>
-      <span data-shadow className="whitespace-nowrap italic text-neutral-500">
-        <span className={warn && value > 0 ? 'font-medium text-warning-700' : undefined}>{value}</span> <span className="text-xs">(shadow)</span>
-      </span>
-    </Tooltip>
-  )
-}
-
-// One row per line, ordered → shipped (945) → delivered → invoiced; its ▸ opens
-// the 945 rows packed for it. The less-used columns start hidden (the eye shows them).
-const lineColumns = (currency: string, numbers: Map<number, number>): ColumnDef<LineRead, unknown>[] => [
-  { accessorKey: 'line_no', header: '#', cell: ({ row }) => <LineNo lineNo={row.original.line_no} numbers={numbers} /> },
-  { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => row.original.item_code ?? <span className="text-danger-600">unmatched</span> },
-  { id: 'ordered', header: 'Ordered', cell: ({ row }) => `${Number(row.original.ordered_qty)} ${row.original.order_unit ?? '?'}` },
-  { accessorKey: 'order_unit', header: 'Unit', cell: ({ row }) => row.original.order_unit ?? '?' },
-  { accessorKey: 'unit_price', header: 'Unit price (PO)', cell: ({ row }) => row.original.unit_price == null ? '—'
-    : <MoneyCell amount={row.original.unit_price} currency={currency} /> },
-  { id: 'amount', header: 'Amount', cell: ({ row }) => {
-    const a = lineAmount(row.original)
-    return a == null ? '—' : <MoneyCell amount={a.toFixed(2)} currency={currency} />
-  } },
-  { accessorKey: 'discount_amount', header: 'Discount', cell: ({ row }) => row.original.discount_amount == null ? '—'
-    : <MoneyCell amount={row.original.discount_amount} currency={currency} /> },
-  { accessorKey: 'tax_amount', header: 'Tax', cell: ({ row }) => row.original.tax_amount == null ? '—'
-    : <MoneyCell amount={row.original.tax_amount} currency={currency} /> },
-  { accessorKey: 'qty_ea', header: 'EA', cell: ({ row }) => ea(row.original.qty_ea) },
-  { accessorKey: 'shipped_ea', header: 'Shipped EA', cell: ({ row: { original: ln } }) => ln.shipped_ea == null && ln.shipped_shadow_ea != null
-    ? <Shadow value={ln.shipped_shadow_ea} /> : ea(ln.shipped_ea) },
-  { accessorKey: 'backordered_ea', header: 'Backordered EA', cell: ({ row: { original: ln } }) => ln.backordered_ea == null && ln.backordered_shadow_ea != null
-    ? <Shadow value={ln.backordered_shadow_ea} warn />
-    : ln.backordered_ea ? <span className="font-medium text-warning-700">{ln.backordered_ea}</span> : ea(ln.backordered_ea) },
-  { accessorKey: 'delivered_qty', header: 'Delivered EA', cell: ({ row }) => ea(row.original.delivered_qty) },
-  { id: 'invoiced', header: 'Invoiced', cell: ({ row }) => row.original.invoiced_qty == null ? '—'
-    : `${row.original.invoiced_qty} ${row.original.invoice_unit ?? ''}` },
-  // Invoiced: the invoice's price per its unit (CA). Before: what the draft will take, per order unit.
-  { accessorKey: 'invoice_price', header: 'Invoice price', cell: ({ row: { original: ln } }) => ln.invoice_price == null ? '—' : (
-    <span className="whitespace-nowrap"><MoneyCell amount={ln.invoice_price} currency={currency} />
-      <span className="text-xs text-neutral-500"> /{ln.invoiced_qty != null ? ln.invoice_unit : (ln.order_unit ?? '?')}</span>
-      {ln.invoiced_qty == null && <VsPo price={ln.invoice_price} po={ln.unit_price} currency={currency} />}
-    </span>) },
-  { accessorKey: 'invoice_amount', header: 'Invoice amount', cell: ({ row }) => row.original.invoice_amount == null ? '—'
-    : <MoneyCell amount={row.original.invoice_amount} currency={currency} /> },
-  { accessorKey: 'state', header: 'Line status', cell: ({ row }) => row.original.state
-    ? <StatusCell value={row.original.state} tone={stateTones[row.original.state]} /> : '' },
-  { accessorKey: 'problem', header: 'Note', cell: ({ row }) => (
-    <span className={row.original.problem && !row.original.removed ? 'text-danger-600' : ''}>{row.original.problem ?? ''}</span>
-  ) },
-]
-const HIDDEN_LINE_COLUMNS = ['line_no', 'order_unit', 'discount_amount', 'tax_amount']
-
-const packingColumns: ColumnDef<PackingRead, unknown>[] = [
-  { accessorKey: 'sscc', header: 'Pallet (SSCC)', cell: ({ row }) => row.original.sscc ?? '—' },
-  { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => row.original.lot ?? '—' },
-  { accessorKey: 'expiry', header: 'Expiry', cell: ({ row }) => <DateCell value={row.original.expiry} /> },
-  { accessorKey: 'qty_shipped_ea', header: 'Qty EA' },
-  { accessorKey: 'tracking', header: 'Tracking', cell: ({ row }) => row.original.tracking ?? '—' },
-  { accessorKey: 'ship_date', header: 'Ship date', cell: ({ row }) => <DateCell value={row.original.ship_date} /> },
-  { id: 'doc', header: '945', cell: ({ row: { original: p } }) => (
-    <span className="inline-flex items-center gap-1">#{p.document_id}
-      {p.shadow ? <Badge variant="neutral">Shadow run</Badge> : !p.applied && <Badge variant="warning">Second 945</Badge>}
-    </span>) },
-]
-
-function Packing({ rows }: { rows: PackingRead[] }) {
-  return (
-    <LocalTable<PackingRead> ariaLabel="Packed for this line" columns={packingColumns} rows={rows}
-      rowKey={(p, i) => `${p.shipment_id}-${i}`}
-      footer={[null, null, 'Total', rows.reduce((n, p) => n + p.qty_shipped_ea, 0), null, null, null]} />
-  )
-}
-
-function LifecycleTable({ o }: { o: OrderDetail }) {
-  const money = (n: number) => formatMoney(n.toFixed(2), o.currency)
-  const hasNotes = o.lines.some((ln) => ln.problem && !ln.removed)
-  return (
-    <LocalTable<LineRead> ariaLabel="Order lines" columns={lineColumns(o.currency, lineNumbers(o))} rows={o.lines} rowKey={(ln) => ln.id}
-      rowAttrs={(ln) => (ln.removed ? { className: 'text-neutral-400', 'data-removed': true } : {})}
-      initiallyHidden={hasNotes ? HIDDEN_LINE_COLUMNS : [...HIDDEN_LINE_COLUMNS, 'problem']}
-      expand={(ln) => (ln.packing?.length ? <Packing rows={ln.packing} /> : null)}
-      footer={[null, 'Total', null, null, null, money(sum(o.lines, lineAmount)), null, null, sum(o.lines, (ln) => ln.qty_ea),
-        sum(o.lines, (ln) => ln.shipped_ea),
-        o.lines.some((ln) => ln.backordered_ea != null) ? sum(o.lines, (ln) => ln.backordered_ea) : null,
-        sum(o.lines, (ln) => ln.delivered_qty), null, null,
-        o.lines.some((ln) => ln.invoice_amount != null) ? money(sum(o.lines, (ln) => Number(ln.invoice_amount ?? 0))) : null,
-        null, null]} />
-  )
-}
-
-
-// The order's files: the sources (Shopify page, 850), the 940s with their 997
-// apart (Sent is not Accepted, FR-OB-22), each downloadable.
-function DocumentsTable({ docs }: { docs: OrderDocument[] }) {
-  const notices = useNotices()
-  const failed = (e: unknown) => notices.notify({ tone: 'error', text: `Download failed: ${e instanceof Error ? e.message : String(e)}` })
-  const columns: ColumnDef<OrderDocument, unknown>[] = [
-    { accessorKey: 'created_at', header: 'Created', cell: ({ row }) => <DateTimeCell value={row.original.created_at} /> },
-    { accessorKey: 'kind', header: 'Kind', cell: ({ row: { original: d } }) => <span className="whitespace-nowrap">{d.kind}{d.direction === 'OUT' ? ' (sent)' : ''}</span> },
-    { accessorKey: 'remote_name', header: 'File', cell: ({ row }) => <span className="break-all">{row.original.remote_name ?? '—'}</span> },
-    { accessorKey: 'st02', header: 'Control', cell: ({ row }) => row.original.st02 ?? '' },
-    { accessorKey: 'file_status', header: 'File status', cell: ({ row }) => (row.original.file_status ? <StatusCell value={row.original.file_status} /> : '') },
-    { accessorKey: 'ack_status', header: '997', cell: ({ row: { original: d } }) => (
-      d.direction !== 'OUT' ? '' : d.file_status === 'Sent' || d.ack_status !== 'Waiting' ? <StatusCell value={d.ack_status} /> : '—') },
-    { accessorKey: 'sent_at', header: 'Sent', cell: ({ row }) => <DateTimeCell value={row.original.sent_at} /> },
-    { id: 'note', header: 'Note', cell: ({ row }) => <span className="break-words text-xs">{row.original.error ?? row.original.ack_detail ?? ''}</span> },
-    { id: 'download', header: '', cell: ({ row: { original: d } }) => (
-      <IconButton label={`Download ${d.remote_name ?? d.kind}`} icon={<Download className="h-4 w-4" />}
-        onClick={() => { downloadDocument(d.id, d.remote_name ?? `document-${d.id}`).catch(failed) }} />) },
-  ]
-  return (
-    <>
-      <LocalTable<OrderDocument> ariaLabel="Documents" columns={columns} rows={docs} rowKey={(d) => d.id} initiallyHidden={['st02']} />
-    </>
-  )
-}
-
-// Every pallet row the warehouse packed for the order, with its lot and
-// tracking (a recall's view of this order).
-const lotColumns: ColumnDef<PackingRead & { item: string | null; links: Map<string, string | null> }, unknown>[] = [
-  { accessorKey: 'item', header: 'Item' },
-  { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => row.original.lot ? <CopyChip text={row.original.lot} /> : '—' },
-  { accessorKey: 'expiry', header: 'Expiry', cell: ({ row }) => <DateCell value={row.original.expiry} /> },
-  { accessorKey: 'qty_shipped_ea', header: 'Qty EA', cell: ({ row }) => <span className="tabular-nums">{row.original.qty_shipped_ea}</span> },
-  { accessorKey: 'sscc', header: 'Pallet (SSCC)', cell: ({ row }) => row.original.sscc ?? '—' },
-  { accessorKey: 'tracking', header: 'Tracking', cell: ({ row: { original: p } }) => p.tracking
-    ? <span className="flex flex-wrap gap-1">{p.tracking.split(', ').map((t) => <TrackingLink key={t} number={t} url={p.links.get(t)} />)}</span> : '—' },
-  { accessorKey: 'ship_date', header: 'Ship date', cell: ({ row }) => <DateCell value={row.original.ship_date} /> },
-  { id: 'doc', header: '945', cell: ({ row: { original: p } }) => (
-    <span className="inline-flex items-center gap-1">#{p.document_id}
-      {p.shadow ? <Badge variant="neutral">Shadow run</Badge> : !p.applied && <Badge variant="warning">Second 945</Badge>}
-    </span>) },
-]
-
-function Lots({ o }: { o: OrderDetail }) {
-  // the carrier's link per tracking number, from the shipment it came on
-  const links = new Map(o.shipments.map((s) => [s.id, new Map((s.tracking_links ?? []).map((t) => [t.number, t.url] as const))]))
-  const none = new Map<string, string | null>()
-  const rows = o.lines.flatMap((ln) => (ln.packing ?? []).map((p) => ({ ...p, item: ln.item_code, links: links.get(p.shipment_id) ?? none })))
-  if (rows.length === 0) return null
-  return (
-    <Section title="Pallets and lots">
-      <LocalTable ariaLabel="Pallets and lots" columns={lotColumns} rows={rows} rowKey={(p, i) => `${p.shipment_id}-${i}`}
-        sortable={['item', 'lot', 'expiry', 'ship_date']}
-        footer={[null, null, 'Total', rows.reduce((n, p) => n + p.qty_shipped_ea, 0), null, null, null, null]} />
-    </Section>
-  )
-}
-
-/** The order's invoice: status, number, method, total, the file it was sent as; opened on Invoices. */
-function OrderInvoice({ o }: { o: OrderDetail }) {
-  const navigate = useNavigate()
-  const notices = useNotices()
-  const q = useQuery({
-    queryKey: [...queryKeys.list(invoicesClient), 'order', o.id],
-    queryFn: () => invoicesClient.list({ page: 1, pageSize: 1, filters: [{ field: 'order_id', op: 'eq', value: String(o.id) }] }),
-    enabled: !!o.has_invoice,
-  })
-  const inv = q.data?.items[0]
-  return (
-    <Section title="Invoice">
-      <DetailList items={[
-        ['Invoice status', <StatusCell key="s" value={o.invoice_status} />],
-        ['Invoice', inv ? inv.invoice_number : o.has_invoice ? (q.isLoading ? 'Loading…' : '—') : 'Not built yet (built at delivery confirmation)'],
-        ['Method', inv?.method ?? null], ['Invoice date', inv ? formatDate(inv.invoice_date) : null],
-        ['Total', inv ? formatMoney(inv.total, inv.currency) : null], ['Delivery number', inv?.delivery_number ?? null],
-        ['Sent', inv?.sent_at ? `${inv.send_count}× · last ${formatDateTime(inv.sent_at)}` : inv ? 'Not yet' : null],
-        ['Problem', inv?.error ?? null],
-      ]} />
-      {inv && (
-        <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="secondary" onClick={() => { requestOpen('/invoices', inv.id); navigate('/invoices') }}>Open invoice {inv.invoice_number}</Button>
-          {inv.document_id != null && (
-            <Button size="sm" variant="secondary" onClick={() => { downloadDocument(inv.document_id!, `${inv.invoice_number}-${inv.method}`).catch((e: unknown) =>
-              notices.notify({ tone: 'error', text: `Download failed: ${e instanceof Error ? e.message : String(e)}` })) }}>
-              <Download className="mr-1 h-3.5 w-3.5" />The file sent ({inv.method === '810_JSON' ? '810' : inv.method})
-            </Button>
-          )}
-        </div>
-      )}
-      <ErrorMessage error={q.error} />
-    </Section>
-  )
-}
-
-const timelineTone = (e: OrderDetail['timeline'][number]): TimelineItem['tone'] => {
-  const st = String(e.after?.fulfillment_status ?? e.after?.invoice_status ?? '')
-  if (e.action === 'create') return 'success'
-  if (['On Hold', 'Review', 'Blocked', 'Failed', '940 Rejected', '940 Failed', '940 Timeout'].includes(st)) return 'warning'
-  if (st === 'Cancelled') return 'danger'
-  return st ? 'info' : 'neutral'
-}
-const ENTITY: Record<string, string> = { sales_orders: 'Order', sales_order_lines: 'Line', sales_invoices: 'Invoice', sales_shipments: 'Shipment' }
-const ACTION: Record<string, string> = { create: 'created', update: 'updated', delete: 'deleted' }
-const show = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v))
-
-function Activity({ o }: { o: OrderDetail }) {
-  return (
-    <Timeline items={o.timeline.map((e, i) => {
-      const keys = Object.keys(e.after ?? {}).filter((k) => !['version', 'updated_at', 'updated_by', 'updated_by_name'].includes(k))
-      return {
-        key: i, when: formatDateTime(e.at), who: e.user_name, tone: timelineTone(e),
-        title: e.reason ?? `${ENTITY[e.entity] ?? e.entity.replace('sales_', '').replace(/_/g, ' ')} ${ACTION[e.action] ?? e.action}`,
-        body: e.action === 'update' && keys.length > 0 ? (
-          <ul>{keys.slice(0, 6).map((k) => <li key={k} className="break-all"><span className="font-medium">{k.replace(/_/g, ' ')}</span>: {show(e.before?.[k])} → {show(e.after?.[k])}</li>)}</ul>
-        ) : undefined,
-      }
-    })} />
   )
 }
 
@@ -311,34 +70,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
 
   const tabs: RecordTab[] = !d ? [] : [
     ...extraTabs,
-    { id: 'overview', label: 'Overview', tone: d.review_reason ? 'warning' : undefined, render: () => (
-      <>
-        {d.review_reason && (
-          <section aria-label="Review reason" className="flex flex-col gap-1 rounded-lg border border-warning-200 bg-warning-50 p-3">
-            <p className="font-medium text-warning-700">Needs review</p>
-            <pre className="whitespace-pre-wrap text-xs text-warning-700">{d.review_reason}</pre>
-            <p className="text-xs text-warning-700">Fix the cause in the Item Master (an item, a unit, a partner code, a DC route), then Re-check.</p>
-          </section>
-        )}
-        <Section title="Order">
-          <DetailList items={[
-            ['Order ref', d.source_reference], ['Internal no.', String(d.order_number)],
-            ['Partner', partnerLabel(d.partner_name, d.partner_code)], ['Customer PO / reference', d.source_order_number],
-            ['Source', d.source_type], ['Received', formatDateTime(d.first_received_at)], ['Paid (delay start)', formatDateTime(d.paid_at)],
-            ['Requested delivery', d.requested_delivery_date ? formatDate(d.requested_delivery_date) : null],
-            ['Total', formatMoney(d.total_amount ?? d.total, d.currency)], ['Invoice', d.invoice_status],
-            ['Notes', d.notes],
-          ]} />
-        </Section>
-        <div className="grid gap-4 md:grid-cols-2">
-          <Section title="Ship to">
-            <AddressView value={d.ship_to} note={shipToOrigin(d)} />
-            {(d.ship_to_flags ?? []).map((f) => <Badge key={f} variant="warning">{f}</Badge>)}
-          </Section>
-          <Section title="Bill to"><AddressView value={d.bill_to} note={billToOrigin(d)} /></Section>
-        </div>
-      </>
-    ) },
+    { id: 'overview', label: 'Overview', tone: d.review_reason ? 'warning' : undefined, render: () => <OverviewTab o={d} /> },
     { id: 'lines', label: 'Lines', count: open.length, tone: unmatched || (backordered ?? 0) > 0 ? 'warning' : undefined, render: () => (
       pricing ? (
         <InvoicePricesForm o={d} onCancel={() => setPricing(false)} onSaved={async (next) => {
@@ -347,33 +79,21 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
           await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
         }} />
       ) : (
-        <>
-          <p className="text-xs text-neutral-500">
-            Ordered → shipped (945) → delivered → invoiced. ▸ shows the pallets and lots packed for a line.
-            {d.has_invoice ? ' The invoice is drafted: change its prices on the invoice.'
-              : ' The invoice price starts as the PO price; the invoice draft takes it.'}
-          </p>
-          <LifecycleTable o={d} />
-        </>
+        <LinesTab o={d} />
       )
     ) },
     { id: 'shipments', label: 'Shipments & lots', count: d.shipments.length, tone: shipmentTrouble ? 'warning' : undefined,
       empty: d.shipments.length === 0 && 'No 945 yet: the warehouse has not reported a shipment.',
-      render: () => (
-        <>
-          <Shipments shipments={d.shipments} orderId={d.id} lineNumbers={lineNumbers(d)} />
-          <Lots o={d} />
-        </>
-      ) },
+      render: () => <ShipmentsTab o={d} /> },
     { id: 'documents', label: 'Documents', count: d.documents.length, tone: docTrouble ? 'danger' : undefined,
       empty: d.documents.length === 0 && 'No document: entered by hand and not sent yet.',
-      render: () => <DocumentsTable docs={d.documents} /> },
+      render: () => <DocumentsTab docs={d.documents} /> },
     { id: 'invoice', label: 'Invoice', hidden: d.invoice_status === 'Not Required' && !d.has_invoice,
-      tone: ['Blocked', 'Failed'].includes(d.invoice_status) ? 'warning' : undefined, render: () => <OrderInvoice o={d} /> },
+      tone: ['Blocked', 'Failed'].includes(d.invoice_status) ? 'warning' : undefined, render: () => <InvoiceTab o={d} /> },
     { id: 'payments', label: 'Payments', hidden: d.source_type !== 'SHOPIFY', count: (d.payments?.length ?? 0) || undefined,
       tone: Number(d.total_refunded ?? 0) > 0 ? 'warning' : undefined, render: () => <PaymentsAndRefunds o={d} /> },
     { id: 'activity', label: 'Activity', count: d.timeline.length, empty: d.timeline.length === 0 && 'Nothing recorded yet',
-      render: () => <Activity o={d} /> },
+      render: () => <ActivityTab o={d} /> },
   ]
 
   const facts: RecordFact[] = !d ? [] : [

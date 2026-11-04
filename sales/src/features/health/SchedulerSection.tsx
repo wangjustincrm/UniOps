@@ -3,12 +3,12 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { z } from 'zod'
 import {
-  ActionButton, Badge, Button, DateTimeCell, ErrorMessage, LocalTable, RowActions, SchemaForm, FormSheet, StatusCell, businessErrorOf,
-  requestOpen, useCan, useToast, type ColumnDef, type FieldSpec,
+  ActionButton, Badge, Button, DateTimeCell, LocalTable, NoticeScope, RowActions, SchemaForm, FormSheet, Section, StatusCell, businessErrorOf,
+  requestOpen, useCan, useNotices, type ColumnDef, type FieldSpec, Hint,
 } from '@/platform-ui'
 import { RefreshCw } from 'lucide-react'
 import { runConnectionNow } from '@/features/configuration/connections/connectionsApi'
-import { followRun, runToast } from '@/features/operations/followRun'
+import { useRunFollower } from '@/features/operations/useRunFollower'
 import { runSystemNow } from '@/features/operations/operationsApi'
 import { saveScheduler, type HealthRead, type JobRead } from './healthApi'
 
@@ -22,24 +22,28 @@ const fields: FieldSpec[] = [
 
 /** Health → Scheduler: every job (each connection's, the system job) with its
  *  last and next run; overdue ones flagged. The system job's Run now, and the
- *  master switch and system interval in a sheet (sales.config). */
-export function SchedulerSection({ health: h }: { health: HealthRead }) {
+ *  master switch and system interval in a sheet (sales.config). Health is no
+ *  list: this section is its own notice scope, with its status row. */
+export function SchedulerSection({ health }: { health: HealthRead }) {
+  return <NoticeScope><Scheduler health={health} /></NoticeScope>
+}
+
+function Scheduler({ health: h }: { health: HealthRead }) {
   const qc = useQueryClient()
   const navigate = useNavigate()
-  const toast = useToast()
+  const { notify } = useNotices()
+  const follower = useRunFollower()
   const canConfig = useCan('sales.config')
   const [editing, setEditing] = useState(false)
-  const [error, setError] = useState<unknown>(null)
   const refresh = () => qc.invalidateQueries({ queryKey: ['sales', 'health'] })
-  // A job's Run now: followed to its end, then a toast with its summary.
+  // A job's Run now: followed to its end, in the section's status row.
   const runJob = async (j: JobRead) => {
     try {
-      const { run_id } = j.connection_id === null ? await runSystemNow() : await runConnectionNow(j.connection_id)
-      toast(runToast(await followRun(run_id)))
+      await follower.run(() => (j.connection_id === null ? runSystemNow() : runConnectionNow(j.connection_id)))
     } catch (e) {
       const be = businessErrorOf(e)
-      toast({ variant: 'error', title: `Not run: ${j.label}`,
-        description: be?.code === 'run.already_running' ? `${j.label} is running; wait for it to finish.` : (be?.message ?? String(e)) })
+      notify({ tone: 'error', text: be?.code === 'run.already_running' ? `${j.label} is running; wait for it to finish.`
+        : `Not run: ${j.label} — ${be?.message ?? String(e)}` })
     }
     await refresh()
   }
@@ -55,7 +59,7 @@ export function SchedulerSection({ health: h }: { health: HealthRead }) {
     { accessorKey: 'last_run_at', header: 'Last run', cell: ({ row: { original: j } }) => !j.last_run_at ? 'never' : (
       <span className="flex flex-col">
         <span className="flex items-center gap-1"><DateTimeCell value={j.last_run_at} />{j.last_run_status && <StatusCell value={j.last_run_status} />}</span>
-        {j.last_run_summary && <span className="text-xs text-neutral-500">{j.last_run_summary}</span>}
+        {j.last_run_summary && <Hint>{j.last_run_summary}</Hint>}
       </span>
     ) },
     { accessorKey: 'next_run_at', header: 'Next run', cell: ({ row: { original: j } }) => (
@@ -68,25 +72,22 @@ export function SchedulerSection({ health: h }: { health: HealthRead }) {
     ) },
   ]
   return (
-    <section aria-label="Scheduler" className="flex flex-col gap-2">
-      <h2 className="font-semibold text-neutral-800">Scheduler</h2>
+    <Section title="Scheduler" plain level={2}>
       <p className="text-sm text-neutral-600">
         {h.scheduler_paused ? 'Every job is paused (master switch).' : `System job every ${h.system_minutes} min; each connection on its own schedule.`}
         {!h.scheduler_enabled && ' The scheduler does not run in this environment: jobs run only with Run now.'}
       </p>
       <LocalTable<JobRead> ariaLabel="Scheduled jobs" columns={columns} rows={h.jobs} rowKey={(j) => j.scope} />
       <div className="flex flex-wrap gap-2">
-        <ActionButton size="sm" permission="sales.file.retry" onAction={async () => {
-          setError(null)
-          try {
-            const { run_id } = await runSystemNow()
-            toast({ variant: 'success', title: `System job: run ${run_id} started` })
+        <ActionButton size="sm" permission="sales.file.retry" done={(r) => `System job: run ${(r as { run_id: number }).run_id} started`}
+          errorMessages={{ 'run.already_running': 'The system job is running; wait for it to finish.' }}
+          onAction={async () => {
+            const started = await runSystemNow()
             await refresh()
-          } catch (e) { setError(e) }
-        }}>Run the system job now</ActionButton>
+            return started
+          }}>Run the system job now</ActionButton>
         {canConfig && <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>Scheduler settings</Button>}
       </div>
-      <ErrorMessage error={error} messages={{ 'run.already_running': 'The system job is running; wait for it to finish.' }} />
       <FormSheet open={editing} onOpenChange={setEditing} title="Scheduler settings">
         {editing && (
           <SchemaForm schema={schema} fields={fields} defaultValues={{ paused: h.scheduler_paused, system_minutes: h.system_minutes }}
@@ -94,6 +95,6 @@ export function SchedulerSection({ health: h }: { health: HealthRead }) {
             onSubmit={async (v) => { await saveScheduler(v as { paused: boolean; system_minutes: number }); setEditing(false); await refresh() }} />
         )}
       </FormSheet>
-    </section>
+    </Section>
   )
 }

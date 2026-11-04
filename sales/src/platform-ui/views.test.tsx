@@ -1,9 +1,12 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
-import {
-  QueryTable, ViewsProvider, useListView, type ColumnDef, type ListMeta, type SavedView, type ViewState, type ViewsClient,
-} from './index'
+import { ViewsProvider, type ColumnDef } from './index'
+import { QueryTable } from './patterns/QueryTable'
+import { useListView } from './patterns/views'
+import { type ListMeta } from './resource/listMeta'
+import { type SavedView, type ViewsClient } from './resource/viewsApi'
+import { type ViewState } from './resource/viewState'
 
 // Saved views and column order (design §13.19): the picker's actions and the
 // order of the columns going into the saved state.

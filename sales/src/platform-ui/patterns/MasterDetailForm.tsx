@@ -7,7 +7,7 @@ import { ErrorMessage } from './ErrorMessage'
 import { AddressFields } from './AddressFields'
 import { ADDRESS_FIELDS } from './address'
 import { SchemaFields, type FieldSpec } from './SchemaForm'
-import { applyServerError, blankToEmpty, emptyToNull, prepare } from './formValues'
+import { applyServerError, blankToEmpty, emptyToNull, hiddenFields, prepare } from './formValues'
 import { zodResolver } from './zodResolver'
 
 export interface MasterDetailState<L> {
@@ -65,7 +65,7 @@ export function MasterDetailForm<L>({
   // Server errors name nested address fields too (e.g. ship_to.zip).
   const known: FieldSpec[] = [...fields, ...addresses.flatMap((a) => ADDRESS_FIELDS.map((f) => ({ name: `${a.name}.${f}`, label: f })))]
   const resolver = useMemo<Resolver<FieldValues>>(() => {
-    const inner = zodResolver(schema)
+    const inner = zodResolver(schema, (v) => hiddenFields(fields, v))
     return (values, ctx, opts) => inner(prepare(values, fields), ctx, opts)
   }, [schema, fields])
   const form = useForm<FieldValues>({ resolver, defaultValues: blankToEmpty(defaultValues) })

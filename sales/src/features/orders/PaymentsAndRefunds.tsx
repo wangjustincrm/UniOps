@@ -1,5 +1,5 @@
 import {
-  Badge, DateTimeCell, DetailList, LocalTable, MoneyCell, StatusCell, formatMoney, type ColumnDef,
+  Badge, DateTimeCell, DetailList, LocalTable, MoneyCell, Section, StatusCell, formatMoney, type ColumnDef, Hint,
 } from '@/platform-ui'
 import type { OrderDetail, PaymentRead, RefundRead } from './ordersApi'
 
@@ -58,8 +58,7 @@ export function PaymentsAndRefunds({ o }: { o: OrderDetail }) {
   const tags = (o.tags ?? '').split(',').map((t) => t.trim()).filter(Boolean)
   const refunds = o.refunds ?? []
   return (
-    <section aria-label="Payments and refunds" className="flex flex-col gap-2">
-      <h3 className="font-semibold text-neutral-800">Payments &amp; refunds</h3>
+    <Section title="Payments & refunds" label="Payments and refunds" plain>
       <DetailList items={[
         ['Payment status', o.shopify_financial_status?.replace(/_/g, ' ') ?? null], ['Sales channel', o.source_name],
         ['Tags', tags.length ? <span key="t" className="flex flex-wrap gap-1">{tags.map((t) => <Badge key={t} variant="neutral">{t}</Badge>)}</span> : null],
@@ -72,7 +71,7 @@ export function PaymentsAndRefunds({ o }: { o: OrderDetail }) {
         ['Original total', money(o.original_total)], ['Refunded', money(o.total_refunded)],
         ['Net', o.net_amount == null ? null : <strong key="n">{money(o.net_amount)}</strong>],
       ]} />
-      {o.net_amount == null && <p className="text-xs text-neutral-500">Not read from Shopify yet: the next pass of its connection fills it.</p>}
+      {o.net_amount == null && <Hint as="p">Not read from Shopify yet: the next pass of its connection fills it.</Hint>}
       <LocalTable<PaymentRead> ariaLabel="Payments" columns={paymentColumns} rows={o.payments ?? []} rowKey={(p) => p.id}
         emptyTitle="No payments recorded" />
       {refunds.length > 0 && (
@@ -80,6 +79,6 @@ export function PaymentsAndRefunds({ o }: { o: OrderDetail }) {
           expand={(r) => (r.lines.length || r.adjustments.length ? <RefundDetail r={r} currency={o.currency} /> : null)}
           footer={['Total', null, null, null, null, formatMoney(refunds.reduce((t, r) => t + Number(r.amount), 0).toFixed(2), o.currency)]} />
       )}
-    </section>
+    </Section>
   )
 }

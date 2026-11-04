@@ -1,10 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import {
-  ActionButton, ListPage, RecordSheet, TableStatusBar, ViewsProvider, createNoticeStore,
-  type ColumnDef, type ListMeta, type ViewsClient,
-} from './index'
+import { ActionButton, ListPage, RecordSheet, ViewsProvider, type ColumnDef } from './index'
+import { TableStatusBar } from './patterns/TableStatusBar'
+import { createNoticeStore } from './patterns/notices'
+import { type ListMeta } from './resource/listMeta'
+import { type ViewsClient } from './resource/viewsApi'
 import { noticeIn } from './testing'
 
 // The status row (the user, 2026-11-03): every list and sheet says what

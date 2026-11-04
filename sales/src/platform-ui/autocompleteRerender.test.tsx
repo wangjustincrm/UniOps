@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { Autocomplete, EditableTable, LocalTable, type ColumnDef, type EditableColumn } from './index'
+import { Autocomplete, LocalTable, type ColumnDef, type EditableColumn } from './index'
+import { EditableTable } from './primitives/EditableTable'
 
 // An open Autocomplete survives its parent re-rendering (a list refetch landing
 // under an open form, 2026-11-03). The cause was in the tables: a cell given as

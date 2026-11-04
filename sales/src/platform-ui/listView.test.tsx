@@ -2,10 +2,11 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import {
-  QueryTable, flipSort, parseView, removeSort, serializeView, setFieldFilters, sortBy, toSearchParams, viewStateOf,
-  type ColumnDef, type GroupCount, type ListMeta, type ListTotal, type QuerySpec,
-} from './index'
+import { type ColumnDef, type QuerySpec } from './index'
+import { QueryTable } from './patterns/QueryTable'
+import { flipSort, removeSort, setFieldFilters, sortBy, toSearchParams, type GroupCount, type ListTotal } from './resource/querySpec'
+import { parseView, serializeView, viewStateOf } from './resource/viewState'
+import { type ListMeta } from './resource/listMeta'
 import { chooseOption } from './testing'
 
 // The list query contract on the client (design §13.19): the column menu,

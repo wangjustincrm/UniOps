@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { EmptyState, ErrorView, Skeleton, formatDateTime, queryKeys } from '@/platform-ui'
+import { EmptyState, ErrorView, Section, Skeleton, formatDateTime, queryKeys, Muted } from '@/platform-ui'
 
 /** One entry of a record's audit history (sales-api schemas/audit.py). */
 export interface AuditEntry {
@@ -15,7 +15,7 @@ export interface AuditEntry {
 const show = (v: unknown) => (v === null || v === undefined || v === '' ? '—' : typeof v === 'object' ? JSON.stringify(v) : String(v))
 
 function Changes({ e }: { e: AuditEntry }) {
-  if (e.action === 'create') return <p className="text-neutral-500">Created</p>
+  if (e.action === 'create') return <Muted as="p">Created</Muted>
   const keys = Object.keys(e.after ?? e.before ?? {})
   return (
     <ul className="text-neutral-600">
@@ -36,8 +36,7 @@ export function AuditHistory({ resource, id, version, load }: {
 }) {
   const q = useQuery({ queryKey: [...queryKeys.audit({ basePath: resource }, id), version], queryFn: () => load(id) })
   return (
-    <section aria-label="History" className="flex flex-col gap-2">
-      <h3 className="text-sm font-semibold text-neutral-800">History</h3>
+    <Section title="History" plain className="text-sm">
       {q.isLoading ? <Skeleton className="h-16 w-full" /> : q.error ? <ErrorView error={q.error} /> : !q.data?.length ? (
         <EmptyState title="No changes recorded" className="py-4" />
       ) : (
@@ -53,7 +52,7 @@ export function AuditHistory({ resource, id, version, load }: {
           ))}
         </ol>
       )}
-    </section>
+    </Section>
   )
 }
 

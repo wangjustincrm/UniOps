@@ -1,4 +1,4 @@
-import type { ToastInput } from '@/platform-ui'
+import type { NoticeInput } from '@/platform-ui'
 import { runsClient, type RunRead } from './operationsApi'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -12,12 +12,11 @@ export async function followRun(id: number, { every = 1500, give_up_after = 600_
   }
 }
 
-/** "Run 12: 3 files, 0 errors" — the toast a finished run gets. */
-export function runToast(run: RunRead): ToastInput {
-  const what = run.summary?.text ?? run.error ?? run.status
-  return {
-    title: `Run ${run.id}: ${what}`,
-    description: run.status === 'SUCCEEDED' ? undefined : run.status,
-    variant: run.status === 'SUCCEEDED' ? 'success' : run.status === 'RUNNING' ? 'info' : 'error',
-  }
+/** "Run 12: 3 files, 0 errors" (a run that did not simply succeed says how it
+ *  ended first) — what the status row says about a finished run. */
+export function runNotice(run: RunRead): NoticeInput {
+  const what = run.summary?.text ?? run.error
+  if (run.status === 'RUNNING') return { tone: 'info', text: `Run ${run.id} is still running` }
+  if (run.status === 'SUCCEEDED') return { tone: 'success', text: `Run ${run.id}: ${what ?? run.status}` }
+  return { tone: run.status === 'PARTIAL' ? 'warning' : 'error', text: `Run ${run.id}: ${run.status}${what ? ` — ${what}` : ''}` }
 }

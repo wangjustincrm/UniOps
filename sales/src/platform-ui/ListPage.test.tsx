@@ -1,9 +1,9 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
-import {
-  ListPage, RecordSheet, ViewsProvider, queryKeys, type ColumnDef, type ListMeta, type QuerySpec, type ViewsClient,
-} from './index'
+import { ListPage, RecordSheet, ViewsProvider, queryKeys, type ColumnDef, type QuerySpec } from './index'
+import { type ListMeta } from './resource/listMeta'
+import { type ViewsClient } from './resource/viewsApi'
 
 // ListPage (design §13.15): the one list implementation — its query keyed by
 // the resource, the open row taken from the refreshed list, row actions, the

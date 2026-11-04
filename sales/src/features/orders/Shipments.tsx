@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   ActionButton, AddressView, Badge, Button, DateCell, DateTimeCell, Tooltip, LocalTable, StatusCell, TrackingLink, queryKeys, requestOpen,
-  type ColumnDef,
+  type ColumnDef, Hint,
 } from '@/platform-ui'
 import { LineNo } from './LineNo'
 import { downloadPackingList, ordersClient, retryShopify, type ShipmentRead, type ShipmentRowRead } from './ordersApi'
@@ -34,7 +34,7 @@ const rowColumns = (shadow: boolean, numbers: Map<number, number>): ColumnDef<Sh
   { accessorKey: 'upc', header: 'UPC', cell: ({ row }) => <span className="tabular-nums">{row.original.upc ?? '—'}</span> },
   { accessorKey: 'description', header: 'Description', cell: ({ row }) => row.original.description ?? '—' },
   { accessorKey: 'qty_shipped_ea', header: 'Qty EA', cell: ({ row: { original: r } }) => (
-    <span className="whitespace-nowrap tabular-nums">{r.qty_shipped_ea}{cases(r) && <span className="text-xs text-neutral-500"> ({cases(r)})</span>}</span>) },
+    <span className="whitespace-nowrap tabular-nums">{r.qty_shipped_ea}{cases(r) && <Hint> ({cases(r)})</Hint>}</span>) },
   { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => row.original.lot ?? '—' },
   { accessorKey: 'expiry', header: 'Expiry', cell: ({ row }) => <DateCell value={row.original.expiry} /> },
   { accessorKey: 'sscc', header: 'SSCC', cell: ({ row }) => <span className="tabular-nums">{row.original.sscc ?? '—'}</span> },
@@ -93,7 +93,7 @@ const MODE: Record<string, string> = { U: 'Parcel', LT: 'LTL', M: 'Truck' }
 function Pair({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5">
-      <dt className="text-xs text-neutral-500">{label}</dt>
+      <Hint as="dt">{label}</Hint>
       <dd className="min-w-0 break-words text-neutral-800">{children}</dd>
     </div>
   )
@@ -132,7 +132,7 @@ export function Shipments({ shipments, orderId, lineNumbers = new Map() }: {
             <Pair label="Ship to (945)">{s.ship_to ? <AddressView value={s.ship_to} /> : '—'}</Pair>
             <Pair label="Carrier">
               {s.carrier ? <>
-                {s.carrier_name ? <>{s.carrier_name} <span className="text-xs text-neutral-500">({s.carrier})</span></> : s.carrier}
+                {s.carrier_name ? <>{s.carrier_name} <Hint>({s.carrier})</Hint></> : s.carrier}
                 {s.mode && <> · <Tooltip tip={`W27 mode ${s.mode}`}>{MODE[s.mode] ?? s.mode}</Tooltip></>}
               </> : '—'}
             </Pair>

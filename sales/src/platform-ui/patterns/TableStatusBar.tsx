@@ -4,7 +4,7 @@ import { IconButton } from '../primitives/IconButton'
 import { IconPopover } from '../primitives/IconPopover'
 import { formatTime } from '../primitives/format'
 import { cn } from '../lib/cn'
-import { useNoticeSnapshot, type NoticeStore, type NoticeTone } from './notices'
+import { NoticesContext, createNoticeStore, useNoticeSnapshot, type NoticeStore, type NoticeTone } from './notices'
 
 const ICON: Record<NoticeTone, ReactNode> = {
   info: <Info aria-hidden className="h-3.5 w-3.5 shrink-0 text-primary-600" />,
@@ -82,5 +82,17 @@ export function TableStatusBar({ store, right, className }: { store: NoticeStore
       </div>
       {right && <div className="flex min-h-9 items-center justify-end max-[480px]:w-full">{right}</div>}
     </div>
+  )
+}
+
+/** A notice scope with its status row for what is neither a list nor a sheet
+ *  (a dashboard's section): what is inside reports with useNotices, as anywhere. */
+export function NoticeScope({ children }: { children: ReactNode }) {
+  const [store] = useState(createNoticeStore)
+  return (
+    <NoticesContext.Provider value={store}>
+      {children}
+      <TableStatusBar store={store} className="mt-2 rounded-lg border border-neutral-200" />
+    </NoticesContext.Provider>
   )
 }

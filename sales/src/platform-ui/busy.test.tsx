@@ -1,7 +1,12 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DataTable, ListPage, LocalTable, RecordSheet, ViewsProvider, type ColumnDef, type ListMeta, type RefreshState, createNoticeStore, type ViewsClient } from './index'
+import { ListPage, LocalTable, RecordSheet, ViewsProvider, type ColumnDef } from './index'
+import { DataTable } from './primitives/DataTable'
+import { type ListMeta } from './resource/listMeta'
+import { type RefreshState } from './patterns/useRefresh'
+import { createNoticeStore } from './patterns/notices'
+import { type ViewsClient } from './resource/viewsApi'
 
 // Loading feedback (the user, 2026-11-03: "tables show nothing while loading"):
 // a refetch over rows shown puts a thin bar on the card's top edge (after
