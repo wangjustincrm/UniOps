@@ -82,6 +82,11 @@ const AD_HOC_MESSAGES = [
   { selector: "JSXAttribute[name.name='aria-live']", message: 'Say it with useNotices (the status row) from @/platform-ui, not an aria-live element.' },
   { selector: "JSXAttribute[name.name='role'][value.value=/^(status|alert)$/]", message: 'Say it with useNotices (the status row), or show a standing fact with Callout, from @/platform-ui — not role="status" / role="alert".' },
 ]
+// A titled block is a Section (a card, or `plain`): features write no h2 / h3
+// of their own, so the look and the region it makes stay one.
+const RAW_HEADINGS = [
+  { selector: "JSXOpeningElement[name.name=/^h[23]$/]", message: 'Use Section from @/platform-ui, not a raw heading.' },
+]
 // Toasts are gone from the features for the same reason: a result is said in
 // the status row, where it stays in the session's history (the bell).
 const NO_TOAST_IMPORT = {
@@ -168,12 +173,12 @@ export default defineConfig([
   {
     files: ['src/features/**/*.{ts,tsx}'],
     ignores: ['src/features/**/*.test.{ts,tsx}'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...AD_HOC_MESSAGES] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...AD_HOC_MESSAGES, ...RAW_HEADINGS] },
   },
   {
     // Health is a dashboard (no list or sheet scope): its own result text may still be read aloud.
     files: ['src/features/health/**/*.{ts,tsx}'],
     ignores: ['src/features/**/*.test.{ts,tsx}'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...RAW_HEADINGS] },
   },
 ])

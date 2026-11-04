@@ -1,4 +1,4 @@
-import { AddressView, Badge, DetailList, Section, formatDate, formatDateTime, formatMoney } from '@/platform-ui'
+import { AddressView, Badge, Callout, DetailList, Section, formatDate, formatDateTime, formatMoney } from '@/platform-ui'
 import { partnerLabel } from '@/features/common/labels'
 import type { OrderDetail } from '../ordersApi'
 
@@ -20,11 +20,10 @@ export function OverviewTab({ o }: { o: OrderDetail }) {
   return (
     <>
       {o.review_reason && (
-        <section aria-label="Review reason" className="flex flex-col gap-1 rounded-lg border border-warning-200 bg-warning-50 p-3">
-          <p className="font-medium text-warning-700">Needs review</p>
-          <pre className="whitespace-pre-wrap text-xs text-warning-700">{o.review_reason}</pre>
-          <p className="text-xs text-warning-700">Fix the cause in the Item Master (an item, a unit, a partner code, a DC route), then Re-check.</p>
-        </section>
+        <Callout label="Review reason" title="Needs review">
+          <pre className="whitespace-pre-wrap text-xs">{o.review_reason}</pre>
+          <p className="text-xs">Fix the cause in the Item Master (an item, a unit, a partner code, a DC route), then Re-check.</p>
+        </Callout>
       )}
       <Section title="Order">
         <DetailList items={[

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
-import { DayChips, Segmented } from './primitives/ChoiceControls'
+import { DayChips, PresetNumber, Segmented } from './primitives/ChoiceControls'
 import { SchemaForm, type FieldSpec } from './index'
 
 // SchemaForm's groups and conditions (2026-11-04): titled sections, a collapsed
@@ -95,6 +95,44 @@ describe('showWhen', () => {
   })
 })
 
+describe('alwaysSent, notes, and a refusal on a field not on screen', () => {
+  const needed = z.object({ kind: z.enum(['A', 'B']), mode: z.enum(['X', 'Y']), wait: z.number().min(1) })
+  const f: FieldSpec[] = [
+    { name: 'kind', label: 'Kind', type: 'segmented', options: [{ value: 'A', label: 'Type A' }, { value: 'B', label: 'Type B' }] },
+    { name: 'mode', label: 'Mode', showWhen: (v) => v.kind === 'A', alwaysSent: true },
+    { name: 'wait', label: 'Wait', type: 'number', showWhen: (v) => v.kind === 'A', alwaysSent: true },
+    { name: 'said', label: 'Said', type: 'note', note: (v) => `Kind is ${v.kind}` },
+  ]
+
+  it('hidden, it is still sent at its starting value, whatever was left in it', async () => {
+    const onSubmit = vi.fn()
+    render(<SchemaForm schema={needed} fields={f} defaultValues={{ kind: 'A', mode: 'X', wait: 60 }} onSubmit={onSubmit} />)
+    fireEvent.change(screen.getByLabelText('Wait'), { target: { value: '' } })  // cannot be corrected once hidden
+    fireEvent.click(screen.getByRole('radio', { name: 'Type B' }))
+    save()
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
+    expect(onSubmit.mock.calls[0][0]).toEqual({ kind: 'B', mode: 'X', wait: 60 })
+  })
+
+  it('a note follows the values and sends nothing', async () => {
+    const onSubmit = vi.fn()
+    render(<SchemaForm schema={needed} fields={f} defaultValues={{ kind: 'A', mode: 'X', wait: 60 }} onSubmit={onSubmit} />)
+    expect(screen.getByText('Kind is A')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: 'Type B' }))
+    expect(screen.getByText('Kind is B')).toBeInTheDocument()
+    save()
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledOnce())
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('said')
+  })
+
+  it("the server refusing a field that is not on screen is said under the form, not lost", async () => {
+    const refused = Object.assign(new Error('x'), { body: { error: { code: 'invalid', message: 'That key must go first', details: { field: 'folder' } } } })
+    mount({ kind: 'B' }, { onSubmit: vi.fn().mockRejectedValue(refused) })
+    save()
+    expect(await screen.findByText('That key must go first')).toBeInTheDocument()
+  })
+})
+
 describe('the choice controls', () => {
   it('Segmented: a radio group, the arrows move and choose, one tab stop', () => {
     const onChange = vi.fn()
@@ -112,5 +150,20 @@ describe('the choice controls', () => {
     expect(screen.getByRole('button', { name: 'Fri' })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(screen.getByRole('button', { name: 'Mon' }))
     expect(onChange).toHaveBeenCalledWith(['Mon', 'Fri'])
+  })
+
+  it('PresetNumber: a preset is the number; Custom opens the input with the value kept', () => {
+    const onChange = vi.fn()
+    const options = [{ value: '5', label: '5 min' }, { value: '10', label: '10 min' }]
+    const { unmount } = render(<PresetNumber aria-label="Every" value={5} onChange={onChange} options={options} />)
+    expect(screen.getByRole('radio', { name: '5 min' })).toBeChecked()
+    expect(screen.queryByLabelText('Every, custom')).toBeNull()
+    fireEvent.click(screen.getByRole('radio', { name: '10 min' }))
+    expect(onChange).toHaveBeenCalledWith(10)
+    fireEvent.click(screen.getByRole('radio', { name: 'Custom' }))
+    expect(screen.getByLabelText('Every, custom')).toHaveValue(5)
+    unmount()
+    render(<PresetNumber aria-label="Every" value={7} onChange={onChange} options={options} />)  // a saved 7 is Custom
+    expect(screen.getByRole('radio', { name: 'Custom' })).toBeChecked()
   })
 })

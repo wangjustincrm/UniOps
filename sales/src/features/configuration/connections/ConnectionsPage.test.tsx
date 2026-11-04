@@ -20,8 +20,9 @@ const LINE = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample'
 
 const api = vi.hoisted(() => ({
   test: vi.fn(), pin: vi.fn(), clear: vi.fn(), importCsv: vi.fn(),
-  edi: vi.fn(async () => ({ connection_id: null, ack_timeout_minutes: 120 })), saveEdi: vi.fn(),
-  shadow: vi.fn(async () => ({ shadow_mode: true })), saveShadow: vi.fn(),
+  edi: vi.fn(async (): Promise<{ connection_id: number | null; ack_timeout_minutes: number }> => ({ connection_id: null, ack_timeout_minutes: 120 })), saveEdi: vi.fn(),
+  shadow: vi.fn(async (): Promise<{ shadow_mode: boolean; open_orders?: number | null }> => ({ shadow_mode: true })), saveShadow: vi.fn(),
+  paused: vi.fn(async () => ({ paused: false })), create: vi.fn(), get: vi.fn(),
   runNow: vi.fn(), runs: vi.fn(async (): Promise<{ items: unknown[]; total: number }> => ({ items: [], total: 0 })), update: vi.fn(),
   list: vi.fn(), getRun: vi.fn(),
   meta: vi.fn(async () => ({ version: 1, searchable: true, default_sort: [], fields: [], views: [], scheduler_enabled: true })),
@@ -30,7 +31,8 @@ vi.mock('./connectionsApi', async (orig) => {
   const real = await orig<typeof import('./connectionsApi')>()
   return {
     ...real,
-    connectionsClient: { ...real.connectionsClient, list: api.list, importCsv: api.importCsv, update: api.update, meta: api.meta },
+    connectionsClient: { ...real.connectionsClient, list: api.list, importCsv: api.importCsv, update: api.update, meta: api.meta, create: api.create, get: api.get },
+    fetchSchedulerPaused: api.paused,
     runConnectionNow: api.runNow,
     fetchConnectionAudit: vi.fn(async () => []),
     testConnection: api.test, pinHostKey: api.pin, clearAuthLatch: api.clear,
@@ -43,6 +45,7 @@ vi.mock('@/features/operations/operationsApi', async (orig) => {
   return { ...real, runsClient: { ...real.runsClient, list: api.runs, get: api.getRun } }
 })
 const { default: ConnectionsPage } = await import('./ConnectionsPage')
+const { connectionFields } = await import('./connectionSchema')
 
 function renderAs(keys: string[]) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -53,12 +56,26 @@ function renderAs(keys: string[]) {
   )
 }
 
+const step = (status: HTMLElement, name: string) => within(status).getByRole('listitem', { name })
+
 async function open() {
   fireEvent.click(await screen.findByText('sftp-test'))
   return within(await screen.findByRole('dialog')).findByRole('region', { name: 'Connection status' })
 }
 
-beforeEach(() => { api.list.mockResolvedValue({ items: [conn], total: 1 }) })
+beforeEach(() => {
+  api.list.mockResolvedValue({ items: [conn], total: 1 })
+  api.shadow.mockResolvedValue({ shadow_mode: true })
+})
+
+/** A summary card, once its value has come. */
+const card = (label: string, value: string) => screen.findByRole('button', { name: new RegExp(`^${label}\\s*${value}`, 'i') })
+
+/** The shadow panel, in the sheet its card opens. */
+async function shadowPanel() {
+  fireEvent.click(await card('Shadow run', '(On|Off)'))
+  return within(await screen.findByRole('dialog', { name: 'Shadow run' })).findByRole('region', { name: 'Shadow run' })
+}
 
 /** The open connection's "Schedule & runs" tab. */
 async function scheduleOf() {
@@ -70,10 +87,10 @@ async function scheduleOf() {
 describe('Connections page', () => {
   it('a reader sees the status but cannot test, pin or clear', async () => {
     renderAs(['sales.read'])
-    expect(await screen.findByText('Key not pinned')).toBeInTheDocument()  // the list's state column
+    expect(await screen.findByText('Key not pinned')).toBeInTheDocument()  // the list's health column
     const status = await open()
-    expect(within(status).getByText('present')).toBeInTheDocument()
-    expect(within(status).getByText('not pinned')).toBeInTheDocument()
+    expect(step(status, 'Secret on server')).toHaveAttribute('data-status', 'done')
+    expect(step(status, 'Host key pinned')).toHaveAttribute('data-status', 'todo')
     expect(within(status).queryByText('Test connection')).not.toBeInTheDocument()
   })
 
@@ -132,21 +149,20 @@ describe('a Shopify connection', () => {
     fireEvent.click(await screen.findByText('example.myshopify.com'))
     status = await within(await screen.findByRole('dialog')).findByRole('region', { name: 'Connection status' })
     expect(within(status).getByText('Reset cursor')).toBeDisabled()  // until a date is chosen
-    expect(within(status).getByText(/Reads the store's name/)).toBeInTheDocument()
+    expect(within(status).getByText(/reads the store's name/)).toBeInTheDocument()
   })
 })
 
 describe('Connections page: warehouse EDI settings (P4)', () => {
   it('a reader sees them read-only; sales.config saves the connection and the 997 wait', async () => {
     const { unmount } = renderAs(['sales.read'])
-    let panel = await screen.findByRole('group', { name: 'Warehouse EDI' })
-    expect(within(panel).getByText('120 minutes')).toBeInTheDocument()
-    expect(within(panel).queryByRole('button', { name: 'Edit' })).toBeNull()  // read only
+    fireEvent.click(await card('997 wait', '120 min'))
+    const read = await screen.findByRole('dialog', { name: 'Warehouse EDI and 810 invoices' })
+    expect(within(read).queryByRole('button', { name: 'Save' })).toBeNull()  // read only
     unmount()
     api.saveEdi.mockImplementation(async (d) => d)
     renderAs(['sales.read', 'sales.config'])
-    panel = await screen.findByRole('group', { name: 'Warehouse EDI' })
-    fireEvent.click(within(panel).getByRole('button', { name: 'Edit' }))
+    fireEvent.click(await card('997 wait', '120 min'))
     const sheet = await screen.findByRole('dialog', { name: 'Warehouse EDI and 810 invoices' })
     fireEvent.change(within(sheet).getByLabelText(/997 wait \(minutes\)/), { target: { value: '90' } })
     fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
@@ -157,13 +173,13 @@ describe('Connections page: warehouse EDI settings (P4)', () => {
 describe('Connections page: the shadow run switch', () => {
   it('says what it does; only sales.config turns it off, after a confirmation', async () => {
     const { unmount } = renderAs(['sales.read'])
-    let panel = await screen.findByRole('region', { name: 'Shadow run' })
+    let panel = await shadowPanel()
     expect(await within(panel).findByText(/On: Zoho is live/)).toBeInTheDocument()
     expect(within(panel).queryByText('Turn the shadow run off')).toBeNull()
     unmount()
     api.saveShadow.mockImplementation(async (d) => d)
     renderAs(['sales.read', 'sales.config'])
-    panel = await screen.findByRole('region', { name: 'Shadow run' })
+    panel = await shadowPanel()
     fireEvent.click(await within(panel).findByText('Turn the shadow run off'))
     expect(api.saveShadow).not.toHaveBeenCalled()
     const confirm = await screen.findByRole('dialog', { name: 'Turn the shadow run off?' })
@@ -173,13 +189,35 @@ describe('Connections page: the shadow run switch', () => {
 })
 
 describe('Connections page: switching the shadow run on', () => {
-  it('says how many open orders became Zoho\'s', async () => {
-    api.shadow.mockResolvedValueOnce({ shadow_mode: false })
-    api.saveShadow.mockResolvedValue({ shadow_mode: true, marked_orders: 26 })
+  it('asks first, saying how many open orders would be marked; nothing is sent until confirmed', async () => {
+    api.saveShadow.mockReset()
+    api.shadow.mockResolvedValue({ shadow_mode: false, open_orders: 26 })
+    api.saveShadow.mockImplementation(async () => {
+      api.shadow.mockResolvedValue({ shadow_mode: true })
+      return { shadow_mode: true, marked_orders: 26 }
+    })
     renderAs(['sales.read', 'sales.config'])
-    const panel = await screen.findByRole('region', { name: 'Shadow run' })
+    const panel = await shadowPanel()
     fireEvent.click(await within(panel).findByText('Turn the shadow run on'))
+    const confirm = await screen.findByRole('dialog', { name: 'Turn the shadow run on?' })
+    expect(confirm).toHaveTextContent("26 open orders will be marked as Zoho's")
+    expect(api.saveShadow).not.toHaveBeenCalled()
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Turn on' }))
+    await waitFor(() => expect(api.saveShadow).toHaveBeenCalledWith({ shadow_mode: true }))
     expect(await within(panel).findByText("26 open order(s) were marked as Zoho's.")).toBeInTheDocument()
+  })
+
+  it('cancelling the confirmation changes nothing', async () => {
+    api.saveShadow.mockReset()
+    api.shadow.mockResolvedValue({ shadow_mode: false, open_orders: 1 })
+    renderAs(['sales.read', 'sales.config'])
+    const panel = await shadowPanel()
+    fireEvent.click(await within(panel).findByText('Turn the shadow run on'))
+    const confirm = await screen.findByRole('dialog', { name: 'Turn the shadow run on?' })
+    expect(confirm).toHaveTextContent("1 open order will be marked")
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Turn the shadow run on?' })).toBeNull())
+    expect(api.saveShadow).not.toHaveBeenCalled()
   })
 })
 
@@ -190,10 +228,15 @@ describe("a connection's schedule", () => {
   it('the list shows the schedule, the last run with its summary, and the next run', async () => {
     api.list.mockResolvedValue({ items: [{ ...ran, schedule_paused: true }], total: 1 })
     renderAs(['sales.read'])
-    expect(await screen.findByText('every 5 min, Mon–Fri 06:00–22:00')).toBeInTheDocument()
-    expect(screen.getByText('Paused')).toBeInTheDocument()
+    expect(await screen.findByText('Paused')).toBeInTheDocument()
     expect(screen.getByText('3 files, 1 errors')).toBeInTheDocument()
     expect(screen.getByText('PARTIAL')).toBeInTheDocument()
+  })
+
+  it('a running schedule reads as a phrase', async () => {
+    api.list.mockResolvedValue({ items: [ran], total: 1 })
+    renderAs(['sales.read'])
+    expect(await screen.findByText('Every 5 min · Mon–Fri 06:00–22:00')).toBeInTheDocument()
   })
 
   it('the form edits it: minutes, pause, hours as HH:MM and days — sent as the API takes them', async () => {
@@ -203,13 +246,15 @@ describe("a connection's schedule", () => {
     fireEvent.click(await screen.findByText('sftp-test'))
     const sheet = await screen.findByRole('dialog')
     await openTab(sheet, 'Settings')  // the form (Overview comes first)
-    expect(within(sheet).getByLabelText(/^Active from/)).toHaveValue('06:00')
-    fireEvent.change(within(sheet).getByLabelText(/^Schedule: every/), { target: { value: '15' } })
-    fireEvent.change(within(sheet).getByLabelText(/^Active until/), { target: { value: '' } })
+    expect(within(sheet).getByLabelText(/^From/)).toHaveValue('06:00')
+    expect(within(sheet).getByText('Runs every 5 minutes, Mon–Fri, 06:00–22:00 Toronto')).toBeInTheDocument()
+    fireEvent.click(within(sheet).getByRole('radio', { name: '15 min' }))
+    expect(within(sheet).getByText('Runs every 15 minutes, Mon–Fri, 06:00–22:00 Toronto')).toBeInTheDocument()  // live
+    fireEvent.change(within(sheet).getByLabelText(/^To/), { target: { value: '' } })
     fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
     expect(await within(sheet).findByText('Give both the start and the end, or neither')).toBeInTheDocument()
-    fireEvent.change(within(sheet).getByLabelText(/^Active until/), { target: { value: '23:30' } })
-    fireEvent.click(within(within(sheet).getByRole('group', { name: 'Active days' })).getByRole('checkbox', { name: 'Sat' }))
+    fireEvent.change(within(sheet).getByLabelText(/^To/), { target: { value: '23:30' } })
+    fireEvent.click(within(within(sheet).getByRole('group', { name: 'Days' })).getByRole('button', { name: 'Sat' }))
     fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(api.update).toHaveBeenCalledWith(7, expect.objectContaining({
       schedule_minutes: 15, active_to: '23:30:00', active_days: 'Mon,Tue,Wed,Thu,Fri,Sat' }), 3))
@@ -332,14 +377,15 @@ describe('when nothing runs by itself, and a run that is overdue', () => {
     api.meta.mockResolvedValueOnce(offMeta)
     api.list.mockResolvedValue({ items: [{ ...ran, overdue: false }], total: 1 })
     renderAs(['sales.read'])
-    expect(await screen.findByText(/Automatic runs are off in this environment \(SALES_SCHEDULER_ENABLED\)/)).toBeInTheDocument()
+    expect(await screen.findByText(/Automatic runs are off here/)).toBeInTheDocument()
+    expect(await card('Automatic runs', 'Off')).toBeInTheDocument()
     const row = (await screen.findByText('sftp-test')).closest('tr')!
     expect(within(row).getByText('Automatic runs off: use Run now')).toBeInTheDocument()
     expect(within(row).queryByText(/2026|Nov/)).toBeNull()  // no next-run time that never comes
     fireEvent.click(within(row).getByText('sftp-test'))
     const sheet = await screen.findByRole('dialog')
     await openTab(sheet, 'Schedule')
-    expect(within(sheet).getByText(/Automatic runs are off in this environment/)).toBeInTheDocument()
+    expect(within(sheet).getByText(/Automatic runs are off here/)).toBeInTheDocument()
     expect(within(within(sheet).getByRole('region', { name: 'Schedule' })).getByText('Automatic runs off: use Run now')).toBeInTheDocument()
   })
 
@@ -352,3 +398,144 @@ describe('when nothing runs by itself, and a run that is overdue', () => {
     expect(within(row).queryByText('Automatic runs off: use Run now')).toBeNull()
   })
 })
+
+describe('the page: settings as cards, a plain table', () => {
+  it('one row of cards; no panel pushes the table down; each card opens its setting', async () => {
+    api.paused.mockResolvedValueOnce({ paused: true })
+    api.edi.mockResolvedValueOnce({ connection_id: 7, ack_timeout_minutes: 60 })
+    renderAs(['sales.read'])
+    const row = await screen.findByRole('region', { name: 'Connection settings' })
+    await card('Warehouse', 'radiant')
+    expect(row).toHaveTextContent(/997 wait\s*60 min/i)
+    expect(row).toHaveTextContent(/810 invoices\s*None/i)
+    await card('Automatic runs', 'Paused')
+    expect(screen.queryByRole('region', { name: 'Shadow run' })).toBeNull()  // only in its sheet
+    fireEvent.click(await card('Automatic runs', 'Paused'))
+    expect(await screen.findByRole('dialog', { name: 'Automatic runs' })).toHaveTextContent('Every job is paused')
+  })
+
+  it('the row: name, host under it, its type, one health badge; Kind, Mode and After read are not shown', async () => {
+    renderAs(['sales.read'])
+    const r = (await screen.findByText('sftp-test')).closest('tr')!
+    expect(within(r).getByText('radiant')).toBeInTheDocument()
+    expect(within(r).getByLabelText('SFTP')).toBeInTheDocument()
+    expect(within(r).getByText('Key not pinned')).toBeInTheDocument()
+    const heads = screen.getAllByRole('columnheader').map((h) => h.textContent)
+    for (const gone of ['Kind', 'Host', 'Mode', 'After read']) expect(heads.join()).not.toContain(gone)
+  })
+})
+
+describe('the Overview checklist', () => {
+  const pinned = { ...conn, host_key: LINE }
+  const openIt = async (c: ConnectionRead, keys = ['sales.read', 'sales.config', 'sales.file.retry']) => {
+    api.list.mockResolvedValue({ items: [c], total: 1 })
+    renderAs(keys)
+    return open()
+  }
+
+  it('a missing secret says what to do, by its name only', async () => {
+    const status = await openIt({ ...pinned, secret_present: false })
+    expect(step(status, 'Secret on server')).toHaveAttribute('data-status', 'todo')
+    expect(step(status, 'Secret on server')).toHaveTextContent('SALES_SECRET_SFTP_TEST')
+  })
+
+  it('a refused login offers Clear right there', async () => {
+    api.clear.mockResolvedValue(pinned)
+    const status = await openIt({ ...pinned, auth_failed_at: '2026-11-02T20:00:00Z', auth_failed_reason: 'bad password' })
+    const login = step(status, 'Login OK')
+    expect(login).toHaveAttribute('data-status', 'problem')
+    expect(login).toHaveTextContent('bad password')
+    fireEvent.click(within(login).getByRole('button', { name: 'Clear and try again next cycle' }))
+    await waitFor(() => expect(api.clear).toHaveBeenCalledWith(7))
+  })
+
+  it('with the key pinned, Test sits on Folders and its result is a table', async () => {
+    api.test.mockResolvedValue({ host_key: { line: LINE, fingerprint: 'SHA256:abc', pinned: true, matches: true }, error: null,
+      folders: [{ folder: '/in', ok: true, files: 3, error: null }, { folder: '/out', ok: false, files: null, error: 'no such folder' }] })
+    const status = await openIt(pinned)
+    const folders = step(status, 'Folders reachable')
+    expect(folders).toHaveAttribute('data-status', 'unknown')
+    expect(within(step(status, 'Host key pinned')).queryByRole('button')).toBeNull()
+    fireEvent.click(within(folders).getByRole('button', { name: 'Test connection' }))
+    const table = await within(status).findByRole('table', { name: 'Test result' })
+    expect(within(table).getByText('/in').closest('tr')).toHaveTextContent('3')
+    expect(within(table).getByText('/out').closest('tr')).toHaveTextContent('no such folder')
+    expect(step(status, 'Folders reachable')).toHaveAttribute('data-status', 'problem')
+  })
+
+  it('a key that differs from the pinned one is a problem, offered only as a replacement', async () => {
+    api.test.mockResolvedValue({ host_key: { line: 'ssh-ed25519 OTHER', fingerprint: 'SHA256:new', pinned: true, matches: false }, folders: [], error: 'host key changed' })
+    const status = await openIt(pinned)
+    fireEvent.click(within(step(status, 'Folders reachable')).getByRole('button', { name: 'Test connection' }))
+    await within(status).findByText('SHA256:new')
+    expect(step(status, 'Host key pinned')).toHaveAttribute('data-status', 'problem')
+    expect(within(step(status, 'Host key pinned')).getByRole('button', { name: 'Replace the pinned key with this one' })).toBeInTheDocument()
+  })
+
+  it('Run now is on the Overview and in the header, for sales.file.retry only', async () => {
+    const status = await openIt(pinned)
+    expect(within(step(status, 'Last run')).getByRole('button', { name: 'Run now' })).toBeInTheDocument()
+    const sheet = screen.getByRole('dialog')
+    expect(within(within(sheet).getByRole('toolbar', { name: 'Actions' })).getByRole('button', { name: 'Run now' })).toBeInTheDocument()
+    cleanup()
+    const read = await openIt(pinned, ['sales.read'])
+    expect(within(step(read, 'Last run')).queryByRole('button')).toBeNull()
+  })
+})
+
+describe('the form, by type of connection', () => {
+  const headings = (el: HTMLElement) => within(el).getAllByRole('heading').map((h) => h.textContent)
+  const newForm = async () => {
+    renderAs(['sales.read', 'sales.config'])
+    fireEvent.click(await screen.findByRole('button', { name: 'New' }))
+    return screen.findByRole('dialog', { name: 'New connection' })
+  }
+  const form = (sheet: HTMLElement) => sheet.querySelector('form')!
+
+  it('SFTP: its sections, no Shopify ones; the less used folders under Advanced', async () => {
+    const sheet = await newForm()
+    expect(headings(form(sheet))).toEqual(['Basics', 'Login', 'Folders', 'Reading', 'Schedule'])
+    const details = within(sheet).getByLabelText('Error folder').closest('details')!
+    expect(details.open).toBe(false)
+    expect(within(sheet).getByLabelText('Inbound folder').closest('details')).toBeNull()
+    expect(within(sheet).queryByLabelText('API version')).toBeNull()
+  })
+
+  it('Shopify: no folders, no reading, no user name; a saved one sends what the server needs', async () => {
+    api.create.mockReset()
+    api.create.mockResolvedValue({ ...conn, id: 9, kind: 'SHOPIFY' })
+    api.get.mockResolvedValue({ ...conn, id: 9, kind: 'SHOPIFY' })
+    const sheet = await newForm()
+    fireEvent.click(within(sheet).getByRole('radio', { name: 'Shopify' }))
+    expect(headings(form(sheet))).toEqual(['Basics', 'Login', 'Shopify', 'Schedule'])
+    expect(within(sheet).queryByLabelText('User name')).toBeNull()
+    fireEvent.change(within(sheet).getByLabelText(/^Name/), { target: { value: 'store' } })
+    fireEvent.change(within(sheet).getByLabelText(/^Address/), { target: { value: 'x.myshopify.com' } })
+    fireEvent.change(within(sheet).getByLabelText(/^API version/), { target: { value: '2026-04' } })
+    fireEvent.change(within(sheet).getByLabelText(/^Partner/), { target: { value: 'SHOP' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.create).toHaveBeenCalledOnce())
+    const sent = api.create.mock.calls[0][0]
+    expect(sent).toMatchObject({ kind: 'SHOPIFY', after_read: 'LEAVE', stable_seconds: 60, port: 22 })  // required by the server: as before
+    for (const k of ['username', 'inbound_folder', 'host_key']) expect(sent).not.toHaveProperty(k)
+  })
+
+  it('after New, the connection opens on its Overview', async () => {
+    api.create.mockReset()
+    api.create.mockResolvedValue({ ...conn, id: 9, name: 'new-one' })
+    api.get.mockResolvedValue({ ...conn, id: 9, name: 'new-one' })
+    const sheet = await newForm()
+    for (const [label, value] of [[/^Name/, 'new-one'], [/^Address/, 'h'], [/^User name/, 'u'], [/^Password name/, 'SALES_SECRET_X'], [/^Inbound folder/, '/in']] as const) {
+      fireEvent.change(within(sheet).getByLabelText(label), { target: { value } })
+    }
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
+    const opened = await screen.findByRole('dialog', { name: 'new-one' })
+    expect(await within(opened).findByRole('list', { name: 'Set-up checklist' })).toBeInTheDocument()
+  })
+
+  it('no technical name in what the user reads', () => {
+    const text = JSON.stringify(connectionFields.map((f) => [f.label, f.hint]))
+    expect(text).not.toMatch(/host_key|secret_name|SALES_[A-Z]|FR-OB/)
+  })
+})
+

@@ -3,13 +3,13 @@ import { Controller, useForm, useWatch, type FieldValues, type Resolver, type Us
 import type { z } from 'zod'
 import { Autocomplete } from '../primitives/Autocomplete'
 import { Checkbox, CheckboxList } from '../primitives/Checkbox'
-import { DayChips, Segmented } from '../primitives/ChoiceControls'
+import { DayChips, PresetNumber, Segmented } from '../primitives/ChoiceControls'
 import type { ComboOption } from '../primitives/Combobox'
 import { DateInput, NumberInput, Textarea } from '../primitives/FieldInputs'
 import { Select } from '../primitives/Select'
 import { Button, FormField, Input } from '../primitives/shell'
 import { ErrorMessage } from './ErrorMessage'
-import { applyServerError, blankToEmpty, emptyToNull, hiddenFields, prepare } from './formValues'
+import { applyServerError, blankToEmpty, emptyToNull, hiddenFields, notShown, prepare, withDefaultsWhenHidden } from './formValues'
 import { Section } from './Section'
 import { zodResolver } from './zodResolver'
 
@@ -18,8 +18,11 @@ import { zodResolver } from './zodResolver'
 // Textarea, reference → Autocomplete over `loadOptions` (a code of another
 // record, e.g. an item or a partner), multiselect → CheckboxList over
 // `options` (an array of values), segmented → Segmented over a few short
-// `options`, days → DayChips (an array of values; `options` default to the week).
+// `options`, days → DayChips (an array of values; `options` default to the week),
+// presets → PresetNumber (a number: a few usual `options`, or Custom), note → a
+// line computed from the values (`note`; no value of its own).
 export type FieldType = 'text' | 'email' | 'number' | 'textarea' | 'checkbox' | 'select' | 'date' | 'reference' | 'multiselect' | 'segmented' | 'days'
+  | 'presets' | 'note'
 
 export interface FieldSpec {
   name: string
@@ -41,6 +44,10 @@ export interface FieldSpec {
    *  validated, and its value is not sent; what was typed comes back if it
    *  applies again. */
   showWhen?: (values: FieldValues) => boolean
+  /** With `showWhen`: a value the server needs whether or not it is shown, sent at its starting value. */
+  alwaysSent?: boolean
+  /** type note: the line, from the current values. */
+  note?: (values: FieldValues) => ReactNode
 }
 
 export interface SchemaFormProps {
@@ -70,8 +77,9 @@ export function SchemaForm({
 }: SchemaFormProps) {
   const resolver = useMemo<Resolver<FieldValues>>(() => {
     const inner = zodResolver(schema, (v) => hiddenFields(fields, v))
-    return (values, ctx, opts) => inner(prepare(values, fields), ctx, opts)
-  }, [schema, fields])
+    const start = blankToEmpty(defaultValues)
+    return (values, ctx, opts) => inner(prepare(withDefaultsWhenHidden(values, fields, start), fields), ctx, opts)
+  }, [schema, fields, defaultValues])
   const form = useForm<FieldValues>({
     resolver,
     defaultValues: blankToEmpty(defaultValues),
@@ -81,7 +89,7 @@ export function SchemaForm({
 
   const submit = form.handleSubmit(async (values) => {
     setError(null)
-    const off = hiddenFields(fields, form.getValues())
+    const off = notShown(fields, form.getValues())
     const out = changesOnly
       ? Object.fromEntries(Object.keys(dirtyFields).filter((k) => !off.includes(k)).map((k) => [k, emptyToNull(values[k])]))
       : Object.fromEntries(Object.entries(values).map(([k, v]) => [k, emptyToNull(v)]))
@@ -91,7 +99,8 @@ export function SchemaForm({
       // A refusal names its field (details.field), or several
       // (details.errors: [{field, message}] for a request the server's
       // schema refused); each message goes next to its input.
-      if (!applyServerError(form, fields, e, errorMessages)) setError(e)
+      // A field not on screen cannot show it: then it is said under the form.
+      if (!applyServerError(form, fields.filter((f) => !off.includes(f.name)), e, errorMessages)) setError(e)
     }
   })
 
@@ -131,11 +140,13 @@ export function SchemaFields({ form, fields, readOnly, idPrefix = 'sf' }: {
   form: UseFormReturn<FieldValues>; fields: FieldSpec[]; readOnly?: boolean; idPrefix?: string
 }) {
   const { errors } = form.formState
-  const hidden = hiddenFields(fields, useWatch({ control: form.control }))
+  const values = useWatch({ control: form.control })
+  const hidden = notShown(fields, values)
   const shown = fields.filter((f) => !hidden.includes(f.name))
   const renderFields = (group: FieldSpec[]) => (
     <>
       {group.map((f) => {
+        if (f.type === 'note') return <p key={f.name} className="text-sm font-medium text-neutral-700">{f.note?.(values)}</p>
         const id = `${idPrefix}-${f.name}`
         const err = errors[f.name]?.message
         const common = { id, disabled: readOnly || f.readOnly, 'aria-invalid': err ? true : undefined }
@@ -158,6 +169,13 @@ export function SchemaFields({ form, fields, readOnly, idPrefix = 'sf' }: {
           control = (
             <Controller control={form.control} name={f.name} render={({ field }) => (
               <Segmented id={id} value={field.value || null} onChange={field.onChange} onBlur={field.onBlur} options={f.options ?? []}
+                disabled={common.disabled} aria-label={f.label} aria-invalid={common['aria-invalid']} />
+            )} />
+          )
+        } else if (f.type === 'presets') {
+          control = (
+            <Controller control={form.control} name={f.name} render={({ field }) => (
+              <PresetNumber id={id} value={field.value} onChange={field.onChange} onBlur={field.onBlur} options={f.options ?? []}
                 disabled={common.disabled} aria-label={f.label} aria-invalid={common['aria-invalid']} />
             )} />
           )

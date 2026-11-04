@@ -7,7 +7,7 @@ import { ErrorMessage } from './ErrorMessage'
 import { AddressFields } from './AddressFields'
 import { ADDRESS_FIELDS } from './address'
 import { SchemaFields, type FieldSpec } from './SchemaForm'
-import { applyServerError, blankToEmpty, emptyToNull, hiddenFields, prepare } from './formValues'
+import { applyServerError, blankToEmpty, emptyToNull, hiddenFields, prepare, withDefaultsWhenHidden } from './formValues'
 import { zodResolver } from './zodResolver'
 
 export interface MasterDetailState<L> {
@@ -66,8 +66,9 @@ export function MasterDetailForm<L>({
   const known: FieldSpec[] = [...fields, ...addresses.flatMap((a) => ADDRESS_FIELDS.map((f) => ({ name: `${a.name}.${f}`, label: f })))]
   const resolver = useMemo<Resolver<FieldValues>>(() => {
     const inner = zodResolver(schema, (v) => hiddenFields(fields, v))
-    return (values, ctx, opts) => inner(prepare(values, fields), ctx, opts)
-  }, [schema, fields])
+    const start = blankToEmpty(defaultValues)
+    return (values, ctx, opts) => inner(prepare(withDefaultsWhenHidden(values, fields, start), fields), ctx, opts)
+  }, [schema, fields, defaultValues])
   const form = useForm<FieldValues>({ resolver, defaultValues: blankToEmpty(defaultValues) })
   const [lines, setLines] = useState<L[]>(spec.initial)
   const [error, setError] = useState<unknown>(null)

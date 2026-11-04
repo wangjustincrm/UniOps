@@ -13,6 +13,7 @@ import { ConfirmAction } from './ConfirmAction'
 import { ListPage } from './ListPage'
 import { SchemaForm, type FieldSpec } from './SchemaForm'
 import { useCrudResource } from '../resource/useCrudResource'
+import { requestOpen } from '../resource/viewRequests'
 import type { ImportReport, ResourceClient } from '../resource/ResourceClient'
 import { useCan } from './permissions'
 import { createNoticeStore } from './notices'
@@ -51,6 +52,12 @@ export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
   recordFacts?: (row: T) => RecordFact[]
   /** The sheet's tabs, given "Details" (the form): e.g. [details, history]. Default [details]. */
   detailTabs?: (row: T, details: RecordTab) => RecordTab[]
+  /** Buttons in the record sheet's header. */
+  recordActions?: (row: T) => ReactNode
+  /** The record sheet's size (default md): wider when its facts need the room. */
+  detailSize?: 'md' | 'lg' | 'xl'
+  /** After New: the new record opens in its sheet on this tab (otherwise the list just shows it). */
+  openAfterCreate?: string
   /** Each row's own actions (e.g. RowActions icons); never open the row. */
   rowActions?: (row: T) => ReactNode
   /** Shown between the header and the list (e.g. a related setting). */
@@ -99,7 +106,7 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
       errorMessages={props.errorMessages}
       notice={props.notice}
       notices={notices}
-      detailSize="md"
+      detailSize={props.detailSize ?? 'md'}
       renderDetail={(row, close) => (
         <RecordForm row={row} close={close} canWrite={canWrite} props={props}
           save={(values) => update.mutateAsync({ id: row.id, data: values as Partial<TUpdate>, version: row.version })}
@@ -126,7 +133,11 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
             defaultValues={props.emptyValues}
             errorMessages={props.errorMessages}
             onCancel={cancel}
-            onSubmit={async (values) => done(await create.mutateAsync(values as TCreate))}
+            onSubmit={async (values) => {
+              const created = await create.mutateAsync(values as TCreate)
+              done(created)
+              if (props.openAfterCreate) requestOpen(client.basePath, created.id, props.openAfterCreate)
+            }}
           />
         ),
       }}
@@ -215,6 +226,7 @@ function RecordForm<T extends Row, TCreate, TUpdate>({ row, close, canWrite, pro
           {!canWrite && <Badge variant="neutral">Read only</Badge>}
         </>}
         facts={props.recordFacts?.(row)}
+        actions={props.recordActions?.(row)}
         more={canWrite && row.active !== false
           ? [{ label: 'Deactivate', onSelect: () => setConfirm(true), opensDialog: true }] : undefined}
         tabs={props.detailTabs ? props.detailTabs(row, details) : [details]}

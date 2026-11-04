@@ -26,9 +26,20 @@ export function applyServerError(form: UseFormReturn<FieldValues>, fields: Field
 
 
 
-/** The fields that do not apply to these values (`showWhen`). */
-export function hiddenFields(fields: FieldSpec[], values: FieldValues): string[] {
+/** The fields not shown for these values (`showWhen`). */
+export function notShown(fields: FieldSpec[], values: FieldValues): string[] {
   return fields.filter((f) => f.showWhen && !f.showWhen(values)).map((f) => f.name)
+}
+
+/** The fields that do not apply to these values: not validated, not sent (an `alwaysSent` one still is). */
+export function hiddenFields(fields: FieldSpec[], values: FieldValues): string[] {
+  const off = notShown(fields, values)
+  return off.filter((n) => !fields.find((f) => f.name === n)?.alwaysSent)
+}
+
+/** A field not shown cannot be corrected: it is validated at its starting value, not at what was left in it. */
+export function withDefaultsWhenHidden(values: FieldValues, fields: FieldSpec[], defaults: FieldValues): FieldValues {
+  return { ...values, ...Object.fromEntries(notShown(fields, values).map((n) => [n, defaults[n]])) }
 }
 
 /** Before validation: an empty number or select is null, a number input's text a number. */
@@ -36,7 +47,7 @@ export function prepare(values: FieldValues, fields: FieldSpec[]): FieldValues {
   const out: FieldValues = { ...values }
   for (const f of fields) {
     const v = out[f.name]
-    if (f.type === 'number') {
+    if (f.type === 'number' || f.type === 'presets') {
       out[f.name] = v === '' || v === null || v === undefined ? null : typeof v === 'string' ? Number(v) : v
     } else if (f.type === 'select' || f.type === 'segmented' || f.type === 'reference' || f.type === 'date') {
       out[f.name] = v === '' || v === undefined ? null : v

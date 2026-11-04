@@ -453,16 +453,18 @@ TS
       # What happened goes through useNotices: an ad-hoc status / alert / live element in a feature is refused.
       control_probe src/features/__eslint_probe__.tsx "<p role=\"status\">Saved</p>" fires
       control_probe src/features/__eslint_probe__.tsx "<span aria-live=\"polite\">Saved</span>" fires
+      # A titled block is a Section: a raw h2 / h3 in a feature is refused.
+      control_probe src/features/__eslint_probe__.tsx "<h2>Title</h2>" fires
       # ...and a toast from a feature is refused the same way.
       probe src/features/__eslint_probe__.ts "import { useToast } from \"@/platform-ui\""
       npx vite build >/tmp/b.log 2>&1 || { echo "build failed"; tail -10 /tmp/b.log; exit 16; }
       grep -q "radix-popover-trigger-width" dist/assets/*.css || { echo "platform-ui classes missing from the built CSS"; exit 17; }
       # As written in CSS: hover:x → .hover\:x
       grep -qF "$SHELL_SELECTOR" dist/assets/*.css || { echo "shell-only class $SHELL_SENTINEL missing from the built CSS"; exit 19; }
-      echo "probe reported; 0 other type errors; import + layer rules pass; 7 planted import violations, 4 raw form controls, 2 hand-made dates, 2 raw tables, 2 raw forms, 2 raw sheets, 1 direct refetch, 2 ad-hoc messages and 1 toast caught, primitives admitted; library and shell classes in CSS"
+      echo "probe reported; 0 other type errors; import + layer rules pass; 7 planted import violations, 4 raw form controls, 2 hand-made dates, 2 raw tables, 2 raw forms, 2 raw sheets, 1 direct refetch, 2 ad-hoc messages, 1 toast and 1 raw heading caught, primitives admitted; library and shell classes in CSS"
     '
   rc=$?
-  if [[ $rc == 0 ]]; then ok "sales: TS5101 trap, import + layer rules, ESLint probes (imports, raw controls, raw tables, raw forms, raw sheets, direct refetch, ad-hoc messages, toasts), library + shell CSS"; else fail "sales checks (code $rc)"; fi
+  if [[ $rc == 0 ]]; then ok "sales: TS5101 trap, import + layer rules, ESLint probes (imports, raw controls, raw tables, raw forms, raw sheets, direct refetch, ad-hoc messages, toasts, raw headings), library + shell CSS"; else fail "sales checks (code $rc)"; fi
 fi
 
 echo

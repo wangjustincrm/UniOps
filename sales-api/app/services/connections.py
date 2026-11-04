@@ -274,7 +274,10 @@ class ShadowSettingService:
 
     @requires(READ)
     async def get(self) -> ShadowSetting:
-        return ShadowSetting(shadow_mode=await SETTINGS.get(self.uow.session, SHADOW_MODE))
+        from app.services.shadow import count_open_orders  # shadow → outbound → … : imported when used
+        s = self.uow.session
+        on = await SETTINGS.get(s, SHADOW_MODE)
+        return ShadowSetting(shadow_mode=on, open_orders=None if on else await count_open_orders(s))
 
     @requires(CONFIG)
     async def update(self, body: ShadowSetting) -> ShadowSetting:

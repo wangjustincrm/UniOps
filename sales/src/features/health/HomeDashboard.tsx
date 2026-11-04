@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
-  DateTimeCell, ErrorView, LocalTable, PageHeader, Section, Skeleton, StatCard, StatusCell, requestView, type ColumnDef,
+  Button, DateTimeCell, ErrorView, LocalTable, PageHeader, Section, Skeleton, StatCard, StatusCell, requestView, type ColumnDef,
   useRefresh, Hint, Muted,
 } from '@/platform-ui'
 import { fetchEvents } from '@/features/configuration/notifications/notificationsApi'
@@ -70,7 +70,7 @@ export function HomeDashboard() {
               {h.shadow_mode && <span className="text-warning-700">Shadow run on: nothing is sent</span>}
             </>
           ) : <Skeleton className="h-5 w-40" />}
-          <button type="button" className="font-medium text-primary-700 underline" onClick={() => go('/health')}>Open the health page</button>
+          <Button size="sm" variant="ghost" onClick={() => go('/health')}>Open the health page</Button>
         </div>
       </Section>
       <Section title="Last runs" plain level={2}>

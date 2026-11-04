@@ -365,22 +365,29 @@ async def _reference_for_key(s, key_raw: str | None, po: str | None) -> Document
 
 # ── switching the shadow run on ──────────────────────────────────────────────
 
-async def mark_open_orders(uow, *, run_id: int | None = None) -> int:
-    """At switch-on, every open order becomes Zoho's (shadow = true), so none
-    becomes eligible for a 940 when the shadow run ends (cutover risk found on
-    dev2, 2026-11-02). Open: not Shipped, not Cancelled, not historical, and no
-    live 940 (that order is already Sales'). Each change is audited; switching
-    off never clears the flag."""
-    s = uow.session
+def _open_orders():
+    """The orders switching the shadow run on marks: not Zoho's yet, not Shipped,
+    not Cancelled, not historical, and no live 940 (that order is already Sales')."""
     live = exists().where(and_(
         DocumentLink.entity_type == "order", DocumentLink.entity_id == Order.id,
         Document.id == DocumentLink.document_id, Document.kind == "940_EDI", Document.direction == "OUT",
         Document.file_status.in_([f.value for f in LIVE_940_FILE]),
         Document.ack_status.not_in((Ack.REJECTED.value, Ack.TIMEOUT.value))))
-    orders = list((await s.execute(select(Order).where(
-        Order.shadow.is_(False), Order.historical.is_(False),
-        Order.fulfillment_status.not_in((F.SHIPPED.value, F.CANCELLED.value)), ~live,
-    ).order_by(Order.id).with_for_update())).scalars())
+    return (Order.shadow.is_(False), Order.historical.is_(False),
+            Order.fulfillment_status.not_in((F.SHIPPED.value, F.CANCELLED.value)), ~live)
+
+
+async def count_open_orders(s) -> int:
+    """How many orders switching the shadow run on would mark (said before it is confirmed)."""
+    return (await s.execute(select(func.count()).select_from(Order).where(*_open_orders()))).scalar_one()
+
+
+async def mark_open_orders(uow, *, run_id: int | None = None) -> int:
+    """At switch-on, every open order becomes Zoho's (shadow = true), so none
+    becomes eligible for a 940 when the shadow run ends (cutover risk found on
+    dev2, 2026-11-02). Each change is audited; switching off never clears the flag."""
+    s = uow.session
+    orders = list((await s.execute(select(Order).where(*_open_orders()).order_by(Order.id).with_for_update())).scalars())
     for o in orders:
         o.shadow = True
     await s.flush()

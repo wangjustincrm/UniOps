@@ -97,7 +97,7 @@ const FACT_TONE: Record<FactTone, string> = {
 /** The record's key numbers, as tiles under the header. */
 function Facts({ facts }: { facts: RecordFact[] }) {
   return (
-    <dl aria-label="Key facts" className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+    <dl aria-label="Key facts" className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-[repeat(auto-fit,minmax(8rem,1fr))]">
       {facts.map((f) => (
         <div key={f.label} data-tone={f.tone ?? 'neutral'} className={cn('flex min-w-0 flex-col gap-0.5 rounded-lg border px-3 py-2', FACT_TONE[f.tone ?? 'neutral'])}>
           <dt className="truncate text-xs font-medium text-neutral-500">{f.label}</dt>

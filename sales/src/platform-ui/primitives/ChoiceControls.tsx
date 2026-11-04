@@ -1,5 +1,6 @@
-import { useRef, type KeyboardEvent } from 'react'
+import { useRef, useState, type KeyboardEvent } from 'react'
 import { cn } from '../lib/cn'
+import { NumberInput } from './FieldInputs'
 
 export interface Choice { value: string; label: string }
 
@@ -23,7 +24,7 @@ export function Segmented({ id, value, onChange, onBlur, options, disabled, 'ari
   }
   return (
     <div ref={box} id={id} role="radiogroup" aria-label={label} aria-invalid={invalid} onKeyDown={keys} onBlur={onBlur}
-      className="inline-flex max-w-full flex-wrap gap-0.5 rounded-lg border border-neutral-200 bg-neutral-50 p-0.5">
+      className="inline-flex w-fit max-w-full flex-wrap gap-0.5 rounded-lg border border-neutral-200 bg-neutral-50 p-0.5">
       {options.map((o, i) => (
         <button key={o.value} type="button" role="radio" aria-checked={o.value === value} disabled={disabled}
           tabIndex={i === Math.max(current, 0) ? 0 : -1} onClick={() => onChange(o.value)}
@@ -32,6 +33,31 @@ export function Segmented({ id, value, onChange, onBlur, options, disabled, 'ari
           {o.label}
         </button>
       ))}
+    </div>
+  )
+}
+
+const CUSTOM = 'custom'
+
+/** A number with a few usual values to pick, or Custom and any number. */
+export function PresetNumber({ id, value, onChange, onBlur, options, disabled, 'aria-label': label, 'aria-invalid': invalid }: {
+  id?: string; value: unknown; onChange: (v: number | string) => void; onBlur?: () => void; options: Choice[]; disabled?: boolean
+  'aria-label'?: string; 'aria-invalid'?: boolean
+}) {
+  const preset = options.some((o) => o.value === String(value))
+  const [custom, setCustom] = useState(!preset)
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Segmented id={id} aria-label={label} aria-invalid={invalid} disabled={disabled} onBlur={onBlur}
+        value={custom ? CUSTOM : String(value)} options={[...options, { value: CUSTOM, label: 'Custom' }]}
+        onChange={(v) => {
+          setCustom(v === CUSTOM)
+          if (v !== CUSTOM) onChange(Number(v))
+        }} />
+      {custom && (
+        <NumberInput aria-label={`${label}, custom`} className="w-24" disabled={disabled} aria-invalid={invalid} onBlur={onBlur}
+          value={value === null || value === undefined ? '' : String(value)} onChange={(e) => onChange(e.target.value)} />
+      )}
     </div>
   )
 }

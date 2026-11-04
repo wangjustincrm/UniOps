@@ -230,9 +230,14 @@ async def test_switching_on_marks_every_open_order_and_off_never_clears_it(edi):
     pending = await a_paid_order(edi, number=9302)     # open, before the switch-on
     old = await a_paid_order(edi, number=8001)         # historical: left alone
     async with edi.env.factory(OP) as u:
+        off = await ShadowSettingService(u).get()
+    assert off.open_orders == 1 and await edi.env.q("SELECT id FROM sales_orders WHERE shadow") == []  # said first; marks nothing
+    async with edi.env.factory(OP) as u:
         on = await ShadowSettingService(u).update(ShadowSetting(shadow_mode=True))
         await u.commit()
     assert on.marked_orders == 1
+    async with edi.env.factory(OP) as u:
+        assert (await ShadowSettingService(u).get()).open_orders is None  # only while it is off
     async with edi.env.factory(OP) as u:
         await ShadowSettingService(u).update(ShadowSetting(shadow_mode=False))
         await u.commit()

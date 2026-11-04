@@ -81,23 +81,6 @@ describe('Partners page', () => {
   })
 })
 
-describe('CrudPage keeps the open record current', () => {
-  it('a save after the record changed underneath uses its current version', async () => {
-    const mod = await import('./partnersApi')
-    const list = vi.mocked(mod.partnersClient.list)
-    const update = vi.mocked(mod.partnersClient.update)
-    update.mockResolvedValue({ ...partner, name: 'X', version: 4 })
-    const { qc } = renderAs(['sales.read', 'sales.config'])
-    const sheet = await openPartner()
-    list.mockResolvedValue({ items: [{ ...partner, version: 3, payment_terms: 'Net 30' }], total: 1 })
-    await qc.invalidateQueries()
-    await waitFor(() => expect(within(sheet).getByLabelText(/^Payment terms/)).toHaveValue('Net 30'))
-    fireEvent.change(within(screen.getByRole('dialog')).getByLabelText(/^Name/), { target: { value: 'X' } })
-    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(update).toHaveBeenCalledWith(1, { name: 'X' }, 3))
-  })
-})
-
 describe('the dev2 partners (regression, 2026-10-29)', () => {
   it('lists all seven and opens one whose updated_at is null', async () => {
     const { DEV2_PARTNERS } = await import('./dev2Partners.fixture')

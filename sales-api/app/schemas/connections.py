@@ -208,6 +208,8 @@ class ShadowSetting(BaseModel):
     shadow_mode: bool
     # In the answer to switching on: the open orders marked as Zoho's.
     marked_orders: int | None = None
+    # While it is off: the open orders switching it on would mark (read only; said before confirming).
+    open_orders: int | None = None
 
 
 class SchedulerSettings(BaseModel):

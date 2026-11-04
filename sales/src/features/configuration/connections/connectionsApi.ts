@@ -89,9 +89,17 @@ export const fetchEdiSettings = () => api.get<EdiSettings>('/config/edi-settings
 export const saveEdiSettings = (data: EdiSettings) => api.put<EdiSettings>('/config/edi-settings', data)
 
 /** The shadow run (§5.4): Zoho is live; Sales reads (Leave) and sends nothing. */
-export interface ShadowSetting { shadow_mode: boolean; marked_orders?: number | null }
+export interface ShadowSetting {
+  shadow_mode: boolean
+  marked_orders?: number | null
+  /** While off: the open orders switching it on would mark. */
+  open_orders?: number | null
+}
 export const fetchShadowSetting = () => api.get<ShadowSetting>('/config/shadow')
 export const saveShadowSetting = (data: ShadowSetting) => api.put<ShadowSetting>('/config/shadow', data)
+
+/** The scheduler's master switch (edited on Health → Scheduler). */
+export const fetchSchedulerPaused = () => api.get<{ paused: boolean }>('/config/scheduler')
 
 /** This connection's job now (sales.file.retry): ignores its schedule, never its single flight. */
 export const runConnectionNow = (id: number) => api.post<{ run_id: number }>(`${CONNECTIONS_PATH}/${id}/run-now`)
@@ -99,16 +107,40 @@ export const runConnectionNow = (id: number) => api.post<{ run_id: number }>(`${
 export const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
 
 /** "every 5 min, Mon–Fri 06:00–22:00" — the same words as sales-api's domain/schedule.py describe(). */
-export function describeSchedule(c: Pick<ConnectionRead, 'schedule_minutes' | 'active_from' | 'active_to' | 'active_days'>): string {
+export function describeSchedule(c: ScheduleFields): string {
   let out = `every ${c.schedule_minutes} min`
-  const days = (c.active_days ?? '').split(',').filter(Boolean)
-  if (days.length && days.length < 7) {
-    const idx = days.map((d) => DAYS.indexOf(d as (typeof DAYS)[number]))
-    const run = days.length > 2 && idx.every((v, i) => i === 0 || v === idx[i - 1] + 1)
-    out += ', ' + (run ? `${days[0]}–${days[days.length - 1]}` : days.join(' '))
-  }
+  const days = daysText((c.active_days ?? '').split(',').filter(Boolean))
+  if (days) out += `, ${days}`
   if (c.active_from && c.active_to) out += ` ${c.active_from.slice(0, 5)}–${c.active_to.slice(0, 5)}`
   return out
+}
+
+type ScheduleFields = Pick<ConnectionRead, 'schedule_minutes' | 'active_from' | 'active_to' | 'active_days'>
+
+/** "Mon–Fri", "Mon Fri"; nothing for every day. */
+function daysText(days: string[]): string | null {
+  if (!days.length || days.length >= 7) return null
+  const idx = days.map((d) => DAYS.indexOf(d as (typeof DAYS)[number]))
+  const run = days.length > 2 && idx.every((v, i) => i === 0 || v === idx[i - 1] + 1)
+  return run ? `${days[0]}–${days[days.length - 1]}` : days.join(' ')
+}
+
+/** The list's words: "Every 5 min · Mon–Fri 06:00–22:00", or "Paused". */
+export function scheduleLabel(c: ScheduleFields & Pick<ConnectionRead, 'schedule_paused'>): string {
+  if (c.schedule_paused) return 'Paused'
+  const when = [daysText((c.active_days ?? '').split(',').filter(Boolean)),
+    c.active_from && c.active_to ? `${c.active_from.slice(0, 5)}–${c.active_to.slice(0, 5)}` : null].filter(Boolean).join(' ')
+  return [`Every ${c.schedule_minutes} min`, when].filter(Boolean).join(' · ')
+}
+
+/** The form's sentence, live from its values: "Runs every 5 minutes, Mon–Fri, 06:00–22:00 Toronto". */
+export function scheduleSentence(v: { schedule_minutes?: unknown; schedule_paused?: unknown; active_from?: unknown; active_to?: unknown; active_days?: unknown }): string {
+  if (v.schedule_paused) return 'Paused: it runs only with Run now.'
+  const n = Number(v.schedule_minutes)
+  if (!n) return 'Choose how often it runs.'
+  const days = Array.isArray(v.active_days) ? DAYS.filter((d) => (v.active_days as string[]).includes(d)) : []
+  const from = String(v.active_from ?? '').trim(), to = String(v.active_to ?? '').trim()
+  return `Runs every ${n === 1 ? 'minute' : `${n} minutes`}, ${daysText([...days]) ?? 'every day'}, ${from && to ? `${from}–${to} Toronto` : 'all day'}`
 }
 
 const TORONTO_PARTS = new Intl.DateTimeFormat('en-CA', {

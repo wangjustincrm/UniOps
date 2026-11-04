@@ -18,14 +18,14 @@ describe('connection form schema', () => {
       inbound_folder: 'Required for an SFTP connection', secret_name: 'Required for an SFTP connection' })
   })
   it('MOVE needs a processed folder; the secret is a variable name, never a password', () => {
-    expect(issues(connectionUpdateSchema.safeParse({ ...valid, after_read: 'MOVE' }))).toEqual({ processed_folder: 'Required when after-read is MOVE' })
+    expect(issues(connectionUpdateSchema.safeParse({ ...valid, after_read: 'MOVE' }))).toEqual({ processed_folder: 'Needed when the file is moved after reading' })
     expect(issues(connectionCreateSchema.safeParse({ ...valid, secret_name: 'hunter2!' }))).toEqual({ secret_name: SECRET_NAME_MESSAGE })
   })
   it('host_key takes only a public key line; a token never; SHOPIFY none; Excel numbers refused', () => {
     expect(issues(connectionCreateSchema.safeParse({ ...valid, host_key: 'shpat_0123456789abcdef' }))).toEqual({ host_key: HOST_KEY_MESSAGE })
     expect(issues(connectionCreateSchema.safeParse({ ...valid, host_key: 'correct horse battery' }))).toEqual({ host_key: HOST_KEY_MESSAGE })
     expect(connectionCreateSchema.safeParse({ ...valid, host_key: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOYyzHbjnpUgsd3f+LSfKEJkQUehyBzwkRpZ0hBihPDh' }).success).toBe(true)
-    expect(issues(connectionCreateSchema.safeParse({ ...valid, kind: 'SHOPIFY', host_key: 'ssh-ed25519 AAAA' }))).toMatchObject({ host_key: 'host_key must be empty for a SHOPIFY connection' })
+    expect(issues(connectionCreateSchema.safeParse({ ...valid, kind: 'SHOPIFY', host_key: 'ssh-ed25519 AAAA' }))).toMatchObject({ host_key: 'A Shopify connection has no server key' })
     expect(issues(connectionCreateSchema.safeParse({ ...valid, username: '1.22E+11' }))).toEqual({ username: EXCEL_MESSAGE })
   })
 
