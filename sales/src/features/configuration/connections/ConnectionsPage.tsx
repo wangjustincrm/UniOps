@@ -15,7 +15,7 @@ import {
   type ConnectionCreate, type ConnectionRead, type ConnectionUpdate,
 } from './connectionsApi'
 import {
-  connectionCreateSchema, connectionEmptyValues, connectionFieldLabels, connectionFields, connectionToFormValues, connectionUpdateSchema,
+  connectionCreateSchema, connectionEmptyValues, connectionFieldLabels, connectionFields, connectionSettingsFields, connectionToFormValues, connectionUpdateSchema,
 } from './connectionSchema'
 
 // Kind, Host, Mode and After read stay in the column chooser (fields of the list's /meta, hidden at first).
@@ -60,6 +60,7 @@ export default function ConnectionsPage() {
       createSchema={connectionCreateSchema}
       updateSchema={connectionUpdateSchema}
       fields={connectionFields}
+      editFields={connectionSettingsFields}
       immutableOnEdit={['name']}
       emptyValues={connectionEmptyValues}
       toFormValues={connectionToFormValues}
@@ -85,7 +86,7 @@ export default function ConnectionsPage() {
         { id: 'overview', label: 'Overview', tone: ['danger', 'warning'].includes(connectionHealth(c).tone) ? connectionHealth(c).tone as 'danger' | 'warning' : undefined,
           render: () => <ConnectionChecklist connection={c} /> },
         { ...details, label: 'Settings' },
-        { id: 'schedule', label: 'Schedule & runs', tone: c.last_run_status === 'FAILED' ? 'danger' : undefined,
+        { id: 'schedule', label: 'Schedule', tone: c.last_run_status === 'FAILED' ? 'danger' : undefined,
           render: () => <><SchedulerOffBanner /><ConnectionSchedule connection={c} /></> },
         { id: 'files', label: 'Files', render: () => <ConnectionFiles connection={c} /> },
         historyTab('connections', c.id, c.version, fetchConnectionAudit),

@@ -90,5 +90,3 @@ export const fetchHealth = () => api.get<HealthRead>('/operations/health')
 export const fetchDashboard = () => api.get<DashboardRead>('/operations/dashboard')
 export const resolveInbox = (key: string) => api.get<InboxTarget>(`/inbox/${encodeURIComponent(key)}`)
 
-export interface SchedulerSettings { paused: boolean; system_minutes: number }
-export const saveScheduler = (body: SchedulerSettings) => api.put<SchedulerSettings>('/config/scheduler', body)

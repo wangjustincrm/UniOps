@@ -28,7 +28,7 @@ export function connectionHealth(c: ConnectionRead): ConnectionHealth {
   }
   if (c.last_run_status === 'FAILED') {
     return { state: 'last_run_failed', label: 'Last run failed', tone: 'danger',
-      tip: `${c.last_error ?? c.last_run_summary ?? 'The last run failed.'} See Schedule & runs, then Run now.` }
+      tip: `${c.last_error ?? c.last_run_summary ?? 'The last run failed.'} See its Schedule tab, then Run now.` }
   }
   if (c.last_run_status === 'PARTIAL') {
     return { state: 'last_run_partial', label: 'Last run partial', tone: 'warning',

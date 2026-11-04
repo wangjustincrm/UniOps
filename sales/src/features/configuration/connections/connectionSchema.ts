@@ -35,16 +35,25 @@ const fields = {
   page_size: z.number().int().min(1, 'From 1').max(250, 'At most 250').nullable().optional(),
   order_number_cutoff: z.number().int().min(0).nullable().optional(),
   partner_code: optional(50),
-  // The schedule (user 2026-11-02): times as HH:MM (Toronto), days as a list — sent as "06:00:00" and "Mon,Fri".
+  active: z.boolean(),
+}
+// The schedule (user 2026-11-02): times as HH:MM (Toronto), days as a list — sent as "06:00:00" and "Mon,Fri".
+const schedule = {
   schedule_minutes: z.number({ error: 'Enter minutes' }).int('Whole minutes').min(1, 'At least 1').max(1440, 'At most 1440'),
   schedule_paused: z.boolean(),
   active_from: clock, active_to: clock,
   active_days: z.array(z.enum(DAYS)).transform((d) => (d.length ? DAYS.filter((x) => d.includes(x)).join(',') : null)),
-  active: z.boolean(),
 }
 
 type Values = { kind?: string; after_read?: string; processed_folder?: string | null; host_key?: string | null; host?: string | null; partner_code?: string | null; active_from?: string | null; active_to?: string | null } & Record<string, unknown>
 const SFTP_REQUIRED = ['host', 'username', 'inbound_folder', 'secret_name'] as const
+
+function scheduleRules(v: Values, ctx: z.RefinementCtx) {
+  if (!String(v.active_from ?? '').trim() !== !String(v.active_to ?? '').trim()) {
+    const missing = String(v.active_from ?? '').trim() ? 'active_to' : 'active_from'
+    ctx.addIssue({ code: 'custom', path: [missing], message: 'Give both the start and the end, or neither' })
+  }
+}
 
 function rules(v: Values, ctx: z.RefinementCtx) {
   if (v.kind === 'SFTP') {
@@ -63,17 +72,16 @@ function rules(v: Values, ctx: z.RefinementCtx) {
   } else if (String(v.partner_code ?? '').trim()) {
     ctx.addIssue({ code: 'custom', path: ['partner_code'], message: "Only for Shopify: an SFTP connection's partner comes from each file" })
   }
-  if (!String(v.active_from ?? '').trim() !== !String(v.active_to ?? '').trim()) {
-    const missing = String(v.active_from ?? '').trim() ? 'active_to' : 'active_from'
-    ctx.addIssue({ code: 'custom', path: [missing], message: 'Give both the start and the end, or neither' })
-  }
+  scheduleRules(v, ctx)
   if (v.after_read === 'MOVE' && !String(v.processed_folder ?? '').trim()) {
     ctx.addIssue({ code: 'custom', path: ['processed_folder'], message: 'Needed when the file is moved after reading' })
   }
 }
 
-export const connectionCreateSchema = z.object({ name: z.string().trim().min(1, 'Required').max(100), ...fields }).superRefine(rules)
+export const connectionCreateSchema = z.object({ name: z.string().trim().min(1, 'Required').max(100), ...fields, ...schedule }).superRefine(rules)
 export const connectionUpdateSchema = z.object(fields).superRefine(rules)
+/** The Schedule tab's form. */
+export const connectionScheduleSchema = z.object(schedule).superRefine(scheduleRules)
 
 const folderLabel: Record<(typeof FOLDERS)[number], string> = {
   inbound_folder: 'Inbound folder', outbound_folder: 'Outbound folder', processed_folder: 'Processed folder',
@@ -83,6 +91,18 @@ const folderLabel: Record<(typeof FOLDERS)[number], string> = {
 const sftp = (v: FieldValues) => v.kind === 'SFTP'
 const shopify = (v: FieldValues) => v.kind === 'SHOPIFY'
 const every = [5, 10, 15, 30, 60].map((n) => ({ value: String(n), label: `${n} min` }))
+
+/** A connection's schedule: edited on its Schedule tab, and in the New form (`connectionFields`). */
+const scheduleSpecs: FieldSpec[] = [
+  { name: 'schedule_minutes', label: 'Run every', type: 'presets', options: every, required: true,
+    hint: 'Each run reads the connection and takes what it stored through (850s, 997s, 945s, 944s). Custom: minutes.' },
+  { name: 'active_days', label: 'Days', type: 'days', hint: 'None chosen: every day.' },
+  { name: 'active_from', label: 'From (Toronto time)', placeholder: '06:00', hint: 'Empty: all day. An end before the start crosses midnight.' },
+  { name: 'active_to', label: 'To (Toronto time)', placeholder: '22:00' },
+  { name: 'schedule_paused', label: 'Pause the schedule', type: 'checkbox' },
+  { name: 'schedule_sentence', label: 'In words', type: 'note', note: scheduleSentence },
+]
+export const scheduleFields: FieldSpec[] = scheduleSpecs.map((f) => ({ ...f, section: 'Schedule' }))
 
 export const connectionFields: FieldSpec[] = [
   { name: 'name', label: 'Name', required: true, section: 'Basics', hint: 'Cannot be changed after the connection is created.' },
@@ -117,14 +137,11 @@ export const connectionFields: FieldSpec[] = [
   { name: 'order_number_cutoff', label: 'Order number cut-off', type: 'number', section: 'Shopify', showWhen: shopify,
     hint: 'Orders numbered below it are historical and never sent.' },
 
-  { name: 'schedule_minutes', label: 'Run every', type: 'presets', options: every, required: true, section: 'Schedule',
-    hint: 'Each run reads the connection and takes what it stored through (850s, 997s, 945s, 944s). Custom: minutes.' },
-  { name: 'active_days', label: 'Days', type: 'days', section: 'Schedule', hint: 'None chosen: every day.' },
-  { name: 'active_from', label: 'From (Toronto time)', placeholder: '06:00', section: 'Schedule', hint: 'Empty: all day. An end before the start crosses midnight.' },
-  { name: 'active_to', label: 'To (Toronto time)', placeholder: '22:00', section: 'Schedule' },
-  { name: 'schedule_paused', label: 'Pause the schedule', type: 'checkbox', section: 'Schedule' },
-  { name: 'schedule_sentence', label: 'In words', type: 'note', section: 'Schedule', note: scheduleSentence },
+  ...scheduleFields,
 ]
+
+/** The Settings tab: everything but the schedule, which has its own tab. */
+export const connectionSettingsFields = connectionFields.filter((f) => !scheduleFields.includes(f))
 
 /** The server's field names, in the form's words (its refusals and CSV rows name them). */
 export const connectionFieldLabels: Record<string, string> = Object.fromEntries(

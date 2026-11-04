@@ -16,8 +16,9 @@ and run records (`sales_runs.scope`):
   shipped orders move toward invoicing, the outbox sends, late 940 / 943s time
   out, and Zoho's reference files are compared during the shadow run.
 
-`scheduler.paused` is the master switch for every job; the environment's
-SALES_SCHEDULER_ENABLED decides whether the loop runs at all. One job's
+`scheduler.paused` is the user's switch for every job (Automatic runs, Off
+until someone turns it on); the environment's SALES_SCHEDULER_ENABLED says
+whether this server may run them at all. One job's
 failure never stops the others (AC-OB-47); a latched connection is skipped
 quietly — it was reported when it latched (AC-OB-48). Single flight per job and
 scope (AC-OB-46); "Run now" ignores the schedule, never the single flight.

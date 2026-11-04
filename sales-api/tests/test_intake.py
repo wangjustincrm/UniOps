@@ -349,11 +349,20 @@ async def test_ac46_a_run_left_running_is_closed_as_failed_by_the_next_cycle(env
     assert [r["status"] for r in rows] == ["FAILED", "SUCCEEDED"] and rows[0]["error"].startswith("stale")
 
 
+async def automatic_runs_on(factory):
+    """Automatic runs are Off until someone turns them on."""
+    from app.services.settings import SCHEDULER_PAUSED, SETTINGS
+    async with factory(SYSTEM_ACTOR) as u:
+        await SETTINGS.set(u.session, SCHEDULER_PAUSED, False)
+        await u.commit()
+
+
 async def test_ac47_one_unreachable_partner_does_not_stop_the_others(env):
     bad = await env.add_conn(name="a-unreachable", folder="/in-a")
     await env.add_conn(name="b-fine", folder="/in-b")
     env.fake.fail_for[(bad.id, "list")] = OSError("connection timed out")
     env.fake.files["/in-b/a.945"] = x12("945")
+    await automatic_runs_on(env.factory)
     await make_scheduler(env).tick()  # each connection its own job: never due yet, so both run
     runs = {r["scope"]: r for r in await env.q("SELECT scope, status, summary FROM sales_runs WHERE job = 'sales_connection'")}
     assert runs[f"connection:{bad.id}"]["status"] == "PARTIAL"

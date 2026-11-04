@@ -213,8 +213,16 @@ class ShadowSetting(BaseModel):
 
 
 class SchedulerSettings(BaseModel):
-    """The master switch for every job and the system job's interval (Health → Scheduler)."""
-    model_config = ConfigDict(extra="forbid")
-
+    """Automatic runs (`paused` = Off) and the system job's interval; `enabled` is whether
+    this server may run them at all (SALES_SCHEDULER_ENABLED: read only)."""
     paused: bool
     system_minutes: Minutes
+    enabled: bool = False
+
+
+class SchedulerUpdate(BaseModel):
+    """What changes, and only that: saving the minutes never turns automatic runs on again."""
+    model_config = ConfigDict(extra="forbid")
+
+    paused: bool | None = None
+    system_minutes: Minutes | None = None

@@ -8,8 +8,9 @@ out of open-work cards (the orders list leaves them out by default).
 Health: PASSED, WARNING or FAILED (FR-OB-52a), the worst check decides.
 FAILED — a required setting missing; an active connection with its
 authentication latch set, or the warehouse connection inactive; more than one
-cycle RUNNING or one stuck; the scheduler paused longer than the alarm.
-WARNING — the scheduler paused (within the alarm) or not running here; failed
+cycle RUNNING or one stuck. Automatic runs Off is a state someone chose: it
+passes, however long it lasts.
+WARNING — automatic runs not available on this server, or a job overdue; failed
 files; rejected or timed-out ACKs; 945 / 944 exceptions; transfer
 discrepancies; failed or long-queued sends; open tasks older than the set age.
 The shadow run and the two send switches are shown as they are.
@@ -25,7 +26,7 @@ from sqlalchemy import and_, func, select
 from app.domain.status import Fulfillment as F
 from app.domain.status import Invoice as Inv
 from app.integrations.epms_tasks import shared_tasks_table
-from app.models.config import Connection, Setting as SettingRow
+from app.models.config import Connection
 from app.models.documents import Run
 from app.models.records import OutboxRecord
 from app.models.shipments import Shipment, ShipmentRow
@@ -41,7 +42,7 @@ from app.services.operations import DocumentRepository
 from app.services.order_views import OrderRepository
 from app.services.problems import DOCUMENT_TYPE
 from app.services.settings import (
-    EDI_CONNECTION_ID, OPERATOR_USER_ID, OUTBOX_BACKLOG_MINUTES, PAUSED_ALARM_MINUTES,
+    EDI_CONNECTION_ID, OPERATOR_USER_ID, OUTBOX_BACKLOG_MINUTES,
     SCHEDULER_PAUSED, SETTINGS, SHADOW_MODE, SYSTEM_MINUTES, TASK_AGE_HOURS,
 )
 from app.services.transfer_views import TransferRepository
@@ -163,23 +164,17 @@ class Health:
         enabled = bool(getattr(self.settings, "SALES_SCHEDULER_ENABLED", False))
         last = f"last successful run {last_ok:%Y-%m-%d %H:%M} UTC" if last_ok else "no successful run yet"
         twice = [k for k, n in _counts(f"{r.job}|{r.scope}" for r in running).items() if n > 1]
-        overdue = [j.label for j in jobs if j.overdue] if enabled else []
+        overdue = [j.label for j in jobs if j.overdue]
         if twice:
             add("scheduler", "Scheduler", FAILED, f"a job is RUNNING twice at once: {', '.join(twice)}", link="/runs")
         elif stale:
             add("scheduler", "Scheduler", FAILED, f"a cycle is stuck RUNNING since {stale[0].started_at:%Y-%m-%d %H:%M} UTC",
                 link="/runs")
-        elif paused:
-            row = (await self.s.execute(select(SettingRow).where(SettingRow.key == SCHEDULER_PAUSED.key))).scalar_one_or_none()
-            since = (row.updated_at or row.created_at) if row is not None else None
-            alarm = await SETTINGS.get(self.s, PAUSED_ALARM_MINUTES)
-            over = since is not None and since < now - timedelta(minutes=alarm)
-            add("scheduler", "Scheduler", FAILED if over else WARNING,
-                f"paused{f' since {since:%Y-%m-%d %H:%M} UTC' if since else ''}"
-                f"{f' — longer than {alarm} minutes' if over else ''}; {last}", link="/runs")
         elif not enabled:
-            add("scheduler", "Scheduler", WARNING, f"not running in this environment (SALES_SCHEDULER_ENABLED off); {last}",
+            add("scheduler", "Scheduler", WARNING, f"not available on this server (SALES_SCHEDULER_ENABLED off); {last}",
                 link="/runs")
+        elif paused:
+            add("scheduler", "Scheduler", PASSED, f"automatic runs are off; {last}", link="/runs")
         elif overdue:
             add("scheduler", "Scheduler", WARNING, f"overdue: {', '.join(overdue)}; {last}", link="/runs")
         else:
@@ -248,8 +243,9 @@ class Health:
 
     async def jobs(self, now: datetime) -> list[JobRead]:
         """Every job with its last and next run. Overdue: more than 3 intervals
-        past its next run while it should run (not paused, inside its window)."""
-        master = await SETTINGS.get(self.s, SCHEDULER_PAUSED)
+        past its next run while it should run (automatic runs On here, not
+        paused, inside its window)."""
+        master = (await SETTINGS.get(self.s, SCHEDULER_PAUSED)) or not getattr(self.settings, "SALES_SCHEDULER_ENABLED", False)
         minutes = await SETTINGS.get(self.s, SYSTEM_MINUTES)
         last = (await self.s.execute(select(Run).where(Run.scope == SYSTEM_SCOPE).order_by(Run.started_at.desc())
                                      .limit(1))).scalar_one_or_none()

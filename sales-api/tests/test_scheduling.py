@@ -15,7 +15,7 @@ from app.platform.actors import SYSTEM_ACTOR
 from app.services.settings import SCHEDULER_PAUSED, SETTINGS
 import pytest_asyncio
 
-from tests.test_intake import env, make_scheduler, x12  # noqa: F401 — env is a fixture
+from tests.test_intake import automatic_runs_on, env, make_scheduler, x12  # noqa: F401 — env is a fixture
 from tests.test_operations_api import C, NOBODY, OP, READER, RETRY, make_conn
 from tests.test_operations_api import api as ops_api  # noqa: F401 — a fixture
 
@@ -92,6 +92,7 @@ async def test_a_connection_runs_when_due_and_writes_its_last_and_next_run(e):
     c = await e.add_conn()
     e.fake.files["/in/a.945"] = x12("945")
     audit_before = await e.q("SELECT id FROM sales_audit WHERE entity = 'sales_connections'")
+    await automatic_runs_on(e.factory)
     sched = make_scheduler(e)
     [conn_run, system_run] = await sched.tick()  # never ran: due now; the system job too
     assert (conn_run.scope, system_run.scope) == (f"connection:{c.id}", "system")
@@ -145,6 +146,7 @@ async def test_a_failed_run_is_written_on_its_connection_and_the_system_job_stil
     async def boom(*a, **k):
         raise RuntimeError("disk full")
     monkeypatch.setattr(e.intake, "run_pass", boom)
+    await automatic_runs_on(e.factory)
     sched = make_scheduler(e)
     runs = await sched.tick()
     assert [(r.scope, r.status) for r in runs] == [(f"connection:{c.id}", "FAILED"), ("system", "SUCCEEDED")]
@@ -207,10 +209,10 @@ async def test_run_now_per_connection_ignores_the_schedule_not_its_single_flight
 
 
 async def test_scheduler_settings_and_the_health_job_list(http):
-    assert (await http.get("/api/v1/config/scheduler", headers=READER)).json() == {"paused": False, "system_minutes": 1}
+    assert (await http.get("/api/v1/config/scheduler", headers=READER)).json() == {"paused": True, "system_minutes": 1, "enabled": False}
     assert (await http.put("/api/v1/config/scheduler", json={"paused": True, "system_minutes": 2}, headers=READER)).status_code == 403
     r = await http.put("/api/v1/config/scheduler", json={"paused": True, "system_minutes": 2}, headers=OP)
-    assert r.status_code == 200 and r.json() == {"paused": True, "system_minutes": 2}
+    assert r.status_code == 200 and r.json() == {"paused": True, "system_minutes": 2, "enabled": False}
     assert (await http.put("/api/v1/config/scheduler", json={"paused": False, "system_minutes": 0}, headers=OP)).status_code == 422
     c = await make_conn(http)
     await http.put(f"{C}/{c['id']}?version=1", json={"active_from": "06:00:00", "active_to": "22:00:00",
@@ -219,7 +221,7 @@ async def test_scheduler_settings_and_the_health_job_list(http):
     jobs = {j["scope"]: j for j in h["jobs"]}
     assert jobs["system"]["interval_minutes"] == 2 and jobs["system"]["paused"] is True
     assert jobs[f"connection:{c['id']}"]["schedule"] == "every 5 min, Mon–Fri 06:00–22:00"
-    assert jobs[f"connection:{c['id']}"]["paused"] is True  # the master switch is on
+    assert jobs[f"connection:{c['id']}"]["paused"] is True  # automatic runs are off
     assert (h["scheduler_paused"], h["system_minutes"]) == (True, 2)
     audit = await http.get("/api/v1/config/scheduler", headers=NOBODY)
     assert audit.status_code == 403
@@ -231,6 +233,7 @@ async def test_a_job_overdue_by_more_than_three_intervals_is_flagged(http):
         await u.session.execute(sa.update(Connection.__table__).where(Connection.__table__.c.id == c["id"]).values(
             next_run_at=datetime.now(UTC) - timedelta(minutes=16)))  # 5-minute schedule: more than 3 intervals late
         await u.commit()
+    await automatic_runs_on(http.runtime.uow_factory)
     from app.core.config import settings
     settings_on = settings.model_copy(update={"SALES_SCHEDULER_ENABLED": True})
     from app.services.health import Health
@@ -280,12 +283,11 @@ async def test_connections_say_whether_the_scheduler_runs_and_which_are_overdue(
         await u.session.execute(sa.update(Connection.__table__).values(next_run_at=datetime.now(UTC) - timedelta(minutes=30)))
         await u.session.execute(sa.update(Connection.__table__).where(Connection.__table__.c.id == p["id"]).values(schedule_paused=True))
         await u.commit()
-    # off (dev and test): nothing ever runs by itself — said once, in the list's meta; no row is "overdue"
-    assert (await http.get(f"{C}/meta", headers=READER)).json()["scheduler_enabled"] is False
+    await automatic_runs_on(http.runtime.uow_factory)
+    # not available here (dev and test): nothing ever runs by itself; no row is "overdue"
     rows = {x["id"]: x for x in (await http.get(C, headers=READER)).json()["items"]}
     assert rows[c["id"]]["overdue"] is False
     monkeypatch.setattr(ConnectionService, "settings", SimpleNamespace(SALES_SCHEDULER_ENABLED=True))
-    assert (await http.get(f"{C}/meta", headers=READER)).json()["scheduler_enabled"] is True
     rows = {x["id"]: x for x in (await http.get(C, headers=READER)).json()["items"]}
     assert rows[c["id"]]["overdue"] is True
     assert rows[p["id"]]["overdue"] is False  # paused: never overdue
@@ -301,6 +303,7 @@ async def test_health_lists_each_overdue_connection_as_an_error(http):
         await u.session.execute(sa.update(Connection.__table__).where(Connection.__table__.c.id == c["id"]).values(
             next_run_at=datetime.now(UTC) - timedelta(minutes=30)))
         await u.commit()
+    await automatic_runs_on(http.runtime.uow_factory)
     from app.core.config import settings
     from app.services.health import Health
     async with http.runtime.uow_factory(SYSTEM_ACTOR) as u:

@@ -26,7 +26,7 @@ from app.platform.services import CrudService
 from app.platform.views import Preset
 from app.schemas.connections import (
     ConnectionCreate, ConnectionRead, ConnectionTestRead, ConnectionUpdate, EdiSettings, FolderCheckRead, HostKeyRead,
-    SchedulerSettings, ShadowSetting,
+    SchedulerSettings, SchedulerUpdate, ShadowSetting,
 )
 from app.services.cycle import window_of
 from app.services.intake import ConnectionSnapshot
@@ -105,11 +105,6 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
 
     def scheduler_enabled(self) -> bool:
         return bool(getattr(self.settings, "SALES_SCHEDULER_ENABLED", False))
-
-    async def meta(self) -> dict[str, Any]:
-        """The list's fields, and whether the scheduler runs here at all (when it
-        does not, a Next run never comes: the page says so)."""
-        return {**await super().meta(), "scheduler_enabled": self.scheduler_enabled()}
 
     async def list(self, spec: QuerySpec):
         """Each row says whether its next run is overdue: only when the scheduler
@@ -295,8 +290,8 @@ class ShadowSettingService:
 
 
 class SchedulerSettingsService:
-    """The scheduler's master switch and the system job's interval (Health →
-    Scheduler): sales.config to change; audited (sales_settings is Audited)."""
+    """Automatic runs and the system job's interval (Connections → the Automatic
+    runs card): sales.config to change; audited (sales_settings is Audited)."""
 
     def __init__(self, uow) -> None:
         self.uow = uow
@@ -305,12 +300,19 @@ class SchedulerSettingsService:
     async def get(self) -> SchedulerSettings:
         s = self.uow.session
         return SchedulerSettings(paused=await SETTINGS.get(s, SCHEDULER_PAUSED),
-                                 system_minutes=await SETTINGS.get(s, SYSTEM_MINUTES))
+                                 system_minutes=await SETTINGS.get(s, SYSTEM_MINUTES),
+                                 enabled=bool(app_settings.SALES_SCHEDULER_ENABLED))
 
     @requires(CONFIG)
-    async def update(self, body: SchedulerSettings) -> SchedulerSettings:
+    async def update(self, body: SchedulerUpdate) -> SchedulerSettings:
         s = self.uow.session
-        self.uow.set_reason("scheduler settings")
-        await SETTINGS.set(s, SCHEDULER_PAUSED, body.paused)
-        await SETTINGS.set(s, SYSTEM_MINUTES, body.system_minutes)
-        return body
+        self.uow.set_reason("scheduler settings" if body.paused is None
+                            else "automatic runs off" if body.paused else "automatic runs on")
+        now = await SchedulerSettingsService.get.__wrapped__(self)  # already authorised; read before the writes
+        if body.paused is not None:
+            await SETTINGS.set(s, SCHEDULER_PAUSED, body.paused)
+            now.paused = body.paused
+        if body.system_minutes is not None:
+            await SETTINGS.set(s, SYSTEM_MINUTES, body.system_minutes)
+            now.system_minutes = body.system_minutes
+        return now

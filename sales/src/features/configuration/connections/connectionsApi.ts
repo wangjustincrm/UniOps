@@ -98,8 +98,11 @@ export interface ShadowSetting {
 export const fetchShadowSetting = () => api.get<ShadowSetting>('/config/shadow')
 export const saveShadowSetting = (data: ShadowSetting) => api.put<ShadowSetting>('/config/shadow', data)
 
-/** The scheduler's master switch (edited on Health → Scheduler). */
-export const fetchSchedulerPaused = () => api.get<{ paused: boolean }>('/config/scheduler')
+/** Automatic runs: `paused` is the user's switch (Off), `enabled` whether this server may run them at all. */
+export interface SchedulerSettings { paused: boolean; system_minutes: number; enabled: boolean }
+export const fetchSchedulerSettings = () => api.get<SchedulerSettings>('/config/scheduler')
+/** Only what changes: saving the minutes never touches the switch. */
+export const saveSchedulerSettings = (data: { paused?: boolean; system_minutes?: number }) => api.put<SchedulerSettings>('/config/scheduler', data)
 
 /** This connection's job now (sales.file.retry): ignores its schedule, never its single flight. */
 export const runConnectionNow = (id: number) => api.post<{ run_id: number }>(`${CONNECTIONS_PATH}/${id}/run-now`)

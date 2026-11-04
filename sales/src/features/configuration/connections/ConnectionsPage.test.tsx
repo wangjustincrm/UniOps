@@ -22,17 +22,17 @@ const api = vi.hoisted(() => ({
   test: vi.fn(), pin: vi.fn(), clear: vi.fn(), importCsv: vi.fn(),
   edi: vi.fn(async (): Promise<{ connection_id: number | null; ack_timeout_minutes: number }> => ({ connection_id: null, ack_timeout_minutes: 120 })), saveEdi: vi.fn(),
   shadow: vi.fn(async (): Promise<{ shadow_mode: boolean; open_orders?: number | null }> => ({ shadow_mode: true })), saveShadow: vi.fn(),
-  paused: vi.fn(async () => ({ paused: false })), create: vi.fn(), get: vi.fn(),
+  scheduler: vi.fn(async () => ({ paused: false, system_minutes: 5, enabled: true })), saveScheduler: vi.fn(), create: vi.fn(), get: vi.fn(),
   runNow: vi.fn(), runs: vi.fn(async (): Promise<{ items: unknown[]; total: number }> => ({ items: [], total: 0 })), update: vi.fn(),
   list: vi.fn(), getRun: vi.fn(),
-  meta: vi.fn(async () => ({ version: 1, searchable: true, default_sort: [], fields: [], views: [], scheduler_enabled: true })),
+  meta: vi.fn(async () => ({ version: 1, searchable: true, default_sort: [], fields: [], views: [] })),
 }))
 vi.mock('./connectionsApi', async (orig) => {
   const real = await orig<typeof import('./connectionsApi')>()
   return {
     ...real,
     connectionsClient: { ...real.connectionsClient, list: api.list, importCsv: api.importCsv, update: api.update, meta: api.meta, create: api.create, get: api.get },
-    fetchSchedulerPaused: api.paused,
+    fetchSchedulerSettings: api.scheduler, saveSchedulerSettings: api.saveScheduler,
     runConnectionNow: api.runNow,
     fetchConnectionAudit: vi.fn(async () => []),
     testConnection: api.test, pinHostKey: api.pin, clearAuthLatch: api.clear,
@@ -67,6 +67,7 @@ beforeEach(() => {
   api.list.mockResolvedValue({ items: [conn], total: 1 })
   api.edi.mockResolvedValue({ connection_id: null, ack_timeout_minutes: 120 })
   api.shadow.mockResolvedValue({ shadow_mode: true })
+  api.scheduler.mockResolvedValue({ paused: false, system_minutes: 5, enabled: true })
 })
 
 /** A summary card, once its value has come. */
@@ -247,17 +248,20 @@ describe("a connection's schedule", () => {
     renderAs(['sales.read', 'sales.config'])
     fireEvent.click(await screen.findByText('sftp-test'))
     const sheet = await screen.findByRole('dialog')
-    await openTab(sheet, 'Settings')  // the form (Overview comes first)
-    expect(within(sheet).getByLabelText(/^From/)).toHaveValue('06:00')
+    await openTab(sheet, 'Settings')  // the schedule is not here any more
+    expect(within(sheet).queryByLabelText(/^From/)).toBeNull()
+    expect(within(sheet).queryByRole('radio', { name: '15 min' })).toBeNull()
+    await openTab(sheet, 'Schedule')  // one place for it: status, the form, Run now, the runs
+    expect(await within(sheet).findByLabelText(/^From/)).toHaveValue('06:00')
     expect(within(sheet).getByText('Runs every 5 minutes, Mon–Fri, 06:00–22:00 Toronto')).toBeInTheDocument()
     fireEvent.click(within(sheet).getByRole('radio', { name: '15 min' }))
     expect(within(sheet).getByText('Runs every 15 minutes, Mon–Fri, 06:00–22:00 Toronto')).toBeInTheDocument()  // live
     fireEvent.change(within(sheet).getByLabelText(/^To/), { target: { value: '' } })
-    fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save schedule' }))
     expect(await within(sheet).findByText('Give both the start and the end, or neither')).toBeInTheDocument()
     fireEvent.change(within(sheet).getByLabelText(/^To/), { target: { value: '23:30' } })
     fireEvent.click(within(within(sheet).getByRole('group', { name: 'Days' })).getByRole('button', { name: 'Sat' }))
-    fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save schedule' }))
     await waitFor(() => expect(api.update).toHaveBeenCalledWith(7, expect.objectContaining({
       schedule_minutes: 15, active_to: '23:30:00', active_days: 'Mon,Tue,Wed,Thu,Fri,Sat' }), 3))
   })
@@ -281,7 +285,6 @@ describe("a connection's schedule", () => {
     renderAs(['sales.read', 'sales.retry', 'sales.file.retry'])
     fireEvent.click(await screen.findByText('sftp-test'))
     const sched = await scheduleOf()
-    expect(within(sched).getByText('every 5 min, Mon–Fri 06:00–22:00')).toBeInTheDocument()
     fireEvent.click(within(sched).getByRole('button', { name: 'Run now' }))
     const sheet = screen.getByRole('dialog')
     await waitFor(() => expect(noticeIn(sheet)).toHaveTextContent('Run 31 is running…'))  // the sheet's status row
@@ -373,48 +376,120 @@ describe('the row icons on Connections', () => {
 
 describe('when nothing runs by itself, and a run that is overdue', () => {
   const ran = { ...conn, schedule_minutes: 5, next_run_at: '2026-11-02T20:05:00Z' }
-  const offMeta = { version: 1, searchable: true, default_sort: [], fields: [], views: [], scheduler_enabled: false }
 
-  it('the scheduler off: a banner, and Next run says to use Run now (in the list and the Schedule tab)', async () => {
-    api.meta.mockResolvedValueOnce(offMeta)
-    api.list.mockResolvedValue({ items: [{ ...ran, overdue: false }], total: 1 })
-    renderAs(['sales.read'])
-    expect(await screen.findByText(/Automatic runs are off here/)).toBeInTheDocument()
-    expect(await card('Automatic runs', 'Off')).toBeInTheDocument()
-    const row = (await screen.findByText('sftp-test')).closest('tr')!
-    expect(within(row).getByText('Off')).toBeInTheDocument()  // said once on the card and the Callout, not on every row
-    expect(screen.queryByText(/use Run now$/)).toBeNull()
-    expect(within(row).queryByText(/2026|Nov/)).toBeNull()  // no next-run time that never comes
-    fireEvent.click(within(row).getByText('sftp-test'))
-    const sheet = await screen.findByRole('dialog')
-    await openTab(sheet, 'Schedule')
-    expect(within(sheet).getByText(/Automatic runs are off here/)).toBeInTheDocument()
-    expect(within(within(sheet).getByRole('region', { name: 'Schedule' })).getByText('Off')).toBeInTheDocument()
-  })
+  for (const [name, setting, word, callout] of [
+    ['Off here', { paused: true, system_minutes: 5, enabled: true }, 'Off', /Automatic runs are off:/],
+    ['not available on this server', { paused: true, system_minutes: 5, enabled: false }, 'Not available', /not available on this server/],
+  ] as const) {
+    it(`${name}: the card, the Callout, and Next run says Off (in the list and the Schedule tab)`, async () => {
+      api.scheduler.mockResolvedValue(setting)
+      api.list.mockResolvedValue({ items: [{ ...ran, overdue: false }], total: 1 })
+      renderAs(['sales.read'])
+      expect(await card('Automatic runs', word)).toBeInTheDocument()
+      expect(await screen.findByText(callout)).toBeInTheDocument()
+      const row = (await screen.findByText('sftp-test')).closest('tr')!
+      expect(await within(row).findByText('Off')).toBeInTheDocument()
+      expect(within(row).queryByText(/2026|Nov/)).toBeNull()  // no next-run time that never comes
+      fireEvent.click(within(row).getByText('sftp-test'))
+      const sheet = await screen.findByRole('dialog')
+      await openTab(sheet, 'Schedule')
+      expect(within(sheet).getByText(callout)).toBeInTheDocument()
+      expect(within(within(sheet).getByRole('region', { name: 'Schedule' })).getByText('Off')).toBeInTheDocument()
+    })
+  }
 
-  it('the scheduler on: no banner; an overdue connection is marked Overdue beside its next run', async () => {
+  it('On: no Callout; an overdue connection is marked Overdue beside its next run', async () => {
     api.list.mockResolvedValue({ items: [{ ...ran, overdue: true }], total: 1 })
     renderAs(['sales.read'])
+    await card('Automatic runs', 'On')
     const row = (await screen.findByText('sftp-test')).closest('tr')!
     await waitFor(() => expect(within(row).getByText('Overdue')).toBeInTheDocument())
-    expect(screen.queryByText(/Automatic runs are off/)).toBeNull()
+    expect(screen.queryByText(/Automatic runs are/)).toBeNull()
     expect(within(row).queryByText('Off')).toBeNull()
   })
 })
 
+describe('the Automatic runs switch', () => {
+  const off = { paused: true, system_minutes: 5, enabled: true }
+  const sheetOf = async (word: string) => {
+    fireEvent.click(await card('Automatic runs', word))
+    return screen.findByRole('dialog', { name: 'Automatic runs' })
+  }
+  beforeEach(() => { api.saveScheduler.mockReset(); api.saveScheduler.mockResolvedValue({}) })
+
+  it('not available on this server: no switch, one plain sentence', async () => {
+    api.scheduler.mockResolvedValue({ ...off, enabled: false })
+    renderAs(['sales.read', 'sales.config'])
+    const sheet = await sheetOf('Not available')
+    expect(await within(sheet).findByText(/An administrator must allow automatic runs on this server/)).toBeInTheDocument()
+    expect(within(sheet).queryByRole('button', { name: /Turn automatic runs/ })).toBeNull()
+    expect(within(sheet).queryByLabelText(/System job/)).toBeNull()
+  })
+
+  it('a reader sees it and cannot switch it', async () => {
+    api.scheduler.mockResolvedValue(off)
+    renderAs(['sales.read'])
+    const sheet = await sheetOf('Off')
+    expect(await within(sheet).findByText('Automatic runs: Off')).toBeInTheDocument()
+    expect(within(sheet).queryByRole('button', { name: /Turn automatic runs/ })).toBeNull()
+  })
+
+  it('On asks first: which connections and how often, and the shadow run; nothing is sent until confirmed', async () => {
+    api.scheduler.mockResolvedValue(off)
+    api.list.mockResolvedValue({ items: [conn, { ...conn, id: 8, name: 'held', schedule_paused: true }], total: 2 })
+    renderAs(['sales.read', 'sales.config'])
+    const sheet = await sheetOf('Off')
+    const go = await within(sheet).findByRole('button', { name: 'Turn automatic runs on' })
+    await waitFor(() => expect(go).toBeEnabled())
+    fireEvent.click(go)
+    const confirm = await screen.findByRole('dialog', { name: 'Turn automatic runs on?' })
+    expect(confirm).toHaveTextContent('These connections start reading now: radiant (every 5 min)')
+    expect(confirm).toHaveTextContent('they stay paused: held')
+    expect(confirm).toHaveTextContent('The system job runs every 5 min')
+    expect(confirm).toHaveTextContent('The shadow run is on')
+    expect(api.saveScheduler).not.toHaveBeenCalled()
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Turn on' }))
+    await waitFor(() => expect(api.saveScheduler).toHaveBeenCalledWith({ paused: false }))  // the switch alone
+  })
+
+  it('with the shadow run off it says Sales will act on what it reads', async () => {
+    api.scheduler.mockResolvedValue(off)
+    api.shadow.mockResolvedValue({ shadow_mode: false, open_orders: 0 })
+    renderAs(['sales.read', 'sales.config'])
+    const sheet = await sheetOf('Off')
+    const go = await within(sheet).findByRole('button', { name: 'Turn automatic runs on' })
+    await waitFor(() => expect(go).toBeEnabled())
+    fireEvent.click(go)
+    expect(await screen.findByRole('dialog', { name: 'Turn automatic runs on?' })).toHaveTextContent('The shadow run is off: Sales acts on what it reads')
+  })
+
+  it('Off needs no confirmation', async () => {
+    renderAs(['sales.read', 'sales.config'])
+    const sheet = await sheetOf('On')
+    fireEvent.click(await within(sheet).findByRole('button', { name: 'Turn automatic runs off' }))
+    await waitFor(() => expect(api.saveScheduler).toHaveBeenCalledWith({ paused: true }))
+    expect(screen.queryByRole('dialog', { name: 'Turn automatic runs off?' })).toBeNull()
+  })
+
+  it('saving the system job\'s minutes sends only the minutes', async () => {
+    api.scheduler.mockResolvedValue(off)
+    renderAs(['sales.read', 'sales.config'])
+    const sheet = await sheetOf('Off')
+    fireEvent.change(await within(sheet).findByLabelText(/^System job/), { target: { value: '7' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(api.saveScheduler).toHaveBeenCalledWith({ system_minutes: 7 }))
+  })
+})
+
 describe('the page: settings as cards, a plain table', () => {
-  it('one row of cards; no panel pushes the table down; each card opens its setting', async () => {
-    api.paused.mockResolvedValueOnce({ paused: true })
+  it('one row of cards; no panel pushes the table down', async () => {
     api.edi.mockResolvedValueOnce({ connection_id: 7, ack_timeout_minutes: 60 })
     renderAs(['sales.read'])
     const row = await screen.findByRole('region', { name: 'Connection settings' })
     await card('Warehouse', 'radiant')
     expect(row).toHaveTextContent(/997 wait\s*60 min/i)
     expect(row).toHaveTextContent(/810 invoices\s*None/i)
-    await card('Automatic runs', 'Paused')
     expect(screen.queryByRole('region', { name: 'Shadow run' })).toBeNull()  // only in its sheet
-    fireEvent.click(await card('Automatic runs', 'Paused'))
-    expect(await screen.findByRole('dialog', { name: 'Automatic runs' })).toHaveTextContent('Every job is paused')
   })
 
   it('the row: name, host under it, its type, one health badge; Kind, Mode and After read are not shown', async () => {

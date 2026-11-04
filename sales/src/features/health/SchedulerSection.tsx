@@ -1,29 +1,19 @@
-import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { z } from 'zod'
 import {
-  ActionButton, Badge, Button, DateTimeCell, LocalTable, NoticeScope, RowActions, SchemaForm, FormSheet, Section, StatusCell, businessErrorOf,
-  requestOpen, useCan, useNotices, type ColumnDef, type FieldSpec, Hint,
+  ActionButton, Badge, Button, DateTimeCell, LocalTable, NoticeScope, RowActions, Section, StatusCell, businessErrorOf,
+  requestOpen, useNotices, type ColumnDef, Hint,
 } from '@/platform-ui'
 import { RefreshCw } from 'lucide-react'
 import { runConnectionNow } from '@/features/configuration/connections/connectionsApi'
 import { useRunFollower } from '@/features/operations/useRunFollower'
 import { runSystemNow } from '@/features/operations/operationsApi'
-import { saveScheduler, type HealthRead, type JobRead } from './healthApi'
-
-const schema = z.object({ paused: z.boolean(), system_minutes: z.number({ error: 'Enter minutes' }).int().min(1, 'At least 1').max(1440) })
-const fields: FieldSpec[] = [
-  { name: 'paused', label: 'Pause every job', type: 'checkbox',
-    hint: 'The master switch: no connection job and no system job runs on its schedule (Run now still works).' },
-  { name: 'system_minutes', label: 'System job: every (minutes)', type: 'number', required: true,
-    hint: 'Queues 940s and 943s, sends the outbox, times out ACKs, moves invoices on, compares with Zoho in the shadow run.' },
-]
+import type { HealthRead, JobRead } from './healthApi'
 
 /** Health → Scheduler: every job (each connection's, the system job) with its
- *  last and next run; overdue ones flagged. The system job's Run now, and the
- *  master switch and system interval in a sheet (sales.config). Health is no
- *  list: this section is its own notice scope, with its status row. */
+ *  last and next run; overdue ones flagged; the system job's Run now. Status
+ *  only: Automatic runs are switched on Connections, its card. Health is no list:
+ *  this section is its own notice scope, with its status row. */
 export function SchedulerSection({ health }: { health: HealthRead }) {
   return <NoticeScope><Scheduler health={health} /></NoticeScope>
 }
@@ -33,8 +23,7 @@ function Scheduler({ health: h }: { health: HealthRead }) {
   const navigate = useNavigate()
   const { notify } = useNotices()
   const follower = useRunFollower()
-  const canConfig = useCan('sales.config')
-  const [editing, setEditing] = useState(false)
+  const state = !h.scheduler_enabled ? 'unavailable' : h.scheduler_paused ? 'off' : 'on'
   const refresh = () => qc.invalidateQueries({ queryKey: ['sales', 'health'] })
   // A job's Run now: followed to its end, in the section's status row.
   const runJob = async (j: JobRead) => {
@@ -54,7 +43,7 @@ function Scheduler({ health: h }: { health: HealthRead }) {
       </Button>
     ) },
     { accessorKey: 'schedule', header: 'Schedule', cell: ({ row: { original: j } }) => (
-      <span className="flex items-center gap-1">{j.schedule}{j.paused && <Badge variant="warning">Paused</Badge>}</span>
+      <span className="flex items-center gap-1">{j.schedule}{state === 'on' && j.paused && <Badge variant="warning">Paused</Badge>}</span>
     ) },
     { accessorKey: 'last_run_at', header: 'Last run', cell: ({ row: { original: j } }) => !j.last_run_at ? 'never' : (
       <span className="flex flex-col">
@@ -62,7 +51,7 @@ function Scheduler({ health: h }: { health: HealthRead }) {
         {j.last_run_summary && <Hint>{j.last_run_summary}</Hint>}
       </span>
     ) },
-    { accessorKey: 'next_run_at', header: 'Next run', cell: ({ row: { original: j } }) => (
+    { accessorKey: 'next_run_at', header: 'Next run', cell: ({ row: { original: j } }) => state !== 'on' ? 'Off' : (
       <span className="flex items-center gap-1">{j.next_run_at ? <DateTimeCell value={j.next_run_at} /> : 'at the next tick'}
         {j.overdue && <Badge variant="danger">Overdue</Badge>}</span>
     ) },
@@ -74,8 +63,9 @@ function Scheduler({ health: h }: { health: HealthRead }) {
   return (
     <Section title="Scheduler" plain level={2}>
       <p className="text-sm text-neutral-600">
-        {h.scheduler_paused ? 'Every job is paused (master switch).' : `System job every ${h.system_minutes} min; each connection on its own schedule.`}
-        {!h.scheduler_enabled && ' The scheduler does not run in this environment: jobs run only with Run now.'}
+        {state === 'on' ? `Automatic runs: On. System job every ${h.system_minutes} min; each connection on its own schedule.`
+          : state === 'off' ? 'Automatic runs: Off. Jobs run only with Run now.'
+            : 'Automatic runs: not available on this server. Jobs run only with Run now.'}
       </p>
       <LocalTable<JobRead> ariaLabel="Scheduled jobs" columns={columns} rows={h.jobs} rowKey={(j) => j.scope} />
       <div className="flex flex-wrap gap-2">
@@ -86,15 +76,8 @@ function Scheduler({ health: h }: { health: HealthRead }) {
             await refresh()
             return started
           }}>Run the system job now</ActionButton>
-        {canConfig && <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>Scheduler settings</Button>}
+        <Button size="sm" variant="secondary" onClick={() => navigate('/config/connections')}>Open Connections</Button>
       </div>
-      <FormSheet open={editing} onOpenChange={setEditing} title="Scheduler settings">
-        {editing && (
-          <SchemaForm schema={schema} fields={fields} defaultValues={{ paused: h.scheduler_paused, system_minutes: h.system_minutes }}
-            onCancel={() => setEditing(false)}
-            onSubmit={async (v) => { await saveScheduler(v as { paused: boolean; system_minutes: number }); setEditing(false); await refresh() }} />
-        )}
-      </FormSheet>
     </Section>
   )
 }

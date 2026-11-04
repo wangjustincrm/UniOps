@@ -23,8 +23,12 @@ SETTINGS = SettingsRegistry(SettingRow)
 SCHEDULER_INTERVAL_MINUTES = SETTINGS.declare(Setting(
     "scheduler.interval_minutes", 5, int, validate=minimum(1), safe=None,
     description="Minutes between cycles"))
+# The user's switch, shown as Automatic runs On / Off (2026-11-04). Off until
+# someone turns it on: a database that never set it (a fresh one, or a copy of
+# another server's) starts nothing, even with SALES_SCHEDULER_ENABLED on. A bad
+# stored value reads as Off too.
 SCHEDULER_PAUSED = SETTINGS.declare(Setting(
-    "scheduler.paused", False, as_bool, description="Pause the scheduled cycle"))
+    "scheduler.paused", True, as_bool, safe=True, description="Automatic runs off: no job runs on its schedule"))
 # X2: every Action Required task goes to the operator.
 OPERATOR_USER_ID = SETTINGS.declare(Setting(
     "operator_user_id", None, _uuid_or_none, safe=None, description="User who receives Action Required tasks"))
@@ -52,9 +56,6 @@ ACK_TIMEOUT_MINUTES = SETTINGS.declare(Setting(
     "edi.ack_timeout_minutes", 120, int, validate=minimum(1), safe=120,
     description="Minutes to wait for a 997 before Timeout"))
 # P8 (FR-OB-52a): the health page's thresholds.
-PAUSED_ALARM_MINUTES = SETTINGS.declare(Setting(
-    "scheduler.paused_alarm_minutes", 60, int, validate=minimum(1), safe=60,
-    description="Minutes a paused scheduler shows WARNING before it is FAILED"))
 TASK_AGE_HOURS = SETTINGS.declare(Setting(
     "health.task_age_hours", 24, int, validate=minimum(1), safe=24,
     description="Hours after which an open task shows on the health page"))

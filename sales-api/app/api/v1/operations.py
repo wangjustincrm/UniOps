@@ -10,7 +10,7 @@ from app.platform.crud_router import crud_router, read_router
 from app.runtime import Runtime, get_runtime
 from app.schemas.audit import AuditEntryRead
 from app.schemas.connections import (
-    ConnectionRead, ConnectionTestRead, CursorReset, EdiSettings, SchedulerSettings, ShadowSetting,
+    ConnectionRead, ConnectionTestRead, CursorReset, EdiSettings, SchedulerSettings, SchedulerUpdate, ShadowSetting,
 )
 from app.schemas.operations import RunStarted
 from app.services import audit
@@ -91,7 +91,7 @@ async def scheduler_get(u: UoW):
 
 
 @scheduler_setting.put("", response_model=SchedulerSettings)
-async def scheduler_put(u: UoW, body: SchedulerSettings):
+async def scheduler_put(u: UoW, body: SchedulerUpdate):
     out = await SchedulerSettingsService(u).update(body)
     await u.commit()
     return out

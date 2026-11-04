@@ -38,6 +38,8 @@ export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
   createSchema: z.ZodType<FieldValues, FieldValues>
   updateSchema: z.ZodType<FieldValues, FieldValues>
   fields: FieldSpec[]
+  /** The record's Details form, when it shows fewer fields than New (the rest are on tabs of their own). */
+  editFields?: FieldSpec[]
   /** Fields that may not change after creation are shown read-only on edit. */
   immutableOnEdit?: string[]
   emptyValues: Record<string, unknown>
@@ -199,7 +201,7 @@ function RecordForm<T extends Row, TCreate, TUpdate>({ row, close, canWrite, pro
   deactivate: () => Promise<unknown>
 }) {
   const [confirm, setConfirm] = useState(false)
-  const fields = props.fields.map((f) => (props.immutableOnEdit?.includes(f.name) ? { ...f, readOnly: true } : f))
+  const fields = (props.editFields ?? props.fields).map((f) => (props.immutableOnEdit?.includes(f.name) ? { ...f, readOnly: true } : f))
   const singular = props.singular ?? props.title
   const details: RecordTab = {
     id: 'details', label: 'Details', render: () => (

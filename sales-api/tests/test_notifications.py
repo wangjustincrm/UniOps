@@ -264,7 +264,7 @@ async def test_ac71_a_channel_goes_live_only_through_the_notification_gate(api):
     assert r.status_code == 200 and r.json()["mode"] == "LIVE"
 
 
-async def test_ac53_health_a_paused_scheduler_warns_then_fails_and_a_latch_fails(api):
+async def test_ac53_health_automatic_runs_not_available_warns_and_a_latch_fails(api):
     h = (await api.get("/api/v1/operations/health", headers=READER)).json()
     by = {c["key"]: c for c in h["checks"]}
     assert by["settings"]["result"] == "FAILED" and "warehouse SFTP connection" in by["settings"]["detail"]
@@ -279,15 +279,9 @@ async def test_ac53_health_a_paused_scheduler_warns_then_fails_and_a_latch_fails
                                  auth_failed_at=datetime.now(timezone.utc), auth_failed_reason="Permission denied"))
         await u.commit()
     by = {c["key"]: c for c in (await api.get("/api/v1/operations/health", headers=READER)).json()["checks"]}
-    assert by["scheduler"]["result"] == "WARNING" and by["scheduler"]["detail"].startswith("paused since")
+    assert by["scheduler"]["result"] == "WARNING" and "not available on this server" in by["scheduler"]["detail"]
     latch = next(c for k, c in by.items() if k.startswith("connection:"))
     assert latch["result"] == "FAILED" and "Permission denied" in latch["detail"]
-    async with api.n.f(SYSTEM_ACTOR) as u:  # paused two hours ago
-        await u.session.execute(sa.text("UPDATE sales_settings SET updated_at = now() - interval '2 hours', "
-                                        "created_at = now() - interval '2 hours' WHERE key = 'scheduler.paused'"))
-        await u.commit()
-    by = {c["key"]: c for c in (await api.get("/api/v1/operations/health", headers=READER)).json()["checks"]}
-    assert by["scheduler"]["result"] == "FAILED" and "longer than 60 minutes" in by["scheduler"]["detail"]
     assert (await api.get("/api/v1/operations/health", headers=as_("requester"))).status_code == 403
 
 

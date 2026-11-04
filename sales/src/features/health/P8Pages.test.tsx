@@ -8,7 +8,7 @@ import type { DashboardRead, HealthRead } from './healthApi'
 
 const health: HealthRead = {
   result: 'FAILED', checked_at: '2026-11-02T20:00:00Z', shadow_mode: true, partner_writes_enabled: false,
-  external_email_enabled: false, scheduler_enabled: false, gate_ok: false, jobs: [
+  external_email_enabled: false, scheduler_enabled: true, gate_ok: false, jobs: [
     { scope: 'system', label: 'System job', connection_id: null, interval_minutes: 1, schedule: 'every 1 min', paused: false,
       last_run_at: '2026-11-02T19:59:00Z', last_run_status: 'SUCCEEDED', last_run_summary: '0 940s queued, 0 sent, 0 problems',
       next_run_at: '2026-11-02T20:00:00Z', overdue: false },
@@ -36,9 +36,9 @@ const dashboard: DashboardRead = {
   runs: [{ id: 9, trigger: 'SCHEDULED', status: 'SUCCEEDED', started_at: '2026-11-02T19:55:00Z', finished_at: null, error: null }],
 }
 
-const h = vi.hoisted(() => ({ health: vi.fn(), dash: vi.fn(), resolve: vi.fn(), test: vi.fn(), save: vi.fn(), system: vi.fn(), getRun: vi.fn() }))
+const h = vi.hoisted(() => ({ health: vi.fn(), dash: vi.fn(), resolve: vi.fn(), test: vi.fn(), system: vi.fn(), getRun: vi.fn() }))
 vi.mock('./healthApi', async (orig) => ({ ...(await orig<typeof import('./healthApi')>()),
-  fetchHealth: h.health, fetchDashboard: h.dash, resolveInbox: h.resolve, saveScheduler: h.save }))
+  fetchHealth: h.health, fetchDashboard: h.dash, resolveInbox: h.resolve }))
 vi.mock('@/features/operations/operationsApi', async (orig) => ({
   ...(await orig<typeof import('@/features/operations/operationsApi')>()), runSystemNow: h.system }))
 vi.mock('@/features/operations/followRun', async (orig) => ({
@@ -118,7 +118,6 @@ describe('a Task Inbox link', () => {
 describe('Health → Scheduler', () => {
   it('lists every job with its last and next run, flags the overdue one, runs the system job and edits the settings', async () => {
     h.system.mockResolvedValue({ run_id: 50 })
-    h.save.mockResolvedValue({ paused: true, system_minutes: 2 })
     renderAt('/health', <HealthPage />, ['sales.read', 'sales.config', 'sales.file.retry'])
     const jobs = await screen.findByRole('table', { name: 'Scheduled jobs' })
     const radiant = within(jobs).getByText('radiant').closest('tr')!
@@ -136,18 +135,30 @@ describe('Health → Scheduler', () => {
     fireEvent.click(within(within(jobs).getByText('System job').closest('tr')!).getByRole('button', { name: 'Run now: System job' }))
     expect(await screen.findByText('Run 51: 0 940s queued, 0 sent, 0 problems')).toBeInTheDocument()
     expect(within(radiant).getByRole('button', { name: 'Run now: radiant' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Scheduler settings' }))
-    const sheet = await screen.findByRole('dialog', { name: 'Scheduler settings' })
-    fireEvent.click(within(sheet).getByRole('checkbox', { name: /Pause every job/ }))
-    fireEvent.change(within(sheet).getByLabelText(/^System job: every/), { target: { value: '2' } })
-    fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(h.save).toHaveBeenCalledWith({ paused: true, system_minutes: 2 }))
   })
 
-  it('without sales.config there is no settings button', async () => {
-    renderAt('/health', <HealthPage />, ['sales.read'])
-    await screen.findByRole('table', { name: 'Scheduled jobs' })
+  it('status only: no switch here, whoever is looking', async () => {
+    renderAt('/health', <HealthPage />, ['sales.read', 'sales.config'])
+    const section = await screen.findByRole('region', { name: 'Scheduler' })
+    expect(section).toHaveTextContent('Automatic runs: On.')
     expect(screen.queryByRole('button', { name: 'Scheduler settings' })).toBeNull()
+    expect(within(section).queryByRole('checkbox')).toBeNull()
+    expect(within(section).getByRole('button', { name: 'Open Connections' })).toBeInTheDocument()
   })
+
+  for (const [name, over, says] of [
+    ['Off', { scheduler_paused: true }, 'Automatic runs: Off.'],
+    ['not available', { scheduler_enabled: false }, 'Automatic runs: not available on this server.'],
+  ] as const) {
+    it(`${name}: said once, and every Next run reads Off`, async () => {
+      h.health.mockResolvedValueOnce({ ...(await h.health()), ...over })
+      renderAt('/health', <HealthPage />, ['sales.read'])
+      const section = await screen.findByRole('region', { name: 'Scheduler' })
+      expect(section).toHaveTextContent(says)
+      const jobs = within(section).getByRole('table', { name: 'Scheduled jobs' })
+      expect(within(within(jobs).getByText('radiant').closest('tr')!).getByText('Off')).toBeInTheDocument()
+      expect(within(jobs).queryByText('Paused')).toBeNull()
+    })
+  }
 })
 

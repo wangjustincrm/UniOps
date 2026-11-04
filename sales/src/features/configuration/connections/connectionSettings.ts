@@ -1,14 +1,21 @@
 import { useQuery } from '@tanstack/react-query'
-import { connectionsClient, fetchEdiSettings, fetchSchedulerPaused, fetchShadowSetting } from './connectionsApi'
+import { connectionsClient, fetchEdiSettings, fetchSchedulerSettings, fetchShadowSetting } from './connectionsApi'
 
 export const EDI_KEY = ['sales', 'config', 'edi-settings']
 export const SHADOW_KEY = ['sales', 'config', 'shadow']
+export const SCHEDULER_KEY = ['sales', 'config', 'scheduler']
 
 /** The shadow run's setting (on or off, and while off what switching it on would mark). */
 export const useShadowSetting = () => useQuery({ queryKey: SHADOW_KEY, queryFn: fetchShadowSetting })
 
-/** The scheduler's master switch (Health → Scheduler). */
-export const useSchedulerPaused = () => useQuery({ queryKey: ['sales', 'config', 'scheduler'], queryFn: fetchSchedulerPaused })
+export type AutomaticRuns = 'on' | 'off' | 'unavailable'
+
+/** Automatic runs here: On, Off (switched off here) or not available on this server. */
+export function useAutomaticRuns() {
+  const q = useQuery({ queryKey: SCHEDULER_KEY, queryFn: fetchSchedulerSettings })
+  const state: AutomaticRuns | undefined = !q.data ? undefined : !q.data.enabled ? 'unavailable' : q.data.paused ? 'off' : 'on'
+  return { state, settings: q.data, error: q.error }
+}
 
 /** The EDI settings and the connections they can name (active SFTP ones). */
 export function useEdiSettings() {
