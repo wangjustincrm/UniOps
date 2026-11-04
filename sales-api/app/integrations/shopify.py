@@ -27,6 +27,7 @@ fields stripped (`strip_card_data`) — a transaction's `payment_details`
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -61,14 +62,23 @@ CARD_KEYS = frozenset({"payment_details", "receipt", "avs_result_code", "cvv_res
                        "extended_authorization_attributes", "payment_method_name"})
 
 
+def is_card_key(key: str) -> bool:
+    """A key that holds card data: the CARD_KEYS and any `credit_card_*` (never `gift_card`: FR-OB-11b reads it)."""
+    return key in CARD_KEYS or key.startswith("credit_card")
+
+
 def strip_card_data(value: Any) -> Any:
-    """The JSON without card data: the CARD_KEYS and any `credit_card_*` key,
-    at any depth (never `gift_card`: FR-OB-11b reads it)."""
+    """The JSON without card data, at any depth."""
     if isinstance(value, dict):
-        return {k: strip_card_data(v) for k, v in value.items() if k not in CARD_KEYS and not k.startswith("credit_card")}
+        return {k: strip_card_data(v) for k, v in value.items() if not is_card_key(k)}
     if isinstance(value, list):
         return [strip_card_data(v) for v in value]
     return value
+
+
+def page_bytes(page: dict[str, Any]) -> bytes:
+    """An orders page as it is stored: the same bytes, so the same sha256, for the same page."""
+    return json.dumps(page, ensure_ascii=False, sort_keys=True).encode()
 
 
 class ShopifyError(Exception):

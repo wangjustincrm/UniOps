@@ -23,7 +23,6 @@ the order (each GETs the order and its transactions). Reads only.
 from __future__ import annotations
 
 import hashlib
-import json
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -33,7 +32,7 @@ from sqlalchemy import select, update
 
 from app.domain.sources import SourceError, from_shopify
 from app.domain.status import InboundFile
-from app.integrations.shopify import ShopifyAuthFailed, readable
+from app.integrations.shopify import ShopifyAuthFailed, page_bytes, readable
 from app.models.config import Connection, Partner
 from app.models.documents import Document
 from app.models.orders import Order
@@ -187,7 +186,7 @@ class ShopifyIntake:
     async def _store_page(self, conn, orders: list[dict], n: int) -> int | None:
         """The page as received (FR-OB-05). Identical bytes are kept once: a page
         that is only the unchanged boundary order is not stored again."""
-        data = json.dumps({"orders": orders}, ensure_ascii=False, sort_keys=True).encode()
+        data = page_bytes({"orders": orders})
         sha = hashlib.sha256(data).hexdigest()
         async with self.uow_factory(SYSTEM_ACTOR) as uow:
             s = uow.session
