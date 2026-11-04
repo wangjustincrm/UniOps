@@ -17,7 +17,7 @@ import { requestOpen } from '../resource/viewRequests'
 import type { ImportReport, ResourceClient } from '../resource/ResourceClient'
 import { useCan } from './permissions'
 import { createNoticeStore } from './notices'
-import { errorText, plainFields } from '../resource/businessError'
+import { errorText } from '../resource/businessError'
 import { RecordSheet, type RecordFact, type RecordTab } from './RecordSheet'
 import { Badge, Button } from '../primitives/shell'
 
@@ -46,7 +46,7 @@ export interface CrudPageProps<T extends Row, TCreate, TUpdate> {
   onExport?: (path: string) => Promise<unknown> | void
   csvImport?: boolean
   errorMessages?: Record<string, string>
-  /** Field names in the server's messages (a refusal, a CSV row) → the words the form uses. */
+  /** Field names in the server's refusals → the words the form uses (a CSV row keeps the file's column name). */
   fieldLabels?: Record<string, string>
   /** The record's sheet: its title (default "<singular> #id"), subtitle and key facts. */
   recordTitle?: (row: T) => string
@@ -180,7 +180,7 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
               </>
             }
           >
-            {preview && <ImportSummary report={preview.report} labels={props.fieldLabels} />}
+            {preview && <ImportSummary report={preview.report} />}
           </Dialog>
         </>
       )}
@@ -252,7 +252,7 @@ function RecordForm<T extends Row, TCreate, TUpdate>({ row, close, canWrite, pro
   )
 }
 
-function ImportSummary({ report, labels }: { report: ImportReport; labels?: Record<string, string> }) {
+function ImportSummary({ report }: { report: ImportReport }) {
   if (!report.ok) {
     return (
       <div className="flex flex-col gap-2">
@@ -260,7 +260,7 @@ function ImportSummary({ report, labels }: { report: ImportReport; labels?: Reco
         <ul className="max-h-72 overflow-y-auto text-sm">
           {report.errors.map((e, i) => (
             <li key={i} className="border-t border-neutral-100 py-1">
-              Row {e.row}{e.column ? ` · ${plainFields(e.column, labels)}` : ''}: {plainFields(e.message, labels)}
+              Row {e.row}{e.column ? ` · ${e.column}` : ''}: {e.message}
             </li>
           ))}
         </ul>

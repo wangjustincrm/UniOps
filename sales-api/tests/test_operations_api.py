@@ -48,7 +48,7 @@ async def api(db_engine, monkeypatch):
         await c.run_sync(lambda sc: shared_tasks_table(sa.MetaData()).metadata.create_all(sc, checkfirst=True))
         await c.execute(sa.text(
             "TRUNCATE sales_log, sales_document_links, sales_documents, sales_runs, sales_connections, "
-            "sales_audit, sales_settings RESTART IDENTITY CASCADE"))
+            "sales_partners, sales_audit, sales_settings RESTART IDENTITY CASCADE"))
         await c.execute(sa.text("DELETE FROM tasks"))
     factory = UnitOfWorkFactory(async_sessionmaker(db_engine, expire_on_commit=False, autoflush=False),
                                 permissions=matrix, audit=AuditTrail(AuditRecord))

@@ -6,6 +6,7 @@ import {
 } from '@/platform-ui'
 import { RunNowButton } from './RunNowButton'
 import { connectionHealth } from './connectionHealth'
+import { useEdiSettings } from './connectionSettings'
 import { clearAuthLatch, connectionsClient, pinHostKey, resetCursor, testConnection, type ConnectionRead, type ConnectionTest } from './connectionsApi'
 
 const CONFIG = 'sales.config'
@@ -80,6 +81,10 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
   const failedFolders = result?.folders.filter((f) => !f.ok).length ?? 0
   const reached: Status = !result ? 'unknown' : result.error || failedFolders ? 'problem' : 'done'
   const health = connectionHealth(c)
+  // Sending looks for this folder before anything refuses the write: without it, what is sent ends as Failed.
+  const edi = useEdiSettings().settings
+  const usedFor = [edi?.connection_id === c.id && 'warehouse connection', edi?.invoice_connection_id === c.id && '810 connection'].filter(Boolean).join(' and the ')
+  const needsTestFolder = sftp && c.mode === 'TEST' && !c.test_outbound_folder && !!usedFor
   return (
     <Section title="Set-up" label="Connection status" plain className="gap-3 text-sm">
       <ol aria-label="Set-up checklist" className="flex flex-col divide-y divide-neutral-100">
@@ -108,6 +113,11 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
           {!result ? (sftp && !c.host_key ? 'Pin the key first, then the test lists the folders.' : 'Test the connection to check.')
             : reached === 'done' ? 'The test reached everything.' : (result.error ?? `${failedFolders} folder(s) could not be reached.`)}
         </Step>
+        {needsTestFolder && (
+          <Step label="Test outbound folder" status="todo">
+            This is the {usedFor} and it is on Test: without a test outbound folder, what it sends will end as Failed. Add one in Settings; nothing is written to it while it is Test.
+          </Step>
+        )}
         <Step label="Last run" action={<RunNowButton connection={c} variant="secondary" />}
           status={!c.last_run_at ? 'unknown' : c.last_run_status === 'FAILED' ? 'problem' : c.last_run_status === 'PARTIAL' ? 'todo' : 'done'}>
           {!c.last_run_at ? 'Not run yet.'

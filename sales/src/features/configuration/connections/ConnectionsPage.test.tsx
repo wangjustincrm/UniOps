@@ -65,6 +65,7 @@ async function open() {
 
 beforeEach(() => {
   api.list.mockResolvedValue({ items: [conn], total: 1 })
+  api.edi.mockResolvedValue({ connection_id: null, ack_timeout_minutes: 120 })
   api.shadow.mockResolvedValue({ shadow_mode: true })
 })
 
@@ -123,10 +124,10 @@ describe('CSV import preview (2026-10-29, the dev2 Connections file)', () => {
     const dialog = await screen.findByRole('dialog')
     expect(api.importCsv).toHaveBeenCalledWith(expect.any(File), true)  // a dry run first
     expect(within(dialog).getByText(/Nothing will be written/)).toBeInTheDocument()
-    expect(within(dialog).getByText(/^Row 1 · Server's key: Server's key must be the server's public key line/)).toBeInTheDocument()
+    // the file's own column names: the person is fixing the file
+    expect(within(dialog).getByText(`Row 1 · host_key: ${HOST_KEY}`)).toBeInTheDocument()
     expect(within(dialog).getByText(`Row 2 · username: ${EXCEL}`)).toBeInTheDocument()
-    expect(within(dialog).getByText(/^Row 3 · Password name on the server: Password name on the server must be/)).toBeInTheDocument()
-    expect(dialog).not.toHaveTextContent(/host_key|secret_name/)  // the server's text, in the form's words
+    expect(within(dialog).getByText(`Row 3 · secret_name: ${SECRET}`)).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: 'Import' })).toBeDisabled()
   })
 })
@@ -482,6 +483,40 @@ describe('the Overview checklist', () => {
     cleanup()
     const read = await openIt(pinned, ['sales.read'])
     expect(within(step(read, 'Last run')).queryByRole('button')).toBeNull()
+  })
+})
+
+describe('the Overview: a Test connection the module writes to', () => {
+  const bare = { ...conn, host_key: LINE, mode: 'TEST' as const, test_outbound_folder: null }
+  const step2 = async (c: ConnectionRead, edi: { connection_id: number | null; invoice_connection_id?: number | null }) => {
+    api.edi.mockResolvedValue({ ack_timeout_minutes: 120, ...edi })
+    api.list.mockResolvedValue({ items: [c], total: 1 })
+    renderAs(['sales.read'])
+    return open()
+  }
+
+  it('the warehouse connection without a test outbound folder is warned about', async () => {
+    const status = await step2(bare, { connection_id: 7 })
+    const row = await within(status).findByRole('listitem', { name: 'Test outbound folder' })
+    expect(row).toHaveAttribute('data-status', 'todo')
+    expect(row).toHaveTextContent('warehouse connection')
+    expect(row).toHaveTextContent('end as Failed')
+  })
+
+  it('so is the 810 connection', async () => {
+    const status = await step2(bare, { connection_id: null, invoice_connection_id: 7 })
+    expect(await within(status).findByRole('listitem', { name: 'Test outbound folder' })).toHaveTextContent('810 connection')
+  })
+
+  it('not with the folder set, on Live, or on a connection nothing is sent through', async () => {
+    for (const [c, edi] of [[{ ...bare, test_outbound_folder: '/t' }, { connection_id: 7 }], [{ ...bare, mode: 'LIVE' as const }, { connection_id: 7 }],
+      [bare, { connection_id: 99 }]] as const) {
+      const status = await step2(c, edi)
+      await within(status).findByRole('listitem', { name: 'Last run' })
+      await waitFor(() => expect(api.edi).toHaveBeenCalled())
+      expect(within(status).queryByRole('listitem', { name: 'Test outbound folder' })).toBeNull()
+      cleanup()
+    }
   })
 })
 
