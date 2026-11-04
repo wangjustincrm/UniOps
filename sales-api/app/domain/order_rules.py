@@ -15,6 +15,7 @@ from typing import Any
 
 from app.domain.items import title_key
 from app.domain.orders import FROM_945, PAYMENT_SATISFIED
+from app.domain.status import FULFILLMENT
 from app.domain.status import Fulfillment as F
 from app.domain.status import Invoice as Inv
 from app.platform.values import ConversionError, FractionalQuantity, MissingConversion, Quantity, UnitTable
@@ -34,6 +35,23 @@ def order_state(fulfillment: str, invoice: str) -> str:
     if fulfillment == F.SHIPPED and invoice in (Inv.SENT, Inv.NOT_REQUIRED):
         return "Completed"
     return "Active"
+
+
+# ── a person stopping an order (PRD 9.1, FR-OB-18, FR-OB-61) ─────────────────
+def can_cancel(fulfillment: str, *, shadow: bool) -> bool:
+    """What the machine lets go to Cancelled; a draft has its own Cancel. A shadow order is Zoho's."""
+    return not shadow and fulfillment != F.DRAFT and FULFILLMENT.can(F(fulfillment), F.CANCELLED)
+
+
+def hold_exits(fulfillment: str, before: str | None, *, shadow: bool, cancelled_at_source: bool, applied_945: bool) -> list[str]:
+    """Where a person can take an order On Hold. Cancelled at source: Cancelled, Shipped (a 945
+    says it left) or what it held before. 945 conflict: keep the applied 945 (Shipped) or Cancelled."""
+    if shadow or fulfillment != F.ON_HOLD:
+        return []
+    if not cancelled_at_source:
+        return [F.SHIPPED.value, F.CANCELLED.value]
+    exits = [F.CANCELLED.value, *([F.SHIPPED.value] if applied_945 else [])]
+    return exits + ([before] if before and before not in exits else [])
 
 
 # ── payment (FR-OB-03d, FR-OB-12) ────────────────────────────────────────────

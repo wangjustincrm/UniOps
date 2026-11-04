@@ -1,5 +1,5 @@
 import { formatDate, formatDateTime } from '@/platform-ui'
-import type { OrderRead } from './ordersApi'
+import type { OrderRead, ShipmentRead } from './ordersApi'
 
 type Tone = 'neutral' | 'info' | 'success' | 'warning'
 
@@ -28,5 +28,18 @@ export function shopifyBadges(o: ShopifyFacts): { label: string; tone: Tone }[] 
     ...(o.shopify_fulfillment_status ? [{ label: words(o.shopify_fulfillment_status), tone: 'neutral' as Tone }] : []),
     ...(o.archived_in_shopify_at ? [{ label: 'Archived', tone: 'neutral' as Tone }] : []),
     ...(o.source_cancelled_at ? [{ label: 'Cancelled', tone: 'warning' as Tone }] : []),
+  ]
+}
+
+/** The two 945s of a conflict, side by side: what the applied one says against the second. */
+export function compare945(a: ShipmentRead, b: ShipmentRead): { left: string | null; right: string | null; same: boolean }[] {
+  const row = (label: string, x: string, y: string) => ({ left: `${label}: ${x}`, right: `${label}: ${y}`, same: x === y })
+  const qty = (s: ShipmentRead, item: string) => s.rows.filter((r) => r.item_code === item).reduce((n, r) => n + r.qty_shipped_ea, 0)
+  const lots = (s: ShipmentRead, item: string) => [...new Set(s.rows.filter((r) => r.item_code === item).map((r) => r.lot ?? '—'))].sort().join(', ') || '—'
+  const items = [...new Set([...a.rows, ...b.rows].map((r) => r.item_code ?? '?'))].sort()
+  return [
+    row('Ship date', a.ship_date ?? '—', b.ship_date ?? '—'),
+    ...items.flatMap((i) => [row(`${i} EA`, String(qty(a, i)), String(qty(b, i))), row(`${i} lots`, lots(a, i), lots(b, i))]),
+    row('Tracking', (a.tracking ?? []).join(', ') || '—', (b.tracking ?? []).join(', ') || '—'),
   ]
 }

@@ -74,6 +74,13 @@ async def _shadow(s) -> bool:
     return bool(await SETTINGS.get(s, SHADOW_MODE))
 
 
+async def rows_to_review(s, order_id: int) -> list[str | None]:
+    """The item of each applied 945 row of the order that matches no line and is not resolved."""
+    return list((await s.execute(select(ShipmentRow.item_code).join(Shipment, Shipment.id == ShipmentRow.shipment_id)
+                                 .where(Shipment.order_id == order_id, Shipment.applied.is_(True),
+                                        ShipmentRow.needs_review.is_(True)))).scalars())
+
+
 class Invoicing:
     def __init__(self, *, uow_factory, tasks, sftp, email,
                  clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
@@ -100,9 +107,7 @@ class Invoicing:
                 .order_by(Order.id).with_for_update(of=Order))).all()
             today = self.today()
             for order, partner in rows:
-                review = (await s.execute(select(ShipmentRow.item_code).join(Shipment, Shipment.id == ShipmentRow.shipment_id)
-                                          .where(Shipment.order_id == order.id, Shipment.applied.is_(True),
-                                                 ShipmentRow.needs_review.is_(True)))).scalars().all()
+                review = await rows_to_review(s, order.id)
                 if review:
                     await self._hold(uow, order, "a 945 line matches no order line (FR-OB-25: lot exception)",
                                      f"945 item(s) {', '.join(x or '?' for x in review)} match no line of order "
@@ -129,6 +134,11 @@ class Invoicing:
         await self.tasks.raise_problem(uow.session, INVOICE_HOLD, order.id, problem(
             INVOICE_HOLD, f"Invoice on hold: order {order.label}", description))
 
+    @staticmethod
+    def _refuse_cancelled(order: Order) -> None:
+        if order.fulfillment_status == F.CANCELLED.value:
+            raise BusinessError("invoice.order_cancelled", "the order is cancelled: it is not invoiced")
+
     async def _refuse_shadow(self, s, order: Order) -> None:
         if await _shadow(s):
             raise BusinessError("invoice.shadow", "the shadow run is on: nothing is invoiced (Zoho is live)")
@@ -143,6 +153,7 @@ class Invoicing:
         if order is None:
             raise BusinessError("order.not_found", "no such order", status_code=404)
         await self._refuse_shadow(s, order)
+        self._refuse_cancelled(order)
         if order.invoice_status != Inv.WAITING_FOR_DELIVERY_CONFIRMATION.value:
             raise BusinessError("delivery.not_waiting", f"the order's invoice is {order.invoice_status}, not waiting for "
                                 "delivery confirmation", {"status": order.invoice_status})
@@ -249,6 +260,9 @@ class Invoicing:
         order = await s.get(Order, order_id, with_for_update=True)
         if order is None or order.invoice_status != Inv.BLOCKED.value:
             raise BusinessError("invoice.not_blocked", "the invoice is not on hold")
+        if await rows_to_review(s, order.id):  # the next cycle would only block it again
+            raise BusinessError("invoice.rows_unresolved", "a 945 row matches no order line: resolve it on the order first "
+                                "(Shipments & lots): the invoice then follows")
         uow.set_reason(f"invoice released: {reason}")
         INVOICE.transition(order, Inv(order.invoice_status_before_hold), actor=uow.actor, events=uow.events,
                            reason=f"released: {reason}")
@@ -263,6 +277,7 @@ class Invoicing:
             raise BusinessError("invoice.not_found", "no such invoice", status_code=404)
         order = await s.get(Order, inv.order_id, with_for_update=True)
         await self._refuse_shadow(s, order)
+        self._refuse_cancelled(order)
         status = Inv(order.invoice_status)
         if status not in (Inv.READY, Inv.FAILED, Inv.SENT):
             raise BusinessError("invoice.not_sendable", f"the invoice is {status.value}", {"status": status.value})

@@ -131,6 +131,7 @@ export interface OrderDocument {
 }
 
 export interface ShipmentRowRead {
+  id: number
   lx_index: number
   w12_index: number
   sscc: string | null
@@ -194,6 +195,10 @@ export interface ShipmentRead {
 }
 
 export interface OrderDetail extends OrderRead {
+  /** Cancel order is open (the server's rule; never for a shadow order). */
+  cancellable?: boolean
+  /** Where Release hold can take the order: none when it is not On Hold. */
+  hold_exits?: string[]
   bill_to: Record<string, string | null> | null
   /** The DC a retailer ship-to GLN routes to (Walmart). */
   dc_number: string | null
@@ -288,6 +293,10 @@ export const fetchShipmentsWithoutOrder = (documentId: number) =>
   api.get<OrderFrom945Plan[]>(`/orders/shipments-without-order?document_id=${documentId}`)
 export const createOrderFrom945 = (shipmentId: number, partnerCode: string | null) =>
   api.post<OrderRead>(`/orders/shipments/${shipmentId}/create-order`, { partner_code: partnerCode })
+export const cancelOrder = (id: number, reason: string) => api.post<OrderRead>(`/orders/${id}/cancel`, { reason })
+export const releaseHold = (id: number, to: string, reason: string) => api.post<OrderRead>(`/orders/${id}/release-hold`, { to, reason })
+export const resolveRow = (shipmentId: number, rowId: number, orderLineId: number | null, reason: string | null) =>
+  api.post<OrderRead>(`/orders/shipments/${shipmentId}/rows/${rowId}/resolve`, { order_line_id: orderLineId, reason })
 export const fetchOrder = (id: number) => api.get<OrderDetail>(`/orders/${id}`)
 export const resolveReview = (id: number) => api.post<{ order: OrderRead; remaining: string[] }>(`/orders/${id}/resolve-review`)
 export const previewManual = (lines: ManualLine[]) => api.post<LinePreview[]>('/orders/manual/preview', lines)

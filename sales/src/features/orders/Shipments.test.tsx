@@ -18,8 +18,8 @@ const base: ShipmentRead = {
   checks: [{ check: 'over-shipment', message: 'CF0092: shipped 14 EA against 12 on the 940' }],
   shopify_status: 'Failed', shopify_error: 'archiving the order: requires write_orders',
   rows: [
-    { lx_index: 1, w12_index: 1, sscc: '00077777770077782891', item_code: 'CF0092', lot: 'LOT-A', expiry: '2028-05-19', qty_ordered_ea: 12, qty_shipped_ea: 10, tracking: null, needs_review: false },
-    { lx_index: 1, w12_index: 2, sscc: '00077777770077782891', item_code: 'CF0010', lot: 'LOT-B', expiry: null, qty_ordered_ea: 1, qty_shipped_ea: 1, tracking: null, needs_review: true },
+    { id: 1, lx_index: 1, w12_index: 1, sscc: '00077777770077782891', item_code: 'CF0092', lot: 'LOT-A', expiry: '2028-05-19', qty_ordered_ea: 12, qty_shipped_ea: 10, tracking: null, needs_review: false },
+    { id: 2, lx_index: 1, w12_index: 2, sscc: '00077777770077782891', item_code: 'CF0010', lot: 'LOT-B', expiry: null, qty_ordered_ea: 1, qty_shipped_ea: 1, tracking: null, needs_review: true },
   ],
 }
 

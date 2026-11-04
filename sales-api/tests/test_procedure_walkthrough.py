@@ -23,11 +23,14 @@ import pytest_asyncio
 import sqlalchemy as sa
 
 import app.runtime as runtime_module
+from app.domain.order_rules import can_cancel
+from app.domain.status import Fulfillment as F
 from app.domain.x12 import segments
 from app.integrations.email import FakeEmail
 from app.integrations.sftp import FakeSftp
 from app.models.config import Connection, Item, ItemUnit, Partner
 from app.models.orders import Order
+from app.models.shipments import ShipmentRow
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.errors import BusinessError
 from app.platform.query import Filter, QuerySpec
@@ -35,6 +38,7 @@ from app.runtime import build_runtime
 from app.schemas.invoices import ConfirmIn, ReleaseIn
 from app.schemas.orders import ManualOrderIn
 from app.services.invoice_views import InvoiceService
+from app.services.order_holds import OrderActions
 from app.services.order_views import ManualOrderService, OrderService
 from app.services.settings import EDI_CONNECTION_ID, INVOICE_CONNECTION_ID, SETTINGS, SHADOW_MODE
 from app.services.shadow import mark_open_orders
@@ -536,16 +540,46 @@ async def test_f_invoice_blocked_with_its_reason(t):
     assert await tasks(t, "invoice_hold") == [False]
 
 
-@pytest.mark.xfail(strict=True, reason="Release is undone by the next cycle: advance() blocks the order again while the row keeps "
-                                       "needs_review, and nothing clears it. The invoice can never leave Invoice Blocked this way.")
-async def test_f_release_of_a_blocked_invoice_holds_through_the_next_cycle(t):
-    o = await blocked(t)
+async def extra_row(t):
+    [r] = await t.q("SELECT id, shipment_id FROM sales_shipment_rows WHERE needs_review")
+    return r["shipment_id"], r["id"]
+
+
+async def resolve_row(t, line=None, reason=None):
+    sid, rid = await extra_row(t)
     async with t.factory(OP) as u:
-        await InvoiceService(u).release(t.rt.invoicing, ReleaseIn(order_id=o, reason="extra sample, no charge"))
+        await OrderActions(u, t.rt.tasks).resolve_row(sid, rid, line, reason)
         await u.commit()
-    await see(t, o, "F22 released", "Shipped", "Pending", "Waiting for Delivery")
+
+
+async def test_f_release_waits_for_the_row_and_accepting_it_lets_the_invoice_go(t):
+    o = await blocked(t)
+    with pytest.raises(BusinessError) as e:
+        async with t.factory(OP) as u:
+            await InvoiceService(u).release(t.rt.invoicing, ReleaseIn(order_id=o, reason="extra sample, no charge"))
+    assert e.value.code == "invoice.rows_unresolved"
+    with pytest.raises(BusinessError) as e:
+        await resolve_row(t)
+    assert e.value.code == "shipment.reason_required"
+    await resolve_row(t, reason="extra sample, no charge")
+    await see(t, o, "F22 row accepted", "Shipped", "Pending", "Waiting for Delivery")
+    assert await tasks(t, "invoice_hold") == [True]
     await system(t)
-    await see(t, o, "F23 next cycle", "Shipped", "Waiting for Delivery Confirmation", "Waiting for Delivery")
+    await see(t, o, "F23 next cycle stays released", "Shipped", "Waiting for Delivery Confirmation", "Waiting for Delivery")
+    assert await t.q("SELECT 1 FROM sales_audit WHERE reason LIKE '945 row CRMMARK002: accepted%'")
+    inv = await confirm(t, o)
+    rows = await t.q("SELECT item_code FROM sales_invoice_lines WHERE invoice_id = :i ORDER BY line_no", i=inv.id)
+    assert [r["item_code"] for r in rows] == ["CF0092", "CF0010"]  # accepted: not on the invoice
+
+
+async def test_f_linking_the_row_puts_it_on_the_line_and_the_invoice(t):
+    o = await blocked(t)
+    [line] = await t.q("SELECT id FROM sales_order_lines WHERE order_id = :o AND item_code = 'CF0010'", o=o)
+    await resolve_row(t, line["id"])
+    await see(t, o, "F29 row linked", "Shipped", "Pending", "Waiting for Delivery")
+    [ln] = await t.q("SELECT shipped_ea FROM sales_order_lines WHERE id = :i", i=line["id"])
+    assert ln["shipped_ea"] == 13  # its 12 and the row's 1
+    assert await t.q("SELECT 1 FROM sales_shipment_rows WHERE needs_review") == []
 
 
 async def test_f_a_part_case_holds_the_invoice_and_release_lets_it_go(t):
@@ -569,22 +603,143 @@ async def test_f_payment_hold_cancelled_at_source_is_silent(t):
     await see(t, o, "F28 unpaid, cancelled", "Cancelled", "Not Required", "Cancelled")
 
 
-@pytest.mark.xfail(strict=True, reason="PRD 9.1 gives On Hold the exits Cancelled, Shipped or the status before, and FR-OB-61 says a "
-                                       "person can release holds and cancel orders; no service or endpoint does either. A Cancelled at "
-                                       "Source or 945 Conflict order stays On Hold for good.")
-async def test_f_a_person_can_leave_on_hold_and_cancel_an_order():
-    from app.main import app
-    paths = {r.path for r in app.routes}
-    assert "/api/v1/orders/{id}/cancel" in paths or "/api/v1/orders/{id}/release-hold" in paths
+async def cancel(t, o, reason="agreed with the customer"):
+    async with t.factory(OP) as u:
+        await OrderActions(u, t.rt.tasks).cancel(o, reason)
+        await u.commit()
 
 
-@pytest.mark.xfail(strict=True, reason="A 945 for an order cancelled at source after its 940: the goods left, but the order stays On Hold "
-                                       "with shipped_ea written, and for a Shopify order the fulfillment of the cancelled order is queued.")
-async def test_f_a_945_after_cancelled_at_source_writes_nothing_to_shopify(t):
+async def release(t, o, to, reason="agreed with the warehouse"):
+    async with t.factory(OP) as u:
+        await OrderActions(u, t.rt.tasks).release_hold(o, to, reason)
+        await u.commit()
+
+
+async def exits(t, o):
+    async with t.factory(OP) as u:
+        d = await OrderService(u).detail(o)
+    return d.cancellable, d.hold_exits
+
+
+@pytest.mark.parametrize(("state", "allowed"), [
+    (s.value, s in (F.REVIEW, F.PAYMENT_HOLD, F.PENDING, F.ARCHIVE_SUPPRESSED, F.GENERATED_940, F.REJECTED_940, F.TIMEOUT_940,
+                    F.FAILED_940, F.ON_HOLD)) for s in F])
+def test_what_can_be_cancelled(state, allowed):
+    assert can_cancel(state, shadow=False) is allowed and can_cancel(state, shadow=True) is False
+
+
+async def test_f_cancel_an_order_with_a_generated_940_writes_nothing(t):
+    o = await shopify(t, 17, 9317)
+    after(t, minutes=181)
+    await t.rt.outbound.queue_due()
+    await see(t, o, "F30 940 generated", "940 Generated", "Not Required", "Waiting to Send")
+    await cancel(t, o)
+    await see(t, o, "F31 cancelled", "Cancelled", "Not Required", "Cancelled")
+    [d] = await t.q("SELECT file_status FROM sales_documents WHERE kind = '940_EDI'")
+    assert d["file_status"] == "Cancelled"
+    await system(t)
+    assert outgoing(t) == {"sftp": [], "mail": 0, "shopify": []}
+    assert await t.q("SELECT 1 FROM sales_audit WHERE reason = 'order cancelled: agreed with the customer'")
+
+
+async def test_f_cancel_closes_the_order_task_and_a_sent_940_cannot_be_cancelled_directly(t):
+    o = await shopify(t, 4, 9304, lines=BAD_LINE)
+    await cancel(t, o)
+    await see(t, o, "F32 review cancelled", "Cancelled", "Not Required", "Cancelled")
+    assert await tasks(t, "order_review") == [True]
+    o = await sent(t)
+    with pytest.raises(BusinessError) as e:
+        await cancel(t, o)
+    assert e.value.code == "order.not_cancellable" and "through On Hold" in e.value.message
+    assert (await exits(t, o)) == (False, [])
+
+
+async def test_f_cancelled_at_source_exits(t):
+    o = await cancelled_after(t)
+    assert await exits(t, o) == (True, ["Cancelled", "940 Sent"])  # Shipped only once a 945 says so
+    with pytest.raises(BusinessError) as e:
+        await release(t, o, "Shipped")
+    assert e.value.code == "order.hold_exit"
+    await release(t, o, "940 Sent")
+    await see(t, o, "F33 back to what it held", "940 Sent", "Not Required", "Waiting for 997", detail="Since")
+    assert await tasks(t, "cancel_after_940") == [True]
+
+
+async def test_f_cancelled_at_source_released_to_cancelled(t):
+    o = await cancelled_after(t)
+    await release(t, o, "Cancelled")
+    await see(t, o, "F34 cancelled", "Cancelled", "Not Required", "Cancelled")
+    assert outgoing(t)["shopify"] == []
+
+
+async def test_f_a_945_after_cancelled_at_source_stays_held_until_a_person_says_shipped(t):
     o = await cancelled_after(t)
     await ship(t, o, [("CF0092", 12, 12)])
     await system(t)
+    await see(t, o, "F35 945 on a cancelled order", "On Hold", "Not Required", "On Hold", reason="Cancelled at Source", detail="Cancelled")
     assert outgoing(t)["shopify"] == []
+    assert (await t.q("SELECT shipped_ea FROM sales_order_lines"))[0]["shipped_ea"] == 12
+    [task] = await t.q("SELECT description, is_completed FROM tasks WHERE type = 'sales_cancel_after_940'")
+    assert "CF0092 12" in task["description"] and not task["is_completed"]
+    assert await exits(t, o) == (True, ["Cancelled", "Shipped", "940 Sent"])
+    await release(t, o, "Shipped")
+    await see(t, o, "F36 a person says Shipped", "Shipped", "Not Required", "Waiting for Packing List", detail="Writing the tracking to Shopify")
+    await system(t)
+    await see(t, o, "F37 written", "Shipped", "Not Required", "Completed")
+    assert outgoing(t)["shopify"] == ["create_fulfillment", "close_order"]
+
+
+async def test_f_a_shopify_write_queued_before_the_hold_cannot_go(t):
+    o = await sent(t)
+    await accept(t, o)
+    await ship(t, o, [("CF0092", 12, 12)])  # the write is queued …
+    await shopify(t, 3, 9303, cancelled_at=t.clock.now.isoformat())  # … and the order goes On Hold before it runs
+    await system(t)
+    assert outgoing(t)["shopify"] == []
+    await see(t, o, "F38 refused by the pre-check", "On Hold", "Not Required", "On Hold", reason="Cancelled at Source", detail="Cancelled")
+    [sh] = await t.q("SELECT shopify_status FROM sales_shipments")
+    assert sh["shopify_status"] == "Suppressed"
+
+
+async def test_f_945_conflict_keep_the_applied_one(t):
+    o = await conflict(t)
+    assert await exits(t, o) == (True, ["Shipped", "Cancelled"])
+    await release(t, o, "Shipped")
+    await see(t, o, "F39 applied 945 kept", "Shipped", "Not Required", "Completed")
+    assert (await t.q("SELECT shipped_ea FROM sales_order_lines"))[0]["shipped_ea"] == 12  # the second changed nothing (AC-OB-73)
+    assert [r["applied"] for r in await t.q("SELECT applied FROM sales_shipments ORDER BY id")] == [True, False]
+    assert await tasks(t, "second_945") == [True]
+    assert outgoing(t)["shopify"] == ["create_fulfillment", "close_order"]  # written once, not again
+
+
+async def test_f_945_conflict_cancelled(t):
+    o = await conflict(t)
+    await release(t, o, "Cancelled")
+    await see(t, o, "F40 cancelled", "Cancelled", "Not Required", "Cancelled")
+
+
+async def test_f_a_cancelled_order_is_not_invoiced(t):
+    o = await blocked(t)  # Shipped, its invoice in progress: then a second 945 and Cancel
+    await resolve_row(t, reason="sample")
+    await system(t)
+    await ship(t, o, [("CF0092", 12, 1)], tracking=None)
+    await release(t, o, "Cancelled")
+    with pytest.raises(BusinessError) as e:
+        await confirm(t, o)
+    assert e.value.code == "invoice.order_cancelled"
+
+
+async def test_g_shadow_orders_have_no_actions_and_the_server_refuses(t):
+    o = await shopify(t, 18, 9318)
+    async with t.factory(SYSTEM_ACTOR) as u:
+        await SETTINGS.set(u.session, SHADOW_MODE, True)
+        await mark_open_orders(u)
+        await u.commit()
+    assert await exits(t, o) == (False, [])
+    for act in (cancel(t, o), release(t, o, "Cancelled")):
+        with pytest.raises(BusinessError) as e:
+            await act
+        assert e.value.code == "order.shadow"
 
 
 @pytest.mark.xfail(strict=True, reason="After Sales closes a Shopify order, the next pull brings closed_at but a Shipped order returns "
@@ -646,6 +801,13 @@ async def figures(t, o):
     return [(ln.qty_ea, ln.shipped_ea, ln.backordered_ea, ln.shipped_shadow_ea, ln.backordered_shadow_ea) for ln in d.lines]
 
 
+async def rows_of(t, o):
+    """(row EA, its line's EA), the 945's order."""
+    return [(r["q"], r["l"]) for r in await t.q(
+        "SELECT r.qty_shipped_ea q, l.qty_ea l FROM sales_shipment_rows r JOIN sales_shipments s ON s.id = r.shipment_id "
+        "JOIN sales_order_lines l ON l.id = r.order_line_id WHERE s.order_id = :o ORDER BY r.lx_index", o=o)]
+
+
 async def test_one_item_on_two_lines_in_full_is_not_short_applied(t):
     o = await two_lines(t, 13, 9313, TWO_LINES)
     after(t, minutes=181)
@@ -655,6 +817,7 @@ async def test_one_item_on_two_lines_in_full_is_not_short_applied(t):
     await see(t, o, "H1 two lines, 7 of 7, applied", "Shipped", "Not Required", "Waiting for Packing List",
               detail="Writing the tracking to Shopify")
     assert await figures(t, o) == [(1, 1, 0, None, None), (6, 6, 0, None, None)]
+    assert await rows_of(t, o) == [(6, 6), (1, 1)]  # each row under its own line
     assert await tasks(t, "short_shipment") == []
     await system(t)
     await see(t, o, "H2 written", "Shipped", "Not Required", "Completed")
@@ -687,6 +850,43 @@ async def test_one_item_on_two_lines_in_full_is_not_short_shadow(t):
     await shadow_945(t, o, 9315, [("CF0092", 7, 6), ("CF0092", 7, 1)])
     await see(t, o, "H4 two lines, 7 of 7, shadow", "Pending", "Not Required", "Completed (shadow)")
     assert await figures(t, o) == [(1, None, None, 1, 0), (6, None, None, 6, 0)]
+    assert await rows_of(t, o) == [(6, 6), (1, 1)]
+
+
+async def test_a_row_that_fits_no_line_keeps_the_totals_and_notifies(t):
+    o = await two_lines(t, 19, 9319, TWO_LINES)  # lines of 1 and 6; rows of 3 and 4
+    after(t, minutes=181)
+    await system(t)
+    await accept(t, o)
+    await ship(t, o, [("CF0092", 7, 3), ("CF0092", 7, 4)])
+    await see(t, o, "H6 rows 3 and 4 on lines 1 and 6", "Shipped", "Not Required", "Waiting for Packing List",
+              detail="Writing the tracking to Shopify")
+    assert await figures(t, o) == [(1, 1, 0, None, None), (6, 6, 0, None, None)]
+    assert await rows_of(t, o) == [(3, 6), (4, 6)]  # the 3 did not fit: linked to the largest line
+    assert await tasks(t, "945_validation") == [False]
+    [sh] = await t.q("SELECT checks FROM sales_shipments")
+    assert [c["check"] for c in sh["checks"]].count("row fits no line") == 1
+
+
+async def test_relink_moves_old_rows_by_the_rule_and_a_dry_run_writes_nothing(t):
+    o = await two_lines(t, 20, 9320, TWO_LINES)
+    await shadow_945(t, o, 9320, [("CF0092", 7, 6), ("CF0092", 7, 1)])
+    ids = [r["id"] for r in await t.q("SELECT id FROM sales_order_lines WHERE order_id = :o ORDER BY line_no", o=o)]
+    rows = [r["id"] for r in await t.q("SELECT id FROM sales_shipment_rows ORDER BY lx_index")]
+    async with t.factory(SYSTEM_ACTOR) as u:  # as the old matching left them: the 6 on the 1 EA line
+        for row, line in zip(rows, ids):
+            (await u.session.get(ShipmentRow, row)).order_line_id = line
+        await u.commit()
+    async with t.factory(SYSTEM_ACTOR) as u:
+        dry = await t.rt.shipments.relink_shadow_rows(u, dry_run=True)
+    assert (dry["shipments"], dry["rows_moved"]) == (1, 2)
+    assert await rows_of(t, o) == [(6, 1), (1, 6)]
+    async with t.factory(SYSTEM_ACTOR) as u:
+        await t.rt.shipments.relink_shadow_rows(u, dry_run=False)
+        await u.commit()
+    assert await rows_of(t, o) == [(6, 6), (1, 1)]
+    async with t.factory(SYSTEM_ACTOR) as u:
+        assert (await t.rt.shipments.relink_shadow_rows(u, dry_run=True))["rows_moved"] == 0
 
 
 async def test_one_item_on_two_lines_really_short_shadow(t):

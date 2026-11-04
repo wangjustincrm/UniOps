@@ -9,10 +9,11 @@ from app.platform.crud_router import page_body
 from app.platform.query import QuerySpec, query_spec
 from app.runtime import Runtime, get_runtime
 from app.schemas.orders import (
-    InvoicePricesIn, LinePreview, ManualLineIn, ManualOrderIn, OrderDetail, OrderFrom945In, OrderFrom945Plan, OrderRead,
-    ReviewResult,
+    CancelOrderIn, InvoicePricesIn, LinePreview, ManualLineIn, ManualOrderIn, OrderDetail, OrderFrom945In, OrderFrom945Plan, OrderRead,
+    ReleaseHoldIn, ResolveRowIn, ReviewResult,
 )
 from app.services.order_from_945 import OrderFrom945
+from app.services.order_holds import OrderActions
 from app.services.order_views import ManualOrderService, OrderService
 
 UoW = Annotated[Any, Depends(get_uow)]
@@ -61,6 +62,13 @@ async def shipments_without_order(u: UoW, document_id: int | None = None):
 @router.post("/shipments/{shipment_id}/create-order", response_model=OrderRead, status_code=201)
 async def create_order_from_945(u: UoW, shipment_id: int, body: OrderFrom945In):
     o = await OrderFrom945(u).create(shipment_id, body.partner_code)
+    await u.commit()
+    return OrderService(u).to_read(o)
+
+
+@router.post("/shipments/{shipment_id}/rows/{row_id}/resolve", response_model=OrderRead)
+async def resolve_945_row(u: UoW, rt: Rt, shipment_id: int, row_id: int, body: ResolveRowIn):
+    o = await OrderActions(u, rt.tasks).resolve_row(shipment_id, row_id, body.order_line_id, body.reason)
     await u.commit()
     return OrderService(u).to_read(o)
 
@@ -120,3 +128,17 @@ async def resolve_review(u: UoW, rt: Rt, id: int):
     out = await OrderService(u).resolve_review(id, rt.intake.tasks, rt.container.shopify)
     await u.commit()
     return out
+
+
+@router.post("/{id}/cancel", response_model=OrderRead)
+async def cancel_order(u: UoW, rt: Rt, id: int, body: CancelOrderIn, version: Version = None):
+    o = await OrderActions(u, rt.tasks).cancel(id, body.reason, version)
+    await u.commit()
+    return OrderService(u).to_read(o)
+
+
+@router.post("/{id}/release-hold", response_model=OrderRead)
+async def release_hold(u: UoW, rt: Rt, id: int, body: ReleaseHoldIn, version: Version = None):
+    o = await OrderActions(u, rt.tasks).release_hold(id, body.to, body.reason, version)
+    await u.commit()
+    return OrderService(u).to_read(o)

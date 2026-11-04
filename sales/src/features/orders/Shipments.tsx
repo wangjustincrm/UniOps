@@ -5,7 +5,8 @@ import {
   type ColumnDef, Hint,
 } from '@/platform-ui'
 import { LineNo } from './LineNo'
-import { downloadPackingList, ordersClient, retryShopify, type ShipmentRead, type ShipmentRowRead } from './ordersApi'
+import { downloadPackingList, ordersClient, retryShopify, type LineRead, type ShipmentRead, type ShipmentRowRead } from './ordersApi'
+import { ResolveRow } from './ResolveRow'
 
 const errorMessages: Record<string, string> = {
   'shipment.shadow': 'The shadow run is on (or this 945 came during it): nothing is written to Shopify.',
@@ -27,7 +28,7 @@ function Match({ r, shadow }: { r: ShipmentRowRead; shadow: boolean }) {
   return <Badge variant="neutral">Not linked</Badge>
 }
 
-const rowColumns = (shadow: boolean, numbers: Map<number, number>): ColumnDef<ShipmentRowRead, unknown>[] => [
+const rowColumns = (s: ShipmentRead, numbers: Map<number, number>, orderId: number, lines: LineRead[]): ColumnDef<ShipmentRowRead, unknown>[] => [
   { id: 'line', header: 'Line', cell: ({ row: { original: r } }) => r.line_no != null
     ? <span className="whitespace-nowrap">#<LineNo lineNo={r.line_no} numbers={numbers} /> · {r.item_code ?? '?'}</span> : '—' },
   { accessorKey: 'item_code', header: 'Item code', cell: ({ row }) => row.original.item_code ?? '—' },
@@ -41,13 +42,18 @@ const rowColumns = (shadow: boolean, numbers: Map<number, number>): ColumnDef<Sh
   { accessorKey: 'lx_number', header: 'LX no.', cell: ({ row }) => row.original.lx_number ?? row.original.lx_index },
   { accessorKey: 'tracking', header: 'Tracking', cell: ({ row: { original: r } }) => r.tracking
     ? <TrackingLink number={r.tracking} url={r.tracking_url} /> : '—' },
-  { id: 'match', header: 'Match', cell: ({ row }) => <Match r={row.original} shadow={shadow} /> },
+  { id: 'match', header: 'Match', cell: ({ row }) => (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      <Match r={row.original} shadow={s.shadow} />
+      {row.original.needs_review && <ResolveRow r={row.original} shipmentId={s.id} orderId={orderId} lines={lines} />}
+    </span>
+  ) },
 ]
 
 /** The 945's line items, one table per pallet (LX) with its subtotal. */
-function LineItems({ s, numbers }: { s: ShipmentRead; numbers: Map<number, number> }) {
+function LineItems({ s, numbers, orderId, lines }: { s: ShipmentRead; numbers: Map<number, number>; orderId: number; lines: LineRead[] }) {
   const pallets = [...new Set(s.rows.map((r) => r.lx_index))]
-  const columns = rowColumns(s.shadow, numbers)
+  const columns = rowColumns(s, numbers, orderId, lines)
   return (
     <div className="flex flex-col gap-2">
       {pallets.map((lx) => {
@@ -105,8 +111,10 @@ function Pair({ label, children }: { label: string; children: React.ReactNode })
  *  checks that notified (FR-OB-25d), the Shopify write-back (FR-OB-11), and its
  *  line items pallet by pallet, each matched to its order line. A split
  *  shipment's parts ("9451a", "9451b") are cards Part a, Part b. */
-export function Shipments({ shipments, orderId, lineNumbers = new Map() }: {
+export function Shipments({ shipments, orderId, lineNumbers = new Map(), lines = [] }: {
   shipments: ShipmentRead[]; orderId: number
+  /** The order's lines, to resolve a 945 row that matches none. */
+  lines?: LineRead[]
   /** The order's line numbers as shown (`lineNumbers` in ordersApi); none: the line_no as is. */
   lineNumbers?: Map<number, number>
 }) {
@@ -168,7 +176,7 @@ export function Shipments({ shipments, orderId, lineNumbers = new Map() }: {
               {s.checks.map((c, i) => <li key={i}>{c.check}: {c.message}</li>)}
             </ul>
           )}
-          {s.rows.length > 0 && <LineItems s={s} numbers={lineNumbers} />}
+          {s.rows.length > 0 && <LineItems s={s} numbers={lineNumbers} orderId={orderId} lines={lines} />}
         </div>
       ))}
     </section>

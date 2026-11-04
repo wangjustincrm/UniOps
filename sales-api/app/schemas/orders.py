@@ -14,6 +14,7 @@ Code = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max
 Unit = Annotated[str, StringConstraints(strip_whitespace=True, to_upper=True, min_length=1, max_length=20)]
 Qty = Annotated[Decimal, Field(gt=0, max_digits=14, decimal_places=4)]
 Text = Annotated[str, StringConstraints(strip_whitespace=True)]
+Reason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=2000)]
 
 
 class OrderRead(BaseModel):
@@ -150,6 +151,7 @@ class TimelineEntry(BaseModel):
 class ShipmentRowRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
+    id: int
     lx_index: int
     w12_index: int
     sscc: str | None
@@ -287,6 +289,8 @@ class OrderDetail(OrderRead):
     ship_to_flags: list[str] = []
     documents: list[OrderDocumentRead] = []
     shipments: list[ShipmentRead] = []
+    cancellable: bool = False                # Cancel order is offered
+    hold_exits: list[str] = []               # where Release hold can take it (none: not On Hold, or a shadow order)
     # Shopify finance (sales17): gateways, discount codes, the order's tax lines,
     # its transactions and refunds
     payment_gateways: list[str] | None = None
@@ -355,6 +359,28 @@ class ManualOrderIn(BaseModel):
     ship_to: AddressIn  # required: the 940 cannot go without it
     notes: Text | None = None
     lines: Annotated[list[ManualLineIn], Field(min_length=1, max_length=200)]
+
+
+class CancelOrderIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: Reason
+
+
+class ReleaseHoldIn(BaseModel):
+    """Where the order goes: one of the detail's `hold_exits`."""
+    model_config = ConfigDict(extra="forbid")
+
+    to: str
+    reason: Reason
+
+
+class ResolveRowIn(BaseModel):
+    """A 945 row matching no line: link it to a line, or (no line) accept it, saying why."""
+    model_config = ConfigDict(extra="forbid")
+
+    order_line_id: int | None = None
+    reason: Text | None = None
 
 
 class OrderFrom945In(BaseModel):

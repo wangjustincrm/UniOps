@@ -34,7 +34,9 @@ from typing import Any, Callable
 from sqlalchemy import func, select
 
 from app.domain.edi945 import OrderKey, Shipment945, order_key, parse_945
+from app.domain.lifecycle import spread
 from app.domain.orders import FROM_945
+from app.domain.row_matching import assign_rows
 from app.domain.status import FULFILLMENT, INBOUND_FILE, Ack, InboundFile
 from app.domain.status import Fulfillment as F
 from app.domain.x12 import X12Error
@@ -53,7 +55,7 @@ from app.services.intake import ConnectionSnapshot
 from app.services.order_from_945 import SYNTHETIC_PREFIX, attach, warehouse_number_is
 from app.services.outbound import TORONTO, latest_940
 from app.services.problems import (
-    EDI_945_LINE_UNMATCHED, EDI_945_NO_ORDER, EDI_945_VALIDATION, ORDER_FILE_UNREADABLE, SECOND_945,
+    CANCELLED_AFTER_940, EDI_945_LINE_UNMATCHED, EDI_945_NO_ORDER, EDI_945_VALIDATION, ORDER_FILE_UNREADABLE, SECOND_945,
     SHOPIFY_WRITE_FAILED, SHORT_SHIPMENT, problem, send_refused,
 )
 from app.services.settings import SETTINGS, SHADOW_MODE
@@ -64,6 +66,7 @@ STEP = "945"
 FULFILL, CLOSE = "shopify_fulfill", "shopify_close"
 OUTBOX = Outbox(OutboxRecord)
 SHIPPABLE = (F.SENT_940, F.ACCEPTED_940, F.TIMEOUT_940)
+STOPPED = (F.ON_HOLD, F.CANCELLED)  # nothing is written to Shopify for these
 TRACKING_COMPANY = "Purolator"  # FR-OB-11: Shopify orders ship with Purolator
 
 
@@ -239,7 +242,6 @@ class Shipments:
             Item.item_code.in_([ln.item_code for ln in lines if ln.item_code])))).scalars()}
         sent = await latest_940(s, order.id)
         locked = ((sent.body_json or {}).get("locked") or {}) if sent is not None else {}
-        lx_of = {str(x["line_no"]): str(x["lx"]) for x in ((sent.body_json or {}).get("lines") or [])} if sent else {}
         ordered = {ln.id: int((locked.get("lines") or {}).get(str(ln.line_no), {}).get("qty_ea") or ln.qty_ea or 0) for ln in lines}
 
         def ids_of(ln: OrderLine) -> set[str]:
@@ -250,38 +252,35 @@ class Shipments:
             return {str(v).strip().lstrip("0") for v in vals if v}
 
         # Several lines of the same item (a Shopify order's "Trial Can" and "Can", both CF0102):
-        # what a W12 shipped fills them up to each line's quantity — the line whose 940 LX is
-        # the W12's LX first, then in line order — and only what is left over is over-shipped.
-        # (In Radiant's real 945s an LX is a pallet, so its number rarely names a 940 line.)
-        # A shadow-run 945 may be one part of a split shipment (Radiant / Zoho: "9451a", "9451b"):
-        # what the earlier parts of this order shipped (their rows linked to the lines) counts first,
-        # so the parts add up. Never for an applied 945 (one 945 per order: D18).
+        # app/domain/row_matching.py says which line each row belongs to; what each line shipped
+        # is the item's total spread over them, up to each line's quantity, and only what is left
+        # over is over-shipped. A shadow-run 945 may be one part of a split shipment (Radiant /
+        # Zoho: "9451a", "9451b"): what the earlier parts shipped counts first, so the parts add
+        # up. Never for an applied 945 (one 945 per order: D18).
         shipped: dict[int, int] = await self._shadow_shipped(s, order.id, doc.id) if doc.shadow else {}
+        groups: dict[tuple[int, ...], tuple[list[OrderLine], list[Any]]] = {}
         for r in sh.rows:
             ident = {str(v).strip().lstrip("0") for v in (r.item_code, r.upc) if v}
             cands = [ln for ln in lines if ident & ids_of(ln)]
-            if len(cands) > 1 and r.lx_number:
-                lx = str(r.lx_number).lstrip("0")
-                cands = sorted(cands, key=lambda ln: lx_of.get(str(ln.line_no)) != lx)  # stable: line order otherwise
             if not cands:
                 p.rows.append(RowPlan(r.lx_index, r.w12_index, None))
                 p.unmatched.append(f"LX {r.lx_number or r.lx_index} W12 {r.item_code or r.upc}: {r.qty_shipped} EA")
                 p.checks.append(_check("extra or substituted item", f"{r.item_code or r.upc} was not on the 940",
                                        found=r.item_code or r.upc, expected=None))
                 continue
-            left, first = r.qty_shipped, None
-            for ln in cands:
-                take = min(left, max(ordered.get(ln.id, 0) - shipped.get(ln.id, 0), 0))
-                if take > 0:
-                    shipped[ln.id] = shipped.get(ln.id, 0) + take
-                    left -= take
-                    first = first or ln
-                if left == 0:
-                    break
-            if left > 0:  # more than every candidate line ordered: over-shipped on the first
-                shipped[cands[0].id] = shipped.get(cands[0].id, 0) + left
-                first = first or cands[0]
-            p.rows.append(RowPlan(r.lx_index, r.w12_index, first.id))
+            groups.setdefault(tuple(ln.id for ln in cands), (cands, []))[1].append(r)
+        for cands, rows in groups.values():
+            room = [max(ordered.get(ln.id, 0) - shipped.get(ln.id, 0), 0) for ln in cands]
+            total = sum(r.qty_shipped for r in rows)
+            placed = assign_rows([((r.lx_index, r.w12_index), r.qty_shipped) for r in rows],
+                                 [(ln.id, n) for ln, n in zip(cands, room)])
+            p.rows += [RowPlan(r.lx_index, r.w12_index, placed.links[(r.lx_index, r.w12_index)]) for r in rows]
+            for ln, n in zip(cands, spread(total, room)):
+                shipped[ln.id] = shipped.get(ln.id, 0) + n
+            if placed.did_not_fit and total <= sum(room):  # beyond that it is an over-shipment (AC-OB-56)
+                p.checks.append(_check("row fits no line", f"{cands[0].item_code}: a 945 row is larger than any line has room for; "
+                                       "it is linked to the largest line, the quantities are right by item",
+                                       found=[r.qty_shipped for r in rows], expected=room))
         for ln in lines:
             if not ln.item_code or not (items.get(ln.item_code) and items[ln.item_code].warehouse_held):
                 continue
@@ -408,7 +407,15 @@ class Shipments:
                 EDI_945_LINE_UNMATCHED, f"945 line matches no order line: order {order.label}",
                 f"945 {doc.remote_name} for order {order.label}: " + "; ".join(p.unmatched)
                 + ". It was stored but cannot be invoiced until someone decides."))
-        if order.source_type == "SHOPIFY":
+        if F(order.fulfillment_status) in STOPPED:
+            # FR-OB-18: the goods left an order cancelled at source. Recorded, and nothing goes to
+            # Shopify unless a person chooses Shipped in Release hold.
+            what = ", ".join(f"{i['item_code']} {i['shipped_ea']}" for i in p.lines.values()) or "nothing on the order's lines"
+            await self.tasks.raise_problem(s, CANCELLED_AFTER_940, order.id, problem(
+                CANCELLED_AFTER_940, f"Cancelled after the 940, but shipped: order {order.label}",
+                f"Order {order.label} was cancelled, and 945 {doc.remote_name} says it shipped: {what} (EA). "
+                "Nothing was written to Shopify. Decide with Release hold: Shipped sends the fulfillment to Shopify.", urgent=True))
+        elif order.source_type == "SHOPIFY":
             shipment.shopify_status = "Pending"
             OUTBOX.add(s, FULFILL, {"shipment_id": shipment.id}, entity=shipment)
         await s.flush()
@@ -498,6 +505,47 @@ class Shipments:
                 f"{k} {v}" for k, v in counts.items()), context=counts)
         return counts
 
+    async def relink_shadow_rows(self, uow, *, dry_run: bool) -> dict[str, Any]:
+        """Once, for the shadow-run 945s linked before the mapping rule: each is planned again
+        from its stored 945 and its rows move to the line the rule gives. Nothing else is
+        written. Idempotent. With `dry_run` nothing is written: the counts and the moves."""
+        s = uow.session
+        out: dict[str, Any] = {"shipments": 0, "unchanged": 0, "skipped_synthetic": 0, "skipped_other_order": 0, "rows_moved": 0,
+                               "checks": 0, "moves": []}
+        ships = list((await s.execute(select(Shipment).where(Shipment.shadow.is_(True), Shipment.order_id.is_not(None))
+                                      .order_by(Shipment.document_id, Shipment.set_index))).scalars())
+        for shp in ships:
+            doc = await s.get(Document, shp.document_id)
+            if (doc.remote_name or "").startswith(SYNTHETIC_PREFIX):
+                out["skipped_synthetic"] += 1
+                continue
+            content = (await s.execute(select(Document.content).where(Document.id == doc.id))).scalar_one()
+            sh = parse_945(content)[shp.set_index - 1]
+            p = await self.plan(s, doc, sh)
+            if p.order_id != shp.order_id:
+                out["skipped_other_order"] += 1
+                continue
+            out["shipments"] += 1
+            out["checks"] += sum(1 for c in p.checks if c["check"] == "row fits no line")
+            by_pos = {(r.lx_index, r.w12_index): r.order_line_id for r in p.rows}
+            moved = 0
+            for r in (await s.execute(select(ShipmentRow).where(ShipmentRow.shipment_id == shp.id))).scalars():
+                new = by_pos.get((r.lx_index, r.w12_index))
+                if new is not None and new != r.order_line_id:
+                    moved += 1
+                    out["moves"].append({"order_number": p.order_number, "shipment": shp.id, "lx": r.lx_index, "ea": r.qty_shipped_ea,
+                                         "from_line": r.order_line_id, "to_line": new})
+                    if not dry_run:
+                        r.order_line_id = new
+            out["rows_moved"] += moved
+            out["unchanged"] += 0 if moved else 1
+            if not dry_run:
+                await s.flush()
+        if not dry_run:
+            await oplog.write(s, "INFO", STEP, f"shadow-run 945 rows relinked by the mapping rule: {out['rows_moved']} row(s)",
+                              context={k: v for k, v in out.items() if k != "moves"})
+        return out
+
     # ── Shopify write-back (outbox) ──────────────────────────────────────────
     def fulfill_kind(self) -> OutboxKind:
         return OutboxKind(effect=self._fulfill, policy=ONCE, pre_check=self._pre_check, on_done=self._fulfilled,
@@ -520,6 +568,12 @@ class Shipments:
             return "the shadow run: nothing is written to Shopify"
         if not sh.applied:
             return "the shipment was not applied"
+        order = await s.get(Order, sh.order_id, with_for_update=True)
+        if F(order.fulfillment_status) in STOPPED:  # a row queued before the hold or the cancellation
+            await oplog.write(s, "WARNING", STEP, f"no Shopify write for shipment {sh.id}: the order is {order.fulfillment_status}",
+                              order_id=order.id)
+            sh.shopify_status = "Suppressed"
+            return f"the order is {order.fulfillment_status}: nothing is written to Shopify"
         return None
 
     async def _context(self, shipment_id: int):

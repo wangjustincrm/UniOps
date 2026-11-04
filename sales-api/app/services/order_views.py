@@ -12,7 +12,7 @@ from sqlalchemy import and_, case, or_, select
 from app.domain.address import address_flags
 from app.domain.carriers import tracking_url
 from app.domain.lifecycle import backordered, line_state, spread
-from app.domain.order_rules import ON_HOLD_FULFILLMENT, order_state, payment_satisfied, to_ea
+from app.domain.order_rules import ON_HOLD_FULFILLMENT, can_cancel, hold_exits, order_state, payment_satisfied, to_ea
 from app.domain.order_status import (
     HOLD_REASONS as ON_HOLD_REASONS, ORDER_STATUSES, DetailFacts, StatusFacts, display, send_time, status_detail,
 )
@@ -201,12 +201,17 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
             (AuditRecord.entity == "sales_order_lines") & (AuditRecord.entity_id.in_(line_ids) if line_ids else False),
         )).order_by(AuditRecord.at.desc(), AuditRecord.id.desc()).limit(200))).scalars()
         base = self.to_read(o).model_dump()
+        shipments = await self._shipments(id)
         return OrderDetail(
             **base, **{k: getattr(o, k) for k in ("bill_to", "contact", "notes", "subtotal", "tax", "shipping",
                                                    "discount", "department", "order_type")},
             lines=await self._lifecycle(lines), has_invoice=has_invoice,
             documents=[OrderDocumentRead(**d._asdict()) for d in docs],
-            shipments=await self._shipments(id),
+            shipments=shipments,
+            cancellable=can_cancel(o.fulfillment_status, shadow=o.shadow),
+            hold_exits=hold_exits(o.fulfillment_status, o.fulfillment_status_before_hold, shadow=o.shadow,
+                                  cancelled_at_source=o.source_cancelled_at is not None,
+                                  applied_945=any(x.applied for x in shipments)),
             payment_gateways=o.payment_gateways, discount_codes=o.discount_codes, tax_lines=o.tax_lines,
             **await self._payments(id),
             dc_number=await self._dc_number(o), ship_to_flags=address_flags(o.ship_to),

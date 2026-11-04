@@ -36,7 +36,7 @@ export function Send940({ o }: { o: OrderRead }) {
     },
   })
   const replace = REPLACEABLE.includes(o.fulfillment_status)
-  if (o.source_type === 'FROM_945') return null // it has already shipped: it never gets a 940
+  if (o.shadow || o.source_type === 'FROM_945') return null // Zoho's order; a FROM_945 order has already shipped
   if (!replace && !SENDABLE.includes(o.fulfillment_status)) return null
   return (
     <section aria-label="Send 940" className="flex flex-col gap-2 text-sm">

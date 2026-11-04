@@ -6,6 +6,7 @@ import {
   compareRecord, useRefresh,
 } from '@/platform-ui'
 import { SOURCE_LABEL, fetchOrder, ordersClient, type OrderRead } from './ordersApi'
+import { OrderHoldActions } from './OrderHoldActions'
 import { OrderStatusBadge } from './OrderStatusCells'
 import { statusDetailText } from './orderStatus'
 import { PaymentsAndRefunds } from './PaymentsAndRefunds'
@@ -102,6 +103,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
       {d.fulfillment_status === 'Review' && <Recheck o={d} bare onResolved={close} />}
       {isDraft && <DraftActions o={d} close={close} />}
       <Send940 o={d} />
+      <OrderHoldActions o={d} />
       {priceable && !pricing && (
         <ActionButton size="sm" variant="secondary" permission={MANAGE_INVOICE}
           onAction={() => { setPricing(true); host?.onTabChange?.('lines') }}>Edit invoice prices</ActionButton>

@@ -38,7 +38,7 @@ function Lots({ o }: { o: OrderDetail }) {
 export function ShipmentsTab({ o }: { o: OrderDetail }) {
   return (
     <>
-      <Shipments shipments={o.shipments} orderId={o.id} lineNumbers={lineNumbers(o)} />
+      <Shipments shipments={o.shipments} orderId={o.id} lineNumbers={lineNumbers(o)} lines={o.lines} />
       <Lots o={o} />
     </>
   )
