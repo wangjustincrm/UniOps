@@ -155,7 +155,7 @@ async def test_the_detail_and_the_list_show_payments_refunds_net_and_the_refund_
                      "partially_refunded": [{"field": "shopify_financial_status", "op": "eq", "value": "partially_refunded"}]}
     labels = {f["name"]: f["label"] for f in meta["fields"]}
     assert (labels["source_name"], labels["tags"], labels["net_amount"], labels["total_refunded"], labels["shopify_financial_status"]) == (
-        "Sales channel", "Tags", "Net", "Refunded", "Payment status")
+        "Sales channel", "Tags", "Net", "Refunded", "Shopify Payment")
     async with env.factory(OP) as u:
         p = await OrderRepository(u).list(QuerySpec())
         part = await OrderRepository(u).list(QuerySpec(filters=[parse_filter("shopify_financial_status:eq:partially_refunded")]))

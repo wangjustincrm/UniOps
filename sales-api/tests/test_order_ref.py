@@ -96,7 +96,7 @@ async def test_the_orders_list_carries_and_searches_the_partner_name_and_the_ref
         page = await repo.list(QuerySpec(search="Loblaws"))
         assert [(o.source_reference, o.partner_name) for o in page.items] == [("LBL-4887314746", "Loblaws")]
         assert (await repo.list(QuerySpec(search="LBL-48873"))).total == 1
-        assert {f["name"] for f in repo.field_meta()} >= {"partner_name", "order_state"}
+        assert {f["name"] for f in repo.field_meta()} >= {"partner_name", "order_status"}
 
 
 # ── the invoice: delivery number, PO price, a reason for a new price ─────────

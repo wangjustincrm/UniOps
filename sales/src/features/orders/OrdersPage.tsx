@@ -1,5 +1,6 @@
-import { DateCell, ListPage, MoneyCell, StatusCell, type ColumnDef, type ListCreate, type QuerySpec, type RecordTab } from '@/platform-ui'
-import { OrderSheet, StateBadge } from './OrderDetailView'
+import { DateCell, ListPage, MoneyCell, type ColumnDef, type ListCreate, type QuerySpec, type RecordTab } from '@/platform-ui'
+import { OrderSheet } from './OrderDetailView'
+import { OrderStatusBadge, ShopifyCell, StatusDetail } from './OrderStatusCells'
 import { ReturnAfterShipment } from '@/features/invoices/ReturnAfterShipment'
 import { SubmitDraft } from './DraftActions'
 import { ManualOrderForm } from './ManualOrderForm'
@@ -14,16 +15,15 @@ const orderColumns: ColumnDef<OrderRead, unknown>[] = [
   { accessorKey: 'partner_name', header: 'Partner', cell: ({ row }) => <PartnerCell name={row.original.partner_name} code={row.original.partner_code} /> },
   { accessorKey: 'source_order_number', header: 'Customer PO / ref.' },
   { accessorKey: 'order_date', header: 'Ordered', cell: ({ row }) => <DateCell value={row.original.order_date} /> },
-  { accessorKey: 'fulfillment_status', header: 'Status', cell: ({ row }) => <StateBadge o={row.original} /> },
+  { accessorKey: 'order_status', header: 'Status', cell: ({ row }) => <OrderStatusBadge o={row.original} /> },
+  { id: 'status_detail', header: 'Detail', cell: ({ row }) => <StatusDetail o={row.original} /> },
+  { id: 'shopify', header: 'Shopify', cell: ({ row }) => <ShopifyCell o={row.original} /> },
   { accessorKey: 'total_amount', header: 'Total', cell: ({ row }) => <MoneyCell amount={row.original.total_amount} currency={row.original.currency} /> },
   { accessorKey: 'backordered_ea', header: 'Backordered EA', cell: ({ row }) => row.original.backordered_ea
     ? <span className="font-medium text-warning-700">{row.original.backordered_ea}</span> : '' },
   { accessorKey: 'total_refunded', header: 'Refunded', cell: ({ row }) => Number(row.original.total_refunded ?? 0)
     ? <MoneyCell amount={row.original.total_refunded} currency={row.original.currency} /> : '' },
   { accessorKey: 'net_amount', header: 'Net', cell: ({ row }) => <MoneyCell amount={row.original.net_amount} currency={row.original.currency} /> },
-  { accessorKey: 'shopify_financial_status', header: 'Payment status', cell: ({ row }) => row.original.shopify_financial_status
-    ? <StatusCell value={row.original.shopify_financial_status.replace('_', ' ')} tone={row.original.shopify_financial_status === 'paid' ? 'success'
-      : row.original.shopify_financial_status.includes('refunded') ? 'warning' : 'neutral'} /> : '' },
   { accessorKey: 'review_reason', header: 'Review reason', cell: ({ row }) => (
     <span className="line-clamp-2 max-w-md whitespace-pre-line text-xs text-neutral-600">{row.original.review_reason ?? ''}</span>
   ) },

@@ -1,4 +1,4 @@
-import { AddressView, Badge, Callout, DetailList, Section, formatDate, formatDateTime, formatMoney } from '@/platform-ui'
+import { AddressView, Badge, Callout, DetailList, Hint, Section, formatDate, formatDateTime, formatMoney } from '@/platform-ui'
 import { partnerLabel } from '@/features/common/labels'
 import { SOURCE_LABEL, type OrderDetail } from '../ordersApi'
 
@@ -33,10 +33,20 @@ export function OverviewTab({ o }: { o: OrderDetail }) {
           ['Partner', partnerLabel(o.partner_name, o.partner_code)], ['Customer PO / reference', o.source_order_number],
           ['Source', SOURCE_LABEL[o.source_type] ?? o.source_type], ['Received', formatDateTime(o.first_received_at)], ['Paid (delay start)', formatDateTime(o.paid_at)],
           ['Requested delivery', o.requested_delivery_date ? formatDate(o.requested_delivery_date) : null],
-          ['Total', formatMoney(o.total_amount ?? o.total, o.currency)], ['Invoice', o.invoice_status],
+          ['Total', formatMoney(o.total_amount ?? o.total, o.currency)],
           ['Notes', o.notes],
         ]} />
       </Section>
+      {o.source_type === 'SHOPIFY' && (
+        <Section title="Shopify">
+          <Hint as="p">As Shopify reports them; read only.</Hint>
+          <DetailList items={[
+            ['Payment', o.shopify_financial_status], ['Fulfillment', o.shopify_fulfillment_status],
+            ['Archived', o.archived_in_shopify_at ? formatDateTime(o.archived_in_shopify_at) : 'No'],
+            ['Cancelled', o.source_cancelled_at ? formatDateTime(o.source_cancelled_at) : 'No'],
+          ]} />
+        </Section>
+      )}
       <div className="grid gap-4 md:grid-cols-2">
         <Section title="Ship to">
           <AddressView value={o.ship_to} note={shipToOrigin(o)} />
@@ -44,6 +54,13 @@ export function OverviewTab({ o }: { o: OrderDetail }) {
         </Section>
         <Section title="Bill to"><AddressView value={o.bill_to} note={billToOrigin(o)} /></Section>
       </div>
+      <Section title="Internal status">
+        <Hint as="p">The raw values, for diagnosis. The statuses at the top are worked out from these.</Hint>
+        <DetailList items={[
+          ['Fulfillment', o.fulfillment_status], ['Invoice', o.invoice_status], ['Order state', o.order_state], ['Hold reason', o.hold_reason],
+          ['Shadow run', o.shadow ? 'Yes' : 'No'],
+        ]} />
+      </Section>
     </>
   )
 }

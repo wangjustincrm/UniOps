@@ -128,6 +128,10 @@ class Order(Audited, Versioned, Base):
         """The order's amount as loaded with the row (`total_amount_sql`); never a lazy load."""
         return self.__dict__.get("total_amount_sql")
 
+    def fact(self, name: str, default=None):
+        """A value loaded with the row (`*_sql`); never a lazy load."""
+        return self.__dict__.get(name, default)
+
     @property
     def backordered_ea(self) -> int | None:
         """What the 945 left unshipped, in EA (`backordered_ea_sql`); never a lazy load."""
@@ -141,6 +145,16 @@ INVOICE.bind(Order)
 # The partner's name on the order's row (lists sort, filter, group and search by it).
 Order.partner_name_sql = column_property(
     select(Partner.name).where(Partner.code == Order.partner_code).correlate_except(Partner).scalar_subquery())
+
+# What the Status and its Detail read of the partner (app/domain/order_status.py).
+def _partner_value(column):
+    return column_property(select(column).where(Partner.code == Order.partner_code).correlate_except(Partner).scalar_subquery())
+
+
+Order.partner_invoice_method_sql = _partner_value(Partner.invoice_method)
+Order.partner_sending_mode_sql = _partner_value(Partner.sending_mode)
+Order.partner_settlement_mode_sql = _partner_value(Partner.settlement_mode)
+Order.partner_delay_minutes_sql = _partner_value(Partner.delay_minutes)
 
 
 class OrderLine(Audited, Base):

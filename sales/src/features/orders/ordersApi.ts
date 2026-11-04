@@ -27,7 +27,21 @@ export interface OrderRead {
   total_amount?: string | null
   fulfillment_status: string
   invoice_status: string
+  /** Internal (D17): what eligibility reads. People see `order_status`. */
   order_state: 'Draft' | 'Active' | 'On Hold' | 'Completed' | 'Cancelled'
+  shadow: boolean
+  /** What people see, derived by sales-api (app/domain/order_status.py). */
+  order_status: string
+  on_hold_reason: string | null
+  /** As shown: "On Hold: 997 Timeout". */
+  order_status_label: string
+  /** A mark beside the Status: the 945 (applied or the shadow run's) left something unshipped. */
+  short_shipped: boolean
+  /** Only what the Status does not say (a time, the hold's detail); usually empty. */
+  status_detail: string | null
+  status_detail_at: string | null
+  shopify_fulfillment_status: string | null
+  source_cancelled_at: string | null
   hold_reason: string | null
   review_reason: string | null
   historical: boolean

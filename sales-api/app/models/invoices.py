@@ -103,3 +103,8 @@ class OrderReturn(CreationAudited, Base):
     kind: Mapped[str] = mapped_column(String(30), nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     lines: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+
+
+# The Detail of an order whose invoice failed (app/domain/order_status.py).
+Order.invoice_error_sql = column_property(
+    select(Invoice.error).where(Invoice.order_id == Order.id).correlate_except(Invoice).scalar_subquery())

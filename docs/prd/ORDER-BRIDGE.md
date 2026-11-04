@@ -247,12 +247,12 @@ Five X12 message types are exchanged over Radiant's SFTP.
 
 ## 9. Order lifecycle and state machine
 
-A normal order passes through eight stages: Received → Preparing Warehouse Request → Waiting for Warehouse ACK → Waiting for Warehouse Confirmation → Waiting for Delivery (retailer orders only, waiting for the manual delivery date) → Waiting for Invoice → Invoice Queued → Completed, with On Hold and Cancelled as exception states. Shopify orders (invoice method None) complete right after shipment.
+People see one **Status** per order, derived from the internal status lines (section 9.1; FR-OB-52). A normal order goes Waiting to Send → Waiting for 997 → Waiting for Packing List → Waiting for Delivery (retailer orders) → Waiting for Invoice → Completed, with On Hold (always with its reason), Draft and Cancelled. Shopify and other no-invoice orders complete after shipment. The table below keeps what Zoho's lines held, for the migration only: Zoho's eight-stage Order status is not carried over.
 
 | Status line | Values |
 | --- | --- |
-| Order state | Active, On Hold, Completed, Cancelled |
-| Order status | Received, Preparing Warehouse Request, Waiting for Warehouse ACK, Waiting for Warehouse Confirmation, Waiting for Delivery, Waiting for Invoice, Invoice Queued, Completed, Cancelled |
+| Order state (Zoho) | Active, On Hold, Completed, Cancelled |
+| Order status (Zoho) | Received, Preparing Warehouse Request, Waiting for Warehouse ACK, Waiting for Warehouse Confirmation, Waiting for Delivery, Waiting for Invoice, Invoice Queued, Completed, Cancelled |
 | Fulfillment status | Pending, 940 Generated, 940 Sent - Waiting for ACK, Waiting for 945, Confirmed, Rejected, Timeout, On Hold, Review Required, Failed (code also writes Payment Required, Fulfilled, Cancelled) |
 | Invoice status | Not Required, Pending, Waiting for Delivery Date, Ready, Queued, Sent, Failed |
 | Transfer status | Draft → Ready To Send → 943 Generated → Waiting for 997 → Waiting for 944 → Received / Partially Received / Discrepancy; Failed on 997 rejection; Cancelled (UniOps, before the 943 is sent, or after it was rejected (Failed); FR-OB-80) |
@@ -266,7 +266,29 @@ Values defined but never written (ACK Timeout, 943 Sent, 997 Accepted, transfer 
 
 ### 9.1 UniOps status model
 
-Four status lines are the source; each value has a closed list (FR-OB-08). Order state is **derived**, never stored independently, and Zoho's eight-stage Order status is not carried over (the order screen shows the source lines instead). Historical (FR-OB-17) is a flag on the order, not a status.
+Four status lines are the source; each value has a closed list (FR-OB-08). They are internal: they drive the 940, 945 and invoice logic and show only on the order page, for diagnosis. What people see is the derived **Status** below. Order state is also derived, and serves eligibility only (FR-OB-03d). Zoho's eight-stage Order status is not carried over. Historical (FR-OB-17) is a flag on the order, not a status.
+
+**Status (derived, never stored).** One value per order, from one rule set: every list, filter, sort, order page and Home and Health count uses it, with no condition of its own (FR-OB-52). The first that applies:
+
+| Status | When |
+| --- | --- |
+| Cancelled | Fulfillment Cancelled |
+| Draft | Fulfillment Draft |
+| On Hold: *reason* | One of the reasons below |
+| Waiting to Send | Pending (delay running, or a Manual-mode partner waiting for Send 940 now) or 940 Generated |
+| Waiting for 997 | 940 Sent |
+| Waiting for Packing List | 940 Accepted. Also Shipped while the Shopify tracking write is queued (minutes): the order is not Completed until it is written |
+| Waiting for Delivery | Shipped, invoice Pending, Awaiting Requested Date or Waiting for Delivery Confirmation |
+| Waiting for Invoice | Shipped, invoice Ready or Queued |
+| Completed | Shipped and invoice Sent, or Shipped, invoice Not Required and the Shopify write done (or none needed) |
+
+A short shipment is final (D18): it never stays open, and a retailer short shipment still passes delivery and invoice. **Short shipped** is a badge beside the Status, not a Status: shown when the 945 left a line unshipped, the shadow run's 945 included.
+
+**On Hold reasons:** Needs Review (Review), Payment Required (Payment Hold), Archived in Shopify (Archive Suppressed, or Pending and archived), 940 Rejected, 940 Failed, 997 Timeout (940 Timeout), Cancelled at Source (On Hold with a source cancellation date, FR-OB-18), 945 Conflict (any other On Hold: a second, different 945, FR-OB-25), Shopify Update Failed (a shipment's write Failed or Suppressed), Invoice Failed, Invoice Blocked.
+
+**During the shadow run** (the order's shadow flag): an open order reads With Zoho (shadow); a Shopify order with a 945 or fulfilled in Shopify reads Completed (shadow); another order with a 945 reads Waiting for Delivery (shadow) when its partner has invoicing (whatever its invoice status says), else Completed (shadow). Holds still show, except that a question before the 940 (Needs Review, Payment Required, Archived in Shopify) is moot once a 945 came or Shopify says fulfilled: archived and not fulfilled is On Hold: Archived in Shopify.
+
+**Detail:** a line under the Status (a list column that can be hidden), shown only when it adds something the Status does not say: the send time, since when it waits, the item not matched, the hold's detail (the 940 rejection or failure, the Shopify or invoice error, the archive or cancel date). Otherwise it is empty: it never repeats the Status or gives an instruction. **Shopify facts** are shown as received, read only, for Shopify orders only: Payment, Fulfillment, Archived and Cancelled, with their dates; filtered separately. Return and delivery reads are not added.
 
 **Fulfillment status** (per order)
 
@@ -305,7 +327,7 @@ Four status lines are the source; each value has a closed list (FR-OB-08). Order
 
 **File and ACK status:** inbound processing Pending → Processing → Processed / Failed / Skipped, plus Duplicate (FR-OB-71); outbound Ready To Send → Sending → Sent / Failed / Suppressed, plus Replaced for a 940 superseded by a confirmed replacement (FR-OB-03c) and Cancelled. Suppressed means the send or write was refused because its environment switch is off (dev and test never reach partners; product owner, 2026-10-28): it is never sent automatically, not even when the switch is turned on — a person reviews it and resends (Suppressed → Sending) or cancels it. ACK: Not Required, Waiting, Accepted, Accepted by 945, Rejected, Timeout.
 
-**On Hold principle (D17):** whenever something is wrong and a person needs to check it, the order's state is On Hold. **Order state (derived):** Draft when fulfillment is Draft; Cancelled when fulfillment is Cancelled; On Hold when fulfillment is Review, Payment Hold, Archive Suppressed, 940 Rejected, 940 Timeout, 940 Failed or On Hold, or invoice is Blocked or Failed; Completed when fulfillment is Shipped and invoice is Sent or Not Required; otherwise Active.
+**On Hold principle (D17):** whenever something is wrong and a person needs to check it, the order is On Hold. **Order state (internal, derived, for eligibility):** Draft when fulfillment is Draft; Cancelled when fulfillment is Cancelled; On Hold when fulfillment is Review, Payment Hold, Archive Suppressed, 940 Rejected, 940 Timeout, 940 Failed or On Hold, or invoice is Blocked or Failed; Completed when fulfillment is Shipped and invoice is Sent or Not Required; otherwise Active.
 
 **Zoho → UniOps map (migration)**
 

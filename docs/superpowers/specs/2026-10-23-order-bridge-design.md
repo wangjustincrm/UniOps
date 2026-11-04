@@ -165,6 +165,8 @@ For each listed remote file: skip if (connection, name, size, mtime) is already 
 
 ### 4.5 Status changes
 
+**Status (PRD 9.1; FR-OB-52).** `app/domain/order_status.py` holds the rules once, as data over an algebra: `status_rules(f, b)` and `hold_rules(f, b)` return (condition, value) pairs. `display()` runs them on plain facts for a row; `app/services/order_status_sql.py` runs the same rules on columns as the CASE that lists filter, sort and group on and Home and Health count with (`order_status`, `on_hold_reason`). A test compares the two over every internal combination. The facts read from other tables are column properties on `Order` (`has_945_sql`, `shopify_failed_sql`, `shopify_pending_sql`, `shadow_short_sql`, `partner_invoice_method_sql`, …). The state machines, eligibility and `order_state` do not change. `fulfillment_status`, `invoice_status`, `order_state` and `hold_reason` stay filterable and sortable, so saved views keep working, but `/meta` no longer offers them.
+
 All status changes go through one module (`app/domain/status.py`, which declares the four PRD 9.1 machines on the platform `StateMachine`, §13.6) that enforces the allowed transitions of PRD section 9.1 and writes `sales_audit` for user actions. Order state is computed (SQL view `sales_order_state_v`), never stored (D17). Unit tests enumerate the transition table.
 
 ## 5. Integrations

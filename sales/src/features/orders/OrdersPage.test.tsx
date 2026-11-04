@@ -15,13 +15,15 @@ const order: OrderRead = {
   id: 4, order_number: 104, partner_code: 'SHOP', source_type: 'SHOPIFY', source_order_id: '1', source_order_number: '9302',
   source_reference: 'SHOP-9302', partner_name: 'Shopify', order_date: '2026-10-29', requested_delivery_date: null, ship_to: { name: 'A B', city: 'Montréal' },
   currency: 'CAD', total: '100.00', fulfillment_status: 'Review', invoice_status: 'Not Required', order_state: 'On Hold',
+  order_status: 'On Hold', on_hold_reason: 'Needs Review', order_status_label: 'On Hold: Needs Review', short_shipped: false, status_detail: 'line 5: item not in the Item Master', status_detail_at: null,
+  shadow: false, shopify_fulfillment_status: null, source_cancelled_at: null,
   hold_reason: null, review_reason: 'line 5: item not in the Item Master (sku=NOPE; 1 CASE)', historical: false,
   first_received_at: '2026-10-29T12:00:00Z', paid_at: '2026-10-29T12:00:00Z', archived_in_shopify_at: null,
   archive_suppressed: false, shopify_financial_status: 'paid', source_updated_at: null, version: 1,
   created_at: '2026-10-29T12:00:00Z', updated_at: null,
 }
 const pending: OrderRead = { ...order, id: 5, order_number: 105, source_order_number: '9303', source_reference: 'SHOP-9303', fulfillment_status: 'Pending',
-  order_state: 'Active', review_reason: null }
+  order_state: 'Active', review_reason: null, order_status: 'Waiting to Send', on_hold_reason: null, order_status_label: 'Waiting to Send', status_detail: 'Sends at', status_detail_at: '2026-10-29T15:00:00Z' }
 const detail: OrderDetail = { ...order, bill_to: null, dc_number: null, notes: null, shipments: [], documents: [{ id: 9, kind: 'SHOPIFY_ORDER_JSON', direction: 'IN', remote_name: 'orders page 1', created_at: order.created_at,
     file_status: null, ack_status: null, st02: null, sent_at: null, error: null, ack_detail: null }],
   timeline: [], lines: [{ id: 1, line_no: 5, item_code: null, source: { sku: 'NOPE' }, ordered_qty: '1', order_unit: 'CASE', factor_ea: null,
@@ -513,7 +515,7 @@ describe('Orders: the Order ref, the partner by name, and the PO prices', () => 
     const row = (await screen.findByText('SHOP-9303')).closest('tr')!
     expect(row).toHaveTextContent('37.00 CAD')
     expect(row).toHaveTextContent('76.00 CAD')
-    expect(row).toHaveTextContent('partially refunded')
+    expect(row).toHaveTextContent('Partially refunded')
     fireEvent.click(within(row).getByText('SHOP-9303'))
     const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
     await openTab(sheet, 'Payments')
@@ -546,20 +548,41 @@ describe('Orders: the Order ref, the partner by name, and the PO prices', () => 
   })
 })
 
+describe('Orders: Status, Detail and the Shopify column', () => {
+  beforeEach(() => { Object.values(api).forEach((f) => f.mockReset()) })
+
+  it('shows On Hold with its reason, only the Shopify facts that have a value, and a dash for any other order', async () => {
+    const retail = { ...pending, id: 6, source_type: 'EDI_850' as const, source_reference: 'LCL-1', shopify_financial_status: null }
+    const archived = { ...pending, id: 7, source_reference: 'SHP-7', shopify_financial_status: 'partially_refunded', shopify_fulfillment_status: 'fulfilled',
+      archived_in_shopify_at: '2026-10-29T12:00:00Z', source_cancelled_at: null }
+    api.list.mockResolvedValue({ items: [order, archived, retail], total: 3 })
+    renderAs(['sales.read'])
+    expect((await screen.findByText('SHOP-9302')).closest('tr')).toHaveTextContent('On Hold: Needs Review')
+    const row = screen.getByText('SHP-7').closest('tr')!
+    for (const t of ['Partially refunded', 'Fulfilled', 'Archived']) expect(within(row).getByText(t)).toBeInTheDocument()
+    expect(within(row).queryByText('Cancelled')).toBeNull()
+    expect(within(screen.getByText('LCL-1').closest('tr')!).getByText('—')).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: /Payment status/ })).toBeNull()
+  })
+})
+
 describe('Orders: backordered quantities and the invoice price before the invoice', () => {
   beforeEach(() => { Object.values(api).forEach((f) => f.mockReset()) })
   // invoiced here (an order whose invoice is Not Required has no invoice price)
-  const shipped = { ...pending, fulfillment_status: 'Shipped', order_state: 'Active' as const, backordered_ea: 80,
+  const shipped = { ...pending, fulfillment_status: 'Shipped', order_state: 'Active' as const, backordered_ea: 80, short_shipped: true,
+    order_status: 'Waiting for Delivery', order_status_label: 'Waiting for Delivery', status_detail: null, status_detail_at: null,
     invoice_status: 'Waiting for Delivery Confirmation' }
   const line = { ...detail.lines[0], id: 2, line_no: 2, item_code: 'CF0093', ordered_qty: '40', order_unit: 'CASE', unit_price: '150.00',
     problem: null, qty_ea: 480, shipped_ea: 400, backordered_ea: 80, state: 'Short shipped', invoice_price: '150.00', packing: [] }
 
-  it('a partial 945: Backordered EA on the line, in the footer and the list; the order is marked partially shipped', async () => {
+  it('a partial 945: Backordered EA on the line, in the footer and the list; the order is marked Short shipped', async () => {
     api.list.mockResolvedValue({ items: [shipped], total: 1 })
     api.fetchOrder.mockResolvedValue({ ...detail, ...shipped, currency: 'CAD', has_invoice: false, lines: [line] })
     renderAs(['sales.read'])
     const row = (await screen.findByText('SHOP-9303')).closest('tr')!
-    expect(row).toHaveTextContent('Partially shipped')
+    expect(row).toHaveTextContent('Short shipped')
+    expect(row).toHaveTextContent('Waiting for Delivery')
+    expect(row).not.toHaveTextContent('Confirm delivery')
     expect(row).toHaveTextContent('80')
     fireEvent.click(within(row).getByText('SHOP-9303'))
     const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
@@ -635,7 +658,8 @@ describe('the order sheet: facts, actions and tabs', () => {
     renderAs(['sales.read', 'sales.invoice.manage'])
     fireEvent.click(await screen.findByText('SHOP-9303'))
     const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
-    expect(within(sheet).getByText('Active · Internal no. 105 · Shopify · PO 9303')).toBeInTheDocument()  // the subtitle: state, the name said once
+    expect(within(sheet).getByText('Internal no. 105 · Shopify · PO 9303')).toBeInTheDocument()  // the subtitle: the name said once
+    expect(within(sheet).getByText(/^Detail: Sends at /)).toBeInTheDocument()  // the line under the Status
     const facts = await within(sheet).findByLabelText('Key facts')
     expect(facts).toHaveTextContent('Total6,000.00 CAD1 line')
     expect(facts).toHaveTextContent('Net5,963.00 CAD37.00 CAD refunded')

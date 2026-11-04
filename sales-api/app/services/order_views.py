@@ -13,6 +13,9 @@ from app.domain.address import address_flags
 from app.domain.carriers import tracking_url
 from app.domain.lifecycle import backordered, line_state
 from app.domain.order_rules import ON_HOLD_FULFILLMENT, order_state, payment_satisfied, to_ea
+from app.domain.order_status import (
+    HOLD_REASONS as ON_HOLD_REASONS, ORDER_STATUSES, DetailFacts, StatusFacts, display, send_time, status_detail,
+)
 from app.domain.orders import HOLD_REASONS, ORDER_STATES, SOURCE_TYPES
 from app.domain.status import FULFILLMENT, Fulfillment as F
 from app.domain.status import Invoice as Inv
@@ -40,6 +43,7 @@ from app.services.intake import ConnectionSnapshot
 from app.services.invoice_pdf import PackingList, PackRow, render_packing
 from app.services.invoice_pdf import Party as PdfParty
 from app.services.invoicing import SELLER
+from app.services.order_status_sql import ON_HOLD_REASON_SQL, ORDER_STATUS_SQL
 from app.services.orders import BarcodeLookup, OrderSync, order_ref
 from app.services.settings import SETTINGS, SHADOW_MODE
 
@@ -78,38 +82,46 @@ class OrderRepository(Repository[Order]):
                    "created_at", "updated_at")
     labels = {"order_number": "Internal no.", "source_reference": "Order ref", "partner_name": "Partner",
               "partner_code": "Partner code", "total_amount": "Total", "total": "Source total", "source_order_number": "Source no.", "source_order_id": "Source ID",
-              "fulfillment_status": "Status", "first_received_at": "Received", "paid_at": "Paid",
-              "shopify_financial_status": "Payment status", "shopify_fulfillment_status": "Shopify fulfillment",
+              "order_status": "Status", "on_hold_reason": "On Hold reason", "first_received_at": "Received", "paid_at": "Paid",
+              "shopify_financial_status": "Shopify Payment", "shopify_fulfillment_status": "Shopify Fulfillment",
+              "archived_in_shopify_at": "Archived", "source_cancelled_at": "Cancelled",
               "source_name": "Sales channel", "tags": "Tags", "original_total": "Original total",
               "total_refunded": "Refunded", "net_amount": "Net", "backordered_ea": "Backordered EA"}
     enums = {"source_type": SOURCE_TYPES, "fulfillment_status": tuple(s.value for s in F),
              "invoice_status": tuple(s.value for s in Inv), "hold_reason": HOLD_REASONS,
-             "order_state": ORDER_STATES}
-    sortable = {"order_state": ORDER_STATE_SQL, "partner_name": Order.partner_name_sql,
+             "order_state": ORDER_STATES, "order_status": ORDER_STATUSES, "on_hold_reason": ON_HOLD_REASONS}
+    # The internal lines stay filterable and sortable, so a saved view on them still lists,
+    # but no list offers them any more: they show on the order page, for diagnosis.
+    meta_hidden = ("order_status_label", "short_shipped", "status_detail", "status_detail_at",
+                   "fulfillment_status", "invoice_status", "order_state", "hold_reason")
+    sortable = {"order_state": ORDER_STATE_SQL, "order_status": ORDER_STATUS_SQL, "on_hold_reason": ON_HOLD_REASON_SQL, "partner_name": Order.partner_name_sql,
                 "total_amount": Order.total_amount_sql, "backordered_ea": Order.backordered_ea_sql}
     filterable = {"order_state": FilterRule(ORDER_STATE_SQL, kind="text"),
+                  "order_status": FilterRule(ORDER_STATUS_SQL, kind="text"),
+                  "on_hold_reason": FilterRule(ON_HOLD_REASON_SQL, kind="text"),
                   "partner_name": FilterRule(Order.partner_name_sql, kind="text"),
                   "total_amount": FilterRule(Order.total_amount_sql, kind="number", cast=lambda v: Decimal(str(v))),
                   "backordered_ea": FilterRule(Order.backordered_ea_sql, kind="number", cast=int)}
     summable = ("total_amount", "net_amount", "total_refunded")
     sum_currency = "currency"
     default_sort = ("-order_number",)
-    groupable = ("order_state", "partner_name", "partner_code", "source_type", "fulfillment_status", "invoice_status", "hold_reason", "order_date",
+    groupable = ("order_status", "on_hold_reason", "order_state", "partner_name", "partner_code", "source_type", "fulfillment_status", "invoice_status", "hold_reason", "order_date",
                  "currency", "historical", "archive_suppressed", "shopify_financial_status", "source_name")
     # System views (§13.19). Review reason is shown where it says something.
     presets = (
         Preset("all", "All", {"hidden": ["review_reason"]}),
-        Preset("needs_review", "Needs review", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Review"}]}),
-        Preset("payment_hold", "Payment hold", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Payment Hold"}], "hidden": ["review_reason"]}),
-        Preset("pending", "Pending (waiting for the 940)", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Pending"}], "hidden": ["review_reason"]}),
+        Preset("on_hold", "On hold", {"filters": [{"field": "order_status", "op": "eq", "value": "On Hold"}]}),
+        Preset("needs_review", "Needs review", {"filters": [{"field": "on_hold_reason", "op": "eq", "value": "Needs Review"}]}),
+        Preset("payment_hold", "Payment hold", {"filters": [{"field": "on_hold_reason", "op": "eq", "value": "Payment Required"}], "hidden": ["review_reason"]}),
+        Preset("pending", "Waiting to send", {"filters": [{"field": "order_status", "op": "eq", "value": "Waiting to Send"}], "hidden": ["review_reason"]}),
         Preset("manual_drafts", "Manual drafts", {"filters": [{"field": "source_type", "op": "eq", "value": "MANUAL"},
-                                                               {"field": "fulfillment_status", "op": "eq", "value": "Draft"}]}),
+                                                               {"field": "order_status", "op": "eq", "value": "Draft"}]}),
         # FR-OB-25: a short 945 closes the fulfilment (Shipped) — what it left unshipped stays visible here.
         Preset("backordered", "Backordered (partially shipped)",
                {"filters": [{"field": "backordered_ea", "op": "gt", "value": 0}], "hidden": ["review_reason"]}),
-        Preset("delivery", "Waiting for delivery confirmation",
-               {"filters": [{"field": "invoice_status", "op": "eq", "value": "Waiting for Delivery Confirmation"}]}),
-        Preset("archive_suppressed", "Archive suppressed", {"filters": [{"field": "fulfillment_status", "op": "eq", "value": "Archive Suppressed"}], "hidden": ["review_reason"]}),
+        Preset("delivery", "Waiting for delivery",
+               {"filters": [{"field": "order_status", "op": "eq", "value": "Waiting for Delivery"}]}),
+        Preset("archive_suppressed", "Archived in Shopify", {"filters": [{"field": "on_hold_reason", "op": "eq", "value": "Archived in Shopify"}], "hidden": ["review_reason"]}),
         Preset("refunded", "Refunded", {"filters": [{"field": "shopify_financial_status", "op": "eq", "value": "refunded"}],
                                         "hidden": ["review_reason"]}),
         Preset("partially_refunded", "Partially refunded", {
@@ -117,6 +129,27 @@ class OrderRepository(Repository[Order]):
         Preset("historical", "Historical", {"filters": [{"field": "historical", "op": "eq", "value": "true"}], "includeHistorical": True, "hidden": ["review_reason"]}),
     )
     historical_column = "historical"
+
+
+def status_facts(o: Order) -> StatusFacts:
+    """What the rules read of an order, from the row and what was loaded with it."""
+    return StatusFacts(
+        fulfillment=o.fulfillment_status, invoice=o.invoice_status,
+        source_type=o.source_type, shadow=bool(o.shadow), archived=o.archived_in_shopify_at is not None,
+        fulfilled_in_shopify=o.shopify_fulfillment_status == "fulfilled", cancelled_at_source=o.source_cancelled_at is not None,
+        has_945=bool(o.fact("has_945_sql")), shopify_failed=bool(o.fact("shopify_failed_sql")),
+        shopify_pending=bool(o.fact("shopify_pending_sql")),
+        invoicing=(o.fact("partner_invoice_method_sql") or "NONE") != "NONE", short=(o.backordered_ea or 0) > 0 or bool(o.fact("shadow_short_sql")))
+
+
+def detail_facts(o: Order) -> DetailFacts:
+    return DetailFacts(
+        manual_sending=o.fact("partner_sending_mode_sql") == "MANUAL",
+        send_at=send_time(from_receipt=o.fact("partner_settlement_mode_sql") == "INVOICE", received_at=o.first_received_at,
+                          paid_at=o.paid_at, delay_minutes=o.fact("partner_delay_minutes_sql")),
+        sent_at=o.fact("sent_940_at_sql"), requested_date=o.requested_delivery_date, review_reason=o.review_reason,
+        archived_at=o.archived_in_shopify_at, cancelled_at=o.source_cancelled_at, file_note=o.fact("file_note_sql"),
+        shopify_error=o.fact("shopify_error_sql"), invoice_error=o.fact("invoice_error_sql"))
 
 
 def shadow_figures(ln: OrderLine, packing: list[PackingRead]) -> dict:
@@ -137,6 +170,11 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
     def to_read(self, o: Order) -> OrderRead:
         out = OrderRead.model_validate(o, from_attributes=True)
         out.order_state = order_state(o.fulfillment_status, o.invoice_status)
+        facts = status_facts(o)
+        d = display(facts)
+        out.order_status, out.on_hold_reason, out.order_status_label = d.order_status, d.on_hold_reason, d.label
+        out.short_shipped = d.short_shipped
+        out.status_detail, out.status_detail_at = status_detail(d, facts, detail_facts(o))
         return out
 
     @requires(READ)

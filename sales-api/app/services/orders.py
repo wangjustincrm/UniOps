@@ -435,7 +435,7 @@ class OrderSync:
         lines = list((await self.s.execute(select(OrderLine).where(
             OrderLine.order_id == order.id).order_by(OrderLine.line_no))).scalars())
         src = SourceOrder(order.source_type, order.partner_code, order.source_order_id, order.source_order_number,
-                          {"ship_to": order.ship_to}, [
+                          {"ship_to": order.ship_to, "archived_in_shopify_at": order.archived_in_shopify_at}, [
                               SourceLine(ln.line_no, Decimal(ln.ordered_qty),
                                          ln.order_unit if order.source_type != "SHOPIFY" else None,
                                          {k: v for k, v in ln.source.items() if k != "inner_packs"},
@@ -460,6 +460,7 @@ class OrderSync:
             else:
                 self._to(order, F.PENDING, "review resolved")
             await self._resolve(ORDER_REVIEW, order)
+            await self._archive_and_cancel(order, src, partner, paid)  # archived meanwhile: not left Pending (FR-OB-03d)
         await self.s.flush()
         return reasons
 

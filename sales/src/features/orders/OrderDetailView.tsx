@@ -1,11 +1,13 @@
 import { useContext, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, Badge, ConfirmAction, RecordSheet, RecordSheetHostContext, StatusCell, formatDate, formatMoney,
+  ActionButton, Badge, ConfirmAction, Hint, RecordSheet, RecordSheetHostContext, formatDate, formatMoney,
   queryKeys, type RecordFact, type RecordTab,
   compareRecord, useRefresh,
 } from '@/platform-ui'
 import { SOURCE_LABEL, fetchOrder, ordersClient, type OrderRead } from './ordersApi'
+import { OrderStatusBadge } from './OrderStatusCells'
+import { statusDetailText } from './orderStatus'
 import { PaymentsAndRefunds } from './PaymentsAndRefunds'
 import { InvoicePricesForm } from './InvoicePrices'
 import { Recheck } from './Recheck'
@@ -18,19 +20,6 @@ import { LinesTab } from './tabs/LinesTab'
 import { OverviewTab } from './tabs/OverviewTab'
 import { ShipmentsTab } from './tabs/ShipmentsTab'
 import { releaseInvoice } from '@/features/invoices/invoicesApi'
-
-// The badge shows the fulfillment status in the colour of the derived order state (D17).
-const stateTone = { Draft: 'neutral', Active: 'info', 'On Hold': 'warning', Completed: 'success', Cancelled: 'neutral' } as const
-
-// A short 945 closes the fulfilment (Shipped, FR-OB-25); what it left unshipped is marked beside it.
-export function StateBadge({ o }: { o: Pick<OrderRead, 'order_state' | 'fulfillment_status' | 'backordered_ea'> }) {
-  return (
-    <span className="inline-flex flex-wrap items-center gap-1">
-      <StatusCell value={o.fulfillment_status} tone={stateTone[o.order_state]} />
-      {o.fulfillment_status === 'Shipped' && (o.backordered_ea ?? 0) > 0 && <Badge variant="warning">Partially shipped</Badge>}
-    </span>
-  )
-}
 
 const MANAGE_INVOICE = 'sales.invoice.manage'
 
@@ -104,7 +93,6 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
     { label: 'Ordered EA', value: orderedEa },
     { label: 'Shipped EA', value: shippedEa == null ? '—' : shippedEa, hint: shippedEa == null ? 'no 945 applied' : undefined },
     ...(backordered != null ? [{ label: 'Backordered EA', value: backordered, tone: backordered > 0 ? 'warning' as const : 'neutral' as const }] : []),
-    { label: 'Invoice', value: d.invoice_status, tone: ['Blocked', 'Failed'].includes(d.invoice_status) ? 'warning' : d.invoice_status === 'Sent' ? 'success' : 'neutral' },
     { label: 'Requested delivery', value: d.requested_delivery_date ? formatDate(d.requested_delivery_date) : '—' },
   ]
 
@@ -129,13 +117,14 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
     <>
       <RecordSheet
         title={live.source_reference ?? `#${live.order_number}`}
-        subtitle={[...new Set([live.order_state, `Internal no. ${live.order_number}`, live.partner_name ?? live.partner_code,
+        subtitle={[...new Set([`Internal no. ${live.order_number}`, live.partner_name ?? live.partner_code,
           SOURCE_LABEL[live.source_type] ?? live.source_type])].concat(live.source_order_number ? [`PO ${live.source_order_number}`] : []).join(' · ')}
         badges={<>
-          <StateBadge o={live} />
+          <span className="flex flex-col gap-0.5">
+            <OrderStatusBadge o={live} />
+            {statusDetailText(live) && <Hint>Detail: {statusDetailText(live)}</Hint>}
+          </span>
           {live.historical && <Badge variant="neutral">Historical</Badge>}
-          {/* the status already says Archive Suppressed; the flag shows only when the status moved on */}
-          {live.archive_suppressed && live.fulfillment_status !== 'Archive Suppressed' && <Badge variant="warning">Archived in Shopify</Badge>}
         </>}
         size="xl" loading={q.isLoading} error={q.error}
         refresh={sheetRefresh}

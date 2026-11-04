@@ -35,15 +35,26 @@ class OrderRead(BaseModel):
     total_amount: Decimal | None = None  # the source's total, else the lines at the PO price
     fulfillment_status: str
     invoice_status: str
-    order_state: str = ""           # derived (D17), filled by the service
+    order_state: str = ""           # internal (D17): what eligibility reads; filled by the service
+    # What people see (app/domain/order_status.py, filled by the service): the Status, On
+    # Hold's reason, the label of both, the Short shipped mark and the Detail with its time.
+    order_status: str = ""
+    on_hold_reason: str | None = None
+    order_status_label: str = ""
+    short_shipped: bool = False
+    status_detail: str | None = None
+    status_detail_at: datetime | date | None = None
     hold_reason: str | None
     review_reason: str | None
     historical: bool
+    shadow: bool = False
     first_received_at: datetime
     paid_at: datetime | None
     archived_in_shopify_at: datetime | None
     archive_suppressed: bool
     shopify_financial_status: str | None
+    shopify_fulfillment_status: str | None = None
+    source_cancelled_at: datetime | None = None
     # Shopify finance (sales17): the sales channel and tags ("groups"), the original
     # total, the successful refunds and the net (original − refunded)
     source_name: str | None = None

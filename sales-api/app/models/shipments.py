@@ -13,13 +13,16 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Boolean, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, false, func, select
+from sqlalchemy import (
+    Boolean, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, and_, exists, false, func, select,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, column_property, mapped_column
 
 from app.db.base import Base
-from app.models.config import one_of
-from app.models.documents import Document
+from app.models.config import Item, one_of
+from app.models.documents import Document, DocumentLink
+from app.models.orders import Order, OrderLine
 from app.platform.entities import Audited, Versioned
 
 SHOPIFY_STATUSES = ("Not needed", "Pending", "Done", "Failed", "Suppressed")
@@ -80,3 +83,36 @@ class ShipmentRow(Base):
 Document.shipments_without_order = column_property(
     select(func.count(Shipment.id)).where(Shipment.document_id == Document.id, Shipment.order_id.is_(None))
     .correlate_except(Shipment).scalar_subquery())
+
+
+# What the Order status reads of the order's 945s and 940 (app/domain/order_status.py).
+def _any_shipment(*where):
+    return column_property(exists().where(Shipment.order_id == Order.id, *where).correlate_except(Shipment))
+
+
+Order.has_945_sql = _any_shipment()
+Order.shopify_failed_sql = _any_shipment(Shipment.shopify_status.in_(("Failed", "Suppressed")))
+Order.shopify_pending_sql = _any_shipment(Shipment.shopify_status == "Pending")
+Order.shopify_error_sql = column_property(
+    select(Shipment.shopify_error).where(Shipment.order_id == Order.id, Shipment.shopify_error.is_not(None))
+    .order_by(Shipment.id.desc()).limit(1).correlate_except(Shipment).scalar_subquery())
+_order_940 = (DocumentLink.entity_type == "order", DocumentLink.entity_id == Order.id, Document.kind == "940_EDI",
+              Document.direction == "OUT")
+Order.file_note_sql = column_property(  # the latest 940's rejection (the 997's codes) or failure
+    select(func.coalesce(Document.ack_detail, Document.error)).join(DocumentLink, DocumentLink.document_id == Document.id)
+    .where(*_order_940).order_by(Document.id.desc()).limit(1).correlate_except(Document, DocumentLink).scalar_subquery())
+Order.sent_940_at_sql = column_property(
+    select(func.max(Document.sent_at)).join(DocumentLink, DocumentLink.document_id == Document.id).where(
+        *_order_940).correlate_except(Document, DocumentLink).scalar_subquery())
+
+# The shadow run's 945 left a warehouse line short (the Short shipped mark). Only a 945 whose
+# rows are linked to the order counts: an unlinked one (a synthetic test file) says nothing.
+_shadow_ea = (select(func.coalesce(func.sum(ShipmentRow.qty_shipped_ea), 0))
+              .join(Shipment, Shipment.id == ShipmentRow.shipment_id)
+              .where(ShipmentRow.order_line_id == OrderLine.id, Shipment.shadow.is_(True))
+              .correlate(OrderLine).scalar_subquery())
+Order.shadow_short_sql = column_property(and_(
+    exists().where(ShipmentRow.shipment_id == Shipment.id, Shipment.order_id == Order.id, Shipment.shadow.is_(True),
+                   ShipmentRow.order_line_id.is_not(None)).correlate(Order),
+    exists().where(OrderLine.order_id == Order.id, OrderLine.removed.is_(False), OrderLine.item_code == Item.item_code,
+                   Item.warehouse_held.is_(True), _shadow_ea < OrderLine.qty_ea).correlate(Order)))

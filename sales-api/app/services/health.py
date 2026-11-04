@@ -23,8 +23,9 @@ from typing import Any
 
 from sqlalchemy import and_, func, select
 
-from app.domain.status import Fulfillment as F
-from app.domain.status import Invoice as Inv
+from app.domain.order_status import (
+    ACTIVE_STATUSES, CANCELLED, COMPLETED_STATUSES, INVOICE_WORK_STATUSES, NEEDS_REVIEW, ON_HOLD, WAITING_DELIVERY, WAREHOUSE_STATUSES,
+)
 from app.integrations.epms_tasks import shared_tasks_table
 from app.models.config import Connection
 from app.models.documents import Run
@@ -73,21 +74,19 @@ def _documents(*filters) -> ListLink:
     return ListLink("/documents", "documents", tuple(filters))
 
 
-OPEN = ("order_state", "in", ["Active", "On Hold"])
+OPEN = ("order_status", "in", [*ACTIVE_STATUSES, ON_HOLD])
 # FR-OB-52b, in its order.
 DASHBOARD_CARDS: tuple[tuple[str, str, ListLink], ...] = (
-    ("active", "Active", _orders(("order_state", "eq", "Active"))),
-    ("on_hold", "On Hold", _orders(("order_state", "eq", "On Hold"))),
-    ("completed", "Completed", _orders(("order_state", "eq", "Completed"))),
-    ("cancelled", "Cancelled", _orders(("order_state", "eq", "Cancelled"))),
+    ("active", "Active", _orders(("order_status", "in", list(ACTIVE_STATUSES)))),
+    ("on_hold", "On Hold", _orders(("order_status", "eq", ON_HOLD))),
+    ("completed", "Completed", _orders(("order_status", "in", list(COMPLETED_STATUSES)))),
+    ("cancelled", "Cancelled", _orders(("order_status", "eq", CANCELLED))),
     ("failed_files", "Failed files", _documents()),  # inbound + outbound: the two failed lists summed
     ("open_retailer", "Open retailer", _orders(("source_type", "eq", "EDI_850"), OPEN)),
     ("open_shopify", "Open Shopify", _orders(("source_type", "eq", "SHOPIFY"), OPEN)),
     ("open_manual", "Open manual", _orders(("source_type", "eq", "MANUAL"), OPEN)),
-    ("warehouse_waiting", "Warehouse waiting", _orders(("fulfillment_status", "in", [
-        F.PENDING.value, F.GENERATED_940.value, F.SENT_940.value, F.ACCEPTED_940.value]))),
-    ("invoice_work", "Invoice work", _orders(("invoice_status", "in", [
-        Inv.WAITING_FOR_DELIVERY_CONFIRMATION.value, Inv.READY.value, Inv.QUEUED.value, Inv.FAILED.value]))),
+    ("warehouse_waiting", "Warehouse waiting", _orders(("order_status", "in", list(WAREHOUSE_STATUSES)))),
+    ("invoice_work", "Invoice work", _orders(("order_status", "in", list(INVOICE_WORK_STATUSES)))),
 )
 FAILED_OUTBOUND = _documents(("direction", "eq", "OUT"), ("file_status", "eq", "Failed"))
 FAILED_INBOUND = _documents(("direction", "eq", "IN"), ("processing_status", "eq", "Failed"))
@@ -284,8 +283,8 @@ class Health:
         tasks = (await self.s.execute(select(TASKS.c.type, func.count()).where(
             TASKS.c.document_type == DOCUMENT_TYPE, TASKS.c.is_completed.is_(False)).group_by(TASKS.c.type)
             .order_by(func.count().desc()))).all()
-        review = await self.count(_orders(("fulfillment_status", "eq", F.REVIEW.value)))
-        delivery = await self.count(_orders(("invoice_status", "eq", Inv.WAITING_FOR_DELIVERY_CONFIRMATION.value)))
+        review = await self.count(_orders(("on_hold_reason", "eq", NEEDS_REVIEW)))
+        delivery = await self.count(_orders(("order_status", "eq", WAITING_DELIVERY)))
         runs = list((await self.s.execute(select(Run).order_by(Run.started_at.desc()).limit(5))).scalars())
         return DashboardRead(
             cards=cards, open_tasks=[TaskCount(type=t, count=n) for t, n in tasks],
