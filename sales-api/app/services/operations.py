@@ -9,7 +9,9 @@ from app.domain.documents import DIRECTIONS, KINDS, LOG_LEVELS, ORIGINS, RUN_STA
 from app.domain.status import Ack, InboundFile, OutboundFile
 from app.models.documents import Document, LogEntry, Run
 from app.platform.authorization import requires
+from app.models.shipments import Shipment  # noqa: F401 — maps Document.shipments_without_order
 from app.platform.errors import BusinessError
+from app.platform.query import FilterRule
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
@@ -30,6 +32,8 @@ class DocumentRepository(Repository[Document]):
     enums = {"direction": DIRECTIONS, "origin": ORIGINS, "system": SYSTEMS, "kind": KINDS,
              "processing_status": tuple(s.value for s in InboundFile),
              "file_status": tuple(s.value for s in OutboundFile), "ack_status": tuple(s.value for s in Ack)}
+    filterable = {"shipments_without_order": FilterRule(Document.shipments_without_order)}
+    meta_hidden = ("shipments_without_order",)
     default_sort = ("-created_at",)
     groupable = ("direction", "origin", "system", "kind", "processing_status", "file_status", "ack_status",
                  "partner_code", "connection_id")
@@ -39,6 +43,7 @@ class DocumentRepository(Repository[Document]):
         Preset("duplicates_not_ours", "Duplicates / not ours",
                {"filters": [{"field": "processing_status", "op": "in", "value": ["Duplicate", "Skipped"]}]}),
         Preset("outbound", "Outbound", {"filters": [{"field": "direction", "op": "eq", "value": "OUT"}]}),
+        Preset("no_order", "945 with no order", {"filters": [{"field": "shipments_without_order", "op": "gt", "value": "0"}]}),
     )
 
 

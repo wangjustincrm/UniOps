@@ -96,7 +96,7 @@ async def test_the_sql_twin_selects_exactly_what_qualifies_selects(edi):
         for i in range(400):
             p = rnd.choice(["SHOP", "LBL", "MAN", "MNL"])
             u.session.add(Order(
-                partner_code=p, source_type=rnd.choice(["SHOPIFY", "EDI_850", "MANUAL"]), source_order_id=f"g{i}",
+                partner_code=p, source_type=rnd.choice(["SHOPIFY", "EDI_850", "MANUAL", "FROM_945"]), source_order_id=f"g{i}",
                 fulfillment_status=rnd.choice([F.PENDING, F.PENDING, F.REVIEW, F.PAYMENT_HOLD, F.SENT_940]).value,
                 invoice_status=rnd.choice(["Pending", "Not Required", "Blocked", "Failed"]),
                 shopify_financial_status=rnd.choice(["paid", "pending", "partially_refunded", "refunded", None]),

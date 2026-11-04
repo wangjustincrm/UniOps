@@ -4,7 +4,8 @@ import { api } from '@/lib/api'
 // Mirrors sales-api app/schemas/orders.py (hand-written, see partnersApi.ts).
 export const FULFILLMENT_STATUSES = ['Draft', 'Review', 'Payment Hold', 'Pending', 'Archive Suppressed', '940 Generated',
   '940 Sent', '940 Accepted', '940 Rejected', '940 Timeout', '940 Failed', 'Shipped', 'On Hold', 'Cancelled'] as const
-export const SOURCE_TYPES = ['SHOPIFY', 'EDI_850', 'MANUAL'] as const
+export const SOURCE_TYPES = ['SHOPIFY', 'EDI_850', 'MANUAL', 'FROM_945'] as const
+export const SOURCE_LABEL: Record<string, string> = { SHOPIFY: 'Shopify', EDI_850: 'Retailer 850', MANUAL: 'Manual', FROM_945: 'Created from 945' }
 
 export interface OrderRead {
   id: number
@@ -251,6 +252,28 @@ export interface ManualOrderIn {
 export interface LinePreview { item_code: string; quantity: string; unit: string; qty_ea: number | null; problem: string | null }
 
 export const ordersClient = createResourceClient<OrderRead, never>(api, '/orders')
+/** A 945 with no order and what making its order would do (FR-OB-25c). */
+export interface OrderFrom945Plan {
+  shipment_id: number
+  document_id: number
+  order_key: string | null
+  reference: string | null
+  partner_code: string | null
+  partner_name_received: string | null
+  po: string | null
+  ship_date: string | null
+  ship_to: Record<string, string | null> | null
+  lines: { item_code: string | null; received: string; qty_ea: number; shipped_ea: number; problem: string | null }[]
+  /** A later part: the order it joins. */
+  order_id: number | null
+  order_ref: string | null
+  refused: string | null
+  refused_message: string | null
+}
+export const fetchShipmentsWithoutOrder = (documentId: number) =>
+  api.get<OrderFrom945Plan[]>(`/orders/shipments-without-order?document_id=${documentId}`)
+export const createOrderFrom945 = (shipmentId: number, partnerCode: string | null) =>
+  api.post<OrderRead>(`/orders/shipments/${shipmentId}/create-order`, { partner_code: partnerCode })
 export const fetchOrder = (id: number) => api.get<OrderDetail>(`/orders/${id}`)
 export const resolveReview = (id: number) => api.post<{ order: OrderRead; remaining: string[] }>(`/orders/${id}/resolve-review`)
 export const previewManual = (lines: ManualLine[]) => api.post<LinePreview[]>('/orders/manual/preview', lines)

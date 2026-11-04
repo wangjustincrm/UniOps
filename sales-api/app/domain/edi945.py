@@ -254,6 +254,21 @@ class OrderKey:
     numeric: bool            # numeric keys compare without leading zeros
 
 
+@dataclass(frozen=True)
+class ZohoReference:
+    """Header `N9*E1` of a 945 that answers a Zoho 940: its file name."""
+    warehouse_order: str
+    partner_name: str
+    po: str
+
+
+def zoho_reference(value: str | None) -> ZohoReference | None:
+    """`CRM-940_<warehouse order no>_<partner name>_<PO>`; None for anything else
+    ("SHP-9497", nothing). A partner name may hold an underscore, the two ends not."""
+    m = re.fullmatch(r"CRM-940_([^_]+)_(.+)_([^_]+)", (value or "").strip())
+    return ZohoReference(m[1], m[2], m[3]) if m else None
+
+
 def order_key(raw: str) -> OrderKey:
     """`1000123a` → `1000123` (exactly ONE trailing letter); zero-padding
     dropped (`000001234` → `1234`). Digits followed by two or more letters →

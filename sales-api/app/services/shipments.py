@@ -34,6 +34,7 @@ from typing import Any, Callable
 from sqlalchemy import func, select
 
 from app.domain.edi945 import OrderKey, Shipment945, order_key, parse_945
+from app.domain.orders import FROM_945
 from app.domain.status import FULFILLMENT, INBOUND_FILE, Ack, InboundFile
 from app.domain.status import Fulfillment as F
 from app.domain.x12 import X12Error
@@ -49,6 +50,7 @@ from app.platform.outbox import ONCE, Outbox, OutboxKind
 from app.platform.pipeline import isolated
 from app.services import oplog
 from app.services.intake import ConnectionSnapshot
+from app.services.order_from_945 import SYNTHETIC_PREFIX, attach, warehouse_number_is
 from app.services.outbound import TORONTO, latest_940
 from app.services.problems import (
     EDI_945_LINE_UNMATCHED, EDI_945_NO_ORDER, EDI_945_VALIDATION, ORDER_FILE_UNREADABLE, SECOND_945,
@@ -109,9 +111,6 @@ def _check(kind: str, message: str, **values: Any) -> dict[str, Any]:
     return {"check": kind, "message": message, **{k: (str(v) if isinstance(v, (date, datetime)) else v) for k, v in values.items()}}
 
 
-# The made-up 945s fed to the dev servers by hand; the backfill never links them.
-SYNTHETIC_PREFIX = "SYNTHETIC-"
-
 class Shipments:
     def __init__(self, *, uow_factory, tasks, shopify, outbound, shadow=None,
                  clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
@@ -165,7 +164,10 @@ class Shipments:
             doc.shadow = True
             plans = [await self.plan(s, doc, sh) for sh in sets]
             for i, (sh, p) in enumerate(zip(sets, plans), start=1):
-                await self._store(s, doc, i, sh, p, applied=False, shadow=True)
+                shipment = await self._store(s, doc, i, sh, p, applied=False, shadow=True)
+                order = await s.get(Order, p.order_id) if p.order_id else None
+                if order is not None and order.source_type == FROM_945:  # a later part of its warehouse order
+                    await attach(s, order, shipment)
             if self.shadow is not None:
                 await self.shadow.match_945(uow, doc, sets, plans)
             doc.error = "shadow run: stored and compared, not applied"
@@ -193,6 +195,8 @@ class Shipments:
                 func.nullif(func.ltrim(func.ltrim(Order.source_order_number, "#"), "0"), "") == key.base))
         else:
             tiers.append(select(Order).where(Order.source_order_number == key.base))
+        # An order made from an earlier part of this warehouse order (FR-OB-25c).
+        tiers.append(select(Order).where(Order.source_type == FROM_945, warehouse_number_is(key)))
         for q in tiers:
             found = list((await s.execute(q.order_by(Order.id))).scalars())
             if found:
@@ -346,6 +350,13 @@ class Shipments:
             return None  # applied before: nothing changes (AC-OB-36)
         p = await self.plan(s, doc, sh)
         order = await s.get(Order, p.order_id, with_for_update=True) if p.order_id else None
+        if order is not None and order.source_type == FROM_945:
+            # Made from a shadow-run 945: Zoho's, also after the switch-off. A later part only joins it.
+            shipment = await self._store(s, doc, set_index, sh, p, applied=False, shadow=True)
+            await attach(s, order, shipment)
+            await oplog.write(s, "INFO", STEP, f"945 {doc.remote_name}: joined order {order.label}, made from a 945; not applied",
+                              run_id=run_id, document_id=doc.id, order_id=order.id)
+            return shipment
         shipment = await self._store(s, doc, set_index, sh, p, applied=order is not None and not p.second_of, shadow=False)
         report.shipments += 1
         for c in p.checks:

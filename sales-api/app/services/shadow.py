@@ -27,6 +27,7 @@ from sqlalchemy import and_, exists, func, select
 from app.domain.edi940 import build_940
 from app.domain.intake import classify
 from app.domain.order_rules import facts_of, qualifies
+from app.domain.orders import FROM_945
 from app.domain.shadow import compare, ignore_rules, reference_940
 from app.domain.status import Ack
 from app.domain.status import Fulfillment as F
@@ -209,7 +210,8 @@ class ShadowRun:
         s = uow.session
         now = self.clock()
         rows = (await s.execute(select(Order, Partner).join(Partner, Partner.code == Order.partner_code).where(
-            Order.shadow.is_(True), Order.fulfillment_status == F.PENDING.value).order_by(Order.id).limit(2000))).all()
+            Order.shadow.is_(True), Order.fulfillment_status == F.PENDING.value,
+            Order.source_type != FROM_945).order_by(Order.id).limit(2000))).all()  # shipped already: no 940 to compare
         want: dict[int, Order] = {}
         for o, p in rows:
             facts, pf = facts_of(o, p)

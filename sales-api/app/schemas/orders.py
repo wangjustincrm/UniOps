@@ -346,6 +346,43 @@ class ManualOrderIn(BaseModel):
     lines: Annotated[list[ManualLineIn], Field(min_length=1, max_length=200)]
 
 
+class OrderFrom945In(BaseModel):
+    """Who the order is for, when the 945's reference does not say (or a person corrects it)."""
+    model_config = ConfigDict(extra="forbid")
+
+    partner_code: Code | None = None
+
+
+class OrderFrom945Line(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    item_code: str | None
+    received: str
+    qty_ea: int
+    shipped_ea: int
+    problem: str | None
+
+
+class OrderFrom945Plan(BaseModel):
+    """A 945 with no order, and what making its order would do (FR-OB-25c)."""
+    model_config = ConfigDict(from_attributes=True)
+
+    shipment_id: int
+    document_id: int
+    order_key: str | None
+    reference: str | None
+    partner_code: str | None
+    partner_name_received: str | None
+    po: str | None
+    ship_date: date | None
+    ship_to: dict[str, Any] | None
+    lines: list[OrderFrom945Line]
+    order_id: int | None
+    order_ref: str | None
+    refused: str | None
+    refused_message: str | None
+
+
 class InvoicePriceIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: int

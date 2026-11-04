@@ -35,6 +35,7 @@ class DocumentRead(BaseModel):
     error: str | None
     created_at: datetime
     created_by_name: str
+    shipments_without_order: int = 0  # FR-OB-25c: its 945 sets that have no order
 
 
 class RunRead(BaseModel):

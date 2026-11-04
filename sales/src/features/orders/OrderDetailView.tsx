@@ -5,7 +5,7 @@ import {
   queryKeys, type RecordFact, type RecordTab,
   compareRecord, useRefresh,
 } from '@/platform-ui'
-import { fetchOrder, ordersClient, type OrderRead } from './ordersApi'
+import { SOURCE_LABEL, fetchOrder, ordersClient, type OrderRead } from './ordersApi'
 import { PaymentsAndRefunds } from './PaymentsAndRefunds'
 import { InvoicePricesForm } from './InvoicePrices'
 import { Recheck } from './Recheck'
@@ -154,4 +154,3 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
   )
 }
 
-const SOURCE_LABEL: Record<string, string> = { SHOPIFY: 'Shopify', EDI_850: 'Retailer 850', MANUAL: 'Manual' }

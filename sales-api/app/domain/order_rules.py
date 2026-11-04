@@ -14,7 +14,7 @@ from decimal import Decimal
 from typing import Any
 
 from app.domain.items import title_key
-from app.domain.orders import PAYMENT_SATISFIED
+from app.domain.orders import FROM_945, PAYMENT_SATISFIED
 from app.domain.status import Fulfillment as F
 from app.domain.status import Invoice as Inv
 from app.platform.values import ConversionError, FractionalQuantity, MissingConversion, Quantity, UnitTable
@@ -93,6 +93,7 @@ def qualifies(o: OrderFacts, p: PartnerFacts, now: datetime) -> tuple[bool, str]
         (not o.archived, "archived in Shopify"),
         (not o.historical, "historical order"),
         (not o.shadow, "received during the shadow run (Zoho handles it)"),
+        (o.source_type != FROM_945, "created from a 945: it has already shipped"),
         (p.sending_mode == "AUTOMATIC", "partner sends manually"),
     )
     for ok, why in checks:

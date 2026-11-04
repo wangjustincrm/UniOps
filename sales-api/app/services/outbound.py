@@ -34,7 +34,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from app.domain.edi940 import Address, Line940, Order940, build_940
 from app.domain.edi997 import parse_997
 from app.domain.order_rules import facts_of, qualifies
-from app.domain.orders import PAYMENT_SATISFIED
+from app.domain.orders import FROM_945, PAYMENT_SATISFIED
 from app.domain.status import ACK, FULFILLMENT, INBOUND_FILE, OUTBOUND_FILE, Ack, InboundFile, OutboundFile
 from app.domain.status import Fulfillment as F
 from app.domain.status import Invoice as Inv
@@ -83,6 +83,7 @@ def eligible_clause(now: datetime) -> ColumnElement[bool]:
         o.archived_in_shopify_at.is_(None),
         o.historical.is_(False),
         o.shadow.is_(False),
+        o.source_type != FROM_945,
         p.sending_mode == "AUTOMATIC",
         or_(started, paid_started),
     )

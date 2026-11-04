@@ -8,7 +8,7 @@ const base: DocumentRead = {
   id: 1, direction: 'IN', origin: 'PARTNER', system: 'RADIANT', connection_id: 7, kind: '945_EDI', remote_name: 'a.945',
   size: 120, remote_mtime: '2026-10-29T11:00:00Z', sha256: 'ab'.repeat(32), has_content: true, processing_status: 'Pending',
   file_status: null, ack_status: null, isa13: '000000001', gs06: '456', st02: '0001', partner_code: null, error: null,
-  created_at: '2026-10-29T12:00:00Z', created_by_name: 'SYSTEM',
+  created_at: '2026-10-29T12:00:00Z', created_by_name: 'SYSTEM', shipments_without_order: 0,
 }
 const dup: DocumentRead = { ...base, id: 2, remote_name: 'b.945', has_content: false, processing_status: 'Duplicate', error: 'same bytes as document 1' }
 vi.mock('./operationsApi', async (orig) => {

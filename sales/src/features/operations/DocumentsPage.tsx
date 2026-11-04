@@ -1,6 +1,7 @@
 import {
   ActionButton, DateTimeCell, DetailList, ListPage, RecordSheet, Section, StatusCell, formatDateTime, type ColumnDef, Muted,
 } from '@/platform-ui'
+import { OrderFrom945 } from '@/features/orders/OrderFrom945'
 import { documentsClient, downloadOriginal, type DocumentRead } from './operationsApi'
 
 const status = (d: DocumentRead) => d.processing_status ?? d.file_status
@@ -44,7 +45,9 @@ function Detail({ d }: { d: DocumentRead }) {
       ]} />
       {!d.has_content && <Muted as="p">This record keeps no bytes of its own (see the note).</Muted>}
         </Section>
-      ) }]}
+      ) }, ...(d.shipments_without_order > 0 ? [{
+        id: 'no-order', label: 'No order', tone: 'warning' as const, render: () => <OrderFrom945 documentId={d.id} />,
+      }] : [])]}
     />
   )
 }

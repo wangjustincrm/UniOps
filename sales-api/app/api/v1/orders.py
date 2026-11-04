@@ -8,7 +8,11 @@ from app.core.deps import get_uow
 from app.platform.crud_router import page_body
 from app.platform.query import QuerySpec, query_spec
 from app.runtime import Runtime, get_runtime
-from app.schemas.orders import InvoicePricesIn, LinePreview, ManualLineIn, ManualOrderIn, OrderDetail, OrderRead, ReviewResult
+from app.schemas.orders import (
+    InvoicePricesIn, LinePreview, ManualLineIn, ManualOrderIn, OrderDetail, OrderFrom945In, OrderFrom945Plan, OrderRead,
+    ReviewResult,
+)
+from app.services.order_from_945 import OrderFrom945
 from app.services.order_views import ManualOrderService, OrderService
 
 UoW = Annotated[Any, Depends(get_uow)]
@@ -47,6 +51,18 @@ async def retry_shopify(u: UoW, rt: Rt, shipment_id: int) -> dict:
     out = await OrderService(u).retry_shopify(shipment_id, rt.shipments)
     await u.commit()
     return out
+
+
+@router.get("/shipments-without-order", response_model=list[OrderFrom945Plan])
+async def shipments_without_order(u: UoW, document_id: int | None = None):
+    return await OrderFrom945(u).without_order(document_id)  # reads only
+
+
+@router.post("/shipments/{shipment_id}/create-order", response_model=OrderRead, status_code=201)
+async def create_order_from_945(u: UoW, shipment_id: int, body: OrderFrom945In):
+    o = await OrderFrom945(u).create(shipment_id, body.partner_code)
+    await u.commit()
+    return OrderService(u).to_read(o)
 
 
 @router.get("/meta")

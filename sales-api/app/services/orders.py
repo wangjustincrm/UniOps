@@ -31,6 +31,7 @@ from sqlalchemy import select
 from app.domain.address import address_problem
 from app.domain.items import barcode_key, titles_list
 from app.domain.order_rules import payment_satisfied, to_ea, unit_from_title
+from app.domain.orders import FROM_945
 from app.domain.sources import SourceLine, SourceOrder
 from app.domain.status import FULFILLMENT, Fulfillment as F
 from app.domain.status import Invoice as Inv
@@ -306,6 +307,8 @@ class OrderSync:
                          problem=p.problem or ln.excluded)
 
     async def _update(self, order, src, partner, plans, reasons, received_at) -> None:
+        if order.source_type == FROM_945:
+            return  # its lines are what the warehouse shipped: a late 850 is linked, never rebuilds them
         h = src.header
         for k in _HEADER_COLUMNS:
             if k in h:

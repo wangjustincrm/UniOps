@@ -28,6 +28,8 @@ export interface DocumentRead {
   error: string | null
   created_at: string
   created_by_name: string
+  /** Its 945 sets that have no order (FR-OB-25c). */
+  shipments_without_order: number
 }
 
 /** One connection's pass (FR-OB-76): listed = the sum of the other six. */

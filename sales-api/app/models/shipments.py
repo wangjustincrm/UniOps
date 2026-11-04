@@ -13,12 +13,13 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Boolean, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, false
+from sqlalchemy import Boolean, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, false, func, select
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, column_property, mapped_column
 
 from app.db.base import Base
 from app.models.config import one_of
+from app.models.documents import Document
 from app.platform.entities import Audited, Versioned
 
 SHOPIFY_STATUSES = ("Not needed", "Pending", "Done", "Failed", "Suppressed")
@@ -73,3 +74,9 @@ class ShipmentRow(Base):
     tracking: Mapped[str | None] = mapped_column(String(80), nullable=True)
     order_line_id: Mapped[int | None] = mapped_column(ForeignKey("sales_order_lines.id"), nullable=True)
     needs_review: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=false())
+
+
+# How many of a document's 945 sets have no order (FR-OB-25c): Documents filters on it.
+Document.shipments_without_order = column_property(
+    select(func.count(Shipment.id)).where(Shipment.document_id == Document.id, Shipment.order_id.is_(None))
+    .correlate_except(Shipment).scalar_subquery())
