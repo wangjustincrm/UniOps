@@ -13,11 +13,11 @@ export function SchedulerOffBanner() {
 }
 
 /** A connection's next run: the time, "Overdue" when it should have run and did
- *  not, or — the scheduler off — that nothing runs by itself (`short`: for a small tile). */
-export function NextRun({ c, short }: { c: ConnectionRead; short?: boolean }) {
+ *  not, or — the scheduler off — a short Off (the card and the Callout say what to do). */
+export function NextRun({ c }: { c: ConnectionRead }) {
   const enabled = useSchedulerEnabled()
   if (!enabled) {
-    return <Tooltip tip={OFF_TIP}><Muted>{short ? 'Off' : 'Automatic runs off: use Run now'}</Muted></Tooltip>
+    return <Tooltip tip={OFF_TIP}><Muted>Off</Muted></Tooltip>
   }
   if (!c.next_run_at) return <Muted>{c.active ? 'at the next tick' : '—'}</Muted>
   return (

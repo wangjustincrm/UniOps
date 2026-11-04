@@ -23,7 +23,7 @@ export function EdiSettingsForm({ settings: s, options, onDone }: {
   const canEdit = useCan('sales.config')
   const fields: FieldSpec[] = [
     { name: 'connection_id', label: 'Warehouse connection', type: 'select', options,
-      hint: '940s and 943s go to its outbound folder (in Test mode, its test outbound folder); 997s are read from it. None: none is made.' },
+      hint: '940s and 943s go to its outbound folder and 997s are read from it; a Test connection writes nothing. None: none is made.' },
     { name: 'ack_timeout_minutes', label: '997 wait (minutes)', type: 'number', required: true, hint: 'No 997 in this time: Timeout and a task.' },
     { name: 'invoice_connection_id', label: '810 invoice connection', type: 'select', options,
       hint: '810 JSON invoices are put in its outbound folder. None: no 810 is sent.' },

@@ -1,24 +1,24 @@
 // Values between a react-hook-form form, its FieldSpecs and the server
 // (SchemaForm, MasterDetailForm).
 import type { FieldValues, UseFormReturn } from 'react-hook-form'
-import { businessErrorOf } from '../resource/businessError'
+import { businessErrorOf, plainFields } from '../resource/businessError'
 import type { FieldSpec } from './SchemaForm'
 
 /** A refusal from the server that names its field(s) goes next to the input:
  *  details.field, or details.errors [{field, message}]. True when it did. */
 export function applyServerError(form: UseFormReturn<FieldValues>, fields: FieldSpec[], e: unknown,
-  errorMessages?: Record<string, string>): boolean {
+  errorMessages?: Record<string, string>, fieldLabels?: Record<string, string>): boolean {
   const be = businessErrorOf(e)
   const known = (f: unknown): f is string => typeof f === 'string' && fields.some((x) => x.name === f)
   const listed = Array.isArray(be?.details?.errors)
     ? (be.details.errors as { field?: unknown; message?: unknown }[]).filter((x) => known(x.field))
     : []
   if (be && listed.length > 0) {
-    for (const x of listed) form.setError(x.field as string, { message: String(x.message ?? be.message) })
+    for (const x of listed) form.setError(x.field as string, { message: plainFields(String(x.message ?? be.message), fieldLabels) })
     return true
   }
   if (be && known(be.details?.field)) {
-    form.setError(be.details.field, { message: errorMessages?.[be.code] ?? be.message })
+    form.setError(be.details.field, { message: plainFields(errorMessages?.[be.code] ?? be.message, fieldLabels) })
     return true
   }
   return false

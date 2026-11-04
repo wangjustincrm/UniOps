@@ -15,7 +15,7 @@ import {
   type ConnectionCreate, type ConnectionRead, type ConnectionUpdate,
 } from './connectionsApi'
 import {
-  connectionCreateSchema, connectionEmptyValues, connectionFields, connectionToFormValues, connectionUpdateSchema,
+  connectionCreateSchema, connectionEmptyValues, connectionFieldLabels, connectionFields, connectionToFormValues, connectionUpdateSchema,
 } from './connectionSchema'
 
 // Kind, Host, Mode and After read stay in the column chooser (fields of the list's /meta, hidden at first).
@@ -66,6 +66,7 @@ export default function ConnectionsPage() {
       onExport={(path) => downloadConnections(path)}
       csvImport
       errorMessages={errorMessages}
+      fieldLabels={connectionFieldLabels}
       notice={<div className="flex flex-col gap-2"><ConnectionSummary /><SchedulerOffBanner /></div>}
       openAfterCreate="overview"
       detailSize="lg"
@@ -78,7 +79,7 @@ export default function ConnectionsPage() {
         { label: 'Schedule', value: c.schedule_paused ? 'Paused' : `Every ${c.schedule_minutes} min`, tone: c.schedule_paused ? 'warning' : 'neutral' },
         { label: 'Last run', value: c.last_run_status ?? '—', tone: c.last_run_status === 'FAILED' ? 'danger' : c.last_run_status === 'PARTIAL' ? 'warning' : 'neutral',
           hint: c.last_run_at ? formatDateTime(c.last_run_at) : undefined },
-        { label: 'Next run', value: <NextRun c={c} short />, tone: c.overdue ? 'danger' : 'neutral' },
+        { label: 'Next run', value: <NextRun c={c} />, tone: c.overdue ? 'danger' : 'neutral' },
       ]}
       detailTabs={(c, details) => [
         { id: 'overview', label: 'Overview', tone: ['danger', 'warning'].includes(connectionHealth(c).tone) ? connectionHealth(c).tone as 'danger' | 'warning' : undefined,

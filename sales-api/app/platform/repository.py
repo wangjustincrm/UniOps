@@ -52,6 +52,8 @@ class Repository(Generic[T]):
     # Model columns that are both sortable and filterable (merged into the two
     # maps above when the class is defined; an explicit entry there wins).
     list_fields: ClassVar[tuple[str, ...]] = ()
+    # In the read schema but never offered to a client as a column or a field (/meta).
+    meta_hidden: ClassVar[tuple[str, ...]] = ()
     labels: ClassVar[Mapping[str, str]] = {}
     enums: ClassVar[Mapping[str, Sequence[str]]] = {}
     # Fields the list can be grouped by (sortable or filterable keys): the
@@ -239,7 +241,7 @@ class Repository(Generic[T]):
         for name, info in (read_schema.model_fields.items() if read_schema else ()):
             if _scalar(info.annotation):
                 names.append(name)
-        names = list(dict.fromkeys([*names, *cls.filterable, *cls.sortable]))  # each once, schema order first
+        names = [n for n in dict.fromkeys([*names, *cls.filterable, *cls.sortable]) if n not in cls.meta_hidden]  # each once, schema order first
         out = []
         for n in names:
             out.append({

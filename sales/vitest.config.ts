@@ -15,5 +15,8 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test-setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],
+    // A cap, not the default of one worker per core: on a busy machine workers fight for CPU and tests time out
+    // (measured 2026-11-04 at 2 CPUs: default 79 failed, 6 workers 18, 3 workers 2, in the same time).
+    maxWorkers: 3,
   },
 })

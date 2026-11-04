@@ -133,6 +133,18 @@ describe('alwaysSent, notes, and a refusal on a field not on screen', () => {
   })
 })
 
+describe('a hint from the values', () => {
+  it('follows them', () => {
+    const f: FieldSpec[] = [
+      { name: 'kind', label: 'Kind', type: 'segmented', hint: (v) => `Says ${v.kind}`, options: [{ value: 'A', label: 'Type A' }, { value: 'B', label: 'Type B' }] },
+    ]
+    render(<SchemaForm schema={z.object({ kind: z.string() })} fields={f} defaultValues={{ kind: 'A' }} onSubmit={vi.fn()} />)
+    expect(screen.getByText('Says A')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('radio', { name: 'Type B' }))
+    expect(screen.getByText('Says B')).toBeInTheDocument()
+  })
+})
+
 describe('the choice controls', () => {
   it('Segmented: a radio group, the arrows move and choose, one tab stop', () => {
     const onChange = vi.fn()

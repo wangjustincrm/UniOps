@@ -25,7 +25,7 @@ const fields = {
   port: z.number({ error: 'Enter a port' }).int().min(1, 'From 1').max(65535, 'At most 65535').nullable().optional(),
   username: optional(255).refine((v) => !v || !EXCEL_NUMBER.test(v.trim()), EXCEL_MESSAGE),
   inbound_folder: optional(), outbound_folder: optional(), processed_folder: optional(), error_folder: optional(),
-  test_inbound_folder: optional(), test_outbound_folder: optional(),
+  test_outbound_folder: optional(),
   after_read: choice(AFTER_READ),
   stable_seconds: z.number({ error: 'Enter seconds' }).int('Whole seconds').min(0, 'Cannot be negative'),
   mode: choice(MODES),
@@ -77,7 +77,7 @@ export const connectionUpdateSchema = z.object(fields).superRefine(rules)
 
 const folderLabel: Record<(typeof FOLDERS)[number], string> = {
   inbound_folder: 'Inbound folder', outbound_folder: 'Outbound folder', processed_folder: 'Processed folder',
-  error_folder: 'Error folder', test_inbound_folder: 'Test inbound folder', test_outbound_folder: 'Test outbound folder',
+  error_folder: 'Error folder', test_outbound_folder: 'Test outbound folder',
 }
 
 const sftp = (v: FieldValues) => v.kind === 'SFTP'
@@ -88,7 +88,9 @@ export const connectionFields: FieldSpec[] = [
   { name: 'name', label: 'Name', required: true, section: 'Basics', hint: 'Cannot be changed after the connection is created.' },
   { name: 'kind', label: 'Type', type: 'segmented', required: true, section: 'Basics', options: [{ value: 'SFTP', label: 'SFTP' }, { value: 'SHOPIFY', label: 'Shopify' }] },
   { name: 'mode', label: 'Mode', type: 'segmented', required: true, section: 'Basics', options: [{ value: 'TEST', label: 'Test' }, { value: 'LIVE', label: 'Live' }],
-    hint: 'Test sends to the test folders and never moves or deletes a file. Live uses the real folders.' },
+    hint: (v) => (v.kind === 'SHOPIFY'
+      ? 'Test reads orders and writes nothing to the store. Live can also send fulfilments and close orders, once writing to partners is switched on.'
+      : 'Test reads the inbound folder, leaves the files there and writes nothing to the server. Live can also send, move and delete, once writing to partners is switched on for this server.') },
   { name: 'active', label: 'Active', type: 'checkbox', section: 'Basics' },
 
   { name: 'host', label: 'Address', section: 'Login', hint: "The server's address (a Shopify store: <name>.myshopify.com). An SFTP server must also be on the server's allowed list; ask your administrator." },
@@ -100,7 +102,8 @@ export const connectionFields: FieldSpec[] = [
   { name: 'host_key', label: "Server's key", type: 'textarea', section: 'Login', showWhen: sftp, advanced: true,
     hint: 'Filled in by "Pin this key" after a test on the Overview.' },
 
-  ...FOLDERS.map((f): FieldSpec => ({ name: f, label: folderLabel[f], section: 'Folders', showWhen: sftp, advanced: !['inbound_folder', 'outbound_folder'].includes(f) })),
+  ...FOLDERS.map((f): FieldSpec => ({ name: f, label: folderLabel[f], section: 'Folders', showWhen: sftp, advanced: !['inbound_folder', 'outbound_folder'].includes(f),
+    hint: f === 'test_outbound_folder' ? 'Takes the place of the outbound folder on a Test connection. Nothing is written while it is Test.' : undefined })),
 
   { name: 'after_read', label: 'After reading a file', type: 'segmented', required: true, section: 'Reading', showWhen: sftp, alwaysSent: true,
     options: [{ value: 'LEAVE', label: 'Leave the file' }, { value: 'MOVE', label: 'Move it' }, { value: 'DELETE', label: 'Delete it' }],
@@ -123,9 +126,13 @@ export const connectionFields: FieldSpec[] = [
   { name: 'schedule_sentence', label: 'In words', type: 'note', section: 'Schedule', note: scheduleSentence },
 ]
 
+/** The server's field names, in the form's words (its refusals and CSV rows name them). */
+export const connectionFieldLabels: Record<string, string> = Object.fromEntries(
+  connectionFields.filter((f) => ['host_key', 'secret_name'].includes(f.name)).map((f) => [f.name, f.label]))
+
 export const connectionEmptyValues: Record<string, unknown> = {
   name: '', kind: 'SFTP', host: '', port: 22, username: '', inbound_folder: '', outbound_folder: '', processed_folder: '',
-  error_folder: '', test_inbound_folder: '', test_outbound_folder: '', after_read: 'LEAVE', stable_seconds: 60,
+  error_folder: '', test_outbound_folder: '', after_read: 'LEAVE', stable_seconds: 60,
   mode: 'TEST', secret_name: '', host_key: '', api_version: '', page_size: null, order_number_cutoff: null, partner_code: '',
   schedule_minutes: 5, schedule_paused: false, active_from: '', active_to: '', active_days: [], active: true,
 }

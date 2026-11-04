@@ -32,7 +32,8 @@ export interface FieldSpec {
   /** reference fields: the options for what was typed. */
   loadOptions?: (query: string) => Promise<ComboOption[]>
   required?: boolean
-  hint?: string
+  /** Under the field; a function when it depends on the values. */
+  hint?: string | ((values: FieldValues) => string)
   placeholder?: string
   /** Shown but not editable (e.g. a code that is immutable after creation). */
   readOnly?: boolean
@@ -62,6 +63,8 @@ export interface SchemaFormProps {
   submitLabel?: string
   onCancel?: () => void
   errorMessages?: Record<string, string>
+  /** Field names in the server's messages → the words this form uses. */
+  fieldLabels?: Record<string, string>
   /** View only: every field disabled, no submit (a reader's view of a record). */
   readOnly?: boolean
 }
@@ -73,7 +76,7 @@ export interface SchemaFormProps {
  *  number is null, never 0; a blank optional select is accepted) and a number
  *  input's text becomes a number. */
 export function SchemaForm({
-  schema, fields, defaultValues, onSubmit, changesOnly, submitLabel = 'Save', onCancel, errorMessages, readOnly,
+  schema, fields, defaultValues, onSubmit, changesOnly, submitLabel = 'Save', onCancel, errorMessages, fieldLabels, readOnly,
 }: SchemaFormProps) {
   const resolver = useMemo<Resolver<FieldValues>>(() => {
     const inner = zodResolver(schema, (v) => hiddenFields(fields, v))
@@ -100,7 +103,7 @@ export function SchemaForm({
       // (details.errors: [{field, message}] for a request the server's
       // schema refused); each message goes next to its input.
       // A field not on screen cannot show it: then it is said under the form.
-      if (!applyServerError(form, fields.filter((f) => !off.includes(f.name)), e, errorMessages)) setError(e)
+      if (!applyServerError(form, fields.filter((f) => !off.includes(f.name)), e, errorMessages, fieldLabels)) setError(e)
     }
   })
 
@@ -110,7 +113,7 @@ export function SchemaForm({
       {typeof errors.root?.message === 'string' && (
         <p role="alert" className="text-sm text-danger-600">{errors.root.message}</p>
       )}
-      <ErrorMessage error={error} messages={errorMessages} />
+      <ErrorMessage error={error} messages={errorMessages} fieldLabels={fieldLabels} />
       <div className="flex justify-end gap-2">
         {onCancel && (
           <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>{readOnly ? 'Close' : 'Cancel'}</Button>
@@ -214,7 +217,7 @@ export function SchemaFields({ form, fields, readOnly, idPrefix = 'sf' }: {
           control = <Input {...common} placeholder={f.placeholder} {...form.register(f.name)} />
         }
         return (
-          <FormField key={f.name} label={f.label} htmlFor={id} required={f.required} hint={f.hint} error={typeof err === 'string' ? err : undefined}>
+          <FormField key={f.name} label={f.label} htmlFor={id} required={f.required} hint={typeof f.hint === 'function' ? f.hint(values) : f.hint} error={typeof err === 'string' ? err : undefined}>
             {control}
           </FormField>
         )

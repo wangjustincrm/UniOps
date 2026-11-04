@@ -6,8 +6,8 @@ import type { AuditEntry } from '../AuditHistory'
 export const KINDS = ['SFTP', 'SHOPIFY'] as const
 export const AFTER_READ = ['LEAVE', 'MOVE', 'DELETE'] as const
 export const MODES = ['LIVE', 'TEST'] as const
-export const FOLDERS = ['inbound_folder', 'outbound_folder', 'processed_folder', 'error_folder',
-  'test_inbound_folder', 'test_outbound_folder'] as const
+// The form's folders. test_inbound_folder is stored but nothing reads it: reading always uses inbound_folder.
+export const FOLDERS = ['inbound_folder', 'outbound_folder', 'processed_folder', 'error_folder', 'test_outbound_folder'] as const
 
 export interface ConnectionRead {
   id: number
@@ -59,7 +59,7 @@ export interface ConnectionRead {
   updated_by_name: string | null
 }
 
-type Editable = Omit<ConnectionRead, 'id' | 'version' | 'secret_present' | 'auth_failed_at' | 'auth_failed_reason' | 'cursor_updated_at'
+type Editable = Omit<ConnectionRead, 'id' | 'version' | 'secret_present' | 'test_inbound_folder' | 'auth_failed_at' | 'auth_failed_reason' | 'cursor_updated_at'
   | 'created_at' | 'created_by_name' | 'updated_at' | 'updated_by_name' | 'last_run_at' | 'last_run_status' | 'last_run_summary'
   | 'last_error' | 'next_run_at'>
 export type ConnectionCreate = Editable

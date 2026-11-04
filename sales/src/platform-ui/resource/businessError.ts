@@ -30,6 +30,12 @@ export function businessErrorOf(err: unknown): BusinessError | null {
 
 /** Text for an error: the module's message for its code, else the server's
  *  message, else the Error's own message. */
+/** A server's text with its field names in the form's words (`labels`: name → label). */
+export function plainFields(text: string, labels?: Record<string, string>): string {
+  const names = Object.keys(labels ?? {})
+  return names.length ? text.replace(new RegExp(`\\b(${names.join('|')})\\b`, 'g'), (n) => labels![n]) : text
+}
+
 export function errorText(err: unknown, messages: Record<string, string> = {}): string {
   const be = businessErrorOf(err)
   if (be) return messages[be.code] ?? be.message

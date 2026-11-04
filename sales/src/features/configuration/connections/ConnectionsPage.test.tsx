@@ -123,9 +123,10 @@ describe('CSV import preview (2026-10-29, the dev2 Connections file)', () => {
     const dialog = await screen.findByRole('dialog')
     expect(api.importCsv).toHaveBeenCalledWith(expect.any(File), true)  // a dry run first
     expect(within(dialog).getByText(/Nothing will be written/)).toBeInTheDocument()
-    expect(within(dialog).getByText(`Row 1 · host_key: ${HOST_KEY}`)).toBeInTheDocument()
+    expect(within(dialog).getByText(/^Row 1 · Server's key: Server's key must be the server's public key line/)).toBeInTheDocument()
     expect(within(dialog).getByText(`Row 2 · username: ${EXCEL}`)).toBeInTheDocument()
-    expect(within(dialog).getByText(`Row 3 · secret_name: ${SECRET}`)).toBeInTheDocument()
+    expect(within(dialog).getByText(/^Row 3 · Password name on the server: Password name on the server must be/)).toBeInTheDocument()
+    expect(dialog).not.toHaveTextContent(/host_key|secret_name/)  // the server's text, in the form's words
     expect(within(dialog).getByRole('button', { name: 'Import' })).toBeDisabled()
   })
 })
@@ -380,13 +381,14 @@ describe('when nothing runs by itself, and a run that is overdue', () => {
     expect(await screen.findByText(/Automatic runs are off here/)).toBeInTheDocument()
     expect(await card('Automatic runs', 'Off')).toBeInTheDocument()
     const row = (await screen.findByText('sftp-test')).closest('tr')!
-    expect(within(row).getByText('Automatic runs off: use Run now')).toBeInTheDocument()
+    expect(within(row).getByText('Off')).toBeInTheDocument()  // said once on the card and the Callout, not on every row
+    expect(screen.queryByText(/use Run now$/)).toBeNull()
     expect(within(row).queryByText(/2026|Nov/)).toBeNull()  // no next-run time that never comes
     fireEvent.click(within(row).getByText('sftp-test'))
     const sheet = await screen.findByRole('dialog')
     await openTab(sheet, 'Schedule')
     expect(within(sheet).getByText(/Automatic runs are off here/)).toBeInTheDocument()
-    expect(within(within(sheet).getByRole('region', { name: 'Schedule' })).getByText('Automatic runs off: use Run now')).toBeInTheDocument()
+    expect(within(within(sheet).getByRole('region', { name: 'Schedule' })).getByText('Off')).toBeInTheDocument()
   })
 
   it('the scheduler on: no banner; an overdue connection is marked Overdue beside its next run', async () => {
@@ -395,7 +397,7 @@ describe('when nothing runs by itself, and a run that is overdue', () => {
     const row = (await screen.findByText('sftp-test')).closest('tr')!
     await waitFor(() => expect(within(row).getByText('Overdue')).toBeInTheDocument())
     expect(screen.queryByText(/Automatic runs are off/)).toBeNull()
-    expect(within(row).queryByText('Automatic runs off: use Run now')).toBeNull()
+    expect(within(row).queryByText('Off')).toBeNull()
   })
 })
 
@@ -534,8 +536,34 @@ describe('the form, by type of connection', () => {
   })
 
   it('no technical name in what the user reads', () => {
-    const text = JSON.stringify(connectionFields.map((f) => [f.label, f.hint]))
+    const hint = (f: (typeof connectionFields)[number], kind: string) => (typeof f.hint === 'function' ? f.hint({ kind }) : f.hint)
+    const text = JSON.stringify(connectionFields.map((f) => [f.label, hint(f, 'SFTP'), hint(f, 'SHOPIFY')]))
     expect(text).not.toMatch(/host_key|secret_name|SALES_[A-Z]|FR-OB/)
+  })
+
+  it('Mode says what it does for each type: a Test connection writes nothing', async () => {
+    const sheet = await newForm()
+    expect(sheet).toHaveTextContent('Test reads the inbound folder, leaves the files there and writes nothing to the server')
+    fireEvent.click(within(sheet).getByRole('radio', { name: 'Shopify' }))
+    expect(sheet).toHaveTextContent('Test reads orders and writes nothing to the store')
+  })
+
+  it('there is no test inbound folder: nothing reads one', async () => {
+    const sheet = await newForm()
+    expect(within(sheet).queryByLabelText('Test inbound folder')).toBeNull()
+    expect(within(sheet).getByLabelText('Test outbound folder')).toBeInTheDocument()
+  })
+
+  it('a server refusal naming a field is said in the form\'s words', async () => {
+    api.create.mockReset()
+    api.create.mockRejectedValue(Object.assign(new Error('x'), { body: { error: { code: 'validation', message: 'x',
+      details: { errors: [{ field: 'secret_name', message: 'secret_name must be a name' }] } } } }))
+    const sheet = await newForm()
+    for (const [label, value] of [[/^Name/, 'n'], [/^Address/, 'h'], [/^User name/, 'u'], [/^Password name/, 'SALES_SECRET_X'], [/^Inbound folder/, '/in']] as const) {
+      fireEvent.change(within(sheet).getByLabelText(label), { target: { value } })
+    }
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
+    expect(await within(sheet).findByText('Password name on the server must be a name')).toBeInTheDocument()
   })
 })
 

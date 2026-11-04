@@ -47,6 +47,8 @@ _RULE_FIELDS = ("kind", "host", "username", "inbound_folder", "secret_name", "af
                 "host_key", "api_version", "partner_code")
 _FOLDERS = ("inbound_folder", "outbound_folder", "processed_folder", "error_folder",
             "test_inbound_folder", "test_outbound_folder")
+# What the connection test lists: test_inbound_folder stays a stored column (and in the CSV), but nothing reads it.
+_TESTED_FOLDERS = tuple(f for f in _FOLDERS if f != "test_inbound_folder")
 
 
 def same_key(a: str | None, b: str | None) -> bool:
@@ -62,7 +64,9 @@ NEEDS_ATTENTION = case((or_(Connection.schedule_paused.is_(True), Connection.las
 class ConnectionRepository(Repository[Connection]):
     model = Connection
     search_fields = ("name", "host")
-    # secret_name and host_key are not list fields: never echoed back in a filter error.
+    # secret_name and host_key are not list fields: never echoed back in a filter error,
+    # and not offered as columns either; test_inbound_folder is read by nothing.
+    meta_hidden = ("secret_name", "host_key", "test_inbound_folder")
     list_fields = ("name", "kind", "host", "port", "username", "after_read", "stable_seconds", "mode",
                    "auth_failed_at", "api_version", "cursor_updated_at", "page_size", "order_number_cutoff",
                    "partner_code", "schedule_minutes", "schedule_paused", "last_run_at", "last_run_status", "next_run_at",
@@ -214,7 +218,7 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
             result.error = ("the host key is not pinned yet: compare the fingerprint and pin it" if not pinned
                             else "the server presents a different host key than the pinned one")
             return result
-        folders = [getattr(entity, f) for f in _FOLDERS if getattr(entity, f)]
+        folders = [getattr(entity, f) for f in _TESTED_FOLDERS if getattr(entity, f)]
         try:
             checks = await sftp.check(snap, folders)
             result.folders = [FolderCheckRead(folder=c.folder, ok=c.ok, files=c.files, error=c.error) for c in checks]
