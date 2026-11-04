@@ -17,7 +17,7 @@ from sqlalchemy import (
     Boolean, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, and_, exists, false, func, select,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, column_property, mapped_column
+from sqlalchemy.orm import Mapped, aliased, column_property, mapped_column
 
 from app.db.base import Base
 from app.models.config import Item, one_of
@@ -105,14 +105,20 @@ Order.sent_940_at_sql = column_property(
     select(func.max(Document.sent_at)).join(DocumentLink, DocumentLink.document_id == Document.id).where(
         *_order_940).correlate_except(Document, DocumentLink).scalar_subquery())
 
-# The shadow run's 945 left a warehouse line short (the Short shipped mark). Only a 945 whose
-# rows are linked to the order counts: an unlinked one (a synthetic test file) says nothing.
+# The shadow run's 945 left a warehouse item short (the Short shipped mark). By item, not by
+# line: a row links to one line but fills every line of its item (app/domain/lifecycle.spread).
+# Only a 945 whose rows are linked to the order counts: an unlinked one (a synthetic test file)
+# says nothing.
+_line = aliased(OrderLine)
 _shadow_ea = (select(func.coalesce(func.sum(ShipmentRow.qty_shipped_ea), 0))
               .join(Shipment, Shipment.id == ShipmentRow.shipment_id)
-              .where(ShipmentRow.order_line_id == OrderLine.id, Shipment.shadow.is_(True))
-              .correlate(OrderLine).scalar_subquery())
+              .join(_line, _line.id == ShipmentRow.order_line_id)
+              .where(_line.order_id == Order.id, _line.item_code == OrderLine.item_code, Shipment.shadow.is_(True))
+              .correlate(Order, OrderLine).scalar_subquery())
 Order.shadow_short_sql = column_property(and_(
     exists().where(ShipmentRow.shipment_id == Shipment.id, Shipment.order_id == Order.id, Shipment.shadow.is_(True),
                    ShipmentRow.order_line_id.is_not(None)).correlate(Order),
-    exists().where(OrderLine.order_id == Order.id, OrderLine.removed.is_(False), OrderLine.item_code == Item.item_code,
-                   Item.warehouse_held.is_(True), _shadow_ea < OrderLine.qty_ea).correlate(Order)))
+    select(OrderLine.item_code).join(Item, Item.item_code == OrderLine.item_code)
+    .where(OrderLine.order_id == Order.id, OrderLine.removed.is_(False), Item.warehouse_held.is_(True))
+    .group_by(OrderLine.item_code).having(func.sum(OrderLine.qty_ea) > _shadow_ea)
+    .correlate(Order).exists()))

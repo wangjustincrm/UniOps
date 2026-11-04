@@ -11,7 +11,7 @@ from sqlalchemy import and_, case, or_, select
 
 from app.domain.address import address_flags
 from app.domain.carriers import tracking_url
-from app.domain.lifecycle import backordered, line_state
+from app.domain.lifecycle import backordered, line_state, spread
 from app.domain.order_rules import ON_HOLD_FULFILLMENT, order_state, payment_satisfied, to_ea
 from app.domain.order_status import (
     HOLD_REASONS as ON_HOLD_REASONS, ORDER_STATUSES, DetailFacts, StatusFacts, display, send_time, status_detail,
@@ -152,14 +152,22 @@ def detail_facts(o: Order) -> DetailFacts:
         shopify_error=o.fact("shopify_error_sql"), invoice_error=o.fact("invoice_error_sql"))
 
 
-def shadow_figures(ln: OrderLine, packing: list[PackingRead]) -> dict:
-    """What the shadow run's 945s shipped for a line (their rows linked to it), and
-    what that leaves backordered — shown as the shadow run's, never applied."""
-    rows = [p for p in packing if p.shadow]
-    if not rows:
-        return {}
-    got = sum(p.qty_shipped_ea for p in rows)
-    return {"shipped_shadow_ea": got, "backordered_shadow_ea": backordered(ln.qty_ea, got, ln.removed)}
+def shadow_figures(lines: list[OrderLine], packed: dict[int, list[PackingRead]]) -> dict[int, dict]:
+    """What the shadow run's 945s shipped per line, and what that leaves backordered —
+    shown as the shadow run's, never applied. By item, then spread over the item's lines."""
+    by_item: dict[object, list[OrderLine]] = {}
+    for ln in lines:
+        by_item.setdefault(ln.item_code or ln.id, []).append(ln)
+    out: dict[int, dict] = {}
+    for group in by_item.values():
+        rows = [p for ln in group for p in packed.get(ln.id, []) if p.shadow]
+        if not rows:
+            continue
+        open_lines = [ln for ln in group if not ln.removed]
+        got = spread(sum(p.qty_shipped_ea for p in rows), [ln.qty_ea or 0 for ln in open_lines])
+        for ln, n in zip(open_lines, got):
+            out[ln.id] = {"shipped_shadow_ea": n, "backordered_shadow_ea": backordered(ln.qty_ea, n, ln.removed)}
+    return out
 
 
 class OrderService(ReadOnlyService[Order, OrderRead]):
@@ -294,6 +302,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                     qty_shipped_ea=r.qty_shipped_ea, tracking=r.tracking or ", ".join(sh.tracking or []) or None,
                     ship_date=sh.ship_date, applied=sh.applied, shadow=sh.shadow))
         out = []
+        shadow = shadow_figures(lines, packed)
         for ln in lines:
             ils = inv.get(ln.id, [])
             out.append(LineRead.model_validate(ln).model_copy(update={
@@ -304,7 +313,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                 "invoice_price": ils[0].unit_price if ils else (
                     None if ln.removed else ln.invoice_unit_price if ln.invoice_unit_price is not None else ln.unit_price),
                 "backordered_ea": backordered(ln.qty_ea, ln.shipped_ea, ln.removed),
-                **shadow_figures(ln, packed.get(ln.id, [])),
+                **shadow.get(ln.id, {}),
                 "invoice_amount": sum((il.amount for il in ils), Decimal(0)) if ils else None,
                 "state": line_state(removed=ln.removed, qty_ea=ln.qty_ea, shipped_ea=ln.shipped_ea,
                                     delivered_ea=ln.delivered_qty, invoiced=bool(ils)),

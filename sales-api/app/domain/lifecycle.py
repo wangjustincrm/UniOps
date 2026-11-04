@@ -32,3 +32,18 @@ def backordered(qty_ea: int | None, shipped_ea: int | None, removed: bool) -> in
         return None
     return max(qty_ea - shipped_ea, 0)
 
+
+def spread(shipped: int, quantities: list[int]) -> list[int]:
+    """What shipped of one item across the lines of that item, in line order: each up
+    to its quantity, what is left over on the first (over-shipped). A 945 row links to one
+    line, but fills several when an order has the item twice, so a line's own rows do not
+    say what it got: the item's total does (the 945 plan fills lines the same way)."""
+    out, left = [], shipped
+    for q in quantities:
+        take = min(left, max(q, 0))
+        out.append(take)
+        left -= take
+    if out:
+        out[0] += left
+    return out
+
