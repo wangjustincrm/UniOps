@@ -160,8 +160,15 @@ async def _validate_agreement_pa_invoices(
 _RELEASED_PA_STATUSES = ("cancelled", "rejected")
 
 
+def _settled_po_id(pa_type: str | None, po_id: uuid.UUID | None) -> uuid.UUID | None:
+    """The PO whose prepayments this PA may share an invoice with: the one it
+    settles. None for every other PA type."""
+    return po_id if pa_type in ("settlement", "balance") else None
+
+
 async def _assert_invoices_not_on_other_live_pa(
     db: SessionDep, invoice_ids: list, pa_id: uuid.UUID | None = None,
+    settled_po_id: uuid.UUID | None = None,
 ) -> None:
     """No invoice may sit on two live PAs: that is one bill paid twice
     (ISS-0112, PA-012). The New PA form hides such invoices, but the Edit form
@@ -170,6 +177,12 @@ async def _assert_invoices_not_on_other_live_pa(
     submit, for the PO and the agreement route alike (Direct and Freight PAs
     have their own check in crud). The invoice rows are locked so two PAs
     saved at the same moment cannot both pass.
+
+    One sharing is legitimate: a settlement or balance PA pays the rest of the
+    invoice a prepayment on the same PO paid part of (the prepayment leaves it
+    partially_paid), and netting prepayment_applied is what stops it being paid
+    twice. `settled_po_id` (see _settled_po_id) lifts the check for those
+    prepayments only; a second settlement or a regular PA still counts.
     """
     ids = [uuid.UUID(str(i)) for i in dict.fromkeys(str(i) for i in invoice_ids or [])]
     if not ids:
@@ -186,6 +199,11 @@ async def _assert_invoices_not_on_other_live_pa(
         )
         if pa_id is not None:
             q = q.where(PaymentApplication.id != pa_id)
+        if settled_po_id is not None:
+            q = q.where(~(
+                (PaymentApplication.pa_type == "prepayment")
+                & PaymentApplication.id.in_(pa_ids_for_po(settled_po_id))
+            ))
         numbers = (await db.execute(q.order_by(PaymentApplication.pa_number))).scalars().all()
         if numbers:
             held.append(f"{refs.get(iid, iid)} is already on {', '.join(numbers)}")
@@ -811,7 +829,8 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
     # ── Invoice validation ─────────────────────────────────────────────────────
     await _assert_invoices_belong_to_pos(db, pos, body.invoice_ids)
     await _assert_invoice_due_dates_within_window(db, body.invoice_ids)
-    await _assert_invoices_not_on_other_live_pa(db, body.invoice_ids)
+    await _assert_invoices_not_on_other_live_pa(
+        db, body.invoice_ids, settled_po_id=_settled_po_id(body.pa_type, po.id))
 
     # ── 收货闸门 —— 预付款先付后收豁免;其余类型须有 3-way matched 发票 ──
     # 每一张 PO 都要过闸:只查主 PO 会让「搭车」的第二张 PO 在完全没收货的情况下
@@ -990,7 +1009,8 @@ async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: Curr
     if pa.agreement_id is None and body.invoice_ids is not None:
         await _assert_invoice_due_dates_within_window(db, body.invoice_ids)
     if body.invoice_ids is not None and pa.source not in ("direct", "freight"):
-        await _assert_invoices_not_on_other_live_pa(db, body.invoice_ids, pa.id)
+        await _assert_invoices_not_on_other_live_pa(
+            db, body.invoice_ids, pa.id, _settled_po_id(pa.pa_type, pa.po_id))
 
     # ── Prepayment: the pre-tax amount follows the % (ISS-0133) ───────────────
     # The pre-tax amount and the single line are recomputed from the % and the
@@ -1138,7 +1158,8 @@ async def pa_action(
     if body.action == "submit":
         _assert_invoice_link_on_submit(pa)
         # Also catches a draft saved before this check existed.
-        await _assert_invoices_not_on_other_live_pa(db, pa.invoice_ids, pa.id)
+        await _assert_invoices_not_on_other_live_pa(
+            db, pa.invoice_ids, pa.id, _settled_po_id(pa.pa_type, pa.po_id))
         # ISS-0125: invoice_ids has no FK, so a deleted invoice leaves its id
         # behind and the PA would go on to pay a bill that no longer exists.
         if pa.invoice_ids:

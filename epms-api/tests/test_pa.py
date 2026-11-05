@@ -1,5 +1,12 @@
 """Payment Application endpoint tests."""
+import uuid
+
 import pytest
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from app.models.invoice import Invoice
+from app.models.pa import PaymentApplication
 
 PA_URL = "/api/v1/pa"
 PO_URL = "/api/v1/po"
@@ -1028,3 +1035,80 @@ async def test_submit_allows_prepayment_pa_without_invoice(admin_client, test_en
     r = await admin_client.post(f"{PA_URL}/{pa['id']}/action", json={"action": "submit"})
 
     assert "links no invoice" not in r.text
+
+
+# ── Settlement of a prepayment that carries the invoice ─────────────────────
+
+async def _paid_prepayment_holding_invoice(admin_client, test_engine):
+    v = await _make_vendor(admin_client, f"VND-SETL-{uuid.uuid4().hex[:6]}")
+    po = await _make_three_way_po(admin_client, test_engine, v["id"])
+    prepay = await _make_prepayment(admin_client, po["id"], subtotal="100.00")
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        inv = (await db.execute(
+            select(Invoice).where(Invoice.po_id == uuid.UUID(po["id"])))).scalars().first()
+        await db.execute(update(PaymentApplication)
+                         .where(PaymentApplication.id == uuid.UUID(prepay["id"]))
+                         .values(status="processed", invoice_ids=[str(inv.id)],
+                                 settlement_status="pending"))
+        inv.status = "partially_paid"
+        await db.commit()
+    return po, prepay, str(inv.id)
+
+
+def _settlement(po, prepay, **over):
+    return _pa_payload(po["id"], pa_type="settlement", prepayment_pa_id=prepay["id"],
+                       subtotal="400.00", tax_amount="52.00", prepayment_applied="100.00",
+                       receipt_override=True, receipt_override_reason="test", **over)
+
+
+@pytest.mark.asyncio
+async def test_settlement_can_carry_the_invoice_its_prepayment_holds(admin_client, test_engine):
+    po, prepay, inv_id = await _paid_prepayment_holding_invoice(admin_client, test_engine)
+
+    r = await admin_client.post(PA_URL, json=_settlement(po, prepay, invoice_ids=[inv_id]))
+    assert r.status_code == 201, r.text
+    assert r.json()["invoice_ids"] == [inv_id]
+
+
+@pytest.mark.asyncio
+async def test_settlement_draft_can_add_the_invoice_its_prepayment_holds(admin_client, test_engine):
+    po, prepay, inv_id = await _paid_prepayment_holding_invoice(admin_client, test_engine)
+    created = await admin_client.post(PA_URL, json=_settlement(po, prepay))
+    assert created.status_code == 201, created.text
+
+    r = await admin_client.patch(f"{PA_URL}/{created.json()['id']}", json={"invoice_ids": [inv_id]})
+    assert r.status_code == 200, r.text
+    assert r.json()["invoice_ids"] == [inv_id]
+
+
+@pytest.mark.asyncio
+async def test_only_a_same_po_prepayment_may_share_with_a_settlement(admin_client, test_engine):
+    from fastapi import HTTPException
+
+    from app.api.v1.pa import _assert_invoices_not_on_other_live_pa, _settled_po_id
+
+    po, prepay, inv_id = await _paid_prepayment_holding_invoice(admin_client, test_engine)
+    po_id = uuid.UUID(po["id"])
+    settling = _settled_po_id("settlement", po_id)
+    assert _settled_po_id("balance", po_id) == po_id
+    assert _settled_po_id("regular", po_id) is None
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with factory() as db:
+        await _assert_invoices_not_on_other_live_pa(db, [inv_id], settled_po_id=settling)
+        # Regular PA: the prepayment still claims it.
+        with pytest.raises(HTTPException) as exc:
+            await _assert_invoices_not_on_other_live_pa(db, [inv_id])
+        assert exc.value.status_code == 409 and prepay["pa_number"] in exc.value.detail
+        # Settling a different PO: not this prepayment's settlement.
+        with pytest.raises(HTTPException):
+            await _assert_invoices_not_on_other_live_pa(db, [inv_id], settled_po_id=uuid.uuid4())
+
+    first = await admin_client.post(PA_URL, json=_settlement(po, prepay, invoice_ids=[inv_id]))
+    assert first.status_code == 201, first.text
+    async with factory() as db:
+        # A live settlement is a real claim: a second one cannot pay it again.
+        with pytest.raises(HTTPException) as exc:
+            await _assert_invoices_not_on_other_live_pa(db, [inv_id], settled_po_id=settling)
+        assert first.json()["pa_number"] in exc.value.detail

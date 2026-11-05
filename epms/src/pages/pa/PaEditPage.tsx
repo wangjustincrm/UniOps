@@ -23,6 +23,7 @@ import { FreightPaEditForm } from './FreightPaEditForm'
 import { DirectPaEditForm } from './DirectPaEditForm'
 import { derivePaLines, derivedLinesTotal, invoiceOwnLines } from '@/lib/paLinesFromInvoices'
 import { dueWindowViolation } from './invoiceDueWindow'
+import { invoiceClaims, poLinesSubtotal } from './invoiceClaims'
 
 /**
  * A Freight PA takes its amounts, invoices and cost split from the Freight page
@@ -133,16 +134,10 @@ function PoPaEditPage() {
     agreement ? { search: agreement.number } : undefined,
     isAgreementMode && Boolean(agreement),
   )
-  const claimedByPaNumber = new Map<string, string>()
   const otherPas = isAgreementMode
     ? (agreementPas?.items ?? []).filter((p) => p.agreement_id === pa?.agreement_id)
     : (poPasQuery.items ?? [])
-  for (const other of otherPas) {
-    if (other.id === pa?.id || ['cancelled', 'rejected'].includes(other.status)) continue
-    for (const invId of other.invoice_ids) {
-      if (!claimedByPaNumber.has(invId)) claimedByPaNumber.set(invId, other.pa_number)
-    }
-  }
+  const claimedByPaNumber = invoiceClaims(otherPas.filter((p) => p.id !== pa?.id), pa?.pa_type)
   const invoiceChoices = poInvoices.filter(
     (inv) => !claimedByPaNumber.has(inv.id) || selectedInvoiceIds.has(inv.id),
   )
@@ -193,7 +188,7 @@ function PoPaEditPage() {
     ? Math.round(prepayPretax * Number(po?.tax_amount ?? 0) / prepayBase * 100) / 100
     : Math.round(prepayPretax * Number(po?.tax_rate ?? 0) * 100) / 100
   const selectedPoLines = pos.flatMap((p) => p.line_items.filter((l) => selectedLineIds.has(l.id)))
-  const autoSubtotal    = selectedPoLines.reduce((s, l) => s + l.line_total, 0)
+  const autoSubtotal    = poLinesSubtotal(selectedPoLines)
   // Same rule as PaCreatePage: line-matched invoices decide the lines.
   const derivedLines = isAgreementMode ? null : derivePaLines(
     poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id)), pos.map((p) => p.id),

@@ -808,11 +808,12 @@ def test_one_invoice_one_pa_is_refused_by_the_server():
     assert pa_api._RELEASED_PA_STATUSES == ("cancelled", "rejected")
     for fn in (pa_api.create_pa, pa_api.update_pa, pa_api.pa_action):
         assert "_assert_invoices_not_on_other_live_pa" in inspect.getsource(fn)
+    claims = _src("epms/src/pages/pa/invoiceClaims.ts")
+    assert "if (['cancelled', 'rejected'].includes(pa.status)) continue" in claims
     page = _src("epms/src/pages/pa/PaCreatePage.tsx")
-    assert "if (['cancelled', 'rejected'].includes(pa.status)) continue" in page
-    assert "lockedInvoiceIds" in page
+    assert "invoiceClaims(" in page and "lockedInvoiceIds" in page
     edit = _src("epms/src/pages/pa/PaEditPage.tsx")
-    assert "other.id === pa?.id || ['cancelled', 'rejected'].includes(other.status)" in edit
+    assert "invoiceClaims(otherPas.filter((p) => p.id !== pa?.id), pa?.pa_type)" in edit
 
 
 def test_new_pa_warns_of_uncollected_goods_with_the_servers_rule():

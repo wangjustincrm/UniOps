@@ -301,13 +301,18 @@ rules:
       Edit PA forms do not offer it (they say which PA holds it), and the
       server refuses it when a PA is created, when its invoices are changed
       and when it is submitted, on the PO and the agreement route alike. Once
-      that other PA is cancelled or rejected, the invoice is free again.
-    enforced_in: "epms-api app/api/v1/pa.py _assert_invoices_not_on_other_live_pa (create_pa, update_pa, pa_action submit); app/crud/pa.py create_direct and app/crud/freight.py for Direct / Freight PAs; epms/src/pages/pa/PaCreatePage.tsx and PaEditPage.tsx (claimed invoices hidden)"
+      that other PA is cancelled or rejected, the invoice is free again. The
+      one exception is a settlement or balance PA: it may take an invoice held
+      by a prepayment on the same PO, because it pays the rest of that invoice
+      and nets the prepayment off.
+    enforced_in: "epms-api app/api/v1/pa.py _assert_invoices_not_on_other_live_pa (create_pa, update_pa, pa_action submit); app/crud/pa.py create_direct and app/crud/freight.py for Direct / Freight PAs; epms/src/pages/pa/invoiceClaims.ts, used by PaCreatePage.tsx and PaEditPage.tsx (claimed invoices hidden)"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_one_invoice_one_pa_is_refused_by_the_server"
       - "tests/test_procurement_batch1.py::test_po_route_second_pa_on_same_invoice_refused"
       - "tests/test_procurement_batch1.py::test_agreement_pa_edit_cannot_reclaim_invoice"
+      - "tests/test_pa.py::test_settlement_can_carry_the_invoice_its_prepayment_holds"
+      - "tests/test_pa.py::test_only_a_same_po_prepayment_may_share_with_a_settlement"
   - id: invoice_on_a_pa_is_locked
     also_in: [pa]
     asked_as:
@@ -319,7 +324,8 @@ rules:
       rejected, its pre-tax amount, tax, currency, line items and linked goods
       receipts cannot be changed and it cannot be deleted — the PA was raised
       for those figures and would otherwise pay amounts that no longer exist.
-      Its dates and notes stay editable. To change it, first remove the
+      Its dates and notes stay editable, and saving the edit form unchanged
+      is not a change. To change it, first remove the
       invoice from that PA (Edit the PA while it is a draft or returned) or
       cancel the PA. A PA whose invoice has been deleted cannot be submitted.
     enforced_in: "epms-api app/api/v1/invoices.py update_invoice (_invoice_money_fields_changed); app/crud/invoice.py delete; app/api/v1/pa.py pa_action submit"
@@ -328,3 +334,5 @@ rules:
       - "tests/test_procurement_batch1.py::test_invoice_on_live_pa_amounts_locked_dates_editable"
       - "tests/test_procurement_batch1.py::test_invoice_on_live_pa_cannot_be_deleted"
       - "tests/test_procurement_batch1.py::test_pa_whose_invoice_was_deleted_cannot_be_submitted"
+      - "tests/test_procurement_batch1.py::test_float_noise_in_a_resent_line_total_is_not_a_change"
+      - "tests/test_procurement_batch1.py::test_form_recomputing_an_ocr_line_keeps_the_stored_total"

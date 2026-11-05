@@ -26,6 +26,7 @@ import { DueWindowNotice } from './DueWindowNotice'
 import { DerivedPaLinesTable } from './DerivedPaLinesTable'
 import { derivePaLines, derivedLinesTotal, invoiceOwnLines } from '@/lib/paLinesFromInvoices'
 import { dueWindowViolation, earliestDueGroup, PA_INVOICE_DUE_WINDOW_DAYS } from './invoiceDueWindow'
+import { invoiceClaims } from './invoiceClaims'
 
 // Invoice multi-select list — shared by the PO route (the PO's invoices) and
 // the agreement route (matched-but-unpaid invoices only). Both routes hand it
@@ -371,13 +372,8 @@ function PoPaCreate() {
   // because the invoice is HIDDEN from the picker below rather than shown
   // greyed out, and an invoice that silently is not there is a hunt: the note
   // that replaces the row has to be able to say where it went.
-  const claimedByPaNumber = new Map<string, string>()
-  for (const pa of (isAgreementMode ? agreementPaItems : (poActivePas?.items ?? []))) {
-    if (['cancelled', 'rejected'].includes(pa.status)) continue
-    for (const invId of pa.invoice_ids) {
-      if (!claimedByPaNumber.has(invId)) claimedByPaNumber.set(invId, pa.pa_number)
-    }
-  }
+  const claimedByPaNumber = invoiceClaims(
+    isAgreementMode ? agreementPaItems : (poActivePas?.items ?? []), paType)
   const lockedInvoiceIds = new Set<string>(claimedByPaNumber.keys())
 
   // "Claimed" describes a fact about the invoice, not about this form: another
