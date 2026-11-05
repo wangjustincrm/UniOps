@@ -1,9 +1,15 @@
 # UniOps Portal — Product Requirements Document
 
-**Version:** 2.4
-**Date:** 2026-10-21
+**Version:** 2.5
+**Date:** 2026-11-05
 **Status:** In Production
 **Scope:** Portal web app (sign-in, launcher, Task Inbox, platform administration) and the platform services it administers: identity service (sign-in, MFA, password policy, users, roles, access control), approval engine (workflows, routing, delegation, re-sync), task-notification outbox, master-data service (MDM), file service, Data Maintenance and the AI Assistant panel.
+
+**What changed in version 2.5** (2026-11-05)
+
+- Notification Settings has new switches: GR Acknowledgement Reminder and Budget Threshold Alerts (each with a dry run), Agreement Overdue Reminder and PA Approved — Notify Requester (§5.7).
+- Tax code writes are System Admin only (§8).
+- Task Inbox: *Create PA*, *Create Prepayment PA* and *Confirm Goods Receipt* rows open New PA / New GR, as in the EPMS inbox (INB-004).
 
 **What changed in version 2.4** (2026-10-21)
 
@@ -230,7 +236,7 @@ Home shows **My Task Inbox**, with a count badge that caps at "99+".
 | **INB-001** | Rows from the two sources are de-duplicated. OA rows win. The key is the document number, except budget plans (keyed by plan id) and VMS tasks (keyed by task id). Rows are ordered newest first. |
 | **INB-002** | **Two-level grouping.** First by module (EPMS → Expense → Visitor), then by task type in a fixed order, each with a header and a count. Task types use the canonical labels in EPMS.md §3.7.1; unknown types are shown in readable form and placed last. OA rows are grouped by claim status (Pending Dept. Approval / Pending Finance Review / Approved — Awaiting Payment). VMS rows are grouped as Visits, Training Confirmations or PPE Confirmations. |
 | **INB-003** | Each row shows the module badge, time since creation, an "Urgent" chip when applicable, the title, the document number and the amount. *EPMS amounts are always formatted as CAD* (**Defect**, §14). |
-| **INB-004** | **Each row opens the page where the work is done, carrying the session:** <br>• EPMS — PR, PO, GR, Invoice, PA and Agreement detail; PO sign-off opens the PO <br>• OA — expense claim or Travel Application <br>• VMS — the visit or the visitor compliance page <br>• Finance — budget plan, JV-validation findings or duplicate-invoice findings <br>• NC sync errors — Portal Admin → NC Sync (Import ERP Vendor opens EPMS Vendors) <br>*A row whose document type has no mapping (such as a Direct PA) links to an EPMS page that does not exist* (**Defect**, §14). |
+| **INB-004** | **Each row opens the page where the work is done, carrying the session:** <br>• EPMS — PR, PO, GR, Invoice, PA and Agreement detail; PO sign-off opens the PO; *Create PA* and *Create Prepayment PA* open New PA for the PO and *Confirm Goods Receipt* opens New GR for it <br>• OA — expense claim or Travel Application <br>• VMS — the visit or the visitor compliance page <br>• Finance — budget plan, JV-validation findings or duplicate-invoice findings <br>• NC sync errors — Portal Admin → NC Sync (Import ERP Vendor opens EPMS Vendors) <br>*A row whose document type has no mapping (such as a Direct PA) links to an EPMS page that does not exist* (**Defect**, §14). |
 | **INB-005** | The inbox is read once per page load; it is not polled. Tasks cannot be dismissed from Portal. *The "Mark all as read" button has no effect* (**Defect**, §14). |
 
 ### 3.4 Platform Health and Recent Activity
@@ -432,6 +438,10 @@ The default currency and the enabled currencies are chosen from CAD, USD, EUR, G
 | Role Shared Mailboxes | Per role, an address that receives role-pool task emails **instead of** every holder. Email only, so nothing is sent to it when the channel is Teams only. The address is validated as you type. |
 | Daily Digest Time (UTC) | Default 08:00. A change takes effect within about 15 minutes. |
 | Service Completion Reminder | On/off switch with a Dry-run option for the Service/Project PO completion-date reminder (EPMS.md §3.13.3) |
+| GR Acknowledgement Reminder | On/off switch (default off) with a Dry-run option (default on) for the daily GR acknowledgement reminder and escalation (EPMS.md GR-N-002, GR-N-003) |
+| Budget Threshold Alerts | On/off switch (default off) with a Dry-run option (default on) for the budget alerts (BUDGET.md BCFG-008) |
+| Agreement Overdue Reminder | On/off switch (default on). Off stops both the email and the chase task; the period is still marked overdue (EPMS.md AGR-041) |
+| PA Approved — Notify Requester | On/off switch (default on) for the email to a PA's creator on final approval (EPMS.md PA-007) |
 
 Saving keeps settings written by other screens.
 
@@ -642,7 +652,7 @@ MDM owns the master data shared by every module. Portal administers departments 
 | Entity | Rules |
 |---|---|
 | Departments, Cost Centres, Units of Measure | Writes need `mdm.finance.write`. Delete is refused (409) while referenced: a department by cost centres or users, a cost centre by PRs, a unit by parts. Deactivate is the safe alternative. |
-| Tax codes | Versioned by effective date; writes need `mdm.finance.write`. "Delete" only deactivates, because documents keep the code and rate they saved. A tax-determination service resolves the applicable treatment from direction, province, customer type, item tax class and date. |
+| Tax codes | Versioned by effective date; writes (add / edit / deactivate) are **System Admin only** — `mdm.finance.write` still gates the other master data (departments, cost centres, units of measure), not tax codes. "Delete" only deactivates, because documents keep the code and rate they saved. A tax-determination service resolves the applicable treatment from direction, province, customer type, item tax class and date. |
 | Business partners / vendors | One table for suppliers and customers; vendors are the supplier view. Create and edit need `mdm.vendor.write` (coupled to Vendor Master). There is no delete. Includes an optional **remittance email**; when it is empty, remittance falls back to the contact email. |
 | ERP mirrors (materials, suppliers, persons) | Mirrored from NC65 incrementally. Manual sync is for System Admin. The schedule runs every N minutes (default and maximum 1440; 0 = off), materials then suppliers then persons, and a failure in one does not stop the others. A failed run is retried at the next interval. The supplier mirror is readable by holders of Vendor Master or `mdm.vendor.write` (it drives EPMS "Import from ERP"). Persons are System Admin only. |
 | Materials | Promoted from the ERP mirror on demand (`data_maintenance`). ERP-owned fields are overwritten; local planning fields (item type, procurement type, factory) are never overwritten. ERP class `0101` (Raw Milk) is excluded by MRP. |
