@@ -87,7 +87,8 @@ class OrderRepository(Repository[Order]):
               "shopify_financial_status": "Shopify Payment", "shopify_fulfillment_status": "Shopify Fulfillment",
               "archived_in_shopify_at": "Archived", "source_cancelled_at": "Cancelled",
               "source_name": "Sales channel", "tags": "Tags", "original_total": "Original total",
-              "total_refunded": "Refunded", "net_amount": "Net", "backordered_ea": "Backordered EA"}
+              "total_refunded": "Refunded", "net_amount": "Net", "backordered_ea": "Backordered EA",
+              "delivery_due_date": "Delivery due"}
     enums = {"source_type": SOURCE_TYPES, "fulfillment_status": tuple(s.value for s in F),
              "invoice_status": tuple(s.value for s in Inv), "hold_reason": HOLD_REASONS,
              "order_state": ORDER_STATES, "order_status": ORDER_STATUSES, "on_hold_reason": ON_HOLD_REASONS}
@@ -96,7 +97,7 @@ class OrderRepository(Repository[Order]):
     meta_hidden = ("order_status_label", "short_shipped", "status_detail", "status_detail_at", "shadow", "to_confirm",
                    "fulfillment_status", "invoice_status", "order_state", "hold_reason")
     sortable = {"order_state": ORDER_STATE_SQL, "order_status": ORDER_STATUS_SQL, "on_hold_reason": ON_HOLD_REASON_SQL, "partner_name": Order.partner_name_sql,
-                "total_amount": Order.total_amount_sql, "backordered_ea": BACKORDERED_SQL}
+                "total_amount": Order.total_amount_sql, "backordered_ea": BACKORDERED_SQL, "delivery_due_date": Order.delivery_due_sql}
     filterable = {"order_state": FilterRule(ORDER_STATE_SQL, kind="text"),
                   "order_status": FilterRule(ORDER_STATUS_SQL, kind="text"),
                   "on_hold_reason": FilterRule(ON_HOLD_REASON_SQL, kind="text"),

@@ -17,7 +17,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger, Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, Sequence, String, Text,
-    UniqueConstraint, false, func, select, text,
+    UniqueConstraint, case, false, func, select, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, column_property, mapped_column
@@ -128,6 +128,11 @@ class Order(Audited, Versioned, Base):
         """The order's amount as loaded with the row (`total_amount_sql`); never a lazy load."""
         return self.__dict__.get("total_amount_sql")
 
+    @property
+    def delivery_due_date(self) -> date | None:
+        """When the delivery is due (`delivery_due_sql`); never a lazy load."""
+        return self.__dict__.get("delivery_due_sql")
+
     def fact(self, name: str, default=None):
         """A value loaded with the row (`*_sql`); never a lazy load."""
         return self.__dict__.get(name, default)
@@ -157,6 +162,10 @@ Order.partner_invoice_method_sql = _partner_value(Partner.invoice_method)
 Order.partner_sending_mode_sql = _partner_value(Partner.sending_mode)
 Order.partner_settlement_mode_sql = _partner_value(Partner.settlement_mode)
 Order.partner_delay_minutes_sql = _partner_value(Partner.delay_minutes)
+# No carrier tells us a delivery date: it is due on the requested date (dc routing: do-not-deliver-after).
+Order.delivery_due_sql = column_property(case(
+    (select(Partner.dc_routing_required).where(Partner.code == Order.partner_code).correlate_except(Partner).scalar_subquery(),
+     Order.do_not_deliver_after), else_=Order.requested_delivery_date))
 
 
 class OrderLine(Audited, Base):

@@ -797,6 +797,19 @@ async def test_g_a_retail_shadow_order_is_on_the_delivery_list_and_confirming_is
     assert e.value.message == TEST_RUN_REFUSAL
 
 
+async def test_g_a_shadow_order_not_yet_due_stays_off_the_delivery_list(t):
+    o = await retailer(t, "4800000022", requested=datetime(2099, 1, 1))
+    async with t.factory(SYSTEM_ACTOR) as u:
+        await SETTINGS.set(u.session, SHADOW_MODE, True)
+        await mark_open_orders(u)
+        await u.commit()
+    await radiant(t, x945(t, "001009002", "4800000022", [("CF0092", 12, 12), ("CF0010", 12, 12)], tracking=None))
+    async with t.factory(OP) as u:
+        waiting = await OrderService(u).list(QuerySpec(page=1, page_size=50, filters=[Filter(field="to_confirm", op="eq", value="true")]))
+        d = await OrderService(u).get(o)
+    assert d.order_status == "Waiting for Delivery" and waiting.items == []
+
+
 async def test_g_a_cancelled_order_leaves_the_delivery_list(t):
     o = await retailer(t, "4800000021", requested=today(t))
     async with t.factory(SYSTEM_ACTOR) as u:

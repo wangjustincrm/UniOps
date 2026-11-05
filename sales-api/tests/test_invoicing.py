@@ -15,10 +15,13 @@ from app.domain.status import Fulfillment as F
 from app.integrations.email import FakeEmail
 from app.models.config import Partner
 from app.models.orders import Order
-from app.models.records import OutboxRecord
+from app.models.records import AuditRecord, OutboxRecord
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.audit import AuditTrail
+from app.platform.authorization import PermissionDenied
 from app.platform.errors import BusinessError
 from app.platform.outbox import Outbox, OutboxWorker
+from app.platform.uow import UnitOfWorkFactory
 from app.services.invoice_views import InvoiceService
 from app.services.invoicing import SEND_INVOICE, Invoicing
 from app.services.settings import INVOICE_CONNECTION_ID, SETTINGS, SHADOW_MODE
@@ -166,6 +169,58 @@ async def test_bulk_confirmation_takes_the_shipped_quantity_and_one_failure_stop
         await u.commit()
     assert [(r.order_id, r.ok) for r in res] == [(a.id, True), (999999, False), (b.id, True)]
     assert await inv_status(p6, a.id) == await inv_status(p6, b.id) == "Ready"
+
+
+async def test_with_no_date_each_order_takes_its_due_date(p6):
+    o = await shipped_850(p6, "PO-1")
+    await p6.inv.advance()
+    [row] = await p6.q("SELECT requested_delivery_date d FROM sales_orders WHERE id = :i", i=o.id)
+    assert row["d"] is not None
+    async with p6.factory(OP) as u:
+        [res] = await InvoiceService(u).confirm_bulk(p6.inv, ConfirmBulkIn(order_ids=[o.id]))
+        await u.commit()
+    assert res.ok and not res.sent and res.status == "Ready"
+    [inv] = await p6.q("SELECT invoice_date d FROM sales_invoices WHERE order_id = :i", i=o.id)
+    assert inv["d"] == row["d"]
+
+
+async def test_confirm_and_send_queues_the_invoice_once(p6):
+    o = await shipped_850(p6, "PO-1")
+    await p6.inv.advance()
+    async with p6.factory(OP) as u:
+        await InvoiceService(u).confirm(p6.inv, ConfirmIn(order_id=o.id, confirmed_date=date(2026, 11, 5), send=True))
+        await u.commit()
+    assert await inv_status(p6, o.id) == "Queued"
+    assert len(await p6.q("SELECT 1 FROM sales_outbox WHERE kind = 'send_invoice'")) == 1
+
+
+async def test_confirm_and_send_leaves_a_blocked_invoice_for_a_person(p6):
+    o = await shipped_850(p6, "PO-1", shipped=1)  # part of a case: the invoice needs a decision
+    await p6.inv.advance()
+    async with p6.factory(OP) as u:
+        [res] = await InvoiceService(u).confirm_bulk(p6.inv, ConfirmBulkIn(order_ids=[o.id], send=True))
+        await u.commit()
+    assert res.ok and not res.sent and res.status == "Blocked"
+    assert await p6.q("SELECT 1 FROM sales_outbox WHERE kind = 'send_invoice'") == []
+
+
+async def test_confirm_and_send_needs_the_invoice_permission_too(p6):
+    o = await shipped_850(p6, "PO-1")
+    await p6.inv.advance()
+    asked = []
+
+    async def no_invoice_work(session, actor, key):
+        asked.append(key)
+        return key != "sales.invoice.manage"
+    factory = UnitOfWorkFactory(p6.factory.session_factory, permissions=no_invoice_work, audit=AuditTrail(AuditRecord))
+    async with factory(OP) as u:
+        with pytest.raises(PermissionDenied):
+            await InvoiceService(u).confirm(p6.inv, ConfirmIn(order_id=o.id, confirmed_date=date(2026, 11, 5), send=True))
+    assert await inv_status(p6, o.id) == "Waiting for Delivery Confirmation"
+    async with factory(OP) as u:  # a plain confirmation still works with order work alone
+        await InvoiceService(u).confirm(p6.inv, ConfirmIn(order_id=o.id, confirmed_date=date(2026, 11, 5)))
+        await u.commit()
+    assert await inv_status(p6, o.id) == "Ready"
 
 
 async def test_fr35_an_edit_is_audited_and_the_amount_follows(p6):

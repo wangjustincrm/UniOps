@@ -6,7 +6,8 @@
   date → at once. A lot exception (a 945 row that matches no order line,
   FR-OB-25) holds it (Blocked) with a task.
 - `confirm`: a person confirms delivery with the delivered quantity per line
-  (≤ shipped; default = shipped) — the confirmed date is the invoice date;
+  (≤ shipped; default = shipped) — the confirmed date (default: the date the
+  delivery was due, as no carrier reports one) is the invoice date;
   the invoice is built (cases at the 850 price) and is Ready. A part case, no
   CASE unit or no price holds it (Blocked) with a task: never invoiced
   silently short. `release` returns it to Ready after a person decided.
@@ -56,6 +57,11 @@ from app.services.settings import INVOICE_CONNECTION_ID, SETTINGS, SHADOW_MODE
 logger = logging.getLogger(__name__)
 
 STEP = "invoice"
+
+
+def delivery_due(order: Order, partner: Partner) -> date | None:
+    """No carrier reports a delivery: it is due on the requested date (dc routing: do-not-deliver-after)."""
+    return order.do_not_deliver_after if partner.dc_routing_required else order.requested_delivery_date
 SEND_INVOICE = "send_invoice"
 OUTBOX = Outbox(OutboxRecord)
 SELLER = Party("Canada Royal Milk ULC", [])
@@ -115,7 +121,7 @@ class Invoicing:
                                      f"{order.label}. Decide (correct the order or the shipment), then Release.")
                     report.held += 1
                     continue
-                due = order.do_not_deliver_after if partner.dc_routing_required else order.requested_delivery_date
+                due = delivery_due(order, partner)
                 target = Inv.WAITING_FOR_DELIVERY_CONFIRMATION if due is None or due <= today else Inv.AWAITING_REQUESTED_DATE
                 if target.value == order.invoice_status:
                     continue
@@ -147,7 +153,7 @@ class Invoicing:
             raise BusinessError("invoice.shadow_order", TEST_RUN_REFUSAL)
 
     # ── confirmation and the invoice ────────────────────────────────────────
-    async def confirm(self, uow, order_id: int, *, confirmed_date: date, delivered: dict[int, int] | None = None,
+    async def confirm(self, uow, order_id: int, *, confirmed_date: date | None = None, delivered: dict[int, int] | None = None,
                       note: str | None = None) -> Invoice:
         s = uow.session
         order = await s.get(Order, order_id, with_for_update=True)
@@ -158,6 +164,9 @@ class Invoicing:
         if order.invoice_status != Inv.WAITING_FOR_DELIVERY_CONFIRMATION.value:
             raise BusinessError("delivery.not_waiting", f"the order's invoice is {order.invoice_status}, not waiting for "
                                 "delivery confirmation", {"status": order.invoice_status})
+        if confirmed_date is None:  # no carrier reports a delivery: the date it was due, else today
+            partner = (await s.execute(select(Partner).where(Partner.code == order.partner_code))).scalar_one()
+            confirmed_date = delivery_due(order, partner) or self.today()
         if confirmed_date > self.today():
             raise BusinessError("delivery.future", "a delivery cannot be confirmed for a future date")
         lines = list((await s.execute(select(OrderLine).where(OrderLine.order_id == order.id, OrderLine.removed.is_(False))

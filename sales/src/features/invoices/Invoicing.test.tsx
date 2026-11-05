@@ -65,10 +65,22 @@ describe('Delivery confirmation', () => {
     expect(api.list.mock.calls.at(-1)![0].filters).toEqual([{ field: 'to_confirm', op: 'eq', value: 'true' }])
     fireEvent.click(screen.getByRole('button', { name: /Confirm all shown \(1\)/ }))
     const ask = await screen.findByRole('dialog', { name: 'Confirm 1 deliveries' })
-    fireEvent.change(within(ask).getByLabelText('Delivered on'), { target: { value: '2026-11-05' } })
+    fireEvent.change(within(ask).getByLabelText('Delivered on (optional)'), { target: { value: '2026-11-05' } })
     fireEvent.click(within(ask).getByRole('button', { name: 'Confirm' }))
-    await waitFor(() => expect(api.bulk).toHaveBeenCalledWith([7], '2026-11-05'))
+    await waitFor(() => expect(api.bulk).toHaveBeenCalledWith([7], '2026-11-05', false))
     await waitFor(() => expect(noticeIn()).toHaveTextContent('1 confirmed'))  // the list's status row
+  })
+
+  it('one order: the date starts at the Delivery due date, a person may change it, Confirm and send sends', async () => {
+    api.list.mockResolvedValue({ items: [{ ...order, delivery_due_date: '2026-11-01' }], total: 1 })
+    api.confirm.mockResolvedValue(invDetail)
+    renderAs(['sales.read', 'sales.order.operate', 'sales.invoice.manage'], <DeliveryPage />)
+    fireEvent.click(await screen.findByText('PO-1'))
+    const form = await screen.findByRole('dialog')
+    await within(form).findByRole('table', { name: 'Delivered quantities' })
+    expect(within(form).getByLabelText(/Delivered on \(the invoice date\)/)).toHaveValue('2026-11-01')
+    fireEvent.click(within(form).getByRole('button', { name: 'Confirm and send' }))
+    await waitFor(() => expect(api.confirm).toHaveBeenCalledWith(expect.objectContaining({ order_id: 7, confirmed_date: '2026-11-01', send: true })))
   })
 
   it('one order: the delivered quantity per line, less than shipped allowed', async () => {
@@ -83,6 +95,25 @@ describe('Delivery confirmation', () => {
     fireEvent.click(within(form).getByRole('button', { name: 'Confirm delivery' }))
     await waitFor(() => expect(api.confirm).toHaveBeenCalledWith({ order_id: 7, confirmed_date: '2026-11-05',
       lines: [{ order_line_id: 70, delivered_qty: 54 }] }))
+  })
+
+  it('with no date each order takes its due date, and Confirm and send needs invoice.manage too', async () => {
+    api.bulk.mockResolvedValue([{ order_id: 7, ok: true, invoice_id: 3, status: 'Queued', sent: true, error: null }])
+    renderAs(['sales.read', 'sales.order.operate', 'sales.invoice.manage'], <DeliveryPage />)
+    await screen.findByText('PO-1')
+    fireEvent.click(screen.getByRole('button', { name: /Confirm all shown \(1\)/ }))
+    const ask = await screen.findByRole('dialog', { name: 'Confirm 1 deliveries' })
+    fireEvent.click(within(ask).getByRole('button', { name: 'Confirm and send' }))
+    await waitFor(() => expect(api.bulk).toHaveBeenCalledWith([7], null, true))
+    await waitFor(() => expect(noticeIn()).toHaveTextContent('1 confirmed, 1 sent'))
+  })
+
+  it('without invoice.manage only Confirm is offered', async () => {
+    renderAs(['sales.read', 'sales.order.operate'], <DeliveryPage />)
+    await screen.findByText('PO-1')
+    fireEvent.click(screen.getByRole('button', { name: /Confirm all shown \(1\)/ }))
+    const ask = await screen.findByRole('dialog', { name: 'Confirm 1 deliveries' })
+    expect(within(ask).queryByRole('button', { name: 'Confirm and send' })).toBeNull()
   })
 
   it('invoice.manage alone does not confirm delivery: it is order work', async () => {

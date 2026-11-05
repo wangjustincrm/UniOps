@@ -73,12 +73,14 @@ class ConfirmIn(BaseModel):
     confirmed_date: date
     lines: list[DeliveredLine] = []     # empty: delivered = shipped
     note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)] | None = None
+    send: bool = False                  # and send the invoice when it is Ready
 
 
 class ConfirmBulkIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     order_ids: Annotated[list[int], Field(min_length=1, max_length=200)]
-    confirmed_date: date
+    confirmed_date: date | None = None  # none: each order on the date its delivery was due
+    send: bool = False
 
 
 class ConfirmResult(BaseModel):
@@ -86,6 +88,7 @@ class ConfirmResult(BaseModel):
     ok: bool
     invoice_id: int | None = None
     status: str | None = None
+    sent: bool = False
     error: str | None = None
 
 

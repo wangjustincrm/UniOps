@@ -11,6 +11,7 @@ import { fetchOrder, ordersClient, type LineRead, type OrderRead } from '@/featu
 import { confirmBulk, confirmDelivery, invoicesClient, type ConfirmResult } from './invoicesApi'
 
 const OPERATE = 'sales.order.operate'
+const MANAGE = 'sales.invoice.manage'  // sending is invoice work: Confirm and send needs both
 const WAITING = [{ field: 'to_confirm', op: 'eq' as const, value: 'true' }]
 
 type Delivered = { line: LineRead; delivered: string }
@@ -35,39 +36,46 @@ const confirmFields: FieldSpec[] = [{ name: 'confirmed_date', label: 'Delivered 
 function ConfirmOne({ o, close }: { o: OrderRead; close: () => void }) {
   const qc = useQueryClient()
   const can = useCan(OPERATE)
+  const canSend = useCan(MANAGE)
   const refused = useTestRunRefusal()
   const q = useQuery({ queryKey: queryKeys.detail(ordersClient, o.id), queryFn: () => fetchOrder(o.id) })
   if (q.isLoading || !q.data) return <Skeleton className="h-20 w-full" />
+  const save = async (v: Record<string, unknown>, lines: Delivered[], send: boolean) => {
+    await confirmDelivery({ order_id: o.id, confirmed_date: String(v.confirmed_date), ...(send ? { send } : {}),
+      lines: lines.map((d) => ({ order_line_id: d.line.id, delivered_qty: Number(d.delivered) })) }).catch(refused)
+    await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
+    await qc.invalidateQueries({ queryKey: queryKeys.list(invoicesClient) })
+    close()
+  }
+  const today = todayDate()
+  const due = o.delivery_due_date && o.delivery_due_date <= today ? o.delivery_due_date : today
   return (
     <MasterDetailForm<Delivered>
-      schema={confirmSchema} fields={confirmFields} defaultValues={{ confirmed_date: todayDate() }} readOnly={!can}
+      schema={confirmSchema} fields={confirmFields} defaultValues={{ confirmed_date: due }} readOnly={!can}
       lines={{ label: 'Delivered quantities', columns: deliveredColumns, rowKey: (d) => d.line.id, problem: deliveredProblem,
         initial: q.data.lines.filter((l) => (l.shipped_ea ?? l.shipped_shadow_ea) != null)
           .map((line) => ({ line, delivered: String(line.shipped_ea ?? line.shipped_shadow_ea) })) }}
       submitLabel="Confirm delivery"
-      onSubmit={async (v, lines) => {
-        await confirmDelivery({ order_id: o.id, confirmed_date: String(v.confirmed_date),
-          lines: lines.map((d) => ({ order_line_id: d.line.id, delivered_qty: Number(d.delivered) })) }).catch(refused)
-        await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
-        await qc.invalidateQueries({ queryKey: queryKeys.list(invoicesClient) })
-        close()
-      }}
+      alsoSubmit={canSend ? { label: 'Confirm and send', onSubmit: (v, lines) => save(v, lines, true) } : undefined}
+      onSubmit={(v, lines) => save(v, lines, false)}
     />
   )
 }
 
-/** All shown, delivered in full, on one date (FR-OB-31: in bulk) — asked in a dialog. */
+/** All shown, delivered in full (FR-OB-31: in bulk): each on its due date, or on one date given here. */
 function ConfirmShown({ rows, refresh }: { rows: OrderRead[]; refresh: () => Promise<void> }) {
   const [open, setOpen] = useState(false)
-  const [date, setDate] = useState(() => todayDate())
+  const [date, setDate] = useState('')
+  const canSend = useCan(MANAGE)
   const notices = useNotices()
   const m = useMutation({
-    mutationFn: () => confirmBulk(rows.map((r) => r.id), date),
+    mutationFn: (send: boolean) => confirmBulk(rows.map((r) => r.id), date || null, send),
     onSuccess: async (r: ConfirmResult[]) => {
       // The outcome in the list's status row: a warning while some were not confirmed.
       const failed = r.filter((x) => !x.ok)
+      const sent = r.filter((x) => x.sent).length
       notices.notify({ key: 'confirm', tone: failed.length ? 'warning' : 'success',
-        text: `${r.length - failed.length} confirmed${failed.length ? `, ${failed.length} not: ${failed.map((f) => `#${f.order_id} ${f.error}`).join('; ')}` : ''}` })
+        text: `${r.length - failed.length} confirmed${sent ? `, ${sent} sent` : ''}${failed.length ? `, ${failed.length} not: ${failed.map((f) => `#${f.order_id} ${f.error}`).join('; ')}` : ''}` })
       setOpen(false)
       await refresh()
     },
@@ -78,12 +86,13 @@ function ConfirmShown({ rows, refresh }: { rows: OrderRead[]; refresh: () => Pro
         Confirm all shown ({rows.length})…
       </ActionButton>
       <Dialog open={open} onOpenChange={setOpen} title={`Confirm ${rows.length} deliveries`}
-        description="Each order shown, delivered in full (its shipped quantity), on this date — the invoice date."
+        description="Each order shown, delivered in full (its shipped quantity). Leave the date empty to use each order's Delivery due date. The date becomes the invoice date."
         footer={<>
           <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-          <ActionButton permission={OPERATE} disabled={!date} onAction={() => m.mutateAsync().catch(() => {})}>Confirm</ActionButton>
+          {canSend && <ActionButton variant="secondary" permission={OPERATE} onAction={() => m.mutateAsync(true).catch(() => {})}>Confirm and send</ActionButton>}
+          <ActionButton permission={OPERATE} onAction={() => m.mutateAsync(false).catch(() => {})}>Confirm</ActionButton>
         </>}>
-        <FormField label="Delivered on" htmlFor="bulk-date"><DateInput id="bulk-date" value={date} onChange={(e) => setDate(e.target.value)} /></FormField>
+        <FormField label="Delivered on (optional)" htmlFor="bulk-date"><DateInput id="bulk-date" value={date} onChange={(e) => setDate(e.target.value)} /></FormField>
         <ErrorMessage error={m.error} />
       </Dialog>
     </>
@@ -98,7 +107,8 @@ export default function DeliveryPage() {
     <OrderList
       fixed={WAITING}
       title="Delivery confirmation"
-      description="Shipped orders whose requested delivery date is reached (Walmart: do-not-deliver-after). Confirm what was delivered: the date becomes the invoice date."
+      description="Shipped orders whose delivery is due: the requested date, or do-not-deliver-after for Walmart. No carrier reports the delivery, so it defaults to the due date. Change it if you know better: it becomes the invoice date."
+      showDue
       emptyTitle="Nothing waits for a delivery confirmation"
       toolbar={(ctx) => <ConfirmShown rows={ctx.rows} refresh={ctx.refresh} />}
       detailTabs={(o, close) => [{ id: 'confirm', label: 'Confirm delivery', render: () => <ConfirmOne o={o} close={close} /> }]}

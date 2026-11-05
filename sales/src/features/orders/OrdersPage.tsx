@@ -32,7 +32,10 @@ const orderColumns: ColumnDef<OrderRead, unknown>[] = [
 /** A list of orders with the order's detail in a sheet; Review orders carry
  *  Re-check in the list and the detail (FR-OB-15). With `fixed` filters (a
  *  list inside another page) it has no views. */
-export function OrderList({ fixed, title, description, emptyTitle, detailActions, detailTabs, toolbar, create }: {
+const dueColumn: ColumnDef<OrderRead, unknown> = { accessorKey: 'delivery_due_date', header: 'Delivery due', cell: ({ row }) => <DateCell value={row.original.delivery_due_date} /> }
+const dueOrderColumns = [...orderColumns.slice(0, 5), dueColumn, ...orderColumns.slice(5)]
+
+export function OrderList({ fixed, title, description, emptyTitle, detailActions, detailTabs, toolbar, create, showDue }: {
   fixed?: QuerySpec['filters']; title: string; description: string; emptyTitle: string
   /** More buttons in the order sheet's action bar. */
   detailActions?: (o: OrderRead, close: () => void) => React.ReactNode
@@ -40,6 +43,8 @@ export function OrderList({ fixed, title, description, emptyTitle, detailActions
   detailTabs?: (o: OrderRead, close: () => void) => RecordTab[]
   toolbar?: React.ReactNode | ((ctx: { rows: OrderRead[]; refresh: () => Promise<void> }) => React.ReactNode)
   create?: ListCreate<OrderRead>
+  /** The Delivery due column (the delivery list). */
+  showDue?: boolean
 }) {
   return (
     <ListPage<OrderRead>
@@ -48,7 +53,7 @@ export function OrderList({ fixed, title, description, emptyTitle, detailActions
       description={description}
       emptyTitle={emptyTitle}
       fixed={fixed}
-      columns={orderColumns}
+      columns={showDue ? dueOrderColumns : orderColumns}
       toolbar={toolbar ? (ctx) => (typeof toolbar === 'function' ? toolbar(ctx) : toolbar) : undefined}
       create={create}
       rowActions={(o) => (o.fulfillment_status === 'Review' ? <Recheck o={o} compact />

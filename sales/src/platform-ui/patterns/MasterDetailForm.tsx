@@ -45,6 +45,8 @@ export interface MasterDetailFormProps<L> {
   blocked?: (state: MasterDetailState<L>) => string | null
   onSubmit: (values: Record<string, unknown>, lines: L[]) => unknown | Promise<unknown>
   submitLabel?: string
+  /** A second way to submit the same form (e.g. "Confirm and send"). */
+  alsoSubmit?: { label: string; onSubmit: (values: Record<string, unknown>, lines: L[]) => unknown | Promise<unknown> }
   onCancel?: () => void
   errorMessages?: Record<string, string>
   readOnly?: boolean
@@ -59,7 +61,7 @@ export interface MasterDetailFormProps<L> {
  *  line errors in their row; the submit runs once (pending + a ref guard).
  *  Always rendered in a Sheet or a Dialog — a page never carries a form. */
 export function MasterDetailForm<L>({
-  schema, fields, defaultValues, lines: spec, preview, onChange, blocked, onSubmit, submitLabel = 'Save', onCancel,
+  schema, fields, defaultValues, lines: spec, preview, onChange, blocked, onSubmit, submitLabel = 'Save', alsoSubmit, onCancel,
   errorMessages, readOnly, addresses = [],
 }: MasterDetailFormProps<L>) {
   // Server errors name nested address fields too (e.g. ship_to.zip).
@@ -88,18 +90,19 @@ export function MasterDetailForm<L>({
     onChange?.({ values: form.getValues(), lines: next })
   }
   // handleSubmit is built when the form is submitted, never during render (it reads the ref).
-  const submit = (e: FormEvent<HTMLFormElement>) => form.handleSubmit(async (v) => {
+  const submitWith = (handler: typeof onSubmit) => form.handleSubmit(async (v) => {
     if (inFlight.current || lineProblems.some(Boolean) || tooFew || waiting) return
     inFlight.current = true
     setError(null)
     try {
-      await onSubmit(Object.fromEntries(Object.entries(v).map(([k, x]) => [k, emptyToNull(x)])), lines)
+      await handler(Object.fromEntries(Object.entries(v).map(([k, x]) => [k, emptyToNull(x)])), lines)
     } catch (e) {
       if (!applyServerError(form, known, e, errorMessages)) setError(e)
     } finally {
       inFlight.current = false
     }
-  })(e)
+  })
+  const submit = (e: FormEvent<HTMLFormElement>) => submitWith(onSubmit)(e)
 
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-4"
@@ -117,6 +120,10 @@ export function MasterDetailForm<L>({
       <ErrorMessage error={error} messages={errorMessages} />
       <div className="flex justify-end gap-2">
         {onCancel && <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>{readOnly ? 'Close' : 'Cancel'}</Button>}
+        {!readOnly && alsoSubmit && (
+          <Button type="button" variant="secondary" disabled={isSubmitting || lineProblems.some(Boolean) || tooFew || !!waiting}
+            onClick={(e) => submitWith(alsoSubmit.onSubmit)(e)}>{alsoSubmit.label}</Button>
+        )}
         {!readOnly && (
           <Button type="submit" disabled={isSubmitting || lineProblems.some(Boolean) || tooFew || !!waiting}>
             {isSubmitting ? 'Saving…' : submitLabel}

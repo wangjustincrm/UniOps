@@ -43,14 +43,15 @@ export interface InvoiceLineRead {
   po_price: string | null
 }
 export interface InvoiceDetail extends InvoiceRead { lines: InvoiceLineRead[]; confirmed_date: string | null }
-export interface ConfirmResult { order_id: number; ok: boolean; invoice_id: number | null; status: string | null; error: string | null }
+export interface ConfirmResult { order_id: number; ok: boolean; invoice_id: number | null; status: string | null; sent?: boolean; error: string | null }
 
 export const invoicesClient = createResourceClient<InvoiceRead, never>(api, '/invoices')
 export const fetchInvoice = (id: number) => api.get<InvoiceDetail>(`/invoices/${id}`)
-export const confirmDelivery = (body: { order_id: number; confirmed_date: string; lines: { order_line_id: number; delivered_qty: number }[]; note?: string | null }) =>
+export const confirmDelivery = (body: { order_id: number; confirmed_date: string; lines: { order_line_id: number; delivered_qty: number }[]; note?: string | null; send?: boolean }) =>
   api.post<InvoiceDetail>('/invoices/confirm', body)
-export const confirmBulk = (order_ids: number[], confirmed_date: string) =>
-  api.post<ConfirmResult[]>('/invoices/confirm-bulk', { order_ids, confirmed_date })
+/** No date: each order on the date its delivery was due. */
+export const confirmBulk = (order_ids: number[], confirmed_date: string | null, send = false) =>
+  api.post<ConfirmResult[]>('/invoices/confirm-bulk', { order_ids, confirmed_date, send })
 export interface InvoiceEditBody {
   invoice_date?: string | null
   delivery_number?: string | null

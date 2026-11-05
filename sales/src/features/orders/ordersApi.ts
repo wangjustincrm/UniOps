@@ -20,6 +20,7 @@ export interface OrderRead {
   partner_name: string | null
   order_date: string | null
   requested_delivery_date: string | null
+  delivery_due_date?: string | null
   ship_to: Record<string, string | null> | null
   currency: string
   total: string | null

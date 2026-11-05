@@ -34,6 +34,7 @@ class OrderRead(BaseModel):
     currency: str
     total: Decimal | None
     total_amount: Decimal | None = None  # the source's total, else the lines at the PO price
+    delivery_due_date: date | None = None  # the requested date; dc routing: do-not-deliver-after
     fulfillment_status: str
     invoice_status: str
     order_state: str = ""           # internal (D17): what eligibility reads; filled by the service

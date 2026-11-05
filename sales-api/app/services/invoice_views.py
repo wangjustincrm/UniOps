@@ -8,10 +8,11 @@ from decimal import Decimal
 
 from sqlalchemy import select
 
+from app.domain.status import Invoice as Inv
 from app.models.config import ItemUnit
 from app.models.invoices import DeliveryConfirmation, Invoice, InvoiceLine
 from app.models.orders import Order, OrderLine
-from app.platform.authorization import requires
+from app.platform.authorization import authorize, requires
 from app.platform.errors import BusinessError
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
@@ -96,21 +97,36 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
 
     @requires(OPERATE)
     async def confirm(self, invoicing, body) -> InvoiceDetail:
+        if body.send:
+            await authorize(self.uow, MANAGE)  # sending is invoice work: both permissions, before anything changes
         inv = await invoicing.confirm(self.uow, body.order_id, confirmed_date=body.confirmed_date,
                                       delivered={x.order_line_id: x.delivered_qty for x in body.lines}, note=body.note)
+        if body.send:
+            await self._send_if_ready(invoicing, inv)
         return await self._detail_after(inv.id)
+
+    async def _send_if_ready(self, invoicing, inv) -> bool:
+        """A Blocked invoice waits for a person, as after a plain confirmation."""
+        order = await self.uow.session.get(Order, inv.order_id)
+        if order.invoice_status != Inv.READY.value or inv.method == "NONE":
+            return False
+        await invoicing.send(self.uow, inv.id)
+        return True
 
     @requires(OPERATE)
     async def confirm_bulk(self, invoicing, body) -> list[ConfirmResult]:
         """FR-OB-31: in bulk, delivered = shipped. Each order on its own: one
         that cannot be confirmed does not stop the others."""
+        if body.send:
+            await authorize(self.uow, MANAGE)
         out = []
         for oid in body.order_ids:
             try:
                 async with self.uow.session.begin_nested():
                     inv = await invoicing.confirm(self.uow, oid, confirmed_date=body.confirmed_date)
+                    sent = body.send and await self._send_if_ready(invoicing, inv)
                 status = (await self.uow.session.get(Order, oid)).invoice_status
-                out.append(ConfirmResult(order_id=oid, ok=True, invoice_id=inv.id, status=status))
+                out.append(ConfirmResult(order_id=oid, ok=True, invoice_id=inv.id, status=status, sent=sent))
             except BusinessError as e:
                 out.append(ConfirmResult(order_id=oid, ok=False, error=e.message))
         return out

@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import and_, case, func, not_, or_, text
+from sqlalchemy import Date, and_, case, cast, func, not_, or_, text
 
 from app.domain.order_status import WAITING_DELIVERY, WAITING_TO_SEND, hold_rules, status_rules
 from app.models import invoices, shipments  # noqa: F401 — map Order.has_945_sql and the other facts
@@ -38,5 +38,7 @@ ORDER_STATUS_SQL = case(*status_rules(FACTS, _B), else_=WAITING_TO_SEND)
 ON_HOLD_REASON_SQL = case(*hold_rules(FACTS, _B), else_=None)
 BACKORDERED_SQL = func.coalesce(Order.backordered_ea_sql, Order.shadow_backordered_sql)
 # The Delivery confirmation list: what waits for a person; a shadow order shows as it will in production.
-TO_CONFIRM_SQL = and_(ORDER_STATUS_SQL == WAITING_DELIVERY,
-                      or_(Order.invoice_status == "Waiting for Delivery Confirmation", Order.shadow))
+_TODAY = cast(func.timezone("America/Toronto", func.now()), Date)
+TO_CONFIRM_SQL = and_(ORDER_STATUS_SQL == WAITING_DELIVERY, or_(
+    Order.invoice_status == "Waiting for Delivery Confirmation",
+    and_(Order.shadow, or_(Order.delivery_due_sql.is_(None), Order.delivery_due_sql <= _TODAY))))
