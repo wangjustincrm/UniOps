@@ -41,6 +41,23 @@ Two rules finance set on 2026-11-02 decide what counts at all:
   bills that day; none was on an approved PA, so the rule above already drops
   them — this keeps a future one from splitting across two buckets).
 
+Two kinds of approved money never reach NC as a payable, so the NC route above
+cannot see them, and they are added as rows of their own (finance, 2026-11-05):
+
+  **Prepayment PAs.** A prepayment has no invoice yet, so there is no NC line to
+  find it through. Measured that day: all 18 approved ones, 7,907.14 CAD and
+  6,869.05 USD. They count at `payment_amount`.
+
+  **Expense claims.** An employee is paid from the claim itself; NC has no
+  payable for it. The same set as the Payment Batches due list: approved, Travel
+  Applications excluded. They count at `total_amount`.
+
+Neither has a bill date or a vendor term, and both are payable once approved
+(the same 0 days as a `prepayment` vendor term), so the approval date stands in
+as the bill date and the due date. `expected_settlement_date` on a prepayment
+is when it should settle against an invoice, not when it gets paid. Neither can
+ever be undated, so neither reaches the missing-terms work list.
+
 The figures in the three findings above were measured before those rules, on
 every approved NC bill.
 
@@ -54,6 +71,7 @@ from datetime import date
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud.payment_execute import NON_PAYABLE_CLAIM_TYPES
 from app.services.nc_ap_bill_invoices import invoices, lines_agg
 
 # What epms-api / mdm-api accept for vendors.payment_terms: `net<N>` for any
@@ -102,6 +120,9 @@ _TERM_CASE = (
     + " end")
 
 PA_APPROVED = "approved"
+CLAIM_APPROVED = "approved"
+PA_PREPAYMENT = "prepayment"
+_NON_PAYABLE_SQL = ", ".join(f"'{t}'" for t in NON_PAYABLE_CLAIM_TYPES)
 # The AP <-> NC invoice-number match (nc_push.match_invoice_no and its SQL twin
 # LINE_MATCH_SQL): upper-case, no whitespace, no hyphens.
 INV_KEY_NC = "nullif(replace(l.invoice_no_norm, '-', ''), '')"
@@ -203,11 +224,37 @@ termed as (
            limit 1
       ) v on true
 ),
+-- What is approved to pay but has no NC payable to be found through. Columns
+-- line up with `termed`. A claim's number rides in `pa_numbers`: that column is
+-- "the approved document behind this row", and search and sort already use it.
+docs as (
+    select 'bill' as doc_kind, t.bill_no as doc_key, t.* from termed t
+    union all
+    select '{PA_PREPAYMENT}', p.pa_number,
+           null, p.currency, coalesce(p.approved_at, p.created_at)::date,
+           v.erp_id, p.vendor_name, null, p.po_number,
+           json_build_array(json_build_object('purchase_order', p.po_number)),
+           null, p.payment_amount, null, p.pa_number,
+           '{PA_PREPAYMENT}', 0, coalesce(p.approved_at, p.created_at)::date, false
+      from payment_applications p
+      left join vendors v on v.id = p.vendor_id
+     where p.status = '{PA_APPROVED}' and p.pa_type = '{PA_PREPAYMENT}'
+       -- Already counted at its NC balance if an invoice has since been linked.
+       and p.pa_number not in (select pa_number from line_pa)
+    union all
+    select 'claim', c.claim_number,
+           null, c.currency, coalesce(c.approved_at, c.created_at)::date,
+           null, c.employee_name, null, null,
+           null, null, c.total_amount, null, c.claim_number,
+           'on approval', 0, coalesce(c.approved_at, c.created_at)::date, false
+      from expense_claims c
+     where c.status = '{CLAIM_APPROVED}' and c.claim_type not in ({_NON_PAYABLE_SQL})
+),
 bucketed as (
     select t.*,
            {_BUCKET_CASE} as bucket,
            case when t.due_date is not null then t.due_date - current_date end as days_to_due
-      from termed t
+      from docs t
 )
 """
 
@@ -282,7 +329,7 @@ ITEM_SORT = {
     "open_bal": "open_bal",
     "pa": "pa_numbers",
 }
-ITEM_TIEBREAK = "bill_no"
+ITEM_TIEBREAK = "doc_key"
 
 
 async def items(db: AsyncSession, currency: str, bucket: str | None = None,
@@ -312,14 +359,14 @@ async def items(db: AsyncSession, currency: str, bucket: str | None = None,
                              .replace("_", "\\_")) + "%"
     clause = " where " + " and ".join(where)
     rows = (await db.execute(text(_BASE + f"""
-        select bill_no, currency, bill_date, supplier_code, supplier_name,
+        select doc_kind, doc_key, bill_no, currency, bill_date, supplier_code, supplier_name,
                invoice_lines, trade_type, open_bal, pa_numbers,
                payment_terms, term_days, due_date, days_to_due, bucket,
                no_vendor_record
           from bucketed {clause}
          -- Undated rows sort last within a bucket: they have no date to sort
          -- by, and biggest-first is the useful order for them.
-         order by {order or "due_date nulls last, open_bal desc, bill_no"}
+         order by {order or "due_date nulls last, open_bal desc, doc_key"}
          limit :limit offset :offset
     """), params)).mappings().all()
     total = (await db.execute(text(
@@ -329,6 +376,10 @@ async def items(db: AsyncSession, currency: str, bucket: str | None = None,
         "total": int(total[0]),
         "amount": str(total[1]),
         "items": [{
+            # bill | prepayment | claim. Only a bill has a bill_no; doc_key is
+            # unique across all three.
+            "doc_kind": r["doc_kind"],
+            "doc_key": r["doc_key"],
             "bill_no": r["bill_no"],
             "currency": r["currency"],
             "bill_date": r["bill_date"].isoformat() if r["bill_date"] else None,
@@ -337,7 +388,8 @@ async def items(db: AsyncSession, currency: str, bucket: str | None = None,
             "invoices": invoices(r["invoice_lines"]),
             "trade_type": r["trade_type"],
             "open_bal": str(r["open_bal"]),
-            # The approved PA(s) that put this bill on the forecast.
+            # The approved PA(s) that put this bill on the forecast, or the
+            # prepayment PA / claim that is the row.
             "pa_numbers": r["pa_numbers"].split(", ") if r["pa_numbers"] else [],
             "payment_terms": r["payment_terms"],
             "term_days": r["term_days"],

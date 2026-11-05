@@ -1,9 +1,13 @@
 # Finance — Product Requirements Document
 
-**Version:** 2.19
+**Version:** 2.20
 **Date:** 2026-11-05
 **Status:** Current. Describes the system as built on the main line, under the 2026-09-20 positioning decision.
 **Scope:** The UniOps Finance module: Finance web app and finance service. Covers the NC65 data mirror, the checks and reports built on it, AP handoff to NC, payments, remittance, vendor credits, bank reconciliation and the remaining finance-held records.
+
+**What changed in version 2.20** (2026-11-05)
+
+- AP Cash Flow now also counts approved prepayment PAs and approved expense claims, which have no NC payable to be found through (FIN-CF-09). At measurement: 18 prepayment PAs (7,907.14 CAD, 6,869.05 USD) and 4 claims (757.35 CAD).
 
 **What changed in version 2.19** (2026-11-05)
 
@@ -429,6 +433,7 @@ Budget planning, the dashboard, catalog, factors and budget settings (including 
 | FIN-CF-06 | The drill-down shows every invoice on a bill with its own open amount, as in FIN-APH-05. The due date stays per bill (NC bill date + vendor term). |
 | FIN-CF-07 | **Reversal pairs net out.** Open lines with the same supplier, currency and invoice number whose open balances add up to exactly zero are left out, even if they are on an approved PA. Matched per line, not per bill: a reversal bill covering several invoices drops only the matched lines. Finance should still offset such pairs in NC. |
 | FIN-CF-08 | The bill list shows the **PA number(s)** that put each bill on the forecast (also in the CSV export, sortable). A **search box** finds bills by AP (NC bill) number, any invoice number on the bill, supplier name or code, or PA number. It searches inside the selected bucket or supplier, or across the currency when nothing is selected. |
+| FIN-CF-09 | **Approved money with no NC payable.** Two kinds of document are added as rows of their own, because FIN-CF-01 can only find what has an NC line. **Prepayment PAs** in status approved count at their payment amount (a prepayment has no invoice yet); one already counted through an NC line is not counted again. **Expense claims** in status approved count at their total, the same set as the Payment Batches due list (Travel Applications excluded; FIN-PAY-06). Both are due on the **approval date**, which also stands in as the bill date, and fall into the FIN-CF-03 buckets like any bill; a prepayment's Expected Settlement date is not a payment date and is not used. Neither is ever undated, so neither reaches the missing-terms panel (FIN-CF-04). In the bill list they show a Prepayment or Claim tag in place of an AP number, the PA or claim number in the PA / Claim column, and the employee in place of the supplier; search finds them by PA number, claim number, supplier or employee. Decided 2026-11-05. |
 | FIN-CF-05 | **Not implemented:** invoice-level term precedence (invoice term → vendor term → "term unknown"); further layers (UniOps invoices not yet in NC, received-not-invoiced, ordered-not-received, recurring agreement schedules, a monthly milk layer). See FIN-OI-12. |
 
 ---
