@@ -90,6 +90,7 @@ CONFIG_FILES=(
   portal/src/components/layout/navConfig.tsx portal/src/pages/PortalHome.tsx
   portal/src/lib/api.ts portal/src/pages/admin/AdminPanel.tsx
   identity-api/alembic/versions/0023_sales_perms.py
+  identity-api/alembic/versions/0024_merge_sales_freight.py
   epms/src/lib/taskTypes.ts epms/src/services/tasks.ts epms-api/app/crud/task.py
   epms/src/lib/api.ts epms/Dockerfile
   epms-api/app/knowledge/modules.yaml epms-api/tests/test_module_guide.py
@@ -108,18 +109,18 @@ SERVICE_CONFIG_RE='^(approval-api|booking-api|budget-api|epms-api|expense-api|fi
 #   path <TAB> line number in the base <TAB> anchor <TAB> inserted text
 LINE_EDITS=$(cat <<'EOF'
 docker-compose.dev.yml	111	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
-docker-compose.dev.yml	165	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
-docker-compose.dev.yml	193	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
-docker-compose.dev.yml	245	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
-docker-compose.dev.yml	284	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
-docker-compose.dev.yml	328	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
-docker-compose.dev.yml	360	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
-docker-compose.dev.yml	398	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
-docker-compose.dev.yml	432	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
-docker-compose.dev.yml	494	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
-docker-compose.dev.yml	547	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
-docker-compose.dev.yml	589	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
-.env.prod.example	52	]	,"https://sales.canadaroyalmilk.com"
+docker-compose.dev.yml	174	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	202	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	254	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	293	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	342	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	374	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	412	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	446	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	508	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	561	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+docker-compose.dev.yml	603	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182}"
+.env.prod.example	57	]	,"https://sales.canadaroyalmilk.com"
 .env.lan.example	38	]	,"http://10.10.50.65:5182"
 epms-api/.env.example	10	]	,"http://localhost:5182"
 epms-api/tests/test_module_guide.py	70	))	, "sales"
