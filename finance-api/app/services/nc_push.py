@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -620,9 +621,15 @@ def render_xml(plan: BillPlan, *, facts: NcFacts, maker: str, now: datetime) -> 
         if r.dims.cc_nc and r.dims.cc_nc not in facts.costcenter_pk:
             raise PushRefused(f"NC cost centre {r.dims.cc_nc} not found in NC")
         if not r.dims.revexp:
-            raise PushRefused("No budget item (收支项目) on the PR / agreement / PA")
+            raise PushRefused("No budget item on the PR / agreement / PA")
         if not r.dims.dept_code:
             raise PushRefused("No department on the PR / agreement / PA")
+        # NC wants local notax + local tax == local total to the cent, and local
+        # total == amount x rate; rounding each one alone can miss by a cent on a
+        # foreign bill (1497.37 + 194.66 at 1.396), so the tax takes the
+        # difference, as it does on the bills NC computes itself.
+        local_total, local_notax = local(r.total), local(r.notax)
+        local_tax = money(Decimal(local_total) - Decimal(local_notax))
         items.append({
             "pk_group": GROUP, "pk_org": ORG, "sett_org": ORG,
             "pk_billtype": BILL_TYPE, "pk_tradetype": TRADE_TYPE, "billclass": BILL_CLASS,
@@ -634,11 +641,11 @@ def render_xml(plan: BillPlan, *, facts: NcFacts, maker: str, now: datetime) -> 
             "pk_currtype": plan.currency, "rate": rate_str(R),
             "taxcodeid": r.nc_tax_code, "taxrate": rate_str(r.tax_rate), "taxtype": "1",
             "buysellflag": buysell, "sendcountryid": facts.supplier_country or None,
-            "money_cr": money(r.total), "local_money_cr": local(r.total),
-            "money_bal": money(r.total), "local_money_bal": local(r.total),
+            "money_cr": money(r.total), "local_money_cr": local_total,
+            "money_bal": money(r.total), "local_money_bal": local_total,
             "occupationmny": money(r.total),
-            "notax_cr": money(r.notax), "local_notax_cr": local(r.notax),
-            "local_tax_cr": local(r.tax), "caltaxmny": local(r.notax),
+            "notax_cr": money(r.notax), "local_notax_cr": local_notax,
+            "local_tax_cr": local_tax, "caltaxmny": local_notax,
             "pk_payterm": PAY_TERM, "invoiceno": plan.invoice_no,
             "scomment": summary_s, "def16": summary_d,
             # the clerks' convention: first row carries the whole bill's tax
@@ -668,11 +675,54 @@ class XResult:
     raw: str
 
 
+# NC's Chinese text -> what the clerk reads. Wording from NC's own language pack
+# (langlib/arap_arappub_eng_langres.jar) for the checks ArapExpPfxxPlugin and
+# ArapExpPfxxValidater can raise. Matched inside the message, first hit wins.
+NC_TEXT_EN = (
+    ("处理完毕", "NC processed the bill"),
+    ("单据已经审核", "Already approved in NC — change it in NC"),
+    ("不允许重复导入单据", "The bill cannot be imported again"),
+    ("本币变动超过最大折算误差", "The change in functional currency exceeds the maximum "
+                                  "conversion error"),
+    ("组织本币无税金额与税金之和不等于价税合计", "The sum of the amount excluding tax in "
+     "functional currency and the tax amount is not equal to the amount including tax"),
+    ("集团无税金额与税金之和不等于价税合计", "The sum of the group amount excluding tax and "
+     "the tax amount is not equal to the amount including tax"),
+    ("全局无税金额与税金之和不等于价税合计", "The sum of the global amount excluding tax and "
+     "the tax amount is not equal to the amount including tax"),
+    ("组织本币无税金额不等于价税合计", "The amount excluding tax in functional currency is "
+     "not equal to the amount including tax"),
+    ("集团无税金额不等于价税合计", "The group amount excluding tax is not equal to the amount "
+     "including tax"),
+    ("全局无税金额不等于价税合计", "The global amount excluding tax is not equal to the amount "
+     "including tax"),
+    ("原币金额合计错误", "Error in the total amount in original currency"),
+    ("购销类型不能为空或者不合法", "Purchase and sales type cannot be empty or invalid"),
+    ("表体币种为空", "Currency in the detail is blank"),
+    ("未找到组织本位币", "The organization's functional currency is not found"),
+)
+_CJK = re.compile(r"[\u4e00-\u9fff]")
+
+
+def nc_message_en(desc: str, code: str | None) -> str:
+    """NC's result text for the clerk, always English. NC wraps the reason as
+    "单据 X 处理错误:...异常信息:<reason>"; the original stays in response_xml."""
+    reason = desc.rsplit("异常信息:", 1)[-1].strip()
+    for zh, en in NC_TEXT_EN:
+        if zh in reason:
+            return en
+    if _CJK.search(reason):
+        return f"NC rejected the bill with a message we have no English for (NC code {code}) " \
+               "— ask IT to read it in the NC push log"
+    return reason
+
+
 def parse_response(raw: str) -> XResult:
     try:
         root = ET.fromstring(raw.encode("utf-8") if isinstance(raw, str) else raw)
     except ET.ParseError:
-        return XResult(False, None, f"NC answered something that is not XML: {raw[:300]}", None, raw)
+        return XResult(False, None, "NC answered something that is not XML — ask IT to read it "
+                                    "in the NC push log", None, raw)
     ok = root.get("successful") == "Y"
     sr = root.find("sendresult")
     code = (sr.findtext("resultcode") or "").strip() if sr is not None else None
@@ -681,7 +731,8 @@ def parse_response(raw: str) -> XResult:
     # NC's description starts "单据 X 开始处理..." — keep only the useful tail.
     lines = [ln.strip() for ln in desc.splitlines() if ln.strip()]
     useful = [ln for ln in lines if "开始处理" not in ln] or lines
-    return XResult(ok and bool(pk), code, " ".join(useful)[:2000], pk or None, raw)
+    return XResult(ok and bool(pk), code, nc_message_en(" ".join(useful), code)[:2000],
+                   pk or None, raw)
 
 
 class XChangeClient:
@@ -843,8 +894,6 @@ async def push_invoices(db: AsyncSession, ap_ids: list[uuid.UUID], user_id: uuid
             except Exception:  # noqa: BLE001 — the bill exists; the number shows up via the mirror
                 logger.exception("NC bill number lookup failed for %s", res.bill_pk)
         msg = res.message
-        if not res.ok and res.code == "-32000" and "审核" in msg:
-            msg = "Already approved in NC — change it in NC. " + msg
         warning = "; ".join(plan.warnings) or None
         if res.ok and warning:
             msg = f"{msg or 'OK'} — {warning}"
