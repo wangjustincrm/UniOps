@@ -229,9 +229,14 @@ async def get_actuals_summary(
     if cc_ids is not None and len(cc_ids) == 0:
         return ActualsSummaryResponse(
             cost_center_id=cost_center_id, fiscal_year=fiscal_year, accounts=[])
+    # A scoped caller's single cost center arrives in cc_ids. Name it to
+    # finance-api too, or it answers for the caller's whole department and the
+    # plan and the actual set against it cover different cost centers.
+    nc_cost_center_id = cost_center_id or (
+        cc_ids[0] if cc_ids is not None and len(cc_ids) == 1 else None)
     nc_actual = await finance_client.nc_actuals_by_account(
         bearer_token=bearer_token, fiscal_year=fiscal_year,
-        cost_center_id=cost_center_id, include_unposted=include_unposted,
+        cost_center_id=nc_cost_center_id, include_unposted=include_unposted,
     )
     if nc_actual is None:
         logger.warning(
