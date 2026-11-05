@@ -312,6 +312,7 @@ _TASK_NO_STATUS_INVARIANT: dict[str, str] = {
     "vms_confirm_ppe": "同 vms_confirm_training。",
     "import_erp_vendor": "NC 同步每趟自己对账(services/nc_purchase_sync/error_tasks.py)。",
     "resolve_nc_sync_error": "同 import_erp_vendor。",
+    "resolve_nc_person_todos": "mdm-api 的 services/nc_readback.py sync_task 收口。",
 }
 
 # ★覆盖边界:上表只能覆盖 EPMS 自己有 model 的表(pr/po/pa/agr/invoice/gr)。
