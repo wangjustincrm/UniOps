@@ -51,7 +51,7 @@ AFTER_940 = {F.GENERATED_940, F.SENT_940, F.ACCEPTED_940, F.REJECTED_940, F.TIME
 _HEADER_COLUMNS = (
     "order_type", "department", "order_date", "requested_delivery_date", "do_not_deliver_after", "cancel_date",
     "ship_to", "bill_to", "contact", "notes", "currency", "subtotal", "tax", "shipping", "discount", "total",
-    "shopify_financial_status", "shopify_fulfillment_status", "shipping_method",
+    "shopify_financial_status", "shopify_fulfillment_status", "shipping_method", "archived_in_shopify_at",
 )
 
 
@@ -374,7 +374,6 @@ class OrderSync:
         if src.source_type != "SHOPIFY":
             return
         archived_at = h.get("archived_in_shopify_at")
-        order.archived_in_shopify_at = archived_at
         before_940 = status in (F.REVIEW, F.PAYMENT_HOLD, F.PENDING, F.ARCHIVE_SUPPRESSED)
         if before_940:
             order.archive_suppressed = bool(archived_at)  # the suppression is recorded on the order (FR-OB-03d)

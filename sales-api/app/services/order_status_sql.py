@@ -38,5 +38,5 @@ ORDER_STATUS_SQL = case(*status_rules(FACTS, _B), else_=WAITING_TO_SEND)
 ON_HOLD_REASON_SQL = case(*hold_rules(FACTS, _B), else_=None)
 BACKORDERED_SQL = func.coalesce(Order.backordered_ea_sql, Order.shadow_backordered_sql)
 # The Delivery confirmation list: what waits for a person; a shadow order shows as it will in production.
-TO_CONFIRM_SQL = or_(Order.invoice_status == "Waiting for Delivery Confirmation",
-                     and_(Order.shadow, ORDER_STATUS_SQL == WAITING_DELIVERY))
+TO_CONFIRM_SQL = and_(ORDER_STATUS_SQL == WAITING_DELIVERY,
+                      or_(Order.invoice_status == "Waiting for Delivery Confirmation", Order.shadow))

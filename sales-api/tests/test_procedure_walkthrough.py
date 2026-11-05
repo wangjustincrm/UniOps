@@ -797,8 +797,24 @@ async def test_g_a_retail_shadow_order_is_on_the_delivery_list_and_confirming_is
     assert e.value.message == TEST_RUN_REFUSAL
 
 
-@pytest.mark.xfail(strict=True, reason="After Sales closes a Shopify order, the next pull brings closed_at but a Shipped order returns "
-                                       "before the archive step: the Archived fact, its filter and the Shopify section stay empty.")
+async def test_g_a_cancelled_order_leaves_the_delivery_list(t):
+    o = await retailer(t, "4800000021", requested=today(t))
+    async with t.factory(SYSTEM_ACTOR) as u:
+        await u.session.execute(sa.update(Order).where(Order.id == o).values(
+            fulfillment_status="Shipped", invoice_status="Waiting for Delivery Confirmation"))
+        await u.commit()
+
+    async def listed():
+        async with t.factory(OP) as u:
+            page = await OrderService(u).list(QuerySpec(page=1, page_size=50, filters=[Filter(field="to_confirm", op="eq", value="true")]))
+        return [x.id for x in page.items]
+    assert await listed() == [o]
+    async with t.factory(SYSTEM_ACTOR) as u:
+        await u.session.execute(sa.update(Order).where(Order.id == o).values(fulfillment_status="Cancelled"))
+        await u.commit()
+    assert await listed() == []
+
+
 async def test_a_the_archive_sales_made_shows_after_the_next_pull(t):
     o = await shopify(t, 11, 9311)
     after(t, minutes=181)
