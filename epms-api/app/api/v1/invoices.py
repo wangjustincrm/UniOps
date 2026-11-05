@@ -2,7 +2,7 @@
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -1024,11 +1024,20 @@ def _invoice_money_fields_changed(inv, body: InvoiceUpdate, prev_gr_ids) -> list
     def dec(v):
         return Decimal(str(v)) if v is not None else None
 
+    def cents(v):
+        return None if v is None else v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
     def lines(items):
         return [(str(li.get("description") or "").strip(), dec(li.get("quantity")),
-                 dec(li.get("unit_price")), dec(li.get("line_total")),
-                 bool(li.get("non_po_fee")))
+                 dec(li.get("unit_price")), bool(li.get("non_po_fee")))
                 for li in items or []]
+
+    def line_total_moved(sent, stored):
+        # The form always sends qty x price as a raw float: that is not a change
+        # to a stored total, even one (from OCR) that disagrees with qty x price.
+        total = cents(dec(sent.get("line_total")))
+        return (total != cents(dec(stored.get("line_total")))
+                and total != cents(dec(sent.get("quantity")) * dec(sent.get("unit_price"))))
 
     moved: list[str] = []
     if body.amount is not None and dec(body.amount) != dec(inv.amount):
@@ -1037,9 +1046,11 @@ def _invoice_money_fields_changed(inv, body: InvoiceUpdate, prev_gr_ids) -> list
         moved.append("tax")
     if body.currency is not None and body.currency.upper() != (inv.currency or "").upper():
         moved.append("currency")
-    if body.line_items is not None and lines(
-            [li.model_dump() for li in body.line_items]) != lines(inv.line_items):
-        moved.append("line items")
+    if body.line_items is not None:
+        sent = [li.model_dump() for li in body.line_items]
+        if lines(sent) != lines(inv.line_items) or any(
+                line_total_moved(s, o) for s, o in zip(sent, inv.line_items or [])):
+            moved.append("line items")
     if body.gr_ids is not None and set(body.gr_ids) != set(prev_gr_ids):
         moved.append("goods receipts")
     return moved
@@ -1102,6 +1113,9 @@ async def update_invoice(
                 detail=(f"Payment Application {held_by.pa_number} ({held_by.status}) pays this "
                         f"invoice, so its {', '.join(moved)} cannot be changed. Remove the "
                         "invoice from that payment application, or cancel it, first."))
+        # Nothing moved, so the totals the PA was raised on stay as stored.
+        for sent, stored in zip(body.line_items or [], inv.line_items or []):
+            sent.line_total = Decimal(str(stored.get("line_total") or 0))
 
     prev_status = inv.status
     caller_id = uuid.UUID(user["sub"])

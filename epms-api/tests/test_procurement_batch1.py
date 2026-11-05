@@ -245,3 +245,58 @@ async def test_detail_shows_the_cumulative_variance_that_decides_exception(admin
     assert Decimal(str(d["cumulative_variance"])) == Decimal("100")
     assert Decimal(str(d["cumulative_variance_pct"])) == Decimal("100")
     assert d["cumulative_other_invoices"] == [refs[0][1]]
+
+
+# ── ISS-0125: what the Edit form re-sends is not a change ───────────────────
+
+def _line(line_id, quantity, unit_price, line_total):
+    return {"id": line_id, "description": "Widget", "quantity": quantity,
+            "unit_price": unit_price, "line_total": line_total, "non_po_fee": False}
+
+
+async def _held_invoice_with_line(admin_client, test_engine, stored):
+    po, invs = await _po_with_invoices(admin_client, test_engine, [_date(2026, 3, 2)])
+    r = await admin_client.post(PA_URL, json=_pa_body(po["id"], invs))
+    assert r.status_code == 201, r.text
+    await _set(test_engine, Invoice, invs[0], line_items=[stored])
+    return invs[0]
+
+
+@pytest.mark.asyncio
+async def test_float_noise_in_a_resent_line_total_is_not_a_change(admin_client, test_engine):
+    line_id = str(_uuid.uuid4())
+    inv_id = await _held_invoice_with_line(
+        admin_client, test_engine, _line(line_id, "3", "0.1", "0.30"))
+
+    r = await admin_client.patch(f"{INV_URL}/{inv_id}", json={
+        "due_date": "2026-03-05",
+        "line_items": [_line(line_id, 3, 0.1, 0.30000000000000004)]})
+    assert r.status_code == 200, r.text
+    assert r.json()["due_date"] == "2026-03-05"
+    assert Decimal(str(r.json()["line_items"][0]["line_total"])) == Decimal("0.30")
+
+
+@pytest.mark.asyncio
+async def test_form_recomputing_an_ocr_line_keeps_the_stored_total(admin_client, test_engine):
+    line_id = str(_uuid.uuid4())
+    inv_id = await _held_invoice_with_line(
+        admin_client, test_engine, _line(line_id, "1", "109", "123.17"))
+
+    r = await admin_client.patch(f"{INV_URL}/{inv_id}", json={
+        "notes": "date only", "line_items": [_line(line_id, 1, 109, 109)]})
+    assert r.status_code == 200, r.text
+    assert r.json()["notes"] == "date only"
+    assert Decimal(str(r.json()["line_items"][0]["line_total"])) == Decimal("123.17")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sent", [(2, 109, 218), (1, 110, 110), (1, 109, 200)],
+                         ids=["quantity", "unit-price", "line-total"])
+async def test_real_line_change_on_a_held_invoice_is_refused(admin_client, test_engine, sent):
+    line_id = str(_uuid.uuid4())
+    inv_id = await _held_invoice_with_line(
+        admin_client, test_engine, _line(line_id, "1", "109", "123.17"))
+
+    r = await admin_client.patch(f"{INV_URL}/{inv_id}", json={"line_items": [_line(line_id, *sent)]})
+    assert r.status_code == 409, r.text
+    assert "line items" in r.json()["detail"]
