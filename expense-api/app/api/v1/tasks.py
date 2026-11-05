@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from app.core.deps import CurrentUserDep, SessionDep
+from app.crud.expense import is_preparer
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -143,7 +144,8 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
     # ── Expense claims ────────────────────────────────────────────────────────
 
     exp_conditions = [
-        (EC.employee_id == user_id) & (EC.status.in_(["submitted", "in_review", "returned"])),
+        ((EC.employee_id == user_id) | ((EC.claim_type == "TRV") & (EC.created_by == user_id)))
+        & (EC.status.in_(["submitted", "in_review", "returned"])),
     ]
     if approvable_ids:
         exp_conditions.append(
@@ -167,7 +169,7 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
     for claim in exp_rows:
         if claim.id in seen_exp:
             continue
-        is_own = claim.employee_id == user_id
+        is_own = claim.employee_id == user_id or is_preparer(claim, user_id)
         tt = _exp_task_type(claim.status, is_own, claim.id in approvable_ids,
                             can_pay, claim.claim_type)
         if tt is None:

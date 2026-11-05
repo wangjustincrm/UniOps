@@ -20,6 +20,12 @@ log = logging.getLogger(__name__)
 router = APIRouter(tags=["travel"])
 
 
+class EligibleClaimant(BaseModel):
+    id: uuid.UUID
+    name: str
+    is_self: bool
+
+
 class EligibleTravelApp(BaseModel):
     id: uuid.UUID
     claim_number: str
@@ -27,6 +33,9 @@ class EligibleTravelApp(BaseModel):
     travel_from_date: str | None = None
     travel_to_date: str | None = None
     purpose: str | None = None
+    # Whom the caller may file for: the applicant, every traveler; a traveler,
+    # themselves.
+    claimants: list[EligibleClaimant] = []
 
 
 @router.get("/travel-applications/eligible", response_model=list[EligibleTravelApp])
@@ -37,7 +46,10 @@ async def eligible_travel_apps(db: SessionDep, user: CurrentUserDep):
         id=c.id, claim_number=c.claim_number, travel_destination=c.travel_destination,
         travel_from_date=c.travel_from_date.isoformat() if c.travel_from_date else None,
         travel_to_date=c.travel_to_date.isoformat() if c.travel_to_date else None,
-        purpose=c.purpose) for c in rows]
+        purpose=c.purpose,
+        claimants=[EligibleClaimant(id=t.user_id, name=t.user_name, is_self=t.user_id == user_id)
+                   for t in c.travelers if c.employee_id == user_id or t.user_id == user_id],
+        ) for c in rows]
 
 
 class DirectoryUser(BaseModel):

@@ -1,9 +1,14 @@
 # OA — Product Requirements Document
 
-**Version:** 3.3
-**Date:** 2026-10-21
+**Version:** 3.4
+**Date:** 2026-11-05
 **Status:** In Production
 **Scope:** Employee expense reimbursement and business travel in UniOps — General Expense (EXP), Mileage (MIL), Travel Application (TRA), Travel Expense (TRV) and admin-defined Custom Forms (CFM), with their approvals, attachments, claim PDF, payment hand-off and budget display.
+
+**What changed in version 3.4** (2026-11-05)
+
+- **A Travel Expense claim can be filed on a traveller's behalf, and travellers can see their Travel Application (TRV-GATE-001…004, TRA-008, §1.4).** The applicant of a TRA is often not a traveller. Before this, an applicant who was not on the roster could not pick their own TRA on a Travel Expense claim, and a traveller who was not the applicant could pick it but could not open it (TRA-20261102-0001). The applicant now files for any traveller on the TRA; the claim belongs to that traveller and is paid to them. A traveller sees the TRA once it has been submitted, read-only; drafts stay with the applicant.
+- **Editing a TRV re-applies the gate when its Travel Application changes** (TRV-GATE-003, closes OI-14).
 
 **What changed in version 3.3** (2026-10-21)
 
@@ -85,6 +90,8 @@ EPMS.md (approval engine, tasks, notifications, delegation, PDF and file storage
 | Who | Sees |
 |-----|------|
 | The claimant (employee on the claim) | Their own claims, any status including draft |
+| A listed traveller | Travel Applications that name them, from submission on, read-only (TRA-008) |
+| Whoever filed a TRV on a traveller's behalf | That claim, any status (TRV-GATE-004) |
 | An approver | Claims with an **open approval task** for them — pinned to them, a role-pool task whose role they hold (`gm_or_opm` satisfied by GM or OPM), or either of these for someone who has delegated to them today |
 | Anyone who has acted on a claim | Claims they have approved / returned / rejected / submitted (from the approval history), so a claim does not vanish from an approver's list once approved |
 | Payment roles (Finance BP, Finance Manager, AP Clerk, Payment Officer, System Admin — primary or additional) | In lists: approved claims (not TRAs). On detail: any claim |
@@ -149,7 +156,7 @@ A warning banner appears when any account's available balance, less this claim's
 
 ## 3. Travel Application (TRA)
 
-Pre-approval for business travel, modelled on the paper travel approval form (content, not layout). A TRA carries **no money**: its totals are always zero and it never enters the payment path. One approved TRA can support several Travel Expense claims, by any traveller on it.
+Pre-approval for business travel, modelled on the paper travel approval form (content, not layout). A TRA carries **no money**: its totals are always zero and it never enters the payment path. One approved TRA can support several Travel Expense claims, each for one traveller on it, filed by that traveller or by the applicant on their behalf.
 
 ### 3.1 Form
 
@@ -176,6 +183,7 @@ Pre-approval for business travel, modelled on the paper travel approval form (co
 | TRA-005 | The applicant (or System Admin) may **hard-delete** a TRA in draft, returned, submitted or in-review status from the list or the detail page, after confirmation. Deletion removes the record, its approval tasks and approval history, and its attachment files; no reason is recorded. Approved TRAs cannot be deleted. Deletion is refused if any travel expense claim references the TRA. |
 | TRA-006 | Only TRAs can be deleted; other claim types are refused (they have budget and payment consequences). |
 | TRA-007 | TRAs appear only under **Travel Applications**, never in the Expense Claims list; their detail lives at the Travel route. |
+| TRA-008 | Every listed traveller sees the TRA in Travel Applications and can open it, its attachments and its PDF, from submission on. A draft stays visible to the applicant only. Seeing it gives a traveller no owner rights: Edit, Submit and Delete stay with the applicant. |
 
 ---
 
@@ -186,8 +194,9 @@ Pre-approval for business travel, modelled on the paper travel approval form (co
 | FR ID | Requirement |
 |-------|-------------|
 | TRV-GATE-001 | A new TRV must reference a Travel Application. The server refuses creation when none is given, when it is not a TRA, when it is not **approved**, or when the claimant is **not on its traveller list**. |
-| TRV-GATE-002 | The form offers only eligible TRAs (approved, claimant listed); choosing one pre-fills destination, dates and purpose. If none exist the form says a TRA must be approved first. |
-| TRV-GATE-003 | The gate must also hold when a TRV is edited — **Defect**: editing can change the referenced TRA without re-checking (OI-14). |
+| TRV-GATE-002 | The form offers only eligible TRAs (approved; the user is a listed traveller or its applicant); choosing one pre-fills destination, dates and purpose. If none exist the form says a TRA must be approved first. |
+| TRV-GATE-003 | The gate also holds when a TRV is edited: changing the referenced TRA is refused unless the new one is approved and lists the claimant. |
+| TRV-GATE-004 | **Filing on behalf.** The TRA's applicant may file a TRV for any traveller on it, picked under **Claim for** (fixed when there is only one, otherwise chosen; never guessed). A listed traveller files only for themselves, and an applicant who is not on the roster has no claim of their own. The claimant, the person paid, is the traveller: approval routing, returned-claim tasks and payment all follow them, using the traveller's department. The filer is kept as `created_by`, and keeps viewing, editing and submitting the claim alongside the traveller, including its returned-claim card in OA Tasks. The claimant cannot be changed after creation. |
 
 ### 4.2 Header
 
@@ -666,7 +675,7 @@ Payroll integration; per-diem auto-calculation; corporate-card reconciliation; m
 | OI-11 | Admin sidebar group shown only to primary System Admin; primary Finance Manager reaches the pages by URL only; additional-role Finance Manager is refused by the page although the API accepts the save | Open |
 | OI-12 | AP Clerk receives "Record Payment" task cards but cannot execute payment | Defect |
 | OI-13 | Attachment upload does not check the caller's relationship to the claim — any signed-in user can add a file to another person's draft or returned claim | Defect |
-| OI-14 | Editing a TRV can change its Travel Application reference without re-applying the approved / traveller gate | Defect |
+| OI-14 | Editing a TRV can change its Travel Application reference without re-applying the approved / traveller gate. Fixed 2026-11-05 (TRV-GATE-003) | Closed |
 | OI-15 | OA claim task e-mails are off by default (business to confirm defaults); the Travel Application task type is not pre-listed in the notification policy until its first task exists; Direct PA e-mail links still point to the retired OA route | Open |
 | OI-16 | TRV detail does not show or link its Travel Application | Open |
 | OI-17 | Payment from OA captures only the funding account; bank reference and payment date are set only via Finance (confirm this replaces the v2.0 three-field rule) | Open |
