@@ -14,9 +14,10 @@ from app.domain.carriers import tracking_url
 from app.domain.lifecycle import backordered, line_state, spread
 from app.domain.order_rules import ON_HOLD_FULFILLMENT, can_cancel, hold_exits, order_state, payment_satisfied, to_ea
 from app.domain.order_status import (
-    HOLD_REASONS as ON_HOLD_REASONS, ORDER_STATUSES, DetailFacts, StatusFacts, display, send_time, status_detail,
+    HOLD_REASONS as ON_HOLD_REASONS, NOT_OPEN_STATUSES, ORDER_STATUSES, DetailFacts, StatusFacts, display, send_time, status_detail,
 )
 from app.domain.orders import HOLD_REASONS, ORDER_STATES, SOURCE_TYPES
+from app.domain.row_matching import identifiers, line_identifiers
 from app.domain.status import FULFILLMENT, Fulfillment as F
 from app.domain.status import Invoice as Inv
 from app.models.config import Connection, DcRouting, Item, ItemUnit, Partner
@@ -109,6 +110,9 @@ class OrderRepository(Repository[Order]):
                  "currency", "historical", "archive_suppressed", "shopify_financial_status", "source_name")
     # System views (§13.19). Review reason is shown where it says something.
     presets = (
+        # The first view is what Orders opens on (unless the person has a default of their own).
+        Preset("open", "Open", {"filters": [{"field": "order_status", "op": "not_in", "value": list(NOT_OPEN_STATUSES)}],
+                                "hidden": ["review_reason"]}),
         Preset("all", "All", {"hidden": ["review_reason"]}),
         Preset("on_hold", "On hold", {"filters": [{"field": "order_status", "op": "eq", "value": "On Hold"}]}),
         Preset("needs_review", "Needs review", {"filters": [{"field": "on_hold_reason", "op": "eq", "value": "Needs Review"}]}),
@@ -361,7 +365,16 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         items = {i.item_code: i for i in (await s.execute(select(Item).where(Item.item_code.in_(codes)))).scalars()} if codes else {}
         cases = dict((await s.execute(select(ItemUnit.item_code, ItemUnit.factor_ea).where(
             ItemUnit.item_code.in_(codes), ItemUnit.unit == "CASE", ItemUnit.active.is_(True)))).all()) if codes else {}
+        lines = list((await s.execute(select(OrderLine).where(OrderLine.order_id == order_id, OrderLine.removed.is_(False)))).scalars())
         line_no = dict((await s.execute(select(OrderLine.id, OrderLine.line_no).where(OrderLine.order_id == order_id))).all())
+        master = {i.item_code: i for i in (await s.execute(select(Item).where(
+            Item.item_code.in_([ln.item_code for ln in lines if ln.item_code])))).scalars()}
+
+        def same_item(r: ShipmentRow) -> list[int]:
+            """The lines Resolve may link this row to: its own item only."""
+            ident = identifiers(r.item_code, r.upc)
+            return [ln.id for ln in lines if ident & line_identifiers(
+                ln.item_code, ln.source, *((master[ln.item_code].upc, master[ln.item_code].gtin) if ln.item_code in master else (None, None)))]
         parts = [(x.order_key_received or "")[-1:].lower() for x in ships]
         split = len(ships) > 1 and all(p.isalpha() for p in parts)
         out = []
@@ -380,6 +393,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                     "description": items[r.item_code].description if r.item_code in items else None,
                     "case_factor": int(cases[r.item_code]) if r.item_code in cases else None,
                     "tracking_url": tracking_url(template, r.tracking),
+                    "matching_lines": same_item(r) if r.needs_review else [],
                 }) for r in rows if r.shipment_id == x.id],
             }))
         return out

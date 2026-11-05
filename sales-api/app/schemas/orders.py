@@ -170,6 +170,7 @@ class ShipmentRowRead(BaseModel):
     description: str | None = None
     case_factor: int | None = None    # EA in a case: the cases shipped, when known
     tracking_url: str | None = None
+    matching_lines: list[int] = []    # a row to resolve: the order lines of its own item
 
 
 class TrackingLinkRead(BaseModel):

@@ -13,6 +13,17 @@ from collections.abc import Hashable, Sequence
 from dataclasses import dataclass, field
 
 
+def identifiers(*values: object) -> set[str]:
+    """Item code, UPC, GTIN or buyer part, compared without leading zeros."""
+    return {str(v).strip().lstrip("0") for v in values if v}
+
+
+def line_identifiers(item_code: str | None, source: dict | None, item_upc: str | None, item_gtin: str | None) -> set[str]:
+    """What identifies an order line's item: its code, what the source sent, the Item Master's barcodes."""
+    src = source or {}
+    return identifiers(item_code, src.get("buyer_part"), src.get("upc"), src.get("gtin"), item_upc, item_gtin)
+
+
 @dataclass
 class Assignment:
     links: dict[Hashable, Hashable] = field(default_factory=dict)   # row → line

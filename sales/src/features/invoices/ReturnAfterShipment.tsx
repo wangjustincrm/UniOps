@@ -8,7 +8,7 @@ import {
 import { fetchOrder, ordersClient, type LineRead, type OrderRead } from '@/features/orders/ordersApi'
 import { recordReturn } from './invoicesApi'
 
-const MANAGE = 'sales.invoice.manage'
+const OPERATE = 'sales.order.operate'
 const KINDS = [{ value: 'Returned', label: 'Returned' }, { value: 'Cancelled after shipment', label: 'Cancelled after shipment' }]
 const schema = z.object({
   kind: z.enum(['Returned', 'Cancelled after shipment']),
@@ -34,7 +34,7 @@ const problem = (b: Back) => {
  *  with quantities and reason (the standard form, in a dialog); the invoice
  *  holds and a task is raised. */
 export function ReturnAfterShipment({ o }: { o: OrderRead }) {
-  const can = useCan(MANAGE)
+  const can = useCan(OPERATE)
   const qc = useQueryClient()
   const [open, setOpen] = useState(false)
   const shipped = o.fulfillment_status === 'Shipped' || o.fulfillment_status === 'On Hold'
@@ -42,7 +42,7 @@ export function ReturnAfterShipment({ o }: { o: OrderRead }) {
   if (!shipped || !can || o.source_type !== 'EDI_850') return null
   return (
     <>
-      <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setOpen(true)}>Record a return or cancellation…</ActionButton>
+      <ActionButton size="sm" variant="secondary" permission={OPERATE} onAction={() => setOpen(true)}>Record a return or cancellation…</ActionButton>
       <Dialog open={open} onOpenChange={setOpen} title={`Order ${orderRef(o)}: return or cancellation after shipment`} className="max-w-2xl">
         {open && q.data && (
           <MasterDetailForm<Back>

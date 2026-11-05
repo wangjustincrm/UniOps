@@ -39,7 +39,7 @@ from app.schemas.invoices import ConfirmIn, ReleaseIn
 from app.schemas.orders import ManualOrderIn
 from app.services.invoice_views import InvoiceService
 from app.services.order_holds import OrderActions
-from app.services.order_views import ManualOrderService, OrderService
+from app.services.order_views import ManualOrderService, OrderRepository, OrderService
 from app.services.settings import EDI_CONNECTION_ID, INVOICE_CONNECTION_ID, SETTINGS, SHADOW_MODE
 from app.services.shadow import mark_open_orders
 from tests.test_orders import OP, env, shopify_order  # noqa: F401 — env is a fixture
@@ -572,13 +572,36 @@ async def test_f_release_waits_for_the_row_and_accepting_it_lets_the_invoice_go(
     assert [r["item_code"] for r in rows] == ["CF0092", "CF0010"]  # accepted: not on the invoice
 
 
-async def test_f_linking_the_row_puts_it_on_the_line_and_the_invoice(t):
-    o = await blocked(t)
+async def test_f_a_row_of_another_item_cannot_be_linked_and_accepted_adds_nothing(t):
+    o = await blocked(t)  # CRMMARK002 on an order of CF0092 and CF0010
     [line] = await t.q("SELECT id FROM sales_order_lines WHERE order_id = :o AND item_code = 'CF0010'", o=o)
+    with pytest.raises(BusinessError) as e:
+        await resolve_row(t, line["id"])
+    assert e.value.code == "shipment.row_other_item"
+    async with t.factory(OP) as u:
+        d = await OrderService(u).detail(o)
+    assert [r.matching_lines for s in d.shipments for r in s.rows if r.needs_review] == [[]]  # the form offers only Accept
+    await resolve_row(t, reason="substituted by the warehouse")
+    assert [r["shipped_ea"] for r in await t.q("SELECT shipped_ea FROM sales_order_lines WHERE order_id = :o ORDER BY line_no", o=o)] == [12, 12]
+
+
+async def test_f_a_row_of_the_same_item_links_and_counts_on_the_line_and_the_invoice(t):
+    o = await retailer(t, "4800000019", requested=today(t))
+    await system(t)
+    await accept(t, o)
+    await ship(t, o, [("CF0092", 12, 12), ("CF0010", 12, 6), ("NEW-CODE", 6, 6)], tracking=None)  # unknown when it came
+    await system(t)
+    await see(t, o, "F29 unknown row", "Shipped", "Blocked", "On Hold", reason="Invoice Blocked", short=True)
+    async with t.factory(SYSTEM_ACTOR) as u:  # the Item Master learns the code
+        (await u.session.execute(sa.select(Item).where(Item.item_code == "CF0010"))).scalar_one().upc = "NEW-CODE"
+        await u.commit()
+    [line] = await t.q("SELECT id FROM sales_order_lines WHERE order_id = :o AND item_code = 'CF0010'", o=o)
+    async with t.factory(OP) as u:
+        d = await OrderService(u).detail(o)
+    assert [r.matching_lines for s in d.shipments for r in s.rows if r.needs_review] == [[line["id"]]]
     await resolve_row(t, line["id"])
-    await see(t, o, "F29 row linked", "Shipped", "Pending", "Waiting for Delivery")
-    [ln] = await t.q("SELECT shipped_ea FROM sales_order_lines WHERE id = :i", i=line["id"])
-    assert ln["shipped_ea"] == 13  # its 12 and the row's 1
+    await see(t, o, "F30 linked", "Shipped", "Pending", "Waiting for Delivery")
+    assert (await t.q("SELECT shipped_ea FROM sales_order_lines WHERE id = :i", i=line["id"]))[0]["shipped_ea"] == 12
     assert await t.q("SELECT 1 FROM sales_shipment_rows WHERE needs_review") == []
 
 
@@ -757,19 +780,47 @@ async def test_a_the_archive_sales_made_shows_after_the_next_pull(t):
     assert r["a"] is not None
 
 
-@pytest.mark.xfail(strict=True, reason="A real 945 has one tracking number per parcel (N9*2I after each W12); the write-back sends only the "
-                                       "first, so the customer never gets the others.")
-async def test_a_every_parcels_tracking_reaches_shopify(t):
-    o = await shopify(t, 12, 9312)
+async def parcels(t, oid, number):
+    o = await shopify(t, oid, number)
     after(t, minutes=181)
     await system(t)
     await accept(t, o)
     f = await the_940(t, o)
-    two = x945(t, f.key, f.po, [("CF0092", 12, 12)]).replace(b"W03*", b"LX*2~\nW12*CC*1*1*0*EA**VN*CRMMARK002~\nN9*2I*TRK000000002~\nW03*")
-    await radiant(t, two)
+    second = b"LX*2~\nW12*CC*1*1*0*EA**VN*CRMMARK002~\nN9*2I*TRK000000002~\nN9*2I*TRK000000001~\nW03*"  # the first number again: sent once
+    return o, x945(t, f.key, f.po, [("CF0092", 12, 12)]).replace(b"W03*", second)
+
+
+async def test_a_every_parcels_tracking_reaches_shopify(t):
+    o, data = await parcels(t, 12, 9312)
+    await radiant(t, data)
     await system(t)
-    sent = str(next(c for n, c in t.shop.calls if n == "create_fulfillment")["tracking"])
-    assert "TRK000000001" in sent and "TRK000000002" in sent
+    [tracking] = [c["tracking"] for n, c in t.shop.calls if n == "create_fulfillment"]
+    assert tracking == {"numbers": ["TRK000000001", "TRK000000002"], "company": "Purolator"}
+    await see(t, o, "A9 two parcels", "Shipped", "Not Required", "Completed")
+
+
+async def test_a_several_numbers_are_added_to_a_zoho_fulfillment_too(t):
+    o, data = await parcels(t, 21, 9321)
+    t.shop.fulfillments_by_order["21"] = [{"id": 77, "status": "success", "tracking_number": None}]
+    await radiant(t, data)
+    await system(t)
+    [tracking] = [c["tracking"] for n, c in t.shop.calls if n == "update_tracking"]
+    assert tracking["numbers"] == ["TRK000000001", "TRK000000002"]
+
+
+async def test_the_open_view_is_the_first_and_finds_on_hold_but_no_closed_order(t):
+    assert OrderRepository.presets[0].key == "open"
+    done = await manual(t, "HAND")           # stays a Draft
+    review = await shopify(t, 4, 9304, lines=BAD_LINE)
+    going = await shopify(t, 22, 9322)
+    gone = await shopify(t, 23, 9323, cancelled_at=t.clock.now.isoformat())
+    state = OrderRepository.presets[0].as_dict()["state"]
+    f = state["filters"][0]
+    spec = QuerySpec(page=1, page_size=50, filters=[Filter(field=f["field"], op=f["op"], value=f["value"])], sort=[])
+    async with t.factory(OP) as u:
+        page = await OrderService(u).list(spec)
+    assert {o.id for o in page.items} == {review, going} and page.total == 2  # the count, server-side
+    assert done.id != gone
 
 
 async def test_d_the_invoice_takes_the_confirmed_quantity_not_the_shipped_one(t):
@@ -921,6 +972,26 @@ async def test_g_shadow_statuses_and_nothing_goes_out(t):
     with pytest.raises(BusinessError) as e:
         await send_now(t, open_shop)
     assert e.value.code.startswith("send940.shadow")
+
+
+async def test_g_fulfilled_and_archived_without_a_945_is_with_zoho_until_the_945(t):
+    """SHP-9544: Zoho fulfills and archives before the goods leave."""
+    o = await shopify(t, 24, 9324)
+    async with t.factory(SYSTEM_ACTOR) as u:
+        await SETTINGS.set(u.session, SHADOW_MODE, True)
+        await mark_open_orders(u)
+        await u.commit()
+    order = shopify_order(24, 9324, updated=t.clock.now, closed_at=t.clock.now.isoformat()) | {"fulfillment_status": "fulfilled"}
+    t.shop.orders = [order]
+    after(t, seconds=1)
+    await job(t, t.store)
+    await see(t, o, "G8 fulfilled and archived, no 945", "Archive Suppressed", "Not Required", "With Zoho (shadow)")
+    state = OrderRepository.presets[0].as_dict()["state"]["filters"][0]
+    async with t.factory(OP) as u:
+        found = await OrderService(u).list(QuerySpec(page=1, page_size=50, filters=[Filter(field=state["field"], op=state["op"], value=state["value"])]))
+    assert o in [x.id for x in found.items]  # still in Open
+    await radiant(t, x945(t, "9324", "9324", [("CF0092", 12, 12)]))
+    await see(t, o, "G9 the 945 came", "Archive Suppressed", "Not Required", "Completed (shadow)")
 
 
 async def test_g_archived_and_not_fulfilled_still_shows_in_shadow(t):

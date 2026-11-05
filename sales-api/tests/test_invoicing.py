@@ -180,16 +180,33 @@ async def test_fr35_an_edit_is_audited_and_the_amount_follows(p6):
     assert await p6.q("SELECT 1 FROM sales_audit WHERE reason = 'invoice edited: agreed promo price'")
 
 
-async def test_confirming_needs_the_invoice_permission(p6):
+async def test_confirming_and_a_return_need_order_operate_and_invoice_work_stays_on_invoice_manage(p6):
     from app.platform.authorization import PermissionDenied
     o = await shipped_850(p6)
     await p6.inv.advance()
 
-    async def read_only(session, actor, key):  # noqa: ARG001
-        return key == "sales.read"
-    p6.factory.permissions = read_only
+    async def only(*keys):
+        async def check(session, actor, key):  # noqa: ARG001
+            return key in keys
+        p6.factory.permissions = check
+    await only("sales.read", "sales.invoice.manage")   # invoice.manage alone no longer confirms
     with pytest.raises(PermissionDenied):
         await confirm(p6, o.id)
+    await only("sales.read", "sales.order.operate")    # an operator without invoice.manage does
+    out = await confirm(p6, o.id)
+    assert await inv_status(p6, o.id) == "Ready"
+    [line] = await p6.q("SELECT id FROM sales_order_lines WHERE order_id = :o", o=o.id)
+    body = ReturnIn(order_id=o.id, kind="Returned", reason="damaged", lines=[{"order_line_id": line["id"], "qty_ea": 1}])
+    async with p6.factory(OP) as u:
+        await InvoiceService(u).record_return(p6.inv, body)
+        await u.commit()
+    await only("sales.read")
+    with pytest.raises(PermissionDenied):
+        async with p6.factory(OP) as u:
+            await InvoiceService(u).record_return(p6.inv, body)
+    await only("sales.read", "sales.order.operate")    # sending and editing stay with invoice.manage
+    with pytest.raises(PermissionDenied):
+        await send(p6, out.id)
 
 
 # ── sending (FR-OB-30, 33, 34; A.9, A.12) ────────────────────────────────────

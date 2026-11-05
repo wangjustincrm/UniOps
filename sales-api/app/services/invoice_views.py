@@ -1,5 +1,6 @@
-"""The invoicing endpoints' service: permissions (sales.invoice.manage for
-every change, sales.read to look), the list and detail. The work is in
+"""The invoicing endpoints' service: permissions (sales.order.operate to confirm
+delivery and record a return, sales.invoice.manage to edit, send and release an
+invoice, sales.read to look), the list and detail. The work is in
 app/services/invoicing.py."""
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ from app.schemas.invoices import ConfirmResult, InvoiceDetail, InvoiceLineRead, 
 
 READ = "sales.read"
 MANAGE = "sales.invoice.manage"
+OPERATE = "sales.order.operate"  # delivery and returns are order work (FR-OB-61)
 
 
 class InvoiceRepository(Repository[Invoice]):
@@ -92,13 +94,13 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
         return InvoiceDetail(**base.model_dump(), confirmed_date=confirmed, lines=[
             InvoiceLineRead.model_validate(x).model_copy(update={"po_price": po.get(x.order_line_id)}) for x in lines])
 
-    @requires(MANAGE)
+    @requires(OPERATE)
     async def confirm(self, invoicing, body) -> InvoiceDetail:
         inv = await invoicing.confirm(self.uow, body.order_id, confirmed_date=body.confirmed_date,
                                       delivered={x.order_line_id: x.delivered_qty for x in body.lines}, note=body.note)
         return await self._detail_after(inv.id)
 
-    @requires(MANAGE)
+    @requires(OPERATE)
     async def confirm_bulk(self, invoicing, body) -> list[ConfirmResult]:
         """FR-OB-31: in bulk, delivered = shipped. Each order on its own: one
         that cannot be confirmed does not stop the others."""
@@ -130,7 +132,7 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
         o = await invoicing.release(self.uow, body.order_id, body.reason)
         return {"order_id": o.id, "invoice_status": o.invoice_status}
 
-    @requires(MANAGE)
+    @requires(OPERATE)
     async def record_return(self, invoicing, body) -> dict:
         r = await invoicing.record_return(self.uow, body.order_id, kind=body.kind, reason=body.reason,
                                           lines=[x.model_dump() for x in body.lines])

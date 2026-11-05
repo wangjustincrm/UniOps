@@ -7,11 +7,13 @@ const OPERATE = 'sales.order.operate'
 const errorMessages: Record<string, string> = {
   'shipment.row_resolved': 'This row needs no decision any more: reload the order.',
   'order.line': 'That line is not open on this order.',
+  'shipment.row_other_item': 'This row is another item than that line: accept it with a reason.',
   'auth.forbidden': 'You do not have permission to do this.',
 }
 
-/** A 945 row matching no order line: link it to a line (its quantity then counts there, and on the
- *  invoice), or accept it with a reason. Once none is left, the invoice it blocked follows. */
+/** A 945 row matching no order line: link it to a line of the same item (its quantity then counts
+ *  there, and on the invoice), or accept it with a reason (a different or substituted item adds
+ *  nothing). Which lines match is the server's. Once none is left, the invoice it blocked follows. */
 export function ResolveRow({ r, shipmentId, orderId, lines }: { r: ShipmentRowRead; shipmentId: number; orderId: number; lines: LineRead[] }) {
   const qc = useQueryClient()
   const notices = useNotices()
@@ -27,7 +29,8 @@ export function ResolveRow({ r, shipmentId, orderId, lines }: { r: ShipmentRowRe
       await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
     },
   })
-  const options = async (q: string): Promise<ComboOption[]> => lines.filter((l) => !l.removed)
+  const matching = lines.filter((l) => !l.removed && (r.matching_lines ?? []).includes(l.id))
+  const options = async (q: string): Promise<ComboOption[]> => matching
     .map((l) => ({ value: String(l.id), label: `Line ${l.line_no} · ${l.item_code ?? '?'}`, hint: `${l.qty_ea ?? '?'} EA` }))
     .filter((o) => o.label.toLowerCase().includes(q.trim().toLowerCase()))
   return (
@@ -36,18 +39,22 @@ export function ResolveRow({ r, shipmentId, orderId, lines }: { r: ShipmentRowRe
       <FormSheet open={open} onOpenChange={setOpen} title={`945 row ${r.item_code ?? ''}: ${r.qty_shipped_ea} EA`}
         description="It matches no line of the order, so the invoice waits for your decision.">
         <div className="flex flex-col gap-3">
-          <label className="flex max-w-sm flex-col gap-1 text-sm">
-            Order line
-            <Autocomplete aria-label="Order line" value={line} onChange={setLine} loadOptions={options} />
-          </label>
-          <Hint as="p">Linked: its quantity counts on that line and on the invoice.</Hint>
-          <div>
-            <ActionButton size="sm" permission={OPERATE} disabled={!line} errorMessages={errorMessages}
-              onAction={() => m.mutateAsync({ lineId: Number(line), why: null })}>Link to this line</ActionButton>
-          </div>
+          {matching.length > 0 ? (
+            <>
+              <label className="flex max-w-sm flex-col gap-1 text-sm">
+                Order line
+                <Autocomplete aria-label="Order line" value={line} onChange={setLine} loadOptions={options} />
+              </label>
+              <Hint as="p">Linked: its quantity counts on that line and on the invoice.</Hint>
+              <div>
+                <ActionButton size="sm" permission={OPERATE} disabled={!line} errorMessages={errorMessages}
+                  onAction={() => m.mutateAsync({ lineId: Number(line), why: null })}>Link to this line</ActionButton>
+              </div>
+            </>
+          ) : <Hint as="p">No line of this order is the same item, so it can only be accepted.</Hint>}
           <div className="flex flex-col items-start gap-1">
             <ActionButton size="sm" variant="secondary" permission={OPERATE} onAction={() => setAccepting(true)}>Accept without a line</ActionButton>
-            <Hint as="p">Accepted: it stays on the 945 and is not invoiced.</Hint>
+            <Hint as="p">Accepted: it stays on the 945 and adds nothing to the line or the invoice.</Hint>
           </div>
         </div>
       </FormSheet>

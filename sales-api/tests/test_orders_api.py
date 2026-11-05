@@ -127,3 +127,19 @@ async def test_a_manual_order_postal_code_must_be_in_its_province_and_a_po_box_i
     assert r.status_code in (200, 201), r.text  # a PO box is a warning on the form, never a refusal
     detail = (await api.get(f"/api/v1/orders/{r.json()['id']}", headers=READER)).json()
     assert detail["ship_to_flags"] == ["PO box: the carrier may not deliver there"]
+
+
+async def test_the_open_view_over_http_filter_sort_and_count(api):
+    """The Open preset as the client sends it: one filter, several values, on the derived Status."""
+    api.env.shop.orders = [shopify_order(1, 9301), shopify_order(2, 9302, lines=[
+        {"id": 5, "sku": "NOPE", "variant_title": "Case", "quantity": 1, "price": "1", "requires_shipping": True}]),
+        shopify_order(3, 9303, cancelled_at="2026-10-29T12:00:00+00:00")]
+    await api.env.pull()
+    meta = (await api.get("/api/v1/orders/meta", headers=READER)).json()
+    [f] = meta["views"][0]["state"]["filters"]
+    assert meta["views"][0]["key"] == "open" and f["op"] in next(x for x in meta["fields"] if x["name"] == "order_status")["operators"]
+    r = await api.get("/api/v1/orders", params={"filter": f"{f['field']}:{f['op']}:{'|'.join(f['value'])}", "sort": "-order_status"}, headers=READER)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["total"] == 2 and [o["order_status_label"] for o in body["items"]] == ["Waiting to Send", "On Hold: Needs Review"]
+

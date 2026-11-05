@@ -28,6 +28,7 @@ WAREHOUSE_STATUSES = (WAITING_TO_SEND, WAITING_997, WAITING_945)
 INVOICE_WORK_STATUSES = (WAITING_DELIVERY, WAITING_INVOICE)
 ACTIVE_STATUSES = (*WAREHOUSE_STATUSES, *INVOICE_WORK_STATUSES, WITH_ZOHO, DELIVERY_SHADOW)
 COMPLETED_STATUSES = (COMPLETED, COMPLETED_SHADOW)
+NOT_OPEN_STATUSES = (DRAFT, *COMPLETED_STATUSES, CANCELLED)  # the Open view is everything else, On Hold included
 
 NEEDS_REVIEW, PAYMENT_REQUIRED, ARCHIVED = "Needs Review", "Payment Required", "Archived in Shopify"
 REJECTED_940, FAILED_940, TIMEOUT_997 = "940 Rejected", "940 Failed", "997 Timeout"
@@ -80,16 +81,18 @@ PY = Python()
 Rules = list[tuple[Any, str]]
 
 
-def _shipped_elsewhere(f, b):
-    """The goods left under Zoho: a 945 came, or Shopify says fulfilled."""
+def _zoho_took_it(f, b):
+    """Zoho has the order: a 945 came, or Shopify says fulfilled. Not proof of shipment: Zoho
+    fulfills and archives before the goods leave (dev2: 36 of 36 orders, 2.5 to 121.7 hours
+    before the 945). Only `has_945` proves shipped."""
     return b.any_(f.has_945, f.fulfilled_in_shopify)
 
 
 def hold_rules(f, b) -> Rules:
     """D17, with its reason. A draft or a cancelled order holds nothing. During the
-    shadow run a question before the 940 is moot once the goods have left."""
+    shadow run a question before the 940 is moot once Zoho has taken the order."""
     live = b.not_(b.is_(f.fulfillment, F.DRAFT.value, F.CANCELLED.value))
-    moot = b.all_(f.shadow, _shipped_elsewhere(f, b))
+    moot = b.all_(f.shadow, _zoho_took_it(f, b))
     open_question = b.not_(moot)
     archived = b.any_(
         b.all_(b.is_(f.fulfillment, F.ARCHIVE_SUPPRESSED.value), open_question),
@@ -119,7 +122,7 @@ def status_rules(f, b) -> Rules:
         (is_f(F.CANCELLED), CANCELLED),
         (is_f(F.DRAFT), DRAFT),
         (b.any_(*(c for c, _ in hold_rules(f, b))), ON_HOLD),
-        (b.all_(f.shadow, b.is_(f.source_type, SHOPIFY), _shipped_elsewhere(f, b)), COMPLETED_SHADOW),
+        (b.all_(f.shadow, f.has_945, b.is_(f.source_type, SHOPIFY)), COMPLETED_SHADOW),
         (b.all_(f.shadow, f.has_945, f.invoicing), DELIVERY_SHADOW),
         (b.all_(f.shadow, f.has_945), COMPLETED_SHADOW),
         (f.shadow, WITH_ZOHO),

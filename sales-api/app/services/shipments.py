@@ -36,7 +36,7 @@ from sqlalchemy import func, select
 from app.domain.edi945 import OrderKey, Shipment945, order_key, parse_945
 from app.domain.lifecycle import spread
 from app.domain.orders import FROM_945
-from app.domain.row_matching import assign_rows
+from app.domain.row_matching import assign_rows, identifiers, line_identifiers
 from app.domain.status import FULFILLMENT, INBOUND_FILE, Ack, InboundFile
 from app.domain.status import Fulfillment as F
 from app.domain.x12 import X12Error
@@ -245,11 +245,8 @@ class Shipments:
         ordered = {ln.id: int((locked.get("lines") or {}).get(str(ln.line_no), {}).get("qty_ea") or ln.qty_ea or 0) for ln in lines}
 
         def ids_of(ln: OrderLine) -> set[str]:
-            src = ln.source or {}
             item = items.get(ln.item_code)
-            vals = {ln.item_code, src.get("buyer_part"), src.get("upc"), src.get("gtin"),
-                    item.upc if item else None, item.gtin if item else None}
-            return {str(v).strip().lstrip("0") for v in vals if v}
+            return line_identifiers(ln.item_code, ln.source, item.upc if item else None, item.gtin if item else None)
 
         # Several lines of the same item (a Shopify order's "Trial Can" and "Can", both CF0102):
         # app/domain/row_matching.py says which line each row belongs to; what each line shipped
@@ -260,7 +257,7 @@ class Shipments:
         shipped: dict[int, int] = await self._shadow_shipped(s, order.id, doc.id) if doc.shadow else {}
         groups: dict[tuple[int, ...], tuple[list[OrderLine], list[Any]]] = {}
         for r in sh.rows:
-            ident = {str(v).strip().lstrip("0") for v in (r.item_code, r.upc) if v}
+            ident = identifiers(r.item_code, r.upc)
             cands = [ln for ln in lines if ident & ids_of(ln)]
             if not cands:
                 p.rows.append(RowPlan(r.lx_index, r.w12_index, None))
@@ -589,16 +586,19 @@ class Shipments:
 
     @staticmethod
     def _tracking(sh: Shipment) -> dict[str, Any] | None:
-        number = (sh.tracking or [None])[0]
-        return {"number": number, "company": TRACKING_COMPANY} if number else None
+        """Every distinct number of the 945 (one per parcel): one as `number`, several as `numbers`."""
+        numbers = list(dict.fromkeys(sh.tracking or []))
+        if len(numbers) > 1:
+            return {"numbers": numbers, "company": TRACKING_COMPANY}
+        return {"number": numbers[0], "company": TRACKING_COMPANY} if numbers else None
 
     async def _fulfill(self, payload: dict[str, Any], ctx) -> None:
         sh, order, conn, lines = await self._context(payload["shipment_id"])
         oid = order.source_order_id
         tracking = self._tracking(sh)
         existing = await self.shopify.fulfillments(conn, oid)  # always first: a retry never duplicates
-        number = (tracking or {}).get("number")
-        mine = next((f for f in existing if number and f.get("tracking_number") == number), None)
+        numbers = (tracking or {}).get("numbers") or [n for n in [(tracking or {}).get("number")] if n]
+        mine = next((f for f in existing if f.get("tracking_number") in numbers), None)
         if mine is not None:
             await self._record(sh.id, str(mine["id"]), "already in Shopify")
             return

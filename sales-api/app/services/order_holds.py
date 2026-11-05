@@ -6,8 +6,9 @@
 - Release hold: Cancelled at Source → Cancelled, Shipped or the status held before;
   945 Conflict → keep the applied 945 (Shipped) or Cancelled. The second 945 stays stored
   and changes no quantity (AC-OB-73). Shipped sends the Shopify write a hold had stopped.
-- A 945 row matching no line: linked to a line, or accepted with a reason. Once none
-  is left the invoice it blocked follows.
+- A 945 row matching no line: linked to a line of the same item, or accepted with a
+  reason (a different or substituted item: nothing on the line or the invoice). Once
+  none is left the invoice it blocked follows.
 
 Shadow orders are Zoho's: every action here is refused for them.
 """
@@ -16,7 +17,9 @@ from __future__ import annotations
 from sqlalchemy import func, select
 
 from app.domain.order_rules import can_cancel, hold_exits
+from app.domain.row_matching import identifiers, line_identifiers
 from app.domain.status import FULFILLMENT, INVOICE, OUTBOUND_FILE, Fulfillment as F, Invoice as Inv, OutboundFile
+from app.models.config import Item
 from app.models.documents import Document, DocumentLink
 from app.models.invoices import OrderReturn
 from app.models.orders import Order, OrderLine
@@ -127,6 +130,10 @@ class OrderActions:
             line = await self.s.get(OrderLine, order_line_id, with_for_update=True)
             if line is None or line.order_id != o.id or line.removed:
                 raise BusinessError("order.line", f"line {order_line_id} is not an open line of this order")
+            item = (await self.s.execute(select(Item).where(Item.item_code == line.item_code))).scalar_one_or_none()
+            if not identifiers(row.item_code, row.upc) & line_identifiers(
+                    line.item_code, line.source, item.upc if item else None, item.gtin if item else None):
+                raise BusinessError("shipment.row_other_item", "this row is another item than that line: accept it with a reason instead")
             row.order_line_id = line.id
             line.shipped_ea = (line.shipped_ea or 0) + row.qty_shipped_ea  # the invoice's quantity comes from here
             what = f"linked to line {line.line_no}" + (f": {why}" if why else "")

@@ -82,10 +82,17 @@ CASES = [
     # the shadow run
     (dict(fulfillment="Pending", shadow=True, invoice="Pending"), (WITH_ZOHO, False)),
     (dict(fulfillment="Pending", shadow=True, source_type="SHOPIFY", has_945=True, invoice="Not Required"), (COMPLETED_SHADOW, False)),
+    # Zoho fulfills and archives before the goods leave: only a 945 proves shipped, and no hold either
     (dict(fulfillment="Pending", shadow=True, source_type="SHOPIFY", archived=True, fulfilled_in_shopify=True, invoice="Not Required"),
-     (COMPLETED_SHADOW, False)),
+     (WITH_ZOHO, False)),
     (dict(fulfillment="Archive Suppressed", shadow=True, source_type="SHOPIFY", archived=True, fulfilled_in_shopify=True, invoice="Not Required"),
-     (COMPLETED_SHADOW, False)),
+     (WITH_ZOHO, False)),
+    (dict(fulfillment="Pending", shadow=True, source_type="SHOPIFY", fulfilled_in_shopify=True, invoice="Not Required"), (WITH_ZOHO, False)),
+    (dict(fulfillment="Archive Suppressed", shadow=True, source_type="SHOPIFY", archived=True, fulfilled_in_shopify=True, has_945=True,
+          invoice="Not Required"), (COMPLETED_SHADOW, False)),
+    # outside the shadow run nothing changes: an Archive Suppressed order is a hold
+    (dict(fulfillment="Archive Suppressed", source_type="SHOPIFY", archived=True, fulfilled_in_shopify=True, invoice="Not Required"),
+     (f"{ON_HOLD}: {ARCHIVED}", False)),
     (dict(fulfillment="Archive Suppressed", shadow=True, source_type="SHOPIFY", archived=True, invoice="Not Required"), (f"{ON_HOLD}: {ARCHIVED}", False)),
     (dict(fulfillment="Pending", shadow=True, source_type="SHOPIFY", archived=True, invoice="Not Required"), (f"{ON_HOLD}: {ARCHIVED}", False)),
     (dict(fulfillment="940 Timeout", shadow=True, source_type="SHOPIFY", has_945=True, fulfilled_in_shopify=True, invoice="Not Required"),

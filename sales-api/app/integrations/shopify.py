@@ -125,6 +125,19 @@ class ShopifyGateway(Protocol):
 READS = ("shop", "orders_page", "order", "transactions", "variant", "fulfillment_orders", "fulfillments", "locations")
 # P5: behind SALES_PARTNER_WRITES_ENABLED, and only for a LIVE connection.
 WRITES: tuple[str, ...] = ("create_fulfillment", "update_tracking", "close_order")
+FULFILLMENT_MUTATION = """mutation($fulfillment: FulfillmentInput!) {
+  fulfillmentCreate(fulfillment: $fulfillment) { fulfillment { id status } userErrors { field message } }
+}"""
+TRACKING_MUTATION = """mutation($id: ID!, $info: FulfillmentTrackingInput!, $notify: Boolean) {
+  fulfillmentTrackingInfoUpdate(fulfillmentId: $id, trackingInfoInput: $info, notifyCustomer: $notify) {
+    fulfillment { id status } userErrors { field message }
+  }
+}"""
+
+
+def tracking_input(tracking: dict[str, Any]) -> dict[str, Any]:
+    """The company applies to every number; Shopify builds each number's link from it."""
+    return {"numbers": tracking["numbers"], "company": tracking.get("company")}
 
 
 def guarded(switch: str) -> dict[str, str]:
@@ -289,15 +302,42 @@ class HttpShopify:
         return r.json().get("locations", [])
 
     # ── writes (guarded; made once) ──────────────────────────────────────────
+    # REST's tracking_info takes one number; several (a 945 with several parcels) need GraphQL.
+    async def _mutate(self, conn: Any, query: str, name: str, variables: dict[str, Any], tracking: dict[str, Any]) -> dict[str, Any]:
+        body = await self._post(conn, "graphql.json", {"query": query, "variables": variables})
+        if body.get("errors"):
+            raise ShopifyError(f"the store refused {name}: {'; '.join(str(e.get('message')) for e in body['errors'])}")
+        out = (body.get("data") or {}).get(name) or {}
+        if out.get("userErrors"):
+            raise ShopifyError(f"the store refused {name}: {'; '.join(str(e.get('message')) for e in out['userErrors'])}")
+        found = out.get("fulfillment") or {}
+        if not found.get("id"):
+            raise ShopifyError(f"the store gave no fulfillment for {name}")
+        return {"id": str(found["id"]).split("?")[0].rsplit("/", 1)[-1], "status": str(found.get("status") or "").lower(),
+                "tracking_number": tracking["numbers"][0]}
+
+    async def _create_with_numbers(self, conn: Any, items: list[dict[str, Any]], tracking: dict[str, Any], notify: bool) -> dict[str, Any]:
+        return await self._mutate(conn, FULFILLMENT_MUTATION, "fulfillmentCreate", {"fulfillment": {
+            "lineItemsByFulfillmentOrder": [{
+                "fulfillmentOrderId": f"gid://shopify/FulfillmentOrder/{_digits(i['fulfillment_order_id'])}",
+                "fulfillmentOrderLineItems": [{"id": f"gid://shopify/FulfillmentOrderLineItem/{_digits(x['id'])}", "quantity": x["quantity"]}
+                                              for x in i["fulfillment_order_line_items"]]} for i in items],
+            "notifyCustomer": notify, "trackingInfo": tracking_input(tracking)}}, tracking)
+
     async def create_fulfillment(self, conn: Any, items: list[dict[str, Any]], tracking: dict[str, Any] | None,
                                  notify: bool) -> dict[str, Any]:
         """`items`: [{"fulfillment_order_id", "fulfillment_order_line_items": [{"id", "quantity"}]}]."""
+        if tracking and tracking.get("numbers"):
+            return await self._create_with_numbers(conn, items, tracking, notify)
         body: dict[str, Any] = {"line_items_by_fulfillment_order": items, "notify_customer": notify}
         if tracking:
             body["tracking_info"] = tracking
         return (await self._post(conn, "fulfillments.json", {"fulfillment": body}))["fulfillment"]
 
     async def update_tracking(self, conn: Any, fulfillment_id: str, tracking: dict[str, Any], notify: bool) -> dict[str, Any]:
+        if tracking.get("numbers"):
+            return await self._mutate(conn, TRACKING_MUTATION, "fulfillmentTrackingInfoUpdate", {
+                "id": f"gid://shopify/Fulfillment/{_digits(fulfillment_id)}", "info": tracking_input(tracking), "notify": notify}, tracking)
         return (await self._post(conn, f"fulfillments/{_digits(fulfillment_id)}/update_tracking.json",
                                  {"fulfillment": {"tracking_info": tracking, "notify_customer": notify}}))["fulfillment"]
 
@@ -434,7 +474,7 @@ class FakeShopify:
         order_id = next((oid for oid, fos in self.fulfillment_orders_by_order.items()
                          if any(fo["id"] == items[0]["fulfillment_order_id"] for fo in fos)), "?")
         f = {"id": 9000 + len(self.calls), "order_id": order_id, "status": "success",
-             "tracking_number": (tracking or {}).get("number")}
+             "tracking_number": (tracking or {}).get("number") or ((tracking or {}).get("numbers") or [None])[0]}
         self.fulfillments_by_order.setdefault(order_id, []).append(f)
         return f
 
@@ -445,7 +485,7 @@ class FakeShopify:
         for fs in self.fulfillments_by_order.values():
             for f in fs:
                 if str(f["id"]) == str(fulfillment_id):
-                    f["tracking_number"] = tracking.get("number")
+                    f["tracking_number"] = tracking.get("number") or (tracking.get("numbers") or [None])[0]
                     return f
         raise ShopifyError(f"the store has nothing at fulfillments/{fulfillment_id} (HTTP 404)")
 

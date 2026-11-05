@@ -60,7 +60,7 @@ describe('Delivery confirmation', () => {
 
   it('lists only orders waiting for confirmation and confirms the shown ones in bulk', async () => {
     api.bulk.mockResolvedValue([{ order_id: 7, ok: true, invoice_id: 3, status: 'Ready', error: null }])
-    renderAs(['sales.read', 'sales.invoice.manage'], <DeliveryPage />)
+    renderAs(['sales.read', 'sales.order.operate'], <DeliveryPage />)
     await screen.findByText('PO-1')
     expect(api.list.mock.calls.at(-1)![0].filters).toEqual([{ field: 'invoice_status', op: 'eq', value: 'Waiting for Delivery Confirmation' }])
     fireEvent.click(screen.getByRole('button', { name: /Confirm all shown \(1\)/ }))
@@ -73,7 +73,7 @@ describe('Delivery confirmation', () => {
 
   it('one order: the delivered quantity per line, less than shipped allowed', async () => {
     api.confirm.mockResolvedValue(invDetail)
-    renderAs(['sales.read', 'sales.invoice.manage'], <DeliveryPage />)
+    renderAs(['sales.read', 'sales.order.operate'], <DeliveryPage />)
     fireEvent.click(await screen.findByText('PO-1'))
     const dialog = await screen.findByRole('dialog')
     const form = dialog
@@ -83,6 +83,12 @@ describe('Delivery confirmation', () => {
     fireEvent.click(within(form).getByRole('button', { name: 'Confirm delivery' }))
     await waitFor(() => expect(api.confirm).toHaveBeenCalledWith({ order_id: 7, confirmed_date: '2026-11-05',
       lines: [{ order_line_id: 70, delivered_qty: 54 }] }))
+  })
+
+  it('invoice.manage alone does not confirm delivery: it is order work', async () => {
+    renderAs(['sales.read', 'sales.invoice.manage'], <DeliveryPage />)
+    await screen.findByText('PO-1')
+    expect(screen.queryByRole('button', { name: /Confirm all shown/ })).toBeNull()
   })
 
   it('a reader cannot confirm', async () => {

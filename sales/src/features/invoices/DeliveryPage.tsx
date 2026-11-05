@@ -9,7 +9,7 @@ import { OrderList } from '@/features/orders/OrdersPage'
 import { fetchOrder, ordersClient, type LineRead, type OrderRead } from '@/features/orders/ordersApi'
 import { confirmBulk, confirmDelivery, invoicesClient, type ConfirmResult } from './invoicesApi'
 
-const MANAGE = 'sales.invoice.manage'
+const OPERATE = 'sales.order.operate'
 const WAITING = [{ field: 'invoice_status', op: 'eq' as const, value: 'Waiting for Delivery Confirmation' }]
 
 type Delivered = { line: LineRead; delivered: string }
@@ -30,10 +30,10 @@ const confirmSchema = z.object({ confirmed_date: z.string().min(1, 'Required') }
 const confirmFields: FieldSpec[] = [{ name: 'confirmed_date', label: 'Delivered on (the invoice date)', type: 'date', required: true }]
 
 /** One order: the delivered EA per line (≤ shipped) and the date — the standard
- *  form, in the order's sheet; read only without sales.invoice.manage. */
+ *  form, in the order's sheet; read only without sales.order.operate. */
 function ConfirmOne({ o, close }: { o: OrderRead; close: () => void }) {
   const qc = useQueryClient()
-  const can = useCan(MANAGE)
+  const can = useCan(OPERATE)
   const q = useQuery({ queryKey: queryKeys.detail(ordersClient, o.id), queryFn: () => fetchOrder(o.id) })
   if (q.isLoading || !q.data) return <Skeleton className="h-20 w-full" />
   return (
@@ -71,14 +71,14 @@ function ConfirmShown({ rows, refresh }: { rows: OrderRead[]; refresh: () => Pro
   })
   return (
     <>
-      <ActionButton size="sm" permission={MANAGE} disabled={rows.length === 0} onAction={() => setOpen(true)}>
+      <ActionButton size="sm" permission={OPERATE} disabled={rows.length === 0} onAction={() => setOpen(true)}>
         Confirm all shown ({rows.length})…
       </ActionButton>
       <Dialog open={open} onOpenChange={setOpen} title={`Confirm ${rows.length} deliveries`}
         description="Each order shown, delivered in full (its shipped quantity), on this date — the invoice date."
         footer={<>
           <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-          <ActionButton permission={MANAGE} disabled={!date} onAction={() => m.mutateAsync().catch(() => {})}>Confirm</ActionButton>
+          <ActionButton permission={OPERATE} disabled={!date} onAction={() => m.mutateAsync().catch(() => {})}>Confirm</ActionButton>
         </>}>
         <FormField label="Delivered on" htmlFor="bulk-date"><DateInput id="bulk-date" value={date} onChange={(e) => setDate(e.target.value)} /></FormField>
         <ErrorMessage error={m.error} />

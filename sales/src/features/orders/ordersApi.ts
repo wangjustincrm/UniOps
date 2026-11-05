@@ -132,6 +132,8 @@ export interface OrderDocument {
 
 export interface ShipmentRowRead {
   id: number
+  /** A row to resolve: the order lines of its own item (the only ones it can be linked to). */
+  matching_lines?: number[]
   lx_index: number
   w12_index: number
   sscc: string | null

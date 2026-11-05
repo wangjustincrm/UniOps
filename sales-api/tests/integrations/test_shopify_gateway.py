@@ -2,6 +2,7 @@
 store from tests. Client-credentials token: obtained once, cached, renewed
 600 s before expiry; the static token only as a logged fallback; the order
 query never asks for `customer` (FR-OB-10); secrets never in a message."""
+import json
 import logging
 from types import SimpleNamespace
 
@@ -163,3 +164,53 @@ async def test_a_full_rate_limit_bucket_is_waited_out_then_given_up():
     with pytest.raises(ShopifyError, match="rate limit"):
         await always.transactions(CONN, "5")
     assert len(waits) == 4  # RATE_LIMIT_RETRIES, then the error
+
+
+# ── several tracking numbers: REST takes one, so these go through GraphQL ─────
+class GraphStore(Store):
+    def __init__(self, answer):
+        super().__init__()
+        self.answer = answer
+
+    def __call__(self, request):
+        if request.url.path.endswith("/graphql.json"):
+            self.requests.append(request)
+            return httpx.Response(200, json=self.answer)
+        return super().__call__(request)
+
+
+def graph_client(store):
+    return HttpShopify(secret=SECRETS.get, transport=httpx.MockTransport(store))
+
+
+ITEMS = [{"fulfillment_order_id": 501, "fulfillment_order_line_items": [{"id": 601, "quantity": 2}]}]
+OK = {"data": {"fulfillmentCreate": {"fulfillment": {"id": "gid://shopify/Fulfillment/9001", "status": "SUCCESS"}, "userErrors": []}}}
+
+
+async def test_several_numbers_go_as_fulfillment_create_with_numbers():
+    store = GraphStore(OK)
+    out = await graph_client(store).create_fulfillment(CONN, ITEMS, {"numbers": ["T1", "T2"], "company": "Purolator"}, True)
+    assert out == {"id": "9001", "status": "success", "tracking_number": "T1"}
+    body = json.loads(store.requests[-1].content)
+    v = body["variables"]["fulfillment"]
+    assert "fulfillmentCreate(" in body["query"] and v["notifyCustomer"] is True
+    assert v["trackingInfo"] == {"numbers": ["T1", "T2"], "company": "Purolator"}
+    assert v["lineItemsByFulfillmentOrder"] == [{"fulfillmentOrderId": "gid://shopify/FulfillmentOrder/501", "fulfillmentOrderLineItems": [
+        {"id": "gid://shopify/FulfillmentOrderLineItem/601", "quantity": 2}]}]
+
+
+async def test_a_user_error_from_graphql_is_a_failed_write():
+    bad = {"data": {"fulfillmentCreate": {"fulfillment": None, "userErrors": [{"field": ["x"], "message": "invalid line"}]}}}
+    with pytest.raises(ShopifyError, match="invalid line"):
+        await graph_client(GraphStore(bad)).create_fulfillment(CONN, ITEMS, {"numbers": ["T1", "T2"], "company": "Purolator"}, True)
+    with pytest.raises(ShopifyError, match="throttled"):
+        await graph_client(GraphStore({"errors": [{"message": "throttled"}]})).create_fulfillment(CONN, ITEMS, {"numbers": ["T1", "T2"]}, True)
+
+
+async def test_several_numbers_on_an_existing_fulfillment():
+    ok = {"data": {"fulfillmentTrackingInfoUpdate": {"fulfillment": {"id": "gid://shopify/Fulfillment/77", "status": "SUCCESS"}, "userErrors": []}}}
+    store = GraphStore(ok)
+    out = await graph_client(store).update_tracking(CONN, "77", {"numbers": ["T1", "T2"], "company": "Purolator"}, True)
+    assert out["id"] == "77"
+    v = json.loads(store.requests[-1].content)["variables"]
+    assert v == {"id": "gid://shopify/Fulfillment/77", "info": {"numbers": ["T1", "T2"], "company": "Purolator"}, "notify": True}
