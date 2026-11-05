@@ -5,7 +5,8 @@ read inbound are 850 (TrueCommerce) and 945 / 944 / 997 (Radiant); anything
 else that is recognised — our own 940s and 943s reflected back in Radiant's
 folder, an 810, other JSON — is *not ours*: counted, never read as inbound.
 A file that cannot be read at all is ours to look at: it is stored as it is
-and raises a task (FR-OB-70; 37 of 73 archived 850s are not valid JSON).
+and raises a task (FR-OB-70). Strict JSON refuses all 67 archived Walmart 850s
+(raw control characters inside strings), so those are read with strict=False.
 """
 from __future__ import annotations
 
@@ -64,7 +65,7 @@ def _x12(data: bytes) -> Classified:
 
 def _json(text: str) -> Classified:
     try:
-        body = json.loads(text)
+        body = json.loads(text, strict=False)  # Walmart's 850s have raw control characters inside strings
     except ValueError as e:
         return Classified("OTHER", ours=True, readable=False, problem=f"not valid JSON: {e}")
     key = next(iter(body), None) if isinstance(body, dict) else None

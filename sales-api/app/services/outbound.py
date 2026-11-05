@@ -217,7 +217,8 @@ class Outbound940:
         return Order940(
             order_id=order.id, order_number=order.order_number, retail=retail,
             source_order_number=str(order.source_order_number or ""), source_reference=order.source_reference,
-            partner_code=order.partner_code, walmart=bool(partner.dc_routing_required), label_code=partner.label_code,
+            partner_code=order.partner_code, partner_name=partner.name, walmart=bool(partner.dc_routing_required),
+            label_code=partner.label_code,
             dc_number=dc, order_type=order.order_type, department=order.department,
             requested_delivery=order.requested_delivery_date, ship_to=Address.of(order.ship_to),
             bill_to=Address.of(order.bill_to), contact=order.contact or {},

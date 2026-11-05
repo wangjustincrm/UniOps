@@ -32,7 +32,7 @@ from typing import Any, Callable
 
 from sqlalchemy import select
 
-from app.domain.invoicing import CASE_UNIT, Header810, LineIn, LineOut, amount, build_810, build_lines
+from app.domain.invoicing import CASE_UNIT, Header810, Item810, LineIn, amount, build_810, build_lines
 from app.domain.shadow import TEST_RUN_REFUSAL
 from app.domain.status import INVOICE
 from app.domain.status import Fulfillment as F
@@ -362,15 +362,7 @@ class Invoicing:
                 if conn is None or conn.kind != "SFTP" or not conn.active:
                     raise RuntimeError("no active invoice connection is set (setting invoice.connection_id)")
                 snap = ConnectionSnapshot.of(conn)
-                codes = [ln.item_code for ln in lines if ln.item_code]
-                items = {i.item_code: i for i in (await s.execute(select(Item).where(Item.item_code.in_(codes)))).scalars()}
-                data = build_810(Header810(order.partner_code, order.order_number, order.source_order_number,
-                                           inv.invoice_date, inv.payment_terms, inv.currency),
-                                 [LineOut(line_no=ln.line_no, order_line_id=ln.order_line_id, item_code=ln.item_code,
-                                          buyer_part=ln.buyer_part, description=ln.description, uom=ln.uom, qty=ln.qty,
-                                          unit_price=ln.unit_price, amount=ln.amount,
-                                          upc=items[ln.item_code].upc if ln.item_code in items else None,
-                                          gtin=items[ln.item_code].gtin if ln.item_code in items else None) for ln in lines])
+                data = await self._810(s, inv, order, lines)
                 name = (f"810-{partner.abbrev}-{order.order_number}-{order.source_order_number or ''}-"
                         f"{self.clock().astimezone(TORONTO):%Y%m%d_%H%M%S}.json")
                 await self._document(s, inv, order, data, name, system="TRUECOMMERCE", kind="810_JSON", conn_id=conn.id)
@@ -389,6 +381,30 @@ class Invoicing:
                 await self.email.send_external(msg)  # guarded: SALES_EXTERNAL_EMAIL_ENABLED
                 return
             raise RuntimeError(f"invoice method {inv.method} sends nothing")
+
+    async def _810(self, s, inv: Invoice, order: Order, lines: list[InvoiceLine]) -> bytes:
+        """Every line of the order: one not invoiced goes out with QuantityShipped 0, as Zoho's do."""
+        ordered = list((await s.execute(select(OrderLine).where(OrderLine.order_id == order.id, OrderLine.removed.is_(False))
+                                        .order_by(OrderLine.line_no))).scalars())
+        codes = [ln.item_code for ln in ordered if ln.item_code]
+        items = {i.item_code: i for i in (await s.execute(select(Item).where(Item.item_code.in_(codes)))).scalars()}
+        cases = dict((await s.execute(select(ItemUnit.item_code, ItemUnit.factor_ea).where(
+            ItemUnit.item_code.in_(codes), ItemUnit.unit == CASE_UNIT, ItemUnit.active.is_(True)))).all())
+        invoiced = {ln.order_line_id: ln for ln in lines}
+        out = []
+        for ln in ordered:
+            sent, item, factor = invoiced.get(ln.id), items.get(ln.item_code), cases.get(ln.item_code)
+            price = sent.unit_price if sent is not None else (ln.invoice_unit_price if ln.invoice_unit_price is not None
+                                                              else ln.unit_price) or Decimal(0)
+            out.append(Item810(item_code=ln.item_code, buyer_part=(ln.source or {}).get("buyer_part"),
+                               gtin=(item.gtin if item else None) or (ln.source or {}).get("gtin"),
+                               description=item.description if item else (ln.source or {}).get("description"),
+                               shipped_cases=sent.qty if sent is not None else 0,
+                               ordered_cases=int(ln.qty_ea // factor) if ln.qty_ea and factor else int(ln.ordered_qty),
+                               unit_price=price, inner_packs=int(factor) if factor else None))
+        st = order.ship_to or {}
+        return build_810(Header810(order.partner_code, order.order_number, order.source_order_number, inv.invoice_date,
+                                   order.order_date, st, order.bill_to or st), out)
 
     async def _document(self, s, inv: Invoice, order: Order, data: bytes, name: str, *, system: str, kind: str,
                         conn_id: int | None) -> Document:

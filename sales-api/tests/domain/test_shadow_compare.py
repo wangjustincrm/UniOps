@@ -16,9 +16,9 @@ BODY = ["W05*N*9471", "N1*ST*A B", "G62*10*20261102", "N9*E1*CRM-940_000000023",
 
 
 def test_control_numbers_dates_and_own_numbers_are_ignored():
-    zoho = x12(["W05*N*000012345*PO-1", *BODY[1:2], "G62*10*20261030*Y*1200", "N9*E1*CRM-940_000012345", *BODY[4:]],
+    zoho = x12(["W05*N*000012345*PO-1", *BODY[1:2], "G62*10*20261030*Y*1200", "N9*E1*CRM-940_000012345_Walmart_PO-1", *BODY[4:]],
                ctl="000016468", date="261030", time="1500")
-    sales = x12(["W05*N*000000023*PO-1", *BODY[1:2], "G62*10*20261102", "N9*E1*CRM-940_000000023", *BODY[4:]])
+    sales = x12(["W05*N*000000023*PO-1", *BODY[1:2], "G62*10*20261102", "N9*E1*CRM-940_000000023_Walmart_PO-1", *BODY[4:]])
     c = compare(zoho, sales)
     assert c.differences == 0 and c.signature is None and all(r["same"] for r in c.rows)
 

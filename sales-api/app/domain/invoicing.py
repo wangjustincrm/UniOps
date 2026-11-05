@@ -7,11 +7,10 @@ invoiced silently short: it is a problem the caller raises (the invoice holds).
 Price: per case at the 850 unit price; a line ordered in another unit is
 scaled by the two factors (price × case factor ÷ order-unit factor).
 
-ASSUMPTIONS for the 810 JSON beyond what A.9 names (AccountingID, Invoice,
-InvoiceDate, ShipDate, SCAC, CarrierPro, QuantityShipped, empty tax / charges /
-allowances) — the line keys mirror the 850's (A.8): Lines / Line / BuyerPart /
-VendorPart / UPC / GTIN# / UOM / UnitPrice; PurchaseOrderNumber, Terms,
-Currency, Total. AC-OB-44 (replay against archived 810s) settles them.
+The 810 JSON has the shape of the 102 archived Zoho 810s (AC-OB-44, replayed
+2026-11-05): every line of the order, also those not shipped (QuantityShipped
+0); UPC carries the GTIN; terms are "NA" with no days, as Zoho has sent since
+August; the empty fields are sent empty.
 """
 from __future__ import annotations
 
@@ -98,21 +97,46 @@ class Header810:
     order_number: int
     po: str | None
     invoice_date: date
-    terms: str | None
-    currency: str
+    po_date: date | None
+    ship_to: dict
+    bill_to: dict
 
 
-def build_810(h: Header810, lines: list[LineOut]) -> bytes:
+@dataclass(frozen=True)
+class Item810:
+    item_code: str | None
+    buyer_part: str | None
+    gtin: str | None
+    description: str | None
+    shipped_cases: int
+    ordered_cases: int
+    unit_price: Decimal
+    inner_packs: int | None
+
+
+def _party(prefix: str, country_key: str, zip_key: str, a: dict) -> dict:
+    return {f"{prefix}Name": a.get("name") or "", f"{prefix}Address-LineOne": a.get("address1") or "",
+            f"{prefix}Address-LineTwo": a.get("address2") or "", f"{prefix}City": a.get("city") or "",
+            f"{prefix}State": a.get("province") or "", zip_key: a.get("zip") or "", country_key: a.get("country") or "CA",
+            f"{prefix}Code": a.get("gln") or a.get("code") or ""}
+
+
+def build_810(h: Header810, items: list[Item810]) -> bytes:
     """A.9: one invoice; InvoiceDate = ShipDate = the delivery date."""
-    total = sum((ln.amount for ln in lines), Decimal(0)).quantize(CENT)
     d = h.invoice_date.strftime("%Y-%m-%d")
     body = {"Invoice": [{
-        "AccountingID": h.partner_code, "Invoice": str(h.order_number), "PurchaseOrderNumber": h.po,
-        "InvoiceDate": d, "ShipDate": d, "SCAC": "WIFS", "CarrierPro": f"CRM|{h.order_number}",
-        "Terms": h.terms, "Currency": h.currency, "Total": str(total),
-        "Taxes": [], "Charges": [], "Allowances": [],
-        "Lines": [{"Line": ln.line_no, "BuyerPart": ln.buyer_part, "VendorPart": ln.item_code, "UPC": ln.upc,
-                   "GTIN#": ln.gtin, "QuantityShipped": ln.qty, "UOM": ln.uom, "UnitPrice": str(ln.unit_price)}
-                  for ln in lines],
+        "TransactionType": "810", "AccountingID": h.partner_code, "Invoice": str(h.order_number), "InvoiceDate": d,
+        "PO": h.po, "PODate": h.po_date.strftime("%Y-%m-%d") if h.po_date else "", "DepartmentNumber": "",
+        "BillofLading": f"{h.order_number:09d}", "CarrierPro": f"CRM|{h.order_number}", "SCAC": "WIFS", "ShipVia": "",
+        "ShipTo": _party("ShipTo", "ShiptoCountry", "ShipToZipcode", h.ship_to),
+        "BillTo": _party("Billto", "BilltoCountry", "BilltoZipcode", h.bill_to),
+        "ShipDate": d, "TermsDescription": "NA", "NetDaysDue": 0, "DiscountDaysDue": 0, "DiscountPercent": 0, "Note": "",
+        "Weight": 0, "TotalCasesShipped": float(sum(i.shipped_cases for i in items)), "TaxAmount": "", "ChargeAmount1": "",
+        "ChargeAmount2": "", "AllowancePercent1": "", "AllowanceAmount1": "", "AllowancePercent2": "", "AllowanceAmount2": "",
+        "Items": [{"Line": n, "VendorPart": i.item_code or i.buyer_part or "", "BuyerPart": i.buyer_part or "", "UPC": i.gtin or "",
+                   "Description": i.description or "", "QuantityShipped": i.shipped_cases, "UOM": "CA",
+                   "UnitPrice": float(i.unit_price), "QuantityOrdered": i.ordered_cases, "PackSize": 1,
+                   "ofInnerPacks": i.inner_packs or "", "ItemAllowancePercent": "", "ItemAllowanceAmount": "",
+                   "GTIN#": i.gtin or ""} for n, i in enumerate(items, start=1)],
     }]}
     return json.dumps(body, ensure_ascii=False, indent=1).encode("utf-8")

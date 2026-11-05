@@ -1,9 +1,8 @@
 """The 940 shipping order to the warehouse (FR-OB-20, Appendix A.2 / A.3),
 its validation (FR-OB-29a) and the values it locks (FR-OB-16).
 
-Built only from Appendix A: where A.3 does not give a value's exact form, the
-choice is marked ASSUMPTION and waits for the segment-by-segment replay
-against archived Zoho 940s (AC-OB-25, pending real files).
+Built from Appendix A and settled by the segment-by-segment replay against
+Zoho's 1,215 archived 940s (AC-OB-25, 2026-11-05).
 """
 from __future__ import annotations
 
@@ -22,7 +21,7 @@ GS_VERSION = "006030"
 # A.3: the two N1 parties that never change.
 SHIP_FROM = ("FR", "CANADA ROYAL MILK ULC", "CRM")
 WAREHOUSE = ("WH", "RADIANT COLERAINE WAREHOUSE", "CLN02")
-ID_QUALIFIER = "94"  # ASSUMPTION: as on the 943 (A.4 N1*SF/ST …*94*code)
+ID_QUALIFIER = "94"
 LABEL_WALMART, LABEL_OTHER = "UCC_CRM_WMT", "UCC_CRM_LBW"
 
 
@@ -78,6 +77,7 @@ class Order940:
     contact: dict[str, Any]
     express: bool                # the shipping method says "express"
     lines: tuple[Line940, ...]
+    partner_name: str | None = None  # N9*E1: CRM-940_<number>_<name without spaces>_<PO>
 
 
 @dataclass
@@ -137,7 +137,9 @@ def build_940(o: Order940, control_no: int, now: datetime) -> Built940:
         country = (a.country or "").strip() or "CA"  # AC-OB-30: an empty country is sent as Canada
         if country.upper() in ("CANADA",):
             country = "CA"
-        n1 = segment("N1", code, v(f"{code}.name", a.name, issues), *(("UL", a.gln) if a.gln else ()))  # ASSUMPTION: GLN as UL
+        # Retailers: the 850's ship-to / bill-to code. Shopify: the customer id, on both parties.
+        party_id = a.gln if o.retail else (o.contact or {}).get("customer_id")
+        n1 = segment("N1", code, v(f"{code}.name", a.name, issues), *((ID_QUALIFIER, party_id) if party_id else ()))
         return [n1,
                 segment("N3", v(f"{code}.address1", a.address1, issues), v(f"{code}.address2", a.address2, issues)),
                 segment("N4", v(f"{code}.city", a.city, issues), v(f"{code}.province", a.province, issues),
@@ -151,18 +153,20 @@ def build_940(o: Order940, control_no: int, now: datetime) -> Built940:
     body.append(segment("N1", SHIP_FROM[0], SHIP_FROM[1], ID_QUALIFIER, SHIP_FROM[2]))
     body.append(segment("N1", WAREHOUSE[0], WAREHOUSE[1], ID_QUALIFIER, WAREHOUSE[2]))
     body += party("ST", st)
+    if not o.retail:  # the ship-to's contact, between the two parties
+        c = o.contact or {}
+        body.append(segment("PER", "CN", v("contact.name", c.get("name") or st.name, issues),
+                            "EM" if c.get("email") else "", v("contact.email", c.get("email"), issues),
+                            "TE" if c.get("phone") else "", v("contact.phone", c.get("phone"), issues)))
     body += party("BT", bt if (bt.name or bt.address1) else st)
     if not o.retail:
-        c = o.contact or {}
-        body.append(segment("PER", "IC", v("contact.name", c.get("name") or st.name, issues),
-                            "TE" if c.get("phone") else "", v("contact.phone", c.get("phone"), issues),
-                            "EM" if c.get("email") else "", v("contact.email", c.get("email"), issues)))
         body.append(segment("N9", "8X", "BC"))
         body.append(segment("N9", "E1", v("source_reference", o.source_reference, issues)))
     else:
         label = o.label_code or (LABEL_WALMART if o.walmart else LABEL_OTHER)
         body += [segment("N9", "8X", "BB"),
-                 segment("N9", "E1", f"CRM-940_{o.order_number:09d}"),  # ASSUMPTION: A.3 shows "CRM-940_…"
+                 segment("N9", "E1", v("reference", f"CRM-940_{o.order_number:09d}_{''.join((o.partner_name or o.partner_code).split())}"
+                                                    f"_{o.source_order_number}", issues)),
                  segment("N9", "LB", label),
                  f"N9*LO*{v('dc_number', o.dc_number, issues)}",       # sent even when empty (AC-OB-26)
                  ]
@@ -186,13 +190,14 @@ def build_940(o: Order940, control_no: int, now: datetime) -> Built940:
         body.append(segment("LX", i))
         body.append(segment("W01", ln.qty_ea, "EA", "", "VN", v(f"line {ln.line_no}.item_code", ln.item_code, issues),
                             *(("BP", v(f"line {ln.line_no}.buyer_part", ln.buyer_part, issues)) if ln.buyer_part else ())))
-        if o.retail:  # ASSUMPTION: line N9 qualifiers for item name, GTIN and buyer part
+        if o.retail:
             if ln.item_name:
-                body.append(segment("N9", "ZZ", v(f"line {ln.line_no}.item_name", ln.item_name, issues)))
+                body.append(segment("N9", "E1", v(f"line {ln.line_no}.item_name", ln.item_name, issues)))
             if ln.gtin:
-                body.append(segment("N9", "UP", ln.gtin))
+                body.append(segment("N9", "E2", ln.gtin))
             if ln.buyer_part:
-                body.append(segment("N9", "BP", v(f"line {ln.line_no}.buyer_part", ln.buyer_part, issues)))
+                part = v(f"line {ln.line_no}.buyer_part", ln.buyer_part, issues)
+                body += [segment("N9", "L9", part), segment("N9", "E3", part)]
         total_qty += ln.qty_ea
         total_weight += Decimal(ln.qty_ea) * (ln.weight_lb_per_ea or Decimal(0))
         lines_sent.append({"line_no": ln.line_no, "lx": i, "item_code": ln.item_code, "qty_ea": ln.qty_ea})

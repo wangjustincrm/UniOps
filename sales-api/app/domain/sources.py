@@ -84,6 +84,7 @@ def from_shopify(o: dict[str, Any], *, partner_code: str, partner_abbrev: str | 
     bill_to = _address(o.get("billing_address"))
     if not bill_to or (bill_to.get("country") or "").upper() not in ("CA", "CANADA"):
         bill_to = ship_to  # A.11: replaced by ship-to when missing or outside Canada
+    customer = o.get("customer") or {}
     shipping = (o.get("shipping_lines") or [{}])[0] if o.get("shipping_lines") else {}
     method = shipping.get("code") or shipping.get("title")
     notes = "\n".join(x for x in (o.get("note"), o.get("email"), o.get("phone"), method,
@@ -96,7 +97,11 @@ def from_shopify(o: dict[str, Any], *, partner_code: str, partner_abbrev: str | 
     header = {
         "order_date": _day(o.get("created_at")),
         "ship_to": ship_to, "bill_to": bill_to,
-        "contact": {"email": o.get("email"), "phone": o.get("phone")},
+        # As Zoho's 940 has it (AC-OB-25, its 1,087 Shopify 940s): the order's phone, else the
+        # ship-to's; the Shopify customer id is the N1 id of both parties.
+        "contact": {"email": o.get("email") or customer.get("email"),
+                    "phone": o.get("phone") or (ship_to or {}).get("phone") or customer.get("phone"),
+                    "customer_id": str(customer["id"]) if customer.get("id") else None},
         "notes": notes or None,
         "shipping_method": method,
         "currency": o.get("currency") or "CAD",
@@ -154,6 +159,8 @@ K = {
     "ship_to_name": "ShipToName", "ship_to_address1": "ShipToAddress1", "ship_to_address2": "ShipToAddress2",
     "ship_to_city": "ShipToCity", "ship_to_state": "ShipToState", "ship_to_zip": "ShipToZip",
     "ship_to_country": "ShipToCountry", "bill_to_name": "BillToName", "bill_to_code": "BillToCode",
+    "bill_to_address1": "BillToAddress1", "bill_to_address2": "BillToAddress2", "bill_to_city": "BillToCity",
+    "bill_to_state": "BillToState", "bill_to_zip": "BillToZip", "bill_to_country": "BillToCountry",
     "contact_name": "BuyerName", "contact_phone": "BuyerPhone", "contact_email": "BuyerEmail",
     "notes": ("Note1", "Note2", "Note3", "Note4"),
     "lines": "Item", "lines_a8": "Lines", "line": "Line", "vendor_part": "VendorPart", "buyer_part": "BuyerPart", "upc": "UPC",
@@ -164,7 +171,9 @@ K = {
 SHIP_TO_NESTED = {"ShipToCode": "ShipToCode", "ShipToName": "ShipToName", "ShipToAddress-LineOne": "ShipToAddress1",
                   "ShipToAddress-LineTwo": "ShipToAddress2", "ShipToCity": "ShipToCity", "ShipToState": "ShipToState",
                   "ShipToZipCode": "ShipToZip", "ShipToCountry": "ShipToCountry"}
-BILL_TO_NESTED = {"BillToCode": "BillToCode", "BillToName": "BillToName"}
+BILL_TO_NESTED = {"BillToCode": "BillToCode", "BillToName": "BillToName", "BillToAddress-LineOne": "BillToAddress1",
+                  "BillToAddress-LineTwo": "BillToAddress2", "BillToCity": "BillToCity", "BillToState": "BillToState",
+                  "BillToZipCode": "BillToZip", "BillToCountry": "BillToCountry"}
 # The 850's unit of measure → the Item Master's unit names ("Case" in the real files).
 UOM = {"CA": "CASE", "CS": "CASE", "CASE": "CASE", "EA": "EA", "EACH": "EA"}
 
@@ -197,6 +206,10 @@ def _po(po: dict[str, Any]) -> SourceOrder:
     if not partner or not number:
         raise SourceError(f"a PO without {K['partner']} or {K['po']}")
     requested = _day(po.get(K["requested"])) or _day(po.get(K["dnda"]))  # A.8: falls back to DoNotDeliverAfter
+    # Walmart's 850s give the bill-to's code and name only; Zoho's 940 and 810 then carry the ship-to's address.
+    bill_address = "BillTo" if po.get(K["bill_to_city"]) else "ShipTo"
+    bill = {f: po.get(K[f"{'bill_to' if bill_address == 'BillTo' else 'ship_to'}_{f}"]) for f in
+            ("address1", "address2", "city", "state", "zip", "country")}
     header = {
         "order_date": _day(po.get(K["po_date"])), "requested_delivery_date": requested,
         "do_not_deliver_after": _day(po.get(K["dnda"])), "cancel_date": _day(po.get(K["cancel"])),
@@ -205,7 +218,9 @@ def _po(po: dict[str, Any]) -> SourceOrder:
                     "address1": po.get(K["ship_to_address1"]), "address2": po.get(K["ship_to_address2"]),
                     "city": po.get(K["ship_to_city"]), "province": po.get(K["ship_to_state"]),
                     "zip": po.get(K["ship_to_zip"]), "country": po.get(K["ship_to_country"]) or "CA"},
-        "bill_to": {"name": po.get(K["bill_to_name"]), "code": po.get(K["bill_to_code"])},
+        "bill_to": {"gln": po.get(K["bill_to_code"]), "code": po.get(K["bill_to_code"]), "name": po.get(K["bill_to_name"]),
+                    "address1": bill["address1"], "address2": bill["address2"], "city": bill["city"],
+                    "province": bill["state"], "zip": bill["zip"], "country": bill["country"] or "CA"},
         "contact": {"name": po.get(K["contact_name"]), "phone": po.get(K["contact_phone"]),
                     "email": po.get(K["contact_email"])},
         "notes": "\n".join(str(po[n]) for n in K["notes"] if po.get(n)) or None,

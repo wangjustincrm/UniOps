@@ -278,13 +278,36 @@ async def test_an_810_is_put_through_the_guard_and_a_resend_keeps_one_document(p
     assert path.startswith(f"/prod/in/810-LBL-{o.order_number}-PO-1-")
     import json
     body = json.loads(data)["Invoice"][0]
-    assert (body["AccountingID"], body["Invoice"], body["InvoiceDate"], body["Lines"][0]["QuantityShipped"]) == (
+    assert (body["AccountingID"], body["Invoice"], body["InvoiceDate"], body["Items"][0]["QuantityShipped"]) == (
         "LBL", str(o.order_number), "2026-11-05", 10)
     await send(p6, out.id)  # resend: stays Sent
     await p6.worker.run_once()
     [inv] = await p6.q("SELECT send_count FROM sales_invoices")
     assert inv["send_count"] == 2 and await inv_status(p6, o.id) == "Sent"
     assert await p6.q("SELECT count(*) n FROM sales_documents WHERE kind = '810_JSON'") == [{"n": 1}]
+
+
+async def test_a_line_not_shipped_stays_on_the_810_with_zero_as_zoho_sends_it(p6):
+    await run_850(p6.edi.env, {"PurchaseOrder": [po("LBL", "PO-Z", [
+        {"Line": 1, "BuyerPart": "L-555", "Quantity": 10, "UOM": "CA", "UnitPrice": "50"},
+        {"Line": 2, "UPC": "062639300029", "Quantity": 2, "UOM": "CA", "UnitPrice": "70"}], ship_to_gln="0012345000011")]})
+    o, _ = await p6.edi.env.order("PO-Z")
+    async with p6.factory(SYSTEM_ACTOR) as u:
+        (await u.session.get(Order, o.id)).fulfillment_status = F.ACCEPTED_940.value
+        await u.commit()
+    await store_945(p6, x945(f"{o.order_number:09d}", ["LX*1", "W12*CP*60*60*0*EA**VN*CF0092", "N9*LT*LOT-1"],
+                             header=["DTM*011*20261102"], ctl="900000777"), "945-z.edi")
+    await p6.ships.process_945s()
+    await p6.inv.advance()
+    out = await confirm(p6, o.id)
+    await send(p6, out.id)
+    await p6.worker.run_once()
+    [data] = [d for p, d in p6.store.files.items() if "/810-" in p]
+    import json
+    inv = json.loads(data)["Invoice"][0]
+    assert [(i["Line"], i["VendorPart"], i["QuantityShipped"], i["QuantityOrdered"], i["UnitPrice"]) for i in inv["Items"]] == [
+        (1, "CF0092", 10, 10, 50.0), (2, "CF0010", 0, 2, 70.0)]
+    assert inv["TotalCasesShipped"] == 10.0 and inv["PO"] == "PO-Z" and inv["ShipTo"]["ShipToCode"] == "0012345000011"
 
 
 async def email_partner(t, cc="ar@crm.example"):

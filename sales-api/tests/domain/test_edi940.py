@@ -1,6 +1,6 @@
 """The 940 per Appendix A.2/A.3 and FR-OB-29a, and reading X12 (FR-OB-26) and
-997s (A.5, FR-OB-22a). Built only from Appendix A — the segment-by-segment
-replay against archived Zoho 940s (AC-OB-25) waits for real files."""
+997s (A.5, FR-OB-22a). The shapes below were settled by the segment-by-segment
+replay against Zoho's archived 940s (AC-OB-25, 2026-11-05)."""
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -46,11 +46,31 @@ def test_a_shopify_940_follows_appendix_a3():
     assert seg(b, "W01") == [["W01", "60", "EA", "", "VN", "CF0092"]]
     assert ["N9", "8X", "BC"] in seg(b, "N9") and ["N9", "E1", "SHP-9302"] in seg(b, "N9")
     assert seg(b, "W66") == [["W66", "PP", "U", "", "", "GND", "", "", "", "", "PRLA"]]
-    assert seg(b, "PER")[0][:3] == ["PER", "IC", "Ana Levesque"]
+    assert seg(b, "PER") == [["PER", "CN", "Ana Levesque", "EM", "a@b.example", "TE", "514 555 0100"]]
     assert seg(b, "G62") == [["G62", "10", "20261030"]]  # no requested date on a Shopify order: only "today"
     assert ["N1", "BT", "Ana Levesque"] in seg(b, "N1")  # an empty bill-to is the ship-to
     assert b.issues.changed and "Montréal → Montreal" in " ".join(b.issues.changed)  # noted on the document
     assert build_940(shopify(express=True), 18, NOW).content.count(b"*EXP*****PRLA") == 1
+
+
+def test_the_shopify_customer_id_is_the_n1_id_and_the_contact_sits_between_the_parties():
+    b = build_940(shopify(contact={"email": "a@b.example", "customer_id": "10995500000000"}), 19, NOW)
+    order = [s[0] + (s[1] if s[0] == "N1" else "") for s in segments(b.content) if s[0] in ("N1", "N3", "N4", "PER")]
+    assert order == ["N1FR", "N1WH", "N1ST", "N3", "N4", "PER", "N1BT", "N3", "N4"]
+    assert ["N1", "ST", "Ana Levesque", "94", "10995500000000"] in seg(b, "N1")
+    assert ["N1", "BT", "Ana Levesque", "94", "10995500000000"] in seg(b, "N1")
+
+
+def test_retail_parties_lines_and_reference_as_zoho_sends_them():
+    b = build_940(retail(partner_name="Overwaitea Food Group", ship_to=Address(
+        name="DC", address1="1 Road", city="Toronto", province="ON", zip="M1M 1M1", country="CA", gln="0000000000028"),
+        bill_to=Address(name="HQ", address1="2 Road", city="Ottawa", province="ON", zip="K1K 1K1", gln="0000000000099"),
+        lines=(line(1, part="050825074"),)), 22, NOW)
+    assert ["N1", "ST", "DC", "94", "0000000000028"] in seg(b, "N1") and ["N1", "BT", "HQ", "94", "0000000000099"] in seg(b, "N1")
+    assert ["N9", "E1", "CRM-940_000000104_OverwaiteaFoodGroup_PO-778"] in seg(b, "N9")
+    assert seg(b, "N9")[-4:] == [["N9", "E1", "Formula 900 g"], ["N9", "E2", "10062639300019"], ["N9", "L9", "050825074"],
+                                 ["N9", "E3", "050825074"]]
+    assert seg(b, "PER") == []
 
 
 def test_a_retail_940_carries_lo_and_dp_even_empty_and_mr_only_for_walmart_0020():

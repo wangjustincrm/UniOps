@@ -13,6 +13,7 @@ import pytest_asyncio
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from app.domain.intake import classify
 from app.integrations import sftp as sftp_mod
 from app.integrations.epms_tasks import shared_tasks_table
 from app.integrations.sftp import FakeSftp, SftpAuthFailed
@@ -45,7 +46,8 @@ def x12(code: str, control: str = "000000123") -> bytes:
 
 
 PO_OK = '{"PurchaseOrder":[{"TradingPartner":"WMT","ShipTo":{"City":"Montréal"}}]}'.encode()
-PO_BROKEN = b'{"PurchaseOrder":[{"Note1":"line one\r\nline two"}]}'  # literal CR/LF: not JSON (AC-OB-01)
+PO_BROKEN = b'{"PurchaseOrder":[{"Note1":"line one'  # cut off: not JSON (AC-OB-01)
+PO_CONTROL_CHARS = b'{"PurchaseOrder":[{"Note1":"line one\r\nline two"}]}'  # raw CR/LF in a string: every real Walmart 850
 
 
 class Fake(FakeSftp):
@@ -123,13 +125,17 @@ async def test_ac01_unreadable_850_is_stored_as_is_and_raises_a_task(env):
     r = await env.intake.run_pass(c)
     assert counts(r) == {"listed": 1, "stored": 1} and r.balanced
     [doc] = await env.q("SELECT content, kind, processing_status, error FROM sales_documents")
-    assert bytes(doc["content"]) == PO_BROKEN  # the original bytes, CR/LF and all
+    assert bytes(doc["content"]) == PO_BROKEN  # the original bytes
     assert (doc["kind"], doc["processing_status"]) == ("OTHER", "Pending")
     assert doc["error"].startswith("not valid JSON")
     [task] = await env.q("SELECT type, document_type, document_number, notified_at FROM tasks")
     assert (task["type"], task["document_type"]) == ("sales_unreadable_file", "sales")
     assert task["document_number"].startswith("SALES:unreadable_file:")
     assert task["notified_at"] is not None  # external email off: written as already notified (§3.5)
+
+
+def test_raw_control_characters_inside_a_string_still_make_an_850():
+    assert classify(PO_CONTROL_CHARS).kind == "850_JSON"  # strict JSON refused all 67 archived Walmart 850s
 
 
 async def test_ac02_accented_address_stores_and_rereads_intact(env):

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
@@ -38,14 +39,15 @@ IGNORED: dict[str, tuple[int, ...]] = {
 IGNORED_QUALIFIED: dict[tuple[str, str], tuple[int, ...]] = {
     ("G62", "10"): (2, 3, 4),  # requested ship date (+ time) = the day the file is made
     ("G62", "38"): (2, 3, 4),  # ship-not-later-than = the day the file is made
-    ("N9", "E1"): (2,),        # CRM-940_<9-digit>: each system's internal number
 }
+INTERNAL_REFERENCE = re.compile(r"^(CRM-940_)\d+(_.*)$")  # N9*E1: only the number in it is each system's own
 
 
 def ignore_rules() -> list[str]:
     """The masked fields, readable (shown on the page)."""
     out = [f"{seg} {', '.join(f'{seg}{p:02d}' for p in pos)}" for seg, pos in IGNORED.items()]
     out += [f"{seg}*{q}: {', '.join(f'{seg}{p:02d}' for p in pos)}" for (seg, q), pos in IGNORED_QUALIFIED.items()]
+    out.append("N9*E1: the number in CRM-940_<number>_…")
     return out
 
 
@@ -60,6 +62,8 @@ def masked(seg: list[str]) -> list[str]:
     seg = _trim(seg)
     positions = IGNORED.get(seg[0], ()) + IGNORED_QUALIFIED.get((seg[0], seg[1] if len(seg) > 1 else ""), ())
     out = [MASK if i in positions else v for i, v in enumerate(seg)]
+    if seg[0] == "N9" and len(seg) > 2 and seg[1] == "E1":
+        out[2] = INTERNAL_REFERENCE.sub(rf"\1{MASK}\2", seg[2])
     while len(out) > 1 and out[-1] == MASK:
         out.pop()  # an ignored element at the end may be present on one side only (a G62 time)
     return out

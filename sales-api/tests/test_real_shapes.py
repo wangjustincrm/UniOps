@@ -68,6 +68,15 @@ def test_a_real_997_is_group_level_only():
     assert (g.functional_id, g.group_control, g.code, g.sets, g.group_only, g.accepted) == ("OW", "1008646", "A", [], True, True)
 
 
+def test_a_shopify_contact_is_the_orders_phone_else_the_ship_tos_and_the_customer_id():
+    from app.domain.sources import from_shopify
+    base = {"id": 1, "name": "#1", "email": "a@b.example", "customer": {"id": 77, "phone": "3"},
+            "shipping_address": {"name": "A", "phone": "2"}, "line_items": []}
+    get = lambda o: from_shopify(o, partner_code="S", partner_abbrev="SHP", cutoff=None).header["contact"]  # noqa: E731
+    assert get(base | {"phone": "1"}) == {"email": "a@b.example", "phone": "1", "customer_id": "77"}
+    assert get(base)["phone"] == "2"
+
+
 def test_a_real_850_item_list_nested_ship_to_and_bill_to_case_and_dates():
     [src] = from_850(json.loads(fixture("truecommerce_850_real_shape.json")))
     assert (src.partner_code, src.source_order_id) == ("LBL", "4800000001")
@@ -75,7 +84,13 @@ def test_a_real_850_item_list_nested_ship_to_and_bill_to_case_and_dates():
     assert (h["order_date"], h["requested_delivery_date"]) == (date(2026, 11, 3), date(2026, 11, 10))
     assert h["ship_to"] == {"gln": "0000000000028", "name": "SAMPLE DISTRIBUTION CENTRE", "address1": "3 SAMPLE AVENUE",
                             "address2": None, "city": "BRAMPTON", "province": "ON", "zip": "L6T 1A1", "country": "CA"}
-    assert h["bill_to"] == {"name": "SAMPLE BUYER", "code": "0000000000099"}
+    assert (h["bill_to"]["name"], h["bill_to"]["code"], h["bill_to"]["gln"]) == ("SAMPLE BUYER", "0000000000099", "0000000000099")
+    assert h["bill_to"]["address1"] == "4 SAMPLE STREET"
+    # Walmart's 850s give only a code and a name: the ship-to's address is carried, as in Zoho's 940 and 810
+    po = json.loads(fixture("truecommerce_850_real_shape.json"))["PurchaseOrder"][0]
+    po["BillTo"] = {"BillToCode": "0000000000099", "BillToName": "SAMPLE BUYER"}
+    bt = from_850({"PurchaseOrder": [po]})[0].header["bill_to"]
+    assert (bt["name"], bt["address1"], bt["zip"]) == ("SAMPLE BUYER", h["ship_to"]["address1"], h["ship_to"]["zip"])
     assert [(ln.line_no, ln.quantity, ln.unit, ln.inner_packs, ln.identifiers["upc"], ln.identifiers["description"])
             for ln in src.lines] == [(10, 200, "CASE", 6, "628347940140", "SAMPLE ITEM ONE"),
                                      (20, 12, "CASE", 12, "062639300029", "SAMPLE ITEM TWO")]

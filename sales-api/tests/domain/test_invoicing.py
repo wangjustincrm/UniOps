@@ -3,7 +3,7 @@ import json
 from datetime import date
 from decimal import Decimal
 
-from app.domain.invoicing import Header810, LineIn, build_810, build_lines
+from app.domain.invoicing import Header810, Item810, LineIn, build_810, build_lines
 
 
 def line(**kw):
@@ -33,10 +33,21 @@ def test_no_case_unit_or_no_price_is_a_problem_and_zero_delivered_is_left_out():
 
 
 def test_the_810_names_what_a9_names():
-    b = build_lines([line()])
-    data = json.loads(build_810(Header810("LBL", 1000123, "PO-1", date(2026, 11, 5), "Net 30", "CAD"), b.lines))
+    ship = {"name": "DC", "address1": "1 Road", "city": "Toronto", "province": "ON", "zip": "M1M 1M1", "country": "CA", "gln": "28"}
+    bill = {"name": "HQ", "address1": "2 Road", "city": "Ottawa", "province": "ON", "zip": "K1K 1K1", "code": "99"}
+    data = json.loads(build_810(Header810("LBL", 1000123, "PO-1", date(2026, 11, 5), date(2026, 10, 19), ship, bill), [
+        Item810("CF0092", "B-1", "10062639300019", "Formula", 10, 10, Decimal("108.6"), 6),
+        Item810("CF0093", "B-2", "10062639300026", "Formula 2", 0, 60, Decimal("126.6"), 6)]))
     [inv] = data["Invoice"]
-    assert (inv["AccountingID"], inv["Invoice"], inv["InvoiceDate"], inv["ShipDate"], inv["SCAC"], inv["CarrierPro"]) == (
-        "LBL", "1000123", "2026-11-05", "2026-11-05", "WIFS", "CRM|1000123")
-    assert inv["Taxes"] == inv["Charges"] == inv["Allowances"] == []
-    assert inv["Lines"][0]["QuantityShipped"] == 10 and inv["Lines"][0]["UOM"] == "CA" and inv["Total"] == "500.00"
+    assert (inv["TransactionType"], inv["AccountingID"], inv["Invoice"], inv["InvoiceDate"], inv["ShipDate"], inv["PO"], inv["PODate"]) == (
+        "810", "LBL", "1000123", "2026-11-05", "2026-11-05", "PO-1", "2026-10-19")
+    assert (inv["SCAC"], inv["CarrierPro"], inv["BillofLading"], inv["TermsDescription"], inv["NetDaysDue"]) == (
+        "WIFS", "CRM|1000123", "001000123", "NA", 0)
+    assert (inv["ShipTo"]["ShipToCode"], inv["ShipTo"]["ShipToZipcode"], inv["ShipTo"]["ShiptoCountry"]) == ("28", "M1M 1M1", "CA")
+    assert (inv["BillTo"]["BilltoCode"], inv["BillTo"]["BilltoCity"], inv["BillTo"]["BilltoCountry"]) == ("99", "Ottawa", "CA")
+    assert inv["TotalCasesShipped"] == 10.0
+    one, two = inv["Items"]  # a line not shipped stays on the invoice with 0
+    assert (one["Line"], one["VendorPart"], one["UPC"], one["GTIN#"], one["QuantityShipped"], one["QuantityOrdered"],
+            one["UOM"], one["UnitPrice"], one["PackSize"], one["ofInnerPacks"]) == (
+        1, "CF0092", "10062639300019", "10062639300019", 10, 10, "CA", 108.6, 1, 6)
+    assert (two["Line"], two["QuantityShipped"], two["QuantityOrdered"]) == (2, 0, 60)

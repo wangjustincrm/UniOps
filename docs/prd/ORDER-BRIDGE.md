@@ -496,7 +496,7 @@ Each criterion is tested before cutover, preferably by **replaying real archived
 
 | ID | Criterion | Verifies |
 | --- | --- | --- |
-| AC-OB-01 | An 850 that is not valid JSON (literal CR/LF in Note1) is stored in its original bytes and raises a task. | FR-OB-70 |
+| AC-OB-01 | An 850 that cannot be read as JSON is stored in its original bytes and raises a task. Raw control characters inside a string (literal CR/LF in a note, all 67 archived Walmart 850s) are read, not refused (replay 2026-11-05). | FR-OB-70 |
 | AC-OB-02 | An address with an accented character (Montréal) stores and re-reads intact. | FR-OB-70 |
 | AC-OB-03 | Two files with different names and identical bytes produce one stored document and one reported duplicate, and are applied once. | FR-OB-71 |
 | AC-OB-04 | A second pass over an unchanged directory downloads nothing. | FR-OB-71 |
@@ -709,11 +709,11 @@ This appendix records the message formats the Zoho application produces and read
 | Segment | Shopify order | Retailer order |
 | --- | --- | --- |
 | W05 | `W05*N*<Shopify order number>` | `W05*N*<9-digit internal number>*<retailer PO>` |
-| N1 | FR = CANADA ROYAL MILK ULC / CRM; WH = RADIANT COLERAINE WAREHOUSE / CLN02; ST and BT from the order; PER contact sent | same, without PER |
-| N9 | `8X*BC`, `E1*<source reference, e.g. SHP-9275>` | `8X*BB`, `E1*CRM-940_…`, `LB*<label code>`, `LO*<DC number>` (sent even when empty), `MR*0020` (Walmart order type 0020 only), `DP*<department>` (sent even when empty) |
+| N1 | FR = CANADA ROYAL MILK ULC / CRM; WH = RADIANT COLERAINE WAREHOUSE / CLN02; ST and BT from the order, `*94*<Shopify customer id>` on both; `PER*CN*<ship-to name>*EM*<email>*TE*<phone>` between ST and BT (the order's phone, else the ship-to's) | same, `*94*<850 code>` on ST and BT, without PER; a bill-to with no address carries the ship-to's |
+| N9 | `8X*BC`, `E1*<source reference, e.g. SHP-9275>` | `8X*BB`, `E1*CRM-940_<9-digit number>_<partner name without spaces>_<PO>`, `LB*<label code>`, `LO*<DC number>` (sent even when empty), `MR*0020` (Walmart order type 0020 only), `DP*<department>` (sent even when empty) |
 | G62 | 01 = requested delivery date, 10 = today | also 38 = today, 79 = requested delivery date |
 | W66 | `W66*PP*U***GND*****PRLA` or `EXP` when the shipping method contains "express" (Purolator) | `W66*PP*LT********WIFS` |
-| LX / W01 | `W01*<qty EA>*EA**VN*<Item_Code>*BP*<buyer part>` | same, plus line-level N9s with item name, GTIN and buyer part |
+| LX / W01 | `W01*<qty EA>*EA**VN*<Item_Code>*BP*<buyer part>` | same, plus line-level `N9*E1*<item name>`, `N9*E2*<GTIN>`, `N9*L9*<buyer part>`, `N9*E3*<buyer part>` |
 | W76 | total quantity and total gross weight in LB (quantity × gross weight per can) | same |
 
 Label code: `UCC_CRM_WMT` for Walmart, otherwise `UCC_CRM_LBW`. Items the warehouse does not hold (for example the bib CRMMARK002) are left off the 940. The source reference is the partner abbreviation, a hyphen and the source order number.
@@ -795,6 +795,7 @@ IEA*1*000016468~
 ### A.9 810 JSON (TrueCommerce, outbound)
 
 - Shape `{"Invoice":[...]}`; AccountingID = partner code; Invoice = internal order number; InvoiceDate = ShipDate = delivery date; SCAC `WIFS`; CarrierPro `CRM|<number>`; tax, charges and allowances empty.
+- Settled by the replay of the 102 archived 810s (2026-11-05): TransactionType `810`, PO, PODate, BillofLading `<number, 9 digits>`, ShipTo and BillTo objects (the 850's; a bill-to with no address carries the ship-to's), TermsDescription `NA` with 0 days (as sent since 2026-08-11), Weight 0, TotalCasesShipped, empty DepartmentNumber, ShipVia, Note and tax / charge / allowance fields. `Items`: every line of the order, also one not shipped (QuantityShipped 0), numbered from 1, with VendorPart, BuyerPart, UPC (= the GTIN), GTIN#, Description (Item Master), UOM `CA`, UnitPrice, QuantityOrdered, PackSize 1, ofInnerPacks (the case factor).
 - Line QuantityShipped = (shipped − cancelled − backordered), converted back to the order unit by case pack and truncated to an integer.
 
 ### A.10 File names

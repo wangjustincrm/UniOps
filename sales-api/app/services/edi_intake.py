@@ -52,7 +52,7 @@ class EdiIntake:
         doc = await s.get(Document, doc_id, with_for_update=True)
         content = (await s.execute(select(Document.content).where(Document.id == doc_id))).scalar_one()
         INBOUND_FILE.transition(doc, InboundFile.PROCESSING, actor=uow.actor, events=uow.events, reason="parse 850")
-        orders = from_850(json.loads(decode(content)))
+        orders = from_850(json.loads(decode(content), strict=False))  # as classify() reads it
         sync = OrderSync(uow, self.tasks)
         for src in orders:
             await sync.upsert(src, connection_id=doc.connection_id, document_id=doc.id, received_at=self.clock())
