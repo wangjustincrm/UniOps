@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -156,7 +156,10 @@ async def create_claim(
     user_name: str,
     department_id: uuid.UUID | None,
     department_name: str,
+    prepared_by: uuid.UUID | None = None,
 ) -> ExpenseClaim:
+    """`user_id` is the claimant. `prepared_by` is who filed it, when that is
+    someone else (a TRV filed on a traveler's behalf)."""
     if data.claim_type == "TRV":
         await _check_trv_lines(db, data.travel_from_date, data.travel_to_date,
                                data.travel_country, data.currency, data.line_items)
@@ -184,7 +187,7 @@ async def create_claim(
         leave_to_date=data.leave_to_date,
         travel_application_id=data.travel_application_id,
         status="draft",
-        created_by=user_id,
+        created_by=prepared_by or user_id,
     )
     db.add(claim)
     await db.flush()
@@ -406,18 +409,41 @@ async def count_pending(db: AsyncSession) -> int:
     return result.scalar_one()
 
 
+def is_preparer(claim: ExpenseClaim, user_id: uuid.UUID) -> bool:
+    """Whether `user_id` filed this TRV on a traveler's behalf.
+
+    A TRV's claimant is always a traveler, the person paid; the TRA's applicant
+    may not be one (TRA-20261102-0001), so `created_by` can differ from
+    `employee_id`. TRV only: no other claim type is filed on behalf, so this
+    grants nothing on those.
+    """
+    return claim.claim_type == "TRV" and claim.created_by == user_id
+
+
+def traveler_claim_ids(user_id: uuid.UUID):
+    """Subquery of the TRAs that list `user_id` as a traveler."""
+    return select(ExpenseTraveler.claim_id).where(ExpenseTraveler.user_id == user_id)
+
+
+async def is_listed_traveler(db: AsyncSession, claim_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+    q = select(func.count()).select_from(ExpenseTraveler).where(
+        ExpenseTraveler.claim_id == claim_id, ExpenseTraveler.user_id == user_id)
+    return (await db.execute(q)).scalar_one() > 0
+
+
 async def list_eligible_travel_apps(db: AsyncSession, user_id: uuid.UUID) -> list[ExpenseClaim]:
-    """Approved TRAs on which `user_id` is a listed traveler (for the TRV picker)."""
+    """Approved TRAs `user_id` travels on or applied for (for the TRV picker)."""
     q = (
         select(ExpenseClaim)
-        .join(ExpenseTraveler, ExpenseTraveler.claim_id == ExpenseClaim.id)
+        .options(selectinload(ExpenseClaim.travelers))
         .where(ExpenseClaim.claim_type == "TRA",
                ExpenseClaim.status == "approved",
-               ExpenseTraveler.user_id == user_id)
+               or_(ExpenseClaim.employee_id == user_id,
+                   ExpenseClaim.id.in_(traveler_claim_ids(user_id))))
         .order_by(ExpenseClaim.travel_from_date.desc().nullslast(),
                   ExpenseClaim.created_at.desc())
     )
-    return list((await db.execute(q)).scalars().unique().all())
+    return list((await db.execute(q)).scalars().all())
 
 
 

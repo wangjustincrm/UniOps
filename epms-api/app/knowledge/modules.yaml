@@ -160,6 +160,14 @@ modules:
         straight back to the approver who returned it — the approvals given
         before that stand and are not asked for again.
       - >-
+        A Travel Expense claim is always for a traveller listed on an approved
+        Travel Application, and is paid to that traveller. Travellers file
+        their own; the person who applied can also file for any traveller on
+        it by choosing them under Claim for, and both can then see, edit and
+        submit it. Listed travellers see the application under Travel
+        Applications once it is submitted, read-only; only the applicant can
+        edit or delete it.
+      - >-
         Nobody approves their own claim or travel application. When the
         person who raised it is the only one who holds an approval step — a
         Department Manager's own claim at the Department Manager step, for
