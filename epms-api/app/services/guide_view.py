@@ -84,6 +84,7 @@ TASK_TYPE_LABELS: dict[str, str] = {
     "revise_po_signoff": "Revise PO Sign-off",
     "import_erp_vendor": "Import ERP Vendor",
     "resolve_nc_sync_error": "Resolve NC Sync Error",
+    "resolve_nc_person_todos": "NC Person Updates",
     "resolve_jv_validation": "Resolve JV Validation Findings",
     "resolve_ap_duplicate_invoice": "Resolve Duplicate NC Invoices",
 }

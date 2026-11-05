@@ -1,8 +1,10 @@
 # EPMS — Product Requirements Document
-**Version:** 2.47
+**Version:** 2.48
 **Date:** 2026-11-05
 **Status:** In Production
 
+> **v2.48 (2026-11-05)** — Users and Departments moved in Portal from Admin to the new **MDM** group (PORTAL.md v2.6). The EPMS Admin "User Management has moved" card now opens Portal → MDM → Users (§3.6.3, §3.6.3a).
+>
 > **v2.47 (2026-11-05)** — Rules settled in the procurement test round. **Goods receipt:** the New GR form shows open quantities; over-receipt needs a reason (GR-P-002, GR-P-003a); a GR with no received line is refused; the damage-report task closes on a recorded return or credit (GR-P-004); who may cancel a GR (GR-C-004). **Reminders:** GR acknowledgement reminder and escalation (GR-N-002, GR-N-003), Collection Confirmation Required and collection reminders (PA-013, GR-N-006, §3.6.4), budget threshold alerts (BUDGET.md BCFG-008); new switches in Notification Settings (§3.9.4); the PA-approved email (PA-007). **PA:** the approval chain is the configured one, shown by its configured step names (§3.15.3); a prepayment's pre-tax amount is its % of the PO (§3.15.2) — staged prepayments and the cumulative cap (PP-002/003) unchanged; agreement PAs take their lines from the invoices (PA-018); Settle is offered only to users who may pay the PO (PP-015); the *create_pa* task reopens when the last live PA is rejected or cancelled (INV-013). **Invoice:** an invoice on a live PA is locked (INV-EDIT-012); "Request credit note" keeps the task open (INV-3WM-005); the cumulative variance is shown (INV-3WM-001). **Others:** POs have payment terms (PO-016); Agreement Consumed and Not-to-Exceed are pre-tax (AGR-002, AGR-005); Direct PA shows the budget for reference (DPA-004, DPA-005); Copy PR carries the department (§3.2.3); Approver dashboard figures (§3.7); submission checks every remaining step (§3.3); double actions are refused (§3.3.3); PR and GR scope of an unrestricted role (§1.3); Task Inbox search and filters (§3.7.1); tabs refresh on return (UI-TAB-004). **Prepayments:** a settlement or balance PA may take the invoice its prepayment holds (PA-012). **Invoices:** the rounding of a re-sent line total does not lock out an edit (INV-EDIT-012). Migrations: `gr01_over_receipt`, `gr02_damage_resolution`, `po01_po_payment_terms`, `ba01_budget_alert_states`, `agr01_consumed_pretax` (rewrites each agreement's Consumed to pre-tax; old values kept in a backup table).
 
 > **v2.46 (2026-10-30)** — Direct PA (§3.22, DPA-004): an invoice linked to a PO with **Link to PO** defaults the Direct PA's department and cost center to the PO's PR and its budget account to the PO's budget code (the PR's when the PO has none); still editable. NC orders carry none of this, so their invoices keep the creator's department.
@@ -901,16 +903,16 @@ SMTP configuration is no longer part of Security: the task-notification SMTP pro
 
 #### 3.6.3 User Management
 
-Moved to **Portal → Admin → User Management** (EPMS shows a "moved" card).
+Moved to **Portal → MDM → Users** (EPMS shows a "moved" card that opens it).
 - Full user table: name, email, role, department, Teams account, active status, created date
 - Add user / edit user / deactivate / delete with confirmation
 - **Reset Password**: portal modal (rendered via `createPortal` into `document.body`) to prevent browser password-manager autofill from targeting the user search box; `autoComplete="new-password"` on input; supports Enter key. Any admin-set, reset or imported password forces the user to choose a new password at next sign-in (§3.1)
 - **CSV Export / Import**: export to `users.csv`; import matches by email, creates or updates; new accounts receive the company-standard initial password if the column is blank
 - **Automatic approval re-sync:** changing a user's role, department, supervisor or active flag, or deactivating the user, automatically re-routes that user's in-flight approvals (department-level approval tasks pinned to the old holder move to the new holder). The save reports how many documents were re-synced; a re-sync failure does not undo the user edit. The same re-sync runs when roles are granted in Access Control and when Approval Routing is saved (§3.3.8).
 
-#### 3.6.3a Departments — MOVED to Portal → Admin → Departments
+#### 3.6.3a Departments — MOVED to Portal → MDM → Departments
 
-As of 2026-05-27 ownership of Departments has moved to **mdm-api** (the master-data service) and the management UI lives in **Portal → Admin → Departments**. The EPMS Admin Panel no longer exposes Departments.
+As of 2026-05-27 ownership of Departments has moved to **mdm-api** (the master-data service) and the management UI lives in **Portal → MDM → Departments** (Portal → Admin until 2026-11-03). The EPMS Admin Panel no longer exposes Departments.
 
 - Source of truth: `mdm-api` — endpoints `GET|POST|PATCH|DELETE /mdm/v1/departments`
 - Write access: `system_admin | finance_manager | ap_clerk` (configured on the mdm-api endpoint dependencies)

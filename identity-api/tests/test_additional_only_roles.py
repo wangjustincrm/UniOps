@@ -39,6 +39,9 @@ async def seeded(db_session):
         "INSERT INTO role_defs(code,label,sort,is_active,assignable_as_primary) "
         "VALUES ('payment_officer','Payment Officer',18,true,false) "
         "ON CONFLICT (code) DO NOTHING"))
+    await db_session.execute(sa.text(
+        "INSERT INTO role_defs(code,label,sort,is_active,assignable_as_primary) "
+        "VALUES ('hr','HR',853,true,false) ON CONFLICT (code) DO NOTHING"))
     await db_session.commit()
     yield
 
@@ -63,11 +66,12 @@ async def test_defs_expose_assignable_as_primary(seeded):
     roles = {row["code"]: row for row in r.json()["roles"]}
     assert roles["erp_pa_officer"]["assignable_as_primary"] is False
     assert roles["payment_officer"]["assignable_as_primary"] is False
+    assert roles["hr"]["assignable_as_primary"] is False
     assert roles["requester"]["assignable_as_primary"] is True
     assert roles["ap_clerk"]["assignable_as_primary"] is True
 
 
-@pytest.mark.parametrize("code", ["erp_pa_officer", "payment_officer"])
+@pytest.mark.parametrize("code", ["erp_pa_officer", "payment_officer", "hr"])
 async def test_additional_only_role_rejected_as_primary(seeded, target_user, code):
     async with _admin() as c:
         r = await c.put(f"{BASE}/authz/users/{target_user}/roles",
@@ -76,7 +80,7 @@ async def test_additional_only_role_rejected_as_primary(seeded, target_user, cod
     assert code in str(r.json()["detail"])
 
 
-@pytest.mark.parametrize("code", ["erp_pa_officer", "payment_officer"])
+@pytest.mark.parametrize("code", ["erp_pa_officer", "payment_officer", "hr"])
 async def test_additional_only_role_still_allowed_as_additional(seeded, target_user, code, db_session):
     async with _admin() as c:
         r = await c.put(f"{BASE}/authz/users/{target_user}/roles",

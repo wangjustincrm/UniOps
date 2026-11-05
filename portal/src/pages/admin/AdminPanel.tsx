@@ -1,8 +1,8 @@
-import { useState, useRef } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { useEffect, useState, useRef } from 'react'
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Building2, ShieldCheck, Users, CreditCard, Bell, Landmark,
+  Building2, ShieldCheck, CreditCard, Bell,
   Plus, Pencil, Trash2, X, Check, Eye, EyeOff, Search,
   CheckCircle2, AlertCircle, Loader2, ArrowLeft,
   Download, Upload, ChevronLeft, ChevronRight, FileText,
@@ -113,6 +113,7 @@ const ROLE_LABELS: Record<string,string> = {
   erp_pa_officer:'ERP PA Officer',
   payment_officer:'Payment Officer',
   finance_director:'Finance Director',
+  hr:'HR',
   system_admin:'System Admin',
 }
 
@@ -386,7 +387,7 @@ function SecuritySettings() {
 
 // ── 3. Department Management ──────────────────────────────────────────────────
 
-function DepartmentManagement() {
+export function DepartmentManagement() {
   // Source of truth lives in mdm-api (master-data service). The shared Postgres
   // DB means epms-api / budget-api still read the same physical rows.
   const qc = useQueryClient()
@@ -508,7 +509,7 @@ const PAGE_SIZE = 20
 
 interface ImportResult { created: number; updated: number; errors: string[] }
 
-function UserManagement() {
+export function UserManagement() {
   const qc = useQueryClient()
 
   // ── Filters + pagination ──
@@ -567,6 +568,26 @@ function UserManagement() {
     setShowPwd(false); setError(''); setModal({ mode: 'edit', user: u })
   }
 
+  // Staff → Create user: the employee's data fills the form as defaults (EMPLOYEES.md
+  // UGEN-002). Every field stays editable except the ERP code, which is the link.
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const fromEmployee = searchParams.get('from_employee')
+  const { data: employee } = useQuery<{ employee_number: string; display_name: string; work_email: string | null; department_id: string | null }>({
+    queryKey: ['staff', 'detail', fromEmployee],
+    queryFn: () => mdmApi.get(`/staff/${fromEmployee}`),
+    enabled: !!fromEmployee,
+  })
+  useEffect(() => {
+    if (!employee) return
+    setForm({ email: employee.work_email ?? '', full_name: employee.display_name, role: 'requester', department_id: employee.department_id ?? '', supervisor_id: '', password: '', is_active: true, teams_account: '', erp_person_code: employee.employee_number })
+    setShowPwd(false); setError(''); setModal({ mode: 'create' })
+  }, [employee])
+  const closeModal = () => {
+    setModal(null)
+    if (fromEmployee) navigate(`/mdm/staff/${fromEmployee}`)
+  }
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault(); setError(''); setSaving(true)
     try {
@@ -574,7 +595,8 @@ function UserManagement() {
       if (modal?.mode === 'create') { body.password = form.password; body.erp_person_code = form.erp_person_code.trim(); await epmsApi.post('/users', body) }
       else { if (form.password) body.password = form.password; body.erp_person_code = form.erp_person_code.trim(); await epmsApi.patch(`/users/${modal?.user?.id}`, body) }
       qc.invalidateQueries({ queryKey: ['portal-users'] })
-      setModal(null)
+      qc.invalidateQueries({ queryKey: ['staff'] })
+      closeModal()
     } catch (err: any) { setError(err.message) } finally { setSaving(false) }
   }
 
@@ -798,7 +820,7 @@ function UserManagement() {
           <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-xl overflow-y-auto max-h-[90vh]">
             <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
               <h3 className="font-semibold text-neutral-900">{modal.mode === 'create' ? 'Add User' : 'Edit User'}</h3>
-              <button onClick={() => setModal(null)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100"><X className="h-4 w-4" /></button>
+              <button onClick={closeModal} className="rounded p-1 text-neutral-400 hover:bg-neutral-100"><X className="h-4 w-4" /></button>
             </div>
             <form onSubmit={handleSave} className="flex flex-col gap-4 p-5">
               <div className="grid grid-cols-2 gap-3">
@@ -844,6 +866,7 @@ function UserManagement() {
                 <Field label={modal.mode === 'create' ? 'ERP Code *' : 'ERP Code'}>
                   <Input value={form.erp_person_code}
                     onChange={(e) => setForm((p) => ({ ...p, erp_person_code: e.target.value }))}
+                    readOnly={!!fromEmployee && modal.mode === 'create'}
                     required={modal.mode === 'create'}
                     placeholder="e.g. EMP00123" />
                 </Field>
@@ -854,7 +877,7 @@ function UserManagement() {
               </div>
               {error && <Toast ok={false} msg={error} />}
               <div className="flex justify-end gap-2 border-t border-neutral-100 pt-3">
-                <button type="button" onClick={() => setModal(null)} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">Cancel</button>
+                <button type="button" onClick={closeModal} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">Cancel</button>
                 <SaveButton loading={saving} />
               </div>
             </form>
@@ -2375,9 +2398,7 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
 const SECTIONS = [
   { key: 'company',      label: 'Company Settings',     icon: Building2 },
   { key: 'security',     label: 'Security',             icon: ShieldCheck },
-  { key: 'departments',  label: 'Departments',          icon: Landmark },
   { key: 'uom',          label: 'Units of Measure',     icon: Ruler },
-  { key: 'users',        label: 'User Management',      icon: Users },
   { key: 'currency',     label: 'Currency Settings',    icon: CreditCard },
   { key: 'notifications',label: 'Notification Settings',icon: Bell },
   { key: 'remittance',   label: 'Remittance Advice',    icon: Mail },
@@ -2387,8 +2408,16 @@ const SECTIONS = [
   { key: 'wms_sync',     label: 'WMS Sync',             icon: Warehouse },
 ]
 
+// Sections that moved to Portal → MDM. Old deep links (/admin?section=users)
+// land on the new page instead of silently falling back to Company Settings.
+const MOVED_SECTIONS: Record<string, string> = {
+  users: '/mdm/users',
+  departments: '/mdm/departments',
+}
+
 export default function AdminPanel() {
   const { user } = useAuthStore()
+  const movedTo = MOVED_SECTIONS[new URLSearchParams(window.location.search).get('section') ?? '']
   // ?section=<key> makes each panel deep-linkable — the NC sync error tasks in
   // the Task Inbox link straight to /admin?section=nc_sync. An unknown or absent
   // key falls back to the default panel.
@@ -2400,6 +2429,7 @@ export default function AdminPanel() {
   const perms = useRolePermissions().data?.permissions
 
   if (user?.role !== 'system_admin') return <Navigate to="/" replace />
+  if (movedTo) return <Navigate to={movedTo} replace />
 
   // Pages that live outside this panel but belong to administration — listed
   // here too, or an admin who comes in through "Portal → Admin" never finds
@@ -2490,9 +2520,7 @@ export default function AdminPanel() {
         <main className="flex-1 overflow-y-auto p-6">
           {section === 'company'       && <CompanySettings />}
           {section === 'security'      && <SecuritySettings />}
-          {section === 'departments'   && <DepartmentManagement />}
           {section === 'uom'           && <UnitsOfMeasure />}
-          {section === 'users'         && <UserManagement />}
           {section === 'currency'      && <CurrencySettings />}
           {section === 'notifications' && <><NotificationSettings /><TaskNotificationPolicies /></>}
           {section === 'remittance'    && <RemittanceSettings />}

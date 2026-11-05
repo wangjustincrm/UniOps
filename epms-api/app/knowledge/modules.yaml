@@ -386,6 +386,39 @@ modules:
       - Find a free room and book it
       - Cancel a booking you made
 
+  - key: mdm
+    label: MDM (Master Data)
+    covers: >
+      The company's shared master data, in Portal → MDM. Staff is the employee
+      master, kept up to date from the ADP roster that HR uploads every two
+      weeks before payroll. Users are sign-in accounts. Departments drive
+      budgets and approval routing.
+    who: >
+      HR and system administrators. Staff is personal data, so it needs its own
+      permissions. People in HR get them from the HR additional role, given in
+      Access Control. Creating a user stays with system administrators. An
+      employee who is not in NC is only flagged, not a to-do: HR adds people to
+      NC as needed.
+    typical:
+      - Upload the ADP roster, check the preview and apply it (MDM → Staff → Import)
+      - Map an ADP department to a UniOps department (MDM → Staff → Department Mapping)
+      - Create a sign-in account for an employee (Create user on the employee)
+      - Work the list of changes HR must make in NC (MDM → Staff → NC To-do)
+    notes:
+      - >-
+        An employee and a user are separate records. The employee number, the
+        last six digits of the ADP Position ID, is the key across ADP, UniOps
+        and NC. An ADP import changes employees only, never user accounts, so
+        names and departments on a user are changed on purpose, with Apply to
+        user on the employee.
+      - >-
+        An import never marks anyone as left. People who left are simply not in
+        the ADP file, so they are listed on the import result and someone
+        decides for each one.
+      - >-
+        UniOps cannot write people into NC. HR makes the change in NC's HR
+        module from the NC To-do list, and each item closes by itself when
+        UniOps reads NC and sees the change.
   - key: admin
     label: Admin
     covers: >

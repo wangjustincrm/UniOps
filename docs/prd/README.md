@@ -9,8 +9,8 @@ This folder holds the **authoritative, maintained PRD for every UniOps module**.
 
 | Module | Document | Version | Status | Apps / services |
 |---|---|---|---|---|
-| Portal & platform | [PORTAL.md](PORTAL.md) | 2.5 | In production | portal, identity-api, approval-api, mdm-api, file-api |
-| EPMS — procurement | [EPMS.md](EPMS.md) | 2.47 | In production | epms, epms-api |
+| Portal & platform | [PORTAL.md](PORTAL.md) | 2.6 | In production | portal, identity-api, approval-api, mdm-api, file-api |
+| EPMS — procurement | [EPMS.md](EPMS.md) | 2.48 | In production | epms, epms-api |
 | OA — reimbursement & travel | [OA.md](OA.md) | 3.4 | In production | oa, expense-api |
 | Finance | [FINANCE.md](FINANCE.md) | 2.19 | In production | finance, finance-api |
 | AI Financial Analysis | [AI-FINANCIAL-ANALYSIS.md](AI-FINANCIAL-ANALYSIS.md) | 1.0 | In production (Phases 1–5); Phase 6 not started | finance, finance-api |
@@ -28,6 +28,7 @@ This folder holds the **authoritative, maintained PRD for every UniOps module**.
 | VMS visitor self-registration & QR check-in | [VMS-SELF-REGISTRATION.md](VMS-SELF-REGISTRATION.md) | 0.2 | Proposed: stakeholder decisions pending |
 | Order Bridge (migration from Zoho) | [ORDER-BRIDGE.md](ORDER-BRIDGE.md) | 1.0 | Proposed: in team review |
 | CMMS — maintenance management | [CMMS.md](CMMS.md) | 2.1 | Proposed: not started |
+| Staff — employee master & ADP roster import | [EMPLOYEES.md](EMPLOYEES.md) | 0.3 | First version built, not yet released |
 
 ## Where shared behaviour is specified
 
