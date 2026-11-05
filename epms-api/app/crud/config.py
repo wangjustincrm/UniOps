@@ -20,14 +20,14 @@ BUILT_IN_ROLES: frozenset[str] = frozenset({
     "procurement_officer", "procurement_manager", "warehouse_staff",
     "ap_clerk", "finance_bp", "finance_manager", "vendor_manager",
     "cfo", "auditor", "erp_pa_officer", "payment_officer", "finance_director",
-    "system_admin",
+    "hr", "system_admin",
 })
 
 # Roles granted ONLY through identity's user_roles side table — never written to
 # users.role. identity's role_defs.assignable_as_primary (migration 0009) is the
 # source of truth; this mirror only backs the identity-down fallback below, so
 # the primary-role guard does not come undone when identity is unreachable.
-ADDITIONAL_ONLY_ROLES: frozenset[str] = frozenset({"erp_pa_officer", "payment_officer", "finance_director"})
+ADDITIONAL_ONLY_ROLES: frozenset[str] = frozenset({"erp_pa_officer", "payment_officer", "finance_director", "hr"})
 
 # Permissions that cannot be disabled for the given role (enforced server-side).
 # The view_* locks below correspond to roles that would be functionally broken
@@ -393,6 +393,9 @@ _DEFAULT_ROLE_PERMISSIONS: dict[str, dict[str, bool]] = {
     # needs to open the PA and everything behind it; approving comes from
     # holding the post in approval-api, not from a matrix permission.
     "finance_director":     _P(**_VIEW_ALL, view_finance=True, **_BOOKING),
+    # Must match identity's 0025 migration: its grants are the phase-2 employee.*
+    # keys, which live only there, so nothing in this matrix.
+    "hr":                   _P(),
     "system_admin":         {k: True for k in PERMISSION_KEYS},
 }
 
@@ -701,6 +704,7 @@ _BUILTIN_ROLE_NAMES: dict[str, str] = {
     "erp_pa_officer": "ERP PA Officer",
     "payment_officer": "Payment Officer",
     "finance_director": "Finance Director",
+    "hr": "HR",
     "system_admin": "System Admin",
 }
 
