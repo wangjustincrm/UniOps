@@ -1,6 +1,6 @@
 """Cross-system data-maintenance admin endpoints (Phase 1: EPMS)."""
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -10,7 +10,7 @@ from app.admin import service
 from app.admin.registry import REGISTRY
 from app.admin.resolvers import get_resolver, resolver_sources
 from app.core.deps import BearerToken, SessionDep, require_permission
-from app.services import approval_client, finance_client
+from app.services import approval_client, finance_client, finance_sync
 
 router = APIRouter(prefix="/admin", tags=["data-maintenance"])
 
@@ -44,7 +44,10 @@ def _actor(user: dict) -> tuple[uuid.UUID, str]:
 
 @router.get("/entities")
 async def list_entities(user: AdminUser):
-    return [spec.schema.to_dict() | {"system": spec.system} for spec in REGISTRY.values()]
+    # sortable_columns: the list columns ?sort= accepts (real columns only).
+    return [spec.schema.to_dict() | {"system": spec.system,
+                                     "sortable_columns": list(service.SORTABLE[key])}
+            for key, spec in REGISTRY.items()]
 
 
 @router.get("/lookup/{source}")
@@ -59,9 +62,14 @@ async def lookup(source: str, db: SessionDep, user: AdminUser,
 @router.get("/{entity}", response_model=ListResponse)
 async def list_records(entity: str, db: SessionDep, user: AdminUser,
                        page: int = Query(1, ge=1), page_size: int = Query(20, le=200),
-                       search: str | None = Query(None)):
+                       search: str | None = Query(None),
+                       sort: str | None = Query(None),
+                       dir: Literal["asc", "desc"] = Query("asc")):
     try:
-        items, total = await service.list_records(db, entity, page=page, page_size=page_size, search=search)
+        items, total = await service.list_records(db, entity, page=page, page_size=page_size,
+                                                  search=search, sort=sort, dir=dir)
+    except service.UnknownSortKey as e:
+        raise HTTPException(422, str(e))
     except ValueError as e:
         raise HTTPException(404, str(e))
     return ListResponse(items=items, total=total)
@@ -198,13 +206,17 @@ async def edit_approval_state(entity: str, record_id: uuid.UUID, db: SessionDep,
 
 @router.delete("/{entity}/{record_id}")
 async def delete_record(entity: str, record_id: uuid.UUID, db: SessionDep, user: AdminUser,
-                        preview: int = Query(0)):
+                        token: BearerToken, preview: int = Query(0)):
     actor_id, email = _actor(user)
     try:
         if preview:
             summary = await service.delete_preview(db, entity, record_id)
             return {"preview": True, "cascade": summary}
         summary = await service.delete_record(db, entity, record_id, actor_id=actor_id, actor_email=email)
+        # Every invoice this removed (itself, or in a PO/agreement cascade) is
+        # voided in Finance before anything commits. This path used to tell
+        # Finance nothing — the source of all five 2026-10 AP orphans.
+        await finance_sync.void_deleted_invoices(db, token)
         await db.commit()
         return {"preview": False, "cascade": summary}
     except ValueError as e:
@@ -213,13 +225,18 @@ async def delete_record(entity: str, record_id: uuid.UUID, db: SessionDep, user:
     except IntegrityError as e:
         await db.rollback()
         raise _constraint_error(e)
+    except finance_sync.FinanceVoidFailed as e:
+        await db.rollback()
+        raise HTTPException(502, str(e))
 
 
 @router.post("/{entity}/bulk-delete")
-async def bulk_delete(entity: str, db: SessionDep, user: AdminUser, body: BulkDeleteRequest):
+async def bulk_delete(entity: str, db: SessionDep, user: AdminUser, body: BulkDeleteRequest,
+                      token: BearerToken):
     actor_id, email = _actor(user)
     try:
         summary = await service.bulk_delete(db, entity, body.ids, actor_id=actor_id, actor_email=email)
+        await finance_sync.void_deleted_invoices(db, token)   # see delete_record
         await db.commit()
         return {"deleted": len(body.ids), "cascade": summary}
     except ValueError as e:
@@ -228,3 +245,6 @@ async def bulk_delete(entity: str, db: SessionDep, user: AdminUser, body: BulkDe
     except IntegrityError as e:
         await db.rollback()
         raise _constraint_error(e)
+    except finance_sync.FinanceVoidFailed as e:
+        await db.rollback()
+        raise HTTPException(502, str(e))

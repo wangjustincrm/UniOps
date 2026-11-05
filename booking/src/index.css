@@ -1,2 +1,6 @@
 @import "tailwindcss";
+/* Tailwind does not scan node_modules, so classes used only inside @uniops/shell
+   (e.g. the sortable list headers) are never generated without this. Same path
+   in the container (/app/src -> /packages/shell/src) and on the host. */
+@source "../../packages/shell/src";
 @import "@uniops/shell/tokens.css";

@@ -186,6 +186,34 @@ async def test_trail_counts_only_the_last_round_and_marks_skipped_steps(db_sessi
     ]
 
 
+_CLAIMANT_SKIP = "Auto-skipped (claimant holds this step — cannot approve own claim)"
+
+
+async def test_engine_skip_is_not_printed_as_the_claimants_signature(db_session, exp_workflow):
+    """approval-api records a skipped step as an approve event whose actor is the
+    claimant. Neither the record nor the TRA signature line may show them as
+    having signed their own claim."""
+    claim = await _persist(db_session, _exp())
+    jane, boss = uuid.uuid4(), uuid.uuid4()
+    await db_session.execute(text(
+        "INSERT INTO users (id, full_name) VALUES (:a, 'Jane Doe'), (:b, 'Mark Boss')"),
+        {"a": jane, "b": boss})
+    db_session.add_all([
+        _event(claim, "submit", 0, jane, 0),
+        _event(claim, "approve", 0, jane, 0, _CLAIMANT_SKIP),
+        _event(claim, "approve", 1, boss, 5, "OK"),
+    ])
+    await db_session.commit()
+
+    rows = await claim_pdf.approval_trail(db_session, claim)
+    assert rows[1] == {"step": "Department Head", "name": "System",
+                       "at": rows[1]["at"], "comment": _CLAIMANT_SKIP}
+
+    sigs = {a["step_idx"]: a for a in await claim_pdf._tra_approvals(db_session, claim)}
+    assert sigs[0]["actor_name"] == "Skipped" and sigs[0]["acted_date"] is None
+    assert sigs[1]["actor_name"] == "Mark Boss"
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @pytest.fixture

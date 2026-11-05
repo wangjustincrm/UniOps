@@ -2,7 +2,7 @@
 import csv
 import io
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -49,11 +49,18 @@ async def list_vendors(
     search: str | None = Query(default=None),
     category: str | None = Query(default=None),
     active_only: bool = False,
+    # The Vendors page's "Inactive" tab. It used to fetch a page of ALL vendors
+    # and drop the active ones in the browser, so the tab showed a near-empty
+    # page while the pager counted every vendor.
+    inactive_only: bool = False,
+    sort: str | None = Query(default=None, description="Key of crud.vendor.VENDOR_SORTABLE; unknown -> 422"),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=5, le=2000),
 ):
     items, total = await vendor_crud.get_all(
         db, search=search, category=category, active_only=active_only,
+        inactive_only=inactive_only, sort=sort, dir=dir,
         page=page, page_size=page_size,
     )
     return VendorListResponse(items=items, total=total)

@@ -1,9 +1,93 @@
 # Finance — Product Requirements Document
 
-**Version:** 2.1
-**Date:** 2026-10-16
+**Version:** 2.18
+**Date:** 2026-11-05
 **Status:** Current. Describes the system as built on the main line, under the 2026-09-20 positioning decision.
 **Scope:** The UniOps Finance module: Finance web app and finance service. Covers the NC65 data mirror, the checks and reports built on it, AP handoff to NC, payments, remittance, vendor credits, bank reconciliation and the remaining finance-held records.
+
+**What changed in version 2.18** (2026-11-05)
+
+- Push to NC (FIN-AP-05): on a foreign-currency bill the local tax is the local total less the local amount excluding tax, so the three always add up. Rounding each alone could miss by a cent, and NC refused the bill (AP-20261030-0008).
+- Push to NC messages are English only. NC's Chinese reply is translated with the wording of NC's own language pack; a message with no translation says so and gives the NC code. The original reply stays in the push log.
+
+**What changed in version 2.17** (2026-11-02)
+
+- AP Cash Flow counts only NC payable lines whose invoice is on an **approved** EPMS PA (FIN-CF-01). Lines on no PA, on a PA still in draft or review, or on a PA already processed (paid) are left out. At measurement: 525,334.73 of 2,143,856.51 CAD open.
+- A reversal posted in NC but never offset against its original (same supplier, currency and invoice number, open balances netting to zero) is left out of AP Cash Flow (FIN-CF-07). At measurement: 8 pairs, 16 bills.
+- The AP Cash Flow bill list shows the linked PA number(s), and a search box finds bills by AP (NC bill) number, invoice number, supplier or PA number (FIN-CF-08).
+
+**What changed in version 2.16** (2026-10-30)
+
+- Courier invoices are charged to budget account **CRM00204** (Postage & Delivery Charges) instead of CRM0150102: the GL Code on the Accounts Payable list (FIN-AP-04) and the budget item sent by Push to NC (FIN-AP-05). Bills already pushed to NC keep CRM0150102.
+
+**What changed in version 2.15** (2026-10-30)
+
+- Accounts Payable list (FIN-AP-04): **GL Code** is no longer empty for invoices without a PO — courier invoices show the freight account CRM0150102, Direct and OA invoices the Direct PA's budget account, agreement invoices the agreement's; the same account the NC push uses.
+- Push to NC (FIN-AP-05): a mixed-rate invoice entered without tax lines (tax too small for any statutory rate on the whole amount) is no longer refused — the taxed part is inferred at 13 % (Ontario HST) when that gives the tax back to the cent, and the rest goes on a zero-rated row; any other mismatch is pushed as HST at the invoice's own rate with an amber notice to correct the tax on the NC bill.
+
+**What changed in version 2.14** (2026-10-29)
+
+- JV Detail (FIN-JV-06, FIN-JV-08): every column sorts on click — auxiliary columns included — through the shared list headers, sorted by the server across all pages; the header row stays locked at the top while the list scrolls; the export follows the on-screen order.
+
+**What changed in version 2.13** (2026-10-29)
+
+- Journal voucher detail (FIN-JV-03): a new **Aux. Acctg** column shows each line's NC auxiliaries the way NC's voucher screen does — 【Department: 0106/Engineering】【Income/Expense Item: CRM004/…】 — in NC's order, with names.
+- New page **Finance → JV Detail** (FIN-JV-06…08): every NC voucher line rather than every voucher, each auxiliary in its own column, with **Export CSV** laid out the same way.
+
+**What changed in version 2.12** (2026-10-29)
+
+- Accounts Payable list (FIN-AP-01, FIN-AP-04): the status **posted** is shown as **Matched**, because "posted" read as "posted to NC"; whether an invoice is in NC is the NC AP Doc column. The stored value is still `posted`. New column **GL Code**: the budget account code of the invoice's PO (several, comma-separated, for a multi-PO invoice); for an invoice without a PO, the budget account the NC push uses (courier: CRM0150102; Direct / OA: the Direct PA's; agreement: the agreement's).
+
+**What changed in version 2.11** (2026-10-28)
+
+- **Push to NC replaces Export to NC** (FIN-AP-05, FIN-AP-06, FIN-AP-09). Finance → Accounts Payable sends the selected invoices straight to NC through NC's external exchange platform (XChange): each AP invoice becomes its own NC payable bill in saved state, with the person who pushed as bill maker; the AP clerk approves it in NC. The Excel workbook and its download are removed. The mapping is corrected along the way: manufacturing overhead defaults to 510102, zero tax goes as Zero-Rated (006), buy/sell type follows the supplier's country, the NC cost centre (DEF5) is filled, agreement invoices carry the agreement's dimensions, an invoice with several tax rates is split into one row per rate, and the summary is the PO / agreement / Direct PA number and title.
+- The list column **NC Export** becomes **NC AP Doc**: the NC bill number(s) holding each invoice and their state, from the push result or the NC AP mirror; "Hide exported" becomes **Hide in NC** (FIN-AP-04).
+- New page **Finance → Exchange Rates** (FIN-FX-01…05): Bank of Canada daily rates are fetched every business day into one history; a document takes its own date's rate, a weekend or holiday the previous business day. Internal payment postings now find a rate there too, instead of 1 (FIN-FX-05).
+- FIN-OI-26 is closed: NC itself refuses to overwrite a bill once approved.
+- Invoices on a PO imported from NC (type 1, raw material / packaging) are tagged **NC flow** on the list, cannot be ticked, and are hidden by Hide in NC: NC makes that payable from its own purchase invoice (FIN-AP-04).
+
+**What changed in version 2.10** (2026-10-27)
+
+- The Journal Voucher Center lists NC vouchers only. The draft vouchers UniOps generated internally from AP invoices and payments never reach NC, and their numbers collided with vouchers NC booked later in the same period (JV-202609-0601 was both a Sulzer accrual draft and NC's own voucher), so finance looked them up in NC and found nothing (FIN-JV-01, FIN-JV-05).
+
+**What changed in version 2.9** (2026-10-21)
+
+- An EPMS invoice deleted in Data Maintenance now voids its AP invoice like any other delete (FIN-AP-03); EPMS refuses the delete when Finance cannot void it. Five AP invoices left behind by earlier Data Maintenance deletes were voided, and the ten EPMS invoices whose AP invoice they blocked were created (FIN-AP-08).
+- New maintenance script `scripts.reconcile_epms_ap` lists — and with `--apply` repairs — AP invoices whose EPMS invoice no longer exists, and EPMS invoices with no AP invoice (FIN-AP-08).
+
+**What changed in version 2.8** (2026-10-21)
+
+- EPMS Direct PA (EPMS.md §3.22): a Direct PA raised in EPMS is paid as an EPMS PA (its invoices are marked paid) and is listed under **Direct PA** on the Payment Batches due list (FIN-PAY-06); its invoice is exported to NC with the department, cost center, budget account and employee of the Direct PA paying it, and is refused until one does (FIN-AP-05).
+
+**What changed in version 2.7** (2026-10-20)
+
+- AP Subledger Health, supplier view: a panel lists journal lines that reduced the supplier's payable without naming any of its invoices — such as a receivable netted against the payable — beside the bills that have no payment document, for finance to compare (FIN-APH-10).
+- Supplier names on journal lines are compared with surrounding spaces removed; NC stores some with a trailing space, which hid those vouchers from the JV evidence and the GL search (FIN-APH-03, FIN-APH-07).
+
+**What changed in version 2.6** (2026-10-20)
+
+- AP Subledger Health: the search box also finds invoice numbers, and says which bill carries the number and whether it is settled (FIN-APH-06).
+- An open bill with no payment document now shows the journal vouchers that name its invoice number and clear it — old payables finance settled with a GL voucher instead of a payment (FIN-APH-07).
+- An open bill whose invoice number is also on the same supplier's bill in another currency is flagged — a supply-chain CAD payable repeating a foreign-currency bill finance keyed and paid (FIN-APH-08).
+
+**What changed in version 2.5** (2026-10-20)
+
+- An NC payable can carry several supplier invoices, one per line. The bill lists in AP Subledger Health (supplier view, bills by date, excluded) and the AP Cash Flow drill-down now show every invoice on the bill with its own amount, instead of one invoice number beside the bill's total (FIN-APH-05, FIN-CF-06). The CSV exports list every invoice too.
+
+**What changed in version 2.4** (2026-10-19)
+
+- Every Finance list sorts by clicking a column header, ascending then descending (column sorting rule in EPMS.md §3.20 (UI-SORT-001…007)). AP invoices, the AP reconciliation drill-down, JV validation lines, Payments, the QBO mirror and Journal Vouchers sort on the server across all pages; on Journal Vouchers empty values now sort last and a newly clicked column starts ascending.
+- AR invoices, the Payment Batches history, the AP cash-flow drill-down, AP ledger health, duplicate invoices and unallocated lines now page on the server instead of showing only the newest N rows, so sorting covers every matching row.
+- The AP reconciliation, JV validation and AP ledger health CSV exports follow the on-screen sort. AP and AR aging tables are sortable. Reports with total rows or order-dependent columns (trial balance, account ledger, cash-flow buckets, bank reconciliation workspace) are not.
+
+**What changed in version 2.3** (2026-10-19)
+
+- Payment Batches due list: every column can be sorted by clicking its header; clicking again reverses the order (FIN-PAY-06).
+- Courier freight (EPMS → Freight, EPMS.md §3.21): Freight PAs are paid as EPMS PAs and get their own **Freight PA** type on the Payment Batches due list (FIN-PAY-06); a courier invoice is exported to NC as **one row per cost center**, budget account CRM0150102 (FIN-AP-05).
+
+**What changed in version 2.2** (2026-10-19)
+
+- Payment Batches due list: a PA's vendor invoice number now opens the EPMS invoice, and a new Due Date column shows the earliest due date of the PA's invoices, in red once past (FIN-PAY-06).
 
 **What changed in version 2.1** (2026-10-16)
 
@@ -109,7 +193,7 @@ All four use the system every day. None of them is a dashboard audience, so chec
 | Finance role set: System Admin, Finance Manager, Finance BP, AP Clerk, Payment Officer (primary or additional role) | Payments hub reads, vendor-credit netting preview, NC AP export, AP check judgements (dismiss / duplicate review) |
 | `view_finance` | Finance menu entries (navigation only, see §15) |
 | `view_budget_dashboard`, `view_budget_plans` | Budget menu entries |
-| `finance.coa.manage` | COA edits and CSV import, NC COA sync, account mappings, GL opening balance and year close, AR writes, FX rates, AP invoice void |
+| `finance.coa.manage` | COA edits and CSV import, NC COA sync, account mappings, GL opening balance and year close, AR writes, manual FX rates (set / remove), AP invoice void |
 | `finance.jv.post` | Review / post / unpost / reverse UniOps-originated journal vouchers |
 | `finance.period.close` | Close / reopen fiscal periods (API only) |
 | `finance.bank.reconcile` | Import statements and payment files, match, sign off, reopen |
@@ -134,11 +218,11 @@ The permission matrix and role assignment are managed in Portal → Admin → Ac
 | AP | Accounts Payable · AP Reconciliation · AP Subledger Health · AP Duplicate Invoices · AP Cash Flow · Payments · Payment Batches |
 | AR | Accounts Receivable |
 | General | General Ledger · Account Balance |
-| Voucher | Journal Vouchers · JV Validation |
+| Voucher | Journal Vouchers · JV Detail · JV Validation |
 | Budget | Budget Dashboard · Budget Plans · Budget Actual · Account Catalog · Factor Library · Budget Config (see BUDGET.md; Budget Dashboard, Budget Plans and Account Catalog are EPMS pages embedded in a frame) |
 | Banking | Bank Reconciliation · Bank Settings (plus Statement Import (CSV), reached from the workbench) |
 | AI Financial Analysis | Separate PRD: AI-FINANCIAL-ANALYSIS.md |
-| Settings | Chart of Accounts · Tax Settings · QuickBooks (legacy archive) |
+| Settings | Chart of Accounts · Tax Settings · Exchange Rates · QuickBooks (legacy archive) |
 
 A failed permission load shows "Couldn't load your Finance permissions" with a retry, never an empty "no access" screen. The AI Assistant is available in Finance (see EPMS.md §3.19).
 
@@ -221,11 +305,14 @@ A failed permission load shows "Couldn't load your Finance permissions" with a r
 
 | FR ID | Requirement |
 |---|---|
-| FIN-JV-01 | The list shows what NC's voucher list shows: number, date, period, summary, preparer / checker / tallier, NC system, voucher kind, status, NC state, amounts. Columns sort on the server. |
+| FIN-JV-01 | The list shows **NC vouchers only** — the ones mirrored from NC, including NC vouchers not yet tallied — and what NC's voucher list shows for them: number, date, period, summary, preparer / checker / tallier, NC system, voucher kind, status, NC state, amounts. Columns sort on the server. |
 | FIN-JV-02 | Query filters: period or period range, date range, number range, status, NC voucher state, voucher kind, preparer, checker, manager, account, contra account, currency, amount range, auxiliary type + value, source document type, source subsystem, free text. |
-| FIN-JV-03 | The detail modal shows lines with account, debit / credit (original and CAD), currency, rate and resolved dimension names. |
+| FIN-JV-03 | The detail modal shows lines with account, debit / credit (original and CAD), currency and rate, and an **Aux. Acctg** column with the line's NC auxiliaries as NC prints them: 【Department: 0106/Engineering】, in the order department, income-expense item, cost centre, project, parties, item, bank account. The sync stores each auxiliary as its code; the name is read from the masters UniOps holds (departments, budget account catalog, materials, NC customers, NC bank accounts; for supplier / customer / 客商 the party name the sync put on the line). A code with no local master — cost centre, project — shows as the code alone. 客商 shows the party name alone (its stored code is NC's internal key). The UniOps cost-centre / department / party tags show only on lines that have no NC auxiliaries. |
 | FIN-JV-04 | **NC-mirrored vouchers are read-only.** Their status follows NC. Review, post and reverse are refused for them, including in batch actions. |
-| FIN-JV-05 | UniOps-originated vouchers (from the internal posting records, §14) follow draft → reviewed → posted, with unreview, unpost and red-entry reversal. The reversal is a new negative voucher; the original is marked reversed. All of these need `finance.jv.post` and an open period. If the SoD rule *jv_self_review* is enabled, the preparer cannot review their own voucher. Batch review and post are available. |
+| FIN-JV-05 | UniOps-originated vouchers (from the internal posting records, §14) are **not listed** in the Journal Voucher Center: they never reach NC, and their numbers are drawn from the same JV-YYYYMM- sequence NC fills later, so the same number can name a different NC voucher. They open only by link from other pages. They follow draft → reviewed → posted, with unreview, unpost and red-entry reversal. The reversal is a new negative voucher; the original is marked reversed. All of these need `finance.jv.post` and an open period. If the SoD rule *jv_self_review* is enabled, the preparer cannot review their own voucher. Batch review and post are available. |
+| FIN-JV-06 | **JV Detail page** (Finance → JV Detail): one row per NC voucher line — date, voucher number, line, account (code and name), line summary, currency, debit / credit in CAD — then **one column per auxiliary** the book uses (the same set on every page, so columns do not shift while paging). Each cell is the auxiliary as FIN-JV-03 names it. A row opens the voucher detail. NC vouchers only, as FIN-JV-01; internal drafts are not listed. Default: the current month. Built from the standard list parts: every column sorts on click (server-side, so the order holds across pages; an auxiliary column sorts by its code; blank amounts sort last both ways), the header row is locked at the top of the scrolling list (which scrolls both ways, the table being wide), and the standard pager. |
+| FIN-JV-07 | Filters: period range, date range (API), NC system, account code (prefix, on the line itself), currency, one auxiliary and optionally its code, and free text on the voucher number or the line summary. Unlike the voucher list, line-level filters select lines, not vouchers that have such a line. |
+| FIN-JV-08 | **Export CSV** writes every line the filters match (all pages, in the on-screen sort order), UTF-8 with BOM: voucher date, period, voucher number, NC number, voucher type, status, system, preparer, line, account code and name, summary, currency, rate, debit / credit in original currency and CAD, quantity, unit, price, contra account, then one column per auxiliary as on screen. A text cell starting with = + - @ is prefixed with ' so Excel does not treat it as a formula. A year of the book (about 37,000 lines) exports in a few seconds. |
 
 ### 6.2 Account Balance (NC 科目余额表 parity)
 
@@ -281,13 +368,15 @@ Budget planning, the dashboard, catalog, factors and budget settings (including 
 
 | FR ID | Requirement |
 |---|---|
-| FIN-AP-01 | EPMS (procurement) and OA (expense) push their vendor invoices into one AP table, keyed by source + source document. Statuses: draft, posted, partially paid, paid, void. |
+| FIN-AP-01 | EPMS (procurement) and OA (expense) push their vendor invoices into one AP table, keyed by source + source document. Statuses: draft, posted, partially paid, paid, void. The Accounts Payable page shows `posted` as **Matched** (matched and accrued in UniOps; it says nothing about NC — see NC AP Doc, FIN-AP-04). |
 | FIN-AP-02 | A vendor + vendor invoice number is unique. A second one is refused with "duplicate vendor invoice". This is the anchor for reconciling against NC. |
-| FIN-AP-03 | When the source deletes an invoice: an AP row with no postings and no payment is removed; a posted one is voided and its accrual reversed. |
-| FIN-AP-04 | **Accounts Payable page:** paginated list with vendor and vendor-invoice-number search. Exported invoices are hidden by default. Aging tab: vendor × currency, five buckets by due date. |
-| FIN-AP-05 | **Export to NC** (any finance role): select invoices and download the NC payable-module import workbook. One summary row per invoice. All enumerations are NC codes. Expense account comes from cost centre / department. Dimensions come from the PR (EPMS) or PA (OA). Zero tax-excluded amount and tax are written explicitly. The file imports into NC without being re-saved in Excel. NC assigns the document number; the file is named after the AP number. |
-| FIN-AP-06 | Draft or void invoices, and invoices without an accrual, are refused with reasons. Exported invoices are stamped with a batch. The UI asks for confirmation before re-exporting. |
+| FIN-AP-03 | When the source deletes an invoice: an AP row with no postings and no payment is removed; a posted one is voided and its accrual reversed. EPMS sends this on every delete path, Data Maintenance included, and does not delete when Finance does not confirm (EPMS.md INV-DEL-001…003). |
+| FIN-AP-04 | **Accounts Payable page:** paginated list with vendor and vendor-invoice-number search. Column **GL Code** shows the budget account code of the PO the invoice is on — its own PO plus any multi-PO allocation, distinct codes comma-separated; for an invoice not on a PO it is the budget account the NC push (FIN-AP-05) uses as revenue/expense item — courier invoices the fixed freight account CRM00204, Direct and OA invoices the Direct PA's budget account, agreement invoices the agreement's; empty when none is known yet (not matched, or a Direct invoice not on a PA). Column **NC AP Doc** shows the NC payable bill(s) holding the invoice, each with its NC state (Saved / Approved, or Pushed until the hourly NC AP sync has seen it): the bill UniOps pushed, plus any bill in the NC AP mirror (§4.3) carrying the same invoice number for the vendor's ERP ID (compared ignoring case, spaces and hyphens), in any approval state. When the numbers match only once the hyphens are dropped (UniOps "IN-22-1014797", NC "IN-221014797"), the bill carries a **Hyphens ignored · NC: <NC number>** note, with both numbers on hover, so the clerk can check it is the same invoice; the push refusal for such a bill names the NC number the same way (FIN-AP-05). A bill UniOps pushed and later replaced is not shown. A failed push shows "Push failed" with NC's reason on hover. An invoice on a PO imported from NC (type 1, raw material / packaging; through the invoice's own PO or a multi-PO allocation) is tagged **NC flow** and has no tick box: NC makes that payable itself from its purchase invoice, so pushing it would book it twice (FIN-AP-06). **Hide in NC** (on by default) hides invoices that have an NC AP Doc and NC-flow invoices. Sorting by NC AP Doc orders by the pushed bill or, failing that, the first matched NC bill; invoices with neither sort last. Aging tab: vendor × currency, five buckets by due date. |
+| FIN-AP-05 | **Push to NC** (any finance role; design: docs/superpowers/specs/2026-10-27-ap-push-to-nc-xchange-design.md). Select invoices and click Push to NC; each AP invoice becomes **one NC F1 payable bill** (trade type F1-Cxx-017) in **saved** state, created through NC's XChange so NC assigns the bill number and builds its own tally rows. The person who clicks is the bill maker: their UniOps ERP ID (NC person code) is resolved to their enabled NC user; no ERP ID, no NC user, or more than one is refused. The push is manual only — nothing is pushed on posting. Mapping: supplier = vendor ERP ID; invoice number verbatim; amounts, tax and every local-currency amount sent explicitly (NC does not look up rates; local tax = local total less local amount excluding tax, because NC requires the three to add up exactly); rate per FIN-FX-04 on the issue date; tax code HST_ON / HST_NS → 001, GST → 005, QST → 004, no tax → 006, at the invoice's actual rate; buy/sell type 2 for a Canadian supplier or an invoice carrying Canadian tax (NC refuses tax on an import bill), else 4; a currency NC quotes inversely (CNY: 1 CAD = x) is sent as NC quotes it; budget item, department and cost centre from the PR of the dominant PO, the agreement, or the Direct PA (EPMS Direct and OA); NC cost centre parent (COSTCENTER) and actual cost centre (DEF5, sent as NC key); expense account by cost-centre prefix (MOH and GA-0105/GA-0107 → 510102, or 510101 for the fixed budget items and the QA lab; GA → 6602; SELL → 660101; RD → 5301; by department when there is no cost centre). A courier invoice has one row per cost centre (budget item CRM00204); an invoice whose tax lines cover only part of it, or that carries several tax codes, has one row per rate (a tax line with no taxable base takes the pre-tax amount the other lines leave); an invoice with no tax lines whose tax is too small for any statutory rate on its whole amount (Culligan: 0.98 on 197.50) is split the same way — the taxed part is inferred at 13 % (Ontario HST) when that gives the tax back to the cent (0.98 → 7.54), the rest is a zero-rated row; any other mismatch (e.g. 14.5 % — QST or a keying slip) is pushed as HST (001) at the invoice's own rate — NC keeps the amounts as sent — and the push result tells the clerk, in amber, to check the tax and correct it on the NC bill (also kept in the push log). Summary (摘要, up to 250 characters, also copied to DEF16 up to 101): one PO = PO number + title; several POs = the PO numbers; agreement = agreement number + title; Direct = PA number + title; courier = "Freight" + invoice number. Every message the clerk sees is in English: NC's replies are translated, and the original reply is kept in the push log. |
+| FIN-AP-06 | A push is refused, with the reason on the row, for: draft or void; no accrual; issue date after the entry date or the due date (day and month probably swapped); vendor missing from the vendor master, without ERP ID, or not in NC; no exchange rate; a courier invoice not fully assigned to cost centres; a Direct invoice on no live Direct PA; tax lines adding up to more than the total; an invoice on a PO imported from NC (raw material / packaging — NC makes that payable from the purchase invoice, D1); a cost centre NC does not have; an invoice already in NC as a bill entered by hand. Pushing again uses the same external id (`UNIOPS-<AP number>`): NC replaces a bill that is still saved (the new bill gets a new number); once approved, NC refuses and the UI says to change it in NC — a failed re-push keeps the bill already recorded. Every request and NC's response are logged per invoice (GET `/ap/invoices/{id}/nc-push-log`). Invoices exported as Excel before 2026-10-27 keep their export stamp; the batches remain in the database. |
 | FIN-AP-07 | Under the positioning, **AP balances are read from NC** (§9.2–9.5). The UniOps paid amount is not used for balances or cash flow, because NC payments do not flow back. |
+| FIN-AP-08 | **Reconciliation with EPMS** (`python -m scripts.reconcile_epms_ap`, dry run unless `--apply`). Finds AP invoices whose EPMS invoice no longer exists (voided by FIN-AP-03's rule) and EPMS invoices (`INV-YYYY-NNNN`) with no AP invoice (created as the normal flow would have: posted with accrual if matched or later, and, if paid, settled by replaying the paying PA's writeback). Each item is independent; one that still clashes on vendor + invoice number (FIN-AP-02) is reported for a person. Repeat runs change nothing. |
+| FIN-AP-09 | **NC side of the push (production rollout, done by the NC administrator):** register external system `uniops` under 外部系统信息设置; raise the summary (`scomment`) length from 20 to 250 in both pfxx F1 bill definitions (`/home/nchome/pfxx/billdefine/arap/F1.xml` and `billdefine/F1.xml`); restrict access to `/service/XChangeServlet` to the UniOps server, because XChange itself has no authentication. Finance service settings: `NC_XCHANGE_URL` (empty = Push to NC answers "not configured"), account `0815`, group `0`, sender `uniops`; the NC read connection (`NC65_*`) must be the same NC. |
 
 ### 9.2 AP Reconciliation: where each UniOps invoice stands in NC
 
@@ -317,15 +406,24 @@ Budget planning, the dashboard, catalog, factors and budget settings (including 
 | FIN-APH-02 | **Excluded** (shown with amount, not worked): payables raised and never approved. **Inconsistent**: approved bills where open ≠ billed − paid (tolerance 0.01). This is kept as a tripwire. |
 | FIN-APH-03 | **Supplier view** with block subtotals, bill-to-payment relationships, and journal entries that cancel each other folded away. A GL search looks for differences finance settled by manual voucher. |
 | FIN-APH-04 | **Dismiss** stale NC payables from the working list with a closed reason set: legacy (NC period closed), duplicate document, settled outside AP by journal, written off, other (note required). Dismissal can be reversed (restore). Bills can be judged in bulk by bill date, with bulk undo. Dismissed bills are excluded from AP Cash Flow. Vendor search is available. |
+| FIN-APH-05 | **A bill can carry several invoices.** In NC the invoice number is on the bill **line**, and one payable often holds several invoices from the same supplier (at measurement, 1,872 of 12,006 approved bills, 65 of 364 open ones). Wherever a bill is shown as one row, the invoice column lists each invoice number on its lines with that invoice's own open amount; the amounts add up to the row's amount. Lines with the same invoice number are one invoice; lines with no number are shown together as "no number". A bill with one invoice shows just the number. The PO column lists every PO on the bill. Sorting by invoice number or PO uses the smallest value on the bill. CSV exports write the invoices as `number (amount); number (amount)`. Dismissal stays per bill. |
+| FIN-APH-06 | **Search by invoice number.** The search box on the supplier and excluded views matches vendor name or code, **or** an invoice number (normalised: upper case, whitespace removed; contains-match; from 3 characters). A supplier is listed when any of its approved bills in that currency carries the number, paid or not, and the row names each matching bill with its date, billed amount and "settled" or its open balance. On the excluded view a bill is listed whole when any of its lines carries the number. |
+| FIN-APH-07 | **Settled by journal voucher.** For an open approved bill with **no approved payment pointing at it**, the supplier view and the bills-by-date view show journal-voucher lines that: are on a 2202* account, carry the same supplier (partner name = NC supplier name, leading and trailing spaces ignored), move the payable the opposite way to the bill (a debit against a bill, a credit against a credit note), and whose line or voucher summary contains one of the bill's invoice numbers as a whole number. Up to 5 per bill, with voucher number, date, amount, source subsystem and summary; marked when the amount equals the bill's open balance. The supplier view header counts these bills. Evidence only: the balance is not reduced. At measurement, 49 of 232 such bills that carry an invoice number had a match. |
+| FIN-APH-08 | **Same invoice in another currency.** An open bill is flagged when one of its invoice numbers is on an approved bill of the same supplier code in a **different currency**, with that bill's number, date, shared invoice numbers and whether it is settled. At measurement, 12 open CAD supply-chain bills (trade type D1, 2025-11-29, 1,790,521.22) repeated foreign-currency bills that had been paid, e.g. Independent Can Company. Evidence only; nothing is netted across currencies. |
+| FIN-APH-10 | **Clearings that name no invoice.** The supplier view shows, above the bills, journal lines that: are on a 2202* account; carry the same supplier (spaces trimmed) and the supplier's currency; were not raised by the AP subsystem; reduce the payable; are dated on or after the oldest open approved bill that has no approved payment and is not ignored; are not cancelled by an equal and opposite line of the same supplier (an accrual and its reversal); and whose summary names none of the invoice numbers on any of the supplier's bills. Shown only when such unpaid bills exist, with their count and open total, the lines (up to 20) and their total. Nothing is applied to any bill. At measurement: 4 suppliers, 11 lines — among them CCIC Agri-Food Testing's 2025-12-30 receivable/payable netting of 292,798.92 against 15 unpaid 2025 bills. |
+| FIN-APH-09 | Invoice numbers are compared as **tokens**: a field holding several invoices is split on `/ , ; &`, and a shorter all-digit token replaces the tail of the number before it (`9151970/1987/1992` = 9151970, 9151987, 9151992). A leading `#` is dropped; tokens under 4 characters are not used. Applies to FIN-APH-07 and FIN-APH-08. |
 
 ### 9.5 AP Cash Flow
 
 | FR ID | Requirement |
 |---|---|
-| FIN-CF-01 | Based on NC's **approved open balance**, per currency, excluding dismissed bills. |
+| FIN-CF-01 | Based on NC's **approved open balance**, per currency, excluding dismissed bills, and counting **only the lines an approved EPMS PA is about to pay**: an open NC line counts when its invoice number (case, spaces and hyphens ignored) is on an EPMS invoice of the same NC supplier that sits on a PA in status **approved**. Lines on no PA, on a PA in draft / submitted / in review / returned, or on a processed (paid) PA are left out; an unnumbered line can never count. A bill's open amount in the cash flow is the sum of its counted lines. Decided with finance on 2026-11-02. |
 | FIN-CF-02 | Due date = NC bill date + the **vendor master payment term** (`net<N>` = N days for any N in 1–365, not only the Net 15/30/60/90 presets; COD and prepayment = 0). An unknown or missing term is **not** defaulted to net30. Such bills are reported as **undated** ("No payment term on file") with the amount and the supplier list. |
 | FIN-CF-03 | Buckets: overdue >180 / 91–180 / 31–90 / ≤30 days; due within 7 / 8–30 / 31–60 / 61–90 / beyond 90 days; undated. Clicking a figure lists its bills. |
 | FIN-CF-04 | Missing-terms panel lists NC suppliers with no vendor record, and the largest single-date amount, which is typically NC's go-live opening load. |
+| FIN-CF-06 | The drill-down shows every invoice on a bill with its own open amount, as in FIN-APH-05. The due date stays per bill (NC bill date + vendor term). |
+| FIN-CF-07 | **Reversal pairs net out.** Open lines with the same supplier, currency and invoice number whose open balances add up to exactly zero are left out, even if they are on an approved PA. Matched per line, not per bill: a reversal bill covering several invoices drops only the matched lines. Finance should still offset such pairs in NC. |
+| FIN-CF-08 | The bill list shows the **PA number(s)** that put each bill on the forecast (also in the CSV export, sortable). A **search box** finds bills by AP (NC bill) number, any invoice number on the bill, supplier name or code, or PA number. It searches inside the selected bucket or supplier, or across the currency when nothing is selected. |
 | FIN-CF-05 | **Not implemented:** invoice-level term precedence (invoice term → vendor term → "term unknown"); further layers (UniOps invoices not yet in NC, received-not-invoiced, ordered-not-received, recurring agreement schedules, a monthly milk layer). See FIN-OI-12. |
 
 ---
@@ -341,7 +439,7 @@ Executing PA payments from EPMS is specified in EPMS.md §3.18. This section cov
 | FIN-PAY-03 | SoD *self_payment* (configurable): the creator of a PA, or the claimant of an expense claim, cannot execute its payment. |
 | FIN-PAY-04 | Refused when: the payment date falls in a soft- or hard-closed period; the PA is not `approved`; the claim is a Travel Application (TRA — it carries no money, OA.md §5); the funding account's currency differs from the payment's; or a PO-route non-prepayment PA links no invoice while its PO still has a payable invoice no live PA claims. |
 | FIN-PAY-05 | Payment record: document reference, payment date, method, amount, currency, **funding bank account or credit card**, batch, credit applied. The legacy direct-create payment endpoint is retired. |
-| FIN-PAY-06 | **Payment Batches:** pick approved PAs and claims from the due list (vendor invoice number shown) and execute them together. Each line goes through the same executor. For vendor PAs the dialog shows a vendor-credit netting preview per line, where credits can be unticked. The remittance dialog opens after execution when remittance is enabled. The due list has a **type filter** — All / PA / Direct PA / Expense Claim, each with its count for the selected currency — and a Submitted date column; currency and type are kept in the URL (`?currency=…&type=claim`). A claim's number opens the OA claim detail as a tab inside Finance. Approved Travel Applications are **not** in the due list, and a batch that names one is refused. |
+| FIN-PAY-06 | **Payment Batches:** pick approved PAs and claims from the due list (vendor invoice number shown) and execute them together. Each line goes through the same executor. For vendor PAs the dialog shows a vendor-credit netting preview per line, where credits can be unticked. The remittance dialog opens after execution when remittance is enabled. The due list has a **type filter** — All / PA / Freight PA / Direct PA / Expense Claim (a Freight PA — courier invoices paid from EPMS → Freight, no PO — is paid exactly like a PA and its invoices are marked paid; *Direct PA* covers EPMS Direct PAs, paid the same way, and OA's retired ones), each with its count for the selected currency — a Submitted date column, and a **Due Date** column — the earliest due date among the PA's invoices (invoices on one PA fall due within 7 days of each other), shown in red once it has passed; claims and PAs without invoices show "—". **Every column header sorts the list**: the first click sorts ascending, the next click reverses it, and a header shows ↕ until it is the active sort. Rows with no value in that column (no due date, no invoice number) stay at the bottom in both directions; amounts sort as numbers, and document and invoice numbers in number-aware order (508027 before 2026000066). Sorting works together with the type filter and starts from the API order on each visit. Currency and type are kept in the URL (`?currency=…&type=claim`). A claim's number opens the OA claim detail as a tab inside Finance; each of a PA's vendor invoice numbers opens that EPMS invoice as a tab inside Finance. OA Direct PAs show their invoice number as plain text, since OA no longer has an invoice detail page. Approved Travel Applications are **not** in the due list, and a batch that names one is refused. |
 | FIN-PAY-07 | **Payments hub:** list with filters (vendor, date range, document kind, currency, method, status, funding account, batch, source batch/single, remittance sent/not sent, free text), summary, CSV export, and multi-select remittance. The Method column shows the funding account. Reads need a finance role. The hub lists money already paid, so above it a **banner per currency** shows approved expense claims still awaiting payment (count and total) and links to the Payment Batches due list filtered to expense claims in that currency. No banner when there are none. |
 | FIN-PAY-08 | Paying closes the matching *process_pa* / *process_expense* tasks. |
 
@@ -382,7 +480,7 @@ Recipient, line and blocking rules match EPMS.md §3.18.3 (REM-001 to REM-006).
 |---|---|
 | FIN-BANK-01 | Bank accounts and credit cards: name, bank / issuer, kind, masked number, currency, ledger account, active flag, CSV column-mapping template. |
 | FIN-BANK-02 | **Link to the NC bank account** (the bank-account auxiliary on 100201). The picker offers only this book's accounts. The link must be made for each account before it can be reconciled. Accounts are named the way finance names them. |
-| FIN-BANK-03 | Gated by `finance.bank.settings`. FX rates (currency pair + effective date) are maintained under `finance.coa.manage`. |
+| FIN-BANK-03 | Gated by `finance.bank.settings`. FX rates are kept on Finance → Exchange Rates (FIN-FX-01…05). |
 
 ### 12.2 Reconciliation workbench (v2)
 
@@ -402,6 +500,18 @@ Recipient, line and blocking rules match EPMS.md §3.18.3 (REM-001 to REM-006).
 
 ---
 
+### 12.3 Exchange Rates
+
+| FR ID | Requirement |
+|---|---|
+| FIN-FX-01 | **One rate history** (`exchange_rates`, one row per currency → CAD per day). Source is either **Bank of Canada** (daily average, Valet series `FX<CCY>CAD`) or **Manual**. RMB is stored and looked up as CNY. |
+| FIN-FX-02 | **Daily fetch:** every business day after 17:00 Toronto time the service fetches the last 14 days for USD, EUR, GBP, CNY and every other currency found on AP invoices (re-fetching is idempotent and fills a day a failed run missed); an empty table is backfilled from 2025-01-01. A Manual row is never overwritten. Each fetch is recorded with its outcome; a currency BoC does not publish is reported and must be set by hand. Any finance role can also fetch a date range (at most 400 days) from the page. |
+| FIN-FX-03 | **Manual rate** (`finance.coa.manage`): set a currency's rate for a day with a required note; it is kept as Manual. A Manual rate can be removed; the next fetch brings the BoC rate back. |
+| FIN-FX-04 | **Which rate a document gets:** the rate of its own date, else the latest within the 7 days before it (a weekend or holiday takes the previous business day — the usual practice, user decision 2026-10-27). Nothing found = no rate: the caller never falls back to 1. The page has a lookup showing exactly the rate a date gets. |
+| FIN-FX-05 | Consumers: Push to NC (FIN-AP-05, invoice issue date; refuses with no rate) and the internal payment postings (FIN-SPINE-01, payment date; with no rate the line keeps rate 1 and appears on the FX exception list, as before). |
+
+---
+
 ## 13. Accounts Receivable and Tax
 
 | FR ID | Requirement |
@@ -416,7 +526,7 @@ Recipient, line and blocking rules match EPMS.md §3.18.3 (REM-001 to REM-006).
 
 | FR ID | Requirement |
 |---|---|
-| FIN-SPINE-01 | UniOps still writes an internal posting event for AP accrual (invoice posted), payment, expense payment and AR events. Each event is idempotent per document + event type and debits and credits are kept separate. Each event also creates a draft UniOps voucher. **These records are an internal trail, not the book of record.** They are not exported to NC; the AP export in §9.1 is the handoff. |
+| FIN-SPINE-01 | UniOps still writes an internal posting event for AP accrual (invoice posted), payment, expense payment and AR events. Each event is idempotent per document + event type and debits and credits are kept separate. Each event also creates a draft UniOps voucher. **These records are an internal trail, not the book of record.** They are not exported to NC; Push to NC in §9.1 is the handoff. |
 | FIN-SPINE-02 | Under "Include unposted vouchers", UniOps' own draft vouchers are counted together with NC's untallied ones. They may duplicate amounts NC also books for the same invoice or payment. **To be confirmed** (FIN-OI-14). |
 | FIN-QBO-01 | **QuickBooks mirror:** an archive of the previous system (vendors, bills, payments, credits, journal entries, attachments), with sync, browse, export, and "Fill Remittance Emails" (copies QBO vendor emails into empty vendor remittance emails, fill-only). It is under Settings and is to be removed when QuickBooks is retired. |
 | FIN-LEG-01 | Legacy budget-ledger endpoints (balance / commit / release / actualize) are still present. Under the positioning, the budget ledger is to be removed and replaced by a derived commitments view (see BUDGET.md, FIN-OI-15). |
@@ -462,7 +572,7 @@ Recipient, line and blocking rules match EPMS.md §3.18.3 (REM-001 to REM-006).
 | FIN-OI-23 | Decision: whether a once-a-day position is enough for the Payment Officer, or bank data should be read directly | Open |
 | FIN-OI-24 | Customs-duty allocation (about 20k manual voucher lines a year): a separate project; manual PO references are not authoritative | Open |
 | FIN-OI-25 | Vendor-credit clearing (1123) has no matching debit posting in UniOps; confirm the treatment in NC | Open |
-| FIN-OI-26 | Server-side refusal of AP re-export to NC unless explicitly allowed (today the confirmation is in the browser only) | Not implemented |
+| FIN-OI-26 | Server-side refusal of AP re-export to NC unless explicitly allowed | **Closed 2026-10-27**: the Excel export is gone; NC refuses to overwrite an approved bill (FIN-AP-06) |
 | FIN-OI-27 | AR beyond the basic framework (credit control, statements, dunning) — waits for a sales source | Not implemented |
 
 ---

@@ -6,14 +6,15 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.coa import _require_manage
 from app.core.deps import CurrentUser
+from app.core.list_sort import SortDir, lower, order_by
 from app.crud import ar as ar_crud
 from app.db.base import get_db
-from app.models.ar import DRAFT, VOID, ArInvoice, ArInvoiceTaxLine
+from app.models.ar import DRAFT, OPEN_STATUSES, VOID, ArInvoice, ArInvoiceTaxLine
 
 router = APIRouter(prefix="/ar", tags=["accounts-receivable"])
 
@@ -98,17 +99,46 @@ async def create_invoice(body: InvoiceIn, user: CurrentUser, db: AsyncSession = 
     return inv
 
 
-@router.get("/invoices", response_model=list[InvoiceOut])
+# GET /ar/invoices click-to-sort whitelist — each key sorts what that column of
+# AccountsReceivablePage shows. Outstanding is shown only for open invoices.
+_INVOICE_SORT = {
+    "invoice_number": ArInvoice.invoice_number,
+    "customer_name": lower(ArInvoice.customer_name),
+    "invoice_date": ArInvoice.invoice_date,
+    "due_date": ArInvoice.due_date,
+    "total_amount": ArInvoice.total_amount,
+    "outstanding": case(
+        (ArInvoice.status.in_(OPEN_STATUSES),
+         ArInvoice.total_amount - ArInvoice.paid_amount), else_=None),
+    "status": ArInvoice.status,
+}
+
+
+class InvoiceListOut(BaseModel):
+    total: int
+    items: list[InvoiceOut]
+
+
+@router.get("/invoices", response_model=InvoiceListOut)
 async def list_invoices(_: CurrentUser, db: AsyncSession = Depends(get_db),
                         status: str | None = Query(default=None),
                         customer_id: uuid.UUID | None = Query(default=None),
-                        limit: int = Query(default=200, le=1000)):
+                        limit: int = Query(default=50, ge=1, le=1000),
+                        offset: int = Query(default=0, ge=0),
+                        sort: str | None = Query(default=None),
+                        dir: SortDir = Query(default="asc")):
+    """Paged envelope {total, items}, like the other finance lists. It used to
+    return the newest 200 bare, so anything older was unreachable."""
+    order = order_by(sort, dir, _INVOICE_SORT, tiebreak=(ArInvoice.id,)) or \
+        [ArInvoice.invoice_date.desc(), ArInvoice.id]
     q = select(ArInvoice)
     if status:
         q = q.where(ArInvoice.status == status)
     if customer_id:
         q = q.where(ArInvoice.customer_id == customer_id)
-    return list((await db.execute(q.order_by(ArInvoice.invoice_date.desc()).limit(limit))).scalars().all())
+    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
+    rows = (await db.execute(q.order_by(*order).offset(offset).limit(limit))).scalars().all()
+    return {"total": total, "items": list(rows)}
 
 
 @router.get("/invoices/{invoice_id}")

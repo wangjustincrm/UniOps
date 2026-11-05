@@ -14,7 +14,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ClipboardPaste, Loader2, Pencil, Plus, Search, Star, Trash2, X } from 'lucide-react'
-import { Button } from '@uniops/shell'
+import { Button, SortTh, useSortableRows } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { ToastStack } from '@/components/Toast'
@@ -107,6 +107,15 @@ export default function SupplyParametersPage() {
       return haystack.includes(needle)
     })
   }, [allRows, query, materialNameByCode, supplierNames])
+  // Client sort: the whole list is loaded. Code columns sort by the code shown first.
+  const { rows: sortedRows, sort, onSort } = useSortableRows(rows, {
+    material: (r) => r.material_code,
+    supplier: (r) => r.partner_code,
+    lead: (r) => r.lead_time_days,
+    moq: (r) => (r.moq == null ? null : Number(r.moq)),
+    multiple: (r) => (r.order_multiple == null ? null : Number(r.order_multiple)),
+    primary: (r) => r.is_primary,
+  })
 
   // Counted over EVERY row, not the filtered view: "3 rows have no lead time"
   // must not change because somebody typed in the search box.
@@ -237,12 +246,12 @@ export default function SupplyParametersPage() {
         <table className="min-w-full text-sm">
           <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
             <tr>
-              <th className="px-3 py-2 text-left">Material</th>
-              <th className="px-3 py-2 text-left">Supplier</th>
-              <th className="px-3 py-2 text-right">Lead time</th>
-              <th className="px-3 py-2 text-right">MOQ</th>
-              <th className="px-3 py-2 text-right">Order multiple</th>
-              <th className="px-3 py-2 text-center">Primary</th>
+              <SortTh label="Material" sortKey="material" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
+              <SortTh label="Supplier" sortKey="supplier" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
+              <SortTh label="Lead time" sortKey="lead" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
+              <SortTh label="MOQ" sortKey="moq" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
+              <SortTh label="Order multiple" sortKey="multiple" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
+              <SortTh label="Primary" sortKey="primary" sort={sort} onSort={onSort} align="center" className="px-3 py-2" />
               <th className="px-3 py-2" />
             </tr>
           </thead>
@@ -257,7 +266,7 @@ export default function SupplyParametersPage() {
                   : `Nothing matches "${query}".`}
               </td></tr>
             )}
-            {rows.map((row) => (
+            {sortedRows.map((row) => (
               <tr key={row.id} className="border-t border-neutral-100">
                 <td className="px-3 py-2 text-xs">
                   <span className="font-mono">{row.material_code}</span>

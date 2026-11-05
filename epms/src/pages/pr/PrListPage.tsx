@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Search, Plus, ChevronUp, ChevronDown, Filter, Copy } from 'lucide-react'
+import { Search, Plus, Filter, Copy } from 'lucide-react'
+import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/ui/badge'
 import { CurrentStepHint } from '@/components/ui/CurrentStepHint'
 import { Pagination } from '@/components/ui/Pagination'
 import { formatCAD, formatDate } from '@/lib/utils'
-import { compareByStatusThenStep } from '@/lib/currentStepSort'
 import { SkeletonRow } from '@/components/ui/skeleton'
 import { usePrs } from '@/hooks/usePrs'
 import { useQuery } from '@tanstack/react-query'
@@ -35,8 +35,9 @@ const STATUS_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'cancelled', label: 'Cancelled' },
 ]
 
-type SortField = 'number' | 'title' | 'created_by_name' | 'amount' | 'status' | 'submitted_at' | 'is_prepaid'
-type SortDir = 'asc' | 'desc'
+// GET /pr sort keys (epms-api crud/pr.py SORTABLE). Status sorts status →
+// current approval step (chain order) → approver, across all pages.
+type SortField = 'number' | 'title' | 'created_by_name' | 'vendor_name' | 'amount' | 'type' | 'is_prepaid' | 'status' | 'submitted_at'
 
 export default function PrListPage() {
   const { user } = useAuthStore()
@@ -54,9 +55,10 @@ export default function PrListPage() {
   // Requester filter: a pure requester is locked to their own PRs; anyone who can
   // see others' PRs (Department Admin, procurement, finance, …) can pick one.
   const [requesterFilter, setRequesterFilter] = useState<string>('all')
-  const [sortField, setSortField] = useState<SortField>('submitted_at')
-  const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [page, setPage] = useState(1)
+  // Paged by the API, so the API sorts; a new order starts again at page 1.
+  // Opens on Submitted ↓ (newest submissions first; drafts with no submitted date last).
+  const [sort, onSort] = useSort<SortField>({ key: 'submitted_at', dir: 'desc' }, () => setPage(1))
   const [pageSize, setPageSize] = useState(20)
   const [selectedPrId, setSelectedPrId] = useState<string | null>(null)
   const navigate = useNavigate()
@@ -106,32 +108,18 @@ export default function PrListPage() {
     pr_type: typeFilter !== 'all' ? Number(typeFilter) : undefined,
     is_prepaid: prepaidFilter === 'all' ? undefined : prepaidFilter === 'yes',
     created_by: createdByFilter,
+    ...sortParams(sort),
     page,
     page_size: pageSize,
   })
   const prs = data?.items ?? []
   const total = data?.total ?? 0
 
-  const handleSort = (field: SortField) => {
-    if (sortField === field) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-    else { setSortField(field); setSortDir('desc') }
-  }
-
   const handleFilterChange = (setter: (v: string) => void) => (v: string) => {
     setter(v)
     setPage(1)
     setSelectedPrId(null)
   }
-
-  const sorted = [...prs].sort((a, b) => {
-    let cmp = 0
-    if (sortField === 'amount') cmp = a.amount - b.amount
-    else if (sortField === 'submitted_at') cmp = (a.submitted_at ?? '').localeCompare(b.submitted_at ?? '')
-    else if (sortField === 'created_by_name') cmp = (a.created_by_name ?? '').localeCompare(b.created_by_name ?? '')
-    else if (sortField === 'status') cmp = compareByStatusThenStep(a, b)
-    else cmp = String(a[sortField as keyof typeof a]).localeCompare(String(b[sortField as keyof typeof b]))
-    return sortDir === 'asc' ? cmp : -cmp
-  })
 
   // Requester is dropped for a pure requester — the list is already only their
   // own PRs, so the column would repeat their name on every row.
@@ -145,16 +133,9 @@ export default function PrListPage() {
     ['is_prepaid', 'Prepaid'],
     ['status', 'Status'],
     ['submitted_at', 'Submitted'],
-  ] as [SortField | 'vendor_name' | 'type' | 'is_prepaid', string][])
+  ] as [SortField, string][])
   // checkbox + data columns + the View action cell
   const colCount = columns.length + 2
-
-  const SortIcon = ({ field }: { field: SortField }) => {
-    if (sortField !== field) return <ChevronUp className="h-3 w-3 text-neutral-300" />
-    return sortDir === 'asc'
-      ? <ChevronUp className="h-3 w-3 text-primary-600" />
-      : <ChevronDown className="h-3 w-3 text-primary-600" />
-  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -256,23 +237,19 @@ export default function PrListPage() {
               <tr className="border-b border-neutral-200 bg-neutral-50">
                 <th className="w-10 px-4 py-3" />
                 {columns.map(([field, label]) => (
-                  <th key={field} className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 ${field === 'amount' ? 'text-right' : 'text-left'}`}>
-                    {['vendor_name', 'type', 'is_prepaid'].includes(field) ? label : (
-                      <button onClick={() => handleSort(field as SortField)} className="flex items-center gap-1 hover:text-neutral-700">
-                        {label}<SortIcon field={field as SortField} />
-                      </button>
-                    )}
-                  </th>
+                  <SortTh key={field} label={label} sortKey={field} sort={sort} onSort={onSort}
+                    align={field === 'amount' ? 'right' : 'left'}
+                    className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500" />
                 ))}
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
               {isLoading && Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} cols={colCount} />)}
-              {!isLoading && sorted.length === 0 && (
+              {!isLoading && prs.length === 0 && (
                 <tr><td colSpan={colCount} className="py-16 text-center text-sm text-neutral-400">No purchase requisitions found</td></tr>
               )}
-              {sorted.map((pr) => (
+              {prs.map((pr) => (
                 <tr key={pr.id} className="border-b border-neutral-100 bg-white hover:bg-primary-50/60 transition-colors">
                   <td className="px-4 py-3">
                     <input

@@ -3,7 +3,8 @@
 #
 # Derived: PaCreate's required fields. PA has no doc_preflight submit gates —
 # its rules live in api/v1/pa.py, which rejects a settlement or balance PA with
-# no prepayment_pa_id (422) and a second prepayment on the same PO (409).
+# no prepayment_pa_id (422), a prepayment on a PO that already has a
+# settlement (409), and a settlement while another prepayment is unpaid (409).
 topic: pa_types
 label: Payment Application types
 doc_type: pa
@@ -14,10 +15,17 @@ what_it_is: >
   invoices and the receipts that justify the payment, goes through approval,
   and on approval becomes a remittance.
 
+# ISS-0066: this used to say the type is "driven by the purchase order: a PO
+# marked prepayment required needs a prepayment PA first", and the Assistant
+# concluded a vendor cannot be prepaid because its old PRs had the flag off.
+# create_pa never reads is_prepaid; the vendor's cap decides (rule
+# prepayment_cap).
 how_types_are_set: >
-  Set when the PA is created, and driven by the purchase order: a PO marked
-  "prepayment required" is paid before delivery and needs a prepayment PA
-  first, then a settlement once the goods or the invoice arrive.
+  Chosen by the person creating the PA. The form offers Prepayment and
+  Settlement only for a single PO marked Prepaid; otherwise it offers Regular.
+  Whether a prepayment is allowed at all is decided by the vendor's Max
+  Prepayment % (or, when the vendor has none, the system cap in Prepayment
+  Config) — never by the Prepaid flag on past PRs or POs.
 
 question_hints:
   - what types of payment application are there
@@ -33,8 +41,14 @@ values:
       The default. Use it whenever the vendor is paid after delivery against an
       invoice you have already matched.
     notes:
-      - Needs receipt evidence behind it; a PO with nothing received cannot be
-        paid this way.
+      - >-
+        On a PO it needs receipt evidence (a goods receipt, or a received
+        quantity on one of the PO's lines) unless a user with the "Override
+        Receipt on PA" permission overrides that check and gives a reason. On an
+        agreement there is no receipt check or override; the agreement's
+        invoice checks apply instead (receipts attached or settled without
+        evidence for a house account, the period's service confirmed for a
+        recurring agreement).
       - >-
         A PA raised against purchase orders can pay several invoices from the
         same vendor, but only if they fall due within 7 days of each other;
@@ -46,16 +60,50 @@ values:
         it was matched to, and non-PO fees on the invoice (freight, for example)
         become lines of their own. You only pick PO lines yourself when an
         invoice was matched against the PO total alone.
+      - >-
+        Courier charges (UPS, FedEx, Purolator…) are not paid this way. Buyers
+        register each tracking number on EPMS → Freight → Shipments with the
+        cost center that bears it; the supply-chain person uploads the carrier's
+        invoice on EPMS → Invoices → Upload Invoice like any invoice (the form
+        recognises the carrier by the vendor), it is
+        matched by tracking number on its invoice page, and a Freight PA is
+        raised from EPMS → Payment Applications → New Freight PA (or Create PA
+        on the matched invoice) — no PO, no agreement, split by cost center and
+        charged to budget account CRM00204. A Freight PA is a regular PA
+        approved by OPM → GM → Finance Manager → Finance BP (configurable as
+        "Freight PA" in Portal → Admin → Approval Workflows); only its title and
+        notes can be edited, its amounts come from the invoices.
+      - >-
+        An invoice that has no purchase order and no agreement behind it is paid
+        by a Direct PA. On the invoice, Match → Direct PA marks it (whoever may
+        match the invoice may do this); then EPMS → Payment Applications →
+        Create Direct PA (or Create Direct PA on the invoice) picks one or more
+        such invoices of the same vendor and currency, and the department
+        (defaulting to your own), cost center, budget account and the reason
+        for paying without a PO are filled in. If the invoice was linked to a
+        PO with Link to PO (not Match to PO), the department, cost center and
+        budget account default to that PO's instead (department and cost
+        center from its PR, budget account from the PO, else the PR) — you
+        can still change them; NC orders carry none of this. A Direct PA is a regular PA
+        approved on the "PA (Direct)" workflow in Portal → Admin → Approval
+        Workflows. Its amounts come from the invoices; the title, reason,
+        department, cost center and budget account stay editable until it is
+        submitted. OA no longer has Direct PAs. If the invoice is not in EPMS
+        yet, Upload Invoice on the Create Direct PA page uploads it and matches
+        it for a Direct PA in one go, then brings you back with it ticked.
 
   - value: prepayment
     label: Prepayment
     covers: A deposit or full payment made before the vendor delivers.
     when: >
-      When the purchase order is marked as requiring prepayment. This is the
-      first of a pair — the money goes out now and is reconciled later.
+      When the purchase order is marked as requiring prepayment. The money goes
+      out now and is reconciled later by one settlement.
     notes:
-      - Only one prepayment PA can be open against a purchase order at a time.
-        Settle or cancel the existing one before raising another.
+      - A purchase order can be prepaid in stages — for example 30% when the
+        order is placed and 70% before shipment — each stage its own prepayment
+        PA. The vendor's cap applies to all the stages added together, not to
+        each one.
+      - No further prepayment can be raised once the order has a settlement.
       - Records what percentage of the order is being prepaid and when the
         settlement is expected.
 
@@ -63,9 +111,13 @@ values:
     label: Settlement
     covers: The reconciliation of a prepayment once the real invoice arrives.
     when: >
-      After a prepayment, when you know the actual amount. It must reference
-      the prepayment PA it is settling — without that link it is rejected.
+      After the prepayment(s), when you know the actual amount. It must
+      reference a prepayment PA on the order — without that link it is
+      rejected. One settlement reconciles every paid prepayment on the order
+      at once, and can apply up to their total.
     notes:
+      - It cannot be raised while another prepayment on the same order is
+        still waiting for approval or payment — pay or cancel that one first.
       - If the invoice exactly matches what was prepaid, nothing is owed and it
         reconciles immediately — no approval, no payment, no bank movement.
       - If the prepayment was too large, a finance confirmation task gates the
@@ -77,3 +129,9 @@ values:
     when: >
       When a deposit covered only part of the order and the rest falls due. Like
       a settlement it must reference the original prepayment PA.
+
+# ── Rules people ask about ───────────────────────────────────────────────────
+# "被拒绝的付款申请是什么状态？" searched status = rejected, found nothing and
+# answered that there were no rejected PAs — nine existed (ISS-0008).
+
+# The rules people ask about live in rules/pa.yaml (app/services/rule_registry.py).

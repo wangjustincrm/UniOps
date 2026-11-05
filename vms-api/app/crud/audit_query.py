@@ -12,6 +12,8 @@ from datetime import datetime
 from typing import AsyncIterator
 
 from sqlalchemy import func, select
+
+from app.core.list_sort import apply_sort
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.audit_log import AuditLog
@@ -33,6 +35,17 @@ def _apply_filters(stmt, *, user_id, action_type, entity_type, entity_id, date_f
     return stmt
 
 
+# Audit Log page headers -> ORDER BY (the ?sort= whitelist).
+AUDIT_SORTABLE = {
+    "timestamp": AuditLog.timestamp,
+    "user_name": func.lower(AuditLog.user_name),
+    "action_type": func.lower(AuditLog.action_type),
+    "entity_type": func.lower(AuditLog.entity_type),
+    "ip_address": AuditLog.ip_address,
+    "notes": func.lower(AuditLog.notes),
+}
+
+
 async def list_audit_logs(
     db: AsyncSession,
     *,
@@ -44,8 +57,11 @@ async def list_audit_logs(
     date_to: datetime | None = None,
     page: int = 1,
     page_size: int = 50,
+    sort: str | None = None,
+    dir: str = "asc",
 ) -> tuple[list[AuditLog], int]:
-    base = select(AuditLog).order_by(AuditLog.id.desc())
+    base = apply_sort(select(AuditLog), sort, dir, AUDIT_SORTABLE,
+                      tiebreak=AuditLog.id.desc(), default=(AuditLog.id.desc(),))
     base = _apply_filters(
         base,
         user_id=user_id, action_type=action_type, entity_type=entity_type,

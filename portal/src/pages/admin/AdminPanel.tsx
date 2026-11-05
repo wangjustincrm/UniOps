@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Building2, ShieldCheck, Users, CreditCard, Bell, Landmark,
@@ -8,7 +8,10 @@ import {
   Download, Upload, ChevronLeft, ChevronRight, FileText,
   Workflow, ChevronDown, ChevronUp, Database, Ruler, Mail, DatabaseZap, Warehouse,
 } from 'lucide-react'
+import { SortTh, useSort, useSortableRows, sortParams, type Sort } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
+import { useRolePermissions } from '@/hooks/useRolePermissions'
+import { adminPageLinks } from '@/components/layout/navConfig'
 import { epmsApi, epmsDownload, epmsUpload, mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { UnitsOfMeasure } from './UnitsOfMeasure'
@@ -26,7 +29,7 @@ interface WorkflowNodeDef {
   sig_slot?: 'initials' | 'signature' | null
 }
 
-type ActionKey = 'pr' | 'po' | 'posign' | 'agr' | 'pa' | 'pa_dir' | 'exp' | 'mil' | 'trv' | 'tra' | 'cfm' | 'budget_plan' | 'vms_visit'
+type ActionKey = 'pr' | 'po' | 'posign' | 'agr' | 'pa' | 'pa_frt' | 'pa_dir' | 'exp' | 'mil' | 'trv' | 'tra' | 'cfm' | 'budget_plan' | 'vms_visit'
 
 interface CompanyConfig {
   name: string
@@ -108,6 +111,15 @@ const ROLE_LABELS: Record<string,string> = {
 }
 
 // ── Shared UI helpers ─────────────────────────────────────────────────────────
+
+/** Header-cell classes shared by the admin list tables below. */
+const ADMIN_TH = 'px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500'
+
+/** Copy `{ sort, dir }` (or nothing) onto a list's query string. */
+function setSortQs<K extends string>(qs: URLSearchParams, sort: Sort<K> | null) {
+  const p = sortParams(sort)
+  if (p.sort) { qs.set('sort', p.sort); qs.set('dir', p.dir ?? 'asc') }
+}
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
@@ -377,6 +389,9 @@ function DepartmentManagement() {
     queryKey: ['portal-departments'],
     queryFn: () => mdmApi.get<{ items: ApiDepartment[]; total: number }>('/departments'),
   })
+  const depts = useSortableRows(data?.items, {
+    code: (d) => d.code, name: (d) => d.name, status: (d) => (d.is_active ? 'Active' : 'Inactive'),
+  })
   const [modal, setModal] = useState<{ mode: 'create' | 'edit'; dept?: ApiDepartment } | null>(null)
   const [form, setForm] = useState({ name: '', code: '', is_active: true })
   const [saving, setSaving] = useState(false)
@@ -426,14 +441,15 @@ function DepartmentManagement() {
           <table className="w-full text-sm">
             <thead className="border-b border-neutral-100 bg-neutral-50">
               <tr>
-                {['Code','Name','Status',''].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>
-                ))}
+                <SortTh label="Code" sortKey="code" sort={depts.sort} onSort={depts.onSort} className={ADMIN_TH} />
+                <SortTh label="Name" sortKey="name" sort={depts.sort} onSort={depts.onSort} className={ADMIN_TH} />
+                <SortTh label="Status" sortKey="status" sort={depts.sort} onSort={depts.onSort} className={ADMIN_TH} />
+                <th className={ADMIN_TH} />
               </tr>
             </thead>
             <tbody>
-              {data.items.map((d, i) => (
-                <tr key={d.id} className={cn('border-b border-neutral-100', i === data.items.length - 1 && 'border-b-0')}>
+              {depts.rows.map((d, i) => (
+                <tr key={d.id} className={cn('border-b border-neutral-100', i === depts.rows.length - 1 && 'border-b-0')}>
                   <td className="px-4 py-3 font-mono text-xs text-neutral-600">{d.code}</td>
                   <td className="px-4 py-3 font-medium text-neutral-800">{d.name}</td>
                   <td className="px-4 py-3">
@@ -494,15 +510,19 @@ function UserManagement() {
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
   const [page, setPage] = useState(1)
+  // Server-sorted: /users pages, so the API sorts (no sort = by name, as before).
+  const [userSort, onUserSort] = useSort<'full_name' | 'role' | 'department' | 'erp_person_code' | 'status'>(
+    null, () => setPage(1))
 
   const qs = new URLSearchParams()
   qs.set('page', String(page))
   qs.set('page_size', String(PAGE_SIZE))
   if (search) qs.set('search', search)
   if (roleFilter) qs.set('role', roleFilter)
+  setSortQs(qs, userSort)
 
   const { data, isLoading } = useQuery<{ items: ApiUser[]; total: number }>({
-    queryKey: ['portal-users', page, search, roleFilter],
+    queryKey: ['portal-users', page, search, roleFilter, userSort],
     queryFn: () => epmsApi.get<{ items: ApiUser[]; total: number }>(`/users?${qs}`),
     placeholderData: (prev) => prev,
   })
@@ -684,9 +704,12 @@ function UserManagement() {
           <table className="w-full text-sm">
             <thead className="border-b border-neutral-100 bg-neutral-50">
               <tr>
-                {['Name / Email', 'Role', 'Department', 'ERP Code', 'Status', ''].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>
-                ))}
+                <SortTh label="Name / Email" sortKey="full_name" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
+                <SortTh label="Role" sortKey="role" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
+                <SortTh label="Department" sortKey="department" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
+                <SortTh label="ERP Code" sortKey="erp_person_code" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
+                <SortTh label="Status" sortKey="status" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
+                <th className={ADMIN_TH} />
               </tr>
             </thead>
             <tbody>
@@ -1377,7 +1400,7 @@ function RemittanceSettings() {
 // so a key missing from this list is not merely uneditable, it is DELETED by
 // the next workflow save. approval-api reseeds it on its next boot (main.py
 // only fills gaps), but until then `workflow_defs->'agr'` reads NULL.
-const ACTION_KEYS: ActionKey[] = ['pr', 'po', 'posign', 'agr', 'pa', 'pa_dir', 'exp', 'mil', 'trv', 'tra', 'cfm', 'budget_plan', 'vms_visit']
+const ACTION_KEYS: ActionKey[] = ['pr', 'po', 'posign', 'agr', 'pa', 'pa_frt', 'pa_dir', 'exp', 'mil', 'trv', 'tra', 'cfm', 'budget_plan', 'vms_visit']
 
 const ACTION_KEY_LABELS: Record<ActionKey, string> = {
   pr:          'Purchase Request',
@@ -1385,6 +1408,7 @@ const ACTION_KEY_LABELS: Record<ActionKey, string> = {
   posign:      'PO Sign-off (NC imports)',
   agr:         'Purchase Agreement',
   pa:          'PA (PO-Linked)',
+  pa_frt:      'PA (Courier Freight)',
   pa_dir:      'PA (Direct)',
   exp:         'General Expense',
   mil:         'Mileage Claim',
@@ -1402,6 +1426,15 @@ const ACTION_KEY_LABELS: Record<ActionKey, string> = {
 const SIGNOFF_ROLE_VALUES = new Set([
   'gm', 'opm', 'procurement_manager', 'finance_manager', 'vendor_manager',
   'finance_director',
+])
+
+// A Freight PA pays one courier invoice split over several departments, so no
+// step can resolve by department: a department-scoped role would resolve
+// against whoever raised the PA, and gm_or_opm would always land on the GM.
+// Only company-level posts are offered (approval-api engine.workflow_key).
+const FREIGHT_ROLE_VALUES = new Set([
+  'opm', 'gm', 'procurement_manager', 'finance_manager', 'finance_director',
+  'finance_bp', 'ap_clerk',
 ])
 
 const SIG_SLOTS: { value: '' | 'initials' | 'signature'; label: string }[] = [
@@ -1422,10 +1455,13 @@ const WORKFLOW_ROLES = [
   { value: 'finance_director',    label: 'Finance Director' },
   { value: 'finance_bp',          label: 'Finance BP' },
   { value: 'ap_clerk',            label: 'AP Clerk' },
-  // VMS-local role — vms-api resolves the specific user from
-  // `vms_config.quality_manager_user_ids` (see S2_ARCHITECTURE_REVIEW.md F2).
+  // VMS-local role — goes to the managers of the visit's access zone
+  // (VMS Admin → Zones), one task each; skipped when the zone has none.
   // Only meaningful on the vms_visit workflow.
-  { value: 'quality_manager',     label: 'Quality Manager (VMS-local)' },
+  { value: 'zone_manager',        label: 'Zone Manager (VMS zone managers)' },
+  // Its name before zones were configurable. Same behaviour — kept so a
+  // workflow saved with it still shows its step; switch it to Zone Manager.
+  { value: 'quality_manager',     label: 'Quality Manager (legacy — same as Zone Manager)' },
 ]
 
 const WORKFLOW_DEFAULTS: Record<ActionKey, WorkflowNodeDef[]> = {
@@ -1440,6 +1476,13 @@ const WORKFLOW_DEFAULTS: Record<ActionKey, WorkflowNodeDef[]> = {
   // Mirrors approval-api crud/engine.py::_WORKFLOW_DEFAULTS['agr'].
   agr:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'procurement_manager', role: 'procurement_manager', label: 'Procurement Manager' }, { id: 'finance_manager', role: 'finance_manager', label: 'Finance Manager' }],
   pa:     [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'gm_or_opm', role: 'gm_or_opm', label: 'GM / OPM' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }],
+  // Mirrors approval-api crud/engine.py::_WORKFLOW_DEFAULTS['pa_frt'].
+  pa_frt: [
+    { id: 'opm', role: 'opm', label: 'Operations Manager' },
+    { id: 'gm', role: 'gm', label: 'General Manager' },
+    { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' },
+    { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' },
+  ],
   pa_dir: [{ id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }],
   exp:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }],
   mil:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }],
@@ -1447,8 +1490,8 @@ const WORKFLOW_DEFAULTS: Record<ActionKey, WorkflowNodeDef[]> = {
   tra:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }, { id: 'gm', role: 'gm', label: 'General Manager' }],
   cfm:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }],
   budget_plan: [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }],
-  // VMS visit: default single-step. Admin adds a `quality_manager` row for
-  // GMP / Lab dual approval (S2_ARCHITECTURE_REVIEW.md §"locked decisions").
+  // VMS visit: default single-step. Admin adds a `zone_manager` row so zones
+  // with managers (VMS Admin → Zones) also need their sign-off.
   vms_visit: [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }],
 }
 
@@ -1492,15 +1535,18 @@ function ApprovalWorkflows() {
     setSteps(steps.filter((_, idx) => idx !== i))
 
   const isSignoff = activeKey === 'posign'
+  const isFreight = activeKey === 'pa_frt'
   const roleOptions = isSignoff
     ? WORKFLOW_ROLES.filter(r => SIGNOFF_ROLE_VALUES.has(r.value))
-    : WORKFLOW_ROLES
+    : isFreight
+      ? WORKFLOW_ROLES.filter(r => FREIGHT_ROLE_VALUES.has(r.value))
+      : WORKFLOW_ROLES
 
   const addStep = () =>
     setSteps([...steps, {
       id: crypto.randomUUID(), label: 'New Step',
       // dept_manager cannot route a sign-off — see SIGNOFF_ROLE_VALUES.
-      role: isSignoff ? 'procurement_manager' : 'dept_manager',
+      role: isSignoff ? 'procurement_manager' : isFreight ? 'finance_manager' : 'dept_manager',
       ...(isSignoff ? { sig_slot: null } : {}),
     }])
 
@@ -1553,6 +1599,7 @@ function ApprovalWorkflows() {
             )}
           >
             {key === 'pa_dir'      ? 'PA-DIR'
+              : key === 'pa_frt'    ? 'Freight PA'
               : key === 'vms_visit' ? 'VMS Visit'
               : key === 'posign'    ? 'PO Sign-off'
               : key.toUpperCase()}
@@ -1565,6 +1612,12 @@ function ApprovalWorkflows() {
         <p className="text-xs text-neutral-400 font-medium uppercase tracking-wide">
           {ACTION_KEY_LABELS[activeKey]} — approval chain
         </p>
+        {isFreight && (
+          <p className="text-xs text-neutral-500">
+            Courier invoices (EPMS → Freight) cover several departments at once, so only
+            company-level roles can approve them. Department-based roles are not offered.
+          </p>
+        )}
 
         {steps.length === 0 && (
           <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-sm text-neutral-400">
@@ -1795,11 +1848,14 @@ function ErpMaterialsTab() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'A' | 'B' | ''>('A')
   const [page, setPage] = useState(1)
+  const [sort, onSort] = useSort<'erp_part_no' | 'description' | 'unit_meas' | 'dim_quality' | 'item_mes_type' | 'part_status' | 'erp_rowversion'>(
+    null, () => setPage(1))
   const qs = new URLSearchParams({ page: String(page), page_size: '20' })
   if (search) qs.set('search', search)
   if (statusFilter) qs.set('part_status', statusFilter)
+  setSortQs(qs, sort)
   const { data, isLoading } = useQuery<{ items: ErpMaterial[]; total: number }>({
-    queryKey: ['erp', 'material', page, search, statusFilter],
+    queryKey: ['erp', 'material', page, search, statusFilter, sort],
     queryFn: () => mdmApi.get(`/erp/materials?${qs}`),
     placeholderData: (prev) => prev,
   })
@@ -1830,9 +1886,13 @@ function ErpMaterialsTab() {
           <table className="w-full text-sm">
             <thead className="border-b border-neutral-100 bg-neutral-50">
               <tr>
-                {['Part No', 'Description', 'Unit', 'Spec', 'MES Type', 'Status', 'ERP rowversion'].map(h =>
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>
-                )}
+                <SortTh label="Part No" sortKey="erp_part_no" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                <SortTh label="Description" sortKey="description" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                <SortTh label="Unit" sortKey="unit_meas" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                <SortTh label="Spec" sortKey="dim_quality" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                <SortTh label="MES Type" sortKey="item_mes_type" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                <SortTh label="Status" sortKey="part_status" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                <SortTh label="ERP rowversion" sortKey="erp_rowversion" sort={sort} onSort={onSort} className={ADMIN_TH} />
               </tr>
             </thead>
             <tbody>
@@ -1889,10 +1949,13 @@ interface ErpSupplierRow {
 function ErpSuppliersTab() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [sort, onSort] = useSort<'erp_supplier_code' | 'supplier_name' | 'supplier_type' | 'supplier_tel' | 'supplier_address'>(
+    null, () => setPage(1))
   const qs = new URLSearchParams({ page: String(page), page_size: '20' })
   if (search) qs.set('search', search)
+  setSortQs(qs, sort)
   const { data, isLoading } = useQuery<{ items: ErpSupplierRow[]; total: number }>({
-    queryKey: ['erp', 'supplier', page, search],
+    queryKey: ['erp', 'supplier', page, search, sort],
     queryFn: () => mdmApi.get(`/erp/suppliers?${qs}`),
     placeholderData: (prev) => prev,
   })
@@ -1907,8 +1970,12 @@ function ErpSuppliersTab() {
           : !data?.items.length ? <div className="py-10 text-center text-sm text-neutral-400">No suppliers. Click Sync.</div>
           : <table className="w-full text-sm">
               <thead className="border-b border-neutral-100 bg-neutral-50">
-                <tr>{['Code', 'Name', 'Type', 'Tel', 'Address'].map(h =>
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>)}
+                <tr>
+                  <SortTh label="Code" sortKey="erp_supplier_code" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Name" sortKey="supplier_name" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Type" sortKey="supplier_type" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Tel" sortKey="supplier_tel" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Address" sortKey="supplier_address" sort={sort} onSort={onSort} className={ADMIN_TH} />
                 </tr>
               </thead>
               <tbody>
@@ -1951,13 +2018,18 @@ interface ErpPersonRow {
   erp_rowversion: string | null; synced_at: string
 }
 
+/** mdm-api /erp/persons ?sort= keys (app/crud/erp.py PERSON_SORTABLE). */
+type ErpPersonSortKey = 'erp_person_code' | 'person_name' | 'company_name' | 'department_name' | 'is_valid'
+
 function ErpPersonsTab() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [sort, onSort] = useSort<ErpPersonSortKey>(null, () => setPage(1))
   const qs = new URLSearchParams({ page: String(page), page_size: '20' })
   if (search) qs.set('search', search)
+  setSortQs(qs, sort)
   const { data, isLoading } = useQuery<{ items: ErpPersonRow[]; total: number }>({
-    queryKey: ['erp', 'person', page, search],
+    queryKey: ['erp', 'person', page, search, sort],
     queryFn: () => mdmApi.get(`/erp/persons?${qs}`),
     placeholderData: (prev) => prev,
   })
@@ -1972,8 +2044,12 @@ function ErpPersonsTab() {
           : !data?.items.length ? <div className="py-10 text-center text-sm text-neutral-400">No persons. Click Sync.</div>
           : <table className="w-full text-sm">
               <thead className="border-b border-neutral-100 bg-neutral-50">
-                <tr>{['Code', 'Name', 'Company', 'Department', 'Valid'].map(h =>
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>)}
+                <tr>
+                  <SortTh label="Code" sortKey="erp_person_code" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Name" sortKey="person_name" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Company" sortKey="company_name" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Department" sortKey="department_name" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Valid" sortKey="is_valid" sort={sort} onSort={onSort} className={ADMIN_TH} />
                 </tr>
               </thead>
               <tbody>
@@ -2023,6 +2099,7 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [excludeImported, setExcludeImported] = useState(true)
+  const [sort, onSort] = useSort<ErpPersonSortKey>(null, () => setPage(1))
   const [selected, setSelected] = useState<Record<string, { email: string }>>({})
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -2052,9 +2129,10 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
   const qs = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) })
   if (search) qs.set('search', search)
   if (excludeImported && importedCodes.length) qs.set('exclude_codes', importedCodes.join(','))
+  setSortQs(qs, sort)
 
   const { data, isLoading } = useQuery<{ items: ErpPersonRow[]; total: number }>({
-    queryKey: ['erp-import-persons', page, search, excludeImported, importedCodes.join(',')],
+    queryKey: ['erp-import-persons', page, search, excludeImported, importedCodes.join(','), sort],
     queryFn: () => mdmApi.get(`/erp/persons?${qs}`),
     placeholderData: (prev) => prev,
   })
@@ -2151,9 +2229,9 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
                     <thead className="border-b border-neutral-200">
                       <tr>
                         <th className="px-2 py-2"></th>
-                        <th className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500">Code</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500">Name</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500">Dept</th>
+                        <SortTh label="Code" sortKey="erp_person_code" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500" />
+                        <SortTh label="Name" sortKey="person_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500" />
+                        <SortTh label="Dept" sortKey="department_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500" />
                         <th className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500">Email *</th>
                       </tr>
                     </thead>
@@ -2247,8 +2325,15 @@ export default function AdminPanel() {
     const wanted = new URLSearchParams(window.location.search).get('section')
     return wanted && SECTIONS.some((s) => s.key === wanted) ? wanted : 'company'
   })
+  // Above the early return (Rules of Hooks).
+  const perms = useRolePermissions().data?.permissions
 
   if (user?.role !== 'system_admin') return <Navigate to="/" replace />
+
+  // Pages that live outside this panel but belong to administration — listed
+  // here too, or an admin who comes in through "Portal → Admin" never finds
+  // Approval Delegation / Routing / Access Control (ISS-0027).
+  const otherPages = adminPageLinks(user?.role ?? null, perms)
 
   const currentSection = SECTIONS.find((s) => s.key === section)
 
@@ -2296,6 +2381,24 @@ export default function AdminPanel() {
               {label}
             </button>
           ))}
+
+          {otherPages.length > 0 && (
+            <div className="mt-3 border-t border-white/10 pt-3 space-y-0.5">
+              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/40">
+                More admin pages
+              </p>
+              {otherPages.map(({ label, icon: Icon, href }) => (
+                <Link
+                  key={href}
+                  to={href.slice('portal:'.length)}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm text-white/65 hover:bg-white/10 hover:text-white transition-colors"
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {label}
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       </nav>
 

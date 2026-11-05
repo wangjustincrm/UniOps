@@ -221,10 +221,33 @@ async def summary(db: AsyncSession, f: ReconFilters) -> dict:
     return {"categories": out}
 
 
+# Click-to-sort whitelist for items(): key -> SQL over the `classified` CTE.
+# Fragments written here, never request text (the key is looked up, not
+# interpolated). Each sorts what that column of ApReconciliationPage shows:
+# the PO cell falls back to the unapproved NC bill number when there is no PO.
+ITEM_SORT = {
+    "ap_invoice_number": "ap_invoice_number",
+    "vendor_name": "lower(nullif(vendor_name, ''))",
+    "vendor_invoice_number": "lower(nullif(vendor_invoice_number, ''))",
+    "total_amount": "total_amount",
+    "invoice_date": "invoice_date",
+    "due_date": "due_date",
+    "po_number": "lower(coalesce(nullif(po_number, ''), unapproved_bill_no))",
+    "nc_bill_no": "nc_bill_no",
+    "nc_money_cr": "nc_money_cr",
+    "nc_money_bal": "nc_money_bal",
+    "alt_invoice_no": "lower(nullif(alt_invoice_no, ''))",
+    "alt_bill_no": "alt_bill_no",
+    "alt_day_gap": "alt_day_gap",
+}
+_ITEM_DEFAULT_ORDER = "total_amount desc nulls last, id"
+
+
 async def items(db: AsyncSession, f: ReconFilters, category: str,
-                limit: int = 200, offset: int = 0) -> dict:
+                limit: int = 200, offset: int = 0, order: str | None = None) -> dict:
     """The drill-down. Ordered by money, because that is the order they get
-    worked in."""
+    worked in — unless the caller passes `order`, an ORDER BY body built by
+    app.core.list_sort.order_sql from ITEM_SORT."""
     where, params = f.clause()
     params |= {"category": category, "limit": limit, "offset": offset}
     sql = _BASE.format(where=where) + """
@@ -236,9 +259,9 @@ async def items(db: AsyncSession, f: ReconFilters, category: str,
            alt_bill_date, alt_day_gap, unapproved_bill_no
       from classified
      where category = :category
-     order by total_amount desc nulls last
+     order by {order}
      limit :limit offset :offset
-    """
+    """.format(order=order or _ITEM_DEFAULT_ORDER)
     rows = (await db.execute(text(sql), params)).mappings().all()
     count_sql = _BASE.format(where=where) + \
         " select count(*) as n from classified where category = :category"

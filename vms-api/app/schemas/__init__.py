@@ -18,6 +18,5 @@ from app.schemas.vms_config import (  # noqa: F401
     HealthQuestionEntry,
     HealthQuestionsUpdate,
     NotificationContactsUpdate,
-    QualityManagerRosterUpdate,
     VmsConfigResponse,
 )

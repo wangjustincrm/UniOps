@@ -1,7 +1,48 @@
 # EPMS — Product Requirements Document
-**Version:** 2.26
-**Date:** 2026-10-16
+**Version:** 2.46
+**Date:** 2026-10-30
 **Status:** In Production
+
+> **v2.46 (2026-10-30)** — Direct PA (§3.22, DPA-004): an invoice linked to a PO with **Link to PO** defaults the Direct PA's department and cost center to the PO's PR and its budget account to the PO's budget code (the PR's when the PO has none); still editable. NC orders carry none of this, so their invoices keep the creator's department.
+
+> **v2.45 (2026-10-30)** — Courier freight (§3.21) is charged to budget account **CRM00204** (Postage & Delivery Charges) instead of CRM0150102 (Freight Out FTL/LTL): new Freight PA cost allocations, the default cost center (FRT-003) and the NC push (FRT-013) use it, and the cost allocations of every existing Freight PA were moved to CRM00204 by migration `fr02_freight_budget_crm00204`. NC bills already pushed keep CRM0150102 and are corrected in NC.
+
+> **v2.44 (2026-10-30)** — PO Fee Invoices (§3.23) opened to **POs raised in EPMS**: the invoice panel is now **Link to PO** and also offers every approved EPMS PO (approved, issued, received or closed — not draft, in approval, returned, rejected or cancelled), marked *EPMS*, with or without an arrival. On an EPMS PO the link names an arrival when the PO has one; one with no arrival yet is ticked as **Whole PO**. All three fee types apply (no Incoterms on EPMS POs). Its Freight & Customs panel shows once a fee is linked and lists the fees without judging them; the Fees column stays blank. NC rules unchanged (FEE-002, -003, -005, -006).
+
+> **v2.43 (2026-10-30)** — **Staged prepayments** (§3.15.4): a PO may now be prepaid more than once (e.g. 30% on order, 70% before shipment) and then settled **once**. The vendor/system cap applies to the **sum** of the PO's live prepayments (PP-002/003, also on editing a draft's %); no further prepayment once the PO has a settlement (PP-004); one Settlement PA reconciles every paid, pending prepayment on the PO, may apply up to their total, and is refused while another prepayment on the PO is still unpaid (PP-009, PP-012, PP-016). The variance is recorded on the referenced prepayment only. The New PA form shows earlier stages and the total being reconciled.
+
+> **v2.42 (2026-10-29)** — Milk orders (`nc_milk`) are now **invoice-matchable and payable** (INV-MATCH-002, §NC mirror status table): the Match panel and the upload form offer them as PO candidates, and PO Detail's *Create PA* and the PA form's PO picker accept them. Their NC arrivals are already mirrored as goods receipts, so the three-way match and the Create PA task work as for any open NC order. `nc_pending` and `closed` stay out of matching.
+
+> **v2.41 (2026-10-26)** — Vendor credit usage history (§3.18.2, VC-006): the credit detail drawer lists every payment a credit was netted against — PA, payment date, batch, amount netted and cash paid — with the total; shown to finance roles.
+
+> **v2.40 (2026-10-26)** — PO Fee Invoices (§3.23) opened to **every NC order with an arrival, milk included**: the invoice panel is now **Link to NC PO**, offers only orders that have an arrival and always links to an arrival (the "whole PO, no arrival yet" option is gone). A milk order with no Incoterms can be linked as **Other** only — freight / customs need its Incoterms set first. An **Other** fee needs a **note** saying what it is (migration `pf02`). Incoterms stays required on raw-material orders only; a milk order shows the Freight & Customs panel once it has Incoterms or a linked fee, and joins the Fees column once it has Incoterms (FEE-002, -003, -005, -006).
+
+> **v2.39 (2026-10-26)** — The EPMS Task Inbox shows EPMS work only (§3.7.1, DSH-023): the inbox page, the header bell and the dashboard task list leave out OA, Finance and VMS tasks. Only Portal's home inbox gathers every module's tasks; OA, Finance and VMS work is done from those modules. OA travel and claim approvals used to reach a Finance Manager's EPMS inbox with no label and a card link that opened nothing.
+
+> **v2.38 (2026-10-23)** — New §3.23 PO Fee Invoices: a freight or customs invoice from a forwarder/broker can be linked to the NC raw-material PO **arrivals** it belongs to (a freight bill to several arrivals, a customs invoice line by line), still paid by a Direct PA; the PO page gets a **Freight & Customs** panel and the PO list a **Fees** column. Incoterms on Edit Details becomes a **required code picker** on raw-material orders plus an optional named place (PO-IMP-001, PO-IMP-007); codes and whether each expects freight / customs invoices are set in the new Admin **Incoterms Settings** (§3.6.4). NC full reload keeps POs that carry fee links or an Incoterms code (NC-003).
+
+> **v2.37 (2026-10-21)** — Deleting an invoice — from the Invoices page, Freight, or Data Maintenance (also inside a PO/PR/agreement cascade) — voids its Finance AP record in the same step, or nothing is deleted (INV-DEL-001…003). Data Maintenance used to tell Finance nothing, which left five AP records for deleted invoices. An invoice reference is never issued twice, even after the newest invoice is deleted (INV-005).
+
+> **v2.36 (2026-10-21)** — Duplicate invoices (INV-004, INV-004a…f): the rule is enforced by the server on every path that sets an invoice's vendor or number (upload, edit, courier upload) against **every** invoice — the upload form used to compare only against the invoices its user could see, and nine duplicates got in through PO-scoped requesters. Numbers compare by a key (letters and digits only, case-insensitive, leading zeros ignored); a number with no letter or digit is refused; a database unique index backs the rule. The 5 invoices that were already duplicates stay, exempt from the index only.
+
+> **v2.35 (2026-10-21)** — Create Direct PA has an **Upload Invoice** button (DPA-010): it opens the Invoices page's upload form in Direct PA mode, every invoice saved there is matched for a Direct PA, and the page comes back with them ticked.
+
+> **v2.34 (2026-10-21)** — Claimant skip for OA claims (§3.3.5 item 3): a step whose only holder is the claimant of an OA expense claim / Travel Application is skipped, because OA never lets a claimant approve their own claim (OA.md WF-SELF-001…004). EPMS documents are unchanged.
+
+> **v2.33 (2026-10-21)** — New §3.22 Direct Payment Application (Direct PA), moved here from OA: an invoice with no PO and no agreement is matched with **Match → Direct PA** and paid from **Payment Applications → Create Direct PA**, charged to a department (the creator's by default), a cost center of it and a budget account, with a required reason; approved on the `pa_dir` ("PA (Direct)") workflow. PA `source` gains `direct` (EPMS) and `oa_direct` (OA's retired rows, §3.15.1); invoice route gains `direct` (§3.14, Route filter); action-key table (§3.3).
+
+> **v2.32 (2026-10-20)** — A courier invoice is checked in the same Upload Invoice window as any invoice: the PDF preview stays on the left and only the form on the right becomes the courier one (FRT-016).
+
+> **v2.31 (2026-10-19)** — Every list column header sorts the list, ascending then descending, across all pages for server-paged lists (UI-SORT-001…007, §3.20; shared by all UniOps modules). PR/PO/PA Status keeps its status → step → approver order, now applied by the server. The Vendors Inactive tab filters on the server; Vendor Credits is paginated; the Receiving Report export follows the on-screen sort.
+>
+
+> **v2.30 (2026-10-20)** — House-account receipt hand-off (AGR-032, AGR-034, task table): an invoice matched to a house account with no receipt evidence raises an `attach_receipts` task for the agreement's owner; the owner (and that task's holder) may now list and attach the agreement's receipts on the invoice. A caller without that right sees a "cannot attach" notice instead of a load error.
+
+> **v2.29 (2026-10-20)** — One Upload Invoice form (FRT-005, FRT-014, FRT-016): no invoice-type choice and no carrier picker. A carrier's invoice is recognised by its vendor and always becomes a courier invoice; it is uploaded with the ordinary invoice-upload permission (matching and Freight PAs stay on `epms.freight.manage`), and the PO invoice upload refuses a carrier's vendor. AP can assign a courier invoice for matching like any invoice (FRT-017).
+
+> **v2.28 (2026-10-19)** — Freight pages folded into the Invoice and PA pages (§3.21, FRT-009, FRT-014, FRT-015): courier invoices are uploaded, listed and matched on the Invoices page (Freight badge, Route filter), Freight PAs are raised from the PA page (New Freight PA); the Freight page keeps Shipments and Carriers. A PO-restricted `epms.freight.manage` holder sees courier invoices; other invoice readers see the matching panel read-only. Design: `docs/superpowers/specs/2026-10-19-freight-into-invoice-pa-design.md`.
+
+> **v2.27 (2026-10-19)** — New §3.21 Courier Freight Payment (Freight): register courier tracking numbers, match carrier invoices by tracking number, and pay them with a Freight PA that has no PO, split by cost center, approved through its own chain (`pa_frt`). PA gains a `source` (§3.15.1); navigation (§6); open items OI-AH–OI-AK.
 
 > **v2.26 (2026-10-16)** — PA line items follow line-matched invoices (PA-018); Data Maintenance no longer rewrites a PA's pre-tax amount from lines that disagree with it, and asks before a line edit changes it (DM-007). OI-AF / OI-AG added.
 >
@@ -389,7 +430,7 @@ Wherever the system displays a person who performed an action (uploader, approve
 
 - Filters: Status, Department, Requester, Type, Prepaid. Department and Requester choices are limited to what the viewer's scope covers; a user whose only role is Requester sees neither (their list is always their own PRs).
 - Search box matches PR number, title, budget code and vendor name.
-- Columns: PR Number, Title, Requester (omitted for pure requesters), Vendor, Amount (CAD), Type, Prepaid, Status, Submitted. For PRs awaiting approval, the Status cell also shows the current step, the approver's name (and stand-in, if delegated) and days waiting; sorting by Status groups by status, then step, then approver.
+- Columns: PR Number, Title, Requester (omitted for pure requesters), Vendor, Amount (CAD), Type, Prepaid, Status, Submitted. For PRs awaiting approval, the Status cell also shows the current step, the approver's name (and stand-in, if delegated) and days waiting; sorting by Status groups by status, then step (approval-chain order), then approver (named approver before an unassigned role pool), across all pages. Every column sorts (UI-SORT-001); the list opens sorted by Submitted, newest first, with PRs not yet submitted last.
 - Select a row and **Copy** to start a new PR pre-filled from it. **New PR** button.
 
 **FR IDs — PR List visibility:**
@@ -524,7 +565,8 @@ Every submittable document or form type has a unique action key. Each action key
 | `posign` | PO sign-off (NC-imported POs, §3.12.8) | EPMS |
 | `agr` | Purchase Agreement (§3.17) | EPMS |
 | `pa` | Payment Application (PO-linked) | EPMS / OA |
-| `pa_dir` | Direct Payment Application (no PO) | OA |
+| `pa_frt` | Freight PA chain — a `pa` document whose `source` is `freight` walks this chain instead of `pa`'s (§3.21) | EPMS |
+| `pa_dir` | Direct PA chain — a `pa` document whose `source` is `direct` walks this chain instead of `pa`'s (§3.22). OA's retired PA-DIRs (doc type `pa_dir`) used it too | EPMS |
 | `exp` | General Expense Claim | OA |
 | `trv` | Travel Expense | OA |
 | `tra` | Travel Application | OA |
@@ -559,7 +601,7 @@ Each workflow is an **ordered list of steps**, configured in Portal Admin Panel 
 | `gm`, `opm`, `procurement_manager`, `finance_manager`, `finance_director`, `vendor_manager` | Current holder(s) of the post (primary or additional role) | Role pool |
 | `finance_bp` | Users assigned Finance BP as an additional role | Role pool |
 | `ap_clerk` | Users with the role | Role pool |
-| `quality_manager` | VMS only — the QM chosen on the visit | That person |
+| `zone_manager` | VMS only — every manager of the visit's access zone, snapshotted at submit (`quality_manager` = legacy alias, same behaviour) | One task each; any one approves; skipped if none |
 
 **Routing department.** Department-scoped steps (Department Manager, Director, GM/OPM) use the department named on the document: the PR's selected department (for a PR and the POs/PAs raised from it) or the agreement's department (for an agreement and its PAs). Only when none is recorded does the engine fall back to the requester's/creator's own department. A PA covering POs from several departments skips Department Manager and Director and goes to the cross-department GM/OPM setting. The Supervisor step always follows the requester personally.
 
@@ -581,7 +623,7 @@ Each workflow is an **ordered list of steps**, configured in Portal Admin Panel 
 | `mil` | `dept_manager → finance_bp` |
 | `cfm` | `dept_manager` |
 | `budget_plan` | `dept_manager → finance_manager` |
-| `vms_visit` | `dept_manager` (+ optional `quality_manager`) |
+| `vms_visit` | `dept_manager` (+ optional `zone_manager`) |
 
 Admins may add, remove, or reorder steps freely in Portal → Admin → Approval Workflows without any code changes or service restart. The workflows actually configured in production may differ from these shipped defaults.
 
@@ -608,15 +650,16 @@ Admins may add, remove, or reorder steps freely in Portal → Admin → Approval
 
 #### 3.3.5 Multi-Role and Conditional Auto-Skip
 
-The engine skips steps automatically in two ways. Every skipped step produces its own `ApprovalEvent` row, so the full history is preserved and visible in the Approval Timeline (shown struck through / with an "Auto-approved" or "Auto-skipped" indicator and the reason).
+The engine skips steps automatically in three ways (the third only on OA claims). Every skipped step produces its own `ApprovalEvent` row, so the full history is preserved and visible in the Approval Timeline (shown struck through / with an "Auto-approved" or "Auto-skipped" indicator and the reason).
 
-1. **Conditional skip** (applied at submit and after each approval): a Supervisor or Director step that does not apply to this document (no active person, or layer switched off); Department Manager and Director steps on a cross-department PA; a VMS Quality Manager step that is not required. Recorded with the reason.
+1. **Conditional skip** (applied at submit and after each approval): a Supervisor or Director step that does not apply to this document (no active person, or layer switched off); Department Manager and Director steps on a cross-department PA; a VMS Zone Manager step (legacy name: Quality Manager) when the visit's zone has no zone managers. Recorded with the reason.
 2. **Same-approver skip** (applied after an approval only):
    1. Actor approves step N — a normal `ApprovalEvent` is recorded for step N.
    2. Engine checks step N+1: if the actor also holds that step **in their own right** — including being any one holder of a post — it records an additional `ApprovalEvent` (action `"approve"`, comment `"Auto-approved (same approver holds both roles)"`) and advances to N+2.
    3. Step 2 repeats until either a step is reached that the actor does not hold, or the final step is passed (→ document moves to `approved`).
 
    The same-approver skip is **not** applied at submit (a requester who is also the step-1 approver must still approve), is **not** applied through delegation (a delegate's approval does not cascade into steps the delegator holds), and System Admin's bypass never cascades.
+3. **Claimant skip — OA claims only** (applied at submit and after each approval, and by in-flight re-sync): on an OA expense claim, Travel Application or custom form, a step whose **only** holder is the claimant is skipped with the comment "Auto-skipped (claimant holds this step — cannot approve own claim)". OA never lets a claimant approve their own claim, so without this the claim would wait at that step for good. Submission is refused when every remaining step would be skipped this way. Details: OA.md §7.1 (WF-SELF-001…004). PR / PO / PA / Agreement / VMS keep the rule in item 2: no skip at submit.
 
 Role resolution for every token is as described in §3.3.2. GM/OPM steps are addressed to the resolved post (all its current holders), not broadcast to both GM and OPM.
 
@@ -691,7 +734,7 @@ Only the last editor and edit time are kept; there is no change history.
 |---|---|
 | **ROUT-001** | Saving Approval Routing re-routes every document already awaiting approval to the approver the new settings resolve to, and reports how many were re-routed. |
 | **ROUT-002** | Changing a user's primary role, department, active status or Supervisor likewise re-routes their in-flight approvals, so tasks never stay with someone who can no longer act. A failed re-sync does not undo the user change; it is reported. System Admin can also trigger a re-sync for all documents or for one document. |
-| **ROUT-003** | Workflow step lists are edited in Portal → Admin → Approval Workflows; available step tokens: Supervisor, Department Manager, Director, GM/OPM, GM, OPM, Procurement Manager, Finance Manager, Finance Director, Finance BP, AP Clerk, Quality Manager (VMS). PO sign-off steps may use only company-wide posts. |
+| **ROUT-003** | Workflow step lists are edited in Portal → Admin → Approval Workflows; available step tokens: Supervisor, Department Manager, Director, GM/OPM, GM, OPM, Procurement Manager, Finance Manager, Finance Director, Finance BP, AP Clerk, Zone Manager (VMS — goes to every manager of the visit's access zone, any one approves; "Quality Manager" is its legacy name with the same behaviour). PO sign-off steps may use only company-wide posts. |
 
 #### 3.3.9 Submit Preflight
 
@@ -887,6 +930,7 @@ As of 2026-05-27 ownership of Cost Centers has moved to **mdm-api** and the mana
 - **Email Settings** — PO-to-vendor SMTP profile and PO email template (§3.6.5)
 - **PDF Templates** — header/footer/logo/terms per document type (§3.6.6)
 - **Vendor Settings** — the vendor category list offered when adding or editing a vendor
+- **Incoterms Settings** — the Incoterms codes offered in PO Edit Details, each with a name and two ticks: whether a raw-material PO on that term expects a **freight** invoice and a **customs** invoice for every arrival (§3.23). Seeded with the eleven Incoterms 2020 codes (EXW/FCA/FAS/FOB: both; CPT/CIP/CFR/CIF/DAP/DPU: customs only; DDP: neither). Codes can be added and deactivated but never removed (the server refuses a list that drops one). Read live — a change re-rates every PO at once. Stored in `CompanyConfig.incoterms_terms`
 - **Service GR SLA** — reminder and manager-escalation days for the Service/Project PO completion-date reminder (two rungs; see §3.13.3)
 - **GR Notification SLA** — stored, but **no scheduler reads it**: there is no GR acknowledgement reminder/escalation ladder (**Not implemented** — see §11). Open GR tasks are re-mailed only through the per-task-type notification policy and daily digest (§3.9.4)
 - **Prepayment Config** — global prepayment cap (% of PO value, overridable per vendor category) and related prepayment rules (§3.15.4)
@@ -1093,7 +1137,7 @@ The dashboard shown is decided **by the server** from the user's roles; the fron
 
 #### 3.7.1 Task Inbox — Task Types
 
-The Task Inbox lists every open task the current user can act on. Tasks live in one shared table written by EPMS, the approval engine, Finance and VMS, so the EPMS inbox also carries OA, Finance and VMS work; each card opens the page where the work is done (EPMS, Finance, VMS or Portal). This table is the canonical task-type list.
+The Task Inbox lists the open **EPMS** tasks the current user can act on. Tasks live in one shared table written by EPMS, the approval engine, Finance and VMS. **Only Portal's home inbox gathers every module's tasks** (PORTAL.md §3.3); the EPMS inbox shows EPMS work only (DSH-023), and OA, Finance and VMS tasks are done from those modules. Each card opens the page where the work is done (EPMS, or Portal for NC sync errors). This table is the canonical list of EPMS task types.
 
 | Task type | Label | Assigned to | Raised when | Closes when |
 |---|---|---|---|---|
@@ -1111,13 +1155,13 @@ The Task Inbox lists every open task the current user can act on. Tasks live in 
 | `match_invoice` | Match Invoice to PO | Named AP user | Invoice assigned for matching | Invoice leaves unmatched/exception |
 | `review_match` | Confirm Invoice Match | AP Clerk pool | Delegate matched an invoice | Invoice leaves match_review |
 | `resolve_exception` | Resolve Match Exception | AP Clerk pool | Match outside tolerance | Invoice leaves exception |
+| `attach_receipts` | Attach Invoice Receipts | Agreement owner (else an active Department Manager of the agreement's department; else AP Clerk pool) | Invoice matched to a house-account agreement with no receipts attached and no settlement declared (AGR-034) | Receipts attached or settled without receipt evidence; invoice unmatched, deleted or listed on a live PA |
 | `create_pa` | Create Payment Application | PR requester; **ERP PA Officer pool** for NC-imported POs | Invoice matched (3-way) on a received PO | PA exists, or matched invoice removed |
 | `confirm_settlement` | Confirm Settlement | Finance BP pool | Zero-cash settlement PA with a variance (prepayment exceeded final value) | Settlement confirmed |
 | `process_pa` | Process Payment Application | Payment Officer pool | PA fully approved | PA processed (paid) or leaves approved |
 | `confirm_period` / `chase_agreement_invoice` | Confirm Service Period / Chase Missing Invoice | Agreement owner | Agreement billing period due / overdue (§3.17) | Period accepted / no overdue period |
 | `import_erp_vendor` / `resolve_nc_sync_error` | Import ERP Vendor / Resolve NC Sync Error | System Admin | NC purchase sync could not import a document (§3.12.6) | Next sync succeeds |
-| `resolve_jv_validation`, `resolve_ap_duplicate_invoice` | Resolve JV Validation Findings / Resolve Duplicate NC Invoices | System Admin / AP Clerk | Finance sync finds issues | Findings cleared |
-| `approve_budget_plan` / `revise_budget_plan`, OA `approve_<claim>` / `revise_<claim>` / `process_expense`, VMS tasks | (other modules) | per module | per module | closed by the owning module |
+| Not in the EPMS inbox: Finance `approve_budget_plan` / `revise_budget_plan` / `resolve_jv_validation` / `resolve_ap_duplicate_invoice`; OA `approve_<claim>` / `revise_<claim>` / `process_expense` (expense, mileage, travel expense, travel application, custom forms); VMS tasks | (other modules — Portal inbox and the owning module) | per module | per module | closed by the owning module |
 
 **Inbox layout:** tabs **All / Urgent / Normal / Completed** (Completed = tasks completed today); stat cards Urgent / Normal / Completed today; tasks grouped by type in a fixed order; each card shows type, document number, vendor, amount and due date when known; NC-sync, JV-validation and duplicate-invoice cards also show the reason text. A **Refresh** button re-reads the inbox. There is no "Mark Done" button.
 
@@ -1133,6 +1177,7 @@ The Task Inbox lists every open task the current user can act on. Tasks live in 
 - **DSH-009** — The header task badge displays the real-time count of open tasks assigned to the current user, polling every 60 seconds. Clicking navigates to the Task Inbox page.
 - **DSH-020** — **Self-healing:** each inbox load closes tasks whose document no longer needs that action (status-based rules declared per task type — e.g. approve_* only while submitted/in_review, revise_* only while draft/returned, match_invoice only while unmatched/exception, process_pa only while approved; plus the create_po / place_order / create_pa / create_prepayment_pa rules in the table) and creates missing `create_po` / `place_order` / `create_pa` tasks for documents created on or after 2026-06-01. Concurrent loads cannot create duplicate tasks. Every new task type must declare its liveness rule (enforced by an automated test).
 - **DSH-021** — A **Refresh** button re-reads the inbox immediately (changes made in Portal, e.g. Data Maintenance, are otherwise picked up by the 60-second poll).
+- **DSH-023** — **Scope:** the EPMS Task Inbox page, the header task badge (DSH-009) and the dashboard task list show only tasks on EPMS documents — PR, PO, goods receipt, invoice, Payment Application (incl. Direct PA), Purchase Agreement, PO sign-off — and NC purchase-sync errors. Tasks of any other module, including a module added later, are left out by default; Portal's inbox shows them. EPMS detail pages still read their own approval tasks (DSH-007), including the Budget Plan editor that Finance embeds.
 - **DSH-022** — When the approver behind a department role changes (user edit, role grant, Approval Routing save), open approval tasks are re-pointed to the new holder automatically (§3.6.3, §3.3.8).
 
 #### 3.7.2 Role Dashboard Layouts
@@ -1190,7 +1235,7 @@ OPM and Procurement Manager do not have company-wide budget view (decision 2026-
 
 **Alerts:** accounts whose NC actual for the year reaches the over-budget threshold (red) or the warning threshold (amber) of their annual budget, using the thresholds in Budget Config (`CompanyConfig.budget_admin_config`); clicking an alert scrolls to and highlights the account. Thresholds drive display colours only — no budget alert emails are sent.
 
-**Monthly grid:** accounts grouped by L1 category (each group collapsible, with expand/collapse all), sorted by code; each month shows the plan amount and the NC actual (red when actual exceeds plan), with year totals, a sticky header and a Total row. An account can be expanded to show its NC actual by vendor/customer and month. *Export XLSX* downloads the grid.
+**Monthly grid:** accounts grouped by L1 category (each group collapsible, with expand/collapse all), sorted by code; each month shows the plan amount and the NC actual (red when actual exceeds plan), with year totals, a sticky header and a Total row. An account can be expanded to show its NC actual by vendor/customer and month. *Export XLSX* downloads the grid; ticking *Expand vendor* beside it adds each account's vendor rows to the file (BUDGET.md BDASH-006).
 
 **Exclusions:** Payroll (CRM007), Depreciation (CRM004) and shut-down loss (CRM09912) are not shown — they are tracked at category level only.
 
@@ -1318,6 +1363,7 @@ GST/HST registration number, province and bank details are not held on the EPMS 
 | **VND-006** | When Max Prepayment % is set on a vendor, it overrides the system-wide prepayment cap (Admin Panel → Prepayment Config) for all Prepayment PAs linked to that vendor's POs. If not set, the system-wide cap applies. |
 | **VND-007** | **From ERP.** Users with `vendor_master` can open the *From ERP* drawer on the Vendors page. It lists the NC supplier master mirrored in MDM, paginated and searchable, with an option to show only suppliers not yet imported. Selected suppliers are created as vendors with POID = ERP ID = NC supplier code, with name, phone and address from NC and the chosen default category, payment terms and currency. A supplier whose ERP ID already exists on a vendor is refused (duplicates are checked by exact ERP ID, not by POID). |
 | **VND-008** | A vendor can be saved without a contact name or contact email. |
+| **VND-009** | **Vendors list.** Tabs All / Active / Inactive filter on the server, so the page count and every page match the tab. Every column sorts on the server (UI-SORT-004); POID and ERP ID sort by numeric value when they are all digits, Payment Terms in term order (COD, Net N by days, Prepayment). |
 
 ### 3.11 Project Code Management
 
@@ -1536,7 +1582,7 @@ Raw-material and packaging purchasing (Type 1) is done in the company ERP, Yonyo
 | NC condition | EPMS PO status | Meaning |
 |---|---|---|
 | Not yet approved in NC (free or in approval) | `nc_pending` ("NC Pending Approval") | Overrides every row below. PDF and sign-off are available. Not payable, receivable or invoice-matchable. |
-| Raw-milk trade type | `nc_milk` ("Milk / NC") | Receipts are booked in NC. Not payable, receivable or invoice-matchable. PDF and sign-off are available. |
+| Raw-milk trade type | `nc_milk` ("Milk / NC") | Receipts are booked in NC (and mirrored as GRs); no GR can be created in EPMS. Open for invoice matching and payment like `issued`. PDF and sign-off are available. |
 | Finally closed in NC, or every line payment-closed | `closed` | Archive only |
 | Otherwise | `issued` | Open for invoice matching and payment |
 
@@ -1570,7 +1616,7 @@ Only one run executes at a time; a second trigger is refused with "already runni
 |---|---|
 | **NC-001** | A mirrored PO cannot be edited through the normal PO edit, submitted to the PO approval workflow or placed with a vendor. The only edits are Edit Details (§3.12.7) and sign-off (§3.12.8). |
 | **NC-002** | **Freeze once invoiced.** When any invoice references a mirrored PO (any invoice status), the sync stops rewriting that PO, its lines and its GRs. |
-| **NC-003** | **Buyer-owned fields survive re-sync.** Incoterms, Buyer Notes, line Supplier Item ID, line Sample and buyer-added lines are never overwritten. If the buyer changed the tax rate, the sync keeps it and recomputes tax and total from NC's fresh subtotal. The value of buyer-added lines stays in the header subtotal. |
+| **NC-003** | **Buyer-owned fields survive re-sync.** Incoterms, Buyer Notes, line Supplier Item ID, line Sample and buyer-added lines are never overwritten. A **full reload** (which rebuilds the mirror) keeps every PO that an invoice points at, that has buyer-added lines, that carries fee-invoice links (§3.23) or that has an Incoterms code. If the buyer changed the tax rate, the sync keeps it and recomputes tax and total from NC's fresh subtotal. The value of buyer-added lines stays in the header subtotal. |
 | **NC-004** | **Withdrawn orders.** A mirrored `nc_pending` PO that NC no longer lists (rejected or deleted) is cancelled and tagged `[NC Pending Withdrawn]`, unless an invoice references it. Any open sign-off on it is cancelled and its `sign_po` tasks are closed. If NC later re-creates an order under the same number, the cancelled mirror is renamed `<number>-VOID<n>` so the live order gets its real number. |
 | **NC-005** | **Number collisions.** If the NC number is already used by a different EPMS PO (a legacy PMS import or another NC order with the same number), the order is mirrored as `<number>-2`, `-3` and so on, up to 50. Past that it is skipped and reported (NC-006). The order that holds the number is never renamed. |
 | **NC-006** | **Import errors raise Admin tasks.** These tasks go to the System Admin pool and also appear in the Portal inbox. Each one names the order and the reason, and closes itself only on evidence: the order is now mirrored, or NC no longer lists it. |
@@ -1589,12 +1635,13 @@ NC carries no Supplier Item IDs, sample requirements, Incoterms, delivery addres
 
 | FR ID | Requirement |
 |---|---|
-| **PO-IMP-001** | **Editable fields:** Expected Delivery, Incoterms (≤100 chars), Delivery Address, Tax Code / Tax Rate (CAD orders only; non-CAD orders keep NC's tax untouched), Prepaid flag, Buyer Notes / Terms & Conditions, and per NC line the Supplier Item ID and Sample. **Read-only:** vendor, currency, budget code, NC line description, quantity, unit and price. |
+| **PO-IMP-001** | **Editable fields:** Expected Delivery, Incoterms — a **code** picked from Incoterms Settings plus an optional **named place** (≤100 chars) —, Delivery Address, Tax Code / Tax Rate (CAD orders only; non-CAD orders keep NC's tax untouched), Prepaid flag, Buyer Notes / Terms & Conditions, and per NC line the Supplier Item ID and Sample. **Read-only:** vendor, currency, budget code, NC line description, quantity, unit and price. |
 | **PO-IMP-002** | **Delivery and address defaults.** If the PO has no header Expected Delivery, the earliest NC line planned-arrival date is shown read-only ("Tracks NC automatically"). Otherwise the date is editable. Delivery Address defaults to the company delivery address until the buyer edits it. |
 | **PO-IMP-003** | **Buyer-added lines.** The buyer can add, edit and remove extra lines (description, qty > 0, unit, unit price, Supplier Item ID, Sample) for charges NC cannot hold, such as moulds or tooling. These lines sort after NC's lines and add to the header subtotal, tax and total. NC-sourced lines can never be edited here. |
 | **PO-IMP-004** | **Invoice guard.** Once any invoice references the PO, changing the tax rate or the buyer-added lines is refused ("…cannot be changed once an invoice has been raised against this PO. Every other field is still editable."). The tax control is shown locked. |
 | **PO-IMP-005** | Each save writes an audit-log entry containing only the fields that changed. A tax-rate change marks the PO as buyer-edited (see NC-003). |
 | **PO-IMP-006** | The page shows where the PO's sign-off stands (§3.12.8). |
+| **PO-IMP-007** | **Incoterms is required on raw-material orders.** On an NC type 1 order that is not milk (status not `nc_milk` and no `[Milk / …]` tag), Edit Details cannot be saved without an Incoterms code (422 "Incoterms is required…"), and the code cannot be cleared. Only active codes are offered; a code the PO already carries stays selectable after being deactivated. Milk orders may leave it empty. NC has no Incoterms field, so it is always entered here — there is no vendor default (one vendor's terms differ by what is bought). Existing free-text values were split by migration `pf01` (e.g. "DAP CRM" → DAP + "CRM"); text with no recognisable code stays as the place with no code. PDF and PO Detail show code + place. |
 
 #### 3.12.8 PO Sign-off (NC-imported POs)
 
@@ -1769,6 +1816,7 @@ Goods Receipt → **Receiving Report** (button on the GR List) lists one row per
 - **Scope:** physical GRs only; cancelled or rejected GRs excluded; **NC-mirrored POs excluded** (NC-010).
 - **Filters:** received-date range (plant local dates, America/Toronto), department, vendor, search.
 - **Summary for the whole window:** line count, receipt count, order count, average lead time.
+- **Sorting:** every column sorts on the server (UI-SORT-004); the Excel export uses the same order as the screen.
 - **Lead time** = received date − ordered date. Ordered date is the Place-Order time, else the last PO approval, else PO creation.
 - **Export:** xlsx export of the whole window, capped at 20,000 rows (the page warns when capped).
 - **Visibility** follows the GR list (GR view permission and document scope).
@@ -1781,6 +1829,7 @@ Goods Receipt → **Receiving Report** (button on the GR List) lists one row per
 | **GR-L-002** | `confirm_receipt` task links and emails open **New GR pre-filled with the PO**, including the PO's line items. |
 | **GR-L-003** | If a counted GR (`collected`, `confirmed`, `discrepancy`) is deleted or cancelled through Data Maintenance, PO line received quantities are recomputed from the GRs that remain, and the PO status can fall back from `fully_received`. |
 | **GR-L-004** | Admin → Data Maintenance (§3.6.8) can edit GR line items. |
+| **GR-L-005** | The GR list sorts by any column on the server (UI-SORT-004); Total Value sorts by the sum of line totals. It opens sorted by Received, newest first. |
 ### 3.14 Invoice Management
 
 #### 3.14.1 Invoice Upload & Auto-Routing
@@ -1819,8 +1868,17 @@ Variance check (§3.14.3) → `matched` / `exception`
 | **INV-003a** | **Document-total check.** The form compares pre-tax + tax against the grand total printed on the document. A difference greater than 0.02 blocks upload until the uploader corrects the amounts (typically a missed line item or a freight/late-fee charge) or explicitly confirms the figures as entered. |
 | **INV-003b** | **Multi-invoice PDFs.** A multi-page PDF opens in a page splitter; the uploader marks where each invoice starts (presets: every page, every 2 pages). Each slice is extracted, checked and created as its own invoice with its own pages attached, one at a time; the vendor selected for the first slice carries forward. Stopping part-way keeps the invoices already created. |
 | **INV-003c** | **Credit notes.** If the document is detected as a credit note (AI flag or negative total) the modal switches to *Credit Note* and creates a Vendor Credit (§3.18.2) instead of an invoice. An invoice must have a pre-tax amount greater than zero. |
-| **INV-004** | **Duplicate guard (upload form).** An invoice with the same vendor and the same vendor invoice # as an existing invoice cannot be uploaded. Credit notes use the Vendor Credit duplicate rule (VC-002). |
-| **INV-005** | Invoice reference is system-generated: `INV-YYYY-NNNN` (next number = highest existing suffix + 1, so a deleted invoice can never cause a collision). |
+| **INV-004** | **No duplicate invoices.** An invoice with the same vendor and the same vendor invoice # as an existing invoice cannot be stored — whatever that invoice's status, and whether or not the person uploading can see it. There is no override. Credit notes use the Vendor Credit duplicate rule (VC-002). |
+| **INV-004a** | **Same number** = same *invoice key*: the number with everything but letters and digits removed, upper-cased, leading zeros dropped. `INV-00123/A`, `inv 00123 a` and `INV00123A` are one invoice; so are `000001` and `1`. Zeros inside the number count (`INV-1023` ≠ `INV-123`). A vendor that reuses a number for a different invoice (e.g. the same number every month) is entered with a suffix, e.g. `000010-OCT`; the refusal message says so. |
+| **INV-004b** | **Same vendor** = the same vendor record, or a vendor record with the same name (case and surrounding spaces ignored) — the vendor master can hold one supplier twice. OA invoices (same vendor record) count as well. |
+| **INV-004c** | A vendor invoice # with no letter or digit (`-`, `0`, `/`) is refused (422): it identifies nothing, so it could never be checked. |
+| **INV-004d** | **Every path.** Upload (PO, agreement and Direct), invoice edit when the number's key changes, and the courier upload all apply INV-004…004c and answer 409 naming the existing invoice (its reference and status). Re-saving an invoice with its own number unchanged is never a duplicate. |
+| **INV-004e** | **The form warns as you type.** Upload Invoice asks the server (`GET /invoices/duplicate-check`) once a vendor and number are entered, shows the reason under the number, and will not submit while the check is running or has found a duplicate. The check covers invoices the user cannot open; it reveals only the existing invoice's reference and status. |
+| **INV-004f** | **Database guard.** A unique index on (vendor, invoice key) makes the rule hold for simultaneous uploads and any writer that bypasses the API. Invoices that were already duplicates when it was introduced (5 in production, 2026-10-21) are marked exempt from the index only — they still block a new upload of their number. |
+| **INV-005** | Invoice reference is system-generated: `INV-YYYY-NNNN`, the next number never issued in that year. A number is never issued twice — not even after its invoice is deleted — because Finance keeps it as the AP record's reference. Numbers deleted before 2026-10-21 stay retired too (taken from the invoices, the Data Maintenance delete log and Finance's AP references). |
+| **INV-DEL-001** | Deleting an invoice voids its Finance AP record in the same step: one never posted is removed; one posted (accrued at match) is voided and its accrual reversed (FINANCE.md FIN-AP-03). This holds on every delete path: the Invoices page, Freight, and Data Maintenance — single, bulk, and an invoice removed inside a PO, PR or agreement cascade. |
+| **INV-DEL-002** | If Finance cannot void it, nothing is deleted: the delete is refused (502) naming the invoice, and the record and its audit entry are rolled back. A delete EPMS itself refuses (e.g. an invoice in payment) never reaches Finance. |
+| **INV-DEL-003** | A delete path that does not void in Finance cannot commit: the service refuses the commit, so a future delete path cannot silently leave an AP record behind. |
 | **INV-006** | On create, if the effective tax rate (tax ÷ pre-tax) matches exactly one active tax code within ±0.5 percentage points, a tax line with that code is pre-filled; otherwise the invoice is left uncoded (never guessed). |
 | **INV-007** | Every invoice is mirrored to Finance AP: draft while `unmatched`/`exception`, posted once `matched`, voided on delete. |
 | **INV-008** | *Retired.* An invoice is no longer limited to one PO — see INV-MATCH-002. |
@@ -1833,7 +1891,7 @@ A separate, Finance-owned duplicate check runs on the NC side (Finance → AP Du
 | FR ID | Requirement |
 |-------|-------------|
 | **INV-MATCH-001** | An invoice is matched on one of two routes: **PO route** (allocate to purchase orders) or **Agreement route** (§3.17.4). |
-| **INV-MATCH-002** | PO route: each invoice line is allocated to a PO line (or PO header) on one or more POs of the **same vendor** in status `issued`, `approved`, `partially_received` or `fully_received`. Pre-tax allocations + non-PO fee lines must equal the invoice pre-tax amount (±0.01) or the match is refused. The candidate list shows, per PO line, what other invoices have already allocated. A PO can carry many invoices. |
+| **INV-MATCH-002** | PO route: each invoice line is allocated to a PO line (or PO header) on one or more POs of the **same vendor** in status `issued`, `approved`, `partially_received`, `fully_received` or `nc_milk` (milk orders, since v2.42). `nc_pending` and `closed` POs are not offered. Pre-tax allocations + non-PO fee lines must equal the invoice pre-tax amount (±0.01) or the match is refused. The candidate list shows, per PO line, what other invoices have already allocated. A PO can carry many invoices. |
 | **INV-MATCH-003** | **Non-PO fee lines.** A line (freight, surcharge, handling) can be marked *Non-PO fee* (right-click). It is excluded from PO matching and variance, counted in the balance check, and paid with the invoice. A line cannot be both allocated and marked as a fee. |
 | **INV-MATCH-004** | **Fee-only invoice.** An invoice whose lines are all fees must be linked to a *reference PO* of the same vendor; it matches with zero variance and does not raise a Create-PA task. |
 | **INV-MATCH-005** | **Match by total.** For invoices without unit prices, the whole pre-tax amount can be matched to one PO in a single step. |
@@ -1875,9 +1933,9 @@ Variance is checked per PO line against everything invoiced on that line. "Three
 | **INV-3WM-001** | Variance is measured per allocated PO line: (sum of pre-tax amounts allocated to that line by **all** invoices) − (PO line pre-tax total). Header-level allocations compare against the PO pre-tax subtotal. Non-PO fee lines are excluded. |
 | **INV-3WM-002** | Under-invoicing (negative variance) always passes — a PO line may be billed across several invoices. Over-invoicing passes when \|variance %\| ≤ the match tolerance; an exact match always passes. |
 | **INV-3WM-003** | Match tolerance is a company setting (`invoice_match_tolerance_pct`, default **5%**). It is not editable in the UI. |
-| **INV-3WM-004** | A passing match sets the invoice to `matched`; the Invoice Detail shows the variance per line ("partially invoiced" or "matched within tolerance"). A failing match sets `exception` and opens a *resolve_exception* task for the AP pool. |
-| **INV-3WM-005** | AP resolves an exception by **Accept with justification** (→ `matched`, PA tasks raised as for any match) or **Request credit note** (stays `exception`). If a later edit changes the total or variance of an accepted invoice, the acceptance is revoked and the invoice returns to `exception`. |
-| **INV-3WM-006** | "Three-way matched" (used by the PA receipt gate, PA-013) means: the invoice is `matched` to the PO (header or allocation) **and** a goods receipt for that PO is linked. No quantity comparison against the GR is performed. |
+| **INV-3WM-004** | A passing match sets the invoice to `matched`; the Invoice Detail shows the variance per line ("partially invoiced" or "matched within tolerance"). When the invoice bills less than the PO, the 3-Way Match summary reads *Partially invoiced — <amount> (<pct>) below PO* (not *Passed — within tolerance*) and states that no review is required; the Invoice row reads *-<pct>% vs PO (partial)* and the History match entry reads *partially invoiced*. A failing match sets `exception` and opens a *resolve_exception* task for the AP pool. |
+| **INV-3WM-005** | AP resolves an exception by **Accept with justification** (→ `matched`, PA tasks raised as for any match) or **Request credit note** (stays `exception`). Either way a note is required (the justification, or the instructions for the vendor); the API refuses a blank one. The note is kept separately from the system's variance description, so later re-matches do not overwrite it. It is shown on the Invoice Detail page in three places: the *Exception Resolution* card on the 3-Way Match tab, under the resolution entry in History, and in the exception banner while the invoice is still in `exception`. An accepted invoice is labelled *Exception accepted* (not *Passed*) on the 3-Way Match tab, and its match entry in History reads *Exception raised*. If a later edit changes the total or variance of an accepted invoice, the acceptance is revoked (note included) and the invoice returns to `exception`. |
+| **INV-3WM-006** | "Three-way matched" (used by the PA receipt gate, PA-013) means: the invoice is `matched` to the PO (header or allocation) **and** a goods receipt for that PO is linked. No quantity comparison against the GR is performed. While no goods receipt is linked, the Invoice Detail labels the match *2-Way Match* (summary: *… · awaiting goods receipt*, with a note that receipt has not been checked; History: *2-way matched, awaiting goods receipt*) and the GR row reads *Not received* — never *Passed* / *Fully delivered*. |
 | **INV-3WM-007** | The *resolve_exception* task closes automatically when the invoice leaves `exception` (rematch, edit, accept) or is deleted. |
 
 #### 3.14.4 Invoice List — Role-Based Visibility
@@ -1952,7 +2010,7 @@ AP staff (holders of *Match Invoice*) and admins can reverse a match from Invoic
 | FR ID | Requirement |
 |-------|-------------|
 | **INV-DEL-001** | An invoice can be deleted only in `unmatched` or `exception` (Upload Invoice permission). Deletion closes its open match/review/exception tasks, voids the Finance AP mirror, releases any agreement receipts or billing period it held, and recomputes the agreement's consumed amount. |
-| **INV-LIST-001** | The invoice list offers a status filter, search across invoice ref, vendor, vendor invoice # and PO #, and stat cards (including Paid). It shows a Due Date column with ageing: *Overdue N d* (red), *Due today* / *Due in N d* for ≤ 5 days (amber); paid invoices are not aged. It supports sorting by due date and an *Overdue* filter (past due, not paid). |
+| **INV-LIST-001** | The invoice list offers a status filter, search across invoice ref, vendor, vendor invoice # and PO #, and stat cards (including Paid). It shows a Due Date column with ageing: *Overdue N d* (red), *Due today* / *Due in N d* for ≤ 5 days (amber); paid invoices are not aged. Every column sorts on the server across all pages (UI-SORT-004); the legacy `sort=due_date` / `sort=-due_date` form is still accepted. The Unmatched tab opens oldest upload first. An *Overdue* filter shows past-due, unpaid invoices. |
 | **INV-LIST-002** | Clicking an invoice's due date opens a chain drawer showing Match PO → Link GR → Create PA → Payment for that invoice; PA steps are shown only to users with *View PA*. |
 
 ### 3.15 Payment Applications (PA)
@@ -1962,11 +2020,13 @@ AP staff (holders of *Match Invoice*) and admins can reverse a match from Invoic
 | PA Type | Description | Prerequisite | `pa_type` value |
 |---------|-------------|-------------|-----------------|
 | **Standard** | Full or partial payment for delivered and invoiced goods/services | One or more POs **of the same vendor and currency**, each with a three-way matched invoice (or an authorised override, PA-013), **or** an active agreement (§3.15.7) | `regular` |
-| **Prepayment** | Advance payment to vendor before delivery | Vendor Max Prepayment % > 0; no other open Prepayment PA on same PO; exactly one PO | `prepayment` |
-| **Settlement** | Closes out a prepayment PA when actual delivery value differs from prepayment | Open prepayment PA on same PO; `prepayment_pa_id` required; exactly one PO | `settlement` |
+| **Prepayment** | Advance payment to vendor before delivery; a PO may be prepaid in several stages | Vendor Max Prepayment % > 0; the PO's prepayments together within the cap; no settlement on the PO yet; exactly one PO | `prepayment` |
+| **Settlement** | Closes out **all** prepayments on the PO once the actual delivery value is known | Open prepayment PA on same PO; `prepayment_pa_id` required; no other prepayment on the PO still unpaid; exactly one PO | `settlement` |
 | **Balance** | Remaining balance after a prepayment, once goods/services delivered | Prepayment PA settled; `prepayment_pa_id` required; exactly one PO | `balance` |
 
 **PA linkage:** Settlement and Balance PAs carry a `prepayment_pa_id` referencing the original Prepayment PA. The backend validates this linkage at creation time — the referenced PA must be of type `prepayment` and belong to the same PO. Prepayment, Settlement and Balance PAs are always raised against exactly one PO; a regular PA may cover several POs. A PA with an agreement and no PO is an **agreement PA** (§3.15.7) and is always `regular`.
+
+**PA source.** Every PA records the flow that raised it: `po`, `agreement`, `freight` (a **Freight PA**, raised from matched courier invoices with New Freight PA on the PA page — no PO and no agreement, §3.21), `direct` (a **Direct PA**, raised from invoices matched to no PO and no agreement with Create Direct PA on the PA page, §3.22) or `oa_direct` (OA's retired Direct PA — its invoice ids are OA expense invoices; migration `dp01_direct_pa` re-tagged those rows from `direct`). EPMS lists, opens and acts on `po`, `agreement`, `freight` and `direct` PAs; `oa_direct` PAs are not EPMS documents. A Freight PA is always `regular`; its amounts, invoices and cost split come from its courier invoices and only its title and notes can be edited on the PA.
 
 #### 3.15.2 Standard PA
 
@@ -2075,15 +2135,18 @@ A Prepayment PA allows the Requester to apply for an advance payment to a vendor
 **3-stage prepayment flow:**
 
 ```
-Stage 1 — Prepayment PA
+Stage 1 — Prepayment PA (one or more)
   Requester creates Prepayment PA → Approval Flow → Approved → Payment Officer executes payment
+  A PO may be prepaid in stages (e.g. 30% on order, then 70% before shipment) —
+  each stage is its own Prepayment PA; together they stay within the cap
 
 Stage 2 — Delivery / Service Completion
   Vendor delivers goods (GR Path A/C) or confirms service (GR Path B)
   Invoice received and matched
 
 Stage 3 — Settlement PA
-  Requester creates Settlement PA (Settle button on the prepayment PA) to reconcile prepayment against actual delivery value
+  Requester creates ONE Settlement PA (Settle button on any of the prepayment PAs) to reconcile
+  every prepayment on the PO against the actual delivery value
   If actual < prepayment: vendor issues credit note / refund
   If actual > prepayment: Balance PA created for the difference
 ```
@@ -2102,20 +2165,21 @@ Stage 3 — Settlement PA
 | FR ID | Requirement |
 |-------|-------------|
 | **PP-001** | Prepayment PA can only be created if the vendor's effective prepayment cap is > 0. The effective cap is the vendor's Max Prepayment % if set, otherwise the system cap in Prepayment Config. Enforced in `POST /pa` — returns HTTP 422 if cap ≤ 0. |
-| **PP-002** | The requested `prepayment_pct` cannot exceed the vendor's effective cap (vendor-level override takes priority over system cap). Enforced in `POST /pa`. |
-| **PP-003** | The requested `prepayment_pct` cannot exceed the system-wide cap in Prepayment Config, regardless of vendor override. Enforced in `POST /pa` as a second independent check. |
-| **PP-004** | A PO can have at most one open (non-cancelled, non-rejected) Prepayment PA at a time. `POST /pa` with `pa_type=prepayment` returns HTTP 409 if one exists. |
+| **PP-002** | The requested `prepayment_pct` **plus the `prepayment_pct` of every other live (non-cancelled, non-rejected) Prepayment PA on the same PO** cannot exceed the vendor's effective cap (vendor-level override takes priority over system cap). Enforced in `POST /pa` and when a draft's % is edited (`PATCH /pa/{id}`); the 422 names how much is already prepaid. |
+| **PP-003** | The same cumulative % cannot exceed the system-wide cap in Prepayment Config, regardless of vendor override. Enforced as a second independent check. |
+| **PP-004** | A PO may carry **several** Prepayment PAs (staged prepayment — e.g. 30% on order, 70% before shipment), but none once it has a live (non-cancelled, non-rejected) Settlement or Balance PA: `POST /pa` with `pa_type=prepayment` returns HTTP 409 naming the settlement. *(Before v2.43 a PO could have only one prepayment.)* |
 | **PP-005** | Prepayment PA follows the same approval flow as Standard PA (§3.15.3). All PA types share the same workflow engine. |
 | **PP-006** | On Prepayment PA approval, the system starts the settlement SLA clock (configurable in Prepayment Config). **Not implemented** — see §11. An expected settlement date can be recorded on the PA, but no SLA is enforced. |
 | **PP-007** | If the settlement SLA is exceeded, the system sends a `prepayment_settlement_overdue` notification to the Requester and Department Manager, and creates a `settlement` task if one does not exist. **Not implemented** — see §11 (no scheduled job exists). |
 | **PP-008** | While a Prepayment PA is open (status not `cancelled`, `rejected`, or `processed`), no **regular** PA can be created on the same PO. Enforced in `POST /pa` — returns HTTP 409 with the blocking PA number. Settlement and Balance PAs are exempt (they require the open prepayment). |
-| **PP-009** | Settlement and Balance PAs must supply `prepayment_pa_id` referencing the original Prepayment PA on the same PO. Backend validates the link at creation time (HTTP 422 if missing or mismatched). |
+| **PP-009** | Settlement and Balance PAs must supply `prepayment_pa_id` referencing a Prepayment PA on the same PO. Backend validates the link at creation time (HTTP 422 if missing or mismatched). With staged prepayments any one of them may be referenced — the settlement covers them all (PP-016). |
 | **PP-010** | Balance PA can only be submitted after the Settlement PA is approved. **Not implemented** — see §11 (the prepayment link exists; no submit-time status check). |
 | **PP-011** | All prepayment-related PAs (Prepayment, Settlement, Balance) are linked in the PO Document Tree (§3.12.4) and visible together on the PO Detail page with their PA type label. |
-| **PP-012** | Settlement/Balance: *Prepayment applied* may not exceed the amount actually paid on the referenced prepayment PA, and the net payable may not be negative (a credit note is required instead). |
+| **PP-012** | Settlement/Balance: *Prepayment applied* may not exceed the total actually prepaid on the PO — the referenced prepayment plus every other **processed**, settlement-pending prepayment on the PO — and the net payable may not be negative (a credit note is required instead). The New PA form pre-fills it with that total and lists the prepayments it covers. |
 | **PP-013** | A settlement whose net payable is 0 is a reconciliation, not a payment: if final value equals the prepayment it is processed immediately (invoices paid, prepayment settled, Finance AP mirror settled, no approval, no bank movement); if the prepayment exceeded the final value, a *confirm_settlement* task goes to the Finance BP pool and the reconciliation completes on confirmation (*Create/Edit PA* permission). |
 | **PP-014** | Approving a PO marked prepayment-required creates a *create_prepayment_pa* task for the PR requester (or, without a PR, the PO sign-off submitter / creator). |
 | **PP-015** | A prepayment PA's Detail offers **Settle** (to a primary-role Requester or System Admin), opening New PA pre-filled as a settlement of that prepayment. |
+| **PP-016** | **One settlement reconciles every stage.** A Settlement/Balance PA cannot be created while another Prepayment PA on the PO is still unpaid (not `processed`, `cancelled` or `rejected`) — it would be paid after the settlement and never reconciled (HTTP 409 naming it). When the settlement reconciles (approval, or PP-013), the referenced prepayment **and every other processed, pending prepayment on the PO** become `settled`; the variance (final value − total prepaid) is recorded once, on the referenced prepayment (the others carry 0), and each settlement note names the other stages. |
 
 #### 3.15.5 PA Document Numbering
 
@@ -2327,8 +2391,9 @@ A Purchase Agreement is a standing authorisation with one vendor for spend that 
 |---|---|
 | **AGR-030** | A receipt (type: counter slip, delivery note, service sign-off) records date, reference, merchant (picked from Vendor Master; flagged when it differs from the agreement's vendor), amounts, received-by (user picker) and photos. It is recorded by Finance on the employee's behalf — never presented as the recipient's own confirmation. Recording needs *Record Agreement Receipts* (`epms.agreement.receipt.write`; seeded System Admin, AP Clerk, Dept Admin). Any agreement type may carry receipts. |
 | **AGR-031** | A receipt entered with a "missing receipt" reason goes to `pending_ap_review`; AP approves (→ `open`) or rejects. Receipt statuses: `open`, `pending_ap_review`, `reconciled` (attached to an invoice), `rejected`, `voided` (shown as *Remove*). Receipt reference is unique per agreement among live receipts. |
-| **AGR-032** | On Invoice Detail, the matcher attaches the receipts the invoice covers (with a reason if amounts differ), or declares *Settle without receipt evidence* with a mandatory reason. Neither can be changed once a non-cancelled PA lists the invoice. |
+| **AGR-032** | On Invoice Detail (3-Way Match tab), the receipts the invoice covers are attached (with a reason if amounts differ), or *Settle without receipt evidence* is declared with a mandatory reason. Allowed for: AP (`epms.invoice.match`), the invoice's uploader, the holder of its open `match_invoice` or `attach_receipts` task, and the **agreement's owner**. Anyone else who can open the invoice sees a notice that they cannot attach receipts. The invoice's own agreement always lists its receipts, even after it leaves the admission window. Neither can be changed once a non-cancelled PA lists the invoice. |
 | **AGR-033** | Receipts have their own menu entry (*Agreement Receipts*), list across agreements, create page and detail page. |
+| **AGR-034** | **Receipt hand-off.** When an invoice ends up `matched`/`approved` against a house-account agreement with no receipts attached and no settlement declared, an `attach_receipts` task goes to the agreement owner (fallback: an active Department Manager of the agreement's department; if neither, the AP Clerk pool). It is checked on every match, match review, invoice edit, exception resolution, receipt change and settlement, and again whenever the Task Inbox is read, so invoices that were already waiting get a task too. It closes by itself once the invoice no longer needs evidence. Changing the agreement's owner moves its open tasks. A task the user dismisses is not raised again. |
 
 #### 3.17.6 Period Confirmation and Missing-Invoice Chase
 
@@ -2343,6 +2408,7 @@ A Purchase Agreement is a standing authorisation with one vendor for spend that 
 |---|---|
 | **AGR-050** | *View Agreements* (`epms.agreement.read`) gates the module (menu entries *Agreements* and *Agreement Receipts*). Unrestricted roles see all agreements; restricted roles see: agreements they created or own (requester), of their department (dept manager/admin), mapped departments (GM/OPM), directed departments (director), created by direct reports (supervisor), and any agreement whose PA they have an open approval task for. Out-of-scope → 404. |
 | **AGR-051** | Agreement Detail shows header, NTE bar, billing schedule (each period with its invoices, status and confirmation), milestones, receipts, matched invoices, attachments, document chain, approval timeline with approver names, and Audit History; *Create PA* is offered only when at least one invoice is payable (AGR-061). |
+| **AGR-052** | The Agreements and Agreement Receipts lists sort by any column on the server (UI-SORT-004). Agreements open sorted by number, newest first. |
 
 #### 3.17.8 Paying an Agreement
 
@@ -2371,8 +2437,9 @@ Payment of an approved PA is executed in Finance; EPMS PA Detail offers the same
 | **VC-001** | A vendor credit is money the vendor owes back. Sources: a **credit-note document** uploaded through Upload Invoice (§3.14.1, INV-003c), a **manual credit** (Vendor Credits → *Record Manual Credit*) when the vendor will not issue a credit note, or a QuickBooks import. Number `VC-YYYYMMDD-NNNN`; amounts are stored positive regardless of the document's sign. |
 | **VC-002** | Duplicate guard: one live (non-void) credit per vendor + vendor credit-note number. |
 | **VC-003** | A manual credit requires the reference number the vendor quoted (shown on the remittance), amount/tax, and a **basis** note (who at the vendor confirmed it, and when); the vendor's email (.msg/.eml/PDF) is attached as evidence and the UI will not approve a manual credit without an attachment. |
-| **VC-004** | New credits are `pending_review`. Holders of *Manage Vendor Credits* (`epms.vendor_credit.manage`) approve (→ `available`) or reject with a reason (→ `void`); an `available` credit not yet applied can be voided. The Vendor Credits page (menu gated by `view_invoice`) lists credits with a detail drawer (fields, files, review actions, applications). |
+| **VC-004** | New credits are `pending_review`. Holders of *Manage Vendor Credits* (`epms.vendor_credit.manage`) approve (→ `available`) or reject with a reason (→ `void`); an `available` credit not yet applied can be voided. The Vendor Credits page (menu gated by `view_invoice`) lists credits with a detail drawer (fields, files, review actions, usage — VC-006). |
 | **VC-005** | At payment, available credits of the same vendor and currency are netted automatically, **oldest first**, up to the payment amount; the operator can untick individual credits in the dialog. A fully used credit becomes `exhausted`. |
+| **VC-006** | **Usage history.** The detail drawer of an `available`, `exhausted` or `void` credit lists every payment it was netted against: PA number (opens the PA), payment date, payment batch, amount netted, cash paid to the vendor on that payment, and who executed it, with a count and total that equal the credit's *Applied*. A payment not in `completed` status is labelled. Usage is payment data: viewers without a finance role (System Admin, Finance Manager, Finance BP, AP Clerk, Payment Officer) see a notice instead of the list. |
 
 #### 3.18.3 Remittance Advice
 
@@ -2401,6 +2468,12 @@ Every EPMS page carries an **Assistant** panel (floating button, available to an
 | **AST-009** | **Reply language.** Every reply is in the language of the user's *current* question, whatever earlier turns used. The server decides it from the question (Chinese script → Chinese; an explicit "answer in English/中文/español" → that language) and tells every answering step; for other Latin-script questions the model is told to use the question's language. A message that only asks for another language ("用中文回答") repeats the previous answer in that language. System-written replies (refusals, "which document do you mean?") are rendered in the user's language too. |
 | **AST-010** | **Fixed Chinese terms.** In Chinese replies, role, approval-level and document names use one fixed translation each, followed by the English name the first time (e.g. 总监 (Director), 主管 (Supervisor), 应付审核 (AP Review), 里程报销单 (MIL)). Names without a fixed translation stay in English. |
 | **AST-011** | **Agreements.** Purchase Agreements are queryable (needs `epms.agreement.read`; same row scope as the Agreements page): number, kind, vendor, status, valid from/to, days until expiry, grace days, Not to Exceed, consumed and remaining. An empty Not to Exceed means *no ceiling*. Status `active` means approved, not "still in force" — the system never moves an agreement to `expired`. |
+| **AST-012** | **Rules.** Questions about how the system behaves are answered from fixed rules, each tied to the code that enforces it, never from a data query or a guess. They cover: a rejected PA gets status Cancelled (PRs and POs get Rejected); Type 1 cannot be chosen when creating a PR; the number formats (PR/PA/GR-YYYYMMDD-NNNN, PO-<vendor code>-YYMM-NN, AGR-YYYYMM-NNNN, invoice reference INV-YYYY-NNNN; the date is the UTC date); invoice matching compares amounts per PO line (over-invoicing beyond tolerance → Exception) and never received quantities, so an invoice can be Matched with nothing received (INV-3WM-006) — receipt evidence is checked only when a PA is created (PA-013), and only for existence; an Active agreement is not necessarily in force; approvals are given only in UniOps (Teams cards and emails only notify). |
+| **AST-013** | **Task counts.** "What do I have to do?" reports the total, the urgent count, the count per task type under the same labels as the Task Inbox group headers, and how many tasks reached the user personally vs through a role. All of these are counted by the server; the model does not count. Only the first 12 tasks (urgent first, then oldest) are named as examples. |
+| **AST-014** | PR answers can include the Service/Project expected completion date, the Service/Project Owner (the owner set on a service or project PR, otherwise the requester, as for receipt tasks) and the requester's name. Replies never show internal tool markup. |
+| **AST-015** | **Long lists.** When a list answer hits the row cap, the server also counts how many rows the query really matched. The answer states that total, lists at most 10 rows, and points to **Export to Excel** (named exactly so in every language) for the full list; the evidence line reads "N of TOTAL rows". |
+| **AST-016** | **Invoices and receipt.** Invoices carry which route they are billed against (purchase order / agreement) and, for the PO route only, whether the PO has receipt evidence under the same rule as the PA receipt gate (a live GR, or a received quantity on a PO line). "Matched but not received" therefore never includes agreement invoices, which are backed by agreement receipts; an empty GR number is not read as "not received". |
+| **AST-017** | **Formatting.** Replies are rendered as formatted text — bold, italics, inline code, headings, bullet and numbered lists, and tables — by a renderer that never interprets HTML in the reply, so quoted text (vendor names, comments) cannot inject markup. Error messages stay plain text. |
 
 ---
 
@@ -2421,7 +2494,92 @@ Every EPMS page carries an **Assistant** panel (floating button, available to an
 | **UI-DATE-001** | Calendar dates (no time) display as the same calendar day in every time zone; display format DD/MM/YYYY. |
 | **UI-BTN-001** | Action buttons that change document state (Approve, Return, Reject, Withdraw and similar) are disabled while their request is pending. |
 
+**Sortable list columns (all UniOps modules).** Every list of records in every UniOps app (EPMS, OA, Finance, Inventory, MRP, Portal, VMS, Booking) can be sorted by clicking a column header. This rule is specified once here; the other PRDs refer to it.
+
+| FR ID | Requirement |
+|---|---|
+| **UI-SORT-001** | Each data column header of a list sorts the list. The first click sorts ascending; the next click on the same header reverses it; clicking another header starts that column ascending. A sortable header shows ↕ until it is the active sort, then ↑ or ↓. Checkbox, action-button and expand columns do not sort. |
+| **UI-SORT-002** | A column sorts by **what its cell shows**: a status or type by its label, a person or vendor by name (never by an internal id), an amount as a number, a date chronologically. Text sorts case-insensitively; document numbers sort in number-aware order where the list is loaded whole (508027 before 2026000066). Status columns sort alphabetically by label, except where a module specifies another order (EPMS PR/PO/PA, §3.2). |
+| **UI-SORT-003** | Rows with no value in the sorted column stay at the bottom in **both** directions. Rows with equal values keep a stable order. |
+| **UI-SORT-004** | A list that is paged by the server is **sorted by the server across all pages**, never by re-ordering the rows on the current page. Changing the sort goes back to page 1 (PGN-003). Every such list endpoint takes `sort` (a column key from a fixed allow-list; an unknown key is refused) and `dir` (`asc` / `desc`); without `sort` it keeps its own default order. |
+| **UI-SORT-005** | A list loaded whole is sorted in the browser over all its rows. Lists that used to load only the newest N rows now page on the server instead, so sorting always covers every matching row. |
+| **UI-SORT-006** | A list opens in its default order (stated in its module's section); where that default is a column sort, the header shows the active arrow. Sorting does not change filters, search or selection. |
+| **UI-SORT-007** | Not sortable by design: line items inside a document's detail or edit form; reports and matrices with subtotal, group or total rows inside the table; and tables whose values depend on row order (running balance, cumulative totals, opening/closing roll-forwards). |
+
 ---
+
+### 3.21 Courier Freight Payment (Freight)
+
+Courier charges (UPS, FedEx, Purolator…) are paid without PR or PO. Buyers register the tracking number of each pickup with the cost center that bears it; when the carrier's invoice arrives, its per-shipment detail is read by AI, matched to the registered tracking numbers, and paid by a **Freight PA** split by cost center. All freight is charged to budget account **CRM00204**. Design: `docs/superpowers/specs/2026-10-19-freight-payment-design.md`; page layout: `docs/superpowers/specs/2026-10-19-freight-into-invoice-pa-design.md`.
+
+**Where it happens.** The Freight page holds only what is Freight's own — **Shipments** and **Carriers**. Courier invoices arrive and are matched on the **Invoices** page like every other invoice, and Freight PAs are raised on the **PA** page (FRT-014).
+
+#### 3.21.1 Access
+
+| Permission | Allows | Seeded |
+|---|---|---|
+| `epms.freight.register` | Register, edit and void one's own shipments; see one's own shipments | System Admin, Procurement Officer, Procurement Manager |
+| `epms.freight.manage` | See every shipment; upload, match, finalise, reopen and delete carrier invoices; raise Freight PAs; see courier invoices on the Invoices page when otherwise PO-restricted. (Uploading a courier invoice is also open to the ordinary invoice-upload permission, FRT-016.) | System Admin (the supply-chain person is granted it in Access Control) |
+| `epms.freight.admin` | Maintain the carrier list | System Admin |
+
+#### 3.21.2 Requirements
+
+| FR ID | Requirement |
+|---|---|
+| **FRT-001** | **Carriers.** A carrier links one vendor (unique) and has a code, a name, an optional tracking-number pattern (regular expression) and an optional default cost center for charges that have no tracking number. Only vendors set up as carriers can be paid by a Freight PA. |
+| **FRT-002** | **Register a shipment.** Carrier, tracking number, cost center (required), direction (outbound / inbound), note, optional waybill photo. The tracking number is stored without spaces, hyphens or dots, upper case; it must match the carrier's pattern when one is set; a carrier + tracking number can be registered once (the refusal names who registered it). A waybill photo can be read by AI to fill the tracking number. |
+| **FRT-003** | **Default cost center.** After a department is chosen: its only active cost center; otherwise the cost center whose current-year approved budget plan carries CRM00204 (largest annual amount); otherwise none and the user picks. Choosing a cost center with no freight budget asks for confirmation; it is not blocked. |
+| **FRT-004** | A shipment is `pending` until an invoice bills it, then `billed`. Only a pending shipment can be edited or voided (`void`). |
+| **FRT-005** | **Upload a carrier invoice** (through *Invoices → Upload Invoice*, FRT-016). The PDF is read by AI (Haiku) for its per-shipment detail: header (invoice number, dates, currency, amount before tax for this invoice only, tax) and one line per shipment / pickup / fee / adjustment with every package tracking number, reference, date, amount before tax and the tax attributed to it. Tax printed per category is spread over that category's lines; any tax still unattributed is spread over the positive lines by amount. The reviewer corrects the result before saving; the form shows whether the lines add up to the header. Saving is refused when the same vendor invoice number already exists in EPMS or OA. The invoice is stored as an EPMS invoice (`match_route = freight`) and synced to Finance AP like any other. |
+| **FRT-006** | **Auto-match** (on save and on demand; never changes a line set by hand): a shipment line matches the carrier's pending shipment whose tracking number is any of the line's package numbers → its cost center. A shipment already billed on another invoice is flagged **Billed before** and needs a decision. A line with no registered shipment is **Not registered** and needs a cost center. An adjustment follows its shipment wherever it was billed. A pickup on (or one day either side of) a matched shipment's date follows that shipment; other pickups and fees take the carrier's default cost center. |
+| **FRT-007** | On an unfinalised invoice each line's cost center, amount, tax, tracking numbers and the shipment a pickup follows can be changed; a change marks the line as set by hand. |
+| **FRT-008** | **Finalise** requires: lines before tax = invoice amount, line taxes = invoice tax, every line has a cost center, no undecided **Billed before** line. Finalising records unregistered shipments (source *from invoice*), marks matched shipments billed and the invoice `matched`. **Reopen** returns it to unfinalised (and its shipments to pending) only while no Freight PA holds it. An unfinalised invoice can be deleted. |
+| **FRT-009** | A courier invoice is matched against shipments, never a PO or agreement: the general invoice actions (match to PO or agreement, assign, unmatch, edit, delete, exceptions) refuse it, and the lists offer **Match shipments** (to its invoice page) instead. Its invoice page shows the charges and their matching in place of the three-way match. |
+| **FRT-010** | **Freight PA.** One or more finalised invoices of the same carrier and currency, none held by another non-cancelled PA, are locked and turned into one PA: `source = freight`, no PO, no agreement, subtotal and tax = the invoices' amounts, one line item per invoice, and a cost allocation per invoice × cost center (department, CRM00204, amount, tax) snapshotted at creation. PA detail and PDF show the cost allocation instead of PO numbers. |
+| **FRT-011** | **Approval.** A Freight PA is a `pa` document (same tasks, inbox, events and payment) that walks the `pa_frt` chain — default OPM → GM → Finance Manager → Finance BP, edited in Portal → Admin → Approval Workflows, where only company-level roles are offered. No department manager is involved or notified. |
+| **FRT-012** | **Visibility.** Besides unrestricted roles, a Freight PA is visible to its creator, `epms.freight.manage` holders and anyone holding a role that is a step of the `pa_frt` chain (GM and OPM are restricted roles whose approval tasks are not personally assigned). It appears in the PA list; the Department filter matches any of its allocations. |
+| **FRT-014** | **Pages.** *Invoices → Upload Invoice* is the one upload form for every invoice (FRT-016). The invoice lists mark courier invoices **Freight** and *All Invoices* filters by Route (PO / Agreement / Freight; PO includes invoices with no recorded route). *Payment Applications* offers **New Freight PA** to `epms.freight.manage` holders (`/pa/new?source=freight`; *Create PA* on a matched courier invoice opens it with that invoice ticked). The Freight page has the Shipments and Carriers tabs only; an old `/freight/invoices/<id>` link opens the invoice page. |
+| **FRT-015** | **Courier invoice visibility.** Unrestricted roles see every invoice. A PO-restricted caller sees courier invoices (list, detail, document chain) when holding `epms.freight.manage`; no role code is hard-wired — anyone else (e.g. the `pa_frt` approvers) is granted through the Access Control Matrix. Every invoice reader sees the matching panel; only `epms.freight.manage` changes it. |
+| **FRT-016** | **A carrier's invoice is a courier invoice.** The upload form reads the PDF as any invoice; when its vendor is an active carrier's — picked by the user, or the vendor name read by AI agreeing with the carrier's vendor name or the carrier's own name (equal once legal suffixes and punctuation are dropped, or one starting with the other over at least 4 characters — an invoice printing just "UPS" is recognised, "Upstate Supplies" is not) — the form on the right of the same Upload Invoice window becomes the courier review (the PDF preview stays on the left; the lines are listed one card per shipment, pickup or fee, with the window's own Save and match): the same PDF is read again for its shipment lines, the carrier is shown (no carrier picker), and *Different vendor* goes back. Credit notes keep the vendor-credit path. Uploading takes the ordinary invoice-upload permission (or `epms.freight.manage`); the PO invoice upload (`POST /invoices`) refuses an active carrier's vendor. |
+| **FRT-017** | **Assigning the matching.** As with any invoice, AP assigns a courier invoice from the Unmatched Queue (*Assign* / *Reassign*, "Assign Shipment Matching"); the assignee gets a *Match Invoice* task ("Match courier invoice … to shipments") that opens the invoice page, and may — without `epms.freight.manage` — edit the lines, re-run auto-match and finalise. The open task also lets them open the invoice page when their role has no invoice view. Finalising (or deleting) closes the task. Reopen, delete and the Freight PA stay with `epms.freight.manage`. |
+| **FRT-013** | **Payment and NC.** A Freight PA is paid through the standard payment executor as an EPMS PA (its invoices are marked paid); the due list labels it Freight PA. In the NC AP export a courier invoice is **one body row per cost center** with revexp CRM00204 (all other invoices stay one summary row); a row with no tax is sent with tax rate 0. |
+
+### 3.22 Direct Payment Application (Direct PA)
+
+Some vendor invoices have no purchase order or agreement behind them — and never will (a one-off service, a fee, a bill paid on the department's say-so). They are paid by a **Direct PA**. The feature moved here from OA, where it was retired on 2026-08-07: the invoice is uploaded on the Invoices page like any other, and the Direct PA is raised on the Payment Applications page. There is no 3-way match; the payment names what it is charged to itself.
+
+#### 3.22.1 Requirements
+
+| FR ID | Requirement |
+|---|---|
+| **DPA-001** | **Match → Direct PA.** The invoice Match panel has a third tab, **Direct PA**, beside Purchase Orders and Agreements. *Match for Direct PA* (or *Match & Create Direct PA*, which then opens the create page with the invoice ticked) sets the invoice `matched` with `match_route = direct`, no PO, no agreement, no variance. Allowed to whoever may match the invoice (AP, its uploader, the holder of an open match task); only an `unmatched` invoice with no PO, agreement or allocation can take it; a courier invoice cannot. Open match / exception tasks on the invoice close; the AP mirror is posted as for any matched invoice. |
+| **DPA-002** | **Unmatch.** On the invoice's 3-Way Match tab AP (`epms.invoice.match`) can take it back to `unmatched` with a reason (audited), unless a non-cancelled PA lists it or it is already in payment. While a live PA lists a Direct invoice, the invoice cannot be edited either — the PA copied its amounts. |
+| **DPA-003** | **Create Direct PA.** *Payment Applications → Create Direct PA* (`/pa/new?source=direct`; also *Create Direct PA* on a Direct invoice) is shown to holders of *Create / Edit PAs* (`epms.pa.write`). It lists the Direct invoices the caller can open on the Invoices page that no live PA lists (oldest due first). One or more of **the same vendor and currency** go on one PA, falling due within 7 days of each other (as for PO PAs). The caller must be able to open every invoice on it (a requester can pay what they uploaded; AP anything). |
+| **DPA-004** | **Charged to.** Required: **Department** (defaults to the creator's own), **Cost Center** (an active cost center of that department), **Budget Account** (L1 → L2 from the budget catalog, checked against it), and the **Reason for payment** (stored as the PA's notes). When a ticked invoice is linked to a PO (**Link to PO**, §3.23 — not Match to PO), the form instead defaults to that PO's department and cost center (from the PO's PR) and its budget code (the PO's own, else its PR's); the invoice row shows *Linked to PO-…* and the form says the values were defaulted from it. The defaults are applied once per new set — the fields stay editable — and only when every ticked invoice that has one agrees; an invoice linked to POs that disagree, or only to NC orders (no PR, no budget code), leaves the form's own default. Title is optional (default "Direct Payment — vendor + invoice numbers"). |
+| **DPA-005** | **The PA.** `source = direct`, `pa_type = regular`, no PO, no agreement; subtotal and tax are the invoices' own amounts (no rate re-applied); one line item per invoice. Created as a draft. On a draft or returned Direct PA only the title, reason, department, cost center and budget account can be edited; amounts and invoices follow the invoices (to change them: cancel, fix the invoice, raise a new PA). Submit (from the PA page or *Save & Submit*) is refused unless invoice, department, cost center, budget account and reason are all present. PA detail and PDF show *Charged To* (department · cost center · budget account) in place of PO numbers. |
+| **DPA-006** | **Approval.** A Direct PA is a `pa` document (same tasks, inbox, events, payment) that walks the `pa_dir` chain — the "PA (Direct)" workflow in Portal → Admin → Approval Workflows, default Finance BP → Finance Manager. Department-based steps an admin adds there (Department Manager, Director, GM / OPM) route on the department named on the PA. |
+| **DPA-007** | **Visibility.** Unrestricted roles see every Direct PA. A restricted caller sees one they created, one they hold an open task on, one charged to a department they oversee (Department Manager / Dept Admin: own department; GM / OPM: mapped departments; Director: directed departments) and — as Supervisor — one raised by a direct report. They can also open the invoices on a Direct PA they can see. The PA list's Department filter matches its department; Direct PAs carry a **Direct** badge with cost center and budget account. |
+| **DPA-008** | **Payment and NC.** Paid through the standard payment executor as an EPMS PA (its invoices are marked paid); the Payment Batches due list labels it Direct PA. In the NC AP export a Direct invoice takes department, cost center, budget account (revexp) and employee from the Direct PA paying it; one with no live Direct PA yet is reported, not exported. |
+| **DPA-009** | **Pages.** The invoice lists mark Direct invoices **Direct** and *All Invoices* filters Route = Direct PA. The invoice's document chain reads a Direct invoice as matched with no goods receipt to wait for. |
+| **DPA-010** | **Upload from Create Direct PA.** Create Direct PA shows **Upload Invoice** (beside the invoice list, and in the empty state) to whoever may upload invoices (`invoice_upload`). It opens *Invoices → Upload Invoice* (`/invoices?upload=direct`) in Direct PA mode: the form is marked *Direct PA*, a saved invoice is not auto-matched to a PO but matched for a Direct PA (DPA-001), and when the upload — every invoice of a split PDF — is done, Create Direct PA reopens with those invoices ticked. A courier invoice or a credit note keeps its own path and is not matched for a Direct PA. If the match is refused the invoice stays saved and unmatched, and the user is told to use Match → Direct PA on it. |
+
+---
+
+### 3.23 PO Fee Invoices (freight & customs on POs)
+
+NC orders (§3.12.6) — raw material and packaging, and since v2.40 milk — and, since v2.44, POs raised in EPMS bring separate **freight** and **customs-clearance** invoices from forwarders and brokers. They used to be paid by Direct PA with no tie to the order, so the material's landed cost was incomplete and nobody could tell whether a PO's fee invoices had all arrived. Design: `docs/superpowers/specs/2026-10-23-po-fee-invoices-design.md`.
+
+| FR ID | Requirement |
+|---|---|
+| **FEE-001** | **Payment is unchanged.** A fee invoice is matched for a Direct PA (§3.22) and paid to the forwarder/broker. Its link to a PO is a separate record (`invoice_fee_links`), never `invoices.po_id`, and never changes the invoice's match, status, route or any PA. No amounts are compared or split. |
+| **FEE-002** | **Linking.** On the invoice page, **Link to PO** (users with `epms.invoice.match`), available on invoices matched for a Direct PA or not yet matched. Pick the part of the invoice (whole invoice or one line), the fee type (Freight / Customs / Other) — **Other** needs a note saying what the fee is (inspection, storage, …), required before arrivals can be ticked, editable per link, refused by the server when blank, shown on the invoice and on the PO's panel; Freight / Customs carry no note — then search NC POs that have at least one arrival — raw material, packaging or milk (marked *Milk*) — and approved EPMS POs (marked *EPMS*, FEE-003) by PO number, supplier or arrival number — any supplier, since the invoice's own vendor is the forwarder — and tick arrivals. The list puts the most recent arrival first, then POs with no arrival yet, shows 50 at a time with "Showing N of M" and a **Show more** button, so no PO is cut off silently. A freight bill the carrier combined is ticked against several arrivals, across POs if needed; a customs invoice is linked line by line, each line to its PO's arrival. The saved set replaces the previous one; each change is audit-logged. |
+| **FEE-003** | **A link names an arrival.** NC orders (any type, milk included; not cancelled) can be linked, and every link must choose one of the order's arrivals (GRs) — an NC order with no arrival is not offered. EPMS-raised POs can be linked once approved (status approved, issued, partially / fully received or closed; draft, submitted, in review, returned, rejected and cancelled ones are refused): with any fee type, to one of their arrivals when they have any, or — only while they have none — to the **whole PO**. A **milk order with no Incoterms** can only be linked with fee type **Other**: under Freight / Customs it is not offered and the server refuses it ("…set its Incoterms in Edit Details to link freight or customs"). A link can still lose its arrival if Data Maintenance deletes that arrival (FEE-007); the PO then shows it as such and re-saving the invoice's links asks for an arrival. |
+| **FEE-004** | **Expected fees come from Incoterms.** The PO's Incoterms code (PO-IMP-007) and Incoterms Settings (§3.6.4) say whether each arrival needs a freight invoice, a customs invoice, both or neither. Read live, never snapshotted. |
+| **FEE-005** | **PO Detail — Freight & Customs panel**, on NC orders and EPMS POs: Incoterms and what it expects; one row per arrival with its linked freight and customs invoices (✓ with links to the invoices, **Missing**, or — when not expected); other-type fees; links whose arrival was deleted. On a raw-material order it always shows, and a missing Incoterms is flagged with a link to Edit Details. On a milk order (Incoterms optional) it shows once the order has Incoterms or a linked fee; without Incoterms the fees are listed but not checked. On an EPMS PO it shows once a fee is linked; the fees (per arrival, or *Linked to the whole order*) are listed, never checked. |
+| **FEE-006** | **Fee status** (PO list **Fees** column, PO detail) on every raw-material order, and on a milk order once it has an Incoterms code: **Complete** — every arrival has each expected invoice; **Missing** — at least one does not; **No arrivals yet**; **Not required** — the term expects neither; **Incoterms not set** (raw-material orders only). Blank for every other PO, EPMS POs included. |
+| **FEE-007** | **Data safety.** Deleting an invoice removes its links; Data Maintenance deleting a PO removes the PO's links; deleting an arrival turns its links into arrival-less ones (still shown on the PO). The NC full reload never deletes a PO that has links (NC-003). Invoices later re-matched to another route keep their links, which can still be removed. |
+
+**Not in scope (phase 2):** cost-allocation export for NC landed-cost adjustment; AI suggestion of the PO from the invoice text; reminders for missing fee invoices.
 
 ## 4. Non-Functional Requirements
 
@@ -2510,6 +2668,7 @@ PROCUREMENT
   Invoices                          view_invoice
   Vendor Credits                    view_invoice
   Payment Applications              view_pa
+  Freight                           epms.freight.register or epms.freight.manage
   Agreements                        epms.agreement.read
   Agreement Receipts                epms.agreement.read
 
@@ -2677,7 +2836,7 @@ A PR is over budget when its total exceeds the Available Balance; the over-budge
 
 ## 10. List Pagination
 
-All major document list pages use **server-side pagination**. The backend applies `OFFSET`/`LIMIT` before returning results; the frontend never loads an entire table to paginate in memory. Exceptions: the Task Inbox (returns all open tasks) and Vendor Credits are not paginated.
+All major document list pages use **server-side pagination**. The backend applies `OFFSET`/`LIMIT` before returning results; the frontend never loads an entire table to paginate in memory. Exception: the Task Inbox (returns all open tasks) is not paginated.
 
 ### 10.1 Paginated Endpoints — EPMS
 
@@ -2698,6 +2857,7 @@ All major document list pages use **server-side pagination**. The backend applie
 | Users (admin) | `GET /api/v1/users` | 20 | 200 |
 | Users directory | `GET /api/v1/users/directory` | 20 | 100 |
 | Data Maintenance lists | `GET /api/v1/admin/{entity}` | 20 | 200 |
+| Vendor Credits | finance `GET /api/v1/vendor-credits` (`limit`/`offset`) | 20 (API default 100) | 500 |
 
 Every paginated endpoint accepts `page` (integer ≥ 1, default 1) and `page_size` query parameters and returns:
 
@@ -2712,6 +2872,7 @@ Every paginated endpoint accepts `page` (integer ≥ 1, default 1) and `page_siz
 - The query applies all filters first, then runs `SELECT COUNT(*)` over the filtered subquery to get `total`.
 - `OFFSET` = `(page − 1) × page_size`. `LIMIT` = `page_size`.
 - Access-scope filters (role-based visibility) are applied **before** the count query, so `total` reflects only records the user is allowed to see.
+- Sorting (`sort`, `dir`, UI-SORT-004) is applied in SQL before `OFFSET`/`LIMIT`, with a unique tiebreak so a row never appears on two pages; empty values sort last in both directions. Without `sort`, each endpoint keeps its default order.
 
 ### 10.3 Pagination UI Component
 
@@ -2726,7 +2887,7 @@ The shared `Pagination` component from the UniOps shared shell package is used o
 
 | FR ID | Requirement |
 |-------|-------------|
-| **PGN-001** | All document list pages must use server-side pagination. Loading the full dataset and paginating in the browser is not permitted. (Task Inbox and Vendor Credits are currently unpaginated.) |
+| **PGN-001** | All document list pages must use server-side pagination. Loading the full dataset and paginating in the browser is not permitted. (The Task Inbox is currently unpaginated.) |
 | **PGN-002** | Every paginated endpoint must return a `total` field (full filtered count) alongside `items`. |
 | **PGN-003** | Changing any filter, status tab, search term, or sort order must reset `page` to 1. |
 | **PGN-004** | The pagination UI must display "X–Y of Z" using the server-returned `total`. |
@@ -2773,3 +2934,7 @@ Status values: **Open** (decision or data needed), **Not implemented** (requirem
 | OI-AE | WCAG 2.1 AA accessibility pass | UI (§4.1) | Not implemented |
 | OI-AF | A PO-route PA can be submitted with line items that do not add up to its pre-tax amount (about a fifth of PO-route PAs created since 2026-07 in production); there is no lines-vs-subtotal check on submit | PA (§3.15.2) | Not implemented |
 | OI-AG | When an invoice was matched only against the PO total, PA lines are still ticked by hand at full PO quantity; lines already paid by another PA are not marked, so the same PO line can appear in full on several PAs | PA (§3.15.2) | Not implemented |
+| OI-AH | Freight carriers (UPS / FedEx / Purolator vendors, tracking patterns, default cost center) and the supply-chain person holding `epms.freight.manage` must be set up before first use | Freight (§3.21) | Open (data) |
+| OI-AI | Freight: NC import of a courier invoice exported as several body rows (one per cost center, zero-tax rows at rate 0) to be tried by AP before the first live export | Freight (§3.21) | Open |
+| OI-AJ | Freight phase 2: import the carriers' per-shipment CSV instead of reading the PDF; suggest the cost center from a PO number in the shipment reference; read invoices over ~10 pages page by page; monthly freight report by cost center | Freight (§3.21) | Not implemented |
+| OI-AK | Freight: the waybill-photo reading has not yet been tried on a real label | Freight (§3.21) | Open |

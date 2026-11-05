@@ -12,39 +12,31 @@
 //
 // The lot number is still searchable — somebody reading a Flux screen may paste
 // one, and finding nothing would be worse than a match they cannot see.
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import {
   AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, MapPin,
   Search, X,
 } from 'lucide-react'
+import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import {
   formatDateOnly, inventoryApi, qty,
-  type AgingBucketKey, type BatchFilters,
+  type AgingBucketKey, type BatchFilters, type BatchSortKey,
 } from './inventoryApi'
 import { InventorySummary } from './InventorySummary'
 import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
 
 const PAGE_SIZE = 25
 
-const SORTABLE = [
-  { key: 'material_code', label: 'Material' },
-  { key: 'supplier_batch', label: 'Supplier batch' },
-  { key: 'qty', label: 'Qty' },
-  // Sortable because oldest-produced-first is how anybody consuming stock in
-  // production order wants to read this.
-  { key: 'production_date', label: 'Produced' },
-  { key: 'expiry_date', label: 'Expiry' },
-] as const
+const thL = 'px-3 py-2 text-left'
+const thR = 'px-3 py-2'
 
 // `inbound_date` is deliberately NOT a column here any more: a batch's lots
 // arrive on different days, so one date on the summary row describes only part
 // of the quantity. It lives on the location rows in the expander, where each
 // one belongs to exactly one lot and the date is unambiguous.
-
-type SortKey = typeof SORTABLE[number]['key']
 
 /** Tint per shelf-life band. Expired and under-30 are the two that need an
  *  action today, so only those two carry colour — if everything is coloured,
@@ -173,8 +165,8 @@ export function BatchesTab({
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
-  const [sort, setSort] = useState<SortKey>('expiry_date')
-  const [descending, setDescending] = useState(false)
+  // Earliest expiry first is the API's default; shown as the active sort.
+  const [sort, onSort] = useSort<BatchSortKey>({ key: 'expiry_date', dir: 'asc' })
   const [expanded, setExpanded] = useState<string | null>(null)
   // Set by clicking the "expiring soon" tile. Held as the exact window the
   // server used rather than as a flag, so the rows shown are the same set the
@@ -191,7 +183,7 @@ export function BatchesTab({
 
   // Back to page 1 when the filters change — adjusted during render (React's
   // "storing information from previous renders"), not in an effect.
-  const resetKey = JSON.stringify([erpClassCode, status, sort, descending, expiringWindow, includeByproducts])
+  const resetKey = JSON.stringify([erpClassCode, status, sort, expiringWindow, includeByproducts])
   const [prevResetKey, setPrevResetKey] = useState(resetKey)
   if (prevResetKey !== resetKey) {
     setPrevResetKey(resetKey)
@@ -205,9 +197,8 @@ export function BatchesTab({
     include_byproducts: includeByproducts,
     expiring_after: expiringWindow?.after,
     expiring_before: expiringWindow?.before,
-    sort,
-    descending,
-  }), [search, status, erpClassCode, sort, descending, expiringWindow,
+    ...sortParams(sort),
+  }), [search, status, erpClassCode, sort, expiringWindow,
        includeByproducts])
 
   const batchQuery = useQuery({
@@ -222,11 +213,6 @@ export function BatchesTab({
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE))
   const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1
   const to = Math.min(page * PAGE_SIZE, total)
-
-  function toggleSort(key: SortKey) {
-    if (key === sort) setDescending((d) => !d)
-    else { setSort(key); setDescending(key === 'qty') }
-  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -293,34 +279,19 @@ export function BatchesTab({
         <table className="min-w-full text-sm">
           <thead className={stickyHeadCls}>
             <tr>
-              {SORTABLE.map(({ key, label }) => (
-                <Fragment key={key}>
-                <th className={cn('px-3 py-2', key === 'qty' ? 'text-right' : 'text-left')}>
-                  <button
-                    type="button"
-                    onClick={() => toggleSort(key)}
-                    aria-label={`Sort by ${label}`}
-                    className={cn('inline-flex items-center gap-1 hover:text-neutral-800',
-                      sort === key && 'text-neutral-900')}
-                  >
-                    {label}
-                    {sort === key && (descending
-                      ? <ChevronDown aria-hidden className="h-3 w-3" />
-                      : <ChevronUp aria-hidden className="h-3 w-3" />)}
-                  </button>
-                </th>
-                {key === 'supplier_batch' && (
-                  <th className="px-3 py-2 text-left"
-                    title="NC QC batch numbers (WMS LOTATT04) of this batch's lots. Filled from the next WMS sync on.">
-                    NC QC batch
-                  </th>
-                )}
-                </Fragment>
-              ))}
-              <th className="px-3 py-2 text-right">Lots</th>
-              <th className="px-3 py-2 text-left">Shelf life</th>
-              <th className="px-3 py-2 text-left">Quality</th>
-              <th className="px-3 py-2 text-left">Status</th>
+              <SortTh label="Material" sortKey="material_code" sort={sort} onSort={onSort} className={thL} />
+              <SortTh label="Supplier batch" sortKey="supplier_batch" sort={sort} onSort={onSort} className={thL} />
+              <SortTh label="NC QC batch" sortKey="qc_batches" sort={sort} onSort={onSort} className={thL}
+                title="NC QC batch numbers (WMS LOTATT04) of this batch's lots. Filled from the next WMS sync on." />
+              <SortTh label="Qty" sortKey="qty" sort={sort} onSort={onSort} align="right" className={thR} />
+              {/* Oldest-produced-first is how anybody consuming stock in
+                  production order wants to read this. */}
+              <SortTh label="Produced" sortKey="production_date" sort={sort} onSort={onSort} className={thL} />
+              <SortTh label="Expiry" sortKey="expiry_date" sort={sort} onSort={onSort} className={thL} />
+              <SortTh label="Lots" sortKey="lots" sort={sort} onSort={onSort} align="right" className={thR} />
+              <SortTh label="Shelf life" sortKey="days_to_expiry" sort={sort} onSort={onSort} className={thL} />
+              <SortTh label="Quality" sortKey="quality_status" sort={sort} onSort={onSort} className={thL} />
+              <SortTh label="Status" sortKey="mapped_status" sort={sort} onSort={onSort} className={thL} />
             </tr>
           </thead>
           <tbody>

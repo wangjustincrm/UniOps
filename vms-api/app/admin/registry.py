@@ -14,19 +14,25 @@ Cascade facts (verified against the ORM models):
 """
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.cascade import purge_shared_refs
 from app.admin.fields import EntitySchema, FieldSpec
+from app.core.plant_time import plant_tz
 from app.models.health_declaration import HealthDeclaration
 from app.models.visit import Visit
 from app.models.visitor import Visitor
 
 CascadeFn = Callable[[AsyncSession, object], Awaitable[dict[str, int]]]
+# Runs after an edit's fields are applied, before the audit snapshot.
+# Re-derives fields the edit form does not expose and applies side effects;
+# raises ValueError (-> 400) to reject the edit. Args: db, row, actor id/email.
+AfterEditFn = Callable[[AsyncSession, object, uuid.UUID, str], Awaitable[None]]
 
 
 @dataclass
@@ -36,6 +42,7 @@ class EntitySpec:
     system: str
     cascade_preview: CascadeFn
     cascade_delete: CascadeFn
+    after_edit: Optional[AfterEditFn] = None
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -57,6 +64,27 @@ async def _visit_delete(db: AsyncSession, visit) -> dict[str, int]:
     refs = await purge_shared_refs(db, visit.id)
     await db.delete(visit)  # vms_health_declarations + vms_badge_prints cascade via FK
     return _merge({"vms_visits": 1}, refs)
+
+
+async def _visit_after_edit(db: AsyncSession, visit, actor_id: uuid.UUID, actor_email: str) -> None:
+    # The schedule is planned_arrival / planned_departure: the Visit List, the
+    # detail page and the auto no-show job all read them. visit_date is only a
+    # day index (list filters, dashboard "today", reports, reminders), so it is
+    # derived here instead of being editable — editing it alone moved nothing
+    # the user can see, and the no-show job still fired on the old day.
+    if visit.planned_arrival is None:
+        raise ValueError("Planned arrival is required")
+    if visit.planned_departure is not None and visit.planned_departure <= visit.planned_arrival:
+        raise ValueError("Planned departure must be after planned arrival")
+    visit.visit_date = visit.planned_arrival.astimezone(plant_tz()).date()
+    # Saving a No Show visit whose schedule is no longer overdue means it was
+    # rescheduled: put status, approval and its tasks back (user rule 2026-10-20).
+    from app.models.user_mirror import User
+    from app.services.scheduled_jobs import undo_no_show
+    actor = await db.get(User, actor_id)
+    await undo_no_show(db, visit, actor_id=actor_id,
+                       actor_name=(actor.full_name if actor else "") or actor_email or str(actor_id),
+                       ip_address="data-maintenance")
 
 
 # ── Visitor ──────────────────────────────────────────────────────────────────
@@ -102,7 +130,7 @@ async def _health_declaration_delete(db: AsyncSession, hd) -> dict[str, int]:
 
 _VISIT_SCHEMA = EntitySchema(
     key="visit", label="Visit", allow_delete=False, number_field="visit_title",
-    list_columns=["visit_title", "visit_purpose", "status", "visit_date", "created_at"],
+    list_columns=["visit_title", "visit_purpose", "status", "planned_arrival", "created_at"],
     search_fields=["visit_title", "notes"], order_by="created_at desc",
     fields=[
         FieldSpec("visit_title", "string", True),
@@ -110,7 +138,10 @@ _VISIT_SCHEMA = EntitySchema(
         FieldSpec("access_area", "string", True),
         FieldSpec("status", "string", True),
         FieldSpec("notes", "string", True),
-        FieldSpec("visit_date", "date", True),
+        FieldSpec("planned_arrival", "datetime", True),
+        FieldSpec("planned_departure", "datetime", True),
+        # Derived from planned_arrival on save (_visit_after_edit).
+        FieldSpec("visit_date", "date", False),
         FieldSpec("created_at", "datetime", False),
     ],
 )
@@ -143,7 +174,8 @@ _HEALTH_DECLARATION_SCHEMA = EntitySchema(
 )
 
 REGISTRY: dict[str, EntitySpec] = {
-    "visit": EntitySpec(_VISIT_SCHEMA, Visit, "vms", _visit_preview, _visit_delete),
+    "visit": EntitySpec(_VISIT_SCHEMA, Visit, "vms", _visit_preview, _visit_delete,
+                        after_edit=_visit_after_edit),
     "visitor": EntitySpec(_VISITOR_SCHEMA, Visitor, "vms", _visitor_preview, _visitor_delete),
     "health_declaration": EntitySpec(
         _HEALTH_DECLARATION_SCHEMA, HealthDeclaration, "vms",

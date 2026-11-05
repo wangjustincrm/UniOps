@@ -10,15 +10,16 @@ import { useEffect, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { Download, Loader2, Search, X } from 'lucide-react'
+import { SortTh, nextSort, type Sort } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import { formatMoney, formatQty } from '@/lib/number'
 import { previousMonthEnd, todayToronto } from '@/lib/time'
 import { MATERIAL_CLASSES } from '@/pages/nc/ncApi'
-import { EmptyRow, ErrorBox, LoadingRows, Pager, SortTh } from '@/pages/nc/NcUi'
+import { EmptyRow, ErrorBox, LoadingRows, Pager } from '@/pages/nc/NcUi'
 import { useDebounced } from '@/pages/nc/useDebounced'
 import { usePageFor } from '@/pages/nc/usePageFor'
 import { WmsHistoryNote } from '@/components/WmsHistoryNote'
-import { reconApi, STATUSES, type ReconSort, type ReconStatus } from './reconApi'
+import { RECON_COLUMN_SORTS, RECON_UNEXPLAINED_SORTS, reconApi, STATUSES, type ReconColumnSort, type ReconSort, type ReconStatus } from './reconApi'
 import { GlExtraTable, ReconRowView } from './ReconRows'
 import { exportReconciliation } from './exportRecon'
 import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
@@ -88,8 +89,19 @@ export default function ReconciliationPage() {
   const category = listParam(searchParams.get('cat'))
   const expandBatches = searchParams.get('batches') === '1'
   const includeUnposted = searchParams.get('unposted') !== '0'
+  // A column header writes sort + dir; the Sort menu's presets write sort
+  // alone, and a "largest unexplained" preset is the same sort as its
+  // column header descending (the API's default direction for it).
   const rawSort = searchParams.get('sort')
-  const sort: ReconSort = SORTS.some((s) => s.key === rawSort) ? (rawSort as ReconSort) : 'material'
+  const rawDir = searchParams.get('dir')
+  const knownKey = RECON_COLUMN_SORTS.some((k) => k === rawSort)
+  const dirOk = rawDir === 'asc' || rawDir === 'desc'
+  const columnSort: Sort<ReconColumnSort> | null = !knownKey ? null
+    : dirOk ? { key: rawSort as ReconColumnSort, dir: rawDir }
+    : RECON_UNEXPLAINED_SORTS.includes(rawSort!) ? { key: rawSort as ReconColumnSort, dir: 'desc' } : null
+  const presetSort: ReconSort | '' = !columnSort || (columnSort.key === 'material' && columnSort.dir === 'asc') ? 'material'
+    : SORTS.some((s) => s.key === columnSort.key && s.key !== 'material') && columnSort.dir === 'desc'
+      ? columnSort.key as ReconSort : ''
   const urlSearch = searchParams.get('q') ?? ''
 
   const [searchInput, setSearchInput] = useState(urlSearch)
@@ -137,7 +149,8 @@ export default function ReconciliationPage() {
   const filters = {
     date, expand_batches: expandBatches, status, category,
     class_code: classCode || undefined, search: search || undefined,
-    include_unposted: includeUnposted, sort,
+    include_unposted: includeUnposted,
+    ...(columnSort ? { sort: columnSort.key, dir: columnSort.dir } : {}),
   }
   const filterKey = JSON.stringify(filters)
   const [page, setPage] = usePageFor(filterKey)
@@ -150,6 +163,18 @@ export default function ReconciliationPage() {
   const data = q.data
   const showAmt = data?.amounts_visible ?? false
   const cols = showAmt ? 17 : 14
+  // Amount sorts are ignored by the API without inventory.cost.view.
+  // Without amounts, `gl_ia` IS the quantity sort: show it on the qty header.
+  const shownSort: Sort<ReconColumnSort> | null = !columnSort ? null
+    : !showAmt && (columnSort.key === 'ia_amount' || columnSort.key === 'gl_amount') ? null
+    : !showAmt && columnSort.key === 'gl_ia' ? { key: 'gl_ia_qty', dir: columnSort.dir }
+    : columnSort
+  function onColumnSort(key: ReconColumnSort) {
+    // Difference columns start largest-unexplained-first, then toggle.
+    const next = shownSort?.key !== key && RECON_UNEXPLAINED_SORTS.includes(key)
+      ? { key, dir: 'desc' as const } : nextSort(shownSort, key)
+    setParams({ sort: next.key, dir: next.dir })
+  }
 
   function toggleRow(code: string) {
     setExpanded((cur) => {
@@ -230,8 +255,9 @@ export default function ReconciliationPage() {
           </div>
           <label className="flex items-center gap-2 text-xs text-neutral-600">
             Sort
-            <select value={sort} onChange={(e) => setParams({ sort: e.target.value === 'material' ? '' : e.target.value })}
+            <select value={presetSort} onChange={(e) => setParams({ sort: e.target.value === 'material' ? '' : e.target.value, dir: '' })}
               className={selectCls}>
+              {!presetSort && <option value="" disabled>By column header</option>}
               {SORTS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
             </select>
           </label>
@@ -323,28 +349,27 @@ export default function ReconciliationPage() {
             <thead className={stickyHeadCls}>
               <tr>
                 <th className="w-8 px-2 py-2" aria-label="Expand" />
-                <SortTh label="Material" sortKey="material" current={sort} onSort={(k) => setParams({ sort: k === 'material' ? '' : k })} />
-                <th className="px-3 py-2 text-right">WMS</th>
-                <th className="px-3 py-2 text-right" title="NC stock in the warehouses WMS manages">NC stock in WMS wh.</th>
-                <th className="px-3 py-2 text-right" title="NC stock in external and production line-side warehouses">NC stock elsewhere</th>
-                <th className="px-3 py-2 text-right" title="All NC warehouses, including transient">NC total</th>
-                <th className="px-3 py-2 text-right">IA qty</th>
-                <th className="px-3 py-2 text-right">GL qty</th>
-                <SortTh label="IC−WMS" sortTitle="Sort by largest unexplained IC−WMS" sortKey="ic_wms" current={sort} align="right" descending
-                  onSort={(k) => setParams({ sort: k })} />
-                <SortTh label="IA−IC" sortTitle="Sort by largest unexplained IA−IC" sortKey="ia_ic" current={sort} align="right" descending
-                  onSort={(k) => setParams({ sort: k })} />
-                {showAmt ? <th className="px-3 py-2 text-right">GL−IA qty</th> : (
-                  <SortTh label="GL−IA qty" sortTitle="Sort by largest unexplained GL−IA" sortKey="gl_ia" current={sort} align="right" descending
-                    onSort={(k) => setParams({ sort: k })} />
-                )}
-                {showAmt && <th className="px-3 py-2 text-right">IA amount</th>}
-                {showAmt && <th className="px-3 py-2 text-right">GL amount</th>}
+                <SortTh label="Material" sortKey="material" sort={shownSort} onSort={onColumnSort} className="px-3 py-2 text-left" />
+                <SortTh label="WMS" sortKey="wms" sort={shownSort} onSort={onColumnSort} align="right" className="px-3 py-2" />
+                <SortTh label="NC stock in WMS wh." title="NC stock in the warehouses WMS manages — click to sort"
+                  sortKey="ic_wms_qty" sort={shownSort} onSort={onColumnSort} align="right" className="px-3 py-2" />
+                <SortTh label="NC stock elsewhere" title="NC stock in external and production line-side warehouses — click to sort"
+                  sortKey="ic_elsewhere" sort={shownSort} onSort={onColumnSort} align="right" className="px-3 py-2" />
+                <SortTh label="NC total" title="All NC warehouses, including transient — click to sort"
+                  sortKey="ic_total" sort={shownSort} onSort={onColumnSort} align="right" className="px-3 py-2" />
+                <SortTh label="IA qty" sortKey="ia_qty" sort={shownSort} onSort={onColumnSort} align="right" className="px-3 py-2" />
+                <SortTh label="GL qty" sortKey="gl_qty" sort={shownSort} onSort={onColumnSort} align="right" className="px-3 py-2" />
+                {/* Difference headers sort by the UNEXPLAINED remainder,
+                    largest first on the first click (PRD INV-056). */}
+                <SortTh label="IC−WMS" title="Sort by unexplained IC−WMS" sortKey="ic_wms" sort={shownSort} onSort={onColumnSort} align="right" className="px-3 py-2" />
+                <SortTh label="IA−IC" title="Sort by unexplained IA−IC" sortKey="ia_ic" sort={shownSort} onSort={onColumnSort} align="right" className="px-3 py-2" />
+                <SortTh label="GL−IA qty" title="Sort by unexplained GL−IA quantity" sortKey="gl_ia_qty" sort={shownSort} onSort={onColumnSort} align="right" className="px-3 py-2" />
+                {showAmt && <SortTh label="IA amount" sortKey="ia_amount" sort={shownSort} onSort={onColumnSort} align="right" className="px-3 py-2" />}
+                {showAmt && <SortTh label="GL amount" sortKey="gl_amount" sort={shownSort} onSort={onColumnSort} align="right" className="px-3 py-2" />}
                 {showAmt && (
-                  <SortTh label="GL−IA amount" sortTitle="Sort by largest unexplained GL−IA" sortKey="gl_ia" current={sort} align="right" descending
-                    onSort={(k) => setParams({ sort: k })} />
+                  <SortTh label="GL−IA amount" title="Sort by unexplained GL−IA amount" sortKey="gl_ia" sort={shownSort} onSort={onColumnSort} align="right" className="px-3 py-2" />
                 )}
-                <th className="px-3 py-2 text-left">Status</th>
+                <SortTh label="Status" sortKey="status" sort={shownSort} onSort={onColumnSort} className="px-3 py-2 text-left" />
                 <th className="px-3 py-2 text-left">Causes</th>
                 <th className="px-3 py-2" aria-label="Trace" />
               </tr>

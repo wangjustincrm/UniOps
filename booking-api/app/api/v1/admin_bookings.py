@@ -14,6 +14,7 @@ import csv
 import io
 import uuid
 from datetime import date, datetime, timezone
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query
@@ -22,6 +23,7 @@ from sqlalchemy import and_, func, select
 
 from app.core.config import settings
 from app.core.deps import SessionDep
+from app.core.list_sort import apply_sort, check_sort, label_case
 from app.core.permissions import AdminUser
 from app.models.booking import Booking
 from app.models.room import MeetingRoom
@@ -32,6 +34,22 @@ router = APIRouter()
 
 TZ = ZoneInfo(settings.DISPLAY_TIMEZONE)
 
+# All Bookings page headers -> ORDER BY (the ?sort= whitelist). Each sorts by
+# what the cell shows: the room NAME, the organizer's NAME (not the FK), the
+# status as "No show", the sync label ("Updating" for compensating —
+# booking/src/pages/admin/AllBookingsPage.tsx SYNC_LABEL).
+_SYNC_LABEL = {"sent": "Sent", "pending": "Pending", "compensating": "Updating",
+               "failed": "Failed"}
+BOOKING_SORTABLE = {
+    "title": func.lower(Booking.title),
+    "room": func.lower(MeetingRoom.name),
+    "organizer": func.lower(User.full_name),
+    "starts_at": Booking.starts_at,
+    "status": func.lower(func.replace(Booking.status, "_", " ")),
+    "sync_status": label_case(Booking.sync_status, _SYNC_LABEL,
+                              else_=func.lower(Booking.sync_status)),
+}
+
 
 def _build_filter_clauses(
     room_id: uuid.UUID | None,
@@ -39,8 +57,12 @@ def _build_filter_clauses(
     date_from: date | None,
     date_to: date | None,
     booking_status: str | None,
+    organizer: str | None = None,
 ):
-    """Build SQLAlchemy WHERE clauses for admin booking filters."""
+    """Build SQLAlchemy WHERE clauses for admin booking filters.
+
+    `organizer` is a case-insensitive contains-match on the organizer's NAME;
+    the statement it is applied to must outer-join User on organizer_id."""
     clauses = []
     if room_id is not None:
         clauses.append(Booking.room_id == room_id)
@@ -56,6 +78,8 @@ def _build_filter_clauses(
         clauses.append(Booking.starts_at <= to_dt)
     if booking_status is not None:
         clauses.append(Booking.status == booking_status)
+    if organizer:
+        clauses.append(User.full_name.ilike(f"%{organizer}%"))
     return clauses
 
 
@@ -68,20 +92,27 @@ async def admin_list_bookings(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     booking_status: str | None = Query(default=None, alias="status"),
+    organizer: str | None = Query(default=None, description="organizer name contains (case-insensitive)"),
     limit: int = Query(default=200, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
 ) -> AdminBookingListOut:
     """List all bookings with admin visibility.
 
     Returns {items: [BookingAdminOut], total: int}.
     Resolves organizer_name via a single JOIN (no N+1).
     """
-    clauses = _build_filter_clauses(room_id, organizer_id, date_from, date_to, booking_status)
+    check_sort(sort, BOOKING_SORTABLE)
+    clauses = _build_filter_clauses(room_id, organizer_id, date_from, date_to, booking_status,
+                                    organizer)
 
-    # Count query
+    # Count query — same outer join as the data query (users.id is unique, so
+    # the count is unchanged) so the organizer-name filter applies to it too.
     count_stmt = (
         select(func.count())
         .select_from(Booking)
+        .join(User, Booking.organizer_id == User.id, isouter=True)
     )
     if clauses:
         count_stmt = count_stmt.where(and_(*clauses))
@@ -93,10 +124,9 @@ async def admin_list_bookings(
         select(Booking, MeetingRoom, User.full_name.label("organizer_name"))
         .join(MeetingRoom, Booking.room_id == MeetingRoom.id)
         .join(User, Booking.organizer_id == User.id, isouter=True)
-        .order_by(Booking.starts_at.desc())
-        .offset(offset)
-        .limit(limit)
     )
+    stmt = apply_sort(stmt, sort, dir, BOOKING_SORTABLE, tiebreak=Booking.id,
+                      default=(Booking.starts_at.desc(),)).offset(offset).limit(limit)
     if clauses:
         stmt = stmt.where(and_(*clauses))
 
@@ -137,13 +167,15 @@ async def admin_export_bookings(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     booking_status: str | None = Query(default=None, alias="status"),
+    organizer: str | None = Query(default=None),
 ) -> StreamingResponse:
     """Export all matching bookings as CSV (no pagination cap).
 
     Columns: id,room_code,room_name,title,organizer,starts_at,ends_at,
              status,attendees_count,sync_status,created_at
     """
-    clauses = _build_filter_clauses(room_id, organizer_id, date_from, date_to, booking_status)
+    clauses = _build_filter_clauses(room_id, organizer_id, date_from, date_to, booking_status,
+                                    organizer)
 
     stmt = (
         select(Booking, MeetingRoom, User.full_name.label("organizer_name"))

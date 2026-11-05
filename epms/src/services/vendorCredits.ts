@@ -57,6 +57,13 @@ export interface CreateVendorCreditBody {
   source?: 'upload' | 'manual'
 }
 
+export interface VendorCreditListOptions {
+  page?: number
+  pageSize: number
+  sort?: string
+  dir?: 'asc' | 'desc'
+}
+
 const qs = (params: Record<string, string | undefined>) => {
   const sp = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) if (v) sp.set(k, v)
@@ -65,8 +72,15 @@ const qs = (params: Record<string, string | undefined>) => {
 }
 
 export const vendorCreditsService = {
-  list:    (status?: string) =>
-    financeApi.get<VendorCreditListResponse>(`/vendor-credits${qs({ status })}`),
+  // Without `page` the call keeps the API's old behaviour (newest first, first
+  // 100). The Vendor Credits page sends limit/offset and the sort pair.
+  list:    (status?: string, opts?: VendorCreditListOptions) =>
+    financeApi.get<VendorCreditListResponse>(`/vendor-credits${qs({
+      status,
+      sort: opts?.sort, dir: opts?.sort ? opts.dir : undefined,
+      limit: opts?.page ? String(opts.pageSize) : undefined,
+      offset: opts?.page ? String((opts.page - 1) * opts.pageSize) : undefined,
+    })}`),
   get:     (id: string) =>
     financeApi.get<VendorCredit>(`/vendor-credits/${id}`),
   create:  (body: CreateVendorCreditBody) =>
@@ -77,6 +91,36 @@ export const vendorCreditsService = {
     financeApi.post<VendorCredit>(`/vendor-credits/${id}/reject`, { note }),
   void:    (id: string, note: string) =>
     financeApi.post<VendorCredit>(`/vendor-credits/${id}/void`, { note }),
+  /** Where the credit went — one row per payment it was netted against.
+   * Finance-read gated (payment data): 403 for viewers without a finance role. */
+  applications: (id: string) =>
+    financeApi.get<VendorCreditApplicationList>(`/vendor-credits/${id}/applications`),
+}
+
+export interface VendorCreditApplication {
+  id: string
+  payment_record_id: string
+  batch_id: string | null
+  batch_number: string | null
+  /** 'pa' | 'pa_dir' — both are EPMS payment applications (/pa/:id). */
+  doc_kind: string
+  doc_id: string
+  doc_number: string | null
+  /** Decimal-as-string. */
+  applied_amount: string
+  applied_at: string
+  applied_by_name: string | null
+  payment_date: string | null
+  /** Decimal-as-string — the cash that actually left the bank on that payment. */
+  cash_paid: string | null
+  payment_status: string | null
+}
+
+export interface VendorCreditApplicationList {
+  items: VendorCreditApplication[]
+  total: number
+  /** Decimal-as-string. */
+  total_applied: string
 }
 
 // ── Evidence files ───────────────────────────────────────────────────────────

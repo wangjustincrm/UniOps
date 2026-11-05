@@ -1,9 +1,15 @@
 # Booking (Meeting Rooms) — Product Requirements Document
 
-**Version:** 1.1
-**Date:** 2026-10-16
+**Version:** 1.2
+**Date:** 2026-10-19
 **Status:** In Production (first released 2026-07-09; single-occurrence cancellation and later shell changes are on main)
 **Scope:** Company-internal web module for finding, booking, changing and cancelling meeting rooms, with email notification and Outlook-compatible calendar invitations sent over SMTP.
+
+### What changed in version 1.2 (2026-10-19)
+
+- All Bookings, Notifications, Rooms and My Bookings sort by clicking a column header, ascending then descending (column sorting rule in EPMS.md §3.20 (UI-SORT-001…007)); paged lists sort on the server.
+- My Bookings pages on the server; it used to show only the 200 latest-starting bookings, so a long recurring series could push near-term bookings out. Upcoming opens soonest first, Past most recent first. The All Bookings organizer filter now filters on the server across all pages (and in the CSV export).
+- Opening a booking's edit page directly (reload or pasted link) loads that booking by id, so an older booking no longer shows "not found". Only the organizer or a booking admin can open it.
 
 ### What changed in this version
 

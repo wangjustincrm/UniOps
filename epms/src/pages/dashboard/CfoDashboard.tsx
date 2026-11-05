@@ -4,6 +4,7 @@ import { useDashboard } from '@/hooks/useDashboard'
 import { formatAmount } from '@/lib/utils'
 import { useConfig } from '@/hooks/useConfig'
 import { cn } from '@/lib/utils'
+import { SortTh, useSortableRows } from '@uniops/shell'
 
 export default function CfoDashboard() {
   const { data } = useDashboard()
@@ -14,7 +15,14 @@ export default function CfoDashboard() {
   const kpi = (title: string) => data?.kpis.find((k) => k.title === title)
   const budget = data?.budget_overview
   const paOverview = data?.pa_overview
-  const groupRows = budget?.groups ?? []
+  const { rows: groupRows, sort, onSort } = useSortableRows(budget?.groups, {
+    l1_name: (r) => r.l1_name,
+    annual_budget: (r) => Number(r.annual_budget),
+    committed: (r) => Number(r.committed),
+    actual_spent: (r) => Number(r.actual_spent),
+    available: (r) => Number(r.available),
+    utilisation_pct: (r) => Number(r.utilisation_pct),
+  })
 
   return (
     <div className="flex flex-col gap-6">
@@ -46,12 +54,12 @@ export default function CfoDashboard() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-neutral-100 text-left">
-                    <th className="pb-2 font-medium text-neutral-500">Group</th>
-                    <th className="pb-2 text-right font-medium text-neutral-500">Budget</th>
-                    <th className="pb-2 text-right font-medium text-neutral-500">Committed</th>
-                    <th className="pb-2 text-right font-medium text-neutral-500">Spent</th>
-                    <th className="pb-2 text-right font-medium text-neutral-500">Available</th>
-                    <th className="pb-2 font-medium text-neutral-500 w-24">Utilisation</th>
+                    <SortTh label="Group" sortKey="l1_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
+                    <SortTh label="Budget" sortKey="annual_budget" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-neutral-500" />
+                    <SortTh label="Committed" sortKey="committed" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-neutral-500" />
+                    <SortTh label="Spent" sortKey="actual_spent" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-neutral-500" />
+                    <SortTh label="Available" sortKey="available" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-neutral-500" />
+                    <SortTh label="Utilisation" sortKey="utilisation_pct" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500 w-24" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-neutral-50">

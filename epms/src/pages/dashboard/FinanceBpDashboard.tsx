@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
 import { formatAmount, formatDate } from '@/lib/utils'
+import { SortTh, useSortableRows } from '@uniops/shell'
 
 function PaTypeBadge({ type }: { type: string }) {
   return type === 'prepayment' ? (
@@ -19,7 +20,15 @@ export default function FinanceBpDashboard() {
   const { data } = useDashboard()
 
   const kpi = (title: string) => data?.kpis.find((k) => k.title === title)
-  const inReview = data?.pa_in_review ?? []
+  // Recent-N widget, loaded whole: sorting the rows here is exact.
+  const { rows: inReview, sort, onSort } = useSortableRows(data?.pa_in_review, {
+    pa_number: (p) => p.pa_number,
+    vendor_name: (p) => p.vendor_name,
+    po_number: (p) => p.po_number,
+    pa_type: (p) => (p.pa_type === 'prepayment' ? 'Prepayment' : 'Regular'),
+    payment_amount: (p) => Number(p.payment_amount),
+    created_at: (p) => p.created_at,
+  })
   const inReviewCount = inReview.length
 
   const now = new Date()
@@ -70,12 +79,12 @@ export default function FinanceBpDashboard() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-neutral-100 text-left">
-                  <th className="pb-2 font-medium text-neutral-500">PA #</th>
-                  <th className="pb-2 font-medium text-neutral-500">Vendor</th>
-                  <th className="pb-2 font-medium text-neutral-500">PO #</th>
-                  <th className="pb-2 font-medium text-neutral-500">Type</th>
-                  <th className="pb-2 text-right font-medium text-neutral-500">Amount</th>
-                  <th className="pb-2 font-medium text-neutral-500">Created</th>
+                  <SortTh label="PA #" sortKey="pa_number" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
+                  <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
+                  <SortTh label="PO #" sortKey="po_number" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
+                  <SortTh label="Type" sortKey="pa_type" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
+                  <SortTh label="Amount" sortKey="payment_amount" sort={sort} onSort={onSort} align="right" className="pb-2 font-medium text-neutral-500" />
+                  <SortTh label="Created" sortKey="created_at" sort={sort} onSort={onSort} className="pb-2 font-medium text-neutral-500" />
                   <th className="pb-2 font-medium text-neutral-500"></th>
                 </tr>
               </thead>

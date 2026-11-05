@@ -17,11 +17,20 @@ Per S2_ARCHITECTURE_REVIEW.md F3 (real title column):
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Integer, String
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import Date, DateTime, ForeignKey, Integer, String, select
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import Mapped, column_property, mapped_column
 
 from app.db.base import Base, UUIDPrimaryKey
+
+
+class VmsZone(UUIDPrimaryKey, Base):
+    """Read-only mirror of vms_zones (vms-api owns it) — only the zone's
+    display name, for approval task titles."""
+    __tablename__ = "vms_zones"
+
+    code: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
 
 
 class Visit(UUIDPrimaryKey, Base):
@@ -35,6 +44,9 @@ class Visit(UUIDPrimaryKey, Base):
     access_area: Mapped[str]       = mapped_column(String(40), nullable=False)
     visit_date:  Mapped[date | None] = mapped_column(Date, nullable=True)
     visit_title: Mapped[str]       = mapped_column(String(255), nullable=False, default="")
+    # The zone's managers at submit time — who gets the Zone Manager step.
+    zone_approver_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # Superseded by zone_approver_ids; no longer read or written.
     quality_approver_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="RESTRICT"),
@@ -55,12 +67,19 @@ class Visit(UUIDPrimaryKey, Base):
         adds where and when — repeating `visit_title` here printed the visitor
         twice in every approval task.
         """
-        area = _AREA_LABELS.get(self.access_area, self.access_area or "")
+        area = (self.zone_name or _AREA_LABELS.get(self.access_area)
+                or (self.access_area or "").replace("_", " "))
         when = self.visit_date.isoformat() if self.visit_date else ""
         return ", ".join(p for p in (area, when) if p) or f"Visit {str(self.id)[:8]}"
 
 
-# Same wording as the VMS frontend's area badges.
+Visit.zone_name = column_property(
+    select(VmsZone.name).where(VmsZone.code == Visit.access_area)
+    .correlate_except(VmsZone).scalar_subquery()
+)
+
+
+# Fallback when the zone row is missing — the six original zones' names.
 _AREA_LABELS = {
     "office": "Office",
     "warehouse": "Warehouse",

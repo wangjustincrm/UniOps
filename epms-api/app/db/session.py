@@ -26,6 +26,9 @@ AsyncSessionLocal = async_sessionmaker(
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     """FastAPI dependency — yields a DB session per request."""
     async with AsyncSessionLocal() as session:
+        # A request may not commit an invoice delete Finance has not voided
+        # (app.services.finance_sync). Scripts and fixtures are not held to it.
+        session.info["finance_sync.strict"] = True
         try:
             yield session
             await session.commit()

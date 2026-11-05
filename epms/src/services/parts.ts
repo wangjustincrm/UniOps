@@ -49,6 +49,9 @@ export interface PartFilters {
   category?: string
   supplier?: string
   active_only?: boolean
+  // Server-side column sort (epms-api crud/part.py PART_SORTABLE).
+  sort?: string
+  dir?: 'asc' | 'desc'
   page?: number
   page_size?: number
 }

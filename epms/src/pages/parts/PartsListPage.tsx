@@ -15,6 +15,12 @@ import type { ApiPart, CreatePartBody, UpdatePartBody } from '@/services/parts'
 import { useUomCodes } from '@/hooks/useUoms'
 import { useAuthStore } from '@/stores/auth.store'
 import { useRolePermissions } from '@/hooks/useConfig'
+import { SortTh, useSort, sortParams } from '@uniops/shell'
+
+type PartSortKey =
+  | 'code' | 'category' | 'name' | 'supplier' | 'supplier_part_no'
+  | 'unit_price' | 'unit' | 'status'
+const PART_TH = 'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap'
 
 // ─── Part form ────────────────────────────────────────────────────────────────
 
@@ -361,6 +367,8 @@ export default function PartsListPage() {
   const [catFilter, setCatFilter] = useState('all')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  // Paged by the API, so the API sorts (null = its default, by code).
+  const [sort, onSort] = useSort<PartSortKey>(null, () => setPage(1))
 
   const [mode, setMode] = useState<'none' | 'add' | { edit: string }>('none')
   const [formData, setFormData] = useState<PartFormData>(BLANK_FORM(''))
@@ -378,6 +386,7 @@ export default function PartsListPage() {
   const { data: partsData } = useParts({
     search: search || undefined,
     category: catFilter === 'all' ? undefined : catFilter,
+    ...sortParams(sort),
     page,
     page_size: pageSize,
   })
@@ -597,14 +606,15 @@ export default function PartsListPage() {
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50">
                 <th className="w-12 px-3 py-3" />
-                {[
-                  'Code', 'Category', 'Name', 'Supplier',
-                  'Supplier Part No.', 'Unit Price', 'UOM', 'Status', '',
-                ].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap">
-                    {h}
-                  </th>
-                ))}
+                <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className={PART_TH} />
+                <SortTh label="Category" sortKey="category" sort={sort} onSort={onSort} className={PART_TH} />
+                <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className={PART_TH} />
+                <SortTh label="Supplier" sortKey="supplier" sort={sort} onSort={onSort} className={PART_TH} />
+                <SortTh label="Supplier Part No." sortKey="supplier_part_no" sort={sort} onSort={onSort} className={PART_TH} />
+                <SortTh label="Unit Price" sortKey="unit_price" sort={sort} onSort={onSort} className={PART_TH} />
+                <SortTh label="UOM" sortKey="unit" sort={sort} onSort={onSort} className={PART_TH} />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={PART_TH} />
+                <th className={PART_TH} />
               </tr>
             </thead>
             <tbody>

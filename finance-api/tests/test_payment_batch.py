@@ -81,6 +81,43 @@ async def test_due_classifies_agreement_pa_as_pa_not_pa_dir(client, db_session):
     assert row["doc_kind"] == "pa"
 
 
+async def test_due_classifies_freight_pa_as_pa_with_source(client, db_session):
+    """A Freight PA has no PO and no agreement either — it must still be paid as
+    an EPMS `pa` (so the executor writes the EPMS invoice back to paid), and the
+    row says it is freight so the batch page can label it."""
+    freight = _pa("86.82", po_id=None)
+    freight.source = "freight"
+    direct = _pa("10.00", po_id=None)          # OA Direct PA: source left at its default
+    db_session.add_all([freight, direct])
+    await db_session.flush()
+    assert freight.is_direct is False and direct.is_direct is True
+
+    rows = (await client.get("/finance/v1/payments/due", headers=_h())).json()
+    f = next(r for r in rows if r["doc_id"] == str(freight.id))
+    d = next(r for r in rows if r["doc_id"] == str(direct.id))
+    assert (f["doc_kind"], f["pa_source"]) == ("pa", "freight")
+    assert d["doc_kind"] == "pa_dir"
+
+
+async def test_due_classifies_epms_direct_pa_as_pa_with_source(client, db_session):
+    """EPMS's Direct PA (source='direct', epms dp01_direct_pa) pays EPMS
+    invoices: it is a `pa` (the executor writes them back to paid), not OA's
+    pa_dir — which is now source 'oa_direct'."""
+    epms_direct = _pa("1130.00", po_id=None)
+    epms_direct.source = "direct"
+    oa_direct = _pa("10.00", po_id=None)
+    oa_direct.source = "oa_direct"
+    db_session.add_all([epms_direct, oa_direct])
+    await db_session.flush()
+    assert epms_direct.is_direct is False and oa_direct.is_direct is True
+
+    rows = (await client.get("/finance/v1/payments/due", headers=_h())).json()
+    e = next(r for r in rows if r["doc_id"] == str(epms_direct.id))
+    o = next(r for r in rows if r["doc_id"] == str(oa_direct.id))
+    assert (e["doc_kind"], e["pa_source"]) == ("pa", "direct")
+    assert o["doc_kind"] == "pa_dir"
+
+
 async def test_due_surfaces_vendor_invoice_number(client, db_session):
     """A PA's linked invoice(s) surface as vendor_inv_no in the due list;
     multiple invoices join, and PAs/claims without invoices show blank."""
@@ -105,6 +142,37 @@ async def test_due_surfaces_vendor_invoice_number(client, db_session):
     by_num = {r["doc_number"]: r for r in rows}
     assert by_num[pa.pa_number]["vendor_inv_no"] == "VINV-001, VINV-002"
     assert by_num[bare.pa_number]["vendor_inv_no"] == ""
+
+
+async def test_due_carries_invoice_links_and_earliest_due_date(client, db_session):
+    """Each PA row lists its epms invoices (id + number, for the detail link)
+    and the earliest of their due dates; PAs without invoices and claims get
+    no links and no due date."""
+    def _inv(no, due):
+        return Invoice(
+            internal_ref=f"INV-{uuid.uuid4().hex[:8]}", vendor_invoice_number=no,
+            vendor_id=uuid.uuid4(), vendor_name="ACME", amount=Decimal("100"),
+            tax_amount=Decimal("0"), total_amount=Decimal("100"), currency="CAD",
+            invoice_date=date(2026, 6, 1), due_date=due, status="matched")
+    late, early = _inv("VINV-L", date(2026, 7, 8)), _inv("VINV-E", date(2026, 7, 3))
+    db_session.add_all([late, early])
+    await db_session.flush()
+    pa = _pa("200.00", po_id=uuid.uuid4(), invoice_ids=[str(late.id), str(early.id)])
+    bare = _pa("50.00")
+    claim = _claim("30.00")
+    db_session.add_all([pa, bare, claim])
+    await db_session.flush()
+
+    rows = (await client.get("/finance/v1/payments/due", headers=_h())).json()
+    by_num = {r["doc_number"]: r for r in rows}
+    row = by_num[pa.pa_number]
+    assert row["invoices"] == [{"id": str(late.id), "number": "VINV-L"},
+                               {"id": str(early.id), "number": "VINV-E"}]
+    assert row["due_date"] == "2026-07-03"
+    assert by_num[bare.pa_number]["invoices"] == []
+    assert by_num[bare.pa_number]["due_date"] is None
+    assert by_num[claim.claim_number]["invoices"] == []
+    assert by_num[claim.claim_number]["due_date"] is None
 
 
 async def test_batch_detail_surfaces_vendor_invoice_number(client, db_session):

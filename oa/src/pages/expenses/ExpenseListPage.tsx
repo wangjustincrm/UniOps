@@ -7,6 +7,9 @@ import { api } from '@/lib/api'
 import { STATUS } from '@/lib/status'
 import { Pagination } from '@/components/ui/Pagination'
 import { StatusBadge } from '@/components/ui/badge'
+import { SortTh, useSort } from '@uniops/shell'
+
+type ExpenseSortKey = 'claim_number' | 'claim_type' | 'employee_name' | 'net_amount' | 'status' | 'date'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -62,13 +65,16 @@ export default function ExpenseListPage() {
   const [newMenuOpen, setNewMenuOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  // Paged by expense-api, so the API sorts (null = its default, newest first).
+  const [sort, onSort] = useSort<ExpenseSortKey>(null, () => setPage(1))
 
   const { data, isLoading } = useQuery<ExpenseList>({
-    queryKey: ['expense-list', activeStatus, activeType, page, pageSize],
+    queryKey: ['expense-list', activeStatus, activeType, page, pageSize, sort],
     queryFn: () => {
       const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
       if (activeStatus !== 'all') qs.set('status', activeStatus)
       if (activeType) qs.set('type', activeType)
+      if (sort) { qs.set('sort', sort.key); qs.set('dir', sort.dir) }
       // TRA (Travel Application) shares the expense_claims table but is not a
       // reimbursement — it has its own list at /travel and detail route
       // /travel/:id, and the New Claim menu above deliberately omits it. Without
@@ -184,12 +190,12 @@ export default function ExpenseListPage() {
           <table className="w-full text-sm">
             <thead className="border-b border-neutral-100 bg-neutral-50">
               <tr>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide">Claim #</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide">Type</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide">Employee</th>
-                <th className="px-4 py-3 text-right font-medium text-neutral-500 text-xs uppercase tracking-wide">Net Amount</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide">Status</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide">Date</th>
+                <SortTh label="Claim #" sortKey="claim_number" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
+                <SortTh label="Type" sortKey="claim_type" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
+                <SortTh label="Employee" sortKey="employee_name" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
+                <SortTh label="Net Amount" sortKey="net_amount" sort={sort} onSort={onSort} align="right" className="px-4 py-3 font-medium text-neutral-500 text-xs uppercase tracking-wide" />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
+                <SortTh label="Date" sortKey="date" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
               </tr>
             </thead>
             <tbody>

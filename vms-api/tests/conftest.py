@@ -26,6 +26,16 @@ from app.db.base import Base
 from app.main import create_app
 from app.models.user_mirror import User
 from app.models.vms_config import VmsConfig
+from app.models.zone import Zone, ZoneManager
+
+SEED_ZONES = [
+    ("office", "Office", False, 10),
+    ("warehouse", "Warehouse", False, 20),
+    ("production_non_gmp", "Production (Non-GMP)", False, 30),
+    ("production_gmp", "Production (GMP)", True, 40),
+    ("laboratory", "Laboratory", True, 50),
+    ("all", "Entire Plant", True, 60),
+]
 
 # ── Test DB URL ─────────────────────────────────────────────────────────────-
 
@@ -70,6 +80,9 @@ async def test_engine():
             health_questions={},
             badge_templates={},
         ))
+        # The six zones migration 20261021_0015 seeds, without managers.
+        for code, name, gmp, order in SEED_ZONES:
+            db.add(Zone(code=code, name=name, gmp_grade=gmp, sort_order=order))
         await db.commit()
 
     yield engine
@@ -217,3 +230,34 @@ async def client():
     app = create_app()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
+
+
+# ── Zone managers ───────────────────────────────────────────────────────────-
+
+async def set_zone_managers(test_engine, code: str, user_ids) -> None:
+    """Replace a zone's managers (empty list = the zone needs no approval)."""
+    from sqlalchemy import delete as _delete, select as _select
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        zone = (await db.execute(_select(Zone).where(Zone.code == code))).scalar_one()
+        await db.execute(_delete(ZoneManager).where(ZoneManager.zone_id == zone.id))
+        for uid in user_ids:
+            db.add(ZoneManager(zone_id=zone.id, user_id=uid))
+        await db.commit()
+
+
+@pytest.fixture
+async def zone_managers(test_engine):
+    """`await zone_managers("warehouse", [user.id, …])` for the duration of a
+    test. Every zone is put back to no managers afterwards — the test DB is
+    shared across the session."""
+    touched: set[str] = set()
+
+    async def _set(code: str, user_ids) -> None:
+        touched.add(code)
+        await set_zone_managers(test_engine, code, user_ids)
+
+    yield _set
+    for code in touched:
+        await set_zone_managers(test_engine, code, [])

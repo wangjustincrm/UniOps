@@ -14,6 +14,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -127,6 +128,40 @@ export default function MaterialTracePage() {
     queryFn: () => financeApi.get<Trace>(
       `/cost-analysis/trace?material=${encodeURIComponent(material)}&from=${from}&to=${to}`),
     enabled: !!material && from <= to,
+  })
+
+  // The trace's sub-lists are each returned whole; rows carry no state, so
+  // each sorts on the page. Signed values sort as signed (an issue line shows
+  // its quantity and amount with a minus).
+  const setl = useSortableRows(data?.settlements, {
+    batch: (s) => s.batch_code,
+    provisional: (s) => (s.provisional ? `${s.provisional.bill_code ?? ''} (${s.provisional.period})` : null),
+    qty: (s) => s.settled.qty, prov_unit: (s) => s.provisional?.unit,
+    settlement: (s) => `${s.settlement_code} (${s.settlement_period})`,
+    settled_unit: (s) => s.settled.unit, variance: (s) => s.variance,
+  })
+  const adj = useSortableRows(data?.out_adjustments, {
+    month: (a) => a.period, adjustment: (a) => a.bill_code, amount: (a) => a.amount,
+    attached: (a) => a.attached_to, mo: (a) => a.mo_code,
+    landed: (a) => a.landed_on.map((l) => `${l.material_code} ${l.material_name ?? ''}`).join('; '),
+  })
+  const vch = useSortableRows(data?.vouchers, {
+    month: (v) => v.period, document: (v) => v.bill_code, what: (v) => v.document,
+    amount: (v) => v.document_amount, voucher: (v) => v.voucher?.voucher_no,
+    voucher_month: (v) => v.voucher?.period,
+    status: (v) => (v.voucher ? v.voucher.status_label : 'No voucher yet'),
+    narration: (v) => v.voucher?.explanation,
+  })
+  const cons = useSortableRows(data?.consumers, {
+    month: (c) => c.period, object: (c) => c.cost_object_code || c.cost_object_name, kind: (c) => c.kind,
+    qty: (c) => c.qty || null, value: (c) => c.amount, unit: (c) => c.unit,
+  })
+  const lines = useSortableRows(data?.lines, {
+    month: (l) => l.period, date: (l) => l.biz_date, document: (l) => l.bill_code,
+    what: (l) => l.category_label, trantype: (l) => l.trantype,
+    qty: (l) => (l.qty == null ? null : l.direction === 'out' ? -l.qty : l.qty),
+    price: (l) => l.price, amount: (l) => (l.direction === 'out' ? -l.amount : l.amount),
+    batch: (l) => l.batch_code, order: (l) => l.mo_code, source: (l) => l.src_code,
   })
 
   if (!user) return <Navigate to="/login" replace />
@@ -301,15 +336,16 @@ export default function MaterialTracePage() {
                 <div className="overflow-x-auto rounded-lg border border-neutral-200">
                   <table className="w-full text-xs">
                     <thead className="bg-neutral-50 text-left text-neutral-500"><tr>
-                      <th className={th}>Batch</th><th className={th}>Provisional receipt</th>
-                      <th className={cn(th, 'text-right')}>Qty</th>
-                      <th className={cn(th, 'text-right')}>Provisional unit</th>
-                      <th className={th}>Settlement</th>
-                      <th className={cn(th, 'text-right')}>Settled unit</th>
-                      <th className={cn(th, 'text-right')}>Variance</th>
+                      <SortTh label="Batch" sortKey="batch" sort={setl.sort} onSort={setl.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Provisional receipt" sortKey="provisional" sort={setl.sort} onSort={setl.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Qty" sortKey="qty" sort={setl.sort} onSort={setl.onSort} align="right" className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Provisional unit" sortKey="prov_unit" sort={setl.sort} onSort={setl.onSort} align="right" className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Settlement" sortKey="settlement" sort={setl.sort} onSort={setl.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Settled unit" sortKey="settled_unit" sort={setl.sort} onSort={setl.onSort} align="right" className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Variance" sortKey="variance" sort={setl.sort} onSort={setl.onSort} align="right" className="px-2 py-1.5 font-medium" />
                     </tr></thead>
                     <tbody>
-                      {data.settlements.map((s, n) => (
+                      {setl.rows.map((s, n) => (
                         <tr key={n} className="border-t border-neutral-100">
                           <td className="px-2 py-1.5 font-mono">{s.batch_code ?? '—'}</td>
                           <td className="px-2 py-1.5 font-mono">
@@ -334,13 +370,15 @@ export default function MaterialTracePage() {
                 <div className="overflow-x-auto rounded-lg border border-neutral-200">
                   <table className="w-full text-xs">
                     <thead className="bg-neutral-50 text-left text-neutral-500"><tr>
-                      <th className={th}>Month</th><th className={th}>Adjustment</th>
-                      <th className={cn(th, 'text-right')}>Amount</th>
-                      <th className={th}>Attached to</th><th className={th}>Production order</th>
-                      <th className={th}>Landed on</th>
+                      <SortTh label="Month" sortKey="month" sort={adj.sort} onSort={adj.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Adjustment" sortKey="adjustment" sort={adj.sort} onSort={adj.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Amount" sortKey="amount" sort={adj.sort} onSort={adj.onSort} align="right" className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Attached to" sortKey="attached" sort={adj.sort} onSort={adj.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Production order" sortKey="mo" sort={adj.sort} onSort={adj.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Landed on" sortKey="landed" sort={adj.sort} onSort={adj.onSort} className="px-2 py-1.5 font-medium" />
                     </tr></thead>
                     <tbody>
-                      {data.out_adjustments.map((a, n) => (
+                      {adj.rows.map((a, n) => (
                         <tr key={n} className="border-t border-neutral-100">
                           <td className="px-2 py-1.5 font-mono">{a.period}</td>
                           <td className="px-2 py-1.5 font-mono">{a.bill_code}</td>
@@ -362,13 +400,17 @@ export default function MaterialTracePage() {
                 <div className="overflow-x-auto rounded-lg border border-neutral-200">
                   <table className="w-full text-xs">
                     <thead className="bg-neutral-50 text-left text-neutral-500"><tr>
-                      <th className={th}>Month</th><th className={th}>Document</th><th className={th}>What</th>
-                      <th className={cn(th, 'text-right')}>Amount</th>
-                      <th className={th}>Voucher</th><th className={th}>Voucher month</th>
-                      <th className={th}>Status</th><th className={th}>Narration</th>
+                      <SortTh label="Month" sortKey="month" sort={vch.sort} onSort={vch.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Document" sortKey="document" sort={vch.sort} onSort={vch.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="What" sortKey="what" sort={vch.sort} onSort={vch.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Amount" sortKey="amount" sort={vch.sort} onSort={vch.onSort} align="right" className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Voucher" sortKey="voucher" sort={vch.sort} onSort={vch.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Voucher month" sortKey="voucher_month" sort={vch.sort} onSort={vch.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Status" sortKey="status" sort={vch.sort} onSort={vch.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Narration" sortKey="narration" sort={vch.sort} onSort={vch.onSort} className="px-2 py-1.5 font-medium" />
                     </tr></thead>
                     <tbody>
-                      {data.vouchers.map((v, n) => (
+                      {vch.rows.map((v, n) => (
                         <tr key={n} className="border-t border-neutral-100">
                           <td className="px-2 py-1.5 font-mono">{v.period}</td>
                           <td className="px-2 py-1.5 font-mono">{v.bill_code}</td>
@@ -397,13 +439,15 @@ export default function MaterialTracePage() {
                 <div className="overflow-x-auto rounded-lg border border-neutral-200">
                   <table className="w-full text-xs">
                     <thead className="bg-neutral-50 text-left text-neutral-500"><tr>
-                      <th className={th}>Month</th><th className={th}>Cost object</th><th className={th}>Kind</th>
-                      <th className={cn(th, 'text-right')}>Qty</th>
-                      <th className={cn(th, 'text-right')}>Value</th>
-                      <th className={cn(th, 'text-right')}>Unit</th>
+                      <SortTh label="Month" sortKey="month" sort={cons.sort} onSort={cons.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Cost object" sortKey="object" sort={cons.sort} onSort={cons.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Kind" sortKey="kind" sort={cons.sort} onSort={cons.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Qty" sortKey="qty" sort={cons.sort} onSort={cons.onSort} align="right" className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Value" sortKey="value" sort={cons.sort} onSort={cons.onSort} align="right" className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Unit" sortKey="unit" sort={cons.sort} onSort={cons.onSort} align="right" className="px-2 py-1.5 font-medium" />
                     </tr></thead>
                     <tbody>
-                      {data.consumers.map((c, n) => (
+                      {cons.rows.map((c, n) => (
                         <tr key={n} className="border-t border-neutral-100">
                           <td className="px-2 py-1.5 font-mono">{c.period}</td>
                           <td className="px-2 py-1.5"><span className="font-mono">{c.cost_object_code}</span> <span className="text-neutral-500">{c.cost_object_name}</span></td>
@@ -429,15 +473,20 @@ export default function MaterialTracePage() {
                 <div className="max-h-[480px] overflow-auto rounded-lg border border-neutral-200">
                   <table className="w-full text-xs">
                     <thead className="sticky top-0 bg-neutral-50 text-left text-neutral-500"><tr>
-                      <th className={th}>Month</th><th className={th}>Date</th><th className={th}>Document</th>
-                      <th className={th}>What</th><th className={th}>Trade type</th>
-                      <th className={cn(th, 'text-right')}>Qty</th>
-                      <th className={cn(th, 'text-right')}>Price</th>
-                      <th className={cn(th, 'text-right')}>Amount</th>
-                      <th className={th}>Batch</th><th className={th}>Order</th><th className={th}>Source</th>
+                      <SortTh label="Month" sortKey="month" sort={lines.sort} onSort={lines.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Date" sortKey="date" sort={lines.sort} onSort={lines.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Document" sortKey="document" sort={lines.sort} onSort={lines.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="What" sortKey="what" sort={lines.sort} onSort={lines.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Trade type" sortKey="trantype" sort={lines.sort} onSort={lines.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Qty" sortKey="qty" sort={lines.sort} onSort={lines.onSort} align="right" className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Price" sortKey="price" sort={lines.sort} onSort={lines.onSort} align="right" className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Amount" sortKey="amount" sort={lines.sort} onSort={lines.onSort} align="right" className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Batch" sortKey="batch" sort={lines.sort} onSort={lines.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Order" sortKey="order" sort={lines.sort} onSort={lines.onSort} className="px-2 py-1.5 font-medium" />
+                      <SortTh label="Source" sortKey="source" sort={lines.sort} onSort={lines.onSort} className="px-2 py-1.5 font-medium" />
                     </tr></thead>
                     <tbody>
-                      {data.lines.map((l, n) => (
+                      {lines.rows.map((l, n) => (
                         <Fragment key={n}>
                           <tr className="border-t border-neutral-100">
                             <td className="px-2 py-1 font-mono">{l.period}</td>

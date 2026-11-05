@@ -90,14 +90,14 @@ def captured_emails(monkeypatch):
 
 # ── VMS-PR-019: auto no-show ────────────────────────────────────────────────-
 
-async def test_marks_confirmed_visit_no_show_after_2h(test_engine):
+async def test_marks_confirmed_visit_no_show_after_its_day(test_engine):
     host = await make_user(test_engine, role="requester")
     visitor = await _mk_visitor(test_engine)
-    now = datetime(2026, 6, 15, 16, 0, tzinfo=UTC)
+    now = datetime(2026, 6, 16, 4, 30, tzinfo=UTC)   # 00:30 EDT on 16 Jun
     visit = await _mk_visit(
         test_engine, host=host, visitor=visitor, status=VisitStatus.confirmed,
         visit_date=date(2026, 6, 15),
-        planned_arrival=now - timedelta(hours=3),  # 3h ago, never arrived
+        planned_arrival=datetime(2026, 6, 16, 3, 0, tzinfo=UTC),  # 23:00 EDT 15 Jun, never arrived
     )
     async with _factory(test_engine)() as db:
         marked = await jobs.mark_no_shows(db, now=now)
@@ -109,17 +109,17 @@ async def test_marks_confirmed_visit_no_show_after_2h(test_engine):
 async def test_no_show_skips_checked_in_and_recent(test_engine):
     host = await make_user(test_engine, role="requester")
     visitor = await _mk_visitor(test_engine)
-    now = datetime(2026, 6, 15, 16, 0, tzinfo=UTC)
+    now = datetime(2026, 6, 16, 3, 59, tzinfo=UTC)   # 23:59 EDT on 15 Jun
     # Already checked in → not a no-show.
     arrived = await _mk_visit(
         test_engine, host=host, visitor=visitor, status=VisitStatus.checked_in,
         visit_date=date(2026, 6, 15), planned_arrival=now - timedelta(hours=3),
         actual_arrival=now - timedelta(hours=2),
     )
-    # Only 1h late → inside the 2h grace window.
+    # 08:00 EDT today, now 23:59 EDT the same day → still its day, not a no-show.
     recent = await _mk_visit(
         test_engine, host=host, visitor=visitor, status=VisitStatus.confirmed,
-        visit_date=date(2026, 6, 15), planned_arrival=now - timedelta(hours=1),
+        visit_date=date(2026, 6, 15), planned_arrival=datetime(2026, 6, 15, 12, 0, tzinfo=UTC),
     )
     async with _factory(test_engine)() as db:
         marked = await jobs.mark_no_shows(db, now=now)
@@ -340,7 +340,7 @@ async def test_run_all_returns_summary(test_engine, captured_emails):
     now = datetime(2026, 6, 15, 16, 0, tzinfo=UTC)
     await _mk_visit(
         test_engine, host=host, visitor=visitor, status=VisitStatus.confirmed,
-        visit_date=date(2026, 6, 15), planned_arrival=now - timedelta(hours=3),
+        visit_date=date(2026, 6, 14), planned_arrival=now - timedelta(days=1),
     )
     async with _factory(test_engine)() as db:
         summary = await jobs.run_all(db, now=now)

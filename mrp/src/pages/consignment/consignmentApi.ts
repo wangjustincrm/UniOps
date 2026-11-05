@@ -3,6 +3,7 @@
 // Pydantic gotcha forecastApi.ts documents (feedback_uniops_decimal_as_string
 // in project memory) — so qty is typed `string` at the wire boundary and
 // converted with Number() at the call site, never trusted as a number here.
+import type { SortDir } from '@uniops/shell'
 import { api } from '@/lib/api'
 
 export type ExpirySource = 'wms' | 'manual' | null
@@ -69,9 +70,17 @@ export interface CreateStockBody {
   // describes auto-fill-or-blank, no manual entry field).
 }
 
+/** Column sort keys mrp-api `GET /consignment/stock` whitelists
+ *  (absent = newest count date first). */
+export type ConsignmentSortKey = 'material_code' | 'lot_no' | 'qty' | 'count_date' | 'expiry_date' | 'expiry_source'
+
 export const consignmentApi = {
-  listStock: (page = 1, pageSize = 100) =>
-    api.get<ConsignmentStockListResponse>(`/consignment/stock?page=${page}&page_size=${pageSize}`),
+  listStock: (page = 1, pageSize = 100, sort: { sort?: ConsignmentSortKey; dir?: SortDir } = {}) => {
+    const q = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+    if (sort.sort) q.set('sort', sort.sort)
+    if (sort.dir) q.set('dir', sort.dir)
+    return api.get<ConsignmentStockListResponse>(`/consignment/stock?${q}`)
+  },
 
   createStock: (body: CreateStockBody) =>
     api.post<ConsignmentStockCreateResponse>('/consignment/stock', body),

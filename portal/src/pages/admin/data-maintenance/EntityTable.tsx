@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { SortTh, useSort } from '@uniops/shell'
 import type { EntitySchema } from '@/services/adminApi'
 import { adminApi } from '@/services/adminApi'
 import { useAdminList } from '@/hooks/useAdmin'
@@ -17,9 +18,13 @@ export function EntityTable({ schema, onEdit, onDelete }: Props) {
   const [allMatching, setAllMatching] = useState(false) // true once "select all N matching" is used
   const [bulkOpen, setBulkOpen] = useState(false)
   const [loadingAll, setLoadingAll] = useState(false)
-  const { data, isLoading } = useAdminList(schema.system, schema.key, page, search)
+  // Server-sorted (the list pages): the API whitelists schema.sortable_columns.
+  const [sort, onSort, setSort] = useSort<string>(null, () => setPage(1))
+  useEffect(() => { setSort(null) }, [schema.key, setSort])
+  const { data, isLoading } = useAdminList(schema.system, schema.key, page, search, sort)
 
   const cols = schema.list_columns
+  const sortable = new Set(schema.sortable_columns ?? [])
   // VMS compliance records are edit-only (backend refuses delete with 409).
   const canDelete = schema.allow_delete !== false
   const totalPages = data ? Math.max(1, Math.ceil(data.total / 20)) : 1
@@ -27,7 +32,7 @@ export function EntityTable({ schema, onEdit, onDelete }: Props) {
   const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id))
 
   // Reset selection whenever the result set changes (entity / page / search).
-  useEffect(() => { setSelected(new Set()); setAllMatching(false) }, [schema.key, page, search])
+  useEffect(() => { setSelected(new Set()); setAllMatching(false) }, [schema.key, page, search, sort])
 
   const toggleRow = (id: string) =>
     setSelected((prev) => {
@@ -108,7 +113,10 @@ export function EntityTable({ schema, onEdit, onDelete }: Props) {
                     className="h-4 w-4 rounded border-neutral-300" />
                 </th>
               )}
-              {cols.map((c) => (
+              {cols.map((c) => sortable.has(c) ? (
+                <SortTh key={c} label={c} sortKey={c} sort={sort} onSort={onSort}
+                  className="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-500" />
+              ) : (
                 <th key={c} className="px-3 py-2 text-left text-xs font-semibold uppercase text-neutral-500">{c}</th>
               ))}
               <th className="px-3 py-2" />

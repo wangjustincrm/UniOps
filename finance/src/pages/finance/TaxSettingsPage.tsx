@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Ban, X } from 'lucide-react'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
@@ -57,6 +58,12 @@ export default function TaxSettingsPage() {
     queryKey: ['portal-tax-codes'],
     // ?all=true → every code/version, not just active-on-date (admin view)
     queryFn: () => mdmApi.get<ApiTaxCode[]>('/tax/codes?all=true'),
+  })
+  // Loaded whole; Edit opens a modal on the row object, so order is free.
+  const { rows, sort, onSort } = useSortableRows(data, {
+    code: (r) => r.code, name: (r) => r.name, type: (r) => r.tax_type, prov: (r) => r.province,
+    rate: (r) => Number(r.rate), itc: (r) => (r.recoverable ? 'Yes' : 'No'),
+    effective: (r) => r.effective_from, status: (r) => (r.active ? 'Active' : 'Inactive'),
   })
   const [modal, setModal] = useState<{ mode: 'create' | 'edit'; row?: ApiTaxCode } | null>(null)
   const [form, setForm] = useState<FormState>(emptyForm())
@@ -139,14 +146,20 @@ export default function TaxSettingsPage() {
           <table className="w-full text-sm">
             <thead className="border-b border-neutral-100 bg-neutral-50">
               <tr>
-                {['Code', 'Name', 'Type', 'Prov', 'Rate', 'ITC', 'Effective', 'Status', ''].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>
-                ))}
+                <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Type" sortKey="type" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Prov" sortKey="prov" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Rate" sortKey="rate" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+                <SortTh label="ITC" sortKey="itc" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Effective" sortKey="effective" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
               </tr>
             </thead>
             <tbody>
-              {data.map((r, i) => (
-                <tr key={r.id} className={cn('border-b border-neutral-100', i === data.length - 1 && 'border-b-0')}>
+              {rows.map((r, i) => (
+                <tr key={r.id} className={cn('border-b border-neutral-100', i === rows.length - 1 && 'border-b-0')}>
                   <td className="px-4 py-3 font-mono text-xs text-neutral-700">{r.code}</td>
                   <td className="px-4 py-3 text-neutral-800">{r.name}</td>
                   <td className="px-4 py-3 text-xs text-neutral-500">{r.tax_type}</td>

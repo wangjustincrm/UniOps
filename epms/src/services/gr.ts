@@ -80,6 +80,9 @@ export interface GrActionBody {
 }
 
 export interface GrFilters {
+  // Server-side column sort (GET … ?sort=<key>&dir=asc|desc); omitted = API default order.
+  sort?: string
+  dir?: 'asc' | 'desc'
   status?: GrStatus
   gr_type?: 'physical' | 'service'
   po_id?: string

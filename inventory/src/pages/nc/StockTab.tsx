@@ -4,14 +4,14 @@
 // those columns show "—" rather than a number that would be invented.
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Badge } from '@uniops/shell'
+import { Badge, SortTh, sortParams, useSort, type Sort } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import { formatQty, isNegative } from '@/lib/number'
 import {
   WAREHOUSE_CLASSES, ncApi,
-  type StockBatchRow, type StockMaterialRow, type StockSort, type StockSummaryRow,
+  type StockBatchRow, type StockBatchSort, type StockMaterialRow, type StockMaterialSort, type StockSummaryRow,
 } from './ncApi'
-import { EmptyRow, ErrorBox, LoadingRows, MaterialCell, Pager, SortTh, Uom } from './NcUi'
+import { EmptyRow, ErrorBox, LoadingRows, MaterialCell, Pager, Uom } from './NcUi'
 import { usePageFor } from './usePageFor'
 import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
 
@@ -61,11 +61,14 @@ function Summary({ rows, residue }: { rows: StockSummaryRow[]; residue: number }
   )
 }
 
+const thL = 'px-3 py-2 text-left'
+const thR = 'px-3 py-2'
+
 function BatchTable({ items, stateAvailable, sort, onSort, loading, emptyText }: {
   items: StockBatchRow[]
   stateAvailable: boolean
-  sort: StockSort
-  onSort: (s: StockSort) => void
+  sort: Sort<StockBatchSort> | null
+  onSort: (k: StockBatchSort) => void
   loading: boolean
   emptyText: string
 }) {
@@ -75,16 +78,24 @@ function BatchTable({ items, stateAvailable, sort, onSort, loading, emptyText }:
     <table className="min-w-full text-sm">
       <thead className={stickyHeadCls}>
         <tr>
-          <SortTh label="Warehouse" sortKey="warehouse" current={sort} onSort={onSort} />
-          <SortTh label="Material" sortKey="material" current={sort} onSort={onSort} />
-          <SortTh label="Batch" sortKey="batch" current={sort} onSort={onSort} />
-          <th className="px-3 py-2 text-left">Supplier batch</th>
-          <th className="px-3 py-2 text-left">Produced</th>
-          <th className="px-3 py-2 text-left">Expires</th>
-          <SortTh label="Qty" sortKey="qty" current={sort} onSort={onSort} align="right" descending />
-          <th className={cn('px-3 py-2 text-right', !stateAvailable && 'text-neutral-300')}>Locked</th>
-          <th className={cn('px-3 py-2 text-right', !stateAvailable && 'text-neutral-300')}>Available</th>
-          <th className={cn('px-3 py-2 text-left', !stateAvailable && 'text-neutral-300')}>State</th>
+          <SortTh label="Warehouse" sortKey="warehouse" sort={sort} onSort={onSort} className={thL} />
+          <SortTh label="Material" sortKey="material" sort={sort} onSort={onSort} className={thL} />
+          <SortTh label="Batch" sortKey="batch" sort={sort} onSort={onSort} className={thL} />
+          <SortTh label="Supplier batch" sortKey="supplier_batch" sort={sort} onSort={onSort} className={thL} />
+          <SortTh label="Produced" sortKey="produced" sort={sort} onSort={onSort} className={thL} />
+          <SortTh label="Expires" sortKey="expires" sort={sort} onSort={onSort} className={thL} />
+          <SortTh label="Qty" sortKey="qty" sort={sort} onSort={onSort} align="right" className={thR} />
+          {/* Locked / available / state exist only for today; on a past date
+              the columns are empty and not sortable. */}
+          {stateAvailable ? <>
+            <SortTh label="Locked" sortKey="locked" sort={sort} onSort={onSort} align="right" className={thR} />
+            <SortTh label="Available" sortKey="available" sort={sort} onSort={onSort} align="right" className={thR} />
+            <SortTh label="State" sortKey="state" sort={sort} onSort={onSort} className={thL} />
+          </> : <>
+            <th className="px-3 py-2 text-right text-neutral-300">Locked</th>
+            <th className="px-3 py-2 text-right text-neutral-300">Available</th>
+            <th className="px-3 py-2 text-left text-neutral-300">State</th>
+          </>}
         </tr>
       </thead>
       <tbody>
@@ -121,8 +132,8 @@ function BatchTable({ items, stateAvailable, sort, onSort, loading, emptyText }:
 function MaterialTable({ items, stateAvailable, sort, onSort, loading, emptyText }: {
   items: StockMaterialRow[]
   stateAvailable: boolean
-  sort: StockSort
-  onSort: (s: StockSort) => void
+  sort: Sort<StockMaterialSort> | null
+  onSort: (k: StockMaterialSort) => void
   loading: boolean
   emptyText: string
 }) {
@@ -131,14 +142,15 @@ function MaterialTable({ items, stateAvailable, sort, onSort, loading, emptyText
     <table className="min-w-full text-sm">
       <thead className={stickyHeadCls}>
         <tr>
-          <SortTh label="Material" sortKey="material" current={sort} onSort={onSort} />
-          <SortTh label="Total" sortKey="qty" current={sort} onSort={onSort} align="right" descending />
-          <th className="px-3 py-2 text-right">WMS warehouses</th>
-          <th className="px-3 py-2 text-right">External</th>
-          <th className="px-3 py-2 text-right">Production line-side</th>
-          <th className="px-3 py-2 text-right" title="Transient, other and unclassified warehouses">Other</th>
-          <th className="px-3 py-2 text-right">Batches</th>
-          {stateAvailable && <th className="px-3 py-2 text-right">Locked</th>}
+          <SortTh label="Material" sortKey="material" sort={sort} onSort={onSort} className={thL} />
+          <SortTh label="Total" sortKey="qty" sort={sort} onSort={onSort} align="right" className={thR} />
+          <SortTh label="WMS warehouses" sortKey="qty_wms" sort={sort} onSort={onSort} align="right" className={thR} />
+          <SortTh label="External" sortKey="qty_external" sort={sort} onSort={onSort} align="right" className={thR} />
+          <SortTh label="Production line-side" sortKey="qty_production" sort={sort} onSort={onSort} align="right" className={thR} />
+          <SortTh label="Other" title="Transient, other and unclassified warehouses — click to sort"
+            sortKey="qty_other" sort={sort} onSort={onSort} align="right" className={thR} />
+          <SortTh label="Batches" sortKey="batches" sort={sort} onSort={onSort} align="right" className={thR} />
+          {stateAvailable && <SortTh label="Locked" sortKey="locked" sort={sort} onSort={onSort} align="right" className={thR} />}
         </tr>
       </thead>
       <tbody>
@@ -164,10 +176,12 @@ function MaterialTable({ items, stateAvailable, sort, onSort, loading, emptyText
 export function StockTab({ date, classCode, search }: { date: string; classCode: string; search: string }) {
   const [group, setGroup] = useState<'batch' | 'material'>('batch')
   const [classes, setClasses] = useState<string[]>([])
-  const [sortState, setSort] = useState<StockSort>('material')
-  // By material the API sorts by material or total only.
-  const sort: StockSort = group === 'material' && sortState !== 'qty' ? 'material' : sortState
+  // One sort per grouping: the two tables have different columns.
+  const [batchSort, onBatchSort] = useSort<StockBatchSort>()
+  const [materialSort, onMaterialSort] = useSort<StockMaterialSort>()
+  const sort = group === 'batch' ? batchSort : materialSort
 
+  // The sort is part of the key, so a new sort starts again at page 1.
   const filterKey = JSON.stringify([date, classCode, search, group, classes, sort])
   const [page, setPage] = usePageFor(filterKey)
 
@@ -175,7 +189,7 @@ export function StockTab({ date, classCode, search }: { date: string; classCode:
     queryKey: ['nc', 'stock', date, classCode, search, group, classes, sort, page],
     queryFn: () => ncApi.stock({
       date, class_code: classCode || undefined, search: search || undefined,
-      group, warehouse_class: classes, sort, page, page_size: PAGE_SIZE,
+      group, warehouse_class: classes, ...sortParams(sort), page, page_size: PAGE_SIZE,
     }),
     placeholderData: keepPreviousData,
   })
@@ -239,10 +253,10 @@ export function StockTab({ date, classCode, search }: { date: string; classCode:
       {!(q.isError && !shown) && <ScrollTable className={cn(q.isFetching && shown && 'opacity-70')}>
         {group === 'batch' ? (
           <BatchTable items={(shown?.items ?? []) as StockBatchRow[]} stateAvailable={stateAvailable}
-            sort={sort} onSort={setSort} loading={loading} emptyText={emptyText} />
+            sort={batchSort} onSort={onBatchSort} loading={loading} emptyText={emptyText} />
         ) : (
           <MaterialTable items={(shown?.items ?? []) as StockMaterialRow[]} stateAvailable={stateAvailable}
-            sort={sort} onSort={setSort} loading={loading} emptyText={emptyText} />
+            sort={materialSort} onSort={onMaterialSort} loading={loading} emptyText={emptyText} />
         )}
       </ScrollTable>}
 

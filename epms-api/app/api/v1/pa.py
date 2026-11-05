@@ -1,11 +1,11 @@
 """Payment Application endpoints."""
 import uuid
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
@@ -21,6 +21,7 @@ from app.services.approval_client import delegate_action
 from app.services import finance_client
 from app.crud import agreement as agr_crud
 from app.crud import pa as pa_crud
+from app.crud._list_order import sort_clauses
 from app.crud import po as po_crud
 from app.crud.pa_links import pa_ids_for_po, pa_ids_for_pos
 from app.crud.current_step import enrich_current_step
@@ -33,7 +34,10 @@ from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.vendor import Vendor
 from app.schemas.config import PrepaymentConfig
-from app.schemas.pa import PaActionRequest, PaCreate, PaListResponse, PaResponse, PaUpdate
+from app.schemas.pa import (
+    DirectPaCandidate, DirectPaCandidatesResponse, DirectPaCreate, PaActionRequest, PaCreate,
+    PaListResponse, PaResponse, PaUpdate,
+)
 from app.schemas.pr import ApprovalEventResponse
 
 router = APIRouter(prefix="/pa", tags=["payment-applications"])
@@ -205,6 +209,61 @@ async def _assert_invoices_belong_to_pos(
 PA_INVOICE_DUE_WINDOW_DAYS = 7
 
 
+# Statuses in which a prepayment PA no longer blocks a regular PA on its PO
+# (PP-008). One function for create_pa and the Assistant's PO check, so the
+# two cannot disagree about what "still open" means.
+PREPAYMENT_CLOSED_STATUSES = ("cancelled", "rejected", "processed")
+
+
+async def open_prepayment_pa_number(db, po_ids: list[uuid.UUID]) -> str | None:
+    """The number of a prepayment PA still open on any of these POs, else None."""
+    return (await db.execute(
+        select(PaymentApplication.pa_number).where(
+            PaymentApplication.id.in_(pa_ids_for_pos(po_ids)),
+            PaymentApplication.pa_type == "prepayment",
+            PaymentApplication.status.notin_(list(PREPAYMENT_CLOSED_STATUSES)),
+        )
+    )).scalars().first()
+
+
+async def prior_prepayment_pct(db, po_id: uuid.UUID, exclude_id: uuid.UUID | None = None) -> Decimal:
+    """Sum of prepayment_pct over the live (not cancelled/rejected) prepayment
+    PAs on this PO — the part of the cap already used by earlier stages."""
+    q = select(func.coalesce(func.sum(PaymentApplication.prepayment_pct), 0)).where(
+        PaymentApplication.id.in_(pa_ids_for_po(po_id)),
+        PaymentApplication.pa_type == "prepayment",
+        PaymentApplication.status.notin_(["cancelled", "rejected"]),
+    )
+    if exclude_id is not None:
+        q = q.where(PaymentApplication.id != exclude_id)
+    return Decimal(str((await db.execute(q)).scalar_one()))
+
+
+async def live_settlement_pa_number(db, po_id: uuid.UUID) -> str | None:
+    """A settlement/balance PA on this PO that is not cancelled/rejected."""
+    return (await db.execute(
+        select(PaymentApplication.pa_number).where(
+            PaymentApplication.id.in_(pa_ids_for_po(po_id)),
+            PaymentApplication.pa_type.in_(["settlement", "balance"]),
+            PaymentApplication.status.notin_(["cancelled", "rejected"]),
+        )
+    )).scalars().first()
+
+
+async def in_flight_sibling_prepayment_number(
+    db, po_id: uuid.UUID, orig_id: uuid.UUID,
+) -> str | None:
+    """Another prepayment on this PO that is neither paid nor dead."""
+    return (await db.execute(
+        select(PaymentApplication.pa_number).where(
+            PaymentApplication.id.in_(pa_ids_for_po(po_id)),
+            PaymentApplication.id != orig_id,
+            PaymentApplication.pa_type == "prepayment",
+            PaymentApplication.status.notin_(list(PREPAYMENT_CLOSED_STATUSES)),
+        )
+    )).scalars().first()
+
+
 async def _assert_invoice_due_dates_within_window(
     db: SessionDep, invoice_ids: list[uuid.UUID],
 ) -> None:
@@ -262,8 +321,8 @@ async def _assert_pos_coherent(pos: list[PurchaseOrder], pa_type: str) -> None:
                    "currency. Raise a separate payment per currency.",
         )
     # Prepayment / settlement / balance are defined against ONE order: the cap
-    # comes from that PO's vendor, "one open prepayment per PO" is per-PO, and a
-    # settlement reconciles exactly one earlier prepayment against it. None of
+    # comes from that PO's vendor and is cumulative over that PO's prepayments,
+    # and a settlement reconciles that PO's prepayments against it. None of
     # them has a coherent multi-PO reading, so multi-PO is regular-only.
     if len(pos) > 1 and pa_type != "regular":
         raise HTTPException(
@@ -288,6 +347,60 @@ async def _assert_pos_coherent(pos: list[PurchaseOrder], pa_type: str) -> None:
     # picked. See engine.py::_should_skip_step / _resolve_gm_or_opm.
 
 
+def _not_epms_pa(pa) -> bool:
+    """Missing, or OA's retired Direct PA (no PO, no agreement, source
+    'oa_direct') — a row of the shared table that is not EPMS's. Agreement PAs
+    (agreement_id set), Freight PAs and EPMS Direct PAs (source 'freight' /
+    'direct') have no PO and ARE EPMS's."""
+    from app.models.pa import EPMS_PO_LESS_SOURCES
+    return pa is None or (pa.po_id is None and pa.agreement_id is None
+                          and pa.source not in EPMS_PO_LESS_SOURCES)
+
+
+async def _assert_prepayment_cap(
+    db, po: PurchaseOrder, pct: Decimal | None, exclude_id: uuid.UUID | None = None,
+) -> None:
+    """PP-001..003 for a prepayment of `pct`% on `po` (create, and a PATCH of
+    the % on a draft — exclude_id is then the PA being edited)."""
+    vendor = await db.get(Vendor, po.vendor_id)
+    pp_cfg = await _get_prepayment_config(db)
+
+    # Effective cap: vendor override takes priority over system-wide cap
+    effective_cap = (
+        float(vendor.max_prepayment_pct)
+        if vendor and vendor.max_prepayment_pct is not None
+        else pp_cfg.max_prepayment_pct
+    )
+
+    # PP-001: vendor must allow prepayment (effective_cap > 0)
+    if not effective_cap or effective_cap <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="This vendor does not allow prepayment. Set Max Prepayment % on the vendor record.",
+        )
+
+    # PP-002/003: the prepayment % is CUMULATIVE per PO. A PO may be prepaid
+    # in stages (30% on order, 70% before shipment, then one settlement), so
+    # the cap bounds the sum of every live prepayment on the PO, not each
+    # one alone — otherwise two 60% prepayments would pass a 100% cap.
+    if pct is None:
+        raise HTTPException(status_code=422, detail="prepayment_pct is required for prepayment PAs.")
+    prior_pct = float(await prior_prepayment_pct(db, po.id, exclude_id))
+    total_pct = prior_pct + float(pct)
+    prior_note = f" (already prepaid {prior_pct:g}% on this PO)" if prior_pct else ""
+    if total_pct > effective_cap:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Prepayment % ({pct}%){prior_note} exceeds the allowed cap of {effective_cap}% for this vendor.",
+        )
+    # PP-003: also enforce system-wide cap independently
+    if total_pct > pp_cfg.max_prepayment_pct:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Prepayment % ({pct}%){prior_note} exceeds the system-wide cap of {pp_cfg.max_prepayment_pct}%.",
+        )
+
+
 @router.get("", response_model=PaListResponse)
 async def list_pas(
     db: SessionDep,
@@ -300,7 +413,10 @@ async def list_pas(
     mine: bool = False,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, le=200),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
 ):
+    sort_clauses(sort, dir, pa_crud.SORTABLE, ())   # unknown key → 422, before any work
     scope = await build_scope(db, user)
     # Access Control Matrix gate — return empty when view_pa is disabled.
     if not scope["perms"].get("view_pa", False):
@@ -308,16 +424,21 @@ async def list_pas(
     created_by = scope["user_id"] if scope["restrict"] and scope["role"] == "requester" else (
         uuid.UUID(user["sub"]) if mine else None
     )
+    from app.core.access_scope import sees_all_freight_pas
     items, total = await pa_crud.get_all(
         db, status=status, po_id=po_id, vendor_id=vendor_id,
         department_id=department_id, search=search,
         created_by=created_by,
         po_ids_subq=scope["po_subq"],
         agr_ids_subq=scope["agr_subq"],
-        page=page, page_size=page_size,
+        freight_all=await sees_all_freight_pas(db, scope),
+        viewer_id=scope["user_id"],
+        direct_subq=scope.get("direct_subq"),
+        page=page, page_size=page_size, sort=sort, dir=dir,
     )
     await enrich_current_step(db, "pa", items)
     await pa_crud.attach_po_links(db, items)
+    await pa_crud.attach_direct_labels(db, items)
     return {"items": [PaResponse.model_validate(pa) for pa in items], "total": total}
 
 
@@ -367,6 +488,64 @@ async def _may_create_pa_on_behalf(
         own_dept = await _user_dept_id(db, user_id)
         return await is_pr_in_departments(db, po.pr_id, {own_dept} if own_dept else set())
     return False
+
+
+@router.get("/direct/candidates", response_model=DirectPaCandidatesResponse)
+async def direct_pa_candidates(db: SessionDep, user: PaWriteDep,
+                               vendor_id: uuid.UUID | None = Query(default=None)):
+    """Invoices the caller may put on a Direct PA: matched to the Direct route,
+    visible to them on the Invoices page (same scope), and not already listed
+    by a live PA. Oldest due first."""
+    from app.api.v1.invoices import list_invoices
+    items: list = []
+    page = 1
+    while True:   # all of them, not the first 200 (held ones are dropped below)
+        out = await list_invoices(
+            db=db, user=user, status="matched", vendor_id=vendor_id, po_id=None,
+            agreement_id=None, search=None, sort="due_date", dir="asc", overdue=False,
+            route="direct", page=page, page_size=200)
+        items.extend(out.items)
+        if len(out.items) < 200:
+            break
+        page += 1
+    if items:
+        held = set((await db.execute(
+            select(func.jsonb_array_elements_text(PaymentApplication.invoice_ids))
+            .where(PaymentApplication.status != "cancelled"))).scalars().all())
+        items = [i for i in items if str(i.id) not in held]
+    # An invoice linked to a PO (Link to PO) defaults the form to that PO's
+    # department, cost centre and budget code (user, 2026-10-30).
+    from app.crud.po_fee import linked_po_defaults
+    defaults = await linked_po_defaults(db, [i.id for i in items])
+    out = [DirectPaCandidate(**i.model_dump(), linked_po=defaults.get(i.id)) for i in items]
+    return {"items": out, "total": len(out)}
+
+
+@router.post("/direct", response_model=PaResponse, status_code=201)
+async def create_direct_pa(body: DirectPaCreate, db: SessionDep, user: PaWriteDep,
+                           token: BearerToken):
+    """Draft Direct PA: invoices matched to no PO and no agreement (Match →
+    Direct PA on the invoice), charged to the department / cost centre /
+    budget account chosen here, approved on the `pa_dir` chain.
+
+    Who may raise one is the ordinary PA right (epms.pa.write) plus being able
+    to open every invoice on it — the same read gate as the invoice page, so a
+    requester can pay what they uploaded and AP can pay anything."""
+    from app.api.v1.invoices import _can_read_invoice
+    from app.services.budget_client import ensure_known_budget_code
+    scope = await build_scope(db, user)
+    for iid in dict.fromkeys(body.invoice_ids):
+        inv = await db.get(Invoice, iid)
+        if inv is None or not await _can_read_invoice(db, user, inv, scope):
+            raise HTTPException(status_code=404, detail="Invoice not found")
+    await _assert_invoice_due_dates_within_window(db, body.invoice_ids)
+    await ensure_known_budget_code(token, body.budget_account_code)
+    try:
+        pa = await pa_crud.create_direct(db, body, uuid.UUID(user["sub"]))
+    except pa_crud.DirectPaInvalid as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail)
+    await pa_crud.attach_direct_labels(db, [pa])
+    return pa
 
 
 @router.post("", response_model=PaResponse, status_code=201)
@@ -466,50 +645,17 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
 
     # ── Prepayment-specific guards ─────────────────────────────────────────────
     if body.pa_type == "prepayment":
-        vendor = await db.get(Vendor, po.vendor_id)
-        pp_cfg = await _get_prepayment_config(db)
+        await _assert_prepayment_cap(db, po, body.prepayment_pct)
 
-        # Effective cap: vendor override takes priority over system-wide cap
-        effective_cap = (
-            float(vendor.max_prepayment_pct)
-            if vendor and vendor.max_prepayment_pct is not None
-            else pp_cfg.max_prepayment_pct
-        )
-
-        # PP-001: vendor must allow prepayment (effective_cap > 0)
-        if not effective_cap or effective_cap <= 0:
-            raise HTTPException(
-                status_code=422,
-                detail="This vendor does not allow prepayment. Set Max Prepayment % on the vendor record.",
-            )
-
-        # PP-002/003: requested prepayment % must not exceed cap
-        if body.prepayment_pct is None:
-            raise HTTPException(status_code=422, detail="prepayment_pct is required for prepayment PAs.")
-        if float(body.prepayment_pct) > effective_cap:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Prepayment % ({body.prepayment_pct}%) exceeds the allowed cap of {effective_cap}% for this vendor.",
-            )
-        # PP-003: also enforce system-wide cap independently
-        if float(body.prepayment_pct) > pp_cfg.max_prepayment_pct:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Prepayment % ({body.prepayment_pct}%) exceeds the system-wide cap of {pp_cfg.max_prepayment_pct}%.",
-            )
-
-        # PP-004: only one open prepayment PA per PO
-        existing = (await db.execute(
-            select(PaymentApplication.id).where(
-                PaymentApplication.id.in_(pa_ids_for_po(po.id)),
-                PaymentApplication.pa_type == "prepayment",
-                PaymentApplication.status.notin_(["cancelled", "rejected"]),
-            )
-        )).scalar_one_or_none()
-        if existing:
+        # PP-004: a PO may carry several prepayments, but none once it has a
+        # settlement — the settlement reconciles every prepayment on the PO, so
+        # one raised after it would never be reconciled.
+        settled_by = await live_settlement_pa_number(db, po.id)
+        if settled_by:
             raise HTTPException(
                 status_code=409,
-                detail="A prepayment PA already exists for this PO. Settle or cancel it before creating a new one.",
+                detail=f"Settlement PA {settled_by} already exists for this PO. "
+                       "No further prepayment can be raised against it.",
             )
 
     elif body.pa_type in ("settlement", "balance"):
@@ -532,16 +678,31 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
                 detail="Referenced prepayment PA not found or does not belong to this PO.",
             )
 
+        # One settlement reconciles EVERY prepayment on the PO (staged
+        # prepayments are settled together). A sibling prepayment still in
+        # draft/approval would be paid after the settlement and never be
+        # reconciled — finish or cancel it first.
+        in_flight = await in_flight_sibling_prepayment_number(db, po.id, orig.id)
+        if in_flight:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Prepayment PA {in_flight} on this PO is not paid yet. "
+                       "Wait until it is paid, or cancel it, before settling.",
+            )
+        pool = await pa_crud.settlement_prepayment_pool(db, orig)
+
         # Net payable = full charge − prepayment applied. Must be ≥ 0:
         # an overpaid prepayment is a credit-note situation, not a negative payment.
         from decimal import Decimal as _D
         applied = body.prepayment_applied or _D("0")
-        # Cannot apply more prepayment than was actually prepaid on the original PA.
-        if applied > orig.payment_amount:
+        # Cannot apply more prepayment than was actually prepaid on the PO.
+        prepaid_total = sum((p.payment_amount for p in pool), _D("0"))
+        if applied > prepaid_total:
+            numbers = ", ".join(p.pa_number for p in pool)
             raise HTTPException(
                 status_code=422,
                 detail=f"prepayment_applied ({applied}) exceeds the amount actually "
-                       f"prepaid on {orig.pa_number} ({orig.payment_amount}). "
+                       f"prepaid on {numbers} ({prepaid_total}). "
                        "You cannot apply more prepayment than was paid.",
             )
         net = (body.subtotal + body.tax_amount + body.shipping_amount
@@ -558,13 +719,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         # An open prepayment on ANY of the POs blocks this regular payment —
         # checking only the primary would let an unsettled advance ride along on
         # a second PO and be paid for twice.
-        blocking = (await db.execute(
-            select(PaymentApplication.pa_number).where(
-                PaymentApplication.id.in_(pa_ids_for_pos([p.id for p in pos])),
-                PaymentApplication.pa_type == "prepayment",
-                PaymentApplication.status.notin_(["cancelled", "rejected", "processed"]),
-            )
-        )).scalars().first()
+        blocking = await open_prepayment_pa_number(db, [p.id for p in pos])
         if blocking:
             raise HTTPException(
                 status_code=409,
@@ -627,7 +782,8 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
     #       – variance != 0 (overpaid) → finance confirmation task gates it
     if created.pa_type == "settlement" and created.payment_amount == 0:
         actor = uuid.UUID(user["sub"])
-        prepaid = orig.payment_amount if orig is not None else Decimal("0")
+        prepaid = (sum((p.payment_amount for p in await pa_crud.settlement_prepayment_pool(db, orig)),
+                       Decimal("0")) if orig is not None else Decimal("0"))
         variance = pa_crud._settlement_variance(created, prepaid)
         if variance == 0:
             # exact match → reconcile now, no approval, no task, no cash
@@ -648,21 +804,82 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
 async def get_pa(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
     from app.core.access_scope import is_pa_visible
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
+    if _not_epms_pa(pa):
         raise HTTPException(status_code=404, detail="PA not found")
     scope = await build_scope(db, user)
     if not await is_pa_visible(db, pa, scope):
         raise HTTPException(status_code=404, detail="PA not found")
+    if pa.source == "freight":
+        from app.crud.freight import cost_allocations
+        pa.cost_allocations = await cost_allocations(db, pa.id)
+    await pa_crud.attach_direct_labels(db, [pa])
     return pa
 
 
 @router.patch("/{pa_id}", response_model=PaResponse)
-async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: PaWriteDep):
+async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: CurrentUserPayload,
+                    token: BearerToken):
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
+    if _not_epms_pa(pa):
         raise HTTPException(status_code=404, detail="PA not found")
+    # epms.pa.write, or — for a Freight PA — the freight manager who raised it
+    # from the Freight page and may not hold the general PA key.
+    from uniops_authz import has_permission
+    uid, role = uuid.UUID(user["sub"]), user.get("role") or ""
+    if not (await has_permission(db, uid, role, "epms.pa.write") or (
+            pa.source == "freight"
+            and await has_permission(db, uid, role, "epms.freight.manage"))):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
     if pa.status not in ("draft", "returned"):
         raise HTTPException(status_code=409, detail=f"Cannot edit PA in status '{pa.status}'")
+    if (pa.pa_type == "prepayment" and pa.po_id is not None
+            and "prepayment_pct" in body.model_fields_set):
+        # The cap is cumulative over the PO's prepayments — editing one stage's
+        # % must not slip past what create_pa would refuse.
+        await _assert_prepayment_cap(db, await db.get(PurchaseOrder, pa.po_id),
+                                     body.prepayment_pct, exclude_id=pa.id)
+    _DIRECT_DIMS = {"department_id", "cost_center_id", "budget_account_code"}
+    if pa.source != "direct" and body.model_fields_set & _DIRECT_DIMS:
+        raise HTTPException(
+            status_code=422,
+            detail="Department, cost center and budget account are set on a Direct PA only; "
+                   "other PAs take them from their PR or agreement.")
+    if pa.source == "freight":
+        # Amounts, invoices and the cost split all come from the matched
+        # carrier invoices (crud.freight.create_pa); editing them here would
+        # break the tie to pa_cost_allocations. Only the wording may change.
+        changed = body.model_fields_set - {"title", "notes"}
+        if changed:
+            raise HTTPException(
+                status_code=422,
+                detail="A Freight PA takes its amounts and invoices from the Freight page; "
+                       "only the title and notes can be edited here.")
+    if pa.source == "direct":
+        # Amounts and invoices come from the invoices it pays (crud.pa.
+        # create_direct) — to change them, cancel and raise a new one. What it
+        # is charged to, and the reason, stay editable until it is submitted.
+        changed = body.model_fields_set - {"title", "notes"} - _DIRECT_DIMS
+        if changed:
+            raise HTTPException(
+                status_code=422,
+                detail="A Direct PA takes its amounts and invoices from the invoices it pays; "
+                       "only the title, reason, department, cost center and budget account "
+                       "can be edited.")
+        for f in _DIRECT_DIMS & body.model_fields_set:
+            if getattr(body, f) is None:
+                raise HTTPException(status_code=422, detail=f"A Direct PA needs a {f.replace('_id', '').replace('_', ' ')}")
+        if "notes" in body.model_fields_set and not (body.notes or "").strip():
+            raise HTTPException(status_code=422, detail="A Direct PA needs a reason for the payment")
+        if body.model_fields_set & {"department_id", "cost_center_id"}:
+            try:
+                await pa_crud.validate_direct_dims(
+                    db, body.department_id or pa.department_id,
+                    body.cost_center_id or pa.cost_center_id)
+            except pa_crud.DirectPaInvalid as exc:
+                raise HTTPException(status_code=exc.status, detail=exc.detail)
+        if body.budget_account_code is not None:
+            from app.services.budget_client import ensure_known_budget_code
+            await ensure_known_budget_code(token, body.budget_account_code)
     # Whole-branch review finding: pa_crud.update() assigns invoice_ids
     # unconditionally, with none of create_pa's agreement gates re-run — a
     # PATCH could swap in an invoice that is unconfirmed, unlinked to a
@@ -738,7 +955,9 @@ async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: PaWr
             await pa_crud.reopen_create_pa_tasks_if_unpaid(db, pid)
         return updated
 
-    return await pa_crud.update(db, pa, body)
+    updated = await pa_crud.update(db, pa, body)
+    await pa_crud.attach_direct_labels(db, [updated])
+    return updated
 
 
 def _assert_invoice_link_on_submit(pa) -> None:
@@ -764,6 +983,19 @@ def _assert_invoice_link_on_submit(pa) -> None:
       * prepayment PAs — paid before the vendor has invoiced anything;
       * agreement PAs (po_id NULL) — gated by _validate_agreement_pa_invoices.
     """
+    if pa.source == "freight":
+        if pa.invoice_ids:
+            return
+        raise HTTPException(status_code=409, detail="This Freight PA links no invoice.")
+    if pa.source == "direct":
+        missing = [label for label, v in (
+            ("invoice", pa.invoice_ids), ("department", pa.department_id),
+            ("cost center", pa.cost_center_id), ("budget account", pa.budget_account_code),
+            ("reason", (pa.notes or "").strip())) if not v]
+        if missing:
+            raise HTTPException(status_code=409,
+                                detail=f"This Direct PA has no {', '.join(missing)}. Edit it and submit again.")
+        return
     if pa.po_id is None or pa.pa_type == "prepayment" or pa.invoice_ids:
         return
     raise HTTPException(
@@ -785,7 +1017,7 @@ async def pa_action(
     token: BearerToken,
 ):
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
+    if _not_epms_pa(pa):
         raise HTTPException(status_code=404, detail="PA not found")
     if body.action == "submit":
         _assert_invoice_link_on_submit(pa)
@@ -835,6 +1067,10 @@ async def pa_action(
         requester_name, approvals = await approval_signatories(
             db, "pa", pa_id, pa.created_by
         )
+        if getattr(pa, "source", None) == "freight":
+            from app.crud.freight import cost_allocations as _cost_allocations
+            pa.cost_allocations = await _cost_allocations(db, pa.id)
+        await pa_crud.attach_direct_labels(db, [pa])
         loop = asyncio.get_event_loop()
         pdf_bytes = await loop.run_in_executor(
             None, generate_pa_pdf, pa, company_name,
@@ -873,7 +1109,7 @@ async def confirm_settlement(
     """Finance sign-off for a zero-cash settlement that has a variance (overpaid).
     No payment is made — it reconciles the prepayment and closes the invoice."""
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
+    if _not_epms_pa(pa):
         raise HTTPException(status_code=404, detail="PA not found")
     if pa.pa_type != "settlement" or pa.payment_amount != 0:
         raise HTTPException(
@@ -891,7 +1127,7 @@ async def confirm_settlement(
 @router.get("/{pa_id}/events", response_model=list[ApprovalEventResponse])
 async def pa_approval_events(pa_id: uuid.UUID, db: SessionDep, _: CurrentUserPayload):
     pa = await pa_crud.get_by_id(db, pa_id)
-    if pa is None or (pa.po_id is None and pa.agreement_id is None):  # OA Direct PA (both NULL) — not agreement PAs (agreement_id set)
+    if _not_epms_pa(pa):
         raise HTTPException(status_code=404, detail="PA not found")
     return await pa_crud.get_approval_events(db, pa_id)
 

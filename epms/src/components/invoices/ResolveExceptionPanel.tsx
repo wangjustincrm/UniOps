@@ -66,7 +66,7 @@ export function ResolveExceptionPanel({ inv, onClose }: { inv: ApiInvoice; onClo
         <label className="text-xs font-medium text-neutral-700">
           {resolution === 'accepted' ? 'Justification' : 'Instructions'} <span className="text-danger-600">*</span>
         </label>
-        <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)}
+        <textarea rows={2} maxLength={4000} value={note} onChange={(e) => setNote(e.target.value)}
           placeholder={resolution === 'accepted'
             ? 'Explain why the excess amount is acceptable...'
             : 'Instructions for the vendor to issue a credit note...'}

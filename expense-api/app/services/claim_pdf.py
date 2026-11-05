@@ -84,10 +84,15 @@ async def _tra_approvals(db, claim: ExpenseClaim) -> list[dict]:
     """pdf_tra's signature rows: approve events by step_idx, actor names resolved."""
     from app.api.v1.expenses import _shared_approval_events
 
+    from app.api.v1.expenses import is_machine_approval
+
+    # A skipped step is not a signature: print "Skipped", never the actor
+    # (the claimant, for a step skipped because they hold it).
     return [{
         "step_idx": e.step_idx,
-        "actor_name": e.actor_name or "",
-        "acted_date": e.created_at.date().isoformat() if e.created_at else None,
+        "actor_name": "Skipped" if is_machine_approval(e.comment) else (e.actor_name or ""),
+        "acted_date": (None if is_machine_approval(e.comment)
+                       else e.created_at.date().isoformat() if e.created_at else None),
     } for e in await _shared_approval_events(db, claim.id) if e.action == "approve"]
 
 

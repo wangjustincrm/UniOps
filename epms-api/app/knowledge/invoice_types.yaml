@@ -22,9 +22,10 @@ doc_type: invoice
 field: status
 
 what_it_is: >
-  What the vendor billed. An invoice is matched against the purchase order it
-  belongs to and the receipt proving the goods arrived — the three-way match —
-  and only a matched invoice can be paid.
+  What the vendor billed. An invoice is matched against the purchase order (or
+  agreement) it belongs to, by AMOUNT, and only a matched invoice can be paid.
+  Goods receipts that already exist are linked to it for reference, but received
+  quantities do not decide whether it matches — see `rules`.
 
 how_types_are_set: >
   Not chosen. The state follows from matching: EPMS moves an invoice through
@@ -43,8 +44,8 @@ values:
     label: Unmatched
     covers: Uploaded, not yet tied to a purchase order.
     when: >
-      Where every invoice starts. It stays here until someone matches it, or
-      until it is auto-attached to a PO whose receipts line up.
+      Where every invoice starts. It stays here until it is matched to a
+      purchase order or an agreement.
     notes:
       - An invoice can be split across several purchase orders. If it is, each
         allocation line carries its own share, and the split is what gets paid
@@ -92,10 +93,17 @@ values:
 
   - value: exception
     label: Exception
-    covers: Something does not line up — quantity, price, or missing receipt.
+    covers: The amount billed is over what the order (or agreement) allows.
     when: >
-      Raised when the three-way match fails. It carries a task to whoever has
-      to resolve it, and it cannot be paid until that is cleared.
+      Raised when the total invoiced against a PO line — across every invoice
+      matched to it, before tax — exceeds the line's value by more than the
+      configured tolerance (or, for an agreement, falls outside its tolerance or
+      schedule). A missing receipt or a quantity difference does not cause it.
+      It carries a task to whoever has to resolve it, and it cannot be paid
+      until that is cleared. AP clears it by accepting the variance (the
+      invoice becomes Matched) or by asking the vendor for a credit note; either
+      needs a written note, which stays visible on the invoice's 3-Way Match
+      tab and in its History.
 
   - value: approved
     label: Approved
@@ -115,3 +123,11 @@ values:
     when: >
       Also written by Finance on execution, when a payment covers only part of
       what was billed.
+
+# ── Rules people ask about ───────────────────────────────────────────────────
+# Each states what the code does, with where. The narrator answers these from
+# here, word for word in meaning — without them "三单匹配会比较收货数量吗？" got
+# yes / no / yes on three tries (ISS-0010), and the `what_it_is` above used to
+# say the receipt was part of the match, which it is not.
+
+# The rules people ask about live in rules/invoice.yaml (app/services/rule_registry.py).

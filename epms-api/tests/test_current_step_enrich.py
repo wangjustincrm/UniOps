@@ -1,5 +1,6 @@
 """enrich_current_step attaches the open approval task's role/approver/since
-to in_review list items, sourced from the tasks mirror (not approval_step_idx)."""
+to list items awaiting approval (submitted / in_review), sourced from the tasks
+mirror (not approval_step_idx)."""
 import uuid
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -67,6 +68,34 @@ async def test_enrich_pool_task_has_null_approver_and_non_in_review_is_none(test
     assert items[0].current_step["approver_name"] is None
     assert items[1].current_step is None   # not in_review
     assert items[2].current_step is None   # in_review but no open task
+
+
+async def test_submitted_document_waiting_on_its_first_approver_has_a_step(test_engine):
+    """ISS-0047 / ISS-0076: a PR waits on its first approver in status
+    `submitted` (in_review comes only after the first approval). Reading
+    in_review alone left the list's Current Step blank and the Assistant
+    called the PR fully approved."""
+    from sqlalchemy import select
+
+    from app.crud.current_step import status_step_sort_keys
+    from app.models.pr import PurchaseRequest
+
+    sf = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    doc_id = uuid.uuid4()
+    async with sf() as db:
+        db.add(_task(doc_id, role="dept_manager", user_id=None))
+        await db.commit()
+
+        items = [SimpleNamespace(id=doc_id, status="submitted")]
+        await enrich_current_step(db, "pr", items)
+
+    assert items[0].current_step["label"] == "Dept Manager"
+
+    # The list's Status sort reads the same set of statuses.
+    _, step_order, _ = status_step_sort_keys(
+        PurchaseRequest.status, PurchaseRequest.id, "pr")
+    sql = str(select(step_order).compile(compile_kwargs={"literal_binds": True}))
+    assert "'submitted'" in sql and "'in_review'" in sql
 
 
 def test_role_maps_cover_default_workflow_roles():

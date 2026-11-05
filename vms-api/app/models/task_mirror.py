@@ -47,3 +47,6 @@ class Task(UUIDPrimaryKey, TimestampMixin, Base):
     completed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
     )
+    # Platform notification outbox (epms-api task_notifier): NULL = not yet
+    # handled; the outbox mails it per the admin's per-type policy, then stamps.
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

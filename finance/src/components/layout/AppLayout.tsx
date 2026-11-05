@@ -2,10 +2,10 @@ import { useState, useEffect, useRef } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   CreditCard, Receipt, BookOpen, FileText, Banknote, Landmark, LayoutDashboard,
-  ClipboardList, FolderTree, FlaskConical, SlidersHorizontal, Percent, Settings,
+  ClipboardList, FolderTree, FlaskConical, SlidersHorizontal, Percent, Coins, Settings,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown, Scale, Target,
   RefreshCw, Wallet, Download, ShieldAlert, ClipboardCheck, HeartPulse, TrendingUp, CopyX,
-  Activity, GitBranch, Network, PieChart, Boxes, Ruler,
+  Activity, GitBranch, Network, PieChart, Boxes, Ruler, Table2,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -59,6 +59,7 @@ const NAV: NavSection[] = [
     title: 'Voucher',
     items: [
       { label: 'Journal Vouchers', href: '/finance/journal-vouchers', icon: FileText, permission: 'view_finance' },
+      { label: 'JV Detail', href: '/finance/jv-lines', icon: Table2, permission: 'view_finance' },
       { label: 'JV Validation', href: '/finance/jv-validation', icon: ShieldAlert, permission: 'view_finance' },
     ],
   },
@@ -99,6 +100,7 @@ const NAV: NavSection[] = [
     items: [
       { label: 'Chart of Accounts', href: '/finance/coa', icon: FolderTree, permission: 'view_finance' },
       { label: 'Tax Settings', href: '/finance/tax', icon: Percent, permission: 'view_finance' },
+      { label: 'Exchange Rates', href: '/finance/fx-rates', icon: Coins, permission: 'view_finance' },
       { label: 'QuickBooks', href: '/finance/qbo', icon: RefreshCw, permission: 'view_finance' },
       // Throwaway: remove with QboCreditImportPage when QuickBooks is retired.
       // Gated on the credit-manage key, not view_finance — this writes spendable

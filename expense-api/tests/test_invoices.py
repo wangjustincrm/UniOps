@@ -136,6 +136,24 @@ async def test_check_duplicate_flags_existing(admin_client):
 
 
 @pytest.mark.asyncio
+async def test_invoice_dedup_compares_the_epms_key(admin_client):
+    """Same key as EPMS (PRD INV-004): punctuation, spaces, case and leading
+    zeros do not make a new invoice; an inner digit does."""
+    vendor_id = str(uuid.uuid4())
+    tag = uuid.uuid4().hex[:6].upper()
+    r = await admin_client.post("/api/v1/invoices",
+                                json=_invoice_payload(invoice_number=f"00INV-{tag}", vendor_id=vendor_id))
+    assert r.status_code == 201
+    for variant in (f"inv {tag.lower()}", f"INV.{tag}", f"000INV-{tag}"):
+        r = await admin_client.post("/api/v1/invoices",
+                                    json=_invoice_payload(invoice_number=variant, vendor_id=vendor_id))
+        assert r.status_code == 409, variant
+    r = await admin_client.post("/api/v1/invoices",
+                                json=_invoice_payload(invoice_number=f"INV-{tag}-2", vendor_id=vendor_id))
+    assert r.status_code == 201
+
+
+@pytest.mark.asyncio
 async def test_check_duplicate_clear_when_none(admin_client):
     """check-duplicate returns null when no matching invoice exists."""
     resp = await admin_client.get(

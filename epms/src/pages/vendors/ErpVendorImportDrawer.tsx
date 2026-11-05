@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { X, Loader2 } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { SortTh, useSort, sortParams } from '@uniops/shell'
 import { mdmApi, api } from '@/lib/api'
 import { PRESET_PAYMENT_TERMS } from '@/lib/paymentTerms'
 
@@ -29,6 +30,8 @@ export function ErpVendorImportDrawer({ vendorCategories, onClose }: ErpVendorIm
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [excludeImported, setExcludeImported] = useState(true)
+  // mdm-api pages /erp/suppliers, so it sorts too (no sort = by code, as before).
+  const [sort, onSort] = useSort<'erp_supplier_code' | 'supplier_name' | 'supplier_tel'>(null, () => setPage(1))
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const initialCategory = vendorCategories.length > 0 ? vendorCategories[0] : 'other'
   const [category, setCategory] = useState(initialCategory)
@@ -47,12 +50,12 @@ export function ErpVendorImportDrawer({ vendorCategories, onClose }: ErpVendorIm
     .map((v) => v.erp_id)
     .filter((c): c is string => !!c)
 
-  const params: Record<string, string | number> = { page, page_size: PAGE_SIZE }
+  const params: Record<string, string | number> = { page, page_size: PAGE_SIZE, ...sortParams(sort) }
   if (search) params.search = search
   if (excludeImported && importedCodes.length) params.exclude_codes = importedCodes.join(',')
 
   const { data, isLoading, error: loadError } = useQuery<{ items: ErpSupplierRow[]; total: number }>({
-    queryKey: ['erp-import-suppliers', search, excludeImported, importedCodes.join(','), page],
+    queryKey: ['erp-import-suppliers', search, excludeImported, importedCodes.join(','), page, sort],
     queryFn: () => mdmApi.get('/erp/suppliers', params),
   })
 
@@ -152,9 +155,9 @@ export function ErpVendorImportDrawer({ vendorCategories, onClose }: ErpVendorIm
                     <thead className="border-b border-neutral-200">
                       <tr>
                         <th className="px-2 py-2"></th>
-                        <th className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500">Code</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500">Name</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500">Tel</th>
+                        <SortTh label="Code" sortKey="erp_supplier_code" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500" />
+                        <SortTh label="Name" sortKey="supplier_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500" />
+                        <SortTh label="Tel" sortKey="supplier_tel" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500" />
                       </tr>
                     </thead>
                     <tbody>

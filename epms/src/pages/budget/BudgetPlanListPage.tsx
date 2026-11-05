@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Plus, X, Save, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { StatusBadge } from '@/components/ui/badge'
+import { StatusBadge, statusLabel } from '@/components/ui/badge'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { cn, formatDate } from '@/lib/utils'
 import { usePlans, useCreatePlan, useDeletePlan, useAvailableFiscalYears } from '@/hooks/useBudget'
 import { useCostCenters } from '@/hooks/useCostCenters'
@@ -75,6 +76,16 @@ export default function BudgetPlanListPage() {
       return b.version - a.version
     })
   }, [plans, ccById])
+  // Click-to-sort on top of that default (the plan list is loaded whole).
+  const { rows: shownPlans, sort, onSort } = useSortableRows(sortedPlans, {
+    cost_center: (p) => ccById.get(p.cost_center_id)?.code,
+    fiscal_year: (p) => p.fiscal_year,
+    version: (p) => p.version,
+    status: (p) => statusLabel(p.status),
+    submitted_at: (p) => p.submitted_at,
+    approved_at: (p) => p.approved_at,
+    updated_at: (p) => p.updated_at,
+  })
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -125,23 +136,23 @@ export default function BudgetPlanListPage() {
         <table className="w-full text-sm">
           <thead className="bg-neutral-50 border-b border-neutral-200">
             <tr>
-              <Th>Cost Center</Th>
-              <Th>Fiscal Year</Th>
-              <Th>Version</Th>
-              <Th>Status</Th>
-              <Th>Submitted</Th>
-              <Th>Approved</Th>
-              <Th>Last Updated</Th>
+              <SortTh label="Cost Center" sortKey="cost_center" sort={sort} onSort={onSort} className={TH_CLASS} />
+              <SortTh label="Fiscal Year" sortKey="fiscal_year" sort={sort} onSort={onSort} className={TH_CLASS} />
+              <SortTh label="Version" sortKey="version" sort={sort} onSort={onSort} className={TH_CLASS} />
+              <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={TH_CLASS} />
+              <SortTh label="Submitted" sortKey="submitted_at" sort={sort} onSort={onSort} className={TH_CLASS} />
+              <SortTh label="Approved" sortKey="approved_at" sort={sort} onSort={onSort} className={TH_CLASS} />
+              <SortTh label="Last Updated" sortKey="updated_at" sort={sort} onSort={onSort} className={TH_CLASS} />
               <Th className="w-24"></Th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr><td colSpan={8} className="py-12 text-center text-sm text-neutral-400">Loading…</td></tr>
-            ) : sortedPlans.length === 0 ? (
+            ) : shownPlans.length === 0 ? (
               <tr><td colSpan={8} className="py-12 text-center text-sm text-neutral-400">No plans match the current filters</td></tr>
             ) : (
-              sortedPlans.map((p) => {
+              shownPlans.map((p) => {
                 const cc = ccById.get(p.cost_center_id)
                 const isSuperseded = !p.is_current && p.status === 'approved'
                 return (
@@ -291,8 +302,10 @@ function CreatePlanModal({ onClose }: { onClose: () => void }) {
   )
 }
 
+const TH_CLASS = 'text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-neutral-500'
+
 function Th({ children, className }: { children?: React.ReactNode; className?: string }) {
-  return <th className={cn('text-left px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-neutral-500', className)}>{children}</th>
+  return <th className={cn(TH_CLASS, className)}>{children}</th>
 }
 
 function Td({ children, className }: { children?: React.ReactNode; className?: string }) {

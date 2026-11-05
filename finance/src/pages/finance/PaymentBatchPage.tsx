@@ -3,8 +3,8 @@
  *
  * CRM pays most invoices in batches ("攒一起一起付"). Flow:
  *   1. Due list — approved PAs and expense claims awaiting payment (single
- *      currency per run), filterable by type via ?type= (all | pa | pa_dir |
- *      claim) so claims are not lost among hundreds of PAs; the Payments page
+ *      currency per run), filterable by type via ?type= (all | pa | freight |
+ *      pa_dir | claim) so claims are not lost among hundreds of PAs; the Payments page
  *      banner deep-links here with ?type=claim&currency=…
  *   2. Select rows → create a draft batch (snapshot)
  *   3. Execute — each line runs through the unified payment executor with
@@ -17,11 +17,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Loader2, Play, Wallet, X } from 'lucide-react'
-import { useOptionalTabStoreApi } from '@uniops/shell'
+import { SortTh, sortParams, useOptionalTabStoreApi, useSort, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
-import { financeApi, OA_URL, encodeSession } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
+import { cn, toLocalDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
+import { ListPager } from '@/components/ListPager'
 import { RemittancePanel } from '@/components/remittance/RemittancePanel'
 import { RemittanceDialog } from '@/components/remittance/RemittanceDialog'
 import { fetchPreview, scopeKey } from '@/services/remittance'
@@ -36,19 +37,31 @@ interface Due {
   doc_kind: string; doc_id: string; doc_number: string | null
   payee: string; vendor_inv_no?: string; amount: string; currency: string
   claim_type: string | null; submitted_at: string | null
+  // po | agreement | freight | direct — a Freight PA (EPMS → Freight) is a `pa`
+  pa_source?: string | null
+  // EPMS invoices the PA settles (empty for claims and OA Direct PAs) and the
+  // earliest of their due dates — a date-only string.
+  invoices?: { id: string; number: string }[]; due_date?: string | null
 }
 
 export const DUE_CURRENCIES = ['CAD', 'USD', 'CNY', 'EUR']
 
+const BATCH_PAGE_SIZE = 20
+type BatchSortKey = 'batch_number' | 'batch_date' | 'status' | 'payment_method' | 'total'
+
 // Type filter for the due list. `claim` covers every payable claim type
 // (EXP / MIL / TRV / CFM); the API already leaves Travel Applications out.
-type DueType = 'all' | 'pa' | 'pa_dir' | 'claim'
+type DueType = 'all' | 'pa' | 'freight' | 'pa_dir' | 'claim'
 const DUE_TYPES: { key: DueType; label: string }[] = [
-  { key: 'all', label: 'All' }, { key: 'pa', label: 'PA' },
+  { key: 'all', label: 'All' }, { key: 'pa', label: 'PA' }, { key: 'freight', label: 'Freight PA' },
   { key: 'pa_dir', label: 'Direct PA' }, { key: 'claim', label: 'Expense Claim' },
 ]
+// An EPMS Direct PA (pa_source 'direct') is doc_kind 'pa' — paid like any EPMS
+// PA — but it is what the Direct PA filter means; OA's retired ones are 'pa_dir'.
 const dueTypeOf = (d: Due): DueType =>
-  d.doc_kind === 'expense_claim' ? 'claim' : d.doc_kind === 'pa_dir' ? 'pa_dir' : 'pa'
+  d.doc_kind === 'expense_claim' ? 'claim'
+    : d.doc_kind === 'pa_dir' || d.pa_source === 'direct' ? 'pa_dir'
+    : d.pa_source === 'freight' ? 'freight' : 'pa'
 
 interface Batch {
   id: string; batch_number: string; batch_date: string; status: string
@@ -64,6 +77,13 @@ interface BatchLine {
 function fmtMoney(v: string, ccy?: string): string {
   const s = Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
   return ccy ? `${s} ${ccy}` : s
+}
+
+/** The label the Type column shows — sorting by it must follow what is on screen. */
+function dueTypeLabel(d: Due): string {
+  return d.doc_kind === 'expense_claim' ? `Claim · ${d.claim_type ?? ''}`
+    : d.doc_kind === 'pa_dir' || d.pa_source === 'direct' ? 'Direct PA'
+    : d.pa_source === 'freight' ? 'Freight PA' : 'PA'
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -112,13 +132,25 @@ export default function PaymentBatchPage() {
     queryFn: () => financeApi.get<Due[]>(`/payments/due?currency=${currency}`),
   })
   const typeCounts = useMemo(() => {
-    const c: Record<DueType, number> = { all: dueAll.length, pa: 0, pa_dir: 0, claim: 0 }
+    const c: Record<DueType, number> = { all: dueAll.length, pa: 0, freight: 0, pa_dir: 0, claim: 0 }
     for (const d of dueAll) c[dueTypeOf(d)] += 1
     return c
   }, [dueAll])
-  const due = useMemo(
+  // Column sort (client-side; the list is loaded whole for one currency).
+  // null = API order. Empties (no due date / no invoice) sit last either way.
+  const dueOfType = useMemo(
     () => (dueType === 'all' ? dueAll : dueAll.filter((d) => dueTypeOf(d) === dueType)),
     [dueAll, dueType])
+  const { rows: due, sort, onSort } = useSortableRows(dueOfType, {
+    document: (d) => d.doc_number,
+    submitted: (d) => d.submitted_at,
+    payee: (d) => d.payee,
+    // The first invoice shown in the cell, else the plain vendor number.
+    invoice: (d) => d.invoices?.[0]?.number || d.vendor_inv_no,
+    due: (d) => d.due_date,                      // YYYY-MM-DD sorts as text
+    type: (d) => dueTypeLabel(d),
+    amount: (d) => Number(d.amount),
+  })
 
   // Open the claim in OA as an iframe tab inside Finance (the same handoff the
   // AP list uses for OA invoices); OA's expense detail is embed-safe.
@@ -131,10 +163,33 @@ export default function PaymentBatchPage() {
       kind: 'iframe', src, icon: 'Receipt', closable: true,
     })
   }
-  const { data: batches = [] } = useQuery({
-    queryKey: ['payment-batches'],
-    queryFn: () => financeApi.get<Batch[]>('/payments/batches'),
+  // Open an EPMS invoice the same way the AP list does — iframe tab, keyed
+  // per invoice so it focuses an already-open one.
+  const openInvoice = (inv: { id: string; number: string }) => {
+    const session = token && user ? encodeSession(token, refreshToken ?? '', user) : ''
+    const src = `${EPMS_URL}/invoices/${inv.id}${session ? `#__session=${session}` : ''}`
+    if (!tabs) { window.open(src, '_blank', 'noopener'); return }
+    tabs.getState().openTab({
+      key: `ext:invoice:epms:${inv.id}`, title: inv.number || 'Invoice',
+      kind: 'iframe', src, icon: 'FileText', closable: true,
+    })
+  }
+  const today = new Date().toLocaleDateString('en-CA')  // local YYYY-MM-DD
+  // Batches are paged and sorted by the API (payments._BATCH_SORT); the due
+  // list above stays whole per currency because batch selection needs it all.
+  const [batchPage, setBatchPage] = useState(1)
+  const [batchSort, onBatchSort] = useSort<BatchSortKey>(null, () => setBatchPage(1))
+  const { data: batchResp } = useQuery({
+    queryKey: ['payment-batches', batchPage, batchSort],
+    queryFn: () => {
+      const qs = new URLSearchParams({ limit: String(BATCH_PAGE_SIZE),
+                                       offset: String((batchPage - 1) * BATCH_PAGE_SIZE) })
+      const { sort: key, dir } = sortParams(batchSort)
+      if (key && dir) { qs.set('sort', key); qs.set('dir', dir) }
+      return financeApi.get<{ total: number; items: Batch[] }>(`/payments/batches?${qs}`)
+    },
   })
+  const batches = batchResp?.items ?? []
 
   const flash = (kind: 'ok' | 'err', text: string) => {
     setBanner({ kind, text }); setTimeout(() => setBanner(null), 6000)
@@ -226,17 +281,18 @@ export default function PaymentBatchPage() {
                   <input type="checkbox" checked={allChecked}
                          onChange={(e) => setSelected(e.target.checked ? new Set(due.map((d) => d.doc_id)) : new Set())} />
                 </th>
-                <th className="px-3 py-2 w-40">Document</th>
-                <th className="px-3 py-2 w-28">Submitted</th>
-                <th className="px-3 py-2">Payee</th>
-                <th className="px-3 py-2 w-44">Vendor Inv No</th>
-                <th className="px-3 py-2 w-24">Type</th>
-                <th className="px-3 py-2 w-40 text-right">Amount</th>
+                <SortTh label="Document" sortKey="document" sort={sort} onSort={onSort} className="px-3 py-2 w-40" />
+                <SortTh label="Submitted" sortKey="submitted" sort={sort} onSort={onSort} className="px-3 py-2 w-28" />
+                <SortTh label="Payee" sortKey="payee" sort={sort} onSort={onSort} className="px-3 py-2" />
+                <SortTh label="Vendor Inv No" sortKey="invoice" sort={sort} onSort={onSort} className="px-3 py-2 w-44" />
+                <SortTh label="Due Date" sortKey="due" sort={sort} onSort={onSort} className="px-3 py-2 w-28" />
+                <SortTh label="Type" sortKey="type" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
+                <SortTh label="Amount" sortKey="amount" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-40" />
               </tr>
             </thead>
             <tbody>
               {due.length === 0 && (
-                <tr><td colSpan={7} className="px-3 py-6 text-center text-neutral-400">
+                <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">
                   {dueType === 'claim'
                     ? `No approved ${currency} expense claims awaiting payment.`
                     : `No approved ${currency} payments awaiting a run.`}</td></tr>
@@ -257,8 +313,20 @@ export default function PaymentBatchPage() {
                     {d.submitted_at ? new Date(d.submitted_at).toLocaleDateString() : <span className="text-neutral-300">—</span>}
                   </td>
                   <td className="px-3 py-2">{d.payee}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-neutral-600">{d.vendor_inv_no || <span className="text-neutral-300">—</span>}</td>
-                  <td className="px-3 py-2 text-xs text-neutral-500">{d.doc_kind === 'expense_claim' ? `Claim · ${d.claim_type ?? ''}` : d.doc_kind === 'pa_dir' ? 'Direct PA' : 'PA'}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-neutral-600">
+                    {d.invoices?.length ? d.invoices.map((inv, k) => (
+                      <span key={inv.id}>
+                        {k > 0 && ', '}
+                        <button onClick={() => openInvoice(inv)} className="text-[#085E5E] underline hover:text-[#064A4A]">
+                          {inv.number || 'Invoice'}
+                        </button>
+                      </span>
+                    )) : (d.vendor_inv_no || <span className="text-neutral-300">—</span>)}
+                  </td>
+                  <td className={cn('px-3 py-2 text-xs', d.due_date && d.due_date < today ? 'font-medium text-red-600' : 'text-neutral-600')}>
+                    {d.due_date ? toLocalDate(d.due_date).toLocaleDateString() : <span className="text-neutral-300">—</span>}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-neutral-500">{dueTypeLabel(d)}</td>
                   <td className="px-3 py-2 text-right font-mono">{fmtMoney(d.amount, d.currency)}</td>
                 </tr>
               ))}
@@ -272,11 +340,11 @@ export default function PaymentBatchPage() {
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
               <tr>
-                <th className="px-3 py-2 w-44">Batch</th>
-                <th className="px-3 py-2 w-28">Date</th>
-                <th className="px-3 py-2 w-24">Status</th>
-                <th className="px-3 py-2">Method</th>
-                <th className="px-3 py-2 w-40 text-right">Total</th>
+                <SortTh label="Batch" sortKey="batch_number" sort={batchSort} onSort={onBatchSort} className="px-3 py-2 w-44" />
+                <SortTh label="Date" sortKey="batch_date" sort={batchSort} onSort={onBatchSort} className="px-3 py-2 w-28" />
+                <SortTh label="Status" sortKey="status" sort={batchSort} onSort={onBatchSort} className="px-3 py-2 w-24" />
+                <SortTh label="Method" sortKey="payment_method" sort={batchSort} onSort={onBatchSort} className="px-3 py-2" />
+                <SortTh label="Total" sortKey="total" sort={batchSort} onSort={onBatchSort} align="right" className="px-3 py-2 w-40" />
                 <th className="px-3 py-2 w-24" />
               </tr>
             </thead>
@@ -299,6 +367,8 @@ export default function PaymentBatchPage() {
             </tbody>
           </table>
         </div>
+        <ListPager page={batchPage} pageSize={BATCH_PAGE_SIZE} total={batchResp?.total ?? 0}
+                   noun="batches" onPage={setBatchPage} />
       </div>
 
       {openBatch && (
@@ -472,7 +542,7 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onError }: {
   return (
     <>
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-base font-semibold text-neutral-800">
             {batch ? `Batch ${batch.batch_number}` : 'Batch'}

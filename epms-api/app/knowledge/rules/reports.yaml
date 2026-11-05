@@ -1,0 +1,18 @@
+area: reports
+label: Reports
+covers: >
+  Which reports exist and what the Receiving Report counts.
+rules:
+  - id: report_types
+    asked_as:
+      - 系统有哪些报表？
+      - which reports are there
+    answer: >
+      Reports → Report Centre has {count} exports (CSV): {reports}. The
+      Receiving Report is separate — open it from the Goods Receipts list.
+      Budget figures in detail are on the Budget Dashboard.
+    provenance: derived
+    derive: report_types
+    enforced_in: "epms-api app/api/v1/reports.py router; epms/src/pages/reports/ReportCentrePage.tsx"
+    test:
+      - "tests/test_rule_registry.py::test_report_types_are_the_routers"

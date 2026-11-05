@@ -76,7 +76,7 @@ async def _seed_invoice(test_engine, po, vendor_id, inv_lines, allocs, *, header
         amount = sum((Decimal(str(t)) for _, _, t, _ in inv_lines), Decimal("0"))
         ref = f"INV-PAL-{uuid.uuid4().hex[:4]}x"
         inv = Invoice(
-            internal_ref=ref, vendor_invoice_number="V-123",
+            internal_ref=ref, vendor_invoice_number=f"V-{ref}",
             vendor_id=uuid.UUID(vendor_id), vendor_name="PAL Vendor",
             amount=amount, tax_amount=(amount * Decimal("0.13")).quantize(Decimal("0.01")),
             total_amount=(amount * Decimal("1.13")).quantize(Decimal("0.01")),
@@ -118,7 +118,7 @@ async def test_line_level_allocations_become_lines_worth_the_allocated_amount(ad
         (pl[0], "REDUCING UNION", Decimal("10"), Decimal("19.421"), Decimal("194.21")),
         (pl[1], "FOLDING KNIFE", Decimal("2"), Decimal("28.25"), Decimal("56.50")),
     ]
-    assert out[0]["notes"] == f"{ref} · V-123"
+    assert out[0]["notes"] == f"{ref} · V-{ref}"
 
 
 @pytest.mark.asyncio

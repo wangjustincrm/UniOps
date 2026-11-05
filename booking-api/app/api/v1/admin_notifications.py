@@ -8,17 +8,34 @@ AdminUser permission required (manage_meeting_rooms).
 from __future__ import annotations
 
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import Text, case, cast, func, select
 
 from app.core.deps import SessionDep
+from app.core.list_sort import apply_sort, check_sort
 from app.core.permissions import AdminUser
 from app.models.notification import NotificationLog
 from app.schemas.notification import NotificationListOut, NotificationLogOut
 from app.services.notifications import send_notification
 
 router = APIRouter()
+
+# Notification Log headers -> ORDER BY (the ?sort= whitelist), by what the
+# cell shows: the type as words ("cancelled occurrence" for cancelled_occ —
+# NotificationsPage.tsx TYPE_LABELS), the recipients as their joined text
+# (an empty list shows "—", so it sorts as empty).
+NOTIFICATION_SORTABLE = {
+    "created_at": NotificationLog.created_at,
+    "notif_type": case((NotificationLog.notif_type == "cancelled_occ", "cancelled occurrence"),
+                       else_=func.lower(func.replace(NotificationLog.notif_type, "_", " "))),
+    "recipients": func.nullif(func.lower(cast(NotificationLog.recipients, Text)), "[]"),
+    "status": func.lower(NotificationLog.status),
+    "retry_count": NotificationLog.retry_count,
+    "error": func.nullif(func.lower(NotificationLog.error), ""),
+    "sent_at": NotificationLog.sent_at,
+}
 
 
 @router.get("", response_model=NotificationListOut)
@@ -29,8 +46,11 @@ async def list_notifications(
     notif_type: str | None = Query(default=None),
     limit: int = Query(default=200, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
 ) -> NotificationListOut:
     """List NotificationLog rows with optional status/type filters."""
+    check_sort(sort, NOTIFICATION_SORTABLE)
     clauses = []
     if notif_status is not None:
         clauses.append(NotificationLog.status == notif_status)
@@ -38,12 +58,10 @@ async def list_notifications(
         clauses.append(NotificationLog.notif_type == notif_type)
 
     count_stmt = select(func.count()).select_from(NotificationLog)
-    data_stmt = (
-        select(NotificationLog)
-        .order_by(NotificationLog.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-    )
+    data_stmt = apply_sort(
+        select(NotificationLog), sort, dir, NOTIFICATION_SORTABLE,
+        tiebreak=NotificationLog.id, default=(NotificationLog.created_at.desc(),),
+    ).offset(offset).limit(limit)
     if clauses:
         from sqlalchemy import and_
         count_stmt = count_stmt.where(and_(*clauses))

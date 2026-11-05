@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
 
 from app.core.deps import CurrentUser
+from app.core.list_sort import SortDir, order_sql
 from app.db.base import get_db
 from app.services import jv_validation as svc
 
@@ -45,7 +46,9 @@ async def validation_lines(_: CurrentUser, db: AsyncSession = Depends(get_db),
                            period_to: str = Query(...),
                            rule: str | None = Query(default=None),
                            limit: int = Query(default=200, ge=1, le=2000),
-                           offset: int = Query(default=0, ge=0)):
+                           offset: int = Query(default=0, ge=0),
+                           sort: str | None = Query(default=None),
+                           dir: SortDir = Query(default="asc")):
     """One page of flagged lines. A line appears once per rule it breaks."""
     period_from = _check_period(period_from, "period_from")
     period_to = _check_period(period_to, "period_to")
@@ -53,5 +56,6 @@ async def validation_lines(_: CurrentUser, db: AsyncSession = Depends(get_db),
         raise HTTPException(status_code=422, detail="period_from is after period_to")
     if rule is not None and rule not in svc.RULES:
         raise HTTPException(status_code=422, detail=f"unknown rule {rule!r}")
+    order = order_sql(sort, dir, svc.ROW_SORT, tiebreak=svc.ROW_TIEBREAK)
     return await svc.rows(db, period_from, period_to, rule=rule,
-                          limit=limit, offset=offset)
+                          limit=limit, offset=offset, order=order)

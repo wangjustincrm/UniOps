@@ -54,6 +54,9 @@ export interface ReceivingReportFilters {
   // `downloadFile` take; without it every call site needs a cast.
   [key: string]: string | number | undefined
   date_from?: string
+  // Server-side column sort (GET … ?sort=<key>&dir=asc|desc); omitted = API default order.
+  sort?: string
+  dir?: 'asc' | 'desc'
   date_to?: string
   department_id?: string
   vendor_id?: string
@@ -82,6 +85,9 @@ export const grReportService = {
         department_id: filters.department_id,
         vendor_id: filters.vendor_id,
         search: filters.search,
+        // Same row order as the table on screen.
+        sort: filters.sort,
+        dir: filters.dir,
       },
       `receiving-report-${localDay()}.xlsx`,
     ),

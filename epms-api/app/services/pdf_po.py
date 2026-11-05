@@ -241,10 +241,12 @@ def generate_po_pdf(
     # Free text from the buyer-detail form — escape before handing to Paragraph,
     # which parses its content as mini-XML (unescaped "&"/"<"/">" raise or
     # silently swallow text; see the two escape() sites in this function).
-    if po.incoterms:
+    # Code (picked) + named place (free text), e.g. "FOB Arbuckle, CA".
+    _incoterms = " ".join(x for x in (getattr(po, "incoterms_code", None), po.incoterms) if x)
+    if _incoterms:
         story += [
             Table([[Paragraph("Incoterms", lbl_style),
-                    Paragraph(escape(po.incoterms).replace("\n", "<br/>"), val_style)]],
+                    Paragraph(escape(_incoterms).replace("\n", "<br/>"), val_style)]],
                   colWidths=[25 * mm, W - 25 * mm]),
             Spacer(1, 4 * mm),
         ]

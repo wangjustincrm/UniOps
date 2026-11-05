@@ -1,11 +1,14 @@
 """Server-side OCR endpoint — keeps the Anthropic API key off the client.
 
-POST /api/v1/ocr/{mode}  (mode = invoice | receipt | slip), multipart file upload.
+POST /api/v1/ocr/{mode}  (mode = invoice | receipt | slip | freight_invoice | waybill), multipart file upload.
   invoice — full extraction for PA-DIR (vendor, invoice_no, dates, line_items, totals)
   receipt — simple extraction for EXP/TRV line items (vendor, date, total, tax)
   slip    — pickup-slip extraction for house_account agreement purchases
             (vendor_name, slip_ref, date, amount, tax_amount, total_amount,
              currency)
+  freight_invoice — courier invoice with per-shipment detail for EPMS Freight
+            (header, lines with tracking numbers, tax spread, checks)
+  waybill — tracking number(s) off a courier waybill / label photo
 
 Replaces the previous client-side extraction in oa/src/lib/invoice-parser.ts,
 which exposed VITE_ANTHROPIC_API_KEY in the browser bundle.
@@ -15,7 +18,7 @@ import logging
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
 from app.core.deps import CurrentUserDep
-from app.services import ocr_service
+from app.services import ocr_freight, ocr_service
 
 log = logging.getLogger(__name__)
 
@@ -35,8 +38,9 @@ async def run_ocr(
     file: UploadFile = File(...),
 ):
     """Extract structured data from an uploaded invoice/receipt via Claude vision."""
-    if mode not in ("invoice", "receipt", "slip"):
-        raise HTTPException(status_code=400, detail="mode must be 'invoice', 'receipt' or 'slip'")
+    if mode not in ("invoice", "receipt", "slip", "freight_invoice", "waybill"):
+        raise HTTPException(status_code=400, detail="mode must be 'invoice', 'receipt', 'slip', "
+                                                    "'freight_invoice' or 'waybill'")
 
     content_type = (file.content_type or "").lower()
     if content_type not in SUPPORTED_MIME:
@@ -56,6 +60,10 @@ async def run_ocr(
             return await ocr_service.extract_invoice(data, content_type)
         if mode == "slip":
             return await ocr_service.extract_slip(data, content_type)
+        if mode == "freight_invoice":
+            return await ocr_freight.extract_freight_invoice(data, content_type)
+        if mode == "waybill":
+            return await ocr_freight.extract_waybill(data, content_type)
         return await ocr_service.extract_receipt(data, content_type)
     except RuntimeError as exc:
         # API unavailable / not configured — degrade gracefully (client allows manual entry)

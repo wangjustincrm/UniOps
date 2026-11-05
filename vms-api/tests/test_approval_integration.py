@@ -17,32 +17,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.models.visit import Visit
-from app.services.approval import (
-    access_requires_approval, access_requires_quality_manager,
-    make_visit_title, pick_quality_manager, sync_status_from_approval,
-)
+from app.services.approval import make_visit_title, sync_status_from_approval
 from app.models.visit import AccessArea, VisitStatus
 from tests.conftest import authed_client, make_token, make_user
-
-
-# ── Pure helper unit tests (no DB) ──────────────────────────────────────────-
-
-def test_office_does_not_require_approval():
-    assert access_requires_approval(AccessArea.office) is False
-    assert access_requires_quality_manager(AccessArea.office) is False
-
-
-def test_warehouse_requires_approval_but_not_qm():
-    assert access_requires_approval(AccessArea.warehouse) is True
-    assert access_requires_quality_manager(AccessArea.warehouse) is False
-
-
-@pytest.mark.parametrize("area", [
-    AccessArea.production_gmp, AccessArea.laboratory, AccessArea.all,
-])
-def test_gmp_lab_all_require_both_approval_and_qm(area):
-    assert access_requires_approval(area) is True
-    assert access_requires_quality_manager(area) is True
 
 
 def test_make_visit_title_fits_document_number_column():
@@ -58,28 +35,6 @@ def test_make_visit_title_fits_document_number_column():
 
 def test_make_visit_title_short_is_unchanged():
     assert make_visit_title(first_name="Ann", last_name="Lee", company="Acme") == "VMS Visit — Ann Lee (Acme)"
-
-
-def test_pick_quality_manager_first_active():
-    a, b, c = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
-    roster = [str(a), str(b), str(c)]
-    active = {b, c}        # `a` is deactivated
-    assert pick_quality_manager(roster=roster, active_user_ids=active) == b
-
-
-def test_pick_quality_manager_returns_none_when_roster_empty():
-    assert pick_quality_manager(roster=[], active_user_ids=set()) is None
-
-
-def test_pick_quality_manager_returns_none_when_no_one_active():
-    a = uuid.uuid4()
-    assert pick_quality_manager(roster=[str(a)], active_user_ids=set()) is None
-
-
-def test_pick_quality_manager_skips_malformed_entries():
-    good = uuid.uuid4()
-    roster = ["not-a-uuid", "", str(good)]
-    assert pick_quality_manager(roster=roster, active_user_ids={good}) == good
 
 
 # ── Read-side status sync ───────────────────────────────────────────────────-
@@ -154,23 +109,36 @@ def _payload(visitor_id: str, host_id: str, *, area: str) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_office_visit_bypasses_approval_entirely(requester):
-    """Office visits do not engage approval-api; status stays at confirmed
-    and approval_status stays NULL."""
+async def test_zone_without_managers_needs_no_approval(requester):
+    """A zone with no managers (every seeded zone until an admin sets them)
+    does not engage approval-api: the visit is confirmed on booking."""
     user, client = requester
     visitor = await _make_visitor(client)
-    resp = await client.post(
-        "/api/v1/visits", json=_payload(visitor, str(user.id), area="office"),
-    )
-    assert resp.status_code == 201
-    body = resp.json()
-    assert body["status"] == "confirmed"
-    assert body["approval_status"] is None
+    for area in ("office", "warehouse", "production_gmp"):
+        resp = await client.post(
+            "/api/v1/visits", json=_payload(visitor, str(user.id), area=area),
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["status"] == "confirmed", area
+        assert body["approval_status"] is None
+        assert body["zone_approver_ids"] == []
 
 
 @pytest.mark.asyncio
-async def test_warehouse_visit_goes_through_approval_no_qm(requester):
-    """Warehouse triggers approval-api submit but no Quality Manager pre-assignment."""
+async def test_zone_with_managers_goes_through_approval(test_engine, requester, zone_managers):
+    """Every active manager of the zone is snapshotted onto the visit for the
+    Zone Manager step BEFORE the submit; a deactivated one is left out."""
+    m1 = await make_user(test_engine, role="auditor")  # any role can manage a zone
+    m2 = await make_user(test_engine, role="opm")
+    gone = await make_user(test_engine, role="requester")
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        from app.models.user_mirror import User
+        (await db.get(User, gone.id)).is_active = False
+        await db.commit()
+    await zone_managers("warehouse", [m1.id, gone.id, m2.id])
+
     user, client = requester
     visitor = await _make_visitor(client)
     resp = await client.post(
@@ -180,40 +148,119 @@ async def test_warehouse_visit_goes_through_approval_no_qm(requester):
     body = resp.json()
     assert body["status"] == "pending_approval"
     assert body["approval_status"] == "submitted"   # stub flipped draft→submitted
-    assert body["quality_approver_id"] is None
+    assert sorted(body["zone_approver_ids"]) == sorted([str(m1.id), str(m2.id)])
     assert body["visit_title"].startswith("VMS Visit — Approval")
 
 
 @pytest.mark.asyncio
-async def test_gmp_visit_pre_assigns_quality_manager(test_engine, requester):
-    """GMP visit picks a QM from `vms_config.quality_manager_user_ids` and
-    writes it to `quality_approver_id` BEFORE submitting."""
-    # Seed the roster with one user.
-    qm_user = await make_user(test_engine, role="auditor")  # any role works as a QM
-    # Set the roster via the admin API — needs an admin caller.
-    admin_user = await make_user(test_engine, role="system_admin")
-    async with authed_client(make_token(admin_user.id, "system_admin")) as ac:
-        await ac.put(
-            "/api/v1/admin/quality-managers",
-            json={"user_ids": [str(qm_user.id)]},
-        )
+async def test_zone_whose_managers_all_left_blocks_instead_of_skipping(
+    test_engine, requester, zone_managers,
+):
+    """Managers configured but none active: the visit must NOT book without
+    approval — it stays Pending Approval (draft) with an error to act on."""
+    gone = await make_user(test_engine, role="requester")
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        from app.models.user_mirror import User
+        (await db.get(User, gone.id)).is_active = False
+        await db.commit()
+    await zone_managers("laboratory", [gone.id])
 
-    # Now a requester creates a GMP visit.
     user, client = requester
     visitor = await _make_visitor(client)
     resp = await client.post(
-        "/api/v1/visits", json=_payload(visitor, str(user.id), area="production_gmp"),
+        "/api/v1/visits", json=_payload(visitor, str(user.id), area="laboratory"),
     )
     assert resp.status_code == 201, resp.text
     body = resp.json()
     assert body["status"] == "pending_approval"
-    assert body["approval_status"] == "submitted"
-    assert body["quality_approver_id"] == str(qm_user.id)
+    assert body["approval_status"] == "draft"
+    assert "No active manager" in body["approval_submit_error"]
 
 
 @pytest.mark.asyncio
-async def test_cancel_pending_approval_cascades_to_engine(test_engine, requester):
+async def test_unknown_or_retired_zone_is_refused(test_engine, requester):
+    user, client = requester
+    visitor = await _make_visitor(client)
+    resp = await client.post(
+        "/api/v1/visits", json=_payload(visitor, str(user.id), area="nowhere"),
+    )
+    assert resp.status_code == 422
+
+    admin = await make_user(test_engine, role="system_admin")
+    async with authed_client(make_token(admin.id, "system_admin")) as ac:
+        z = (await ac.post("/api/v1/admin/zones", json={"name": f"Old Shed {uuid.uuid4().hex[:4]}"})).json()
+        assert (await ac.patch(f"/api/v1/admin/zones/{z['id']}", json={"is_active": False})).status_code == 200
+    resp = await client.post(
+        "/api/v1/visits", json=_payload(visitor, str(user.id), area=z["code"]),
+    )
+    assert resp.status_code == 422
+    # A retired zone still shows on area-rules, so old visits keep their label.
+    rules = {r["area"]: r for r in (await client.get("/api/v1/area-rules")).json()}
+    assert rules[z["code"]]["is_active"] is False
+
+
+@pytest.mark.asyncio
+async def test_zone_manager_can_open_the_visit(test_engine, requester, zone_managers):
+    """A zone manager with no other claim on the visit can open it from the
+    task-inbox deep link; a stranger cannot."""
+    manager = await make_user(test_engine, role="requester")
+    stranger = await make_user(test_engine, role="requester")
+    await zone_managers("warehouse", [manager.id])
+    user, client = requester
+    visitor = await _make_visitor(client)
+    created = (await client.post(
+        "/api/v1/visits", json=_payload(visitor, str(user.id), area="warehouse"),
+    )).json()
+    async with authed_client(make_token(manager.id, "requester")) as mc:
+        assert (await mc.get(f"/api/v1/visits/{created['id']}")).status_code == 200
+        listed = (await mc.get("/api/v1/visits", params={"page_size": 100})).json()
+        assert created["id"] in {v["id"] for v in listed["items"]}
+    async with authed_client(make_token(stranger.id, "requester")) as sc:
+        assert (await sc.get(f"/api/v1/visits/{created['id']}")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_confirmed_visit_may_only_move_to_a_zone_its_approvers_cover(
+    test_engine, requester, zone_managers,
+):
+    m1 = await make_user(test_engine, role="requester")
+    m2 = await make_user(test_engine, role="requester")
+    await zone_managers("warehouse", [m1.id])
+    user, client = requester
+    visitor = await _make_visitor(client)
+    created = (await client.post(
+        "/api/v1/visits", json=_payload(visitor, str(user.id), area="warehouse"),
+    )).json()
+    await _force_approve(test_engine, created["id"])
+
+    # Same manager owns the GMP zone → no new approval needed.
+    await zone_managers("production_gmp", [m1.id])
+    ok = await client.patch(f"/api/v1/visits/{created['id']}", json={"access_area": "production_gmp"})
+    assert ok.status_code == 200, ok.text
+    # Somebody new in charge of the lab → refused.
+    await zone_managers("laboratory", [m1.id, m2.id])
+    refused = await client.patch(f"/api/v1/visits/{created['id']}", json={"access_area": "laboratory"})
+    assert refused.status_code == 409
+    # A zone without managers → always fine.
+    down = await client.patch(f"/api/v1/visits/{created['id']}", json={"access_area": "office"})
+    assert down.status_code == 200
+
+
+async def _force_approve(test_engine, visit_id: str) -> None:
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        row = (await db.execute(select(Visit).where(Visit.id == uuid.UUID(visit_id)))).scalar_one()
+        row.approval_status = "approved"
+        row.status = VisitStatus.confirmed
+        row.host_notified_at = datetime.now(timezone.utc)
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_cancel_pending_approval_cascades_to_engine(test_engine, requester, zone_managers):
     """Cancelling a pending-approval visit flips both status and approval_status."""
+    await zone_managers("warehouse", [(await make_user(test_engine)).id])
     user, client = requester
     visitor = await _make_visitor(client)
     created = (
@@ -238,9 +285,10 @@ async def test_cancel_pending_approval_cascades_to_engine(test_engine, requester
 
 
 @pytest.mark.asyncio
-async def test_print_badge_blocked_while_pending_approval(requester):
+async def test_print_badge_blocked_while_pending_approval(test_engine, requester, zone_managers):
     """Verifies the existing pending_approval gate on print-badge still
     works now that visits can naturally enter that state via approval."""
+    await zone_managers("warehouse", [(await make_user(test_engine)).id])
     user, client = requester
     visitor = await _make_visitor(client)
     created = (
@@ -258,37 +306,47 @@ async def test_print_badge_blocked_while_pending_approval(requester):
 
 
 @pytest.mark.asyncio
-async def test_admin_quality_manager_roster_get_and_put(test_engine):
-    """PUT replaces atomically; subsequent GET reflects the change.
-
-    We don't assert anything about the initial roster state — other tests in
-    the session may have populated it. Both PUT calls in this test do explicit
-    overwrites, so the assertions don't depend on starting state.
-    """
+async def test_admin_zone_crud(test_engine):
     admin = await make_user(test_engine, role="system_admin")
-    a, b = uuid.uuid4(), uuid.uuid4()
-
+    m = await make_user(test_engine, role="requester")
+    tag = uuid.uuid4().hex[:4]
     async with authed_client(make_token(admin.id, "system_admin")) as ac:
-        # Empty out first so the next assertions are deterministic.
-        await ac.put("/api/v1/admin/quality-managers", json={"user_ids": []})
-        empty = await ac.get("/api/v1/admin/quality-managers")
-        assert empty.status_code == 200
-        assert empty.json()["user_ids"] == []
+        listed = (await ac.get("/api/v1/admin/zones")).json()
+        assert {"office", "warehouse", "all"} <= {z["code"] for z in listed}
 
-        # Replace with two ids.
-        resp = await ac.put(
-            "/api/v1/admin/quality-managers",
-            json={"user_ids": [str(a), str(b)]},
-        )
-        assert resp.status_code == 200
-        assert sorted(resp.json()["user_ids"]) == sorted([str(a), str(b)])
+        created = await ac.post("/api/v1/admin/zones", json={
+            "name": f"Cold Room {tag}", "gmp_grade": True, "manager_ids": [str(m.id)],
+        })
+        assert created.status_code == 201, created.text
+        z = created.json()
+        assert z["code"] == f"cold_room_{tag}"
+        assert [x["id"] for x in z["managers"]] == [str(m.id)]
+
+        dup = await ac.post("/api/v1/admin/zones", json={"name": f"cold room {tag}"})
+        assert dup.status_code == 409
+
+        # Rename keeps the code; clearing managers makes it approval-free.
+        upd = (await ac.patch(f"/api/v1/admin/zones/{z['id']}", json={
+            "name": f"Cold Room {tag} B", "manager_ids": [],
+        })).json()
+        assert upd["code"] == z["code"] and upd["managers"] == []
+
+        bad = await ac.patch(f"/api/v1/admin/zones/{z['id']}", json={"manager_ids": [str(uuid.uuid4())]})
+        assert bad.status_code == 422
+
+        assert (await ac.delete(f"/api/v1/admin/zones/{z['id']}")).status_code == 204
+
+        # A zone in use cannot be deleted.
+        office = next(x for x in listed if x["code"] == "office")
+        requester_user = await make_user(test_engine)
+        async with authed_client(make_token(requester_user.id, "requester")) as rc:
+            vid = await _make_visitor(rc)
+            await rc.post("/api/v1/visits", json=_payload(vid, str(requester_user.id), area="office"))
+        assert (await ac.delete(f"/api/v1/admin/zones/{office['id']}")).status_code == 409
 
 
 @pytest.mark.asyncio
-async def test_non_admin_cannot_set_roster(requester):
+async def test_non_admin_cannot_manage_zones(requester):
     _, client = requester
-    resp = await client.put(
-        "/api/v1/admin/quality-managers",
-        json={"user_ids": [str(uuid.uuid4())]},
-    )
-    assert resp.status_code == 403
+    assert (await client.post("/api/v1/admin/zones", json={"name": "X"})).status_code == 403
+    assert (await client.get("/api/v1/admin/zones")).status_code == 403

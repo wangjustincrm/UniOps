@@ -6,10 +6,11 @@
  * NC posted JV period debit (via /gl/budget-actual-grid); budget = budget-api
  * current approved plan. Read-only; each actual drills into its composing vouchers.
  */
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -87,7 +88,13 @@ export default function BudgetActualPage() {
       `/gl/budget-actual-grid?period=${period}&include_unposted=${includeUnposted}`),
   })
 
-  const unmapped = useMemo(() => data?.unmapped ?? [], [data])
+  // The exceptions list: one plain row per account x NC cost center, whole.
+  const unmappedSort = useSortableRows(data?.unmapped, {
+    account: (u) => u.account_code, nc_cc: (u) => u.nc_cc_code,
+    income_expense: (u) => u.income_expense_code, actual: (u) => Number(u.actual),
+    lines: (u) => u.line_count,
+  })
+  const unmapped = unmappedSort.rows
 
   const onJvActed = () => {
     qc.invalidateQueries({ queryKey: ['account-balance'] })
@@ -250,11 +257,11 @@ export default function BudgetActualPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-neutral-100 text-xs text-neutral-500">
-                      <th className="px-3 py-2 text-left font-medium">Account</th>
-                      <th className="px-3 py-2 text-left font-medium">NC Cost Center</th>
-                      <th className="px-3 py-2 text-left font-medium">Income / Expense</th>
-                      <th className="px-3 py-2 text-right font-medium">Actual</th>
-                      <th className="px-3 py-2 text-right font-medium">Lines</th>
+                      <SortTh label="Account" sortKey="account" sort={unmappedSort.sort} onSort={unmappedSort.onSort} className="px-3 py-2 font-medium text-left" />
+                      <SortTh label="NC Cost Center" sortKey="nc_cc" sort={unmappedSort.sort} onSort={unmappedSort.onSort} className="px-3 py-2 font-medium text-left" />
+                      <SortTh label="Income / Expense" sortKey="income_expense" sort={unmappedSort.sort} onSort={unmappedSort.onSort} className="px-3 py-2 font-medium text-left" />
+                      <SortTh label="Actual" sortKey="actual" sort={unmappedSort.sort} onSort={unmappedSort.onSort} align="right" className="px-3 py-2 font-medium" />
+                      <SortTh label="Lines" sortKey="lines" sort={unmappedSort.sort} onSort={unmappedSort.onSort} align="right" className="px-3 py-2 font-medium" />
                       <th className="px-3 py-2 w-20"></th>
                     </tr>
                   </thead>

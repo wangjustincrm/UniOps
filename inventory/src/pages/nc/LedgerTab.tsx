@@ -5,10 +5,10 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { Badge } from '@uniops/shell'
+import { Badge, SortTh, sortParams, useSort } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import { formatMoney, formatQty, isNegative } from '@/lib/number'
-import { ncApi, type LedgerAccountRow, type LedgerRow } from './ncApi'
+import { ncApi, type LedgerAccountRow, type LedgerRow, type LedgerSort } from './ncApi'
 import { EmptyRow, ErrorBox, LoadingRows, Pager, Uom, tableWrapCls, thCls } from './NcUi'
 import { usePageFor } from './usePageFor'
 import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
@@ -140,19 +140,22 @@ export function LedgerTab({ date, classCode, search, includeUnposted, onIncludeU
   onIncludeUnposted: (v: boolean) => void
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set())
-  const [page, setPage] = usePageFor(JSON.stringify([date, classCode, search, includeUnposted]))
+  const [sortState, onSort] = useSort<LedgerSort>()
+  const [page, setPage] = usePageFor(JSON.stringify([date, classCode, search, includeUnposted, sortState]))
 
   const q = useQuery({
-    queryKey: ['nc', 'ledger', date, classCode, search, includeUnposted, page],
+    queryKey: ['nc', 'ledger', date, classCode, search, includeUnposted, sortState, page],
     queryFn: () => ncApi.ledger({
       date, class_code: classCode || undefined, search: search || undefined,
-      include_unposted: includeUnposted, page, page_size: PAGE_SIZE,
+      include_unposted: includeUnposted, ...sortParams(sortState), page, page_size: PAGE_SIZE,
     }),
     placeholderData: keepPreviousData,
   })
   const data = q.data
   const showAmt = data?.amounts_visible ?? false
   const cols = showAmt ? 5 : 4
+  // The API ignores an amount sort when amounts are hidden (default order).
+  const sort = sortState?.key === 'amount' && !showAmt ? null : sortState
 
   function toggle(key: string) {
     setExpanded((cur) => {
@@ -189,10 +192,10 @@ export function LedgerTab({ date, classCode, search, includeUnposted, onIncludeU
             <thead className={stickyHeadCls}>
               <tr>
                 <th className="w-8 px-2 py-2" aria-label="Expand" />
-                <th className="px-3 py-2 text-left">Account</th>
-                <th className="px-3 py-2 text-left">Material</th>
-                <th className="px-3 py-2 text-right">Qty</th>
-                {showAmt && <th className="px-3 py-2 text-right">Amount</th>}
+                <SortTh label="Account" sortKey="account" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
+                <SortTh label="Material" sortKey="material" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
+                <SortTh label="Qty" sortKey="qty" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
+                {showAmt && <SortTh label="Amount" sortKey="amount" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />}
               </tr>
             </thead>
             <tbody>

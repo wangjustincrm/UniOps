@@ -89,6 +89,8 @@ export interface ApiInvoice {
   exception_resolved_by?: string
   exception_resolved_by_name?: string
   exception_resolution?: string
+  // AP's justification (accepted) or vendor instructions (credit_note_requested)
+  exception_resolution_note?: string | null
   notes?: string
   allocations?: InvoiceAllocation[]
   file_name?: string
@@ -114,7 +116,11 @@ export interface ApiInvoice {
   // "agreement" by the backend (epms-api/app/crud/invoice.py) — null before
   // any match. Not the same as `status`; a PO-route invoice keeps match_route
   // "po" even after review/exception handling.
-  match_route?: 'po' | 'agreement' | null
+  // 'freight' = a courier invoice, matched against shipments on the Freight
+  // page (/freight/invoices/:id); epms-api refuses PO/agreement matching on it.
+  // 'direct' = matched to no PO and no agreement (Match → Direct PA); it is
+  // paid by a Direct PA (Payment Applications → Create Direct PA).
+  match_route?: 'po' | 'agreement' | 'freight' | 'direct' | null
   // 1A has no receipt evidence at all: every agreement match is flagged and
   // must carry a reason. This is the escape-hatch health metric Finance watches.
   legacy_settlement?: boolean
@@ -217,12 +223,16 @@ export interface InvoiceFilters {
   po_id?: string
   agreement_id?: string
   search?: string
-  // 'due_date' | '-due_date'. Omit for the server default (newest uploaded
-  // first) — every other caller of this endpoint relies on that order.
+  // Column key of epms-api crud/invoice.py INVOICE_SORTABLE, with `dir`
+  // (the legacy '-due_date' still means descending). Omit for the server
+  // default (newest uploaded first) — every other caller relies on that order.
   sort?: string
+  dir?: 'asc' | 'desc'
   // Past the due date and not yet paid, evaluated against the PLANT's calendar
   // day on the server (the API container runs in UTC).
   overdue?: boolean
+  // po | agreement | freight | direct. 'po' includes legacy rows with no route.
+  route?: 'po' | 'agreement' | 'freight' | 'direct'
   page?: number
   page_size?: number
 }
@@ -265,6 +275,14 @@ export interface InvoiceListResponse {
   total: number
 }
 
+export interface InvoiceDuplicateCheck {
+  duplicate: boolean
+  /** The number has no letter or digit — the upload will be refused. */
+  uncheckable: boolean
+  detail: string | null
+  existing_ref: string | null
+}
+
 export const invoiceService = {
   list: (filters?: InvoiceFilters) =>
     api.get<InvoiceListResponse>('/invoices', filters as Record<string, string | number | boolean | null | undefined>),
@@ -284,6 +302,14 @@ export const invoiceService = {
   create: (body: CreateInvoiceBody) =>
     api.post<ApiInvoice>('/invoices', body),
 
+  // PRD INV-004 — the rule POST /invoices enforces, against every invoice (not
+  // just the ones this user can see). The form's live warning; the server
+  // refuses the upload regardless.
+  duplicateCheck: (vendorId: string, number: string) =>
+    api.get<InvoiceDuplicateCheck>('/invoices/duplicate-check', {
+      vendor_id: vendorId, vendor_invoice_number: number,
+    }),
+
   update: (id: string, body: UpdateInvoiceBody) =>
     api.patch<ApiInvoice>(`/invoices/${id}`, body),
 
@@ -301,6 +327,14 @@ export const invoiceService = {
 
   unmatchGr: (id: string, reason: string) =>
     api.post<ApiInvoice>(`/invoices/${id}/unmatch-gr`, { reason }),
+
+  // Direct PA route: match to no PO and no agreement (same rights as a PO
+  // match), and its reversal (AP only, refused while a live PA lists it).
+  markDirect: (id: string) =>
+    api.post<ApiInvoice>(`/invoices/${id}/mark-direct`, {}),
+
+  unmatchDirect: (id: string, reason: string) =>
+    api.post<ApiInvoice>(`/invoices/${id}/unmatch-direct`, { reason }),
 
   // Candidate POs for allocation (same vendor, open statuses) — authorized by
   // the invoice's match rights, NOT the caller's general PO scope, so task

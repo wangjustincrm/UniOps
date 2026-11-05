@@ -12,7 +12,7 @@ from app.crud.engine import CONDITIONAL_ROLES, _should_skip_step
 
 class _Doc:
     """Stand-in document: nothing on it makes a step skip by itself."""
-    quality_approver_id = None
+    zone_approver_ids: list = []
 
 
 def _skips(role, doc_type="pr", *, director=None, supervisor=None):
@@ -27,8 +27,9 @@ def test_every_annotated_role_can_actually_be_skipped():
     rule was removed and the description was left behind."""
     assert _skips("director", director=None)
     assert _skips("supervisor", supervisor=None)
+    assert _skips("zone_manager", doc_type="vms_visit")
     assert _skips("quality_manager", doc_type="vms_visit")
-    assert set(CONDITIONAL_ROLES) == {"director", "supervisor", "quality_manager"}
+    assert set(CONDITIONAL_ROLES) == {"director", "supervisor", "zone_manager", "quality_manager"}
 
 
 def test_a_role_that_always_runs_is_not_annotated():

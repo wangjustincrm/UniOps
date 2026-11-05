@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import BearerToken, CurrentUser
+from app.core.list_sort import SortDir, order_by
 from app.core.read_authz import authorize_finance_read
 from app.db.base import get_db
 from app.crud import payment as payment_crud
@@ -20,6 +21,7 @@ from app.crud.payment_execute import PaymentPermissionError
 from app.crud.remittance import applied_credit_notes_by_payment
 from app.models.bank import BankAccount
 from app.models.mirrors import ExpenseClaim
+from app.models.payment import PaymentRecord
 from app.models.payment_batch import PaymentBatch, PaymentBatchLine
 from app.models.remittance import SENT
 from app.schemas.payment import PaymentListResponse, PaymentResponse, PaymentSummaryRow
@@ -176,10 +178,13 @@ async def list_payments(
     user: CurrentUser = ...,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
+    sort: str | None = Query(default=None),
+    dir: SortDir = Query(default="asc"),
 ):
     await _authorize_read(db, user)
+    order = order_by(sort, dir, payment_crud.PAYMENT_SORT, tiebreak=(PaymentRecord.id,))
     items, total = await payment_crud.get_all(
-        db, page=page, page_size=page_size, **filters.model_dump())
+        db, page=page, page_size=page_size, order=order, **filters.model_dump())
     status_by_id = await _remittance_status(db, items)
     payee_by_id = await _payee_names(db, items)
     bank_by_id = await _bank_labels(db, items)
@@ -348,13 +353,36 @@ async def list_due(user: CurrentUser, db: AsyncSession = Depends(get_db),
     return await batch_crud.list_due(db, currency=currency)
 
 
-@router.get("/batches", response_model=list[BatchOut])
-async def list_batches(user: CurrentUser, db: AsyncSession = Depends(get_db)):
+# GET /payments/batches click-to-sort whitelist (PaymentBatchPage "Batches").
+_BATCH_SORT = {
+    "batch_number": PaymentBatch.batch_number,
+    "batch_date": PaymentBatch.batch_date,
+    "status": PaymentBatch.status,
+    "payment_method": PaymentBatch.payment_method,
+    "total": PaymentBatch.total,
+}
+
+
+class BatchListOut(BaseModel):
+    total: int
+    items: list[BatchOut]
+
+
+@router.get("/batches", response_model=BatchListOut)
+async def list_batches(user: CurrentUser, db: AsyncSession = Depends(get_db),
+                       limit: int = Query(default=50, ge=1, le=200),
+                       offset: int = Query(default=0, ge=0),
+                       sort: str | None = Query(default=None),
+                       dir: SortDir = Query(default="asc")):
+    """Paged {total, items}. It used to return only the newest 200 batches."""
     await _authorize_read(db, user)
+    order = order_by(sort, dir, _BATCH_SORT, tiebreak=(PaymentBatch.id,)) or \
+        [PaymentBatch.created_at.desc(), PaymentBatch.id]
+    total = (await db.execute(select(sa.func.count()).select_from(PaymentBatch))).scalar_one()
     rows = (await db.execute(
-        select(PaymentBatch).order_by(PaymentBatch.created_at.desc()).limit(200)
+        select(PaymentBatch).order_by(*order).offset(offset).limit(limit)
     )).scalars().all()
-    return rows
+    return {"total": total, "items": list(rows)}
 
 
 @router.get("/batches/{batch_id}")

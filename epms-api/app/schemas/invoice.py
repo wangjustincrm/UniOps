@@ -150,8 +150,19 @@ class SettleWithoutReceiptRequest(BaseModel):
 
 
 class InvoiceExceptionRequest(BaseModel):
-    resolution: str = Field(min_length=1, max_length=30)  # accepted | credit_note_requested
-    note: str | None = None
+    resolution: Literal["accepted", "credit_note_requested"]
+    # Required: the justification (accepted) or the vendor instructions
+    # (credit_note_requested) is the audit record of the decision. The form
+    # always demanded it; the API used to accept a resolution without one.
+    note: str = Field(max_length=4000)
+
+    @field_validator("note")
+    @classmethod
+    def _note_not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("A justification note is required")
+        return v
 
 
 class AssignMatchRequest(BaseModel):
@@ -250,6 +261,7 @@ class InvoiceResponse(BaseModel):
     exception_resolved_by: uuid.UUID | None
     exception_resolved_by_name: str | None
     exception_resolution: str | None
+    exception_resolution_note: str | None = None
     created_at: datetime
     updated_at: datetime
     uploaded_at: datetime | None = None
@@ -278,6 +290,14 @@ class InvoiceResponse(BaseModel):
         return self
 
     model_config = {"from_attributes": True}
+
+
+class InvoiceDuplicateCheckResponse(BaseModel):
+    """GET /invoices/duplicate-check — PRD INV-004, same rule as POST /invoices."""
+    duplicate: bool
+    uncheckable: bool = False      # the number has no letter or digit: upload will be refused
+    detail: str | None = None
+    existing_ref: str | None = None
 
 
 class InvoiceListResponse(BaseModel):

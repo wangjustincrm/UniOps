@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, Search, Warehouse, ArrowUpDown, ClipboardList } from 'lucide-react'
+import { Plus, Search, Warehouse, ClipboardList } from 'lucide-react'
+import { SortTh, sortParams, useSort, type Sort } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
@@ -33,8 +34,10 @@ export function GrStatusBadge({ status }: { status: GrStatus }) {
 
 // ─── Filters ─────────────────────────────────────────────────────────────────
 
-type SortField = 'number' | 'receivedAt' | 'vendor'
-type SortDir = 'asc' | 'desc'
+// GET /gr sort keys (epms-api crud/gr.py SORTABLE).
+type SortField =
+  | 'number' | 'po_number' | 'vendor_name' | 'gr_type' | 'status' | 'received_at'
+  | 'total_value' | 'received_by'
 
 const STATUS_FILTERS: { value: GrStatus | 'all'; label: string }[] = [
   { value: 'all',                label: 'All' },
@@ -53,14 +56,16 @@ export default function GrListPage() {
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<GrStatus | 'all'>('all')
-  const [sortField, setSortField] = useState<SortField>('receivedAt')
-  const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [page, setPage] = useState(1)
+  // Paged by the API, so the API sorts; a new order starts again at page 1.
+  // Opens on Received Date ↓ (unreceived rows last).
+  const [sort, onSort] = useSort<SortField>({ key: 'received_at', dir: 'desc' }, () => setPage(1))
   const [pageSize, setPageSize] = useState(20)
 
   const { data, isLoading } = useGrs({
     search: search || undefined,
     status: statusFilter !== 'all' ? statusFilter : undefined,
+    ...sortParams(sort),
     page,
     page_size: pageSize,
   })
@@ -69,19 +74,6 @@ export default function GrListPage() {
 
   // Requesters can create service GRs (type 4 PO service confirmation)
   const canCreate = ['warehouse_staff', 'procurement_officer', 'procurement_manager', 'system_admin', 'requester'].includes(user?.role ?? '')
-
-  const toggleSort = (field: SortField) => {
-    if (sortField === field) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
-    else { setSortField(field); setSortDir('desc') }
-  }
-
-  const filtered = [...grs].sort((a, b) => {
-    let cmp = 0
-    if (sortField === 'number')     cmp = a.number.localeCompare(b.number)
-    if (sortField === 'receivedAt') cmp = a.received_at.localeCompare(b.received_at)
-    if (sortField === 'vendor')     cmp = a.vendor_name.localeCompare(b.vendor_name)
-    return sortDir === 'asc' ? cmp : -cmp
-  })
 
   return (
     <div className="flex flex-col gap-6">
@@ -137,7 +129,7 @@ export default function GrListPage() {
 
       {/* Table */}
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-        {isLoading || filtered.length === 0 ? (
+        {isLoading || grs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-center">
             <Warehouse className="h-10 w-10 text-neutral-300 mb-3" />
             <p className="text-sm font-medium text-neutral-500">
@@ -149,18 +141,18 @@ export default function GrListPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50">
-                <Th onClick={() => toggleSort('number')} sorted={sortField === 'number'}>GR Number</Th>
-                <Th>PO Reference</Th>
-                <Th onClick={() => toggleSort('vendor')} sorted={sortField === 'vendor'}>Vendor</Th>
-                <Th>Type</Th>
-                <Th>Status</Th>
-                <Th onClick={() => toggleSort('receivedAt')} sorted={sortField === 'receivedAt'}>Received Date</Th>
-                <Th align="right">Total Value</Th>
-                <Th>Received By</Th>
+                <Th label="GR Number" sortKey="number" sort={sort} onSort={onSort} />
+                <Th label="PO Reference" sortKey="po_number" sort={sort} onSort={onSort} />
+                <Th label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} />
+                <Th label="Type" sortKey="gr_type" sort={sort} onSort={onSort} />
+                <Th label="Status" sortKey="status" sort={sort} onSort={onSort} />
+                <Th label="Received Date" sortKey="received_at" sort={sort} onSort={onSort} />
+                <Th label="Total Value" sortKey="total_value" sort={sort} onSort={onSort} align="right" />
+                <Th label="Received By" sortKey="received_by" sort={sort} onSort={onSort} />
               </tr>
             </thead>
             <tbody>
-              {filtered.map((gr, idx) => (
+              {grs.map((gr, idx) => (
                 <GrRow key={gr.id} gr={gr} idx={idx} />
               ))}
             </tbody>
@@ -178,29 +170,22 @@ export default function GrListPage() {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function Th({
-  children, onClick, sorted, align = 'left',
+  label, sortKey, sort, onSort, align = 'left',
 }: {
-  children: React.ReactNode
-  onClick?: () => void
-  sorted?: boolean
+  label: string
+  sortKey: SortField
+  sort: Sort<SortField> | null
+  onSort: (key: SortField) => void
   align?: 'left' | 'right'
 }) {
   return (
-    <th
+    <SortTh
+      label={label} sortKey={sortKey} sort={sort} onSort={onSort} align={align}
       className={cn(
         'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap',
         align === 'right' ? 'text-right' : 'text-left',
-        onClick && 'cursor-pointer hover:text-neutral-700 select-none'
       )}
-      onClick={onClick}
-    >
-      <span className="inline-flex items-center gap-1">
-        {children}
-        {onClick && (
-          <ArrowUpDown className={cn('h-3 w-3', sorted ? 'text-primary-600' : 'text-neutral-300')} />
-        )}
-      </span>
-    </th>
+    />
   )
 }
 

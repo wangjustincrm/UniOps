@@ -103,6 +103,9 @@ async def regenerate_pdf(
     company_name = cfg.name if cfg else "EPMS"
     filename = f"{pa.pa_number}.pdf"
     requester_name, approvals = await approval_signatories(db, "pa", pa_id, pa.created_by)
+    if getattr(pa, "source", None) == "freight":
+        from app.crud.freight import cost_allocations as _cost_allocations
+        pa.cost_allocations = await _cost_allocations(db, pa.id)
     loop = asyncio.get_event_loop()
     pdf_bytes = await loop.run_in_executor(
         None, generate_pa_pdf, pa, company_name,

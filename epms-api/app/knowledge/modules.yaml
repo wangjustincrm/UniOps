@@ -46,8 +46,37 @@ modules:
       - Match a vendor invoice against the order and the receipt
       - Raise a payment application once it is all lined up
       - Record a vendor credit so it is deducted from the next payment to that vendor
+      - Register a courier tracking number and pay the courier's invoice (Freight)
+      - Pay an invoice that has no purchase order or agreement (Direct PA)
     documents: [pr, po, gr, invoice, pa, agreement]
     notes:
+      - >-
+        An invoice with no purchase order or agreement behind it is paid by a
+        Direct PA, which moved here from OA. Either upload it from EPMS →
+        Payment Applications → Create Direct PA → Upload Invoice (it is matched
+        for a Direct PA as it is saved and comes back ticked), or upload it as
+        usual on EPMS → Invoices → Upload Invoice and choose the Direct PA tab on
+        its Match panel. Then EPMS → Payment Applications → Create Direct PA
+        (or the Create Direct PA button on the invoice) takes one or more such
+        invoices of one vendor, with the department it is charged to (your own
+        by default), a cost center of that department, a budget account and the
+        reason. It is approved on the "PA (Direct)" workflow set in Portal →
+        Admin → Approval Workflows, and paid like any other PA.
+      - >-
+        Courier freight (UPS, FedEx, Purolator…) does not go through PR → PO.
+        A buyer registers the tracking number of each pickup with the department
+        / cost center that bears it on EPMS → Freight → Shipments (Register
+        Courier Shipments permission); carriers are set up on Freight →
+        Carriers. The carrier's invoice is uploaded like any other invoice, on
+        EPMS → Invoices → Upload Invoice, by anyone who uploads invoices: when
+        the vendor is a carrier's, the form turns into the courier review by
+        itself (no carrier to choose). The supply-chain person (Match Courier
+        Invoices permission) then matches it. The AI reads
+        every shipment line, the lines are matched to the registered tracking
+        numbers on that invoice's page, unregistered ones and pickup / late fees
+        are assigned by hand, and the matched invoices are paid from EPMS →
+        Payment Applications → New Freight PA, one PA split by cost center. All
+        freight is charged to budget account CRM00204.
       - >-
         A vendor credit (money the vendor owes back — a credit note, or an
         overpayment or duplicate payment they acknowledge) is not an invoice.
@@ -56,6 +85,10 @@ modules:
         automatically, oldest first, from the next payment to that vendor in
         the same currency. A credit-note PDF is uploaded through Upload Invoice,
         which recognises the negative total and switches to Credit Note.
+        To see where a credit went, click it on Vendor Credits: the Usage
+        section lists each payment it was deducted from (payment application,
+        date, batch, amount deducted and cash actually paid). Fully used
+        credits are under the Exhausted tab. Finance roles only.
       - >-
         When the vendor will not issue a credit note — typically they email
         "use invoice #…REV -2,216.15 on your next payment" — use Vendor Credits
@@ -72,6 +105,16 @@ modules:
         goes straight back to the approver who returned it, and the approvals
         given before that stand. The same holds for every kind of document in
         UniOps.
+      - >-
+        Any list in UniOps can be sorted by clicking a column header: once for
+        ascending, again to reverse. On a list that runs over several pages the
+        whole list is sorted, not just the page on screen, and sorting goes
+        back to page 1. Rows with nothing in that column stay at the bottom
+        either way. On requisitions, orders and payment applications, sorting
+        by Status also groups the ones waiting for approval by how far along
+        the approval chain they are, then by approver. Requisitions open newest
+        submitted first, agreements by number and goods receipts by received
+        date, newest first.
 
   - key: oa
     label: OA — Office Automation
@@ -117,6 +160,14 @@ modules:
         straight back to the approver who returned it — the approvals given
         before that stand and are not asked for again.
       - >-
+        Nobody approves their own claim or travel application. When the
+        person who raised it is the only one who holds an approval step — a
+        Department Manager's own claim at the Department Manager step, for
+        example — that step is skipped and the claim goes straight to the next
+        approver; the step shows as skipped, not as approved by them. If every
+        step would be theirs, Submit is refused and an administrator has to
+        change the approval workflow.
+      - >-
         A submitted claim that is stuck with an approver can be chased from the
         claim itself: Approval Status → Send reminder under the pending step
         emails whoever holds that step (their delegate if they are away) and
@@ -136,18 +187,31 @@ modules:
   - key: vms
     label: VMS — Visitor Management
     covers: Visitors coming on site, and the approvals and health checks around it.
-    who: Whoever is hosting a visitor, plus the approvers for the areas being visited.
+    who: Whoever is hosting a visitor, plus the zone managers of the zones being visited.
     typical:
-      - Register a visitor and the areas they need access to
+      - Register a visitor and the zone they need access to
       - Get the visit approved before they arrive
       - Print a badge on the day
+      - Set up access zones and who approves each one (System Admin, VMS Admin → Zones)
     notes:
       - >-
-        The access area decides the route: Office / Lobby is confirmed at
-        once; Warehouse and non-GMP production need the Department Manager;
-        GMP, Laboratory and Entire Plant also need the Quality Manager, and
-        every visitor needs a passing health declaration before the badge
-        prints.
+        The access zone decides the route. Zones, and who manages each, are
+        set by a System Admin in VMS Admin → Zones — the booking page lists
+        the current ones, so name a zone only as the person picked it. A zone
+        with no zone managers needs no approval: the visit is confirmed when
+        booked. A zone with zone managers goes through the VMS visit approval
+        workflow (its steps are set in Portal → Admin → Approval Workflows);
+        at its Zone Manager step every manager of that zone gets the task and
+        any one of them can approve. If none of a zone's managers is still
+        active, the visit stays Pending Approval until an admin updates the
+        zone and it is submitted again. A zone marked GMP-grade also needs a
+        passing health declaration for every visitor before the badge prints.
+      - >-
+        Who approves is fixed when the visit is submitted: changing a zone's
+        managers afterwards does not move a visit already waiting for
+        approval. A confirmed visit can only be moved to a zone that needs no
+        approval or whose managers already had it; otherwise cancel it and
+        book again.
       - >-
         A visit an approver returns for edit comes back to its Host or the
         person who booked it: open the visit, use Edit visit, then Submit for
@@ -164,8 +228,11 @@ modules:
     typical:
       - Execute approved payments and issue remittance advice
       - Reconcile accounts payable against what EPMS says is owed
+      - Send AP invoices to NC as saved payable bills, and see which NC payable document each invoice already has (Finance → Accounts Payable → Push to NC, NC AP Doc column)
+      - Look up the exchange rate a document of a given date takes, fetch Bank of Canada rates, or set a day's rate by hand (Finance → Exchange Rates)
       - Find an invoice keyed into NC more than once, before the extra copy is approved or paid
-      - Post and review journal vouchers
+      - Look up NC's journal vouchers and their lines (the list shows NC's vouchers only — UniOps does not book its own)
+      - List every voucher line for a period with each auxiliary (department, income-expense item, cost centre, party, item…) in its own column, sort by any column, and export it to CSV in that order for analysis (Finance → JV Detail)
       - Find a voucher across several months, or by the item, project or party it was booked against
       - See who prepared, checked and posted a voucher in NC, and whether it was cancelled
       - Reconcile a bank statement against the ledger and sign the period off (a USD or CNY account reconciles in its own currency, not in CAD)
@@ -182,8 +249,13 @@ modules:
         otherwise lists only payments already made. The banner links to
         Payment Batches, whose due list can be narrowed to Expense Claim (or
         PA / Direct PA) with a count on each; clicking a claim number opens the
-        claim. Travel Applications are not listed there and cannot be paid —
-        they carry no money.
+        claim, and clicking a PA's vendor invoice number opens that invoice.
+        The Due Date column is the earliest due date among the PA's invoices,
+        shown in red once it has passed; claims have none. Every column header
+        sorts the list — click once for ascending, again to reverse — so the
+        oldest due date or the largest amount can be brought to the top; rows
+        with no value in that column stay at the bottom. Travel Applications
+        are not listed there and cannot be paid — they carry no money.
       - >-
         Bank reconciliation counts unposted vouchers (ones NC has not tallied
         yet) on the ledger side by default — "Include unposted vouchers" at the
@@ -194,6 +266,38 @@ modules:
         cleared group still holds an unposted line (unmatch it first). A period
         signed off before this change stays on posted vouchers only. Vouchers NC
         has discarded or deleted are never counted.
+      - >-
+        Push to NC (Finance → Accounts Payable) replaced the Excel "Export to
+        NC" file. Tick invoices and click Push to NC: each one becomes its own
+        payable bill in NC, in saved state, with the person who clicked as the
+        bill maker — their ERP ID on their UniOps user must match an NC user.
+        The AP clerk then checks, approves and makes the voucher in NC as
+        before. The NC summary is the PO number and title (several POs: the PO
+        numbers only), the agreement number and title, or for a Direct invoice
+        the PA number and title; a courier bill is "Freight" plus its invoice
+        number. A foreign-currency invoice takes the Bank of Canada rate of its
+        issue date (a weekend or holiday: the previous business day). An
+        invoice with more than one tax rate becomes one row per rate. Pushing
+        the same invoice again replaces the NC bill while it is still saved;
+        once approved in NC it is refused and must be changed in NC. An
+        invoice already keyed into NC by hand is not pushed again. The NC AP
+        Doc column shows the NC bill number and whether it is saved or
+        approved (from the hourly NC sync); "Hide in NC" hides invoices NC
+        already has. Invoice numbers are compared ignoring case, spaces and
+        hyphens; a bill found only by dropping the hyphens is marked
+        "Hyphens ignored" with NC's own number, to check it is the same
+        invoice. Invoices on a PO imported from NC (type 1, raw material and
+        packaging) are tagged "NC flow" and cannot be ticked: NC creates
+        that payable itself from its purchase invoice, so they are never
+        pushed, and "Hide in NC" hides them too. A push is refused, with the reason shown, when there is
+        no exchange rate, the vendor has no ERP ID, or the issue date is after
+        the entry or due date (day and month probably swapped).
+      - >-
+        Finance → Exchange Rates holds every rate the system uses: Bank of
+        Canada daily averages, fetched each business day after BoC publishes,
+        plus any rate a finance manager typed in (marked Manual, with a note,
+        and never overwritten by the daily fetch). The rate a document gets is
+        the one of its own date, else the latest within the week before it.
       - >-
         A vendor's invoice number must be unique (vendor name + invoice
         number), and NC itself does not check it. Finance → AP Duplicate

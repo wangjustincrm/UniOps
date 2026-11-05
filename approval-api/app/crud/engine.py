@@ -341,6 +341,23 @@ def _ob_step_waived(node: dict, cfg_mode: str) -> str | None:
             f"mode changed to {_OB_MODE_LABELS.get(cfg_mode, cfg_mode)})")
 
 
+def workflow_key(doc_type: str, doc: Any) -> str:
+    """Which workflow_defs chain a document walks.
+
+    The chain key is the document type, except for a Freight PA and an EPMS
+    Direct PA: each stays a `pa` document — its tasks, events, signatories,
+    inbox links and task liveness are all `pa`'s — but walks its own chain:
+    `pa_frt` (OPM → GM → Finance Manager → Finance BP by default) or `pa_dir`
+    (Finance BP → Finance Manager by default — the "PA (Direct)" workflow OA's
+    retired Direct PA used). Admins edit both in Portal.
+    """
+    if doc_type == "pa" and getattr(doc, "source", None) == "freight":
+        return "pa_frt"
+    if doc_type == "pa" and getattr(doc, "source", None) == "direct":
+        return "pa_dir"
+    return doc_type
+
+
 async def build_effective_workflow(
     db: AsyncSession, doc_type: str, doc: Any, cfg: CompanyConfig | None,
     *, ob_mode: str | None = None,
@@ -350,7 +367,7 @@ async def build_effective_workflow(
     (`ob_mode` overrides it — the submit path passes the mode being frozen).
     Optional supervisor/director nodes stay in the list (skip is decided per-step
     at execution/render time)."""
-    workflow = await _get_workflow(db, doc_type)
+    workflow = await _get_workflow(db, workflow_key(doc_type, doc))
     if doc_type != "pr":
         return workflow
     mode = ob_mode
@@ -396,6 +413,17 @@ _WORKFLOW_DEFAULTS: dict[str, list[dict]] = {
         {"id": "finance_bp",   "role": "finance_bp",     "label": "Finance BP"},
         {"id": "finance_mgr",  "role": "finance_manager", "label": "Finance Manager"},
     ],
+    # Courier freight PA (epms-api Freight): a document of type `pa`, walked
+    # through this chain instead of `pa`'s (workflow_key). The invoice spans
+    # several departments, so no step may resolve by department: OPM and GM are
+    # separate plain roles here, never gm_or_opm (which would always land on
+    # the GM for a document without a single department).
+    "pa_frt": [
+        {"id": "opm",         "role": "opm",             "label": "Operations Manager"},
+        {"id": "gm",          "role": "gm",              "label": "General Manager"},
+        {"id": "finance_mgr", "role": "finance_manager", "label": "Finance Manager"},
+        {"id": "finance_bp",  "role": "finance_bp",      "label": "Finance BP"},
+    ],
     "pa_dir": [
         {"id": "finance_bp",  "role": "finance_bp",      "label": "Finance BP"},
         {"id": "finance_mgr", "role": "finance_manager", "label": "Finance Manager"},
@@ -425,13 +453,39 @@ _WORKFLOW_DEFAULTS: dict[str, list[dict]] = {
         {"id": "finance_mgr",    "role": "finance_manager", "label": "Finance Manager"},
     ],
     "vms_visit": [
-        # Default single-step. Admin adds a `quality_manager` step (W11 UI)
-        # for GMP / Laboratory zones; vms-api resolves the actual user from
-        # `vms_config.quality_manager_user_ids` and stores the chosen UUID
-        # on `vms_visits.quality_approver_id` at submit time.
+        # Default single-step. Admin adds a `zone_manager` step (Portal →
+        # Approval Workflows); vms-api snapshots the visit's zone managers
+        # onto `vms_visits.zone_approver_ids` at submit time.
         {"id": "dept_manager", "role": "dept_manager", "label": "Department Manager"},
     ],
 }
+
+
+# ── VMS Zone Manager step ─────────────────────────────────────────────────────
+#
+# Routed to every manager of the visit's access zone (VMS Admin → Zones), as
+# snapshotted by vms-api on `vms_visits.zone_approver_ids` at submit: one task
+# each, the first to act decides (_complete_tasks closes the rest). No managers
+# → the step auto-skips. "quality_manager" is the step's pre-2026-10 name (one
+# VMS-wide Quality Manager): workflows saved before then, and tasks already
+# open, still carry it, so it means the same thing.
+_ZONE_ROLES = frozenset({"zone_manager", "quality_manager"})
+
+
+def _zone_approver_ids(doc: Any) -> list[uuid.UUID]:
+    out: list[uuid.UUID] = []
+    for raw in getattr(doc, "zone_approver_ids", None) or []:
+        try:
+            uid = uuid.UUID(str(raw))
+        except (ValueError, TypeError):
+            continue
+        if uid not in out:
+            out.append(uid)
+    return out
+
+
+def _is_zone_step(role: str, doc_type: str) -> bool:
+    return role in _ZONE_ROLES and doc_type == "vms_visit"
 
 
 # ── Dept manager lookup ───────────────────────────────────────────────────────
@@ -508,16 +562,35 @@ async def _actor_is_step_holder(
     role was not recognised at gm_or_opm whenever the real GM sorted first, so
     the skip never fired and they had to approve the same document twice.
     """
-    if step_role == "quality_manager":
-        if doc is None:
-            return False
-        expected = getattr(doc, "quality_approver_id", None)
-        return expected is not None and actor_id == expected
+    return actor_id in await _step_holder_ids(
+        db, step_role, routing_dept_id, rm, dept_gm_opm, finance_bp_ids,
+        doc, director_uid, supervisor_uid, cross_dept_pa)
+
+
+async def _step_holder_ids(
+    db: AsyncSession,
+    step_role: str,
+    routing_dept_id: uuid.UUID | None,
+    rm: dict,
+    dept_gm_opm: dict,
+    finance_bp_ids: set[uuid.UUID],
+    doc: Any | None = None,
+    director_uid: uuid.UUID | None = None,
+    supervisor_uid: uuid.UUID | None = None,
+    cross_dept_pa: bool = False,
+) -> set[uuid.UUID]:
+    """Everyone who holds `step_role` for this document in their own right.
+
+    Membership in this set is what _actor_is_step_holder answers; the set itself
+    is what the claimant skip needs (is the claimant the ONLY one who could act).
+    """
+    if step_role in _ZONE_ROLES:
+        return set(_zone_approver_ids(doc)) if doc is not None else set()
     if step_role == "finance_bp":
-        return actor_id in finance_bp_ids
+        return set(finance_bp_ids)
     if step_role == "dept_manager":
         dept_mgr_id = await _get_dept_manager_id(db, routing_dept_id)
-        return dept_mgr_id is not None and actor_id == dept_mgr_id
+        return {dept_mgr_id} if dept_mgr_id is not None else set()
     if step_role == "gm_or_opm":
         # Resolve which post (gm/opm) this department routes to — same logic as
         # task assignment — then match ANY active holder of that post, not just
@@ -527,20 +600,21 @@ async def _actor_is_step_holder(
         # task is visible to all of them, so all of them must be able to act.
         resolved_role, resolved_user_id = await _resolve_gm_or_opm(
             db, routing_dept_id, rm, dept_gm_opm, cross_dept_pa)
-        if resolved_user_id is not None and actor_id == resolved_user_id:
-            return True
-        return actor_id in await post_holder_ids(db, resolved_role)
+        holders = await post_holder_ids(db, resolved_role)
+        if resolved_user_id is not None:
+            holders.add(resolved_user_id)
+        return holders
     if step_role == "director":
         # Director is resolved per-department (routing_dept_id), not via a
         # collapsed global holder, so a director covering multiple departments
         # already matches on any of their departments' documents.
-        return director_uid is not None and actor_id == director_uid
+        return {director_uid} if director_uid is not None else set()
     if step_role == "supervisor":
-        return supervisor_uid is not None and actor_id == supervisor_uid
+        return {supervisor_uid} if supervisor_uid is not None else set()
     # Named post role (gm/opm/finance_manager/procurement_manager/vendor_manager/
     # finance_director as a direct step): membership in the holder set, not
     # equality to the single collapsed rm['<role>_user_id'].
-    return actor_id in await post_holder_ids(db, step_role)
+    return await post_holder_ids(db, step_role)
 
 
 async def _actor_can_approve(
@@ -561,9 +635,9 @@ async def _actor_can_approve(
     """Return True if the actor is authorized to approve the current workflow step.
 
     `doc` is optional for back-compat (callers pre-S2 don't pass it). The
-    VMS Quality Manager step needs it to read `doc.quality_approver_id`
+    VMS Zone Manager step needs it to read `doc.zone_approver_ids`
     (per-visit assignment is VMS-local — no `role_management` mapping for
-    quality_manager). See S2_ARCHITECTURE_REVIEW.md F2.
+    zone_manager). See S2_ARCHITECTURE_REVIEW.md F2.
 
     `routing_dept_id` is the department that drives dept_manager/gm_or_opm
     routing for this document — the PR's selected department_id, falling back
@@ -593,7 +667,7 @@ async def _actor_can_approve(
     # Fallback: actor's own JWT role must match the step role. Only reachable
     # for a step whose post has NO holders at all — with holders configured,
     # membership above is the authority and a non-holder must stay denied.
-    if step_role in ("quality_manager", "finance_bp", "dept_manager",
+    if step_role in ("zone_manager", "quality_manager", "finance_bp", "dept_manager",
                      "gm_or_opm", "director", "supervisor"):
         return False
     return actor_role == step_role and not await post_holder_ids(db, step_role)
@@ -790,6 +864,13 @@ async def _routing_department_id(
     # 那步落到了协议 Owner / AP 代建人所在部门的经理身上,而不是协议上填的部门。
     # 口径与协议本身(上面的 "agr" 分支)以及可见性(epms-api crud/pa.py::get_all
     # 按 PurchaseAgreement.department_id 收窄 PA 列表)保持一致。
+    # EPMS Direct PA: no PO, no agreement — it names its department itself.
+    # Same column epms-api's visibility scope reads (visible_direct_pa_subquery).
+    if doc_type == "pa" and getattr(doc, "source", None) == "direct":
+        dept = getattr(doc, "department_id", None)
+        if dept:
+            return dept
+
     if doc_type in ("pa", "pa_dir"):
         agr_id = getattr(doc, "agreement_id", None)
         if agr_id:
@@ -1000,10 +1081,12 @@ async def resolve_step_assignment(
         assigned_user_id = director_uid
     elif role == "supervisor":
         assigned_user_id = supervisor_uid
-    elif role == "quality_manager" and doc_type == "vms_visit":
-        # VMS-local: vms-api pre-selected the QM and stored on the visit.
-        # See S2_ARCHITECTURE_REVIEW.md F2.
-        assigned_user_id = getattr(doc, "quality_approver_id", None)
+    elif _is_zone_step(role, doc_type):
+        # VMS-local: vms-api snapshotted the zone's managers onto the visit.
+        # The first is returned here; _create_approve_task gives each manager
+        # a task. See S2_ARCHITECTURE_REVIEW.md F2.
+        ids = _zone_approver_ids(doc)
+        assigned_user_id = ids[0] if ids else None
 
     return assigned_user_id, assigned_role
 
@@ -1051,19 +1134,23 @@ async def _create_approve_task(
             f"Justification: {just_line}"
         )
 
-    db.add(Task(
-        type=meta["task_approve"],
-        priority="normal",
-        document_type=doc_type,
-        document_id=doc.id,
-        document_number=doc_number,
-        assigned_role=assigned_role,
-        assigned_user_id=assigned_user_id,
-        title=f"{labels.get('approve_verb', 'Approve')} {doc_label}: {doc_number} — {doc.title}",
-        description=description,
-        amount=amount,
-        vendor=vendor,
-    ))
+    # A Zone Manager step goes to every manager of the zone, one task each.
+    assignees = (_zone_approver_ids(doc) or [assigned_user_id]
+                 if _is_zone_step(wf["role"], doc_type) else [assigned_user_id])
+    for uid in assignees:
+        db.add(Task(
+            type=meta["task_approve"],
+            priority="normal",
+            document_type=doc_type,
+            document_id=doc.id,
+            document_number=doc_number,
+            assigned_role=assigned_role,
+            assigned_user_id=uid,
+            title=f"{labels.get('approve_verb', 'Approve')} {doc_label}: {doc_number} — {doc.title}",
+            description=description,
+            amount=amount,
+            vendor=vendor,
+        ))
 
 
 async def _create_revise_task(db: AsyncSession, doc_type: str, doc: Any, meta: dict) -> None:
@@ -1311,11 +1398,32 @@ _POST_APPROVE: dict[str, Any] = {
 #
 # Kept next to the rules it describes, and test_workflow_conditional_roles
 # asserts the two do not drift apart.
+# Statuses a submitter may recall a document from (back to draft, starting
+# over). A constant so engine_rules.py states the same tuple the branch checks.
+RECALLABLE_STATUSES = ("submitted", "in_review")
+
 CONDITIONAL_ROLES: dict[str, str] = {
     "director": "Only runs when the department has a Director configured.",
     "supervisor": "Only runs when a Supervisor is assigned.",
-    "quality_manager": ("Only runs when the visitor's access area requires "
-                        "Quality Manager review."),
+    "zone_manager": ("Only runs when the visit's access zone has zone "
+                     "managers configured."),
+    "quality_manager": ("Only runs when the visit's access zone has zone "
+                        "managers configured."),
+}
+
+
+# The payment-application half of the same annotation: on a PA the department
+# steps also step aside when the payment spans several departments (first
+# branch of _should_skip_step). Keyed by role, read only for doc_type "pa";
+# test_workflow_conditional_roles holds it to the skip rule.
+CROSS_DEPT_PA_CONDITIONS: dict[str, str] = {
+    "dept_manager": ("Only runs when all the payment's purchase orders come from one "
+                     "department; a payment covering several departments skips it "
+                     "and is approved at GM/OPM level instead."),
+    "director": ("Only runs when the department has a Director configured and all "
+                 "the payment's purchase orders come from one department; a payment "
+                 "covering several departments skips it and is approved at GM/OPM "
+                 "level instead."),
 }
 
 
@@ -1335,9 +1443,8 @@ def _should_skip_step(role, doc_type, doc, director_uid, supervisor_uid,
     if cross_dept_pa and role in ("dept_manager", "director"):
         return True, ("Auto-skipped (payment covers purchase orders from several "
                       "departments — approved at GM/OPM level instead)")
-    if role == "quality_manager" and doc_type == "vms_visit":
-        if getattr(doc, "quality_approver_id", None) is None:
-            return True, "Auto-skipped (access area does not require Quality Manager review)"
+    if _is_zone_step(role, doc_type) and not _zone_approver_ids(doc):
+        return True, "Auto-skipped (the visit's access zone has no zone managers)"
     if role == "director" and director_uid is None:
         reason = ("Auto-skipped ⚠ configured Director is inactive/missing"
                   if dept_has_director else "Auto-skipped (department has no Director)")
@@ -1362,6 +1469,62 @@ def _step_skip(node, doc_type, doc, director_uid, supervisor_uid,
     return _should_skip_step(node["role"], doc_type, doc, director_uid,
                              supervisor_uid, dept_has_director,
                              dept_has_supervisor, cross_dept_pa)
+
+
+# A claimant never approves their own OA claim (OA.md §7.3; expense-api's
+# can_approve refuses the owner). The engine, unlike that rule, routes by role:
+# a Department Manager's own claim lands its first step on the Department
+# Manager — the claimant — and nobody can move it (TRA-20261020-0001/0002).
+# When the claimant is the ONLY holder of a step, that step is skipped and the
+# next level approves. A step someone else also holds stays with them.
+CLAIMANT_SKIP_REASON = "Auto-skipped (claimant holds this step — cannot approve own claim)"
+MSG_CLAIMANT_HOLDS_EVERY_STEP = (
+    "Cannot submit: every approval step of this claim would be approved by the "
+    "claimant themselves. Ask an administrator to adjust the approval workflow "
+    "(Admin → Approval Workflows) so someone else approves it."
+)
+
+
+async def _claimant_step_skip(db: AsyncSession, doc_type: str, ctx: "ActionContext",
+                              node: dict) -> str | None:
+    """CLAIMANT_SKIP_REASON when the claimant is the sole holder of this step."""
+    if ctx.meta["model"] is not ExpenseClaim:
+        return None
+    claimant = getattr(ctx.doc, "created_by", None)   # = expense_claims.employee_id
+    if claimant is None:
+        return None
+    holders = await _step_holder_ids(
+        db, node["role"], ctx.routing_dept_id, ctx.rm, ctx.dept_gm_opm,
+        {uuid.UUID(u) for u in ctx.rm.get("finance_bp_user_ids", [])},
+        ctx.doc, ctx.director_uid, ctx.supervisor_uid, ctx.cross_dept_pa)
+    return CLAIMANT_SKIP_REASON if holders == {claimant} else None
+
+
+async def submission_landing(
+    db: AsyncSession, doc_type: str, ctx: "ActionContext",
+    workflow: list[dict], start: int,
+) -> tuple[int, list[tuple[int, str, str]], bool]:
+    """first_actionable_step plus the claimant skip — where a submission lands.
+
+    Returns (start, skipped, claimant_skipped). Shared by execution and
+    preflight so the two cannot disagree about it.
+    """
+    skipped: list[tuple[int, str, str]] = []
+    claimant_skipped = False
+    while True:
+        start, cond = first_actionable_step(
+            doc_type, ctx.doc, workflow, ctx.director_uid, ctx.supervisor_uid,
+            ctx.dept_has_director, ctx.dept_has_supervisor, ctx.cross_dept_pa,
+            start=start, cfg_ob_mode=ctx.cfg_ob_mode or None)
+        skipped.extend(cond)
+        if start >= len(workflow):
+            return start, skipped, claimant_skipped
+        reason = await _claimant_step_skip(db, doc_type, ctx, workflow[start])
+        if reason is None:
+            return start, skipped, claimant_skipped
+        skipped.append((start, workflow[start]["role"], reason))
+        claimant_skipped = True
+        start += 1
 
 
 # ── Main execution entry point ────────────────────────────────────────────────
@@ -1514,12 +1677,14 @@ async def preflight_submit(db: AsyncSession, doc_type: str,
     # unconfigured department manager is exactly the kind of thing worth knowing
     # about before you go fix something else and come back.
     sub_workflow = ctx.submit_workflow if ctx.submit_workflow is not None else ctx.workflow
-    start, _skipped = first_actionable_step(
-        doc_type, ctx.doc, sub_workflow, ctx.director_uid, ctx.supervisor_uid,
-        ctx.dept_has_director, ctx.dept_has_supervisor, ctx.cross_dept_pa,
-        start=await submission_start(db, doc_type, ctx, status),
-        cfg_ob_mode=ctx.cfg_ob_mode or None)
-    if start >= len(sub_workflow):
+    start, _skipped, claimant_skipped = await submission_landing(
+        db, doc_type, ctx, sub_workflow, await submission_start(db, doc_type, ctx, status))
+    if claimant_skipped and start >= len(sub_workflow):
+        checks.append(Check(
+            id="approver_routing", layer="config", passed=False,
+            message=MSG_CLAIMANT_HOLDS_EVERY_STEP, fixable_by_user=False, owner="admin",
+        ))
+    elif start >= len(sub_workflow):
         # Whole workflow auto-skips: submission goes straight to approved.
         checks.append(Check(id="approver_routing", layer="config", passed=True))
     else:
@@ -1594,13 +1759,13 @@ async def execute_action(
         if doc_type == "pr":
             # Freeze the over-budget mode this approval run walks — see _ob_prefix.
             doc.ob_mode_applied = ctx.submit_ob_mode
+        start, skipped_prefix, claimant_skipped = await submission_landing(
+            db, doc_type, ctx, workflow, resume_at)
+        if claimant_skipped and start >= len(workflow):
+            raise ValueError(MSG_CLAIMANT_HOLDS_EVERY_STEP)
         _set_status(meta, doc, "submitted")
         if hasattr(doc, "submitted_at"):
             doc.submitted_at = now
-        start, skipped_prefix = first_actionable_step(
-            doc_type, doc, workflow, director_uid, supervisor_uid,
-            dept_has_director, dept_has_supervisor, cross_dept_pa, start=resume_at,
-            cfg_ob_mode=ctx.cfg_ob_mode or None)
         for idx, skipped_role, reason in skipped_prefix:
             db.add(ApprovalEvent(
                 document_type=doc_type, document_id=doc.id, document_number=doc_number,
@@ -1649,7 +1814,8 @@ async def execute_action(
         while next_step < len(workflow):
             next_role = workflow[next_step]["role"]
             # Conditional skip (per-document) — fires before the same-approver
-            # check so non-GMP visits don't even check who holds the QM role.
+            # check so a visit to a zone without managers doesn't even check
+            # who would hold the Zone Manager step.
             # Includes an over-budget step Budget Config has since stopped
             # requiring (FM approved under fm_gm_opm, mode is now fm_only).
             cond_skip, reason = _step_skip(
@@ -1678,6 +1844,17 @@ async def execute_action(
                     step_idx=next_step, action="approve",
                     actor_id=actor_id, actor_role=next_role,
                     comment="Auto-approved (same approver holds both roles)",
+                ))
+                auto_skipped.append(next_step)
+                next_step += 1
+                continue
+            claimant_reason = await _claimant_step_skip(db, doc_type, ctx, workflow[next_step])
+            if claimant_reason:
+                db.add(ApprovalEvent(
+                    document_type=doc_type, document_id=doc.id, document_number=doc_number,
+                    step_idx=next_step, action="approve",
+                    actor_id=actor_id, actor_role=next_role,
+                    comment=claimant_reason,
                 ))
                 auto_skipped.append(next_step)
                 next_step += 1
@@ -1749,7 +1926,7 @@ async def execute_action(
         _set_status(meta, doc, "cancelled" if doc_type in ("pa", "pa_dir") else "rejected")
 
     elif act == "recall":
-        if _status_of(meta, doc) not in ("submitted", "in_review"):
+        if _status_of(meta, doc) not in RECALLABLE_STATUSES:
             raise ValueError(f"Cannot recall {doc_type.upper()} in status '{_status_of(meta, doc)}'")
         if actor_role != "system_admin" and actor_id != doc.created_by:
             raise ValueError(f"Only the submitter can recall this {doc_type.upper()}")
@@ -1872,7 +2049,7 @@ _GM_OPM_ROLES = {"gm", "opm", "gm_or_opm"}
 # set) and resync re-points them to the current resolved person. gm_or_opm is
 # NOT here: gm/opm are singleton posts broadcast by role (assigned_user_id=None),
 # handled by the broadcast branch in resync Case C — same as finance_manager etc.
-_USER_SPECIFIC_ROLES = {"dept_manager", "director", "supervisor", "quality_manager"}
+_USER_SPECIFIC_ROLES = {"dept_manager", "director", "supervisor", "zone_manager", "quality_manager"}
 
 
 def _step_index_for_task_role(workflow: list[dict], task_role: str,
@@ -1908,8 +2085,9 @@ async def _resolved_assignee_for_step(
         return role, director_uid
     if role == "supervisor":
         return role, supervisor_uid
-    if role == "quality_manager" and doc_type == "vms_visit":
-        return role, getattr(doc, "quality_approver_id", None)
+    if _is_zone_step(role, doc_type):
+        ids = _zone_approver_ids(doc)
+        return role, ids[0] if ids else None
     return role, None  # broadcast
 
 
@@ -1977,20 +2155,40 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
 
     # Case A — true step is now skippable: an optional level gone (Director /
     # Supervisor), or an over-budget step Budget Config no longer requires
-    # (mode loosened to fm_only / allow — the FM's task moves on). Advance.
-    skip_now, _r = _step_skip(
-        workflow[true_step], doc_type, doc, director_uid, supervisor_uid,
-        dept_has_director, dept_has_supervisor, cross_dept_pa, cfg_ob_mode)
-    if skip_now:
+    # (mode loosened to fm_only / allow — the FM's task moves on), or an OA
+    # step whose only holder is the claimant (claims submitted before the
+    # claimant skip existed sit there for good). Advance.
+    claim_ctx = (await load_action_context(db, doc_type, doc.id)
+                 if Model is ExpenseClaim else None)
+
+    async def _skip_reason(i: int) -> str | None:
+        sk, reason = _step_skip(
+            workflow[i], doc_type, doc, director_uid, supervisor_uid,
+            dept_has_director, dept_has_supervisor, cross_dept_pa, cfg_ob_mode)
+        if sk:
+            return reason
+        if claim_ctx is not None:
+            return await _claimant_step_skip(db, doc_type, claim_ctx, workflow[i])
+        return None
+
+    if await _skip_reason(true_step):
+        reasons: list[tuple[int, str]] = []
+        while true_step + len(reasons) < len(workflow):
+            reason = await _skip_reason(true_step + len(reasons))
+            if reason is None:
+                break
+            reasons.append((true_step + len(reasons), reason))
+        if (true_step + len(reasons) >= len(workflow)
+                and any(r == CLAIMANT_SKIP_REASON for _, r in reasons)):
+            # Same refusal as submit: never approve a claim with nobody but the
+            # claimant left to approve it.
+            return {"doc_type": doc_type, "number": number, "final_step": _step_of(meta, doc),
+                    "actions": [f"WARN claimant holds every remaining step from step{true_step} "
+                                "— adjust the workflow, then re-sync"]}
         start = true_step
         skipped: list[str] = []
-        while start < len(workflow):
+        for _i, reason in reasons:
             r = workflow[start]["role"]
-            sk, reason = _step_skip(
-                workflow[start], doc_type, doc, director_uid, supervisor_uid,
-                dept_has_director, dept_has_supervisor, cross_dept_pa, cfg_ob_mode)
-            if not sk:
-                break
             db.add(ApprovalEvent(
                 document_type=doc_type, document_id=doc.id, document_number=number,
                 step_idx=start, action="approve", actor_id=routing_uid, actor_role=r,
@@ -2028,7 +2226,22 @@ async def _resync_document(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -
         supervisor_uid, cross_dept_pa)
     role = workflow[true_step]["role"]
     stray = any(_step_index_for_task_role(workflow, t.assigned_role, true_step) != true_step for t in open_tasks)
-    if role in _USER_SPECIFIC_ROLES:
+    if _is_zone_step(role, doc_type):
+        # One task per zone manager: reissue unless the open tasks are exactly
+        # the snapshotted managers.
+        wanted = set(_zone_approver_ids(doc))
+        have = {t.assigned_user_id for t in open_tasks}
+        if not wanted:
+            actions.append(f"WARN {role} has no zone managers @step{true_step} — re-sync after VMS resubmits")
+        elif stray or have != wanted:
+            await _complete_tasks(db, doc_type, doc.id)
+            await _create_approve_task(
+                db, doc_type, doc, step=true_step, workflow=workflow, meta=meta, rm=rm,
+                dept_gm_opm=dept_gm_opm, routing_dept_id=routing_dept_id,
+                director_uid=director_uid, supervisor_uid=supervisor_uid,
+                cross_dept_pa=cross_dept_pa)
+            actions.append(f"reissue step{true_step} -> {role}/{len(wanted)} zone manager(s)")
+    elif role in _USER_SPECIFIC_ROLES:
         if des_uid is None:
             actions.append(f"WARN {role} unresolved @step{true_step} — assign one in config, then re-sync")
         elif stray or not any(t.assigned_user_id == des_uid for t in open_tasks):

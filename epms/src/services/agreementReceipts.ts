@@ -165,6 +165,9 @@ export interface ReceiptListFilters {
 }
 
 export interface ReceiptListAllFilters {
+  // Server-side column sort (GET … ?sort=<key>&dir=asc|desc); omitted = API default order.
+  sort?: string
+  dir?: 'asc' | 'desc'
   agreement_id?: string
   receipt_type?: ReceiptType
   status?: ReceiptStatus

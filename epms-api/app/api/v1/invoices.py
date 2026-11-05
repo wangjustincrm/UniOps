@@ -1,7 +1,8 @@
 """Invoice endpoints."""
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -9,9 +10,15 @@ from sqlalchemy import select
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_permission
 from app.core.access_scope import build_scope, is_agreement_visible
 from uniops_authz import has_permission
+
+from app.core.ontology import sees_agreement_invoices, sees_freight_invoices
 from app.crud import agreement as agreement_crud
 from app.crud import agreement_receipt as agreement_receipt_crud
 from app.crud import invoice as invoice_crud
+from app.crud import po_fee as po_fee_crud
+from app.schemas.po_fee import FeeLinkOut, FeeLinksPut
+from app.crud import invoice_dedup
+from app.crud import attach_receipts_task
 from app.crud import vendor as vendor_crud
 from app.crud.pr_owner import owner_id_of
 from app.models.agreement import PurchaseAgreement
@@ -29,6 +36,7 @@ from app.schemas.invoice import (
     DeclineMatchRequest,
     InvoiceChainResponse,
     InvoiceCreate,
+    InvoiceDuplicateCheckResponse,
     InvoiceExceptionRequest,
     InvoiceListResponse,
     InvoiceMatchRequest,
@@ -50,6 +58,25 @@ router = APIRouter(prefix="/invoices", tags=["invoices"])
 
 ApDep = Annotated[dict, Depends(require_permission("epms.invoice.match"))]
 InvoiceUploadDep = Annotated[dict, Depends(require_permission("invoice_upload"))]
+
+
+def _refuse_freight(inv) -> None:
+    """Courier invoices (match_route='freight') are matched, finalised and
+    deleted against shipments (the freight panel of its invoice page) — never against a PO or
+    agreement here, which would leave its freight lines and shipments behind."""
+    if inv is not None and inv.match_route == "freight":
+        raise HTTPException(status_code=409,
+                            detail="This is a courier invoice — it is matched to shipments on its invoice page")
+
+
+async def _lock_invoice(db, invoice_id: uuid.UUID) -> Invoice | None:
+    """Row-lock the invoice and reload it, for every path that turns an
+    unmatched invoice into a matched one (POST /match, /mark-direct). Without
+    it two concurrent requests both read `unmatched` and both write — an
+    invoice matched to a PO AND sent to the Direct route is payable twice."""
+    return (await db.execute(
+        select(Invoice).where(Invoice.id == invoice_id).with_for_update()
+        .execution_options(populate_existing=True))).scalar_one_or_none()
 
 
 async def _is_ap(db, user: dict) -> bool:
@@ -131,6 +158,38 @@ async def _is_agreement_owner(db, user: dict, inv) -> bool:
     return owner_id is not None and owner_id == uuid.UUID(user["sub"])
 
 
+async def _has_open_attach_receipts_task(db, user_id: uuid.UUID, invoice_id: uuid.UUID) -> bool:
+    return (await db.execute(select(Task.id).where(
+        Task.type == "attach_receipts", Task.document_type == "invoice",
+        Task.document_id == invoice_id, Task.assigned_user_id == user_id,
+        Task.is_completed.is_(False),
+    ).limit(1))).first() is not None
+
+
+async def _require_invoice_receipt_access(db, user: dict, inv) -> None:
+    """Who may list / attach receipts on an agreement invoice, or settle it
+    without evidence: everyone _require_invoice_match_access admits, plus the
+    agreement's owner and whoever holds the invoice's open attach_receipts task
+    (the owner's fallback, a department manager).
+
+    The owner records the delivery notes on the agreement and is the one who
+    knows which of them a statement covers. Before this, an invoice AP had
+    matched straight to the agreement could not be handed to them at all —
+    assign-match only runs on unmatched/exception — and the owner opening it
+    got a 403 the page showed as "Couldn't load this agreement's receipts"
+    (user report 2026-10-20, AGR-202608-0008)."""
+    caller_id = uuid.UUID(user["sub"])
+    if await _is_agreement_owner(db, user, inv):
+        return
+    if await _has_open_attach_receipts_task(db, caller_id, inv.id):
+        return
+    try:
+        await _require_invoice_match_access(db, user, inv)
+    except HTTPException:
+        raise HTTPException(status_code=403,
+                            detail="Not allowed to attach receipts to this invoice")
+
+
 async def _can_read_invoice(db, user: dict, inv, scope: dict) -> bool:
     """The invoice detail read gate, shared by GET /{id} and GET /{id}/chain.
 
@@ -138,13 +197,22 @@ async def _can_read_invoice(db, user: dict, inv, scope: dict) -> bool:
     caller who could open the invoice through the agreement arm below — e.g. a
     requester who owns the agreement — 404'd on the chain, and the page could
     not tell them a PA already locks the invoice."""
+    caller_id = uuid.UUID(user["sub"])
+    # Assigned to match it: the task in their inbox links here, so it opens
+    # even for a role whose matrix row has no invoice view (a buyer or a
+    # warehouse lead AP hands a courier invoice to) — otherwise the task is
+    # a dead link. Personal assignment only (assigned_user_id = caller).
+    if await _has_open_match_task(db, caller_id, inv.id):
+        return True
     # Access Control Matrix gate — treat absence of view_invoice as not-found.
     if not scope["perms"].get("view_invoice", False):
         return False
     if not scope["restrict"]:
         return True
-    caller_id = uuid.UUID(user["sub"])
-    if await _has_open_match_task(db, caller_id, inv.id):
+    # The receipt hand-off: an attach_receipts task can land on a department
+    # manager whose scope does not otherwise reach this invoice. (The open
+    # match task is checked above, before the matrix view gate.)
+    if await _has_open_attach_receipts_task(db, caller_id, inv.id):
         return True
     # Matcher retention: the person who performed the match retains detail visibility
     # even after their task is completed (you can see what you acted on).
@@ -158,6 +226,9 @@ async def _can_read_invoice(db, user: dict, inv, scope: dict) -> bool:
     if inv.agreement_id is not None and await has_permission(
         db, scope["user_id"], scope["role"], "epms.agreement.read"
     ) and await is_agreement_visible(db, inv.agreement_id, scope):
+        return True
+    # Same widening as the list: a courier invoice is worked by the freight manager.
+    if inv.match_route == "freight" and await sees_freight_invoices(db, scope):
         return True
     return await invoice_crud.is_visible(db, inv, scope)
 
@@ -416,12 +487,21 @@ async def list_invoices(
     search: str | None = Query(default=None),
     sort: str | None = Query(
         default=None,
-        pattern="^-?due_date$",
-        description="due_date | -due_date. Omit for the default newest-first order.",
+        description=(
+            "Column key from crud.invoice.INVOICE_SORTABLE (unknown key -> 422); "
+            "the legacy `-due_date` still means due_date descending. "
+            "Omit for the default newest-first order."
+        ),
     ),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
     overdue: bool = Query(
         default=False,
         description="Only invoices past their due date and not yet paid.",
+    ),
+    route: str | None = Query(
+        default=None,
+        pattern="^(po|agreement|freight|direct)$",
+        description="po | agreement | freight | direct. 'po' includes legacy rows with no route.",
     ),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, le=200),
@@ -472,10 +552,20 @@ async def list_invoices(
         po_subq = own_uploads = task_uid = None
     items, total = await invoice_crud.get_all(
         db, status=status, vendor_id=vendor_id, po_id=po_id, agreement_id=agreement_id, search=search,
-        sort=sort, overdue=overdue,
+        sort=sort, dir=dir, overdue=overdue, route=route,
         po_ids_subq=po_subq,
         own_uploads_user_id=own_uploads,
         task_user_id=task_uid,
+        # Courier invoices are uploaded and matched on the Invoices page by
+        # epms.freight.manage holders, who are often PO-restricted.
+        freight_visible=task_uid is not None and await sees_freight_invoices(db, scope),
+        # Agreement invoices hang off no PO either: the general list admits the
+        # ones whose agreement the caller can open — the same arm the detail
+        # gate (_can_read_invoice) has, so search finds what the agreement
+        # page links to.
+        agreement_visible=task_uid is not None and await sees_agreement_invoices(db, scope),
+        agr_ids_subq=scope["agr_subq"],
+        direct_subq=scope.get("direct_subq") if task_uid is not None else None,
         page=page, page_size=page_size,
     )
     await _attach_match_assignees(db, items)
@@ -483,17 +573,125 @@ async def list_invoices(
     return InvoiceListResponse(items=items, total=total)
 
 
+@contextmanager
+def _dedup_errors():
+    """crud.invoice_dedup's refusals as HTTP errors (PRD INV-004)."""
+    try:
+        yield
+    except invoice_dedup.DuplicateInvoice as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except invoice_dedup.UncheckableInvoiceNumber as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.get("/duplicate-check", response_model=InvoiceDuplicateCheckResponse)
+async def duplicate_check(
+    vendor_id: uuid.UUID,
+    vendor_invoice_number: str,
+    db: SessionDep,
+    user: InvoiceUploadDep,
+    exclude_id: uuid.UUID | None = None,
+):
+    """The upload form's live check — the same rule POST /invoices enforces.
+
+    Against every invoice, so it tells an uploader about a copy they cannot
+    open; it gives away only that copy's reference and status, which the 409
+    on upload would name anyway. Declared before /{invoice_id} so that route
+    does not swallow the path."""
+    vendor = await vendor_crud.get_by_id(db, vendor_id)
+    if vendor is None:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+    try:
+        hit = await invoice_dedup.find_duplicate(
+            db, vendor.id, vendor.name, vendor_invoice_number, exclude_id=exclude_id)
+    except invoice_dedup.UncheckableInvoiceNumber as e:
+        return {"duplicate": False, "uncheckable": True, "detail": str(e)}
+    if hit is None:
+        return {"duplicate": False, "uncheckable": False, "detail": None}
+    return {"duplicate": True, "uncheckable": False,
+            "detail": str(invoice_dedup.DuplicateInvoice(vendor.name, vendor_invoice_number, hit)),
+            "existing_ref": hit.ref}
+
+
 @router.post("", response_model=InvoiceResponse, status_code=201)
 async def upload_invoice(body: InvoiceCreate, db: SessionDep, user: InvoiceUploadDep, token: BearerToken):
     vendor = await vendor_crud.get_by_id(db, body.vendor_id)
     if vendor is None:
         raise HTTPException(status_code=404, detail="Vendor not found")
-    inv = await invoice_crud.create(
-        db, body, vendor_name=vendor.name, uploaded_by=uuid.UUID(user["sub"])
-    )
+    # A carrier's invoice is always a courier invoice (matched to shipments,
+    # paid by a Freight PA) — never a PO / agreement invoice. The upload form
+    # switches to the courier review on its own; this keeps the rule for any
+    # other caller.
+    from app.models.freight import FreightCarrier
+    if (await db.execute(select(FreightCarrier.id).where(
+            FreightCarrier.vendor_id == body.vendor_id, FreightCarrier.is_active.is_(True))
+            .limit(1))).scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail=(
+            f"{vendor.name} is a courier (Freight → Carriers) — its invoices are courier "
+            "invoices, read per shipment and matched to tracking numbers"))
+    # INV-004 — against every invoice, not only those this user can see.
+    with _dedup_errors():
+        await invoice_dedup.ensure_unique(db, vendor.id, vendor.name, body.vendor_invoice_number)
+        async with invoice_dedup.key_violation_as_duplicate(vendor.name, body.vendor_invoice_number):
+            inv = await invoice_crud.create(
+                db, body, vendor_name=vendor.name, uploaded_by=uuid.UUID(user["sub"])
+            )
     await tax_prefill.apply_tax_prefill(db, inv, token)   # 新增
     await finance_sync.sync_ap_invoice(db, inv, token)
     return inv
+
+
+@router.get("/fee-link-candidates")
+async def fee_link_candidates(
+    db: SessionDep, _: ApDep,
+    q: str | None = Query(default=None, max_length=100),
+    limit: int = Query(default=50, ge=1, le=500),
+    fee_type: str | None = Query(default=None, pattern="^(freight|customs|other)$"),
+):
+    """POs (with their arrivals) a freight / customs invoice can be linked to —
+    NC orders with an arrival and approved EPMS POs — latest arrival first, plus the total that match — searched by
+    PO number, vendor or arrival number, never filtered by the invoice's own
+    vendor (a forwarder, not the PO's supplier)."""
+    return await po_fee_crud.search_candidate_pos(db, q, limit, fee_type)
+
+
+@router.get("/{invoice_id}/fee-links", response_model=list[FeeLinkOut])
+async def get_fee_links(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None or not await _can_read_invoice(db, user, inv, await build_scope(db, user)):
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    return await po_fee_crud.list_for_invoice(db, invoice_id)
+
+
+@router.put("/{invoice_id}/fee-links", response_model=list[FeeLinkOut])
+async def put_fee_links(invoice_id: uuid.UUID, body: FeeLinksPut, db: SessionDep, user: ApDep):
+    """Replace which raw-material PO arrivals this fee invoice belongs to.
+    Only a record of where the cost came from: the invoice's status, route and
+    payment are untouched (design: 2026-10-23-po-fee-invoices)."""
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    links = [po_fee_crud.LinkIn(fee_type=l.fee_type, po_id=l.po_id, gr_id=l.gr_id,
+                                invoice_line_id=l.invoice_line_id, note=l.note) for l in body.links]
+    try:
+        before, after = await po_fee_crud.replace_for_invoice(
+            db, inv, links, actor_id=uuid.UUID(user["sub"]))
+    except po_fee_crud.FeeLinkInvalid as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    def _brief(rows: list[dict]) -> list[str]:
+        return sorted(f"{r['fee_type']}:{r['po_number']}/{r['gr_number'] or '-'}"
+                      + (f"@{r['invoice_line_id']}" if r["invoice_line_id"] else "")
+                      + (f" ({r['note']})" if r.get("note") else "") for r in rows)
+    if _brief(before) != _brief(after):
+        db.add(AdminAuditLog(
+            actor_id=uuid.UUID(user["sub"]), actor_email=user.get("email", ""),
+            action="edit", system="epms", entity="invoice",
+            record_id=inv.id, record_number=inv.internal_ref,
+            before={"fee_links": _brief(before)}, after={"fee_links": _brief(after)},
+        ))
+    await db.commit()
+    return after
 
 
 @router.get("/{invoice_id}", response_model=InvoiceResponse)
@@ -649,6 +847,7 @@ async def unmatch_invoice_po(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     await _guard_unmatch(db, inv)
     if inv.po_id is None:
         raise HTTPException(status_code=422, detail="This invoice is not matched to a PO")
@@ -679,6 +878,7 @@ async def unmatch_invoice_gr(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     await _guard_unmatch(db, inv)
     if inv.gr_id is None and not inv.gr_ids:
         raise HTTPException(status_code=422, detail="No goods receipt is linked to this invoice")
@@ -686,6 +886,58 @@ async def unmatch_invoice_gr(
     po_ids, before = await invoice_crud.unmatch_gr(db, inv)
     cascade = await _withdraw_orphaned_po_tasks(db, po_ids)
     await _audit_unmatch(db, inv, user, "gr", before, body.reason, cascade)
+    await db.commit()
+    await db.refresh(inv)
+    await finance_sync.sync_ap_invoice(db, inv, token)
+    await _attach_match_assignees(db, [inv])
+    await invoice_crud.attach_claimed_receipts(db, [inv])
+    return inv
+
+
+@router.post("/{invoice_id}/mark-direct", response_model=InvoiceResponse)
+async def mark_invoice_direct(
+    invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload, token: BearerToken,
+):
+    """Match an invoice to no PO and no agreement: it will be paid by a Direct
+    PA (Payment Applications → Create Direct PA). Same rights as matching it to
+    a PO — AP, its uploader, or whoever holds an open match task for it."""
+    caller_id = uuid.UUID(user["sub"])
+    if await _lock_invoice(db, invoice_id) is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if (not await _is_ap(db, user) and inv.uploaded_by != caller_id
+            and not await _has_open_match_task(db, caller_id, invoice_id)):
+        raise HTTPException(status_code=403, detail="Not allowed to match this invoice")
+    try:
+        await invoice_crud.mark_direct(db, inv, matched_by=caller_id)
+    except invoice_crud.DirectRouteInvalid as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    # Matching is done — nobody still needs to be asked to match it.
+    await _close_open_match_tasks(db, inv.id, caller_id)
+    await _sync_exception_task(db, inv, inv, caller_id)
+    await db.commit()
+    await db.refresh(inv)
+    await finance_sync.sync_ap_invoice(db, inv, token)
+    await _attach_match_assignees(db, [inv])
+    await invoice_crud.attach_claimed_receipts(db, [inv])
+    return inv
+
+
+@router.post("/{invoice_id}/unmatch-direct", response_model=InvoiceResponse)
+async def unmatch_invoice_direct(
+    invoice_id: uuid.UUID, body: UnmatchRequest, db: SessionDep,
+    user: ApDep, token: BearerToken,
+):
+    """Take an invoice back off the Direct PA route (to `unmatched`). AP only,
+    as for unmatch-po; refused while a live PA still lists the invoice."""
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    if inv.match_route != "direct":
+        raise HTTPException(status_code=422, detail="This invoice is not on the Direct PA route")
+    await _guard_unmatch(db, inv)
+    before = await invoice_crud.unmatch_direct(db, inv)
+    await _audit_unmatch(db, inv, user, "direct", before, body.reason, {})
     await db.commit()
     await db.refresh(inv)
     await finance_sync.sync_ap_invoice(db, inv, token)
@@ -702,14 +954,33 @@ async def update_invoice(
     user: InvoiceUploadDep,
     token: BearerToken,
 ):
-    inv = await invoice_crud.get_by_id(db, invoice_id)
-    if inv is None:
+    # Locked first: a Direct invoice's amounts must not change under a
+    # create_direct that is snapshotting them (it holds the same row lock).
+    if await _lock_invoice(db, invoice_id) is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    _refuse_freight(inv)
     if inv.status not in ("unmatched", "exception", "matched"):
         raise HTTPException(
             status_code=409,
             detail=f"Cannot edit invoice in '{inv.status}' status"
         )
+    if inv.match_route == "direct":
+        # No goods receipt on the Direct route — linking one would make it look
+        # 3-way matched. Unmatch it and match it to the PO instead.
+        if body.gr_ids is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="This invoice is matched for a Direct PA and takes no goods receipt — "
+                       "unmatch it first to match it to a PO.")
+        # A Direct PA copies its amounts from the invoices when it is raised;
+        # changing them underneath it would pay the old figures.
+        held = await invoice_crud._invoice_referenced_by_active_pa(db, inv.id)
+        if held is not None:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{held.pa_number} ({held.status}) pays this invoice — cancel it first, "
+                       "then edit the invoice and raise a new Direct PA.")
     # Capture existing PO/GR links before update so we can re-match after
     prev_po_id = inv.po_id
     prev_gr_ids: list[uuid.UUID] = []
@@ -730,7 +1001,21 @@ async def update_invoice(
         else None
     )
 
-    result = await invoice_crud.update(db, inv, body)
+    # INV-004: a new number must not be another invoice's. Compared by key, so
+    # re-saving the form unchanged (or re-casing the number) is not "a change"
+    # — that keeps the pre-existing dedup_exempt duplicates editable.
+    number_changed = (
+        body.vendor_invoice_number is not None
+        and await invoice_dedup.invoice_key(db, body.vendor_invoice_number) != inv.vendor_invoice_key
+    )
+    with _dedup_errors():
+        if number_changed:
+            await invoice_dedup.ensure_unique(
+                db, inv.vendor_id, inv.vendor_name, body.vendor_invoice_number, exclude_id=inv.id)
+        async with invoice_dedup.key_violation_as_duplicate(
+                inv.vendor_name, body.vendor_invoice_number or inv.vendor_invoice_number):
+            result = await invoice_crud.update(db, inv, body)
+            await db.flush()
 
     # Re-run match against current allocations so variance/status reflect edits.
     if prev_po_id is not None or inv.gr_ids:
@@ -759,6 +1044,7 @@ async def update_invoice(
     # with nobody told is the worst of the three outcomes. Also closes a stale
     # exception task when the edit takes the invoice back OUT of exception.
     await _sync_exception_task(db, result, result, caller_id)
+    await attach_receipts_task.sync_for_invoice(db, result)
 
     # Sync the (possibly rematched) invoice to finance once: draft if still
     # unmatched/exception, posted if matched. Fail-open.
@@ -777,9 +1063,12 @@ async def match_invoice(
 ):
     caller_id = uuid.UUID(user["sub"])
     is_ap = await _is_ap(db, user)
-    inv = await invoice_crud.get_by_id(db, invoice_id)
-    if inv is None:
+    if await _lock_invoice(db, invoice_id) is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    _refuse_freight(inv)
+    if inv.match_route == "direct":
+        raise HTTPException(status_code=409, detail="This invoice is matched for a Direct PA — unmatch it first")
     is_uploader = inv.uploaded_by == caller_id
     if not is_ap and not is_uploader and not await _has_open_match_task(db, caller_id, invoice_id):
         raise HTTPException(status_code=403, detail="Not allowed to match this invoice")
@@ -965,6 +1254,10 @@ async def match_invoice(
             if has_alloc:
                 await _on_invoice_matched(db, result)
 
+        # A house_account match with no receipts yet hands the receipt
+        # reconciliation to the agreement owner (attach_receipts).
+        await attach_receipts_task.sync_for_invoice(db, result)
+
         # Sync to finance: posted if matched, draft otherwise. Fail-open.
         await finance_sync.sync_ap_invoice(db, result, token)
 
@@ -979,7 +1272,9 @@ async def match_invoice(
 
 # 发票可匹配的 PO 状态(与前端 MATCHABLE_PO_STATUSES 一致)。
 # closed 不在其中:已关闭(含 PMS 导入按 PAID 收口)的 PO 不再进入候选(2026-07-10)。
-_MATCHABLE_PO_STATUSES = ("issued", "approved", "partially_received", "fully_received")
+# nc_milk 在其中(2026-10-29):奶单的发票也要在 UniOps 匹配付款;它的 NC 到货照样
+# 镜像成 GR,所以三单匹配、create_pa 都走得通。nc_pending(NC 未审批)仍不在。
+_MATCHABLE_PO_STATUSES = ("issued", "approved", "partially_received", "fully_received", "nc_milk")
 
 
 @router.get("/{invoice_id}/match-candidates", response_model=PoListResponse)
@@ -1086,11 +1381,15 @@ async def list_invoice_agreement_receipts(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    await _require_invoice_match_access(db, user, inv)
+    await _require_invoice_receipt_access(db, user, inv)
 
-    candidates = await agreement_crud.candidates_for_vendor(db, inv.vendor_id)
-    if not any(agr.id == agreement_id for agr in candidates):
-        raise HTTPException(status_code=404, detail="Agreement not found")
+    # The agreement the invoice is ALREADY matched to always qualifies — it can
+    # have aged out of the admission window since, and its receipts are exactly
+    # what the matched invoice still has to reconcile against.
+    if agreement_id != inv.agreement_id:
+        candidates = await agreement_crud.candidates_for_vendor(db, inv.vendor_id)
+        if not any(agr.id == agreement_id for agr in candidates):
+            raise HTTPException(status_code=404, detail="Agreement not found")
 
     items = await agreement_receipt_crud.list_for_agreement(db, agreement_id, status=status_filter)
     return {"items": items, "total": len(items)}
@@ -1111,13 +1410,18 @@ async def set_invoice_receipts(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    await _require_invoice_match_access(db, user, inv)
+    _refuse_freight(inv)
+    await _require_invoice_receipt_access(db, user, inv)
 
     try:
-        return await invoice_crud.set_receipts(
+        result = await invoice_crud.set_receipts(
             db, inv, body.receipt_ids, body.variance_reason)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    # Attaching closes the attach_receipts task; clearing every receipt
+    # (an empty PUT) re-opens one.
+    await attach_receipts_task.sync_for_invoice(db, result)
+    return result
 
 
 @router.post("/{invoice_id}/billing-period", response_model=InvoiceResponse)
@@ -1141,6 +1445,7 @@ async def assign_invoice_billing_period(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     if not await _is_agreement_owner(db, user, inv):
         await _require_invoice_match_access(db, user, inv)
     try:
@@ -1161,12 +1466,15 @@ async def settle_invoice_without_receipt(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    await _require_invoice_match_access(db, user, inv)
+    _refuse_freight(inv)
+    await _require_invoice_receipt_access(db, user, inv)
 
     try:
-        return await invoice_crud.settle_without_receipt(db, inv, body.reason)
+        result = await invoice_crud.settle_without_receipt(db, inv, body.reason)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+    await attach_receipts_task.sync_for_invoice(db, result)
+    return result
 
 
 @router.post("/{invoice_id}/decline-match", response_model=InvoiceResponse)
@@ -1181,6 +1489,7 @@ async def decline_match(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     if not body.note.strip():
         raise HTTPException(status_code=422, detail="A note is required when declining")
     caller_id = uuid.UUID(user["sub"])
@@ -1228,7 +1537,9 @@ async def assign_match(
     db: SessionDep,
     user: ApDep,
 ):
-    """AP 将这张发票的 PO 匹配工作指派给某个用户(任何角色)。重复调用=改派。"""
+    """AP 将这张发票的 PO 匹配工作指派给某个用户(任何角色)。重复调用=改派。
+    快递发票同样可以指派:受理人凭这条 match_invoice 任务匹配运单(freight.py
+    _can_match),无需 epms.freight.manage。"""
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
@@ -1263,7 +1574,15 @@ async def assign_match(
     # only re-words the case where the link already exists, i.e. the invoice
     # was matched to an agreement and then knocked back to exception, or AP
     # pre-linked it. No lookup, no guess.
-    if inv.agreement_id is not None:
+    if inv.match_route == "freight":
+        title = f"Match courier invoice {inv.internal_ref} to shipments"
+        description = (
+            f"You have been assigned to match courier invoice {inv.internal_ref} "
+            f"({inv.vendor_name}, {inv.currency} {inv.total_amount}). Open the invoice, "
+            f"check that each shipment, pickup and fee has the right cost center, "
+            f"then press Finalize."
+        )
+    elif inv.agreement_id is not None:
         agr_number = (await db.execute(
             select(PurchaseAgreement.number).where(
                 PurchaseAgreement.id == inv.agreement_id))).scalar_one_or_none()
@@ -1327,6 +1646,7 @@ async def match_review(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     if body.action == "reject" and not (body.note or "").strip():
         raise HTTPException(status_code=422, detail="A note is required when rejecting")
     reviewer_id = uuid.UUID(user["sub"])
@@ -1379,6 +1699,7 @@ async def match_review(
 
     if result.status == "matched":
         await _on_invoice_matched(db, result)
+    await attach_receipts_task.sync_for_invoice(db, result)
     await finance_sync.sync_ap_invoice(db, result, token)
     await _attach_match_assignees(db, [result])
     await invoice_crud.attach_claimed_receipts(db, [result])
@@ -1395,14 +1716,15 @@ async def delete_invoice(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     try:
-        await finance_sync.sync_ap_invoice(db, inv, token, void=True)
         # Complete all open match_invoice / review_match / resolve_exception tasks
         # before hard delete so no orphaned tasks reference a non-existent invoice.
         caller_id = uuid.UUID(user["sub"])
         now_ts = datetime.now(timezone.utc)
         open_tasks = (await db.execute(select(Task).where(
-            Task.type.in_(["match_invoice", "review_match", "resolve_exception"]),
+            Task.type.in_(["match_invoice", "review_match", "resolve_exception",
+                           "attach_receipts"]),
             Task.document_type == "invoice",
             Task.document_id == invoice_id,
             Task.is_completed.is_(False),
@@ -1413,8 +1735,13 @@ async def delete_invoice(
             t.completed_by = caller_id
         await db.flush()
         await invoice_crud.delete(db, inv)
+        # After the delete has flushed (so a refusal above never reaches
+        # Finance), before commit: Finance voids it or nothing is deleted.
+        await finance_sync.void_deleted_invoices(db, token)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    except finance_sync.FinanceVoidFailed as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 @router.post("/{invoice_id}/exception", response_model=InvoiceResponse)
@@ -1428,6 +1755,7 @@ async def resolve_exception(
     inv = await invoice_crud.get_by_id(db, invoice_id)
     if inv is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
+    _refuse_freight(inv)
     caller_id = uuid.UUID(user["sub"])
     try:
         result = await invoice_crud.resolve_exception(db, inv, body, resolved_by=caller_id)
@@ -1464,6 +1792,7 @@ async def resolve_exception(
         if result.status == "matched":
             await _close_open_match_tasks(db, result.id, caller_id)
             await _on_invoice_matched(db, result)
+        await attach_receipts_task.sync_for_invoice(db, result)
         # Sync to finance: posted if matched, draft otherwise. Fail-open.
         await finance_sync.sync_ap_invoice(db, result, token)
         return result

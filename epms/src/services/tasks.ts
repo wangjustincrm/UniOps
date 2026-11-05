@@ -18,6 +18,7 @@ export type TaskType =
   | 'review_match'
   | 'match_invoice'
   | 'resolve_exception'
+  | 'attach_receipts'
   | 'create_pa'
   | 'create_prepayment_pa'
   | 'approve_budget_plan'

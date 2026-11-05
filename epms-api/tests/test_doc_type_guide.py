@@ -124,11 +124,49 @@ def test_only_procurement_documents_report_a_receipt_flow():
 
 
 @pytest.mark.parametrize("kind", ("pr", "po"))
-def test_service_types_are_confirmed_by_the_requester(kind):
+def test_service_types_are_confirmed_by_the_owner(kind):
+    """ISS-0029 / ISS-0055: the guide said "the requester confirms the work",
+    while every service task goes to the PR's Service/Project Owner."""
     receipts = {t["value"]: t["receipt"] for t in doc_type_guide.build(kind)["types"]}
-    assert "requester" in receipts[4].lower()
-    assert "requester" in receipts[6].lower()
+    assert receipts[4] == receipts[6] == doc_type_guide.RECEIPT_SERVICE
+    assert "Owner" in receipts[4]
     assert "warehouse" in receipts[2].lower()
+    assert "acknowledge" in receipts[2] and "collect" in receipts[2]
+
+
+def test_receipt_text_matches_who_the_code_routes_to():
+    """The two facts RECEIPT_SERVICE states, read off the code that enforces
+    them: tasks go to the owner (else the requester), and the GR gate admits
+    the owner OR the requester."""
+    import inspect
+
+    from app.api.v1 import gr as gr_api
+    from app.crud import pr_owner
+
+    owner, requester = object(), object()
+    assert pr_owner._resolve(4, owner, requester) is owner
+    assert pr_owner._resolve(6, owner, requester) is owner
+    assert pr_owner._resolve(4, None, requester) is requester
+    # Physical types never route to an owner.
+    assert pr_owner._resolve(2, owner, requester) is requester
+
+    src = inspect.getsource(gr_api)
+    assert "(pr_requester_id, pr_owner_id)" in src, (
+        "the service GR gate no longer admits owner OR requester — "
+        "update RECEIPT_SERVICE")
+
+
+def test_no_knowledge_file_says_you_confirm_service_work_yourself():
+    """The prose half used to contradict the owner rule (pr_types type 4/6)."""
+    import pathlib
+
+    for path in pathlib.Path(doc_type_guide._KNOWLEDGE).glob("*.yaml"):
+        text = " ".join(path.read_text(encoding="utf-8").split()).lower()
+        for phrase in ("confirm the work is done yourself",
+                       "confirm completion yourself",
+                       "confirmed by the requester",
+                       "raised by the requester"):
+            assert phrase not in text, (path.name, phrase)
 
 
 def test_pr_and_po_describe_the_same_six_types():

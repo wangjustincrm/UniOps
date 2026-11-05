@@ -19,6 +19,7 @@ import {
   AlertCircle, BookOpenCheck, Check, Download, Loader2, Pencil, Plus,
   RefreshCw, Search, Trash2, Upload, X,
 } from 'lucide-react'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, financeDownload, financeUpload } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -408,6 +409,15 @@ export default function CoaConfigPage() {
     (!search || a.code.includes(search) || a.name.toLowerCase().includes(search.toLowerCase())),
   ), [accounts, search, typeFilter])
 
+  // Loaded whole. Rows keep a.id keys and the delete confirmation is by code,
+  // so re-ordering never moves it. Default (null) = the API's code order.
+  const acctSort = useSortableRows(filtered, {
+    code: (a) => a.code, name: (a) => a.name, type: (a) => TYPE_LABEL[a.account_type],
+    balance: (a) => (a.normal_balance === 'debit' ? 'Dr' : 'Cr'),
+    aux: (a) => a.aux_dimensions.map((d) => auxLabel(d.code)).join(', '),
+    status: (a) => (a.is_active ? 'Active' : 'Inactive'),
+  })
+
   if (!user) return <Navigate to="/login" replace />
 
   return (
@@ -495,17 +505,17 @@ export default function CoaConfigPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-neutral-200 bg-neutral-50">
-                      {['Code', 'Name', 'Type', 'Balance', 'Aux Dimensions', 'Status', ''].map((h, i) => (
-                        <th key={i}
-                            className={cn('px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500',
-                                          i === 5 && 'w-24', i === 6 && 'w-24')}>
-                          {h}
-                        </th>
-                      ))}
+                      <SortTh label="Code" sortKey="code" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+                      <SortTh label="Name" sortKey="name" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+                      <SortTh label="Type" sortKey="type" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+                      <SortTh label="Balance" sortKey="balance" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+                      <SortTh label="Aux Dimensions" sortKey="aux" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+                      <SortTh label="Status" sortKey="status" sort={acctSort.sort} onSort={acctSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500 w-24" />
+                      <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500 w-24" />
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.map((a, i) => (
+                    {acctSort.rows.map((a, i) => (
                       <tr key={a.id}
                           className={cn('border-b border-neutral-100 last:border-b-0',
                                         i % 2 === 1 ? 'bg-neutral-50' : 'bg-white',
@@ -616,6 +626,13 @@ function AuxTypesTab({ auxTypes, canManage }: { auxTypes: AuxType[]; canManage: 
     onSuccess: () => qc.invalidateQueries({ queryKey: ['coa-aux-types'] }),
   })
 
+  const { rows, sort, onSort } = useSortableRows(auxTypes, {
+    code: (t) => t.code, name: (t) => t.name,
+    storage: (t) => (t.storage === 'column' ? 'spine column' : 'side table'),
+    source: (t) => t.master_source, builtin: (t) => (t.builtin ? 'yes' : null),
+    status: (t) => (t.is_active ? 'Active' : 'Inactive'),
+  })
+
   return (
     <div className="overflow-hidden rounded-lg border border-neutral-200">
       {canManage && (
@@ -634,13 +651,17 @@ function AuxTypesTab({ auxTypes, canManage }: { auxTypes: AuxType[]; canManage: 
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-neutral-200 bg-neutral-50">
-            {['Code', 'Name', 'Storage', 'Source', 'Built-in', 'Status', ''].map((h, i) => (
-              <th key={i} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500">{h}</th>
-            ))}
+            <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+            <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+            <SortTh label="Storage" sortKey="storage" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+            <SortTh label="Source" sortKey="source" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+            <SortTh label="Built-in" sortKey="builtin" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+            <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+            <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
           </tr>
         </thead>
         <tbody>
-          {auxTypes.map((t, i) => (
+          {rows.map((t, i) => (
             <tr key={t.id} className={cn('border-b border-neutral-100 last:border-0', i % 2 === 1 && 'bg-neutral-50')}>
               <td className="px-4 py-2.5 font-mono text-[11px]">{t.code}</td>
               <td className="px-4 py-2.5 text-neutral-800">{t.name}</td>

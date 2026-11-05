@@ -1,11 +1,16 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AlertTriangle, Plus } from 'lucide-react'
 
 import { useRolePermissions } from '@/hooks/useConfig'
-import { useReviewVendorCredit, useVendorCredits } from '@/hooks/useVendorCredits'
+import { useReviewVendorCredit, useVendorCredit, useVendorCredits } from '@/hooks/useVendorCredits'
 import type { VendorCredit } from '@/services/vendorCredits'
 import { useAuthStore } from '@/stores/auth.store'
+import { Pagination, SortTh, useSort, sortParams } from '@uniops/shell'
+
+type CreditSortKey =
+  | 'credit_number' | 'vendor_name' | 'vendor_credit_number' | 'credit_date'
+  | 'total_amount' | 'applied_amount' | 'remaining_amount' | 'po_number'
 
 import { CreditDetailDrawer } from './CreditDetailDrawer'
 import { ManualCreditModal } from './ManualCreditModal'
@@ -31,8 +36,22 @@ export function VendorCreditsPage() {
   // Held as an id, not the row: after an Add file / review the list refetches
   // and the drawer should show the fresh row, or close once it leaves this tab.
   const [openId, setOpenId] = useState<string | null>(null)
+  // The create response of a just-recorded manual credit, shown in the drawer
+  // until the by-id fetch lands.
+  const [createdCredit, setCreatedCredit] = useState<VendorCredit | null>(null)
 
-  const { data, isLoading } = useVendorCredits(tab)
+  // Paged and sorted by finance-api (limit/offset + sort/dir); a tab or sort
+  // change goes back to page 1.
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [sort, onSort] = useSort<CreditSortKey>(null, () => setPage(1))
+  const { data, isLoading } = useVendorCredits(tab, { page, pageSize, ...sortParams(sort) })
+  const total = data?.total ?? 0
+  // A review can move the last row of the last page to another tab.
+  useEffect(() => {
+    const last = Math.max(1, Math.ceil(total / pageSize))
+    if (data && page > last) setPage(last)
+  }, [data, total, page, pageSize])
   const review = useReviewVendorCredit()
 
   const user  = useAuthStore((s) => s.user)
@@ -40,7 +59,14 @@ export function VendorCreditsPage() {
   const canManage = user?.role === 'system_admin' || !!perms?.['epms.vendor_credit.manage']
 
   const rows = data?.items ?? []
-  const openCredit = rows.find((c) => c.id === openId) ?? null
+  // The open credit is fetched by id, so it shows whatever page or sort is
+  // active (a just-created credit need not be on the page in view). The row
+  // from the current page is used when present. The drawer still closes once
+  // the credit leaves this tab (approve / reject / void).
+  const byId = useVendorCredit(openId, createdCredit).data
+  const openCredit =
+    rows.find((c) => c.id === openId)
+    ?? (byId && byId.id === openId && byId.status === tab ? byId : null)
 
   // The single `review` mutation backs both the inline Approve buttons and the
   // note modal's Confirm button. Route its error to the right spot by looking
@@ -69,7 +95,7 @@ export function VendorCreditsPage() {
 
       <div className="mt-4 flex gap-1 border-b border-neutral-200">
         {TABS.map((t) => (
-          <button key={t.key} onClick={() => setTab(t.key)}
+          <button key={t.key} onClick={() => { setTab(t.key); setPage(1) }}
                   className={`px-4 py-2 text-sm font-medium ${
                     tab === t.key
                       ? 'border-b-2 border-primary-600 text-primary-700'
@@ -94,14 +120,14 @@ export function VendorCreditsPage() {
         <table className="mt-4 w-full text-sm">
           <thead className="text-left text-xs uppercase text-neutral-500">
             <tr>
-              <th className="px-4 py-2">Credit #</th>
-              <th className="px-4 py-2">Vendor</th>
-              <th className="px-4 py-2">Vendor Doc #</th>
-              <th className="px-4 py-2">Date</th>
-              <th className="px-4 py-2 text-right">Original</th>
-              <th className="px-4 py-2 text-right">Applied</th>
-              <th className="px-4 py-2 text-right">Remaining</th>
-              <th className="px-4 py-2">PO</th>
+              <SortTh label="Credit #" sortKey="credit_number" sort={sort} onSort={onSort} className="px-4 py-2" />
+              <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className="px-4 py-2" />
+              <SortTh label="Vendor Doc #" sortKey="vendor_credit_number" sort={sort} onSort={onSort} className="px-4 py-2" />
+              <SortTh label="Date" sortKey="credit_date" sort={sort} onSort={onSort} className="px-4 py-2" />
+              <SortTh label="Original" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className="px-4 py-2" />
+              <SortTh label="Applied" sortKey="applied_amount" sort={sort} onSort={onSort} align="right" className="px-4 py-2" />
+              <SortTh label="Remaining" sortKey="remaining_amount" sort={sort} onSort={onSort} align="right" className="px-4 py-2" />
+              <SortTh label="PO" sortKey="po_number" sort={sort} onSort={onSort} className="px-4 py-2" />
               <th className="px-4 py-2" />
             </tr>
           </thead>
@@ -168,11 +194,18 @@ export function VendorCreditsPage() {
           </tbody>
         </table>
       )}
+      {total > 0 && (
+        <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage}
+                    onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
+      )}
 
       {showManual && (
         <ManualCreditModal
           onClose={() => setShowManual(false)}
-          onCreated={(credit) => { setShowManual(false); setTab('pending_review'); setOpenId(credit.id) }}
+          onCreated={(credit) => {
+            setShowManual(false); setTab('pending_review'); setPage(1)
+            setCreatedCredit(credit); setOpenId(credit.id)
+          }}
         />
       )}
 

@@ -16,6 +16,7 @@ import type { ApprovalStep, DocumentStatus, WorkflowNodeDef } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
 import { PoSignoffPanel } from '@/components/po/PoSignoffPanel'
+import { PoFeePanel } from '@/components/po/PoFeePanel'
 import { generatePoHtml } from '@/lib/po-document'
 import { buildEmailVars, renderTemplate } from '@/lib/email-template'
 import { useConfig, useRolePermissions } from '@/hooks/useConfig'
@@ -29,6 +30,7 @@ import { poService } from '@/services/po'
 import type { ApiPo, ApiPoLineItem } from '@/services/po'
 import { useApprovalReminder } from '@/hooks/useApprovalReminder'
 import type { ApiEvent } from '@/services/pr'
+import { historyLine, isSkipped } from '@/lib/approvalHistory'
 import type { GrStatus } from '@/services/gr'
 import { vendorService } from '@/services/vendors'
 import { isImportedEditablePo } from '@/lib/importedPoEdit'
@@ -109,10 +111,10 @@ function buildWorkflowSteps(nodes: WorkflowNodeDef[], status: string, stepIdx: n
       s = i < stepIdx ? 'completed' : i === stepIdx ? 'current' : 'pending'
     }
     const evt = approveEventByStep[i]
-    if (evt?.comment?.includes('Auto-skipped')) {
+    if (isSkipped(evt)) {
       s = 'skipped'
     }
-    return { id: node.id, role: node.label, actorName: evt?.comment?.includes('Auto-skipped') ? undefined : evt?.actor_name ?? undefined, status: s }
+    return { id: node.id, role: node.label, actorName: isSkipped(evt) ? undefined : evt?.actor_name ?? undefined, status: s }
   })
   return [created, ...approvalNodes]
 }
@@ -600,7 +602,7 @@ export default function PoDetailPage() {
   // moment "unpaid" stopped being sufficient.
   const canCreatePa =
     po &&
-    ['issued', 'partially_received', 'fully_received'].includes(po.status) &&
+    ['issued', 'partially_received', 'fully_received', 'nc_milk'].includes(po.status) &&
     (po.is_prepaid || po.has_unpaid_invoice) &&
     (user?.role === 'system_admin' || !!paPerms?.['epms.pa.write'])
   // Types 4 (Service) and 6 (Project-Related) both run the service GR flow —
@@ -805,6 +807,15 @@ export default function PoDetailPage() {
             <PoSignoffPanel poId={po.id} source={po.source ?? null} />
           )}
 
+          {/* Freight & Customs — every PO (the panel hides itself on a milk
+              order with no Incoterms and nothing linked, and on an EPMS PO with
+              nothing linked). Right under the sign-off, above the order
+              details: "are this order's fee invoices in?" is what a
+              raw-material PO is opened to find out. */}
+          {activeTab === 'Details' && (
+            <PoFeePanel poId={po.id} canEditDetails={canEditImported} />
+          )}
+
           {/* Details Tab */}
           {activeTab === 'Details' && (
             <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-6">
@@ -826,10 +837,12 @@ export default function PoDetailPage() {
                       <dd className="text-neutral-900">{value}</dd>
                     </div>
                   ))}
-                  {po.incoterms && (
+                  {(po.incoterms_code || po.incoterms) && (
                     <div className="flex flex-col gap-0.5">
                       <dt className="text-xs font-medium text-neutral-500">Incoterms</dt>
-                      <dd className="text-neutral-900">{po.incoterms}</dd>
+                      <dd className="text-neutral-900">
+                        {[po.incoterms_code, po.incoterms].filter(Boolean).join(' ')}
+                      </dd>
                     </div>
                   )}
                   {/* purchase_orders.notes means two different things depending on origin:
@@ -1076,17 +1089,20 @@ export default function PoDetailPage() {
               <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">Audit History</h2>
               {events && events.length > 0 ? (
                 <ul className="flex flex-col gap-3">
-                  {events.map((e) => (
-                    <li key={e.id} className="flex gap-3 text-sm">
-                      <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDate(e.created_at)}</span>
-                      <div>
-                        <span className="font-medium text-neutral-800 capitalize">{e.action.replace(/_/g, ' ')}</span>
-                        <span className="text-neutral-500 ml-1">by {e.actor_role.replace(/_/g, ' ')}</span>
-                        {e.actor_name && <span className="text-neutral-400 ml-1">— {e.actor_name}</span>}
-                        {e.comment && <p className="text-neutral-400 text-xs mt-0.5 italic">{e.comment}</p>}
-                      </div>
-                    </li>
-                  ))}
+                  {events.map((e) => {
+                    const line = historyLine(e)
+                    return (
+                      <li key={e.id} className="flex gap-3 text-sm">
+                        <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDate(e.created_at)}</span>
+                        <div>
+                          <span className="font-medium text-neutral-800 capitalize">{line.action}</span>
+                          <span className="text-neutral-500 ml-1">{line.role}</span>
+                          {line.actorName && <span className="text-neutral-400 ml-1">— {line.actorName}</span>}
+                          {line.note && <p className="text-neutral-400 text-xs mt-0.5 italic">{line.note}</p>}
+                        </div>
+                      </li>
+                    )
+                  })}
                 </ul>
               ) : (
                 <div className="text-sm text-neutral-400 text-center py-8">No history yet</div>

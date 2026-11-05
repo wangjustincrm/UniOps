@@ -32,6 +32,7 @@ question_hints:
   - why does the budget report disagree with NC
   - why is this month's actual empty or negative
   - what does include unposted vouchers do
+  - how do I export the budget by vendor
 
 # The figures in one cell, top to bottom. Keys are the services' own figure
 # names: `plan` and `actual_docs` from budget-api, `nc_posted` from finance-api.
@@ -111,6 +112,14 @@ notes:
     cards, vendor drill and export follow it. Clear it to see tallied vouchers
     only. Clearing it only changes this view: a PR's over-budget check always
     counts the untallied vouchers too.
+  - >-
+    Export XLSX downloads the grid as it is filtered: one row per budget account,
+    a Plan / NC column pair per month and for the year. Tick "Expand vendor"
+    next to the button to have every account followed by its vendor rows — the
+    same breakdown as expanding an account on screen, for all accounts at once.
+    Vendor rows carry NC actual only (the plan is per account, not per vendor),
+    are grouped under their account so Excel can collapse them, and are not
+    added into the Grand Total because the account row already holds their sum.
   - >-
     With no cost centre selected the grid adds up every cost centre that has a
     current approved budget for the year — so a cost centre whose plan was never

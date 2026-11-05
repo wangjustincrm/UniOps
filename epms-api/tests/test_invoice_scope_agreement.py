@@ -14,9 +14,9 @@ Every other thing that page renders is gated on epms.agreement.read alone with
 no row scope (the agreement itself, its receipts). The invoice sub-list was the
 one member inheriting a scope its siblings do not have.
 
-The widening is confined to the agreement_id filter — the second test is the
-one that matters for that: the same requester's UNFILTERED invoice list must
-still be scoped exactly as before.
+The general (unfiltered) list admits the same rows since agreements gained a
+row scope (is_agreement_visible): an agreement invoice is listed for whoever
+may open its agreement, and for nobody else.
 """
 import uuid
 from datetime import date
@@ -133,17 +133,43 @@ async def test_agreement_filter_shows_every_invoice_on_that_agreement(test_engin
 
 
 @pytest.mark.asyncio
-async def test_unfiltered_list_keeps_its_scope(test_engine):
-    """The widening must not leak past the agreement_id filter."""
+async def test_unfiltered_list_admits_the_owners_agreement_invoices(test_engine):
+    """The general Invoices list (and its search box) finds an agreement
+    invoice for whoever may open the agreement — the same rule the detail gate
+    applies. Before: the owner could open INV-… from the agreement page, but
+    searching its number on the Invoices list returned nothing.
+
+    This used to assert the opposite, back when agreements had no row scope
+    and widening the general list would have handed every agreement invoice to
+    every requester. is_agreement_visible closed that; the other two tests
+    below hold the line it draws."""
     sf = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     uid, _, on_agr_id, loose_id = await _seed(sf)
+
+    async with sf() as db:
+        ref = (await db.execute(text("SELECT internal_ref FROM invoices WHERE id=:i"),
+                                {"i": on_agr_id})).scalar_one()
+    async with _client(uid) as c:
+        r = await c.get("/api/v1/invoices", params={"page_size": 200})
+        found = await c.get("/api/v1/invoices", params={"search": ref})
+    assert r.status_code == 200, r.text
+    ids = {i["id"] for i in r.json()["items"]}
+    assert str(on_agr_id) in ids
+    assert str(loose_id) not in ids, "someone else's invoice must stay out of the general list"
+    assert [i["id"] for i in found.json()["items"]] == [str(on_agr_id)]
+
+
+@pytest.mark.asyncio
+async def test_unfiltered_list_hides_agreements_the_caller_cannot_open(test_engine):
+    """WHICH agreements: not the owner, not the creator, not the department →
+    the agreement's invoices stay out of the general list too."""
+    sf = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    uid, _, on_agr_id, _ = await _seed(sf, owner=False)
 
     async with _client(uid) as c:
         r = await c.get("/api/v1/invoices", params={"page_size": 200})
     assert r.status_code == 200, r.text
-    ids = {i["id"] for i in r.json()["items"]}
-    assert str(loose_id) not in ids, "someone else's invoice must stay out of the general list"
-    assert str(on_agr_id) not in ids, "agreement access widens the agreement view, not the whole list"
+    assert str(on_agr_id) not in {i["id"] for i in r.json()["items"]}
 
 
 @pytest.mark.asyncio
@@ -162,8 +188,10 @@ async def test_without_agreement_read_the_agreement_view_stays_scoped(test_engin
     try:
         async with _client(uid) as c:
             r = await c.get("/api/v1/invoices", params={"agreement_id": str(agr_id), "page_size": 200})
+            general = await c.get("/api/v1/invoices", params={"page_size": 200})
         assert r.status_code == 200, r.text
         assert str(on_agr_id) not in {i["id"] for i in r.json()["items"]}
+        assert str(on_agr_id) not in {i["id"] for i in general.json()["items"]}
     finally:
         async with sf() as db:
             await db.execute(text(

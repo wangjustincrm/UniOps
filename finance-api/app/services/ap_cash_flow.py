@@ -27,6 +27,23 @@ page, and each of them would make a naive forecast wrong:
   table to resolve them against (checked when the mirror was built). So the
   term comes from our vendor master, where it is editable per supplier.
 
+Two rules finance set on 2026-11-02 decide what counts at all:
+
+  **Only bills an approved EPMS PA is about to pay.** An open NC line is cash
+  flow when its invoice is on a PA in `approved` — not drafted or in review
+  (no commitment yet), not `processed` (already paid; NC catches up later).
+  Measured that day: 525,334.73 of 2,143,856.51 CAD open, and 285,284.58 more
+  sat on processed PAs that NC had not yet recorded as paid.
+
+  **Reversal pairs net out.** A reversal posted but never offset against its
+  original in NC leaves both open. Lines with the same supplier, currency and
+  invoice number whose open balances add to zero are left out (8 pairs, 16
+  bills that day; none was on an approved PA, so the rule above already drops
+  them — this keeps a future one from splitting across two buckets).
+
+The figures in the three findings above were measured before those rules, on
+every approved NC bill.
+
 Currency is never mixed. Everything is derived on read — there is no forecast
 table to go stale.
 """
@@ -36,6 +53,8 @@ from datetime import date
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services.nc_ap_bill_invoices import invoices, lines_agg
 
 # What epms-api / mdm-api accept for vendors.payment_terms: `net<N>` for any
 # N in 1..365 (Net 14, Net 21… not just the form's presets), plus two non-day
@@ -82,6 +101,13 @@ _TERM_CASE = (
     + " ".join(f"when v.payment_terms = '{k}' then {n}" for k, n in NON_DAY_TERMS.items())
     + " end")
 
+PA_APPROVED = "approved"
+# The AP <-> NC invoice-number match (nc_push.match_invoice_no and its SQL twin
+# LINE_MATCH_SQL): upper-case, no whitespace, no hyphens.
+INV_KEY_NC = "nullif(replace(l.invoice_no_norm, '-', ''), '')"
+INV_KEY_EPMS = (r"nullif(replace(upper(regexp_replace("
+                r"coalesce(i.vendor_invoice_number, ''), '\s', '', 'g')), '-', ''), '')")
+
 _DAYS_SQL = "(t.due_date - current_date)"
 _BUCKET_CASE = ("case when t.due_date is null then '" + UNDATED + "' " + " ".join(
     f"when {pred.format(d=_DAYS_SQL)} then '{key}'"
@@ -91,18 +117,11 @@ _BASE = f"""
 with dismissed as (
     select bill_no from nc_ap_bill_dismissals where restored_at is null
 ),
-open_bills as (
-    -- One row per NC document. `money_bal` is the open amount per LINE, so it
-    -- sums; everything else on a payable is a header property and is taken
-    -- with min() rather than repeated per line.
-    select l.bill_no, b.currency,
-           min(l.bill_date)::date as bill_date,
-           min(l.supplier_code) as supplier_code,
-           min(l.supplier_name) as supplier_name,
-           min(l.invoice_no) as invoice_no,
-           min(l.purchase_order) as purchase_order,
-           min(b.trade_type) as trade_type,
-           sum(l.money_bal) as open_bal
+open_lines as (
+    -- `money_bal` is the open amount per LINE, and a bill carries one invoice
+    -- per line, often several, so everything below is decided per line.
+    select l.*, b.currency, b.trade_type as bill_trade_type,
+           {INV_KEY_NC} as inv_key
       from nc_ap_bill_lines l
       join nc_ap_bills b on b.id = l.bill_id
      where b.bill_status = 1 and b.approve_status = 1
@@ -110,7 +129,59 @@ open_bills as (
        -- Bills finance has judged not to be real debt never reach the
        -- forecast. That is the whole point of having judged them.
        and not exists (select 1 from dismissed x where x.bill_no = l.bill_no)
-     group by l.bill_no, b.currency
+),
+-- A reversal finance posted but never offset against its original in NC:
+-- same supplier, currency and invoice number, open balances that add to zero.
+-- Both stay open in NC; neither is money to pay (finance, 2026-11-02).
+offset_pairs as (
+    select supplier_code, currency, inv_key
+      from open_lines
+     where inv_key is not null
+     group by supplier_code, currency, inv_key
+    having count(*) > 1 and sum(money_bal) = 0
+),
+-- Only what an approved EPMS PA is about to pay is cash flow (finance,
+-- 2026-11-02). `processed` is already paid; earlier states are not yet a
+-- commitment. The NC line is found the way the AP list finds it: invoice
+-- number ignoring case, spaces and hyphens, for the same NC supplier.
+approved_pa as (
+    select distinct p.pa_number, v.erp_id, {INV_KEY_EPMS} as inv_key
+      from payment_applications p
+      cross join lateral jsonb_array_elements_text(p.invoice_ids) x(invoice_id)
+      join invoices i on i.id::text = x.invoice_id
+      join vendors v on v.id = i.vendor_id
+     where p.status = '{PA_APPROVED}'
+),
+line_pa as (
+    select o.id as line_id, o.bill_no, a.pa_number
+      from open_lines o
+      join approved_pa a on a.inv_key = o.inv_key and a.erp_id = o.supplier_code
+     where not exists (select 1 from offset_pairs k
+                        where k.supplier_code = o.supplier_code
+                          and k.currency = o.currency and k.inv_key = o.inv_key)
+),
+open_bills as (
+    -- One row per NC document, over its PA-linked lines only. Everything else
+    -- on a payable is a header property and is taken with min() rather than
+    -- repeated per line.
+    select l.bill_no, l.currency,
+           min(l.bill_date)::date as bill_date,
+           min(l.supplier_code) as supplier_code,
+           min(l.supplier_name) as supplier_name,
+           -- Sort key only: a bill carries one invoice per line, often
+           -- several. What the page shows is `invoice_lines`.
+           min(l.invoice_no) as invoice_no,
+           min(l.purchase_order) as purchase_order,
+           {lines_agg()} as invoice_lines,
+           min(l.bill_trade_type) as trade_type,
+           sum(l.money_bal) as open_bal,
+           -- Search text only: every invoice number on the bill's lines.
+           string_agg(l.invoice_no, ' ') as invoice_search,
+           (select string_agg(distinct p.pa_number, ', ' order by p.pa_number)
+              from line_pa p where p.bill_no = l.bill_no) as pa_numbers
+      from open_lines l
+     where l.id in (select line_id from line_pa)
+     group by l.bill_no, l.currency
 ),
 termed as (
     select o.*,
@@ -120,7 +191,17 @@ termed as (
                 then o.bill_date + ({_TERM_CASE}) end as due_date,
            v.id is null as no_vendor_record
       from open_bills o
-      left join vendors v on v.erp_id = o.supplier_code
+      -- erp_id is not unique in the vendor master (the same NC supplier has
+      -- been created twice more than once), and a plain join repeats every
+      -- bill once per copy — inflating the totals, not just the list. Take
+      -- one record per supplier: an active one first, then the latest edited.
+      left join lateral (
+          select vv.id, vv.payment_terms
+            from vendors vv
+           where vv.erp_id = o.supplier_code
+           order by vv.is_active desc nulls last, vv.updated_at desc nulls last, vv.id
+           limit 1
+      ) v on true
 ),
 bucketed as (
     select t.*,
@@ -187,9 +268,26 @@ async def summary(db: AsyncSession, currency: str | None = None) -> dict:
     return {"currencies": out, "as_of": date.today().isoformat()}
 
 
+# Click-to-sort whitelist for items(): key -> SQL over the `bucketed` CTE.
+# Fragments written here (the request key is only looked up), each sorting what
+# that column of ApCashFlowPage shows.
+ITEM_SORT = {
+    "bill_no": "bill_no",
+    "supplier": "lower(coalesce(nullif(supplier_name, ''), supplier_code))",
+    "invoice_no": "lower(nullif(invoice_no, ''))",
+    "purchase_order": "lower(nullif(purchase_order, ''))",
+    "bill_date": "bill_date",
+    "payment_terms": "lower(nullif(payment_terms, ''))",
+    "due_date": "due_date",
+    "open_bal": "open_bal",
+    "pa": "pa_numbers",
+}
+ITEM_TIEBREAK = "bill_no"
+
+
 async def items(db: AsyncSession, currency: str, bucket: str | None = None,
-                supplier_code: str | None = None,
-                limit: int = 500, offset: int = 0) -> dict:
+                supplier_code: str | None = None, q: str | None = None,
+                limit: int = 500, offset: int = 0, order: str | None = None) -> dict:
     """The documents behind a bucket, soonest due first — which is also the
     order they have to be paid in.
 
@@ -206,16 +304,22 @@ async def items(db: AsyncSession, currency: str, bucket: str | None = None,
     if supplier_code:
         where.append("supplier_code = :supplier_code")
         params["supplier_code"] = supplier_code
+    if q and q.strip():
+        # Bill no, any invoice number on it, supplier name or code, PA number.
+        where.append("concat_ws(' ', bill_no, invoice_search, supplier_name, supplier_code,"
+                     " pa_numbers) ilike :q escape '\\'")
+        params["q"] = "%" + (q.strip().replace("\\", "\\\\").replace("%", "\\%")
+                             .replace("_", "\\_")) + "%"
     clause = " where " + " and ".join(where)
     rows = (await db.execute(text(_BASE + f"""
         select bill_no, currency, bill_date, supplier_code, supplier_name,
-               invoice_no, purchase_order, trade_type, open_bal,
+               invoice_lines, trade_type, open_bal, pa_numbers,
                payment_terms, term_days, due_date, days_to_due, bucket,
                no_vendor_record
           from bucketed {clause}
          -- Undated rows sort last within a bucket: they have no date to sort
          -- by, and biggest-first is the useful order for them.
-         order by due_date nulls last, open_bal desc
+         order by {order or "due_date nulls last, open_bal desc, bill_no"}
          limit :limit offset :offset
     """), params)).mappings().all()
     total = (await db.execute(text(
@@ -230,10 +334,11 @@ async def items(db: AsyncSession, currency: str, bucket: str | None = None,
             "bill_date": r["bill_date"].isoformat() if r["bill_date"] else None,
             "supplier_code": r["supplier_code"],
             "supplier_name": r["supplier_name"],
-            "invoice_no": r["invoice_no"],
-            "purchase_order": r["purchase_order"],
+            "invoices": invoices(r["invoice_lines"]),
             "trade_type": r["trade_type"],
             "open_bal": str(r["open_bal"]),
+            # The approved PA(s) that put this bill on the forecast.
+            "pa_numbers": r["pa_numbers"].split(", ") if r["pa_numbers"] else [],
             "payment_terms": r["payment_terms"],
             "term_days": r["term_days"],
             "due_date": r["due_date"].isoformat() if r["due_date"] else None,

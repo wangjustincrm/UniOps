@@ -45,11 +45,12 @@ from typing import Annotated
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, SessionDep
+from app.core.list_sort import SortDir, order_by, resolve
 from app.models.consignment import ConsignmentStock
 from app.services.mdm_client import resolve_material_names
 from app.services.wms_lot_lookup import list_lots, lookup_lot
@@ -243,6 +244,21 @@ async def create_stock(body: ConsignmentStockCreate, db: SessionDep, payload: Wr
     return response
 
 
+#: Sort keys for `GET /consignment/stock`, one per column of the entries
+#: table. Source sorts by the label the table shows ("from WMS" / "manual",
+#: empty last), not by the stored code.
+_STOCK_SORT = {
+    "material_code": ConsignmentStock.material_code,
+    "lot_no": func.lower(ConsignmentStock.lot_no),
+    "qty": ConsignmentStock.qty,
+    "count_date": ConsignmentStock.count_date,
+    "expiry_date": ConsignmentStock.expiry_date,
+    "expiry_source": case((ConsignmentStock.expiry_source == "wms", "from wms"),
+                          (ConsignmentStock.expiry_source == "manual", "manual"),
+                          else_=None),
+}
+
+
 @router.get("/stock", response_model=ConsignmentStockListResponse)
 async def list_stock(
     db: SessionDep,
@@ -251,9 +267,12 @@ async def list_stock(
     warehouse_code: str | None = Query(default=None),
     material_code: str | None = Query(default=None),
     lot_no: str | None = Query(default=None),
+    sort: str | None = Query(default=None, description="Column key; absent = newest count first"),
+    dir_: SortDir = Query(default="asc", alias="dir"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=500),
 ):
+    srt = resolve(sort, dir_, _STOCK_SORT)
     stmt = select(ConsignmentStock)
     count_stmt = select(func.count()).select_from(ConsignmentStock)
     if warehouse_code:
@@ -268,7 +287,10 @@ async def list_stock(
 
     total = (await db.execute(count_stmt)).scalar_one()
 
-    stmt = stmt.order_by(ConsignmentStock.count_date.desc(), ConsignmentStock.material_code, ConsignmentStock.lot_no)
+    if srt is None:
+        stmt = stmt.order_by(ConsignmentStock.count_date.desc(), ConsignmentStock.material_code, ConsignmentStock.lot_no)
+    else:
+        stmt = stmt.order_by(*order_by(_STOCK_SORT, *srt, ConsignmentStock.id))
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
     rows = (await db.execute(stmt)).scalars().all()
 

@@ -209,3 +209,18 @@ async def test_dashboard_endpoint_passes_the_flag_through(client, mixed):
         "fiscal_year": 2026, "cost_center_id": str(mixed["cc_a"]), "include_unposted": "true"})
     assert r.status_code == 200
     assert Decimal(r.json()["accounts"][item]["6"]) == Decimal("107.00")
+
+
+async def test_actuals_by_cost_centre_take_the_same_toggle(db_session, mixed):
+    """The Assistant's budget-vs-actual reads this per cost centre. Posted-only
+    it gave 590,817.60 available where the dashboard (unposted ticked) showed
+    488K (ISS-0014). Same rule as every other read: the live draft counts,
+    discarded / deleted / temp-saved drafts never do."""
+    posted = await crud.nc_actuals_by_cost_center(db_session, 2026)
+    both = await crud.nc_actuals_by_cost_center(db_session, 2026, include_unposted=True)
+    cc = str(mixed["cc_a"])
+    got = {r["cost_center_id"]: Decimal(r["actual"]) for r in posted["cost_centers"]}
+    got_both = {r["cost_center_id"]: Decimal(r["actual"]) for r in both["cost_centers"]}
+    assert got_both[cc] - got[cc] == Decimal("7.00")
+    assert both["include_unposted"] is True and posted["include_unposted"] is False
+

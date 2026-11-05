@@ -3,7 +3,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import delete as sa_delete, func, or_, select
+from sqlalchemy import delete as sa_delete, func, literal_column, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud._numbering import next_number
@@ -37,6 +37,22 @@ async def delete_invoice(db: AsyncSession, inv: ApInvoice) -> None:
     that never touched the GL and were never paid — callers must check."""
     await db.delete(inv)
     await db.flush()
+
+
+async def void_for_deleted_source(db: AsyncSession, inv: ApInvoice) -> str:
+    """The source system deleted this invoice. An AP row that never touched
+    the GL and was never paid is just noise — remove it ("deleted"). A posted
+    one stays for the audit trail, voided, with its accrual reversed out of the
+    GL ("voided"). The one rule for POST /ap/invoices status=void and for
+    scripts.reconcile_epms_ap."""
+    from app.crud.ap_accrual import has_postings, reverse_invoice_accrual
+    if not await has_postings(db, inv.id) and inv.paid_amount == Decimal("0"):
+        await delete_invoice(db, inv)
+        return "deleted"
+    inv.status = VOID
+    await reverse_invoice_accrual(db, inv.id)
+    await db.flush()
+    return "voided"
 
 
 async def upsert(db: AsyncSession, *, source: str, source_invoice_id: uuid.UUID,
@@ -86,12 +102,49 @@ async def upsert(db: AsyncSession, *, source: str, source_invoice_id: uuid.UUID,
     return inv
 
 
+_IN_NC_SQL = r"""exists (
+    select 1 from nc_ap_bill_lines l
+      join nc_ap_bills b on b.id = l.bill_id
+      join vendors v on v.id = ap_invoices.vendor_id
+     where replace(l.invoice_no_norm, '-', '') = nullif(replace(upper(regexp_replace(
+               coalesce(ap_invoices.vendor_invoice_number, ''), '\s', '', 'g')), '-', ''), '')
+       and l.supplier_code = v.erp_id
+       and (b.src_syscode is distinct from 17 or b.bill_no = ap_invoices.nc_bill_no))"""
+
+
+# An EPMS AP on a PO imported from NC (type 1, raw material / packaging): NC
+# makes that payable itself from its purchase invoice, so UniOps never pushes
+# it (nc_push refuses it too). Covers the invoice's own PO and multi-PO
+# allocations — the same POs nc_push.plan_bill looks at.
+NC_FLOW_SQL = """ap_invoices.source = 'epms' and exists (
+    select 1 from invoices i
+      join purchase_orders p on p.source = 'nc'
+       and (p.id = i.po_id or p.id in (select al.po_id from invoice_po_allocations al
+                                        where al.invoice_id = i.id))
+     where i.id = ap_invoices.source_invoice_id)"""
+
+
+# Sort key for the NC AP Doc column: our pushed bill, else the first mirror bill
+# that _IN_NC_SQL would match — so hand-entered bills sort with the rest.
+NC_DOC_SORT = literal_column(r"""coalesce(ap_invoices.nc_bill_no, (
+    select min(b.bill_no) from nc_ap_bill_lines l
+      join nc_ap_bills b on b.id = l.bill_id
+      join vendors v on v.id = ap_invoices.vendor_id
+     where replace(l.invoice_no_norm, '-', '') = nullif(replace(upper(regexp_replace(
+               coalesce(ap_invoices.vendor_invoice_number, ''), '\s', '', 'g')), '-', ''), '')
+       and l.supplier_code = v.erp_id
+       and (b.src_syscode is distinct from 17 or b.bill_no = ap_invoices.nc_bill_no)))""")
+
+
 async def list_invoices(db: AsyncSession, *, source: str | None = None,
                         vendor_id: uuid.UUID | None = None, status: str | None = None,
                         q: str | None = None, exported: bool | None = None,
-                        limit: int = 50, offset: int = 0) -> tuple[int, list[ApInvoice]]:
+                        in_nc: bool | None = None,
+                        limit: int = 50, offset: int = 0,
+                        order: list | None = None) -> tuple[int, list[ApInvoice]]:
     """Paginated envelope (total, page). `q` matches vendor_invoice_number /
-    vendor_name; `exported` filters on nc_exported_at presence."""
+    vendor_name; `exported` filters on nc_exported_at presence. `order` is the
+    caller's whitelisted ORDER BY (app.core.list_sort); None = newest first."""
     base = select(ApInvoice)
     if source:
         base = base.where(ApInvoice.source == source)
@@ -107,12 +160,98 @@ async def list_invoices(db: AsyncSession, *, source: str | None = None,
         base = base.where(ApInvoice.nc_exported_at.is_not(None))
     elif exported is False:
         base = base.where(ApInvoice.nc_exported_at.is_(None))
+    if in_nc is not None:
+        # "Hide in NC": an AP is in NC when UniOps pushed it, or the NC AP
+        # mirror holds its invoice number for its supplier (any approval
+        # state; our own replaced bills excluded) — same match as the list's
+        # NC AP Doc column (services/nc_push.nc_docs_for). An NC-flow AP is
+        # hidden too: NC books it itself, there is nothing to push.
+        has = or_(ApInvoice.nc_bill_no.is_not(None), text(_IN_NC_SQL),
+                  text(f"({NC_FLOW_SQL})"))
+        base = base.where(has if in_nc else ~has)
     total = (await db.execute(
         select(func.count()).select_from(base.subquery()))).scalar_one()
     rows = list((await db.execute(
-        base.order_by(ApInvoice.invoice_date.desc(), ApInvoice.ap_invoice_number.desc())
+        base.order_by(*(order or (ApInvoice.invoice_date.desc(),
+                                  ApInvoice.ap_invoice_number.desc())))
         .offset(offset).limit(limit))).scalars().all())
     return total, rows
+
+
+async def nc_flow_ids(db: AsyncSession, ids: list[uuid.UUID]) -> set[uuid.UUID]:
+    if not ids:
+        return set()
+    return set((await db.execute(select(ApInvoice.id).where(
+        ApInvoice.id.in_(ids), text(f"({NC_FLOW_SQL})")))).scalars().all())
+
+
+async def gl_codes(db: AsyncSession, rows: list[ApInvoice]) -> dict[uuid.UUID, str]:
+    """AP id -> budget account code(s), from the same source the NC push takes
+    its revenue/expense item from (services/nc_push._summary_and_dims):
+    PO route = the PO(s) — own PO plus multi-PO allocations, distinct,
+    comma-joined; courier = the fixed freight item; Direct / OA = the Direct
+    PA's budget account; agreement = the agreement's. Nothing known -> absent."""
+    from app.models.mirrors import (ExpenseInvoice, Invoice, InvoicePoAllocation,
+                                    PurchaseAgreement, PurchaseOrder)
+    from app.models.pa import PaymentApplication
+    from app.services.nc_push import FREIGHT_REVEXP, _leaf_budget
+    by_ap: dict[uuid.UUID, set[str]] = {}
+
+    def put(ap_id, code):
+        c = _leaf_budget(code)
+        if c:
+            by_ap.setdefault(ap_id, set()).add(c)
+
+    # OA: expense invoice -> its Direct PA.
+    oa = {r.source_invoice_id: r.id for r in rows if r.source == "oa"}
+    if oa:
+        pa_of = dict((await db.execute(
+            select(ExpenseInvoice.id, ExpenseInvoice.pa_id)
+            .where(ExpenseInvoice.id.in_(list(oa)), ExpenseInvoice.pa_id.is_not(None)))).all())
+        code = dict((await db.execute(
+            select(PaymentApplication.id, PaymentApplication.budget_account_code)
+            .where(PaymentApplication.id.in_(set(pa_of.values()))))).all()) if pa_of else {}
+        for ei, pa in pa_of.items():
+            put(oa[ei], code.get(pa))
+
+    src = {r.source_invoice_id: r.id for r in rows if r.source == "epms"}
+    if not src:
+        return {ap: ", ".join(sorted(cs)) for ap, cs in by_ap.items()}
+    invs = list((await db.execute(
+        select(Invoice.id, Invoice.match_route, Invoice.agreement_id)
+        .where(Invoice.id.in_(list(src))))).all())
+    po_side = [i for i, route, _ in invs if (route or "po") not in ("freight", "direct", "agreement")]
+    for i, route, _ in invs:
+        if route == "freight":
+            put(src[i], FREIGHT_REVEXP)
+    for i, route, _ in invs:
+        if route == "direct":
+            pa = (await db.execute(select(PaymentApplication.budget_account_code).where(
+                PaymentApplication.invoice_ids.contains([str(i)]),
+                PaymentApplication.status != "cancelled").limit(1))).scalars().first()
+            put(src[i], pa)
+    agr_of = {i: a for i, route, a in invs if route == "agreement" and a}
+    if agr_of:
+        code = dict((await db.execute(
+            select(PurchaseAgreement.id, PurchaseAgreement.budget_code)
+            .where(PurchaseAgreement.id.in_(set(agr_of.values()))))).all())
+        for i, a in agr_of.items():
+            put(src[i], code.get(a))
+
+    if po_side:
+        pairs = list((await db.execute(
+            select(Invoice.id, Invoice.po_id)
+            .where(Invoice.id.in_(po_side), Invoice.po_id.is_not(None)))).all())
+        pairs += list((await db.execute(
+            select(InvoicePoAllocation.invoice_id, InvoicePoAllocation.po_id)
+            .where(InvoicePoAllocation.invoice_id.in_(po_side)))).all())
+        if pairs:
+            code = dict((await db.execute(
+                select(PurchaseOrder.id, PurchaseOrder.budget_code)
+                .where(PurchaseOrder.id.in_({po for _, po in pairs})))).all())
+            for inv_id, po_id in pairs:
+                put(src[inv_id], code.get(po_id))
+    return {ap: ", ".join(sorted(cs)) for ap, cs in by_ap.items()}
 
 
 async def get(db: AsyncSession, invoice_id: uuid.UUID) -> ApInvoice | None:

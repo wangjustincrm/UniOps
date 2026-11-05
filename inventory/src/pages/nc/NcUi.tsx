@@ -1,9 +1,8 @@
 // Small pieces the three NC tabs share: error box, loading rows, pager,
-// sortable header, material cell.
-import { AlertTriangle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp } from 'lucide-react'
+// material cell. (Sortable headers: SortTh from @uniops/shell.)
+import { AlertTriangle, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Skeleton } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
-import { cn } from '@/lib/utils'
 
 export function ErrorBox({ error, fallback }: { error: unknown; fallback: string }) {
   // An empty table and a failed request must never look the same.
@@ -69,34 +68,6 @@ export function Pager({ page, pageSize, total, busy, onPage }: {
         </button>
       </div>
     </div>
-  )
-}
-
-/** Header cell that sorts. The API sorts each key in one fixed direction
- *  (qty/amount largest first, codes ascending), so there is no toggle. */
-export function SortTh<K extends string>({ label, sortKey, current, onSort, align = 'left', descending = false, sortTitle }: {
-  label: string
-  /** Tooltip; defaults to "Sort by <label>". */
-  sortTitle?: string
-  sortKey: K
-  current: K
-  onSort: (k: K) => void
-  align?: 'left' | 'right'
-  descending?: boolean
-}) {
-  const active = current === sortKey
-  return (
-    <th className={cn('px-3 py-2', align === 'right' ? 'text-right' : 'text-left')}
-      aria-sort={active ? (descending ? 'descending' : 'ascending') : undefined}>
-      <button type="button" onClick={() => onSort(sortKey)}
-        className={cn('inline-flex items-center gap-1 uppercase hover:text-neutral-800', active && 'text-neutral-900')}
-        title={sortTitle ?? `Sort by ${label}${descending ? ' (largest first)' : ''}`}>
-        {label}
-        {active && (descending
-          ? <ChevronDown aria-hidden className="h-3 w-3" />
-          : <ChevronUp aria-hidden className="h-3 w-3" />)}
-      </button>
-    </th>
   )
 }
 

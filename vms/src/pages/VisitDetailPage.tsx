@@ -95,8 +95,8 @@ export default function VisitDetailPage() {
   const isClosed = visit.status === 'cancelled' || visit.status === 'checked_out' || visit.status === 'no_show'
   const hasVisitorId = !!visitor
 
-  // Area rules come from vms-api (the rules it enforces): GMP, Laboratory and
-  // Entire Plant need a passing health declaration for every visitor.
+  // Zone rules come from vms-api (the rules it enforces): GMP-grade zones
+  // (VMS Admin → Zones) need a passing health declaration for every visitor.
   const rule = areaRules?.[visit.access_area]
   const isGmpZone = !!rule?.requires_health_declaration
   const showComplianceGate = !!rule?.compliance_tasks_at_check_in
@@ -127,7 +127,7 @@ export default function VisitDetailPage() {
   // first" even when the blocker was a health declaration.
   const printBlockers = [
     !allIdVerified && 'tick “ID Verified” for every visitor',
-    isGmpZone && visit.health_decl_status === 'failed' && 'a health declaration failed — use “Edit visit” to move the visit to Office / Lobby, or cancel it',
+    isGmpZone && visit.health_decl_status === 'failed' && 'a health declaration failed — use “Edit visit” to move the visit to a non-GMP zone (e.g. Office), or cancel it',
     isGmpZone && visit.health_decl_status !== 'failed' && !healthPassed && 'every visitor needs a passing health declaration',
   ].filter(Boolean) as string[]
 

@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AlertCircle, Loader2 } from 'lucide-react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -160,6 +161,19 @@ function ApprovalRoutingBody() {
       .sort((a, b) => a.full_name.localeCompare(b.full_name)),
     [usersQ.data],
   )
+  // Whole list, sorted here. Rows are keyed by dept_id and edits live in
+  // deptEdits[dept_id], so reordering never moves an edit to another row. The
+  // getters read the SAVED values, so a row does not jump while it is edited.
+  const usersById = useMemo(() => new Map((usersQ.data ?? []).map((u) => [u.id, u])), [usersQ.data])
+  const sortedDepts = useSortableRows(routingQ.data?.departments, {
+    department: (d) => `${d.dept_code} — ${d.dept_name}`,
+    gm_or_opm: (d) => d.gm_or_opm.toUpperCase(),
+    director: (d) => {
+      const u = d.director_user_id ? usersById.get(d.director_user_id) : undefined
+      return u ? userLabel(u) : null
+    },
+    supervisor: (d) => (d.supervisor_enabled ? 'Enabled' : 'Disabled'),
+  })
 
   if (routingQ.isLoading || usersQ.isLoading) return <LoadingBlock />
   if (routingQ.isError || usersQ.isError) {
@@ -239,11 +253,10 @@ function ApprovalRoutingBody() {
         <table className="w-full min-w-max text-sm">
           <thead className="border-b border-neutral-100 bg-neutral-50">
             <tr>
-              {['Department', 'GM or OPM', 'Director', 'Supervisor'].map((h) => (
-                <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">
-                  {h}
-                </th>
-              ))}
+              <SortTh label="Department" sortKey="department" sort={sortedDepts.sort} onSort={sortedDepts.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+              <SortTh label="GM or OPM" sortKey="gm_or_opm" sort={sortedDepts.sort} onSort={sortedDepts.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+              <SortTh label="Director" sortKey="director" sort={sortedDepts.sort} onSort={sortedDepts.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+              <SortTh label="Supervisor" sortKey="supervisor" sort={sortedDepts.sort} onSort={sortedDepts.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
             </tr>
           </thead>
           <tbody>
@@ -254,7 +267,7 @@ function ApprovalRoutingBody() {
                 </td>
               </tr>
             ) : (
-              departments.map((dept, i) => {
+              sortedDepts.rows.map((dept, i) => {
                 const row = effectiveRow(dept)
                 const isDirty = dept.dept_id in deptEdits
                 return (

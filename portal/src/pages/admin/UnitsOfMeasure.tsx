@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Trash2, X } from 'lucide-react'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -29,6 +30,10 @@ export function UnitsOfMeasure() {
   const { data, isLoading } = useQuery<{ items: ApiUom[]; total: number }>({
     queryKey: ['portal-uoms'],
     queryFn: () => mdmApi.get<{ items: ApiUom[]; total: number }>('/uom'),
+  })
+  const uoms = useSortableRows(data?.items, {
+    code: (u) => u.code, name: (u) => u.name, dimension: (u) => u.dimension,
+    status: (u) => (u.is_active ? 'Active' : 'Inactive'),
   })
   const [modal, setModal] = useState<{ mode: 'create' | 'edit'; uom?: ApiUom } | null>(null)
   const [form, setForm] = useState<{ code: string; name: string; dimension: Dimension; is_active: boolean }>(
@@ -79,14 +84,16 @@ export function UnitsOfMeasure() {
           <table className="w-full text-sm">
             <thead className="border-b border-neutral-100 bg-neutral-50">
               <tr>
-                {['Code', 'Name', 'Dimension', 'Status', ''].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>
-                ))}
+                <SortTh label="Code" sortKey="code" sort={uoms.sort} onSort={uoms.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Name" sortKey="name" sort={uoms.sort} onSort={uoms.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Dimension" sortKey="dimension" sort={uoms.sort} onSort={uoms.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Status" sortKey="status" sort={uoms.sort} onSort={uoms.onSort} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
+                <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500" />
               </tr>
             </thead>
             <tbody>
-              {data.items.map((u, i) => (
-                <tr key={u.id} className={cn('border-b border-neutral-100', i === data.items.length - 1 && 'border-b-0')}>
+              {uoms.rows.map((u, i) => (
+                <tr key={u.id} className={cn('border-b border-neutral-100', i === uoms.rows.length - 1 && 'border-b-0')}>
                   <td className="px-4 py-3 font-mono text-xs text-neutral-700">{u.code}</td>
                   <td className="px-4 py-3 text-neutral-800">{u.name}</td>
                   <td className="px-4 py-3 text-xs text-neutral-500">{u.dimension}</td>

@@ -27,7 +27,7 @@ import { ArrowLeft, CheckCircle2, AlertCircle, Loader2, Info } from 'lucide-reac
 import { cn } from '@/lib/utils'
 import { ApiError } from '@/lib/api'
 import {
-  useMyBookings,
+  useBooking,
   useUpdateBooking,
   useUpdateSeries,
   usePrecheckBooking,
@@ -141,19 +141,16 @@ export default function BookingEditPage() {
   const [booking, setBooking] = useState<BookingOut | null>(locationState.booking ?? null)
   const [notFound, setNotFound] = useState(false)
 
-  const { data: mineList } = useMyBookings()
+  // No router state (reload / pasted link): load it by id. This used to search
+  // the latest-200 /bookings/mine window, so older bookings were "not found".
+  const { data: fetched, isError: fetchFailed } = useBooking(id, !booking)
   useDocTabTitle(booking?.title && `Edit ${booking.title}`)
 
   useEffect(() => {
     if (booking) return   // already have it from location.state
-    if (!mineList) return
-    const found = mineList.find((b) => b.id === id)
-    if (found) {
-      setBooking(found)
-    } else {
-      setNotFound(true)
-    }
-  }, [mineList, id, booking])
+    if (fetched) setBooking(fetched)
+    else if (fetchFailed) setNotFound(true)
+  }, [fetched, fetchFailed, booking])
 
   // ── Series mode detection ─────────────────────────────────────────────────
   const isSeries = !!(booking?.series_id)

@@ -26,7 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.department_mirror import Department
 from app.models.user_mirror import User
-from app.models.visit import AccessArea, HealthDeclStatus, Visit, VisitStatus
+from app.models.visit import HealthDeclStatus, Visit, VisitStatus
+from app.services import area_rules
 from app.models.visitor import Visitor
 
 
@@ -158,7 +159,7 @@ async def stream_cfia_visit_log(
                     v_row.visitor_type.value,
                     host.full_name,
                     dept_name or "",
-                    visit.access_area.value,
+                    visit.access_area,
                     visit.health_decl_status.value if visit.health_decl_status else "",
                     _fmt_dt(visit.planned_arrival),
                     _fmt_dt(visit.actual_arrival),
@@ -190,13 +191,10 @@ _GMP_SUMMARY_HEADER = [
 _BUSINESS_HOUR_START = 7   # inclusive
 _BUSINESS_HOUR_END = 19    # exclusive
 
-_GMP_AREAS = (AccessArea.production_gmp, AccessArea.laboratory, AccessArea.all)  # = area_rules.GMP_GRADE_AREAS, ordered for the report
-
-
 async def stream_gmp_area_summary(
     db: AsyncSession, *, date_from: date, date_to: date,
 ) -> AsyncIterator[str]:
-    """One row per GMP/Lab access area for the requested window.
+    """One row per GMP-grade zone (VMS Admin → Zones) for the requested window.
 
     Counters reflect VMS-CR-002 / §6.5.5: total visits, health-decl outcome
     distribution, after-hours count, unreturned badges (still a problem at
@@ -204,7 +202,7 @@ async def stream_gmp_area_summary(
     """
     yield _csv_row(_GMP_SUMMARY_HEADER)
 
-    for area in _GMP_AREAS:
+    for area in await area_rules.gmp_grade_codes(db):
         base = (
             select(Visit)
             .where(
@@ -273,7 +271,7 @@ async def stream_gmp_area_summary(
 
         yield _csv_row(
             [
-                area.value, total, passed, failed, restricted, not_required,
+                area, total, passed, failed, restricted, not_required,
                 no_decl, after_hours, unreturned,
             ]
         )
@@ -298,7 +296,7 @@ async def compliance_metrics(
     gmp_base = (
         select(Visit)
         .where(
-            Visit.access_area.in_(_GMP_AREAS),
+            Visit.access_area.in_(await area_rules.gmp_grade_codes(db)),
             Visit.visit_date >= month_start,
             Visit.visit_date <= today,
             Visit.status.in_(

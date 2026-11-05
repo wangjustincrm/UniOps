@@ -124,6 +124,11 @@ class VendorCreditApplicationRow(BaseModel):
     applied_at: datetime
     applied_by: uuid.UUID
     applied_by_name: str | None = None
+    # Joined at read time from payment_records / payment_batches.
+    batch_number: str | None = None
+    payment_date: date | None = None
+    cash_paid: Decimal | None = None      # payment_records.amount — net of credits
+    payment_status: str | None = None
 
     model_config = {"from_attributes": True}
 

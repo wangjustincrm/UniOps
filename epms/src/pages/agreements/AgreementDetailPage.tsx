@@ -6,6 +6,7 @@ import {
   ArrowLeft, CheckCircle2, RotateCcw, XCircle, MessageSquare, X, FileText, AlertTriangle, ExternalLink, Pencil,
   CreditCard, Upload, Paperclip, Info, Plus,
 } from 'lucide-react'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
@@ -28,6 +29,7 @@ import {
 import { agreementAttachmentService } from '@/services/agreementAttachments'
 import type { AgreementStatus, AgreementType } from '@/services/agreement'
 import type { ApiEvent } from '@/services/pr'
+import { historyLine, isSkipped } from '@/lib/approvalHistory'
 import type { InvoiceStatus } from '@/services/invoices'
 import { isAgreementAdmissible } from '@/lib/agreements'
 
@@ -114,7 +116,7 @@ function buildWorkflowSteps(
     // Auto-skipped steps carry an approve event with a machine actor; naming
     // it would credit a person for a decision nobody made. Same rule as PR.
     const evt = approveEventByStep[i]
-    const autoSkipped = evt?.comment?.includes('Auto-skipped') ?? false
+    const autoSkipped = isSkipped(evt)
     if (autoSkipped) s = 'skipped'
     return {
       id: node.id, role: node.label, status: s,
@@ -273,6 +275,16 @@ export default function AgreementDetailPage() {
     Boolean(agreement),
   )
   const invoices = invoicesData?.items ?? []
+  // Matched Invoices table: the agreement's invoices arrive whole (listAll),
+  // so sorting them here is exact. Status sorts by the label it shows.
+  const { rows: sortedInvoices, sort: invSort, onSort: onInvSort } = useSortableRows(invoicesData?.items, {
+    internal_ref: (inv) => inv.internal_ref,
+    vendor_invoice_number: (inv) => inv.vendor_invoice_number,
+    total_amount: (inv) => Number(inv.total_amount),
+    invoice_date: (inv) => inv.invoice_date,
+    status: (inv) => (INVOICE_STATUS_CFG[inv.status]?.label ?? inv.status),
+    receipt: (inv) => (inv.legacy_settlement ? 'Settled without receipt' : null),
+  })
   const legacySettlementCount = invoices.filter((inv) => inv.legacy_settlement).length
   // house_account agreements have no schedule rows at all (epms-api's
   // ensure_period_rows returns 0 for non-recurring types, and milestone/period
@@ -713,16 +725,17 @@ export default function AgreementDetailPage() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-neutral-200 bg-neutral-50">
-                        <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Invoice</th>
-                        <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Vendor Invoice #</th>
-                        <th className="px-4 py-2.5 text-right text-xs font-semibold text-neutral-500">Amount</th>
-                        <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Date</th>
-                        <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Status</th>
-                        <th className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500">Receipt</th>
+                        <SortTh label="Invoice" sortKey="internal_ref" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
+                        <SortTh label="Vendor Invoice #" sortKey="vendor_invoice_number" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
+                        <SortTh label="Amount" sortKey="total_amount" sort={invSort} onSort={onInvSort} align="right"
+                          className="px-4 py-2.5 text-right text-xs font-semibold text-neutral-500" />
+                        <SortTh label="Date" sortKey="invoice_date" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
+                        <SortTh label="Status" sortKey="status" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
+                        <SortTh label="Receipt" sortKey="receipt" sort={invSort} onSort={onInvSort} className="px-4 py-2.5 text-left text-xs font-semibold text-neutral-500" />
                       </tr>
                     </thead>
                     <tbody>
-                      {invoices.map((inv) => {
+                      {sortedInvoices.map((inv) => {
                         const invStatusCfg = INVOICE_STATUS_CFG[inv.status] ?? { label: inv.status, variant: 'neutral' as const }
                         return (
                           <tr key={inv.id} className="border-b border-neutral-100 last:border-0 bg-white hover:bg-primary-50/60 transition-colors">
@@ -836,17 +849,20 @@ export default function AgreementDetailPage() {
             <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">Audit History</h2>
             {events && events.length > 0 ? (
               <ul className="flex flex-col gap-3">
-                {events.map((e) => (
-                  <li key={e.id} className="flex gap-3 text-sm">
-                    <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDateTime(e.created_at)}</span>
-                    <div>
-                      <span className="font-medium text-neutral-800 capitalize">{e.action.replace(/_/g, ' ')}</span>
-                      <span className="text-neutral-500 ml-1">by {e.actor_role.replace(/_/g, ' ')}</span>
-                      {e.actor_name && <span className="text-neutral-400 ml-1">— {e.actor_name}</span>}
-                      {e.comment && <p className="text-neutral-400 text-xs mt-0.5 italic">{e.comment}</p>}
-                    </div>
-                  </li>
-                ))}
+                {events.map((e) => {
+                  const line = historyLine(e)
+                  return (
+                    <li key={e.id} className="flex gap-3 text-sm">
+                      <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDateTime(e.created_at)}</span>
+                      <div>
+                        <span className="font-medium text-neutral-800 capitalize">{line.action}</span>
+                        <span className="text-neutral-500 ml-1">{line.role}</span>
+                        {line.actorName && <span className="text-neutral-400 ml-1">— {line.actorName}</span>}
+                        {line.note && <p className="text-neutral-400 text-xs mt-0.5 italic">{line.note}</p>}
+                      </div>
+                    </li>
+                  )
+                })}
               </ul>
             ) : (
               <div className="text-sm text-neutral-400 text-center py-8">No history yet</div>

@@ -1,19 +1,24 @@
 """Journal voucher API — list/detail + lifecycle actions (Plan 2)."""
+import io
+import tempfile
 import uuid
 from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from uniops_authz import has_permission
 
 from app.core.deps import CurrentUser
+from app.core.list_sort import SortDir, lower
 from app.crud import journal_voucher as crud
 from app.db.base import get_db
 from app.models.journal_voucher import (JournalVoucher, JournalVoucherLine,
                                         JvLineDimension)
+from app.services import jv_lines
 
 router = APIRouter(prefix="/journal-vouchers", tags=["journal-vouchers"])
 
@@ -21,13 +26,17 @@ router = APIRouter(prefix="/journal-vouchers", tags=["journal-vouchers"])
 _SORTABLE = {
     "voucher_date": JournalVoucher.voucher_date,
     "jv_number": JournalVoucher.jv_number,
-    "summary": JournalVoucher.summary,
+    "summary": lower(JournalVoucher.summary),
     # The list's "Debit (CAD)" column displays total_local_debit, so sort on the
     # SAME column — sorting the original-currency total_debit would make the
     # visible CAD column non-monotonic for a multi-currency book (27k USD lines).
     "total_debit": JournalVoucher.total_local_debit,
     "status": JournalVoucher.status,
     "source_subsystem": JournalVoucher.source_subsystem,
+    # The Source cell leads with the document number; Prepared / Checked leads
+    # with the preparer. Each sorts by the line it shows first.
+    "source_doc_number": lower(JournalVoucher.source_doc_number),
+    "nc_prepared_name": lower(JournalVoucher.nc_prepared_name),
 }
 
 _SUBSYSTEM_LABELS = {
@@ -132,15 +141,22 @@ async def list_vouchers(_: CurrentUser, db: AsyncSession = Depends(get_db),
                         limit: int = Query(default=50, le=200),
                         offset: int = Query(default=0, ge=0),
                         sort: str = Query(default="voucher_date"),
-                        dir: str = Query(default="desc")):
+                        dir: SortDir = Query(default="desc")):
     """NC's 凭证查询 has period/date/number RANGES and an auxiliary picker; this
     used to offer a single exact fiscal_period, so listing a quarter meant three
     separate queries and listing "all of 2026" was impossible.
 
     `period` (exact) is kept because existing callers and saved links use it.
     fiscal_period is a zero-padded 'YYYY-MM' string, so a plain string BETWEEN
-    orders correctly — no date casting needed."""
-    base = select(JournalVoucher)
+    orders correctly — no date casting needed.
+
+    NC vouchers only (nc_source_pk set). The drafts generate_from_event writes
+    for AP accruals / payments never reach NC, and their max+1 numbers collide
+    with the vouchers NC books later in the same period: JV-202609-0601 was both
+    an internal Sulzer accrual draft and NC's real Amazon voucher, and finance
+    looked for the draft in NC and found nothing (user, 2026-10-27). NC is the
+    book of record — this list is its mirror. Detail by id is unchanged."""
+    base = select(JournalVoucher).where(JournalVoucher.nc_source_pk.is_not(None))
     if period:
         base = base.where(JournalVoucher.fiscal_period == period)
     if period_from:
@@ -200,9 +216,11 @@ async def list_vouchers(_: CurrentUser, db: AsyncSession = Depends(get_db),
     if sort not in _SORTABLE:
         raise HTTPException(status_code=422, detail=f"unknown sort column {sort!r}")
     col = _SORTABLE[sort]
-    col = col.asc() if dir == "asc" else col.desc()
+    # nulls_last both ways: Postgres DESC would otherwise lift every voucher
+    # without a summary / source document above the real values.
+    col = (col.asc() if dir == "asc" else col.desc()).nulls_last()
     rows = (await db.execute(
-        base.order_by(col, JournalVoucher.jv_number.desc())   # jv_number 作稳定次级键
+        base.order_by(col, JournalVoucher.jv_number.desc(), JournalVoucher.id)   # 稳定次级键
         .offset(offset).limit(limit))).scalars().all()
     return {"total": total, "items": [_hdr(jv) for jv in rows]}
 
@@ -258,6 +276,72 @@ async def aux_values(_: CurrentUser, dim_code: str = Query(...),
     return {"items": list(rows)}
 
 
+def _line_filters(period_from: str | None = Query(default=None),
+                  period_to: str | None = Query(default=None),
+                  date_from: date | None = Query(default=None),
+                  date_to: date | None = Query(default=None),
+                  status: str | None = Query(default=None),
+                  source_subsystem: str | None = Query(default=None),
+                  account_code: str | None = Query(default=None),
+                  currency: str | None = Query(default=None),
+                  aux_code: str | None = Query(default=None),
+                  aux_value: str | None = Query(default=None),
+                  q: str | None = Query(default=None),
+                  sort: str | None = Query(default=None),
+                  dir: SortDir = Query(default="asc")) -> jv_lines.LineFilters:
+    return jv_lines.LineFilters(
+        period_from=period_from, period_to=period_to, date_from=date_from, date_to=date_to,
+        status=status, source_subsystem=source_subsystem, account_code=account_code,
+        currency=currency, aux_code=aux_code, aux_value=aux_value if aux_code else None,
+        q=q, sort=sort, dir=dir)
+
+
+@router.get("/lines")
+async def list_lines(_: CurrentUser, db: AsyncSession = Depends(get_db),
+                     f: jv_lines.LineFilters = Depends(_line_filters),
+                     limit: int = Query(default=50, le=200),
+                     offset: int = Query(default=0, ge=0)):
+    """JV Detail page: voucher LINES rather than vouchers, each auxiliary in its
+    own column (user, 2026-10-29) so finance can slice them. `dim_columns` is
+    the book's auxiliary set, fixed across pages."""
+    total = (await db.execute(select(func.count()).select_from(
+        jv_lines.line_query(f).order_by(None).subquery()))).scalar_one()
+    codes = await jv_lines.book_dim_codes(db)
+    return {
+        "total": total,
+        "dim_columns": [{"code": c, "label": jv_lines.dim_label(c)} for c in codes],
+        "items": await jv_lines.page(db, f, limit, offset),
+    }
+
+
+@router.get("/lines/export")
+async def export_lines(_: CurrentUser, db: AsyncSession = Depends(get_db),
+                       f: jv_lines.LineFilters = Depends(_line_filters)):
+    """CSV of every line the JV Detail filters match, auxiliaries expanded one
+    column each. Written to a spooled temp file inside the request (the DB
+    session is still open), then streamed; UTF-8 with BOM so Excel reads the
+    Chinese names."""
+    buf = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024, mode="w+b")
+    text = io.TextIOWrapper(buf, encoding="utf-8-sig", newline="")
+    await jv_lines.write_csv(db, f, text)
+    text.flush()
+    text.detach()
+    buf.seek(0)
+    name = "jv-detail"
+    if f.period_from or f.period_to:
+        name += f"-{f.period_from or 'start'}_{f.period_to or 'end'}"
+
+    def _chunks():
+        try:
+            while chunk := buf.read(256 * 1024):
+                yield chunk
+        finally:
+            buf.close()
+
+    return StreamingResponse(_chunks(), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": f'attachment; filename="{name}.csv"'})
+
+
 @router.get("/{jv_id}")
 async def get_voucher(jv_id: uuid.UUID, _: CurrentUser, db: AsyncSession = Depends(get_db)):
     jv = await crud.get(db, jv_id)
@@ -268,7 +352,6 @@ async def get_voucher(jv_id: uuid.UUID, _: CurrentUser, db: AsyncSession = Depen
         .order_by(JournalVoucherLine.line_no))).scalars().all()
 
     from app.models.coa import ChartOfAccount
-    from app.models.journal_voucher import JvLineDimension
     from app.models.mirrors import CostCenter, Department, User
 
     async def _lookup(model, ids, key=lambda r: r.id):
@@ -286,13 +369,10 @@ async def get_voucher(jv_id: uuid.UUID, _: CurrentUser, db: AsyncSession = Depen
     if codes:
         coa = {a.code: a for a in (await db.execute(
             select(ChartOfAccount).where(ChartOfAccount.code.in_(codes)))).scalars()}
-    dims_by_line: dict = {}
-    line_ids = [ln.id for ln in lines]
-    if line_ids:
-        for d in (await db.execute(select(JvLineDimension).where(
-                JvLineDimension.jv_line_id.in_(line_ids)))).scalars():
-            dims_by_line.setdefault(d.jv_line_id, []).append(
-                {"dim_code": d.dim_code, "value_text": d.value_text})
+    # In NC's Aux. Acctg order, each with its name ("0106/Engineering") the
+    # way NC's voucher screen prints it.
+    dims_by_line = await jv_lines.dims_for(db, [ln.id for ln in lines])
+    aux_names = await jv_lines.AuxNames.load(db) if dims_by_line else None
 
     def _name(uid):
         u = users.get(uid)
@@ -325,7 +405,10 @@ async def get_voucher(jv_id: uuid.UUID, _: CurrentUser, db: AsyncSession = Depen
             "department_code": dept.code if dept else None,
             "department_name": dept.name if dept else None,
             "partner_name": ln.partner_name, "tax_code": ln.tax_code,
-            "dims": dims_by_line.get(ln.id, []),
+            "dims": [{"dim_code": code, "value_text": val,
+                      "label": jv_lines.dim_label(code),
+                      "display": aux_names.display(code, val, ln.partner_name)}
+                     for code, val in dims_by_line.get(ln.id, [])],
         }
 
     return {"voucher": voucher, "lines": [_line(ln) for ln in lines]}

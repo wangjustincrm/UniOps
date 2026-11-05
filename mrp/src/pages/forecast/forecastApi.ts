@@ -62,6 +62,9 @@ export interface ListVersionsOptions {
   status?: ForecastVersionStatus
   /** Case-insensitive substring of version number, anchor month or note. */
   search?: string
+  /** Column sort (absent = newest first). */
+  sort?: 'version_no' | 'source_anchor_month' | 'horizon_months' | 'created_at'
+  dir?: 'asc' | 'desc'
 }
 
 export const forecastApi = {
@@ -73,6 +76,8 @@ export const forecastApi = {
     const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
     if (opts.status) params.set('status', opts.status)
     if (opts.search?.trim()) params.set('search', opts.search.trim())
+    if (opts.sort) params.set('sort', opts.sort)
+    if (opts.dir) params.set('dir', opts.dir)
     return api.get<ForecastVersionListResponse>(`/forecast/versions?${params}`)
   },
 

@@ -191,6 +191,22 @@ async def test_bulk_breakdown_matches_the_single_account_one(db_session, seeded)
            {k: v["source"] for k, v in one.items()}
 
 
+
+async def test_bulk_breakdown_follows_the_unposted_checkbox(db_session, seeded):
+    """The export's vendor rows must add up to the account's NC figure, which
+    counts unposted vouchers when the dashboard's checkbox is ticked — so the
+    bulk breakdown has to honour the same flag."""
+    _exec("update journal_vouchers set status = 'draft' where jv_number = 'JV-LINE'")
+    posted = await crud.nc_partner_monthly_all(db_session, fiscal_year=2026)
+    assert str(VENDOR_Y) not in {r["key"] for r in posted[str(seeded["item"])]}
+    both = await crud.nc_partner_monthly_all(db_session, fiscal_year=2026,
+                                             include_unposted=True)
+    rows = {r["key"]: r for r in both[str(seeded["item"])]}
+    assert rows[str(VENDOR_Y)]["year_total"] == "60.00"
+    acct = await crud.nc_actuals_monthly(db_session, 2026, include_unposted=True)
+    assert sum(Decimal(r["year_total"]) for r in rows.values()) == \
+        Decimal(acct["accounts"][str(seeded["item"])][6])
+
 # ── 6603: budgeted by account, not by income-expense item ────────────────────
 
 @pytest.fixture

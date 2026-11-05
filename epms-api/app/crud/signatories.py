@@ -11,6 +11,7 @@ from collections.abc import Iterable
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.approval_event_kind import is_machine_approval
 from app.crud.current_step import role_label
 from app.models.approval import ApprovalEvent
 from app.models.user import User
@@ -23,13 +24,8 @@ from app.models.user import User
 #   "Auto-approved on behalf of <role> — PMS migration (...)" — backfilled at import.
 # The sibling "Auto-approved (same approver holds both roles)" IS a real person
 # holding two posts and must stay.
-# Same discriminator the PR/PA detail timelines use client-side.
-_MACHINE_APPROVAL_MARKERS = ("Auto-skipped", "Auto-approved on behalf of")
-
-
-def _is_machine_approval(comment: str | None) -> bool:
-    text = comment or ""
-    return any(marker in text for marker in _MACHINE_APPROVAL_MARKERS)
+# One definition, shared with the events endpoints' `kind` (History tabs and
+# timelines): app/core/approval_event_kind.py.
 
 
 _ON_BEHALF_MARKER = "on behalf of "
@@ -94,7 +90,7 @@ async def approval_signatories(
             "at": ev.created_at,
         }
         for ev, name in rows
-        if not _is_machine_approval(ev.comment)
+        if not is_machine_approval(ev.comment)
     ]
     return requester, approvals
 

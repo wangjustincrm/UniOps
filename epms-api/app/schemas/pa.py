@@ -3,9 +3,10 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.current_step import CurrentStep
+from app.schemas.invoice import InvoiceResponse
 
 PA_WORKFLOW = [
     {"step": 0, "role": "finance_bp",      "label": "Finance BP Review"},
@@ -108,6 +109,44 @@ class PaCreate(BaseModel):
         return self
 
 
+class LinkedPoDefaults(BaseModel):
+    """What a Direct PA defaults to from the PO its invoice is linked to."""
+    po_number: str
+    department_id: uuid.UUID | None = None
+    cost_center_id: uuid.UUID | None = None
+    budget_code: str | None = None
+
+
+class DirectPaCandidate(InvoiceResponse):
+    linked_po: LinkedPoDefaults | None = None
+
+
+class DirectPaCandidatesResponse(BaseModel):
+    items: list[DirectPaCandidate]
+    total: int
+
+
+class DirectPaCreate(BaseModel):
+    """EPMS Direct PA: pays invoices matched to no PO and no agreement
+    (invoices.match_route='direct'), charged to the department / cost centre /
+    budget account chosen here. Amounts come from the invoices."""
+    invoice_ids: list[uuid.UUID] = Field(min_length=1)
+    department_id: uuid.UUID
+    cost_center_id: uuid.UUID
+    budget_account_code: str = Field(min_length=1, max_length=100)
+    title: str | None = Field(default=None, max_length=255)
+    # The reason for paying without a PO (事由) — stored in `notes`.
+    notes: str = Field(min_length=1)
+
+    @field_validator("notes", "budget_account_code")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("must not be blank")
+        return v
+
+
 class PaUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     # Replaces the PA's whole PO set (draft / returned only, PO route only).
@@ -129,6 +168,10 @@ class PaUpdate(BaseModel):
     prepayment_applied: Decimal | None = Field(default=None, ge=0)
     expected_settlement_date: date | None = None
     line_items: list[PaLineItemIn] | None = None
+    # Direct PA only (source='direct'): what it is charged to.
+    department_id: uuid.UUID | None = None
+    cost_center_id: uuid.UUID | None = None
+    budget_account_code: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class PaActionRequest(BaseModel):
@@ -151,6 +194,20 @@ class PaSettleRequest(BaseModel):
     note: str | None = None
     variance: Decimal = Field(default=Decimal("0"))
     resolution: str = Field(default="settled", max_length=20)  # settled | disputed
+
+
+class PaCostAllocationResponse(BaseModel):
+    """One (invoice × cost centre) slice of a Freight PA."""
+    invoice_id: uuid.UUID
+    invoice_number: str | None = None
+    cost_center_id: uuid.UUID
+    cost_center_code: str | None = None
+    cost_center_name: str | None = None
+    department_id: uuid.UUID
+    department_name: str | None = None
+    budget_code: str
+    amount: Decimal
+    tax_amount: Decimal
 
 
 class PaResponse(BaseModel):
@@ -183,6 +240,11 @@ class PaResponse(BaseModel):
     status: str
     notes: str | None
     submitted_at: datetime | None
+    # When the PA was paid: the payment DATE Finance entered (PAY-005), as a
+    # plain date — paid_at is that date at midnight UTC, which shown as a time
+    # in Toronto reads as the evening before. Not updated_at, which any later
+    # write moves (PRD 3.7.2: event dates, not last-modified).
+    paid_on: date | None = None
     prepayment_pct: Decimal | None
     expected_settlement_date: date | None
     settlement_status: str | None
@@ -203,6 +265,17 @@ class PaResponse(BaseModel):
     current_step: CurrentStep | None = None
     agreement_id: uuid.UUID | None = None
     agreement_number: str | None = None
+    # po | agreement | freight | direct (OA's oa_direct never reaches EPMS's endpoints)
+    source: str = "po"
+    # Direct PA only: what it is charged to (labels resolved on read).
+    department_id: uuid.UUID | None = None
+    department_name: str | None = None
+    cost_center_id: uuid.UUID | None = None
+    cost_center_code: str | None = None
+    cost_center_name: str | None = None
+    budget_account_code: str | None = None
+    # Freight PA only, on the detail endpoint: the cost-centre split.
+    cost_allocations: list[PaCostAllocationResponse] | None = None
 
     model_config = {"from_attributes": True}
 

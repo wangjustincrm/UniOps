@@ -3,12 +3,15 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.dialects.postgresql import array as sa_array
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ontology import scope_po
+from app.crud._list_order import lower_text, sort_clauses
 from app.crud._numbering import next_number
+from app.crud.current_step import status_step_sort_keys
+from app.crud.pr import type_label_key
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
 from app.models.cost_center import CostCenter
@@ -63,6 +66,27 @@ def _compute_totals(items_in, tax_rate: Decimal):
 
 # ── Reads ──────────────────────────────────────────────────────────────────────
 
+# GET /po ?sort= keys → what the PO list's column shows (whitelist = the
+# SQL-injection boundary; unknown key → 422).
+SORTABLE = {
+    "number": lower_text(PurchaseOrder.number),
+    # "PR Ref." prints pr_number only when the PO is linked to a PR.
+    "pr_number": case((PurchaseOrder.pr_id.is_not(None), lower_text(PurchaseOrder.pr_number))),
+    # "Title / Vendor" — the title is the cell's headline; the vendor is the
+    # grey second line, so it is a separate key.
+    "title": lower_text(PurchaseOrder.title),
+    "vendor_name": lower_text(PurchaseOrder.vendor_name),
+    "type": type_label_key(PurchaseOrder.type),
+    "total": PurchaseOrder.total,
+    # status → current approval step in chain order → approver name.
+    "status": status_step_sort_keys(PurchaseOrder.status, PurchaseOrder.id, "po"),
+    "created_at": PurchaseOrder.created_at,
+    "is_prepaid": PurchaseOrder.is_prepaid,
+    "expected_delivery": PurchaseOrder.expected_delivery,
+}
+SORT_TIEBREAK = (PurchaseOrder.id.asc(),)
+
+
 async def get_all(
     db: AsyncSession,
     *,
@@ -77,7 +101,10 @@ async def get_all(
     po_ids_subq=None,
     page: int = 1,
     page_size: int = 20,
+    sort: str | None = None,
+    dir: str = "asc",
 ) -> tuple[list[PurchaseOrder], int]:
+    order = sort_clauses(sort, dir, SORTABLE, SORT_TIEBREAK) or [PurchaseOrder.created_at.desc()]
     q = select(PurchaseOrder)
     # Row scope lives in ontology.scope_po — see the note in crud/pr.py.
     q = await scope_po(q, {"po_subq": po_ids_subq}, db)
@@ -113,7 +140,7 @@ async def get_all(
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
     items = list((await db.execute(
-        q.order_by(PurchaseOrder.created_at.desc()).offset(offset).limit(page_size)
+        q.order_by(*order).offset(offset).limit(page_size)
     )).scalars().all())
     return items, total
 
@@ -401,7 +428,7 @@ async def update_imported_details(
         after[field] = str(value) if value is not None else None
         setattr(po, field, value)
 
-    for field in ("expected_delivery", "delivery_address", "incoterms",
+    for field in ("expected_delivery", "delivery_address", "incoterms_code", "incoterms",
                   "tax_code", "buyer_notes"):
         _set(field, getattr(payload, field))
     _set("is_prepaid", payload.is_prepaid, nullable=False)
@@ -791,19 +818,8 @@ async def po_has_receipt_evidence(db: AsyncSession, po_id: uuid.UUID) -> bool:
     the invoice on it could never reach 3-way — no create_pa either, the goods
     silently going unpaid until someone raised the PA by hand.
     """
-    gr = (await db.execute(
-        select(GoodsReceipt.id).where(
-            GoodsReceipt.po_id == po_id,
-            GoodsReceipt.status.not_in(DEAD_GR_STATUSES),
-        ).limit(1)
-    )).scalar_one_or_none()
-    if gr is not None:
-        return True
-    return (await db.execute(
-        select(PoLineItem.id).where(
-            PoLineItem.po_id == po_id, PoLineItem.received_qty > 0
-        ).limit(1)
-    )).scalar_one_or_none() is not None
+    from app.core.receipt_evidence import receipt_evidence
+    return bool((await db.execute(select(receipt_evidence(po_id)))).scalar())
 
 
 async def pr_department_id(db: AsyncSession, pr_id: uuid.UUID | None) -> uuid.UUID | None:
@@ -842,39 +858,10 @@ async def po_has_three_way_matched_invoice(db: AsyncSession, po_id: uuid.UUID) -
     matched 也永远判「未收货」,拿不到 create_pa,只会反复收到一条谁也满足不了
     的催收货任务(生产 11 条僵尸任务)。
     """
-    header = (await db.execute(
-        select(Invoice.id).where(
-            Invoice.po_id == po_id,
-            Invoice.status == "matched",
-            Invoice.gr_id.is_not(None),
-        ).limit(1)
-    )).scalar_one_or_none()
-    if header is not None:
-        return True
-
-    # 表头 matched 但 gr_id 为空 —— 回落到本 PO 自己的收货证据。gr_id 为空既可能
-    # 是历史单从来没有 GR,也可能是自动挂接漏了(生产 22 张 matched 发票 gr_id
-    # 为空而其 PO 有 GR);两种都不该被读成「货没到」。
-    header_no_gr = (await db.execute(
-        select(Invoice.id).where(
-            Invoice.po_id == po_id,
-            Invoice.status == "matched",
-        ).limit(1)
-    )).scalar_one_or_none()
-    if header_no_gr is not None and await po_has_receipt_evidence(db, po_id):
-        return True
-
-    allocated = (await db.execute(
-        select(InvoicePoAllocation.invoice_id)
-        .join(Invoice, Invoice.id == InvoicePoAllocation.invoice_id)
-        .where(
-            InvoicePoAllocation.po_id == po_id,
-            Invoice.status == "matched",
-        ).limit(1)
-    )).scalar_one_or_none()
-    if allocated is None:
-        return False
-    return await po_has_receipt_evidence(db, po_id)
+    # One definition, shared with the Assistant's purchase_order.three_way_matched
+    # (core.po_facts) — it used to be three queries here and a guess there.
+    from app.core.po_facts import three_way_matched
+    return bool((await db.execute(select(three_way_matched(po_id)))).scalar())
 
 
 async def payable_invoice_po_ids(

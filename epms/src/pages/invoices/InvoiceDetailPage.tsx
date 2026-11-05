@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import {
   ArrowLeft, FileText, ExternalLink, CheckCircle2,
   AlertTriangle, GitMerge, Paperclip, TrendingUp, Trash2, Pencil, X, Plus, Save, Upload, UserPlus,
-  Unlink,
+  Unlink, Info,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -18,6 +18,7 @@ import { InvoiceTaxSection } from '@/components/invoices/InvoiceTaxSection'
 import { InvoiceReceiptsPanel } from '@/components/invoices/InvoiceReceiptsPanel'
 import { InvoiceBillingPeriodPanel } from '@/components/invoices/InvoiceBillingPeriodPanel'
 import { ResolveExceptionPanel } from '@/components/invoices/ResolveExceptionPanel'
+import { InvoiceFeeLinksPanel } from '@/components/invoices/InvoiceFeeLinksPanel'
 import { useGr, useGrs } from '@/hooks/useGrs'
 import { useAgreement } from '@/hooks/useAgreements'
 import { useAuthStore } from '@/stores/auth.store'
@@ -27,6 +28,8 @@ import { useRolePermissions, useConfig } from '@/hooks/useConfig'
 import { getTaxLines } from '@/services/invoiceTax'
 import { AssignMatchDialog } from './AssignMatchDialog'
 import { MatchPanel } from './MatchPanel'
+import { CourierInvoiceView } from './CourierInvoiceView'
+import { useStaticTabNav } from '@/hooks/useStaticTabNav'
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
@@ -119,6 +122,47 @@ function UnmatchButton({ label, blockedReason, onClick }: {
   )
 }
 
+/** 3-Way Match tab for a Direct-route invoice: there is nothing to compare it
+ *  against — it is paid by a Direct PA that names its own charge-to. */
+function DirectRouteCard({ inv, pa, canCreatePa, onCreatePa, unmatchAction }: {
+  inv: { matched_at?: string | null; matched_by_name?: string | null; matched_by?: string | null }
+  pa: { id: string; number: string | null; status: string | null } | null
+  canCreatePa: boolean
+  onCreatePa: () => void
+  unmatchAction: ReactNode
+}) {
+  return (
+    <div className="rounded-xl border border-primary-200 bg-primary-50 p-5 flex flex-col gap-3">
+      <div className="flex items-center gap-4">
+        <CheckCircle2 className="h-8 w-8 text-primary-600 flex-shrink-0" />
+        <div className="flex-1">
+          <p className="text-sm font-semibold text-primary-800">Matched for a Direct PA — no PO or agreement</p>
+          {inv.matched_at && (
+            <p className="text-xs text-neutral-500 mt-0.5">
+              Matched by {inv.matched_by_name ?? inv.matched_by} on {formatDateTime(inv.matched_at)}
+            </p>
+          )}
+        </div>
+        {unmatchAction}
+      </div>
+      <p className="text-xs text-neutral-600">
+        There is no 3-way match on this route. The department, cost center and budget account it is charged to,
+        and the reason, are on the Direct PA; it is approved on the PA (Direct) workflow.
+      </p>
+      {pa ? (
+        <p className="text-xs text-neutral-700">
+          Paid by <Link to={`/pa/${pa.id}`} className="font-mono font-semibold text-primary-700 hover:underline">{pa.number}</Link>
+          {pa.status && <span className="ml-1 capitalize text-neutral-500">({pa.status.replace(/_/g, ' ')})</span>}
+        </p>
+      ) : canCreatePa ? (
+        <div><Button size="sm" onClick={onCreatePa}>Create Direct PA</Button></div>
+      ) : (
+        <p className="text-xs text-neutral-500">No payment application yet — someone with the Create / Edit PAs permission raises it.</p>
+      )}
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function InvoiceDetailPage() {
@@ -132,6 +176,9 @@ export default function InvoiceDetailPage() {
   // — AP staff and admins. Deliberately narrower than the rule for PERFORMING a
   // match, which also admits the uploader and the holder of an open match task.
   const canUnmatch = user?.role === 'system_admin' || !!perms?.['epms.invoice.match']
+  // Same key as POST /pa/direct (and the PA list's Create Direct PA button).
+  const canCreatePa = user?.role === 'system_admin' || !!perms?.['epms.pa.write']
+  const { openTab } = useStaticTabNav()
   const deleteInvoice = useDeleteInvoice()
 
   const { data: inv, isLoading } = useInvoice(id ?? '')
@@ -148,7 +195,10 @@ export default function InvoiceDetailPage() {
     inv?.agreement_type === 'recurring' ? (inv.agreement_id ?? '') : '')
   const isAgreementOwner = !!user?.id && recurringAgreement?.owner_id === user.id
   const canChangePeriod = canUnmatch || isAgreementOwner
-  const { data: chain } = useInvoiceChain(canChangePeriod ? (id ?? null) : null)
+  // A Direct-route invoice always needs it: whether a Direct PA already pays it
+  // decides between "Create Direct PA" and a link to that PA.
+  const { data: chain } = useInvoiceChain(
+    canChangePeriod || inv?.match_route === 'direct' ? (id ?? null) : null)
   const updateInvoice = useUpdateInvoice()
 
   // Tax lines are the source of truth for the header tax when present: the
@@ -300,11 +350,30 @@ export default function InvoiceDetailPage() {
     )
   }
 
+  // Courier invoices are matched against shipments, not a PO: the freight
+  // panel takes the place of the three-way match (read-only without
+  // epms.freight.manage).
+  if (inv.match_route === 'freight') return <CourierInvoiceView id={inv.id} />
+
   const sla = inv.status === 'unmatched' ? computeSla(inv.uploaded_at) : null
 
   const varianceAbs = Math.abs(Number(inv.variance ?? 0))
   const variancePctAbs = Math.abs(Number(inv.variance_pct ?? 0))
   const hasException = inv.status === 'exception'
+  // An accepted exception leaves "exception" for "matched" — the variance is
+  // still there, a person signed it off. Must not read as "within tolerance".
+  const exceptionAccepted = !hasException && inv.exception_resolution === 'accepted'
+  // Billing less than the PO always passes (a line may be invoiced in parts) —
+  // tolerance never applies to it, so "within 5% tolerance" was wrong for, say,
+  // -23%. Not an exception either: nothing to review, no justification.
+  const partiallyInvoiced = !hasException && !exceptionAccepted && Number(inv.variance ?? 0) < 0
+  // "Three-way" needs a linked goods receipt (INV-3WM-006). Matching itself
+  // compares amounts only and runs without one (ISS-0138: such invoices read
+  // "✓ Passed" with a "Fully delivered" GR row while nothing was received).
+  const hasGr = inv.gr_id != null
+  const matchLabel = hasGr ? '3-Way Match' : '2-Way Match'
+  const awaitingGr = !hasGr && !hasException && !exceptionAccepted
+  const resolutionNoteLabel = inv.exception_resolution === 'accepted' ? 'Justification' : 'Instructions'
   // Agreement route: no PO/GR, so the PO-vs-GR-vs-Invoice 3-way table doesn't
   // apply — there is nothing to reconcile against but the agreement itself.
   const isAgreementRoute = inv.match_route === 'agreement'
@@ -313,6 +382,11 @@ export default function InvoiceDetailPage() {
   // the server answer, rather than blocking on something we cannot see.
   const paStep = chain?.steps.find((s) => s.key === 'create_pa')
   const blockedPa = paStep?.state === 'done' ? (paStep.refs[0]?.number ?? 'a payment application') : null
+  const isDirectRoute = inv.match_route === 'direct'
+  const directPa = isDirectRoute && paStep?.state === 'done' && paStep.refs[0]
+    ? { id: paStep.refs[0].id, number: paStep.refs[0].number, status: paStep.detail ?? null }
+    : null
+  const createDirectPa = () => openTab('/pa/new', `source=direct&invoice=${inv.id}`)
   const unmatchBlockedReason =
     inv.status === 'approved' || inv.status === 'paid'
       ? `This invoice has already entered payment (status "${inv.status}").`
@@ -425,6 +499,12 @@ export default function InvoiceDetailPage() {
               {inv.match_assignee_name ? `Reassign (${inv.match_assignee_name})` : 'Assign'}
             </Button>
           )}
+          {isDirectRoute && inv.status === 'matched' && !directPa && canCreatePa && !editing && (
+            <Button size="sm" className="gap-1.5" onClick={createDirectPa}>
+              <FileText className="h-3.5 w-3.5" />
+              Create Direct PA
+            </Button>
+          )}
           {canEdit && !editing && (
             <Button variant="secondary" size="sm" className="gap-1.5" onClick={startEdit}>
               <Pencil className="h-3.5 w-3.5" />
@@ -493,6 +573,11 @@ export default function InvoiceDetailPage() {
               <p className="text-xs text-neutral-500 mt-1">
                 Resolved by {inv.exception_resolved_by_name ?? inv.exception_resolved_by} on {formatDateTime(inv.exception_resolved_at)} —{' '}
                 {inv.exception_resolution === 'accepted' ? 'Accepted with justification' : 'Credit note requested'}
+              </p>
+            )}
+            {inv.exception_resolved_at && inv.exception_resolution_note && (
+              <p className="text-xs text-neutral-700 mt-1 whitespace-pre-wrap">
+                <span className="text-neutral-500">{resolutionNoteLabel}:</span> {inv.exception_resolution_note}
               </p>
             )}
           </div>
@@ -775,6 +860,19 @@ export default function InvoiceDetailPage() {
                   pretaxAmount={Number(inv.amount)}
                   headerTax={Number(inv.tax_amount)}
                   editable={hasInvoiceUpload && inv.status !== 'paid'}
+                />
+              </div>
+
+              {/* Freight / customs fee → the raw-material PO arrival it belongs
+                  to. Direct-route and not-yet-matched invoices only (the
+                  component hides itself otherwise unless links exist). */}
+              <div className="sm:col-span-2">
+                <InvoiceFeeLinksPanel
+                  invoiceId={inv.id}
+                  matchRoute={inv.match_route}
+                  lineItems={inv.line_items ?? []}
+                  currency={inv.currency}
+                  canEdit={isAp}
                 />
               </div>
 
@@ -1076,6 +1174,17 @@ export default function InvoiceDetailPage() {
                   <p className="text-xs text-neutral-400">Go to the Unmatched Queue to link this invoice to a PO</p>
                   <Link to="/invoices"><Button variant="secondary" size="sm">Go to Unmatched Queue</Button></Link>
                 </div>
+              ) : isDirectRoute ? (
+                <DirectRouteCard
+                  inv={inv}
+                  pa={directPa}
+                  canCreatePa={canCreatePa}
+                  onCreatePa={createDirectPa}
+                  unmatchAction={canUnmatch && (
+                    <UnmatchButton label="Unmatch" blockedReason={unmatchBlockedReason}
+                      onClick={() => setUnmatchScope('direct')} />
+                  )}
+                />
               ) : isAgreementRoute ? (
                 // Fix-round 1 (Minor 3): the outer card used to be
                 // unconditionally green + a success checkmark, even while the
@@ -1164,18 +1273,39 @@ export default function InvoiceDetailPage() {
                 <>
                   {/* Summary row */}
                   <div className={cn('rounded-xl border p-5 flex items-center gap-4',
-                    hasException ? 'border-danger-200 bg-danger-50' : 'border-success-200 bg-success-50')}>
-                    {hasException
-                      ? <AlertTriangle className="h-8 w-8 text-danger-600 flex-shrink-0" />
+                    hasException ? 'border-danger-200 bg-danger-50'
+                      : exceptionAccepted ? 'border-warning-200 bg-warning-50'
+                      : partiallyInvoiced || awaitingGr ? 'border-primary-200 bg-primary-50'
+                      : 'border-success-200 bg-success-50')}>
+                    {hasException || exceptionAccepted
+                      ? <AlertTriangle className={cn('h-8 w-8 flex-shrink-0', hasException ? 'text-danger-600' : 'text-warning-600')} />
+                      : partiallyInvoiced || awaitingGr
+                      ? <Info className="h-8 w-8 text-primary-600 flex-shrink-0" />
                       : <CheckCircle2 className="h-8 w-8 text-success-600 flex-shrink-0" />
                     }
                     <div>
-                      <p className={cn('text-sm font-semibold', hasException ? 'text-danger-700' : 'text-success-700')}>
-                        {hasException
-                          ? `3-Way Match: Exception — Variance ${Number(inv.variance_pct ?? 0) > 0 ? '+' : ''}${Number(inv.variance_pct ?? 0).toFixed(1)}% (${inv.currency} ${formatAmount(Number(inv.variance ?? 0), inv.currency)})`
+                      <p className={cn('text-sm font-semibold',
+                        hasException ? 'text-danger-700' : exceptionAccepted ? 'text-warning-700'
+                          : partiallyInvoiced || awaitingGr ? 'text-primary-700' : 'text-success-700')}>
+                        {hasException || exceptionAccepted
+                          ? `${matchLabel}: ${hasException ? 'Exception' : 'Exception accepted'} — Variance ${Number(inv.variance_pct ?? 0) > 0 ? '+' : ''}${Number(inv.variance_pct ?? 0).toFixed(1)}% (${inv.currency} ${formatAmount(Number(inv.variance ?? 0), inv.currency)})`
+                          : partiallyInvoiced
+                          ? `${matchLabel}: Partially invoiced — ${inv.currency} ${formatAmount(varianceAbs, inv.currency)} (${variancePctAbs.toFixed(1)}%) below PO${awaitingGr ? ' · awaiting goods receipt' : ''}`
+                          : awaitingGr
+                          ? `2-Way Match: Invoice within ${matchTolerancePct}% tolerance of PO · awaiting goods receipt`
                           : `3-Way Match: ✓ Passed — Invoice within ${matchTolerancePct}% tolerance of PO`
                         }
                       </p>
+                      {awaitingGr && (
+                        <p className="text-xs text-primary-700 mt-0.5">
+                          No goods receipt is linked yet, so receipt has not been checked. A payment application needs proof of receipt.
+                        </p>
+                      )}
+                      {partiallyInvoiced && (
+                        <p className="text-xs text-primary-700 mt-0.5">
+                          Billing less than the PO always passes — the rest may be billed on later invoices. No review is required.
+                        </p>
+                      )}
                       {inv.matched_at && (
                         <p className="text-xs text-neutral-500 mt-0.5">
                           Matched by {inv.matched_by_name ?? inv.matched_by} on {formatDateTime(inv.matched_at)}
@@ -1222,7 +1352,8 @@ export default function InvoiceDetailPage() {
                           href={`/gr/${inv.gr_id}`}
                           amount={inv.gr_value}
                           currency={inv.currency}
-                          note={inv.gr_value != null && inv.po_total != null && Number(inv.gr_value) < Number(inv.po_total)
+                          note={!hasGr ? 'Not received'
+                            : inv.gr_value != null && inv.po_total != null && Number(inv.gr_value) < Number(inv.po_total)
                             ? 'Partial delivery' : 'Fully delivered'}
                           ok={inv.gr_value != null}
                           action={canUnmatch && inv.gr_id != null && (
@@ -1240,8 +1371,10 @@ export default function InvoiceDetailPage() {
                           href={`/invoices/${inv.id}`}
                           amount={inv.total_amount}
                           currency={inv.currency}
-                          note={hasException
-                            ? `${Number(inv.variance_pct ?? 0) > 0 ? '+' : ''}${Number(inv.variance_pct ?? 0).toFixed(1)}% vs PO`
+                          note={hasException || exceptionAccepted
+                            ? `${Number(inv.variance_pct ?? 0) > 0 ? '+' : ''}${Number(inv.variance_pct ?? 0).toFixed(1)}% vs PO${exceptionAccepted ? ' (accepted)' : ''}`
+                            : partiallyInvoiced
+                            ? `-${variancePctAbs.toFixed(1)}% vs PO (partial)`
                             : 'Within tolerance'}
                           ok={!hasException}
                         />
@@ -1297,14 +1430,19 @@ export default function InvoiceDetailPage() {
                   )}
 
                   {/* Exception resolution detail */}
-                  {hasException && inv.exception_resolved_at && (
+                  {inv.exception_resolved_at && (
                     <div className="rounded-xl border border-neutral-200 bg-white p-5">
                       <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">Exception Resolution</h3>
                       <div className="flex flex-col gap-2">
                         <MetaRow label="Resolution" value={inv.exception_resolution === 'accepted' ? 'Accepted with justification' : 'Credit note requested'} />
                         <MetaRow label="Resolved By" value={inv.exception_resolved_by_name ?? inv.exception_resolved_by ?? '—'} />
                         <MetaRow label="Resolved On" value={formatDateTime(inv.exception_resolved_at)} />
-                        {inv.notes && <MetaRow label="Notes" value={inv.notes} />}
+                        {inv.exception_resolution_note && (
+                          <div className="flex gap-2 text-sm">
+                            <span className="text-neutral-400 min-w-36 flex-shrink-0">{resolutionNoteLabel}</span>
+                            <span className="text-neutral-800 whitespace-pre-wrap">{inv.exception_resolution_note}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1323,6 +1461,7 @@ export default function InvoiceDetailPage() {
                     date: inv.exception_resolved_at,
                     actor: inv.exception_resolved_by_name ?? inv.exception_resolved_by ?? 'System',
                     action: inv.exception_resolution === 'accepted' ? 'Exception accepted with justification' : 'Credit note requested',
+                    note: inv.exception_resolution_note ?? undefined,
                     color: 'bg-warning-500',
                   },
                   inv.matched_at && {
@@ -1331,10 +1470,13 @@ export default function InvoiceDetailPage() {
                     // I1: this entry is the permanent audit trace — the one place a
                     // false "settled without receipt evidence" outlives the page it was
                     // rendered on. Same derived wording as the banner above.
-                    action: isAgreementRoute
+                    action: isDirectRoute
+                      ? 'Matched for a Direct PA — no PO or agreement'
+                      : isAgreementRoute
                       ? `Matched to Agreement ${inv.agreement_number ?? inv.agreement_id?.slice(0, 8) ?? ''} — ${agreementEvidenceSummary}`
-                      : `Matched to ${inv.po_number}${hasException ? ' — Exception raised' : ' — 3-way match passed'}`,
-                    color: hasException ? 'bg-danger-600' : 'bg-success-600',
+                      : `Matched to ${inv.po_number}${hasException || exceptionAccepted ? ' — Exception raised'
+                          : `${partiallyInvoiced ? ' — partially invoiced' : hasGr ? ' — 3-way match passed' : ' — 2-way matched'}${awaitingGr ? ', awaiting goods receipt' : ''}`}`,
+                    color: hasException || exceptionAccepted ? 'bg-danger-600' : 'bg-success-600',
                   },
                   {
                     date: inv.uploaded_at,
@@ -1346,7 +1488,7 @@ export default function InvoiceDetailPage() {
                   .filter(Boolean)
                   .sort((a, b) => new Date((b as {date:string}).date).getTime() - new Date((a as {date:string}).date).getTime())
                   .map((entry, i, arr) => {
-                    const e = entry as { date: string; actor: string; action: string; color: string }
+                    const e = entry as { date: string; actor: string; action: string; note?: string; color: string }
                     return (
                       <div key={i} className="flex gap-3">
                         <div className="flex flex-col items-center">
@@ -1355,6 +1497,11 @@ export default function InvoiceDetailPage() {
                         </div>
                         <div className="pb-4">
                           <p className="text-sm text-neutral-900">{e.action}</p>
+                          {e.note && (
+                            <p className="text-sm text-neutral-700 mt-1 rounded-md bg-neutral-50 border border-neutral-200 px-3 py-2 whitespace-pre-wrap">
+                              {e.note}
+                            </p>
+                          )}
                           <p className="text-xs text-neutral-400 mt-0.5">{e.actor} · {formatDateTime(e.date)}</p>
                         </div>
                       </div>

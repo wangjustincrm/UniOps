@@ -281,9 +281,10 @@ classified as (
     select *, (select p from unnest(cast(:excluded as text[])) p
                 where nc_code like p || '%' limit 1) as policy_prefix
       from lines
-)
+),
+picked as (
 select jv_id, jv_number, voucher_date, fiscal_period, line_no, account_code,
-       coalesce(line_summary, jv_summary), local_debit, dept_code, nc_io_text,
+       coalesce(line_summary, jv_summary) as summary, local_debit, dept_code, nc_io_text,
        -- Why this line is in the bucket. Two different faults share it, and
        -- the bucket's one label can only name one of them; without this the
        -- reader sees "not placed in any cost centre" against a line that has
@@ -297,25 +298,60 @@ select jv_id, jv_number, voucher_date, fiscal_period, line_no, account_code,
             then policy_prefix is null
                  and (cost_center_id is null or budget_account_id is null)
             else policy_prefix = :bucket end
- order by fiscal_period, jv_number, line_no
+)
+"""
+
+_UNALLOCATED_PAGE_SQL = _UNALLOCATED_LINES_SQL + """
+select jv_id, jv_number, voucher_date, fiscal_period, line_no, account_code,
+       summary, local_debit, dept_code, nc_io_text,
+       missing_cost_centre, missing_budget_account, posted
+  from picked
+ order by {order}
  limit :limit offset :offset
 """
+_UNALLOCATED_TOTAL_SQL = _UNALLOCATED_LINES_SQL + """
+select count(*), coalesce(sum(local_debit), 0) from picked
+"""
+
+# Click-to-sort over the `picked` CTE (fragments written here; the request key
+# is only looked up). "why" sorts the label UnallocatedLinesModal prints.
+UNALLOCATED_SORT = {
+    "voucher": "jv_number",
+    "account": "account_code",
+    "dept": "nullif(dept_code, '')",
+    "nc_ie": "nullif(nc_io_text, '')",
+    "why": ("case when missing_cost_centre and missing_budget_account "
+            "then 'No cost centre, no budget account' "
+            "when missing_cost_centre then 'No cost centre' "
+            "when missing_budget_account then 'No budget account' "
+            "else 'Excluded by policy' end"),
+    "debit": "local_debit",
+    "summary": "lower(nullif(summary, ''))",
+}
+UNALLOCATED_TIEBREAK = "jv_number, line_no, jv_id"
+_UNALLOCATED_DEFAULT_ORDER = "fiscal_period, jv_number, line_no, jv_id"
 
 
 async def unallocated_lines(db, *, fiscal_year: int, month_from: int, month_to: int,
                             bucket: str, limit: int = 200, offset: int = 0,
-                            include_unposted: bool = False) -> dict[str, Any]:
-    """Voucher lines behind one bucket of the unallocated row."""
+                            include_unposted: bool = False,
+                            order: str | None = None) -> dict[str, Any]:
+    """Voucher lines behind one bucket of the unallocated row — one page, plus
+    the count and debit sum of EVERY matching line (`total`, `debit_total`).
+    `order` is an ORDER BY body from list_sort.order_sql over UNALLOCATED_SORT."""
     params = {
         "year_like": f"{fiscal_year}-%", "month_from": month_from, "month_to": month_to,
         "bucket": bucket, "limit": limit, "offset": offset,
         "excluded": list(EXCLUDED_IO_PREFIXES),
     }
-    rows = (await db.execute(
-        text(_UNALLOCATED_LINES_SQL.format(
-            categories=_CATEGORIES, status=status_sql("v", include_unposted))), params)).all()
+    fmt = {"categories": _CATEGORIES, "status": status_sql("v", include_unposted)}
+    page_sql = _UNALLOCATED_PAGE_SQL.format(**fmt, order=order or _UNALLOCATED_DEFAULT_ORDER)
+    rows = (await db.execute(text(page_sql), params)).all()
+    total, debit_total = (await db.execute(
+        text(_UNALLOCATED_TOTAL_SQL.format(**fmt)), params)).one()
     return {
         "bucket": bucket, "limit": limit, "offset": offset,
+        "total": int(total), "debit_total": _s(debit_total),
         "include_unposted": include_unposted,
         "rows": [{
             "jv_id": str(r[0]), "jv_number": r[1],

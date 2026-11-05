@@ -1,11 +1,11 @@
-import { useState, useRef, Fragment } from 'react'
+import { useState, useRef, useEffect, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Upload, Search, AlertTriangle, CheckCircle2, Clock,
   X, FileText, ChevronDown, ChevronUp, ExternalLink, Loader2, Plus, Trash2, UserPlus,
-  ArrowDown, ArrowUp, ArrowUpDown,
 } from 'lucide-react'
+import { SortTh, useSort, sortParams } from '@uniops/shell'
 import { parseInvoiceFile, type ParseFailureKind, type ParsedTotalCheck } from '@/lib/invoice-parser'
 import { EXPENSE_BASE } from '@/lib/api'
 import { createPortal } from 'react-dom'
@@ -16,7 +16,8 @@ import { AiBadge } from '@/components/ui/AiBadge'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { dueInfo, type DueTone } from '@/lib/dueDate'
 import { computeSla, type InvoiceStatus } from '@/stores/invoice.store'
-import { useInvoices, useCreateInvoice, useMatchInvoice, useDeleteInvoice } from '@/hooks/useInvoices'
+import { useInvoices, useCreateInvoice, useMatchInvoice, useDeleteInvoice, useMarkInvoiceDirect } from '@/hooks/useInvoices'
+import { useStaticTabNav } from '@/hooks/useStaticTabNav'
 import { ResolveExceptionPanel } from '@/components/invoices/ResolveExceptionPanel'
 import { useCreateVendorCredit } from '@/hooks/useVendorCredits'
 import { usePos } from '@/hooks/usePos'
@@ -24,6 +25,7 @@ import { useGrs } from '@/hooks/useGrs'
 import { useVendors } from '@/hooks/useVendors'
 import { useAuthStore } from '@/stores/auth.store'
 import { useRolePermissions, useConfig } from '@/hooks/useConfig'
+import { invoiceService } from '@/services/invoices'
 import type { ApiInvoice, InvoiceLineItem, AllocationInput, NonPoLineInput } from '@/services/invoices'
 import type { ApiPo } from '@/services/po'
 import { InvoiceAllocationPanel, type AllocationAssignment } from './InvoiceAllocationPanel'
@@ -32,6 +34,9 @@ import { FilePreviewPanel } from './FilePreviewPanel'
 import { PdfSplitPanel } from './PdfSplitPanel'
 import { readPageCount, splitPdf, type PageGroup } from '@/lib/pdf-split'
 import { AssignMatchDialog } from './AssignMatchDialog'
+import { CourierInvoiceReview } from './CourierInvoiceReview'
+import { DirectRouteBadge, FreightRouteBadge } from '@/pages/freight/freightUi'
+import { useFreightAccess, useFreightCarriers } from '@/hooks/useFreight'
 import { InvoiceChainDrawer } from './InvoiceChainDrawer'
 
 // Roles allowed to run the 3-way match (mirrors epms-api invoices.py _AP_ROLES,
@@ -40,7 +45,9 @@ import { InvoiceChainDrawer } from './InvoiceChainDrawer'
 
 // PO statuses an invoice can be matched/allocated against.
 // closed excluded: closed POs (incl. PMS imports closed by PAID) never enter match candidates
-const MATCHABLE_PO_STATUSES = ['issued', 'approved', 'partially_received', 'fully_received']
+// nc_milk: milk orders' invoices are matched and paid here too (their NC
+// arrivals are mirrored as GRs). Same list as epms-api invoices.py.
+const MATCHABLE_PO_STATUSES = ['issued', 'approved', 'partially_received', 'fully_received', 'nc_milk']
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
@@ -101,7 +108,12 @@ interface UploadModalProps {
   // found" and pushes the operator into re-uploading a credit that was in fact
   // created (409 duplicate). Defaults to 'invoice' for the many invoice-path
   // call sites below.
-  onUploaded: (id: string, kind?: 'invoice' | 'credit') => void
+  // `ids` = every invoice this upload created (a split PDF makes several).
+  onUploaded: (id: string, kind?: 'invoice' | 'credit', ids?: string[]) => void
+  // Opened from Create Direct PA: each invoice saved here is matched for a
+  // Direct PA (no PO auto-match, no allocation step). Courier invoices and
+  // credit notes keep their own paths — neither can be paid by a Direct PA.
+  forDirectPa?: boolean
 }
 
 /** Display-time sign derivation for the amount fields — NOT a normalisation
@@ -128,9 +140,21 @@ const vendorNamesLookAlike = (a: string, b: string): boolean => {
   return x.length > 2 && y.length > 2 && (x.includes(y) || y.includes(x))
 }
 
-function UploadModal({ onClose, onUploaded }: UploadModalProps) {
-  const { data: invoicesData } = useInvoices()
-  const invoices = invoicesData?.items ?? []
+/** Stricter than vendorNamesLookAlike, because this one DOES pick: the name the
+ *  AI read off the invoice is taken to be a carrier's vendor only when the two
+ *  agree once suffixes and punctuation are dropped, or one is the other's start
+ *  of at least 4 characters ("UPS Canada" ↔ "UPS Canada Ltd."), so "Upstate
+ *  Supplies" is never taken for "UPS". A miss only leaves the vendor to pick. */
+const carrierNameMatches = (carrierVendor: string, read: string): boolean => {
+  const norm = (v: string) => v.toLowerCase()
+    .replace(/\b(inc|ltd|llc|corp|co|company|limited|incorporated)\b/g, '')
+    .replace(/[^a-z0-9]/g, '')
+  const x = norm(carrierVendor), y = norm(read)
+  const [short, long] = x.length <= y.length ? [x, y] : [y, x]
+  return x === y ? x.length >= 2 : short.length >= 4 && long.startsWith(short)
+}
+
+function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalProps) {
   const { data: posData } = usePos()
   const pos = posData?.items ?? []
   const { data: grsData } = useGrs()
@@ -138,6 +162,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
   const createInvoice = useCreateInvoice()
   const createVendorCredit = useCreateVendorCredit()
   const matchInvoiceMutation = useMatchInvoice()
+  const markDirect = useMarkInvoiceDirect()
   const fileRef = useRef<HTMLInputElement>(null)
 
   const [dragging, setDragging] = useState(false)
@@ -148,6 +173,8 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
 
   const { data: vendorsData } = useVendors({ search: vendorQuery || undefined, active_only: true, page_size: 50 })
   const vendorOptions = vendorsData?.items ?? []
+  // A carrier's invoice is always a courier invoice (Freight → Carriers).
+  const { data: carriers = [] } = useFreightCarriers()
   const [vendorInvoiceNumber, setVendorInvoiceNumber] = useState('')
   const [poNumber, setPoNumber] = useState('')
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10))
@@ -259,10 +286,21 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       setDocType(detected ? 'credit_note' : 'invoice')
       setDocTypeAutoDetected(detected)
 
+      const carrierHit = fields.vendorName
+        // Against the carrier's vendor name AND its own name: invoices often
+        // print just "UPS" where the vendor master says "UPS Canada Ltd.".
+        ? carriers.find((c) => c.is_active && !!c.vendor_name && (
+            carrierNameMatches(c.vendor_name, fields.vendorName!) || carrierNameMatches(c.name, fields.vendorName!)))
+        : undefined
       if (fields.vendorName) {
         if (keepVendor && vendorNamesLookAlike(keepVendor.name, fields.vendorName)) {
           // Same company as the invoice before it — leave the pick alone rather
           // than dropping the user back into the picker for every slice.
+        } else if (carrierHit) {
+          // A carrier's own name: pick it, which hands the form to the courier
+          // review below (it reads the shipment detail itself).
+          setSelectedVendor({ id: carrierHit.vendor_id, name: carrierHit.vendor_name!, code: '' })
+          filled.add('vendorName')
         } else {
           setSelectedVendor(null)
           setVendorQuery(fields.vendorName)
@@ -377,7 +415,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       void startInvoice(queue[next], selectedVendor)
       return
     }
-    onUploaded(id, kind)
+    onUploaded(id, kind, [...createdIds, id])
   }
 
   const queueTotal     = queue.length
@@ -466,15 +504,30 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       )
     : undefined
 
-  // Duplicate check: same vendor + same vendor invoice number
-  const isDuplicate =
-    !!selectedVendor &&
-    vendorInvoiceNumber.trim() !== '' &&
-    invoices.some(
-      (i) =>
-        i.vendor_name.toLowerCase() === selectedVendor.name.toLowerCase() &&
-        i.vendor_invoice_number.toLowerCase() === vendorInvoiceNumber.trim().toLowerCase()
-    )
+  // Duplicate check (PRD INV-004): asked of the server, which compares against
+  // EVERY invoice. It used to compare against this user's own invoice list —
+  // a PO-scoped requester could not see AP's upload of the same invoice, and
+  // nine duplicates got in that way. POST /invoices refuses one regardless.
+  const [dup, setDup] = useState<{ checking: boolean; duplicate: boolean; uncheckable: boolean; detail: string | null }>({
+    checking: false, duplicate: false, uncheckable: false, detail: null,
+  })
+  useEffect(() => {
+    const n = vendorInvoiceNumber.trim()
+    if (docType !== 'invoice' || !selectedVendor || !n) {
+      setDup({ checking: false, duplicate: false, uncheckable: false, detail: null })
+      return
+    }
+    let live = true
+    setDup((d) => ({ ...d, checking: true }))
+    const t = setTimeout(() => {
+      invoiceService.duplicateCheck(selectedVendor.id, n)
+        .then((r) => { if (live) setDup({ checking: false, duplicate: r.duplicate, uncheckable: r.uncheckable, detail: r.detail }) })
+        // The check failing is not a pass: the server still refuses on upload.
+        .catch(() => { if (live) setDup({ checking: false, duplicate: false, uncheckable: false, detail: null }) })
+    }, 350)
+    return () => { live = false; clearTimeout(t) }
+  }, [docType, selectedVendor, vendorInvoiceNumber])
+  const isDuplicate = docType === 'invoice' && (dup.duplicate || dup.uncheckable)
 
   // Greedily pair each invoice line with an unused PO line of equal pre-tax amount.
   // Returns line-level allocations ONLY if every invoice line is paired AND they
@@ -523,11 +576,15 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       )
       return
     }
-    // isDuplicate checks vendorInvoiceNumber against the regular-invoice list —
-    // not meaningful for credit notes, whose numbers live in a separate
-    // namespace. finance-api does its own duplicate detection for credits
-    // (409 with the existing credit named), surfaced in the catch below.
-    if (docType === 'invoice' && isDuplicate) return
+    // The invoice duplicate check is for invoices only — credit notes' numbers
+    // live in a separate namespace. finance-api does its own duplicate
+    // detection for credits (409 with the existing credit named), surfaced in
+    // the catch below.
+    if (docType === 'invoice' && dup.checking) {
+      setSubmitError('Still checking whether this invoice is already in the system — try again in a moment.')
+      return
+    }
+    if (isDuplicate) return
 
     if (docType === 'credit_note') {
       try {
@@ -609,6 +666,20 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
       // (AP-oriented) scope. Any residual server-side denial (e.g. an edge
       // case canMatchInvoice doesn't model) is still caught by the
       // onError → manual panel fallback below, so this can't silently fail.
+      // Opened from Create Direct PA: match it to nothing, for a Direct PA. The
+      // uploader may (same rights as a PO match). A refusal leaves the invoice
+      // saved and unmatched — say so, and carry on rather than lose the queue.
+      if (forDirectPa) {
+        try {
+          await markDirect.mutateAsync(inv.id)
+        } catch (e) {
+          alert(`Invoice ${inv.vendor_invoice_number} was saved but could not be matched for a Direct PA: `
+            + (e instanceof Error ? e.message : 'unknown error')
+            + '. Open it on the Invoices page and use Match → Direct PA.')
+        }
+        finishOne(inv.id)
+        return
+      }
       if (matchedPo) {
         const lineAllocs = buildLineLevelAllocations(inv, matchedPo)
         const linkedGr = grs.find((g) => g.po_id === matchedPo.id && g.status !== 'cancelled')
@@ -631,6 +702,13 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
 
   const fieldErr = (val: string) => submitted && !val.trim() ? 'border-danger-400' : 'border-neutral-300'
 
+  // ── Courier invoice: the vendor is a carrier's ─────────────────────────────
+  // Rule (2026-10-20): a carrier's invoice is always a courier invoice. Its
+  // review replaces the rest of this form; the same PDF is read again for the
+  // per-shipment detail. Credit notes keep the ordinary credit path.
+  const courierCarrier = docType === 'invoice' && selectedVendor && !createdInv
+    ? carriers.find((c) => c.is_active && c.vendor_id === selectedVendor.id)
+    : undefined
   // ── Step 2: line-level allocation (invoice created, PO recognized) ──────────
   if (createdInv) {
     // Candidate POs: the recognized PO first, then other open POs for the vendor.
@@ -752,10 +830,14 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
             <div>
               <h2 className="text-sm font-semibold text-neutral-900">
                 {queueTotal > 1 ? `Upload Invoice ${queueIndex + 1} of ${queueTotal}` : 'Upload Invoice'}
+                {courierCarrier && <span className="ml-2 rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-medium text-primary-700">Courier invoice</span>}
+                {forDirectPa && !courierCarrier && <span className="ml-2 rounded-full bg-warning-50 px-2 py-0.5 text-[11px] font-medium text-warning-700">Direct PA</span>}
               </h2>
               <p className="text-xs text-neutral-400">
                 {queueTotal > 1
                   ? `${file?.name ?? ''} · ${createdIds.length} of ${queueTotal} created so far`
+                  : courierCarrier ? 'Each line is matched to a registered tracking number and cost center after saving'
+                  : forDirectPa ? 'For a Direct PA — saved and matched to no PO or agreement'
                   : 'New invoice will be queued for PO matching'}
               </p>
             </div>
@@ -836,12 +918,27 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
               makes both wrappers transparent so the layout is exactly as before. */}
           <div className={cn(file ? 'flex flex-1 min-h-0 gap-5' : 'contents')}>
           {file && (
-            <div className="w-[60%] shrink-0">
+            <div className={cn('shrink-0', courierCarrier ? 'w-1/2' : 'w-[60%]')}>
               <FilePreviewPanel file={file.raw} />
             </div>
           )}
           <div className={cn(file ? 'flex-1 min-w-0 overflow-y-auto flex flex-col gap-4 pr-1' : 'contents')}>
 
+          {courierCarrier ? (
+            // A carrier's invoice: same window, same preview — only the form on
+            // the right becomes the courier one (one line per shipment).
+            <CourierInvoiceReview
+              embedded
+              key={`${queueIndex}-${file?.name ?? 'manual'}-${courierCarrier.id}`}
+              carrier={courierCarrier}
+              file={file?.raw ?? null}
+              queueLabel={queueTotal > 1 ? `Invoice ${queueIndex + 1} of ${queueTotal}` : undefined}
+              onBack={() => { setSelectedVendor(null); setVendorOpen(true) }}
+              onClose={onClose}
+              onCreated={(id) => finishOne(id)}
+            />
+          ) : (
+          <>
           {/* Document type */}
           {showCreditNoteBanner ? (
             <div className="mb-4 rounded-lg border border-warning-300 bg-warning-50 p-3">
@@ -953,11 +1050,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
             {isDuplicate && (
               <div className="flex items-center gap-2 rounded-lg border border-danger-300 bg-danger-50 px-3 py-2 text-xs text-danger-700">
                 <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                <span>
-                  Duplicate invoice — <span className="font-semibold">{vendorInvoiceNumber.trim()}</span> from{' '}
-                  <span className="font-semibold">{selectedVendor?.name}</span> already exists in the system.
-                  Please verify this invoice has not already been uploaded.
-                </span>
+                <span>{dup.detail}</span>
               </div>
             )}
           </div>
@@ -1253,6 +1346,8 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
               placeholder="Any additional notes..."
               className="px-3 py-2 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none" />
           </div>
+          </>
+          )}
 
           </div>
           </div>
@@ -1262,7 +1357,7 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
 
         {/* Footer */}
         <div className={cn('border-t border-neutral-100 px-6 py-4 flex-col gap-2 shrink-0',
-                           pendingSplit ? 'hidden' : 'flex')}>
+                           pendingSplit || courierCarrier ? 'hidden' : 'flex')}>
           {queueRemaining > 0 && (
             <p className="text-xs text-neutral-500">
               {queueRemaining} more {queueRemaining === 1 ? 'invoice' : 'invoices'} from this file after
@@ -1296,10 +1391,22 @@ function UploadModal({ onClose, onUploaded }: UploadModalProps) {
 
 // ─── Tab content components ───────────────────────────────────────────────────
 
+// Header-cell classes shared by the four list tabs. Every tab is paged by the
+// API, so sorting is server-side (epms-api crud/invoice.py INVOICE_SORTABLE)
+// and a sort change goes back to page 1.
+const TH = 'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap'
+type InvoiceSortKey =
+  | 'internal_ref' | 'vendor_name' | 'vendor_invoice_number' | 'total_amount'
+  | 'invoice_date' | 'due_date' | 'uploaded_at' | 'sla' | 'status'
+  | 'po_number' | 'po_total' | 'variance' | 'variance_pct'
+
 function UnmatchedTab() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
-  const { data } = useInvoices({ status: 'unmatched', page, page_size: pageSize })
+  // Oldest upload first by default — the SLA queue. This used to be a sort of
+  // the current page only; it is now the server's order across all pages.
+  const [sort, onSort] = useSort<InvoiceSortKey>({ key: 'uploaded_at', dir: 'asc' }, () => setPage(1))
+  const { data } = useInvoices({ status: 'unmatched', ...sortParams(sort), page, page_size: pageSize })
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [assigningInv, setAssigningInv] = useState<ApiInvoice | null>(null)
@@ -1314,9 +1421,7 @@ function UnmatchedTab() {
     isAp || inv.uploaded_by === user?.id ||
     (inv.match_assignee_id != null && inv.match_assignee_id === user?.id)
 
-  const unmatched = [...(data?.items ?? [])].sort(
-    (a, b) => new Date(a.uploaded_at).getTime() - new Date(b.uploaded_at).getTime()
-  )
+  const unmatched = data?.items ?? []
   const total = data?.total ?? 0
 
   if (unmatched.length === 0) {
@@ -1343,16 +1448,23 @@ function UnmatchedTab() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-neutral-200 bg-neutral-50">
-              {['Vendor', 'Invoice #', 'Amount', 'Invoice Date', 'Upload Date', 'SLA', 'Action'].map((h) => (
-                <th key={h} className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap ${h === 'Amount' ? 'text-right' : 'text-left'}`}>{h}</th>
-              ))}
+              <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+              <SortTh label="Invoice #" sortKey="internal_ref" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+              <SortTh label="Amount" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className={TH} />
+              <SortTh label="Invoice Date" sortKey="invoice_date" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+              <SortTh label="Upload Date" sortKey="uploaded_at" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+              <SortTh label="SLA" sortKey="sla" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+              <th className={`${TH} text-left`}>Action</th>
             </tr>
           </thead>
           <tbody>
             {unmatched.map((inv, idx) => (
               <Fragment key={inv.id}>
                 <tr className="border-b border-neutral-100 bg-white hover:bg-primary-50/60 transition-colors">
-                  <td className="px-4 py-3 font-medium text-neutral-900">{inv.vendor_name}</td>
+                  <td className="px-4 py-3 font-medium text-neutral-900">
+                    {inv.vendor_name}
+                    {inv.match_route === 'freight' && <FreightRouteBadge className="ml-2" />}
+                  </td>
                   <td className="px-4 py-3">
                     <Link to={`/invoices/${inv.id}`} className="font-mono text-xs text-primary-600 hover:underline">
                       {inv.internal_ref}
@@ -1367,7 +1479,33 @@ function UnmatchedTab() {
                   <td className="px-4 py-3"><SlaBadge uploadedAt={inv.uploaded_at} /></td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      {deletingId === inv.id ? (
+                      {inv.match_route === 'freight' ? (
+                        // Courier invoices are matched to shipments on their own
+                        // page (PO matching and delete here refuse them); AP can
+                        // still assign the matching to someone, like any invoice.
+                        <>
+                          {inv.match_assignee_name && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-primary-50 border border-primary-200 px-2 py-0.5 text-[11px] font-medium text-primary-700">
+                              <UserPlus className="h-3 w-3" />
+                              {inv.match_assignee_name}
+                            </span>
+                          )}
+                          <Link to={`/invoices/${inv.id}`}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-primary-300 bg-primary-50 px-2.5 py-1 text-xs font-medium text-primary-700 hover:bg-primary-100 transition-colors">
+                            Match shipments
+                          </Link>
+                          {isAp && (
+                            <button
+                              onClick={() => { setExpandedId(null); setDeletingId(null); setAssigningInv(inv) }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-neutral-300 bg-white px-2.5 py-1 text-xs font-medium text-neutral-600 hover:bg-neutral-50 transition-colors"
+                              title="Assign to someone"
+                            >
+                              <UserPlus className="h-3.5 w-3.5" />
+                              {inv.match_assignee_name ? 'Reassign' : 'Assign'}
+                            </button>
+                          )}
+                        </>
+                      ) : deletingId === inv.id ? (
                         <>
                           <span className="text-xs text-danger-600 font-medium">Delete?</span>
                           <button
@@ -1442,6 +1580,7 @@ function UnmatchedTab() {
         <AssignMatchDialog
           invoiceId={assigningInv.id}
           currentAssigneeName={assigningInv.match_assignee_name}
+          courier={assigningInv.match_route === 'freight'}
           onClose={() => setAssigningInv(null)}
           onAssigned={() => setAssigningInv(null)}
         />
@@ -1453,7 +1592,8 @@ function UnmatchedTab() {
 function ExceptionsTab() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
-  const { data } = useInvoices({ status: 'exception', page, page_size: pageSize })
+  const [sort, onSort] = useSort<InvoiceSortKey>(null, () => setPage(1))
+  const { data } = useInvoices({ status: 'exception', ...sortParams(sort), page, page_size: pageSize })
   const matchTolerancePct = useConfig().data?.invoice_match_tolerance_pct ?? 5
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
@@ -1484,9 +1624,14 @@ function ExceptionsTab() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-neutral-200 bg-neutral-50">
-              {['Vendor', 'Invoice #', 'Invoice Amount', 'PO Total', 'Variance', 'Variance %', 'PO', 'Action'].map((h) => (
-                <th key={h} className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap ${['Invoice Amount','PO Total','Variance','Variance %'].includes(h) ? 'text-right' : 'text-left'}`}>{h}</th>
-              ))}
+              <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+              <SortTh label="Invoice #" sortKey="internal_ref" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+              <SortTh label="Invoice Amount" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className={TH} />
+              <SortTh label="PO Total" sortKey="po_total" sort={sort} onSort={onSort} align="right" className={TH} />
+              <SortTh label="Variance" sortKey="variance" sort={sort} onSort={onSort} align="right" className={TH} />
+              <SortTh label="Variance %" sortKey="variance_pct" sort={sort} onSort={onSort} align="right" className={TH} />
+              <SortTh label="PO" sortKey="po_number" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+              <th className={`${TH} text-left`}>Action</th>
             </tr>
           </thead>
           <tbody>
@@ -1580,12 +1725,13 @@ function DueDateCell({ invoice, onOpen }: { invoice: ApiInvoice; onOpen: () => v
 function AllInvoicesTab() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'all'>('all')
-  // null = the server's default order (newest uploaded first).
-  const [dueSort, setDueSort] = useState<'due_date' | '-due_date' | null>(null)
   const [overdueOnly, setOverdueOnly] = useState(false)
+  const [route, setRoute] = useState<'' | 'po' | 'agreement' | 'freight' | 'direct'>('')
   const [chainInvoiceId, setChainInvoiceId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  // null = the server's default order (newest uploaded first).
+  const [sort, onSort] = useSort<InvoiceSortKey>(null, () => setPage(1))
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const deleteInvoice = useDeleteInvoice()
   const { user } = useAuthStore()
@@ -1595,8 +1741,9 @@ function AllInvoicesTab() {
   const { data } = useInvoices({
     search: search || undefined,
     status: statusFilter !== 'all' ? statusFilter : undefined,
-    sort: dueSort ?? undefined,
+    ...sortParams(sort),
     overdue: overdueOnly || undefined,
+    route: route || undefined,
     page,
     page_size: pageSize,
   })
@@ -1616,6 +1763,15 @@ function AllInvoicesTab() {
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
             className="w-full h-9 pl-9 pr-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
         </div>
+        <select value={route} aria-label="Route"
+          onChange={(e) => { setRoute(e.target.value as typeof route); setPage(1) }}
+          className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
+          <option value="">All routes</option>
+          <option value="po">PO</option>
+          <option value="agreement">Agreement</option>
+          <option value="freight">Freight</option>
+          <option value="direct">Direct PA</option>
+        </select>
         <div className="flex flex-wrap gap-1.5">
           {(['all', 'unmatched', 'matched', 'match_review', 'exception', 'approved', 'paid'] as const).map((s) => (
             <button key={s} onClick={() => { setStatusFilter(s); setPage(1) }}
@@ -1644,27 +1800,16 @@ function AllInvoicesTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50">
-                {['Ref', 'Vendor', 'Invoice #', 'Amount', 'Invoice Date'].map((h) => (
-                  <th key={h} className={`px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap ${h === 'Amount' ? 'text-right' : 'text-left'}`}>{h}</th>
-                ))}
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap">
-                  {/* Cycles unsorted -> soonest first -> latest first. Sorting
-                      is server-side, so it orders the whole list, not the page. */}
-                  <button type="button"
-                    onClick={() => {
-                      setDueSort((c) => (c === null ? 'due_date' : c === 'due_date' ? '-due_date' : null))
-                      setPage(1)
-                    }}
-                    className="flex items-center gap-1 uppercase tracking-wide hover:text-neutral-700">
-                    Due Date
-                    {dueSort === 'due_date' ? <ArrowUp className="h-3 w-3" />
-                      : dueSort === '-due_date' ? <ArrowDown className="h-3 w-3" />
-                      : <ArrowUpDown className="h-3 w-3 text-neutral-300" />}
-                  </button>
-                </th>
-                {['Upload Date', 'Status', 'PO', ''].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap">{h}</th>
-                ))}
+                <SortTh label="Ref" sortKey="internal_ref" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+                <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+                <SortTh label="Invoice #" sortKey="vendor_invoice_number" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+                <SortTh label="Amount" sortKey="total_amount" sort={sort} onSort={onSort} align="right" className={TH} />
+                <SortTh label="Invoice Date" sortKey="invoice_date" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+                <SortTh label="Due Date" sortKey="due_date" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+                <SortTh label="Upload Date" sortKey="uploaded_at" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+                <SortTh label="PO" sortKey="po_number" sort={sort} onSort={onSort} className={`${TH} text-left`} />
+                <th className={`${TH} text-left`} />
               </tr>
             </thead>
             <tbody>
@@ -1675,7 +1820,11 @@ function AllInvoicesTab() {
                       {inv.internal_ref}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-neutral-700">{inv.vendor_name}</td>
+                  <td className="px-4 py-3 text-neutral-700">
+                    {inv.vendor_name}
+                    {inv.match_route === 'freight' && <FreightRouteBadge className="ml-2" />}
+                    {inv.match_route === 'direct' && <DirectRouteBadge className="ml-2" />}
+                  </td>
                   <td className="px-4 py-3 font-mono text-xs text-neutral-500">{inv.vendor_invoice_number}</td>
                   <td className="px-4 py-3 font-mono text-xs font-semibold text-neutral-900">
                     {formatAmount(inv.total_amount, inv.currency)}
@@ -1693,7 +1842,7 @@ function AllInvoicesTab() {
                     }
                   </td>
                   <td className="px-4 py-3 text-right">
-                    {canDelete && (inv.status === 'unmatched' || inv.status === 'exception') && (
+                    {canDelete && inv.match_route !== 'freight' && (inv.status === 'unmatched' || inv.status === 'exception') && (
                       deletingId === inv.id ? (
                         <div className="flex items-center justify-end gap-2">
                           <span className="text-xs text-danger-600 font-medium">Delete?</span>
@@ -1747,16 +1896,24 @@ interface OaInvoiceItem {
   created_at: string; pa_number: string | null; attachment_count: number
 }
 
+type OaInvoiceSortKey =
+  | 'invoice_number' | 'vendor_name' | 'total_amount' | 'status'
+  | 'pa_number' | 'attachment_count' | 'created_at'
+const OA_TH = 'px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500'
+
 function OaInvoicesTab() {
   const { token } = useAuthStore()
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  // Paged by expense-api, which sorts the whole list before cutting the page.
+  const [sort, onSort] = useSort<OaInvoiceSortKey>(null, () => setPage(1))
   const { data, isLoading } = useQuery<{ items: OaInvoiceItem[]; total: number }>({
-    queryKey: ['oa-invoices', search, page, pageSize],
+    queryKey: ['oa-invoices', search, page, pageSize, sort],
     queryFn: async () => {
       const qs = new URLSearchParams({ source: 'oa', page: String(page), page_size: String(pageSize) })
       if (search) qs.set('search', search)
+      if (sort) { qs.set('sort', sort.key); qs.set('dir', sort.dir) }
       const res = await fetch(`${EXPENSE_BASE}/api/v1/invoices/all?${qs}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -1789,9 +1946,13 @@ function OaInvoicesTab() {
           <table className="w-full text-sm">
             <thead className="border-b border-neutral-100 bg-neutral-50">
               <tr>
-                {['Invoice #', 'Vendor', 'Amount', 'Status', 'PA', 'Attachments', 'Date'].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>
-                ))}
+                <SortTh label="Invoice #" sortKey="invoice_number" sort={sort} onSort={onSort} className={OA_TH} />
+                <SortTh label="Vendor" sortKey="vendor_name" sort={sort} onSort={onSort} className={OA_TH} />
+                <SortTh label="Amount" sortKey="total_amount" sort={sort} onSort={onSort} className={OA_TH} />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={OA_TH} />
+                <SortTh label="PA" sortKey="pa_number" sort={sort} onSort={onSort} className={OA_TH} />
+                <SortTh label="Attachments" sortKey="attachment_count" sort={sort} onSort={onSort} className={OA_TH} />
+                <SortTh label="Date" sortKey="created_at" sort={sort} onSort={onSort} className={OA_TH} />
               </tr>
             </thead>
             <tbody>
@@ -1838,11 +1999,26 @@ export default function InvoiceListPage() {
   const { user } = useAuthStore()
   const perms = useRolePermissions().data?.permissions
   const navigate = useNavigate()
+  const { openTab } = useStaticTabNav()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [activeTab, setActiveTab] = useState<Tab>('all')
   const [showUpload, setShowUpload] = useState(false)
+  // Create Direct PA → Upload Invoice lands here with ?upload=direct: open the
+  // upload form in Direct PA mode, then drop the query so a later visit to this
+  // (kept-alive) tab does not reopen it.
+  const [uploadForDirect, setUploadForDirect] = useState(false)
+  useEffect(() => {
+    if (searchParams.get('upload') !== 'direct') return
+    setUploadForDirect(true)
+    setShowUpload(true)
+    setSearchParams({}, { replace: true })
+  }, [searchParams, setSearchParams])
 
   const canUpload = user?.role === 'system_admin' || !!perms?.invoice_upload
+  // One upload form for every invoice; a carrier's is recognised by its vendor.
+  // The freight manager may upload courier invoices without invoice_upload.
+  const canCourier = !!useFreightAccess().data?.manage
 
   const unmatchedCount  = invoices.filter((i) => i.status === 'unmatched').length
   const exceptionCount  = invoices.filter((i) => i.status === 'exception').length
@@ -1867,8 +2043,8 @@ export default function InvoiceListPage() {
             {exceptionCount > 0 && ` · ${exceptionCount} exception${exceptionCount > 1 ? 's' : ''} require attention`}
           </p>
         </div>
-        {canUpload && (
-          <Button onClick={() => setShowUpload(true)} className="gap-2">
+        {(canUpload || canCourier) && (
+          <Button onClick={() => { setUploadForDirect(false); setShowUpload(true) }} className="gap-2">
             <Upload className="h-4 w-4" />
             Upload Invoice
           </Button>
@@ -1924,10 +2100,14 @@ export default function InvoiceListPage() {
       {/* Upload modal */}
       {showUpload && (
         <UploadModal
+          forDirectPa={uploadForDirect}
           onClose={() => setShowUpload(false)}
-          onUploaded={(id, kind) => {
+          onUploaded={(id, kind, ids) => {
             setShowUpload(false)
-            navigate(kind === 'credit' ? '/vendor-credits' : `/invoices/${id}`)
+            if (kind === 'credit') navigate('/vendor-credits')
+            // Back to Create Direct PA with what was just uploaded ticked.
+            else if (uploadForDirect) openTab('/pa/new', `source=direct&invoice=${(ids ?? [id]).join(',')}`)
+            else navigate(`/invoices/${id}`)
           }}
         />
       )}

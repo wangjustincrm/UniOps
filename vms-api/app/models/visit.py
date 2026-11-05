@@ -34,6 +34,12 @@ class VisitStatus(str, enum.Enum):
 
 
 class AccessArea(str, enum.Enum):
+    """Codes of the six zones seeded by migration 20261021_0015.
+
+    Zones are now defined in VMS Admin (app.models.zone), so this is no longer
+    the list of valid areas — only the codes of the original ones, kept for the
+    migration and tests. `vms_visits.access_area` is a plain string referencing
+    `vms_zones.code`."""
     office = "office"
     warehouse = "warehouse"
     production_non_gmp = "production_non_gmp"
@@ -98,8 +104,11 @@ class Visit(UUIDPrimaryKey, TimestampMixin, Base):
     visit_purpose: Mapped[VisitPurpose] = mapped_column(
         SAEnum(VisitPurpose, name="vms_visit_purpose"), nullable=False,
     )
-    access_area: Mapped[AccessArea] = mapped_column(
-        SAEnum(AccessArea, name="vms_access_area"), nullable=False,
+    # The zone's code (vms_zones.code) — see app.models.zone.
+    access_area: Mapped[str] = mapped_column(
+        String(40),
+        ForeignKey("vms_zones.code", ondelete="RESTRICT", onupdate="CASCADE"),
+        nullable=False,
     )
 
     # ── State ───────────────────────────────────────────────────────────────
@@ -135,9 +144,16 @@ class Visit(UUIDPrimaryKey, TimestampMixin, Base):
     # approval-api reads it via `meta["number_attr"]` so Portal task inbox rows
     # have meaningful labels without a join. See S2_ARCHITECTURE_REVIEW.md F3.
     visit_title: Mapped[str] = mapped_column(String(255), nullable=False, default="", server_default="")
-    # Per-instance approver assignment for the VMS-local Quality Manager step.
-    # vms-api populates this from vms_config.quality_manager_user_ids when
-    # submitting a GMP/lab visit; approval-api uses it as assignee_id directly.
+    # The zone's managers at submit time — who may approve the workflow's Zone
+    # Manager step (any one of them). vms-api snapshots them from
+    # vms_zone_managers on every (re)submit; approval-api gives each one a task.
+    # A snapshot, so editing the zone later does not move an approval already
+    # in flight. JSONB list of user UUID strings.
+    zone_approver_ids: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]",
+    )
+    # Superseded by zone_approver_ids (20261021_0015 copied it across). No longer
+    # written; kept so the column can be dropped in a later release.
     quality_approver_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="RESTRICT"),

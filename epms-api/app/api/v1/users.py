@@ -4,7 +4,7 @@ import io
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, UploadFile, File, status
@@ -83,6 +83,25 @@ async def _post_conflict(db, role: str, exclude_user_id: uuid.UUID | None = None
     return row[0] if row is not None else None
 
 
+# ?sort= goes straight into ORDER BY, so only these keys are accepted (the
+# SQL-injection boundary). Each sorts by what the Users table cell shows:
+# - role: the cell shows a label ("Dept Manager", "ERP PA Officer") that is
+#   the code with "_" → " " up to letter case, so lower(replace(code)) orders
+#   exactly like the labels.
+# - department: the department NAME, not the FK.
+# - status: the cell shows "Active"/"Inactive" — Active sorts first ascending.
+_USER_SORTABLE = {
+    "full_name": func.lower(User.full_name),
+    "email": func.lower(User.email),
+    "role": func.lower(func.replace(User.role, "_", " ")),
+    "department": (select(func.lower(Department.name))
+                   .where(Department.id == User.department_id)
+                   .correlate(User).scalar_subquery()),
+    "erp_person_code": func.lower(User.erp_person_code),
+    "status": sa.case((User.is_active.is_(True), 0), else_=1),
+}
+
+
 async def _with_dept_names(db: SessionDep, users: list[User]) -> list[UserAdminResponse]:
     """Attach department_name to each user in one extra query."""
     dept_ids = {u.department_id for u in users if u.department_id}
@@ -110,9 +129,22 @@ async def list_users(
     search: str | None = None,
     role: str | None = None,
     is_active: bool | None = None,
+    sort: str | None = Query(None),
+    dir: Literal["asc", "desc"] = Query("asc"),
 ):
-    """List users with optional search, role filter, and pagination."""
-    q = select(User).order_by(User.full_name)
+    """List users with optional search, role filter, and pagination.
+
+    sort/dir: one of _USER_SORTABLE (Portal → Admin → Users headers); no sort
+    keeps the historical full_name order."""
+    if sort is not None and sort not in _USER_SORTABLE:
+        raise HTTPException(status_code=422, detail=f"unknown sort column {sort!r}")
+    q = select(User)
+    if sort is None:
+        q = q.order_by(User.full_name)
+    else:
+        col = _USER_SORTABLE[sort]
+        col = col.asc() if dir == "asc" else col.desc()
+        q = q.order_by(col.nulls_last(), User.id.asc())
     if search:
         q = q.where(
             or_(User.full_name.ilike(f"%{search}%"), User.email.ilike(f"%{search}%"))

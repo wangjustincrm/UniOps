@@ -15,14 +15,43 @@ from sqlalchemy import text
 
 from app.api.v1.perms import ViewDep, can_view_cost
 from app.core.deps import SessionDep
+from app.core.list_sort import SortDir, order_sql, resolve
 from app.models import InvSyncState
 from app.services import asof, params
 from app.services import recon as recon_svc
 
 router = APIRouter(prefix="/nc", tags=["nc-inventory"])
 
-_SORT_SAFE = {"material": "mat_code, wh_code, batch", "warehouse": "wh_code, mat_code, batch",
-              "batch": "batch, mat_code, wh_code", "qty": "qty desc, mat_code"}
+# Sort whitelists: key -> a FIXED SQL fragment over the query's final CTE.
+# Only these fragments reach ORDER BY (see app/core/list_sort.py). Each key
+# sorts what its column SHOWS: the code shown in the cell, the batch with
+# "no batch" ('') as empty, availability as the page computes it.
+_STOCK_BATCH_SORT = {
+    "warehouse": "lower(wh_code)",
+    "material": "lower(mat_code)",
+    "batch": "nullif(lower(batch), '')",
+    "supplier_batch": "lower(supplier_batch)",
+    "produced": "produced",
+    "expires": "expires",
+    "qty": "qty",
+    "locked": "locked",
+    # Same formula as `available` below; null on past dates (no lock data).
+    "available": "case when locked is null then null"
+                 " else greatest(0, qty - coalesce(locked,0) - coalesce(reserved,0)) end",
+    "state": "lower(coalesce(state_name, state_code))",
+}
+# warehouse × material × batch (× state, today) is the row's identity.
+_STOCK_BATCH_TIE = "mat_code, wh_code, batch, wh, mat, state"
+_STOCK_BATCH_DEFAULT = "mat_code, wh_code, batch"
+_STOCK_MATERIAL_SORT = {
+    "material": "lower(mat_code)",
+    "qty": "qty", "qty_wms": "qty_wms", "qty_external": "qty_external",
+    "qty_production": "qty_production", "qty_other": "qty_other",
+    "batches": "batches", "locked": "locked",
+}
+_STOCK_MATERIAL_TIE = "mat_code, mat"
+# The directions the old one-way `sort` had; kept when `dir` is absent.
+_LEGACY_DIR: dict[str, SortDir] = {"qty": "desc", "amount": "desc"}
 
 
 def _s(v) -> str | None:
@@ -147,8 +176,12 @@ async def stock(
     db: SessionDep, _: ViewDep, q: CommonDep,
     group: Literal["batch", "material"] = "batch",
     warehouse_class: Annotated[list[str] | None, Query()] = None,
-    sort: Literal["material", "warehouse", "batch", "qty"] = "material",
+    sort: str | None = Query(None),
+    dir_: Annotated[SortDir | None, Query(alias="dir")] = None,
 ) -> dict:
+    if group == "material" and sort in ("warehouse", "batch"):
+        sort = None     # old callers: by material these always fell back to material order
+    s = resolve(sort, dir_, _STOCK_MATERIAL_SORT if group == "material" else _STOCK_BATCH_SORT, _LEGACY_DIR)
     a = await _asof(db, q.date)
     is_today = a.d == asof.today_local()
     if a.d > asof.today_local():
@@ -190,7 +223,7 @@ async def stock(
                    sum(qty) filter (where wh_class not in ('wms','external','production')) qty_other,
                    sum(locked) locked, count(distinct batch) batches
             from j group by mat, mat_code
-            order by {'qty desc, mat_code' if sort == 'qty' else 'mat_code'}
+            order by {order_sql(_STOCK_MATERIAL_SORT[s[0]], s[1], _STOCK_MATERIAL_TIE) if s else 'mat_code'}
             limit :limit offset :offset"""), p)).all()
         items = [{
             "material_code": r.mat_code, "material_name": r.mat_name, "uom": r.uom,
@@ -202,7 +235,9 @@ async def stock(
     else:
         total = (await db.execute(text(base + "select count(*) from j"), p)).scalar_one()
         rows = (await db.execute(text(base + f"""
-            select * from j order by {_SORT_SAFE[sort]} limit :limit offset :offset"""), p)).all()
+            select * from j
+            order by {order_sql(_STOCK_BATCH_SORT[s[0]], s[1], _STOCK_BATCH_TIE) if s else _STOCK_BATCH_DEFAULT}
+            limit :limit offset :offset"""), p)).all()
         items = []
         for r in rows:
             available = None
@@ -239,13 +274,26 @@ async def stock(
 
 # ── IA cost ─────────────────────────────────────────────────────────────────
 
+_COST_SORT = {
+    "material": "lower(mat_code)",
+    "qty": "qty",
+    "amount": "amt",
+    "unit_price": "case when qty <> 0 then amt / qty end",
+    "uncosted": "uncosted",
+}
+_COST_AMOUNT_KEYS = {"amount", "unit_price"}
+_COST_TIE = "mat_code, mat"
+
+
 @router.get("/cost")
 async def cost(db: SessionDep, payload: ViewDep, q: CommonDep,
-               sort: Literal["material", "qty", "amount"] = "material") -> dict:
+               sort: str | None = Query(None),
+               dir_: Annotated[SortDir | None, Query(alias="dir")] = None) -> dict:
+    s = resolve(sort, dir_, _COST_SORT, _LEGACY_DIR)
     a = await _asof(db, q.date)
     show_amt = await can_view_cost(payload, db)
-    if sort == "amount" and not show_amt:
-        sort = "material"
+    if s and s[0] in _COST_AMOUNT_KEYS and not show_amt:
+        s = None    # ordering by a withheld amount would leak it; default order instead
     p = {**a.sql_params, **q.filter_params()}
     base = f"""
         with r as (
@@ -265,7 +313,7 @@ async def cost(db: SessionDep, payload: ViewDep, q: CommonDep,
                    or m.name_local ilike :search)
         )"""
     totals = (await db.execute(text(base + "select count(*) n, sum(qty) qty, sum(amt) amt from j"), p)).one()
-    order = {"material": "mat_code", "qty": "qty desc, mat_code", "amount": "amt desc, mat_code"}[sort]
+    order = order_sql(_COST_SORT[s[0]], s[1], _COST_TIE) if s else "mat_code"
     rows = (await db.execute(text(base + f"select * from j order by {order} limit :limit offset :offset"), p)).all()
     return {
         "date": a.d.isoformat(), "period": a.period, "ia": await _period_status(db, a),
@@ -347,11 +395,27 @@ async def cost_lines(material_code: str, db: SessionDep, payload: ViewDep,
 _GL_POSTED = "(cast(:include_unposted as boolean) or g.tallydate is not null)"
 
 
+_LEDGER_SORT = {
+    "account": "acct",
+    "material": "lower(mat_code)",
+    "qty": "qty",
+    "amount": "amt",
+}
+_LEDGER_DEFAULT = "acct, mat_code nulls first"
+_LEDGER_TIE = "acct, mat_code nulls first, mat nulls first"
+
+
 @router.get("/ledger")
 async def ledger(db: SessionDep, payload: ViewDep, q: CommonDep,
-                 include_unposted: bool = True) -> dict:
+                 include_unposted: bool = True,
+                 sort: str | None = Query(None),
+                 dir_: Annotated[SortDir | None, Query(alias="dir")] = None) -> dict:
+    s = resolve(sort, dir_, _LEDGER_SORT)
     a = await _asof(db, q.date)
     show_amt = await can_view_cost(payload, db)
+    if s and s[0] == "amount" and not show_amt:
+        s = None    # ordering by a withheld amount would leak it
+    order = order_sql(_LEDGER_SORT[s[0]], s[1], _LEDGER_TIE) if s else _LEDGER_DEFAULT
     p = {**a.sql_params, **q.filter_params(), "include_unposted": include_unposted}
     base = f"""
         with r as (
@@ -379,8 +443,8 @@ async def ledger(db: SessionDep, payload: ViewDep, q: CommonDep,
             from inv_nc_gl_line g where {asof.GL_LINE_ASOF} and {_GL_POSTED} group by 1)
         select * from r where qty <> 0 or amt <> 0 order by acct"""), p)).all()
     total = (await db.execute(text(base + "select count(*) from j"), p)).scalar_one()
-    rows = (await db.execute(text(base + """
-        select * from j order by acct, mat_code nulls first limit :limit offset :offset"""), p)).all()
+    rows = (await db.execute(text(base + f"""
+        select * from j order by {order} limit :limit offset :offset"""), p)).all()
 
     def acct_row(r):
         return {"account_code": r.acct, "account_name": r.acct_name, "qty": _s(r.qty),

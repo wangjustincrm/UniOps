@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import { cn, formatAmount, formatDate, formatDateTime, formatUnitPrice } from '@/lib/utils'
 import { usePa, usePaAction, usePaEvents, useConfirmSettlement, usePaWorkflowSteps } from '@/hooks/usePas'
 import { usePosByIds } from '@/hooks/usePos'
-import { useInvoices, useInvoicesForPos } from '@/hooks/useInvoices'
+import { useInvoices, useInvoicesByIds, useInvoicesForPos } from '@/hooks/useInvoices'
 import { useTasks } from '@/hooks/useTasks'
 import { useAuthStore } from '@/stores/auth.store'
 import { usePaAttachments, useUploadPaAttachment, useDeletePaAttachment, useRegeneratePaPdf } from '@/hooks/usePaAttachments'
@@ -28,6 +28,8 @@ import {
 } from '@/services/vendorCredits'
 import { InvoiceMatchVariancePanel } from '@/components/invoices/InvoiceMatchVariancePanel'
 import { useConfig } from '@/hooks/useConfig'
+import type { ApiPa } from '@/services/pa'
+import { historyLine, isSkipped } from '@/lib/approvalHistory'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
@@ -51,9 +53,11 @@ function PaStatusBadge({ status }: { status: PaStatus }) {
 // ─── Approval timeline ────────────────────────────────────────────────────────
 
 function TimelineStep({
-  label, actor, date, status, note,
+  label, actor, date, dateOnly, status, note,
 }: {
   label: string; actor?: string; date?: string;
+  /** `date` is a calendar date with no time of day (the payment date). */
+  dateOnly?: boolean;
   status: 'done' | 'active' | 'pending' | 'skipped';
   note?: string;
 }) {
@@ -80,7 +84,7 @@ function TimelineStep({
       </div>
       <div className="pb-5">
         <p className={cn('text-sm font-semibold text-neutral-800', status === 'skipped' && 'line-through text-neutral-400')}>{actor ? `${label} — ${actor}` : label}</p>
-        {date && <p className="text-xs text-neutral-400 mt-0.5">{formatDateTime(date)}</p>}
+        {date && <p className="text-xs text-neutral-400 mt-0.5">{dateOnly ? formatDate(date) : formatDateTime(date)}</p>}
         {isAutoApproved && (
           <span className="inline-flex items-center mt-1 rounded-full bg-neutral-100 border border-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-500">
             Auto-approved
@@ -394,9 +398,14 @@ export default function PaDetailPage() {
   const poInvoices = useInvoicesForPos(invoicePoIds, invoicePoIds.length > 0)
   const linkedPos = usePosByIds(paPoLinks.map((l) => l.id))
   const allPoLines = linkedPos.items?.flatMap((p) => p.line_items)
-  const invoiceCandidates = agreementInvoiceFilter
-    ? (agreementInvoicesData?.items ?? [])
-    : (poInvoices.items ?? [])
+  // Direct PA: no PO or agreement to list its invoices by — fetch each one.
+  const directInvoiceIds = pa?.source === 'direct' ? pa.invoice_ids : []
+  const directInvoices = useInvoicesByIds(directInvoiceIds, directInvoiceIds.length > 0)
+  const invoiceCandidates = pa?.source === 'direct'
+    ? directInvoices.items
+    : agreementInvoiceFilter
+      ? (agreementInvoicesData?.items ?? [])
+      : (poInvoices.items ?? [])
   const linkedInvoices = invoiceCandidates.filter((inv) => pa?.invoice_ids.includes(inv.id))
   const { user } = useAuthStore()
   // Same hook/pattern InvoiceDetailPage.tsx uses for its 3-way-match tolerance.
@@ -446,6 +455,22 @@ export default function PaDetailPage() {
 
   const wfNodes = workflowSteps ?? []
   const stepIdx = pa.approval_step_idx ?? 0
+  // Freight PA: no PO, no agreement — courier invoices split over cost centers
+  // (pa.cost_allocations). Every PO/agreement-shaped block below is swapped
+  // for the allocation table rather than left to render empty.
+  const isFreight = pa.source === 'freight'
+  // Direct PA: invoices matched to no PO and no agreement, charged to the
+  // department / cost center / budget account on the PA itself. Like a Freight
+  // PA it is created as a draft and submitted from here (no PO edit flow).
+  const isDirect = pa.source === 'direct'
+  const canSubmitFreight = (isFreight || isDirect) && (['draft', 'returned'] as PaStatus[]).includes(pa.status)
+  const handleSubmitFreight = () => {
+    if (paAction.isPending) return
+    paAction.mutate(
+      { action: 'submit' },
+      { onError: (e) => alert(e instanceof Error ? e.message : 'Could not submit the PA') },
+    )
+  }
 
   // Approval gating is driven solely by the approval engine's task routing — no
   // client-side workflow/role fallback. The engine assigns each step to exactly the
@@ -501,18 +526,20 @@ export default function PaDetailPage() {
       const isDone = ['approved', 'processed'].includes(pa.status) || i < stepIdx
       const isActive = !isDone && i === stepIdx && ['submitted', 'in_review'].includes(pa.status)
       const evt = approveEventByStep[i]
-      const isAutoSkipped = evt?.comment?.includes('Auto-skipped') ?? false
+      const isAutoSkipped = isSkipped(evt)
       return {
         label: node.label,
         actor: isAutoSkipped ? undefined : evt?.actor_name ?? undefined,
         date: isAutoSkipped ? undefined : evt?.created_at ?? undefined,
         // A skipped step shows WHY it was skipped. The tag alone says a level
         // was bypassed without saying on what grounds, which for a payment
-        // approval is the one thing a reader actually needs.
-        note: evt?.comment?.includes('Auto-approved')
+        // approval is the one thing a reader actually needs. skip_reason is
+        // the server's reading of the comment — it also handles the
+        // "Re-synced (config change): Auto-skipped (...)" form.
+        note: evt?.kind === 'same_approver' || evt?.kind === 'imported'
           ? 'Auto-approved (same approver)'
           : isAutoSkipped
-            ? evt?.comment?.replace(/^Auto-skipped\s*/, '').replace(/^\(|\)$/g, '') || undefined
+            ? evt?.skip_reason || undefined
             : undefined,
         status: isAutoSkipped ? 'skipped' as const : isDone ? 'done' as const : isActive ? 'active' as const : 'pending' as const,
       }
@@ -520,7 +547,11 @@ export default function PaDetailPage() {
     {
       label: 'Payment Processed',
       actor: undefined as string | undefined,
-      date: pa.status === 'processed' ? pa.updated_at : undefined,
+      // The payment date Finance recorded (PAY-005) — a date, so shown
+      // without a time. It used to be updated_at, the last time anything
+      // touched the PA, which is not when it was paid (PRD 3.7.2).
+      date: pa.status === 'processed' ? pa.paid_on ?? undefined : undefined,
+      dateOnly: true,
       note: undefined as string | undefined,
       status: pa.status === 'processed' ? 'done' as const : pa.status === 'approved' ? 'active' as const : 'pending' as const,
     },
@@ -555,7 +586,10 @@ export default function PaDetailPage() {
             <p className="text-sm text-neutral-500 mt-0.5">
               {pa.title}
               <span className="ml-2 text-neutral-400">·</span>
-              <span className="ml-2 text-neutral-400">{linkedInvoices.length} invoice{linkedInvoices.length !== 1 ? 's' : ''}</span>
+              {(() => {
+                const n = isFreight || isDirect ? pa.invoice_ids.length : linkedInvoices.length
+                return <span className="ml-2 text-neutral-400">{n} invoice{n !== 1 ? 's' : ''}</span>
+              })()}
             </p>
           </div>
         </div>
@@ -565,6 +599,12 @@ export default function PaDetailPage() {
             <Button variant="secondary" onClick={() => navigate(`/pa/${pa.id}/edit`)} className="gap-2">
               <Pencil className="h-4 w-4" />
               Edit
+            </Button>
+          )}
+          {canSubmitFreight && (
+            <Button onClick={handleSubmitFreight} disabled={paAction.isPending} className="gap-2">
+              <CheckCircle2 className="h-4 w-4" />
+              {paAction.isPending ? 'Submitting…' : 'Submit for Approval'}
             </Button>
           )}
           {/* Approval actions moved to fixed bottom bar */}
@@ -627,8 +667,15 @@ export default function PaDetailPage() {
                   {[
                     { label: 'PA Number',    value: pa.pa_number },
                     { label: 'Vendor',       value: pa.vendor_name },
-                    { label: 'PA Type',      value: PA_TYPE_LABEL[pa.pa_type] ?? 'Regular Payment' },
+                    { label: 'PA Type',      value: isFreight ? 'Freight (courier invoices)'
+                        : isDirect ? 'Direct (no PO or agreement)'
+                        : (PA_TYPE_LABEL[pa.pa_type] ?? 'Regular Payment') },
                     { label: 'Created',      value: formatDate(pa.created_at) },
+                    ...(isDirect ? [
+                      { label: 'Department',     value: pa.department_name ?? '—' },
+                      { label: 'Cost Center',    value: pa.cost_center_code ? `${pa.cost_center_code} — ${pa.cost_center_name ?? ''}` : '—' },
+                      { label: 'Budget Account', value: pa.budget_account_code ?? '—' },
+                    ] : []),
                     ...(pa.pa_type === 'prepayment' && pa.prepayment_pct ? [
                       { label: 'Prepayment %', value: `${pa.prepayment_pct}%` },
                       { label: 'Expected Settlement', value: pa.expected_settlement_date ? formatDate(pa.expected_settlement_date) : '—' },
@@ -643,7 +690,7 @@ export default function PaDetailPage() {
 
                 {pa.notes && (
                   <div className="mt-4 pt-4 border-t border-neutral-100">
-                    <p className="text-xs text-neutral-500 mb-1">Notes</p>
+                    <p className="text-xs text-neutral-500 mb-1">{isDirect ? 'Reason for payment' : 'Notes'}</p>
                     <p className="whitespace-pre-wrap break-words text-sm text-neutral-700">{pa.notes}</p>
                   </div>
                 )}
@@ -793,7 +840,11 @@ export default function PaDetailPage() {
                 )}
               </div>
 
+              {/* Freight PA: the cost split replaces the PO / invoice links. */}
+              {isFreight && <FreightCostAllocation pa={pa} />}
+
               {/* Linked documents */}
+              {!isFreight && (
               <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
                 <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-4">Linked Documents</h3>
                 <div className="flex flex-col gap-2">
@@ -833,6 +884,7 @@ export default function PaDetailPage() {
                   )}
                 </div>
               </div>
+              )}
 
               {/* Invoice-to-PO / invoice-to-receipts variance — per-invoice,
                   collapsed to a total, expandable to line/receipt detail. AP
@@ -902,19 +954,28 @@ export default function PaDetailPage() {
               <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-4">Activity History</h3>
               <div className="flex flex-col text-sm">
                 {events && events.length > 0 ? (
-                  [...events].reverse().map((evt, i) => (
-                    <div key={i} className="flex gap-4 pb-4 border-b border-neutral-100 last:border-0 last:pb-0">
-                      <div className="text-xs text-neutral-400 w-32 shrink-0 mt-0.5">{formatDateTime(evt.created_at)}</div>
-                      <div>
-                        <p className="text-sm font-medium text-neutral-800 capitalize">{evt.action.replace(/_/g, ' ')}</p>
-                        <p className="text-xs text-neutral-500 mt-0.5">
-                          by {evt.actor_role.replace(/_/g, ' ')}
-                          {evt.actor_name && <span className="text-neutral-400"> — {evt.actor_name}</span>}
-                        </p>
-                        {evt.comment && <p className="text-xs text-neutral-400 mt-0.5 italic">"{evt.comment}"</p>}
+                  [...events].reverse().map((evt, i) => {
+                    const line = historyLine(evt)
+                    return (
+                      <div key={i} className="flex gap-4 pb-4 border-b border-neutral-100 last:border-0 last:pb-0">
+                        <div className="text-xs text-neutral-400 w-32 shrink-0 mt-0.5">{formatDateTime(evt.created_at)}</div>
+                        <div>
+                          <p className="text-sm font-medium text-neutral-800 capitalize">{line.action}</p>
+                          <p className="text-xs text-neutral-500 mt-0.5">
+                            {line.role}
+                            {line.actorName && <span className="text-neutral-400"> — {line.actorName}</span>}
+                          </p>
+                          {/* Quoted for what a person wrote; unquoted for a skip
+                              reason, which is the system explaining itself. */}
+                          {line.note && (
+                            <p className="text-xs text-neutral-400 mt-0.5 italic">
+                              {evt.kind === 'skipped' ? line.note : `"${line.note}"`}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    )
+                  })
                 ) : (
                   <div className="flex gap-4 pb-4">
                     <div className="text-xs text-neutral-400 w-32 shrink-0 mt-0.5">{formatDateTime(pa.created_at)}</div>
@@ -935,7 +996,10 @@ export default function PaDetailPage() {
             {steps.map((step, i) => (
               <TimelineStep key={i} {...step} />
             ))}
-            <DocumentChainTree currentType="pa" id={pa.id} />
+            {/* The chain is PO/agreement-pivoted and would render empty for a
+                Freight PA (its documents are in the Cost Allocation table) or a
+                Direct PA (its invoices are under Linked Documents). */}
+            {!isFreight && !isDirect && <DocumentChainTree currentType="pa" id={pa.id} />}
           </div>
         </div>
       </div>
@@ -1004,6 +1068,64 @@ export default function PaDetailPage() {
           onConfirm={handleProcessConfirm}
           onClose={() => { paAction.reset(); setProcessOpen(false) }}
         />
+      )}
+    </div>
+  )
+}
+
+// ─── Freight PA cost allocation ───────────────────────────────────────────────
+
+function FreightCostAllocation({ pa }: { pa: ApiPa }) {
+  const rows = pa.cost_allocations ?? []
+  const amount = rows.reduce((t, r) => t + Number(r.amount), 0)
+  const tax = rows.reduce((t, r) => t + Number(r.tax_amount), 0)
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
+      <div className="px-5 py-3 border-b border-neutral-200 bg-neutral-50">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
+          Cost Allocation ({pa.invoice_ids.length} courier invoice{pa.invoice_ids.length !== 1 ? 's' : ''})
+        </h3>
+      </div>
+      {rows.length === 0 ? (
+        <div className="px-5 py-6 text-center text-xs text-neutral-400 italic">No cost allocation recorded for this PA</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-neutral-200 bg-neutral-50">
+                {['Invoice', 'Department', 'Cost Center', 'Budget Code', 'Amount', 'Tax'].map((h) => (
+                  <th key={h} className={cn('px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500', ['Amount', 'Tax'].includes(h) ? 'text-right' : 'text-left')}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={`${r.invoice_id}-${r.cost_center_id}`} className={cn('border-b border-neutral-100 last:border-0', i % 2 === 1 && 'bg-neutral-50/50')}>
+                  <td className="px-4 py-2.5">
+                    <Link to={`/invoices/${r.invoice_id}`} className="flex items-center gap-1 font-mono text-xs text-primary-700 hover:underline">
+                      {r.invoice_number ?? r.invoice_id.slice(0, 8)} <ExternalLink className="h-3 w-3" />
+                    </Link>
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-neutral-700">{r.department_name ?? '—'}</td>
+                  <td className="px-4 py-2.5 text-xs text-neutral-700">
+                    <span className="font-mono">{r.cost_center_code ?? '—'}</span>
+                    {r.cost_center_name && <span className="text-neutral-500"> — {r.cost_center_name}</span>}
+                  </td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{r.budget_code}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs text-neutral-900">{formatAmount(Number(r.amount), pa.currency)}</td>
+                  <td className="px-4 py-2.5 text-right font-mono text-xs text-neutral-700">{formatAmount(Number(r.tax_amount), pa.currency)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-neutral-200 bg-neutral-50 font-semibold">
+                <td colSpan={4} className="px-4 py-2.5 text-right text-xs text-neutral-600">Total</td>
+                <td className="px-4 py-2.5 text-right font-mono text-xs text-neutral-900">{formatAmount(Math.round(amount * 100) / 100, pa.currency)}</td>
+                <td className="px-4 py-2.5 text-right font-mono text-xs text-neutral-900">{formatAmount(Math.round(tax * 100) / 100, pa.currency)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       )}
     </div>
   )

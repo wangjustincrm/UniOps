@@ -1,9 +1,21 @@
 # OA — Product Requirements Document
 
-**Version:** 3.0
-**Date:** 2026-10-16
+**Version:** 3.3
+**Date:** 2026-10-21
 **Status:** In Production
 **Scope:** Employee expense reimbursement and business travel in UniOps — General Expense (EXP), Mileage (MIL), Travel Application (TRA), Travel Expense (TRV) and admin-defined Custom Forms (CFM), with their approvals, attachments, claim PDF, payment hand-off and budget display.
+
+**What changed in version 3.3** (2026-10-21)
+
+- **A claim never waits on its own claimant (WF-SELF-001…004, §7.1).** A step whose only holder is the claimant — typically a Department Manager's own claim at the Department Manager step — is skipped and the next level approves. Before this, such a claim sat at that step for good: the claimant may not approve their own claim and nobody else held the step (TRA-20261020-0001/0002). Skipped steps no longer print the claimant as signer on the claim PDF or the Travel Application form, nor show them as approver in Approval Status.
+
+**What changed in version 3.2** (2026-10-20)
+
+- The Direct Payment Application now lives in EPMS (EPMS.md §3.22): invoice uploaded on EPMS → Invoices, matched with *Match → Direct PA*, paid from *Payment Applications → Create Direct PA*, approved on the same "PA (Direct)" workflow. OA's own Direct PA stays retired; its old records are tagged `oa_direct` (§15).
+
+**What changed in version 3.1** (2026-10-19)
+
+- The Expense Claims and Travel Applications lists sort by clicking a column header, ascending then descending, on the server across all pages (column sorting rule in EPMS.md §3.20 (UI-SORT-001…007)). The Date column sorts by submitted date, else created date, as shown.
 
 **What changed in this version** (v2.0, 2026-06-02 → v3.0; every statement re-checked against the system as deployed):
 - **Module re-scoped to reimbursement and travel.** The OA Direct Payment Application (PA-DIR) and the OA Invoices pages are **retired** (hidden in the UI, new Direct PAs refused by the server). PO-linked PAs belong to EPMS (see EPMS.md §3.15). The shared invoice, invoice-attachment and OCR services that EPMS still uses remain and are listed in §15.
@@ -201,7 +213,7 @@ Lines are entered in collapsible sections per category:
 
 Each line is either **Single day** or **Date range** (toggle on the line).
 
-- **Single day:** Date, Description, Amount (net), Tax code (Canada only, §4.2), Tax, Total, Budget Account (list of active accounts — no balance shown), Receipt (attach or Scan).
+- **Single day:** Date, Description, Amount (net), Tax code (Canada only, §4.2), Tax, Total, Budget Account (the same two-level picker as EXP — L1 category → L2 account, with available balance and % used, §9), Receipt (attach or Scan).
 - **Date range** (long trips, e.g. a 2–3 month overseas posting): From / To (must lie inside the trip dates), **Days claimed** (defaults to the number of days in the range; may be lowered, never above it), **Daily rate** (net), Description, Budget Account. Net = days × daily rate; tax and total follow as above. For meal and incidental categories the daily rate **may not exceed** the policy limit — refused, not flagged. Hotel, Transportation and Other have no cap. An invoice is **optional**; when one is attached its **Invoice amount** must be entered and the line total may not exceed it (one invoice may cover the whole stay, e.g. 20 nights, $2,000). Scanning on a range line fills the description and invoice amount, not the line amount.
 
 The category is stored as a prefix of the line description and is restored when the claim is edited. Receipt files attached on a line are filed on the claim with the category in the file name. Detail page and claim PDF show a range line's dates, "N days × rate" and invoice amount.
@@ -313,6 +325,15 @@ All OA documents are approved by the shared engine (EPMS.md §3.3). Each type ha
 
 Engine behaviour that applies to OA exactly as to EPMS (see EPMS.md §3.3): department-routed approvers from Approval Routing (the claim's department is the claimant's); same-approver auto-skip (recorded as "Auto-approved (same approver holds both roles)"); a chain whose every step is skipped approves on submit; delegation (EPMS.md §1.5); role union and the `gm_or_opm` pseudo-role.
 
+**The claimant never approves their own claim**, so the engine does not leave a claim waiting on them. This differs from EPMS, where a submitter who holds step 1 approves it themselves (EPMS.md §3.3.5).
+
+| ID | Requirement |
+|----|-------------|
+| WF-SELF-001 | When the claimant is the **only** holder of a step (the Department Manager of their own department; the sole holder of a post such as Finance Manager or GM; their own Director or Supervisor), the step is skipped and the claim moves to the next step. It is recorded as an approval event with the comment "Auto-skipped (claimant holds this step — cannot approve own claim)". Applies at submit, at resubmission, and when a later step is reached after an approval. |
+| WF-SELF-002 | A step that someone other than the claimant also holds (a post with two holders, a Finance BP pool) is **not** skipped; the other holder approves it. Delegation does not count: a step is skipped even if the claimant has a delegate today. |
+| WF-SELF-003 | If every remaining step would be skipped this way, submission is refused ("every approval step of this claim would be approved by the claimant themselves…") and the submit preflight reports it, owner Admin. A claim is never approved with no approver other than the claimant. |
+| WF-SELF-004 | Claims already waiting on their claimant are moved on by an in-flight re-sync (Portal → Data Maintenance → the claim's approval state → Re-sync, or any Approval Routing save). On the Approval Status card a skipped step shows Approved with no approver name; the Approval Timeline shows it as "System"; the claim PDF shows "System" with the reason, and the Travel Application form's signature line reads "Skipped". |
+
 **Conditional Finance Manager step for over-budget or over-limit claims — Not implemented.** The engine injects over-budget steps for PRs only (OI-01).
 
 ### 7.2 Status Life-cycle
@@ -341,7 +362,7 @@ draft / returned ──cancel──► cancelled
 |--------|-------------|-----|-------|
 | Save / Edit | draft, returned | Claimant; also System Admin or Finance Manager (primary role) | Save as Draft / Edit → Save Changes |
 | Submit | draft, returned | Claimant (employee or creator); System Admin | Submit (disabled with a hint until an attachment exists for EXP/TRV; not for a TRV of only date-range lines) |
-| Approve / Return / Reject | submitted, in_review | Holder of the current step (task-based), delegate, System Admin; never the claimant | Approve / Return / Reject with comment dialog |
+| Approve / Return / Reject | submitted, in_review | Holder of the current step (task-based), delegate, System Admin; never the claimant (a step only the claimant holds is skipped — WF-SELF-001) | Approve / Return / Reject with comment dialog |
 | Recall | submitted, in_review | Creator or System Admin | **Not exposed** (OI-08) |
 | Cancel | draft, returned | Creator, System Admin, or current step holder | **Not exposed** (OI-08) |
 | Delete | TRA only: draft, returned, submitted, in_review | Applicant or System Admin | Delete (list row and detail) |
@@ -447,7 +468,7 @@ Budget plans, NC actuals and the over-budget modes used for PRs are specified in
 
 ### 10.2 OA Task Inbox
 
-Lists what the user must do in OA, from the expense service (independent of, and consistent with, the platform Task Inbox in EPMS.md §3.7).
+Lists what the user must do in OA, from the expense service (independent of, and consistent with, Portal's unified Task Inbox, PORTAL.md §3.3). OA tasks are not shown in the EPMS Task Inbox (EPMS.md DSH-023).
 
 | Task type | When | Label |
 |-----------|------|-------|
@@ -569,7 +590,7 @@ Approval tasks and approval history are the platform's shared tables (EPMS.md §
 | Item | Current state |
 |------|---------------|
 | Direct PA (PA-DIR) pages and sidebar entry | Removed from the OA app; code kept so it can be restored |
-| Creating a Direct PA | Refused by the server ("gone") |
+| Creating a Direct PA | Refused by OA's server ("gone"). Direct PAs are now raised in EPMS (EPMS.md §3.22); OA's old records carry `source = oa_direct` so EPMS and Finance never take them for EPMS Direct PAs |
 | Existing PA records | Readable, approvable and payable server-side; none existed in production at retirement. The PA list used by EPMS's document chain (by PO) is still served |
 | OA Invoices list / detail pages | Removed with the Direct PA |
 | Shared services kept for EPMS | Unified invoice list (EPMS + OA invoices, role-scoped), invoice attachments (File Server), AI invoice reading (`invoice` mode, with credit-note recognition and printed-total check) and pickup-slip reading (`slip` mode, purchase agreements), vendor search |

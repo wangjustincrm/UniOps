@@ -19,6 +19,12 @@ import {
   PRESET_PAYMENT_TERMS, MAX_NET_DAYS, customDaysToTerms, formatPaymentTerms, isPresetTerms, netDays,
 } from '@/lib/paymentTerms'
 import { ErpVendorImportDrawer } from './ErpVendorImportDrawer'
+import { SortTh, useSort, sortParams } from '@uniops/shell'
+
+type VendorSortKey =
+  | 'code' | 'erp_id' | 'name' | 'category' | 'contact'
+  | 'payment_terms' | 'currency' | 'status'
+const VENDOR_TH = 'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap'
 
 // Select value for "Custom (Net N days)"; the day count lives in customDays.
 const CUSTOM_TERMS = '__custom'
@@ -407,6 +413,8 @@ export default function VendorsPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'active' | 'inactive'>('all')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  // Paged by the API, so the API sorts (null = its default, by POID).
+  const [sort, onSort] = useSort<VendorSortKey>(null, () => setPage(1))
 
   const [mode, setMode] = useState<'none' | 'add' | { edit: string }>('none')
   const [formData, setFormData] = useState<VendorFormData>(BLANK_FORM)
@@ -425,14 +433,16 @@ export default function VendorsPage() {
   const { data: vendorsData } = useVendors({
     search: search || undefined,
     category: catFilter === 'all' ? undefined : catFilter,
-    active_only: activeTab === 'active' ? true : activeTab === 'inactive' ? undefined : undefined,
+    active_only: activeTab === 'active' ? true : undefined,
+    // Filtered by the API: dropping active rows from one fetched page left the
+    // tab near-empty while the pager still counted every vendor.
+    inactive_only: activeTab === 'inactive' ? true : undefined,
+    ...sortParams(sort),
     page,
     page_size: pageSize,
   })
 
-  // For inactive tab we filter client-side since the API doesn't support it directly
-  const rawItems = vendorsData?.items ?? []
-  const vendors = activeTab === 'inactive' ? rawItems.filter((v) => !v.is_active) : rawItems
+  const vendors = vendorsData?.items ?? []
   const total = vendorsData?.total ?? 0
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
 
@@ -708,24 +718,15 @@ export default function VendorsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50">
-                {[
-                  'POID',
-                  'ERP ID',
-                  'Name',
-                  'Category',
-                  'Contact',
-                  'Payment Terms',
-                  'Currency',
-                  'Status',
-                  ...(canWrite ? [''] : []),
-                ].map((h) => (
-                  <th
-                    key={h}
-                    className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap"
-                  >
-                    {h}
-                  </th>
-                ))}
+                <SortTh label="POID" sortKey="code" sort={sort} onSort={onSort} className={VENDOR_TH} />
+                <SortTh label="ERP ID" sortKey="erp_id" sort={sort} onSort={onSort} className={VENDOR_TH} />
+                <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className={VENDOR_TH} />
+                <SortTh label="Category" sortKey="category" sort={sort} onSort={onSort} className={VENDOR_TH} />
+                <SortTh label="Contact" sortKey="contact" sort={sort} onSort={onSort} className={VENDOR_TH} />
+                <SortTh label="Payment Terms" sortKey="payment_terms" sort={sort} onSort={onSort} className={VENDOR_TH} />
+                <SortTh label="Currency" sortKey="currency" sort={sort} onSort={onSort} className={VENDOR_TH} />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={VENDOR_TH} />
+                {canWrite && <th className={VENDOR_TH} />}
               </tr>
             </thead>
             <tbody>

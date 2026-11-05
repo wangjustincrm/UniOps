@@ -186,6 +186,9 @@ export interface AgreementActionBody {
 }
 
 export interface AgreementFilters {
+  // Server-side column sort (GET … ?sort=<key>&dir=asc|desc); omitted = API default order.
+  sort?: string
+  dir?: 'asc' | 'desc'
   status?: AgreementStatus
   vendor_id?: string
   agreement_type?: AgreementType

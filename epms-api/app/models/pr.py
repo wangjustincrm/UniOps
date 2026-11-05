@@ -3,8 +3,10 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import (Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text,
+                        case, cast, func, select)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
@@ -102,6 +104,64 @@ class PurchaseRequest(UUIDPrimaryKey, TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"),
         nullable=True, index=True,
     )
+
+    # ── Names, for the Assistant's ontology (ISS-0004) ────────────────────────
+    # Query-side only: the instance side returns None, because a name needs the
+    # users table. Nothing outside the ontology reads these.
+    #
+    # The service owner follows crud/pr_owner.py's rule exactly — owner_id for
+    # a service type that carries one, else the requester — so "who owns this"
+    # gets the name the receipt task is routed to.
+    @hybrid_property
+    def service_owner_name(self) -> str | None:
+        return None
+
+    @service_owner_name.inplace.expression
+    @classmethod
+    def _service_owner_name_expression(cls):
+        from app.models.user import User
+        from app.schemas.gr import SERVICE_TYPES
+        owner = case((cls.type.in_(sorted(SERVICE_TYPES)) & cls.owner_id.is_not(None),
+                      cls.owner_id), else_=cls.created_by)
+        return select(User.full_name).where(User.id == owner).scalar_subquery()
+
+    @hybrid_property
+    def requester_full_name(self) -> str | None:
+        return None
+
+    @requester_full_name.inplace.expression
+    @classmethod
+    def _requester_full_name_expression(cls):
+        from app.models.user import User
+        return select(User.full_name).where(User.id == cls.created_by).scalar_subquery()
+
+    # When the PR was finally approved: the last "approve" in its approval
+    # history (the engine writes no approved_at on a PR). Query side only, for
+    # "how long does approval take" (ISS-0060).
+    @hybrid_property
+    def approved_at(self) -> datetime | None:
+        return None
+
+    @approved_at.inplace.expression
+    @classmethod
+    def _approved_at_expression(cls):
+        from app.models.approval import ApprovalEvent
+        last = (select(func.max(ApprovalEvent.created_at))
+                .where(ApprovalEvent.document_type == "pr",
+                       ApprovalEvent.document_id == cls.id,
+                       ApprovalEvent.action == "approve")
+                .scalar_subquery())
+        return case((cls.status == "approved", last), else_=None)
+
+    @hybrid_property
+    def days_to_approve(self) -> Decimal | None:
+        return None
+
+    @days_to_approve.inplace.expression
+    @classmethod
+    def _days_to_approve_expression(cls):
+        span = func.extract("epoch", cls.approved_at - cls.submitted_at)
+        return func.round(cast(span / 86400, Numeric(12, 4)), 1)
 
     line_items: Mapped[list["PrLineItem"]] = relationship(
         "PrLineItem", back_populates="pr", cascade="all, delete-orphan", lazy="selectin",

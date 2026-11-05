@@ -18,16 +18,32 @@ const API_BASE =
   (import.meta.env.VITE_API_URL as string | undefined) || '/api/v1'
 import { useAuthStore } from '@/stores/auth.store'
 
+/**
+ * Route segment → the doc_type the backend knows. Agreements and agreement
+ * receipts were missing, so on those pages the panel did not know a document
+ * was open at all (ISS-0068).
+ */
+const DOC_TYPE_BY_SEGMENT: Record<string, string> = {
+  pr: 'pr',
+  po: 'po',
+  gr: 'gr',
+  invoice: 'invoice',
+  invoices: 'invoice',
+  pa: 'pa',
+  agreements: 'agreement',
+  receipts: 'agreement_receipt',
+}
+
 /** URL → what document the person is looking at, if any. */
 export function deriveContext(pathname: string): AssistantContext {
   const ctx: AssistantContext = { app: 'epms', route: pathname }
   // /pr/<id>, /po/<id>, /gr/<id>… — the id is only useful when it is an id, not
   // a sub-route like /pr/new or /pr/list.
   const m = pathname.match(
-    /^\/(pr|po|gr|invoice|invoices|pa)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
+    /^\/(pr|po|gr|invoice|invoices|pa|agreements|receipts)\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i
   )
   if (m) {
-    ctx.doc_type = m[1].toLowerCase().replace(/^invoices$/, 'invoice')
+    ctx.doc_type = DOC_TYPE_BY_SEGMENT[m[1].toLowerCase()]
     ctx.doc_id = m[2]
   }
   return ctx

@@ -11,6 +11,7 @@
 // URLSearchParams: filtering and paging both happen server-side, so a filter
 // that silently fails to reach the API looks exactly like a filter that
 // matched everything.
+import type { SortDir } from '@uniops/shell'
 import { mrpApi as api } from '@/lib/api'
 
 export type AgingBucketKey = 'expired' | 'under_30' | '30_to_60' | '60_to_90'
@@ -266,10 +267,21 @@ export interface BatchFilters {
    *  of finished-goods stock by quantity, so leaving them in means the totals
    *  describe the feed pile. */
   include_byproducts?: boolean
-  sort?: 'material_code' | 'supplier_batch' | 'production_date' | 'expiry_date'
-    | 'qty' | 'inbound_date'
+  sort?: BatchSortKey
+  dir?: SortDir
+  /** Legacy direction flag; `dir` wins when both are sent. */
   descending?: boolean
 }
+
+/** Sort keys mrp-api `GET /inventory/batches` whitelists, one per column of
+ *  the Batches and Aging tables (absent = earliest expiry first). */
+export type BatchSortKey = 'material_code' | 'supplier_batch' | 'qc_batches' | 'qty' | 'lots'
+  | 'production_date' | 'expiry_date' | 'days_to_expiry' | 'inbound_date'
+  | 'quality_status' | 'mapped_status'
+
+/** Sort keys of `GET /inventory/materials` (absent = by material code). */
+export type MaterialSortKey = 'material_code' | 'on_hand' | 'available' | 'on_hold'
+  | 'expired_qty' | 'next_expiry' | 'in_transit' | 'earliest_arrival'
 
 export interface LotFilters {
   search?: string
@@ -333,7 +345,7 @@ export const inventoryApi = {
   listMaterials: (
     page: number, pageSize: number,
     filters: { search?: string; erp_class_code?: string; only_with_stock?: boolean
-               include_byproducts?: boolean } = {},
+               include_byproducts?: boolean; sort?: MaterialSortKey; dir?: SortDir } = {},
   ) => api.get<MaterialStockList>(`/inventory/materials?${params(page, pageSize, { ...filters })}`),
 
   openPoLines: (materialCode: string) =>

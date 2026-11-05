@@ -6,8 +6,9 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { Plus, Trash2, AlertTriangle, ChevronDown, ChevronRight, ArrowLeft, Paperclip, Upload, X } from 'lucide-react'
 import { cn, formatAmount, todayLocal } from '@/lib/utils'
 import { useEditableClaim, useSaveClaim, type EditableFormProps } from '@/lib/editableClaim'
-import { api, budgetApi, mdmApi } from '@/lib/api'
+import { api, mdmApi } from '@/lib/api'
 import { ReceiptScanButton } from '@/components/ReceiptScanButton'
+import { AccountPicker, useBudgetAccounts, type BudgetAccount } from '@/components/BudgetAccountPicker'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -26,13 +27,6 @@ interface TaxCode { code: string; name: string; rate: string; recoverable: boole
 // Pre-selected on a new line in Canada: Ontario HST, what every TRV line was
 // taxed at before the picker existed (policy hst_rate 13%).
 const DEFAULT_TAX_CODE = 'HST_ON'
-
-interface BudgetAccount {
-  id: string; code: string; name: string
-  // Balance fields are now per-CC and fetched on demand via budget-api /balance.
-  // For the budget account dropdown we only need the catalog (id/code/name).
-  annual_budget?: number; committed?: number; actual_spent?: number; available?: number
-}
 
 interface EligibleApp {
   id: string; claim_number: string; travel_destination?: string | null
@@ -383,22 +377,18 @@ function CategorySection({
                 {/* Budget account */}
                 <div>
                   <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">Budget Account</label>
-                  <select value={li.budget_account_id}
-                    onChange={e => {
-                      const acc = accounts.find(a => a.id === e.target.value)
-                      onUpdate(li.line_number, {
-                        budget_account_id: acc?.id ?? '',
-                        budget_account_code: acc?.code ?? '',
-                        budget_account_name: acc?.name ?? '',
-                      })
-                    }}
-                    className="mt-0.5 w-full rounded border border-neutral-200 bg-white px-2 py-1.5 text-sm focus:outline-none focus:border-primary-400"
-                  >
-                    <option value="">— Select account —</option>
-                    {accounts.map(a => (
-                      <option key={a.id} value={a.id}>{a.code} — {a.name}</option>
-                    ))}
-                  </select>
+                  <div className="mt-0.5">
+                    <AccountPicker
+                      value={li.budget_account_id}
+                      onChange={acc => onUpdate(li.line_number, {
+                        budget_account_id: acc.id,
+                        budget_account_code: acc.code,
+                        budget_account_name: acc.name,
+                      })}
+                      accounts={accounts}
+                      className="text-sm"
+                    />
+                  </div>
                 </div>
 
                 {/* Sales tax — Canada only; abroad lines carry none */}
@@ -575,14 +565,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
     }),
   })
 
-  const { data: accountsData } = useQuery<{ items: BudgetAccount[] }>({
-    queryKey: ['budget-accounts'],
-    queryFn: async () => {
-      const items = await budgetApi.get<BudgetAccount[]>('/accounts?is_active=true')
-      return { items }
-    },
-  })
-  const accounts = accountsData?.items ?? []
+  const { data: accounts = [] } = useBudgetAccounts()
 
   const { data: taxCodes = [] } = useQuery<TaxCode[]>({
     queryKey: ['tax-codes'],

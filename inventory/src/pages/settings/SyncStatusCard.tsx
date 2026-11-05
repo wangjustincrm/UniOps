@@ -5,15 +5,17 @@
 // mirrors), never from the last attempt: during an NC outage the two diverge,
 // and that is exactly when this card must not look reassuring.
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Loader2, RefreshCw, XCircle } from 'lucide-react'
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle } from '@uniops/shell'
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, SortTh, sortParams, useSort } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { formatDateTimeToronto, formatDuration, formatNumber, relativeAge } from '@/lib/time'
 import type { useToasts } from '@/hooks/useToasts'
+import { Pager } from '@/pages/nc/NcUi'
+import { usePageFor } from '@/pages/nc/usePageFor'
 import {
-  WMS_TIEOUT_CHECKS, settingsApi, tieoutCheckLabel, type NcSyncStatus,
+  settingsApi, tieoutCheckLabel, type NcSyncStatus, type TieoutSort,
 } from './settingsApi'
 
 export type SyncSource = 'nc' | 'wms'
@@ -101,36 +103,45 @@ function CountsTable({ status, name }: { status: NcSyncStatus; name: string }) {
   )
 }
 
-function diffOf(mirror: string | null, nc: string | null): string {
-  if (mirror == null || nc == null) return '—'
+function diffNum(mirror: string | null, nc: string | null): number | null {
+  if (mirror == null || nc == null) return null
   const d = Number(mirror) - Number(nc)
-  return Number.isFinite(d) ? formatNumber(d, 4) : '—'
+  return Number.isFinite(d) ? d : null
 }
 
+function diffOf(mirror: string | null, nc: string | null): string {
+  const d = diffNum(mirror, nc)
+  return d == null ? '—' : formatNumber(d, 4)
+}
+
+const issueTh = 'px-3 py-2 font-medium'
+
+const ISSUES_PAGE_SIZE = 50
+
 function TieoutIssuesTable({ source }: { source: SyncSource }) {
-  // The endpoint serves every source's findings. The WMS card asks for its
-  // one check; the NC card takes the rest (filtered here, as the endpoint
-  // filters by a single check only).
+  // Paged and sorted by the API, filtered to this card's sync (`source`), so
+  // every stored issue is reachable — no client-side cap or filter.
+  const [sort, onSort] = useSort<TieoutSort>()
+  const [page, setPage] = usePageFor(JSON.stringify([source, sort]))
   const q = useQuery({
-    queryKey: ['inv-tieout-issues', source],
-    queryFn: () => settingsApi.tieoutIssues(source === 'wms' ? WMS_TIEOUT_CHECKS[0] : undefined),
+    queryKey: ['inv-tieout-issues', source, sort, page],
+    queryFn: () => settingsApi.tieoutIssues({ source, page, page_size: ISSUES_PAGE_SIZE, ...sortParams(sort) }),
+    placeholderData: keepPreviousData,
   })
+  const data = q.data
   if (q.isLoading) return <p className="text-sm text-neutral-500">Loading tie-out issues…</p>
-  if (q.isError) {
-    return <p className="text-sm text-danger-600">Could not load tie-out issues: {(q.error as Error).message}</p>
+  if (q.isError || !data) {
+    return <p className="text-sm text-danger-600">Could not load tie-out issues: {(q.error as Error)?.message}</p>
   }
-  const data = q.data!
-  const mine = (check: string) => (source === 'wms') === WMS_TIEOUT_CHECKS.includes(check)
-  const items = data.items.filter((i) => mine(i.check))
-  const byCheck = Object.entries(data.by_check).filter(([k]) => mine(k))
-  const totalStored = byCheck.reduce((a, [, n]) => a + n, 0)
+  const items = data.items
+  const byCheck = Object.entries(data.by_check)
   const hidden = data.amount_issues_hidden > 0 && (
     <p className="text-xs text-neutral-500">
       {data.amount_issues_hidden} amount-based issue{data.amount_issues_hidden === 1 ? ' is' : 's are'} hidden
       {' '}— requires the ‘View Inventory Amounts’ permission.
     </p>
   )
-  if (items.length === 0) {
+  if (data.total === 0) {
     return hidden || <p className="text-sm text-neutral-500">No issues stored.</p>
   }
   return (
@@ -138,18 +149,17 @@ function TieoutIssuesTable({ source }: { source: SyncSource }) {
       {hidden}
       <p className="text-xs text-neutral-500">
         By check: {byCheck.map(([k, n]) => `${tieoutCheckLabel(k)} ${n}`).join(' · ')}
-        {items.length < totalStored && ` — showing ${items.length} of ${totalStored}`}
       </p>
-      <div className="max-h-96 overflow-auto rounded-lg border border-neutral-200">
+      <div className={cn('max-h-96 overflow-auto rounded-lg border border-neutral-200', q.isFetching && 'opacity-70')}>
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-neutral-50">
             <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-500">
-              <th className="px-3 py-2 font-medium">Check</th>
-              <th className="px-3 py-2 font-medium">Measure</th>
-              <th className="px-3 py-2 font-medium">Label</th>
-              <th className="px-3 py-2 text-right font-medium">Mirror</th>
-              <th className="px-3 py-2 text-right font-medium">{source === 'wms' ? 'WMS' : 'NC'}</th>
-              <th className="px-3 py-2 text-right font-medium">Diff</th>
+              <SortTh label="Check" sortKey="check" sort={sort} onSort={onSort} className={issueTh} />
+              <SortTh label="Measure" sortKey="measure" sort={sort} onSort={onSort} className={issueTh} />
+              <SortTh label="Label" sortKey="label" sort={sort} onSort={onSort} className={issueTh} />
+              <SortTh label="Mirror" sortKey="mirror" sort={sort} onSort={onSort} align="right" className={issueTh} />
+              <SortTh label={source === 'wms' ? 'WMS' : 'NC'} sortKey="nc" sort={sort} onSort={onSort} align="right" className={issueTh} />
+              <SortTh label="Diff" sortKey="diff" sort={sort} onSort={onSort} align="right" className={issueTh} />
             </tr>
           </thead>
           <tbody>
@@ -166,6 +176,7 @@ function TieoutIssuesTable({ source }: { source: SyncSource }) {
           </tbody>
         </table>
       </div>
+      <Pager page={page} pageSize={ISSUES_PAGE_SIZE} total={data.total} busy={q.isFetching} onPage={setPage} />
     </div>
   )
 }

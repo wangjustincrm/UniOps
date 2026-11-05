@@ -1,9 +1,21 @@
 # UniOps Portal — Product Requirements Document
 
-**Version:** 2.0
-**Date:** 2026-10-16
+**Version:** 2.4
+**Date:** 2026-10-21
 **Status:** In Production
 **Scope:** Portal web app (sign-in, launcher, Task Inbox, platform administration) and the platform services it administers: identity service (sign-in, MFA, password policy, users, roles, access control), approval engine (workflows, routing, delegation, re-sync), task-notification outbox, master-data service (MDM), file service, Data Maintenance and the AI Assistant panel.
+
+**What changed in version 2.4** (2026-10-21)
+
+- New approval step role `zone_manager` (VMS only) for the VMS Visit chain: the step goes to the zone managers copied onto the visit, one task each, and any one of them decides; it is skipped when there are none. `quality_manager` stays accepted as a legacy alias with the same behaviour (§5.8, §6.1; VMS.md §6.2).
+
+**What changed in version 2.3** (2026-10-20)
+
+- The **PA (Direct)** workflow (`pa_dir`) is now the chain of EPMS's Direct PA (EPMS.md §3.22): a Payment Application raised from invoices with no PO or agreement stays a `pa` document but walks this chain. Department-based steps added to it route on the department named on the PA.
+
+**What changed in version 2.2** (2026-10-19)
+
+- Admin lists sort by clicking a column header, ascending then descending (column sorting rule in EPMS.md §3.20 (UI-SORT-001…007)). Users, the ERP MDM lists (materials, suppliers, persons) and every Data Maintenance list sort on the server; Departments, Units of Measure, Access Control roles, Approval Routing and Approval Delegation sort in the page (delegation still opens newest start date first).
 
 **What changed in this version (v1.5 → v2.0)** — the document now matches the system as deployed on main. Every statement was checked against the code. Requirements that are wanted but not built are marked **Not implemented** and listed in §14.
 - **Architecture.** Sign-in now runs in a dedicated identity service, reached through the EPMS API gateway. Portal is a launcher plus platform administration. All Finance and Budget pages moved to the standalone Finance app (FINANCE.md, BUDGET.md).
@@ -210,7 +222,7 @@ Home shows **My Task Inbox**, with a count badge that caps at "99+".
 
 | Source | Content |
 |---|---|
-| EPMS API Task Inbox (open tasks) | Every task in the shared task table that the user can act on: EPMS tasks, approval-engine tasks for OA, Finance (budget plans) and VMS documents, and NC-sync and Finance finding tasks. The same rules as EPMS.md §3.7.1 apply: personal plus role-pool tasks for all of the user's roles, plus the approval tasks of anyone who has delegated to them today. |
+| EPMS API Task Inbox (open tasks) | Every task in the shared task table that the user can act on: EPMS tasks, approval-engine tasks for OA, Finance (budget plans) and VMS documents, and NC-sync and Finance finding tasks. This is the only inbox that gathers every module (the EPMS Task Inbox shows EPMS tasks only, EPMS.md DSH-023). The visibility rules of EPMS.md §3.7.1 (DSH-008) apply: personal plus role-pool tasks for all of the user's roles, plus the approval tasks of anyone who has delegated to them today. |
 | OA "my actions" | OA claims and Travel Applications needing the user's action (OA.md) |
 
 | FR ID | Requirement |
@@ -451,14 +463,15 @@ This is the central configuration of approval chains for every module. Changes a
 | `posign` | PO sign-off (NC-imported POs) | procurement_manager (initials) → opm (signature) |
 | `agr` | Purchase Agreement | dept_manager → procurement_manager → finance_manager |
 | `pa` | Payment Application (PO-linked) | dept_manager → director → gm_or_opm → finance_bp → finance_manager (a finance_director step may be added as payment sign-off) |
-| `pa_dir` | Direct Payment Application | finance_bp → finance_manager |
+| `pa_frt` | Freight PA chain — a Payment Application raised from EPMS → Freight (courier invoices, no PO) stays a `pa` document but walks this chain. Only company-level roles are offered here, since one courier invoice covers several departments | opm → gm → finance_manager → finance_bp |
+| `pa_dir` | Direct PA chain — a Payment Application raised in EPMS from invoices with no PO or agreement (EPMS.md §3.22) stays a `pa` document but walks this chain; department-based steps route on the department named on the PA. (OA's retired PA-DIRs used it too.) | finance_bp → finance_manager |
 | `exp`, `mil`, `trv` | Expense, mileage and travel claims | dept_manager → finance_bp |
 | `tra` | Travel Application | dept_manager → finance_manager → gm |
 | `cfm` / `cfm_<code>` | Custom forms (a named form falls back to `cfm`) | dept_manager |
 | `budget_plan` | Budget Plan | dept_manager → finance_manager |
-| `vms_visit` | Visitor visit | dept_manager (an optional quality_manager step can be added) |
+| `vms_visit` | Visitor visit | dept_manager (an optional zone_manager step can be added) |
 
-**Step role tokens:** supervisor, dept_manager, director, gm_or_opm, gm, opm, procurement_manager, finance_manager, finance_director, finance_bp, ap_clerk, quality_manager (VMS only). How each resolves is specified in EPMS.md §3.3.2 and summarised in §6.
+**Step role tokens:** supervisor, dept_manager, director, gm_or_opm, gm, opm, procurement_manager, finance_manager, finance_director, finance_bp, ap_clerk, zone_manager (VMS only; shown as "Zone Manager (VMS zone managers)"). `quality_manager` is still accepted as a legacy alias with identical behaviour, shown as "Quality Manager (legacy — same as Zone Manager)", so workflows saved earlier and open tasks keep working; admins should switch such steps to Zone Manager. How each resolves is specified in EPMS.md §3.3.2 and summarised in §6.
 
 | FR ID | Requirement |
 |---|---|
@@ -531,6 +544,8 @@ NC sync failures create Task Inbox items for System Admin that open the NC Sync 
 
 Data Maintenance is for system-level corrections across modules (permission `data_maintenance`; the owning services enforce it too). Portal merges the record catalogues of the EPMS, OA, VMS and Finance services; a service that does not answer within 15 seconds is left out.
 
+Each record list sorts on the server by any of its columns (EPMS.md UI-SORT-004); the owning service publishes which columns can be sorted.
+
 | System | Records |
 |---|---|
 | EPMS | PR, PO, GR, Invoice, PA, Purchase Agreement, Agreement Receipt, Task (delete only) |
@@ -566,7 +581,7 @@ The engine runs approvals for EPMS, OA, Finance and VMS. The full specification 
 | gm, opm, procurement_manager, finance_manager, finance_director, vendor_manager | Current holder of the post | Role pool |
 | finance_bp | Users granted Finance BP as an additional role | Role pool |
 | ap_clerk | Users with the role | Role pool. *Only the primary role is honoured* (**Defect**, §14). |
-| quality_manager | The Quality Manager chosen on the VMS visit | That person; skipped if none |
+| zone_manager (legacy alias: quality_manager) | The VMS visit's zone managers, copied from the zone's active managers at each submit / resubmit (VMS.md §6.2) | One task per manager; any one may approve, return or reject, and the other tasks close. Skipped (with the reason "the visit's access zone has no zone managers") if none |
 
 **Routing department:** an agreement's own department (for the agreement and its PAs); otherwise the PR's selected department (for the PR and the POs and PAs raised from it); otherwise the creator's department. A PA covering POs from several departments skips Department Manager and Director.
 
@@ -574,7 +589,7 @@ The engine runs approvals for EPMS, OA, Finance and VMS. The full specification 
 
 The actions are Submit, Approve, Return, Reject (PA: cancelled), Recall (creator or System Admin) and Cancel (creator, System Admin, or the current approver). Approve, Return and Reject need the authority for the current step: the resolved person, any holder of the post, today's delegate, or System Admin. A post with no holder at all may be acted on by a user whose primary role is that post. Actions taken under delegation record "on behalf of <delegator>" on Approve and Reject.
 
-Auto-skips are recorded as separate history entries. They are: conditional skips (no Supervisor or Director, Quality Manager not needed, cross-department PA), and the same-approver cascade after an approval (never at submit, never through delegation, never through System Admin's bypass).
+Auto-skips are recorded as separate history entries. They are: conditional skips (no Supervisor or Director, no zone managers on a VMS visit, cross-department PA), and the same-approver cascade after an approval (never at submit, never through delegation, never through System Admin's bypass).
 
 *Submit and Cancel rely on the calling service to check who is acting. The engine itself accepts Submit from any signed-in user, and Cancel of a draft or returned document from whoever holds the first step* (**Defect**, §14).
 

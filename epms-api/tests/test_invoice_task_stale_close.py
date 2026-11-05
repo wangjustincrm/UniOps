@@ -537,6 +537,40 @@ async def test_editing_an_already_matched_invoice_does_not_renotify(admin_client
 # ── G. 编辑抹掉 AP "接受变差"的决定 ───────────────────────────────────────────
 
 @pytest.mark.asyncio
+async def test_resolution_note_is_kept_apart_from_the_variance_reason(admin_client):
+    """接受异常时必填的理由原来写进 exception_reason —— match() 的系统差异说明列。
+    发票一旦 matched,详情页没有任何地方再显示它(用户 2026-10-21 报:INV-2026-0665
+    History 里只有一句 "Exception accepted with justification",理由看不到)。
+    现在独立存一列,系统差异说明原样保留。"""
+    inv, _po = await _over_tolerance_invoice(admin_client, "NOTE1")
+    reason_before = (await admin_client.get(f"{INV_URL}/{inv['id']}")).json()["exception_reason"]
+    assert reason_before, "前提:match() 写了系统差异说明"
+
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/exception",
+                                json={"resolution": "accepted", "note": "  price rise agreed  "})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "matched"
+    assert body["exception_resolution_note"] == "price rise agreed"
+    assert body["exception_reason"] == reason_before, "系统差异说明不能被理由覆盖"
+
+
+@pytest.mark.asyncio
+async def test_resolving_an_exception_requires_a_note(admin_client):
+    """前端一直要求填理由,API 原来不要求 —— 理由是这次决定唯一的审计记录。"""
+    inv, _po = await _over_tolerance_invoice(admin_client, "NOTE2")
+    for body in ({"resolution": "accepted"},
+                 {"resolution": "accepted", "note": "   "},
+                 {"resolution": "credit_note_requested", "note": ""},
+                 {"resolution": "bogus", "note": "x"}):
+        r = await admin_client.post(f"{INV_URL}/{inv['id']}/exception", json=body)
+        assert r.status_code == 422, (body, r.text)
+    r = await admin_client.get(f"{INV_URL}/{inv['id']}")
+    assert r.json()["status"] == "exception"
+    assert r.json()["exception_resolution"] is None
+
+
+@pytest.mark.asyncio
 async def test_editing_an_accepted_invoice_keeps_the_acceptance(admin_client):
     """AP 在异常面板点 Accept 是一个**针对这组数字的人工决定**。
 
@@ -559,6 +593,9 @@ async def test_editing_an_accepted_invoice_keeps_the_acceptance(admin_client):
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "matched", (
         "只改了备注,金额一分没动 —— AP 接受变差的决定不该被一次编辑推翻")
+    assert r.json()["exception_resolution_note"] == "variance ok", (
+        "接受时写的理由必须挺过重匹配 —— 原来存在 exception_reason 里,"
+        "被 \"Variance accepted by ...\" 覆盖掉了")
     assert await _tasks(inv["id"], "resolve_exception") == [], "没有新的异常要解决"
 
 
@@ -589,6 +626,7 @@ async def test_editing_the_numbers_revokes_the_acceptance_loudly(admin_client):
             f"接受的痕迹必须清掉,否则单据自相矛盾(status={row.status} 却写着已解决)")
         assert row.exception_resolved_at is None
         assert row.exception_resolved_by is None
+        assert row.exception_resolution_note is None, "理由属于被撤销的那次接受"
 
 
 @pytest.mark.asyncio

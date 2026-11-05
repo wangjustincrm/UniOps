@@ -1,6 +1,17 @@
 import { api, fetchAllPages } from '@/lib/api'
 import type { ApiEvent } from './pr'
+import type { ApiInvoice } from './invoices'
 import type { WorkflowNodeDef, CurrentStep } from '@/types'
+
+/** What a Direct PA defaults to from the PO its invoice is linked to (Link to PO). */
+export interface LinkedPoDefaults {
+  po_number: string
+  department_id: string | null
+  cost_center_id: string | null
+  budget_code: string | null
+}
+
+export type DirectPaCandidate = ApiInvoice & { linked_po?: LinkedPoDefaults | null }
 
 export type PaStatus =
   | 'draft'
@@ -37,6 +48,21 @@ export interface ApiPaLineItem {
   unit_price: number
   line_total: number
   notes?: string
+}
+
+/** One (invoice × cost center) slice of a Freight PA — PaCostAllocationResponse. */
+export interface ApiPaCostAllocation {
+  invoice_id: string
+  invoice_number: string | null
+  cost_center_id: string
+  cost_center_code: string | null
+  cost_center_name: string | null
+  department_id: string
+  department_name: string | null
+  budget_code: string
+  // Decimals arrive as strings — Number() at use sites.
+  amount: number | string
+  tax_amount: number | string
 }
 
 export interface ApiPa {
@@ -80,6 +106,21 @@ export interface ApiPa {
   // the po_id/po_number pair, which the backend leaves null on this route.
   agreement_id?: string | null
   agreement_number?: string | null
+  // po | agreement | freight | direct. A Freight PA (courier invoices) and a
+  // Direct PA (invoices matched to nothing) have neither PO nor agreement — a
+  // Freight PA's cost split is cost_allocations, a Direct PA names its
+  // department / cost center / budget account below. Optional: a response
+  // cached from before Freight.
+  source?: 'po' | 'agreement' | 'freight' | 'direct' | string
+  // Direct PA only: what the payment is charged to (labels resolved server-side).
+  department_id?: string | null
+  department_name?: string | null
+  cost_center_id?: string | null
+  cost_center_code?: string | null
+  cost_center_name?: string | null
+  budget_account_code?: string | null
+  // Freight PA only, on the detail endpoint (null/absent otherwise).
+  cost_allocations?: ApiPaCostAllocation[] | null
   invoice_ids: string[]
   prepayment_pct?: number
   expected_settlement_date?: string
@@ -96,6 +137,9 @@ export interface ApiPa {
   created_at: string
   updated_at: string
   current_step?: CurrentStep | null
+  /** The payment date Finance entered (YYYY-MM-DD, a plain date); null until
+   *  paid. Not updated_at, which any later write moves. */
+  paid_on?: string | null
 }
 
 export interface CreatePaBody {
@@ -137,8 +181,23 @@ export interface CreatePaBody {
   receipt_override_reason?: string | null
 }
 
+/** POST /pa/direct — invoices matched to no PO and no agreement (Match →
+ *  Direct PA). Amounts come from the invoices; `notes` is the reason. */
+export interface CreateDirectPaBody {
+  invoice_ids: string[]
+  department_id: string
+  cost_center_id: string
+  budget_account_code: string
+  title?: string | null
+  notes: string
+}
+
 export interface UpdatePaBody {
   title?: string
+  // Direct PA only — every other PA takes these from its PR / agreement.
+  department_id?: string
+  cost_center_id?: string
+  budget_account_code?: string
   // NOTE: pa_type and currency are NOT editable — pa_type is derived from the
   // linked PO (prepaid PO → prepayment/settlement) and currency follows the PO.
   subtotal?: number
@@ -184,6 +243,9 @@ export interface PaActionBody {
 }
 
 export interface PaFilters {
+  // Server-side column sort (GET … ?sort=<key>&dir=asc|desc); omitted = API default order.
+  sort?: string
+  dir?: 'asc' | 'desc'
   status?: PaStatus
   pa_type?: PaType
   department_id?: string
@@ -214,6 +276,15 @@ export const paService = {
 
   create: (body: CreatePaBody) =>
     api.post<ApiPa>('/pa', body),
+
+  createDirect: (body: CreateDirectPaBody) =>
+    api.post<ApiPa>('/pa/direct', body),
+
+  // Invoices matched to the Direct route that no live PA lists yet, within the
+  // caller's invoice scope — what Create Direct PA offers.
+  directCandidates: (vendorId?: string) =>
+    api.get<{ items: DirectPaCandidate[]; total: number }>('/pa/direct/candidates',
+      vendorId ? { vendor_id: vendorId } : undefined),
 
   update: (id: string, body: UpdatePaBody) =>
     api.patch<ApiPa>(`/pa/${id}`, body),

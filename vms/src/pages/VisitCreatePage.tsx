@@ -5,7 +5,7 @@ import { AlertCircle, Loader2 } from 'lucide-react'
 import { VisitorSearch } from '@/components/VisitorSearch'
 import { HostSearch } from '@/components/HostSearch'
 import { PpeRequestForm } from '@/components/PpeRequestForm'
-import { ACCESS_AREAS, PURPOSES, areaRequirementText } from '@/lib/visitOptions'
+import { PURPOSES, areaRequirementText, zoneOptions } from '@/lib/visitOptions'
 import {
   useAreaRules,
   useCreateVisit,
@@ -156,12 +156,15 @@ export default function VisitCreatePage() {
   const [arrivalTime, setArrivalTime] = useState('09:00')
   const [departureTime, setDepartureTime] = useState('17:00')
   const [purpose, setPurpose] = useState<VisitPurpose>('meeting')
-  const [area, setArea] = useState<AccessArea>('office')
+  const [areaPick, setArea] = useState<AccessArea>('office')
   const [notes, setNotes] = useState('')
   const [ppeRequest, setPpeRequest] = useState<PpeRequest | null>(null)
 
   const { mutate, isPending, error } = useCreateVisit()
   const { data: areaRules } = useAreaRules()
+  const zones = zoneOptions(areaRules)
+  // Office by default; the first active zone if Office has been retired.
+  const area = zones.some((z) => z.value === areaPick) ? areaPick : (zones[0]?.value ?? areaPick)
   const areaHint = areaRequirementText(areaRules?.[area])
 
   const isReady = !!visitor && !!host && !!visitDate && !!arrivalTime
@@ -246,9 +249,9 @@ export default function VisitCreatePage() {
                 {PURPOSES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </Field>
-            <Field label="Access area">
+            <Field label="Access zone">
               <select value={area} onChange={(e) => setArea(e.target.value as AccessArea)} className={inputCls}>
-                {ACCESS_AREAS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                {zones.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </Field>
           </div>

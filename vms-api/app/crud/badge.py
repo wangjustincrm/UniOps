@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.badge_print import BadgePrint
 from app.services import area_rules
-from app.models.visit import AccessArea, HealthDeclStatus, Visit, VisitStatus
+from app.models.visit import HealthDeclStatus, Visit, VisitStatus
 
 
 # Statuses from which a badge CANNOT be printed at all.
@@ -32,23 +32,19 @@ _TERMINAL = frozenset({
     VisitStatus.cancelled, VisitStatus.checked_out, VisitStatus.no_show,
 })
 
-# Access areas that require a passing health declaration before a badge prints.
-_HEALTH_DECL_REQUIRED = area_rules.HEALTH_DECLARATION_AREAS
-
-
-def is_printable(visit: Visit) -> tuple[bool, str | None]:
+async def is_printable(db: AsyncSession, visit: Visit) -> tuple[bool, str | None]:
     """Returns (allowed, reason). `reason` is set when not allowed."""
     if visit.status in _TERMINAL:
         return False, f"Cannot print badge for a visit in status '{visit.status.value}'"
     if visit.status == VisitStatus.pending_approval:
         return False, "Visit is pending approval — badge cannot print until approved"
-    # PRD §2.2.2 VMS-CI-010: GMP/lab visits require a passing health declaration.
-    # `not_required` / null / `failed` all block the print path.
-    if visit.access_area in _HEALTH_DECL_REQUIRED:
+    # PRD §2.2.2 VMS-CI-010: GMP-grade zones require a passing health
+    # declaration. `not_required` / null / `failed` all block the print path.
+    rules = await area_rules.rules_for(db, visit.access_area)
+    if rules is not None and rules.requires_health_declaration:
         if visit.health_decl_status != HealthDeclStatus.passed:
             return False, (
-                "Health declaration required before printing a "
-                f"{visit.access_area.value.replace('_', ' ')} badge"
+                f"Health declaration required before printing a {rules.name} badge"
             )
     return True, None
 
@@ -71,7 +67,7 @@ async def print_badge(
       - the visit is in a terminal / pre-approval state, or
       - this is a reprint and `reprint_reason` is missing.
     """
-    ok, why = is_printable(visit)
+    ok, why = await is_printable(db, visit)
     if not ok:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=why,

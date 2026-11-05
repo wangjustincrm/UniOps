@@ -1,8 +1,7 @@
 /**
  * AllBookingsPage — /admin/bookings
  *
- * Filters (server-side): room_id, date_from, date_to, status
- * Organizer name filter: client-side contains match on organizer_name
+ * Filters (server-side): room_id, date_from, date_to, status, organizer (name contains)
  * Pagination: limit=50, offset-based with total from response
  *
  * Table: title, room, organizer_name, time range, status, sync_status
@@ -18,6 +17,7 @@ import {
   X as XIcon,
   Repeat,
 } from 'lucide-react'
+import { SortTh, useSort, sortParams } from '@uniops/shell'
 import { cn } from '@/lib/utils'
 import {
   useAdminRoomList,
@@ -146,6 +146,9 @@ export default function AllBookingsPage() {
   const [status, setStatus] = useState('')
   const [organizerFilter, setOrganizerFilter] = useState('')
   const [offset, setOffset] = useState(0)
+  // Server-sorted: the list is paged by limit/offset (no sort = newest start first).
+  const [sort, onSort] = useSort<'title' | 'room' | 'organizer' | 'starts_at' | 'status' | 'sync_status'>(
+    null, () => setOffset(0))
 
   const [cancelTarget, setCancelTarget] = useState<BookingAdminOut | null>(null)
   const [cancelError, setCancelError] = useState<string | null>(null)
@@ -153,28 +156,33 @@ export default function AllBookingsPage() {
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
 
+  // Organizer name is filtered by the API (it used to match only the 50 rows on
+  // screen); debounced so typing doesn't fire a request per keystroke.
+  const [organizerQuery, setOrganizerQuery] = useState('')
+  useEffect(() => {
+    const id = setTimeout(() => setOrganizerQuery(organizerFilter.trim()), 300)
+    return () => clearTimeout(id)
+  }, [organizerFilter])
+
   // Reset offset on filter change
-  useEffect(() => { setOffset(0) }, [roomId, dateFrom, dateTo, status])
+  useEffect(() => { setOffset(0) }, [roomId, dateFrom, dateTo, status, organizerQuery])
 
   const serverFilters: AdminBookingFilters = {
     room_id: roomId || undefined,
     date_from: dateFrom || undefined,
     date_to: dateTo || undefined,
     status: status || undefined,
+    organizer: organizerQuery || undefined,
     limit: PAGE_SIZE,
     offset,
+    ...sortParams(sort),
   }
 
   const { data, isLoading, error, refetch } = useAdminBookings(serverFilters)
   const { data: rooms } = useAdminRoomList()
   const forceCancel = useAdminForceCancel()
 
-  // Client-side organizer filter
-  const items = (data?.items ?? []).filter((b) =>
-    organizerFilter
-      ? b.organizer_name.toLowerCase().includes(organizerFilter.toLowerCase())
-      : true,
-  )
+  const items = data?.items ?? []
 
   const total = data?.total ?? 0
   const totalPages = Math.ceil(total / PAGE_SIZE)
@@ -208,6 +216,7 @@ export default function AllBookingsPage() {
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
         status: status || undefined,
+        organizer: organizerQuery || undefined,
       })
     } catch (err) {
       setExportError(err instanceof Error ? err.message : 'Export failed')
@@ -326,12 +335,12 @@ export default function AllBookingsPage() {
               <table className="w-full text-left text-sm">
                 <thead className="border-b border-neutral-200 bg-neutral-50">
                   <tr>
-                    <th className={thCls}>Title</th>
-                    <th className={thCls}>Room</th>
-                    <th className={thCls}>Organizer</th>
-                    <th className={thCls}>Date / Time</th>
-                    <th className={thCls}>Status</th>
-                    <th className={thCls}>Sync</th>
+                    <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} className={thCls} />
+                    <SortTh label="Room" sortKey="room" sort={sort} onSort={onSort} className={thCls} />
+                    <SortTh label="Organizer" sortKey="organizer" sort={sort} onSort={onSort} className={thCls} />
+                    <SortTh label="Date / Time" sortKey="starts_at" sort={sort} onSort={onSort} className={thCls} />
+                    <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={thCls} />
+                    <SortTh label="Sync" sortKey="sync_status" sort={sort} onSort={onSort} className={thCls} />
                     <th className={thCls}>Actions</th>
                   </tr>
                 </thead>
