@@ -592,6 +592,20 @@ the first Sales release:
    (or single `sales.*` keys) to the people who need them. The Sales card and
    nav entry stay invisible until then.
 
+### Sales cutover from Zoho (in this order)
+
+1. Rotate the Radiant, TrueCommerce and Shopify credentials; add `write_orders` to the Shopify app.
+2. Run the controlled test with the warehouse: one 940 / 997 / 945 round trip, and one Shopify
+   order with two tracking numbers (the GraphQL path has never run on a real store).
+3. Set the start: the Shopify cursor and `order_number_cutoff` to the first order Sales owns.
+   An older order that returns then arrives Historical, and never gets a 940.
+4. Load the Radiant export once by hand (retailer and manual orders, tracking, lots). The load
+   must not raise a 940, invoice, email, task or Shopify write.
+5. Stop Zoho's sending, then turn off `shadow_mode`, set the guards above, and put the Radiant
+   and TrueCommerce connections in LIVE. Set `edi.warehouse_connection_id` and
+   `invoice.connection_id`. Check Health: every gate passes.
+6. Watch the first day: Waiting for 997, Delivery confirmation, Failed files.
+
 Rollback: stop `sales-api` and `sales-web` and leave the permissions
 ungranted; no other service needs a change.
 
