@@ -22,18 +22,35 @@ export function useGrs(filters?: GrFilters, enabled = true) {
 // Multi-PO payment: one query per PO, keyed identically to useGrs({ po_id })
 // so the caches are shared and existing ['grs'] invalidations still apply.
 // GR ids are unique per PO, so no de-duplication is needed here.
+//
+// `combine` is a module-level function on purpose: TanStack then hands back the
+// SAME result object until a query's data really changes. Built inline, `items`
+// was a new array on every render, and New PA — whose effects depend on it —
+// re-rendered itself forever (ISS-0097).
+function combineGrs(results: { data?: { items: ApiGr[] } }[]) {
+  if (!results.every((r) => r.data !== undefined)) return { items: undefined as ApiGr[] | undefined, isLoading: true }
+  return { items: results.flatMap((r) => r.data?.items ?? []) as ApiGr[] | undefined, isLoading: false }
+}
+
 export function useGrsForPos(poIds: string[], enabled = true) {
-  const results = useQueries({
+  return useQueries({
     queries: poIds.map((poId) => ({
       queryKey: ['grs', { po_id: poId }],
       queryFn: () => grService.listAll({ po_id: poId }),
       enabled,
       staleTime: 30_000,
     })),
+    combine: combineGrs,
   })
-  const settled = poIds.length === 0 || results.every((r) => r.data !== undefined)
-  if (!settled) return { items: undefined as ApiGr[] | undefined, isLoading: true }
-  return { items: results.flatMap((r) => r.data?.items ?? []), isLoading: false }
+}
+
+// Keyed under 'grs' so every GR create/action invalidation refreshes it.
+export function usePoOpenQuantities(poId: string) {
+  return useQuery({
+    queryKey: ['grs', 'open-quantities', poId],
+    queryFn: () => grService.openQuantities(poId),
+    enabled: Boolean(poId),
+  })
 }
 
 export function useGr(id: string) {
@@ -64,6 +81,10 @@ export function useGrAction(id: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['grs'] })
       queryClient.invalidateQueries({ queryKey: ['grs', id] })
+      // Confirming a GR (service completion, receipt) stores its PDF as an
+      // attachment (GR-S-007); the Attachments tab showed it only after F5
+      // (ISS-0104).
+      queryClient.invalidateQueries({ queryKey: ['gr-attachments', id] })
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },

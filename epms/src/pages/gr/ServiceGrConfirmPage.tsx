@@ -1,13 +1,15 @@
 import { useState, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
+import { NotFoundState } from '@/components/shared/NotFoundState'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, CheckCircle2, AlertTriangle, Upload, X, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn, formatAmount, formatDate } from '@/lib/utils'
+import { cn, formatAmount, formatDate, formatQty } from '@/lib/utils'
 import { useGr, useGrAction } from '@/hooks/useGrs'
 import { useAuthStore } from '@/stores/auth.store'
+import { isOverReceiptError } from '@/services/gr'
 
 type QualityRating = 'satisfactory' | 'issues' | 'rejected'
 
@@ -44,6 +46,10 @@ export default function ServiceGrConfirmPage() {
   const [dragging, setDragging] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [overReceiptReason, setOverReceiptReason] = useState('')
+  // Asked for only when the server says confirming takes a PO line past its
+  // order and the GR carries no reason yet (ISS-0169).
+  const needsOverReason = isOverReceiptError(grAction.error)
 
   // ── Guard ──────────────────────────────────────────────────────────────────
 
@@ -51,10 +57,8 @@ export default function ServiceGrConfirmPage() {
 
   if (!gr) {
     return (
-      <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-lg font-semibold text-neutral-500">GR not found</p>
-        <BackLink to="/gr" className="mt-4 text-sm text-primary-600 hover:underline">← Back to GR List</BackLink>
-      </div>
+      <NotFoundState title="GR Not Found" message="The goods receipt you're looking for doesn't exist."
+                     backTo="/gr" backLabel="Back to GR List" />
     )
   }
 
@@ -105,6 +109,7 @@ export default function ServiceGrConfirmPage() {
     setSubmitted(true)
     if (!completionDate || acceptanceNotes.trim().length < 10) return
     if (qualityRating !== 'satisfactory' && !issueDetails.trim()) return
+    if (needsOverReason && !overReceiptReason.trim()) return
 
     const combinedNotes = [
       acceptanceNotes.trim(),
@@ -113,12 +118,20 @@ export default function ServiceGrConfirmPage() {
 
     const apiAction = qualityRating === 'rejected' ? 'reject' : 'confirm'
     grAction.mutate(
-      { action: apiAction, collected_by: user?.name, collection_notes: combinedNotes },
+      {
+        action: apiAction, collected_by: user?.name, collection_notes: combinedNotes,
+        over_receipt_reason: overReceiptReason.trim() || undefined,
+      },
       { onSuccess: () => replaceTab(`/gr/${id}`) }
     )
   }
 
   const totalValue = gr.line_items.reduce((s, l) => s + Number(l.line_total), 0)
+
+  // GR-S-005: a service GR can be rejected only once acknowledged
+  // (collection_pending). From pending_ack the server refuses it with a 409,
+  // so the option is not offered there (ISS-0121, ISS-0179).
+  const canReject = gr.status === 'collection_pending'
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -167,7 +180,7 @@ export default function ServiceGrConfirmPage() {
                 <tr key={item.id} className={cn('border-b border-neutral-100', idx % 2 === 1 && 'bg-neutral-50/50')}>
                   <td className="px-4 py-3 text-neutral-400 text-xs text-center">{idx + 1}</td>
                   <td className="px-4 py-3 text-neutral-800">{item.description}</td>
-                  <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-neutral-900">{item.qty_received}</td>
+                  <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-neutral-900">{formatQty(item.qty_received)}</td>
                   <td className="px-4 py-3 text-xs text-neutral-500">{item.unit}</td>
                   <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-neutral-900">
                     {formatAmount(item.line_total, gr.currency)}
@@ -180,7 +193,8 @@ export default function ServiceGrConfirmPage() {
 
         {gr.notes && (
           <div className="mt-3 rounded-lg bg-neutral-50 border border-neutral-200 px-4 py-2.5 text-xs text-neutral-600">
-            <span className="font-medium">Vendor notes: </span>{gr.notes}
+            {/* Written by whoever recorded the receipt, not the vendor (ISS-0183). */}
+            <span className="font-medium">Receipt notes: </span>{gr.notes}
           </div>
         )}
       </div>
@@ -214,7 +228,7 @@ export default function ServiceGrConfirmPage() {
               { value: 'satisfactory', label: 'Satisfactory',    icon: CheckCircle2,   on: 'border-success-400 bg-success-50', iconCls: 'text-success-600' },
               { value: 'issues',       label: 'Has Issues',      icon: AlertTriangle,  on: 'border-warning-400 bg-warning-50', iconCls: 'text-warning-500' },
               { value: 'rejected',     label: 'Reject Service',  icon: AlertTriangle,  on: 'border-danger-400 bg-danger-50',   iconCls: 'text-danger-600' },
-            ] as const).map((opt) => {
+            ] as const).filter((opt) => opt.value !== 'rejected' || canReject).map((opt) => {
               const Icon = opt.icon
               const selected = qualityRating === opt.value
               return (
@@ -337,23 +351,53 @@ export default function ServiceGrConfirmPage() {
         <div className="rounded-lg border border-success-200 bg-success-50 p-4 flex gap-3">
           <CheckCircle2 className="h-5 w-5 text-success-600 flex-shrink-0" />
           <p className="text-sm text-success-700">
-            Confirming service completion will mark this GR as <strong>Confirmed</strong> and unlock
-            Payment Application creation.
+            Confirming service completion will mark this GR as <strong>Confirmed</strong> and record the service as
+            received on the PO. The Payment Application follows once the vendor's invoice is matched to this PO.
           </p>
         </div>
       ) : qualityRating === 'issues' ? (
         <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
           <AlertTriangle className="h-5 w-5 text-warning-500 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-warning-700">
-            Submitting with issues will notify the Procurement Officer. The GR will still be confirmed and Payment Application can proceed.
+            The GR will still be confirmed; payment follows the matched invoice as usual. The issue details are kept in the
+            GR's acceptance notes; the Procurement Officer is not notified, so tell them if the vendor needs to be contacted.
           </p>
         </div>
       ) : (
         <div className="rounded-lg border border-danger-200 bg-danger-50 p-4 flex gap-3">
           <AlertTriangle className="h-5 w-5 text-danger-600 flex-shrink-0 mt-0.5" />
           <p className="text-sm text-danger-700">
-            <strong>Rejecting</strong> the service will mark this GR as <strong>Rejected</strong> and notify the Procurement Officer to liaise with the vendor. Payment Application will not be created.
+            <strong>Rejecting</strong> the service will mark this GR as <strong>Rejected</strong> and close its tasks. Nothing is
+            received against the PO. The Procurement Officer is not notified, so tell them if the vendor needs to be contacted.
           </p>
+        </div>
+      )}
+
+      {grAction.isError && (
+        <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
+          <AlertTriangle className="h-5 w-5 text-warning-500 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 flex flex-col gap-2">
+            <p className="text-sm text-warning-700">
+              {grAction.error instanceof Error ? grAction.error.message : 'The confirmation could not be saved'}
+            </p>
+            {needsOverReason && (
+              <>
+                <label className="text-xs font-medium text-warning-700">
+                  Over-receipt reason <span className="text-danger-600">*</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={overReceiptReason}
+                  onChange={(e) => setOverReceiptReason(e.target.value)}
+                  placeholder="Why more than the PO line has open is being confirmed"
+                  className={cn(
+                    'w-full px-3 py-1.5 rounded border text-sm bg-white focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
+                    submitted && !overReceiptReason.trim() ? 'border-danger-400' : 'border-warning-300'
+                  )}
+                />
+              </>
+            )}
+          </div>
         </div>
       )}
 

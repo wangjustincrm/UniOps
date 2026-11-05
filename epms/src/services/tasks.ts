@@ -48,6 +48,9 @@ export interface ApiTask {
   is_completed: boolean
   created_at: string
   completed_at?: string
+  // Who closed it; null = closed by the system when the document moved on.
+  completed_by?: string | null
+  completed_by_name?: string | null
 }
 
 export interface TaskFilters {

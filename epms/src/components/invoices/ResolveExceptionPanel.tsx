@@ -77,6 +77,13 @@ export function ResolveExceptionPanel({ inv, onClose }: { inv: ApiInvoice; onClo
         {submitted && !note.trim() && <p className="text-xs text-danger-600">Required</p>}
       </div>
 
+      {resolution === 'credit_note_requested' && (
+        <p className="text-xs text-neutral-500">
+          The invoice stays in Exception and the task stays open as "Awaiting credit note" until
+          the credit arrives and you accept or edit the invoice.
+        </p>
+      )}
+
       {resolveExceptionMutation.isError && (
         <p className="text-xs text-danger-600 text-right">
           {resolveExceptionMutation.error instanceof Error

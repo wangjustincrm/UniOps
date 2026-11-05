@@ -1,19 +1,22 @@
 import { useState } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { BackLink, useDocTabTitle } from '@/components/BackLink'
+import { useDocTabTitle } from '@/components/BackLink'
+import { NotFoundState } from '@/components/shared/NotFoundState'
 import {
   ArrowLeft, CheckCircle2, Clock, Truck, Paperclip,
   AlertTriangle, Package, ExternalLink, X, RotateCcw,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { cn, formatAmount, formatDate, formatDateTime } from '@/lib/utils'
+import { cn, formatAmount, formatBytes, formatDate, formatDateTime, formatQty } from '@/lib/utils'
 import { useGr, useGrAction } from '@/hooks/useGrs'
 import { usePo } from '@/hooks/usePos'
 import { useAuthStore } from '@/stores/auth.store'
-import { type GrStatus, type ApiGr, type ApiGrLineItem } from '@/services/gr'
+import { useRolePermissions } from '@/hooks/useConfig'
+import { type GrStatus, type ApiGr, type ApiGrLineItem, type GrDamageResolution } from '@/services/gr'
 import { useGrAttachments, useDeleteGrAttachment, useRegenerateGrPdf } from '@/hooks/useGrAttachments'
 import { grAttachmentService } from '@/services/grAttachments'
+import { canCancelGr } from '@/lib/documentActions'
 
 // Statuses the backend accepts for POST /gr/{id}/attachments/regenerate-pdf
 // (anything from the acknowledge step onward, excluding cancelled).
@@ -33,6 +36,7 @@ const GR_STATUS_CONFIG: Record<GrStatus, { label: string; variant: 'neutral' | '
   collected:          { label: 'Collected',               variant: 'success',  dot: 'bg-success-600' },
   confirmed:          { label: 'Confirmed',               variant: 'success',  dot: 'bg-success-600' },
   discrepancy:        { label: 'Discrepancy',             variant: 'danger',   dot: 'bg-danger-600'  },
+  rejected:           { label: 'Rejected',                variant: 'danger',   dot: 'bg-danger-600'  },
   cancelled:          { label: 'Cancelled',               variant: 'neutral',  dot: 'bg-neutral-400' },
 }
 
@@ -50,6 +54,13 @@ function GrStatusBadge({ status }: { status: GrStatus }) {
 
 function GrTimeline({ gr }: { gr: ApiGr }) {
   const isPhysical = gr.gr_type === 'physical'
+  // A cancelled (or rejected) GR waits on nobody — no step may show Waiting /
+  // Awaiting (ISS-0124). A service GR's steps go to the PR's Service/Project
+  // Owner, not the requester (crud/gr.py _get_pr_owner_id; PRD §3.13.2) —
+  // ISS-0183.
+  const awaiting = gr.status === 'cancelled' || gr.status === 'rejected'
+    ? undefined
+    : isPhysical ? 'Awaiting requester' : 'Awaiting Service/Project Owner'
 
   const steps = [
     {
@@ -63,29 +74,29 @@ function GrTimeline({ gr }: { gr: ApiGr }) {
     {
       key: 'ack',
       label: 'Acknowledged',
-      sublabel: gr.acknowledged_by ? `By ${gr.acknowledged_by}` : 'Awaiting requester',
+      sublabel: gr.acknowledged_by ? `By ${gr.acknowledged_by}` : awaiting,
       date: gr.acknowledged_at ? formatDateTime(gr.acknowledged_at) : undefined,
       done: !!gr.acknowledged_at,
-      pending: !gr.acknowledged_at,
+      pending: !!awaiting && !gr.acknowledged_at,
       icon: CheckCircle2,
     },
     isPhysical
       ? {
           key: 'collected',
           label: 'Collection Confirmed',
-          sublabel: gr.collected_by ? `By ${gr.collected_by}` : 'Awaiting requester',
+          sublabel: gr.collected_by ? `By ${gr.collected_by}` : awaiting,
           date: gr.collected_at ? formatDateTime(gr.collected_at) : undefined,
           done: !!gr.collected_at,
-          pending: !!gr.acknowledged_at && !gr.collected_at,
+          pending: !!awaiting && !!gr.acknowledged_at && !gr.collected_at,
           icon: Truck,
         }
       : {
           key: 'confirmed',
           label: 'Service Confirmed',
-          sublabel: gr.collected_by ? `By ${gr.collected_by}` : 'Awaiting requester',
+          sublabel: gr.collected_by ? `By ${gr.collected_by}` : awaiting,
           date: gr.collected_at ? formatDateTime(gr.collected_at) : undefined,
           done: gr.status === 'confirmed',
-          pending: !!gr.acknowledged_at && gr.status !== 'confirmed',
+          pending: !!awaiting && !!gr.acknowledged_at && gr.status !== 'confirmed',
           icon: CheckCircle2,
         },
   ]
@@ -175,6 +186,9 @@ export default function GrDetailPage() {
   const { data: gr, isLoading } = useGr(id ?? '')
   useDocTabTitle(gr?.number)
   const grAction = useGrAction(id ?? '')
+  // Cancel has its own mutation so its refusal shows next to the button.
+  const grCancel = useGrAction(id ?? '')
+  const grPerms = useRolePermissions().data?.permissions
   const { data: po } = usePo(gr?.po_id ?? '')
   const { data: attachments = [] } = useGrAttachments(id ?? '')
   const deleteAttachment = useDeleteGrAttachment(id ?? '')
@@ -188,10 +202,8 @@ export default function GrDetailPage() {
 
   if (!gr) {
     return (
-      <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-lg font-semibold text-neutral-500">GR not found</p>
-        <BackLink to="/gr" className="mt-4 text-sm text-primary-600 hover:underline">← Back to GR List</BackLink>
-      </div>
+      <NotFoundState title="GR Not Found" message="The goods receipt you're looking for doesn't exist."
+                     backTo="/gr" backLabel="Back to GR List" />
     )
   }
 
@@ -209,6 +221,13 @@ export default function GrDetailPage() {
   const canCollect = gr.status === 'collection_pending' && gr.gr_type === 'physical' &&
     (user?.role === 'requester' || user?.role === 'system_admin')
 
+  // PRD GR-C-004: pending_ack / collection_pending. Offered to whoever recorded
+  // it, warehouse receivers and System Admin (ISS-0124; lib/documentActions.ts).
+  const canCancel = canCancelGr(gr, user ?? {}, !!grPerms?.['epms.gr.receive'])
+  // PRD GR-C-003: a collected GR can be flagged Discrepancy (closes its open
+  // tasks, creates none). There was no button for it (ISS-0092).
+  const canFlagDiscrepancy = gr.status === 'collected' && isRequesterRole
+
   const handleAcknowledge = () => {
     grAction.mutate(
       { action: 'acknowledge', acknowledged_by: user?.name },
@@ -224,13 +243,13 @@ export default function GrDetailPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between flex-wrap gap-4">
         <div className="flex items-start gap-4">
           <Link to="/gr" className="mt-1 text-neutral-400 hover:text-neutral-600 transition-colors">
             <ArrowLeft className="h-5 w-5" />
           </Link>
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-2xl font-bold text-neutral-900 font-mono">{gr.number}</h1>
               <GrStatusBadge status={gr.status} />
             </div>
@@ -239,7 +258,7 @@ export default function GrDetailPage() {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-wrap">
           {canAcknowledge && (
             <Button onClick={() => setShowAckModal(true)} className="gap-2">
               <CheckCircle2 className="h-4 w-4" />
@@ -258,6 +277,41 @@ export default function GrDetailPage() {
               Confirm Collection
             </Button>
           )}
+          {canCancel && (
+            <Button
+              variant="secondary"
+              className="gap-2 border-danger-200 text-danger-600 hover:bg-danger-50"
+              disabled={grCancel.isPending}
+              onClick={() => {
+                if (confirm(`Cancel ${gr.number}? Nothing will be recorded as received and its open tasks will be closed.`)) {
+                  grCancel.mutate({ action: 'cancel' })
+                }
+              }}
+            >
+              <X className="h-4 w-4" />
+              Cancel GR
+            </Button>
+          )}
+          {canFlagDiscrepancy && (
+            <Button
+              variant="secondary"
+              className="gap-2 border-danger-200 text-danger-600 hover:bg-danger-50"
+              disabled={grCancel.isPending}
+              onClick={() => {
+                if (confirm(`Flag ${gr.number} as Discrepancy? Its open tasks will be closed; nothing else changes.`)) {
+                  grCancel.mutate({ action: 'discrepancy' })
+                }
+              }}
+            >
+              <AlertTriangle className="h-4 w-4" />
+              Flag Discrepancy
+            </Button>
+          )}
+          {grCancel.isError && (
+            <span className="text-xs text-danger-600">
+              {grCancel.error instanceof Error ? grCancel.error.message : 'Could not cancel the GR'}
+            </span>
+          )}
         </div>
       </div>
 
@@ -268,8 +322,9 @@ export default function GrDetailPage() {
           <div>
             <p className="text-sm font-semibold text-danger-700">Discrepancy on record</p>
             <p className="text-sm text-danger-600 mt-0.5">
-              One or more items were received with issues. Invoice creation is blocked until the
-              Procurement Officer resolves the discrepancy.
+              This receipt was flagged as having a discrepancy and its open tasks were closed.
+              It does not block invoice matching or payment — a damaged line is followed up by
+              Procurement on the Report Goods Damage task (return or credit).
             </p>
           </div>
         </div>
@@ -283,7 +338,7 @@ export default function GrDetailPage() {
             <div>
               <p className="text-sm font-semibold text-warning-700">Collection Required</p>
               <p className="text-sm text-warning-600 mt-0.5">
-                Please go to <strong>{gr.storage_location}</strong> to collect your goods, then record the collection.
+                Please go to <strong>{gr.storage_location || 'Warehouse'}</strong> to collect your goods, then record the collection.
               </p>
             </div>
           </div>
@@ -300,7 +355,7 @@ export default function GrDetailPage() {
         </div>
       )}
 
-      <div className="flex gap-6 items-start">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
         {/* Main content */}
         <div className="flex-1 min-w-0 flex flex-col gap-4">
           {/* Tabs */}
@@ -332,10 +387,16 @@ export default function GrDetailPage() {
                   <MetaRow label="GR Type"     value={gr.gr_type === 'physical' ? 'Physical Goods' : 'Service'} />
                   <MetaRow label="Received By" value={gr.received_by} />
                   <MetaRow label="Received On" value={formatDate(gr.received_at)} />
-                  {gr.storage_location && gr.storage_location !== '—' && (
+                  {/* Not applicable to a service GR — older ones carry the PO delivery address (ISS-0132) */}
+                  {gr.gr_type === 'physical' && gr.storage_location && gr.storage_location !== '—' && (
                     <MetaRow label="Storage Location" value={gr.storage_location} />
                   )}
                   {gr.notes && <MetaRow label="Notes" value={gr.notes} />}
+                  {/* Where a service GR's Has Issues details are kept (ISS-0179) */}
+                  {gr.collection_notes && (
+                    <MetaRow label={gr.gr_type === 'service' ? 'Acceptance Notes' : 'Collection Notes'} value={gr.collection_notes} />
+                  )}
+                  {gr.over_receipt_reason && <MetaRow label="Over-receipt Reason" value={gr.over_receipt_reason} />}
                 </div>
               </div>
               {/* Linked Documents */}
@@ -379,6 +440,8 @@ export default function GrDetailPage() {
                   </div>
                 </div>
               </div>
+
+              {hasDiscrepancy && <DamageResolutionCard gr={gr} />}
 
               {/* Line Items */}
               <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden sm:col-span-2">
@@ -455,7 +518,7 @@ export default function GrDetailPage() {
                     <div key={att.id} className="flex items-center gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-4 py-3">
                       <Paperclip className="h-4 w-4 shrink-0 text-neutral-400" />
                       <span className="flex-1 truncate text-sm text-neutral-700">{att.filename}</span>
-                      <span className="text-xs text-neutral-400">{(att.file_size / 1024 / 1024).toFixed(1)} MB</span>
+                      <span className="text-xs text-neutral-400">{formatBytes(att.file_size)}</span>
                       <button
                         type="button"
                         onClick={() => {
@@ -484,7 +547,7 @@ export default function GrDetailPage() {
         </div>
 
         {/* Right sidebar — Timeline */}
-        <div className="w-64 flex-shrink-0">
+        <div className="w-full lg:w-64 flex-shrink-0">
           <GrTimeline gr={gr} />
         </div>
       </div>
@@ -513,8 +576,8 @@ function LineDetailRow({ line, idx, currency }: { line: ApiGrLineItem; idx: numb
           <div className="text-neutral-800">{line.description}</div>
           {line.material_id && <div className="text-xs text-neutral-400 font-mono mt-0.5">{line.material_id}</div>}
         </td>
-        <td className="px-4 py-3 text-right font-mono text-xs text-neutral-500">{line.qty_ordered}</td>
-        <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-neutral-900">{line.qty_received}</td>
+        <td className="px-4 py-3 text-right font-mono text-xs text-neutral-500">{formatQty(line.qty_ordered)}</td>
+        <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-neutral-900">{formatQty(line.qty_received)}</td>
         <td className="px-4 py-3 text-xs text-neutral-500">{line.unit}</td>
         <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-neutral-900">
           {formatAmount(line.line_total, currency)}
@@ -536,6 +599,127 @@ function LineDetailRow({ line, idx, currency }: { line: ApiGrLineItem; idx: numb
         </tr>
       )}
     </>
+  )
+}
+
+// ─── Vendor resolution for damaged / discrepancy lines (ISS-0099) ────────────
+//
+// The Report Goods Damage task stays open until Procurement records here what
+// was arranged with the vendor — a return or a credit, with its reference.
+
+const RESOLUTION_LABELS: Record<GrDamageResolution, string> = {
+  return: 'Return to vendor',
+  credit: 'Credit from vendor',
+}
+
+function DamageResolutionCard({ gr }: { gr: ApiGr }) {
+  const { user } = useAuthStore()
+  const perms = useRolePermissions().data?.permissions
+  // Same matrix key the API checks for action=resolve_damage (Procurement).
+  const canResolve = user?.role === 'system_admin' || !!perms?.['epms.po.write']
+  const grAction = useGrAction(gr.id)
+  const [open, setOpen] = useState(false)
+  const [resolution, setResolution] = useState<GrDamageResolution>('return')
+  const [ref, setRef] = useState('')
+  const [note, setNote] = useState('')
+  const [tried, setTried] = useState(false)
+
+  const submit = () => {
+    setTried(true)
+    if (!ref.trim()) return
+    grAction.mutate(
+      {
+        action: 'resolve_damage',
+        damage_resolution: resolution,
+        damage_resolution_ref: ref.trim(),
+        damage_resolution_note: note.trim() || undefined,
+      },
+      { onSuccess: () => setOpen(false) },
+    )
+  }
+
+  return (
+    <div className="rounded-xl border border-neutral-200 bg-white p-5 sm:col-span-2">
+      <div className="flex items-center justify-between gap-4 mb-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Vendor Resolution</h3>
+        {!gr.damage_resolution && gr.status !== 'cancelled' && canResolve && !open && (
+          <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
+            Record Vendor Resolution
+          </Button>
+        )}
+      </div>
+
+      {gr.damage_resolution ? (
+        <div className="flex flex-col gap-2">
+          <MetaRow label="Resolution" value={RESOLUTION_LABELS[gr.damage_resolution]} />
+          <MetaRow label="Reference" value={gr.damage_resolution_ref ?? '—'} mono />
+          {gr.damage_resolution_note && <MetaRow label="Note" value={gr.damage_resolution_note} />}
+          <MetaRow
+            label="Recorded"
+            value={`${gr.damage_resolved_by ?? '—'} · ${gr.damage_resolved_at ? formatDateTime(gr.damage_resolved_at) : '—'}`}
+          />
+        </div>
+      ) : gr.status === 'cancelled' ? (
+        <p className="text-sm text-neutral-500">This GR was cancelled; no vendor resolution is needed.</p>
+      ) : !open ? (
+        <p className="text-sm text-warning-700">
+          Not recorded yet. The Report Goods Damage task stays open until a return or credit is recorded here.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <div className="flex gap-4">
+            {(Object.keys(RESOLUTION_LABELS) as GrDamageResolution[]).map((r) => (
+              <label key={r} className="flex items-center gap-1.5 text-sm text-neutral-700 cursor-pointer">
+                <input
+                  type="radio"
+                  name="damage-resolution"
+                  checked={resolution === r}
+                  onChange={() => setResolution(r)}
+                  className="h-3.5 w-3.5"
+                />
+                {RESOLUTION_LABELS[r]}
+              </label>
+            ))}
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-neutral-700">
+              {resolution === 'return' ? 'Return / RMA number' : 'Credit note number'}{' '}
+              <span className="text-danger-600">*</span>
+            </label>
+            <input
+              type="text"
+              maxLength={100}
+              value={ref}
+              onChange={(e) => setRef(e.target.value)}
+              className={cn(
+                'h-9 px-3 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-primary-600',
+                tried && !ref.trim() ? 'border-danger-400' : 'border-neutral-300'
+              )}
+            />
+            {tried && !ref.trim() && <p className="text-xs text-danger-600">Required</p>}
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-neutral-700">Note</label>
+            <textarea
+              rows={2}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Optional — what was agreed with the vendor"
+              className="px-3 py-2 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 resize-none"
+            />
+          </div>
+          {grAction.isError && (
+            <p className="text-sm text-danger-600">
+              {grAction.error instanceof Error ? grAction.error.message : 'Could not record the resolution'}
+            </p>
+          )}
+          <div className="flex gap-2 justify-end">
+            <Button size="sm" variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={submit} disabled={grAction.isPending}>Save</Button>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 

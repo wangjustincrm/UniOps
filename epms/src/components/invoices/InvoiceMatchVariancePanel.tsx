@@ -125,6 +125,15 @@ function HouseAccountReceiptPanel({ invoice }: { invoice: ApiInvoice }): JSX.Ele
           </span>
         </Button>
       </div>
+      {/* The reason given when the receipts were attached (PRD AGR-032,
+          ISS-0116) — shown with the difference, not behind the expander, since
+          it is what the approver needs to read. Evidence saved before the
+          reason became required may have none; say so rather than nothing. */}
+      <p className="px-4 pb-2 text-xs text-danger-700">
+        {invoice.receipt_variance_reason
+          ? <>Reason: <span className="text-neutral-800">{invoice.receipt_variance_reason}</span></>
+          : <span className="italic">No reason was given for the difference</span>}
+      </p>
 
       {expanded && (
         <div className="border-t border-inherit px-4 py-4 bg-white flex flex-col gap-4">
@@ -196,7 +205,11 @@ function PoRouteVariancePanel({
 
   const variance = Number(invoice.variance ?? 0)
   const variancePct = Number(invoice.variance_pct ?? 0)
-  const variancePctAbs = Math.abs(variancePct)
+  // Tone follows the variance that decides Matched / Exception (all invoices
+  // on the PO line — ISS-0129), not this invoice alone, which can read 0 on a
+  // second bill for the same goods.
+  const toneVariance = Number(invoice.cumulative_variance ?? variance)
+  const variancePctAbs = Math.abs(Number(invoice.cumulative_variance_pct ?? variancePct))
 
   // Whole-branch review (finding 4c): tone used to key off the ABSOLUTE
   // variance percentage, so a partially-invoiced PO line (variance < 0 —
@@ -206,9 +219,9 @@ function PoRouteVariancePanel({
   // (crud/invoice.py: `if variance > 0 and not within_tolerance(...)`) —
   // align the color with that: under-invoicing, at any magnitude, never
   // reads as danger here.
-  const tone: 'success' | 'warning' | 'danger' = centsEqual(variance, 0)
+  const tone: 'success' | 'warning' | 'danger' = centsEqual(toneVariance, 0)
     ? 'success'
-    : variance < 0
+    : toneVariance < 0
       ? 'warning'
       : variancePctAbs <= tolerancePct ? 'warning' : 'danger'
 

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useParams, Link, useNavigate } from 'react-router-dom'
-import { BackLink, useDocTabTitle } from '@/components/BackLink'
+import { useParams, Link } from 'react-router-dom'
+import { useBack, useDocTabTitle } from '@/components/BackLink'
+import { NotFoundState } from '@/components/shared/NotFoundState'
 import {
   ArrowLeft, FileText, ExternalLink, CheckCircle2,
   AlertTriangle, GitMerge, Paperclip, TrendingUp, Trash2, Pencil, X, Plus, Save, Upload, UserPlus,
@@ -13,7 +14,8 @@ import { cn, formatAmount, formatDate, formatDateTime } from '@/lib/utils'
 import { EXPENSE_BASE } from '@/lib/api'
 import { computeSla } from '@/stores/invoice.store'
 import type { InvoiceStatus, InvoiceLineItem } from '@/services/invoices'
-import { useInvoiceChain, useInvoice, useDeleteInvoice, useUpdateInvoice, useReviewMatch } from '@/hooks/useInvoices'
+import { useInvoiceChain, useInvoice, useDeleteInvoice, useUpdateInvoice, useReviewMatch, useInvoiceHistory } from '@/hooks/useInvoices'
+import { historyLine, MATCH_ACTIONS } from '@/lib/invoiceHistory'
 import { InvoiceTaxSection } from '@/components/invoices/InvoiceTaxSection'
 import { InvoiceReceiptsPanel } from '@/components/invoices/InvoiceReceiptsPanel'
 import { InvoiceBillingPeriodPanel } from '@/components/invoices/InvoiceBillingPeriodPanel'
@@ -167,7 +169,7 @@ function DirectRouteCard({ inv, pa, canCreatePa, onCreatePa, unmatchAction }: {
 
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
+  const back = useBack()
   const { user } = useAuthStore()
   const perms = useRolePermissions().data?.permissions
   const matchTolerancePct = useConfig().data?.invoice_match_tolerance_pct ?? 5
@@ -183,7 +185,7 @@ export default function InvoiceDetailPage() {
 
   const { data: inv, isLoading } = useInvoice(id ?? '')
   useDocTabTitle(inv?.internal_ref)
-  const { data: gr } = useGr(inv?.gr_id ?? '')
+  const { data: gr, isError: grUnreadable } = useGr(inv?.gr_id ?? '')
   // The blocking condition for an unmatch is "a non-cancelled PA still claims
   // this invoice", which lives in payment_applications.invoice_ids and cannot
   // be read off the invoice. The chain endpoint already resolves exactly that,
@@ -212,6 +214,8 @@ export default function InvoiceDetailPage() {
   const hasTaxLines = (taxLinesData?.lines?.length ?? 0) > 0
 
   const [activeTab, setActiveTab] = useState<'details' | 'match' | 'history'>('details')
+  // Every recorded step (ISS-0170), fetched when the History tab is opened.
+  const { data: historyRows, error: historyError } = useInvoiceHistory(id ?? '', activeTab === 'history')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [editing, setEditing] = useState(false)
   const [showAssignDialog, setShowAssignDialog] = useState(false)
@@ -334,7 +338,9 @@ export default function InvoiceDetailPage() {
     if (!inv) return
     try {
       await deleteInvoice.mutateAsync(inv.id)
-      navigate('/invoices')
+      // Close this tab, not just navigate away from it: a deleted invoice's tab
+      // otherwise stayed open on a document that no longer exists (ISS-0183).
+      back('/invoices')
     } catch {
       // error displayed via deleteInvoice.isError below
     }
@@ -343,10 +349,8 @@ export default function InvoiceDetailPage() {
   if (isLoading) return <div className="p-8 text-center text-neutral-400">Loading…</div>
   if (!inv) {
     return (
-      <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-lg font-semibold text-neutral-500">Invoice not found</p>
-        <BackLink to="/invoices" className="mt-4 text-sm text-primary-600 hover:underline">← Back to Invoices</BackLink>
-      </div>
+      <NotFoundState title="Invoice Not Found" message="The invoice you're looking for doesn't exist."
+                     backTo="/invoices" backLabel="Back to Invoices" />
     )
   }
 
@@ -357,8 +361,17 @@ export default function InvoiceDetailPage() {
 
   const sla = inv.status === 'unmatched' ? computeSla(inv.uploaded_at) : null
 
-  const varianceAbs = Math.abs(Number(inv.variance ?? 0))
-  const variancePctAbs = Math.abs(Number(inv.variance_pct ?? 0))
+  // ISS-0129: the variance shown is the one that decides Matched / Exception —
+  // every invoice allocated to the same PO line(s), from the server
+  // (cumulative_variance). inv.variance is this invoice alone vs the PO: on a
+  // second bill for the same goods it read "+0%" next to an Exception.
+  const decidingVariance = Number(inv.cumulative_variance ?? inv.variance ?? 0)
+  const decidingPct = Number(inv.cumulative_variance_pct ?? inv.variance_pct ?? 0)
+  const otherInvoices = inv.cumulative_other_invoices ?? []
+  const varianceScope = otherInvoices.length > 0 ? ' (all invoices on this PO line)' : ''
+  const varianceAbs = Math.abs(decidingVariance)
+  const variancePctAbs = Math.abs(decidingPct)
+  const signed = (n: number) => (n > 0 ? '+' : n < 0 ? '−' : '')
   const hasException = inv.status === 'exception'
   // An accepted exception leaves "exception" for "matched" — the variance is
   // still there, a person signed it off. Must not read as "within tolerance".
@@ -366,13 +379,18 @@ export default function InvoiceDetailPage() {
   // Billing less than the PO always passes (a line may be invoiced in parts) —
   // tolerance never applies to it, so "within 5% tolerance" was wrong for, say,
   // -23%. Not an exception either: nothing to review, no justification.
-  const partiallyInvoiced = !hasException && !exceptionAccepted && Number(inv.variance ?? 0) < 0
+  const partiallyInvoiced = !hasException && !exceptionAccepted && decidingVariance < 0
   // "Three-way" needs a linked goods receipt (INV-3WM-006). Matching itself
   // compares amounts only and runs without one (ISS-0138: such invoices read
   // "✓ Passed" with a "Fully delivered" GR row while nothing was received).
   const hasGr = inv.gr_id != null
   const matchLabel = hasGr ? '3-Way Match' : '2-Way Match'
   const awaitingGr = !hasGr && !hasException && !exceptionAccepted
+  // Matched when it was the only bill, but a later invoice on the same PO line
+  // has since pushed the line over tolerance (ISS-0129). Not an Exception on
+  // this invoice — still must not read "within tolerance".
+  const overBilledSince = !hasException && !exceptionAccepted && otherInvoices.length > 0
+    && decidingVariance > 0 && variancePctAbs > matchTolerancePct
   const resolutionNoteLabel = inv.exception_resolution === 'accepted' ? 'Justification' : 'Instructions'
   // Agreement route: no PO/GR, so the PO-vs-GR-vs-Invoice 3-way table doesn't
   // apply — there is nothing to reconcile against but the agreement itself.
@@ -460,7 +478,7 @@ export default function InvoiceDetailPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between flex-wrap gap-4">
         <div className="flex items-start gap-4">
           <Link to="/invoices" className="mt-1 text-neutral-400 hover:text-neutral-600 transition-colors">
             <ArrowLeft className="h-5 w-5" />
@@ -485,7 +503,7 @@ export default function InvoiceDetailPage() {
         </div>
 
         {/* Header actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {!!inv && (inv.status === 'unmatched' || inv.status === 'exception') && !editing &&
             (isAp || inv.uploaded_by === user?.id || (inv.match_assignee_id != null && inv.match_assignee_id === user?.id)) && (
             <Button size="sm" className="gap-1.5" onClick={() => setShowMatchPanel((v) => !v)}>
@@ -566,8 +584,15 @@ export default function InvoiceDetailPage() {
           <AlertTriangle className="h-5 w-5 text-danger-600 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="text-sm font-semibold text-danger-700">
-              Invoice variance: {inv.currency} {formatAmount(varianceAbs, inv.currency)} ({variancePctAbs.toFixed(1)}% over PO)
+              Variance{varianceScope}: {signed(decidingVariance)}{formatAmount(varianceAbs, inv.currency)}
+              {' '}({variancePctAbs.toFixed(1)}% {decidingVariance < 0 ? 'below' : 'over'} PO)
             </p>
+            {otherInvoices.length > 0 && (
+              <p className="text-xs text-danger-600 mt-0.5">
+                Other invoices on this PO line: {otherInvoices.join(', ')}. This invoice alone vs the PO:{' '}
+                {Number(inv.variance ?? 0) >= 0 ? '+' : ''}{formatAmount(Number(inv.variance ?? 0), inv.currency)}.
+              </p>
+            )}
             <p className="text-sm text-danger-600 mt-0.5">{inv.exception_reason}</p>
             {inv.exception_resolved_at && (
               <p className="text-xs text-neutral-500 mt-1">
@@ -602,7 +627,7 @@ export default function InvoiceDetailPage() {
         <ResolveExceptionPanel inv={inv} onClose={() => setShowResolvePanel(false)} />
       )}
 
-      <div className="flex gap-6 items-start">
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
         {/* Main content */}
         <div className="flex-1 min-w-0 flex flex-col gap-4">
           {/* Tabs */}
@@ -626,14 +651,25 @@ export default function InvoiceDetailPage() {
               {inv.status === 'match_review' && isAp && (
                 <div className="sm:col-span-2 rounded-xl border border-primary-200 bg-primary-50 p-4 flex flex-col gap-3">
                   <p className="text-sm font-semibold text-primary-800">Confirm invoice match</p>
+                  {/* An agreement invoice has no PO, GR or variance (AGR-026), so it
+                      is not described in PO / goods-receipt terms (ISS-0183). */}
                   <p className="text-xs text-neutral-500">
-                    This confirms the invoice is linked to the correct PO and goods receipt. It
+                    {isAgreementRoute
+                      ? 'This confirms the invoice is linked to the correct agreement.'
+                      : 'This confirms the invoice is linked to the correct PO and goods receipt.'} It
                     does not approve the payment amount — that happens later, on the Payment
                     Application approval chain.
                   </p>
                   <p className="text-xs text-neutral-600">
-                    This invoice was matched with a variance of {formatAmount(Math.abs(Number(inv.variance ?? 0)), inv.currency)}
-                    {' '}against PO reference {formatAmount(Number(inv.po_total ?? 0), inv.currency)}. Confirm to finalize the match,
+                    {isAgreementRoute ? (
+                      <>Matched to Agreement {inv.agreement_number ?? inv.agreement_id?.slice(0, 8)}. </>
+                    ) : (
+                      <>
+                        This invoice was matched with a variance{varianceScope} of {signed(decidingVariance)}{formatAmount(varianceAbs, inv.currency)}
+                        {' '}against PO reference {formatAmount(Number(inv.po_total ?? 0), inv.currency)}.{' '}
+                      </>
+                    )}
+                    Confirm to finalize the match,
                     or reject to send it back to {inv.match_assignee_name ?? 'the assignee'}.
                   </p>
                   <textarea rows={2} value={reviewNote} onChange={(e) => setReviewNote(e.target.value)}
@@ -752,6 +788,24 @@ export default function InvoiceDetailPage() {
                         </div>
                       )
                     }
+                    // Direct route (DPA-009): matched, with no PO, agreement or goods
+                    // receipt to wait for — not "Not yet matched" / "No GR linked" (ISS-0190).
+                    if (isDirectRoute && inv.status !== 'unmatched') {
+                      return (
+                        <div className="col-span-2 rounded-lg border border-neutral-200 px-3 py-2.5 flex flex-col gap-1">
+                          <p className="text-xs text-neutral-400">Direct PA</p>
+                          <p className="text-sm text-neutral-700">Matched for a Direct PA — no PO, agreement or goods receipt needed</p>
+                          {directPa && (
+                            <Link
+                              to={`/pa/${directPa.id}`}
+                              className="text-sm font-mono font-medium text-primary-600 hover:underline inline-flex items-center gap-1"
+                            >
+                              {directPa.number} <ExternalLink className="h-3 w-3" />
+                            </Link>
+                          )}
+                        </div>
+                      )
+                    }
                     const linkedPos = Array.from(
                       new Map(
                         (inv.allocations ?? []).map((a) => [a.po_id, a.po_number ?? a.po_id.slice(0, 8)]),
@@ -783,7 +837,7 @@ export default function InvoiceDetailPage() {
                       </div>
                     )
                   })()}
-                  {inv.match_route === 'agreement' ? null : gr ? (
+                  {inv.match_route === 'agreement' || (isDirectRoute && inv.status !== 'unmatched') ? null : gr ? (
                     <div className="flex items-center justify-between rounded-lg border border-neutral-200 px-3 py-2.5">
                       <div>
                         <p className="text-xs text-neutral-400">Goods Receipt</p>
@@ -795,7 +849,10 @@ export default function InvoiceDetailPage() {
                     </div>
                   ) : (
                     <div className="flex items-center justify-center rounded-lg border border-dashed border-neutral-200 px-3 py-4">
-                      <p className="text-xs text-neutral-400">No GR linked</p>
+                      {/* gr_id set but the GR did not load: this user may not view GRs (§1.3) — it is still linked (ISS-0115) */}
+                      <p className="text-xs text-neutral-400">
+                        {!inv.gr_id ? 'No GR linked' : grUnreadable ? 'Goods receipt linked (no permission to view)' : 'Loading…'}
+                      </p>
                     </div>
                   )}
                 </div>
@@ -1274,10 +1331,10 @@ export default function InvoiceDetailPage() {
                   {/* Summary row */}
                   <div className={cn('rounded-xl border p-5 flex items-center gap-4',
                     hasException ? 'border-danger-200 bg-danger-50'
-                      : exceptionAccepted ? 'border-warning-200 bg-warning-50'
+                      : exceptionAccepted || overBilledSince ? 'border-warning-200 bg-warning-50'
                       : partiallyInvoiced || awaitingGr ? 'border-primary-200 bg-primary-50'
                       : 'border-success-200 bg-success-50')}>
-                    {hasException || exceptionAccepted
+                    {hasException || exceptionAccepted || overBilledSince
                       ? <AlertTriangle className={cn('h-8 w-8 flex-shrink-0', hasException ? 'text-danger-600' : 'text-warning-600')} />
                       : partiallyInvoiced || awaitingGr
                       ? <Info className="h-8 w-8 text-primary-600 flex-shrink-0" />
@@ -1285,12 +1342,14 @@ export default function InvoiceDetailPage() {
                     }
                     <div>
                       <p className={cn('text-sm font-semibold',
-                        hasException ? 'text-danger-700' : exceptionAccepted ? 'text-warning-700'
+                        hasException ? 'text-danger-700' : exceptionAccepted || overBilledSince ? 'text-warning-700'
                           : partiallyInvoiced || awaitingGr ? 'text-primary-700' : 'text-success-700')}>
                         {hasException || exceptionAccepted
-                          ? `${matchLabel}: ${hasException ? 'Exception' : 'Exception accepted'} — Variance ${Number(inv.variance_pct ?? 0) > 0 ? '+' : ''}${Number(inv.variance_pct ?? 0).toFixed(1)}% (${inv.currency} ${formatAmount(Number(inv.variance ?? 0), inv.currency)})`
+                          ? `${matchLabel}: ${hasException ? 'Exception' : 'Exception accepted'} — Variance${varianceScope} ${decidingPct > 0 ? '+' : ''}${decidingPct.toFixed(1)}% (${formatAmount(decidingVariance, inv.currency)})`
+                          : overBilledSince
+                          ? `${matchLabel}: Matched — the PO line is now billed ${decidingPct.toFixed(1)}% over (${formatAmount(decidingVariance, inv.currency)}) together with ${otherInvoices.join(', ')}`
                           : partiallyInvoiced
-                          ? `${matchLabel}: Partially invoiced — ${inv.currency} ${formatAmount(varianceAbs, inv.currency)} (${variancePctAbs.toFixed(1)}%) below PO${awaitingGr ? ' · awaiting goods receipt' : ''}`
+                          ? `${matchLabel}: Partially invoiced — ${formatAmount(varianceAbs, inv.currency)} (${variancePctAbs.toFixed(1)}%) below PO${awaitingGr ? ' · awaiting goods receipt' : ''}`
                           : awaitingGr
                           ? `2-Way Match: Invoice within ${matchTolerancePct}% tolerance of PO · awaiting goods receipt`
                           : `3-Way Match: ✓ Passed — Invoice within ${matchTolerancePct}% tolerance of PO`
@@ -1328,23 +1387,48 @@ export default function InvoiceDetailPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        <MatchRow
-                          icon={<FileText className="h-4 w-4 text-neutral-400" />}
-                          label="Purchase Order"
-                          docRef={inv.po_number}
-                          href={`/po/${inv.po_id}`}
-                          amount={inv.po_total}
-                          currency={inv.currency}
-                          note="Authorised PO total"
-                          ok={true}
-                          action={canUnmatch && (
-                            <UnmatchButton
-                              label="Unmatch"
-                              blockedReason={unmatchBlockedReason}
-                              onClick={() => setUnmatchScope('po')}
+                        {(() => {
+                          // A multi-PO invoice lists each PO with its own reference
+                          // (ISS-0190) — po_total is their sum, which one row under the
+                          // primary PO's number misread as that PO's amount. Summed the
+                          // way match() sums po_total: once per (PO, PO line).
+                          const perPo = new Map<string, { number: string; amount: number; seen: Set<string> }>()
+                          const allocs = inv.allocations ?? []
+                          if (allocs.every((a) => a.po_reference != null)) {
+                            for (const a of allocs) {
+                              const row = perPo.get(a.po_id) ?? { number: a.po_number ?? a.po_id.slice(0, 8), amount: 0, seen: new Set<string>() }
+                              const key = a.po_line_id ?? 'header'
+                              if (!row.seen.has(key)) {
+                                row.seen.add(key)
+                                row.amount += Number(a.po_reference)
+                              }
+                              perPo.set(a.po_id, row)
+                            }
+                          }
+                          const poRows = perPo.size > 1
+                            ? Array.from(perPo, ([pid, r]) => ({ pid, number: r.number, amount: r.amount }))
+                            : [{ pid: inv.po_id, number: inv.po_number, amount: inv.po_total }]
+                          return poRows.map((r, i) => (
+                            <MatchRow
+                              key={r.pid ?? 'po'}
+                              icon={<FileText className="h-4 w-4 text-neutral-400" />}
+                              label="Purchase Order"
+                              docRef={r.number ?? undefined}
+                              href={`/po/${r.pid}`}
+                              amount={r.amount ?? undefined}
+                              currency={inv.currency}
+                              note="Authorised PO total"
+                              ok={true}
+                              action={i === 0 && canUnmatch && (
+                                <UnmatchButton
+                                  label="Unmatch"
+                                  blockedReason={unmatchBlockedReason}
+                                  onClick={() => setUnmatchScope('po')}
+                                />
+                              )}
                             />
-                          )}
-                        />
+                          ))
+                        })()}
                         <MatchRow
                           icon={<TrendingUp className="h-4 w-4 text-neutral-400" />}
                           label="Goods / Service Receipt"
@@ -1371,23 +1455,23 @@ export default function InvoiceDetailPage() {
                           href={`/invoices/${inv.id}`}
                           amount={inv.total_amount}
                           currency={inv.currency}
-                          note={hasException || exceptionAccepted
-                            ? `${Number(inv.variance_pct ?? 0) > 0 ? '+' : ''}${Number(inv.variance_pct ?? 0).toFixed(1)}% vs PO${exceptionAccepted ? ' (accepted)' : ''}`
+                          note={hasException || exceptionAccepted || overBilledSince
+                            ? `${decidingPct > 0 ? '+' : ''}${decidingPct.toFixed(1)}% vs PO${varianceScope}${exceptionAccepted ? ' (accepted)' : ''}`
                             : partiallyInvoiced
                             ? `-${variancePctAbs.toFixed(1)}% vs PO (partial)`
                             : 'Within tolerance'}
-                          ok={!hasException}
+                          ok={!hasException && !overBilledSince}
                         />
                       </tbody>
                     </table>
                     {/* Variance footer */}
                     <div className="px-4 py-3 border-t border-neutral-200 bg-neutral-50 flex justify-end">
                       <div className="flex items-center gap-6 text-sm">
-                        <span className="text-neutral-500">Variance</span>
+                        <span className="text-neutral-500">Variance{varianceScope}</span>
                         <span className={cn('font-mono font-semibold',
                           variancePctAbs > matchTolerancePct ? 'text-danger-600' : variancePctAbs > 0 ? 'text-warning-600' : 'text-success-600')}>
-                          {Number(inv.variance ?? 0) >= 0 ? '+' : ''}{formatAmount(Number(inv.variance ?? 0), inv.currency)}{' '}
-                          ({Number(inv.variance_pct ?? 0) >= 0 ? '+' : ''}{Number(inv.variance_pct ?? 0).toFixed(2)}%)
+                          {decidingVariance >= 0 ? '+' : ''}{formatAmount(decidingVariance, inv.currency)}{' '}
+                          ({decidingPct >= 0 ? '+' : ''}{decidingPct.toFixed(2)}%)
                         </span>
                       </div>
                     </div>
@@ -1455,16 +1539,32 @@ export default function InvoiceDetailPage() {
           {activeTab === 'history' && (
             <div className="rounded-xl border border-neutral-200 bg-white p-5">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-4">Activity Log</h3>
+              {historyError && (
+                <p role="alert" className="mb-3 text-xs text-danger-600">
+                  The recorded steps could not be loaded ({historyError instanceof Error ? historyError.message : 'error'}) — only the upload and the current match are shown.
+                </p>
+              )}
               <div className="flex flex-col gap-0">
                 {[
-                  inv.matched_at && inv.exception_resolved_at && {
+                  // Recorded steps: assignment, every match, AP review, exception
+                  // resolution, unmatch — each kept with who, when and its note.
+                  ...(historyRows ?? []).map((h) => ({
+                    date: h.created_at,
+                    actor: h.actor_name ?? 'System',
+                    ...historyLine(h),
+                  })),
+                  // The two entries below are derived from the invoice's CURRENT
+                  // fields. They stand in only for invoices matched before steps
+                  // were recorded; once a recorded step exists they would repeat it.
+                  inv.matched_at && inv.exception_resolved_at
+                    && !(historyRows ?? []).some((h) => h.action === 'resolve_exception') && {
                     date: inv.exception_resolved_at,
                     actor: inv.exception_resolved_by_name ?? inv.exception_resolved_by ?? 'System',
                     action: inv.exception_resolution === 'accepted' ? 'Exception accepted with justification' : 'Credit note requested',
                     note: inv.exception_resolution_note ?? undefined,
                     color: 'bg-warning-500',
                   },
-                  inv.matched_at && {
+                  inv.matched_at && !(historyRows ?? []).some((h) => MATCH_ACTIONS.has(h.action)) && {
                     date: inv.matched_at,
                     actor: inv.matched_by_name ?? 'System',
                     // I1: this entry is the permanent audit trace — the one place a
@@ -1514,7 +1614,7 @@ export default function InvoiceDetailPage() {
         </div>
 
         {/* Right sidebar */}
-        <div className="w-56 flex-shrink-0 flex flex-col gap-4">
+        <div className="w-full lg:w-56 flex-shrink-0 flex flex-col gap-4">
           <div className="rounded-xl border border-neutral-200 bg-white p-4">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-3">Quick Info</h3>
             <div className="flex flex-col gap-2 text-xs">
@@ -1569,31 +1669,38 @@ function fmtBytes(b: number) {
   return `${(b / (1024 * 1024)).toFixed(1)} MB`
 }
 
-/** Fetches a single attachment file with auth → returns a revocable blob URL. */
+/** Fetches a single attachment file with auth → returns a revocable blob URL.
+ *  `error` says why it could not be fetched: a failed fetch used to leave Open
+ *  and Download greyed out with no word of why (HTTP 502, ISS-0096; FS-008). */
 function useAttachmentBlob(attachmentId: string, token: string | null) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!token) { setLoading(false); return }
     let url = ''
     setLoading(true)
+    setError(null)
     fetch(`${EXPENSE_BASE}/api/v1/invoice-attachments/${attachmentId}/file`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then((r) => r.ok ? r.blob() : Promise.reject(r.status))
+      .then((r) => r.ok ? r.blob() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then((blob) => { url = URL.createObjectURL(blob); setBlobUrl(url) })
-      .catch(() => setBlobUrl(null))
+      .catch((err: unknown) => {
+        setBlobUrl(null)
+        setError(err instanceof Error ? err.message : 'network error')
+      })
       .finally(() => setLoading(false))
 
     return () => { if (url) URL.revokeObjectURL(url) }
   }, [attachmentId, token])
 
-  return { blobUrl, loading }
+  return { blobUrl, loading, error }
 }
 
 function AttachmentItem({ att, token }: { att: AttachmentMeta; token: string | null }) {
-  const { blobUrl } = useAttachmentBlob(att.id, token)
+  const { blobUrl, error } = useAttachmentBlob(att.id, token)
 
   const handleDownload = () => {
     if (!blobUrl) return
@@ -1623,6 +1730,12 @@ function AttachmentItem({ att, token }: { att: AttachmentMeta; token: string | n
           Download
         </button>
       </div>
+      {error && (
+        <p role="alert" className="flex items-center gap-1 text-xs text-danger-600">
+          <AlertTriangle className="h-3 w-3 shrink-0" />
+          This file could not be loaded ({error}), so it cannot be opened or downloaded. Reload the page to try again; if it keeps failing, ask an administrator to check the file store.
+        </p>
+      )}
 
     </div>
   )
@@ -1642,14 +1755,15 @@ function InvoiceAttachments({
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
-  const { data: attachments = [], isLoading } = useQuery<AttachmentMeta[]>({
+  const { data: attachments = [], isLoading, error: listError } = useQuery<AttachmentMeta[]>({
     queryKey: ['invoice-attachments', invoiceId],
     queryFn: async () => {
       const res = await fetch(
         `${EXPENSE_BASE}/api/v1/invoice-attachments?invoice_id=${invoiceId}&invoice_source=epms`,
         { headers: { Authorization: `Bearer ${token}` } }
       )
-      if (!res.ok) return []
+      // A failed list used to read as "No attachment" (FS-008).
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       return res.json()
     },
     enabled: !!invoiceId,
@@ -1708,6 +1822,12 @@ function InvoiceAttachments({
       {uploadError && (
         <p className="mb-2 text-xs text-danger-600 flex items-center gap-1">
           <AlertTriangle className="h-3 w-3 shrink-0" />{uploadError}
+        </p>
+      )}
+      {listError && (
+        <p role="alert" className="mb-2 text-xs text-danger-600 flex items-center gap-1">
+          <AlertTriangle className="h-3 w-3 shrink-0" />
+          The attachment list could not be loaded ({listError instanceof Error ? listError.message : 'error'}). Reload the page to try again.
         </p>
       )}
 

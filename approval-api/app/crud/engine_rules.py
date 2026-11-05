@@ -70,9 +70,10 @@ ENGINE_RULES: list[dict] = [
         "area": "approval_engine",
         "answer": (
             "The person who submitted a document — or a System Admin — can recall it "
-            "while it is {recallable} (on a purchase request this is the Recall to "
-            "Edit button). It goes back to draft, can be edited, and when submitted "
-            "again it starts from the first step."),
+            "while it is {recallable} (the Recall to Edit button on a purchase "
+            "request, Recall on a payment application or an agreement). It goes "
+            "back to draft, can be edited, and when submitted again it starts from "
+            "the first step."),
         "pinned_by": [
             "tests/test_engine_recall.py::test_recall_by_submitter_succeeds",
             "tests/test_engine_recall.py::test_recall_by_non_submitter_rejected",
@@ -179,12 +180,15 @@ ENGINE_RULES: list[dict] = [
             "The Department Manager step needs an active Department Manager for the "
             "document's department: without one the document cannot be submitted "
             "(the error says so) and stays where it is until an admin assigns one. "
+            "That holds wherever the step sits in the chain — also when an "
+            "over-budget Finance Manager step comes first. "
             "The Director step runs only when the department has an active Director "
             "configured, and the Supervisor step only when the requester has an "
             "active Supervisor in a department with that level switched on; "
             "otherwise they are skipped and the timeline records why."),
         "pinned_by": [
             "tests/test_engine_dept_manager_routing.py::test_submit_pr_without_dept_manager_raises_not_broadcast",
+            "tests/test_engine_double_action_and_chain_routing.py::test_over_budget_pr_without_dept_manager_is_refused_at_submit",
             "tests/test_engine_optional_levels.py::test_director_skipped_when_unmapped",
             "tests/test_engine_optional_levels.py::test_supervisor_skipped_at_submit",
             "tests/test_engine_optional_levels.py::test_inactive_director_skipped_with_reason",

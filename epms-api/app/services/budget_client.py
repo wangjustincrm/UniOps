@@ -167,11 +167,16 @@ async def get_actuals_summary(
     bearer_token: str | None,
     fiscal_year: int,
     cost_center_id: uuid.UUID | None = None,
+    include_unposted: bool = False,
 ) -> dict[str, Any] | None:
-    """Returns the budget-api /actuals/summary response, or None on failure."""
+    """Returns the budget-api /actuals/summary response, or None on failure.
+    ``include_unposted``: NC actual including vouchers not yet tallied — the
+    Budget Dashboard's default basis."""
     params: dict[str, Any] = {"fiscal_year": fiscal_year}
     if cost_center_id is not None:
         params["cost_center_id"] = str(cost_center_id)
+    if include_unposted:
+        params["include_unposted"] = "true"
     url = f"{settings.BUDGET_API_URL}/api/v1/actuals/summary"
     try:
         async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
@@ -180,6 +185,20 @@ async def get_actuals_summary(
             return r.json()
     except httpx.HTTPError as e:
         logger.warning("budget-api /actuals/summary unreachable: %s", e)
+        return None
+
+
+async def get_actuals_scope(bearer_token: str | None) -> dict[str, Any] | None:
+    """budget-api /actuals/scope: the cost centers the caller may see
+    ({full_access, cost_centers: [{id, code, name, department_id}]}), or None."""
+    url = f"{settings.BUDGET_API_URL}/api/v1/actuals/scope"
+    try:
+        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+            r = await client.get(url, headers=_auth_headers(bearer_token))
+            r.raise_for_status()
+            return r.json()
+    except httpx.HTTPError as e:
+        logger.warning("budget-api /actuals/scope unreachable: %s", e)
         return None
 
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { createPortal } from 'react-dom'
@@ -13,7 +13,7 @@ import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
 import { ScheduleTable } from '@/components/agreements/ScheduleTable'
 import { ReceiptTable } from '@/components/agreements/ReceiptTable'
 import { formatAmount, formatDate, formatDateTime, formatBytes, cn } from '@/lib/utils'
-import type { ApprovalStep, DocumentStatus } from '@/types'
+import type { ApprovalStep, CurrentStep, DocumentStatus } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig, useRolePermissions } from '@/hooks/useConfig'
 import { useAgreement, useAgreementAction, useAgreementEvents, useAgreementSchedule } from '@/hooks/useAgreements'
@@ -29,9 +29,12 @@ import {
 import { agreementAttachmentService } from '@/services/agreementAttachments'
 import type { AgreementStatus, AgreementType } from '@/services/agreement'
 import type { ApiEvent } from '@/services/pr'
-import { historyLine, isSkipped } from '@/lib/approvalHistory'
+import { historyLine } from '@/lib/approvalHistory'
+import { buildApprovalNodes } from '@/lib/approvalTimeline'
 import type { InvoiceStatus } from '@/services/invoices'
 import { isAgreementAdmissible } from '@/lib/agreements'
+import { canRecallDocument, canWithdrawDocument } from '@/lib/documentActions'
+import { clearSubmitFailure, peekSubmitFailure } from '@/lib/submitFailure'
 
 const TYPE_LABELS: Record<AgreementType, string> = {
   house_account: 'House Account',
@@ -76,19 +79,8 @@ function buildWorkflowSteps(
   stepIdx: number,
   events: ApiEvent[] = [],
   createdByName?: string | null,
+  currentStep?: CurrentStep | null,
 ): ApprovalStep[] {
-  // Who actually acted at each step. Same indexing as PrDetailPage's copy of
-  // this function — first approve event per step_idx wins — because the
-  // timeline they both feed is one component and must read the same either
-  // way. Without this the agreement's timeline rendered four role labels and
-  // four green ticks with not one name against them: it showed that the
-  // document was approved, never by whom.
-  const approveEventByStep = events
-    .filter((e) => e.action === 'approve')
-    .reduce<Record<number, ApiEvent>>((acc, e) => {
-      if (!(e.step_idx in acc)) acc[e.step_idx] = e
-      return acc
-    }, {})
   const submitEvent = events.find((e) => e.action === 'submit')
 
   const created: ApprovalStep = {
@@ -101,27 +93,14 @@ function buildWorkflowSteps(
     action: 'Created',
     channel: 'Web',
   }
-  const approvalNodes: ApprovalStep[] = nodes.map((node, i) => {
-    let s: ApprovalStep['status']
-    if (status === 'draft') {
-      s = 'pending'
-    } else if (['active', 'expired', 'closed'].includes(status)) {
-      s = 'completed'
-    } else if (status === 'cancelled') {
-      s = i < stepIdx ? 'completed' : i === stepIdx ? 'skipped' : 'pending'
-    } else {
-      // in_review, returned
-      s = i < stepIdx ? 'completed' : i === stepIdx ? 'current' : 'pending'
-    }
-    // Auto-skipped steps carry an approve event with a machine actor; naming
-    // it would credit a person for a decision nobody made. Same rule as PR.
-    const evt = approveEventByStep[i]
-    const autoSkipped = isSkipped(evt)
-    if (autoSkipped) s = 'skipped'
-    return {
-      id: node.id, role: node.label, status: s,
-      actorName: autoSkipped ? undefined : evt?.actor_name ?? undefined,
-    }
+  // Who acted at each step, the skip reasons, the open step's approver and the
+  // return / reject marker: one reading shared with the PR, PO and PA
+  // timelines, so a returned or rejected agreement no longer shows a step it
+  // already passed as "Awaiting action", nor a cancel as an auto-skip (ISS-0088).
+  const approvalNodes = buildApprovalNodes({
+    nodes, status, stepIdx, events, currentStep,
+    doneStatuses: ['active', 'expired', 'closed'],
+    ownerLabel: 'creator',
   })
   return [created, ...approvalNodes]
 }
@@ -138,13 +117,13 @@ function NteBar({ consumedAmount, notToExceed, currency }: { consumedAmount: str
   return (
     <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-5 py-4 flex flex-col gap-2 max-w-sm">
       <div className="flex justify-between text-sm">
-        <span className="text-neutral-700">Consumed</span>
+        <span className="text-neutral-700">Consumed (pre-tax)</span>
         <span className={cn('amount font-semibold', overCeiling ? 'text-danger-600' : 'text-neutral-900')}>
           {formatAmount(consumed, currency)}
         </span>
       </div>
       <div className="flex justify-between text-sm">
-        <span className="text-neutral-700">Not to Exceed</span>
+        <span className="text-neutral-700">Not to Exceed (pre-tax)</span>
         <span className="amount text-neutral-900">{ceiling !== null ? formatAmount(ceiling, currency) : 'No ceiling'}</span>
       </div>
       {ceiling !== null && (
@@ -170,17 +149,19 @@ function NteBar({ consumedAmount, notToExceed, currency }: { consumedAmount: str
 
 // ─── Approval action modal ───────────────────────────────────────────────────
 
-type ApprovalAction = 'approve' | 'return'
+type ApprovalAction = 'approve' | 'return' | 'reject'
 
-function ApprovalModal({ action, agreementNumber, onConfirm, onClose, isPending }: {
+function ApprovalModal({ action, agreementNumber, onConfirm, onClose, isPending, error }: {
   action: ApprovalAction
   agreementNumber: string
   onConfirm: (comment: string) => void
   onClose: () => void
   isPending: boolean
+  /** The server's refusal, shown in the dialog. */
+  error?: string
 }) {
   const [comment, setComment] = useState('')
-  const needsComment = action === 'return'
+  const needsComment = action !== 'approve'
   const canSubmit = !needsComment || comment.trim().length > 0
 
   const config = {
@@ -201,6 +182,15 @@ function ApprovalModal({ action, agreementNumber, onConfirm, onClose, isPending 
       btn: 'bg-warning-500 hover:bg-warning-600 text-white',
       commentLabel: 'Revision instructions *',
       placeholder: 'Describe what needs to be revised…',
+    },
+    reject: {
+      title: 'Reject Agreement',
+      label: 'Reject',
+      icon: <XCircle className="h-5 w-5 text-danger-600" />,
+      bgIcon: 'bg-danger-50',
+      btn: 'bg-danger-600 hover:bg-danger-700 text-white',
+      commentLabel: 'Reason for rejection *',
+      placeholder: 'Explain why this agreement is being rejected…',
     },
   }[action]
 
@@ -236,6 +226,7 @@ function ApprovalModal({ action, agreementNumber, onConfirm, onClose, isPending 
               />
             </div>
           </div>
+          {error && <p className="text-xs text-danger-600">{error}</p>}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
             <button
@@ -266,9 +257,19 @@ export default function AgreementDetailPage() {
   const { data: config } = useConfig()
   const { data: deptData } = useDepartments()
   const departments = deptData?.items ?? []
-  const agreementAction = useAgreementAction(id ?? '')
+  // Submit / Cancel refusals are shown in the banner below, not in a browser
+  // pop-up (ISS-0090 follow-up: the draft page's Submit only alerted).
+  const agreementAction = useAgreementAction(id ?? '', { alertOnError: false })
+  // The approval dialog and Recall show the server's refusal on the page
+  // instead of in an alert().
+  const agreementDecision = useAgreementAction(id ?? '', { alertOnError: false })
+  const agreementRecall = useAgreementAction(id ?? '', { alertOnError: false })
   const { user } = useAuthStore()
   const [pendingAction, setPendingAction] = useState<ApprovalAction | null>(null)
+  // Why New Agreement's Submit for Approval was refused, when it brought the
+  // saved draft here instead (ISS-0090).
+  const [createSubmitError] = useState<string | null>(() => peekSubmitFailure(id))
+  useEffect(() => { clearSubmitFailure(id) }, [id])
 
   const { data: invoicesData, isLoading: invoicesLoading } = useInvoices(
     agreement ? { agreement_id: agreement.id } : undefined,
@@ -366,10 +367,6 @@ export default function AgreementDetailPage() {
   // a missing submit button reads as a broken page, not as a missing field.
   const missingOwner = !!agreement && !agreement.owner_id
   const canEdit = canWrite && !!agreement && ['draft', 'returned'].includes(agreement.status)
-  // Matches approval-api's _DOC_META["agr"]["valid_cancel"] = ("draft", "returned", "submitted")
-  // (engine.py:104) — NOT "in_review": once a human has already acted (the
-  // first approve moves it to in_review), cancel is no longer offered.
-  const canCancel = canWrite && !!agreement && ['draft', 'returned', 'submitted'].includes(agreement.status)
 
   // Approval gating follows the open-task convention used across PR/PO/PA:
   // the Approve button only appears when the current user holds an active
@@ -380,6 +377,14 @@ export default function AgreementDetailPage() {
   )
   const canApprove =
     !!user && !!agreement && APPROVABLE_STATUSES.includes(agreement.status) && hasApproveTask
+  // PRD §3.3.3 recall: the creator or a System Admin, submitted / in_review
+  // → draft; the next submit starts from the first step (ISS-0119).
+  const canRecall = !!agreement && canRecallDocument(agreement, user ?? {})
+  // Cancel follows the engine's rule, not epms.agreement.write: approval-api
+  // valid_cancel = draft / returned / submitted (not in_review), by the
+  // creator, a System Admin or the approver holding it. The write key showed
+  // it to people the engine refuses and hid it from that approver.
+  const canCancel = !!agreement && canWithdrawDocument('agr', agreement, user ?? {}, hasApproveTask)
 
   const periodRows = scheduleRows.filter((r) => r.schedule_type === 'period')
   const milestoneRows = scheduleRows.filter((r) => r.schedule_type === 'milestone')
@@ -434,7 +439,7 @@ export default function AgreementDetailPage() {
   const deleteAttachment = useDeleteAgreementAttachment(agreement?.id ?? '')
 
   const handleConfirm = (action: ApprovalAction, comment: string) => {
-    agreementAction.mutate(
+    agreementDecision.mutate(
       { action, comment: comment || undefined },
       { onSuccess: () => setPendingAction(null) }
     )
@@ -462,6 +467,7 @@ export default function AgreementDetailPage() {
     // Resolved off the same directory the Owner row uses — the agreement
     // response carries created_by as a bare uuid, no name.
     usersData?.items?.find((u) => u.id === agreement.created_by)?.full_name,
+    agreement.current_step,
   )
   const department = departments.find((d) => d.id === agreement.department_id)
 
@@ -506,7 +512,7 @@ export default function AgreementDetailPage() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  onClick={() => agreementAction.mutate({ action: 'submit' })}
+                  onClick={() => { agreementAction.reset(); agreementAction.mutate({ action: 'submit' }) }}
                   disabled={agreementAction.isPending || missingOwner}
                   title={missingOwner ? 'Set an Owner on this agreement before submitting it' : undefined}
                 >
@@ -519,11 +525,31 @@ export default function AgreementDetailPage() {
                 )}
               </>
             )}
+            {canRecall && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  if (confirm(`Recall ${agreement.number}? It will be moved back to Draft; the next submit starts from the first approval step.`)) {
+                    agreementRecall.mutate({ action: 'recall' })
+                  }
+                }}
+                disabled={agreementRecall.isPending}
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Recall
+              </Button>
+            )}
+            {agreementRecall.isError && (
+              <span className="text-xs text-danger-600">
+                {agreementRecall.error instanceof Error ? agreementRecall.error.message : 'Could not recall the agreement'}
+              </span>
+            )}
             {canCancel && (
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => agreementAction.mutate({ action: 'cancel' })}
+                onClick={() => { agreementAction.reset(); agreementAction.mutate({ action: 'cancel' }) }}
                 disabled={agreementAction.isPending}
               >
                 <XCircle className="h-3.5 w-3.5" />
@@ -552,6 +578,14 @@ export default function AgreementDetailPage() {
           </div>
         </div>
       </div>
+
+      {(agreementAction.isError || (createSubmitError && agreement.status === 'draft')) && (
+        <p role="alert" className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+          {agreementAction.isError
+            ? (agreementAction.error instanceof Error ? agreementAction.error.message : 'The agreement action failed')
+            : createSubmitError}
+        </p>
+      )}
 
       {/* Main content + timeline */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
@@ -589,7 +623,7 @@ export default function AgreementDetailPage() {
             </section>
 
             <section>
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-3">Consumed / Not to Exceed</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-3">Consumed / Not to Exceed (pre-tax)</h2>
               <NteBar consumedAmount={agreement.consumed_amount} notToExceed={agreement.not_to_exceed} currency={agreement.currency} />
             </section>
           </div>
@@ -850,7 +884,7 @@ export default function AgreementDetailPage() {
             {events && events.length > 0 ? (
               <ul className="flex flex-col gap-3">
                 {events.map((e) => {
-                  const line = historyLine(e)
+                  const line = historyLine(e, workflowNodes)
                   return (
                     <li key={e.id} className="flex gap-3 text-sm">
                       <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDateTime(e.created_at)}</span>
@@ -892,6 +926,14 @@ export default function AgreementDetailPage() {
             <Button variant="secondary" size="sm" onClick={() => setPendingAction('return')} className="gap-1.5">
               <RotateCcw className="h-3.5 w-3.5" /> Return for Revision
             </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setPendingAction('reject')}
+              className="gap-1.5 border-danger-200 text-danger-600 hover:bg-danger-50"
+            >
+              <XCircle className="h-3.5 w-3.5" /> Reject
+            </Button>
             <button
               onClick={() => setPendingAction('approve')}
               className="inline-flex items-center gap-2 h-9 px-5 rounded-lg bg-success-600 text-white text-sm font-semibold hover:bg-success-700 transition-colors"
@@ -907,9 +949,12 @@ export default function AgreementDetailPage() {
         <ApprovalModal
           action={pendingAction}
           agreementNumber={agreement.number}
-          isPending={agreementAction.isPending}
+          isPending={agreementDecision.isPending}
+          error={agreementDecision.isError
+            ? (agreementDecision.error instanceof Error ? agreementDecision.error.message : 'The action was refused')
+            : undefined}
           onConfirm={(comment) => handleConfirm(pendingAction, comment)}
-          onClose={() => setPendingAction(null)}
+          onClose={() => { agreementDecision.reset(); setPendingAction(null) }}
         />
       )}
     </div>

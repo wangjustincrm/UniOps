@@ -102,7 +102,9 @@ _DEFAULT_BUDGET_ADMIN_CONFIG = {
 }
 
 _DEFAULT_COLLECTION_CONFIG = {
-    "collection_required": True, "reminder_days": 2,
+    # collection_required: legacy, never read. collection_gate_enabled is the
+    # switch crud.po.collection_gate_on reads (ISS-0146) — off by default.
+    "collection_required": True, "collection_gate_enabled": False, "reminder_days": 2,
     "manager_escalation_days": 4, "fm_alert_days": 7,
 }
 
@@ -116,6 +118,10 @@ _DEFAULT_NOTIFICATION_SETTINGS = {
     # 默认 ON 是刻意的:daily_followup_enabled 默认 OFF,结果上线后没人知道要去
     # admin 打开、提醒一直没发。开关的作用是"吵了可以关掉",不是"要用得先找到它"。
     "agreement_overdue_enabled": True,
+    # PA 最终批准后给申请人发一封知会邮件(ISS-0137 / PA-007)。纯知会,不生成
+    # Task —— 申请人此时没有要做的事。默认 ON:PRD PA-007 规定申请人会收到通知;
+    # 开关只是"吵了可以关"(规则题 15:通知按配置走)。消费方 .get(..., True) 回落。
+    "pa_approved_notify_requester": True,
     # 服务/项目 PO 完成日到期催建 GR(app/tasks/service_gr_due.py)。
     # 默认 OFF + dry_run 默认 ON 是刻意的两道闸:上线当天先让扫描空跑一轮,
     # 把命中清单汇总发给 admin 过目,确认无误再开。存量单据靠回填脚本补日期,
@@ -123,6 +129,14 @@ _DEFAULT_NOTIFICATION_SETTINGS = {
     # 没有这道闸。消费方一律显式回落,老配置行没有这两个键也算「关 + 空跑」。
     "service_gr_due_enabled": False,
     "service_gr_due_dry_run": True,
+    # GR acknowledgement reminder / escalation (app/tasks/gr_ack_due.py,
+    # ISS-0146 ①): same two gates as service_gr_due — off, and dry run first.
+    "gr_ack_due_enabled": False,
+    "gr_ack_due_dry_run": True,
+    # Budget threshold alert emails (app/tasks/budget_alerts.py, ISS-0146 ③):
+    # off, and dry run first. Email only — no Teams (owner, 2026-10-30).
+    "budget_alert_enabled": False,
+    "budget_alert_dry_run": True,
     # 角色 → 共享邮箱。配了地址的角色,其“角色池”任务只发这一个邮箱,
     # 不再逐个通知该角色成员。空 = 维持逐人发送。
     "role_shared_mailboxes": {},
@@ -142,16 +156,23 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
         "{task_description}\n\n<a href=\"{link}\">Open {document_number}</a>\n\n{company_name}",
     ),
     # ── PR ────────────────────────────────────────────────────────────────────
+    # {pr_title} {requester_name} {currency} {step_label} are read from the
+    # document at send time (services/notification._document_vars, ISS-0140).
     "pr_approval_request": _DEFAULT_EMAIL_TEMPLATE(
         "Action Required: Approve PR {pr_number}",
         "Hi {recipient_name},\n\nPurchase Request <b>{pr_number}</b> requires your approval.\n\n"
-        "<b>Vendor:</b> {vendor}\n<b>Amount:</b> CAD {amount}\n\n"
+        "<b>Title:</b> {pr_title}\n<b>Requester:</b> {requester_name}\n"
+        "<b>Vendor:</b> {vendor}\n<b>Amount:</b> {currency} {amount}\n"
+        "<b>Approval step:</b> {step_label}\n\n"
         "<a href=\"{link}\">Review &amp; Approve PR</a>\n\n{company_name}",
     ),
+    # {comment} / {returned_by} come from the return's approval event
+    # (services/notification._document_vars, ISS-0145).
     "pr_returned": _DEFAULT_EMAIL_TEMPLATE(
         "Your PR {pr_number} has been returned for revision",
         "Hi {recipient_name},\n\nYour Purchase Request <b>{pr_number}</b> has been returned for revision.\n\n"
-        "<b>Comment:</b> {comment}\n\n<a href=\"{link}\">View &amp; Edit PR</a>\n\n{company_name}",
+        "<b>Returned by:</b> {returned_by}\n<b>Comment:</b> {comment}\n\n"
+        "<a href=\"{link}\">View &amp; Edit PR</a>\n\n{company_name}",
     ),
     "pr_rejected": _DEFAULT_EMAIL_TEMPLATE(
         "Your PR {pr_number} has been rejected",
@@ -167,7 +188,7 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
     "po_creation_request": _DEFAULT_EMAIL_TEMPLATE(
         "Action Required: Create PO for PR {pr_number}",
         "Hi {recipient_name},\n\nPurchase Request <b>{pr_number}</b> has been fully approved. Please create a Purchase Order.\n\n"
-        "<b>Vendor:</b> {vendor}\n<b>Amount:</b> CAD {amount}\n\n"
+        "<b>Title:</b> {pr_title}\n<b>Vendor:</b> {vendor}\n<b>Amount:</b> {currency} {amount}\n\n"
         "<a href=\"{link}\">View PR &amp; Create PO</a>\n\n{company_name}",
     ),
     "po_approval_request": _DEFAULT_EMAIL_TEMPLATE(
@@ -206,14 +227,19 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
         "<a href=\"{link}\">Place Order</a>\n\n{company_name}",
     ),
     # ── GR ────────────────────────────────────────────────────────────────────
+    # GR-N-001 / PRD 3.9.2. {po_number} {delivery_date} {received_items}
+    # {storage_location} are read from the GR at send time (ISS-0140).
     "gr_created": _DEFAULT_EMAIL_TEMPLATE(
         "Goods Receipt Created — {gr_number}",
         "Hi {recipient_name},\n\nGoods Receipt <b>{gr_number}</b> has been created and requires your acknowledgement.\n\n"
+        "<b>PO:</b> {po_number}\n<b>Vendor:</b> {vendor}\n<b>Delivery date:</b> {delivery_date}\n\n"
+        "<b>Received items:</b>\n{received_items}\n\n"
         "<a href=\"{link}\">View GR</a>\n\n{company_name}",
     ),
     "gr_collection_ready": _DEFAULT_EMAIL_TEMPLATE(
         "Goods Ready for Collection — {gr_number}",
-        "Hi {recipient_name},\n\nThe goods for GR <b>{gr_number}</b> are ready for collection.\n\n"
+        "Hi {recipient_name},\n\nThe goods for GR <b>{gr_number}</b> (PO <b>{po_number}</b>) are ready for collection.\n\n"
+        "<b>Storage location:</b> {storage_location}\n\n"
         "<a href=\"{link}\">Confirm Collection</a>\n\n{company_name}",
     ),
     "service_gr_pending": _DEFAULT_EMAIL_TEMPLATE(
@@ -238,6 +264,47 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
     # 老的键留着不能删:cfg.email_templates 是**数据行**,生产库里那份模板早就
     # 写着 {requester_name},代码这边改名只会让线上渲染出一个空洞。新装库用
     # {owner_name},措辞才和实际收件逻辑对得上。
+    # GR acknowledgement reminder / escalation (app/tasks/gr_ack_due.py,
+    # ISS-0146 ①). Missing keys are backfilled into existing rows by get_or_create.
+    "gr_ack_reminder": _DEFAULT_EMAIL_TEMPLATE(
+        "Reminder: Acknowledge Goods Receipt — {gr_number}",
+        "Hi {recipient_name},\n\nGoods receipt <b>{gr_number}</b> for PO <b>{po_number}</b> "
+        "has been waiting for your acknowledgement for {days_waiting} day(s).\n\n"
+        "Please acknowledge it so the goods can be collected and the vendor paid.\n\n"
+        "<b>Vendor:</b> {vendor}\n\n"
+        "<a href=\"{link}\">Open the Goods Receipt</a>\n\n{company_name}",
+    ),
+    "gr_ack_escalation": _DEFAULT_EMAIL_TEMPLATE(
+        "Overdue: Goods Receipt Not Acknowledged — {gr_number}",
+        "Hi {recipient_name},\n\nGoods receipt <b>{gr_number}</b> for PO <b>{po_number}</b> "
+        "has been waiting {days_waiting} day(s), and <b>{holder_name}</b> has not acknowledged "
+        "it despite a reminder.\n\nPlease follow up.\n\n"
+        "<b>Vendor:</b> {vendor}\n\n"
+        "<a href=\"{link}\">Open the Goods Receipt</a>\n\n{company_name}",
+    ),
+    # Collection SLA escalation (app/tasks/gr_collect_due.py, ISS-0146 ②) —
+    # wording from EPMS → Admin → Collection Config.
+    "gr_collect_reminder": _DEFAULT_EMAIL_TEMPLATE(
+        "Reminder: Goods Ready to Collect — PO {po_number}",
+        "Hi {recipient_name},\n\nGoods are ready to collect at Technical Warehouse for PO "
+        "<b>{po_number}</b> (goods receipt <b>{gr_number}</b>, waiting {days_waiting} day(s)).\n\n"
+        "<a href=\"{link}\">Open the Goods Receipt</a>\n\n{company_name}",
+    ),
+    "gr_collect_escalation": _DEFAULT_EMAIL_TEMPLATE(
+        "Overdue: Goods Not Collected — PO {po_number}",
+        "Hi {recipient_name},\n\nGoods for PO <b>{po_number}</b> have not been collected "
+        "(goods receipt <b>{gr_number}</b>, waiting {days_waiting} day(s); requester "
+        "<b>{holder_name}</b>). Please follow up.\n\n"
+        "<a href=\"{link}\">Open the Goods Receipt</a>\n\n{company_name}",
+    ),
+    "gr_collect_fm_alert": _DEFAULT_EMAIL_TEMPLATE(
+        "Collection Overdue — PO {po_number}",
+        "Hi {recipient_name},\n\nGoods receipt <b>{gr_number}</b> for PO <b>{po_number}</b> "
+        "has not been collected after {days_waiting} day(s) (requester <b>{holder_name}</b>). "
+        "It is flagged Collection Overdue on the Warehouse dashboard.\n\n"
+        "<b>Vendor:</b> {vendor}\n\n"
+        "<a href=\"{link}\">Open the Goods Receipt</a>\n\n{company_name}",
+    ),
     "service_gr_escalation": _DEFAULT_EMAIL_TEMPLATE(
         "Overdue: Service Completion Not Confirmed — {po_number}",
         "Hi {recipient_name},\n\nPO <b>{po_number}</b> was expected to be complete on "
@@ -338,6 +405,35 @@ _SUPERSEDED_EMAIL_TEMPLATE_DEFAULTS: dict = {
         "Hi {recipient_name},\n\nThe assigned matcher has completed matching on invoice <b>{invoice_number}</b> "
         "with a non-zero variance. Please review the allocation and approve or reject it.\n\n"
         "<a href=\"{link}\">Review Match</a>\n\n{company_name}",
+    ),
+    # 2026-11-02 (ISS-0145): now also says who returned the PR.
+    "pr_returned": _DEFAULT_EMAIL_TEMPLATE(
+        "Your PR {pr_number} has been returned for revision",
+        "Hi {recipient_name},\n\nYour Purchase Request <b>{pr_number}</b> has been returned for revision.\n\n"
+        "<b>Comment:</b> {comment}\n\n<a href=\"{link}\">View &amp; Edit PR</a>\n\n{company_name}",
+    ),
+    # 2026-11-02 (ISS-0140): content PRD 3.9.2 / GR-N-001 asks for.
+    "pr_approval_request": _DEFAULT_EMAIL_TEMPLATE(
+        "Action Required: Approve PR {pr_number}",
+        "Hi {recipient_name},\n\nPurchase Request <b>{pr_number}</b> requires your approval.\n\n"
+        "<b>Vendor:</b> {vendor}\n<b>Amount:</b> CAD {amount}\n\n"
+        "<a href=\"{link}\">Review &amp; Approve PR</a>\n\n{company_name}",
+    ),
+    "po_creation_request": _DEFAULT_EMAIL_TEMPLATE(
+        "Action Required: Create PO for PR {pr_number}",
+        "Hi {recipient_name},\n\nPurchase Request <b>{pr_number}</b> has been fully approved. Please create a Purchase Order.\n\n"
+        "<b>Vendor:</b> {vendor}\n<b>Amount:</b> CAD {amount}\n\n"
+        "<a href=\"{link}\">View PR &amp; Create PO</a>\n\n{company_name}",
+    ),
+    "gr_created": _DEFAULT_EMAIL_TEMPLATE(
+        "Goods Receipt Created — {gr_number}",
+        "Hi {recipient_name},\n\nGoods Receipt <b>{gr_number}</b> has been created and requires your acknowledgement.\n\n"
+        "<a href=\"{link}\">View GR</a>\n\n{company_name}",
+    ),
+    "gr_collection_ready": _DEFAULT_EMAIL_TEMPLATE(
+        "Goods Ready for Collection — {gr_number}",
+        "Hi {recipient_name},\n\nThe goods for GR <b>{gr_number}</b> are ready for collection.\n\n"
+        "<a href=\"{link}\">Confirm Collection</a>\n\n{company_name}",
     ),
 }
 

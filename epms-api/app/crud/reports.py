@@ -3,10 +3,13 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import date
+from datetime import date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.delegation import PLANT_TIMEZONE
 
 # NOTE: Budget data moved to budget-api (:8007). Budget reports now return an
 # empty CSV; the front-end should download budget reports from budget-api
@@ -25,6 +28,24 @@ def _csv(rows: list[list], headers: list[str]) -> str:
     w.writerow(headers)
     w.writerows(rows)
     return buf.getvalue()
+
+
+def _day_start(day: date) -> datetime:
+    return datetime.combine(day, time.min, tzinfo=ZoneInfo(PLANT_TIMEZONE))
+
+
+def _in_range(column, date_from: date | None, date_to: date | None) -> list:
+    """From and To are whole plant-calendar days, both included — the same
+    reading the Receiving Report (crud/gr_report.py) gives its range. Comparing
+    a timestamptz with a bare date compared it with that day's midnight, so the
+    To day itself was left out and a same-day range exported nothing
+    (ISS-0154)."""
+    conds = []
+    if date_from:
+        conds.append(column >= _day_start(date_from))
+    if date_to:
+        conds.append(column < _day_start(date_to + timedelta(days=1)))
+    return conds
 
 
 def _dt(v) -> str:
@@ -54,10 +75,7 @@ async def pr_report(
     cost_center_id: str | None = None,
 ) -> str:
     q = select(PurchaseRequest)
-    if date_from:
-        q = q.where(PurchaseRequest.created_at >= date_from)
-    if date_to:
-        q = q.where(PurchaseRequest.created_at <= date_to)
+    q = q.where(*_in_range(PurchaseRequest.created_at, date_from, date_to))
     if status:
         q = q.where(PurchaseRequest.status == status)
     if pr_type:
@@ -99,10 +117,7 @@ async def po_report(
     vendor_id: str | None = None,
 ) -> str:
     q = select(PurchaseOrder)
-    if date_from:
-        q = q.where(PurchaseOrder.created_at >= date_from)
-    if date_to:
-        q = q.where(PurchaseOrder.created_at <= date_to)
+    q = q.where(*_in_range(PurchaseOrder.created_at, date_from, date_to))
     if status:
         q = q.where(PurchaseOrder.status == status)
     if po_type:
@@ -143,10 +158,7 @@ async def gr_report(
     gr_type: str | None = None,
 ) -> str:
     q = select(GoodsReceipt)
-    if date_from:
-        q = q.where(GoodsReceipt.created_at >= date_from)
-    if date_to:
-        q = q.where(GoodsReceipt.created_at <= date_to)
+    q = q.where(*_in_range(GoodsReceipt.created_at, date_from, date_to))
     if status:
         q = q.where(GoodsReceipt.status == status)
     if gr_type:
@@ -186,10 +198,7 @@ async def invoice_report(
     vendor_id: str | None = None,
 ) -> str:
     q = select(Invoice)
-    if date_from:
-        q = q.where(Invoice.created_at >= date_from)
-    if date_to:
-        q = q.where(Invoice.created_at <= date_to)
+    q = q.where(*_in_range(Invoice.created_at, date_from, date_to))
     if status:
         q = q.where(Invoice.status == status)
     if vendor_id:
@@ -232,10 +241,7 @@ async def pa_report(
     vendor_id: str | None = None,
 ) -> str:
     q = select(PaymentApplication)
-    if date_from:
-        q = q.where(PaymentApplication.created_at >= date_from)
-    if date_to:
-        q = q.where(PaymentApplication.created_at <= date_to)
+    q = q.where(*_in_range(PaymentApplication.created_at, date_from, date_to))
     if status:
         q = q.where(PaymentApplication.status == status)
     if pa_type:

@@ -15,6 +15,7 @@ import { ProcurementTypeSelector } from '@/components/pr/ProcurementTypeSelector
 import { BudgetBalanceWidget, OverBudgetWarning } from '@/components/pr/BudgetBalanceWidget'
 import { PrLineItems, lineItemsTotal, validateLineItems } from '@/components/pr/PrLineItems'
 import { budgetAccountError, requiresBudgetAccount, budgetCheckPayload } from '@/lib/prBudget'
+import { errorMessage, rememberSubmitFailure } from '@/lib/submitFailure'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig } from '@/hooks/useConfig'
 import { useBudgetOverview, useFactors, useBalance } from '@/hooks/useBudget'
@@ -28,7 +29,9 @@ import { useVendors } from '@/hooks/useVendors'
 import { userService, type ApiUserBrief } from '@/services/users'
 import type { ApiVendor } from '@/services/vendors'
 import type { ProcurementType, PrLineItem, Currency } from '@/types'
-import { CURRENCIES } from '@/types'
+import { enabledCurrencyOptions } from '@/lib/currencies'
+import { ATTACHMENT_RULE, partitionUploads } from '@/lib/uploadLimits'
+import { formatBytes } from '@/lib/utils'
 
 const prSchema = z.object({
   title: z.string().min(3, 'Title is required'),
@@ -161,10 +164,12 @@ export default function PrCreatePage() {
   const [departmentError, setDepartmentError] = useState<string | null>(null)
   const [budgetError, setBudgetError] = useState<string | null>(null)
   const [attachments, setAttachments] = useState<File[]>([])
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [currency, setCurrency] = useState<Currency>('CAD')
   const [lineItems, setLineItems] = useState<PrLineItem[]>([defaultLine()])
   const [lineErrors, setLineErrors] = useState<Record<string, { description?: string; qty?: string; unitPrice?: string }>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   const createPr = useCreatePr()
 
@@ -173,6 +178,12 @@ export default function PrCreatePage() {
   const { data: sourcePr } = usePr(copyFromId)
   const [copyFilled, setCopyFilled] = useState(false)
   const [copyVendorId, setCopyVendorId] = useState<string | null>(null)
+  // Copy carries the source PR's department (ISS-0100). It is set first, on
+  // its own: the cost centres are listed per department, so the copied cost
+  // centre and budget account are only filled in once that list has loaded —
+  // otherwise picking the department afterwards would clear them again.
+  const [copyDeptApplied, setCopyDeptApplied] = useState(false)
+  const [copyDeptNote, setCopyDeptNote] = useState<string | null>(null)
 
   const { data: vendorsData } = useVendors({
     active_only: true,
@@ -203,7 +214,22 @@ export default function PrCreatePage() {
   }, [config?.delivery_address, setValue])
 
   useEffect(() => {
-    if (!sourcePr || copyFilled) return
+    if (!sourcePr || copyDeptApplied || !departmentsData) return
+    if (sourcePr.department_id) {
+      if (departments.some((d) => d.id === sourcePr.department_id)) {
+        setSelectedDepartmentId(sourcePr.department_id)
+      } else {
+        setCopyDeptNote(
+          `The department of ${sourcePr.number}${sourcePr.department_name ? ` (${sourcePr.department_name})` : ''} is no longer active — choose a department.`,
+        )
+      }
+    }
+    setCopyDeptApplied(true)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourcePr, copyDeptApplied, departmentsData])
+
+  useEffect(() => {
+    if (!sourcePr || copyFilled || !copyDeptApplied) return
     if (!vendorsData || !costCentersData || !budgetData) return
 
     setSelectedType(sourcePr.type as ProcurementType)
@@ -258,7 +284,7 @@ export default function PrCreatePage() {
 
     setCopyFilled(true)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourcePr, copyFilled, vendorsData, costCentersData, budgetData])
+  }, [sourcePr, copyFilled, copyDeptApplied, vendorsData, costCentersData, budgetData])
 
   const estimatedAmount = lineItemsTotal(lineItems)
   // Look up from ccL2Accounts (already scoped to the selected CC + L1) to avoid matching a
@@ -334,7 +360,6 @@ export default function PrCreatePage() {
   const isOverBudget = selectedBudgetAccount
     ? (budgetCheck && !budgetCheckError ? budgetCheck.over_budget : localOverBudget)
     : false
-  const overage = isOverBudget ? Math.max(estimatedAmount - available, 0) : 0
   // Over-Budget Approval Mode (single source of truth = Admin → Budget Config)
   const overBudgetMode = config?.budget_admin_config?.over_budget_mode ?? 'fm_gm_opm'
   const isHardBlock = isOverBudget && overBudgetMode === 'hard_block'
@@ -396,8 +421,10 @@ export default function PrCreatePage() {
       return
     }
     setIsSubmitting(true)
+    setSubmitError(null)
+    let newPr: { id: string } | null = null
     try {
-      const newPr = await createPr.mutateAsync({
+      newPr = await createPr.mutateAsync({
         title: formData.title,
         type: selectedType!,
         currency,
@@ -434,9 +461,22 @@ export default function PrCreatePage() {
           notes: item.notes || undefined,
         })),
       })
-      await Promise.all(attachments.map((f) => prAttachmentService.upload(newPr.id, f)))
-      await prService.action(newPr.id, { action: 'submit' })
-      replaceTab(`/pr/${newPr.id}`)
+      const created = newPr
+      await Promise.all(attachments.map((f) => prAttachmentService.upload(created.id, f)))
+      await prService.action(created.id, { action: 'submit' })
+      replaceTab(`/pr/${created.id}`)
+    } catch (err) {
+      // The refusal used to vanish: nothing on the page, and each further
+      // click saved another draft (PR-20261028-0005…0009, ISS-0166). Once the
+      // PR exists it is a draft — go to it, with the reason, and submit from
+      // there. Before that, the form stays and says why.
+      const message = errorMessage(err, 'The purchase request could not be submitted')
+      if (newPr) {
+        rememberSubmitFailure(newPr.id, `Saved as a draft but not submitted: ${message}`)
+        replaceTab(`/pr/${newPr.id}/edit`)
+      } else {
+        setSubmitError(message)
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -495,17 +535,24 @@ export default function PrCreatePage() {
   }
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
-    setAttachments((prev) => [...prev, ...files])
+    // Checked when picked: the document is saved before its files are sent,
+    // so a refused file would otherwise be found missing only afterwards.
+    const { ok, problems } = partitionUploads(Array.from(e.target.files ?? []), ATTACHMENT_RULE)
+    setAttachmentError(problems.length ? problems.join(' ') : null)
+    setAttachments((prev) => [...prev, ...ok])
     e.target.value = ''
   }
 
+  // Applied once. Left set, it re-selected the copied vendor every time the
+  // field was emptied — Backspace and × could never clear it (ISS-0151). The
+  // user editing the field ends it too, even before the vendor was found.
   useEffect(() => {
     if (!copyVendorId || selectedVendor) return
     const match = vendorsData?.items.find((v) => v.id === copyVendorId)
     if (match) {
       setSelectedVendor(match)
       setVendorQuery('')
+      setCopyVendorId(null)
     }
   }, [copyVendorId, vendorsData, selectedVendor])
 
@@ -602,13 +649,13 @@ export default function PrCreatePage() {
                           placeholder="Search vendor by name or POID…"
                           value={selectedVendor ? selectedVendor.name : vendorQuery}
                           onFocus={() => { setVendorOpen(true); if (selectedVendor) setVendorQuery('') }}
-                          onChange={(e) => { setVendorQuery(e.target.value); setSelectedVendor(null); setVendorOpen(true) }}
+                          onChange={(e) => { setVendorQuery(e.target.value); setSelectedVendor(null); setCopyVendorId(null); setVendorOpen(true) }}
                           className={`h-10 w-full rounded-md border bg-white pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600 ${vendorError && !selectedVendor ? 'border-danger-500' : 'border-neutral-300'}`}
                         />
                         {selectedVendor && (
                           <button
                             type="button"
-                            onClick={() => { setSelectedVendor(null); setVendorQuery('') }}
+                            onClick={() => { setSelectedVendor(null); setVendorQuery(''); setCopyVendorId(null) }}
                             className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-600"
                           >
                             <X className="h-3.5 w-3.5" />
@@ -660,6 +707,7 @@ export default function PrCreatePage() {
                       onChange={(e) => {
                         setSelectedDepartmentId(e.target.value || undefined)
                         setDepartmentError(null)
+                        setCopyDeptNote(null)
                         // department changed → clear cost-center cascade (cc belongs to the old dept)
                         setSelectedCostCenter(''); setSelectedCostCenterId(undefined)
                         setSelectedL1(''); setSelectedL1Obj(null); setSelectedL2('')
@@ -674,6 +722,9 @@ export default function PrCreatePage() {
                     </select>
                     {departmentError && (
                       <p className="text-xs text-danger-600">{departmentError}</p>
+                    )}
+                    {copyDeptNote && !departmentError && (
+                      <p className="text-xs text-warning-600">{copyDeptNote}</p>
                     )}
                   </div>
 
@@ -790,8 +841,9 @@ export default function PrCreatePage() {
                   {isOverBudget && selectedBudgetAccount && (
                     <OverBudgetWarning
                       accountCode={selectedL2}
-                      overage={overage}
-                      pct={(overage / available) * 100}
+                      thisAmount={estimatedAmount}
+                      available={available}
+                      annualBudget={annualBudget}
                     />
                   )}
 
@@ -903,7 +955,7 @@ export default function PrCreatePage() {
                       onChange={(e) => setCurrency(e.target.value as Currency)}
                       className="h-10 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                     >
-                      {CURRENCIES.filter((c) => (config?.enabled_currencies ?? ['CAD','USD','EUR','RMB']).includes(c.value)).map((c) => (
+                      {enabledCurrencyOptions(config, currency).map((c) => (
                         <option key={c.value} value={c.value}>{c.value} — {c.label}</option>
                       ))}
                     </select>
@@ -957,14 +1009,15 @@ export default function PrCreatePage() {
                       <Upload className="h-8 w-8 text-neutral-400" />
                       <div>
                         <p className="text-sm font-medium text-neutral-700">Drag &amp; drop or click to upload</p>
-                        <p className="text-xs text-neutral-400 mt-1">Any format · Max 25 MB per file</p>
+                        <p className="text-xs text-neutral-400 mt-1">{ATTACHMENT_RULE.hint}</p>
                       </div>
-                      <input id="file-upload" type="file" multiple className="sr-only" onChange={handleFileInput} />
+                      <input id="file-upload" type="file" multiple accept={ATTACHMENT_RULE.accept} className="sr-only" onChange={handleFileInput} />
                     </label>
+                    {attachmentError && <p role="alert" className="text-xs text-danger-600">{attachmentError}</p>}
                     {attachments.map((f, i) => (
                       <div key={i} className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
                         <span className="flex-1 truncate text-neutral-700">📎 {f.name}</span>
-                        <span className="text-neutral-400 text-xs">{(f.size / 1024 / 1024).toFixed(1)} MB</span>
+                        <span className="text-neutral-400 text-xs">{formatBytes(f.size)}</span>
                         <button
                           type="button"
                           onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
@@ -992,6 +1045,9 @@ export default function PrCreatePage() {
                   <Link to="/pr">
                     <Button variant="secondary">Cancel</Button>
                   </Link>
+                  {submitError && (
+                    <p role="alert" className="flex-1 mx-4 text-sm text-danger-600">{submitError}</p>
+                  )}
                   <div className="flex items-center gap-3">
                     <Button type="button" variant="secondary" disabled={isSubmitting} onClick={handleDraftSave}>Save as Draft</Button>
                     <Button type="submit" disabled={!selectedType || isSubmitting || isHardBlock}>

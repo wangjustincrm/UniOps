@@ -122,6 +122,9 @@ export interface UpdatePrBody {
 export interface PrActionBody {
   action: PrAction
   comment?: string
+  // approve / return / reject: the step the decision is for — the server
+  // refuses it once the PR has moved past that step (ISS-0079).
+  expected_step?: number
 }
 
 export interface PrFilters {
@@ -133,6 +136,8 @@ export interface PrFilters {
   department_id?: string
   is_prepaid?: boolean
   created_by?: string
+  /** false = only PRs no PO has been raised from yet. */
+  has_po?: boolean
   search?: string
   page?: number
   page_size?: number

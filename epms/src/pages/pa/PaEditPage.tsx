@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { useReplaceTab } from '@uniops/shell'
@@ -6,8 +6,8 @@ import { epmsRoutes } from '@/app/routes'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDot } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn, formatAmount, formatDate } from '@/lib/utils'
-import { usePa, useUpdatePa } from '@/hooks/usePas'
+import { cn, formatAmount, formatDate, formatQty } from '@/lib/utils'
+import { usePa, usePas, usePasForPos, useUpdatePa } from '@/hooks/usePas'
 import { usePaAttachments, useUploadPaAttachment, useDeletePaAttachment } from '@/hooks/usePaAttachments'
 import { paAttachmentService } from '@/services/paAttachments'
 import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
@@ -21,8 +21,9 @@ import { DueWindowNotice } from './DueWindowNotice'
 import { DerivedPaLinesTable } from './DerivedPaLinesTable'
 import { FreightPaEditForm } from './FreightPaEditForm'
 import { DirectPaEditForm } from './DirectPaEditForm'
-import { derivePaLines } from '@/lib/paLinesFromInvoices'
+import { derivePaLines, derivedLinesTotal, invoiceOwnLines } from '@/lib/paLinesFromInvoices'
 import { dueWindowViolation } from './invoiceDueWindow'
+import { invoiceClaims, poLinesSubtotal } from './invoiceClaims'
 
 /**
  * A Freight PA takes its amounts, invoices and cost split from the Freight page
@@ -97,11 +98,18 @@ function PoPaEditPage() {
   const [subtotal, setSubtotal]         = useState('')
   const [taxAmount, setTaxAmount]       = useState('')
   const [taxManuallyEdited, setTaxManuallyEdited] = useState(false)
+  // Set once the user ticks or unticks an invoice. Until then the saved
+  // amounts stand; from then on they follow the selection (ISS-0113).
+  const [invoicesTouched, setInvoicesTouched] = useState(false)
   const [shippingAmount, setShipping]   = useState('')
   const [otherCharges, setOther]        = useState('')
   const [otherChargesNote, setOtherNote]= useState('')
   const [notes, setNotes]               = useState('')
   const [submitted, setSubmitted]       = useState(false)
+  // Save & Resubmit saves first, then submits; a refused submit is shown here
+  // instead of being swallowed (ISS-0166 retest: no message at all).
+  const [submitError, setSubmitError]   = useState<string | null>(null)
+  const [submitting, setSubmitting]     = useState(false)
   const [initialized, setInitialized]   = useState(false)
 
   const { data: agreementInvoicesData } = useInvoices(
@@ -116,6 +124,30 @@ function PoPaEditPage() {
     ? (agreementInvoicesData?.items ?? [])
     : (invoicesForPos.items ?? [])
   const poGrs      = (grsForPos.items ?? []).filter((g) => g.status !== 'cancelled')
+
+  // Invoices another live PA already pays (ISS-0112). Same rule as New PA
+  // (PaCreatePage claimedByPaNumber): hidden from the picker, with a note
+  // saying where they went. One this PA still holds stays listed with a
+  // warning so it can be unticked; the server refuses to save or submit it.
+  const poPasQuery = usePasForPos(isAgreementMode ? [] : poIds, !isAgreementMode)
+  const { data: agreementPas } = usePas(
+    agreement ? { search: agreement.number } : undefined,
+    isAgreementMode && Boolean(agreement),
+  )
+  const otherPas = isAgreementMode
+    ? (agreementPas?.items ?? []).filter((p) => p.agreement_id === pa?.agreement_id)
+    : (poPasQuery.items ?? [])
+  const claimedByPaNumber = invoiceClaims(otherPas.filter((p) => p.id !== pa?.id), pa?.pa_type)
+  const invoiceChoices = poInvoices.filter(
+    (inv) => !claimedByPaNumber.has(inv.id) || selectedInvoiceIds.has(inv.id),
+  )
+  const hiddenClaimed = poInvoices.filter(
+    (inv) => claimedByPaNumber.has(inv.id) && !selectedInvoiceIds.has(inv.id),
+  )
+  const hiddenClaimedNote = hiddenClaimed.length === 0 ? null : (() => {
+    const pas = [...new Set(hiddenClaimed.map((inv) => claimedByPaNumber.get(inv.id)!))].sort()
+    return `${hiddenClaimed.length} invoice${hiddenClaimed.length === 1 ? ' is' : 's are'} already on ${pas.join(', ')} and cannot be paid twice.`
+  })()
 
   // Pre-fill form once PA data loads
   useEffect(() => {
@@ -144,8 +176,19 @@ function PoPaEditPage() {
 
   // ── Derived ────────────────────────────────────────────────────────────────
   const isMultiPo = poIds.length > 1
+  // ISS-0133: a prepayment's pre-tax amount is its % of the whole PO's pre-tax
+  // total. Tax is pre-filled with the same share of the PO's tax and stays
+  // editable, like freight. Keyed on the saved type — the one the server
+  // recomputes on.
+  const isPrepayment = pa?.pa_type === 'prepayment'
+  const prepayPctNum = parseFloat(prepaymentPct) || 0
+  const prepayBase   = Number(po?.subtotal ?? 0)
+  const prepayPretax = Math.round(prepayBase * prepayPctNum) / 100
+  const prepayTax    = prepayBase > 0
+    ? Math.round(prepayPretax * Number(po?.tax_amount ?? 0) / prepayBase * 100) / 100
+    : Math.round(prepayPretax * Number(po?.tax_rate ?? 0) * 100) / 100
   const selectedPoLines = pos.flatMap((p) => p.line_items.filter((l) => selectedLineIds.has(l.id)))
-  const autoSubtotal    = selectedPoLines.reduce((s, l) => s + l.line_total, 0)
+  const autoSubtotal    = poLinesSubtotal(selectedPoLines)
   // Same rule as PaCreatePage: line-matched invoices decide the lines.
   const derivedLines = isAgreementMode ? null : derivePaLines(
     poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id)), pos.map((p) => p.id),
@@ -207,6 +250,7 @@ function PoPaEditPage() {
 
   const subtotalNum  = parseFloat(subtotal)  || 0
   const taxNum       = parseFloat(taxAmount) || 0
+  const taxMissing   = taxAmount.trim() === ''   // required, as on New PA (ISS-0136)
   const shippingNum  = parseFloat(shippingAmount) || 0
   const otherNum     = parseFloat(otherCharges) || 0
   const paymentTotal = subtotalNum + taxNum + shippingNum + otherNum
@@ -228,8 +272,35 @@ function PoPaEditPage() {
   const paTaxCode = (isAgreementMode ? pa?.tax_code : po?.tax_code) ?? pa?.tax_code ?? null
 
   // Auto-fill tax at the PO's rate when not manually edited
+  const selectedInvoices = poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id))
+  const invoiceSubtotal = selectedInvoices.reduce((s, inv) => s + Number(inv.amount), 0)
+  const invoiceTax      = selectedInvoices.reduce((s, inv) => s + Number(inv.tax_amount), 0)
+  const derivedTotal    = derivedLines ? derivedLinesTotal(derivedLines) : null
+
+  // After a change to the invoice selection, Pre-tax and Tax follow the ticked
+  // invoices, as on New PA (PRD §3.15.2). Tax a user types afterwards sticks.
+  // The saved tax is kept until the % changes; then it follows, unless typed.
+  const prepayPctRef = useRef<string | null>(null)
   useEffect(() => {
-    if (taxManuallyEdited) return
+    if (!isPrepayment || !initialized) return
+    setSubtotal(prepayPretax > 0 ? prepayPretax.toFixed(2) : '')
+    const pctChanged = prepayPctRef.current !== null && prepayPctRef.current !== prepaymentPct
+    prepayPctRef.current = prepaymentPct
+    if (pctChanged && !taxManuallyEdited) setTaxAmount(prepayPretax > 0 ? prepayTax.toFixed(2) : '')
+  }, [isPrepayment, initialized, prepayPretax, prepayTax]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    // A prepayment's amount follows its %, not the invoices (ISS-0133).
+    if (!invoicesTouched || isPrepayment) return
+    const linked = selectedInvoices.length > 0
+    const auto = linked ? (derivedTotal ?? invoiceSubtotal) : (isAgreementMode ? 0 : autoSubtotal)
+    setSubtotal(auto > 0 ? String(Number(auto.toFixed(2))) : '')
+    if (!taxManuallyEdited && linked) setTaxAmount(invoiceTax.toFixed(2))
+    else if (!taxManuallyEdited && isAgreementMode) setTaxAmount('')
+  }, [invoicesTouched, invoiceSubtotal, invoiceTax, derivedTotal, selectedInvoices.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (isPrepayment || taxManuallyEdited || (invoicesTouched && selectedInvoices.length > 0)) return
     if (po?.currency === 'CAD' && subtotalNum > 0) {
       setTaxAmount((subtotalNum * paTaxRate).toFixed(2))
     }
@@ -241,6 +312,7 @@ function PoPaEditPage() {
     if (!title.trim())   errors.push('PA Title is required')
     if (subtotalNum <= 0) errors.push('Pre-tax amount must be greater than zero')
     if (taxNum < 0)      errors.push('Tax amount cannot be negative')
+    if (taxMissing)      errors.push('Tax amount is required — enter 0 if there is no tax')
     if (paType === 'prepayment' && (!prepaymentPct || parseFloat(prepaymentPct) <= 0 || parseFloat(prepaymentPct) > 100))
       errors.push('Prepayment percentage must be between 1 and 100')
     if (paType === 'prepayment' && !expectedSettlement)
@@ -251,6 +323,10 @@ function PoPaEditPage() {
 
   const toggleInvoice = (invId: string) => {
     setSelectedInvoiceIds((prev) => { const n = new Set(prev); if (n.has(invId)) n.delete(invId); else n.add(invId); return n })
+    if (!invoicesTouched) {
+      setInvoicesTouched(true)
+      setTaxManuallyEdited(false)   // the saved tax was for the old selection
+    }
   }
   const toggleGr = (grId: string) => {
     setSelectedGrIds((prev) => { const n = new Set(prev); if (n.has(grId)) n.delete(grId); else n.add(grId); return n })
@@ -267,15 +343,18 @@ function PoPaEditPage() {
     if (!pa) return
     if (!isAgreementMode && !po) return
     if (!isAgreementMode && poIds.length === 0) return
-    if (!title.trim() || subtotalNum <= 0 || taxNum < 0 || paymentTotal <= 0) return
-    if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement)) return
+    if (!title.trim() || subtotalNum <= 0 || taxNum < 0 || taxMissing || paymentTotal <= 0) return
+    // Same bounds as the on-page message above (ISS-0115: 120% reached the
+    // server and came back as a raw pop-up).
+    if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement || prepayPctNum <= 0 || prepayPctNum > 100)) return
     // PO route only — agreement PAs are exempt. The notice under the invoice
     // list already names the two ends.
     if (!isAgreementMode && dueWindowViolation(poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id)))) return
 
     try {
       // Lines from every PO still on the payment.
-      const paLineItems = derivedLines
+      // A prepayment's single line is rebuilt by the server from the %.
+      const paLineItems = isPrepayment ? undefined : derivedLines
         ? derivedLines.map(({ line_total: _lt, ...l }) => l)
         : pos.flatMap((p) =>
         p.line_items
@@ -319,16 +398,31 @@ function PoPaEditPage() {
       })
 
       if (andSubmit) {
-        await paService.action(pa.id, { action: 'submit' })
+        setSubmitError(null)
+        setSubmitting(true)
+        try {
+          await paService.action(pa.id, { action: 'submit' })
+        } catch (e) {
+          setSubmitError(e instanceof Error ? e.message : 'Could not submit the PA')
+          await queryClient.invalidateQueries({ queryKey: ['pas'] })
+          return
+        } finally {
+          setSubmitting(false)
+        }
         await queryClient.invalidateQueries({ queryKey: ['pas'] })
         replaceTab('/pa')
       } else {
         replaceTab(`/pa/${pa.id}`)
       }
     } catch {
-      // error handled by mutation
+      // the refusal shows in the error box from updatePa's error state
     }
   }
+
+  const shownErrors = updatePa.isError
+    ? [...errors, updatePa.error instanceof Error && updatePa.error.message
+      ? updatePa.error.message : 'Failed to update payment application']
+    : errors
 
   if (isLoading || !initialized) {
     return (
@@ -496,13 +590,15 @@ function PoPaEditPage() {
                   : (isMultiPo ? 'Invoices for these POs' : 'Invoices for this PO')}
                 <span className="text-neutral-400 font-normal">(select all that apply)</span>
               </p>
-              {poInvoices.length === 0 ? (
+              {invoiceChoices.length === 0 ? (
                 <p className="text-xs text-neutral-400 italic px-3 py-2 border border-neutral-200 rounded-lg bg-neutral-50">
-                  {isAgreementMode ? 'No invoices matched to this agreement yet' : 'No invoices found for the selected PO(s) yet'}
+                  {hiddenClaimedNote
+                    ? `Nothing left to pay — ${hiddenClaimedNote}`
+                    : (isAgreementMode ? 'No invoices matched to this agreement yet' : 'No invoices found for the selected PO(s) yet')}
                 </p>
               ) : (
                 <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-100">
-                  {poInvoices.map((inv) => (
+                  {invoiceChoices.map((inv) => (
                     <label
                       key={inv.id}
                       className={cn(
@@ -529,10 +625,18 @@ function PoPaEditPage() {
                           <span className="text-neutral-200">·</span>
                           <span>Tax <span className="font-mono text-neutral-600">{formatAmount(inv.tax_amount, inv.currency)}</span></span>
                         </div>
+                        {claimedByPaNumber.has(inv.id) && (
+                          <p className="mt-1 text-[11px] text-danger-600">
+                            Also on {claimedByPaNumber.get(inv.id)} — untick it; one invoice cannot be paid twice.
+                          </p>
+                        )}
                       </div>
                     </label>
                   ))}
                 </div>
+              )}
+              {invoiceChoices.length > 0 && hiddenClaimedNote && (
+                <p className="text-[11px] text-neutral-400">{hiddenClaimedNote}</p>
               )}
               {!isAgreementMode && (
                 <DueWindowNotice invoices={poInvoices.filter((inv) => selectedInvoiceIds.has(inv.id))} />
@@ -581,6 +685,10 @@ function PoPaEditPage() {
               )}
             </div>
 
+            )}
+
+            {isAgreementMode && invoiceOwnLines(selectedInvoices) && (
+              <DerivedPaLinesTable lines={invoiceOwnLines(selectedInvoices)!} currency={paCurrency} fromInvoiceLines />
             )}
 
             {/* PO Line Items — nothing to select without a PO */}
@@ -651,7 +759,7 @@ function PoPaEditPage() {
                                 {isReceived ? `Received (${receivedQty} ${line.unit})` : 'Not yet received'}
                               </div>
                             </td>
-                            <td className="px-3 py-2.5 text-right font-mono text-neutral-500">{line.qty} {line.unit}</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-neutral-500">{formatQty(line.qty)} {line.unit}</td>
                             <td className="px-3 py-2.5 text-right font-mono font-medium text-neutral-700">
                               {receivedQty > 0 ? `${receivedQty} ${line.unit}` : '—'}
                             </td>
@@ -715,7 +823,7 @@ function PoPaEditPage() {
                           onChange={(e) => setPrepaymentPct(e.target.value)}
                           className={cn(
                             'h-9 w-full pl-3 pr-8 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
-                            submitted && (!prepaymentPct || parseFloat(prepaymentPct) <= 0) ? 'border-danger-400' : 'border-neutral-300'
+                            submitted && (!prepaymentPct || parseFloat(prepaymentPct) <= 0 || parseFloat(prepaymentPct) > 100) ? 'border-danger-400' : 'border-neutral-300'
                           )}
                         />
                         <span className="absolute right-3 top-2 text-sm text-neutral-400">%</span>
@@ -771,7 +879,7 @@ function PoPaEditPage() {
 
             {/* Charge breakdown */}
             <div className="flex flex-col gap-3">
-              <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">Charge Breakdown ({po?.currency ?? ''})</p>
+              <p className="text-xs font-semibold text-neutral-600 uppercase tracking-wide">Charge Breakdown ({paCurrency})</p>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1">
@@ -782,12 +890,19 @@ function PoPaEditPage() {
                     type="number" min={0} step={0.01}
                     value={subtotal}
                     onChange={(e) => setSubtotal(e.target.value)}
+                    readOnly={isPrepayment}
                     placeholder="0.00"
                     className={cn(
                       'h-10 px-3 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
+                      isPrepayment && 'bg-neutral-50 text-neutral-600',
                       submitted && subtotalNum <= 0 ? 'border-danger-400' : 'border-neutral-300'
                     )}
                   />
+                  {isPrepayment && po && (
+                    <p className="text-[11px] text-neutral-400">
+                      {prepayPctNum || 0}% × PO pre-tax {formatAmount(prepayBase, po.currency)} — change the % to change it
+                    </p>
+                  )}
                   {submitted && subtotalNum <= 0 && (
                     <p className="text-xs text-danger-600">Pre-tax amount is required</p>
                   )}
@@ -796,7 +911,10 @@ function PoPaEditPage() {
                 <div className="flex flex-col gap-1">
                   <label className="text-xs font-medium text-neutral-700">
                     Tax Amount <span className="text-danger-600">*</span>
-                    {!taxManuallyEdited && po?.currency === 'CAD' && subtotalNum > 0 && (
+                    {isPrepayment && !taxManuallyEdited && (
+                      <span className="ml-1.5 text-[10px] font-normal text-neutral-400">same share of the PO's tax</span>
+                    )}
+                    {!isPrepayment && !taxManuallyEdited && po?.currency === 'CAD' && subtotalNum > 0 && (
                       <span className="ml-1.5 text-[10px] font-normal text-neutral-400">13% HST</span>
                     )}
                   </label>
@@ -807,7 +925,7 @@ function PoPaEditPage() {
                     placeholder="0.00"
                     className={cn(
                       'h-10 px-3 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
-                      submitted && taxNum < 0 ? 'border-danger-400' : 'border-neutral-300'
+                      submitted && (taxNum < 0 || taxMissing) ? 'border-danger-400' : 'border-neutral-300'
                     )}
                   />
                 </div>
@@ -855,7 +973,7 @@ function PoPaEditPage() {
               <div className="flex items-center justify-between rounded-xl border-2 border-primary-200 bg-primary-50 px-5 py-3">
                 <span className="text-sm font-semibold text-neutral-700">Total Payment Amount</span>
                 <span className={cn('font-mono font-bold text-xl', paymentTotal > 0 ? 'text-primary-700' : 'text-neutral-300')}>
-                  {paymentTotal > 0 ? formatAmount(paymentTotal, po?.currency ?? '') : '—'}
+                  {paymentTotal > 0 ? formatAmount(paymentTotal, paCurrency) : '—'}
                 </span>
               </div>
             </div>
@@ -892,10 +1010,11 @@ function PoPaEditPage() {
             />
           </div>
 
-          {/* Errors */}
-          {errors.length > 0 && (
-            <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 flex flex-col gap-1">
-              {errors.map((e) => (
+          {/* Errors — the form's own checks, then the server's refusal of the
+              last save (shown here, not as a browser pop-up — ISS-0188) */}
+          {shownErrors.length > 0 && (
+            <div role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 flex flex-col gap-1">
+              {shownErrors.map((e) => (
                 <p key={e} className="text-xs text-danger-700 flex items-center gap-1.5">
                   <AlertTriangle className="h-3 w-3 shrink-0" /> {e}
                 </p>
@@ -909,11 +1028,16 @@ function PoPaEditPage() {
             <Button variant="secondary" onClick={() => handleSave(false)} disabled={updatePa.isPending}>
               Save Draft
             </Button>
-            <Button onClick={() => handleSave(true)} disabled={updatePa.isPending} className="gap-2">
+            <Button onClick={() => handleSave(true)} disabled={updatePa.isPending || submitting} className="gap-2">
               <CreditCard className="h-4 w-4" />
-              Save & Resubmit
+              {submitting ? 'Submitting…' : 'Save & Resubmit'}
             </Button>
           </div>
+          {submitError && (
+            <p role="alert" className="text-right text-sm text-danger-600">
+              Saved as a draft but not submitted: {submitError}
+            </p>
+          )}
         </div>
 
         {/* ── Sidebar — Summary ───────────────────────────────────────────────── */}

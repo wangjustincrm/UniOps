@@ -57,6 +57,58 @@ rules:
     test:
       - "tests/test_task_notifications.py::test_digest_bundles_one_email_per_person"
       - "tests/test_rule_registry.py::test_digest_time_is_read_from_config"
+  - id: pa_approved_email
+    also_in: [pa]
+    asked_as:
+      - PA 批准后申请人会收到通知吗？
+      - am I told when my PA is approved
+    answer: >
+      Yes, unless an admin has switched it off: Portal → Admin → Notification
+      Settings → PA Approved — Notify Requester (on by default). When on, the
+      person who raised the PA gets one email once it is fully approved
+      (information only — no task; paying it is the Payment Officer's). It is
+      currently {pa_approved}.
+      Their own channel choice in My Profile still applies.
+    provenance: derived
+    derive: notification_switches
+    enforced_in: "epms-api app/services/notification.py send_pa_approved (notification_settings.pa_approved_notify_requester, default on — PRD PA-007); app/api/v1/pa.py pa_action on new_status approved"
+    test:
+      - "tests/test_pa_approved_notify.py::test_on_by_default"
+      - "tests/test_pa_approved_notify.py::test_switched_off_emails_nobody"
+      - "tests/test_pa_approved_notify.py::test_on_emails_the_requester_and_raises_no_task"
+  - id: agreement_overdue_email
+    also_in: [agreement]
+    asked_as:
+      - 协议逾期提醒能关掉吗？
+      - can the agreement overdue reminder be switched off
+    answer: >
+      Yes: Portal → Admin → Notification Settings → Agreement Overdue Reminder
+      (on by default). When a billing period of a purchase agreement is
+      overdue with no invoice, the agreement owner gets a Chase Invoice task
+      and an email; switching it off stops both, though the period is still
+      marked overdue. It is currently {agreement_overdue}.
+    provenance: derived
+    derive: notification_switches
+    enforced_in: "epms-api app/tasks/agreement_overdue.py run_agreement_overdue (notification_settings.agreement_overdue_enabled, default on); portal AdminPanel Notification Settings"
+    test:
+      - "tests/test_agreement_overdue_sweep.py::test_toggle_off_flips_status_but_sends_no_email"
+      - "tests/test_agreement_overdue_sweep.py::test_toggle_on_emails_the_agreements_owner"
+  - id: place_order_email_goes_to_the_pool
+    also_in: [po]
+    asked_as:
+      - PO 批准后谁会收到下单提醒？
+      - who gets the place order email
+    answer: >
+      The Place Order task goes to the Procurement Officer pool — every
+      Procurement Officer, or the role's shared mailbox if one is set — not
+      to the person who created the PO. Whether it is emailed at once, put in
+      the daily digest or not emailed is set under Portal → Admin →
+      Notification Settings → Task Notifications; the recipients themselves
+      are not configurable.
+    provenance: pinned
+    enforced_in: "approval-api app/crud/engine.py _post_approve_po (place_order, assigned_role procurement_officer, no user); epms-api app/services/task_notify_policy.py"
+    test:
+      - "approval-api/tests/test_engine_prepayment_pa_assignee.py::test_place_order_task_still_goes_to_the_procurement_pool"
   - id: email_templates_are_not_editable
     asked_as:
       - 能在邮件里修改通知模板吗？
@@ -69,3 +121,38 @@ rules:
     provenance: not_built
     test:
       - "tests/test_rule_registry.py::test_no_screen_edits_email_templates"
+  - id: returned_email_names_who_and_why
+    also_in: [pr]
+    asked_as:
+      - PR 被退回的邮件里有退回意见吗？
+      - does the returned PR email say who returned it
+    answer: >
+      Yes. When a purchase request is returned for revision, the requester's
+      email names who returned it and quotes their comment (the comment is
+      required to return), with a link to open and edit the PR. A returned
+      PO sign-off email quotes the comment the same way.
+    provenance: pinned
+    enforced_in: "epms-api app/services/notification.py _document_vars (latest 'return' approval event → {returned_by} / {comment}); app/crud/config.py pr_returned / po_signoff_returned templates"
+    test:
+      - "tests/test_task_email_contents.py::test_returned_pr_email_shows_the_comment_and_who_returned_it"
+      - "tests/test_task_email_contents.py::test_returned_signoff_email_shows_the_comment"
+  - id: what_pr_and_gr_emails_contain
+    also_in: [pr, gr]
+    asked_as:
+      - 收货邮件里有哪些内容？
+      - what does the goods receipt email contain
+    answer: >
+      An approve-PR email gives the PR number, title, requester, vendor,
+      amount with currency, which approval step it is at, and a link to the
+      PR. The Create PO email gives the PR number, title, vendor, amount with
+      currency and a link. The goods receipt email to the requester gives the
+      GR and PO numbers, vendor, delivery date, each received item with its
+      quantity and condition, and a link to acknowledge; the goods ready for
+      collection email gives the storage location and a link.
+    provenance: pinned
+    enforced_in: "epms-api app/services/notification.py _document_vars (PR title / requester / currency / step label; GR PO number / delivery date / items / storage location); app/crud/config.py pr_approval_request / po_creation_request / gr_created / gr_collection_ready"
+    test:
+      - "tests/test_task_email_contents.py::test_approve_pr_email_has_title_requester_currency_and_step"
+      - "tests/test_task_email_contents.py::test_create_po_email_has_the_pr_title_and_currency"
+      - "tests/test_task_email_contents.py::test_gr_created_email_has_po_vendor_date_and_items"
+      - "tests/test_task_email_contents.py::test_collection_email_has_the_storage_location"

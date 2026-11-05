@@ -126,17 +126,15 @@ async def _sod_enabled(db: AsyncSession, rule_code: str) -> bool:
 
 
 async def _check_self_payment(db: AsyncSession, payer_id: uuid.UUID,
-                              counterparty_id: uuid.UUID | None, what: str) -> None:
+                              counterparty_id: uuid.UUID | None, message: str) -> None:
     """FIN-AUD-003 self_payment: the document creator / claimant cannot execute
     its own payment. Rule is config (identity-owned sod_rules) — disabling it
-    is an audited act, never a code change."""
+    is an audited act, never a code change. `message` is what the payer reads
+    — plain words, not the rule code (ISS-0115)."""
     if counterparty_id is None or payer_id != counterparty_id:
         return
     if await _sod_enabled(db, "self_payment"):
-        raise PaymentPermissionError(
-            f"SoD violation (self_payment): the {what} cannot execute payment "
-            "of their own document"
-        )
+        raise PaymentPermissionError(message)
 
 
 async def _complete_open_tasks(db: AsyncSession, doc_types: list[str], doc_id: uuid.UUID) -> None:
@@ -412,6 +410,25 @@ async def apply_pa_invoice_writeback(db: AsyncSession, pa: PaymentApplication) -
     return {"invoices_closed": closed, "ap_invoices_settled": settled}
 
 
+async def _refuse_second_payment(db: AsyncSession, column: str, doc_id: uuid.UUID,
+                                 doc_number: str | None) -> None:
+    """A document that already has a completed payment is never paid again.
+
+    The status check alone is not enough: a status edited back to "approved"
+    (Data Maintenance) let a paid PA be paid a second time — PA-20260930-0001
+    on the test site, 116.24 twice. A reversed payment is not "completed", so
+    a genuine re-payment after a reversal still goes through."""
+    existing = (await db.execute(
+        select(PaymentRecord.payment_date).where(
+            getattr(PaymentRecord, column) == doc_id,
+            PaymentRecord.status == "completed",
+        ).limit(1)
+    )).scalar_one_or_none()
+    if existing is not None:
+        raise ValueError(
+            f"{doc_number or doc_id} was already paid on {existing} — refusing to pay it twice")
+
+
 async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
                   bearer_token: str | None = None,
                   batch_id: uuid.UUID | None = None) -> PaymentExecuteResponse:
@@ -423,14 +440,20 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
     await _check_period_open(db, pay_date)
 
     if req.doc_kind in ("pa", "pa_dir"):
+        # Row lock: two batches holding the same PA (allowed while they are
+        # drafts, ISS-0163) or a double-clicked Execute must not both read
+        # "approved" and both pay.
         pa = (await db.execute(
             select(PaymentApplication).where(PaymentApplication.id == req.doc_id)
+            .with_for_update()
         )).scalar_one_or_none()
         if pa is None:
             raise LookupError("Payment application not found")
-        await _check_self_payment(db, recorded_by, pa.created_by, "PA creator")
+        await _check_self_payment(db, recorded_by, pa.created_by,
+                                  "You created this PA — another payment officer must pay it.")
         if pa.status != "approved":
             raise ValueError(f"Cannot pay PA in status '{pa.status}'")
+        await _refuse_second_payment(db, "pa_id", pa.id, pa.pa_number)
         await _check_invoice_link(db, pa)
         # actual kind derives from the document, not the client
         doc_kind = "pa_dir" if pa.is_direct else "pa"
@@ -542,15 +565,17 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
         raise ValueError("Vendor credits do not apply to expense claims")
 
     claim = (await db.execute(
-        select(ExpenseClaim).where(ExpenseClaim.id == req.doc_id)
+        select(ExpenseClaim).where(ExpenseClaim.id == req.doc_id).with_for_update()
     )).scalar_one_or_none()
     if claim is None:
         raise LookupError("Expense claim not found")
-    await _check_self_payment(db, recorded_by, claim.employee_id, "claimant")
+    await _check_self_payment(db, recorded_by, claim.employee_id,
+                              "This is your own expense claim — another payment officer must pay it.")
     if claim.claim_type in NON_PAYABLE_CLAIM_TYPES:
         raise ValueError("Travel Applications are not payable")
     if claim.status != "approved":
         raise ValueError(f"Cannot pay claim in status '{claim.status}'")
+    await _refuse_second_payment(db, "doc_id", claim.id, claim.claim_number)
     claim.status = "paid"
     claim.paid_at = datetime.now(timezone.utc)
     await _complete_open_tasks(db, [claim.claim_type.lower()], claim.id)

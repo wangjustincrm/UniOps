@@ -17,7 +17,7 @@ from reportlab.platypus import (
 
 from app.models.gr import GoodsReceipt
 from app.services.pdf_template import (
-    build_logo, footer_note_element, get_tmpl, header_note_element, qty_text,
+    build_logo, esc, footer_note_element, get_tmpl, header_note_element, qty_text,
     terms_element, unit_price_text,
 )
 
@@ -29,6 +29,19 @@ _DARK = colors.HexColor("#1A1A1A")
 
 def _s(name: str, **kw) -> ParagraphStyle:
     return ParagraphStyle(name, **kw)
+
+
+# The GR's status as the GR pages label it (epms GrDetailPage GR_STATUS_CONFIG).
+# The footer printed "Confirmed" whatever the status was (ISS-0184).
+STATUS_LABELS = {
+    "pending_ack": "Pending Acknowledgement",
+    "collection_pending": "Collection Pending",
+    "collected": "Collected",
+    "confirmed": "Confirmed",
+    "discrepancy": "Discrepancy",
+    "rejected": "Rejected",
+    "cancelled": "Cancelled",
+}
 
 
 def generate_gr_pdf(
@@ -73,7 +86,7 @@ def generate_gr_pdf(
 
     # ── Header ───────────────────────────────────────────────────────────────
     logo = build_logo(logo_data_url) if tmpl.get("show_logo", True) else None
-    left_col = [logo, Spacer(1, 1 * mm), Paragraph(company_name, co_style), Paragraph("Goods Receipt", sub_style)] if logo else [Paragraph(company_name, co_style), Paragraph("Goods Receipt", sub_style)]
+    left_col = [logo, Spacer(1, 1 * mm), Paragraph(esc(company_name), co_style), Paragraph("Goods Receipt", sub_style)] if logo else [Paragraph(esc(company_name), co_style), Paragraph("Goods Receipt", sub_style)]
     header = Table(
         [[left_col, [Paragraph(gr.number, num_style), Paragraph("GOODS RECEIPT", tag_style)]]],
         colWidths=[W * 0.6, W * 0.4],
@@ -87,7 +100,7 @@ def generate_gr_pdf(
 
     # ── Meta grid ────────────────────────────────────────────────────────────
     def _cell(lbl: str, val: str | None) -> list:
-        return [Paragraph(lbl, lbl_style), Paragraph(val or "—", val_style)]
+        return [Paragraph(lbl, lbl_style), Paragraph(esc(val) or "—", val_style)]
 
     received_str = gr.received_at.strftime("%Y-%m-%d") if gr.received_at else "—"
     acknowledged_str = gr.acknowledged_at.strftime("%Y-%m-%d") if gr.acknowledged_at else "—"
@@ -135,18 +148,18 @@ def generate_gr_pdf(
 
     rows: list = [[Paragraph(h, th_style) for h in col_headers]]
     for i, item in enumerate(gr.line_items, 1):
-        row: list = [Paragraph(str(i), td_style), Paragraph(item.description, td_style)]
+        row: list = [Paragraph(str(i), td_style), Paragraph(esc(item.description), td_style)]
         if has_material:
-            row.append(Paragraph(item.material_id or "", td_style))
+            row.append(Paragraph(esc(item.material_id), td_style))
         row += [
             Paragraph(qty_text(item.qty_ordered), td_style),
             Paragraph(qty_text(item.qty_received), td_style),
-            Paragraph(item.unit, td_style),
+            Paragraph(esc(item.unit), td_style),
             Paragraph(unit_price_text(item.unit_price), td_style),
             Paragraph(f"{item.line_total:,.2f}", td_style),
         ]
         if has_discrepancy:
-            row.append(Paragraph(item.condition.capitalize(), td_style))
+            row.append(Paragraph(esc(item.condition.capitalize()), td_style))
         rows.append(row)
 
     n_extra = (1 if has_material else 0) + (1 if has_discrepancy else 0)
@@ -194,7 +207,7 @@ def generate_gr_pdf(
     if gr.notes:
         elements.append(Spacer(1, 5 * mm))
         elements.append(Paragraph("Notes", sec_style))
-        elements.append(Paragraph(gr.notes, val_style))
+        elements.append(Paragraph(esc(gr.notes), val_style))
 
     # ── Created / Received / Acknowledged / Collected by ─────────────────────
     if created_by_name or received_name or acknowledged_name or collected_name:
@@ -220,7 +233,7 @@ def generate_gr_pdf(
     elements.append(Spacer(1, 8 * mm))
     elements.append(HRFlowable(width="100%", thickness=0.5, color=_GRAY))
     elements.append(Paragraph(
-        f"Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} · Status: Confirmed · {gr.number}",
+        f"Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} · Status: {esc(STATUS_LABELS.get(gr.status, gr.status or '—'))} · {gr.number}",
         footer_style,
     ))
     if tmpl.get("show_terms") and tmpl.get("terms_text"):

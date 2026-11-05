@@ -108,6 +108,104 @@ def _render_task_body(tpl: dict | None, task: Task, variables: dict[str, Any]) -
     return _render(body, variables, escape=True)
 
 
+# approval-api writes every approval task's description as
+# "Step {n}/{total}: {label} {noun} required." (engine._create_approve_task);
+# the over-budget pre-approval steps replace it with the justification.
+_STEP_RE = re.compile(r"^Step (\d+)/(\d+): (.+) \S+ required\.$")
+_CONDITION_LABELS = {"good": "Good", "discrepancy": "Discrepancy", "damaged": "Damaged"}
+
+
+def _step_label(description: str | None) -> str:
+    m = _STEP_RE.match((description or "").strip())
+    if m:
+        return f"{m.group(3)} (step {m.group(1)} of {m.group(2)})"
+    if (description or "").lstrip("⚠️ ").startswith("OVER-BUDGET"):
+        return "Over-budget pre-approval"
+    return "—"
+
+
+def _qty(value) -> str:
+    """1.0000 → 1, 2.5000 → 2.5 (NUMERIC(15,4) quantities)."""
+    try:
+        return f"{value.normalize():f}"
+    except AttributeError:
+        return str(value)
+
+
+async def _document_vars(db: AsyncSession, task: Task) -> dict[str, Any]:
+    """Template variables read from the task's document at send time.
+
+    Tasks are written by approval-api (and others) with no room for these
+    facts, so the templates' {comment} etc. used to go out as literal braces
+    (ISS-0145) and the PR / GR emails lacked what PRD 3.9.2 and GR-N-001 list
+    (ISS-0140). Reading them here covers every path into the dispatcher —
+    the outbox, Send reminder, re-notification — alike. Call-site extra_vars
+    still win. Never raises: a missing fact must not stop the email.
+    """
+    out: dict[str, Any] = {}
+    try:
+        # Savepoint: a failed lookup here must not abort the caller's
+        # transaction (the task / outbox writes around the send).
+        async with db.begin_nested():
+            if (task.type or "").startswith("revise"):
+                # Returned for revision: the engine records the return as an
+                # approval event in the same transaction that creates this task.
+                from app.models.approval import ApprovalEvent
+                row = (await db.execute(
+                    select(ApprovalEvent.comment, User.full_name)
+                    .outerjoin(User, User.id == ApprovalEvent.actor_id)
+                    .where(ApprovalEvent.document_type == task.document_type,
+                           ApprovalEvent.document_id == task.document_id,
+                           ApprovalEvent.action == "return")
+                    .order_by(ApprovalEvent.created_at.desc())
+                    .limit(1)
+                )).first()
+                out["comment"] = ((row.comment or "").strip() if row else "") or "—"
+                out["returned_by"] = (row.full_name if row else None) or "—"
+
+            dt = (task.document_type or "").lower()
+            if dt == "pr":
+                # PRD 3.9.2: PR emails carry the title, requester and currency.
+                from app.models.pr import PurchaseRequest
+                row = (await db.execute(
+                    select(PurchaseRequest.title, PurchaseRequest.currency, User.full_name)
+                    .outerjoin(User, User.id == PurchaseRequest.created_by)
+                    .where(PurchaseRequest.id == task.document_id)
+                )).first()
+                if row:
+                    out.update(pr_title=row.title, currency=row.currency or "CAD",
+                               requester_name=row.full_name or "—")
+                if (task.type or "").startswith("approve"):
+                    out["step_label"] = _step_label(task.description)
+            elif dt == "gr":
+                # GR-N-001: PO number, delivery date, received items with
+                # quantity and condition; 3.9.2: storage location for collection.
+                from app.core.delegation import PLANT_TIMEZONE
+                from app.models.gr import GoodsReceipt
+                from zoneinfo import ZoneInfo
+                gr = (await db.execute(
+                    select(GoodsReceipt).where(GoodsReceipt.id == task.document_id)
+                )).scalar_one_or_none()
+                if gr is not None:
+                    out["po_number"] = gr.po_number
+                    out["currency"] = gr.currency or "CAD"
+                    out["delivery_date"] = (
+                        gr.received_at.astimezone(ZoneInfo(PLANT_TIMEZONE)).date().isoformat()
+                        if gr.received_at else "—")
+                    # Same fallback the collect_goods task description uses.
+                    out["storage_location"] = gr.storage_location or "Warehouse"
+                    # Plain text, one line per item: values are escaped, and
+                    # _build_email_html turns the newlines into <br>.
+                    out["received_items"] = "\n".join(
+                        f"• {li.description} — {_qty(li.qty_received)} {li.unit} "
+                        f"({_CONDITION_LABELS.get(li.condition, li.condition)})"
+                        for li in gr.line_items
+                    ) or "—"
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Task %s: document facts for the email unavailable: %s", task.id, exc)
+    return out
+
+
 def _build_email_html(body_text: str) -> str:
     """Wrap plain-text/simple-HTML body in a basic styled container."""
     return f"""
@@ -374,6 +472,7 @@ async def _dispatch(
         "amount": str(task.amount) if task.amount else "",
         "task_title": task.title,
         "task_description": task.description or "",
+        **await _document_vars(db, task),
         **extra_vars,
     }
 
@@ -611,6 +710,66 @@ async def send_signoff_complete(po_id, db: AsyncSession | None = None) -> None:
         await send_email(recipient.email, subject, _build_email_html(body), **_smtp_kwargs(cfg))
     except Exception as exc:  # noqa: BLE001
         logger.error("send_signoff_complete failed for PO %s: %s", po_id, exc)
+
+
+async def send_pa_approved(pa_id, db: AsyncSession | None = None) -> None:
+    """Tell the PA's requester it has been approved (final step) — ISS-0137 /
+    PA-007, when Portal → Notification Settings → "PA Approved — Notify
+    Requester" is on (off by default).
+
+    An email and not a Task: the requester has nothing to do next (payment is
+    the Payment Officer's). Never raises — a failed notification must not undo
+    the approval that triggered it.
+    """
+    try:
+        if db is None:
+            from app.db.session import AsyncSessionLocal
+            async with AsyncSessionLocal() as session:
+                await send_pa_approved(pa_id, db=session)
+            return
+
+        from app.crud.config import get_or_create as get_config
+        from app.models.pa import PaymentApplication
+        from app.services.email import send_email
+
+        cfg = await get_config(db)
+        settings_map = cfg.notification_settings or {}
+        if not settings_map.get("pa_approved_notify_requester", True):
+            return
+        if settings_map.get("default_channel") == "none":
+            return
+        pa = (await db.execute(
+            select(PaymentApplication).where(PaymentApplication.id == pa_id)
+        )).scalar_one_or_none()
+        if pa is None or pa.status != "approved" or pa.created_by is None:
+            return
+        recipient = (await db.execute(
+            select(User).where(User.id == pa.created_by)
+        )).scalar_one_or_none()
+        if recipient is None or not recipient.email or not recipient.is_active:
+            return
+        # Respect the recipient's own delivery preference, same as _dispatch.
+        if recipient.notification_channel in ("none", "teams_only"):
+            return
+
+        tpl = (cfg.email_templates or {}).get("pa_approved") or {}
+        variables = {
+            "company_name": cfg.name,
+            "recipient_name": recipient.full_name,
+            "pa_number": pa.pa_number,
+            "link": _task_link("pa", pa.id),
+        }
+        subject = _render(tpl.get("subject", "Your PA {pa_number} has been approved"), variables, escape=False)
+        body = _render(tpl.get("body", "Payment Application {pa_number} has been approved."), variables, escape=True)
+        await send_email(recipient.email, subject, _build_email_html(body), **_smtp_kwargs(cfg))
+    except Exception as exc:  # noqa: BLE001
+        logger.error("send_pa_approved failed for PA %s: %s", pa_id, exc)
+
+
+def fire_and_forget_pa_approved(pa_id) -> None:
+    """Schedule the PA-approved email to the requester (own DB session)."""
+    from app.core.background import spawn
+    spawn(send_pa_approved(pa_id), name=f"pa_approved:{pa_id}")
 
 
 def fire_and_forget_signoff_complete(po_id) -> None:

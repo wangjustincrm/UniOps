@@ -59,6 +59,12 @@ interface CompanyConfig {
     daily_followup_enabled?: boolean
     service_gr_due_enabled?: boolean
     service_gr_due_dry_run?: boolean
+    agreement_overdue_enabled?: boolean
+    gr_ack_due_enabled?: boolean
+    gr_ack_due_dry_run?: boolean
+    budget_alert_enabled?: boolean
+    budget_alert_dry_run?: boolean
+    pa_approved_notify_requester?: boolean
     role_shared_mailboxes?: Record<string, string>
     [key: string]: unknown
   }
@@ -928,6 +934,12 @@ function NotificationSettings() {
   const [webhook, setWebhook] = useState('')
   const [followup, setFollowup] = useState('')
   const [serviceGrDue, setServiceGrDue] = useState<boolean | null>(null)
+  const [agreementOverdue, setAgreementOverdue] = useState<boolean | null>(null)
+  const [grAckDue, setGrAckDue] = useState<boolean | null>(null)
+  const [grAckDryRun, setGrAckDryRun] = useState<boolean | null>(null)
+  const [budgetAlert, setBudgetAlert] = useState<boolean | null>(null)
+  const [budgetAlertDryRun, setBudgetAlertDryRun] = useState<boolean | null>(null)
+  const [paApprovedNotify, setPaApprovedNotify] = useState<boolean | null>(null)
   const [serviceGrDryRun, setServiceGrDryRun] = useState<boolean | null>(null)
   const [mailboxes, setMailboxes] = useState<Record<string, string> | null>(null)
   const [mailboxError, setMailboxError] = useState<string | null>(null)
@@ -947,6 +959,16 @@ function NotificationSettings() {
   // switched on, and once on it stays in dry-run until explicitly released.
   const serviceGrDueVal = serviceGrDue ?? ns?.service_gr_due_enabled ?? false
   const serviceGrDryRunVal = serviceGrDryRun ?? ns?.service_gr_due_dry_run ?? true
+  // ISS-0137. Fallbacks mirror crud/config.py: the overdue chase is on unless
+  // switched off; the PA-approved email is off unless switched on.
+  const agreementOverdueVal = agreementOverdue ?? ns?.agreement_overdue_enabled ?? true
+  // ISS-0146 ①: off, and dry run first — mirrors crud/config.py.
+  const grAckDueVal = grAckDue ?? ns?.gr_ack_due_enabled ?? false
+  const grAckDryRunVal = grAckDryRun ?? ns?.gr_ack_due_dry_run ?? true
+  // ISS-0146 ③: off, and dry run first — mirrors crud/config.py.
+  const budgetAlertVal = budgetAlert ?? ns?.budget_alert_enabled ?? false
+  const budgetAlertDryRunVal = budgetAlertDryRun ?? ns?.budget_alert_dry_run ?? true
+  const paApprovedNotifyVal = paApprovedNotify ?? ns?.pa_approved_notify_requester ?? true
   const mailboxesVal = mailboxes ?? ns?.role_shared_mailboxes ?? {}
 
   const setMailboxFor = (code: string, value: string) => {
@@ -992,6 +1014,12 @@ function NotificationSettings() {
           followup_time: followupVal,
           service_gr_due_enabled: serviceGrDueVal,
           service_gr_due_dry_run: serviceGrDryRunVal,
+          agreement_overdue_enabled: agreementOverdueVal,
+          gr_ack_due_enabled: grAckDueVal,
+          gr_ack_due_dry_run: grAckDryRunVal,
+          budget_alert_enabled: budgetAlertVal,
+          budget_alert_dry_run: budgetAlertDryRunVal,
+          pa_approved_notify_requester: paApprovedNotifyVal,
           role_shared_mailboxes: mailboxesVal,
         },
         smtp_host: smtpVal.host || null,
@@ -1131,6 +1159,50 @@ function NotificationSettings() {
           </div>
         </Field>
       )}
+
+      <Field label="GR Acknowledgement Reminder" hint="When on, a goods receipt still waiting for acknowledgement past the GR Notification SLA (EPMS → Admin) is reminded daily to the PR owner, and escalated once to their Department Manager. Runs at the digest time above. Off by default.">
+        <div className="flex items-center gap-2 pt-1.5">
+          <Toggle checked={grAckDueVal} onChange={(v) => setGrAckDue(v)} />
+          <span className="text-xs text-neutral-500">{grAckDueVal ? 'On — waiting receipts are chased' : 'Off — no acknowledgement reminders'}</span>
+        </div>
+      </Field>
+      {grAckDueVal && (
+        <Field label="GR Acknowledgement Reminder — Dry Run" hint="Leave on for the first days: administrators get the list of receipts it would chase, and nobody is reminded. Turn off once the list looks right.">
+          <div className="flex items-center gap-2 pt-1.5">
+            <Toggle checked={grAckDryRunVal} onChange={(v) => setGrAckDryRun(v)} />
+            <span className="text-xs text-neutral-500">{grAckDryRunVal ? 'Dry run — admins get a preview only' : 'Live — owners and their managers are notified'}</span>
+          </div>
+        </Field>
+      )}
+
+      <Field label="Budget Threshold Alerts" hint="When on, every budget line (cost center × account) is checked against Finance → Budget Config thresholds: reaching the warning level sends the Department Manager a daily digest (at the digest time); reaching the over-budget level is reported within the hour by email to the Department Manager, Finance Manager and the department's GM/OPM, plus a Teams card (Teams Webhook URL above) when one of them chose Teams. Once per crossing. Off by default.">
+        <div className="flex items-center gap-2 pt-1.5">
+          <Toggle checked={budgetAlertVal} onChange={(v) => setBudgetAlert(v)} />
+          <span className="text-xs text-neutral-500">{budgetAlertVal ? 'On — budget lines are checked daily' : 'Off — no budget alert emails'}</span>
+        </div>
+      </Field>
+      {budgetAlertVal && (
+        <Field label="Budget Threshold Alerts — Dry Run" hint="Leave on first: administrators get the list of lines that would be reported, nobody else is emailed and nothing is marked as sent. Turn off once the list looks right.">
+          <div className="flex items-center gap-2 pt-1.5">
+            <Toggle checked={budgetAlertDryRunVal} onChange={(v) => setBudgetAlertDryRun(v)} />
+            <span className="text-xs text-neutral-500">{budgetAlertDryRunVal ? 'Dry run — admins get a preview only' : 'Live — managers are emailed'}</span>
+          </div>
+        </Field>
+      )}
+
+      <Field label="Agreement Overdue Reminder" hint="When a purchase agreement's billing period is overdue with no invoice, the agreement owner gets a Chase Invoice task and an email. Turning this off stops both the email and the task (the period is still marked overdue on the agreement). On by default.">
+        <div className="flex items-center gap-2 pt-1.5">
+          <Toggle checked={agreementOverdueVal} onChange={(v) => setAgreementOverdue(v)} />
+          <span className="text-xs text-neutral-500">{agreementOverdueVal ? 'On — overdue agreement periods are chased' : 'Off — no overdue reminders or chase tasks'}</span>
+        </div>
+      </Field>
+
+      <Field label="PA Approved — Notify Requester" hint="When on, the person who raised a Payment Application gets an email once it is fully approved. Information only — no task. On by default (PRD PA-007); switch off to stop these emails.">
+        <div className="flex items-center gap-2 pt-1.5">
+          <Toggle checked={paApprovedNotifyVal} onChange={(v) => setPaApprovedNotify(v)} />
+          <span className="text-xs text-neutral-500">{paApprovedNotifyVal ? 'On — requesters are emailed on final approval' : 'Off — requesters are not emailed'}</span>
+        </div>
+      </Field>
 
       {/* Test notification */}
       <div className="flex items-center gap-2">

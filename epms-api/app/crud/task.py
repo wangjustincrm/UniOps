@@ -11,7 +11,7 @@ from app.models.agreement import PurchaseAgreement
 from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
 from app.models.invoice_allocation import InvoicePoAllocation
-from app.crud.pa_links import po_ids_with_pa
+from app.crud.pa_links import pa_is_live, po_ids_with_pa
 from app.models.pa import PaymentApplication
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
@@ -55,9 +55,11 @@ async def _complete_stale_create_pa_tasks(db: AsyncSession) -> None:
       - document_type="po" → PA exists with po_id == document_id
       - document_type="gr" → the GR's PO has a PA
     Needed both as a safety net and to clear tasks created before PA creation
-    started completing them.
+    started completing them. Only a live PA counts: a cancelled / rejected one
+    covers nothing, or the task its cancellation reopened would be closed
+    again on the next inbox load (ISS-0172).
     """
-    pos_with_pa = po_ids_with_pa()
+    pos_with_pa = po_ids_with_pa(pa_is_live())
     grs_whose_po_has_pa = (
         select(GoodsReceipt.id).where(GoodsReceipt.po_id.in_(pos_with_pa))
     )
@@ -95,8 +97,9 @@ async def _complete_orphan_create_pa_tasks(
     no invoice, so they are left to the PA-based completion path. A "matched"
     invoice counts whether it links via header po_id OR a line allocation — the
     same reference invoice_crud.list treats as "this PO has an invoice".
+    A cancelled / rejected PA is no PA here either (ISS-0172).
     """
-    pos_with_pa = po_ids_with_pa()
+    pos_with_pa = po_ids_with_pa(pa_is_live())
     pos_matched_header = select(Invoice.po_id).where(
         Invoice.status == "matched", Invoice.po_id.is_not(None)
     )
@@ -226,7 +229,7 @@ TASK_LIVENESS: dict[str, _Liveness] = {
         "crud.resolve_exception 对其它状态直接 raise。"),
 
     # ── Goods receipt ────────────────────────────────────────────────────────
-    # crud.gr.action() 每次跑都关掉该 GR 上所有开放任务,所以这三类只在"状态变了
+    # crud.gr.action() 每次跑都关掉该 GR 上所有开放任务(gr_damage_report 除外,见下表),所以这三类只在"状态变了
     # 却没走 action()"时漂 —— Data Maintenance 的 status 编辑正是那道门。生产
     # GR-20260903-0015 被那样改成 confirmed,collect_goods 挂了 6 天,至今带着
     # action() 产生不出来的指纹:confirmed 而 collected_at 为 NULL。
@@ -297,7 +300,8 @@ _TASK_DEDICATED_HANDLING: dict[str, str] = {
 
 # 本服务兜不住的,连同原因。
 _TASK_NO_STATUS_INVARIANT: dict[str, str] = {
-    "gr_damage_report": "「找人看一眼」的提示,不是收货状态机里的一步 —— 没有能判死的状态。",
+    "gr_damage_report": "不是收货状态机里的一步,GR 状态判不了它的死活:由 crud.gr._resolve_damage"
+                        "(采购登记退货/贷项)或 GR 取消时关(ISS-0099),Collect 不再关它。",
     "confirm_settlement": "预付冲销确认,由 crud.pa 的结算流程关。",
     "sign_po": "posign 走自己的 step_attr,PO 的 status 不是它的闸门。",
     "revise_po_signoff": "同 sign_po。",

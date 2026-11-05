@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useSearchParams, Link } from 'react-router-dom'
+import { useSearchParams, useNavigate, Link } from 'react-router-dom'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, Upload, X, Calendar, Search, Receipt } from 'lucide-react'
@@ -9,16 +9,19 @@ import { FormField } from '@/components/ui/form-field'
 import { PrLineItems, lineItemsTotal, validateLineItems } from '@/components/pr/PrLineItems'
 import { BudgetAccountSelect } from '@/components/budget/BudgetAccountSelect'
 import { useConfig } from '@/hooks/useConfig'
-import { formatAmount, cn } from '@/lib/utils'
+import { formatAmount, formatBytes, cn } from '@/lib/utils'
 import type { ProcurementType, PrLineItem, Currency } from '@/types'
-import { CURRENCIES } from '@/types'
+import { enabledCurrencyOptions } from '@/lib/currencies'
 import { useCreatePo } from '@/hooks/usePos'
 import { poService } from '@/services/po'
-import { usePr } from '@/hooks/usePrs'
+import { usePr, usePrs } from '@/hooks/usePrs'
 import { useVendors } from '@/hooks/useVendors'
 import type { ApiVendor } from '@/services/vendors'
 import { useTaxCodes } from '@/hooks/useTaxCodes'
 import { useAuthStore } from '@/stores/auth.store'
+import { PaymentTermsField } from '@/components/po/PaymentTermsField'
+import { formatPaymentTerms } from '@/lib/paymentTerms'
+import { ATTACHMENT_RULE, partitionUploads } from '@/lib/uploadLimits'
 
 // PO lines can originate from a PR line — carry that source id so the backend
 // can persist pr_line_id and keep the PO↔PR line link.
@@ -70,10 +73,24 @@ export default function PoCreatePage() {
   const createPo = useCreatePo()
   const { data: config } = useConfig()
   const { data: linkedPrData } = usePr(prId ?? '')
+  // Linked PR selector (PRD §3.12.1; ISS-0087): the approved PRs no PO has been
+  // raised from yet — one PR, one PO — exactly where a PR's Create PO button
+  // is shown. Picking one opens this page as /po/new?prId=…, the same path as
+  // Create PO, so it is pre-filled by the same code (PO-002); "None" opens a
+  // blank New PO.
+  const navigate = useNavigate()
+  const { data: linkablePrsData } = usePrs({ status: 'approved', has_po: false })
+  const linkablePrs = linkablePrsData?.items ?? []
 
   // Form state
   const [title, setTitle] = useState('')
   const [selectedVendor, setSelectedVendor] = useState<ApiVendor | null>(null)
+  // PRD §3.12.1: payment terms default from the vendor and can be changed
+  // (ISS-0087). Re-defaulted each time a different vendor is picked.
+  const [paymentTerms, setPaymentTerms] = useState('')
+  useEffect(() => {
+    if (selectedVendor?.payment_terms) setPaymentTerms(selectedVendor.payment_terms)
+  }, [selectedVendor?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const [vendorQuery, setVendorQuery] = useState('')
   const [vendorOpen, setVendorOpen] = useState(false)
 
@@ -96,6 +113,7 @@ export default function PoCreatePage() {
   const [lineItems, setLineItems] = useState<PoDraftLine[]>([defaultLine()])
   const [lineErrors, setLineErrors] = useState<Record<string, { description?: string; qty?: string; unitPrice?: string }>>({})
   const [attachments, setAttachments] = useState<File[]>([])
+  const [attachmentError, setAttachmentError] = useState<string | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
 
@@ -163,6 +181,7 @@ export default function PoCreatePage() {
     const e: Record<string, string> = {}
     if (!title.trim()) e.title = 'Title is required'
     if (!selectedVendor) e.vendor = 'Please select a vendor'
+    if (selectedVendor && !paymentTerms) e.paymentTerms = 'Choose the payment terms'
     if (status === 'submitted' && !expectedDelivery) e.expectedDelivery = 'Expected delivery date is required'
     setErrors(e)
     return Object.keys(e).length === 0
@@ -184,6 +203,7 @@ export default function PoCreatePage() {
         title,
         type: procurementType ?? 2,
         vendor_id: selectedVendor!.id,
+        payment_terms: paymentTerms || undefined,
         currency,
         tax_rate: effectiveTaxRate,
         tax_code: effectiveTaxRate > 0 ? taxCode ?? undefined : null,
@@ -220,8 +240,11 @@ export default function PoCreatePage() {
   }
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? [])
-    setAttachments((prev) => [...prev, ...files])
+    // Checked when picked: the document is saved before its files are sent,
+    // so a refused file would otherwise be found missing only afterwards.
+    const { ok, problems } = partitionUploads(Array.from(e.target.files ?? []), ATTACHMENT_RULE)
+    setAttachmentError(problems.length ? problems.join(' ') : null)
+    setAttachments((prev) => [...prev, ...ok])
     e.target.value = ''
   }
 
@@ -256,6 +279,25 @@ export default function PoCreatePage() {
           {/* Basic Details */}
           <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
             <h2 className="text-base font-semibold text-neutral-900">Order Details</h2>
+
+            <FormField label="Linked PR" htmlFor="linkedPr" hint="Optional. Pre-fills the vendor, lines, budget code and other fields from the PR.">
+              <select
+                id="linkedPr"
+                value={prId ?? ''}
+                onChange={(e) => navigate(e.target.value ? `/po/new?prId=${e.target.value}` : '/po/new')}
+                className="h-10 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+              >
+                <option value="">None</option>
+                {prId && linkedPrData && !linkablePrs.some((p) => p.id === prId) && (
+                  <option value={prId}>{linkedPrData.number} — {linkedPrData.title}</option>
+                )}
+                {linkablePrs.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.number} — {p.title}{p.vendor_name ? ` (${p.vendor_name})` : ''}
+                  </option>
+                ))}
+              </select>
+            </FormField>
 
             {/* Title */}
             <FormField label="PO Title / Description" required htmlFor="title" error={errors.title}>
@@ -318,7 +360,9 @@ export default function PoCreatePage() {
                     </>
                   )}
                 </div>
-                {selectedVendor && <p className="text-xs text-success-600">✓ {selectedVendor.name} ({selectedVendor.code})</p>}
+                {/* A vendor prefilled from the PR may not be in the loaded page of the
+                    list, so its code is unknown — no empty "()" (ISS-0183). */}
+                {selectedVendor && <p className="text-xs text-success-600">✓ {selectedVendor.name}{selectedVendor.code ? ` (${selectedVendor.code})` : ''}</p>}
                 {errors.vendor && <p className="text-xs text-danger-600">{errors.vendor}</p>}
               </div>
 
@@ -369,6 +413,17 @@ export default function PoCreatePage() {
               </div>
             </div>
 
+            {/* Payment terms — PRD §3.12.1 (ISS-0087) */}
+            <FormField label="Payment Terms" htmlFor="paymentTerms">
+              <PaymentTermsField
+                value={paymentTerms}
+                onChange={(t) => { setPaymentTerms(t); setErrors((p) => ({ ...p, paymentTerms: '' })) }}
+                invalid={!!errors.paymentTerms}
+                hint={errors.paymentTerms || (selectedVendor?.payment_terms
+                  ? `Vendor's terms: ${formatPaymentTerms(selectedVendor.payment_terms)}` : null)}
+              />
+            </FormField>
+
             {/* Delivery Address */}
             <FormField
               label="Delivery Address / Location"
@@ -415,9 +470,7 @@ export default function PoCreatePage() {
                   }}
                   className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 >
-                  {[
-                    ...CURRENCIES.filter((c) => (config?.enabled_currencies ?? ['CAD','USD','EUR','RMB']).includes(c.value)),
-                  ].map((c) => (
+                  {enabledCurrencyOptions(config, currency).map((c) => (
                     <option key={c.value} value={c.value}>{c.value} — {c.label}</option>
                   ))}
                 </select>
@@ -503,9 +556,10 @@ export default function PoCreatePage() {
               <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-neutral-300 bg-neutral-50 py-6 text-center transition-colors hover:border-primary-400 hover:bg-primary-50">
                 <Upload className="h-6 w-6 text-neutral-400" />
                 <span className="text-sm text-neutral-500">Drag &amp; drop or click to upload</span>
-                <span className="text-xs text-neutral-400">Any format · Max 25 MB per file</span>
-                <input type="file" multiple className="hidden" onChange={handleFileInput} />
+                <span className="text-xs text-neutral-400">{ATTACHMENT_RULE.hint}</span>
+                <input type="file" multiple accept={ATTACHMENT_RULE.accept} className="hidden" onChange={handleFileInput} />
               </label>
+              {attachmentError && <p role="alert" className="text-xs text-danger-600">{attachmentError}</p>}
               {attachments.length > 0 && (
                 <ul className="flex flex-col gap-1.5">
                   {attachments.map((f, i) => (
@@ -513,7 +567,7 @@ export default function PoCreatePage() {
                       <span className="flex items-center gap-2 text-neutral-700">
                         <Upload className="h-3.5 w-3.5 text-neutral-400" />
                         {f.name}
-                        <span className="text-neutral-400">({(f.size / 1024 / 1024).toFixed(1)} MB)</span>
+                        <span className="text-neutral-400">({formatBytes(f.size)})</span>
                       </span>
                       <button
                         type="button"

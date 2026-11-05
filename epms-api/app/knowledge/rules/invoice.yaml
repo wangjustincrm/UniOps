@@ -75,12 +75,16 @@ rules:
       the Match Courier Invoices permission, or by the person AP assigns it to
       from the Unmatched Queue (like any invoice — they get a "Match Invoice"
       task and need no Freight permission); other invoice readers see it
-      read-only. Only the freight manager raises the Freight PA.
-    enforced_in: "epms-api app/api/v1/freight.py (create / match / finalize on epms.freight.manage, read-only GET for invoice readers); app/api/v1/invoices.py _refuse_freight; PRD EPMS §3.21"
+      read-only. Only the freight manager raises the Freight PA. Like any
+      invoice it is mirrored to Finance → Accounts Payable: draft until it is
+      finalised, posted once finalised (back to draft if reopened), and paid
+      once its Freight PA is paid.
+    enforced_in: "epms-api app/api/v1/freight.py (create / match / finalize on epms.freight.manage, read-only GET for invoice readers; finalize / reopen push the AP row via services/finance_sync.py); app/api/v1/invoices.py _refuse_freight; finance-api crud/payment_execute.py apply_pa_invoice_writeback; PRD EPMS §3.21, INV-007, PAY-005"
     provenance: pinned
     test:
       - "tests/test_freight.py::test_generic_invoice_endpoints_refuse_freight_invoices"
       - "tests/test_freight.py::test_ups_sample_auto_matches"
+      - "tests/test_freight.py::test_finance_ap_row_follows_finalize_and_reopen"
   - id: invoice_internal_number
     asked_as:
       - how are invoice numbers generated
@@ -104,7 +108,8 @@ rules:
       Finance Accounts Payable in the same step: one never posted is removed,
       one posted at match is voided and its accrual reversed. If Finance cannot
       confirm, nothing is deleted and the message names the invoice; try again
-      later. An invoice already in payment cannot be deleted at all.
+      later. An invoice already in payment, or on a payment application that
+      is not cancelled or rejected, cannot be deleted at all.
     enforced_in: "epms-api app/services/finance_sync.py void_deleted_invoices + before_commit guard; api/v1/invoices.py, api/v1/freight.py, api/v1/admin.py delete endpoints; finance-api crud/ap_invoice.py void_for_deleted_source; PRD EPMS INV-DEL-001…003, FINANCE FIN-AP-03"
     provenance: pinned
     test:
@@ -239,7 +244,8 @@ rules:
       approved or paid), and while any payment application that is not
       cancelled still includes it — the message names that PA, which has to
       be cancelled first. An invoice matched to an agreement cannot be
-      unmatched from a PO. A reason is required.
+      unmatched from a PO. A reason is required, and it is kept in the
+      invoice's History.
     enforced_in: "epms-api app/crud/invoice.py gr_unlink_blocker / _invoice_referenced_by_active_pa; app/api/v1/invoices.py _guard_unmatch"
     provenance: pinned
     test:
@@ -247,17 +253,86 @@ rules:
       - "tests/test_invoice_unmatch.py::test_unmatch_refused_once_the_invoice_has_entered_payment"
       - "tests/test_invoice_unmatch.py::test_unmatch_po_refused_on_the_agreement_route"
       - "tests/test_invoice_unmatch.py::test_unmatch_requires_a_reason"
+  - id: invoice_history_keeps_every_step
+    asked_as:
+      - 发票的 History 记录哪些操作？
+      - who rejected this invoice match and why
+      - where can I see why an invoice was unmatched
+    answer: >
+      The invoice's History tab lists every step with who did it and when:
+      AP assigning the matching to someone (and that person declining it, with
+      their note), each match and what it was matched to, AP confirming or
+      rejecting a match sent for review (with the note), an exception being
+      accepted or a credit note requested (with the note), an edit that
+      changed the match result, and each Unmatch PO / Unmatch GR / removal from
+      the Direct PA route (with the reason). A later unmatch or re-match does
+      not remove earlier entries. Invoices matched before these steps were
+      recorded show only their upload and their current match.
+    enforced_in: "epms-api app/api/v1/invoices.py _audit_invoice / _audit_unmatch writers, GET /invoices/{id}/history; epms/src/pages/invoices/InvoiceDetailPage.tsx History tab"
+    provenance: pinned
+    test:
+      - "tests/test_invoice_history.py::test_history_keeps_assign_review_unmatch_and_rematch"
+      - "tests/test_invoice_history.py::test_history_records_decline_and_exception_resolution"
+  - id: invoice_file_types
+    asked_as:
+      - 发票可以上传什么格式的文件？
+      - can I upload a zip or Excel file as an invoice
+      - what file types does Upload Invoice accept
+    answer: >
+      Upload Invoice accepts PDF, JPG, JPEG and PNG files of at most 25 MB.
+      Any other file is refused before an invoice is created, with the reason
+      shown. Supporting documents on purchase requests, orders, goods receipts
+      and payment applications take PDF, images, Excel, Word, CSV, text and
+      saved emails (.msg / .eml), at most 25 MB per file.
+    enforced_in: "epms-api app/schemas/invoice.py InvoiceCreate._invoice_file_type; expense-api invoice_attachments MAX_FILE_BYTES; epms/src/lib/uploadLimits.ts; file-api ALLOWED_CONTENT_TYPES; epms-api *_attachments.py MAX_FILE_SIZE; PRD INV-001, §3.4.1"
+    provenance: pinned
+    test:
+      - "tests/test_invoice_upload_file_type.py::test_zip_invoice_is_refused_and_not_created"
+      - "tests/test_invoice_upload_file_type.py::test_inv001_types_and_manual_entry_are_accepted"
+      - "epms/src/lib/uploadLimits.test.ts"
   - id: one_invoice_one_pa
     also_in: [pa]
     asked_as:
       - 同一张发票能被两张 PA 付款吗？
       - can one invoice be paid by two PAs
     answer: >
-      No, in practice: the payment application form does not offer an
-      invoice that is already on another payment application that is not
-      cancelled or rejected, so each invoice is paid by one PA. This is the
-      form's rule — the server does not itself refuse it.
-    enforced_in: "epms/src/pages/pa/PaCreatePage.tsx (claimed invoices filtered); epms-api app/crud/po.py payable_invoice_po_ids; app/api/v1/pa.py create has no claim check"
+      No. An invoice that is already on another payment application that is
+      not cancelled or rejected cannot be put on a second one: the New PA and
+      Edit PA forms do not offer it (they say which PA holds it), and the
+      server refuses it when a PA is created, when its invoices are changed
+      and when it is submitted, on the PO and the agreement route alike. Once
+      that other PA is cancelled or rejected, the invoice is free again. The
+      one exception is a settlement or balance PA: it may take an invoice held
+      by a prepayment on the same PO, because it pays the rest of that invoice
+      and nets the prepayment off.
+    enforced_in: "epms-api app/api/v1/pa.py _assert_invoices_not_on_other_live_pa (create_pa, update_pa, pa_action submit); app/crud/pa.py create_direct and app/crud/freight.py for Direct / Freight PAs; epms/src/pages/pa/invoiceClaims.ts, used by PaCreatePage.tsx and PaEditPage.tsx (claimed invoices hidden)"
     provenance: pinned
     test:
-      - "tests/test_rule_registry.py::test_claimed_invoices_are_hidden_by_the_form_only"
+      - "tests/test_rule_registry.py::test_one_invoice_one_pa_is_refused_by_the_server"
+      - "tests/test_procurement_batch1.py::test_po_route_second_pa_on_same_invoice_refused"
+      - "tests/test_procurement_batch1.py::test_agreement_pa_edit_cannot_reclaim_invoice"
+      - "tests/test_pa.py::test_settlement_can_carry_the_invoice_its_prepayment_holds"
+      - "tests/test_pa.py::test_only_a_same_po_prepayment_may_share_with_a_settlement"
+  - id: invoice_on_a_pa_is_locked
+    also_in: [pa]
+    asked_as:
+      - 发票已经在 PA 上了还能改金额或删除吗？
+      - why can't I edit the amount of this invoice
+      - why can't I delete this invoice, it says a payment application pays it
+    answer: >
+      While an invoice is on a payment application that is not cancelled or
+      rejected, its pre-tax amount, tax, currency, line items and linked goods
+      receipts cannot be changed and it cannot be deleted — the PA was raised
+      for those figures and would otherwise pay amounts that no longer exist.
+      Its dates and notes stay editable, and saving the edit form unchanged
+      is not a change. To change it, first remove the
+      invoice from that PA (Edit the PA while it is a draft or returned) or
+      cancel the PA. A PA whose invoice has been deleted cannot be submitted.
+    enforced_in: "epms-api app/api/v1/invoices.py update_invoice (_invoice_money_fields_changed); app/crud/invoice.py delete; app/api/v1/pa.py pa_action submit"
+    provenance: pinned
+    test:
+      - "tests/test_procurement_batch1.py::test_invoice_on_live_pa_amounts_locked_dates_editable"
+      - "tests/test_procurement_batch1.py::test_invoice_on_live_pa_cannot_be_deleted"
+      - "tests/test_procurement_batch1.py::test_pa_whose_invoice_was_deleted_cannot_be_submitted"
+      - "tests/test_procurement_batch1.py::test_float_noise_in_a_resent_line_total_is_not_a_change"
+      - "tests/test_procurement_batch1.py::test_form_recomputing_an_ocr_line_keeps_the_stored_total"

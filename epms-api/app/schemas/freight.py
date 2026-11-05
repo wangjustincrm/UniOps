@@ -198,6 +198,9 @@ class FreightInvoiceResponse(BaseModel):
     # PA that currently holds this invoice (any status except cancelled).
     pa_id: uuid.UUID | None = None
     pa_number: str | None = None
+    # Its status, so the page can say what (if anything) would free the invoice
+    # — an approved PA can be neither cancelled nor returned (ISS-0183).
+    pa_status: str | None = None
     # Why finalize would be refused right now; empty when it can go.
     finalize_blockers: list[str] = []
     # The caller may match it: epms.freight.manage, or the person AP assigned

@@ -57,21 +57,29 @@ export default function QboMirrorPage() {
       <div className="space-y-6">
         <section className="space-y-3 rounded-lg border border-neutral-200 bg-white p-4">
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              className={primaryBtn}
-              disabled={!!running || !status?.configured}
-              onClick={() => trigger('incremental')}
-            >
-              <RefreshCw className="h-4 w-4" /> Incremental sync
-            </button>
-            <button
-              className={secondaryBtn}
-              disabled={!!running || !status?.configured}
-              onClick={() => setConfirming(true)}
-            >
-              Full reload…
-            </button>
-            {!status?.configured && (
+            {/* Sync and full reload are System Admin only (ISS-0164) — the
+                server refuses anyone else and reports it as can_sync. */}
+            {status?.can_sync ? (
+              <>
+                <button
+                  className={primaryBtn}
+                  disabled={!!running || !status?.configured}
+                  onClick={() => trigger('incremental')}
+                >
+                  <RefreshCw className="h-4 w-4" /> Incremental sync
+                </button>
+                <button
+                  className={secondaryBtn}
+                  disabled={!!running || !status?.configured}
+                  onClick={() => setConfirming(true)}
+                >
+                  Full reload…
+                </button>
+              </>
+            ) : status && (
+              <span className="text-sm text-neutral-500">Syncing with QuickBooks is limited to System Admin.</span>
+            )}
+            {status?.can_sync && !status?.configured && (
               <span className="text-sm text-red-600">QBO connection is not configured</span>
             )}
           </div>
@@ -154,6 +162,9 @@ function cell(c: string, v: unknown): string {
 }
 
 function QboTabs() {
+  // Fill Remittance Emails writes vendor master data: System Admin only, like
+  // the sync (ISS-0164). Same cached status query as the page header.
+  const canSync = useQuery({ queryKey: ['qbo-status'], queryFn: qboApi.status }).data?.can_sync ?? false
   const [tab, setTab] = useState(ENTITY_TABS[0].slug)
   const [q, setQ] = useState('')
   const [qInput, setQInput] = useState('')
@@ -230,7 +241,7 @@ function QboTabs() {
           {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
           Export CSV
         </button>
-        {tab === 'vendors' && <VendorEmailBackfill />}
+        {tab === 'vendors' && canSync && <VendorEmailBackfill />}
       </div>
 
       {exportError && (

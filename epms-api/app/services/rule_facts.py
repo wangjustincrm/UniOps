@@ -115,6 +115,78 @@ async def service_gr_reminders(db) -> dict:
             "time": (ns.get("followup_time") or "08:00")}
 
 
+async def notification_switches(db) -> dict:
+    """Portal → Notification Settings switches the Assistant states (ISS-0137).
+    Fallbacks are the consumers' own: agreement_overdue.run_agreement_overdue
+    reads True, notification.send_pa_approved reads True (PRD PA-007)."""
+    cfg = await _config(db)
+    ns = (cfg.notification_settings if cfg else None) or {}
+    pa_on = bool(ns.get("pa_approved_notify_requester", True))
+    overdue_on = bool(ns.get("agreement_overdue_enabled", True))
+    return {
+        "pa_approved": ("switched on, so the requester is emailed when the PA is "
+                        "fully approved" if pa_on else
+                        "switched off, so the requester is not emailed"),
+        "agreement_overdue": ("switched on" if overdue_on else
+                              "switched off, so no overdue email or chase task is "
+                              "raised (the period is still marked overdue)"),
+    }
+
+
+async def gr_ack_reminders(db) -> dict:
+    """GR acknowledgement reminder (ISS-0146 ①), read the way gr_ack_due reads it."""
+    from app.tasks import gr_ack_due as due
+
+    cfg = await _config(db)
+    sla = getattr(cfg, "gr_notification_sla", None) or {}
+    ns = getattr(cfg, "notification_settings", None) or {}
+    enabled = bool(ns.get("gr_ack_due_enabled", False))
+    dry_run = bool(ns.get("gr_ack_due_dry_run", True))
+    if not enabled:
+        state = "switched off, so no such reminders are being sent"
+    elif dry_run:
+        state = ("switched on in dry run: the list is emailed to the System Admins "
+                 "only, and nobody is reminded yet")
+    else:
+        state = "switched on and live"
+    return {"reminder_days": int(sla.get("reminder_days", due._DEFAULT_REMINDER_DAYS)),
+            "escalation_days": int(sla.get("manager_escalation_days",
+                                           due._DEFAULT_MANAGER_ESCALATION_DAYS)),
+            "state": state, "time": ns.get("followup_time") or "08:00"}
+
+
+async def budget_alerts(db) -> dict:
+    """Budget threshold alert emails (ISS-0146 ③), read the way
+    tasks/budget_alerts reads them."""
+    cfg = await _config(db)
+    ns = getattr(cfg, "notification_settings", None) or {}
+    bac = getattr(cfg, "budget_admin_config", None) or {}
+    if not ns.get("budget_alert_enabled", False):
+        state = "switched off, so no budget alerts are sent"
+    elif ns.get("budget_alert_dry_run", True):
+        state = ("switched on in dry run: the list goes to the System Admins only, "
+                 "nobody else is emailed yet")
+    else:
+        state = "switched on and live"
+    return {"state": state, "warning": bac.get("yellow_threshold_pct", 80),
+            "over": bac.get("red_threshold_pct", 100),
+            "time": ns.get("followup_time") or "08:00"}
+
+
+async def collection_gate(db) -> dict:
+    """Admin → Collection Config "Collection Confirmation Required" (ISS-0146),
+    read the way crud.po.collection_gate_on reads it."""
+    cfg = await _config(db)
+    cc = getattr(cfg, "collection_config", None) or {}
+    on = bool(cc.get("collection_gate_enabled", False))
+    return {"state": ("switched on: a physical PO's PA waits until its goods are collected"
+                      if on else
+                      "switched off: a PA is allowed as soon as a goods receipt is recorded"),
+            "reminder_days": cc.get("reminder_days", 2),
+            "manager_days": cc.get("manager_escalation_days", 4),
+            "fm_days": cc.get("fm_alert_days", 7)}
+
+
 # ── Payment applications and invoices ────────────────────────────────────────
 
 def pa_invoice_window(db) -> dict:

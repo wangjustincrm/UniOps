@@ -16,7 +16,9 @@ from app.crud._list_order import sort_clauses
 from app.crud import gr_report as gr_report_crud
 from app.crud import po as po_crud
 from app.crud.pr_owner import get_pr_owner_id
-from app.schemas.gr import GrActionRequest, GrCreate, GrListResponse, GrResponse, is_service
+from app.schemas.gr import (
+    GrActionRequest, GrCreate, GrListResponse, GrResponse, PoLineOpenQty, is_service,
+)
 from app.schemas.gr_report import (
     ReceivingReportResponse,
     ReceivingReportRow,
@@ -58,7 +60,7 @@ async def list_grs(
     items, total = await gr_crud.get_all(
         db, status=status, po_id=po_id, vendor_id=vendor_id,
         search=search, gr_type=gr_type,
-        po_ids_subq=scope["po_subq"],
+        po_ids_subq=scope["gr_po_subq"],
         page=page, page_size=page_size, sort=sort, dir=dir,
     )
     return GrListResponse(items=items, total=total)
@@ -119,7 +121,19 @@ async def create_gr(body: GrCreate, db: SessionDep, user: CurrentUserPayload, to
                 detail=f"Cannot create GR for PO in status '{po.status}' (must be issued or partially_received)"
             )
 
-    gr = await gr_crud.create(db, body, po=po, created_by=uuid.UUID(user["sub"]), token=token)
+    # The New GR form's own rule, held here too: a request with no lines (or
+    # lines sent under a misspelt key, which Pydantic drops) was saved as an
+    # empty GR — and with no PR on the PO went straight to Collected (ISS-0181).
+    if not any(li.qty_received > 0 for li in body.line_items):
+        raise HTTPException(
+            status_code=422,
+            detail="At least one line must have a received quantity greater than 0.",
+        )
+
+    try:
+        gr = await gr_crud.create(db, body, po=po, created_by=uuid.UUID(user["sub"]), token=token)
+    except gr_crud.OverReceiptReasonRequired as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     # New tasks need no notify call: app/tasks/task_notifier.py picks up every
     # un-notified task and applies the admin's per-type policy.
     return gr
@@ -147,7 +161,7 @@ async def _receiving_rows(db, user, *, date_from, date_to, department_id, vendor
         db,
         date_from=date_from, date_to=date_to,
         department_id=department_id, vendor_id=vendor_id, search=search,
-        po_ids_subq=scope["po_subq"],
+        po_ids_subq=scope["gr_po_subq"],
         page=page, page_size=page_size, sort=sort, dir=dir,
     )
 
@@ -215,6 +229,24 @@ async def export_receiving_report(
     )
 
 
+@router.get("/open-quantities", response_model=list[PoLineOpenQty])
+async def po_open_quantities(
+    db: SessionDep, user: CurrentUserPayload, po_id: uuid.UUID = Query(...),
+):
+    """Per PO line: ordered, received, pending in GRs not yet collected, and
+    what is still open — the New GR form shows these and warns past ``open``."""
+    from app.core.access_scope import is_po_visible
+    scope = await build_scope(db, user)
+    if not await is_po_visible(db, po_id, scope):
+        raise HTTPException(status_code=404, detail="Purchase order not found")
+    rows = await gr_crud.open_qty_by_po_line(db, po_id)
+    return [
+        PoLineOpenQty(po_line_id=pl_id, ordered=r["ordered"], received=r["received"],
+                      pending=r["pending"], open=max(r["open"], 0))
+        for pl_id, r in rows.items()
+    ]
+
+
 @router.get("/{gr_id}", response_model=GrResponse)
 async def get_gr(gr_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
     from app.core.access_scope import is_gr_visible
@@ -238,8 +270,29 @@ async def gr_action(
     gr = await gr_crud.get_by_id(db, gr_id)
     if gr is None:
         raise HTTPException(status_code=404, detail="GR not found")
+    # Recording the return / credit is Procurement's job (the gr_damage_report
+    # task goes to the Procurement Officer pool) — the same matrix key that
+    # lets them write POs.
+    if body.action.lower() == "resolve_damage" and not await has_permission(
+            db, uuid.UUID(user["sub"]), user.get("role", ""), "epms.po.write"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    # Cancel was open to any signed-in user. Same people the GR page offers it
+    # to (documentActions.ts canCancelGr): whoever recorded the receipt, a
+    # warehouse receiver (epms.gr.receive, the key that records one) or a
+    # System Admin.
+    if body.action.lower() == "cancel" and not (
+            user.get("role") == "system_admin"
+            or gr.created_by == uuid.UUID(user["sub"])
+            or await has_permission(db, uuid.UUID(user["sub"]), user.get("role", ""),
+                                    "epms.gr.receive")):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the person who recorded this goods receipt, warehouse receiving staff "
+                   "or a System Admin can cancel it.")
     try:
         result = await gr_crud.action(db, gr, body, actor_id=uuid.UUID(user["sub"]), token=token)
         return result
+    except gr_crud.OverReceiptReasonRequired as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))

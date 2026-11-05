@@ -7,6 +7,7 @@ import { Header, ForcedChangePasswordModal } from './Header'
 import { useAuthStore } from '@/stores/auth.store'
 import { useIdleTimeout } from '@/hooks/useIdleTimeout'
 import { epmsRoutes } from '@/app/routes'
+import { TabQueryScope, TabRefreshButton } from './TabQueryScope'
 
 // True when this app is rendered inside an iframe (e.g. Portal's budget shell).
 // In that case we hide EPMS's own Sidebar/Header AND the tab bar so Portal's
@@ -23,6 +24,20 @@ function detectIframeEmbed(): boolean {
 const IS_EMBEDDED = detectIframeEmbed()
 
 const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'
+
+// List and detail tabs re-read their data when the user comes back to them and
+// get a Refresh button beside the tab bar (ISS-0131; dashboards: DSH-010).
+// Create / edit / confirm forms are left out on purpose — see TabQueryScope.
+const REFRESHABLE_ROUTES = new Set([
+  '/dashboard',
+  '/pr', '/pr/:id', '/po', '/po/:id', '/gr', '/gr/report', '/gr/:id',
+  '/invoices', '/invoices/:id', '/vendor-credits',
+  '/agreements', '/agreements/:id', '/receipts', '/receipts/:id', '/pa', '/pa/:id',
+  '/freight', '/freight/invoices/:id', '/vendors', '/projects', '/parts',
+])
+const tabRoutes = epmsRoutes.map((r) => REFRESHABLE_ROUTES.has(r.path)
+  ? { ...r, element: <TabQueryScope routes={epmsRoutes}>{r.element}</TabQueryScope> }
+  : r)
 
 const EPMS_INITIAL_TABS: TabMeta[] = [
   { key: '/dashboard', title: 'Dashboard', kind: 'page', path: '/dashboard', icon: 'LayoutDashboard', pinned: true, closable: false },
@@ -101,9 +116,15 @@ export function AppLayout() {
         <div className="flex flex-1 flex-col overflow-hidden">
           <Header onMobileMenuToggle={() => setMobileOpen((v) => !v)} />
           <TabRouterSync routes={epmsRoutes} />
-          <TabBar />
+          {/* The tab strip scrolls sideways only: with overflow-x set, the
+              browser would also make it scroll vertically and show ▲▼
+              arrows beside the horizontal scrollbar. */}
+          <div className="flex shrink-0">
+            <div className="min-w-0 flex-1 [&>div]:overflow-y-hidden"><TabBar /></div>
+            <TabRefreshButton />
+          </div>
           <main id="main-content" className="relative flex-1 overflow-hidden" tabIndex={-1}>
-            <TabHost routes={epmsRoutes} pageClassName="mx-auto max-w-[1440px] p-6" />
+            <TabHost routes={tabRoutes} pageClassName="mx-auto max-w-[1440px] p-6" />
           </main>
         </div>
 

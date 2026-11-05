@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   agreementReceiptService,
@@ -48,6 +49,28 @@ export function useReceipt(receiptId: string) {
     queryKey: ['agreement-receipts', 'detail', receiptId],
     queryFn: () => agreementReceiptService.get(receiptId),
     enabled: Boolean(receiptId),
+  })
+}
+
+// Live "differs from the agreement's vendor" flag for the New / Edit Receipt
+// form (ISS-0114). A bound vendor is asked at once; typed text only once the
+// recorder pauses, so a keystroke is not a request.
+export function useReceiptVendorCheck(agreementId: string | undefined, vendorId: string | null, vendorName: string) {
+  const name = vendorName.trim()
+  const [settledName, setSettledName] = useState(name)
+  useEffect(() => {
+    const t = setTimeout(() => setSettledName(name), 300)
+    return () => clearTimeout(t)
+  }, [name])
+  const askName = vendorId ? '' : settledName
+  return useQuery({
+    queryKey: ['agreements', agreementId, 'receipts', 'vendor-check', vendorId, askName],
+    queryFn: () => agreementReceiptService.vendorCheck(agreementId!, {
+      vendor_id: vendorId ?? undefined,
+      vendor_name: askName || undefined,
+    }),
+    enabled: Boolean(agreementId) && Boolean(vendorId || askName),
+    staleTime: 60_000,
   })
 }
 
@@ -124,7 +147,8 @@ export function useCreateReceipt(agreementId: string) {
     onSuccess: async () => {
       await invalidateReceiptViews(queryClient, agreementId)
     },
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to create receipt'),
+    // No onError alert: ReceiptEntryForm shows the refusal on the form itself —
+    // a duplicate reference at the Reference # field (ISS-0115).
   })
 }
 

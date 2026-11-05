@@ -37,7 +37,7 @@ const STATUS_FILTER_OPTIONS = [
   { value: 'approved',  label: 'Approved' },
   { value: 'returned',  label: 'Returned' },
   { value: 'processed', label: 'Processed' },
-  { value: 'rejected',  label: 'Rejected' },
+  // No 'rejected': an approver's rejection cancels the PA (§3.15.6).
   { value: 'cancelled', label: 'Cancelled' },
 ]
 
@@ -225,7 +225,7 @@ export default function PaListPage() {
                 >
                   <td className="px-4 py-3">
                     <span className="font-mono text-xs font-semibold text-primary-700">{pa.pa_number}</span>
-                    {pa.pa_type === 'prepayment' && pa.settlement_status === 'pending' && (
+                    {pa.pa_type === 'prepayment' && pa.settlement_status === 'pending' && pa.status !== 'cancelled' && (
                       <div className="text-[10px] text-warning-600 font-medium mt-0.5">⚠ Settlement pending</div>
                     )}
                   </td>

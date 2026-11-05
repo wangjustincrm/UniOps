@@ -1,6 +1,8 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { BackLink, useDocTabTitle } from '@/components/BackLink'
+import { DirectPaBudgetPanel } from '@/components/pa/DirectPaBudgetPanel'
+import { useDocTabTitle } from '@/components/BackLink'
+import { NotFoundState } from '@/components/shared/NotFoundState'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { financeApi } from '@/lib/api'
@@ -11,11 +13,12 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { cn, formatAmount, formatDate, formatDateTime, formatUnitPrice } from '@/lib/utils'
+import { cn, formatAmount, formatDate, formatDateTime, formatQty, formatUnitPrice } from '@/lib/utils'
 import { usePa, usePaAction, usePaEvents, useConfirmSettlement, usePaWorkflowSteps } from '@/hooks/usePas'
 import { usePosByIds } from '@/hooks/usePos'
 import { useInvoices, useInvoicesByIds, useInvoicesForPos } from '@/hooks/useInvoices'
 import { useTasks } from '@/hooks/useTasks'
+import { useCloseOnEscape } from '@/hooks/useCloseOnEscape'
 import { useAuthStore } from '@/stores/auth.store'
 import { usePaAttachments, useUploadPaAttachment, useDeletePaAttachment, useRegeneratePaPdf } from '@/hooks/usePaAttachments'
 import { paAttachmentService } from '@/services/paAttachments'
@@ -27,9 +30,13 @@ import {
   type CreditSuggestResponse,
 } from '@/services/vendorCredits'
 import { InvoiceMatchVariancePanel } from '@/components/invoices/InvoiceMatchVariancePanel'
-import { useConfig } from '@/hooks/useConfig'
+import { canRecallDocument, canWithdrawDocument } from '@/lib/documentActions'
+import { useConfig, useRolePermissions } from '@/hooks/useConfig'
+import { isPaRequesterScoped, scopedRequesterMayPay } from '@/lib/paCreateScope'
+import { clearSubmitFailure, peekSubmitFailure } from '@/lib/submitFailure'
 import type { ApiPa } from '@/services/pa'
-import { historyLine, isSkipped } from '@/lib/approvalHistory'
+import { historyLine } from '@/lib/approvalHistory'
+import { approvalNodeStates } from '@/lib/approvalTimeline'
 
 // ─── Status config ────────────────────────────────────────────────────────────
 
@@ -58,7 +65,7 @@ function TimelineStep({
   label: string; actor?: string; date?: string;
   /** `date` is a calendar date with no time of day (the payment date). */
   dateOnly?: boolean;
-  status: 'done' | 'active' | 'pending' | 'skipped';
+  status: 'done' | 'active' | 'pending' | 'skipped' | 'returned' | 'rejected';
   note?: string;
 }) {
   const isAutoApproved = note?.includes('Auto-approved')
@@ -71,6 +78,8 @@ function TimelineStep({
           'bg-primary-600 ring-4 ring-primary-100': status === 'active',
           'bg-neutral-200':  status === 'pending',
           'border-2 border-dashed border-neutral-300 bg-white': status === 'skipped',
+          'bg-warning-500': status === 'returned',
+          'bg-danger-600': status === 'rejected',
         })}>
           {status === 'done'
             ? <CheckCircle2 className="h-4 w-4 text-white" />
@@ -78,7 +87,11 @@ function TimelineStep({
               ? <Clock className="h-3.5 w-3.5 text-white animate-pulse" />
               : status === 'skipped'
                 ? <SkipForward className="h-3.5 w-3.5 text-neutral-300" />
-                : <div className="h-2 w-2 rounded-full bg-neutral-400" />}
+                : status === 'returned'
+                  ? <RotateCcw className="h-3.5 w-3.5 text-white" />
+                  : status === 'rejected'
+                    ? <X className="h-3.5 w-3.5 text-white" />
+                    : <div className="h-2 w-2 rounded-full bg-neutral-400" />}
         </div>
         <div className="w-px flex-1 bg-neutral-200 mt-1" />
       </div>
@@ -95,6 +108,16 @@ function TimelineStep({
             Auto-skipped
           </span>
         )}
+        {status === 'returned' && (
+          <span className="inline-flex items-center mt-1 rounded-full bg-warning-50 px-2 py-0.5 text-[10px] font-medium text-warning-700">
+            Returned
+          </span>
+        )}
+        {status === 'rejected' && (
+          <span className="inline-flex items-center mt-1 rounded-full bg-danger-50 px-2 py-0.5 text-[10px] font-medium text-danger-700">
+            Rejected
+          </span>
+        )}
         {/* Quoted for a real comment somebody typed; unquoted for a skip
             reason, which is the system explaining itself, not a person. */}
         {note && !isAutoApproved && (
@@ -104,6 +127,9 @@ function TimelineStep({
         )}
         {status === 'active' && !date && (
           <p className="text-xs text-primary-600 mt-0.5 font-medium">Awaiting action</p>
+        )}
+        {status === 'returned' && (
+          <p className="text-xs text-neutral-500 mt-1">Returned for revision — waiting for the requester to resubmit</p>
         )}
       </div>
     </div>
@@ -119,9 +145,10 @@ type ApprovalAction = 'approve' | 'return' | 'reject'
 // same action — usually a 409 the user reads as a failure, but for 'approve' it
 // can silently consume the NEXT step's task when the same person approves two
 // consecutive steps. ProcessModal already gates on `busy` for the same reason.
-function ApprovalModal({ action, paNumber, onConfirm, onClose, isPending }: {
+function ApprovalModal({ action, paNumber, onConfirm, onClose, isPending, error }: {
   action: ApprovalAction; paNumber: string
   onConfirm: (comment: string) => void; onClose: () => void; isPending: boolean
+  error?: string | null
 }) {
   const [comment, setComment] = useState('')
   const needsComment = action !== 'approve'
@@ -153,6 +180,7 @@ function ApprovalModal({ action, paNumber, onConfirm, onClose, isPending }: {
                 className="w-full resize-none rounded-lg border border-neutral-300 bg-white pl-8 pr-3 pt-2 pb-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
             </div>
           </div>
+          {error && <p role="alert" className="text-xs text-danger-600">{error}</p>}
           <div className="flex justify-end gap-2">
             <button onClick={onClose} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50">Cancel</button>
             <button disabled={(needsComment && !comment.trim()) || isPending} onClick={() => onConfirm(comment)}
@@ -366,6 +394,13 @@ export default function PaDetailPage() {
   useDocTabTitle(pa?.pa_number)
   const { data: events } = usePaEvents(id ?? '')
   const paAction = usePaAction(id ?? '')
+  // Withdraw / Recall get their own mutation so their refusal shows in the
+  // header and not in the approval or payment dialogs.
+  const paHeaderAction = usePaAction(id ?? '')
+  // Why New PA's submit was refused, when it brought the saved draft here
+  // instead (ISS-0188 — was a browser pop-up).
+  const [createSubmitError] = useState<string | null>(() => peekSubmitFailure(id))
+  useEffect(() => { clearSubmitFailure(id) }, [id])
   const confirmSettlement = useConfirmSettlement(id ?? '')
   // Assigned below paPoLinks so it covers EVERY PO on the payment — the line
   // variance panel matches an invoice line to its PO line by id, and an invoice
@@ -408,6 +443,7 @@ export default function PaDetailPage() {
       : (poInvoices.items ?? [])
   const linkedInvoices = invoiceCandidates.filter((inv) => pa?.invoice_ids.includes(inv.id))
   const { user } = useAuthStore()
+  const myAuthz = useRolePermissions().data
   // Same hook/pattern InvoiceDetailPage.tsx uses for its 3-way-match tolerance.
   const matchTolerancePct = useConfig().data?.invoice_match_tolerance_pct ?? 5
 
@@ -416,6 +452,7 @@ export default function PaDetailPage() {
   const [processOpen, setProcessOpen] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement>(null)
+  useCloseOnEscape(moreOpen, () => setMoreOpen(false))
   const { data: attachments = [] } = usePaAttachments(id ?? '')
   const uploadAttachment = useUploadPaAttachment(id ?? '')
   const deleteAttachment = useDeletePaAttachment(id ?? '')
@@ -446,10 +483,8 @@ export default function PaDetailPage() {
 
   if (!pa) {
     return (
-      <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-neutral-500">Payment Application not found.</p>
-        <BackLink to="/pa" className="mt-4"><Button variant="secondary">Back to PA List</Button></BackLink>
-      </div>
+      <NotFoundState title="PA Not Found" message="The payment application you're looking for doesn't exist."
+                     backTo="/pa" backLabel="Back to PA List" />
     )
   }
 
@@ -464,12 +499,13 @@ export default function PaDetailPage() {
   // PA it is created as a draft and submitted from here (no PO edit flow).
   const isDirect = pa.source === 'direct'
   const canSubmitFreight = (isFreight || isDirect) && (['draft', 'returned'] as PaStatus[]).includes(pa.status)
+  // A refusal (e.g. no Department Manager to route to) is shown in the header
+  // with the other header actions' errors, not in a browser pop-up
+  // (ISS-0166 follow-up).
   const handleSubmitFreight = () => {
-    if (paAction.isPending) return
-    paAction.mutate(
-      { action: 'submit' },
-      { onError: (e) => alert(e instanceof Error ? e.message : 'Could not submit the PA') },
-    )
+    if (paHeaderAction.isPending) return
+    paHeaderAction.reset()
+    paHeaderAction.mutate({ action: 'submit' })
   }
 
   // Approval gating is driven solely by the approval engine's task routing — no
@@ -485,7 +521,22 @@ export default function PaDetailPage() {
     (['submitted', 'in_review'].includes(pa.status)) &&
     hasApproveTask
   const canProcess  = payPerm?.can_pay ?? false
-  const canSettle   = user?.role === 'requester' || user?.role === 'system_admin'
+  // The engine's cancel (draft/returned) and recall (submitted/in_review)
+  // rules, PRD §3.3.3 / PA-APR-004 (ISS-0082, ISS-0119).
+  const canWithdraw = canWithdrawDocument('pa', pa, user ?? {})
+  const canRecall   = canRecallDocument(pa, user ?? {})
+  // PP-015 offers Settle to a primary-role Requester or System Admin — and only
+  // where New PA could then create the settlement (§3.15.2 Who can create:
+  // epms.pa.write, and a plain Requester only on POs from their own PRs, or as
+  // ERP PA Officer on PR-less NC POs).
+  // Offering it more widely led to a refusal after the form was filled in
+  // (ISS-0158).
+  const settleScoped = isPaRequesterScoped(user?.role, myAuthz?.roles)
+  const canSettle   = (user?.role === 'requester' || user?.role === 'system_admin')
+    && (user?.role === 'system_admin' || !!myAuthz?.permissions?.['epms.pa.write'])
+    && (!settleScoped || (linkedPos.items !== undefined
+      && linkedPos.items.length > 0
+      && linkedPos.items.every((p) => scopedRequesterMayPay(p, user?.id, myAuthz?.roles))))
 
   const handleConfirm = (action: ApprovalAction, comment: string) => {
     paAction.mutate(
@@ -502,19 +553,21 @@ export default function PaDetailPage() {
       { onSuccess: () => setProcessOpen(false) },
     )
 
-  // Build timeline steps
-  // Index approval events by step_idx for quick lookup
-  const approveEventByStep = (events ?? [])
-    .filter((e) => e.action === 'approve')
-    .reduce<Record<number, typeof events[0]>>((acc, e) => {
-      if (!(e.step_idx in acc)) acc[e.step_idx] = e
-      return acc
-    }, {})
+  // Build timeline steps. Step states come from the reading shared with the
+  // PR / PO / Agreement timelines: a returned PA shows the steps it already
+  // passed as approved and marks the step that returned it, a rejected one
+  // marks the rejecting step (ISS-0088), and the open step names who holds it
+  // (ISS-0085).
+  const nodeStates = approvalNodeStates(
+    wfNodes.length, pa.status, stepIdx, events ?? [], ['approved', 'processed'])
   const submitEvent = (events ?? []).find((e) => e.action === 'submit')
+  // A draft (never submitted, or recalled) — or one cancelled before it was
+  // ever submitted — is only "Created" (ISS-0183).
+  const notSubmitted = pa.status === 'draft' || (pa.status === 'cancelled' && !submitEvent)
 
   const steps = [
     {
-      label: 'PA Created & Submitted',
+      label: notSubmitted ? 'PA Created' : 'PA Created & Submitted',
       // Prefer the document's creator (always set, incl. imported data); fall back
       // to the submit event's actor for records created before created_by tracking.
       actor: pa.created_by_name ?? submitEvent?.actor_name ?? undefined,
@@ -523,25 +576,31 @@ export default function PaDetailPage() {
       note: undefined as string | undefined,
     },
     ...wfNodes.map((node, i) => {
-      const isDone = ['approved', 'processed'].includes(pa.status) || i < stepIdx
-      const isActive = !isDone && i === stepIdx && ['submitted', 'in_review'].includes(pa.status)
-      const evt = approveEventByStep[i]
-      const isAutoSkipped = isSkipped(evt)
+      const { status: st, event: evt } = nodeStates[i]
+      const isAutoSkipped = st === 'skipped'
+      const isDecision = st === 'returned' || st === 'rejected'
       return {
         label: node.label,
-        actor: isAutoSkipped ? undefined : evt?.actor_name ?? undefined,
+        actor: isAutoSkipped ? undefined
+          : st === 'current' ? pa.current_step?.approver_name ?? undefined
+          : evt?.actor_name ?? undefined,
         date: isAutoSkipped ? undefined : evt?.created_at ?? undefined,
         // A skipped step shows WHY it was skipped. The tag alone says a level
         // was bypassed without saying on what grounds, which for a payment
         // approval is the one thing a reader actually needs. skip_reason is
         // the server's reading of the comment — it also handles the
-        // "Re-synced (config change): Auto-skipped (...)" form.
-        note: evt?.kind === 'same_approver' || evt?.kind === 'imported'
-          ? 'Auto-approved (same approver)'
-          : isAutoSkipped
-            ? evt?.skip_reason || undefined
-            : undefined,
-        status: isAutoSkipped ? 'skipped' as const : isDone ? 'done' as const : isActive ? 'active' as const : 'pending' as const,
+        // "Re-synced (config change): Auto-skipped (...)" form. A return or
+        // reject shows the decider's comment.
+        note: isDecision
+          ? evt?.comment ?? undefined
+          : evt?.kind === 'same_approver' || evt?.kind === 'imported'
+            ? 'Auto-approved (same approver)'
+            : isAutoSkipped
+              ? evt?.skip_reason || undefined
+              : undefined,
+        status: st === 'completed' ? 'done' as const
+          : st === 'current' ? 'active' as const
+          : st,
       }
     }),
     {
@@ -570,13 +629,13 @@ export default function PaDetailPage() {
   return (
     <div className={cn('flex flex-col gap-6 p-6', canApprove && 'pb-16')}>
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/pa')} className="p-2 rounded-lg hover:bg-neutral-100 text-neutral-500">
             <ArrowLeft className="h-5 w-5" />
           </button>
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl font-bold text-neutral-900">{pa.pa_number}</h1>
               <PaStatusBadge status={pa.status} />
               {pa.pa_type === 'prepayment' && (
@@ -594,7 +653,7 @@ export default function PaDetailPage() {
           </div>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {(['draft', 'returned'] as PaStatus[]).includes(pa.status) && (
             <Button variant="secondary" onClick={() => navigate(`/pa/${pa.id}/edit`)} className="gap-2">
               <Pencil className="h-4 w-4" />
@@ -602,9 +661,38 @@ export default function PaDetailPage() {
             </Button>
           )}
           {canSubmitFreight && (
-            <Button onClick={handleSubmitFreight} disabled={paAction.isPending} className="gap-2">
+            <Button onClick={handleSubmitFreight} disabled={paHeaderAction.isPending} className="gap-2">
               <CheckCircle2 className="h-4 w-4" />
-              {paAction.isPending ? 'Submitting…' : 'Submit for Approval'}
+              {paHeaderAction.isPending ? 'Submitting…' : 'Submit for Approval'}
+            </Button>
+          )}
+          {canRecall && (
+            <Button
+              variant="secondary"
+              className="gap-2"
+              disabled={paHeaderAction.isPending}
+              onClick={() => {
+                if (confirm(`Recall ${pa.pa_number}? It will be moved back to Draft; the next submit starts from the first approval step.`)) {
+                  paHeaderAction.mutate({ action: 'recall' })
+                }
+              }}
+            >
+              <RotateCcw className="h-4 w-4" />
+              Recall
+            </Button>
+          )}
+          {canWithdraw && (
+            <Button
+              variant="secondary"
+              className="border-danger-200 text-danger-600 hover:bg-danger-50"
+              disabled={paHeaderAction.isPending}
+              onClick={() => {
+                if (confirm(`Withdraw ${pa.pa_number}? This will cancel the PA.`)) {
+                  paHeaderAction.mutate({ action: 'cancel' })
+                }
+              }}
+            >
+              Withdraw
             </Button>
           )}
           {/* Approval actions moved to fixed bottom bar */}
@@ -637,9 +725,22 @@ export default function PaDetailPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      {/* Refused header actions (Submit / Recall / Withdraw). Its own row: a long
+          reason inside the button bar squeezed the header (ISS-0166 retest). */}
+      {paHeaderAction.isError && (
+        <p role="alert" className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+          {paHeaderAction.error instanceof Error ? paHeaderAction.error.message : 'The action was refused'}
+        </p>
+      )}
+      {createSubmitError && pa.status === 'draft' && !paHeaderAction.isError && (
+        <p role="alert" className="rounded-xl border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+          {createSubmitError}
+        </p>
+      )}
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Main content */}
-        <div className="col-span-2 flex flex-col gap-5">
+        <div className="lg:col-span-2 min-w-0 flex flex-col gap-5">
           {/* Tabs */}
           <div className="flex gap-1 border-b border-neutral-200">
             {(['details', 'attachments', 'history'] as const).map((t) => (
@@ -819,7 +920,7 @@ export default function PaDetailPage() {
                                 <div className="text-neutral-800">{line.description}</div>
                                 {line.notes && <div className="whitespace-pre-wrap break-words text-xs text-neutral-400 mt-0.5">{line.notes}</div>}
                               </td>
-                              <td className="px-4 py-3 text-right font-mono text-xs text-neutral-700">{line.qty}</td>
+                              <td className="px-4 py-3 text-right font-mono text-xs text-neutral-700">{formatQty(line.qty)}</td>
                               <td className="px-4 py-3 text-xs text-neutral-500">{line.unit}</td>
                               <td className="px-4 py-3 text-right font-mono text-xs text-neutral-700">{formatUnitPrice(line.unit_price, pa.currency)}</td>
                               <td className="px-4 py-3 text-right font-mono text-xs font-semibold text-neutral-900">{formatAmount(line.line_total, pa.currency)}</td>
@@ -955,7 +1056,7 @@ export default function PaDetailPage() {
               <div className="flex flex-col text-sm">
                 {events && events.length > 0 ? (
                   [...events].reverse().map((evt, i) => {
-                    const line = historyLine(evt)
+                    const line = historyLine(evt, workflowSteps)
                     return (
                       <div key={i} className="flex gap-4 pb-4 border-b border-neutral-100 last:border-0 last:pb-0">
                         <div className="text-xs text-neutral-400 w-32 shrink-0 mt-0.5">{formatDateTime(evt.created_at)}</div>
@@ -1000,6 +1101,13 @@ export default function PaDetailPage() {
                 Freight PA (its documents are in the Cost Allocation table) or a
                 Direct PA (its invoices are under Linked Documents). */}
             {!isFreight && !isDirect && <DocumentChainTree currentType="pa" id={pa.id} />}
+            {isDirect && (
+              <div className="mt-6 border-t border-neutral-100 pt-4">
+                <DirectPaBudgetPanel costCenterId={pa.cost_center_id} budgetCode={pa.budget_account_code}
+                  amount={Number(pa.subtotal)} currency={pa.currency}
+                  showAfter={!(['processed', 'cancelled', 'rejected'] as PaStatus[]).includes(pa.status)} />
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -1051,8 +1159,9 @@ export default function PaDetailPage() {
           action={pendingAction}
           paNumber={pa.pa_number}
           onConfirm={(comment) => handleConfirm(pendingAction, comment)}
-          onClose={() => setPendingAction(null)}
+          onClose={() => { paAction.reset(); setPendingAction(null) }}
           isPending={paAction.isPending}
+          error={paAction.isError && paAction.error instanceof Error ? paAction.error.message : null}
         />
       )}
       {processOpen && (

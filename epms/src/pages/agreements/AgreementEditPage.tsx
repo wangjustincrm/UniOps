@@ -4,12 +4,12 @@ import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, Search, Upload, X } from 'lucide-react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
 import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
-import { cn } from '@/lib/utils'
+import { cn, formatBytes } from '@/lib/utils'
 import { useAgreement, useAgreementSchedule, useUpdateAgreement } from '@/hooks/useAgreements'
 import { agreementService, type AgreementType, type MilestoneRowIn, type UpdateAgreementBody } from '@/services/agreement'
 import { agreementAttachmentService } from '@/services/agreementAttachments'
@@ -35,6 +35,7 @@ export default function AgreementEditPage() {
   const { data: agreement, isLoading } = useAgreement(id ?? '')
   useDocTabTitle(agreement?.number && `Edit ${agreement.number}`)
   const updateAgreement = useUpdateAgreement()
+  const queryClient = useQueryClient()
   const { data: deptData } = useDepartments()
   const departments = (deptData?.items ?? []).filter((d) => d.is_active)
   const taxCodes = useTaxCodes()
@@ -362,6 +363,14 @@ export default function AgreementEditPage() {
       }
       if (andSubmit) {
         await agreementService.action(id!, { action: 'submit' })
+        // The detail tab is kept alive and does not refetch on show, so
+        // without this it kept the pre-submit Returned status, buttons and
+        // timeline until F5 (ISS-0122). The save's own invalidation above ran
+        // before the submit, so it fetched the still-returned agreement.
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['agreements'] }),
+          queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+        ])
       }
       replaceTab(`/agreements/${id}`)
     } finally {
@@ -491,9 +500,9 @@ export default function AgreementEditPage() {
 
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               <FormField
-                label="Not to Exceed"
+                label="Not to Exceed (pre-tax)"
                 htmlFor="notToExceed"
-                hint="Optional ceiling. Spend past this amount only warns — it never blocks matching or approval."
+                hint="Optional ceiling, before tax — compared with the pre-tax total of the invoices matched to the agreement. Spend past it only warns; it never blocks matching or approval."
               >
                 <Input
                   id="notToExceed"
@@ -706,7 +715,7 @@ export default function AgreementEditPage() {
             {attachments.map((f, i) => (
               <div key={i} className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
                 <span className="flex-1 truncate text-neutral-700">📎 {f.name}</span>
-                <span className="text-neutral-400 text-xs">{(f.size / 1024 / 1024).toFixed(1)} MB</span>
+                <span className="text-neutral-400 text-xs">{formatBytes(f.size)}</span>
                 <button
                   type="button"
                   onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}

@@ -105,3 +105,34 @@ export function derivePaLines(
 
 export const derivedLinesTotal = (lines: DerivedPaLine[]) =>
   Math.round(lines.reduce((s, l) => s + Math.round(l.line_total * 100), 0)) / 100
+
+/**
+ * Lines copied from the invoices' own lines — the browser half of
+ * crud/pa_lines.py::invoice_lines, used for an agreement PA (no PO lines to
+ * derive from; ISS-0109). An invoice whose lines do not add up to its pre-tax
+ * amount becomes one line for the whole invoice.
+ */
+export function invoiceOwnLines(invoices: ApiInvoice[]): DerivedPaLine[] | null {
+  const out: DerivedPaLine[] = []
+  for (const inv of invoices) {
+    const lines = (inv.line_items ?? []).filter((li) => num(li.line_total) !== null)
+    const cents = lines.reduce((s, li) => s + Math.round(Number(li.line_total) * 100), 0)
+    const amount = Number(inv.amount)
+    if (lines.length === 0 || Math.abs(cents - Math.round(amount * 100)) > 1) {
+      out.push({
+        po_line_id: null, description: `Invoice ${inv.vendor_invoice_number || inv.internal_ref}`.slice(0, 500),
+        qty: 1, unit: FALLBACK_UNIT, unit_price: amount, line_total: amount, notes: note(inv),
+      })
+      continue
+    }
+    for (const li of lines) {
+      const lineTotal = Number(Number(li.line_total).toFixed(2))
+      const [qty, price] = qtyPrice(li, lineTotal)
+      out.push({
+        po_line_id: null, description: (li.description || inv.internal_ref).slice(0, 500),
+        qty, unit: li.unit || FALLBACK_UNIT, unit_price: price, line_total: lineTotal, notes: note(inv),
+      })
+    }
+  }
+  return out.length > 0 ? out : null
+}

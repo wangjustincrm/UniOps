@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, exists, func, select
 from sqlalchemy.dialects.postgresql import array as sa_array
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -167,6 +167,7 @@ async def create(
     vendor_code: str,
     vendor_name: str,
     created_by: uuid.UUID,
+    vendor_payment_terms: str | None = None,
 ) -> PurchaseOrder:
     number = await _next_number(db, vendor_code)
     subtotal, tax_amount, total = _compute_totals(payload.line_items, payload.tax_rate)
@@ -198,6 +199,8 @@ async def create(
         pr_id=payload.pr_id,
         pr_number=pr_number,
         is_prepaid=getattr(payload, "is_prepaid", False) or False,
+        # PRD §3.12.1: defaulted from the vendor, overridable (ISS-0087).
+        payment_terms=payload.payment_terms or vendor_payment_terms,
         created_by=created_by,
     )
     db.add(po)
@@ -232,7 +235,8 @@ async def update(
     vendor_name: str | None = None,
 ) -> PurchaseOrder:
     for field in ("title", "type", "currency", "budget_code",
-                  "expected_delivery", "delivery_address", "notes", "is_prepaid"):
+                  "expected_delivery", "delivery_address", "notes", "is_prepaid",
+                  "payment_terms"):
         val = getattr(payload, field)
         if val is not None:
             setattr(po, field, val)
@@ -615,6 +619,9 @@ async def action(
         if po.status != "approved":
             raise ValueError(f"Cannot issue PO in status '{po.status}'")
         po.status = "issued"
+        # Same catch-up as place_order (ISS-0108).
+        from app.crud.gr import sync_po_receipt_status
+        await sync_po_receipt_status(db, po.id)
 
     elif act == "cancel":
         if po.status not in ("draft", "returned", "submitted"):
@@ -726,14 +733,16 @@ async def _create_revise_task(db: AsyncSession, po: PurchaseOrder) -> None:
     ))
 
 
-async def _complete_tasks(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -> None:
-    result = await db.execute(
-        select(Task).where(
-            Task.document_type == doc_type,
-            Task.document_id == doc_id,
-            Task.is_completed.is_(False),
-        )
+async def _complete_tasks(db: AsyncSession, doc_type: str, doc_id: uuid.UUID,
+                          task_type: str | None = None) -> None:
+    q = select(Task).where(
+        Task.document_type == doc_type,
+        Task.document_id == doc_id,
+        Task.is_completed.is_(False),
     )
+    if task_type is not None:
+        q = q.where(Task.type == task_type)
+    result = await db.execute(q)
     now = datetime.now(timezone.utc)
     for task in result.scalars().all():
         task.is_completed = True
@@ -762,7 +771,16 @@ async def place_order(
     elif req.method == "online":
         po.place_order_reference = req.reference
 
-    await _complete_tasks(db, "po", po.id)
+    # A service PO may be confirmed while still approved (GR-S-008); its
+    # receipt status could not move then (PT-008). Catch up now, or a fully
+    # received PO sits at issued forever (ISS-0108).
+    from app.crud.gr import sync_po_receipt_status
+    await sync_po_receipt_status(db, po.id)
+
+    # Only the place_order task is done now. Other PO tasks have their own
+    # close condition — create_prepayment_pa closes when a prepayment PA
+    # exists (§3.7.1), not when the order is placed (ISS-0135).
+    await _complete_tasks(db, "po", po.id, task_type="place_order")
 
     db.add(ApprovalEvent(
         document_type="po",
@@ -862,6 +880,48 @@ async def po_has_three_way_matched_invoice(db: AsyncSession, po_id: uuid.UUID) -
     # (core.po_facts) — it used to be three queries here and a guess there.
     from app.core.po_facts import three_way_matched
     return bool((await db.execute(select(three_way_matched(po_id)))).scalar())
+
+
+async def collection_gate_on(db: AsyncSession) -> bool:
+    """Admin → Collection Config → "Collection Confirmation Required" (ISS-0146).
+
+    Read from collection_config.collection_gate_enabled, off unless switched
+    on. Not the older collection_required key: that one was stored (and
+    defaulted to true) for years while nothing read it, so honouring it would
+    switch the gate on everywhere the moment this shipped."""
+    from app.models.config import CompanyConfig
+    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
+    return bool(((cfg.collection_config if cfg else None) or {}).get("collection_gate_enabled", False))
+
+
+async def po_collection_cleared(db: AsyncSession, po) -> bool:
+    """False only while the collection gate is on, the PO is for physical goods
+    and nothing on it has been collected yet: no GR collected / confirmed (or
+    later flagged discrepancy) and no received quantity — quantities reach the
+    PO lines only on collection (GR-P-003). Service / project POs are confirmed,
+    not collected, and are never held back."""
+    from app.crud.gr import COUNTED_GR_STATUSES
+    from app.models.gr import GoodsReceipt
+    from app.schemas.gr import is_physical
+
+    if not is_physical(po.type) or not await collection_gate_on(db):
+        return True
+    collected = await db.execute(select(
+        exists(select(GoodsReceipt.id).where(
+            GoodsReceipt.po_id == po.id, GoodsReceipt.status.in_(COUNTED_GR_STATUSES)))
+        | exists(select(PoLineItem.id).where(
+            PoLineItem.po_id == po.id, PoLineItem.received_qty > 0))
+    ))
+    return bool(collected.scalar())
+
+
+async def po_ready_for_pa(db: AsyncSession, po) -> bool:
+    """The PA receipt gate and the create_pa task: 3-way matched and, when the
+    collection gate is on, collected. The confirm-receipt nudge keeps reading
+    po_has_three_way_matched_invoice alone — a GR that exists but is not yet
+    collected must not be chased as "no receipt"."""
+    return (await po_has_three_way_matched_invoice(db, po.id)
+            and await po_collection_cleared(db, po))
 
 
 async def payable_invoice_po_ids(

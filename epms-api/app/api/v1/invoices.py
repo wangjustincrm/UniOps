@@ -2,6 +2,7 @@
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -38,6 +39,7 @@ from app.schemas.invoice import (
     InvoiceCreate,
     InvoiceDuplicateCheckResponse,
     InvoiceExceptionRequest,
+    InvoiceHistoryEntry,
     InvoiceListResponse,
     InvoiceMatchRequest,
     InvoiceReceiptsRequest,
@@ -328,7 +330,7 @@ async def _on_invoice_matched(db, invoice) -> None:
     crud.po.po_has_three_way_matched_invoice —— 对表头 PO 等价于原来的
     `invoice.gr_id is not None`,对分摊 PO 则要求该 PO 自己有 GR。
     """
-    from app.crud.po import po_has_three_way_matched_invoice
+    from app.crud.po import po_collection_cleared, po_has_three_way_matched_invoice
     from app.models.invoice_allocation import InvoicePoAllocation
     from app.schemas.gr import is_physical
 
@@ -359,7 +361,11 @@ async def _on_invoice_matched(db, invoice) -> None:
         three_way = (invoice.status == "matched"
                      and await po_has_three_way_matched_invoice(db, po.id))
         if three_way:
-            await _create_or_renotify_create_pa(db, po, pr, invoice)   # = 原 create_pa 逻辑抽出
+            # Collection gate (ISS-0146): received but not yet collected → no
+            # create_pa yet; crud.gr raises it when the goods are collected.
+            # No confirm_receipt either — there IS a receipt.
+            if await po_collection_cleared(db, po):
+                await _create_or_renotify_create_pa(db, po, pr, invoice)   # = 原 create_pa 逻辑抽出
         else:
             await _create_or_renotify_confirm_receipt(db, po, pr, invoice, is_physical(po.type))
 
@@ -704,6 +710,13 @@ async def get_invoice(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPa
         raise HTTPException(status_code=404, detail="Invoice not found")
     await _attach_match_assignees(db, [inv])
     await invoice_crud.attach_claimed_receipts(db, [inv])
+    await invoice_crud.attach_cumulative_variance(db, inv)
+    # AGR-032: receipt evidence is frozen while a non-cancelled PA lists the
+    # invoice. Name that PA so the Receipt Evidence panel can lock up front
+    # instead of answering the click with the 422 (ISS-0134).
+    if inv.agreement_id is not None:
+        held = await invoice_crud._invoice_referenced_by_active_pa(db, inv.id)
+        inv.receipts_locked_by_pa = held.pa_number if held is not None else None
     return inv
 
 
@@ -832,6 +845,64 @@ async def _audit_unmatch(db, inv, user: dict, scope_label: str,
     await db.flush()
 
 
+# What the History tab shows (ISS-0170). Every one is written by the endpoint
+# that performs the step, at that moment, so a later unmatch or re-match never
+# rewrites an earlier entry. "edit" rows (data maintenance, fee links) stay out.
+HISTORY_ACTIONS = ("assign_match", "decline_match", "match", "review_approve",
+                   "review_reject", "resolve_exception", "rematch_on_edit", "unmatch")
+
+
+def _match_target(inv) -> dict:
+    """What an invoice is matched to right now, for a history entry."""
+    return {
+        "route": inv.match_route,
+        "po_number": inv.po_number,
+        "gr_number": inv.gr_number,
+        "agreement_number": inv.agreement_number,
+    }
+
+
+async def _audit_invoice(db, inv, user: dict, action: str, after: dict,
+                         before: dict | None = None) -> None:
+    """One History entry for a step on this invoice (see HISTORY_ACTIONS).
+    Same table and shape as _audit_unmatch; the caller's commit carries it."""
+    actor_id = uuid.UUID(user["sub"])
+    actor_email = user.get("email") or (await db.execute(
+        select(User.email).where(User.id == actor_id)
+    )).scalar_one_or_none()
+    db.add(AdminAuditLog(
+        actor_id=actor_id, actor_email=actor_email or "unknown",
+        action=action, system="epms", entity="invoice",
+        record_id=inv.id, record_number=inv.internal_ref,
+        before=before, after=after,
+    ))
+    await db.flush()
+
+
+@router.get("/{invoice_id}/history", response_model=list[InvoiceHistoryEntry])
+async def invoice_history(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+    """Every recorded step on the invoice, oldest first. Same read gate as the
+    invoice itself."""
+    inv = await invoice_crud.get_by_id(db, invoice_id)
+    if inv is None or not await _can_read_invoice(db, user, inv, await build_scope(db, user)):
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    rows = (await db.execute(
+        select(AdminAuditLog, User.full_name)
+        .outerjoin(User, User.id == AdminAuditLog.actor_id)
+        .where(AdminAuditLog.entity == "invoice", AdminAuditLog.record_id == invoice_id,
+               AdminAuditLog.action.in_(HISTORY_ACTIONS))
+        .order_by(AdminAuditLog.created_at, AdminAuditLog.id)
+    )).all()
+    return [
+        InvoiceHistoryEntry(
+            id=row.id, action=row.action, created_at=row.created_at,
+            actor_id=row.actor_id, actor_name=name or row.actor_email,
+            before=row.before, after=row.after,
+        )
+        for row, name in rows
+    ]
+
+
 @router.post("/{invoice_id}/unmatch-po", response_model=InvoiceResponse)
 async def unmatch_invoice_po(
     invoice_id: uuid.UUID, body: UnmatchRequest, db: SessionDep,
@@ -912,6 +983,7 @@ async def mark_invoice_direct(
         await invoice_crud.mark_direct(db, inv, matched_by=caller_id)
     except invoice_crud.DirectRouteInvalid as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    await _audit_invoice(db, inv, user, "match", {**_match_target(inv), "status": inv.status})
     # Matching is done — nobody still needs to be asked to match it.
     await _close_open_match_tasks(db, inv.id, caller_id)
     await _sync_exception_task(db, inv, inv, caller_id)
@@ -944,6 +1016,44 @@ async def unmatch_invoice_direct(
     await _attach_match_assignees(db, [inv])
     await invoice_crud.attach_claimed_receipts(db, [inv])
     return inv
+
+
+def _invoice_money_fields_changed(inv, body: InvoiceUpdate, prev_gr_ids) -> list[str]:
+    """Which of the fields a PA is paid on this edit really changes. Compared by
+    value, because the Edit form sends every field back even when untouched."""
+    def dec(v):
+        return Decimal(str(v)) if v is not None else None
+
+    def cents(v):
+        return None if v is None else v.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    def lines(items):
+        return [(str(li.get("description") or "").strip(), dec(li.get("quantity")),
+                 dec(li.get("unit_price")), bool(li.get("non_po_fee")))
+                for li in items or []]
+
+    def line_total_moved(sent, stored):
+        # The form always sends qty x price as a raw float: that is not a change
+        # to a stored total, even one (from OCR) that disagrees with qty x price.
+        total = cents(dec(sent.get("line_total")))
+        return (total != cents(dec(stored.get("line_total")))
+                and total != cents(dec(sent.get("quantity")) * dec(sent.get("unit_price"))))
+
+    moved: list[str] = []
+    if body.amount is not None and dec(body.amount) != dec(inv.amount):
+        moved.append("pre-tax amount")
+    if body.tax_amount is not None and dec(body.tax_amount) != dec(inv.tax_amount):
+        moved.append("tax")
+    if body.currency is not None and body.currency.upper() != (inv.currency or "").upper():
+        moved.append("currency")
+    if body.line_items is not None:
+        sent = [li.model_dump() for li in body.line_items]
+        if lines(sent) != lines(inv.line_items) or any(
+                line_total_moved(s, o) for s, o in zip(sent, inv.line_items or [])):
+            moved.append("line items")
+    if body.gr_ids is not None and set(body.gr_ids) != set(prev_gr_ids):
+        moved.append("goods receipts")
+    return moved
 
 
 @router.patch("/{invoice_id}", response_model=InvoiceResponse)
@@ -989,6 +1099,24 @@ async def update_invoice(
     elif inv.gr_id:
         prev_gr_ids = [inv.gr_id]
 
+    # ISS-0125: a PA copies the invoice's figures when it is raised and pays
+    # them. Changing them underneath a live PA re-ran the match, dropped the
+    # invoice to Unmatched (detached from its PO, so Delete appeared) and left
+    # the PA payable for the old amount. Same rule Unmatch already applies:
+    # the PA has to let go of the invoice first. Dates and notes stay editable.
+    held_by = await invoice_crud._invoice_referenced_by_active_pa(db, inv.id)
+    if held_by is not None:
+        moved = _invoice_money_fields_changed(inv, body, prev_gr_ids)
+        if moved:
+            raise HTTPException(
+                status_code=409,
+                detail=(f"Payment Application {held_by.pa_number} ({held_by.status}) pays this "
+                        f"invoice, so its {', '.join(moved)} cannot be changed. Remove the "
+                        "invoice from that payment application, or cancel it, first."))
+        # Nothing moved, so the totals the PA was raised on stay as stored.
+        for sent, stored in zip(body.line_items or [], inv.line_items or []):
+            sent.line_total = Decimal(str(stored.get("line_total") or 0))
+
     prev_status = inv.status
     caller_id = uuid.UUID(user["sub"])
     # Snapshot BEFORE the edit lands: crud.update mutates this same row, so
@@ -1019,8 +1147,17 @@ async def update_invoice(
 
     # Re-run match against current allocations so variance/status reflect edits.
     if prev_po_id is not None or inv.gr_ids:
-        result = await invoice_crud.rematch_from_existing(
-            db, result, matched_by=caller_id, accepted_numbers=accepted_numbers)
+        try:
+            result = await invoice_crud.rematch_from_existing(
+                db, result, matched_by=caller_id, accepted_numbers=accepted_numbers)
+        except invoice_crud.AllocationImbalance as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        if result.status != prev_status:
+            # An edit moved the match outcome (e.g. revoked an accepted
+            # exception, or cleared allocations that no longer balance).
+            await _audit_invoice(db, result, user, "rematch_on_edit",
+                                 {**_match_target(result), "status": result.status},
+                                 before={"status": prev_status})
 
     # An edit can MATCH the invoice: rematch_from_existing calls crud.match()
     # directly, and match() is where the status is set — every piece of
@@ -1088,6 +1225,8 @@ async def match_invoice(
         result = await invoice_crud.match(db, inv, body, matched_by=caller_id,
                                           require_review=require_review,
                                           auto_link_grs=body.gr_ids is None and body.gr_id is None)
+        await _audit_invoice(db, result, user, "match",
+                             {**_match_target(result), "status": result.status})
 
         # 完成调用者的 match 任务(指派场景)
         now_ts = datetime.now(timezone.utc)
@@ -1515,6 +1654,7 @@ async def decline_match(
         task.assigned_user_id = None
         task.assigned_role = "ap_clerk"
     task.title = f"Match invoice {inv.internal_ref} to PO (assignment declined)"
+    await _audit_invoice(db, inv, user, "decline_match", {"note": body.note.strip()})
     task.description = (
         f"{caller_name or 'The assignee'} declined this match assignment: {body.note.strip()} "
         f"Please match the invoice yourself or reassign it."
@@ -1624,6 +1764,10 @@ async def assign_match(
             vendor=inv.vendor_name, amount=inv.total_amount,
         )
         db.add(task)
+    await _audit_invoice(db, inv, user, "assign_match", {
+        "assignee_id": str(assignee.id), "assignee_name": assignee.full_name,
+        "reassigned": existing is not None,
+    })
     await db.flush()
     await db.refresh(task)
     # Queued in the same commit as the task, so the notifier never sees the
@@ -1650,10 +1794,15 @@ async def match_review(
     if body.action == "reject" and not (body.note or "").strip():
         raise HTTPException(status_code=422, detail="A note is required when rejecting")
     reviewer_id = uuid.UUID(user["sub"])
+    # A reject clears the match, so what was reviewed is read before it.
+    reviewed = _match_target(inv)
     try:
         result = await invoice_crud.review_match(db, inv, body.action, body.note, reviewer_id)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    await _audit_invoice(
+        db, result, user, "review_approve" if body.action == "approve" else "review_reject",
+        {"note": (body.note or "").strip() or None, "status": result.status}, before=reviewed)
 
     # 完成 open review 任务
     review_task = (await db.execute(select(Task).where(
@@ -1759,14 +1908,29 @@ async def resolve_exception(
     caller_id = uuid.UUID(user["sub"])
     try:
         result = await invoice_crud.resolve_exception(db, inv, body, resolved_by=caller_id)
+        await _audit_invoice(db, result, user, "resolve_exception", {
+            "resolution": body.resolution, "note": body.note, "status": result.status})
         exc_task = (await db.execute(select(Task).where(
             Task.type == "resolve_exception", Task.document_type == "invoice",
             Task.document_id == inv.id, Task.is_completed.is_(False),
         ))).scalar_one_or_none()
+        # The task is done only when the invoice leaves "exception" (INV-3WM-007).
+        # "Request credit note" leaves it there: the task stays open as the
+        # follow-up until the credit arrives and AP accepts, edits, re-matches or
+        # deletes the invoice (ISS-0171). A vendor credit is not linked to an
+        # invoice, so its arrival cannot close the task by itself.
         if exc_task is not None:
-            exc_task.is_completed = True
-            exc_task.completed_at = datetime.now(timezone.utc)
-            exc_task.completed_by = caller_id
+            if result.status != "exception":
+                exc_task.is_completed = True
+                exc_task.completed_at = datetime.now(timezone.utc)
+                exc_task.completed_by = caller_id
+            elif body.resolution == "credit_note_requested":
+                exc_task.title = f"Awaiting credit note — {inv.internal_ref}"
+                exc_task.description = (
+                    f"A credit note was requested from the vendor for invoice "
+                    f"{inv.internal_ref}: {body.note} When it arrives, accept or "
+                    f"edit the invoice so it leaves exception."
+                )
         # Accepting an exception IS a match decision — it lands the invoice in
         # "matched" exactly as review_match() approve does. Everything that hangs
         # off "this invoice is now matched" therefore has to run here too, or for

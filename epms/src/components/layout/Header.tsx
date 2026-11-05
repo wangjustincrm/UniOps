@@ -34,6 +34,13 @@ const BREADCRUMB_LABELS: Record<string, string> = {
   collect: 'Collection',
   report: 'Receiving Report',
   settle: 'Settlement',
+  freight: 'Freight',
+  agreements: 'Agreements',
+  receipts: 'Agreement Receipts',
+  'service-confirm': 'Confirm Service Completion',
+  'edit-imported': 'Edit Details',
+  catalog: 'Account Catalog',
+  plans: 'Budget Plans',
 }
 
 const DETAIL_LABELS: Record<string, string> = {
@@ -45,6 +52,8 @@ const DETAIL_LABELS: Record<string, string> = {
   vendors: 'Vendor',
   projects: 'Project',
   parts: 'Part',
+  agreements: 'Agreement Detail',
+  receipts: 'Receipt Detail',
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

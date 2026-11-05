@@ -14,6 +14,7 @@ async def delegate_action(
     action: str,
     comment: str | None,
     bearer_token: str,
+    expected_step: int | None = None,
 ) -> dict:
     """
     Call POST /approval/v1/approvals/{doc_type}/{doc_id}/action on the Approval Engine.
@@ -25,7 +26,7 @@ async def delegate_action(
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(
                 url,
-                json={"action": action, "comment": comment},
+                json={"action": action, "comment": comment, "expected_step": expected_step},
                 headers={"Authorization": f"Bearer {bearer_token}"},
             )
     except httpx.ConnectError:

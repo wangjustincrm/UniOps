@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, MessageSquare, X, FileText, Pencil, ChevronDown } from 'lucide-react'
@@ -6,16 +6,18 @@ import { createPortal } from 'react-dom'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
-import { formatAmount, formatDate, cn } from '@/lib/utils'
-import type { ApprovalStep, DocumentStatus, WorkflowNodeDef } from '@/types'
+import { formatAmount, formatDate, formatQty, cn } from '@/lib/utils'
+import type { ApprovalStep, CurrentStep, DocumentStatus, WorkflowNodeDef } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { useConfig } from '@/hooks/useConfig'
 import { usePr, usePrAction, usePrEvents, usePrWorkflowSteps } from '@/hooks/usePrs'
 import { useApprovalReminder } from '@/hooks/useApprovalReminder'
 import { prService } from '@/services/pr'
 import type { ApiEvent } from '@/services/pr'
-import { historyLine, isSkipped } from '@/lib/approvalHistory'
+import { historyLine } from '@/lib/approvalHistory'
+import { buildApprovalNodes } from '@/lib/approvalTimeline'
 import { useTasks } from '@/hooks/useTasks'
+import { useCloseOnEscape } from '@/hooks/useCloseOnEscape'
 import { useBudgetOverview, useFactors } from '@/hooks/useBudget'
 import { usePrAttachments, useUploadAttachment, useDeleteAttachment, useRegeneratePrPdf } from '@/hooks/usePrAttachments'
 import { prAttachmentService } from '@/services/prAttachments'
@@ -39,14 +41,8 @@ function buildWorkflowSteps(
   stepIdx: number,
   events: ApiEvent[] = [],
   createdByName?: string | null,
+  currentStep?: CurrentStep | null,
 ): ApprovalStep[] {
-  // Index approve events by step_idx so each workflow node shows who acted.
-  const approveEventByStep = events
-    .filter((e) => e.action === 'approve')
-    .reduce<Record<number, ApiEvent>>((acc, e) => {
-      if (!(e.step_idx in acc)) acc[e.step_idx] = e
-      return acc
-    }, {})
   const submitEvent = events.find((e) => e.action === 'submit')
 
   const created: ApprovalStep = {
@@ -59,22 +55,12 @@ function buildWorkflowSteps(
     action: 'Created',
     channel: 'Web',
   }
-  const approvalNodes: ApprovalStep[] = nodes.map((node, i) => {
-    let s: ApprovalStep['status']
-    if (['approved', 'paid', 'closed'].includes(status)) {
-      s = 'completed'
-    } else if (status === 'rejected') {
-      s = i < stepIdx ? 'completed' : i === stepIdx ? 'skipped' : 'pending'
-    } else if (status === 'returned' || status === 'cancelled') {
-      s = i < stepIdx ? 'completed' : 'pending'
-    } else {
-      s = i < stepIdx ? 'completed' : i === stepIdx ? 'current' : 'pending'
-    }
-    const evt = approveEventByStep[i]
-    if (isSkipped(evt)) {
-      s = 'skipped'
-    }
-    return { id: node.id, role: node.label, actorName: isSkipped(evt) ? undefined : evt?.actor_name ?? undefined, status: s }
+  // Step states, names, skip reasons and the return / reject marker come from
+  // the one reading shared with the PO, Agreement and PA timelines.
+  const approvalNodes = buildApprovalNodes({
+    nodes, status, stepIdx, events, currentStep,
+    doneStatuses: ['approved', 'paid', 'closed'],
+    ownerLabel: 'requester',
   })
   return [created, ...approvalNodes]
 }
@@ -96,12 +82,31 @@ interface ApprovalModalProps {
   // it can silently consume the NEXT step's task when the same person approves
   // two consecutive steps — two levels passed on one intended click.
   isPending: boolean
+  // The refusal of the last attempt, shown in the dialog — it used to stay
+  // open with no message at all (ISS-0166).
+  error: string | null
 }
 
-function ApprovalModal({ action, prNumber, onConfirm, onClose, isPending }: ApprovalModalProps) {
+function ApprovalModal({ action, prNumber, onConfirm, onClose, isPending, error }: ApprovalModalProps) {
   const [comment, setComment] = useState('')
   const needsComment = action !== 'approve'
   const canSubmit = !needsComment || comment.trim().length > 0
+  // isPending alone did not stop a quick double-click (PR-20261022-0005 was
+  // approved twice, ISS-0079): it reaches the button only after the mutation
+  // has notified, a re-render later. `sent` is set inside the click itself, so
+  // the second click finds the button already disabled. Re-armed when the
+  // request settles — on success the dialog closes, on failure it can retry.
+  const sentRef = useRef(false)
+  const [sent, setSent] = useState(false)
+  useEffect(() => {
+    if (!isPending) { sentRef.current = false; setSent(false) }
+  }, [isPending])
+  const handleConfirmClick = () => {
+    if (sentRef.current) return
+    sentRef.current = true
+    setSent(true)
+    onConfirm(comment)
+  }
 
   const config = {
     approve: {
@@ -169,18 +174,24 @@ function ApprovalModal({ action, prNumber, onConfirm, onClose, isPending }: Appr
             </div>
           </div>
 
+          {error && (
+            <p role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+              {error}
+            </p>
+          )}
+
           <div className="flex justify-end gap-2">
             <Button variant="secondary" size="sm" onClick={onClose}>Cancel</Button>
             <button
-              disabled={!canSubmit || isPending}
-              onClick={() => onConfirm(comment)}
+              disabled={!canSubmit || isPending || sent}
+              onClick={handleConfirmClick}
               className={cn(
                 'inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
                 config.btn
               )}
             >
               {config.icon}
-              {isPending ? 'Working…' : config.label}
+              {isPending || sent ? 'Working…' : config.label}
             </button>
           </div>
         </div>
@@ -205,6 +216,7 @@ export default function PrDetailPage() {
   const [pendingAction, setPendingAction] = useState<ApprovalAction | null>(null)
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement>(null)
+  useCloseOnEscape(moreOpen, () => setMoreOpen(false))
 
   const { data: pr, isLoading } = usePr(id ?? '')
   useDocTabTitle(pr?.number)
@@ -247,12 +259,23 @@ export default function PrDetailPage() {
     !!pr &&
     APPROVABLE_STATUSES.includes(pr.status as DocumentStatus) &&
     (hasApproveTask || isAdmin || (!tasksLoaded && roleMatchesStep))
+  // Edit / Recall to Edit / Withdraw belong to the requester or a System Admin
+  // (REJ-004 / REJ-005); the engine refuses everyone else, so don't offer them.
+  // (The approver currently holding the PR acts from the approval bar instead.)
+  const isRequesterOrAdmin = !!pr && (isAdmin || pr.created_by === user?.id)
+  // A refused action used to leave the page silent (ISS-0156).
+  const [actionError, setActionError] = useState<string | null>(null)
+  const onActionError = (e: unknown) =>
+    setActionError(e instanceof Error ? e.message : 'The action could not be completed.')
 
   const handleConfirm = (action: ApprovalAction, comment: string) => {
     if (!pr) return
     const apiAction = action === 'approve' ? 'approve' : action === 'return' ? 'return' : 'reject'
+    setActionError(null)
     prAction.mutate(
-      { action: apiAction, comment: comment || undefined },
+      // expected_step: a decision is for the step on screen; once the PR has
+      // moved on the server refuses it rather than applying it to the next one.
+      { action: apiAction, comment: comment || undefined, expected_step: pr.approval_step_idx ?? 0 },
       { onSuccess: () => setPendingAction(null) }
     )
   }
@@ -288,6 +311,7 @@ export default function PrDetailPage() {
     pr.approval_step_idx ?? 0,
     events ?? [],
     pr.created_by_name,
+    pr.current_step,
   )
   const hasMaterial = pr.type === 1 || pr.type === 3
 
@@ -313,7 +337,7 @@ export default function PrDetailPage() {
             <p className="mt-0.5 text-sm text-neutral-400">Submitted {formatDate(pr.submitted_at ?? '')}</p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {['draft', 'returned', 'submitted', 'in_review'].includes(pr.status) && !canApprove && (
+            {['draft', 'returned', 'submitted', 'in_review'].includes(pr.status) && !canApprove && isRequesterOrAdmin && (
               <>
                 {['draft', 'returned'].includes(pr.status) ? (
                   <Link to={`/pr/${pr.id}/edit`}>
@@ -328,9 +352,10 @@ export default function PrDetailPage() {
                     size="sm"
                     onClick={() => {
                       if (confirm(`Recall ${pr.number} for editing? It will be moved back to Draft.`)) {
+                        setActionError(null)
                         prAction.mutate(
                           { action: 'recall' },
-                          { onSuccess: () => navigate(`/pr/${pr.id}/edit`) }
+                          { onSuccess: () => navigate(`/pr/${pr.id}/edit`), onError: onActionError }
                         )
                       }
                     }}
@@ -339,19 +364,24 @@ export default function PrDetailPage() {
                     Recall to Edit
                   </Button>
                 )}
+                {/* The engine cancels a PR only while draft / returned / submitted
+                    (valid_cancel, PRD §3.3.3); on in_review it always refused. */}
+                {['draft', 'returned', 'submitted'].includes(pr.status) && (
                 <Button
                   variant="secondary"
                   size="sm"
                   className="border-danger-200 text-danger-600 hover:bg-danger-50"
                   onClick={() => {
                     if (confirm(`Withdraw ${pr.number}? This will cancel the PR.`)) {
-                      prAction.mutate({ action: 'cancel' })
+                      setActionError(null)
+                      prAction.mutate({ action: 'cancel' }, { onError: onActionError })
                     }
                   }}
                   disabled={prAction.isPending}
                 >
                   Withdraw
                 </Button>
+                )}
               </>
             )}
             {/* Approver actions moved to fixed bottom bar */}
@@ -368,6 +398,11 @@ export default function PrDetailPage() {
             )}
           </div>
         </div>
+        {actionError && (
+          <div role="alert" className="mt-3 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-sm text-danger-600">
+            {actionError}
+          </div>
+        )}
       </div>
 
       {/* Main content + timeline */}
@@ -408,6 +443,9 @@ export default function PrDetailPage() {
                     ...(pr.type === 6 ? [['Project No.', pr.project_code || '—'] as [string, string]] : []),
                     ['Currency', pr.currency ?? 'CAD'],
                     [`Total Amount (${pr.currency ?? 'CAD'})`, formatAmount(pr.amount, pr.currency ?? 'CAD')],
+                    // Approvers need to see this purchase is paid in advance;
+                    // before ISS-0132 it first showed up on the PO.
+                    ...(pr.is_prepaid ? [['Prepayment Required', 'Yes'] as [string, string]] : []),
                     ['Required By Date', formatDate(pr.required_by ?? '')],
                     ...(pr.type === 4 || pr.type === 6
                       ? [['Service/Project Expected Completion Date',
@@ -502,7 +540,7 @@ export default function PrDetailPage() {
                               <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{item.material_id || '—'}</td>
                             )}
                             <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{item.supplier_item_id || '—'}</td>
-                            <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{item.qty}</td>
+                            <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatQty(item.qty)}</td>
                             <td className="px-4 py-2.5 text-neutral-500">{item.unit}</td>
                             <td className="px-4 py-2.5 amount text-right text-neutral-900">{formatAmount(item.unit_price, pr.currency ?? 'CAD')}</td>
                             <td className="px-4 py-2.5 amount text-right font-semibold text-neutral-900">{formatAmount(item.line_total, pr.currency ?? 'CAD')}</td>
@@ -580,7 +618,7 @@ export default function PrDetailPage() {
               {events && events.length > 0 ? (
                 <ul className="flex flex-col gap-3">
                   {events.map((ev) => {
-                    const line = historyLine(ev)
+                    const line = historyLine(ev, workflowSteps)
                     return (
                       <li key={ev.id} className="flex gap-3 text-sm">
                         <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDate(ev.created_at)}</span>
@@ -675,8 +713,9 @@ export default function PrDetailPage() {
           action={pendingAction}
           prNumber={pr.number}
           onConfirm={(comment) => handleConfirm(pendingAction, comment)}
-          onClose={() => setPendingAction(null)}
+          onClose={() => { setPendingAction(null); prAction.reset() }}
           isPending={prAction.isPending}
+          error={prAction.error instanceof Error ? prAction.error.message : null}
         />
       )}
     </div>

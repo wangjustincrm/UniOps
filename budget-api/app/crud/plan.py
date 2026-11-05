@@ -20,7 +20,7 @@ import uuid
 from decimal import Decimal, InvalidOperation
 
 from fastapi import HTTPException, status
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.catalog import BudgetAccount, BudgetL1
@@ -157,14 +157,53 @@ async def get_open_revision(
     return result.scalars().first()
 
 
+# As the Budget Plans list labels them (epms pages/budget/BudgetPlanListPage.tsx).
+_PLAN_STATUS_LABELS = {
+    "draft": "Draft", "submitted": "Submitted", "in_review": "In Review",
+    "approved": "Approved", "returned": "Returned", "rejected": "Rejected",
+    "cancelled": "Cancelled",
+}
+
+
+async def _cost_center_label(db: AsyncSession, cost_center_id: uuid.UUID) -> str:
+    """"SELL-0113 — SELL-ECOM", as the New Plan picker lists it. cost_centers
+    lives in the shared DB but belongs to another service's schema (see
+    core/budget_scope.py), so the read runs in a savepoint and any failure
+    falls back to a neutral phrase instead of spoiling the session."""
+    try:
+        async with db.begin_nested():
+            row = (await db.execute(
+                text("SELECT code, name FROM cost_centers WHERE id = :id"),
+                {"id": cost_center_id},
+            )).first()
+    except Exception:  # noqa: BLE001 — wording only; the 409 stands either way
+        row = None
+    if row is None or not row[0]:
+        return "this cost center"
+    return f"{row[0]} — {row[1]}" if row[1] else row[0]
+
+
+async def _plan_exists_message(db: AsyncSession, existing: BudgetPlan) -> str:
+    """BPLAN-003's refusal in the user's words (ISS-0115): which plan is in the
+    way and what to do instead — no internal ids. Revise Plan is only offered
+    on the current approved version; any other current version is the one
+    still being worked on, so the advice is to carry on with it."""
+    cc = await _cost_center_label(db, existing.cost_center_id)
+    head = f"A FY {existing.fiscal_year} plan already exists for {cc}."
+    if existing.status == "approved":
+        return f"{head} Open it and use Revise Plan to change it."
+    label = _PLAN_STATUS_LABELS.get(existing.status, existing.status)
+    return (f"{head} Version v{existing.version} is {label} — "
+            f"open it from the Budget Plans list and continue there.")
+
+
 async def create_plan(
     db: AsyncSession, payload: PlanCreate, actor_id: uuid.UUID,
 ) -> BudgetPlan:
     existing = await get_current_plan(db, payload.cost_center_id, payload.fiscal_year)
     if existing:
         raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            f"Plan already exists for cost_center={payload.cost_center_id} fiscal_year={payload.fiscal_year} (id={existing.id})",
+            status.HTTP_409_CONFLICT, await _plan_exists_message(db, existing),
         )
     plan = BudgetPlan(
         cost_center_id=payload.cost_center_id,

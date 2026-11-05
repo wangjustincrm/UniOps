@@ -202,6 +202,9 @@ class ExpenseClaimCreate(BaseModel):
     travelers: list[TravelerCreate] = []
     # TRV only — reference to an approved TRA
     travel_application_id: Optional[uuid.UUID] = None
+    # TRV only — the traveler being reimbursed, when not the caller (filed on
+    # their behalf by the TRA's applicant). Omitted = the caller.
+    claimant_id: Optional[uuid.UUID] = None
     # Line items (EXP + TRV use line_items; MIL uses trip_items)
     line_items: list[LineItemCreate] = []
     trip_items: list[TripItemCreate] = []

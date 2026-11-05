@@ -108,7 +108,9 @@ function Sidebar({
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-2 py-4">
+      {/* No scrollbar of its own (ISS-0182): Chrome on Windows gives it ~15px,
+          narrowing the menu out of line with the logo above; it still scrolls. */}
+      <nav className="flex-1 overflow-y-auto px-2 py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {!collapsed && (
           <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-white/40">
             Inventory

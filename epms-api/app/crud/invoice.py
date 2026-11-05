@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import case, func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -40,6 +40,60 @@ logger = logging.getLogger(__name__)
 
 
 # ── Claimed receipts (Task 5) ───────────────────────────────────────────────────
+
+async def attach_cumulative_variance(db: AsyncSession, invoice: Invoice) -> None:
+    """Put the variance that decides Matched / Exception on the invoice for its
+    detail page (ISS-0129). match() measures each allocated PO line against the
+    pre-tax amount every invoice allocated to it (INV-3WM-001); the header
+    `variance` is this invoice alone against the PO, which on a second bill for
+    the same goods reads "+0%" while the invoice sits in Exception.
+
+    Same query as match() step 4, run now, so it also reflects invoices matched
+    to those lines after this one. When any line is over-billed, the figure is
+    the over-billed lines only (what raises the Exception); otherwise the net.
+    """
+    rows = [a for a in (invoice.allocations or [])]
+    if not rows:
+        return
+    keys = list(dict.fromkeys((a.po_id, a.po_line_id) for a in rows))
+    per_key: list[tuple[Decimal, Decimal]] = []
+    for po_id, po_line_id in keys:
+        if po_line_id is not None:
+            reference = (await db.execute(
+                select(PoLineItem.line_total).where(PoLineItem.id == po_line_id)
+            )).scalar_one_or_none()
+        else:
+            reference = (await db.execute(
+                select(PurchaseOrder.subtotal).where(PurchaseOrder.id == po_id)
+            )).scalar_one_or_none()
+        if reference is None:
+            return
+        q = select(func.coalesce(func.sum(InvoicePoAllocation.allocated_amount), Decimal("0"))) \
+            .where(InvoicePoAllocation.po_id == po_id)
+        q = q.where(InvoicePoAllocation.po_line_id == po_line_id) if po_line_id is not None \
+            else q.where(InvoicePoAllocation.po_line_id.is_(None))
+        invoiced = (await db.execute(q)).scalar_one() or Decimal("0")
+        per_key.append((invoiced - reference, reference))
+    over = [(v, r) for v, r in per_key if v > Decimal("0")]
+    chosen = over or per_key
+    variance = sum((v for v, _ in chosen), Decimal("0"))
+    reference = sum((r for _, r in chosen), Decimal("0"))
+    invoice.cumulative_variance = variance
+    invoice.cumulative_variance_pct = (
+        (variance / reference * 100).quantize(Decimal("0.0001"))
+        if reference != Decimal("0") else Decimal("0"))
+
+    conds = [and_(InvoicePoAllocation.po_id == po_id,
+                  InvoicePoAllocation.po_line_id == po_line_id if po_line_id is not None
+                  else InvoicePoAllocation.po_line_id.is_(None))
+             for po_id, po_line_id in keys]
+    invoice.cumulative_other_invoices = list((await db.execute(
+        select(Invoice.internal_ref).distinct()
+        .join(InvoicePoAllocation, InvoicePoAllocation.invoice_id == Invoice.id)
+        .where(or_(*conds), Invoice.id != invoice.id)
+        .order_by(Invoice.internal_ref)
+    )).scalars().all())
+
 
 async def attach_claimed_receipts(db: AsyncSession, invoices: list) -> None:
     """Inject `claimed_receipts` onto ORM invoice instances, batched.
@@ -105,8 +159,8 @@ async def attach_claimed_receipts(db: AsyncSession, invoices: list) -> None:
 
 
 async def attach_allocation_display_fields(db: AsyncSession, invoices: list) -> None:
-    """Inject `po_number` + `po_line_description` onto each invoice's
-    allocation rows, batched — display-only fields resolved at read time,
+    """Inject `po_number` + `po_line_description` + `po_reference` onto each
+    invoice's allocation rows, batched — display-only fields resolved at read time,
     never stored on `InvoicePoAllocation` (see that model).
 
     Same batching shape as `attach_claimed_receipts` above: every `po_id`
@@ -129,20 +183,30 @@ async def attach_allocation_display_fields(db: AsyncSession, invoices: list) -> 
     line_ids = {a.po_line_id for a in all_allocs if a.po_line_id is not None}
 
     po_numbers: dict = {}
+    po_subtotals: dict = {}
     if po_ids:
-        po_numbers = dict((await db.execute(
-            select(PurchaseOrder.id, PurchaseOrder.number).where(PurchaseOrder.id.in_(po_ids))
-        )).all())
+        for pid, number, subtotal in (await db.execute(
+            select(PurchaseOrder.id, PurchaseOrder.number, PurchaseOrder.subtotal)
+            .where(PurchaseOrder.id.in_(po_ids))
+        )).all():
+            po_numbers[pid] = number
+            po_subtotals[pid] = subtotal
 
     line_descs: dict = {}
+    line_totals: dict = {}
     if line_ids:
-        line_descs = dict((await db.execute(
-            select(PoLineItem.id, PoLineItem.description).where(PoLineItem.id.in_(line_ids))
-        )).all())
+        for lid, desc, total in (await db.execute(
+            select(PoLineItem.id, PoLineItem.description, PoLineItem.line_total)
+            .where(PoLineItem.id.in_(line_ids))
+        )).all():
+            line_descs[lid] = desc
+            line_totals[lid] = total
 
     for a in all_allocs:
         a.po_number = po_numbers.get(a.po_id)
         a.po_line_description = line_descs.get(a.po_line_id) if a.po_line_id else None
+        a.po_reference = (line_totals.get(a.po_line_id) if a.po_line_id
+                          else po_subtotals.get(a.po_id))
 
 
 # ── Number generation ──────────────────────────────────────────────────────────
@@ -529,9 +593,13 @@ async def _recompute_consumed(db: AsyncSession, agreement_id: uuid.UUID) -> None
     Deriving it from the invoice set makes re-match idempotent: incrementing
     would double-count every correction, and the number drives the NTE warning
     banner AP looks at.
+
+    Pre-tax (Invoice.amount), like the Not-to-Exceed and the stage / period
+    amounts it is compared with (ISS-0128): summing the tax-inclusive total put
+    an agreement invoiced exactly to its stages over its ceiling by the tax.
     """
     total = (await db.execute(
-        select(func.coalesce(func.sum(Invoice.total_amount), Decimal("0")))
+        select(func.coalesce(func.sum(Invoice.amount), Decimal("0")))
         .where(Invoice.agreement_id == agreement_id)
     )).scalar_one()
     agr = (await db.execute(
@@ -1005,8 +1073,25 @@ async def set_receipts(
 
     if receipt_ids:
         claimed = await agreement_receipt_crud.claim(db, agr, receipt_ids, invoice)
+        reason = (variance_reason or "").strip() or None
+        # PRD AGR-032 "with a reason if amounts differ" (ISS-0116). Same
+        # comparison InvoiceReceiptsPanel shows and the PA's "Receipts differ
+        # from invoice by …" line reads (matchVariance.ts receiptSummary):
+        # tax-inclusive totals, only receipts that carry an amount, to the cent.
+        # Nothing priced selected = nothing to compare. Raised after the claim
+        # on purpose: the request session rolls the release + claim back.
+        priced = [r.total_amount for r in claimed if r.total_amount is not None]
+        if priced and reason is None:
+            selected = sum(priced, Decimal("0")).quantize(Decimal("0.01"))
+            billed = Decimal(invoice.total_amount).quantize(Decimal("0.01"))
+            if selected != billed:
+                raise ValueError(
+                    f"The selected receipts total {invoice.currency} {selected} but the "
+                    f"invoice is {invoice.currency} {billed} (difference "
+                    f"{selected - billed:+}). Explain the difference before saving "
+                    f"the receipt evidence.")
         invoice.receipt_ids = [str(r.id) for r in claimed]
-        invoice.receipt_variance_reason = (variance_reason or "").strip() or None
+        invoice.receipt_variance_reason = reason
         # 挂上了凭证就不再是无凭证结算 —— 这两个状态互斥,协议详情页那个
         # 健康度计数依赖它们互斥才有意义。
         invoice.legacy_settlement = False
@@ -1149,6 +1234,14 @@ async def match(
             )).scalar_one_or_none()
             if po is None:
                 raise ValueError(f"Purchase order {a.po_id} not found")
+            # ISS-0120: the candidate list offers only this vendor's POs, but
+            # the endpoint took any PO id it was sent. Same rule as the
+            # fee-only link and the agreement route below.
+            if invoice.vendor_id is not None and po.vendor_id != invoice.vendor_id:
+                raise AllocationImbalance(
+                    f"{po.number} is a purchase order of {po.vendor_name}, not of "
+                    f"{invoice.vendor_name}. An invoice can only be matched to its own "
+                    "vendor's purchase orders.")
             po_cache[a.po_id] = po
         if a.po_line_id is not None:
             exists = (await db.execute(
@@ -1295,9 +1388,12 @@ async def match(
         invoice.exception_reason = None
     elif any_exception:
         invoice.status = "exception"
+        # Pre-tax on both sides, the figures the variance is measured on
+        # (INV-3WM-001) — total_amount includes tax, the PO reference does not.
         invoice.exception_reason = (
             "One or more PO lines are outside tolerance "
-            f"(invoice total {invoice.total_amount} vs reference {summary_reference})"
+            f"(invoice pre-tax {summary_reference + invoice.variance:.2f} "
+            f"vs PO pre-tax {summary_reference:.2f})"
         )
     else:
         invoice.status = "matched"
@@ -1516,9 +1612,12 @@ async def review_match(
         )
         if any_exception:
             invoice.status = "exception"
+            # Pre-tax on both sides, as in match() (INV-3WM-001).
+            po_pre_tax = invoice.po_total or Decimal("0")
             invoice.exception_reason = (
                 "Reviewed: variance outside tolerance "
-                f"(invoice total {invoice.total_amount} vs reference {invoice.po_total})"
+                f"(invoice pre-tax {po_pre_tax + (invoice.variance or Decimal('0')):.2f} "
+                f"vs PO pre-tax {po_pre_tax:.2f})"
             )
         else:
             invoice.status = "matched"
@@ -1763,6 +1862,14 @@ async def delete(db: AsyncSession, invoice: Invoice) -> None:
         raise ValueError(
             f"Cannot delete invoice in '{invoice.status}' status. "
             "Only unmatched or exception invoices may be deleted."
+        )
+    # ISS-0125: the PA would stay payable for a bill that no longer exists.
+    held_by = await _invoice_referenced_by_active_pa(db, invoice.id)
+    if held_by is not None:
+        raise ValueError(
+            f"Payment Application {held_by.pa_number} ({held_by.status}) still pays this "
+            "invoice. Remove the invoice from that payment application, or cancel it, "
+            "before deleting the invoice."
         )
     po_id = invoice.po_id
     agreement_id = invoice.agreement_id

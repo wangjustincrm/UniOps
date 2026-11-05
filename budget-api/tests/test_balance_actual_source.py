@@ -309,3 +309,26 @@ async def test_by_account_client_error_is_unknown_not_empty(monkeypatch, status_
     got = await finance_client.nc_actuals_by_account(
         bearer_token="t", fiscal_year=FY, cost_center_id=CC)
     assert got is None
+
+
+async def test_scoped_summary_for_one_cc_asks_finance_for_that_cc(db_session, monkeypatch):
+    """A scoped caller's one cost center arrives in cc_ids. Sent on as None,
+    finance answers for the whole department, and the approver dashboard,
+    which asks once per cost center, adds the department up N times."""
+    acct = await _seed(db_session, annual=Decimal("38080"), ledger_opening=Decimal("0"))
+    seen = _finance_map_returns(monkeypatch, {str(acct.id): Decimal("5000")})
+
+    await balance_crud.get_actuals_summary(
+        db_session, fiscal_year=FY, cc_ids=[CC], bearer_token="t")
+
+    assert seen["cost_center_id"] == CC
+
+
+async def test_scoped_summary_for_a_department_leaves_finance_to_clamp(db_session, monkeypatch):
+    acct = await _seed(db_session, annual=Decimal("38080"), ledger_opening=Decimal("0"))
+    seen = _finance_map_returns(monkeypatch, {str(acct.id): Decimal("5000")})
+
+    await balance_crud.get_actuals_summary(
+        db_session, fiscal_year=FY, cc_ids=[CC, uuid.uuid4()], bearer_token="t")
+
+    assert seen["cost_center_id"] is None

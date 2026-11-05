@@ -106,3 +106,34 @@ async def test_scoped_approver_roles_get_the_approver_dashboard(test_engine, rol
 async def test_existing_primary_role_dashboards_unchanged(test_engine, role, kind):
     async with await _client_with_roles(test_engine, role) as c:
         assert await _role_of(c) == kind
+
+
+async def test_payment_officer_dashboard_lists_a_pa_without_a_po(test_engine):
+    """ISS-0159: an approved agreement / freight / Direct PA has no po_number;
+    PaRow required one, so the whole Payment Officer dashboard 500'd (503 at the
+    proxy) as soon as one such PA was among the latest eight awaiting payment."""
+    from decimal import Decimal
+    from app.models.pa import PaymentApplication
+    from app.models.user import User
+    from app.models.vendor import Vendor
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        v = Vendor(id=uuid.uuid4(), code=f"V-{uuid.uuid4().hex[:8]}", name="V", category="supplier",
+                   contact_name="A", contact_email="a@example.com")
+        u = User(id=uuid.uuid4(), email=f"pa-{uuid.uuid4().hex[:8]}@example.com",
+                 hashed_password="x", full_name="Creator", role="requester")
+        db.add_all([v, u])
+        await db.flush()
+        pa = PaymentApplication(pa_number=f"PA-NOPO-{uuid.uuid4().hex[:6]}", title="t", po_id=None,
+                                po_number=None, vendor_id=v.id, vendor_name="V",
+                                subtotal=Decimal("1"), payment_amount=Decimal("1"),
+                                currency="CAD", status="approved", created_by=u.id)
+        db.add(pa)
+        await db.commit()
+        pa_id = str(pa.id)
+    async with await _client_with_roles(test_engine, "requester", ["payment_officer"]) as c:
+        r = await c.get(DASH_URL)
+    assert r.status_code == 200, r.text
+    row = next(p for p in r.json()["pa_in_review"] if p["id"] == pa_id)
+    assert row["po_number"] is None

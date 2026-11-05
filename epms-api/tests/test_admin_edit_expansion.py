@@ -1073,3 +1073,25 @@ async def test_get_record_labels_reference_list_including_unresolvable_ids(test_
     assert [l["id"] for l in labels] == [str(inv_id), str(stranger)]
     assert "I-RL-6" in labels[0]["label"]
     assert "not found" in labels[1]["label"]
+
+
+@pytest.mark.asyncio
+async def test_get_record_names_the_user_behind_a_user_reference(test_engine):
+    """The PA Creator field showed the creator's uuid (UI-USER-001, ISS-0183):
+    a user reference has no name column, so get_record resolves its label."""
+    from app.admin import service
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator, vid, po_id, pa_id = (uuid.uuid4() for _ in range(4))
+    async with factory() as db:
+        await _rl_setup(db, creator=creator, vid=vid, po_id=po_id, tag="rl7")
+        db.add(_rl_pa(pa_id, po_id, vid, creator, "PA-RL7"))
+        await db.commit()
+    async with factory() as db:
+        rec = await service.get_record(db, "pa", pa_id)
+    assert rec["created_by"] == str(creator)          # the stored value is unchanged
+    assert rec["_ref_labels"]["created_by"].startswith("C <rl7-")
+    assert str(creator) not in rec["_ref_labels"]["created_by"]
+    # A field with a name column (vendor) keeps using it; an empty one is left out.
+    assert "vendor_id" not in rec["_ref_labels"]
+    assert "source_requester_id" not in rec["_ref_labels"]

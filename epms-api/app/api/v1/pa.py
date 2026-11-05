@@ -23,7 +23,7 @@ from app.crud import agreement as agr_crud
 from app.crud import pa as pa_crud
 from app.crud._list_order import sort_clauses
 from app.crud import po as po_crud
-from app.crud.pa_links import pa_ids_for_po, pa_ids_for_pos
+from app.crud.pa_links import pa_ids_for_po, pa_ids_for_pos, po_ids_of_pa
 from app.crud.current_step import enrich_current_step
 from app.models.agreement_schedule import AgreementPaymentSchedule
 from app.models.config import CompanyConfig
@@ -36,7 +36,7 @@ from app.models.vendor import Vendor
 from app.schemas.config import PrepaymentConfig
 from app.schemas.pa import (
     DirectPaCandidate, DirectPaCandidatesResponse, DirectPaCreate, PaActionRequest, PaCreate,
-    PaListResponse, PaResponse, PaUpdate,
+    PaLineItemIn, PaListResponse, PaResponse, PaUpdate,
 )
 from app.schemas.pr import ApprovalEventResponse
 
@@ -155,6 +155,65 @@ async def _validate_agreement_pa_invoices(
                         "explicitly without receipt evidence, before raising payment."))
 
 
+# PA statuses that no longer hold a claim on their invoices. Same set the
+# New PA form uses to hide an invoice (PaCreatePage claimedByPaNumber).
+_RELEASED_PA_STATUSES = ("cancelled", "rejected")
+
+
+def _settled_po_id(pa_type: str | None, po_id: uuid.UUID | None) -> uuid.UUID | None:
+    """The PO whose prepayments this PA may share an invoice with: the one it
+    settles. None for every other PA type."""
+    return po_id if pa_type in ("settlement", "balance") else None
+
+
+async def _assert_invoices_not_on_other_live_pa(
+    db: SessionDep, invoice_ids: list, pa_id: uuid.UUID | None = None,
+    settled_po_id: uuid.UUID | None = None,
+) -> None:
+    """No invoice may sit on two live PAs: that is one bill paid twice
+    (ISS-0112, PA-012). The New PA form hides such invoices, but the Edit form
+    of a returned PA listed them again and the server took the second claim.
+    So the rule lives here, run on create, on every invoice-list PATCH and on
+    submit, for the PO and the agreement route alike (Direct and Freight PAs
+    have their own check in crud). The invoice rows are locked so two PAs
+    saved at the same moment cannot both pass.
+
+    One sharing is legitimate: a settlement or balance PA pays the rest of the
+    invoice a prepayment on the same PO paid part of (the prepayment leaves it
+    partially_paid), and netting prepayment_applied is what stops it being paid
+    twice. `settled_po_id` (see _settled_po_id) lifts the check for those
+    prepayments only; a second settlement or a regular PA still counts.
+    """
+    ids = [uuid.UUID(str(i)) for i in dict.fromkeys(str(i) for i in invoice_ids or [])]
+    if not ids:
+        return
+    refs = dict((await db.execute(
+        select(Invoice.id, Invoice.internal_ref).where(Invoice.id.in_(ids))
+        .order_by(Invoice.id).with_for_update()
+    )).all())
+    held: list[str] = []
+    for iid in ids:
+        q = select(PaymentApplication.pa_number).where(
+            PaymentApplication.invoice_ids.contains([str(iid)]),
+            PaymentApplication.status.not_in(_RELEASED_PA_STATUSES),
+        )
+        if pa_id is not None:
+            q = q.where(PaymentApplication.id != pa_id)
+        if settled_po_id is not None:
+            q = q.where(~(
+                (PaymentApplication.pa_type == "prepayment")
+                & PaymentApplication.id.in_(pa_ids_for_po(settled_po_id))
+            ))
+        numbers = (await db.execute(q.order_by(PaymentApplication.pa_number))).scalars().all()
+        if numbers:
+            held.append(f"{refs.get(iid, iid)} is already on {', '.join(numbers)}")
+    if held:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Invoice {'; '.join(held)} and cannot be paid twice. Remove it "
+                   "from this payment application, or cancel the other one first.")
+
+
 async def _assert_invoices_belong_to_pos(
     db: SessionDep, pos: list[PurchaseOrder], invoice_ids: list[uuid.UUID],
 ) -> None:
@@ -175,7 +234,8 @@ async def _assert_invoices_belong_to_pos(
         return
     po_ids = [p.id for p in pos]
     rows = (await db.execute(
-        select(Invoice.id, Invoice.po_id).where(Invoice.id.in_(invoice_ids))
+        select(Invoice.id, Invoice.po_id, Invoice.internal_ref, Invoice.vendor_invoice_number)
+        .where(Invoice.id.in_(invoice_ids))
     )).all()
     found_ids = {r.id for r in rows}
     not_found = len(set(invoice_ids)) - len(found_ids)
@@ -193,10 +253,13 @@ async def _assert_invoices_belong_to_pos(
         )
         need_alloc_check -= set(alloc_rows.scalars().all())
     if need_alloc_check:
+        # Named as the invoice list shows them, never by UUID (ISS-0115).
+        refs = sorted(f"{r.internal_ref} ({r.vendor_invoice_number})"
+                      for r in rows if r.id in need_alloc_check)
         raise HTTPException(
             status_code=422,
             detail=f"Invoice(s) do not belong to {', '.join(p.number for p in pos)}: "
-                   f"{', '.join(str(i) for i in need_alloc_check)}",
+                   f"{', '.join(refs)}",
         )
 
 
@@ -405,6 +468,7 @@ async def _assert_prepayment_cap(
 async def list_pas(
     db: SessionDep,
     user: CurrentUserPayload,
+    token: BearerToken,
     status: str | None = Query(default=None),
     po_id: uuid.UUID | None = Query(default=None),
     vendor_id: uuid.UUID | None = Query(default=None),
@@ -436,10 +500,41 @@ async def list_pas(
         direct_subq=scope.get("direct_subq"),
         page=page, page_size=page_size, sort=sort, dir=dir,
     )
-    await enrich_current_step(db, "pa", items)
+    await enrich_current_step(db, "pa", items, token)
     await pa_crud.attach_po_links(db, items)
     await pa_crud.attach_direct_labels(db, items)
     return {"items": [PaResponse.model_validate(pa) for pa in items], "total": total}
+
+
+def _prepayment_amounts(po: PurchaseOrder, pct, tax_given: bool) -> dict:
+    """ISS-0133 (rule question 8, the administrator's answer B: the amount is
+    calculated from the %). Base = the whole PO — the question put it as
+    "% × PO amount". The pre-tax amount is computed, never typed. One line,
+    "Prepayment N% of PO-…", unless linked invoices decide the lines
+    (PA-018); invoices stay optional on a prepayment (PA-010, INV-009).
+
+    Tax, shipping and other charges stay as entered, as on any PA: 3 of the
+    25 prepayments on record (all 100%) also prepaid the freight, one with tax
+    on it. Only when no tax is sent is it filled — the same share of the PO's
+    tax, so 30% of a 100 + 13 PO is 30.00 + 3.90."""
+    from decimal import ROUND_HALF_UP
+
+    cent = Decimal("0.01")
+    pct = Decimal(str(pct))
+    base = po.subtotal or Decimal("0")
+    pretax = (base * pct / 100).quantize(cent, ROUND_HALF_UP)
+    out = {
+        "subtotal": pretax,
+        "line_items": [PaLineItemIn(
+            description=f"Prepayment {pct.normalize():f}% of {po.number}",
+            qty=Decimal("1"), unit="lot", unit_price=pretax)],
+    }
+    if not tax_given:
+        if base > 0:
+            out["tax_amount"] = (pretax * (po.tax_amount or Decimal("0")) / base).quantize(cent, ROUND_HALF_UP)
+        else:
+            out["tax_amount"] = (pretax * (po.tax_rate or Decimal("0"))).quantize(cent, ROUND_HALF_UP)
+    return out
 
 
 async def _get_prepayment_config(db: SessionDep) -> PrepaymentConfig:
@@ -593,6 +688,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
         # see _validate_agreement_pa_invoices, shared with update_pa's PATCH
         # path so the same rules apply there too.
         await _validate_agreement_pa_invoices(db, agr, body.invoice_ids)
+        await _assert_invoices_not_on_other_live_pa(db, body.invoice_ids)
         # No due-date window here: an agreement PA routinely pays a run of
         # statements together (decided 2026-10-06) — see
         # _assert_invoice_due_dates_within_window.
@@ -646,6 +742,10 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
     # ── Prepayment-specific guards ─────────────────────────────────────────────
     if body.pa_type == "prepayment":
         await _assert_prepayment_cap(db, po, body.prepayment_pct)
+        # ISS-0133: the pre-tax amount follows the %, whatever the client sent.
+        tax_given = "tax_amount" in body.model_fields_set
+        for field, value in _prepayment_amounts(po, body.prepayment_pct, tax_given).items():
+            setattr(body, field, value)
 
         # PP-004: a PO may carry several prepayments, but none once it has a
         # settlement — the settlement reconciles every prepayment on the PO, so
@@ -729,6 +829,8 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
     # ── Invoice validation ─────────────────────────────────────────────────────
     await _assert_invoices_belong_to_pos(db, pos, body.invoice_ids)
     await _assert_invoice_due_dates_within_window(db, body.invoice_ids)
+    await _assert_invoices_not_on_other_live_pa(
+        db, body.invoice_ids, settled_po_id=_settled_po_id(body.pa_type, po.id))
 
     # ── 收货闸门 —— 预付款先付后收豁免;其余类型须有 3-way matched 发票 ──
     # 每一张 PO 都要过闸:只查主 PO 会让「搭车」的第二张 PO 在完全没收货的情况下
@@ -740,15 +842,26 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
             p for p in pos
             if not await po_crud.po_has_three_way_matched_invoice(db, p.id)
         ]
-        if ungated:
-            numbers = ", ".join(p.number for p in ungated)
+        # Admin → Collection Config "Collection Confirmation Required" (ISS-0146):
+        # a physical PO's goods must also have been collected. Same override.
+        uncollected = [
+            p for p in pos
+            if p not in ungated and not await po_crud.po_collection_cleared(db, p)
+        ]
+        if ungated or uncollected:
             if not body.receipt_override:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"No 3-way matched invoice for {numbers} (a matched invoice "
-                           "with a linked goods receipt). Create a goods receipt "
-                           "first, or override with a reason.",
-                )
+                if ungated:
+                    numbers = ", ".join(p.number for p in ungated)
+                    detail = (f"No 3-way matched invoice for {numbers} (a matched invoice "
+                              "with a linked goods receipt). Create a goods receipt "
+                              "first, or override with a reason.")
+                else:
+                    numbers = ", ".join(p.number for p in uncollected)
+                    detail = (f"The goods for {numbers} have not been collected yet — "
+                              "Collection Confirmation is required before a PA. The "
+                              "requester records it on the goods receipt, or override "
+                              "with a reason.")
+                raise HTTPException(status_code=422, detail=detail)
             if not scope["perms"].get("pa_override_receipt", False):
                 raise HTTPException(
                     status_code=403,
@@ -801,7 +914,7 @@ async def create_pa(body: PaCreate, db: SessionDep, user: PaWriteDep, token: Bea
 
 
 @router.get("/{pa_id}", response_model=PaResponse)
-async def get_pa(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+async def get_pa(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload, token: BearerToken):
     from app.core.access_scope import is_pa_visible
     pa = await pa_crud.get_by_id(db, pa_id)
     if _not_epms_pa(pa):
@@ -813,6 +926,8 @@ async def get_pa(pa_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
         from app.crud.freight import cost_allocations
         pa.cost_allocations = await cost_allocations(db, pa.id)
     await pa_crud.attach_direct_labels(db, [pa])
+    # Who the current approval step is waiting on — see get_pr (ISS-0085).
+    await enrich_current_step(db, "pa", [pa], token)
     return pa
 
 
@@ -893,6 +1008,27 @@ async def update_pa(pa_id: uuid.UUID, body: PaUpdate, db: SessionDep, user: Curr
         await _validate_agreement_pa_invoices(db, agr, body.invoice_ids)
     if pa.agreement_id is None and body.invoice_ids is not None:
         await _assert_invoice_due_dates_within_window(db, body.invoice_ids)
+    if body.invoice_ids is not None and pa.source not in ("direct", "freight"):
+        await _assert_invoices_not_on_other_live_pa(
+            db, body.invoice_ids, pa.id, _settled_po_id(pa.pa_type, pa.po_id))
+
+    # ── Prepayment: the pre-tax amount follows the % (ISS-0133) ───────────────
+    # The pre-tax amount and the single line are recomputed from the % and the
+    # PO — whatever the client sent. (The cumulative cap on an edited % is
+    # checked above, PP-002/003.)
+    if pa.pa_type == "prepayment" and pa.po_id is not None:
+        pp_po_id = (body.po_ids[0] if body.po_ids else pa.po_id)
+        pp_po = await po_crud.get_by_id(db, pp_po_id)
+        if pp_po is None:
+            raise HTTPException(status_code=404, detail="Purchase order not found")
+        pct = body.prepayment_pct if "prepayment_pct" in body.model_fields_set else pa.prepayment_pct
+        if pct is None:
+            raise HTTPException(status_code=422, detail="prepayment_pct is required for prepayment PAs.")
+        # Tax is refilled only when the % changes and no tax comes with it —
+        # an edit of, say, the title keeps a tax that was typed.
+        tax_given = body.tax_amount is not None or "prepayment_pct" not in body.model_fields_set
+        for field, value in _prepayment_amounts(pp_po, pct, tax_given).items():
+            setattr(body, field, value)
 
     # ── PO-set replacement ─────────────────────────────────────────────────────
     # Editing which POs a draft covers runs the same gates creation does. Doing
@@ -1021,6 +1157,20 @@ async def pa_action(
         raise HTTPException(status_code=404, detail="PA not found")
     if body.action == "submit":
         _assert_invoice_link_on_submit(pa)
+        # Also catches a draft saved before this check existed.
+        await _assert_invoices_not_on_other_live_pa(
+            db, pa.invoice_ids, pa.id, _settled_po_id(pa.pa_type, pa.po_id))
+        # ISS-0125: invoice_ids has no FK, so a deleted invoice leaves its id
+        # behind and the PA would go on to pay a bill that no longer exists.
+        if pa.invoice_ids:
+            found = set((await db.execute(select(Invoice.id).where(
+                Invoice.id.in_([uuid.UUID(i) for i in pa.invoice_ids])))).scalars().all())
+            if len(found) < len(set(pa.invoice_ids)):
+                raise HTTPException(
+                    status_code=409,
+                    detail="An invoice on this payment application has been deleted. Edit "
+                           "the payment application, link the invoice(s) it really pays, "
+                           "and submit again.")
     try:
         if body.action == "process":
             # Payment is not a workflow action (Phase 0-B1.5): forward to
@@ -1047,8 +1197,18 @@ async def pa_action(
         raise HTTPException(status_code=502, detail=str(exc))
 
     await db.refresh(pa)
+    # Rejected / cancelled: the PA no longer covers its PO(s). Where no other
+    # live PA does, the create_pa prompt comes back (§3.14.2, INV-013;
+    # ISS-0172) — the same reopen as a PO dropped from a draft.
+    if pa.status in _RELEASED_PA_STATUSES:
+        for pid in (await db.execute(po_ids_of_pa(pa.id))).scalars().all():
+            if pid is not None:
+                await pa_crud.reopen_create_pa_tasks_if_unpaid(db, pid)
     # Generate PDF when PA transitions to approved
     if result.get("new_status") == "approved":
+        # ISS-0137: email the requester, if Notification Settings say so.
+        from app.services import notification as notification_service
+        notification_service.fire_and_forget_pa_approved(pa.id)
         # 统一 settlement：settlement PA 一旦 approved，回填来源预付为 settled
         if pa.pa_type == "settlement":
             await pa_crud.mark_prepayment_settled(
@@ -1065,7 +1225,7 @@ async def pa_action(
         company_name = cfg.name if cfg else "EPMS"
         from app.crud.signatories import approval_signatories
         requester_name, approvals = await approval_signatories(
-            db, "pa", pa_id, pa.created_by
+            db, "pa", pa_id, pa.created_by, token=token
         )
         if getattr(pa, "source", None) == "freight":
             from app.crud.freight import cost_allocations as _cost_allocations

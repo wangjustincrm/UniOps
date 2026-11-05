@@ -208,8 +208,12 @@ async def get_actuals_summary(
     *, cost_center_id: uuid.UUID | None = None, fiscal_year: int,
     cc_ids: list[uuid.UUID] | None = None,
     bearer_token: str | None = None,
+    include_unposted: bool = False,
 ) -> ActualsSummaryResponse:
     """Per-account summary: plan vs actual for the full year.
+
+    ``include_unposted`` (default off, so existing callers are unchanged) counts
+    NC vouchers not yet tallied too — the Budget Dashboard's default.
 
     `actual_spent` is NC's posted figure, for the same reason and from the same
     source as `get_balance` — see there. This one had been left reading the
@@ -225,9 +229,14 @@ async def get_actuals_summary(
     if cc_ids is not None and len(cc_ids) == 0:
         return ActualsSummaryResponse(
             cost_center_id=cost_center_id, fiscal_year=fiscal_year, accounts=[])
+    # A scoped caller's single cost center arrives in cc_ids. Name it to
+    # finance-api too, or it answers for the caller's whole department and the
+    # plan and the actual set against it cover different cost centers.
+    nc_cost_center_id = cost_center_id or (
+        cc_ids[0] if cc_ids is not None and len(cc_ids) == 1 else None)
     nc_actual = await finance_client.nc_actuals_by_account(
         bearer_token=bearer_token, fiscal_year=fiscal_year,
-        cost_center_id=cost_center_id,
+        cost_center_id=nc_cost_center_id, include_unposted=include_unposted,
     )
     if nc_actual is None:
         logger.warning(
@@ -243,52 +252,57 @@ async def get_actuals_summary(
     )
     rows = (await db.execute(accts_q)).all()
 
+    # One grouped query per figure, not three or four per account (171 active
+    # accounts made one call ~0.65 s, and the approver dashboard asks once per
+    # cost center). Same figures as the per-account helpers: annual = current
+    # approved plan lines; committed = commit − release − actualize, floored
+    # at 0; ledger actual only when finance-api is unavailable.
+    def _cc(col):
+        if cost_center_id is not None:
+            return [col == cost_center_id]
+        if cc_ids:
+            return [col.in_(cc_ids)]
+        return []
+
+    async def _by_account(q) -> dict:
+        return {aid: Decimal(str(v)) for aid, v in (await db.execute(q)).all()}
+
+    annual_by = await _by_account(
+        select(BudgetPlanLine.account_id, func.coalesce(func.sum(BudgetPlanLine.amount), 0))
+        .join(BudgetPlan, BudgetPlanLine.plan_id == BudgetPlan.id)
+        .where(
+            BudgetPlan.fiscal_year == fiscal_year,
+            BudgetPlan.status == "approved",
+            BudgetPlan.is_current.is_(True),
+            *_cc(BudgetPlan.cost_center_id),
+        )
+        .group_by(BudgetPlanLine.account_id)
+    )
+
+    def _ledger(ops):
+        return (
+            select(BudgetLedger.account_id, func.coalesce(func.sum(BudgetLedger.amount), 0))
+            .where(
+                BudgetLedger.fiscal_year == fiscal_year,
+                BudgetLedger.operation.in_(ops),
+                *_cc(BudgetLedger.cost_center_id),
+            )
+            .group_by(BudgetLedger.account_id)
+        )
+
+    adds_by = await _by_account(_ledger(COMMIT_ADDS))
+    releases_by = await _by_account(_ledger(COMMIT_RELEASES))
+    ledger_actual_by = await _by_account(_ledger(ACTUAL_OPS)) if nc_actual is None else {}
+
     summaries: list[AccountSummary] = []
     for acct, l1 in rows:
-        if cost_center_id is None:
-            # Aggregate across all CCs that have a current approved plan for this year
-            annual_q = (
-                select(func.coalesce(func.sum(BudgetPlanLine.amount), 0))
-                .join(BudgetPlan, BudgetPlanLine.plan_id == BudgetPlan.id)
-                .where(
-                    BudgetPlan.fiscal_year == fiscal_year,
-                    BudgetPlan.status == "approved",
-                    BudgetPlan.is_current.is_(True),
-                    BudgetPlanLine.account_id == acct.id,
-                )
-            )
-            committed_q = select(func.coalesce(func.sum(BudgetLedger.amount), 0)).where(
-                BudgetLedger.account_id == acct.id,
-                BudgetLedger.fiscal_year == fiscal_year,
-                BudgetLedger.operation == "commit",
-            )
-            release_q = select(func.coalesce(func.sum(BudgetLedger.amount), 0)).where(
-                BudgetLedger.account_id == acct.id,
-                BudgetLedger.fiscal_year == fiscal_year,
-                BudgetLedger.operation.in_(["release", "actualize"]),
-            )
-            actual_q = select(func.coalesce(func.sum(BudgetLedger.amount), 0)).where(
-                BudgetLedger.account_id == acct.id,
-                BudgetLedger.fiscal_year == fiscal_year,
-                BudgetLedger.operation.in_(ACTUAL_OPS),
-            )
-            if cc_ids:
-                annual_q = annual_q.where(BudgetPlan.cost_center_id.in_(cc_ids))
-                committed_q = committed_q.where(BudgetLedger.cost_center_id.in_(cc_ids))
-                release_q = release_q.where(BudgetLedger.cost_center_id.in_(cc_ids))
-                actual_q = actual_q.where(BudgetLedger.cost_center_id.in_(cc_ids))
-            annual = Decimal(str((await db.execute(annual_q)).scalar_one()))
-            committed = Decimal(str((await db.execute(committed_q)).scalar_one())) \
-                       - Decimal(str((await db.execute(release_q)).scalar_one()))
-            if committed < 0:
-                committed = Decimal("0")
-            if nc_actual is None:
-                actual = Decimal(str((await db.execute(actual_q)).scalar_one()))
-        else:
-            annual = await get_annual_budget(db, cost_center_id, acct.id, fiscal_year)
-            committed = await get_committed(db, cost_center_id, acct.id, fiscal_year)
-            if nc_actual is None:
-                actual = await get_actual_spent(db, cost_center_id, acct.id, fiscal_year)
+        zero = Decimal("0")
+        annual = annual_by.get(acct.id, zero)
+        committed = adds_by.get(acct.id, zero) - releases_by.get(acct.id, zero)
+        if committed < 0:
+            committed = zero
+        if nc_actual is None:
+            actual = ledger_actual_by.get(acct.id, zero)
         if nc_actual is not None:
             actual = nc_actual.get(str(acct.id), Decimal("0"))
         available = annual - committed - actual

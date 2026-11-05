@@ -310,6 +310,35 @@ async def _has_unrestricted_special_role(
     return any(c not in _RESTRICTED_ROLES for c in codes)
 
 
+async def _wide_view_keys(
+    db: AsyncSession,
+    base_role: str,
+    codes: set[str],
+) -> set[str]:
+    """Which of view_pr / view_gr the user's UNRESTRICTED roles themselves grant.
+
+    "All" scope is only ever all-of-what-that-role-may-view (PRD §1.3: "All PRs,
+    provided the role has View PR"). Payment Officer is unrestricted but holds
+    neither View PR nor View GR, so it must not lift a Requester's "Own" scope
+    on those two documents (ISS-0155) — it still widens PO / Invoice / PA, which
+    it does hold and needs to pay. A view key granted only by a restricted role
+    (Requester's own View PR) is not "all"; it is that role's restricted scope.
+    """
+    if base_role == "system_admin":
+        return {"view_pr", "view_gr"}
+    wide = [c for c in codes if c not in _RESTRICTED_ROLES]
+    if not wide:
+        return set()
+    rows = (await db.execute(sa.text(
+        "SELECT permission_key FROM role_permissions "
+        " WHERE role_code = ANY(:c) AND permission_key IN ('view_pr', 'view_gr') "
+        "UNION "
+        "SELECT permission_key FROM role_permission_locks "
+        " WHERE role_code = ANY(:c) AND permission_key IN ('view_pr', 'view_gr')"),
+        {"c": wide})).scalars().all()
+    return set(rows)
+
+
 async def _effective_permissions(
     db: AsyncSession,
     base_role: str,
@@ -452,7 +481,7 @@ async def scoped_department_ids(
     Director to his own primary department and over-scoped a GM to all requesters.
 
     Mirror of `visible_pr_subquery`'s dept resolution, role-for-role:
-      • any unrestricted role → None (all departments)
+      • any unrestricted role that holds View PR → None (all departments)
       • requester / dept_manager / dept_admin → own department
       • gm / opm → `_mapped_dept_ids`
       • director → `_director_dept_ids`
@@ -463,7 +492,9 @@ async def scoped_department_ids(
     user_id = uuid.UUID(user["sub"])
     codes = await _effective_role_codes(db, role, user_id)
 
-    if any(c not in _RESTRICTED_ROLES for c in codes):
+    # Same test build_scope uses for pr_subq: an unrestricted role counts only
+    # if it holds View PR itself (ISS-0155).
+    if "view_pr" in await _wide_view_keys(db, role, codes):
         return None  # unrestricted
 
     dept_ids: set[uuid.UUID] = set()
@@ -822,10 +853,10 @@ async def is_po_visible(db: AsyncSession, po_id: uuid.UUID, scope: dict) -> bool
 
 
 async def is_gr_visible(db: AsyncSession, gr, scope: dict) -> bool:
-    """True if the given GR's po_id falls inside the user's po_subq (or unrestricted)."""
+    """True if the given GR's po_id falls inside the user's gr_po_subq (or unrestricted)."""
     if not _scope_allows_view(scope, "view_gr"):
         return False
-    po_subq = scope["po_subq"]
+    po_subq = scope.get("gr_po_subq", scope["po_subq"])
     if po_subq is None:
         return True
     if gr.po_id is None:
@@ -940,11 +971,12 @@ async def build_scope(db: AsyncSession, user: dict) -> dict:
       {
         "pr_subq":  Select | None,  # scalar subquery of visible PR ids
         "po_subq":  Select | None,  # scalar subquery of visible PO ids
+        "gr_po_subq": Select | None,  # PO ids whose GRs are visible
         "agr_subq": Select | None,  # scalar subquery of visible agreement ids
         "direct_subq": Select | None,  # visible EPMS Direct PA ids
         "user_id":  uuid.UUID,
         "role":     str,
-        "restrict": bool,           # False = unrestricted (see all)
+        "restrict": bool,           # False = PO chain unrestricted (see all)
         "perms":    dict[str, bool],# union of effective permissions across active roles
       }
 
@@ -967,19 +999,34 @@ async def build_scope(db: AsyncSession, user: dict) -> dict:
     # delegator's roles in there would hand the delegate the delegator's
     # entire company-wide document scope, not just their open approval tasks.
     task_user_ids = {user_id} | await active_delegator_ids(db, user_id)
-    pr_subq = await visible_pr_subquery(db, user, codes=codes, task_user_ids=task_user_ids)
-    po_subq = await visible_po_subquery(db, user, pr_subq, task_user_ids=task_user_ids)
+    # PR and GR are "all" only when an unrestricted role itself holds View PR /
+    # View GR (_wide_view_keys, ISS-0155); otherwise they fall back to the
+    # restricted roles' union. The PO chain (PO / Invoice / PA via po_subq) keeps
+    # the any-unrestricted-role rule. Without unrestricted roles all three are
+    # the same restricted subqueries as before.
+    chain_wide = any(c not in _RESTRICTED_ROLES for c in codes)
+    wide_views = await _wide_view_keys(db, role, codes)
+    pr_wide, gr_wide = "view_pr" in wide_views, "view_gr" in wide_views
+    narrow_pr = narrow_po = None
+    if not (chain_wide and pr_wide and gr_wide):
+        narrow_pr = await visible_pr_subquery(
+            db, user, codes=codes & _RESTRICTED_ROLES, task_user_ids=task_user_ids)
+        narrow_po = await visible_po_subquery(db, user, narrow_pr, task_user_ids=task_user_ids)
+    pr_subq = None if pr_wide else narrow_pr
+    po_subq = None if chain_wide else narrow_po
+    gr_po_subq = None if gr_wide else narrow_po
     agr_subq = await visible_agreement_subquery(db, user, codes=codes, task_user_ids=task_user_ids)
     direct_subq = await visible_direct_pa_subquery(db, user, codes=codes, task_user_ids=task_user_ids)
     perms = await _effective_permissions(db, role, user_id)
     return {
         "pr_subq":  pr_subq,
         "po_subq":  po_subq,
+        "gr_po_subq": gr_po_subq,
         "agr_subq": agr_subq,
         "direct_subq": direct_subq,
         "user_id":  user_id,
         "role":     role,
-        "restrict": pr_subq is not None,
+        "restrict": po_subq is not None,
         "perms":    perms,
     }
 

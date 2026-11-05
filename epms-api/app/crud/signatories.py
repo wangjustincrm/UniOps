@@ -64,15 +64,56 @@ async def resolve_user_names(
     return {uid: name for uid, name in rows.all()}
 
 
+# A step token that can be fulfilled by more than one actor role.
+_STEP_ROLE_ALIASES = {"gm_or_opm": {"gm", "opm"}}
+
+
+def _step_matches(step_role: str | None, actor_role: str | None) -> bool:
+    if not step_role or not actor_role:
+        return False
+    return actor_role == step_role or actor_role in _STEP_ROLE_ALIASES.get(step_role, set())
+
+
+async def _configured_step_labels(doc_type: str, doc_id: uuid.UUID, token: str | None) -> list[dict]:
+    """The document's effective workflow steps from the approval engine
+    ([{role, label}], over-budget prefix included, so step_idx lines up).
+    Empty when no token or the engine cannot be reached — the PDF then falls
+    back to the fixed role names; a PDF must never fail over a label."""
+    if not token:
+        return []
+    from app.services import approval_client
+    try:
+        return await approval_client.get_workflow_steps(doc_type, str(doc_id), token)
+    except Exception:  # noqa: BLE001
+        return []
+
+
 async def approval_signatories(
-    db: AsyncSession, doc_type: str, doc_id: uuid.UUID, created_by: uuid.UUID | None
+    db: AsyncSession, doc_type: str, doc_id: uuid.UUID, created_by: uuid.UUID | None,
+    token: str | None = None,
 ) -> tuple[str | None, list[dict]]:
     """Return ``(requester_name, approvals)`` for a PR or PA PDF.
 
     ``approvals`` is ordered along the workflow chain; each entry is
     ``{"role": <display label>, "name": <full name or None>, "at": <datetime>}``.
+
+    The label is the step's name as configured in the approval engine (e.g.
+    "Finance Director of Oversea Department", "AP Review") — ISS-0107/0144:
+    the workflow is whatever the engine is configured with, so the PDF must not
+    print a fixed role name of its own. It is used only when that step's role
+    still matches the role the approver acted in (the workflow may have been
+    edited since); otherwise, and without a token, the fixed role name is used.
     """
     requester = (await resolve_user_names(db, [created_by])).get(created_by)
+    steps = await _configured_step_labels(doc_type, doc_id, token)
+
+    def _label(ev) -> str:
+        if 0 <= (ev.step_idx or 0) < len(steps):
+            step = steps[ev.step_idx]
+            if step.get("label") and _step_matches(step.get("role"), ev.actor_role):
+                return step["label"]
+        return role_label(ev.actor_role)
+
     rows = (await db.execute(
         select(ApprovalEvent, User.full_name)
         .outerjoin(User, User.id == ApprovalEvent.actor_id)
@@ -85,7 +126,7 @@ async def approval_signatories(
     )).all()
     approvals = [
         {
-            "role": role_label(ev.actor_role),
+            "role": _label(ev),
             "name": _signatory_name(name, ev.comment),
             "at": ev.created_at,
         }

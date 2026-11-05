@@ -58,6 +58,11 @@ describe('taskHref — EPMS doc types still resolve in-app', () => {
     expect(taskHref({ type: 'create_pa', document_type: 'po', document_id: VISIT_ID }))
       .toBe(`/pa/create?poId=${VISIT_ID}`)
   })
+
+  it('sends confirm_receipt to New GR pre-filled with the PO (ISS-0094)', () => {
+    expect(taskHref({ type: 'confirm_receipt', document_type: 'po', document_id: VISIT_ID }))
+      .toBe(`/gr/new?poId=${VISIT_ID}`)
+  })
 })
 
 describe('taskHref — PO sign-off', () => {
@@ -192,5 +197,31 @@ describe('isEpmsInboxTask — EPMS inbox shows EPMS work only', () => {
     for (const docType of ['exp', 'tra', 'trv', 'mil', 'vms_visit', 'pa_dir']) {
       expect(EPMS_PAGE_DOC_TYPES.has(docType)).toBe(false)
     }
+  })
+})
+
+describe('overBudgetJustification (ISS-0126)', () => {
+  it('reads the justification off an over-budget pre-approval task', async () => {
+    const { overBudgetJustification } = await import('./taskTypes')
+    expect(overBudgetJustification({
+      type: 'approve_pr',
+      description: '⚠️ OVER-BUDGET PRE-APPROVAL — PR amount: 60.00\nJustification: Needed for\nthe line 3 repair',
+    })).toBe('Needed for\nthe line 3 repair')
+  })
+
+  it('an over-budget task without a justification is still recognised', async () => {
+    const { overBudgetJustification } = await import('./taskTypes')
+    expect(overBudgetJustification({
+      type: 'approve_pr',
+      description: '⚠️ OVER-BUDGET PRE-APPROVAL — PR amount: 60.00\nJustification: (no justification provided)',
+    })).toBe('')
+  })
+
+  it('a plain PR approval is not one', async () => {
+    const { overBudgetJustification } = await import('./taskTypes')
+    expect(overBudgetJustification({
+      type: 'approve_pr', description: 'Step 1/3: Department Manager approval required.',
+    })).toBeNull()
+    expect(overBudgetJustification({ type: 'approve_po', description: 'OVER-BUDGET PRE-APPROVAL' })).toBeNull()
   })
 })

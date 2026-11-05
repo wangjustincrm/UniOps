@@ -322,13 +322,17 @@ export function ManualCreditModal({ onClose, onCreated }: Props) {
                 {submitted && missing.files && <p className="text-xs text-danger-600">Attach the vendor's confirmation</p>}
               </div>
 
-              {error && (
-                <div className="flex items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
-                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                  {error}
-                </div>
-              )}
             </div>
+
+            {/* Outside the scrolling body, directly above Record Credit — inside
+                it the refusal landed below the fold and the click looked like it
+                did nothing (ISS-0115). */}
+            {error && (
+              <div className="mx-6 mt-3 flex items-center gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700" role="alert">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                {error}
+              </div>
+            )}
 
             <div className="flex items-center justify-between border-t border-neutral-100 px-6 py-3">
               <p className="text-xs text-neutral-400">Goes to Pending Review — it is not netted off any payment until approved.</p>

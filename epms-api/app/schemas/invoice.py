@@ -21,6 +21,11 @@ class InvoiceLineItem(BaseModel):
     non_po_note: str | None = Field(default=None, max_length=500)
 
 
+# PRD INV-001. Size (25 MB) is enforced where the bytes arrive: expense-api
+# invoice_attachments MAX_FILE_BYTES.
+INVOICE_FILE_EXTENSIONS = ("pdf", "jpg", "jpeg", "png")
+
+
 class InvoiceCreate(BaseModel):
     vendor_id: uuid.UUID
     vendor_invoice_number: str = Field(min_length=1, max_length=100)
@@ -35,6 +40,20 @@ class InvoiceCreate(BaseModel):
     notes: str | None = None
     # Optional pre-link to a PO at upload time
     po_id: uuid.UUID | None = None
+
+    @field_validator("file_name")
+    @classmethod
+    def _invoice_file_type(cls, v: str | None) -> str | None:
+        """INV-001: an invoice is a PDF, JPG, JPEG or PNG. The form checks it
+        too, but the record is created before the file is stored, so a refused
+        file used to leave an invoice behind (a .zip became INV-2026-0336)."""
+        if v is None or not v.strip():
+            return None
+        ext = v.rsplit(".", 1)[-1].lower() if "." in v else ""
+        if ext not in INVOICE_FILE_EXTENSIONS:
+            raise ValueError(
+                f"'{v}' cannot be uploaded as an invoice: accepted files are PDF, JPG, JPEG, PNG")
+        return v
 
 
 class InvoiceUpdate(BaseModel):
@@ -74,6 +93,11 @@ class AllocationResponse(BaseModel):
     # Display helpers resolved at read time (not stored on the allocation row).
     po_number: str | None = None
     po_line_description: str | None = None
+    # What this allocation was matched against: the PO line's pre-tax
+    # line_total, or the PO's pre-tax subtotal for a header allocation — the
+    # same reference match() adds up into the invoice's po_total. Lets the
+    # 3-Way Match tab show each PO of a multi-PO invoice with its own amount.
+    po_reference: Decimal | None = None
     model_config = {"from_attributes": True}
 
 
@@ -240,6 +264,10 @@ class InvoiceResponse(BaseModel):
     # on purpose). Was write-only end to end — nothing in epms/src ever read
     # it back — the same silent-drop bug as receipt_ids above, one field over.
     receipt_variance_reason: str | None = None
+    # AGR-032: number of the non-cancelled PA that lists this invoice, which
+    # freezes its receipt evidence. Detail endpoint only, agreement invoices
+    # only (GET /invoices/{id}); None everywhere else (ISS-0134).
+    receipts_locked_by_pa: str | None = None
     # Which scheduled billing period this invoice claims (recurring route).
     # Same silent-drop as receipt_ids above: the column has existed since
     # Phase 1B and nothing ever sent it to the client, so the invoice page had
@@ -256,6 +284,12 @@ class InvoiceResponse(BaseModel):
     variance_pct: Decimal | None
     matched_po_line_ids: list | None = None
     matched_reference_total: Decimal | None = None
+    # ISS-0129: the variance that decides Matched / Exception — every invoice
+    # allocated to the same PO line(s), not this invoice alone (INV-3WM-001).
+    # Detail endpoint only (crud.invoice.attach_cumulative_variance).
+    cumulative_variance: Decimal | None = None
+    cumulative_variance_pct: Decimal | None = None
+    cumulative_other_invoices: list[str] = Field(default_factory=list)
     exception_reason: str | None
     exception_resolved_at: datetime | None
     exception_resolved_by: uuid.UUID | None
@@ -317,6 +351,20 @@ class UnmatchRequest(BaseModel):
         if not v.strip():
             raise ValueError("A reason is required when unmatching")
         return v.strip()
+
+
+class InvoiceHistoryEntry(BaseModel):
+    """One recorded step on an invoice's History tab (ISS-0170): an assignment,
+    a match, an AP review, an exception resolution or an unmatch. Read from
+    admin_audit_log, which is written at the moment of the step and never
+    rewritten — the invoice's own matched_* fields only ever hold the latest."""
+    id: uuid.UUID
+    action: str
+    created_at: datetime
+    actor_id: uuid.UUID
+    actor_name: str | None = None
+    before: dict | None = None
+    after: dict | None = None
 
 
 # ── Document chain (Invoice List due-date drawer) ─────────────────────────────

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ApiInvoice, InvoiceAllocation, InvoiceLineItem } from '@/services/invoices'
-import { derivePaLines, derivedLinesTotal, type PoLineLike } from './paLinesFromInvoices'
+import { derivePaLines, derivedLinesTotal, invoiceOwnLines, type PoLineLike } from './paLinesFromInvoices'
 
 // Mirrors epms-api tests/test_pa_lines.py case for case — the two rules must agree.
 
@@ -79,5 +79,27 @@ describe('derivePaLines', () => {
   it('falls back to qty 1 at the allocated amount when the invoice line has no quantity', () => {
     const inv = invoice({ line_items: [line('l1', 0, 0, 80)], allocations: [alloc('l1', PO_A, 'pl-1', 80)] })
     expect(derivePaLines([inv], [PO_A], poLines)!.map((l) => [l.qty, l.unit_price, l.line_total])).toEqual([[1, 80, 80]])
+  })
+})
+
+// Mirrors epms-api tests/test_pa_invoice_lines.py (ISS-0109).
+describe('invoiceOwnLines', () => {
+  it("copies the invoice's own lines, in order, with the invoice as the reference", () => {
+    const inv = invoice({ amount: 100, line_items: [line('l1', 2, 30, 60), line('l2', 1, 40, 40)] })
+    const out = invoiceOwnLines([inv])!
+    expect(out.map((l) => [l.po_line_id, l.description, l.qty, l.unit_price, l.line_total, l.notes])).toEqual([
+      [null, 'inv l1', 2, 30, 60, 'INV-1 · V1'],
+      [null, 'inv l2', 1, 40, 40, 'INV-1 · V1'],
+    ])
+  })
+
+  it('uses one line for the whole invoice when its lines do not add up to the pre-tax amount', () => {
+    const inv = invoice({ amount: 100, line_items: [line('l1', 1, 90, 90)] })
+    expect(invoiceOwnLines([inv])!.map((l) => [l.description, l.qty, l.line_total])).toEqual([['Invoice V1', 1, 100]])
+  })
+
+  it('uses one line for an invoice without lines, and returns null for no invoices', () => {
+    expect(invoiceOwnLines([invoice({ amount: 50, line_items: [] })])!.map((l) => l.line_total)).toEqual([50])
+    expect(invoiceOwnLines([])).toBeNull()
   })
 })

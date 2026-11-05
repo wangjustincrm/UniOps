@@ -102,7 +102,7 @@ async def regenerate_pdf(
     cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
     company_name = cfg.name if cfg else "EPMS"
     filename = f"{pa.pa_number}.pdf"
-    requester_name, approvals = await approval_signatories(db, "pa", pa_id, pa.created_by)
+    requester_name, approvals = await approval_signatories(db, "pa", pa_id, pa.created_by, token=token)
     if getattr(pa, "source", None) == "freight":
         from app.crud.freight import cost_allocations as _cost_allocations
         pa.cost_allocations = await _cost_allocations(db, pa.id)

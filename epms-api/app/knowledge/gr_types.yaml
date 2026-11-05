@@ -41,9 +41,19 @@ values:
       - >-
         Any line received in a condition other than Good raises an urgent
         damage-report task for the Procurement Officers, to arrange a return or
-        credit note with the vendor.
+        credit note with the vendor. It stays open until they record the return
+        or credit on the GR (or the GR is cancelled), not just until collection.
+      - Receiving more than a PO line still has open (ordered less received
+        and pending) needs an over-receipt reason, kept on the GR.
+      - If Admin → Collection Config → Collection Confirmation Required is on,
+        a PA for the order (and the Create PA task) waits until the goods are
+        collected; off by default.
       - A short delivery is recorded as a discrepancy rather than being forced
         to match the order.
+      - A collected receipt can also be flagged Discrepancy by hand (Flag
+        Discrepancy on the GR page, for the requester, Procurement or a
+        System Admin). That closes its open tasks and creates none; it does not
+        block invoice matching or payment.
       - Cancelled and rejected receipts do not count as goods received — they
         do not discharge the obligation, and the reminder keeps coming.
 
@@ -56,6 +66,9 @@ values:
       else, and the requester can always confirm too. There is no delivery for
       the warehouse to check in.
     notes:
+      - When someone else records the service receipt, the owner's task reads
+        "Confirm Service Completion" and is done with that button on the GR
+        page (Satisfactory or Has Issues).
       - The PR's expected completion date is what triggers the reminder; once
         it passes you are nudged to confirm.
       - A purchase order whose PR never carried a completion date is outside

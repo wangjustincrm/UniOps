@@ -409,7 +409,7 @@ export default function ExpenseDetailPage() {
 
   // Server-computed permissions — approval roles (Finance BP, etc.) are assignments,
   // not JWT roles, so authorization is resolved server-side via tasks + role_management.
-  const { data: perms } = useQuery<{ is_owner: boolean; can_approve: boolean; can_pay: boolean; can_delete: boolean }>({
+  const { data: perms } = useQuery<{ is_owner: boolean; can_edit: boolean; can_approve: boolean; can_pay: boolean; can_delete: boolean }>({
     queryKey: ['expense-permissions', id],
     queryFn: () => api.get(`/api/v1/expenses/${id}/permissions`),
   })
@@ -474,7 +474,8 @@ export default function ExpenseDetailPage() {
   const missingAttachment = requiresAttachment && isEditable(claim.status) && attachments.length === 0
 
   // Permissions resolved server-side (see the /permissions query above).
-  const isOwner = perms?.is_owner ?? false
+  // The claimant, or whoever filed the claim on their behalf.
+  const canEdit = perms?.can_edit ?? false
   const canApprove = perms?.can_approve ?? false
   const canPay = perms?.can_pay ?? false
   // False server-side for EXP/MIL/TRV, so this shared component needs no
@@ -519,7 +520,7 @@ export default function ExpenseDetailPage() {
                 claim `returned` (approval-api accepts submit from draft or
                 returned), and with only Edit here a returned claim could be
                 changed but never sent back into approval. */}
-            {isEditable(claim.status) && isOwner && (
+            {isEditable(claim.status) && canEdit && (
               <button
                 onClick={() => setActiveAction(ACTION.SUBMIT)}
                 disabled={missingAttachment}
@@ -529,7 +530,7 @@ export default function ExpenseDetailPage() {
                 Submit
               </button>
             )}
-            {isEditable(claim.status) && isOwner && (
+            {isEditable(claim.status) && canEdit && (
               <button
                 onClick={() => navigate(`/expenses/${claim.id}/edit`)}
                 className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"

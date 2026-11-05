@@ -283,7 +283,8 @@ async def update_line(invoice_id: uuid.UUID, line_id: uuid.UUID, body: FreightLi
 
 
 @router.post("/invoices/{invoice_id}/finalize", response_model=FreightInvoiceResponse)
-async def finalize(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+async def finalize(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload,
+                   token: BearerToken):
     inv = await _freight_invoice(db, invoice_id)
     await _need_match(db, user, inv)
     actor = uuid.UUID(user["sub"])
@@ -291,6 +292,11 @@ async def finalize(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPaylo
         await crud.finalize(db, inv, actor)
     except FreightError as e:
         raise _err(e)
+    # Finalised = matched: its Finance AP row goes draft -> posted, like any
+    # matched invoice (PRD INV-007). Without this it stayed draft for good and
+    # the payment executor, which settles only posted rows, never marked it
+    # paid (ISS-0157).
+    await finance_sync.sync_ap_invoice(db, inv, token)
     # Matched: the assignment (if any) is done, whoever finalised it.
     from app.api.v1.invoices import _close_open_match_tasks
     await _close_open_match_tasks(db, inv.id, actor)
@@ -299,13 +305,16 @@ async def finalize(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPaylo
 
 
 @router.post("/invoices/{invoice_id}/reopen", response_model=FreightInvoiceResponse)
-async def reopen(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+async def reopen(invoice_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload,
+                 token: BearerToken):
     await _need(db, user, "manage")
     inv = await _freight_invoice(db, invoice_id)
     try:
         await crud.reopen(db, inv)
     except FreightError as e:
         raise _err(e)
+    # Back to unmatched: the AP row returns to draft, as for an unmatched invoice.
+    await finance_sync.sync_ap_invoice(db, inv, token)
     return await _detail(db, user, inv)
 
 

@@ -5,6 +5,7 @@ import { SortTh, useSortableRows } from '@uniops/shell'
 import { mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
+import { useAuthStore } from '@/store/auth'
 
 /**
  * Tax Settings — Finance master data (mdm-api tax_codes).
@@ -53,6 +54,9 @@ const emptyForm = (): FormState => ({
 const pct = (fraction: string) => `${(Number(fraction) * 100).toFixed(3).replace(/\.?0+$/, '')}%`
 
 export default function TaxSettingsPage() {
+  // Adding, editing and deactivating tax codes is System Admin only (ISS-0164);
+  // mdm-api refuses everyone else. Others see the list read-only.
+  const isAdmin = useAuthStore().user?.role === 'system_admin'
   const qc = useQueryClient()
   const { data, isLoading } = useQuery<ApiTaxCode[]>({
     queryKey: ['portal-tax-codes'],
@@ -132,10 +136,14 @@ export default function TaxSettingsPage() {
     >
       <div className="mx-auto max-w-6xl">
       <div className="mb-4 flex justify-end">
-        <button onClick={openCreate}
-          className="flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A]">
-          <Plus className="h-4 w-4" />Add Tax Code
-        </button>
+        {isAdmin ? (
+          <button onClick={openCreate}
+            className="flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A]">
+            <Plus className="h-4 w-4" />Add Tax Code
+          </button>
+        ) : (
+          <span className="text-sm text-neutral-500">Read-only — tax codes are maintained by System Admin.</span>
+        )}
       </div>
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
         {isLoading ? (
@@ -175,12 +183,12 @@ export default function TaxSettingsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-1">
+                    {isAdmin && <div className="flex items-center justify-end gap-1">
                       <button onClick={() => openEdit(r)} className="rounded p-1.5 text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700" title="Edit"><Pencil className="h-3.5 w-3.5" /></button>
                       {r.active && (
                         <button onClick={() => handleDeactivate(r)} className="rounded p-1.5 text-neutral-400 hover:bg-amber-50 hover:text-amber-600" title="Deactivate"><Ban className="h-3.5 w-3.5" /></button>
                       )}
-                    </div>
+                    </div>}
                   </td>
                 </tr>
               ))}

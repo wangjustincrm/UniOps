@@ -1,11 +1,17 @@
 # Budget — Product Requirements Document
 
-**Version:** 2.0
-**Date:** 2026-10-16
+**Version:** 2.1
+**Date:** 2026-11-05
 **Status:** In Production
 **Scope:** The UniOps Budget module: budget account catalog and factors, annual budget plans with versioned revisions and approval, Budget Config (including over-budget modes), budget visibility scope, the Budget Dashboard and Budget Actual reports measured against NC actuals, and the budget balance service used by PRs and expense claims.
 
-> **What changed in this version (v1.0 → v2.0)**
+> **What changed in version 2.1 (2026-11-05)**
+> - **Budget alerts** are built (BCFG-008): a daily warning digest and within-the-hour over-budget emails, plus a Teams card, switched on in Portal Notification Settings. BUD-OI-02 resolved.
+> - **The over-budget mode is frozen on the PR at submission** (BCFG-006): the text said the opposite.
+> - The EPMS Approver dashboard's budget figures are filled (BUD-OI-11, Approver part).
+> - Migration `ba01_budget_alert_states` adds the table that remembers the level last alerted per budget line.
+
+> **What changed in v2.0 (v1.0 → v2.0)**
 > - Rewritten in English and brought in line with the system on main. Every requirement was checked against the code; anything wanted but not built is marked **Not implemented** and listed in §11.
 > - **Actuals now come from NC**, not from the budget ledger. Budget figures (Actual Spent, Available, over-budget alerts, the PR over-budget check) are measured against NC general-ledger actuals read from the Finance module. The PR/PO/PA chain does not write to the budget ledger (decision 2026-09-20); the ledger only holds opening-balance imports. *Committed* is therefore always 0 (§4.4).
 > - **Include unposted vouchers**: the Budget Dashboard and Budget Actual report can count vouchers entered in NC but not yet tallied; ticked by default. The PR over-budget check always includes them (§4.4, §4.8).
@@ -262,7 +268,7 @@ Saving fiscal years, thresholds and mode requires the *Admin Panel* permission.
 | **BCFG-001** | **Available fiscal years** (2000–2100, de-duplicated, ascending) feed the New Plan year list, the plan-list year filter and the Dashboard year selector. With none configured, plan creation is blocked with a message to ask an admin. |
 | **BCFG-002** | Removing a year only hides it from the lists; existing plans for that year remain accessible. |
 | **BCFG-003** | Fiscal year = calendar year everywhere; there is no fiscal start-month setting. |
-| **BCFG-004** | **Alert thresholds**: warning (default 80%) and over-budget (default 100%), 1–200%. They colour the Budget Dashboard alerts only. The page text promises a daily email digest and email/Teams alerts at these thresholds; **no budget alert emails are sent — Not implemented** (§11). |
+| **BCFG-004** | **Alert thresholds**: warning (default 80%) and over-budget (default 100%), 1–200%. They colour the Budget Dashboard alerts and set the levels of the budget alerts (BCFG-008). |
 | **BCFG-005** | **Over-Budget Approval Mode** decides what happens when a PR exceeds its available balance (full behaviour in EPMS.md §3.2.6): |
 
 | Mode | Label | Effect on an over-budget PR |
@@ -274,8 +280,9 @@ Saving fiscal years, thresholds and mode requires the *Admin Panel* permission.
 
 | FR ID | Requirement |
 |---|---|
-| **BCFG-006** | The mode is read by the approval engine each time it builds a PR's workflow, so a change applies to in-flight PRs from their next step. An unrecognised value behaves as *Finance Manager only*. |
+| **BCFG-006** | The mode is frozen on the PR when it is submitted (`ob_mode_applied`); a change applies to new submissions, and a resubmission after a return keeps the frozen mode unless the PR crossed the budget line meanwhile. PRs already in approval only ever get lighter: if the mode is relaxed, over-budget steps the new mode no longer requires are skipped (switching to *Hard block* skips none); a stricter mode never adds steps to them. An unrecognised value behaves as *Finance Manager only*. |
 | **BCFG-007** | The over-budget justification requirement is enforced by the PR form only, not by the server (EPMS.md OBG-007). |
+| **BCFG-008** | **Budget alerts** (Portal → Admin → Notification Settings → *Budget Threshold Alerts*, default off; *Dry Run*, default on). Every cost center × budget account of the current calendar year: usage = NC year-to-date actual including vouchers not yet tallied ÷ the approved annual budget (the BDASH-003 alert; Committed is always 0 — BACT-003; spend with no budget counts as over). **Warning**: a line that crosses up to the warning threshold is listed in a daily email digest (at the daily digest time) to the Department Manager. **Over budget**: checked every hour, the default NC voucher sync interval; a line that crosses up to the over-budget threshold is emailed to the Department Manager, every Finance Manager and the GM or OPM mapped to the department (no mapping: neither), and a Teams card goes to the company Teams webhook when one of them has chosen Teams (My Profile notification channel, with a Teams account). A department with no Department Manager: its lines go to the Finance Managers instead. One email per person per run. Each crossing is reported once; when usage falls back the mark is lowered, so a later crossing alerts again. In dry run, System Admins get the daily list, nobody else is emailed, nothing is marked and the hourly check stays quiet. The channel settings apply: company channel *None* stops the emails and cards, and a person on *None* or *Teams only* gets no email. |
 
 ### 4.7 Access and visibility
 
@@ -408,7 +415,6 @@ At go-live (2026-05) the former per-cost-center budget tables were merged into t
 
 - Commitment / encumbrance tracking from PR, PO or PA.
 - Cross-year budget transfers and carry-forward.
-- Budget alert emails and digests.
 
 ---
 
@@ -417,7 +423,7 @@ At go-live (2026-05) the former per-cost-center budget tables were merged into t
 | ID | Item | Status |
 |---|---|---|
 | BUD-OI-01 | **Committed is always 0.** No PR/PO/PA writes commitments, so the same remaining balance can pass the over-budget check for any number of PRs until NC books them (see EPMS.md OI-K). The Dashboard "Total Committed — PA in-flight" card is always 0. | Not implemented |
-| BUD-OI-02 | Budget alert emails (daily digest at the warning threshold; email + Teams at the over-budget threshold) are promised by the Budget Config page text but are not sent. Either build them or correct the page text. | Defect |
+| ~~BUD-OI-02~~ | ~~Budget alert emails are promised by the Budget Config page text but are not sent~~ — built, see BCFG-008 | **Resolved** |
 | BUD-OI-03 | Matrix editor reference panel: *current month actual* and *YTD actual* read unused ledger movements and are always empty; should read NC actuals. | Defect |
 | BUD-OI-04 | OA expense-claim account picker shows NC **posted only**, while the PR check includes unposted vouchers; the two can show different remaining balances for the same account. | Open |
 | BUD-OI-05 | Plan lists, plan details and plan exports are visible to every signed-in user regardless of budget visibility scope; plan writers (incl. Department Managers) can create and edit plans for any cost center. | Open |
@@ -426,7 +432,7 @@ At go-live (2026-05) the former per-cost-center budget tables were merged into t
 | BUD-OI-08 | Catalog *Import CSV* is shown to all catalog writers but the service accepts it from System Admin only. | Defect |
 | BUD-OI-09 | *Copy FY n-1* is offered on returned plans but the service accepts it only on drafts. | Defect |
 | BUD-OI-10 | The Finance Budget Actual report and the NC drill endpoints it uses are company-wide for any *View Finance* user and not limited by budget visibility scope. | Open |
-| BUD-OI-11 | EPMS role dashboards (Approver, Finance Manager, CFO) show "Over-Budget Depts / Accounts" and a budget overview that are always 0 / empty since budget moved to its own service. | Defect |
+| BUD-OI-11 | EPMS Finance Manager and CFO dashboards show "Over-Budget Accounts" and a budget overview that are always 0 / empty since budget moved to its own service. Resolved for the Approver dashboard (2026-11-05, EPMS.md §3.7). | Defect |
 | BUD-OI-12 | Ledger write endpoints (commit / release / actualize / book-expense) have no callers and accept any signed-in user. Remove them, or restrict them to service callers, before anything relies on the ledger again. | Open |
 | BUD-OI-13 | The balance check is not scope-limited by design; the NC actual it relies on is served by Finance to any signed-in user. A service-to-service credential is needed so the figure is available to the check without being readable by everyone. | Open |
 | BUD-OI-14 | When NC actuals are unavailable, the fallback reports the full budget as available for any account without an opening balance (fail-open by decision 2026-09-23). Revisit if outages become frequent. | Open |

@@ -451,8 +451,11 @@ entities:
       status:
         kind: enum
         label: "Status"
+        # discrepancy: a collected GR flagged by hand (GR-C-003, Flag
+        # Discrepancy on GR Detail); rejected: a service GR rejected at
+        # confirmation (GR-S-005).
         values: [pending_ack, acknowledged, collection_pending, collected,
-                 confirmed, cancelled]
+                 confirmed, discrepancy, rejected, cancelled]
       po_number: {kind: text, doc_number: PO, label: "PO number"}
       pr_number: {kind: text, doc_number: PR, label: "PR number"}
       vendor_name: {kind: text, label: "Vendor name"}
@@ -771,9 +774,9 @@ entities:
       grace_days: {kind: int, label: "Grace days after valid_to during which invoices are still accepted"}
       not_to_exceed:
         kind: money
-        label: "Spending ceiling (Not to Exceed, NTE). EMPTY means the agreement
-          has no ceiling — say \"no ceiling\", never \"0\""
-      consumed_amount: {kind: money, label: "Amount consumed against the agreement so far"}
+        label: "Spending ceiling (Not to Exceed, NTE), pre-tax. EMPTY means the
+          agreement has no ceiling — say \"no ceiling\", never \"0\""
+      consumed_amount: {kind: money, label: "Amount consumed against the agreement so far (pre-tax: the sum of the matched invoices' amounts before tax)"}
       remaining_amount:
         kind: money
         label: "NTE still available (not_to_exceed - consumed_amount). Empty

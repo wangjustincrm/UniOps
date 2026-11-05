@@ -49,7 +49,10 @@ async def upload_file(
     if ctype not in settings.ALLOWED_CONTENT_TYPES:
         raise HTTPException(
             status_code=415,
-            detail=f"Unsupported file type '{file.content_type}'. Allowed: PDF, images, Office docs, CSV/text.",
+            # PRD §3.4.1: refused "with the list of allowed types".
+            detail=(f"Unsupported file type '{file.content_type}'. Allowed: PDF; PNG, JPEG, GIF, "
+                    "WEBP, HEIC; Excel (.xlsx/.xls); Word (.docx/.doc); CSV; plain text; "
+                    "saved emails (.msg, .eml)."),
         )
 
     file_id = uuid.uuid4()

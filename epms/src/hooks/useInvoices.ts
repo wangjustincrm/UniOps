@@ -94,6 +94,31 @@ export function useInvoices(filters?: InvoiceFilters, enabled = true) {
   })
 }
 
+// The Invoices page's stat cards and tab badges (ISS-0127, PGN-001): one
+// page_size=1 request per figure, read off the server's `total`, instead of
+// downloading every invoice to count them in the browser. Same scope as the
+// list itself, since it is the list endpoint.
+const COUNTED_STATUSES = [undefined, 'unmatched', 'exception', 'matched', 'paid'] as const
+
+export function useInvoiceStatusCounts() {
+  return useQueries({
+    queries: COUNTED_STATUSES.map((status) => {
+      const filters: InvoiceFilters = { ...(status ? { status } : {}), page: 1, page_size: 1 }
+      return {
+        queryKey: ['invoices', filters],
+        queryFn: () => invoiceService.list(filters),
+        staleTime: 30_000,
+      }
+    }),
+    combine: combineCounts,
+  })
+}
+
+function combineCounts(results: { data?: { total: number } }[]) {
+  const [all, unmatched, exception, matched, paid] = results.map((r) => r.data?.total ?? 0)
+  return { all, unmatched, exception, matched, paid }
+}
+
 // One query per PO rather than a widened endpoint: the keys are IDENTICAL to
 // useInvoices({ po_id }) above, so adding a second PO to a payment reuses the
 // first PO's cached list instead of refetching everything, and any mutation
@@ -104,17 +129,11 @@ export function useInvoices(filters?: InvoiceFilters, enabled = true) {
 // is offered twice for ticking and double-counts in the charge breakdown.
 // `isLoading` is undefined-until-resolved, matching the `data === undefined`
 // guard the create page's auto-selection effects use.
-export function useInvoicesForPos(poIds: string[], enabled = true) {
-  const results = useQueries({
-    queries: poIds.map((poId) => ({
-      queryKey: ['invoices', { po_id: poId }],
-      queryFn: () => invoiceService.listAll({ po_id: poId }),
-      enabled,
-      staleTime: 30_000,
-    })),
-  })
-  const settled = poIds.length === 0 || results.every((r) => r.data !== undefined)
-  if (!settled) return { items: undefined as ApiInvoice[] | undefined, isLoading: true }
+//
+// `combine` is module-level so the result keeps its identity until the data
+// changes — see combineGrs in useGrs.ts (ISS-0097).
+function combineInvoices(results: { data?: { items: ApiInvoice[] } }[]) {
+  if (!results.every((r) => r.data !== undefined)) return { items: undefined as ApiInvoice[] | undefined, isLoading: true }
   const seen = new Set<string>()
   const items: ApiInvoice[] = []
   for (const r of results) {
@@ -124,7 +143,19 @@ export function useInvoicesForPos(poIds: string[], enabled = true) {
       items.push(inv)
     }
   }
-  return { items, isLoading: false }
+  return { items: items as ApiInvoice[] | undefined, isLoading: false }
+}
+
+export function useInvoicesForPos(poIds: string[], enabled = true) {
+  return useQueries({
+    queries: poIds.map((poId) => ({
+      queryKey: ['invoices', { po_id: poId }],
+      queryFn: () => invoiceService.listAll({ po_id: poId }),
+      enabled,
+      staleTime: 30_000,
+    })),
+    combine: combineInvoices,
+  })
 }
 
 // A Direct PA's invoices: no PO or agreement to list them by, so one detail
@@ -151,6 +182,16 @@ export function useInvoiceChain(id: string | null) {
     queryKey: ['invoices', id, 'chain'],
     queryFn: () => invoiceService.chain(id as string),
     enabled: Boolean(id),
+    staleTime: 30_000,
+  })
+}
+
+// Under ['invoices', id] so every invoice mutation's invalidation refreshes it.
+export function useInvoiceHistory(id: string, enabled = true) {
+  return useQuery({
+    queryKey: ['invoices', id, 'history'],
+    queryFn: () => invoiceService.history(id),
+    enabled: Boolean(id) && enabled,
     staleTime: 30_000,
   })
 }

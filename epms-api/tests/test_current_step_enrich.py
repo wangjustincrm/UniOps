@@ -203,3 +203,53 @@ async def test_enrich_current_step_batches_stand_in_lookup_no_n_plus_1(test_engi
         "Approver 1 (delegated: Delegate 1)",
         "Approver 2 (delegated: Delegate 2)",
     }
+
+
+# ── ISS-0107/0144 (rule question 6): the configured step name ─────────────────
+
+async def test_enrich_uses_the_configured_step_name(test_engine, monkeypatch):
+    """With the caller's token the label is the engine's configured step name;
+    a step whose role no longer matches the task, or no engine, falls back."""
+    from app.crud import current_step as cs_mod
+    from app.services import approval_client
+
+    sf = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    named, renamed, down = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    steps = {
+        str(named): [{"role": "dept_manager", "label": "Dept Manager"},
+                     {"role": "finance_bp", "label": "Finance Director of Oversea Department"}],
+        str(renamed): [{"role": "dept_manager", "label": "Dept Manager"}],
+    }
+
+    async def _steps(doc_type, doc_id, token):
+        if doc_id not in steps:
+            raise RuntimeError("engine down")
+        return steps[doc_id]
+    monkeypatch.setattr(approval_client, "get_workflow_steps", _steps)
+    cs_mod._steps_cache.clear()
+
+    async with sf() as db:
+        for d in (named, renamed, down):
+            db.add(_task(d, role="finance_bp"))
+        await db.commit()
+        items = [SimpleNamespace(id=d, status="in_review", approval_step_idx=1)
+                 for d in (named, renamed, down)]
+        await enrich_current_step(db, "pr", items, token="t")
+
+    assert items[0].current_step["label"] == "Finance Director of Oversea Department"
+    assert items[1].current_step["label"] == "Finance BP"   # no step with that role
+    assert items[2].current_step["label"] == "Finance BP"   # engine unreachable
+    cs_mod._steps_cache.clear()
+
+
+def test_configured_label_prefers_the_step_index_then_the_role():
+    from app.crud.current_step import configured_label
+
+    steps = [{"role": "finance_manager", "label": "Over-Budget — Finance Manager"},
+             {"role": "dept_manager", "label": "Dept Manager"},
+             {"role": "finance_manager", "label": "Finance Manager Approval"}]
+    assert configured_label(steps, 2, "finance_manager") == "Finance Manager Approval"
+    assert configured_label(steps, 0, "finance_manager") == "Over-Budget — Finance Manager"
+    assert configured_label(steps, None, "finance_manager") == "Over-Budget — Finance Manager"
+    assert configured_label(steps, 1, "gm") is None
+    assert configured_label([{"role": "gm_or_opm", "label": "GM / OPM step"}], 0, "opm") == "GM / OPM step"

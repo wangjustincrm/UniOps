@@ -3,8 +3,38 @@ label: Budget checks
 covers: >
   When a PR is checked against the budget, what over budget leads to, whether
   budget is reserved, what happens when the Budget service is down, what
-  Committed means.
+  Committed means, budget alert emails.
 # The over-budget rules themselves are PR rules (topic over_budget in pr.yaml)
 # and are listed here through also_in; the over-budget MODE is configuration
 # the approval engine reports (explain_process for a PR).
-rules: []
+rules:
+  - id: budget_alert_emails
+    also_in: [notifications]
+    asked_as:
+      - 预算超支会发邮件提醒吗？
+      - 预算用到 80% 会通知部门经理吗？
+      - do budget overruns send an alert
+    answer: >
+      Budget alerts are {state}. When on, every cost center × budget account
+      is checked: usage is NC year-to-date actual
+      (vouchers not yet tallied included) ÷ the approved annual budget, as on
+      the Budget Dashboard; committed is not counted, and spend with no budget
+      counts as over. A line that reaches the warning threshold ({warning}%) is
+      listed in a daily digest (at {time} UTC) to the Department Manager; one
+      that reaches the over-budget threshold ({over}%) is reported within the
+      hour (NC actuals are synced hourly) by email to the Department Manager,
+      every Finance Manager and the department's GM or OPM, and by a Teams
+      card on the company Teams channel when one of them has chosen Teams in
+      My Profile. A department with no Department Manager goes to the Finance
+      Manager instead. Each line is reported once per crossing, and again only
+      after it has dropped back and crossed again. The switch is
+      Portal → Admin → Notification Settings → Budget Threshold Alerts; the
+      thresholds are Finance → Budget Config.
+    provenance: derived
+    derive: budget_alerts
+    enforced_in: "epms-api app/tasks/budget_alerts.py run_budget_alerts (budget_admin_config thresholds; notification_settings budget_alert_enabled default off, budget_alert_dry_run default on; budget_alert_states); budget_over_alerts_loop hourly over-budget run; _send_teams (teams_webhook_url, user notification_channel teams_only/both + teams_account)"
+    test:
+      - "tests/test_budget_alerts.py::test_crossings_are_emailed_once_and_rearm"
+      - "tests/test_budget_alerts.py::test_off_and_dry_run_email_nobody"
+      - "tests/test_budget_alerts.py::test_hourly_run_alerts_over_budget_only"
+      - "tests/test_budget_alerts.py::test_over_budget_posts_one_teams_card_for_teams_recipients"

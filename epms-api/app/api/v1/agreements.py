@@ -11,6 +11,7 @@ from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.crud import agreement as agr_crud
 from app.crud._list_order import sort_clauses
+from app.crud.current_step import enrich_current_step
 from app.crud import agreement_schedule as agr_sched_crud
 from app.crud import vendor as vendor_crud
 from app.models.agreement import PurchaseAgreement
@@ -102,8 +103,11 @@ async def _visible_agreement_or_404(
 
 
 @router.get("/{agreement_id}", response_model=AgreementResponse)
-async def get_agreement(agreement_id: uuid.UUID, db: SessionDep, user: AgrReadDep):
-    return await _visible_agreement_or_404(db, user, agreement_id)
+async def get_agreement(agreement_id: uuid.UUID, db: SessionDep, user: AgrReadDep, token: BearerToken):
+    agr = await _visible_agreement_or_404(db, user, agreement_id)
+    # Who the current approval step is waiting on — see get_pr (ISS-0085).
+    await enrich_current_step(db, "agr", [agr], token)
+    return agr
 
 
 @router.get("/{agreement_id}/events", response_model=list[ApprovalEventResponse])

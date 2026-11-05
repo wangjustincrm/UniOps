@@ -60,7 +60,7 @@ async def sync_status(user: CurrentUser, db: AsyncSession = Depends(get_db)):
                .order_by(QboSyncRun.started_at.desc()).limit(1))).scalars().first()
     last = (await db.execute(select(QboSyncRun).where(QboSyncRun.status != RUNNING)
             .order_by(QboSyncRun.started_at.desc()).limit(1))).scalars().first()
-    return {"can_sync": True, "configured": svc.qbo_configured(),
+    return {"can_sync": user.get("role") == "system_admin", "configured": svc.qbo_configured(),
             "current_run": _run_out(current), "last_run": _run_out(last)}
 
 
@@ -73,6 +73,10 @@ async def sync_runs(user: CurrentUser, db: AsyncSession = Depends(get_db), limit
 
 @router.post("/sync", status_code=202)
 async def trigger_sync(body: SyncIn, user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    # Incremental sync and full reload: System Admin only (ISS-0164), like the
+    # NC sync (nc_sync.trigger). It used to accept any valid token.
+    if user.get("role") != "system_admin":
+        raise HTTPException(status_code=403, detail="system_admin only")
     if not svc.qbo_configured():
         raise HTTPException(status_code=503, detail="QBO connection is not configured")
     if body.mode == "full" and body.confirm != svc.FULL_CONFIRM:
@@ -93,7 +97,13 @@ async def backfill_vendor_emails(user: CurrentUser, db: AsyncSession = Depends(g
     """Copy qbo_vendors.email into EMPTY business_partners.remittance_email,
     matched on lower(trim(name)) == lower(trim(display_name)). Fill-only
     (human-entered values are never overwritten) and idempotent; ambiguous
-    names on either side are skipped and reported, never guessed."""
+    names on either side are skipped and reported, never guessed.
+
+    System Admin only, like the sync on the same page (ISS-0164): it writes
+    vendor master data and used to accept any valid token."""
+    if user.get("role") != "system_admin":
+        raise HTTPException(status_code=403, detail="system_admin only")
+
     def norm(s: str | None) -> str:
         return (s or "").strip().lower()
 

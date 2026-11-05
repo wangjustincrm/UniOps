@@ -170,6 +170,39 @@ async def test_match_two_pos_line_level_matched(admin_client):
 
 
 @pytest.mark.asyncio
+async def test_multi_po_allocations_carry_each_pos_own_reference(admin_client):
+    """ISS-0190 (INV-2026-0489): the 3-Way Match tab showed one PO with
+    po_total, the sum of both POs (400 + 680). Each allocation now carries its
+    own reference (po_reference), which adds up to po_total the way match()
+    adds it up, so the page can list each PO with its own amount."""
+    await _ensure_company_config()
+    v = await _make_vendor(admin_client, "VND-ALLOC-2PO-REF")
+    po_a = await _make_issued_po(admin_client, v["id"],
+        lines=[{"description": "A", "qty": "1", "unit": "EA", "unit_price": "400.00"}])
+    po_b = await _make_issued_po(admin_client, v["id"],
+        lines=[{"description": "B", "qty": "2", "unit": "EA", "unit_price": "340.00"}])
+    inv = (await admin_client.post(INV_URL, json=_inv_payload(
+        v["id"], amount="1050.00", tax_amount="0.00",
+        line_items=[{"description": "combined", "quantity": "1",
+                     "unit_price": "1050.00", "line_total": "1050.00"}]))).json()
+    inv_line = inv["line_items"][0]["id"]
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={"allocations": [
+        {"invoice_line_id": inv_line, "po_id": po_a["id"],
+         "po_line_id": po_a["line_items"][0]["id"],
+         "allocated_amount": "400.00", "allocated_tax": "0.00"},
+        {"invoice_line_id": inv_line, "po_id": po_b["id"],
+         "po_line_id": po_b["line_items"][0]["id"],
+         "allocated_amount": "650.00", "allocated_tax": "0.00"},
+    ]})
+    assert r.status_code == 200, r.text
+
+    data = (await admin_client.get(f"{INV_URL}/{inv['id']}")).json()
+    refs = {a["po_id"]: float(a["po_reference"]) for a in data["allocations"]}
+    assert refs == {po_a["id"]: 400.0, po_b["id"]: 680.0}
+    assert sum(refs.values()) == float(data["po_total"])
+
+
+@pytest.mark.asyncio
 async def test_legacy_match_rejects_multiple_po_line_ids(admin_client):
     """旧签名 po_line_ids 多于 1 个曾被静默丢弃(只取第一个做 reference)→ 现在必须 422,
     要求调用方改用行级 allocations。单个/零个 po_line_id 的旧路径保持兼容。"""

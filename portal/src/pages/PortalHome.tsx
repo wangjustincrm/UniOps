@@ -627,6 +627,15 @@ export default function PortalHome() {
         // wraps the EPMS plan editor in Portal chrome), not bare EPMS.
         base = FINANCE_URL
         path = `/budget/plans/${t.document_id}`
+      } else if (t.type === 'create_pa' || t.type === 'create_prepayment_pa') {
+        // Same targets as the EPMS Task Inbox (epms/src/lib/taskTypes.ts
+        // taskHref): both anchor on the PO and open New PA pre-filled with it
+        // (PRD §3.9.2) — not PO Detail (ISS-0186).
+        path = `/pa/create?poId=${t.document_id}`
+      } else if (t.type === 'confirm_receipt') {
+        // Confirm goods receipt / service completion: New GR pre-filled for
+        // the PO (§3.9.2, GR-L-002), as in the EPMS Task Inbox (ISS-0186).
+        path = `/gr/new?poId=${t.document_id}`
       } else {
         path = `${DOC_PATH[t.document_type] ?? '/dashboard'}/${t.document_id}`
       }

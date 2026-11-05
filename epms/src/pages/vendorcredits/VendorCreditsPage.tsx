@@ -6,6 +6,7 @@ import { useRolePermissions } from '@/hooks/useConfig'
 import { useReviewVendorCredit, useVendorCredit, useVendorCredits } from '@/hooks/useVendorCredits'
 import type { VendorCredit } from '@/services/vendorCredits'
 import { useAuthStore } from '@/stores/auth.store'
+import { formatDate } from '@/lib/utils'
 import { Pagination, SortTh, useSort, sortParams } from '@uniops/shell'
 
 type CreditSortKey =
@@ -151,10 +152,12 @@ export function VendorCreditsPage() {
                 </td>
                 <td className="px-4 py-3">{c.vendor_name}</td>
                 <td className="px-4 py-3 font-mono text-xs">{c.vendor_credit_number}</td>
-                <td className="px-4 py-3">{c.credit_date}</td>
+                <td className="px-4 py-3">{formatDate(c.credit_date)}</td>
                 <td className="px-4 py-3 text-right font-mono">{fmt(c.total_amount, c.currency)}</td>
                 <td className="px-4 py-3 text-right font-mono">{fmt(c.applied_amount, c.currency)}</td>
-                <td className="px-4 py-3 text-right font-mono font-semibold">{fmt(c.remaining_amount, c.currency)}</td>
+                {/* A voided credit can no longer be applied, so its Remaining
+                    reads 0 (ISS-0189). Display only; the stored amount is kept. */}
+                <td className="px-4 py-3 text-right font-mono font-semibold">{fmt(c.status === 'void' ? '0' : c.remaining_amount, c.currency)}</td>
                 <td className="px-4 py-3 text-xs text-neutral-500">{c.po_number ?? '—'}</td>
                 <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                   {/* A manual credit's evidence is the attached email, so it is

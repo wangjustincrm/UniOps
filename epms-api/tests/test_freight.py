@@ -293,6 +293,27 @@ async def test_generic_invoice_endpoints_refuse_freight_invoices(admin_client, w
     assert (await admin_client.get(f"/api/v1/invoices/{inv['id']}")).status_code == 200
 
 
+async def test_finance_ap_row_follows_finalize_and_reopen(admin_client, world, monkeypatch):
+    """ISS-0157 / PRD INV-007: the courier invoice's Finance AP row is draft
+    while unmatched and posted once finalised (matched) — like any invoice.
+    It only ever got the draft push from create, so it stayed draft, and the
+    payment executor (which settles posted rows only) never made it paid."""
+    from app.services import finance_sync
+    pushed: list[str] = []
+
+    async def _record(db, invoice, token, *, void=False):
+        pushed.append(finance_sync._header(invoice, void)["status"])
+    monkeypatch.setattr("app.api.v1.freight.finance_sync.sync_ap_invoice", _record)
+
+    await _register(admin_client, world, "1Z4E4F776821544637", "qa_lab")
+    inv = (await admin_client.post("/api/v1/freight/invoices", json=_ups_invoice(world))).json()
+    assert pushed == ["draft"]
+    assert (await admin_client.post(f"/api/v1/freight/invoices/{inv['id']}/finalize")).status_code == 200
+    assert pushed == ["draft", "posted"]
+    assert (await admin_client.post(f"/api/v1/freight/invoices/{inv['id']}/reopen")).status_code == 200
+    assert pushed == ["draft", "posted", "draft"]
+
+
 # ── Freight PA ────────────────────────────────────────────────────────────────
 
 async def _matched_invoice(admin_client, world):
@@ -329,6 +350,12 @@ async def test_freight_pa_snapshot_and_visibility(admin_client, world):
     again = await admin_client.post("/api/v1/freight/pa", json={"invoice_ids": [inv["id"]]})
     assert again.status_code == 409
     assert (await admin_client.post(f"/api/v1/freight/invoices/{inv['id']}/reopen")).status_code == 409
+
+    # The invoice page names the holding PA's status, so it can say what would
+    # free the invoice — an approved PA offers no Cancel / Return (ISS-0183).
+    held = (await admin_client.get(f"/api/v1/freight/invoices/{inv['id']}")).json()
+    assert held["pa_number"] == pa["pa_number"]
+    assert held["pa_status"] == pa["status"]
 
 
 async def test_freight_pa_amounts_are_not_editable(admin_client, world):

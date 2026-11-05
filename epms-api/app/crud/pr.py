@@ -137,6 +137,7 @@ async def get_all(
     department_id: uuid.UUID | None = None,
     is_prepaid: bool | None = None,
     created_by: uuid.UUID | None = None,
+    has_po: bool | None = None,
     pr_ids_subq=None,
     search: str | None = None,
     page: int = 1,
@@ -164,6 +165,8 @@ async def get_all(
         q = q.where(PurchaseRequest.is_prepaid == is_prepaid)
     if created_by:
         q = q.where(PurchaseRequest.created_by == created_by)
+    if has_po is not None:
+        q = q.where(PurchaseRequest.po_id.is_not(None) if has_po else PurchaseRequest.po_id.is_(None))
     if search:
         term = f"%{search}%"
         # Match the fields the UI advertises: PR#, title, vendor name, budget code.

@@ -6,6 +6,7 @@ from decimal import Decimal
 from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.current_step import CurrentStep
+from app.schemas.vendor import PaymentTerms
 
 PO_STATUSES = {
     "draft", "submitted", "in_review", "approved",
@@ -80,6 +81,8 @@ class PoCreate(BaseModel):
     notes: str | None = None
     pr_id: uuid.UUID | None = None
     is_prepaid: bool = False
+    # Omitted → the vendor's payment terms (PRD §3.12.1, ISS-0087).
+    payment_terms: PaymentTerms | None = None
     line_items: list[PoLineItemIn] = Field(default_factory=list)
 
 
@@ -95,6 +98,7 @@ class PoUpdate(BaseModel):
     delivery_address: str | None = None
     notes: str | None = None
     is_prepaid: bool | None = None
+    payment_terms: PaymentTerms | None = None
     line_items: list[PoLineItemIn] | None = None
 
 
@@ -222,6 +226,10 @@ class PoResponse(BaseModel):
     buyer_notes: str | None = None
     incoterms_code: str | None = None
     incoterms: str | None = None   # the named place
+    # The PO's own terms; NULL on older / NC-mirrored POs, which use the
+    # vendor's (vendor_payment_terms, attached on the detail read).
+    payment_terms: str | None = None
+    vendor_payment_terms: str | None = None
     buyer_edited_at: datetime | None = None
     approval_step_idx: int
     pr_id: uuid.UUID | None

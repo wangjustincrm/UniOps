@@ -170,7 +170,30 @@ async def get_record(db: AsyncSession, entity: str, record_id: uuid.UUID) -> dic
             .order_by(child.model.sort_order.asc()))).scalars().all()
         rec["line_items"] = [_serialize_child(child, li) for li in lis]
     rec["_ref_list_labels"] = await _ref_list_labels(db, spec, rec)
+    rec["_ref_labels"] = await _ref_labels(db, spec, rec)
     return rec
+
+
+async def _ref_labels(db: AsyncSession, spec: EntitySpec, rec: dict) -> dict:
+    """{field: label} for every single reference field that has no denormalized
+    name column (the user references: Requester, PA Creator, Agreement Owner…),
+    so the editor names the person instead of showing their uuid (UI-USER-001,
+    ISS-0183). Display only. An id that resolves to nothing is left out and the
+    editor falls back to the raw value, as before."""
+    out: dict[str, str] = {}
+    for f in spec.schema.fields:
+        if f.type != "reference" or not f.ref_source or f.ref_name_field:
+            continue
+        raw = rec.get(f.name)
+        if not raw:
+            continue
+        try:
+            hit = await get_resolver(f.ref_source).fetch_by_id(db, uuid.UUID(str(raw)))
+        except (ValueError, TypeError):
+            hit = None
+        if hit is not None:
+            out[f.name] = hit.label
+    return out
 
 
 async def _ref_list_labels(db: AsyncSession, spec: EntitySpec, rec: dict) -> dict:

@@ -80,7 +80,7 @@ rules:
       Prepayment Config. Whether a vendor can be prepaid is decided by these
       caps alone — never by the Prepaid flag on its past PRs or POs, which
       the payment application does not read.
-    enforced_in: "epms-api app/api/v1/pa.py _assert_prepayment_cap (effective_cap = vendor.max_prepayment_pct else Prepayment Config; second check against the system cap; cumulative over the PO's live prepayments via prior_prepayment_pct)"
+    enforced_in: "epms-api app/api/v1/pa.py _assert_prepayment_cap, on create_pa and when a draft's % is edited in update_pa (effective_cap = vendor.max_prepayment_pct else Prepayment Config; second check against the system cap; cumulative over the PO's live prepayments via prior_prepayment_pct)"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_prepayment_cap_reads_the_vendor_then_the_system"
@@ -123,7 +123,7 @@ rules:
       days apart; a PO has no three-way matched invoice and no authorised
       receipt override; or an invoice is already on another payment
       application that is not cancelled or rejected (the form does not offer
-      it). Agreement PAs follow the agreement's own rules and have no
+      it and the server refuses it). Agreement PAs follow the agreement's own rules and have no
       due-date window. Give me the invoice or PO numbers and I can look at
       their data.
     provenance: derived
@@ -155,10 +155,11 @@ rules:
       raised. Recurring agreement: each invoice must be linked to a billing
       period whose service the department has confirmed. House account: each
       invoice must have its agreement receipts attached, or be settled
-      explicitly without receipt evidence, with a reason. Milestone: no
-      confirmation check. The same checks run again whenever the PA's
-      invoices are changed.
-    enforced_in: "epms-api app/api/v1/pa.py create_pa agreement branch + _validate_agreement_pa_invoices (_PAYABLE_INVOICE_STATUSES matched/approved; recurring schedule_id + accepted_at; house_account receipt_ids or legacy_settlement); app/schemas/invoice.py SettleWithoutReceiptRequest (reason required); PRD EPMS AGR-061"
+      explicitly without receipt evidence, with a reason; on New PA an
+      invoice with neither is shown greyed out ("No receipt evidence yet")
+      and cannot be ticked. Milestone: no confirmation check. The same checks
+      run again whenever the PA's invoices are changed.
+    enforced_in: "epms-api app/api/v1/pa.py create_pa agreement branch + _validate_agreement_pa_invoices (_PAYABLE_INVOICE_STATUSES matched/approved; recurring schedule_id + accepted_at; house_account receipt_ids or legacy_settlement); app/schemas/invoice.py SettleWithoutReceiptRequest (reason required); epms/src/pages/pa/PaCreatePage.tsx lacksReceiptEvidence; PRD EPMS AGR-061"
     provenance: pinned
     test:
       - "tests/test_agreement_pa.py::test_agreement_pa_skips_the_goods_receipt_gate"
@@ -181,12 +182,33 @@ rules:
       No. While a PO has a prepayment PA that is not cancelled, rejected or
       processed (paid), a regular PA cannot be created on that PO — the
       system refuses and names the open prepayment PA. Settlement and
-      balance PAs are exempt. A PO can have only one prepayment PA: a second
-      one is refused even after the first has been paid.
+      balance PAs are exempt. A PO may be prepaid in several stages (each its
+      own prepayment PA, the cap counting them together), but no further
+      prepayment is accepted once the PO has a settlement or balance PA.
     enforced_in: "epms-api app/api/v1/pa.py create_pa (PP-008 regular branch; PP-004 prepayment branch)"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_an_open_prepayment_blocks_a_regular_pa"
+  # ISS-0133 (rule question 8): the administrator answered B — the amount is
+  # calculated from the %; the question put it as "% × PO amount".
+  - id: prepayment_amount
+    asked_as:
+      - 预付 PA 的金额是怎么算的？
+      - 预付比例有什么用？
+      - how is the prepayment amount calculated
+    answer: >
+      A prepayment PA's pre-tax amount is calculated, not typed: Prepayment %
+      × the whole PO's pre-tax total (30% of a PO of 400.00 pre-tax is
+      120.00). Changing the % on a draft recalculates it. Tax is pre-filled
+      with the same share of the PO's tax (15.60 of 52.00 here) and can be
+      changed, and shipping or other charges can be added, as on any PA.
+      Invoices are optional on a prepayment; linking one does not change the
+      amount. With no line-matched invoice its single line reads
+      "Prepayment N% of PO-…".
+    enforced_in: "epms-api app/api/v1/pa.py _prepayment_amounts, on create_pa and update_pa (server recomputes whatever the client sent); epms/src/pages/pa/PaCreatePage.tsx, PaEditPage.tsx (pre-tax read-only)"
+    provenance: pinned
+    test:
+      - "tests/test_pa.py::test_prepayment_amount_follows_the_pct"
   - id: pa_tax
     asked_as:
       - PA 上的运费要交税吗？
@@ -200,7 +222,8 @@ rules:
       pre-tax amount × the PO's tax rate (the agreement's on an agreement
       PA), for CAD only — 13% is used only for an agreement that has no rate
       recorded; in another currency the tax is left blank. Once you type in
-      the tax field it is no longer filled for you.
+      the tax field it is no longer filled for you. A prepayment's tax is
+      pre-filled with the prepayment's share of the PO's tax instead.
     enforced_in: "epms-api app/admin/recompute.py recompute_pa_header_only ('shipping and other charges are never taxed'); app/crud/pa.py _compute_payment; epms/src/pages/pa/PaCreatePage.tsx tax prefill"
     provenance: pinned
     test:

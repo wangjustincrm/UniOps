@@ -63,7 +63,14 @@ export default function WarehouseDashboard() {
           subtitle="Pending requester acknowledgement"
           alert={kpi('GRs Awaiting ACK')?.alert}
         />
-        <StatCard title="Collection Pending" value={kpi('Collection Pending')?.value ?? '—'} subtitle="Ready for requester collection" />
+        {/* "Collection Overdue" (Collection Config → Finance Manager alert) is
+            counted by the server, only while collection is required. */}
+        <StatCard
+          title="Collection Pending"
+          value={kpi('Collection Pending')?.value ?? '—'}
+          subtitle={kpi('Collection Pending')?.subtitle ?? 'Ready for requester collection'}
+          alert={kpi('Collection Pending')?.alert}
+        />
         <StatCard
           title="Discrepancies"
           value={kpi('Discrepancies')?.value ?? '—'}

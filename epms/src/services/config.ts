@@ -45,7 +45,10 @@ export interface BudgetAdminConfig {
 }
 
 export interface CollectionConfig {
+  // Legacy: stored (default true) but never read — kept so a save round-trips it.
   collection_required: boolean
+  // The real switch (ISS-0146), off unless an admin turns it on.
+  collection_gate_enabled?: boolean
   reminder_days: number
   manager_escalation_days: number
   fm_alert_days: number

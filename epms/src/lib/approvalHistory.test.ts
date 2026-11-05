@@ -45,3 +45,28 @@ describe('historyLine (ISS-0077)', () => {
     expect(isSkipped(undefined)).toBe(false)
   })
 })
+
+describe('historyLine names the step for a return / reject too (ISS-0183)', () => {
+  const steps = [
+    { id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' },
+    { id: 'director', role: 'director', label: 'Director' },
+  ]
+
+  it('a system admin rejecting at the department-manager step reads as that step', () => {
+    const line = historyLine(ev({ step_idx: 0, action: 'reject', actor_role: 'system_admin', actor_name: 'System Administrator' }), steps)
+    expect(line.role).toBe('by Department Manager')
+    expect(line.actorName).toBe('System Administrator')
+  })
+
+  it('a return names its step the same way', () => {
+    expect(historyLine(ev({ step_idx: 1, action: 'return', actor_role: 'system_admin' }), steps).role).toBe('by Director')
+  })
+
+  it('a submit keeps the actor role (it is not a workflow step)', () => {
+    expect(historyLine(ev({ step_idx: 0, action: 'submit', actor_role: 'system_admin' }), steps).role).toBe('by system admin')
+  })
+
+  it('without the workflow steps it falls back to the recorded role', () => {
+    expect(historyLine(ev({ step_idx: 0, action: 'reject', actor_role: 'system_admin' })).role).toBe('by system admin')
+  })
+})

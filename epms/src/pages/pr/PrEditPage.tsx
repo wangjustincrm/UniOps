@@ -11,7 +11,8 @@ import { FormField } from '@/components/ui/form-field'
 import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import { PrLineItems, lineItemsTotal, validateLineItems } from '@/components/pr/PrLineItems'
 import { budgetAccountError } from '@/lib/prBudget'
-import { OverBudgetWarning } from '@/components/pr/BudgetBalanceWidget'
+import { clearSubmitFailure, errorMessage, peekSubmitFailure } from '@/lib/submitFailure'
+import { BudgetBalanceWidget, OverBudgetWarning } from '@/components/pr/BudgetBalanceWidget'
 import { useConfig } from '@/hooks/useConfig'
 import { useBudgetOverview, useBalance, useFactors } from '@/hooks/useBudget'
 import { useCostCenters } from '@/hooks/useCostCenters'
@@ -26,7 +27,7 @@ import { userService, type ApiUserBrief } from '@/services/users'
 import type { ApiVendor } from '@/services/vendors'
 import type { ApiBudgetL1 } from '@/services/budget'
 import type { PrLineItem, Currency, ProcurementType } from '@/types'
-import { CURRENCIES } from '@/types'
+import { enabledCurrencyOptions } from '@/lib/currencies'
 
 const TYPE_LABELS: Record<number, string> = {
   1: 'Raw Mat./Pack.',
@@ -133,6 +134,10 @@ export default function PrEditPage() {
   const [selectedL2, setSelectedL2] = useState('')
 
   const [isSubmitting, setIsSubmitting] = useState(false)
+  // Why the last Submit was refused — here, or on New PR before it brought
+  // the saved draft here (ISS-0166). It used to be shown nowhere.
+  const [submitError, setSubmitError] = useState<string | null>(() => peekSubmitFailure(id))
+  useEffect(() => { clearSubmitFailure(id) }, [id])
   const [initialized, setInitialized] = useState(false)
 
   const costCenters = costCentersData ?? []
@@ -238,7 +243,6 @@ export default function PrEditPage() {
   const actualSpent = Number(budgetBalance?.actual_spent ?? 0)
   const available = annualBudget - committed - actualSpent
   const isOverBudget = selectedBudgetAccount ? estimatedAmount > available && estimatedAmount > 0 : false
-  const overage = isOverBudget ? estimatedAmount - available : 0
   const overBudgetMode = config?.budget_admin_config?.over_budget_mode ?? 'fm_gm_opm'
   const isHardBlock = isOverBudget && overBudgetMode === 'hard_block'
 
@@ -338,10 +342,13 @@ export default function PrEditPage() {
     }
     setJustificationError(null)
     setIsSubmitting(true)
+    setSubmitError(null)
     try {
       await updatePr.mutateAsync({ id, body: buildPayload() })
       await prAction.mutateAsync({ action: 'submit' })
       replaceTab(`/pr/${id}`)
+    } catch (err) {
+      setSubmitError(errorMessage(err, 'The purchase request could not be submitted'))
     } finally {
       setIsSubmitting(false)
     }
@@ -378,7 +385,10 @@ export default function PrEditPage() {
       </div>
 
       <form onSubmit={handleSubmit} noValidate>
-        <div className="flex flex-col gap-6">
+        {/* Same two columns as New PR, so the budget panel sits beside the form
+            and follows every change before saving (OBG-001; ISS-0142). */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+        <div className="lg:col-span-9 flex flex-col gap-6">
           <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-5">
             <h2 className="text-base font-semibold text-neutral-900">Requisition Details</h2>
 
@@ -571,8 +581,9 @@ export default function PrEditPage() {
             {isOverBudget && selectedBudgetAccount && available > 0 && (
               <OverBudgetWarning
                 accountCode={selectedL2}
-                overage={overage}
-                pct={(overage / available) * 100}
+                thisAmount={estimatedAmount}
+                available={available}
+                annualBudget={annualBudget}
               />
             )}
 
@@ -607,7 +618,7 @@ export default function PrEditPage() {
                 onChange={(e) => setCurrency(e.target.value as Currency)}
                 className="h-10 w-full rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
               >
-                {CURRENCIES.filter((c) => (config?.enabled_currencies ?? ['CAD', 'USD', 'EUR', 'RMB']).includes(c.value)).map((c) => (
+                {enabledCurrencyOptions(config, currency).map((c) => (
                   <option key={c.value} value={c.value}>{c.value} — {c.label}</option>
                 ))}
               </select>
@@ -795,6 +806,9 @@ export default function PrEditPage() {
             <Link to={`/pr/${id}`}>
               <Button variant="secondary">Cancel</Button>
             </Link>
+            {submitError && (
+              <p role="alert" className="flex-1 mx-4 text-sm text-danger-600">{submitError}</p>
+            )}
             <div className="flex items-center gap-3">
               <Button type="button" variant="secondary" disabled={isSubmitting || !title.trim()} onClick={handleSaveDraft}>
                 Save as Draft
@@ -804,6 +818,22 @@ export default function PrEditPage() {
               </Button>
             </div>
           </div>
+        </div>
+
+        <div className="lg:col-span-3 flex flex-col gap-4">
+          {selectedL2 && selectedBudgetAccount && (
+            <BudgetBalanceWidget
+              data={{
+                accountCode: selectedL2,
+                accountName: selectedBudgetAccount.name,
+                annualBudget: annualBudget,
+                committed: committed,
+                actualSpent: actualSpent,
+              }}
+              thisAmount={estimatedAmount}
+            />
+          )}
+        </div>
         </div>
       </form>
     </div>

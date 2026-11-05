@@ -1527,6 +1527,31 @@ async def submission_landing(
         start += 1
 
 
+async def check_chain_routable(
+    db: AsyncSession, doc_type: str, ctx: "ActionContext",
+    workflow: list[dict], start: int,
+) -> None:
+    """Raise ValueError when any step from `start` on could not be routed.
+
+    Checking only the step a submission lands on let a PR whose over-budget
+    Finance Manager step comes first be submitted in a department with no
+    Department Manager; it then stuck at that step, every Approve refused with
+    the routing error (ISS-0166). A step that is conditionally skipped (no
+    Director, a multi-department PA) is not asked — it will never be routed.
+    Read-only, so preflight and execution share it."""
+    for idx in range(start, len(workflow)):
+        skip, _ = _step_skip(
+            workflow[idx], doc_type, ctx.doc, ctx.director_uid, ctx.supervisor_uid,
+            ctx.dept_has_director, ctx.dept_has_supervisor, ctx.cross_dept_pa,
+            ctx.cfg_ob_mode or None)
+        if skip:
+            continue
+        await resolve_step_assignment(
+            db, doc_type, ctx.doc, idx, workflow, ctx.rm, ctx.dept_gm_opm,
+            routing_dept_id=ctx.routing_dept_id, director_uid=ctx.director_uid,
+            supervisor_uid=ctx.supervisor_uid, cross_dept_pa=ctx.cross_dept_pa)
+
+
 # ── Main execution entry point ────────────────────────────────────────────────
 
 @dataclass
@@ -1564,12 +1589,23 @@ class ActionContext:
 
 
 async def load_action_context(db: AsyncSession, doc_type: str,
-                              doc_id: uuid.UUID) -> ActionContext:
-    """Read-only. Raises LookupError when the document does not exist."""
+                              doc_id: uuid.UUID, *,
+                              for_update: bool = False) -> ActionContext:
+    """Read-only. Raises LookupError when the document does not exist.
+
+    `for_update` locks the document row until the caller's transaction ends.
+    execute_action needs it: two requests for the same document (a double-click
+    on Approve) otherwise both read the same status and step and both act —
+    PR-20261022-0005 got every approval and its auto-PDF twice (ISS-0079).
+    Locked, the second waits for the first to commit and then sees where the
+    document really is."""
     meta = _resolve_meta(doc_type)
     Model = meta["model"]
 
-    result = await db.execute(select(Model).where(Model.id == doc_id))
+    stmt = select(Model).where(Model.id == doc_id)
+    if for_update:
+        stmt = stmt.with_for_update(of=Model)
+    result = await db.execute(stmt)
     doc = result.scalar_one_or_none()
     if doc is None:
         raise LookupError(f"{doc_type.upper()} {doc_id} not found")
@@ -1689,10 +1725,7 @@ async def preflight_submit(db: AsyncSession, doc_type: str,
         checks.append(Check(id="approver_routing", layer="config", passed=True))
     else:
         try:
-            await resolve_step_assignment(
-                db, doc_type, ctx.doc, start, sub_workflow, ctx.rm, ctx.dept_gm_opm,
-                routing_dept_id=ctx.routing_dept_id, director_uid=ctx.director_uid,
-                supervisor_uid=ctx.supervisor_uid, cross_dept_pa=ctx.cross_dept_pa)
+            await check_chain_routable(db, doc_type, ctx, sub_workflow, start)
             checks.append(Check(id="approver_routing", layer="config", passed=True))
         except ValueError as exc:
             checks.append(Check(
@@ -1715,8 +1748,9 @@ async def execute_action(
     actor_role: str,
     comment: str | None = None,
     today: date | None = None,
+    expected_step: int | None = None,
 ) -> ActionResult:
-    ctx = await load_action_context(db, doc_type, doc_id)
+    ctx = await load_action_context(db, doc_type, doc_id, for_update=True)
     meta = ctx.meta
     doc = ctx.doc
     step = ctx.step
@@ -1746,6 +1780,17 @@ async def execute_action(
     current_step_role = workflow[step]["role"] if step < len(workflow) else ""
     finance_bp_ids = {uuid.UUID(u) for u in rm.get("finance_bp_user_ids", [])}
 
+    # The caller says which step its decision is for. If the document has moved
+    # on since, the decision was already taken (a double-click, a second tab) —
+    # acting anyway would spend it on the NEXT step, which an administrator, who
+    # may approve any step, would pass without ever seeing it (ISS-0079).
+    if (expected_step is not None and act in ("approve", "return", "reject")
+            and expected_step != step):
+        raise ValueError(
+            f"This {doc_type.upper()} has already moved past the step you acted on "
+            "— refresh the page to see where it is now."
+        )
+
     if act == "submit":
         if _status_of(meta, doc) not in meta["valid_submit"]:
             raise ValueError(msg_cannot_submit(doc_type, _status_of(meta, doc)))
@@ -1763,6 +1808,7 @@ async def execute_action(
             db, doc_type, ctx, workflow, resume_at)
         if claimant_skipped and start >= len(workflow):
             raise ValueError(MSG_CLAIMANT_HOLDS_EVERY_STEP)
+        await check_chain_routable(db, doc_type, ctx, workflow, start)
         _set_status(meta, doc, "submitted")
         if hasattr(doc, "submitted_at"):
             doc.submitted_at = now

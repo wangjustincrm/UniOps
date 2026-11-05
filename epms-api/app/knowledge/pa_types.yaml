@@ -59,7 +59,11 @@ values:
         line by line: each matched invoice line becomes a PA line on the PO line
         it was matched to, and non-PO fees on the invoice (freight, for example)
         become lines of their own. You only pick PO lines yourself when an
-        invoice was matched against the PO total alone.
+        invoice was matched against the PO total alone; if you pick none, the
+        PA takes the invoices' own lines. A PA raised against an agreement
+        always takes its invoices' own lines (an invoice whose lines do not
+        add up to its pre-tax amount becomes one line), and its PDF names the
+        agreement.
       - >-
         Courier charges (UPS, FedEx, Purolator…) are not paid this way. Buyers
         register each tracking number on EPMS → Freight → Shipments with the
@@ -88,7 +92,12 @@ values:
         approved on the "PA (Direct)" workflow in Portal → Admin → Approval
         Workflows. Its amounts come from the invoices; the title, reason,
         department, cost center and budget account stay editable until it is
-        submitted. OA no longer has Direct PAs. If the invoice is not in EPMS
+        submitted. Create Direct PA, its edit form and the Direct PA page show
+        the budget of the chosen cost center × budget account (annual budget,
+        committed, actual spent, available and "after this payment", which
+        subtracts the pre-tax amount; not shown for a non-CAD PA or once it is
+        paid) — for reference only: it never blocks the PA or adds an approval
+        step. OA no longer has Direct PAs. If the invoice is not in EPMS
         yet, Upload Invoice on the Create Direct PA page uploads it and matches
         it for a Direct PA in one go, then brings you back with it ticked.
 
@@ -106,6 +115,9 @@ values:
       - No further prepayment can be raised once the order has a settlement.
       - Records what percentage of the order is being prepaid and when the
         settlement is expected.
+      - The pre-tax amount is calculated — Prepayment % × the whole PO's
+        pre-tax total — and cannot be typed. Tax is pre-filled with the same
+        share of the PO's tax and can be changed; freight may be added.
 
   - value: settlement
     label: Settlement
@@ -122,6 +134,11 @@ values:
         reconciles immediately — no approval, no payment, no bank movement.
       - If the prepayment was too large, a finance confirmation task gates the
         reconciliation rather than it going through silently.
+      - The paid prepayment PA offers Settle Prepayment / Settle Now to a System
+        Admin, and to a user whose primary role is Requester who may create PAs
+        and either raised the order's PR, also holds Procurement Officer or
+        Dept Admin, or holds ERP PA Officer and the order is an NC order with
+        no PR — the same people New PA accepts for that order.
 
   - value: balance
     label: Balance

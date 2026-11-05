@@ -192,8 +192,9 @@ async def scope_po(q: Select, scope: dict, db: AsyncSession) -> Select:
 
 
 async def scope_gr(q: Select, scope: dict, db: AsyncSession) -> Select:
-    # Scoped through the PO, not by a GR subquery of its own.
-    subq = scope.get("po_subq")
+    # Scoped through the PO, not by a GR subquery of its own — the GR view of
+    # the PO chain (gr_po_subq), which can be narrower than po_subq (ISS-0155).
+    subq = scope.get("gr_po_subq", scope.get("po_subq"))
     return q if subq is None else q.where(GoodsReceipt.po_id.in_(subq))
 
 
@@ -211,7 +212,7 @@ async def scope_po_line(q: Select, scope: dict, db: AsyncSession) -> Select:
 
 async def scope_gr_line(q: Select, scope: dict, db: AsyncSession) -> Select:
     """A receipt line is exactly as visible as its receipt (through the PO)."""
-    subq = scope.get("po_subq")
+    subq = scope.get("gr_po_subq", scope.get("po_subq"))
     if subq is None:
         return q
     return q.where(GrLineItem.gr_id.in_(

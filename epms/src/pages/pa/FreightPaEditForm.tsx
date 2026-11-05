@@ -19,6 +19,8 @@ export function FreightPaEditForm({ pa }: { pa: ApiPa }) {
   const [title, setTitle] = useState(pa.title)
   const [notes, setNotes] = useState(pa.notes ?? '')
   const [submitting, setSubmitting] = useState(false)
+  // A refused submit is shown next to the buttons, not in a pop-up (ISS-0166).
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const busy = updatePa.isPending || submitting
 
   if (!['draft', 'returned'].includes(pa.status)) {
@@ -38,10 +40,11 @@ export function FreightPaEditForm({ pa }: { pa: ApiPa }) {
       await updatePa.mutateAsync({ id: pa.id, body: { title: title.trim(), notes: notes.trim() } })
       if (andSubmit) {
         setSubmitting(true)
+        setSubmitError(null)
         try {
           await paService.action(pa.id, { action: 'submit' })
         } catch (e) {
-          alert(e instanceof Error ? e.message : 'Could not submit the PA')
+          setSubmitError(e instanceof Error ? e.message : 'Could not submit the PA')
           return
         } finally {
           setSubmitting(false)
@@ -51,7 +54,7 @@ export function FreightPaEditForm({ pa }: { pa: ApiPa }) {
       }
       replaceTab(`/pa/${pa.id}`)
     } catch {
-      // useUpdatePa alerts the server error
+      // the refusal shows below the buttons from updatePa's error state
     }
   }
 
@@ -98,6 +101,17 @@ export function FreightPaEditForm({ pa }: { pa: ApiPa }) {
           {submitting ? 'Submitting…' : 'Save & Submit'}
         </Button>
       </div>
+      {updatePa.isError && (
+        <p role="alert" className="text-right text-sm text-danger-600">
+          {updatePa.error instanceof Error && updatePa.error.message
+            ? updatePa.error.message : 'Failed to update payment application'}
+        </p>
+      )}
+      {submitError && (
+        <p role="alert" className="text-right text-sm text-danger-600">
+          Saved as a draft but not submitted: {submitError}
+        </p>
+      )}
     </div>
   )
 }

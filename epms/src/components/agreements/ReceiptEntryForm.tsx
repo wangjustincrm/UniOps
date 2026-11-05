@@ -8,7 +8,7 @@ import { cn, todayISODate } from '@/lib/utils'
 import { useUserDirectory } from '@/hooks/useUsers'
 import { useCreateReceipt, invalidateReceiptViews } from '@/hooks/useAgreementReceipts'
 import { agreementReceiptAttachmentService, receiptAttachmentsQueryKey } from '@/services/agreementReceiptAttachments'
-import { agreementReceiptService, ocrService, receiptTotalsMatch, type ReceiptType } from '@/services/agreementReceipts'
+import { agreementReceiptService, ocrService, receiptTotalsMatch, type ApiReceipt, type ReceiptType } from '@/services/agreementReceipts'
 import {
   ReceiptVendorPicker,
   type ReceiptVendorSuggestion,
@@ -30,6 +30,10 @@ interface ReceiptEntryFormProps {
   // visually identical to a failed submit. Optional so this component still
   // works standalone with no caller-visible behavior change.
   onSuccess?: () => void
+  // The agreement's tax rate (0.13 = 13%), when one is set. Only drives the
+  // grey "at 13% ≈ …" hint under Tax (ISS-0130) — never a value filled in:
+  // a slip may mix taxable and exempt items or round differently.
+  taxRate?: number | null
 }
 
 // Entry flow: pick a photo → auto OCR → prefill (still fully editable) →
@@ -49,7 +53,9 @@ const TYPE_COPY = {
     dateLabel: 'Receipt date',
     refLabel: 'Reference #',
     refPlaceholder: 'Receipt number',
-    byLabel: 'Picked up by',
+    // One name for this person everywhere — receipt detail, the receipt
+    // lists and AGR-030 all say received-by (ISS-0132).
+    byLabel: 'Received by',
     byHint: 'The person who brought the receipt in — not a sign-off or approval.',
   },
   delivery: {
@@ -68,7 +74,7 @@ const TYPE_COPY = {
   },
 } as const
 
-export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', onSuccess }: ReceiptEntryFormProps) {
+export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', onSuccess, taxRate }: ReceiptEntryFormProps) {
   // Only a counter slip runs OCR, demands a photo-or-reason, and routes to AP
   // review when neither is there.
   const isSlip = receiptType === 'counter_slip'
@@ -87,8 +93,9 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
   // it matched (when it matched one) and the text stored either way. OCR
   // prefills it and the picker tries to bind it; both halves stay editable.
   // Nothing is compared against the agreement's vendor here — the backend
-  // decides that (receipt_vendor_mismatch) and the receipt list/detail views
-  // surface it, so there is exactly one verdict in the system.
+  // decides that (receipt_vendor_mismatch); the picker asks it live
+  // (agreementId, ISS-0114) and the receipt list/detail views show the saved
+  // verdict, so there is exactly one verdict in the system.
   const [vendor, setVendor] = useState<ReceiptVendorValue>({ vendorId: null, vendorName: '' })
   // Handed to the picker when OCR reads a merchant name off the photo. A new
   // object each time, so re-reading a photo of the SAME shop re-runs the match.
@@ -111,6 +118,11 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
   const [amountError, setAmountError] = useState<string | null>(null)
   const [receivedByError, setReceivedByError] = useState<string | null>(null)
   const [reasonError, setReasonError] = useState<string | null>(null)
+  // A save the server refused. A duplicate reference is shown at Reference #
+  // like any other field check (ISS-0115); anything else next to the button —
+  // never a browser alert.
+  const [refError, setRefError] = useState<string | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false)
 
   const resetForm = () => {
@@ -130,6 +142,8 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
     setAmountError(null)
     setReceivedByError(null)
     setReasonError(null)
+    setRefError(null)
+    setSubmitError(null)
   }
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -172,6 +186,19 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
 
   const isPending = createReceipt.isPending || isUploadingAttachment
 
+  // Reference values only (ISS-0130) — the recorder copies the slip, so
+  // nothing here is written into a field.
+  const amtVal = amount === '' ? NaN : Number(amount)
+  const taxVal = taxAmount === '' ? NaN : Number(taxAmount)
+  const totVal = totalAmount === '' ? NaN : Number(totalAmount)
+  const haveAmt = Number.isFinite(amtVal)
+  const haveSum = haveAmt && Number.isFinite(taxVal)
+  const sumHint = haveSum ? `Amount + Tax = ${((Math.round(amtVal * 100) + Math.round(taxVal * 100)) / 100).toFixed(2)}` : undefined
+  const taxHint = haveAmt && taxRate != null && taxRate > 0
+    ? `At ${Number((taxRate * 100).toFixed(3))}% ≈ ${(Math.round(amtVal * taxRate * 100) / 100).toFixed(2)}`
+    : undefined
+  const totalMismatch = haveSum && Number.isFinite(totVal) && !receiptTotalsMatch(totVal, amtVal, taxVal)
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -207,32 +234,48 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
       setAmountError(null)
     }
     if (!receiptDate) hasError = true
+    setRefError(null)
+    setSubmitError(null)
     if (hasError) return
 
-    const receipt = await createReceipt.mutateAsync({
-      receipt_type: receiptType,
-      receipt_date: receiptDate,
-      receipt_ref: receiptRef.trim() || undefined,
-      // Vendor, like the amounts, is a counter-slip question: a slip can come
-      // from any merchant and be filed against the wrong house account, which
-      // is what the mismatch check exists to catch. A delivery note against
-      // an agreement comes from that agreement's supplier by construction —
-      // asking again only invites a wrong answer. Omitted entirely (an empty
-      // vendor is never reported as a mismatch — schemas/agreement_receipt.py).
-      vendor_id: isSlip ? vendor.vendorId ?? undefined : undefined,
-      vendor_name: isSlip ? vendor.vendorName.trim() || undefined : undefined,
-      // Omitted, not zeroed — 0 is a value the reconciliation would sum.
-      amount: isSlip ? amt : undefined,
-      tax_amount: isSlip ? tax : undefined,
-      total_amount: isSlip ? tot : undefined,
-      received_by: receivedBy,
-      // Only a counter slip can be "missing" its evidence — the attachment is
-      // optional on the other two, so there is nothing to explain and nothing
-      // for AP to review (crud/agreement_receipt.py routes to
-      // pending_ap_review on this field alone).
-      missing_receipt_reason: isSlip && !file ? missingReceiptReason.trim() || undefined : undefined,
-      notes: notes.trim() || undefined,
-    })
+    let receipt: ApiReceipt
+    try {
+      receipt = await createReceipt.mutateAsync({
+        receipt_type: receiptType,
+        receipt_date: receiptDate,
+        receipt_ref: receiptRef.trim() || undefined,
+        // Vendor, like the amounts, is a counter-slip question: a slip can come
+        // from any merchant and be filed against the wrong house account, which
+        // is what the mismatch check exists to catch. A delivery note against
+        // an agreement comes from that agreement's supplier by construction —
+        // asking again only invites a wrong answer. Omitted entirely (an empty
+        // vendor is never reported as a mismatch — schemas/agreement_receipt.py).
+        vendor_id: isSlip ? vendor.vendorId ?? undefined : undefined,
+        vendor_name: isSlip ? vendor.vendorName.trim() || undefined : undefined,
+        // Omitted, not zeroed — 0 is a value the reconciliation would sum.
+        amount: isSlip ? amt : undefined,
+        tax_amount: isSlip ? tax : undefined,
+        total_amount: isSlip ? tot : undefined,
+        received_by: receivedBy,
+        // Only a counter slip can be "missing" its evidence — the attachment is
+        // optional on the other two, so there is nothing to explain and nothing
+        // for AP to review (crud/agreement_receipt.py routes to
+        // pending_ap_review on this field alone).
+        missing_receipt_reason: isSlip && !file ? missingReceiptReason.trim() || undefined : undefined,
+        notes: notes.trim() || undefined,
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to create receipt'
+      const ref = receiptRef.trim()
+      // epms-api's duplicate-reference 409 names the reference it collided on
+      // (agreement_receipts.py _receipt_integrity_error).
+      if ((err as { status?: number }).status === 409 && ref && msg.includes(`Reference # ${ref} `)) {
+        setRefError(msg)
+      } else {
+        setSubmitError(msg)
+      }
+      return
+    }
 
     if (file) {
       setIsUploadingAttachment(true)
@@ -417,13 +460,14 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
         <FormField label={copy.dateLabel} required htmlFor="receipt-date">
           <Input id="receipt-date" type="date" value={receiptDate} onChange={(e) => setReceiptDate(e.target.value)} required />
         </FormField>
-        <FormField label={copy.refLabel} htmlFor="receipt-ref">
+        <FormField label={copy.refLabel} htmlFor="receipt-ref" error={refError ?? undefined}>
           {/* DB column is String(64) — a paste that overflows it raises a
               psycopg StringDataRightTruncation (DataError), not an
               IntegrityError, so create_receipt's `except IntegrityError` for the
               friendly 409 doesn't catch it and it falls through to a bare 500.
               maxLength stops the overflow from ever reaching the request. */}
-          <Input id="receipt-ref" value={receiptRef} onChange={(e) => setReceiptRef(e.target.value)} placeholder={copy.refPlaceholder} maxLength={64} />
+          <Input id="receipt-ref" value={receiptRef} onChange={(e) => { setReceiptRef(e.target.value); setRefError(null) }}
+            placeholder={copy.refPlaceholder} maxLength={64} error={!!refError} aria-invalid={!!refError} />
         </FormField>
         {isSlip && (
         <FormField
@@ -441,6 +485,7 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
             onChange={setVendor}
             suggestion={vendorSuggestion}
             disabled={isPending}
+            agreementId={agreementId}
           />
         </FormField>
         )}
@@ -449,11 +494,17 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
             <FormField label="Amount (before tax)" required htmlFor="receipt-amount">
               <Input id="receipt-amount" type="number" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
             </FormField>
-            <FormField label="Tax" required htmlFor="receipt-tax">
+            <FormField label="Tax" required htmlFor="receipt-tax" hint={taxHint}>
               <Input id="receipt-tax" type="number" step="0.01" value={taxAmount} onChange={(e) => setTaxAmount(e.target.value)} />
             </FormField>
-            <FormField label="Total" required error={amountError ?? undefined} htmlFor="receipt-total">
+            <FormField label="Total" required error={amountError ?? undefined} htmlFor="receipt-total"
+              hint={totalMismatch ? undefined : sumHint}>
               <Input id="receipt-total" type="number" step="0.01" value={totalAmount} onChange={(e) => setTotalAmount(e.target.value)} />
+              {/* A heads-up while typing; the save itself still refuses a
+                  total that is not amount + tax (schemas/agreement_receipt.py). */}
+              {totalMismatch && !amountError && (
+                <p className="text-xs text-amber-700">{sumHint} — the Total entered differs. Check the slip.</p>
+              )}
             </FormField>
           </>
         )}
@@ -503,7 +554,8 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
         />
       </FormField>
 
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-3">
+        {submitError && <p className="text-sm text-danger-600" role="alert">{submitError}</p>}
         <Button type="submit" size="sm" disabled={isPending} className={cn(isPending && 'cursor-not-allowed')}>
           {isPending ? 'Recording…' : 'Record Receipt'}
         </Button>

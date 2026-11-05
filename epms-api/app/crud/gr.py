@@ -21,7 +21,7 @@ from app.models.invoice_allocation import InvoicePoAllocation
 from app.models.po import PoLineItem, PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.task import Task
-from app.schemas.gr import GrCreate, GrActionRequest, is_physical
+from app.schemas.gr import DAMAGE_RESOLUTIONS, GrCreate, GrActionRequest, is_physical
 from app.services.pdf_gr import generate_gr_pdf
 
 logger = logging.getLogger(__name__)
@@ -66,6 +66,126 @@ def _build_line_items(gr_id: uuid.UUID, items_in) -> list[GrLineItem]:
         )
         for i, item in enumerate(items_in)
     ]
+
+
+def _effective_qty(line) -> Decimal:
+    """The quantity a GR line posts to its PO line — actual_qty when set."""
+    return line.actual_qty if line.actual_qty is not None else line.qty_received
+
+
+# ── Over-receipt (ISS-0098 / ISS-0169) ─────────────────────────────────────────
+#
+# Receiving more than a PO line still has open is allowed, but only with a
+# reason. "Open" counts GRs that are created but not yet collected/confirmed:
+# their quantities reach the PO line only on collection (GR-P-003), so leaving
+# them out let two GRs each take the full remainder.
+
+#: GR statuses whose quantities are on their way to the PO line but not posted yet.
+PENDING_GR_STATUSES = ("pending_ack", "collection_pending")
+
+OVER_RECEIPT_PREFIX = "Over-receipt"
+
+
+class OverReceiptReasonRequired(ValueError):
+    """A receipt takes a PO line past its ordered quantity and no reason was given."""
+
+
+async def open_qty_by_po_line(
+    db: AsyncSession, po_id: uuid.UUID, *, exclude_gr_id: uuid.UUID | None = None,
+) -> dict[uuid.UUID, dict[str, Decimal]]:
+    """po_line_id → ordered / received / pending / open for every line of the PO.
+
+    ``open`` may be negative when the line is already over-received; callers
+    that display it clamp at 0, the over-receipt check compares the raw value.
+    """
+    po_lines = (await db.execute(
+        select(PoLineItem).where(PoLineItem.po_id == po_id))).scalars().all()
+    stmt = (
+        select(GrLineItem.po_line_id,
+               func.sum(func.coalesce(GrLineItem.actual_qty, GrLineItem.qty_received)))
+        .join(GoodsReceipt, GoodsReceipt.id == GrLineItem.gr_id)
+        .where(GoodsReceipt.po_id == po_id,
+               GoodsReceipt.status.in_(PENDING_GR_STATUSES),
+               GrLineItem.po_line_id.is_not(None))
+        .group_by(GrLineItem.po_line_id)
+    )
+    if exclude_gr_id is not None:
+        stmt = stmt.where(GoodsReceipt.id != exclude_gr_id)
+    pending = {row[0]: row[1] or Decimal("0") for row in (await db.execute(stmt)).all()}
+    out: dict[uuid.UUID, dict[str, Decimal]] = {}
+    for pl in po_lines:
+        p = pending.get(pl.id, Decimal("0"))
+        out[pl.id] = {
+            "ordered": pl.qty,
+            "received": pl.received_qty,
+            "pending": p,
+            "open": pl.qty - pl.received_qty - p,
+            "description": pl.description,
+        }
+    return out
+
+
+def _fmt_qty(q: Decimal) -> str:
+    return f"{q.normalize():f}"
+
+
+def _over_receipt_message(over: list[tuple[str, Decimal, Decimal]]) -> str:
+    parts = "; ".join(
+        f"{desc}: receiving {_fmt_qty(qty)}, only {_fmt_qty(max(avail, Decimal('0')))} still open"
+        for desc, qty, avail in over
+    )
+    return (f"{OVER_RECEIPT_PREFIX}: {parts}. "
+            "Give a reason to receive more than the PO line has open.")
+
+
+async def _over_receipt_on_create(
+    db: AsyncSession, po_id: uuid.UUID, items_in,
+) -> list[tuple[str, Decimal, Decimal]]:
+    """Lines of a new GR that exceed what their PO line has open (received + pending)."""
+    wanted: dict[uuid.UUID, Decimal] = {}
+    for item in items_in:
+        if item.po_line_id is not None:
+            wanted[item.po_line_id] = wanted.get(item.po_line_id, Decimal("0")) + _effective_qty(item)
+    if not wanted:
+        return []
+    avail = await open_qty_by_po_line(db, po_id)
+    return [
+        (avail[pl]["description"], qty, avail[pl]["open"])
+        for pl, qty in wanted.items()
+        if pl in avail and qty > 0 and qty > avail[pl]["open"]
+    ]
+
+
+async def _require_over_receipt_reason_on_post(
+    db: AsyncSession, gr: GoodsReceipt, reason_in: str | None,
+) -> None:
+    """Before a GR's quantities are posted: if they take a PO line past its
+    ordered quantity and the GR carries no reason yet, one must be given now.
+
+    Catches GRs created before the check existed and a GR collected after
+    another one already filled the line.
+    """
+    if gr.over_receipt_reason:
+        return
+    posting: dict[uuid.UUID, Decimal] = {}
+    for line in gr.line_items:
+        if line.po_line_id is not None:
+            posting[line.po_line_id] = posting.get(line.po_line_id, Decimal("0")) + _effective_qty(line)
+    if not posting:
+        return
+    po_lines = (await db.execute(
+        select(PoLineItem).where(PoLineItem.id.in_(posting.keys())))).scalars().all()
+    over = [
+        (pl.description, posting[pl.id], pl.qty - pl.received_qty)
+        for pl in po_lines
+        if posting[pl.id] > 0 and pl.received_qty + posting[pl.id] > pl.qty
+    ]
+    if not over:
+        return
+    reason = (reason_in or "").strip()
+    if not reason:
+        raise OverReceiptReasonRequired(_over_receipt_message(over))
+    gr.over_receipt_reason = reason
 
 
 # ── Reads ──────────────────────────────────────────────────────────────────────
@@ -154,6 +274,18 @@ async def create(
     created_by: uuid.UUID,
     token: str | None = None,
 ) -> GoodsReceipt:
+    # One GR at a time per PO. A double-click on Submit sent two requests 1 ms
+    # apart; both read the same open quantity before either was saved, so the
+    # over-receipt check passed twice and the PO line was received twice
+    # (GR-20261027-0004/0005, ISS-0152). Locked, the second sees the first
+    # GR's quantity as pending and needs an over-receipt reason like any other.
+    await db.execute(
+        select(PurchaseOrder.id).where(PurchaseOrder.id == po.id).with_for_update())
+    over = await _over_receipt_on_create(db, po.id, payload.line_items)
+    over_reason = (payload.over_receipt_reason or "").strip() or None
+    if over and over_reason is None:
+        raise OverReceiptReasonRequired(_over_receipt_message(over))
+
     number = await _next_number(db)
     gr_type = "physical" if is_physical(po.type) else "service"
     received_by_name = payload.received_by or await _actor_name(db, created_by)
@@ -173,6 +305,7 @@ async def create(
         status="pending_ack",
         storage_location=payload.storage_location,
         notes=payload.notes,
+        over_receipt_reason=over_reason if over else None,
         received_at=datetime.now(timezone.utc),
         received_by=received_by_name,
         created_by=created_by,
@@ -263,13 +396,6 @@ async def action(
         await _complete_tasks(db, gr.id)
         gr.acknowledged_at = now
         gr.acknowledged_by = req.acknowledged_by or await _actor_name(db, actor_id)
-        # Best-effort: acknowledging must not fail because the file server is
-        # down — fall back to inline DB storage for the PDF.
-        try:
-            await _attach_gr_pdf(db, gr, company_name, token=token, cfg=cfg)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("GR %s acknowledge: PDF upload failed (%s); storing inline", gr.number, exc)
-            await _attach_gr_pdf(db, gr, company_name, token=None, cfg=cfg)
         requester_id = await _get_pr_requester_id(db, gr)
         if requester_id is None:
             # Legacy no-PR GR (created before requester-less POs skipped the ack
@@ -278,7 +404,9 @@ async def action(
             gr.status = "collected" if gr.gr_type == "physical" else "confirmed"
             gr.collected_at = now
             gr.collected_by = req.acknowledged_by or await _actor_name(db, actor_id)
+            await _require_over_receipt_reason_on_post(db, gr, req.over_receipt_reason)
             await _update_po_received_qty(db, gr)
+            await _after_receipt_posted(db, gr)
         elif gr.gr_type == "physical":
             gr.status = "collection_pending"
             await _create_collect_task(db, gr)
@@ -286,16 +414,27 @@ async def action(
             # Service GR → goes straight to confirmation step
             gr.status = "collection_pending"
             await _create_service_confirm_task(db, gr)
+        # After the status moves on: the PDF footer prints the GR's status
+        # (ISS-0184). Best-effort: acknowledging must not fail because the file
+        # server is down — fall back to inline DB storage for the PDF.
+        try:
+            await _attach_gr_pdf(db, gr, company_name, token=token, cfg=cfg)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("GR %s acknowledge: PDF upload failed (%s); storing inline", gr.number, exc)
+            await _attach_gr_pdf(db, gr, company_name, token=None, cfg=cfg)
 
     elif act == "collect":
         if gr.status != "collection_pending" or gr.gr_type != "physical":
             raise ValueError(f"Cannot collect GR in status '{gr.status}' (type={gr.gr_type})")
+        await _require_over_receipt_reason_on_post(db, gr, req.over_receipt_reason)
         await _complete_tasks(db, gr.id)
         gr.status = "collected"
         gr.collected_at = now
         gr.collected_by = req.collected_by or await _actor_name(db, actor_id)
         gr.collection_notes = req.collection_notes
+        await _refresh_gr_pdf(db, gr, token=token)
         await _update_po_received_qty(db, gr)
+        await _after_receipt_posted(db, gr)
 
     elif act == "confirm":
         allowed = {"collected", "collection_pending"}
@@ -305,6 +444,7 @@ async def action(
             allowed.add("pending_ack")
         if gr.status not in allowed:
             raise ValueError(f"Cannot confirm GR in status '{gr.status}'")
+        await _require_over_receipt_reason_on_post(db, gr, req.over_receipt_reason)
         await _complete_tasks(db, gr.id)
         if gr.status == "pending_ack":
             gr.acknowledged_at = now
@@ -315,6 +455,7 @@ async def action(
         gr.collection_notes = req.collection_notes
         # Update PO line received_qty and PO status
         await _update_po_received_qty(db, gr)
+        await _after_receipt_posted(db, gr)
         # Best-effort: confirming must not fail because the file server is down —
         # fall back to inline DB storage for the PDF. Service GRs collapse
         # acknowledge + confirm into this one step and would otherwise never get
@@ -343,8 +484,12 @@ async def action(
     elif act == "cancel":
         if gr.status not in ("pending_ack", "collection_pending"):
             raise ValueError(f"Cannot cancel GR in status '{gr.status}'")
-        await _complete_tasks(db, gr.id)
+        # A cancelled GR records no receipt, so there is no damage left to settle.
+        await _complete_tasks(db, gr.id, include_damage_report=True)
         gr.status = "cancelled"
+
+    elif act == "resolve_damage":
+        await _resolve_damage(db, gr, req, actor_id)
 
     else:
         raise ValueError(f"Unknown action '{act}'")
@@ -571,8 +716,13 @@ async def _create_ack_task(db: AsyncSession, gr: GoodsReceipt) -> None:
         document_number=gr.number,
         assigned_role="requester",
         assigned_user_id=assignee_id,
-        title=f"Acknowledge GR: {gr.number} — {gr.title}",
-        description="New goods receipt requires your acknowledgement.",
+        # A service GR is acknowledged with Confirm Service Completion (there is
+        # no Acknowledge button on it), so its task says so (ISS-0179).
+        title=(f"Confirm Service Completion: {gr.number} — {gr.title}"
+               if gr.gr_type == "service" else f"Acknowledge GR: {gr.number} — {gr.title}"),
+        description=("Confirm on the goods receipt whether the service was completed "
+                     "(Satisfactory or Has Issues)." if gr.gr_type == "service"
+                     else "New goods receipt requires your acknowledgement."),
         vendor=gr.vendor_name,
     ))
 
@@ -626,6 +776,43 @@ async def _create_damage_report_task(db: AsyncSession, gr: GoodsReceipt, damaged
                     f"Please raise a return or credit note with the vendor. Affected: {line_summary}",
         vendor=gr.vendor_name,
     ))
+
+
+async def _resolve_damage(
+    db: AsyncSession, gr: GoodsReceipt, req: GrActionRequest, actor_id: uuid.UUID,
+) -> None:
+    """Record the return or credit arranged with the vendor and close the
+    gr_damage_report task (ISS-0099: the task closes on this, not on Collect).
+
+    EPMS has no return document and a vendor credit is not tied to one GR, so
+    what is recorded is the arrangement and the vendor's reference for it.
+    """
+    if gr.status == "cancelled":
+        raise ValueError("Cannot record a vendor resolution on a cancelled GR")
+    if not any(line.condition != "good" for line in gr.line_items):
+        raise ValueError("This GR has no damaged or discrepancy lines")
+    if gr.damage_resolution:
+        raise ValueError("A vendor resolution is already recorded on this GR")
+    if req.damage_resolution not in DAMAGE_RESOLUTIONS:
+        raise ValueError(f"damage_resolution must be one of {', '.join(DAMAGE_RESOLUTIONS)}")
+    ref = (req.damage_resolution_ref or "").strip()
+    if not ref:
+        raise ValueError("Enter the return or credit note reference")
+    gr.damage_resolution = req.damage_resolution
+    gr.damage_resolution_ref = ref
+    gr.damage_resolution_note = (req.damage_resolution_note or "").strip() or None
+    gr.damage_resolved_at = datetime.now(timezone.utc)
+    gr.damage_resolved_by = await _actor_name(db, actor_id)
+    tasks = (await db.execute(select(Task).where(
+        Task.type == "gr_damage_report",
+        Task.document_type == "gr",
+        Task.document_id == gr.id,
+        Task.is_completed.is_(False),
+    ))).scalars().all()
+    for task in tasks:
+        task.is_completed = True
+        task.completed_at = gr.damage_resolved_at
+        task.completed_by = actor_id
 
 
 async def _autofill_gr_to_matched_invoices(
@@ -730,9 +917,24 @@ async def _autofill_gr_to_matched_invoices(
     await db.flush()
 
 
+async def _after_receipt_posted(db: AsyncSession, gr: GoodsReceipt) -> None:
+    """A GR was collected / confirmed: with the collection gate on, this is
+    when the PO becomes ready for a PA, so raise create_pa now (idempotent —
+    nothing happens if it already exists or the PO has a PA). Flushed first:
+    the session does not autoflush and the readiness check is a SELECT on the
+    quantities just posted."""
+    if gr.po_id is None:
+        return
+    await db.flush()
+    await _on_three_way_reached(db, gr.po_id)
+
+
 async def _on_three_way_reached(db: AsyncSession, po_id: uuid.UUID) -> None:
-    """GR 创建使 PO 达成 3-way 后:关掉催收货提醒,补建 create_pa(若尚无 PA/任务)。"""
-    from app.crud.po import po_has_three_way_matched_invoice
+    """GR 创建(或领取)使 PO 达成 3-way 后:关掉催收货提醒,补建 create_pa(若尚无 PA/任务)。
+
+    With the collection gate on (ISS-0146) create_pa waits until the goods are
+    collected, so this also runs after collect / confirm."""
+    from app.crud.po import po_ready_for_pa
     # 1) 关闭 confirm_receipt
     now = datetime.now(timezone.utc)
     rows = (await db.execute(select(Task).where(
@@ -744,8 +946,9 @@ async def _on_three_way_reached(db: AsyncSession, po_id: uuid.UUID) -> None:
     for t in rows:
         t.is_completed = True
         t.completed_at = now
-    # 2) 若已 3-way 且无 PA 且无 open create_pa → 建 create_pa
-    if not await po_has_three_way_matched_invoice(db, po_id):
+    # 2) 若已 3-way(且收货闸门要求时已领取)且无 PA 且无 open create_pa → 建 create_pa
+    po_row = (await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == po_id))).scalar_one_or_none()
+    if po_row is None or not await po_ready_for_pa(db, po_row):
         return
     from app.crud.pa_links import pa_ids_for_po
     has_pa = (await db.execute(
@@ -836,14 +1039,38 @@ async def _attach_gr_pdf(
         ))
 
 
-async def _complete_tasks(db: AsyncSession, gr_id: uuid.UUID) -> None:
-    result = await db.execute(
-        select(Task).where(
-            Task.document_type == "gr",
-            Task.document_id == gr_id,
-            Task.is_completed.is_(False),
-        )
-    )
+async def _refresh_gr_pdf(
+    db: AsyncSession, gr: GoodsReceipt, token: str | None = None,
+) -> None:
+    """Regenerate the GR PDF on Collect so it carries Collected By (GR-P-007,
+    ISS-0081). Best-effort, like acknowledge and confirm: collecting must not
+    fail because the file server is down — fall back to inline DB storage."""
+    cfg = await _get_config(db)
+    company_name = cfg.name if cfg else "EPMS"
+    try:
+        await _attach_gr_pdf(db, gr, company_name, token=token, cfg=cfg)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("GR %s collect: PDF upload failed (%s); storing inline", gr.number, exc)
+        await _attach_gr_pdf(db, gr, company_name, token=None, cfg=cfg)
+
+
+async def _complete_tasks(
+    db: AsyncSession, gr_id: uuid.UUID, *, include_damage_report: bool = False,
+) -> None:
+    """Close the GR's open step tasks.
+
+    The gr_damage_report task is left open unless asked for: it is not a step
+    of the receipt flow, and stays open until Procurement records a return or
+    credit (resolve_damage) or the GR is cancelled (ISS-0099).
+    """
+    conds = [
+        Task.document_type == "gr",
+        Task.document_id == gr_id,
+        Task.is_completed.is_(False),
+    ]
+    if not include_damage_report:
+        conds.append(Task.type != "gr_damage_report")
+    result = await db.execute(select(Task).where(*conds))
     now = datetime.now(timezone.utc)
     for task in result.scalars().all():
         task.is_completed = True

@@ -151,3 +151,52 @@ async def derive_lines(
                 "notes": _note(inv),
             })
     return out or None
+
+
+async def invoice_lines(db: AsyncSession, invoice_ids: list) -> list[dict] | None:
+    """PA lines copied from the invoices' own lines, for a PA with no PO lines
+    to derive from: every agreement PA, and a PO PA paying an invoice matched
+    only against the PO total when no PO line was picked (ISS-0109). PRD
+    §3.15.2: the lines mirror the selected invoices' lines.
+
+    An invoice whose lines do not add up to its pre-tax amount (OCR rounding,
+    lines never entered) becomes one line for the whole invoice, so the lines
+    always add up to what the PA pays.
+    """
+    if not invoice_ids:
+        return None
+    ids = [uuid.UUID(str(i)) for i in invoice_ids]
+    by_id = {inv.id: inv for inv in (await db.execute(
+        select(Invoice).where(Invoice.id.in_(ids))
+    )).scalars().all()}
+    out: list[dict] = []
+    for iid in ids:
+        inv = by_id.get(iid)
+        if inv is None:
+            continue
+        lines = [li for li in (inv.line_items or []) if _dec(li.get("line_total")) is not None]
+        total = sum((_dec(li.get("line_total")) for li in lines), Decimal("0"))
+        if not lines or abs(total - inv.amount) > Decimal("0.01"):
+            out.append({
+                "po_line_id": None,
+                "description": f"Invoice {inv.vendor_invoice_number or inv.internal_ref}"[:500],
+                "qty": Decimal("1"),
+                "unit": _FALLBACK_UNIT,
+                "unit_price": inv.amount,
+                "line_total": inv.amount,
+                "notes": _note(inv),
+            })
+            continue
+        for li in lines:
+            amount = _dec(li.get("line_total")).quantize(Decimal("0.01"))
+            qty, price = _qty_price(li, amount)
+            out.append({
+                "po_line_id": None,
+                "description": (li.get("description") or inv.internal_ref)[:500],
+                "qty": qty,
+                "unit": li.get("unit") or _FALLBACK_UNIT,
+                "unit_price": price,
+                "line_total": amount,
+                "notes": _note(inv),
+            })
+    return out or None

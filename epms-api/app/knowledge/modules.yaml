@@ -160,6 +160,14 @@ modules:
         straight back to the approver who returned it — the approvals given
         before that stand and are not asked for again.
       - >-
+        A Travel Expense claim is always for a traveller listed on an approved
+        Travel Application, and is paid to that traveller. Travellers file
+        their own; the person who applied can also file for any traveller on
+        it by choosing them under Claim for, and both can then see, edit and
+        submit it. Listed travellers see the application under Travel
+        Applications once it is submitted, read-only; only the applicant can
+        edit or delete it.
+      - >-
         Nobody approves their own claim or travel application. When the
         person who raised it is the only one who holds an approval step — a
         Department Manager's own claim at the Department Manager step, for
@@ -256,6 +264,13 @@ modules:
         oldest due date or the largest amount can be brought to the top; rows
         with no value in that column stay at the bottom. Travel Applications
         are not listed there and cannot be paid — they carry no money.
+        A document already in a draft batch is marked "In draft BP-…" in the
+        due list: it can still be picked into another batch (with a
+        confirmation), but it is paid only once — whichever batch is executed
+        first pays it, the other records that line as failed, and a document
+        that already has a completed payment is never paid again. A draft
+        batch can be cancelled (Cancel Draft, same roles that can pay): nothing
+        is paid and its documents are simply no longer marked.
       - >-
         Bank reconciliation counts unposted vouchers (ones NC has not tallied
         yet) on the ledger side by default — "Include unposted vouchers" at the
@@ -339,9 +354,9 @@ modules:
       - budget_plan_vs_actual
     notes:
       - >-
-        You meet this without opening it — the budget widget on the Create PR
-        form is this module, and an over-budget request is stopped or needs
-        justification because of it.
+        You meet this without opening it — the budget widget on the New PR
+        and Edit PR forms is this module, and an over-budget request is stopped
+        or needs justification because of it.
       - >-
         The Plan vs Actual grid stacks two figures in every cell — plan and NC
         posted (optionally including vouchers NC has not tallied yet). Ask about

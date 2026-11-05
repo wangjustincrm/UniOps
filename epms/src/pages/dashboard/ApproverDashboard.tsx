@@ -83,12 +83,18 @@ export default function ApproverDashboard() {
           subtitle="Awaiting your action"
           alert={kpi('Pending Approvals')?.alert}
         />
-        <StatCard title="Open POs" value={kpi('Open POs')?.value ?? '—'} subtitle="In progress" />
-        <StatCard title="Total Committed (FY)" value={kpi('Total Committed (FY)')?.value ?? '—'} subtitle="FY YTD" />
+        {/* A Department Manager / Dept Admin sees their own department's POs
+            (ISS-0168); the server says which in the subtitle. */}
+        <StatCard title="Open POs" value={kpi('Open POs')?.value ?? '—'}
+          subtitle={`In progress · ${kpi('Open POs')?.subtitle ?? 'Company-wide'}`} />
+        <StatCard title="Total Committed (FY)" value={kpi('Total Committed (FY)')?.value ?? '—'}
+          subtitle={`Open POs · ${kpi('Total Committed (FY)')?.subtitle ?? 'Company-wide'}`} />
+        {/* Judged per cost center × account (ISS-0168); the subtitle carries the
+            number of over-budget accounts behind the department count. */}
         <StatCard
           title="Over-Budget Depts"
           value={kpi('Over-Budget Depts')?.value ?? '—'}
-          subtitle="Require attention"
+          subtitle={kpi('Over-Budget Depts')?.subtitle ?? 'Require attention'}
           alert={kpi('Over-Budget Depts')?.alert}
         />
       </div>

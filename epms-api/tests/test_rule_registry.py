@@ -332,7 +332,7 @@ async def test_my_dashboard_is_the_dashboard_pages_own_figures(admin_client, mon
 
     called = []
 
-    async def fake_build(db, role, user_id):
+    async def fake_build(db, role, user_id, **kw):
         called.append(role)
         return SimpleNamespace(role=role, users_by_role=[], kpis=[
             SimpleNamespace(title="Pending Approvals", value=4, subtitle=None),
@@ -351,7 +351,7 @@ async def test_my_dashboard_is_the_dashboard_pages_own_figures(admin_client, mon
     # What some cards really are travels with the figures.
     assert {r["id"] for r in payload["rules"]} >= {"tasks_have_no_due_date"}
     # The page and the Assistant read one function.
-    assert "dash_crud.build(db, role, user_id)" in inspect.getsource(dash_api)
+    assert "dash_crud.build(db, role, user_id, user=user, token=token)" in inspect.getsource(dash_api)
 
 
 def test_the_pa_check_uses_create_pas_own_queries():
@@ -405,6 +405,32 @@ def test_the_task_inbox_has_no_mark_done():
     assert "/complete" not in tasks_ts
 
 
+def test_portal_home_task_links_match_the_epms_task_inbox():
+    """ISS-0186: Portal home opens the same action page as EPMS's taskHref —
+    New PA for create_pa / create_prepayment_pa, New GR for confirm_receipt."""
+    epms = _src("epms/src/lib/taskTypes.ts")
+    portal = _src("portal/src/pages/PortalHome.tsx")
+    for cond, target in (
+        ("t.type === 'create_pa' || t.type === 'create_prepayment_pa'", "/pa/create?poId="),
+        ("t.type === 'confirm_receipt'", "/gr/new?poId="),
+    ):
+        assert cond.replace("t.", "task.") in epms and f"`{target}${{task.document_id}}`" in epms
+        assert cond in portal and f"`{target}${{t.document_id}}`" in portal
+
+
+def test_task_inbox_groups_follow_dsh_001():
+    """ISS-0131: every type in its DSH-001 category, revisions last."""
+    import re
+    page = _src("epms/src/pages/tasks/TaskInboxPage.tsx")
+    body = re.search(r"const GROUP_ORDER: string\[\] = \[(.*?)\n\]", page, re.S).group(1)
+    order = re.findall(r"'([a-z_]+)'", body)
+    first_revise = min(i for i, t in enumerate(order) if t.startswith("revise_"))
+    assert all(t.startswith("revise_") for t in order[first_revise:]), order
+    pos = order.index
+    assert pos("approve_agr") < pos("process_pa") < pos("create_po") < pos("acknowledge_gr")
+    assert pos("confirm_receipt") < pos("match_invoice") < pos("attach_receipts") < pos("confirm_settlement")
+
+
 # ── Purchase requests ────────────────────────────────────────────────────────
 
 def test_budget_gate_applies_to_every_type_but_1():
@@ -426,12 +452,16 @@ def test_only_the_requester_edits_a_draft_or_returned_pr():
     assert "Only the requester who raised this PR can edit it" in src
 
 
-def test_the_pr_page_offers_withdraw_on_in_review():
-    """Known defect stated by withdraw_a_pr: shown on in_review, refused there.
-    When the page stops offering it, this fails and the rule is updated."""
+def test_the_pr_page_offers_withdraw_where_the_engine_allows():
+    """withdraw_a_pr: Withdraw is offered only where the engine cancels a PR
+    (approval-api _DOC_META['pr']['valid_cancel'] = draft/returned/submitted)."""
     page = _src("epms/src/pages/pr/PrDetailPage.tsx")
     assert "['draft', 'returned', 'submitted', 'in_review'].includes(pr.status) && !canApprove" in page
+    assert "{['draft', 'returned', 'submitted'].includes(pr.status) && (" in page
     assert "action: 'cancel'" in page
+    # …and only to the requester or a System Admin, with a refusal shown (ISS-0156).
+    assert "&& !canApprove && isRequesterOrAdmin" in page
+    assert "pr.created_by === user?.id" in page and "onError: onActionError" in page
 
 
 def test_pr_line_prices_may_be_zero_or_negative():
@@ -447,6 +477,10 @@ def test_pr_line_prices_may_be_zero_or_negative():
         PrLineItemIn(**base, qty=Decimal("0"), unit_price=Decimal("1"))
     page = _src("epms/src/pages/pr/PrCreatePage.tsx")
     assert "estimatedAmount === 0" in page and "At least one line must have a price" in page
+    # The form keeps a typed 0: `value={item.unitPrice || ''}` emptied the box (ISS-0083).
+    lines = _src("epms/src/components/pr/PrLineItems.tsx")
+    assert "item.unitPrice || ''" not in lines
+    assert lines.count("<UnitPriceInput") == 2
 
 
 def test_changing_the_department_clears_the_budget_fields():
@@ -468,13 +502,18 @@ def test_decomposition_factors_are_required_on_submit_only():
 def test_pr_list_filters():
     page = _src("epms/src/pages/pr/PrListPage.tsx")
     for text in ("Search by PR#, title, vendor, budget code", "All Departments",
-                 "disabled={isRequesterOnly}", "My Purchase Requisitions", "prepaidFilter"):
+                 "{!isRequesterOnly && (", "My Purchase Requisitions", "prepaidFilter"):
         assert text in page, text
 
 
 def test_a_pr_is_copied_from_the_list():
     assert "/pr/new?copyFrom=" in _src("epms/src/pages/pr/PrListPage.tsx")
-    assert "Copy of " in _src("epms/src/pages/pr/PrCreatePage.tsx")
+    page = _src("epms/src/pages/pr/PrCreatePage.tsx")
+    assert "Copy of " in page
+    # The copied vendor is a starting value, applied once: it must not come
+    # back each time the user empties the field (ISS-0151).
+    effect = page.split("const match = vendorsData?.items.find((v) => v.id === copyVendorId)")[1][:200]
+    assert "setCopyVendorId(null)" in effect
 
 
 def test_the_pr_pdf_is_made_on_approval():
@@ -632,6 +671,20 @@ def test_gr_statuses_are_the_routes():
                      "service": "approved, issued and partially_received"}
 
 
+def test_gr_cancel_button_follows_the_server():
+    """ISS-0124: the page offers Cancel GR in exactly the statuses the action
+    accepts, and only through the shared predicate."""
+    from app.crud import gr as gr_crud
+
+    src = inspect.getsource(gr_crud.action)
+    assert 'elif act == "cancel":\n        if gr.status not in ("pending_ack", "collection_pending"):' in src
+    page = _src("epms/src/pages/gr/GrDetailPage.tsx")
+    assert "canCancelGr(gr, user ?? {}, !!grPerms?.['epms.gr.receive'])" in page
+    assert "grCancel.mutate({ action: 'cancel' })" in page
+    lib = _src("epms/src/lib/documentActions.ts")
+    assert "GR_CANCELLABLE_STATUSES = ['pending_ack', 'collection_pending'] as const" in lib
+
+
 def test_a_damaged_line_raises_an_urgent_task_for_procurement():
     from app.crud import gr as gr_crud
 
@@ -640,13 +693,27 @@ def test_a_damaged_line_raises_an_urgent_task_for_procurement():
     assert 'item.condition not in ("good", None)' in inspect.getsource(gr_crud.create)
 
 
-def test_nothing_reads_the_gr_notification_sla():
-    """Stored and editable, acted on by nothing (no_escalation_for_goods_receipts)."""
-    allowed = {"models/config.py", "crud/config.py", "schemas/config.py"}
+def test_only_the_ack_sweep_reads_the_gr_notification_sla():
+    """ISS-0146 ①: the GR Notification SLA is acted on by tasks/gr_ack_due.py
+    (and stated by rule_facts) — nothing else reads it."""
+    allowed = {"models/config.py", "crud/config.py", "schemas/config.py",
+               "tasks/gr_ack_due.py", "services/rule_facts.py"}
     readers = sorted(
         str(p.relative_to(EPMS_API / "app")) for p in (EPMS_API / "app").rglob("*.py")
         if "gr_notification_sla" in p.read_text(encoding="utf-8"))
     assert set(readers) <= allowed, readers
+    assert "tasks/gr_ack_due.py" in readers
+
+
+async def test_gr_ack_reminder_facts_are_read_from_config():
+    off = await rule_facts.gr_ack_reminders(_FakeDb(SimpleNamespace(
+        gr_notification_sla={}, notification_settings={})))
+    assert (off["reminder_days"], off["escalation_days"]) == (1, 3)
+    assert off["state"].startswith("switched off")
+    live = await rule_facts.gr_ack_reminders(_FakeDb(SimpleNamespace(
+        gr_notification_sla={"reminder_days": 2, "manager_escalation_days": 5},
+        notification_settings={"gr_ack_due_enabled": True, "gr_ack_due_dry_run": False})))
+    assert (live["reminder_days"], live["escalation_days"], live["state"]) == (2, 5, "switched on and live")
 
 
 async def test_service_gr_reminder_facts_are_read_from_config():
@@ -699,8 +766,10 @@ def test_prepayment_cap_reads_the_vendor_then_the_system():
     assert "vendor.max_prepayment_pct" in cap
     assert "This vendor does not allow prepayment" in cap
     assert "prior_prepayment_pct(" in cap  # cumulative over the PO's stages
+    # Checked when a draft's % is edited too (PP-002, ISS-0133).
+    assert "_assert_prepayment_cap(" in inspect.getsource(pa_api.update_pa)
     # ISS-0066: the Prepaid flag on PRs/POs plays no part in creating a PA.
-    assert "is_prepaid" not in create
+    assert "is_prepaid" not in create + cap
 
 
 def test_pa_tax_is_on_the_lines_only():
@@ -731,14 +800,67 @@ def test_remittance_is_sent_by_hand_and_not_modelled():
     assert "/remittance/send" in routes
 
 
-def test_claimed_invoices_are_hidden_by_the_form_only():
+def test_one_invoice_one_pa_is_refused_by_the_server():
     from app.api.v1 import pa as pa_api
 
+    # ISS-0112: the server refuses it on create, on PATCH and on submit, with
+    # the same "released" statuses the forms use.
+    assert pa_api._RELEASED_PA_STATUSES == ("cancelled", "rejected")
+    for fn in (pa_api.create_pa, pa_api.update_pa, pa_api.pa_action):
+        assert "_assert_invoices_not_on_other_live_pa" in inspect.getsource(fn)
+    claims = _src("epms/src/pages/pa/invoiceClaims.ts")
+    assert "if (['cancelled', 'rejected'].includes(pa.status)) continue" in claims
     page = _src("epms/src/pages/pa/PaCreatePage.tsx")
-    assert "if (['cancelled', 'rejected'].includes(pa.status)) continue" in page
-    assert "lockedInvoiceIds" in page
-    # The server does not check claims on create (one_invoice_one_pa says so).
-    assert "payable_invoice_po_ids" not in inspect.getsource(pa_api.create_pa)
+    assert "invoiceClaims(" in page and "lockedInvoiceIds" in page
+    edit = _src("epms/src/pages/pa/PaEditPage.tsx")
+    assert "invoiceClaims(otherPas.filter((p) => p.id !== pa?.id), pa?.pa_type)" in edit
+
+
+def test_new_pa_warns_of_uncollected_goods_with_the_servers_rule():
+    """ISS-0188: New PA says "not collected yet" (and offers the receipt
+    override) on the same rule POST /pa refuses with — po_collection_cleared."""
+    from app.api.v1 import pa as pa_api
+    from app.crud import po as po_crud
+    from app.crud.gr import COUNTED_GR_STATUSES
+    from app.schemas.gr import PHYSICAL_TYPES
+
+    src = inspect.getsource(po_crud.po_collection_cleared)
+    assert "is_physical(po.type)" in src and "COUNTED_GR_STATUSES" in src
+    assert "PoLineItem.received_qty > 0" in src
+    # One override for both refusals, behind the same permission.
+    create = inspect.getsource(pa_api.create_pa)
+    assert "po_collection_cleared" in create and '"pa_override_receipt"' in create
+    page = _src("epms/src/pages/pa/PaCreatePage.tsx")
+    assert f"[{', '.join(str(t) for t in sorted(PHYSICAL_TYPES))}].includes(p.type)" in page
+    assert ("[" + ", ".join(f"'{s}'" for s in COUNTED_GR_STATUSES) + "].includes(g.status)") in page
+    assert "Number(l.received_qty) > 0" in page
+    assert "collection_config?.collection_gate_enabled" in page
+    # Server refusals show in the page, not in a browser pop-up.
+    assert "alert(" not in _src("epms/src/hooks/usePas.ts")
+    assert "alert(" not in page
+
+
+def test_settle_is_offered_only_where_new_pa_accepts_the_po():
+    """ISS-0158: Settle on a prepayment PA follows §3.15.2 Who can create — the
+    same requester-ownership rule (and exemptions) as POST /pa and New PA's
+    PO picker — on top of PP-015's primary Requester / System Admin."""
+    from app.api.v1 import pa as pa_api
+
+    server = inspect.getsource(pa_api._may_create_pa_on_behalf)
+    detail = _src("epms/src/pages/pa/PaDetailPage.tsx")
+    assert "const settleScoped = isPaRequesterScoped(user?.role, myAuthz?.roles)" in detail
+    assert "linkedPos.items.every((p) => scopedRequesterMayPay(p, user?.id, myAuthz?.roles))" in detail
+    assert "myAuthz?.permissions?.['epms.pa.write']" in detail
+    scope = _src("epms/src/lib/paCreateScope.ts")
+    roles = re.search(r"const ON_BEHALF_ROLES = \[([^\]]*)\]", scope).group(1)
+    for role in re.findall(r"'([a-z_]+)'", roles):
+        assert f'"{role}" in roles' in server
+    create = _src("epms/src/pages/pa/PaCreatePage.tsx")
+    assert "isPaRequesterScoped(user?.role, myAuthz?.roles)" in create
+    assert "scopedRequesterMayPay(p, user?.id, myAuthz?.roles)" in create
+    # ERP PA Officer: only PR-less NC POs, on the server and in the shared rule.
+    assert '"erp_pa_officer" in roles and po.pr_id is None and po.source == "nc"' in server
+    assert "roles?.includes('erp_pa_officer') && !po.pr_id && po.source === 'nc'" in scope
 
 
 # ── Invoices ─────────────────────────────────────────────────────────────────
@@ -848,6 +970,11 @@ def test_approval_buttons_follow_the_open_task():
     assert "hasApproveTask" in pa and "'approve_pa'" in pa
     pr = _src("epms/src/pages/pr/PrDetailPage.tsx")
     assert "(hasApproveTask || isAdmin || (!tasksLoaded && roleMatchesStep))" in pr
+    # ISS-0117: Reject sits in the same task-gated bar as Approve / Return.
+    agr = _src("epms/src/pages/agreements/AgreementDetailPage.tsx")
+    assert "t.document_id === agreement.id && t.type === 'approve_agr'" in agr
+    bar = agr.split("{/* Fixed bottom approver action bar */}")[1].split("{/* Approval modal */}")[0]
+    assert bar.lstrip().startswith("{canApprove && (") and "setPendingAction('reject')" in bar
 
 
 def test_the_delegation_page_is_in_the_admin_sidebar():
@@ -1006,3 +1133,47 @@ async def test_a_process_answer_carries_the_engines_rules(monkeypatch):
     got = await guide_view.process_steps("pr", "t")
     assert [r["id"] for r in got["engine_rules"]] == [
         "returned_document_resumes_at_the_returning_step"]
+
+
+def test_a_refused_submit_takes_the_user_to_the_saved_draft():
+    """refused_submit_keeps_one_draft (ISS-0090, ISS-0166): the create pages
+    hand the refusal to the draft's page and go there instead of staying on
+    the form, where each further click saved another draft."""
+    pr_create = _src("epms/src/pages/pr/PrCreatePage.tsx")
+    assert "rememberSubmitFailure(newPr.id" in pr_create
+    assert "replaceTab(`/pr/${newPr.id}/edit`)" in pr_create
+    agr_create = _src("epms/src/pages/agreements/AgreementCreatePage.tsx")
+    assert "rememberSubmitFailure(\n            newAgreement.id" in agr_create
+    assert "peekSubmitFailure(id)" in _src("epms/src/pages/pr/PrEditPage.tsx")
+    assert "peekSubmitFailure(id)" in _src("epms/src/pages/agreements/AgreementDetailPage.tsx")
+
+
+def test_currency_lists_follow_currency_settings():
+    """currencies_on_a_pr_or_po (ISS-0118): every PR / PO / agreement currency
+    list is built from the enabled list, not by filtering the four presets."""
+    helper = _src("epms/src/lib/currencies.ts")
+    assert "config?.enabled_currencies" in helper and "custom_currencies" in helper
+    for page in ("pr/PrCreatePage.tsx", "pr/PrEditPage.tsx", "po/PoCreatePage.tsx",
+                 "po/PoEditPage.tsx", "agreements/AgreementCreatePage.tsx"):
+        src = _src(f"epms/src/pages/{page}")
+        assert "enabledCurrencyOptions(config" in src, page
+        assert "CURRENCIES.filter" not in src, page
+
+
+def test_the_budget_panel_is_on_new_and_edit_pr():
+    """modules.yaml budget note (ISS-0142, OBG-001): Edit PR shows the same
+    budget panel as New PR, fed by the form's own amount before saving."""
+    for page in ("PrCreatePage.tsx", "PrEditPage.tsx"):
+        src = _src(f"epms/src/pages/pr/{page}")
+        assert "<BudgetBalanceWidget" in src, page
+        assert "thisAmount={estimatedAmount}" in src, page
+
+
+def test_new_po_links_a_pr_through_the_create_po_path():
+    """linking_a_po_to_a_pr (ISS-0087): New PO's Linked PR offers approved PRs
+    without a PO and re-opens the form as /po/new?prId=, the Create PO path."""
+    page = _src("epms/src/pages/po/PoCreatePage.tsx")
+    assert "usePrs({ status: 'approved', has_po: false })" in page
+    assert "navigate(e.target.value ? `/po/new?prId=${e.target.value}` : '/po/new')" in page
+    assert "Create PO" in _src("epms/src/pages/pr/PrDetailPage.tsx")
+    assert "pr.status === 'approved' && !pr.po_id" in _src("epms/src/pages/pr/PrDetailPage.tsx")

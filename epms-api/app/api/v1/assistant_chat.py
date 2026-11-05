@@ -303,7 +303,7 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
         return await _answer_rules(db, token, body, planned.get("areas") or [], actor)
 
     if planned["kind"] == "dashboard":
-        return await _answer_dashboard(db, user, body, actor)
+        return await _answer_dashboard(db, user, body, actor, token)
 
     if planned["kind"] == "modules":
         return await _answer_modules(db, body, actor)
@@ -887,7 +887,7 @@ async def _answer_receiving_report(db, scope, body, planned, actor) -> dict:
         frm = _dt.date.fromisoformat(planned["from"]) if planned.get("from") else None
         to = _dt.date.fromisoformat(planned["to"]) if planned.get("to") else None
     _, total, summary, _ = await gr_report_crud.receiving_rows(
-        db, date_from=frm, date_to=to, po_ids_subq=scope["po_subq"],
+        db, date_from=frm, date_to=to, po_ids_subq=scope["gr_po_subq"],
         page=1, page_size=1)
     result = {"period": {"from": frm.isoformat() if frm else None,
                          "to": to.isoformat() if to else None},
@@ -1149,13 +1149,13 @@ async def _answer_po_check(db, user, token, scope, body, planned, actor) -> dict
     }
 
 
-async def _answer_dashboard(db, user, body, actor) -> dict:
+async def _answer_dashboard(db, user, body, actor, token: str | None = None) -> dict:
     """The asker's own dashboard cards, from the Dashboard page's own code
     (ISS-0022 #2: "my dashboard numbers" was refused as "look at the screen",
     while each card asked singly was answered)."""
     from app.crud import dashboard as dash_crud
 
-    board = await dash_crud.build(db, user.get("role", "requester"), actor)
+    board = await dash_crud.build(db, user.get("role", "requester"), actor, user=user, token=token)
     result = {
         "role": board.role,
         "kpis": [{"title": k.title, "value": k.value,

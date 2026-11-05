@@ -1,7 +1,7 @@
 area: po
 label: Purchase orders
 covers: >
-  Purchase order numbers, editing a PO (raised in EPMS or from NC), Incoterms, placing the order, closing, PO sign-off, and whether a raw-material PO's freight / customs invoices are in.
+  Purchase order numbers, linking a PO to a PR, editing a PO (raised in EPMS or from NC), Incoterms, placing the order, closing, PO sign-off, and whether a raw-material PO's freight / customs invoices are in.
 rules:
   - id: po_numbering
     asked_as:
@@ -60,12 +60,15 @@ rules:
       Place Order is done on an approved PO by someone with PO write
       permission — by default Procurement Officers, Procurement Managers and
       System Admins; the PO page shows the button only to users whose main
-      role is one of those three. It moves the PO to Issued. Approving a PO
-      does not place it, and the approvers are not the people who place it.
-    enforced_in: "epms-api app/api/v1/po.py place-order (PoWriteDep = epms.po.write); app/crud/po.py place_order (status approved → issued); epms/src/pages/po/PoDetailPage.tsx canPlaceOrder"
+      role is one of those three. It moves the PO to Issued — or, for a
+      service or project PO whose completion was already confirmed while it
+      was still approved, straight to Partially or Fully Received. Approving a
+      PO does not place it, and the approvers are not the people who place it.
+    enforced_in: "epms-api app/api/v1/po.py place-order (PoWriteDep = epms.po.write); app/crud/po.py place_order (status approved → issued, then sync_po_receipt_status); epms/src/pages/po/PoDetailPage.tsx canPlaceOrder"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_place_order_needs_po_write_on_an_approved_po"
+      - "tests/test_gr.py::test_service_po_confirmed_before_place_order_ends_fully_received"
   - id: no_manual_po_close
     asked_as:
       - 怎么手动关闭一张 PO？
@@ -176,3 +179,42 @@ rules:
       - "tests/test_po_fee.py::test_raw_material_po_cannot_be_saved_without_incoterms"
       - "tests/test_po_fee.py::test_milk_orders_do_not_require_incoterms"
       - "tests/test_po_fee.py::test_config_serves_the_defaults_and_refuses_removing_a_code"
+  - id: payment_terms_on_a_po
+    asked_as:
+      - PO 的付款条件从哪里来？能改吗？
+      - what payment terms does a PO have
+      - can I change the payment terms on a PO
+    answer: >
+      A PO carries its own payment terms (Net N days, COD or Prepayment). New
+      PO fills them in from the vendor's payment terms as soon as the vendor is
+      chosen, and they can be changed on New PO and Edit PO; picking a
+      different vendor fills in that vendor's terms again. PO Detail shows
+      them. A PO saved before POs had their own terms, and a PO mirrored from
+      NC, shows the vendor's terms, marked "(vendor's terms)". The PO's terms
+      are a record of what was agreed for that order: invoice due dates still
+      come from the invoice itself, and Finance's payables forecast still uses
+      the vendor's terms. They are not printed on the PO PDF.
+    enforced_in: "epms-api app/models/po.py payment_terms (migration po01_po_payment_terms); app/crud/po.py create (payload.payment_terms or the vendor's) / update; app/api/v1/po.py get_po vendor_payment_terms; epms/src/components/po/PaymentTermsField.tsx in PoCreatePage / PoEditPage; PoDetailPage; PRD EPMS §3.12.1"
+    provenance: pinned
+    test:
+      - "tests/test_po_payment_terms.py::test_po_terms_default_from_the_vendor_and_can_be_overridden"
+      - "tests/test_po_payment_terms.py::test_a_po_without_its_own_terms_reads_the_vendors"
+  - id: linking_a_po_to_a_pr
+    also_in: [pr]
+    asked_as:
+      - 新建 PO 时怎么关联请购单？
+      - how do I link a PO to a PR
+      - can one PR have two POs
+    answer: >
+      A PO can be linked to one approved PR, and a PR to one PO. Either press
+      Create PO on the approved PR, or pick it in Linked PR on Purchase Orders
+      → New PO, which lists the approved PRs you can see that no PO has been
+      raised from yet. Both pre-fill the PO from the PR — title, vendor, line
+      items, budget code, procurement type, currency, required-by date,
+      delivery address and the prepayment flag — and everything stays
+      editable. Linked PR is optional: choose None for a PO without a PR.
+    enforced_in: "epms/src/pages/po/PoCreatePage.tsx (Linked PR select → /po/new?prId=, pre-fill effect on prId); epms-api app/api/v1/pr.py list_prs has_po; app/crud/po.py create (pr.po_id / po_number set on create)"
+    provenance: pinned
+    test:
+      - "tests/test_pr_has_po_filter.py::test_has_po_false_lists_only_prs_without_a_po"
+      - "tests/test_rule_registry.py::test_new_po_links_a_pr_through_the_create_po_path"

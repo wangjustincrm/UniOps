@@ -1,4 +1,5 @@
 import { cn, formatCAD } from '@/lib/utils'
+import { overBudgetFigures } from '@/lib/prBudget'
 import { TrendingUp, TrendingDown, Info } from 'lucide-react'
 
 interface BudgetData {
@@ -12,9 +13,11 @@ interface BudgetData {
 interface BudgetBalanceWidgetProps {
   data: BudgetData
   thisAmount?: number
+  /** Label of the "after" row — the PR page's default; a Direct PA says "After this payment". */
+  thisLabel?: string
 }
 
-export function BudgetBalanceWidget({ data, thisAmount = 0 }: BudgetBalanceWidgetProps) {
+export function BudgetBalanceWidget({ data, thisAmount = 0, thisLabel = 'After this PR' }: BudgetBalanceWidgetProps) {
   const available = data.annualBudget - data.committed - data.actualSpent
   const afterThis = available - thisAmount
   const isOverBudget = afterThis < 0
@@ -56,7 +59,7 @@ export function BudgetBalanceWidget({ data, thisAmount = 0 }: BudgetBalanceWidge
         {thisAmount > 0 && (
           <div className="border-t border-neutral-100 pt-1.5">
             <div className="flex justify-between items-center">
-              <span className="text-xs text-neutral-500">After this PR</span>
+              <span className="text-xs text-neutral-500">{thisLabel}</span>
               <div className="flex items-center gap-1">
                 <StatusIcon className={cn('h-3 w-3', statusColor)} />
                 <span className={cn('amount text-xs font-semibold', statusColor)}>
@@ -73,11 +76,15 @@ export function BudgetBalanceWidget({ data, thisAmount = 0 }: BudgetBalanceWidge
 
 interface OverBudgetWarningProps {
   accountCode: string
-  overage: number
-  pct: number
+  /** This PR's amount. */
+  thisAmount: number
+  /** Balance available before this PR (may already be negative). */
+  available: number
+  annualBudget: number
 }
 
-export function OverBudgetWarning({ accountCode, overage, pct }: OverBudgetWarningProps) {
+export function OverBudgetWarning({ accountCode, thisAmount, available, annualBudget }: OverBudgetWarningProps) {
+  const { thisPrOver, afterThis, pctOverAnnual: pctOver } = overBudgetFigures(thisAmount, available, annualBudget)
   return (
     <div className="rounded-md border border-warning-500 bg-warning-50 p-3">
       <div className="flex gap-2">
@@ -87,7 +94,9 @@ export function OverBudgetWarning({ accountCode, overage, pct }: OverBudgetWarni
             This PR will exceed the budget for {accountCode}
           </p>
           <p className="text-warning-600 mt-0.5">
-            by {formatCAD(overage)} ({pct.toFixed(1)}% over). Please provide justification.
+            This PR is over by {formatCAD(thisPrOver)}. Balance after this PR: {formatCAD(afterThis)}
+            {pctOver !== null && <> ({pctOver.toFixed(1)}% over the annual budget)</>}
+            . Please provide justification.
           </p>
         </div>
       </div>

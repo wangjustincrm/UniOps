@@ -1,4 +1,5 @@
 import type { ApiEvent } from '@/services/pr'
+import type { CurrentStep } from '@/types'
 import { api, fetchAllPages } from '@/lib/api'
 
 export type AgreementStatus =
@@ -14,7 +15,7 @@ export type AgreementStatus =
 
 export type AgreementType = 'house_account' | 'recurring' | 'milestone'
 
-export type AgreementAction = 'submit' | 'approve' | 'return' | 'cancel'
+export type AgreementAction = 'submit' | 'approve' | 'return' | 'reject' | 'cancel' | 'recall'
 
 export type RecurringType =
   | 'weekly'
@@ -109,6 +110,8 @@ export interface ApiAgreement {
   overdue_after_days?: number | null
   status: AgreementStatus
   approval_step_idx: number
+  /** GET /agreements/{id} only: who the open approval step is waiting on. */
+  current_step?: CurrentStep | null
   notes?: string | null
   created_by: string
   created_at: string

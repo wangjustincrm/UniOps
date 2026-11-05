@@ -38,12 +38,15 @@ router = APIRouter(prefix="/pr", tags=["purchase-requests"])
 async def list_prs(
     db: SessionDep,
     user: CurrentUserPayload,
+    token: BearerToken,
     status: str | None = Query(default=None),
     pr_type: int | None = Query(default=None),
     cost_center_id: uuid.UUID | None = Query(default=None),
     department_id: uuid.UUID | None = Query(default=None),
     is_prepaid: bool | None = Query(default=None),
     created_by: uuid.UUID | None = Query(default=None),
+    # false = only PRs no PO has been raised from yet (New PO's Linked PR list).
+    has_po: bool | None = Query(default=None),
     mine: bool = False,
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
@@ -67,6 +70,7 @@ async def list_prs(
         department_id=department_id,
         is_prepaid=is_prepaid,
         created_by=created_by,   # narrows WITHIN the enforced scope — safe
+        has_po=has_po,
         pr_ids_subq=scope["pr_subq"],
         search=search,
         page=page,
@@ -74,7 +78,7 @@ async def list_prs(
         sort=sort,
         dir=dir,
     )
-    await enrich_current_step(db, "pr", items)
+    await enrich_current_step(db, "pr", items, token)
     return PrListResponse(items=items, total=total)
 
 
@@ -166,7 +170,7 @@ async def budget_check(
 
 
 @router.get("/{pr_id}", response_model=PrResponse)
-async def get_pr(pr_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+async def get_pr(pr_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload, token: BearerToken):
     from app.core.access_scope import is_pr_visible
     pr = await pr_crud.get_by_id(db, pr_id)
     if pr is None:
@@ -174,6 +178,10 @@ async def get_pr(pr_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
     scope = await build_scope(db, user)
     if not await is_pr_visible(db, pr_id, scope):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PR not found")
+    # The Approval Timeline names who the current step is waiting on (and any
+    # stand-in) from this — the same open-task reading as the list's Status
+    # cell, so the two cannot disagree (ISS-0085).
+    await enrich_current_step(db, "pr", [pr], token)
     return pr
 
 
@@ -242,7 +250,7 @@ async def _generate_pr_pdf_background(pr_id: uuid.UUID, pr_number: str, token: s
 
             from app.crud.signatories import approval_signatories
             requester_name, approvals = await approval_signatories(
-                fresh_db, "pr", pr_id, pr_row.created_by
+                fresh_db, "pr", pr_id, pr_row.created_by, token=token
             )
             owner_name = await _owner_display_name(fresh_db, pr_row, requester_name)
 
@@ -297,7 +305,8 @@ async def pr_action(
             if not check.passed:
                 raise HTTPException(status_code=409, detail=check.message)
     try:
-        await delegate_action("pr", str(pr_id), body.action, body.comment, token)
+        await delegate_action("pr", str(pr_id), body.action, body.comment, token,
+                              expected_step=body.expected_step)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:

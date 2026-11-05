@@ -428,6 +428,27 @@ async def create_batch(body: CreateBatchRequest, user: CurrentUser,
         raise HTTPException(status_code=409, detail=str(e))
 
 
+@router.post("/batches/{batch_id}/cancel", response_model=BatchOut)
+async def cancel_batch(batch_id: uuid.UUID, user: CurrentUser, db: AsyncSession = Depends(get_db)):
+    """Cancel a draft batch (ISS-0163) — same payment authority as create /
+    execute. The row is locked so a cancel cannot race an execute."""
+    try:
+        await payment_execute._check_can_pay(db, user)
+    except PaymentPermissionError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    batch = (await db.execute(
+        select(PaymentBatch).where(PaymentBatch.id == batch_id).with_for_update()
+    )).scalar_one_or_none()
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    try:
+        await batch_crud.cancel_batch(db, batch)
+        await db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    return batch
+
+
 @router.post("/batches/{batch_id}/execute")
 async def execute_batch(batch_id: uuid.UUID, token: BearerToken, user: CurrentUser,
                         body: ExecuteBatchRequest = ExecuteBatchRequest(),
@@ -436,8 +457,10 @@ async def execute_batch(batch_id: uuid.UUID, token: BearerToken, user: CurrentUs
         await payment_execute._check_can_pay(db, user)
     except PaymentPermissionError as e:
         raise HTTPException(status_code=403, detail=str(e))
+    # Locked: a second Execute (double click) or a Cancel waits, then sees the
+    # batch is no longer a draft.
     batch = (await db.execute(
-        select(PaymentBatch).where(PaymentBatch.id == batch_id)
+        select(PaymentBatch).where(PaymentBatch.id == batch_id).with_for_update()
     )).scalar_one_or_none()
     if batch is None:
         raise HTTPException(status_code=404, detail="Batch not found")

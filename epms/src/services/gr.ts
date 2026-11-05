@@ -9,7 +9,9 @@ export type GrStatus =
   | 'rejected'
   | 'cancelled'
 
-export type GrAction = 'acknowledge' | 'collect' | 'confirm' | 'reject' | 'discrepancy' | 'cancel'
+export type GrAction = 'acknowledge' | 'collect' | 'confirm' | 'reject' | 'discrepancy' | 'cancel' | 'resolve_damage'
+
+export type GrDamageResolution = 'return' | 'credit'
 
 export type GrLineCondition = 'good' | 'discrepancy' | 'damaged'
 
@@ -49,7 +51,30 @@ export interface ApiGr {
   collected_at?: string
   collected_by?: string
   collection_notes?: string
+  over_receipt_reason?: string | null
+  damage_resolution?: GrDamageResolution | null
+  damage_resolution_ref?: string | null
+  damage_resolution_note?: string | null
+  damage_resolved_at?: string | null
+  damage_resolved_by?: string | null
+  created_by?: string
   created_at: string
+}
+
+/** Per PO line: ordered, received, pending in GRs not yet collected, still open. */
+export interface PoLineOpenQty {
+  po_line_id: string
+  ordered: number
+  received: number
+  pending: number
+  open: number
+}
+
+/** The API refuses an over-receipt without a reason with a 422 whose detail starts with this. */
+export const OVER_RECEIPT_PREFIX = 'Over-receipt'
+
+export function isOverReceiptError(err: unknown): boolean {
+  return err instanceof Error && err.message.startsWith(OVER_RECEIPT_PREFIX)
 }
 
 export interface GrAttachmentIn {
@@ -69,6 +94,7 @@ export interface CreateGrBody {
   line_items: Omit<ApiGrLineItem, 'id' | 'line_total'>[]
   notes?: string
   attachments?: GrAttachmentIn[]
+  over_receipt_reason?: string
 }
 
 export interface GrActionBody {
@@ -77,6 +103,10 @@ export interface GrActionBody {
   collected_by?: string
   comment?: string
   collection_notes?: string
+  over_receipt_reason?: string
+  damage_resolution?: GrDamageResolution
+  damage_resolution_ref?: string
+  damage_resolution_note?: string
 }
 
 export interface GrFilters {
@@ -112,4 +142,7 @@ export const grService = {
 
   action: (id: string, body: GrActionBody) =>
     api.post<ApiGr>(`/gr/${id}/action`, body),
+
+  openQuantities: (poId: string) =>
+    api.get<PoLineOpenQty[]>('/gr/open-quantities', { po_id: poId }),
 }

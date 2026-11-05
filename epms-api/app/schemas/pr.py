@@ -167,6 +167,10 @@ class PrActionRequest(BaseModel):
     """Payload for submit / approve / return / reject / cancel."""
     action: str = Field(min_length=1, max_length=20)
     comment: str | None = None
+    # approve / return / reject: the approval step the decision is for. The
+    # engine refuses the action once the PR has moved past it, so a second
+    # click cannot approve the next step as well (ISS-0079).
+    expected_step: int | None = None
 
 
 class PrResponse(BaseModel):

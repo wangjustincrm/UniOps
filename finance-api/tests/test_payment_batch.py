@@ -377,3 +377,104 @@ async def test_batch_with_claim_executes_and_flips_status(client, db_session):
     await db_session.refresh(pa); await db_session.refresh(claim)
     assert pa.status == "processed"
     assert claim.status == "paid"
+
+
+# ── ISS-0163: cancel a draft, mark documents already in a draft ─────────────────
+
+async def _draft(client, *pas, role="finance_manager"):
+    r = await client.post("/finance/v1/payments/batches", headers=_h(role),
+                          json={"docs": [{"doc_kind": "pa", "doc_id": str(p.id)} for p in pas]})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def test_due_marks_a_pa_already_in_a_draft_batch(client, db_session):
+    a, b = _pa("100.00"), _pa("50.00")
+    db_session.add_all([a, b])
+    await db_session.flush()
+    batch = await _draft(client, a)
+
+    rows = {r["doc_id"]: r for r in (await client.get(
+        "/finance/v1/payments/due", headers=_h())).json()}
+    assert rows[str(a.id)]["in_draft_batches"] == [batch["batch_number"]]
+    assert rows[str(b.id)]["in_draft_batches"] == []
+
+    # Still selectable into another batch (decision 2B) — it is only marked.
+    second = await _draft(client, a)
+    rows = {r["doc_id"]: r for r in (await client.get(
+        "/finance/v1/payments/due", headers=_h())).json()}
+    assert sorted(rows[str(a.id)]["in_draft_batches"]) == sorted(
+        [batch["batch_number"], second["batch_number"]])
+
+
+async def test_cancelling_a_draft_releases_its_documents(client, db_session):
+    a = _pa("100.00")
+    db_session.add(a)
+    await db_session.flush()
+    batch = await _draft(client, a)
+
+    r = await client.post(f"/finance/v1/payments/batches/{batch['id']}/cancel",
+                          headers=_h("payment_officer"))
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "cancelled"
+    await db_session.refresh(a)
+    assert a.status == "approved"
+    rows = {r["doc_id"]: r for r in (await client.get(
+        "/finance/v1/payments/due", headers=_h())).json()}
+    assert rows[str(a.id)]["in_draft_batches"] == []
+
+    # A cancelled (or executed) batch cannot be cancelled or executed again.
+    r = await client.post(f"/finance/v1/payments/batches/{batch['id']}/cancel", headers=_h())
+    assert r.status_code == 409
+    r = await client.post(f"/finance/v1/payments/batches/{batch['id']}/execute", headers=_h())
+    assert r.status_code == 409
+
+
+async def test_cancel_needs_payment_authority(client, db_session):
+    a = _pa("100.00")
+    db_session.add(a)
+    await db_session.flush()
+    batch = await _draft(client, a)
+    r = await client.post(f"/finance/v1/payments/batches/{batch['id']}/cancel",
+                          headers=_h("requester"))
+    assert r.status_code == 403
+    r = await client.post(f"/finance/v1/payments/batches/{batch['id']}/cancel",
+                          headers=_h("finance_manager"))
+    assert r.status_code == 200, r.text
+
+
+async def test_pa_in_two_drafts_is_paid_once(client, db_session):
+    a = _pa("100.00")
+    db_session.add(a)
+    await db_session.flush()
+    first, second = await _draft(client, a), await _draft(client, a)
+
+    r = await client.post(f"/finance/v1/payments/batches/{first['id']}/execute",
+                          headers=_h("payment_officer"))
+    assert r.status_code == 200 and r.json()["paid"] == 1, r.text
+    r = await client.post(f"/finance/v1/payments/batches/{second['id']}/execute",
+                          headers=_h("payment_officer"))
+    assert r.status_code == 200 and r.json()["paid"] == 0 and r.json()["failed"] == 1
+    recs = (await db_session.execute(
+        select(PaymentRecord).where(PaymentRecord.doc_id == a.id))).scalars().all()
+    assert len(recs) == 1
+
+
+async def test_a_paid_pa_edited_back_to_approved_is_not_paid_twice(client, db_session):
+    """PA-20260930-0001 on the test site: paid, set back to approved in Data
+    Maintenance, paid again. A completed payment record now refuses it."""
+    a = _pa("116.24")
+    db_session.add(a)
+    await db_session.flush()
+    first = await _draft(client, a)
+    r = await client.post(f"/finance/v1/payments/batches/{first['id']}/execute",
+                          headers=_h("payment_officer"))
+    assert r.json()["paid"] == 1
+
+    a.status = "approved"          # what the Data Maintenance edit did
+    await db_session.flush()
+    second = await _draft(client, a)
+    r = await client.post(f"/finance/v1/payments/batches/{second['id']}/execute",
+                          headers=_h("payment_officer"))
+    assert r.json()["paid"] == 0 and r.json()["failed"] == 1
+    assert "already paid" in r.json()["lines"][0]["error"]

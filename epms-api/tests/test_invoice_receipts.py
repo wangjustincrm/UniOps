@@ -138,8 +138,10 @@ async def test_put_receipts_with_fewer_ids_releases_the_dropped_ones(admin_clien
     })
     assert res.status_code == 200, res.text
 
+    # 100 of 200 now — a difference, so a reason is required (ISS-0116).
     res = await admin_client.put(f"{INV_URL}/{inv_id}/receipts",
-                                  json={"receipt_ids": [str(receipt_a.id)]})
+                                  json={"receipt_ids": [str(receipt_a.id)],
+                                        "variance_reason": "B billed separately"})
     assert res.status_code == 200, res.text
     assert res.json()["receipt_ids"] == [str(receipt_a.id)]
 
@@ -241,7 +243,8 @@ async def test_put_rejects_a_receipt_that_is_not_open(admin_client, test_engine)
     # Claim `held_receipt` first, then flip `blocked_receipt` to pending_ap_review
     # behind the scenes (an AP-review flag added after the fact).
     res = await admin_client.put(f"{INV_URL}/{inv_id}/receipts",
-                                  json={"receipt_ids": [str(held_receipt.id)]})
+                                  json={"receipt_ids": [str(held_receipt.id)],
+                                        "variance_reason": "second receipt to follow"})
     assert res.status_code == 200, res.text
 
     async with factory() as db:
@@ -276,7 +279,8 @@ async def test_put_rejects_a_receipt_that_is_not_open(admin_client, test_engine)
     # The already-held receipt must still be re-selectable on its own — this
     # is the "select back your own already-claimed receipts" case.
     res = await admin_client.put(f"{INV_URL}/{inv_id}/receipts",
-                                  json={"receipt_ids": [str(held_receipt.id)]})
+                                  json={"receipt_ids": [str(held_receipt.id)],
+                                        "variance_reason": "second receipt to follow"})
     assert res.status_code == 200, res.text
     assert res.json()["receipt_ids"] == [str(held_receipt.id)]
 
@@ -286,8 +290,8 @@ async def test_put_rejects_a_receipt_that_is_not_open(admin_client, test_engine)
 
 
 async def test_variance_reason_is_stored_and_does_not_block(admin_client, test_engine):
-    """差额非零照样 200 —— 柜台采购与发票金额对不上是常态(运费/折扣/税差),
-    拦死只会把人推回无凭证通道。"""
+    """差额非零、附了原因照样 200 —— 柜台采购与发票金额对不上是常态(运费/折扣/税差),
+    拦死只会把人推回无凭证通道。没附原因的见 ISS-0116 那组用例。"""
     vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
     agr = await _make_active_agreement(test_engine, vendor_id, user_id)
     inv = await _matched_invoice(admin_client, vendor_id, agr, amount="150.00")
@@ -482,6 +486,45 @@ async def test_put_receipts_allowed_when_the_only_referencing_pa_is_cancelled(
     assert res.json()["receipt_ids"] == [str(receipt_b.id)]
 
 
+async def test_invoice_detail_names_the_pa_that_locks_its_receipts(admin_client, test_engine):
+    """ISS-0134 / AGR-032: GET /invoices/{id} names the live PA that freezes
+    the receipt evidence, so the panel can lock before the click — None while
+    no PA lists it, the PA number while one does, None again once cancelled."""
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _matched_invoice(admin_client, vendor_id, agr, amount="100.00")
+    inv_id = inv["id"]
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        receipt = await _create_receipt(db, agr, user_id, amount="100.00")
+    res = await admin_client.put(f"{INV_URL}/{inv_id}/receipts",
+                                  json={"receipt_ids": [str(receipt.id)]})
+    assert res.status_code == 200, res.text
+
+    detail = await admin_client.get(f"{INV_URL}/{inv_id}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["receipts_locked_by_pa"] is None
+
+    pa_id = await _raise_pa_referencing(admin_client, agr, inv)
+    async with factory() as db:
+        pa_row = (await db.execute(
+            select(PaymentApplication).where(PaymentApplication.id == uuid.UUID(pa_id))
+        )).scalar_one()
+        pa_number = pa_row.pa_number
+    detail = await admin_client.get(f"{INV_URL}/{inv_id}")
+    assert detail.json()["receipts_locked_by_pa"] == pa_number
+
+    async with factory() as db:
+        pa_row = (await db.execute(
+            select(PaymentApplication).where(PaymentApplication.id == uuid.UUID(pa_id))
+        )).scalar_one()
+        pa_row.status = "cancelled"
+        await db.commit()
+    detail = await admin_client.get(f"{INV_URL}/{inv_id}")
+    assert detail.json()["receipts_locked_by_pa"] is None
+
+
 async def test_settle_without_receipt_requires_the_invoice_be_matched_to_an_agreement(
     admin_client, test_engine,
 ):
@@ -514,3 +557,66 @@ async def test_settle_without_receipt_rejects_a_whitespace_only_reason(admin_cli
     res = await admin_client.post(f"{INV_URL}/{inv_id}/settle-without-receipt",
                                    json={"reason": "    "})
     assert res.status_code == 422, res.text
+
+
+# ── ISS-0116: a difference needs a reason (PRD AGR-032) ─────────────────────
+
+async def test_a_difference_without_a_reason_is_refused_and_nothing_is_claimed(
+        admin_client, test_engine):
+    """INV-2026-0351's case: receipts 79.10 against an 84.75 invoice, reason
+    left blank → refused, and the receipt is still free (the release + claim
+    roll back with the request)."""
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _matched_invoice(admin_client, vendor_id, agr, amount="84.75")
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        receipt = await _create_receipt(db, agr, user_id, amount="70.00", tax_amount="9.10")
+
+    for reason in (None, "   "):
+        res = await admin_client.put(f"{INV_URL}/{inv['id']}/receipts", json={
+            "receipt_ids": [str(receipt.id)], "variance_reason": reason})
+        assert res.status_code == 422, res.text
+        assert "Explain the difference" in res.json()["detail"]
+        assert "-5.65" in res.json()["detail"]
+
+    fresh = await _fresh_receipt(test_engine, receipt.id)
+    assert fresh.status == "open" and fresh.invoice_id is None
+
+    ok = await admin_client.put(f"{INV_URL}/{inv['id']}/receipts", json={
+        "receipt_ids": [str(receipt.id)], "variance_reason": "Counter added a fee"})
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["receipt_variance_reason"] == "Counter added a fee"
+
+
+async def test_receipts_that_add_up_need_no_reason(admin_client, test_engine):
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _matched_invoice(admin_client, vendor_id, agr, amount="45.20")
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        r1 = await _create_receipt(db, agr, user_id, amount="10.00", tax_amount="1.30")
+        r2 = await _create_receipt(db, agr, user_id, amount="30.00", tax_amount="3.90")
+
+    res = await admin_client.put(f"{INV_URL}/{inv['id']}/receipts", json={
+        "receipt_ids": [str(r1.id), str(r2.id)]})
+    assert res.status_code == 200, res.text
+    assert res.json()["receipt_variance_reason"] is None
+
+
+async def test_receipts_without_amounts_are_not_compared(admin_client, test_engine):
+    """A delivery note carries no amount — nothing to differ, no reason asked."""
+    vendor_id, _name, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id)
+    inv = await _matched_invoice(admin_client, vendor_id, agr, amount="45.20")
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        note = await _create_receipt(db, agr, user_id, amount=None, tax_amount=None,
+                                     receipt_type="delivery")
+
+    res = await admin_client.put(f"{INV_URL}/{inv['id']}/receipts", json={
+        "receipt_ids": [str(note.id)]})
+    assert res.status_code == 200, res.text

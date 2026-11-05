@@ -31,6 +31,7 @@ const DEFAULT_TAX_CODE = 'HST_ON'
 interface EligibleApp {
   id: string; claim_number: string; travel_destination?: string | null
   travel_from_date?: string | null; travel_to_date?: string | null; purpose?: string | null
+  claimants: { id: string; name: string; is_self: boolean }[]
 }
 
 interface TrvLineItem {
@@ -492,6 +493,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
   const [lines, setLines] = useState<TrvLineItem[]>([])
   const [error, setError] = useState('')
   const [travelApplicationId, setTravelApplicationId] = useState('')
+  const [claimantId, setClaimantId] = useState('')
 
   // flat counter for unique line_numbers
   // The submission date used to be re-read from the clock at submit time; it
@@ -550,6 +552,8 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
     queryKey: ['eligible-travel-apps'],
     queryFn: () => api.get<EligibleApp[]>('/api/v1/travel-applications/eligible'),
   })
+
+  const selectedApp = eligibleApps.find(a => a.id === travelApplicationId)
 
   const { data: policy } = useQuery<Policy>({
     queryKey: ['expense-policy'],
@@ -638,6 +642,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!travelApplicationId) { setError('A Travel Application is required'); return }
+    if (!editClaimId && !claimantId) { setError('Select the traveler this claim is for'); return }
     if (!destination.trim()) { setError('Travel destination is required'); return }
     if (!purpose.trim()) { setError('Travel purpose is required'); return }
     if (lines.length === 0) { setError('Add at least one expense line'); return }
@@ -670,6 +675,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
     mutation.mutate({
       claim_type: 'TRV',
       travel_application_id: travelApplicationId,
+      ...(editClaimId ? {} : { claimant_id: claimantId }),
       submission_date: submissionDate,
       currency,
       purpose,
@@ -739,6 +745,10 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
           onChange={e => {
             const id = e.target.value; setTravelApplicationId(id)
             const app = eligibleApps.find(a => a.id === id)
+            // Never guess the payee: with several travelers and the filer not
+            // among them, the filer has to choose.
+            const only = app?.claimants.length === 1 ? app.claimants[0] : undefined
+            setClaimantId((only ?? app?.claimants.find(c => c.is_self))?.id ?? '')
             if (app) {
               if (app.travel_destination) setDestination(app.travel_destination)
               if (app.travel_from_date) setFromDate(app.travel_from_date)
@@ -758,6 +768,20 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
           <p className="mt-1 text-xs text-warning-700">
             No approved travel applications available. Submit and get a Travel Application approved first.
           </p>
+        )}
+        {!editClaimId && selectedApp && (
+          <div className="mt-4">
+            <label className="mb-1 block text-xs font-medium text-neutral-600">Claim for *</label>
+            <select required value={claimantId} onChange={e => setClaimantId(e.target.value)}
+              disabled={selectedApp.claimants.length === 1}
+              className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm disabled:bg-neutral-50">
+              <option value="">— Select a traveler —</option>
+              {selectedApp.claimants.map(c => (
+                <option key={c.id} value={c.id}>{c.name}{c.is_self ? ' (me)' : ''}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-neutral-500">The reimbursement is paid to this traveler.</p>
+          </div>
         )}
       </div>
 

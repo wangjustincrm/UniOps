@@ -169,7 +169,7 @@ async def build(db, doc_type: str, doc, token: str) -> dict:
 
     # enrich_current_step only fills documents awaiting approval (submitted or
     # in review), which is exactly when "who is it with" has an answer.
-    await enrich_current_step(db, doc_type, [doc])
+    await enrich_current_step(db, doc_type, [doc], token)
     current = getattr(doc, "current_step", None)
 
     out = {

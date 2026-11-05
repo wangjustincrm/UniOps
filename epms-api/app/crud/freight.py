@@ -684,6 +684,7 @@ async def invoice_detail(db: AsyncSession, inv: Invoice) -> dict:
         "lines_tax_total": sum((l.tax_amount for l in lines), _ZERO),
         "pa_id": pa.id if pa else None,
         "pa_number": pa.pa_number if pa else None,
+        "pa_status": pa.status if pa else None,
         "finalize_blockers": (await finalize_blockers(db, inv, lines)) if inv.status == "unmatched" else [],
     }
 

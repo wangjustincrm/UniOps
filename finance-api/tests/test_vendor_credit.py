@@ -786,3 +786,69 @@ async def test_manual_credit_collides_with_an_uploaded_one_of_the_same_number(cl
     dup = await client.post("/finance/v1/vendor-credits",
                             json=_api_body(vendor_id=vid), headers=_h())
     assert dup.status_code == 409
+
+
+# ── ISS-0089: "Recorded by" / "Reviewed by" show the person's name ──────────
+# The access token carries only sub + role, so a name taken from the token was
+# always None and the drawer showed "—". PRD UI-USER-001.
+
+async def _seed_user(db_session, full_name):
+    from app.models.mirrors import User
+    uid = uuid.uuid4()
+    db_session.add(User(id=uid, email=f"{uid.hex[:8]}@test.local", full_name=full_name))
+    await db_session.flush()
+    return uid
+
+
+@pytest.mark.anyio
+async def test_recorder_and_reviewer_are_named(client, db_session):
+    recorder = await _seed_user(db_session, "Rita Recorder")
+    reviewer = await _seed_user(db_session, "Victor Reviewer")
+
+    created = await client.post("/finance/v1/vendor-credits",
+                                json=_api_body(source="manual", notes="per vendor email"),
+                                headers=_h(sub=recorder))
+    assert created.status_code == 201, created.text
+    assert created.json()["uploaded_by_name"] == "Rita Recorder"
+    cid = created.json()["id"]
+
+    approved = await client.post(f"/finance/v1/vendor-credits/{cid}/approve",
+                                 json={}, headers=_h("system_admin", sub=reviewer))
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["reviewed_by_name"] == "Victor Reviewer"
+
+    voided = await client.post(f"/finance/v1/vendor-credits/{cid}/void",
+                               json={"note": "test record"}, headers=_h("system_admin", sub=reviewer))
+    assert voided.status_code == 200, voided.text
+    detail = (await client.get(f"/finance/v1/vendor-credits/{cid}", headers=_h())).json()
+    assert detail["uploaded_by_name"] == "Rita Recorder"
+    assert detail["reviewed_by_name"] == "Victor Reviewer"
+
+
+@pytest.mark.anyio
+async def test_credits_recorded_without_a_name_are_named_on_read(client, db_session):
+    """Every credit recorded before the fix has NULL names; the reads fill them
+    in from the users table without rewriting the row."""
+    from app.models.vendor_credit import VendorCredit
+    recorder = await _seed_user(db_session, "Old Recorder")
+    reviewer = await _seed_user(db_session, "Old Reviewer")
+    row = _row(uploaded_by=recorder, uploaded_by_name=None, status="void",
+               reviewed_by=reviewer, reviewed_by_name=None,
+               reviewed_at=datetime.now(timezone.utc))
+    cid = (await db_session.execute(
+        sa.insert(VendorCredit.__table__).values(**row).returning(VendorCredit.__table__.c.id)
+    )).scalar_one()
+
+    detail = (await client.get(f"/finance/v1/vendor-credits/{cid}", headers=_h())).json()
+    assert detail["uploaded_by_name"] == "Old Recorder"
+    assert detail["reviewed_by_name"] == "Old Reviewer"
+
+    listed = (await client.get("/finance/v1/vendor-credits", params={"status": "void"},
+                               headers=_h())).json()["items"]
+    mine = next(i for i in listed if i["id"] == str(cid))
+    assert mine["uploaded_by_name"] == "Old Recorder"
+    assert mine["reviewed_by_name"] == "Old Reviewer"
+
+    stored = (await db_session.execute(
+        sa.select(VendorCredit.uploaded_by_name).where(VendorCredit.id == cid))).scalar_one()
+    assert stored is None

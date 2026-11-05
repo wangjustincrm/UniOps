@@ -112,15 +112,17 @@ rules:
     answer: >
       Withdraw cancels a PR for good. It works while the PR is draft,
       returned or submitted, for the requester, the approver it is waiting
-      on, or a System Admin. Known defect: the PR page also shows Withdraw on
-      a PR that is in review, but there it fails with an error ("Cannot
-      cancel PR in status 'in_review'"). To stop an in-review PR, use Recall
-      to Edit, or ask the approver to return or reject it.
-    enforced_in: "approval-api app/crud/engine.py _DOC_META['pr']['valid_cancel']; epms/src/pages/pr/PrDetailPage.tsx (Withdraw shown for draft/returned/submitted/in_review)"
+      on, or a System Admin. Once the PR is in review (a step has already
+      been approved) it cannot be withdrawn and the PR page no longer offers
+      it; to stop it, use Recall to Edit, or ask the approver to return or
+      reject it. Edit, Recall to
+      Edit and Withdraw are shown only to the requester and a System Admin;
+      when one of these actions is refused, the page shows the reason.
+    enforced_in: "approval-api app/crud/engine.py _DOC_META['pr']['valid_cancel']; epms/src/pages/pr/PrDetailPage.tsx (Withdraw shown for draft/returned/submitted only, isRequesterOrAdmin, actionError)"
     provenance: pinned
     test:
       - "approval-api/tests/test_engine_rules.py::test_cancel_statuses_are_the_engines"
-      - "tests/test_rule_registry.py::test_the_pr_page_offers_withdraw_on_in_review"
+      - "tests/test_rule_registry.py::test_the_pr_page_offers_withdraw_where_the_engine_allows"
   - id: pr_line_prices
     asked_as:
       - 行项目的单价可以填 0 或负数吗？
@@ -173,9 +175,9 @@ rules:
     answer: >
       The PR list has a search box (PR number, title, vendor, budget code)
       and filters for Status, Department, Requester, Type and Prepaid.
-      Someone who is only a Requester sees only their own PRs: the Requester
-      filter is fixed to themselves and the list is titled My Purchase
-      Requisitions.
+      Someone who is only a Requester sees only their own PRs: the
+      Department and Requester filters are not shown and the list is titled
+      My Purchase Requisitions.
     enforced_in: "epms/src/pages/pr/PrListPage.tsx"
     provenance: pinned
     test:
@@ -186,9 +188,9 @@ rules:
       - how do I copy a PR
     answer: >
       Select the old PR on the PR list and click Copy. A new PR form opens
-      filled in from it — title ("Copy of …"), type, lines, currency, notes,
-      delivery address, cost centre and budget account, and the vendor if it
-      is still active. Dates, decomposition factors, attachments and the
+      filled in from it — title ("Copy of …"), type, department (if still
+      active), lines, currency, notes, delivery address, cost centre and
+      budget account, and the vendor if it is still active. Dates, decomposition factors, attachments and the
       Service/Project Owner are not copied.
     enforced_in: "epms/src/pages/pr/PrListPage.tsx (Copy → /pr/new?copyFrom=); PrCreatePage.tsx copyFrom prefill"
     provenance: pinned
@@ -235,3 +237,62 @@ rules:
     test:
       - "tests/test_assistant_iss_batch1.py::test_budget_unreachable_is_treated_as_within_budget"
       - "tests/test_rule_registry.py::test_an_unreachable_budget_service_skips_the_catalogue_check"
+  - id: refused_submit_keeps_one_draft
+    also_in: [agreement]
+    asked_as:
+      - 新建请购单点提交被拒绝了，会生成草稿吗？
+      - 提交失败后为什么多了一张草稿？
+      - what happens if Submit for Approval is refused on a new PR or agreement
+    answer: >
+      On New PR and New Agreement, Submit for Approval first saves the
+      document and then submits it. If the submission is refused — for
+      example the department has no active Department Manager, or a
+      milestone agreement has no stage — the document stays saved as a
+      draft and you are taken to it with the reason shown: a PR opens on
+      its edit page, an agreement on its page. Fix what the message says and
+      submit that draft; clicking Submit again does not create another one.
+      If the PR is refused while you are already editing a draft, the reason
+      is shown next to the Submit button.
+    enforced_in: "epms/src/pages/pr/PrCreatePage.tsx onSubmit and agreements/AgreementCreatePage.tsx handleSubmit (rememberSubmitFailure → replaceTab to the draft); pr/PrEditPage.tsx and agreements/AgreementDetailPage.tsx show it (epms/src/lib/submitFailure.ts)"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_a_refused_submit_takes_the_user_to_the_saved_draft"
+      - "epms/src/lib/submitFailure.test.ts"
+  - id: who_sees_which_prs
+    also_in: [gr]
+    asked_as:
+      - 为什么我能看到别人的请购单？
+      - 付款员（Payment Officer）能看到所有请购单吗？
+      - why can I see other people's PRs
+    answer: >
+      A Requester sees the PRs they raised and the goods receipts on them
+      (plus any document they hold an open approval task on, or a PR they are
+      the Service/Project Owner of). Department, GM/OPM, Director and
+      Supervisor roles add their own departments or reports. A role outside
+      that set (Procurement, AP, Finance, CFO, Auditor and so on) shows every
+      PR or every goods receipt only if that role itself has View PR or View
+      GR in Access Control. So a Requester who also holds Payment Officer,
+      which has neither, still sees only their own PRs and goods receipts,
+      while seeing every PO, invoice and payment application.
+    enforced_in: "epms-api app/core/access_scope.py build_scope / _wide_view_keys (pr_subq, gr_po_subq), scoped_department_ids"
+    provenance: pinned
+    test:
+      - "tests/test_scope_wide_role_view_keys.py::test_requester_plus_payment_officer_sees_only_own_prs_and_grs"
+      - "tests/test_scope_wide_role_view_keys.py::test_requester_plus_role_holding_view_pr_still_sees_everything"
+  - id: currencies_on_a_pr_or_po
+    also_in: [po]
+    asked_as:
+      - 新建请购单 / PO 时为什么选不到某个币种？
+      - which currencies can I choose on a PR or PO
+    answer: >
+      The Currency list on New / Edit PR, New / Edit PO and New Agreement
+      offers exactly the currencies enabled in Portal → Admin → Currency
+      Settings — any of them, not only CAD, USD, EUR and CNY. To use another
+      currency, ask an administrator to enable it there. A PR or PO already
+      saved in a currency that has since been disabled keeps it on its edit
+      page.
+    enforced_in: "epms/src/lib/currencies.ts enabledCurrencyOptions (company_config.enabled_currencies, names from custom_currencies); used by pages/pr/PrCreatePage.tsx, PrEditPage.tsx, pages/po/PoCreatePage.tsx, PoEditPage.tsx, pages/agreements/AgreementCreatePage.tsx"
+    provenance: pinned
+    test:
+      - "tests/test_rule_registry.py::test_currency_lists_follow_currency_settings"
+      - "epms/src/lib/currencies.test.ts"

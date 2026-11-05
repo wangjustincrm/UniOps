@@ -77,7 +77,9 @@ class ReminderCooldown(Exception):
         super().__init__(
             f"A reminder was already sent for this step in the last {COOLDOWN_HOURS} "
             f"hours. You can send another one after "
-            f"{retry_at.strftime('%Y-%m-%d %H:%M')} UTC."
+            # DD/MM/YYYY like the rest of the app (UI-DATE-001, ISS-0183). Format
+            # only — the time is still the UTC instant (zone left as is).
+            f"{retry_at.strftime('%d/%m/%Y %H:%M')} UTC."
         )
 
 

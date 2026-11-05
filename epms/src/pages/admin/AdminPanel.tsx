@@ -1924,6 +1924,7 @@ function PrepaymentConfigSection() {
 
 const DEFAULT_COLLECTION_CONFIG: CollectionConfig = {
   collection_required: true,
+  collection_gate_enabled: false,
   reminder_days: 2,
   manager_escalation_days: 5,
   fm_alert_days: 10,
@@ -1941,29 +1942,33 @@ function CollectionConfigSection() {
   return (
     <div className="flex flex-col gap-6 max-w-lg">
       <p className="text-sm text-neutral-500">
-        Controls the <strong>Physical Goods Collection Confirmation</strong> step (§6.3). After Warehouse Staff confirm a Physical GR,
-        the Requester must physically collect the goods and record the collection in EPMS before a PA can be created.
+        Controls the <strong>Physical Goods Collection Confirmation</strong> step. After the warehouse records a physical GR,
+        the PR's requester collects the goods and records the collection in EPMS (Confirm Collection).
       </p>
 
+      {/* collection_gate_enabled is the switch the server reads (ISS-0146);
+          collection_required was stored for years and never read. */}
       <ToggleRow
         label="Collection Confirmation Required"
-        description="When enabled, PA creation for physical GRs is blocked until the Requester submits a Collection Confirmation. When disabled, PA creation is unlocked on GR acknowledgement (legacy behaviour)."
-        checked={cfg.collection_required}
-        onToggle={() => set('collection_required', !cfg.collection_required)}
+        description="When on, a PA for a physical PO cannot be created — and no Create PA task is raised — until goods on that PO have been collected (a GR collected or confirmed); someone with the receipt-override permission can still override with a reason. Service / project POs and prepayment PAs are not affected. When off (default), a PA is allowed as soon as a goods receipt is recorded."
+        checked={!!cfg.collection_gate_enabled}
+        onToggle={() => set('collection_gate_enabled', !cfg.collection_gate_enabled)}
       />
 
-      {cfg.collection_required ? (
+      {cfg.collection_gate_enabled ? (
         <div className="flex flex-col gap-3">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Collection SLA Escalation</h3>
-          <p className="text-sm text-neutral-500">Timers start from the date the Physical GR is saved.</p>
+          <p className="rounded-lg bg-neutral-50 border border-neutral-200 px-3 py-2 text-xs text-neutral-600">
+            Checked once a day (at the daily digest time) while collection is required; counted from the day the GR was saved. The Dept. Manager and Finance Manager are each told once, after the requester has been reminded.
+          </p>
           <SlaRow label="Requester reminder" description="Reminder: 'Goods are ready to collect at Technical Warehouse for PO [#].'" value={cfg.reminder_days} onChange={(v) => set('reminder_days', v)} />
           <SlaRow label="Dept. Manager escalation" description="Dept. Manager notified: 'Goods for PO [#] have not been collected. Please follow up.'" value={cfg.manager_escalation_days} onChange={(v) => set('manager_escalation_days', v)} min={cfg.reminder_days + 1} />
           <SlaRow label="Finance Manager alert" description="Finance Manager notified. GR flagged 'Collection Overdue' on dashboard." value={cfg.fm_alert_days} onChange={(v) => set('fm_alert_days', v)} min={cfg.manager_escalation_days + 1} />
         </div>
       ) : (
         <div className="rounded-lg bg-warning-50 border border-warning-200 px-4 py-3 text-xs text-warning-700">
-          <p className="font-medium mb-0.5">Collection step is disabled</p>
-          <p>PA creation for physical GRs is unlocked upon GR acknowledgement. Collection SLA timers are not active.</p>
+          <p className="font-medium mb-0.5">Collection is not required</p>
+          <p>A PA for a physical PO is allowed as soon as a goods receipt is recorded.</p>
         </div>
       )}
 

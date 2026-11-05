@@ -69,6 +69,9 @@ export interface ApiInvoice {
   // with the invoice total (submitted by MatchPanel.tsx, stored separately
   // from legacy_settlement_reason — see models/invoice.py:76-78).
   receipt_variance_reason?: string | null
+  // AGR-032: the non-cancelled PA that lists this invoice and so freezes its
+  // receipt evidence. GET /invoices/{id} only, agreement invoices only.
+  receipts_locked_by_pa?: string | null
   // Which scheduled billing period this invoice claims (recurring route only —
   // house_account has no schedule, milestone picks its stage at match time).
   // NULL on a recurring invoice means the automatic claim could not place it,
@@ -84,6 +87,11 @@ export interface ApiInvoice {
   gr_value?: number
   variance?: number
   variance_pct?: number
+  // ISS-0129: detail endpoint only — the variance across every invoice on the
+  // same PO line(s), which decides Matched / Exception.
+  cumulative_variance?: number | null
+  cumulative_variance_pct?: number | null
+  cumulative_other_invoices?: string[]
   exception_reason?: string
   exception_resolved_at?: string
   exception_resolved_by?: string
@@ -137,6 +145,9 @@ export interface CreateInvoiceBody {
   due_date: string
   line_items?: InvoiceLineItem[]
   notes?: string
+  /** The uploaded document's name; refused unless PDF / JPG / JPEG / PNG (INV-001). */
+  file_name?: string
+  file_size?: string
 }
 
 export interface UpdateInvoiceBody {
@@ -165,6 +176,9 @@ export interface InvoiceAllocation {
   note: string | null
   po_number?: string | null
   po_line_description?: string | null
+  // The PO line's pre-tax total (PO subtotal for a header allocation) this
+  // allocation was matched against.
+  po_reference?: number | null
 }
 
 export interface AllocationInput {
@@ -262,6 +276,23 @@ export interface ChainStep {
   refs: ChainStepRef[]
 }
 
+// One recorded step on the History tab — mirrors InvoiceHistoryEntry in
+// epms-api/app/schemas/invoice.py. `before` / `after` are what the step's
+// endpoint recorded (keys per action: see invoices.py HISTORY_ACTIONS).
+export type InvoiceHistoryAction =
+  | 'assign_match' | 'decline_match' | 'match' | 'review_approve' | 'review_reject'
+  | 'resolve_exception' | 'rematch_on_edit' | 'unmatch'
+
+export interface InvoiceHistoryEntry {
+  id: string
+  action: InvoiceHistoryAction
+  created_at: string
+  actor_id: string
+  actor_name: string | null
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+}
+
 export interface InvoiceChain {
   invoice_id: string
   internal_ref: string
@@ -298,6 +329,9 @@ export const invoiceService = {
   // JSONB array with no FK), which no PA list filter can reach.
   chain: (id: string) =>
     api.get<InvoiceChain>(`/invoices/${id}/chain`),
+
+  history: (id: string) =>
+    api.get<InvoiceHistoryEntry[]>(`/invoices/${id}/history`),
 
   create: (body: CreateInvoiceBody) =>
     api.post<ApiInvoice>('/invoices', body),

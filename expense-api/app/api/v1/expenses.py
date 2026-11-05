@@ -416,9 +416,14 @@ async def list_expenses(
         db, user_id, role, doc_types=OA_CLAIM_DOC_TYPES)
 
     conditions = [EC.employee_id == user_id]                    # raised by me
+    conditions.append((EC.claim_type == "TRV") & (EC.created_by == user_id))  # filed for a traveler
     if approvable:
         conditions.append(EC.id.in_(approvable))                # waiting for me
     conditions.append(EC.id.in_(acted_on_documents(user_id)))   # acted on by me
+    # A TRA is also the travelers' document once it has left the applicant's
+    # drafts; they claim against it. Same rule as _can_view_claim.
+    conditions.append((EC.status != "draft")
+                      & EC.id.in_(expense_crud.traveler_claim_ids(user_id)))
 
     # Payment is a stage of the document's life, not an approval step, and it is
     # keyed on a role pool rather than a per-document task — so the finance
@@ -460,10 +465,29 @@ async def create_expense(
         raise HTTPException(status_code=400, detail=f"claim_type must be one of {allowed} or CFM_<code>")
 
     user_id = uuid.UUID(user["sub"])
-    user_name = user.get("full_name") or user.get("name") or ""
-    dept_id_raw = user.get("department_id")
+    if body.claimant_id and body.claim_type != "TRV":
+        raise HTTPException(status_code=400,
+            detail="Only travel expense claims can be filed for someone else")
+    claimant_id = body.claimant_id or user_id
+
+    # TRV reimbursement gate: must reference an APPROVED TRA the claimant travels on.
+    roster_name = ""
+    if body.claim_type == "TRV":
+        if not body.travel_application_id:
+            raise HTTPException(status_code=400,
+                detail="A Travel Application is required for travel expense claims")
+        tra = await _require_trv_application(db, body.travel_application_id, claimant_id)
+        if claimant_id != user_id and user_id != tra.employee_id:
+            raise HTTPException(status_code=403,
+                detail="Only the applicant can file a claim for another traveler")
+        roster_name = next(t.user_name for t in tra.travelers if t.user_id == claimant_id)
+
+    # The token describes the caller, so it says nothing about someone else.
+    on_behalf = claimant_id != user_id
+    user_name = "" if on_behalf else (user.get("full_name") or user.get("name") or "")
+    dept_id_raw = None if on_behalf else user.get("department_id")
     dept_id = uuid.UUID(dept_id_raw) if dept_id_raw else None
-    dept_name = user.get("department_name") or ""
+    dept_name = "" if on_behalf else (user.get("department_name") or "")
 
     # The access token carries only {sub, role, type} — full_name / department are
     # NOT in it (identity-api create_access_token). Resolve them from the shared
@@ -482,7 +506,7 @@ async def create_expense(
                         "FROM users u LEFT JOIN departments d ON d.id = u.department_id "
                         "WHERE u.id = :uid"
                     ),
-                    {"uid": user_id},
+                    {"uid": claimant_id},
                 )).first()
         except Exception:
             row = None
@@ -492,31 +516,17 @@ async def create_expense(
                 dept_id = row.department_id
             dept_name = dept_name or (row.department_name or "")
 
-    user_name = user_name or user.get("email", "")
-
-    # TRV reimbursement gate: must reference an APPROVED TRA the user travels on.
-    if body.claim_type == "TRV":
-        if not body.travel_application_id:
-            raise HTTPException(status_code=400,
-                detail="A Travel Application is required for travel expense claims")
-        tra = await expense_crud.get_by_id(db, body.travel_application_id)
-        if not tra or tra.claim_type != "TRA":
-            raise HTTPException(status_code=404, detail="Travel Application not found")
-        if tra.status != "approved":
-            raise HTTPException(status_code=400,
-                detail="The selected Travel Application is not approved yet")
-        if user_id not in {t.user_id for t in tra.travelers}:
-            raise HTTPException(status_code=403,
-                detail="You are not listed as a traveler on this Travel Application")
+    user_name = user_name or roster_name or user.get("email", "")
 
     try:
         claim = await expense_crud.create_claim(
             db,
             data=body,
-            user_id=user_id,
+            user_id=claimant_id,
             user_name=user_name,
             department_id=dept_id,
             department_name=dept_name,
+            prepared_by=user_id,
         )
     except ValueError as exc:  # TRV line rules (_check_trv_lines)
         raise HTTPException(status_code=422, detail=str(exc))
@@ -580,6 +590,21 @@ async def my_actions(db: SessionDep, user: CurrentUserDep):
     )
 
 
+async def _require_trv_application(db, tra_id: uuid.UUID, claimant_id: uuid.UUID):
+    """The approved TRA a TRV rests on, with the claimant on its roster. A TRV
+    pays its claimant, so being the TRA's applicant is not enough."""
+    tra = await expense_crud.get_by_id(db, tra_id)
+    if not tra or tra.claim_type != "TRA":
+        raise HTTPException(status_code=404, detail="Travel Application not found")
+    if tra.status != "approved":
+        raise HTTPException(status_code=400,
+            detail="The selected Travel Application is not approved yet")
+    if claimant_id not in {t.user_id for t in tra.travelers}:
+        raise HTTPException(status_code=403,
+            detail="The claimant is not listed as a traveler on this Travel Application")
+    return tra
+
+
 async def _can_view_claim(db, claim, user_id: uuid.UUID, role: str) -> bool:
     """Object-level read gate — the same rule list_expenses filters on.
 
@@ -589,7 +614,11 @@ async def _can_view_claim(db, claim, user_id: uuid.UUID, role: str) -> bool:
     here was exactly that hole — it let any holder of any step role read any
     claim of that type, company-wide.
     """
-    if claim.employee_id == user_id or role == "system_admin":
+    if (claim.employee_id == user_id or role == "system_admin"
+            or expense_crud.is_preparer(claim, user_id)):
+        return True
+    if (claim.claim_type == "TRA" and claim.status != "draft"
+            and await expense_crud.is_listed_traveler(db, claim.id, user_id)):
         return True
     # Finance/AP settle claims they never approved; they need to read them.
     # Role UNION, not the JWT role: these are usually assignments here.
@@ -710,6 +739,7 @@ async def _shared_approval_events(db, claim_id: uuid.UUID) -> list[ApprovalEvent
 
 class ClaimPermissions(BaseModel):
     is_owner: bool
+    can_edit: bool
     can_approve: bool      # may approve / return / reject the current pending step
     can_pay: bool          # may record payment (status = approved)
     can_delete: bool = False   # may hard-delete (unapproved Travel Applications only)
@@ -743,6 +773,7 @@ async def get_claim_permissions(claim_id: uuid.UUID, db: SessionDep, user: Curre
 
     return ClaimPermissions(
         is_owner=is_owner,
+        can_edit=is_owner or expense_crud.is_preparer(claim, user_id),
         can_approve=can_approve,
         can_pay=can_pay,
         can_delete=can_delete_claim(claim, user_id, role),
@@ -901,8 +932,12 @@ async def update_expense(
     if not claim:
         raise HTTPException(status_code=404, detail="Expense claim not found")
     user_id = uuid.UUID(user["sub"])
-    if claim.employee_id != user_id and user.get("role") not in ("system_admin", "finance_manager"):
+    if (claim.employee_id != user_id and not expense_crud.is_preparer(claim, user_id)
+            and user.get("role") not in ("system_admin", "finance_manager")):
         raise HTTPException(status_code=403, detail="Cannot edit another employee's claim")
+    if (claim.claim_type == "TRV" and body.travel_application_id
+            and body.travel_application_id != claim.travel_application_id):
+        await _require_trv_application(db, body.travel_application_id, claim.employee_id)
     try:
         await expense_crud.update_claim(db, claim, body)
     except ValueError as exc:
