@@ -20,6 +20,7 @@ from app.core.config import settings
 from app.db.base import AsyncSessionLocal
 from app.models.company_config import CompanyConfig
 from app.models.erp_sync_state import ErpSyncState
+from app.services import nc_readback
 from app.services.erp_sync import sync_kind
 
 logger = logging.getLogger(__name__)
@@ -130,6 +131,9 @@ async def run_all_kinds_session() -> None:
     """
     async with AsyncSessionLocal() as db:
         await run_all_kinds(db)
+
+    # Reads NC itself (a complete list), so it does not depend on the sync above.
+    await nc_readback.scheduled_run()
 
 
 async def run_tick() -> str:
