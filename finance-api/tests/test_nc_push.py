@@ -159,12 +159,31 @@ def test_tax_codes():
         svc.nc_tax(None, D("100"), D("9"))
 
 
+def _nc_error(reason: str) -> str:
+    return APPROVED_RESPONSE.replace("单据已经审核，不允许重复导入单据。", reason)
+
+
+def test_nc_messages_reach_the_clerk_in_english():
+    rounding = svc.parse_response(_nc_error("业务插件处理错误:插件类=nc.bs.arap.plugin.ArapExpPfxxPlugin,"
+                                            "异常信息:组织本币无税金额与税金之和不等于价税合计！"))
+    assert rounding.message == ("The sum of the amount excluding tax in functional currency and "
+                                "the tax amount is not equal to the amount including tax")
+    # already English: only NC's Chinese wrapper goes
+    ora = 'ORA-12899: value too large for column "NCSC"."AP_PAYABLEITEM"."DEF16" (actual: 103, maximum: 101)'
+    assert svc.parse_response(_nc_error(ora)).message == ora
+    unknown = svc.parse_response(_nc_error("计划比例总和必须为100"))
+    assert "NC code -32000" in unknown.message and not svc._CJK.search(unknown.message)
+    # the original stays for whoever reads the log
+    assert "计划比例总和必须为100" in unknown.raw
+    assert svc.parse_response(OK_RESPONSE).message == "NC processed the bill"
+
+
 def test_parse_response():
     ok = svc.parse_response(OK_RESPONSE)
     assert ok.ok and ok.bill_pk == "1001A1100000003I85WJ" and ok.code == "1"
     bad = svc.parse_response(APPROVED_RESPONSE)
-    assert not bad.ok and bad.code == "-32000" and "单据已经审核" in bad.message
-    assert "开始处理" not in bad.message
+    assert not bad.ok and bad.code == "-32000"
+    assert bad.message == "Already approved in NC — change it in NC"
     junk = svc.parse_response("<html>502</html")
     assert not junk.ok and junk.bill_pk is None
 
@@ -471,6 +490,21 @@ async def test_render_foreign_supplier_charging_tax_is_domestic(db_session):
         "94.70", "12.31", "107.01")
 
 
+async def test_render_local_tax_takes_the_rounding_cent(db_session):
+    """AP-20261030-0008: 1497.37 + 194.66 at 1.396 rounds to 2090.33 + 271.75 =
+    2362.08 against a total of 2362.07; NC refused it (checkTaxByIn, exact)."""
+    vid = _vendor("0000183")
+    await _usd_rate(db_session, rate="1.396")
+    ap, *_ = await _ap(db_session, vendor_id=vid, currency="USD", amount="1497.37", tax="194.66",
+                       tax_lines=(("HST_ON", "1497.37", "194.66"),), invoice_date=date(2026, 10, 9))
+    plan = await svc.plan_bill(db_session, ap, today=date(2026, 10, 27))
+    xml = svc.render_xml(plan, facts=FakeLookup(country="US").facts("x", {"ENG", "E04"}, "1"),
+                         maker="Raghav", now=datetime.now(timezone.utc))
+    item = ET.fromstring(xml).find("bill/billhead/bodys/item")
+    assert (item.findtext("local_notax_cr"), item.findtext("local_tax_cr"), item.findtext("local_money_cr")) == (
+        "2090.33", "271.74", "2362.07")
+
+
 async def test_render_cny_uses_nc_inverse_quotation(db_session):
     """NC quotes CNY as 1 CAD = x CNY (convmode 1) and checks local with zero
     tolerance; BoC gives CAD per CNY."""
@@ -548,7 +582,7 @@ async def test_push_after_approval_keeps_the_bill(db_session):
     assert not out.ok and out.message.startswith("Already approved in NC")
     # the failed re-push does not hide the bill that is in NC
     assert ap.nc_push_status == "pushed" and ap.nc_bill_no == "D12026102800139886"
-    assert "审核" in ap.nc_push_error
+    assert ap.nc_push_error == "Already approved in NC — change it in NC"
 
 
 async def test_push_refusal_sends_nothing(db_session):
