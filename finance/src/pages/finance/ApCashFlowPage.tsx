@@ -5,7 +5,9 @@
  * how much cash the next quarter needs. Built on NC's approved open balance,
  * because NC is the book of record for payable balances — but only the part an
  * approved EPMS PA is about to pay, with reversal pairs netted out (finance,
- * 2026-11-02; finance-api services/ap_cash_flow).
+ * 2026-11-02; finance-api services/ap_cash_flow). Approved prepayment PAs and
+ * expense claims never reach NC as a payable, so they are added as rows of
+ * their own, due on approval (finance, 2026-11-05).
  *
  * The page is shaped by three things the data does, each of which would make a
  * naive forecast wrong:
@@ -63,13 +65,20 @@ interface SummaryResp {
   mirror: { synced_at: string | null; tie_out_ok: boolean | null }
 }
 
+/** Only a bill has an AP number; `doc_key` is unique across all three kinds. */
+type DocKind = 'bill' | 'prepayment' | 'claim'
+const DOC_KIND_LABEL: Record<DocKind, string> = {
+  bill: 'NC bill', prepayment: 'Prepayment', claim: 'Claim',
+}
+
 interface BillRow {
-  bill_no: string; currency: string; bill_date: string | null
+  doc_kind: DocKind; doc_key: string
+  bill_no: string | null; currency: string; bill_date: string | null
   supplier_code: string | null; supplier_name: string | null
   /** One per invoice number on the bill's lines — usually one, often several. */
   invoices: BillInvoice[]; trade_type: string | null
   open_bal: string
-  /** The approved PA(s) that put this bill on the forecast. */
+  /** The approved PA(s) behind this bill, or the prepayment PA / claim itself. */
   pa_numbers: string[]
   payment_terms: string | null; term_days: number | null
   due_date: string | null; days_to_due: number | null
@@ -197,11 +206,12 @@ export default function ApCashFlowPage() {
       all.push(...page.items)
       if (all.length >= page.total || page.items.length === 0) break
     }
-    const head = ['AP no', 'Supplier code', 'Supplier', 'Invoice no', 'PO', 'PA', 'Currency',
+    const head = ['Type', 'AP no', 'Supplier code', 'Supplier', 'Invoice no', 'PO', 'PA', 'Currency',
                   'Bill date', 'Payment term', 'Term days', 'Due date', 'Days to due',
                   'Open balance', 'Bucket', 'No vendor record']
     const body = all.map((r) => [
-      r.bill_no, r.supplier_code, r.supplier_name, invoicesCsv(r.invoices),
+      DOC_KIND_LABEL[r.doc_kind], r.bill_no, r.supplier_code, r.supplier_name,
+      invoicesCsv(r.invoices),
       billPurchaseOrders(r.invoices).join('; '), r.pa_numbers.join('; '),
       r.currency, r.bill_date, r.payment_terms, r.term_days, r.due_date, r.days_to_due,
       r.open_bal, r.bucket_label, r.no_vendor_record ? 'yes' : 'no'])
@@ -220,7 +230,7 @@ export default function ApCashFlowPage() {
     <PortalChromeLayout
       activeKey="portal:/finance/ap-cash-flow"
       title="AP Cash Flow"
-      subtitle="What approved PAs will pay and when, from NC's open balance"
+      subtitle="What approved PAs and expense claims will pay, and when"
     >
       <div className="mx-auto max-w-7xl">
         {summary?.mirror && (
@@ -237,7 +247,9 @@ export default function ApCashFlowPage() {
               a reversal and the bill it reverses (same supplier and invoice number, netting
               to zero) are left out. Due dates are calculated as <strong>NC bill date + the supplier&rsquo;s payment term</strong>,
               taken from the vendor master (editable per supplier in EPMS &rsquo;Vendors&rsquo;).
-              NC holds no due date of its own. Mirror as of{' '}
+              NC holds no due date of its own. Approved <strong>prepayment PAs</strong> and{' '}
+              <strong>expense claims</strong> have no NC bill: they are added at their own
+              amount, due on the approval date. Mirror as of{' '}
               <strong>{summary.mirror.synced_at?.replace('T', ' ').slice(0, 16) ?? 'never'}</strong>
               {summary.mirror.tie_out_ok === false && ' — it does NOT tie out against NC.'}
             </span>
@@ -292,8 +304,8 @@ export default function ApCashFlowPage() {
           <div className="relative ml-auto">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" />
             <input type="search" value={searchQ} onChange={(e) => setSearchQ(e.target.value)}
-                   placeholder="Search AP no., invoice no., supplier, PA no."
-                   aria-label="Search AP number, invoice number, supplier or PA number"
+                   placeholder="Search AP, invoice, supplier, PA, claim"
+                   aria-label="Search AP number, invoice number, supplier or employee, PA number or claim number"
                    className="w-72 rounded-lg border border-neutral-300 py-1.5 pl-8 pr-2.5 text-sm" />
           </div>
           <button onClick={exportCsv}
@@ -425,8 +437,8 @@ export default function ApCashFlowPage() {
                     <SortTh label="Supplier" sortKey="supplier" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
                     <SortTh label="Invoice no." sortKey="invoice_no" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
                     <SortTh label="PO" sortKey="purchase_order" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
-                    <SortTh label="PA" sortKey="pa" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
-                    <SortTh label="Bill date" sortKey="bill_date" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
+                    <SortTh label="PA / Claim" sortKey="pa" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
+                    <SortTh label="Bill / approved" sortKey="bill_date" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
                     <SortTh label="Term" sortKey="payment_terms" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
                     <SortTh label="Due" sortKey="due_date" sort={billSort} onSort={onBillSort} className="px-3 py-2 font-medium text-left" />
                     <SortTh label="Open" sortKey="open_bal" sort={billSort} onSort={onBillSort} align="right" className="px-3 py-2 font-medium" />
@@ -445,8 +457,14 @@ export default function ApCashFlowPage() {
                     <tr><td colSpan={9} className="px-3 py-8 text-center text-neutral-400">
                       {searching ? 'No bill matches the search.' : 'Nothing in this bucket.'}</td></tr>
                   ) : items!.items.map((r) => (
-                    <tr key={r.bill_no} className="border-t border-neutral-100 hover:bg-neutral-50/60">
-                      <td className="px-3 py-2 font-mono text-xs">{r.bill_no}</td>
+                    <tr key={r.doc_key} className="border-t border-neutral-100 hover:bg-neutral-50/60">
+                      <td className="px-3 py-2 font-mono text-xs">
+                        {r.bill_no ?? (
+                          <span className="rounded bg-neutral-200 px-1.5 py-0.5 font-sans text-[10px] font-semibold text-neutral-600">
+                            {DOC_KIND_LABEL[r.doc_kind]}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2">
                         <div className="text-neutral-800">{r.supplier_name ?? '—'}</div>
                         <div className="font-mono text-[11px] text-neutral-400">{r.supplier_code ?? '—'}</div>
