@@ -44,10 +44,10 @@ describe('Order shipments (945)', () => {
     await waitFor(() => expect(api.retry).toHaveBeenCalledWith(7))
   })
 
-  it('a shadow 945 says it was not applied and offers no retry', () => {
+  it('a shadow 945 reads like an applied one: no label, and Retry shows (the server refuses it)', () => {
     renderAs(['sales.read', 'sales.order.operate'], [{ ...base, shadow: true, applied: false, shopify_status: 'Suppressed', shopify_error: null }])
-    expect(screen.getByText('Shadow run: not applied')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Retry in Shopify' })).toBeNull()
+    expect(screen.queryByText(/shadow/i)).toBeNull()
+    expect(screen.getByRole('button', { name: 'Retry in Shopify' })).toBeInTheDocument()
   })
 
   it('the card says where it went, by whom (in words), its control numbers, its file, and no 997 back', () => {
@@ -73,7 +73,7 @@ describe('Order shipments (945)', () => {
     const p1 = screen.getByRole('table', { name: 'Shipment 7 pallet 1 line items' })
     const p2 = screen.getByRole('table', { name: 'Shipment 7 pallet 2 line items' })
     expect(within(p1).getAllByRole('row').filter((r) => r.closest('tbody'))).toHaveLength(2)
-    expect(within(p1).getByText('LOT-A').closest('tr')).toHaveTextContent(/#11 · CF0092.*Milk powder.*12 \(2 CS\).*Matched \(shadow\)/)
+    expect(within(p1).getByText('LOT-A').closest('tr')).toHaveTextContent(/#11 · CF0092.*Milk powder.*12 \(2 CS\).*Matched/)
     expect(p1.querySelector('tfoot')).toHaveTextContent(/Pallet subtotal\s*17/)
     expect(p2.querySelector('tfoot')).toHaveTextContent(/Pallet subtotal\s*3/)
     expect(screen.getByRole('region', { name: 'Pallet 2' })).toHaveTextContent('SSCC 00077777770077782907 · 3 EA')

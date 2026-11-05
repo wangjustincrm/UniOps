@@ -6,7 +6,6 @@ type Tone = 'neutral' | 'info' | 'success' | 'warning'
 // The one place the Status gets its colour; the values come from sales-api (app/domain/order_status.py).
 const STATUS_TONE: Record<string, Tone> = {
   Draft: 'neutral', Cancelled: 'neutral', 'On Hold': 'warning', Completed: 'success',
-  'With Zoho (shadow)': 'neutral', 'Waiting for Delivery (shadow)': 'neutral', 'Completed (shadow)': 'neutral',
 }
 export const orderStatusTone = (status: string): Tone => STATUS_TONE[status] ?? 'info'
 

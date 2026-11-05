@@ -16,7 +16,6 @@ import {
 const MANAGE = 'sales.transfer.manage'
 const CANCELLABLE = ['Draft', 'Ready To Send', '943 Generated', 'Failed']
 const errorMessages: Record<string, string> = {
-  'transfer.shadow': 'The shadow run is on: Sales sends no 943 (Zoho is live).',
   'transfer.not_cancellable': 'The 943 is sent: the transfer can no longer be cancelled.',
   'transfer.same_warehouse': 'The two warehouses must differ.',
   'entity.stale': 'Someone else changed this transfer. Close it and open it again.',
@@ -125,7 +124,7 @@ function Detail({ row }: { row: TransferRead }) {
     ) },
     { id: 'receipts', label: 'Receipts (944)', count: t.receipts.length, tone: discrepant ? 'warning' : undefined,
       empty: t.receipts.length === 0 && 'No 944 yet', render: () => t.receipts.map((r) => (
-        <Section key={r.id} title={<>944 {r.document_name} · <DateCell value={r.receipt_date} /> · {r.applied ? r.outcome : r.shadow ? 'shadow run: not applied' : 'not applied (second 944)'}</>}>
+        <Section key={r.id} title={<>944 {r.document_name} · <DateCell value={r.receipt_date} /> · {r.applied || r.shadow ? r.outcome : 'not applied (second 944)'}</>}>
           {r.discrepancies && r.discrepancies.length > 0 && <ul className="text-xs text-danger-600">{r.discrepancies.map((x) => <li key={x}>{x}</li>)}</ul>}
           <LocalTable<ReceiptRowRead> ariaLabel={`944 ${r.document_name ?? r.id} lines`} columns={rowColumns} rows={r.rows}
             rowKey={(x) => x.position} sortable={['item_code', 'lot', 'transfer_line_no']}

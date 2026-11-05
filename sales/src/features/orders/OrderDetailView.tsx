@@ -49,9 +49,10 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
   const unmatched = open.some((ln) => !ln.item_code || (ln.problem && !ln.removed))
   const backordered = live.backordered_ea ?? null
   const orderedEa = open.reduce((n, ln) => n + (ln.qty_ea ?? 0), 0)
-  const shippedEa = open.some((ln) => ln.shipped_ea != null) ? open.reduce((n, ln) => n + (ln.shipped_ea ?? 0), 0) : null
+  const shippedOf = (ln: (typeof open)[number]) => ln.shipped_ea ?? ln.shipped_shadow_ea
+  const shippedEa = open.some((ln) => shippedOf(ln) != null) ? open.reduce((n, ln) => n + (shippedOf(ln) ?? 0), 0) : null
   const shipmentTrouble = !!d?.shipments.some((s) => (s.checks?.length ?? 0) > 0 || s.rows.some((r) => r.needs_review)
-    || (s.shopify_status === 'Failed' && !s.shadow))
+    || s.shopify_status === 'Failed')
   // A 940 that failed or was refused (a source file's note — e.g. a shadow-run 945 kept, not applied — is not a problem).
   const docTrouble = !!d?.documents.some((x) => x.direction === 'OUT'
     && (['Rejected', 'Failed'].includes(x.file_status ?? '') || x.ack_status === 'Rejected' || !!x.error))
@@ -92,7 +93,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
       label: 'Net', value: formatMoney(d.net_amount, d.currency), tone: Number(d.total_refunded ?? 0) > 0 ? 'warning' as const : 'neutral' as const,
       hint: Number(d.total_refunded ?? 0) > 0 ? `${formatMoney(d.total_refunded!, d.currency)} refunded` : 'nothing refunded' }] : []),
     { label: 'Ordered EA', value: orderedEa },
-    { label: 'Shipped EA', value: shippedEa == null ? '—' : shippedEa, hint: shippedEa == null ? 'no 945 applied' : undefined },
+    { label: 'Shipped EA', value: shippedEa == null ? '—' : shippedEa, hint: shippedEa == null ? 'no 945 yet' : undefined },
     ...(backordered != null ? [{ label: 'Backordered EA', value: backordered, tone: backordered > 0 ? 'warning' as const : 'neutral' as const }] : []),
     { label: 'Requested delivery', value: d.requested_delivery_date ? formatDate(d.requested_delivery_date) : '—' },
   ]

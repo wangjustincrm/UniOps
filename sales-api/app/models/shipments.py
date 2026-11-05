@@ -14,7 +14,7 @@ from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
-    Boolean, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, and_, exists, false, func, select,
+    Boolean, Date, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, and_, case, exists, false, func, select,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, aliased, column_property, mapped_column
@@ -110,14 +110,26 @@ Order.sent_940_at_sql = column_property(
 # Only a 945 whose rows are linked to the order counts: an unlinked one (a synthetic test file)
 # says nothing.
 _line = aliased(OrderLine)
+_item_line = aliased(OrderLine)
+_earlier = aliased(OrderLine)
 _shadow_ea = (select(func.coalesce(func.sum(ShipmentRow.qty_shipped_ea), 0))
               .join(Shipment, Shipment.id == ShipmentRow.shipment_id)
               .join(_line, _line.id == ShipmentRow.order_line_id)
               .where(_line.order_id == Order.id, _line.item_code == OrderLine.item_code, Shipment.shadow.is_(True))
               .correlate(Order, OrderLine).scalar_subquery())
+_shadow_linked = exists().where(ShipmentRow.shipment_id == Shipment.id, Shipment.order_id == Order.id, Shipment.shadow.is_(True),
+                                ShipmentRow.order_line_id.is_not(None)).correlate(Order)
+# What the shadow run's 945 left unshipped, the Backordered EA of a shadow order: by item, once
+# per item (on its first line), NULL before a linked 945.
+_item_ea = (select(func.sum(_item_line.qty_ea)).where(_item_line.order_id == Order.id, _item_line.item_code == OrderLine.item_code,
+                                                      _item_line.removed.is_(False)).correlate(Order, OrderLine).scalar_subquery())
+Order.shadow_backordered_sql = column_property(case((_shadow_linked, select(func.coalesce(func.sum(
+    func.greatest(_item_ea - _shadow_ea, 0)), 0)).select_from(OrderLine).join(Item, Item.item_code == OrderLine.item_code).where(
+    OrderLine.order_id == Order.id, OrderLine.removed.is_(False), Item.warehouse_held.is_(True),
+    ~exists().where(_earlier.order_id == Order.id, _earlier.item_code == OrderLine.item_code, _earlier.removed.is_(False),
+                    _earlier.id < OrderLine.id).correlate(Order, OrderLine)).correlate(Order).scalar_subquery()), else_=None))
 Order.shadow_short_sql = column_property(and_(
-    exists().where(ShipmentRow.shipment_id == Shipment.id, Shipment.order_id == Order.id, Shipment.shadow.is_(True),
-                   ShipmentRow.order_line_id.is_not(None)).correlate(Order),
+    _shadow_linked,
     select(OrderLine.item_code).join(Item, Item.item_code == OrderLine.item_code)
     .where(OrderLine.order_id == Order.id, OrderLine.removed.is_(False), Item.warehouse_held.is_(True))
     .group_by(OrderLine.item_code).having(func.sum(OrderLine.qty_ea) > _shadow_ea)

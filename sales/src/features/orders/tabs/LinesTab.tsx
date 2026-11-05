@@ -1,4 +1,4 @@
-import { Badge, DateCell, LocalTable, MoneyCell, StatusCell, Tooltip, formatMoney, type ColumnDef, Hint } from '@/platform-ui'
+import { Badge, DateCell, LocalTable, MoneyCell, StatusCell, formatMoney, type ColumnDef, Hint } from '@/platform-ui'
 import { VsPo } from '../InvoicePrices'
 import { LineNo } from '../LineNo'
 import { lineNumbers, type LineRead, type OrderDetail, type PackingRead } from '../ordersApi'
@@ -15,18 +15,6 @@ const stateTones: Record<string, 'neutral' | 'info' | 'warning' | 'success' | 'd
 const ea = (n: number | null | undefined) => (n == null ? '—' : n)
 const sum = (lines: LineRead[], f: (ln: LineRead) => number | null | undefined) =>
   lines.filter((ln) => !ln.removed).reduce((t, ln) => t + Number(f(ln) ?? 0), 0)
-
-// A figure from the shadow run's 945s: shown beside the line, never applied.
-const SHADOW_TIP = 'From the 945, not applied: Zoho is still the live system'
-function Shadow({ value, warn }: { value: number; warn?: boolean }) {
-  return (
-    <Tooltip tip={SHADOW_TIP}>
-      <span data-shadow className="whitespace-nowrap italic text-neutral-500">
-        <span className={warn && value > 0 ? 'font-medium text-warning-700' : undefined}>{value}</span> <span className="text-xs">(shadow)</span>
-      </span>
-    </Tooltip>
-  )
-}
 
 // One row per line, ordered → shipped (945) → delivered → invoiced; its ▸ opens
 // the 945 rows packed for it. The less-used columns start hidden (the eye shows them).
@@ -46,11 +34,11 @@ const lineColumns = (currency: string, numbers: Map<number, number>): ColumnDef<
   { accessorKey: 'tax_amount', header: 'Tax', cell: ({ row }) => row.original.tax_amount == null ? '—'
     : <MoneyCell amount={row.original.tax_amount} currency={currency} /> },
   { accessorKey: 'qty_ea', header: 'EA', cell: ({ row }) => ea(row.original.qty_ea) },
-  { accessorKey: 'shipped_ea', header: 'Shipped EA', cell: ({ row: { original: ln } }) => ln.shipped_ea == null && ln.shipped_shadow_ea != null
-    ? <Shadow value={ln.shipped_shadow_ea} /> : ea(ln.shipped_ea) },
-  { accessorKey: 'backordered_ea', header: 'Backordered EA', cell: ({ row: { original: ln } }) => ln.backordered_ea == null && ln.backordered_shadow_ea != null
-    ? <Shadow value={ln.backordered_shadow_ea} warn />
-    : ln.backordered_ea ? <span className="font-medium text-warning-700">{ln.backordered_ea}</span> : ea(ln.backordered_ea) },
+  { accessorKey: 'shipped_ea', header: 'Shipped EA', cell: ({ row: { original: ln } }) => ea(ln.shipped_ea ?? ln.shipped_shadow_ea) },
+  { accessorKey: 'backordered_ea', header: 'Backordered EA', cell: ({ row: { original: ln } }) => {
+    const n = ln.backordered_ea ?? ln.backordered_shadow_ea
+    return n ? <span className="font-medium text-warning-700">{n}</span> : ea(n)
+  } },
   { accessorKey: 'delivered_qty', header: 'Delivered EA', cell: ({ row }) => ea(row.original.delivered_qty) },
   { id: 'invoiced', header: 'Invoiced', cell: ({ row }) => row.original.invoiced_qty == null ? '—'
     : `${row.original.invoiced_qty} ${row.original.invoice_unit ?? ''}` },
@@ -79,7 +67,7 @@ const packingColumns: ColumnDef<PackingRead, unknown>[] = [
   { accessorKey: 'ship_date', header: 'Ship date', cell: ({ row }) => <DateCell value={row.original.ship_date} /> },
   { id: 'doc', header: '945', cell: ({ row: { original: p } }) => (
     <span className="inline-flex items-center gap-1">#{p.document_id}
-      {p.shadow ? <Badge variant="neutral">Shadow run</Badge> : !p.applied && <Badge variant="warning">Second 945</Badge>}
+      {!p.shadow && !p.applied && <Badge variant="warning">Second 945</Badge>}
     </span>) },
 ]
 

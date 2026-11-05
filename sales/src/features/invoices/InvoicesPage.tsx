@@ -13,8 +13,6 @@ import { partnerLabel } from '@/features/common/labels'
 
 const MANAGE = 'sales.invoice.manage'
 const errorMessages: Record<string, string> = {
-  'invoice.shadow': 'The shadow run is on: nothing is invoiced (Zoho is live).',
-  'invoice.shadow_order': 'This order was received during the shadow run: Zoho invoices it.',
   'invoice.not_sendable': 'The invoice cannot be sent in its current status.',
   'invoice.not_editable': 'The invoice cannot be edited in its current status.',
   'entity.stale': 'Someone else changed this invoice. Close it and open it again.',

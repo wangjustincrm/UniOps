@@ -1,5 +1,7 @@
 """What people see of an order (PRD 9.1, FR-OB-52): one Status, the reason of On
-Hold, the Short shipped mark and the Detail. Derived, never stored. The
+Hold, the Short shipped mark and the Detail. Derived, never stored. During the
+shadow run the same names are shown, inferred from what Sales can see; nothing on
+the page says shadow, the server's refusals do. The
 state machines in app/domain/status.py stay the source: nothing here sends,
 blocks or decides anything (`order_rules.order_state` still serves eligibility).
 
@@ -21,14 +23,12 @@ from app.domain.status import Invoice as Inv
 DRAFT, CANCELLED, ON_HOLD, COMPLETED = "Draft", "Cancelled", "On Hold", "Completed"
 WAITING_TO_SEND, WAITING_997, WAITING_945 = "Waiting to Send", "Waiting for 997", "Waiting for Packing List"
 WAITING_DELIVERY, WAITING_INVOICE = "Waiting for Delivery", "Waiting for Invoice"
-WITH_ZOHO, COMPLETED_SHADOW, DELIVERY_SHADOW = "With Zoho (shadow)", "Completed (shadow)", "Waiting for Delivery (shadow)"
 ORDER_STATUSES = (DRAFT, WAITING_TO_SEND, WAITING_997, WAITING_945, WAITING_DELIVERY, WAITING_INVOICE, COMPLETED, ON_HOLD,
-                  CANCELLED, WITH_ZOHO, DELIVERY_SHADOW, COMPLETED_SHADOW)
+                  CANCELLED)
 WAREHOUSE_STATUSES = (WAITING_TO_SEND, WAITING_997, WAITING_945)
 INVOICE_WORK_STATUSES = (WAITING_DELIVERY, WAITING_INVOICE)
-ACTIVE_STATUSES = (*WAREHOUSE_STATUSES, *INVOICE_WORK_STATUSES, WITH_ZOHO, DELIVERY_SHADOW)
-COMPLETED_STATUSES = (COMPLETED, COMPLETED_SHADOW)
-NOT_OPEN_STATUSES = (DRAFT, *COMPLETED_STATUSES, CANCELLED)  # the Open view is everything else, On Hold included
+ACTIVE_STATUSES = (*WAREHOUSE_STATUSES, *INVOICE_WORK_STATUSES)
+NOT_OPEN_STATUSES = (DRAFT, COMPLETED, CANCELLED)  # the Open view is everything else, On Hold included
 
 NEEDS_REVIEW, PAYMENT_REQUIRED, ARCHIVED = "Needs Review", "Payment Required", "Archived in Shopify"
 REJECTED_940, FAILED_940, TIMEOUT_997 = "940 Rejected", "940 Failed", "997 Timeout"
@@ -37,7 +37,6 @@ SHOPIFY_FAILED, INVOICE_FAILED, INVOICE_BLOCKED = "Shopify Update Failed", "Invo
 HOLD_REASONS = (NEEDS_REVIEW, PAYMENT_REQUIRED, ARCHIVED, REJECTED_940, FAILED_940, TIMEOUT_997, CANCELLED_AT_SOURCE,
                 CONFLICT_945, SHOPIFY_FAILED, INVOICE_FAILED, INVOICE_BLOCKED)
 
-SHOPIFY = "SHOPIFY"
 
 
 @dataclass(frozen=True)
@@ -56,6 +55,7 @@ class StatusFacts:
     shopify_pending: bool = False         # a shipment's write is queued
     invoicing: bool = False               # the partner's invoice method is not None
     short: bool = False                   # the 945 (applied or the shadow run's) left something unshipped
+    delay_over: bool = False              # the partner's delay has passed (D20)
 
 
 class Python:
@@ -122,10 +122,12 @@ def status_rules(f, b) -> Rules:
         (is_f(F.CANCELLED), CANCELLED),
         (is_f(F.DRAFT), DRAFT),
         (b.any_(*(c for c, _ in hold_rules(f, b))), ON_HOLD),
-        (b.all_(f.shadow, f.has_945, b.is_(f.source_type, SHOPIFY)), COMPLETED_SHADOW),
-        (b.all_(f.shadow, f.has_945, f.invoicing), DELIVERY_SHADOW),
-        (b.all_(f.shadow, f.has_945), COMPLETED_SHADOW),
-        (f.shadow, WITH_ZOHO),
+        # The shadow run: Zoho sends the 940 and Sales cannot tell which 997 answers it, so what
+        # shows is inferred. Only a 945 proves shipped; Waiting for 997 and Waiting for Invoice never show.
+        (b.all_(f.shadow, f.has_945, f.invoicing), WAITING_DELIVERY),
+        (b.all_(f.shadow, f.has_945), COMPLETED),
+        (b.all_(f.shadow, b.any_(f.fulfilled_in_shopify, f.delay_over)), WAITING_945),
+        (f.shadow, WAITING_TO_SEND),
         (is_f(F.PENDING, F.GENERATED_940), WAITING_TO_SEND),
         (is_f(F.SENT_940), WAITING_997),
         (is_f(F.ACCEPTED_940), WAITING_945),
@@ -198,6 +200,9 @@ def status_detail(d: Display, f: StatusFacts, n: DetailFacts) -> tuple[str | Non
         if n.manual_sending:
             return "This partner sends by hand", None
         return ("Sends at", n.send_at) if n.send_at else (None, None)
+    if s == WAITING_945 and f.shadow:  # no 940 of ours: the archive date when Zoho has fulfilled it, else the delay's end
+        since = (n.archived_at if f.fulfilled_in_shopify else None) or n.send_at
+        return ("Since", since) if since else (None, None)
     if s == WAITING_997 or (s == WAITING_945 and f.fulfillment != F.SHIPPED):
         return ("Since", n.sent_at) if n.sent_at else (None, None)
     if s == WAITING_945:

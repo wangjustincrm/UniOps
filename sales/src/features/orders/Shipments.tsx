@@ -9,7 +9,6 @@ import { downloadPackingList, ordersClient, retryShopify, type LineRead, type Sh
 import { ResolveRow } from './ResolveRow'
 
 const errorMessages: Record<string, string> = {
-  'shipment.shadow': 'The shadow run is on (or this 945 came during it): nothing is written to Shopify.',
   'shipment.not_failed': 'The Shopify write is not failed.',
   'auth.forbidden': 'You do not have permission to retry Shopify writes.',
 }
@@ -21,10 +20,10 @@ function cases(r: ShipmentRowRead): string | null {
   return `${Number.isInteger(n) ? n : n.toFixed(1)} CS`
 }
 
-// Whether the row found its order line: matched (an applied or a shadow 945), none to review, or not linked yet.
-function Match({ r, shadow }: { r: ShipmentRowRead; shadow: boolean }) {
+// Whether the row found its order line: matched, none to review, or not linked yet.
+function Match({ r }: { r: ShipmentRowRead }) {
   if (r.needs_review) return <Badge variant="danger">matches no order line</Badge>
-  if (r.order_line_id != null) return <Badge variant={shadow ? 'neutral' : 'success'}>{shadow ? 'Matched (shadow)' : 'Matched'}</Badge>
+  if (r.order_line_id != null) return <Badge variant="success">Matched</Badge>
   return <Badge variant="neutral">Not linked</Badge>
 }
 
@@ -44,7 +43,7 @@ const rowColumns = (s: ShipmentRead, numbers: Map<number, number>, orderId: numb
     ? <TrackingLink number={r.tracking} url={r.tracking_url} /> : '—' },
   { id: 'match', header: 'Match', cell: ({ row }) => (
     <span className="inline-flex flex-wrap items-center gap-1">
-      <Match r={row.original} shadow={s.shadow} />
+      <Match r={row.original} />
       {row.original.needs_review && <ResolveRow r={row.original} shipmentId={s.id} orderId={orderId} lines={lines} />}
     </span>
   ) },
@@ -127,7 +126,6 @@ export function Shipments({ shipments, orderId, lineNumbers = new Map(), lines =
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-medium text-neutral-800">945 #{s.document_id}</span>
             {s.part && <Badge variant="info">Part {s.part}</Badge>}
-            {s.shadow && <Badge variant="neutral">Shadow run: not applied</Badge>}
             {!s.shadow && !s.applied && <Badge variant="warning">Not applied (second 945)</Badge>}
             <span className="ml-auto">
               <ActionButton size="sm" variant="secondary" onAction={() => downloadPackingList(orderId, s.id)}>Packing list (PDF)</ActionButton>
@@ -166,7 +164,7 @@ export function Shipments({ shipments, orderId, lineNumbers = new Map(), lines =
             <Pair label="Shopify">
               <span className="inline-flex flex-wrap items-center gap-1">
                 <StatusCell value={s.shopify_status} />
-                {(s.shopify_status === 'Failed' || s.shopify_status === 'Suppressed') && !s.shadow && <Retry s={s} orderId={orderId} />}
+                {(s.shopify_status === 'Failed' || s.shopify_status === 'Suppressed') && <Retry s={s} orderId={orderId} />}
               </span>
             </Pair>
           </dl>

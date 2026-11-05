@@ -15,7 +15,7 @@ const lotColumns: ColumnDef<PackingRead & { item: string | null; links: Map<stri
   { accessorKey: 'ship_date', header: 'Ship date', cell: ({ row }) => <DateCell value={row.original.ship_date} /> },
   { id: 'doc', header: '945', cell: ({ row: { original: p } }) => (
     <span className="inline-flex items-center gap-1">#{p.document_id}
-      {p.shadow ? <Badge variant="neutral">Shadow run</Badge> : !p.applied && <Badge variant="warning">Second 945</Badge>}
+      {!p.shadow && !p.applied && <Badge variant="warning">Second 945</Badge>}
     </span>) },
 ]
 

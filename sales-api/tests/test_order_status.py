@@ -10,7 +10,7 @@ import pytest
 import sqlalchemy as sa
 
 from app.domain.order_status import (
-    ARCHIVED, CANCELLED_AT_SOURCE, COMPLETED, COMPLETED_SHADOW, CONFLICT_945, DELIVERY_SHADOW, HOLD_REASONS, ON_HOLD, ORDER_STATUSES, SHOPIFY_FAILED, TIMEOUT_997, WAITING_945, WITH_ZOHO, DetailFacts, StatusFacts,
+    ARCHIVED, CANCELLED_AT_SOURCE, COMPLETED, CONFLICT_945, HOLD_REASONS, ON_HOLD, ORDER_STATUSES, SHOPIFY_FAILED, TIMEOUT_997, WAITING_945, WAITING_DELIVERY, WAITING_TO_SEND, DetailFacts, StatusFacts,
     display, status_detail,
 )
 from app.domain.status import Fulfillment as F
@@ -25,6 +25,7 @@ from app.services.order_views import OrderRepository, OrderService, status_facts
 from app.services.orders import OrderSync
 from tests.test_orders import OP, T0, env, shopify_order  # noqa: F401 — env is a fixture
 
+T1 = T0 + timedelta(days=1)
 ALL_F = [s.value for s in F]
 ALL_I = [s.value for s in Inv]
 
@@ -80,16 +81,17 @@ CASES = [
     # archived before the re-check fix: left Pending
     (dict(fulfillment="Pending", archived=True, source_type="SHOPIFY", invoice="Not Required"), (f"{ON_HOLD}: {ARCHIVED}", False)),
     # the shadow run
-    (dict(fulfillment="Pending", shadow=True, invoice="Pending"), (WITH_ZOHO, False)),
-    (dict(fulfillment="Pending", shadow=True, source_type="SHOPIFY", has_945=True, invoice="Not Required"), (COMPLETED_SHADOW, False)),
+    (dict(fulfillment="Pending", shadow=True, invoice="Pending"), (WAITING_TO_SEND, False)),
+    (dict(fulfillment="Pending", shadow=True, invoice="Pending", delay_over=True), (WAITING_945, False)),  # Zoho has sent its 940
+    (dict(fulfillment="Pending", shadow=True, source_type="SHOPIFY", has_945=True, invoice="Not Required"), (COMPLETED, False)),
     # Zoho fulfills and archives before the goods leave: only a 945 proves shipped, and no hold either
     (dict(fulfillment="Pending", shadow=True, source_type="SHOPIFY", archived=True, fulfilled_in_shopify=True, invoice="Not Required"),
-     (WITH_ZOHO, False)),
+     (WAITING_945, False)),
     (dict(fulfillment="Archive Suppressed", shadow=True, source_type="SHOPIFY", archived=True, fulfilled_in_shopify=True, invoice="Not Required"),
-     (WITH_ZOHO, False)),
-    (dict(fulfillment="Pending", shadow=True, source_type="SHOPIFY", fulfilled_in_shopify=True, invoice="Not Required"), (WITH_ZOHO, False)),
+     (WAITING_945, False)),
+    (dict(fulfillment="Pending", shadow=True, source_type="SHOPIFY", fulfilled_in_shopify=True, invoice="Not Required"), (WAITING_945, False)),
     (dict(fulfillment="Archive Suppressed", shadow=True, source_type="SHOPIFY", archived=True, fulfilled_in_shopify=True, has_945=True,
-          invoice="Not Required"), (COMPLETED_SHADOW, False)),
+          invoice="Not Required"), (COMPLETED, False)),
     # outside the shadow run nothing changes: an Archive Suppressed order is a hold
     (dict(fulfillment="Archive Suppressed", source_type="SHOPIFY", archived=True, fulfilled_in_shopify=True, invoice="Not Required"),
      (f"{ON_HOLD}: {ARCHIVED}", False)),
@@ -97,9 +99,9 @@ CASES = [
     (dict(fulfillment="Pending", shadow=True, source_type="SHOPIFY", archived=True, invoice="Not Required"), (f"{ON_HOLD}: {ARCHIVED}", False)),
     (dict(fulfillment="940 Timeout", shadow=True, source_type="SHOPIFY", has_945=True, fulfilled_in_shopify=True, invoice="Not Required"),
      (f"{ON_HOLD}: {TIMEOUT_997}", False)),  # order 23
-    (dict(fulfillment="Pending", shadow=True, source_type="FROM_945", has_945=True, invoicing=True, invoice="Not Required"), (DELIVERY_SHADOW, False)),
-    (dict(fulfillment="Pending", shadow=True, source_type="FROM_945", has_945=True, invoice="Not Required"), (COMPLETED_SHADOW, False)),  # order 107
-    (dict(fulfillment="Pending", shadow=True, source_type="EDI_850", has_945=True, invoicing=True), (DELIVERY_SHADOW, False)),
+    (dict(fulfillment="Pending", shadow=True, source_type="FROM_945", has_945=True, invoicing=True, invoice="Not Required"), (WAITING_DELIVERY, False)),
+    (dict(fulfillment="Pending", shadow=True, source_type="FROM_945", has_945=True, invoice="Not Required"), (COMPLETED, False)),  # order 107
+    (dict(fulfillment="Pending", shadow=True, source_type="EDI_850", has_945=True, invoicing=True), (WAITING_DELIVERY, False)),
     (dict(fulfillment="Review", shadow=True), (f"{ON_HOLD}: Needs Review", False)),
     (dict(fulfillment="Cancelled", shadow=True, has_945=True), ("Cancelled", False)),
     (dict(fulfillment="Draft", shadow=True), ("Draft", False)),
@@ -111,7 +113,7 @@ def test_short_shipment_on_hold_and_shadow_cases(facts, want):
     assert show(**facts) == want
 
 
-def message(n=None, **k):
+def detail(n=None, **k):
     f = StatusFacts(**k)
     return status_detail(display(f), f, n or DetailFacts())
 
@@ -131,7 +133,21 @@ def message(n=None, **k):
     (dict(fulfillment="On Hold", cancelled_at_source=True), DetailFacts(cancelled_at=T0), ("Cancelled", T0)),
 ])
 def test_the_status_detail_adds_what_the_status_does_not_say(facts, n, want):
-    assert message(n, **facts) == want
+    assert detail(n, **facts) == want
+
+
+@pytest.mark.parametrize(("facts", "n", "want"), [
+    (dict(fulfillment="Pending", shadow=True, delay_over=True), DetailFacts(send_at=T0), ("Since", T0)),
+    (dict(fulfillment="Pending", shadow=True, fulfilled_in_shopify=True, delay_over=True), DetailFacts(send_at=T0, archived_at=T1), ("Since", T1)),
+    (dict(fulfillment="Archive Suppressed", shadow=True, fulfilled_in_shopify=True, archived=True), DetailFacts(archived_at=T1), ("Since", T1)),
+    (dict(fulfillment="Pending", shadow=True), DetailFacts(send_at=T0), ("Sends at", T0)),
+])
+def test_the_shadow_detail_gives_a_date_we_have(facts, n, want):
+    assert detail(n, **facts) == want
+
+
+def test_no_status_says_shadow():
+    assert not [s for s in ORDER_STATUSES if "shadow" in s.lower() or "zoho" in s.lower()]
 
 
 @pytest.mark.parametrize("facts", [
@@ -139,17 +155,17 @@ def test_the_status_detail_adds_what_the_status_does_not_say(facts, n, want):
     dict(fulfillment="Shipped", invoice="Ready"), dict(fulfillment="Shipped", invoice="Sent"),
     dict(fulfillment="Shipped", invoice="Not Required"), dict(fulfillment="Draft"), dict(fulfillment="Cancelled"),
     dict(fulfillment="Payment Hold"), dict(fulfillment="On Hold"), dict(fulfillment="940 Generated"),
-    dict(fulfillment="Pending", shadow=True),
     dict(fulfillment="Pending", shadow=True, has_945=True, source_type="SHOPIFY"),
+    dict(fulfillment="Pending", shadow=True, has_945=True, invoicing=True),
 ])
 def test_the_status_detail_is_empty_when_it_has_nothing_to_add(facts):
     full = DetailFacts(send_at=T0, sent_at=T0, requested_date=T0.date(), file_note="x", shopify_error="x", invoice_error="x")
-    assert message(full, **facts) == (None, None)
+    assert detail(full, **facts) == (None, None)
 
 
 def test_every_combination_has_a_message_or_none_without_failing():
     for f, i in itertools.product(ALL_F, ALL_I):
-        text, _ = message(fulfillment=f, invoice=i)
+        text, _ = detail(fulfillment=f, invoice=i)
         assert text is None or isinstance(text, str)
 
 

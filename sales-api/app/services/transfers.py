@@ -32,6 +32,7 @@ from sqlalchemy import func, select, text
 
 from app.domain.edi943 import Line943, Party943, Transfer943, build_943
 from app.domain.edi944 import LineIn, allocate, parse_944
+from app.domain.shadow import TEST_RUN_TRANSFER_REFUSAL
 from app.domain.status import ACK, INBOUND_FILE, OUTBOUND_FILE, TRANSFER, Ack, InboundFile, OutboundFile
 from app.domain.status import Transfer as T
 from app.domain.x12 import X12Error
@@ -198,7 +199,7 @@ class Transfers:
     async def generate(self, uow, t: Transfer, *, reason: str) -> Document:
         s = uow.session
         if await SETTINGS.get(s, SHADOW_MODE):
-            raise BusinessError("transfer.shadow", "the shadow run is on: Sales sends no 943 (Zoho is live)")
+            raise BusinessError("transfer.shadow", TEST_RUN_TRANSFER_REFUSAL)
         conn = await self._connection(s)
         if conn is None:
             raise BusinessError("edi.no_connection", "no warehouse connection is set (setting edi.warehouse_connection_id)")

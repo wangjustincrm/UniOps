@@ -35,6 +35,7 @@ from app.domain.edi940 import Address, Line940, Order940, build_940
 from app.domain.edi997 import parse_997
 from app.domain.order_rules import facts_of, qualifies
 from app.domain.orders import FROM_945, PAYMENT_SATISFIED
+from app.domain.shadow import TEST_RUN_REFUSAL
 from app.domain.status import ACK, FULFILLMENT, INBOUND_FILE, OUTBOUND_FILE, Ack, InboundFile, OutboundFile
 from app.domain.status import Fulfillment as F
 from app.domain.status import Invoice as Inv
@@ -227,9 +228,9 @@ class Outbound940:
         its record (locked values) and, when valid, the outbox row."""
         s = uow.session
         if await SETTINGS.get(s, SHADOW_MODE):
-            raise BusinessError("send940.shadow", "the shadow run is on: Sales sends no 940 (Zoho is live)")
+            raise BusinessError("send940.shadow", TEST_RUN_REFUSAL)
         if order.shadow:
-            raise BusinessError("send940.shadow_order", "this order was received during the shadow run: Zoho handles it")
+            raise BusinessError("send940.shadow_order", TEST_RUN_REFUSAL)
         conn = await self._connection(s)
         if conn is None:
             raise BusinessError("edi.no_connection", "no warehouse connection is set for 940s (setting "
@@ -326,9 +327,9 @@ class Outbound940:
         if order.historical:
             raise BusinessError("send940.historical", "a historical order is never sent (FR-OB-17)")
         if await SETTINGS.get(s, SHADOW_MODE):
-            raise BusinessError("send940.shadow", "the shadow run is on: Sales sends no 940 (Zoho is live)")
+            raise BusinessError("send940.shadow", TEST_RUN_REFUSAL)
         if order.shadow:
-            raise BusinessError("send940.shadow_order", "this order was received during the shadow run: Zoho handles it")
+            raise BusinessError("send940.shadow_order", TEST_RUN_REFUSAL)
         status = F(order.fulfillment_status)
         live = await self.live_940(s, order.id)
         if status == F.GENERATED_940:

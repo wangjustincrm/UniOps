@@ -62,7 +62,7 @@ describe('Delivery confirmation', () => {
     api.bulk.mockResolvedValue([{ order_id: 7, ok: true, invoice_id: 3, status: 'Ready', error: null }])
     renderAs(['sales.read', 'sales.order.operate'], <DeliveryPage />)
     await screen.findByText('PO-1')
-    expect(api.list.mock.calls.at(-1)![0].filters).toEqual([{ field: 'invoice_status', op: 'eq', value: 'Waiting for Delivery Confirmation' }])
+    expect(api.list.mock.calls.at(-1)![0].filters).toEqual([{ field: 'to_confirm', op: 'eq', value: 'true' }])
     fireEvent.click(screen.getByRole('button', { name: /Confirm all shown \(1\)/ }))
     const ask = await screen.findByRole('dialog', { name: 'Confirm 1 deliveries' })
     fireEvent.change(within(ask).getByLabelText('Delivered on'), { target: { value: '2026-11-05' } })

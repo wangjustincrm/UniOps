@@ -13,7 +13,7 @@ The goods already left and Zoho handles the rest, so nothing here may start
 anything: `shadow` is true (kept after the switch-off), the source is FROM_945
 (its own barrier in `qualifies` / `eligible_clause`), the invoice status is Not
 Required, no task is raised, `shipped_ea` is not written (Shipped stays derived,
-shown as "(shadow)"). The status is Pending: what a shadow order with a shadow
+from the shadow 945's rows). The status is Pending: what a shadow order with a shadow
 945 already has; Shipped would claim the 945 was applied.
 
 A later part of the same warehouse order joins this order: `find_orders` finds it

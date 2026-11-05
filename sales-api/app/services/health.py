@@ -24,7 +24,7 @@ from typing import Any
 from sqlalchemy import and_, func, select
 
 from app.domain.order_status import (
-    ACTIVE_STATUSES, CANCELLED, COMPLETED_STATUSES, INVOICE_WORK_STATUSES, NEEDS_REVIEW, ON_HOLD, WAITING_DELIVERY, WAREHOUSE_STATUSES,
+    ACTIVE_STATUSES, CANCELLED, COMPLETED, INVOICE_WORK_STATUSES, NEEDS_REVIEW, ON_HOLD, WAITING_DELIVERY, WAREHOUSE_STATUSES,
 )
 from app.integrations.epms_tasks import shared_tasks_table
 from app.models.config import Connection
@@ -79,7 +79,7 @@ OPEN = ("order_status", "in", [*ACTIVE_STATUSES, ON_HOLD])
 DASHBOARD_CARDS: tuple[tuple[str, str, ListLink], ...] = (
     ("active", "Active", _orders(("order_status", "in", list(ACTIVE_STATUSES)))),
     ("on_hold", "On Hold", _orders(("order_status", "eq", ON_HOLD))),
-    ("completed", "Completed", _orders(("order_status", "in", list(COMPLETED_STATUSES)))),
+    ("completed", "Completed", _orders(("order_status", "eq", COMPLETED))),
     ("cancelled", "Cancelled", _orders(("order_status", "eq", CANCELLED))),
     ("failed_files", "Failed files", _documents()),  # inbound + outbound: the two failed lists summed
     ("open_retailer", "Open retailer", _orders(("source_type", "eq", "EDI_850"), OPEN)),

@@ -58,7 +58,6 @@ export function OverviewTab({ o }: { o: OrderDetail }) {
         <Hint as="p">The raw values, for diagnosis. The statuses at the top are worked out from these.</Hint>
         <DetailList items={[
           ['Fulfillment', o.fulfillment_status], ['Invoice', o.invoice_status], ['Order state', o.order_state], ['Hold reason', o.hold_reason],
-          ['Shadow run', o.shadow ? 'Yes' : 'No'],
         ]} />
       </Section>
     </>

@@ -37,6 +37,7 @@ from app.domain.edi945 import OrderKey, Shipment945, order_key, parse_945
 from app.domain.lifecycle import spread
 from app.domain.orders import FROM_945
 from app.domain.row_matching import assign_rows, identifiers, line_identifiers
+from app.domain.shadow import TEST_RUN_REFUSAL
 from app.domain.status import FULFILLMENT, INBOUND_FILE, Ack, InboundFile
 from app.domain.status import Fulfillment as F
 from app.domain.x12 import X12Error
@@ -688,7 +689,7 @@ class Shipments:
         if sh.shopify_status not in ("Failed", "Suppressed"):
             raise BusinessError("shipment.not_failed", f"the Shopify write is {sh.shopify_status}")
         if sh.shadow or await SETTINGS.get(s, SHADOW_MODE):
-            raise BusinessError("shipment.shadow", "the shadow run: nothing is written to Shopify")
+            raise BusinessError("shipment.shadow", TEST_RUN_REFUSAL)
         kind = CLOSE if sh.shopify_fulfillment_id else FULFILL
         sh.shopify_status = "Pending"
         OUTBOX.add(s, kind, {"shipment_id": sh.id}, entity=sh)

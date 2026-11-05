@@ -24,6 +24,7 @@ import sqlalchemy as sa
 
 import app.runtime as runtime_module
 from app.domain.order_rules import can_cancel
+from app.domain.shadow import TEST_RUN_REFUSAL
 from app.domain.status import Fulfillment as F
 from app.domain.x12 import segments
 from app.integrations.email import FakeEmail
@@ -648,7 +649,7 @@ async def exits(t, o):
     (s.value, s in (F.REVIEW, F.PAYMENT_HOLD, F.PENDING, F.ARCHIVE_SUPPRESSED, F.GENERATED_940, F.REJECTED_940, F.TIMEOUT_940,
                     F.FAILED_940, F.ON_HOLD)) for s in F])
 def test_what_can_be_cancelled(state, allowed):
-    assert can_cancel(state, shadow=False) is allowed and can_cancel(state, shadow=True) is False
+    assert can_cancel(state) is allowed
 
 
 async def test_f_cancel_an_order_with_a_generated_940_writes_nothing(t):
@@ -752,17 +753,48 @@ async def test_f_a_cancelled_order_is_not_invoiced(t):
     assert e.value.code == "invoice.order_cancelled"
 
 
-async def test_g_shadow_orders_have_no_actions_and_the_server_refuses(t):
+async def test_g_shadow_orders_show_production_actions_and_the_server_refuses_each(t):
     o = await shopify(t, 18, 9318)
     async with t.factory(SYSTEM_ACTOR) as u:
         await SETTINGS.set(u.session, SHADOW_MODE, True)
         await mark_open_orders(u)
         await u.commit()
-    assert await exits(t, o) == (False, [])
-    for act in (cancel(t, o), release(t, o, "Cancelled")):
+    assert await exits(t, o) == (True, [])  # Cancel order shows, as in production
+    before = outgoing(t)
+    for act in (cancel(t, o), release(t, o, "Cancelled"), send_now(t, o)):
         with pytest.raises(BusinessError) as e:
             await act
-        assert e.value.code == "order.shadow"
+        assert e.value.message == TEST_RUN_REFUSAL
+    [r] = await t.q("SELECT fulfillment_status f FROM sales_orders WHERE id = :o", o=o)
+    assert r["f"] == "Pending" and outgoing(t) == before
+
+
+async def test_g_a_shadow_order_reads_like_an_applied_one(t):
+    o = await two_lines(t, 25, 9325, TWO_EA_LINES)
+    await shadow_945(t, o, 9325, [("CF0092", 2, 1)])
+    async with t.factory(OP) as u:
+        d = await OrderService(u).detail(o)
+        found = await OrderService(u).list(QuerySpec(page=1, page_size=50, filters=[Filter(field="backordered_ea", op="gt", value=0)]))
+    assert d.backordered_ea == 1 and [ln.state for ln in d.lines] == ["Shipped", "Short shipped"]
+    assert [x.id for x in found.items] == [o] and found.items[0].backordered_ea == 1
+    async with t.factory(OP) as u:
+        waiting = await OrderService(u).list(QuerySpec(page=1, page_size=50, filters=[Filter(field="to_confirm", op="eq", value="true")]))
+    assert waiting.items == []  # a Shopify order is Completed: nothing to confirm
+
+
+async def test_g_a_retail_shadow_order_is_on_the_delivery_list_and_confirming_is_refused(t):
+    o = await retailer(t, "4800000020", requested=today(t))
+    async with t.factory(SYSTEM_ACTOR) as u:
+        await SETTINGS.set(u.session, SHADOW_MODE, True)
+        await mark_open_orders(u)
+        await u.commit()
+    await radiant(t, x945(t, "001009001", "4800000020", [("CF0092", 12, 12), ("CF0010", 12, 12)], tracking=None))
+    async with t.factory(OP) as u:
+        waiting = await OrderService(u).list(QuerySpec(page=1, page_size=50, filters=[Filter(field="to_confirm", op="eq", value="true")]))
+    assert [x.id for x in waiting.items] == [o]
+    with pytest.raises(BusinessError) as e:
+        await confirm(t, o)
+    assert e.value.message == TEST_RUN_REFUSAL
 
 
 @pytest.mark.xfail(strict=True, reason="After Sales closes a Shopify order, the next pull brings closed_at but a Shipped order returns "
@@ -899,7 +931,7 @@ async def shadow_945(t, o, number, rows):
 async def test_one_item_on_two_lines_in_full_is_not_short_shadow(t):
     o = await two_lines(t, 15, 9315, TWO_LINES)
     await shadow_945(t, o, 9315, [("CF0092", 7, 6), ("CF0092", 7, 1)])
-    await see(t, o, "H4 two lines, 7 of 7, shadow", "Pending", "Not Required", "Completed (shadow)")
+    await see(t, o, "H4 two lines, 7 of 7, shadow", "Pending", "Not Required", "Completed")
     assert await figures(t, o) == [(1, None, None, 1, 0), (6, None, None, 6, 0)]
     assert await rows_of(t, o) == [(6, 6), (1, 1)]
 
@@ -943,7 +975,7 @@ async def test_relink_moves_old_rows_by_the_rule_and_a_dry_run_writes_nothing(t)
 async def test_one_item_on_two_lines_really_short_shadow(t):
     o = await two_lines(t, 16, 9316, TWO_EA_LINES)
     await shadow_945(t, o, 9316, [("CF0092", 2, 1)])
-    await see(t, o, "H5 two lines, 1 of 2, shadow", "Pending", "Not Required", "Completed (shadow)", short=True)
+    await see(t, o, "H5 two lines, 1 of 2, shadow", "Pending", "Not Required", "Completed", short=True)
     assert await figures(t, o) == [(1, None, None, 1, 0), (1, None, None, 0, 1)]
 
 
@@ -956,16 +988,16 @@ async def test_g_shadow_statuses_and_nothing_goes_out(t):
         await SETTINGS.set(u.session, SHADOW_MODE, True)
         await mark_open_orders(u)
         await u.commit()
-    await see(t, open_shop, "G1 open Shopify", "Pending", "Not Required", "With Zoho (shadow)")
-    await see(t, retail, "G2 open retailer", "Pending", "Pending", "With Zoho (shadow)")
+    await see(t, open_shop, "G1 Shopify, delay running", "Pending", "Not Required", "Waiting to Send", detail="Sends at")
+    await see(t, retail, "G2 retailer, delay over", "Pending", "Pending", "Waiting for Packing List", detail="Since")
     await radiant(t, x945(t, "9308", "9308", [("CF0092", 12, 12)]))
     await radiant(t, x945(t, "001009000", "4800000016", [("CF0092", 12, 12), ("CF0010", 12, 12)], tracking=None))
-    await see(t, shipped_shop, "G3 Shopify with a 945", "Pending", "Not Required", "Completed (shadow)")
-    await see(t, retail, "G4 retailer with a 945", "Pending", "Pending", "Waiting for Delivery (shadow)")
+    await see(t, shipped_shop, "G3 Shopify with a 945", "Pending", "Not Required", "Completed")
+    await see(t, retail, "G4 retailer with a 945", "Pending", "Pending", "Waiting for Delivery")
     after(t, days=5)
     await system(t)
-    await see(t, shipped_shop, "G5 after a cycle", "Pending", "Not Required", "Completed (shadow)")
-    await see(t, retail, "G6 after a cycle", "Pending", "Pending", "Waiting for Delivery (shadow)")
+    await see(t, shipped_shop, "G5 after a cycle", "Pending", "Not Required", "Completed")
+    await see(t, retail, "G6 after a cycle", "Pending", "Pending", "Waiting for Delivery")
     assert outgoing(t) == {"sftp": [], "mail": 0, "shopify": []}
     assert await t.q("SELECT 1 FROM sales_documents WHERE direction = 'OUT'") == []
     assert await t.q("SELECT 1 FROM sales_order_lines WHERE shipped_ea IS NOT NULL") == []
@@ -985,13 +1017,13 @@ async def test_g_fulfilled_and_archived_without_a_945_is_with_zoho_until_the_945
     t.shop.orders = [order]
     after(t, seconds=1)
     await job(t, t.store)
-    await see(t, o, "G8 fulfilled and archived, no 945", "Archive Suppressed", "Not Required", "With Zoho (shadow)")
+    await see(t, o, "G8 fulfilled and archived, no 945", "Archive Suppressed", "Not Required", "Waiting for Packing List", detail="Since")
     state = OrderRepository.presets[0].as_dict()["state"]["filters"][0]
     async with t.factory(OP) as u:
         found = await OrderService(u).list(QuerySpec(page=1, page_size=50, filters=[Filter(field=state["field"], op=state["op"], value=state["value"])]))
     assert o in [x.id for x in found.items]  # still in Open
     await radiant(t, x945(t, "9324", "9324", [("CF0092", 12, 12)]))
-    await see(t, o, "G9 the 945 came", "Archive Suppressed", "Not Required", "Completed (shadow)")
+    await see(t, o, "G9 the 945 came", "Archive Suppressed", "Not Required", "Completed")
 
 
 async def test_g_archived_and_not_fulfilled_still_shows_in_shadow(t):

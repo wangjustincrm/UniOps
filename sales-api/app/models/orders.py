@@ -136,6 +136,8 @@ class Order(Audited, Versioned, Base):
     def backordered_ea(self) -> int | None:
         """What the 945 left unshipped, in EA (`backordered_ea_sql`); never a lazy load."""
         v = self.__dict__.get("backordered_ea_sql")
+        if v is None:
+            v = self.__dict__.get("shadow_backordered_sql")  # the shadow run's 945: the same figure
         return None if v is None else int(v)
 
 

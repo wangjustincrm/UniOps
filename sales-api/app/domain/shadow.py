@@ -16,6 +16,9 @@ from difflib import SequenceMatcher
 
 from app.domain.x12 import X12Error, segments
 
+# Every refusal a person meets on an order (or a transfer) during the shadow run: one sentence.
+TEST_RUN_REFUSAL = "dev2 is in a test run: Zoho handles this order, so nothing was sent or changed."
+TEST_RUN_TRANSFER_REFUSAL = "dev2 is in a test run: Zoho handles this transfer, so nothing was sent or changed."
 STATUSES = ("Match", "Differs", "Expected difference", "No Sales order", "Sales only", "Unreadable", "No reference")
 MASK = "<ignored>"
 

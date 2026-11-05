@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ActionButton, Autocomplete, ConfirmAction, FormSheet, Hint, queryKeys, useNotices, type ComboOption } from '@/platform-ui'
+import { useTestRunRefusal } from '@/features/common/testRun'
 import { ordersClient, resolveRow, type LineRead, type ShipmentRowRead } from './ordersApi'
 
 const OPERATE = 'sales.order.operate'
@@ -17,6 +18,7 @@ const errorMessages: Record<string, string> = {
 export function ResolveRow({ r, shipmentId, orderId, lines }: { r: ShipmentRowRead; shipmentId: number; orderId: number; lines: LineRead[] }) {
   const qc = useQueryClient()
   const notices = useNotices()
+  const refused = useTestRunRefusal()
   const [open, setOpen] = useState(false)
   const [accepting, setAccepting] = useState(false)
   const [line, setLine] = useState<string | null>(null)
@@ -59,7 +61,7 @@ export function ResolveRow({ r, shipmentId, orderId, lines }: { r: ShipmentRowRe
         </div>
       </FormSheet>
       <ConfirmAction open={accepting} onOpenChange={setAccepting} title="Accept this row without a line?" confirmLabel="Accept"
-        reason={{ label: 'Why it is accepted' }} errorMessages={errorMessages} onConfirm={(why) => m.mutateAsync({ lineId: null, why })} />
+        reason={{ label: 'Why it is accepted' }} errorMessages={errorMessages} onConfirm={(why) => m.mutateAsync({ lineId: null, why }).catch(refused)} />
     </>
   )
 }

@@ -332,14 +332,13 @@ modules:
         manual order, its lines at the PO price. List totals are summed over
         everything the filter finds, not just the page, and amounts in
         different currencies are never added together. Lots lists every 945
-        row, also those of a shadow-run or second 945 (marked): those goods went
-        out too. Shipment rows and the original 945 files are never deleted.
+        row, also those of a second 945 (marked): those goods went out too. Shipment rows and the original 945 files are never deleted.
       - >-
         Backordered is what the warehouse's 945 did not ship: the line's EA
-        ordered minus shipped, once a 945 is applied (empty before; a removed
-        line, a shadow-run or a second 945 count nothing). The warehouse sends
+        ordered minus shipped, once a 945 came (empty before; a removed line or
+        a second 945 count nothing). The warehouse sends
         one 945 per order, so a short one still closes the fulfilment —
-        the order is Shipped, marked Partially shipped, and the shortfall task
+        the order is Shipped, marked Short shipped, and the shortfall task
         asks whether to send the rest; nothing is re-sent by itself. A line's
         invoice price is per the unit it was ordered in, like the PO price;
         the invoice is per case and converts it.
@@ -367,6 +366,13 @@ modules:
         LIVE only once the go-live events (authentication failures, 940
         failure / rejection / timeout, cancellation after the 940, paid order
         archived) each have recipients and a test notification was sent.
+      - >-
+        During the shadow run orders show the same Statuses and figures as in
+        production, worked out from what Sales can see, and the same buttons;
+        using one says that it is a test run and nothing was sent or changed.
+        Only the Health page, the Connections setting and Shadow compare show
+        that the shadow run is on. Waiting for 997 and Waiting for Invoice do
+        not appear then.
       - >-
         While the shadow run is on (Configuration → Connections, Shadow run),
         Zoho is the live system: Sales reads the partners' folders but leaves

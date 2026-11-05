@@ -52,7 +52,7 @@ async def test_a_partial_945_backorders_the_rest_and_the_order_shows_in_the_back
         assert (await OrderRepository(u).list(QuerySpec(sort=[SortKey(field="backordered_ea", desc=True)]))).items[0].id == o.id
 
 
-async def test_a_shadow_945_and_a_removed_line_backorder_nothing(p6):  # noqa: F811
+async def test_a_shadow_945_shows_its_figure_applied_nowhere_and_a_removed_line_backorders_nothing(p6):  # noqa: F811
     from tests.test_orders import po, run_850
     await run_850(p6.edi.env, {"PurchaseOrder": [po("LBL", "PO-S", [
         {"Line": 1, "BuyerPart": "L-555", "Quantity": 10, "UOM": "CA", "UnitPrice": "50"}], ship_to_gln="0012345000011")]})
@@ -61,7 +61,8 @@ async def test_a_shadow_945_and_a_removed_line_backorder_nothing(p6):  # noqa: F
                              header=["DTM*011*20261102"], ctl="900000999"), "945-shadow.edi", shadow=True)
     await p6.ships.process_945s()
     d = await detail(p6, o.id)
-    assert (d.lines[0].shipped_ea, d.lines[0].backordered_ea, d.backordered_ea) == (None, None, None)
+    assert (d.lines[0].shipped_ea, d.lines[0].backordered_ea, d.backordered_ea) == (None, None, 30)  # shown, never written
+    assert (d.lines[0].shipped_shadow_ea, d.lines[0].backordered_shadow_ea) == (30, 30)
     o2 = await shipped_850(p6, number="PO-R", qty=10, shipped=30)
     async with p6.factory(SYSTEM_ACTOR) as u:
         (await u.session.execute(sa.select(OrderLine).where(OrderLine.order_id == o2.id))).scalar_one().removed = True

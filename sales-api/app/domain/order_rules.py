@@ -38,15 +38,16 @@ def order_state(fulfillment: str, invoice: str) -> str:
 
 
 # ── a person stopping an order (PRD 9.1, FR-OB-18, FR-OB-61) ─────────────────
-def can_cancel(fulfillment: str, *, shadow: bool) -> bool:
-    """What the machine lets go to Cancelled; a draft has its own Cancel. A shadow order is Zoho's."""
-    return not shadow and fulfillment != F.DRAFT and FULFILLMENT.can(F(fulfillment), F.CANCELLED)
+def can_cancel(fulfillment: str) -> bool:
+    """What the machine lets go to Cancelled; a draft has its own Cancel. Shown as in production;
+    the server refuses a shadow order when it is used."""
+    return fulfillment != F.DRAFT and FULFILLMENT.can(F(fulfillment), F.CANCELLED)
 
 
-def hold_exits(fulfillment: str, before: str | None, *, shadow: bool, cancelled_at_source: bool, applied_945: bool) -> list[str]:
+def hold_exits(fulfillment: str, before: str | None, *, cancelled_at_source: bool, applied_945: bool) -> list[str]:
     """Where a person can take an order On Hold. Cancelled at source: Cancelled, Shipped (a 945
     says it left) or what it held before. 945 conflict: keep the applied 945 (Shipped) or Cancelled."""
-    if shadow or fulfillment != F.ON_HOLD:
+    if fulfillment != F.ON_HOLD:
         return []
     if not cancelled_at_source:
         return [F.SHIPPED.value, F.CANCELLED.value]

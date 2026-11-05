@@ -78,3 +78,17 @@ describe('Cancel order and Release hold', () => {
     expect(rows.map((r) => r.same)).toEqual([true, false, true, true])
   })
 })
+
+describe('a test-run refusal', () => {
+  it('ends the dialog and goes to the status row, not the dialog', async () => {
+    cancelOrder.mockRejectedValueOnce({ body: { error: { code: 'order.shadow', message: 'dev2 is in a test run: Zoho handles this order, so nothing was sent or changed.' } } })
+    const qc = new QueryClient()
+    render(<QueryClientProvider client={qc}><ToastProvider><PermissionProvider can={() => true}>
+      <OrderHoldActions o={{ ...base, cancellable: true }} /></PermissionProvider></ToastProvider></QueryClientProvider>)
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel order' }))
+    const dialog = await reason('agreed')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel order' }))
+    await waitFor(() => expect(cancelOrder).toHaveBeenCalled())
+    await waitFor(() => expect(screen.queryByRole('textbox')).toBeNull())  // the dialog closed
+  })
+})

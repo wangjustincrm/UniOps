@@ -25,7 +25,7 @@ const columns: ColumnDef<LotRead, unknown>[] = [
   { accessorKey: 'sscc', header: 'Pallet (SSCC)', cell: ({ row }) => row.original.sscc ?? '—' },
   { accessorKey: 'document_id', header: '945', cell: ({ row: { original: r } }) => (
     <span className="inline-flex items-center gap-1">#{r.document_id}
-      {r.shadow ? <Badge variant="neutral">Shadow run</Badge> : !r.applied && <Badge variant="warning">Second 945</Badge>}
+      {!r.shadow && !r.applied && <Badge variant="warning">Second 945</Badge>}
     </span>) },
 ]
 

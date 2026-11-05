@@ -5,9 +5,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy import and_, case, func, not_, or_
+from sqlalchemy import and_, case, func, not_, or_, text
 
-from app.domain.order_status import WAITING_TO_SEND, hold_rules, status_rules
+from app.domain.order_status import WAITING_DELIVERY, WAITING_TO_SEND, hold_rules, status_rules
 from app.models import invoices, shipments  # noqa: F401 — map Order.has_945_sql and the other facts
 from app.models.orders import Order
 
@@ -30,7 +30,13 @@ FACTS = SimpleNamespace(
     cancelled_at_source=Order.source_cancelled_at.is_not(None),
     has_945=Order.has_945_sql, shopify_failed=Order.shopify_failed_sql, shopify_pending=Order.shopify_pending_sql,
     invoicing=func.coalesce(Order.partner_invoice_method_sql, "NONE") != "NONE",
+    delay_over=func.coalesce(case((Order.partner_settlement_mode_sql == "INVOICE", Order.first_received_at), else_=Order.paid_at)
+                             + Order.partner_delay_minutes_sql * text("interval '1 minute'") <= func.now(), False),
 )
 _B = Sql()
 ORDER_STATUS_SQL = case(*status_rules(FACTS, _B), else_=WAITING_TO_SEND)
 ON_HOLD_REASON_SQL = case(*hold_rules(FACTS, _B), else_=None)
+BACKORDERED_SQL = func.coalesce(Order.backordered_ea_sql, Order.shadow_backordered_sql)
+# The Delivery confirmation list: what waits for a person; a shadow order shows as it will in production.
+TO_CONFIRM_SQL = or_(Order.invoice_status == "Waiting for Delivery Confirmation",
+                     and_(Order.shadow, ORDER_STATUS_SQL == WAITING_DELIVERY))

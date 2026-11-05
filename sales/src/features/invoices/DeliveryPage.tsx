@@ -5,12 +5,13 @@ import {
   ActionButton, Button, DateInput, Dialog, ErrorMessage, FormField, MasterDetailForm, Skeleton, numberColumn, queryKeys, readColumn,
   todayDate, useCan, type FieldSpec, useNotices,
 } from '@/platform-ui'
+import { useTestRunRefusal } from '@/features/common/testRun'
 import { OrderList } from '@/features/orders/OrdersPage'
 import { fetchOrder, ordersClient, type LineRead, type OrderRead } from '@/features/orders/ordersApi'
 import { confirmBulk, confirmDelivery, invoicesClient, type ConfirmResult } from './invoicesApi'
 
 const OPERATE = 'sales.order.operate'
-const WAITING = [{ field: 'invoice_status', op: 'eq' as const, value: 'Waiting for Delivery Confirmation' }]
+const WAITING = [{ field: 'to_confirm', op: 'eq' as const, value: 'true' }]
 
 type Delivered = { line: LineRead; delivered: string }
 
@@ -34,17 +35,19 @@ const confirmFields: FieldSpec[] = [{ name: 'confirmed_date', label: 'Delivered 
 function ConfirmOne({ o, close }: { o: OrderRead; close: () => void }) {
   const qc = useQueryClient()
   const can = useCan(OPERATE)
+  const refused = useTestRunRefusal()
   const q = useQuery({ queryKey: queryKeys.detail(ordersClient, o.id), queryFn: () => fetchOrder(o.id) })
   if (q.isLoading || !q.data) return <Skeleton className="h-20 w-full" />
   return (
     <MasterDetailForm<Delivered>
       schema={confirmSchema} fields={confirmFields} defaultValues={{ confirmed_date: todayDate() }} readOnly={!can}
       lines={{ label: 'Delivered quantities', columns: deliveredColumns, rowKey: (d) => d.line.id, problem: deliveredProblem,
-        initial: q.data.lines.filter((l) => l.shipped_ea != null).map((line) => ({ line, delivered: String(line.shipped_ea) })) }}
+        initial: q.data.lines.filter((l) => (l.shipped_ea ?? l.shipped_shadow_ea) != null)
+          .map((line) => ({ line, delivered: String(line.shipped_ea ?? line.shipped_shadow_ea) })) }}
       submitLabel="Confirm delivery"
       onSubmit={async (v, lines) => {
         await confirmDelivery({ order_id: o.id, confirmed_date: String(v.confirmed_date),
-          lines: lines.map((d) => ({ order_line_id: d.line.id, delivered_qty: Number(d.delivered) })) })
+          lines: lines.map((d) => ({ order_line_id: d.line.id, delivered_qty: Number(d.delivered) })) }).catch(refused)
         await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
         await qc.invalidateQueries({ queryKey: queryKeys.list(invoicesClient) })
         close()

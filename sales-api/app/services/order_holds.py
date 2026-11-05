@@ -10,7 +10,7 @@
   reason (a different or substituted item: nothing on the line or the invoice). Once
   none is left the invoice it blocked follows.
 
-Shadow orders are Zoho's: every action here is refused for them.
+Shadow orders are Zoho's: the actions show as in production and are refused here.
 """
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from sqlalchemy import func, select
 
 from app.domain.order_rules import can_cancel, hold_exits
 from app.domain.row_matching import identifiers, line_identifiers
+from app.domain.shadow import TEST_RUN_REFUSAL
 from app.domain.status import FULFILLMENT, INVOICE, OUTBOUND_FILE, Fulfillment as F, Invoice as Inv, OutboundFile
 from app.models.config import Item
 from app.models.documents import Document, DocumentLink
@@ -49,7 +50,7 @@ class OrderActions:
         if o is None:
             raise BusinessError("entity.not_found", f"order {id} not found", status_code=404)
         if o.shadow:
-            raise BusinessError("order.shadow", "this order belongs to Zoho during the shadow run")
+            raise BusinessError("order.shadow", TEST_RUN_REFUSAL)
         if version is not None and o.version != version:
             raise BusinessError("entity.stale", "this order was changed by someone else; reload it",
                                 {"current_version": o.version, "sent_version": version})
@@ -76,7 +77,7 @@ class OrderActions:
     @requires(OPERATE)
     async def cancel(self, id: int, reason: str, version: int | None = None) -> Order:
         o = await self._order(id, version)
-        if not can_cancel(o.fulfillment_status, shadow=o.shadow):
+        if not can_cancel(o.fulfillment_status):
             raise BusinessError("order.not_cancellable", f"an order in {o.fulfillment_status} cannot be cancelled here"
                                 + (": a 940 at the warehouse is cancelled through On Hold" if o.fulfillment_status in
                                    (F.SENT_940, F.ACCEPTED_940) else ""), {"status": o.fulfillment_status})
@@ -93,7 +94,7 @@ class OrderActions:
     async def release_hold(self, id: int, to: str, reason: str, version: int | None = None) -> Order:
         o = await self._order(id, version)
         applied = await self._applied(o.id)
-        exits = hold_exits(o.fulfillment_status, o.fulfillment_status_before_hold, shadow=o.shadow,
+        exits = hold_exits(o.fulfillment_status, o.fulfillment_status_before_hold,
                            cancelled_at_source=o.source_cancelled_at is not None, applied_945=bool(applied))
         if to not in exits:
             raise BusinessError("order.hold_exit", f"this order cannot go to {to} from {o.fulfillment_status}", {"exits": exits})

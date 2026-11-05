@@ -479,7 +479,7 @@ describe('Orders: the Order ref, the partner by name, and the PO prices', () => 
     const packing = await within(sheet).findByRole('table', { name: 'Packed for this line' })
     expect(within(packing).getByText('LOT-A').closest('tr')).toHaveTextContent('00077777770077782891')
     expect(within(packing).getByText('LOT-A').closest('tr')).toHaveTextContent('1Z-TRACK')
-    expect(within(packing).getByText('LOT-B').closest('tr')).toHaveTextContent('Shadow run')
+    expect(within(packing).getByText('LOT-B').closest('tr')).not.toHaveTextContent(/shadow/i)
     expect(packing.querySelector('tfoot')).toHaveTextContent('1200')
   })
 

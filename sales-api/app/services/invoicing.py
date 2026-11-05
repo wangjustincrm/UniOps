@@ -32,6 +32,7 @@ from typing import Any, Callable
 from sqlalchemy import select
 
 from app.domain.invoicing import CASE_UNIT, Header810, LineIn, LineOut, amount, build_810, build_lines
+from app.domain.shadow import TEST_RUN_REFUSAL
 from app.domain.status import INVOICE
 from app.domain.status import Fulfillment as F
 from app.domain.status import Invoice as Inv
@@ -141,9 +142,9 @@ class Invoicing:
 
     async def _refuse_shadow(self, s, order: Order) -> None:
         if await _shadow(s):
-            raise BusinessError("invoice.shadow", "the shadow run is on: nothing is invoiced (Zoho is live)")
+            raise BusinessError("invoice.shadow", TEST_RUN_REFUSAL)
         if order.shadow:
-            raise BusinessError("invoice.shadow_order", "this order was received during the shadow run: Zoho invoices it")
+            raise BusinessError("invoice.shadow_order", TEST_RUN_REFUSAL)
 
     # ── confirmation and the invoice ────────────────────────────────────────
     async def confirm(self, uow, order_id: int, *, confirmed_date: date, delivered: dict[int, int] | None = None,

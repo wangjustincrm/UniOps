@@ -67,7 +67,6 @@ export function HomeDashboard() {
             <>
               <HealthBadge result={h.result} />
               <span>{h.cards.critical ?? 0} critical, {h.cards.warnings ?? 0} warnings</span>
-              {h.shadow_mode && <span className="text-warning-700">Shadow run on: nothing is sent</span>}
             </>
           ) : <Skeleton className="h-5 w-40" />}
           <Button size="sm" variant="ghost" onClick={() => go('/health')}>Open the health page</Button>

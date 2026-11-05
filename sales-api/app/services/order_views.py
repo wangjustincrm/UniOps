@@ -44,7 +44,7 @@ from app.services.intake import ConnectionSnapshot
 from app.services.invoice_pdf import PackingList, PackRow, render_packing
 from app.services.invoice_pdf import Party as PdfParty
 from app.services.invoicing import SELLER
-from app.services.order_status_sql import ON_HOLD_REASON_SQL, ORDER_STATUS_SQL
+from app.services.order_status_sql import BACKORDERED_SQL, ON_HOLD_REASON_SQL, ORDER_STATUS_SQL, TO_CONFIRM_SQL
 from app.services.orders import BarcodeLookup, OrderSync, order_ref
 from app.services.settings import SETTINGS, SHADOW_MODE
 
@@ -93,16 +93,17 @@ class OrderRepository(Repository[Order]):
              "order_state": ORDER_STATES, "order_status": ORDER_STATUSES, "on_hold_reason": ON_HOLD_REASONS}
     # The internal lines stay filterable and sortable, so a saved view on them still lists,
     # but no list offers them any more: they show on the order page, for diagnosis.
-    meta_hidden = ("order_status_label", "short_shipped", "status_detail", "status_detail_at",
+    meta_hidden = ("order_status_label", "short_shipped", "status_detail", "status_detail_at", "shadow", "to_confirm",
                    "fulfillment_status", "invoice_status", "order_state", "hold_reason")
     sortable = {"order_state": ORDER_STATE_SQL, "order_status": ORDER_STATUS_SQL, "on_hold_reason": ON_HOLD_REASON_SQL, "partner_name": Order.partner_name_sql,
-                "total_amount": Order.total_amount_sql, "backordered_ea": Order.backordered_ea_sql}
+                "total_amount": Order.total_amount_sql, "backordered_ea": BACKORDERED_SQL}
     filterable = {"order_state": FilterRule(ORDER_STATE_SQL, kind="text"),
                   "order_status": FilterRule(ORDER_STATUS_SQL, kind="text"),
                   "on_hold_reason": FilterRule(ON_HOLD_REASON_SQL, kind="text"),
                   "partner_name": FilterRule(Order.partner_name_sql, kind="text"),
                   "total_amount": FilterRule(Order.total_amount_sql, kind="number", cast=lambda v: Decimal(str(v))),
-                  "backordered_ea": FilterRule(Order.backordered_ea_sql, kind="number", cast=int)}
+                  "backordered_ea": FilterRule(BACKORDERED_SQL, kind="number", cast=int),
+                  "to_confirm": FilterRule(TO_CONFIRM_SQL, kind="bool", cast=lambda v: str(v).lower() == "true")}
     summable = ("total_amount", "net_amount", "total_refunded")
     sum_currency = "currency"
     default_sort = ("-order_number",)
@@ -135,9 +136,16 @@ class OrderRepository(Repository[Order]):
     historical_column = "historical"
 
 
+def _send_at(o: Order) -> datetime | None:
+    return send_time(from_receipt=o.fact("partner_settlement_mode_sql") == "INVOICE", received_at=o.first_received_at,
+                     paid_at=o.paid_at, delay_minutes=o.fact("partner_delay_minutes_sql"))
+
+
 def status_facts(o: Order) -> StatusFacts:
     """What the rules read of an order, from the row and what was loaded with it."""
+    send_at = _send_at(o)
     return StatusFacts(
+        delay_over=send_at is not None and send_at <= datetime.now(timezone.utc),
         fulfillment=o.fulfillment_status, invoice=o.invoice_status,
         source_type=o.source_type, shadow=bool(o.shadow), archived=o.archived_in_shopify_at is not None,
         fulfilled_in_shopify=o.shopify_fulfillment_status == "fulfilled", cancelled_at_source=o.source_cancelled_at is not None,
@@ -149,8 +157,7 @@ def status_facts(o: Order) -> StatusFacts:
 def detail_facts(o: Order) -> DetailFacts:
     return DetailFacts(
         manual_sending=o.fact("partner_sending_mode_sql") == "MANUAL",
-        send_at=send_time(from_receipt=o.fact("partner_settlement_mode_sql") == "INVOICE", received_at=o.first_received_at,
-                          paid_at=o.paid_at, delay_minutes=o.fact("partner_delay_minutes_sql")),
+        send_at=_send_at(o),
         sent_at=o.fact("sent_940_at_sql"), requested_date=o.requested_delivery_date, review_reason=o.review_reason,
         archived_at=o.archived_in_shopify_at, cancelled_at=o.source_cancelled_at, file_note=o.fact("file_note_sql"),
         shopify_error=o.fact("shopify_error_sql"), invoice_error=o.fact("invoice_error_sql"))
@@ -212,8 +219,8 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
             lines=await self._lifecycle(lines), has_invoice=has_invoice,
             documents=[OrderDocumentRead(**d._asdict()) for d in docs],
             shipments=shipments,
-            cancellable=can_cancel(o.fulfillment_status, shadow=o.shadow),
-            hold_exits=hold_exits(o.fulfillment_status, o.fulfillment_status_before_hold, shadow=o.shadow,
+            cancellable=can_cancel(o.fulfillment_status),
+            hold_exits=hold_exits(o.fulfillment_status, o.fulfillment_status_before_hold,
                                   cancelled_at_source=o.source_cancelled_at is not None,
                                   applied_945=any(x.applied for x in shipments)),
             payment_gateways=o.payment_gateways, discount_codes=o.discount_codes, tax_lines=o.tax_lines,
@@ -324,7 +331,8 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                 "backordered_ea": backordered(ln.qty_ea, ln.shipped_ea, ln.removed),
                 **shadow.get(ln.id, {}),
                 "invoice_amount": sum((il.amount for il in ils), Decimal(0)) if ils else None,
-                "state": line_state(removed=ln.removed, qty_ea=ln.qty_ea, shipped_ea=ln.shipped_ea,
+                "state": line_state(removed=ln.removed, qty_ea=ln.qty_ea,
+                                    shipped_ea=ln.shipped_ea if ln.shipped_ea is not None else shadow.get(ln.id, {}).get("shipped_shadow_ea"),
                                     delivered_ea=ln.delivered_qty, invoiced=bool(ils)),
                 "packing": packed.get(ln.id, []),
             }))
@@ -389,11 +397,13 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                 "document_name": d.remote_name if d else None, "received_at": d.created_at if d else None,
                 "part": part if (split or (part.isalpha() and (x.order_key_received or "")[:-1].isdigit())) else None,
                 "rows": [ShipmentRowRead.model_validate(r).model_copy(update={
+                    # A shadow 945's row is flagged as an applied one would be; Resolve is refused on it.
+                    "needs_review": r.needs_review or (x.shadow and r.order_line_id is None),
                     "line_no": line_no.get(r.order_line_id) if r.order_line_id else None,
                     "description": items[r.item_code].description if r.item_code in items else None,
                     "case_factor": int(cases[r.item_code]) if r.item_code in cases else None,
                     "tracking_url": tracking_url(template, r.tracking),
-                    "matching_lines": same_item(r) if r.needs_review else [],
+                    "matching_lines": same_item(r) if r.needs_review or r.order_line_id is None else [],
                 }) for r in rows if r.shipment_id == x.id],
             }))
         return out
@@ -417,8 +427,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
             st.get("city"), st.get("province"), st.get("zip"))))) if x])
         carrier = (await carriers_by_scac(s, [sh.carrier])).get((sh.carrier or "").strip().upper())
         template = carrier.tracking_url if carrier else None
-        note = ("Shadow run: this 945 was kept, not applied." if sh.shadow
-                else None if sh.applied else "A second 945 for this order: kept, not applied.")
+        note = (None if sh.applied or sh.shadow else "A second 945 for this order: kept, not applied.")
         pdf = render_packing(PackingList(
             number=o.ref, order_number=o.order_number, po=o.source_order_number, ship_date=sh.ship_date, carrier=sh.carrier,
             bol=sh.bol, tracking=list(sh.tracking or []), our_reference=sh.our_reference, document_id=sh.document_id,

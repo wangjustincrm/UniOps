@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ActionButton, ConfirmAction, DiffTable, FormSheet, Hint, queryKeys, useNotices } from '@/platform-ui'
+import { useTestRunRefusal } from '@/features/common/testRun'
 import { cancelOrder, ordersClient, releaseHold, type OrderDetail } from './ordersApi'
 import { compare945 } from './orderStatus'
 
@@ -10,7 +11,6 @@ const errorMessages: Record<string, string> = {
   'order.not_cancellable': 'This order cannot be cancelled now: reload it.',
   'order.sending': 'Its 940 is being sent right now: try again in a moment.',
   'order.hold_exit': 'That choice is no longer open for this order: reload it.',
-  'order.shadow': 'This order belongs to Zoho during the shadow run.',
   'auth.forbidden': 'You do not have permission to do this.',
 }
 
@@ -31,10 +31,11 @@ function exitOf(to: string, conflict: boolean): { label: string; text: string; d
 }
 
 /** Cancel order, and Release hold or the 945 comparison (PRD 9.1, FR-OB-18, FR-OB-25). What is
- *  open comes from the server; a shadow order has none of them. */
+ *  open comes from the server, as in production; a shadow order is refused there. */
 export function OrderHoldActions({ o }: { o: OrderDetail }) {
   const refresh = useRefreshOrder(o.id)
   const notices = useNotices()
+  const refused = useTestRunRefusal()
   const [cancelling, setCancelling] = useState(false)
   const [sheet, setSheet] = useState(false)
   const [choice, setChoice] = useState<string | null>(null)
@@ -62,7 +63,7 @@ export function OrderHoldActions({ o }: { o: OrderDetail }) {
         <ActionButton size="sm" permission={OPERATE} onAction={() => setSheet(true)}>{conflict ? 'Compare the 945s' : 'Release hold'}</ActionButton>
       )}
       <ConfirmAction open={cancelling} onOpenChange={setCancelling} title={`Cancel order ${name}?`} description={NOTHING_WRITTEN} destructive
-        confirmLabel="Cancel order" reason={{ label: 'Why it is cancelled' }} errorMessages={errorMessages} onConfirm={(why) => cancel.mutateAsync(why)} />
+        confirmLabel="Cancel order" reason={{ label: 'Why it is cancelled' }} errorMessages={errorMessages} onConfirm={(why) => cancel.mutateAsync(why).catch(refused)} />
       <FormSheet open={sheet} onOpenChange={setSheet} title={conflict ? 'Two 945s for this order' : 'Release hold'}
         description={conflict ? 'The applied 945 set the quantities; the second is stored and changed nothing.'
           : 'This order was cancelled at source after its 940. Decide where it goes.'}>
@@ -84,7 +85,7 @@ export function OrderHoldActions({ o }: { o: OrderDetail }) {
       </FormSheet>
       <ConfirmAction open={choice !== null} onOpenChange={(v) => { if (!v) setChoice(null) }} title={picked ? `${picked.label}?` : ''} description={picked?.text}
         destructive={picked?.destructive} confirmLabel={picked?.label} reason={{ label: 'Why' }} errorMessages={errorMessages}
-        onConfirm={(why) => release.mutateAsync({ to: choice!, why })} />
+        onConfirm={(why) => release.mutateAsync({ to: choice!, why }).catch(refused)} />
     </>
   )
 }

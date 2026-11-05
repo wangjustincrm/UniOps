@@ -32,10 +32,11 @@ class LotRepository(Repository[LotRow]):
                    "bol", "our_reference", "applied", "shadow", "order_ref", "order_number", "partner_code", "partner_name",
                    "ship_to_city", "ship_to_postal", "document_id", "shipment_id")
     filterable = {"order_id": FilterRule(LotRow.order_id)}
+    meta_hidden = ("shadow",)
     labels = {"item_code": "Item", "qty_shipped_ea": "Qty EA", "sscc": "Pallet (SSCC)", "days_to_expiry": "Days to expiry",
               "order_ref": "Order ref", "order_number": "Internal no.", "partner_name": "Partner", "partner_code": "Partner code",
               "ship_to_city": "Ship-to city", "ship_to_postal": "Ship-to postal code", "document_id": "945 document",
-              "our_reference": "940 reference (N9*E1)", "bol": "BOL", "applied": "Applied", "shadow": "Shadow run"}
+              "our_reference": "940 reference (N9*E1)", "bol": "BOL", "applied": "Applied"}
     groupable = ("lot", "item_code", "expiry", "ship_date", "partner_name", "order_ref", "ship_to_city")
     summable = ("qty_shipped_ea",)
     default_sort = ("-ship_date", "lot")

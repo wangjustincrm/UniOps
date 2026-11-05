@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ActionButton, ConfirmAction, queryKeys, useNotices } from '@/platform-ui'
+import { useTestRunRefusal } from '@/features/common/testRun'
 import { ordersClient, send940, type OrderRead, type Send940Result } from './ordersApi'
 
 const OPERATE = 'sales.order.operate'
@@ -24,6 +25,7 @@ export function Send940({ o }: { o: OrderRead }) {
   const qc = useQueryClient()
   const [confirming, setConfirming] = useState(false)
   const notices = useNotices()
+  const refused = useTestRunRefusal()
   const m = useMutation({
     mutationFn: (replace: boolean) => send940(o.id, replace),
     onSuccess: async (r: Send940Result) => {
@@ -36,7 +38,6 @@ export function Send940({ o }: { o: OrderRead }) {
     },
   })
   const replace = REPLACEABLE.includes(o.fulfillment_status)
-  if (o.shadow || o.source_type === 'FROM_945') return null // Zoho's order; a FROM_945 order has already shipped
   if (!replace && !SENDABLE.includes(o.fulfillment_status)) return null
   return (
     <section aria-label="Send 940" className="flex flex-col gap-2 text-sm">
@@ -52,7 +53,7 @@ export function Send940({ o }: { o: OrderRead }) {
             confirmLabel="Replace 940"
             destructive
             errorMessages={errorMessages}
-            onConfirm={() => m.mutateAsync(true)}
+            onConfirm={() => m.mutateAsync(true).catch(refused)}
           />
         </>
       ) : (
