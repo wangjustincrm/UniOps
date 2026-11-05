@@ -157,3 +157,133 @@ async def test_search_by_bill_invoice_supplier_or_pa(db_session):
     assert await hits("Q_1") == ["D5002"]
     assert await hits("V_7") == []
     assert sorted(await hits("")) == ["D5001", "D5002"]
+
+
+def _prepayment(pa_number, vendor_id, amount, *, status="approved", approved=None,
+                currency="CAD", invoice_ids=()):
+    _exec("insert into payment_applications (id, pa_number, title, pa_type, status, source, "
+          "vendor_id, vendor_name, po_number, invoice_ids, payment_amount, currency, "
+          "approved_at, created_by, created_at, updated_at) values "
+          "(%s,%s,'t','prepayment',%s,'po',%s,'Prepaid Co','PO-T-1',%s::jsonb,%s,%s,%s,%s,"
+          "now(),now())",
+          (uuid.uuid4(), pa_number, status, vendor_id, json.dumps(list(invoice_ids)), amount,
+           currency, approved, uuid.uuid4()))
+
+
+def _claim(number, amount, *, claim_type="EXP", status="approved", approved=None,
+           currency="CAD"):
+    _exec("insert into expense_claims (id, claim_number, claim_type, status, employee_name, "
+          "currency, total_amount, tax_amount, net_amount, approved_at, created_at, updated_at) "
+          "values (%s,%s,%s,%s,'Pat Lee',%s,%s,0,%s,%s,now(),now())",
+          (uuid.uuid4(), number, claim_type, status, currency, amount, amount, approved))
+
+
+def _at(day):
+    return datetime(day.year, day.month, day.day, 12, tzinfo=timezone.utc)
+
+
+async def test_approved_prepayment_counts_without_an_nc_bill(db_session):
+    _vendors_table()
+    v = _vendor("0000010", "net30")
+    approved = date.today() - timedelta(days=3)
+    _prepayment("PA-T-0401", v, "230.00", approved=_at(approved))
+    _prepayment("PA-T-0402", v, "999.00", status="in_review")
+    _prepayment("PA-T-0403", v, "999.00", status="processed", approved=_at(approved))
+
+    got = await svc.items(db_session, "CAD", limit=1000)
+    assert got["total"] == 1 and got["amount"] == "230.00"
+    r = got["items"][0]
+    assert (r["doc_kind"], r["doc_key"], r["bill_no"]) == ("prepayment", "PA-T-0401", None)
+    assert r["pa_numbers"] == ["PA-T-0401"]
+    assert r["supplier_code"] == "0000010" and r["supplier_name"] == "Prepaid Co"
+    assert r["invoices"][0]["purchase_orders"] == ["PO-T-1"]
+    # Due on approval, whatever the vendor's own term says.
+    assert (r["payment_terms"], r["term_days"]) == ("prepayment", 0)
+    assert r["due_date"] == approved.isoformat() and r["bucket"] == "overdue_now"
+
+
+async def test_prepayment_already_on_an_nc_line_is_not_counted_twice(db_session):
+    _vendors_table()
+    v = _vendor("0000011", "net30")
+    _bill("D6001", "500.00", sc="0000011", day=date.today(), inv="P-1")
+    iid = uuid.uuid4()
+    _exec("insert into invoices (id, internal_ref, vendor_invoice_number, vendor_id, "
+          "vendor_name, amount, tax_amount, total_amount, currency, invoice_date, "
+          "due_date, status, created_at, updated_at) values "
+          "(%s,%s,'P-1',%s,'V',0,0,0,'CAD',current_date,current_date,'matched',now(),now())",
+          (iid, f"INV-{iid.hex[:8]}", v))
+    _prepayment("PA-T-0411", v, "500.00", approved=_at(date.today()), invoice_ids=[str(iid)])
+
+    got = await svc.items(db_session, "CAD", limit=1000)
+    assert [r["doc_key"] for r in got["items"]] == ["D6001"]
+    assert got["amount"] == "500.00"
+
+
+async def test_approved_claim_counts_and_travel_application_does_not(db_session):
+    _vendors_table()
+    approved = date.today() - timedelta(days=2)
+    _claim("EXP-T-0001", "130.00", approved=_at(approved))
+    _claim("MIL-T-0001", "377.30", claim_type="MIL", approved=_at(approved))
+    _claim("TRA-T-0001", "50.00", claim_type="TRA", approved=_at(approved))
+    _claim("EXP-T-0002", "999.00", status="submitted")
+    _claim("EXP-T-0003", "999.00", status="paid", approved=_at(approved))
+
+    got = await svc.items(db_session, "CAD", limit=1000)
+    assert sorted(r["doc_key"] for r in got["items"]) == ["EXP-T-0001", "MIL-T-0001"]
+    assert got["amount"] == "507.30"
+    r = next(x for x in got["items"] if x["doc_key"] == "EXP-T-0001")
+    assert r["doc_kind"] == "claim" and r["bill_no"] is None
+    assert r["supplier_name"] == "Pat Lee" and r["supplier_code"] is None
+    assert r["pa_numbers"] == ["EXP-T-0001"] and r["invoices"] == []
+    assert r["due_date"] == approved.isoformat()
+
+
+async def test_all_three_kinds_add_up_and_stay_off_the_missing_terms_list(db_session):
+    _vendors_table()
+    v = _vendor("0000012", "net30")
+    w = _vendor("0000013", None)                   # no term at all: undated
+    today = date.today()
+    _bill("D7001", "100.00", sc="0000012", day=today, inv="M-1")
+    _bill("D7002", "40.00", sc="0000013", day=today, inv="M-2")
+    _pa("PA-T-0501", v, ["M-1"])
+    _pa("PA-T-0502", w, ["M-2"])
+    _prepayment("PA-T-0503", w, "20.00", approved=_at(today))
+    _prepayment("PA-T-0504", v, "7.00", approved=_at(today), currency="USD")
+    _claim("EXP-T-0101", "3.00", approved=_at(today))
+
+    cad = next(c for c in (await svc.summary(db_session, "CAD"))["currencies"]
+               if c["currency"] == "CAD")
+    assert cad["total"] == "163.00" and cad["undated"] == "40.00"
+    usd = next(c for c in (await svc.summary(db_session, "USD"))["currencies"]
+               if c["currency"] == "USD")
+    assert usd["total"] == "7.00"
+
+    # Only the NC bill is on the work list, though its supplier also has a prepayment.
+    missing = await svc.missing_terms(db_session, "CAD")
+    assert [(m["supplier_code"], m["bills"], m["amount"]) for m in missing["items"]] \
+        == [("0000013", 1, "40.00")]
+
+
+async def test_search_and_sort_reach_prepayments_and_claims(db_session):
+    _vendors_table()
+    v = _vendor("0000014", "net30")
+    day = date.today()
+    _bill("D8001", "10.00", sc="0000014", day=day, inv="S-1")
+    _pa("PA-T-0601", v, ["S-1"])
+    _prepayment("PA-T-0602", v, "20.00", approved=_at(day))
+    _prepayment("PA-T-0603", v, "20.00", approved=_at(day))
+    _claim("EXP-T-0201", "30.00", approved=_at(day))
+
+    async def hits(q):
+        return [r["doc_key"] for r in (await svc.items(db_session, "CAD", q=q))["items"]]
+    assert await hits("PA-T-0602") == ["PA-T-0602"]
+    assert await hits("EXP-T-0201") == ["EXP-T-0201"]
+    assert await hits("pat lee") == ["EXP-T-0201"]
+    assert await hits("Prepaid Co") == ["PA-T-0602", "PA-T-0603"]
+
+    # Rows with no bill number share a sort value; the tiebreak keeps paging whole.
+    from app.core.list_sort import order_sql
+    order = order_sql("bill_no", "asc", svc.ITEM_SORT, tiebreak=svc.ITEM_TIEBREAK)
+    pages = [(await svc.items(db_session, "CAD", limit=1, offset=i, order=order))["items"][0]
+             ["doc_key"] for i in range(4)]
+    assert sorted(pages) == ["D8001", "EXP-T-0201", "PA-T-0602", "PA-T-0603"]

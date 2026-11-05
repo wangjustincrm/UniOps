@@ -42,6 +42,7 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
     submitted_at: Mapped[datetime | None] = mapped_column(nullable=True)
     # Written by the payment executor when the PA is paid (see crud.payment_execute).
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     cost_center_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     budget_account_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # EPMS Direct PA (source='direct'): the department it is charged to.
