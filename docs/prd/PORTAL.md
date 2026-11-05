@@ -1,9 +1,13 @@
 # UniOps Portal — Product Requirements Document
 
-**Version:** 2.5
+**Version:** 2.6
 **Date:** 2026-11-03
 **Status:** In Production
 **Scope:** Portal web app (sign-in, launcher, Task Inbox, platform administration) and the platform services it administers: identity service (sign-in, MFA, password policy, users, roles, access control), approval engine (workflows, routing, delegation, re-sync), task-notification outbox, master-data service (MDM), file service, Data Maintenance and the AI Assistant panel.
+
+**What changed in version 2.6** (2026-11-05)
+
+- New additional-only role HR, for the people who run Staff (§4.2, EMPLOYEES.md §8).
 
 **What changed in version 2.5** (2026-11-03)
 
@@ -319,13 +323,14 @@ Roles are a fixed built-in set; they cannot be created or renamed in the UI.
 | auditor | Auditor | |
 | erp_pa_officer | ERP PA Officer | Additional role only |
 | payment_officer | Payment Officer | Additional role only |
+| hr | HR | Additional role only; any number of holders. Holds the four Staff permissions (EMPLOYEES.md §8). |
 | system_admin | System Admin | |
 
 | FR ID | Requirement |
 |---|---|
 | **ROLE-001** | Every user has one primary role and any number of additional roles. Their effective roles and permissions are the union of both, re-read on every request (no re-login needed). |
 | **ROLE-002** | **Posts** (GM, OPM, Procurement Manager, Finance Manager, Finance Director, Vendor Manager) can each be held by only one active user, counting primary and additional roles together. Assigning a post that someone else holds is refused with a message naming the holder. |
-| **ROLE-003** | ERP PA Officer, Payment Officer and Finance Director cannot be primary roles; an attempt is refused with a message pointing to Additional Roles. |
+| **ROLE-003** | ERP PA Officer, Payment Officer, Finance Director and HR cannot be primary roles; an attempt is refused with a message pointing to Additional Roles. |
 | **ROLE-004** | Changing a user's primary role, department, Supervisor or active status re-routes their in-flight approvals automatically (§6.4). The save reports how many documents were re-synced; a re-sync failure does not undo the user change. *Changing only additional roles does not trigger a re-sync* (**Open**, §14). |
 
 Role-by-role business permissions and document visibility scopes are specified in EPMS.md §1.1–§1.3.
@@ -379,6 +384,7 @@ The identity service holds switchable separation-of-duties rules. Anyone can rea
 | Section / page | Route | Access |
 |---|---|---|
 | Company Settings, Security, Units of Measure, Currency Settings, Notification Settings (incl. Task Notifications), Remittance Advice, Approval Workflows, ERP MDM, NC Sync, WMS Sync | `/admin` | System Admin |
+| Staff (EMPLOYEES.md) — MDM group | `/mdm/staff`, `/mdm/staff/import`, `/mdm/staff/department-mapping`, `/mdm/staff/nc-todo` | `employee.view` (Import: `employee.import`) |
 | Users (§5.5) — MDM group | `/mdm/users` | System Admin |
 | Departments (§5.4) — MDM group | `/mdm/departments` | System Admin |
 | Data Maintenance (§5.14) | `/admin/data-maintenance` | System Admin or `data_maintenance` |

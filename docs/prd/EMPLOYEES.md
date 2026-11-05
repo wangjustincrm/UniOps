@@ -1,11 +1,21 @@
 # UniOps Staff (Employee Master) & ADP Roster Import — Product Requirements Document
 
-**Version:** 0.1
-**Date:** 2026-11-03
-**Status:** Proposed: decisions recorded 2026-11-02; not started
+**Version:** 0.3
+**Date:** 2026-11-04
+**Status:** First version built (not yet released); decisions recorded 2026-11-02
 **Scope:** A new employee master in UniOps, kept up to date from the ADP Workforce Now roster that HR exports every two weeks; creating UniOps user accounts from employee records; and a to-do list that keeps the NC65 HR person records in step with UniOps, checked automatically by reading NC.
 
-**What this version contains** (v0.1, 2026-11-03)
+**What changed in v0.3** (2026-11-05)
+
+- New additional-only role HR holds all four Staff permissions (§8).
+- An employee who is not in NC is a notice, not a to-do: people go into NC only as needed (NCT-006). The Add person to-do is removed.
+
+**What this version contains** (v0.2, 2026-11-04)
+
+- Built: the Staff pages, ADP import, department mapping, Create user and bulk create, NC to-dos, the read-back and the reconciliation report. Not built yet: UGEN-005 and UGEN-006 (§6.2).
+- Changed while building: reading NC is always a full read (NCR-001), a person whose NC code differs has its own state (NCR-003), to-dos can be closed in bulk (NCT-002), the original file is kept with the import (NFR-002), the NC department code is the UniOps department's own code (MAP-004), and the user link is the ERP person code (UGEN-003).
+
+**Earlier** (v0.1, 2026-11-03)
 
 - First draft. The module is called **Staff** in the UI and lives in Portal's **MDM** group, next to Users and Departments (§2.1). It records the decisions taken on 2026-11-02, the findings from the real ADP roster, the production user list and NC, and the test of NC's import interface for persons (§10).
 
@@ -166,7 +176,7 @@ ADP departments are payroll groups. They are coarser than UniOps departments and
 | **MAP-001** | An admin page maps each **ADP department name** either to one UniOps department, or to **Choose per employee**. It needs `employee.edit`. |
 | **MAP-002** | An ADP department name seen for the first time is **unmapped**. The preview lists it. Apply still updates the employee's ADP department, but leaves their UniOps department unchanged and flags them as needing a department. |
 | **MAP-003** | The UniOps department is a **default, not a rule**. The import sets it from the mapping only when the employee is new or their ADP department changed. A department chosen by hand otherwise survives later imports. For *Choose per employee*, the import never sets it. |
-| **MAP-004** | Each UniOps department records its **NC department code**. NC to-dos use it to tell HR which NC department to choose (§7). |
+| **MAP-004** | A UniOps department's **code is its NC department code** (0100 to 0113). NC to-dos use it to tell HR which NC department to choose (§7). A department that NC does not have, such as Business Development, cannot show as different from NC. |
 
 Initial mapping, from the 2026-11-02 roster (HR to confirm):
 
@@ -208,10 +218,12 @@ NC's 0102 Purchasing is marked "NOT USE" in NC and is not mapped.
 |---|---|
 | **UGEN-001** | The Staff list and employee detail have **Create user** for an employee who has no linked user and is not Left. It needs the existing permission to manage users. |
 | **UGEN-002** | The form is the normal user form (PORTAL.md USR-002), filled with defaults: full name = display name, email = work email, department = UniOps department, ERP person code = employee number, primary role = Requester, Supervisor empty. Every field can be changed before saving (D2), except the ERP person code. It is the link to the employee and is changed only through EMP-006. |
-| **UGEN-003** | On save, the user is linked to the employee. One employee has at most one user. |
+| **UGEN-003** | On save, the user is linked to the employee: the link is the user's ERP person code being equal to the employee number. One employee has at most one user. |
 | **UGEN-004** | **Bulk create** from the list: tick employees and create users with the defaults above, all as Requesters. Rows that fail (for example, no email, or an email already in use) are reported, and the others are kept. Temporary passwords are shown once, as in USR-005 today. |
 
 ### 6.2 Adding a user without an employee
+
+*UGEN-005 and UGEN-006 are not built yet. They should go live after the first import and after every active user has been classified, because until then a new user could not meet the rule.*
 
 | FR ID | Requirement |
 |---|---|
@@ -248,12 +260,11 @@ NC65 keeps people in its **HR module**. HR is enabled for the Canadian company, 
 
 | Trigger | To-do | What HR does in NC |
 |---|---|---|
-| New ADP employee (import) or new Non-ADP employee | **Add person** | Create the person in NC HR with code = employee number, the name, NC department (MAP-004) and person category *Regular employee* (0101). |
 | UniOps department changed | **Change department** | Transfer the person to the NC department shown. |
 | Marked Left | **Terminate** | Process the departure in NC HR (person category *Left*, 0201). |
 | Reinstated | **Rehire** | Reverse the departure in NC HR. |
 | Employee number corrected (EMP-006) | **Change code** | Change the NC person code from the old number to the new one. |
-| Read-back finds a mismatch with no open to-do (§7.3) | **Fix mismatch** | As described on the item. |
+| Read-back finds a difference with no open to-do (§7.3); Not in NC is not one (NCT-006) | **Fix mismatch** | As described on the item. |
 
 Name and email changes do not create to-dos. NC uses the person for document makers and claim payees, and the NC name is informational.
 
@@ -262,18 +273,19 @@ Name and email changes do not create to-dos. NC uses the person for document mak
 | FR ID | Requirement |
 |---|---|
 | **NCT-001** | The **NC To-do** page lists open and closed items: employee number, name, type, target values (NC department code and name, person category, new code), created at, created by (the import or the user), closed at, and how it was closed. It follows the standard list rules (EMP-001). It can be exported to XLSX so that it can be worked from a printout. |
-| **NCT-002** | A to-do **closes automatically** when the read-back (§7.3) shows NC in the target state. HR can also close it by hand with a reason, for example "not needed: temporary contractor". |
+| **NCT-002** | A to-do **closes automatically** when the read-back (§7.3) shows NC in the target state. HR can also close one or many by hand with a reason, for example "not needed: temporary contractor". A to-do closed by hand is not raised again by the read-back for the same difference. |
 | **NCT-003** | A new to-do for an employee supersedes an open one of the same type. For example, two department changes in a row leave one open to-do, with the latest department. |
 | **NCT-004** | Holders of the new permission `employee.nc_todo` get **one Task Inbox task** while any to-do is open: "NC person updates pending: N". It opens the NC To-do page and closes itself when none are left. It follows the Task Inbox and notification-outbox rules (PORTAL.md §3.3, §7). |
 | **NCT-005** | A to-do open for longer than a configurable number of days (default 14, one payroll cycle) is highlighted on the page and in the task. |
+| **NCT-006** | Not every employee belongs in NC, and HR adds people there only as needed. An employee who is not in NC raises **no to-do and no task**. It is a notice: the NC To-do page shows how many there are, the reconciliation report lists them, and the Staff list can filter on them. To add someone, create the person in NC HR with code = employee number, the name, NC department (MAP-004) and person category *Regular employee* (0101); the next read-back shows them In step. Nobody is asked to change a person NC has never had, so a department change, Left, reinstatement or number correction on such an employee raises no to-do either. |
 
 ### 7.3 Reading NC back
 
 | FR ID | Requirement |
 |---|---|
-| **NCR-001** | UniOps reads NC persons on the existing ERP master-data schedule (PORTAL.md §5.13). This is a **read-only check**. It never creates or changes employees or users. |
+| **NCR-001** | UniOps reads NC persons after the existing ERP master-data sync (PORTAL.md §5.13), after every import, and on **Check NC now**. This is a **read-only check**. It never creates or changes users, and on employees it changes only the NC state. It always reads the **complete** list: NC lists enabled people only, so a person terminated in NC is seen only by being absent. The person mirror cannot show that, and it keeps old rows after a code change. |
 | **NCR-002** | NC persons are matched to employees by **NC internal key** once known, and by person code before that. A person whose code changes in NC therefore stays the same person and does not leave an outdated duplicate. A person who disappears from NC is marked *not in NC*. |
-| **NCR-003** | For each employee, the NC state is one of: **In step**; **Not in NC**; **Different department**; **Different status** (Left in UniOps, active in NC, or the reverse); or **Not in UniOps** (an NC person with no employee). |
+| **NCR-003** | For each employee, the NC state is one of: **In step**; **Not in NC**; **Different department**; **Different status** (Left in UniOps, active in NC); **Different code** (NC has the person under another code); or **Not in UniOps** (an NC person with no employee). |
 | **NCR-004** | A **reconciliation report** lists every difference across the whole population, not only open to-dos. On 2026-11-02, NC had 74 active persons who are not on the ADP roster. Many are former staff never terminated in NC, and some have no name. The first report becomes the clean-up list for HR. |
 
 ---
@@ -284,12 +296,12 @@ Employee data is personal information. It is **not** readable by every signed-in
 
 | Permission key | Allows | Default holders |
 |---|---|---|
-| `employee.view` | Staff list and detail, NC To-do page, reconciliation report | System Admin |
-| `employee.edit` | Edit employees, Non-ADP create, Mark as Left / Reinstate, department mapping | System Admin |
-| `employee.import` | Upload, preview and apply ADP imports; import history and original files | System Admin |
-| `employee.nc_todo` | Close to-dos by hand; receives the Task Inbox task | System Admin |
+| `employee.view` | Staff list and detail, NC To-do page, reconciliation report | System Admin, HR |
+| `employee.edit` | Edit employees, Non-ADP create, Mark as Left / Reinstate, department mapping | System Admin, HR |
+| `employee.import` | Upload, preview and apply ADP imports; import history and original files | System Admin, HR |
+| `employee.nc_todo` | Close to-dos by hand; receives the Task Inbox task | System Admin, HR |
 
-HR staff get these through Access Control (PORTAL.md §4.3) as additional roles. Correcting an employee number (EMP-006) is for System Admin only. User creation keeps its existing permission.
+HR staff get these through the **HR** role, which is additional-only: they keep their own primary role and are given HR in Access Control (PORTAL.md §4.2). Any number of people can hold it. Correcting an employee number (EMP-006) is for System Admin only. User creation and Apply to user keep their existing permission, so HR cannot do them.
 
 The AI Assistant's guide layer must describe the Staff module, the import and the NC to-dos when they are built. Employee data is only available to the Assistant for users who hold `employee.view`.
 
@@ -323,7 +335,7 @@ NC65's external exchange interface (XChange) has a person-record import. It was 
 | ID | Requirement |
 |---|---|
 | **NFR-001** | Preview of a 500-row roster returns within 10 seconds; apply within 30 seconds. |
-| **NFR-002** | Uploaded roster files are stored in the file service and can be read only by `employee.import` holders. They are kept for 24 months, then deleted. The import result rows stay. |
+| **NFR-002** | The uploaded roster file is stored with its import record and can be read only by `employee.import` holders. It should be kept for 24 months, then deleted, and the import result rows stay. The deletion is not built yet. |
 | **NFR-003** | Every change to an employee is in its history (§3). Imports, Left/Reinstate, number corrections and manual to-do closes are also audit events with user and time. |
 | **NFR-004** | Lists and forms follow UniOps UI conventions: English-only UI, plant-local dates, standard sortable lists with locked headers, and no date-only values shifted by time zone. |
 
