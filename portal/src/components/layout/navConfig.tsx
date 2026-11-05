@@ -13,7 +13,7 @@
  */
 import {
   Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark, CalendarClock, ShieldCheck, GitBranch,
-  Network, Repeat, Warehouse, Layers, Users, Building2,
+  Network, Repeat, Warehouse, Layers, IdCard, Users, Building2,
 } from 'lucide-react'
 
 // MRP has no single landing tile like the other modules — Portal links
@@ -103,6 +103,7 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
     title: 'MDM',
     collapsible: { icon: Layers },
     items: [
+      { label: 'Staff',       icon: IdCard,    href: 'portal:/mdm/staff',       permission: 'employee.view' },
       { label: 'Users',       icon: Users,     href: 'portal:/mdm/users',       adminOnly: true },
       { label: 'Departments', icon: Building2, href: 'portal:/mdm/departments', adminOnly: true },
     ],

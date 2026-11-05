@@ -266,6 +266,8 @@ const EPMS_TYPE_LABELS: Record<string, string> = {
   // services/nc_purchase_sync/error_tasks.py); system_admin only.
   import_erp_vendor: 'Import ERP Vendor',
   resolve_nc_sync_error: 'Resolve NC Sync Error',
+  // mdm-api services/nc_readback.py: one standing task for the whole NC To-do list.
+  resolve_nc_person_todos: 'NC Person Updates',
   // Standing finance-api tasks whose subject is a set of NC rows, not a
   // document: services/jv_validation_tasks.py and ap_duplicate_invoice_tasks.py.
   resolve_jv_validation: 'Resolve JV Validation Findings',
@@ -561,6 +563,9 @@ export default function PortalHome() {
           path = ''
           selfHref = '/admin?section=nc_sync'
         }
+      } else if (t.document_type === 'nc_person') {
+        path = ''
+        selfHref = '/mdm/staff/nc-todo'
       } else if (isVms) {
         module = 'VMS'; base = VMS_URL
         path = vmsDeeplinkPath(t.document_type, t.document_id)
