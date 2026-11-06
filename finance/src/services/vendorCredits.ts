@@ -40,9 +40,10 @@ export interface CreditSuggestResponse {
 /** `docKind` must be 'pa' or 'pa_dir' — the backend 422s for anything else
  * (in particular 'expense_claim', which never takes vendor credits). Callers
  * must filter batch lines to those two kinds before calling this. */
-export const suggestCredits = (docKind: string, docId: string) =>
+/** `amount`: what a batch line pays, which can be only part of the PA. */
+export const suggestCredits = (docKind: string, docId: string, amount?: string) =>
   financeApi.get<CreditSuggestResponse>(
-    `/vendor-credits/suggest?doc_kind=${docKind}&doc_id=${docId}`)
+    `/vendor-credits/suggest?doc_kind=${docKind}&doc_id=${docId}${amount ? `&amount=${amount}` : ''}`)
 
 export interface PlannedApplication {
   credit: CreditSuggestion

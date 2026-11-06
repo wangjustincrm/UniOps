@@ -200,6 +200,8 @@ export interface CreditSuggestion {
 export interface CreditSuggestResponse {
   /** Decimal-as-string — Number() before arithmetic. */
   gross: string
+  /** Invoices of this PA already paid in a Finance payment batch; gross is what is left. */
+  already_paid: string
   suggested: CreditSuggestion[]
   /** Decimal-as-string — Number() before arithmetic. */
   credit_applied: string
