@@ -123,9 +123,19 @@ async def test_change_password_and_audit(client, test_engine, db_session):
     assert r2.status_code == 200
 
 
-async def test_register_conflict(client, test_engine):
-    u = await make_user(test_engine)
+async def test_nobody_can_register_themselves(client, test_engine, db_session):
+    """★ SEC-001. Anyone could POST here, through the EPMS gateway, and choose
+    their own role. Accounts come from administrators; there is no such route."""
+    from app.models.user import User
+    email = "walk-in@example.com"
     r = await client.post("/identity/v1/auth/register", json={
-        "email": u.email, "password": "Whatever123!", "full_name": "Dup",
+        "email": email, "password": "Whatever123!", "full_name": "Walk In",
+        "role": "system_admin",
     })
-    assert r.status_code == 409
+    assert r.status_code == 404
+    assert (await db_session.execute(select(User).where(User.email == email))).first() is None
+    # The admission: a real account still signs in.
+    u = await make_user(test_engine)
+    ok = await client.post("/identity/v1/auth/login",
+                           json={"email": u.email, "password": "TestPass1!"})
+    assert ok.status_code == 200, ok.text

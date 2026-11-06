@@ -1,7 +1,7 @@
 # UniOps Portal — Product Requirements Document
 
-**Version:** 2.6
-**Date:** 2026-11-05
+**Version:** 2.7
+**Date:** 2026-11-06
 **Status:** In Production
 **Scope:** Portal web app (sign-in, launcher, Task Inbox, platform administration) and the platform services it administers: identity service (sign-in, MFA, password policy, users, roles, access control), approval engine (workflows, routing, delegation, re-sync), task-notification outbox, master-data service (MDM), file service, Data Maintenance and the AI Assistant panel.
 
@@ -746,7 +746,7 @@ EPMS Admin keeps Email Settings (PO-to-vendor SMTP and template), PDF Templates,
 
 | FR ID | Requirement | Status |
 |---|---|---|
-| **SEC-001** | Account creation must be possible only through administrator user management or ERP import. Self-registration must not exist, and a caller must never be able to choose their own role. | *A public registration endpoint, reachable through the EPMS API gateway, accepts a caller-chosen role including System Admin* — **Defect** |
+| **SEC-001** | Account creation must be possible only through administrator user management or ERP import. Self-registration must not exist, and a caller must never be able to choose their own role. | **Built** (2026-11-06: the public registration endpoint was removed). |
 | **SEC-002** | Repeated failed password and MFA-code attempts must be throttled or locked out. | **Not implemented** |
 | **SEC-003** | Secrets (SMTP passwords) must never be returned to non-administrators. | **Defect** (EMAIL-SPLIT-006) |
 | **SEC-004** | Deactivation and role changes must take effect promptly on every API. | **Defect** (SES-003) |
@@ -762,7 +762,7 @@ EPMS Admin keeps Email Settings (PO-to-vendor SMTP and template), PDF Templates,
 
 | ID | Item | Status |
 |---|---|---|
-| PO-01 | Public self-registration with a caller-chosen role (incl. System Admin) through the gateway (SEC-001) | Defect |
+| PO-01 | Public self-registration with a caller-chosen role (incl. System Admin) through the gateway (SEC-001) | Fixed 2026-11-06: the endpoint is removed |
 | PO-02 | No throttling or lock-out on password or MFA-code attempts (SEC-002) | Not implemented |
 | PO-03 | SMTP passwords returned to every signed-in user when the company configuration is read (EMAIL-SPLIT-006) | Defect |
 | PO-04 | Company-configuration changes accepted from any `admin_panel` holder (Finance Manager and Vendor Manager by default), not only System Admin (§5.1) | Defect |

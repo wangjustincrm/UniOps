@@ -9,7 +9,7 @@ This folder holds the **authoritative, maintained PRD for every UniOps module**.
 
 | Module | Document | Version | Status | Apps / services |
 |---|---|---|---|---|
-| Portal & platform | [PORTAL.md](PORTAL.md) | 2.6 | In production | portal, identity-api, approval-api, mdm-api, file-api |
+| Portal & platform | [PORTAL.md](PORTAL.md) | 2.7 | In production | portal, identity-api, approval-api, mdm-api, file-api |
 | EPMS — procurement | [EPMS.md](EPMS.md) | 2.49 | In production | epms, epms-api |
 | OA — reimbursement & travel | [OA.md](OA.md) | 3.4 | In production | oa, expense-api |
 | Finance | [FINANCE.md](FINANCE.md) | 2.22 | In production | finance, finance-api |
