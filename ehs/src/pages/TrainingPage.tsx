@@ -299,7 +299,8 @@ function NewSessionForm({ onClose }: { onClose: () => void }) {
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Course">
-          <CoursePicker courses={courses.data ?? []} value={courseId} onChange={setCourseId} />
+          <CoursePicker courses={courses.data ?? []} value={courseId} onChange={setCourseId}
+                        loading={courses.isLoading} failed={courses.isError} />
         </Field>
         <Field label="Title" hint="Leave blank to use the course name">
           <input className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)}

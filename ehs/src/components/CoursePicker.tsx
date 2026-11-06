@@ -18,10 +18,12 @@ function rank(name: string, term: string): number {
   return n.includes(term) ? 2 : 3
 }
 
-export function CoursePicker({ courses, value, onChange }: {
+export function CoursePicker({ courses, value, onChange, loading = false, failed = false }: {
   courses: PickableCourse[]
   value: string
   onChange: (id: string) => void
+  loading?: boolean
+  failed?: boolean
 }) {
   const chosen = courses.find((c) => c.id === value)
   const [term, setTerm] = useState('')
@@ -37,16 +39,21 @@ export function CoursePicker({ courses, value, onChange }: {
   }, [courses, term])
   const pick = (id: string) => { onChange(id); setTerm(''); setOpen(false) }
   return (
-    <div>
+    <div onBlur={(e) => {
+      // Clicking elsewhere closes it, and the chosen course reads again.
+      if (!e.currentTarget.contains(e.relatedTarget)) { setOpen(false); setTerm('') }
+    }}>
       <input
         className={inputClass}
         role="combobox"
         aria-expanded={open}
         aria-controls="course-picker-list"
         aria-label="Course"
-        placeholder="Type to find a course"
+        placeholder={chosen?.name ?? 'Type to find a course'}
         value={open ? term : chosen?.name ?? ''}
         onFocus={() => setOpen(true)}
+        // Still focused after a pick, when a click fires no focus event.
+        onClick={() => setOpen(true)}
         onChange={(e) => { setTerm(e.target.value); setOpen(true) }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && open && matches[0]) { e.preventDefault(); pick(matches[0].id) }
@@ -54,18 +61,27 @@ export function CoursePicker({ courses, value, onChange }: {
         }}
       />
       {open && (
+        // mouseDown keeps the focus in the input, so a blur cannot close the
+        // list before the click on an option lands.
         <ul id="course-picker-list" role="listbox" aria-label="Courses"
+            onMouseDown={(e) => e.preventDefault()}
             className="mt-1 max-h-48 overflow-y-auto rounded-lg border border-neutral-200 bg-white">
           {matches.map((c) => (
             <li key={c.id} role="option" aria-selected={c.id === value}>
-              <button type="button" onClick={() => pick(c.id)}
+              {/* preventDefault: the field is a label, and it would pass the
+                  click on to the input once this button has gone, reopening
+                  the list. */}
+              <button type="button" onClick={(e) => { e.preventDefault(); pick(c.id) }}
                       className="block min-h-[40px] w-full px-3 py-2 text-left text-sm text-neutral-800 hover:bg-neutral-50">
                 {c.name}
               </button>
             </li>
           ))}
           {matches.length === 0 && (
-            <li className="px-3 py-2 text-sm text-neutral-500">No course matches that.</li>
+            <li className="px-3 py-2 text-sm text-neutral-500">
+              {failed ? 'The courses could not be loaded. Close this form and try again.'
+                : loading ? 'Loading courses…' : 'No course matches that.'}
+            </li>
           )}
         </ul>
       )}
