@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.48
-**Date:** 2026-11-05
+**Version:** 2.49
+**Date:** 2026-11-06
 **Status:** In Production
+
+> **v2.49 (2026-11-06)** — A Finance payment batch can pay some of a PA's invoices (FINANCE.md FIN-PAY-10). Such a PA stays approved with those invoices shown paid; **Mark as Processed** on it pays only what is still owed and says how much was already paid (PAY-001).
 
 > **v2.48 (2026-11-05)** — Users and Departments moved in Portal from Admin to the new **MDM** group (PORTAL.md v2.6). The EPMS Admin "User Management has moved" card now opens Portal → MDM → Users (§3.6.3, §3.6.3a).
 >
@@ -2444,7 +2446,7 @@ Payment of an approved PA is executed in Finance; EPMS PA Detail offers the same
 
 | FR ID | Requirement |
 |---|---|
-| **PAY-001** | An `approved` PA is paid with **Mark as Processed** on PA Detail (or in Finance → Payments / payment batches). Allowed for **Payment Officer**, **Finance Manager** and **Finance BP** (primary or additional role) and System Admin (primary role only). AP Clerk cannot execute payments. |
+| **PAY-001** | An `approved` PA is paid with **Mark as Processed** on PA Detail (or in Finance → Payments / payment batches). A PA partly paid in a batch (FINANCE.md FIN-PAY-10) pays only what is still owed. Allowed for **Payment Officer**, **Finance Manager** and **Finance BP** (primary or additional role) and System Admin (primary role only). AP Clerk cannot execute payments. |
 | **PAY-002** | The confirmation dialog requires the funding account (bank account or credit card, same currency as the PA) and shows Gross / Vendor credits applied / Net before anything is sent. |
 | **PAY-003** | Segregation of duties: the PA's creator cannot execute its payment while the *self_payment* SoD rule is enabled. Payment is refused in a closed (soft or hard) fiscal period. |
 | **PAY-004** | A PO-route, non-prepayment PA that links no invoice is refused at payment while its PO still carries a payable invoice that no live PA claims. |

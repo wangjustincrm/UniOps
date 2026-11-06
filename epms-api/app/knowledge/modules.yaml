@@ -272,6 +272,15 @@ modules:
         batch can be cancelled (Cancel Draft, same roles that can pay): nothing
         is paid and its documents are simply no longer marked.
       - >-
+        Payment Batches has two tabs: Due for Payment and Batches. A PA with
+        several invoices that add up to the PA amount lists them under its row,
+        and any of them can be ticked on its own to pay just those; a PA whose
+        invoices do not add up says "Paid as a whole". The PA stays approved and
+        on the due list at what is still owed until its last invoice is paid,
+        then it becomes processed. An invoice is never paid twice, and a draft
+        line that no longer matches what is owed fails and asks for a new batch.
+        Mark as Processed on a part-paid PA in EPMS pays only the remainder.
+      - >-
         Bank reconciliation counts unposted vouchers (ones NC has not tallied
         yet) on the ledger side by default — "Include unposted vouchers" at the
         top of the period is ticked. The choice is saved on that period, so the
