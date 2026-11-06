@@ -89,6 +89,7 @@ async def test_on_their_own_file_a_person_sees_what_is_theirs(test_engine, db_se
         body = (await m.get(f"/api/v1/staff-file/{person.id}")).json()
     g = _groups(body)
     assert g["injury"] == 1 and g["incident"] == 1
+    assert g.get("near_miss", 0) == 0, "an incident is not a near miss"
     numbers = {r["number"] for r in body["rows"]}
     assert mine in numbers and others not in numbers
     # Registers they may not open, and nothing of theirs to open as theirs, are absent.
@@ -108,3 +109,22 @@ async def test_the_export_is_text_only(test_engine, db_session, hse_manager):
     assert [c.value for c in ws[1]] == ["Employee name", "Date", "Register type", "Number", "Title"]
     cell = ws.cell(row=2, column=1)
     assert cell.value == "=HYPERLINK(\"x\")" and cell.data_type == "s" and cell.quotePrefix
+
+
+async def test_near_misses_have_their_own_box(test_engine, db_session, hse_manager):
+    """★ Round 11, TC-15: the Incidents box counted both."""
+    _, hse = hse_manager
+    person = await make_user(test_engine, role="requester")
+    await _injury(db_session, person, person)
+    async with authed_client(make_token(person.id, person.role), db_session) as c:
+        made = await c.post("/api/v1/incidents", json={
+            "form_kind": "near_miss", "title": f"Slipped {uuid.uuid4().hex[:4]}",
+            "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+            "incident_type": "near_miss", "signature": SIGNATURE})
+        assert made.status_code in (200, 201), made.text
+        assert (await c.post(f"/api/v1/incidents/{made.json()['id']}/submit")).status_code == 200
+    body = (await hse.get(f"/api/v1/staff-file/{person.id}")).json()
+    g = _groups(body)
+    assert g["near_miss"] == 1 and g["incident"] == 1
+    kinds = {r["number"]: r["register"] for r in body["rows"]}
+    assert kinds[made.json()["incident_no"]] == "Near miss"

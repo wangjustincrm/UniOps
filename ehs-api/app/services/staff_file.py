@@ -52,21 +52,35 @@ class Category:
 
 _NOT_ANON = "i.status <> 'draft' AND NOT i.is_anonymous"
 
+
+def _reports(which: str, kind: str) -> str:
+    return f"""SELECT i.id, i.occurred_at AS at, i.incident_no AS ref, i.title,
+                      i.id AS link_id, '{kind}' AS kind
+                 FROM ehs_incidents i
+                WHERE {_NOT_ANON} AND {which}
+                  AND (i.reported_by = :uid OR EXISTS (
+                       SELECT 1 FROM ehs_incident_persons p
+                        WHERE p.incident_id = i.id AND p.user_id = :uid AND p.role <> 'injured'))"""
+
+
+def _own_reports(which: str, kind: str) -> str:
+    return f"""SELECT i.id, i.occurred_at AS at, i.incident_no AS ref, i.title, i.id AS link_id,
+                      '{kind}' AS kind
+                 FROM ehs_incidents i WHERE {_NOT_ANON} AND {which} AND i.reported_by = :uid"""
+
 CATEGORIES: tuple[Category, ...] = (
     Category(
         "incident", "Incidents", "ehs.incident.read",
-        f"""SELECT i.id, i.occurred_at AS at, i.incident_no AS ref, i.title,
-                   i.id AS link_id,
-                   CASE i.form_kind WHEN 'near_miss' THEN 'Near miss' ELSE 'Incident' END AS kind
-              FROM ehs_incidents i
-             WHERE {_NOT_ANON}
-               AND (i.reported_by = :uid OR EXISTS (
-                    SELECT 1 FROM ehs_incident_persons p
-                     WHERE p.incident_id = i.id AND p.user_id = :uid AND p.role <> 'injured'))""",
+        _reports("i.form_kind <> 'near_miss'", "Incident"),
         "/incidents/{link_id}",
-        own=f"""SELECT i.id, i.occurred_at AS at, i.incident_no AS ref, i.title, i.id AS link_id,
-                       CASE i.form_kind WHEN 'near_miss' THEN 'Near miss' ELSE 'Incident' END AS kind
-                  FROM ehs_incidents i WHERE {_NOT_ANON} AND i.reported_by = :uid""",
+        own=_own_reports("i.form_kind <> 'near_miss'", "Incident"),
+        own_path="/incidents/{link_id}"),
+    # ★ Round 11, TC-15: the box counted both under one name.
+    Category(
+        "near_miss", "Near misses", "ehs.incident.read",
+        _reports("i.form_kind = 'near_miss'", "Near miss"),
+        "/incidents/{link_id}",
+        own=_own_reports("i.form_kind = 'near_miss'", "Near miss"),
         own_path="/incidents/{link_id}"),
     Category(
         "injury", "Injuries", "ehs.incident.medical.read",
