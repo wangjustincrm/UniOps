@@ -1,5 +1,5 @@
 /**
- * HSE news: the ticker everybody sees at the top of My Actions, and the box
+ * HSE news: the list everybody sees at the top of My Actions, and the box
  * HSE writes it in.
  *
  * Round 10 (open box): "Create a news section on the my action register for
@@ -52,36 +52,29 @@ function when(at: string) {
 
 function Item({ n }: { n: NewsItem }) {
   return (
-    <span className="inline-flex items-center gap-2 whitespace-nowrap text-sm">
+    <li className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
       <span className="tabular-nums text-neutral-500">{when(n.posted_at)}</span>
       <Importance level={n.importance} />
-      <span className="text-neutral-900">{n.message}</span>
-    </span>
+      <span className="min-w-0 flex-1 text-neutral-900">{n.message}</span>
+    </li>
   )
 }
 
-/** For all staff, at the top of My Actions. Nothing when there is no news. */
-export function NewsTicker() {
+/** For all staff, at the top of My Actions. Nothing when there is no news.
+ *
+ *  ★ Round 11, TC-17: "place those messages under each other rather then beside
+ *  each other." It was a scrolling ticker; a list also reads on a phone. */
+export function NewsList() {
   const news = useNews()
   const items = news.data ?? []
   if (!items.length) return null
-  // A steady reading speed, however much there is.
-  const length = items.reduce((n, i) => n + i.message.length + 24, 0)
-  const style = { ['--ehs-ticker-duration' as string]: `${Math.max(20, Math.round(length / 6))}s` }
   return (
-    <section aria-label="HSE news" tabIndex={0}
-             className="ehs-ticker mb-1 flex items-center gap-3 overflow-hidden rounded-xl border border-neutral-200 bg-white px-3 py-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400">
-      <Megaphone className="h-4 w-4 shrink-0 text-primary-600" aria-hidden />
-      <div className="min-w-0 flex-1 overflow-hidden">
-        <div className="ehs-ticker-track flex w-max gap-10" style={style}>
-          {items.map((n) => <Item key={n.id} n={n} />)}
-          {/* The second copy is what makes the loop seamless; screen readers
-              and reduced motion get the list once. */}
-          {items.map((n) => (
-            <span key={`copy-${n.id}`} data-ticker-copy aria-hidden="true"><Item n={n} /></span>
-          ))}
-        </div>
-      </div>
+    <section aria-label="HSE news"
+             className="mb-1 flex items-start gap-3 rounded-xl border border-neutral-200 bg-white px-3 py-2">
+      <Megaphone className="mt-0.5 h-4 w-4 shrink-0 text-primary-600" aria-hidden />
+      <ul className="flex max-h-40 min-w-0 flex-1 flex-col gap-1.5 overflow-y-auto">
+        {items.map((n) => <Item key={n.id} n={n} />)}
+      </ul>
     </section>
   )
 }

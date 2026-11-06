@@ -4,7 +4,7 @@
  * Card list rather than a table: this is read one-handed on a phone, and a
  * table hides the one thing that matters, which is how late something is.
  */
-import { NewsDesk, NewsTicker } from '@/components/News'
+import { NewsDesk, NewsList } from '@/components/News'
 import { usePermissions } from '@/hooks/usePermissions'
 import TabLink from '@/components/TabLink'
 import { useState } from 'react'
@@ -122,7 +122,7 @@ export default function MyActionsPage() {
   const { can } = usePermissions()
   const news = (
     <>
-      <NewsTicker />
+      <NewsList />
       {can('ehs.settings.manage') && <NewsDesk />}
     </>
   )

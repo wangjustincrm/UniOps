@@ -72,23 +72,3 @@
 
   a[href]::after { content: "" }   /* no URL spam beside every link */
 }
-
-/* ── HSE news ticker (round 10) ─────────────────────────────────────────────
-   The items are rendered twice in a row and the row slides left by half its
-   width, so it loops without a jump. Paused while pointed at or focused, so it
-   can be read; still, as a plain list, for anyone who asks for less motion. */
-@keyframes ehs-ticker {
-  from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
-}
-.ehs-ticker-track {
-  animation: ehs-ticker var(--ehs-ticker-duration, 40s) linear infinite;
-}
-.ehs-ticker:hover .ehs-ticker-track,
-.ehs-ticker:focus-within .ehs-ticker-track {
-  animation-play-state: paused;
-}
-@media (prefers-reduced-motion: reduce) {
-  .ehs-ticker-track { animation: none; flex-wrap: wrap; }
-  .ehs-ticker-track [data-ticker-copy] { display: none; }
-}
