@@ -20,40 +20,53 @@ function Form({ onSearch }: { onSearch: (v: string[]) => void }) {
 }
 
 const box = () => screen.getByRole('combobox', { name: 'Status' })
-const search = async () => screen.findByRole('textbox', { name: 'Status: search' })
 
 describe('MultiSelect and the Enter rule', () => {
   it('Enter chooses while the list is open, then confirms and searches', async () => {
     const onSearch = vi.fn()
     render(<Form onSearch={onSearch} />)
-    fireEvent.click(box())
-    const input = await search()
-    fireEvent.change(input, { target: { value: 'ship' } })
-    fireEvent.keyDown(input, { key: 'Enter' })
+    fireEvent.change(box(), { target: { value: 'ship' } })
+    await screen.findByRole('option', { name: 'Shipped' })
+    fireEvent.keyDown(box(), { key: 'Enter' })
     expect(onSearch).not.toHaveBeenCalled()  // the first Enter chooses
-    expect(box()).toHaveTextContent('Shipped')
+    expect(screen.getByText('Shipped')).toBeInTheDocument()  // now a tag in the box
     expect(box()).toHaveAttribute('aria-expanded', 'false')
     fireEvent.keyDown(box(), { key: 'Enter' })
     expect(onSearch).toHaveBeenCalledWith(['Shipped'])  // the second Enter searches
   })
 
-  it('a click chooses several and stays open; more than two shows a count', async () => {
+  it('the box holds what is chosen and the list offers only the rest; a click leaves it open', async () => {
     render(<Form onSearch={vi.fn()} />)
-    fireEvent.click(box())
+    fireEvent.keyDown(box(), { key: 'ArrowDown' })
     const list = await screen.findByRole('listbox', { name: 'Status' })
-    for (const name of ['Sent', 'Shipped', 'On Hold']) fireEvent.click(within(list).getByRole('option', { name }))
-    expect(within(list).getByRole('option', { name: 'Sent' })).toHaveAttribute('aria-selected', 'true')
-    expect(box()).toHaveTextContent('Sent +2')
+    fireEvent.click(within(list).getByRole('option', { name: 'Sent' }))
+    fireEvent.click(within(list).getByRole('option', { name: 'On Hold' }))
+    expect(within(list).queryByRole('option', { name: 'Sent' })).toBeNull()
+    expect(within(list).getAllByRole('option')).toHaveLength(5)
+    expect(screen.getByRole('button', { name: 'Remove Sent' })).toBeInTheDocument()
+    expect(box()).toHaveAttribute('aria-expanded', 'true')
   })
 
-  it('arrows reach a row, Space chooses and stays open', async () => {
+  it('the first row is ready, arrows move it, and a tag goes with its x or Backspace', async () => {
     render(<Form onSearch={vi.fn()} />)
-    fireEvent.click(box())
-    const input = await search()
-    fireEvent.keyDown(input, { key: 'ArrowDown' })
-    fireEvent.keyDown(input, { key: ' ' })
-    expect(screen.getByRole('option', { name: 'To Fulfill' })).toHaveAttribute('aria-selected', 'true')
-    expect(box()).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.keyDown(box(), { key: 'ArrowDown' })
+    expect(await screen.findByRole('option', { name: 'To Fulfill' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.keyDown(box(), { key: 'ArrowDown' })
+    expect(screen.getByRole('option', { name: 'Sent' })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Sent' }))
+    expect(screen.queryByRole('button', { name: 'Remove Sent' })).toBeNull()
+    fireEvent.keyDown(box(), { key: 'ArrowDown' })
+    fireEvent.keyDown(box(), { key: 'Enter' })
+    expect(screen.getByRole('button', { name: 'Remove To Fulfill' })).toBeInTheDocument()
+    fireEvent.keyDown(box(), { key: 'Backspace' })
+    expect(screen.queryByRole('button', { name: 'Remove To Fulfill' })).toBeNull()
+  })
+
+  it('what matches nothing says so', async () => {
+    render(<Form onSearch={vi.fn()} />)
+    fireEvent.change(box(), { target: { value: 'zzz' } })
+    expect(await screen.findByText('No match')).toBeInTheDocument()
   })
 
   it('Enter on a real button is that button, not a search', () => {

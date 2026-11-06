@@ -1,8 +1,7 @@
-import { useId, useState, type KeyboardEvent } from 'react'
-import { Check, ChevronsUpDown } from 'lucide-react'
+import { useId, useRef, useState, type KeyboardEvent } from 'react'
+import * as RP from '@radix-ui/react-popover'
 import { cn } from '../lib/cn'
-import { Popover } from './Popover'
-import { CHOOSING } from './submitOnEnter'
+import { Chip } from './Chip'
 
 export interface MultiOption {
   value: string
@@ -21,66 +20,69 @@ export interface MultiSelectProps {
   className?: string
 }
 
-/** Several values from a long list: type to narrow it. Keys: ↑ ↓ move, Enter chooses and closes,
- *  Space chooses and stays open (with nothing typed), Escape closes. A click chooses and stays open. */
-export function MultiSelect({ options, values, onChange, label, placeholder = 'Any', disabled, className }: MultiSelectProps) {
+/** Several values from a list: what is chosen sits as tags in the box, and the box is where you type
+ *  to narrow the list below it, which offers only what is not chosen yet. Keys: ↑ ↓ open and move, Enter
+ *  chooses and closes (Enter on the closed box goes to the form), Backspace removes the last tag, Escape
+ *  closes. A click chooses and leaves the list open for the next one. */
+export function MultiSelect({ options, values, onChange, label, placeholder = 'Select…', disabled, className }: MultiSelectProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const [active, setActive] = useState(-1)  // nothing is chosen by Enter until a row is reached
-  const listId = `${useId()}-list`
+  const [active, setActive] = useState(0)
+  const input = useRef<HTMLInputElement>(null)
+  const box = useRef<HTMLDivElement>(null)
+  const id = useId()
+  const listId = `${id}-list`
   const q = query.trim().toLowerCase()
-  const shown = options.filter((o) => !q || `${o.label} ${o.hint ?? ''}`.toLowerCase().includes(q))
-  const toggle = (v: string) => onChange(values.includes(v) ? values.filter((x) => x !== v) : [...values, v])
-  const reset = (next: boolean) => {
-    setOpen(next)
-    setQuery('')
-    setActive(-1)
-  }
+  const shown = options.filter((o) => !values.includes(o.value) && (!q || `${o.label} ${o.hint ?? ''}`.toLowerCase().includes(q)))
+  const row = Math.min(active, shown.length - 1)
+  const show = () => { if (!disabled) setOpen(true) }
+  const close = () => { setOpen(false); setQuery(''); setActive(0) }
+  const add = (v: string) => { onChange([...values, v]); setQuery(''); setActive(0) }
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setActive((i) => Math.min(i + 1, shown.length - 1)) }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setActive((i) => Math.max(i - 1, 0)) }
-    else if (e.key === 'Enter') {
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (open) setActive(Math.min(row + 1, shown.length - 1)); else show() }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); if (open) setActive(Math.max(row - 1, 0)); else show() }
+    else if (e.key === 'Enter' && open) {
       e.preventDefault()
-      const row = shown[active >= 0 ? active : q ? 0 : -1]
-      if (row) toggle(row.value)
-      reset(false)
-    } else if (e.key === ' ' && !query && shown[active]) { e.preventDefault(); toggle(shown[active].value) }
+      if (shown[row]) add(shown[row].value)
+      close()
+    } else if (e.key === 'Escape' && open) { e.preventDefault(); e.stopPropagation(); close() }
+    else if (e.key === 'Backspace' && !query && values.length) onChange(values.slice(0, -1))
   }
-  const names = options.filter((o) => values.includes(o.value)).map((o) => o.label)
+  const name = (v: string) => options.find((o) => o.value === v)?.label ?? v
   return (
-    <Popover
-      open={open}
-      onOpenChange={reset}
-      className="w-[var(--radix-popover-trigger-width)] min-w-[14rem] p-1"
-      trigger={
-        <button type="button" role="combobox" aria-expanded={open} aria-controls={listId} aria-label={label} disabled={disabled}
-          className={cn('flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-white px-3 text-left text-sm',
-            'disabled:cursor-not-allowed disabled:opacity-50', names.length === 0 && 'text-neutral-400', className)}>
-          <span className="truncate">{names.length === 0 ? placeholder : names.length <= 2 ? names.join(', ') : `${names[0]} +${names.length - 1}`}</span>
-          <ChevronsUpDown className="h-4 w-4 shrink-0 text-neutral-400" />
-        </button>
-      }
-    >
-      <input {...CHOOSING} autoFocus value={query} aria-label={`${label}: search`} aria-controls={listId} placeholder="Type to search…"
-        onChange={(e) => { setQuery(e.target.value); setActive(e.target.value ? 0 : -1) }} onKeyDown={onKey}
-        className="mb-1 h-9 w-full rounded-md border border-neutral-200 px-2 text-sm outline-none focus:border-primary-600" />
-      <ul id={listId} role="listbox" aria-multiselectable aria-label={label} className="max-h-64 overflow-y-auto">
-        {shown.length === 0 && <li className="px-2 py-2 text-sm text-neutral-400">No match</li>}
-        {shown.map((o, i) => {
-          const on = values.includes(o.value)
-          return (
-            <li key={o.value} role="option" aria-selected={on} onMouseEnter={() => setActive(i)} onClick={() => toggle(o.value)}
-              className={cn('flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm', i === active && 'bg-neutral-100')}>
-              <span aria-hidden className={cn('flex h-4 w-4 shrink-0 items-center justify-center rounded border',
-                on ? 'border-primary-600 bg-primary-600 text-white' : 'border-neutral-300 bg-white')}>
-                {on && <Check className="h-3 w-3" />}
-              </span>
-              <span className="truncate">{o.label}</span>
-              {o.hint && <span className="ml-auto truncate text-xs text-neutral-400">{o.hint}</span>}
-            </li>
-          )
-        })}
-      </ul>
-    </Popover>
+    <RP.Root open={open}>
+      <RP.Anchor asChild>
+        <div ref={box} onClick={(e) => { input.current?.focus(); if (!(e.target as HTMLElement).closest('button')) show() }}
+          className={cn('flex min-h-10 w-full cursor-text flex-wrap items-center gap-1 rounded-lg border border-neutral-200 bg-white px-2 py-1 text-sm',
+            'focus-within:border-primary-600 focus-within:ring-1 focus-within:ring-primary-600', disabled && 'cursor-not-allowed opacity-50', className)}>
+          {values.map((v) => (
+            <Chip key={v} removeLabel={`Remove ${name(v)}`} onRemove={() => onChange(values.filter((x) => x !== v))}>{name(v)}</Chip>
+          ))}
+          <input ref={input} role="combobox" aria-label={label} aria-expanded={open} aria-controls={listId} aria-autocomplete="list"
+            aria-activedescendant={open && shown[row] ? `${id}-${row}` : undefined} disabled={disabled} value={query}
+            placeholder={values.length ? '' : placeholder} onKeyDown={onKey}
+            onChange={(e) => { setQuery(e.target.value); setActive(0); show() }}
+            className="h-7 min-w-[5rem] flex-1 bg-transparent px-1 outline-none placeholder:text-neutral-400" />
+        </div>
+      </RP.Anchor>
+      <RP.Portal>
+        <RP.Content align="start" sideOffset={4} onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={(e) => e.preventDefault()}
+          onInteractOutside={(e) => { if (box.current?.contains(e.target as Node)) e.preventDefault(); else close() }}
+          onEscapeKeyDown={(e) => { e.preventDefault(); close() }}
+          className="z-50 w-[var(--radix-popover-trigger-width)] min-w-[12rem] rounded-lg border border-neutral-200 bg-white p-1 shadow-lg focus:outline-none">
+          <ul id={listId} role="listbox" aria-multiselectable aria-label={label} className="max-h-64 overflow-y-auto">
+            {shown.length === 0 && <li className="px-2 py-2 text-sm text-neutral-400">{q ? 'No match' : 'All chosen'}</li>}
+            {shown.map((o, i) => (
+              <li key={o.value} id={`${id}-${i}`} role="option" aria-selected={i === row} onMouseEnter={() => setActive(i)}
+                onMouseDown={(e) => e.preventDefault()} onClick={() => add(o.value)}
+                className={cn('flex cursor-pointer items-center gap-2 rounded-md px-3 py-1.5 text-sm', i === row && 'bg-primary-50')}>
+                <span className="truncate">{o.label}</span>
+                {o.hint && <span className="ml-auto truncate text-xs text-neutral-400">{o.hint}</span>}
+              </li>
+            ))}
+          </ul>
+        </RP.Content>
+      </RP.Portal>
+    </RP.Root>
   )
 }

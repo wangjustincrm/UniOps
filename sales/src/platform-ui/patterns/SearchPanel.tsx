@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
 import { Checkbox } from '../primitives/Checkbox'
 import { DateInput, DateTimeInput, NumberInput } from '../primitives/FieldInputs'
-import { MultiChoice } from '../primitives/MultiChoice'
+import { MultiSelect } from '../primitives/MultiSelect'
 import { Select } from '../primitives/Select'
 import { submitOnEnter } from '../primitives/submitOnEnter'
 import { Button } from '../primitives/shell'
@@ -132,7 +132,7 @@ function ValueInput({ field, draft, set, autoFocus }: { field: FieldMeta; draft:
   const label = `${field.label}: value`
   if (draft.op === 'is_null' || draft.op === 'not_null') return null
   if (field.type === 'enum') {
-    return <MultiChoice label={label} options={field.enum_values.map((v) => ({ value: v, label: v }))}
+    return <MultiSelect label={label} options={field.enum_values.map((v) => ({ value: v, label: v }))}
       values={draft.values} onChange={(values) => set({ values })} />
   }
   if (field.type === 'bool') {
