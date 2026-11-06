@@ -295,10 +295,15 @@ STATUS_VOCABULARY = "jhsc_rec_status"
 
 
 async def first_status(db: AsyncSession):
+    """New request, wherever HSE has moved it. Sort order alone is not enough:
+    an entry added to the list took sort 0, and every new recommendation then
+    opened as "Waiting on Parts"."""
     from app.models.vocabulary import VocabularyItem
     return (await db.execute(select(VocabularyItem).where(
         VocabularyItem.vocabulary_code == STATUS_VOCABULARY,
-        VocabularyItem.is_active.is_(True)).order_by(VocabularyItem.sort_order))).scalars().first()
+        VocabularyItem.is_active.is_(True)).order_by(
+            (VocabularyItem.code != "new_request"), VocabularyItem.sort_order)
+    )).scalars().first()
 
 
 async def set_status(db: AsyncSession, rec: JhscRecommendation, item_id: uuid.UUID):

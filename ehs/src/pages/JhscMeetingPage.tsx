@@ -502,6 +502,11 @@ function RecommendationList({
                     Where: {r.location_path.split('/').join(' › ')}
                   </span>
                 )}</span>
+                {r.status_label && (
+                  <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-700">
+                    {r.status_label}
+                  </span>
+                )}
                 <ReplyBadge rec={r} />
               </div>
               {r.sent_at ? (

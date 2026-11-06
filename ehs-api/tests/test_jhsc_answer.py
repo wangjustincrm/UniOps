@@ -285,3 +285,19 @@ async def test_answering_locks_the_recommendation_first(hse_manager, asked, test
         event.remove(test_engine.sync_engine, "before_cursor_execute", grab)
     assert got.status_code == 200, got.text
     assert any("ehs_jhsc_recommendations" in s and "FOR UPDATE" in s for s in seen)
+
+
+async def test_a_new_recommendation_starts_at_new_request_wherever_it_sorts(
+        hse_manager, asked, states, db_session):
+    """★ HSE added "Waiting on Parts" and it took the first place on the list;
+    every new recommendation then opened in it. Round 10 asked for New request."""
+    from app.models.vocabulary import VocabularyItem
+    states[0].code = "new_request"
+    db_session.add(VocabularyItem(
+        id=uuid.uuid4(), vocabulary_code="jhsc_rec_status", code=f"parts-{uuid.uuid4().hex[:4]}",
+        label="Waiting on Parts", sort_order=0, is_active=True, attrs={}, path="Waiting on Parts"))
+    await db_session.flush()
+    _, hse = hse_manager
+    person, _ = asked
+    _, rec = await _sent(hse, [person])
+    assert rec["status_label"] == "New request"
