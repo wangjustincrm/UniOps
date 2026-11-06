@@ -5,7 +5,7 @@ import { cn } from '../lib/cn'
 import { CopyChip } from './Copy'
 import { IconButton } from './IconButton'
 import { TrackingLink } from './TrackingLink'
-import { formatDate, formatDateTime, formatDuration, formatMoney, formatNumber, instant, statusTone, timeFromNow } from './format'
+import { dateAndTime, formatDate, formatDateTime, formatDuration, formatMoney, formatNumber, instant, statusTone, timeFromNow } from './format'
 import { useNow } from './useNow'
 
 // The standard cells (and detail values) of every list: one way to show a
@@ -13,6 +13,17 @@ import { useNow } from './useNow'
 
 export function DateTimeCell({ value }: { value: string | null | undefined }) {
   return <span className="whitespace-nowrap">{formatDateTime(value)}</span>
+}
+
+/** A date-time in a table: the day, the time under it. About half the width of one line. */
+export function StackedDateTimeCell({ value }: { value: string | null | undefined }) {
+  const { day, time } = dateAndTime(value)
+  return (
+    <span className="inline-flex flex-col whitespace-nowrap leading-tight" title={formatDateTime(value)}>
+      <span>{day}</span>
+      {time && <span className="text-xs text-neutral-500">{time}</span>}
+    </span>
+  )
 }
 
 export function DateCell({ value }: { value: string | null | undefined }) {

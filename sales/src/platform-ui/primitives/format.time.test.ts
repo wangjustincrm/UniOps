@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatDuration, formatNumber, timeFromNow } from './format'
+import { dateAndTime, formatDuration, formatNumber, timeFromNow } from './format'
 
 const NOW = new Date(2026, 10, 6, 12, 0).getTime()
 
@@ -23,5 +23,19 @@ describe('time from now', () => {
     expect(timeFromNow(null, NOW)).toBeNull()
     expect(formatNumber(null)).toBe('')
     expect(formatNumber('1200')).toBe('1,200')
+  })
+})
+
+describe('a moment in two parts', () => {
+  it('splits a date-time into its local day and time', () => {
+    const { day, time } = dateAndTime(new Date(2026, 10, 6, 18, 37).toISOString())
+    expect(day).toBe('Nov 6, 2026')
+    expect(time).toMatch(/^6:37/)
+  })
+  it('a date has no time, and keeps its day in any time zone', () => {
+    expect(dateAndTime('2026-11-18')).toEqual({ day: 'Nov 18, 2026', time: null })
+  })
+  it('no value is a dash', () => {
+    expect(dateAndTime(null)).toEqual({ day: '—', time: null })
   })
 })

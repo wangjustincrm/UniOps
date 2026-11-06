@@ -20,11 +20,11 @@ export { Tabs } from './primitives/Tabs'
 export { PageHeader } from './primitives/PageHeader'
 export { DetailList } from './primitives/DetailList'
 export {
-  BooleanCell, CountdownCell, DateTimeCell, DateCell, MoneyCell, NumberCell, RelativeCell, StatusCell, TagsCell,
+  BooleanCell, CountdownCell, DateTimeCell, DateCell, MoneyCell, NumberCell, RelativeCell, StackedDateTimeCell, StatusCell, TagsCell,
 } from './primitives/cells'
 export { columnsOf } from './primitives/columns'
 export {
-  formatDateTime, formatDate, formatDuration, formatTime, formatMoney, formatNumber, registerStatusTones, statusTone, timeFromNow,
+  dateAndTime, formatDateTime, formatDate, formatDuration, formatTime, formatMoney, formatNumber, registerStatusTones, statusTone, timeFromNow,
 } from './primitives/format'
 export { useNow } from './primitives/useNow'
 export { Autocomplete } from './primitives/Autocomplete'

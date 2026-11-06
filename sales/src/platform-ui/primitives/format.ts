@@ -10,6 +10,8 @@ import type { BadgeVariant } from './StatusBadge'
 
 const DATE_TIME = new Intl.DateTimeFormat('en-CA', { dateStyle: 'medium', timeStyle: 'short' })
 const TIME = new Intl.DateTimeFormat('en-CA', { timeStyle: 'medium' })
+const SHORT_TIME = new Intl.DateTimeFormat('en-CA', { timeStyle: 'short' })
+const LOCAL_DAY = new Intl.DateTimeFormat('en-CA', { dateStyle: 'medium' })
 // A calendar day in the same style as a date-time ("Nov 18, 2026"), read in UTC
 // from its own Y-M-D parts: the day never moves with the user's time zone.
 const DAY = new Intl.DateTimeFormat('en-CA', { dateStyle: 'medium', timeZone: 'UTC' })
@@ -20,6 +22,14 @@ export function formatDateTime(iso: string | null | undefined): string {
   if (DATE_ONLY.test(iso)) return formatDate(iso)
   const d = new Date(iso)
   return Number.isNaN(d.getTime()) ? iso : DATE_TIME.format(d)
+}
+
+/** A moment in two parts for a narrow column: the user's local day and time. A date-only value has no time. */
+export function dateAndTime(iso: string | null | undefined): { day: string; time: string | null } {
+  if (!iso) return { day: '—', time: null }
+  if (DATE_ONLY.test(iso)) return { day: formatDate(iso), time: null }
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? { day: iso, time: null } : { day: LOCAL_DAY.format(d), time: SHORT_TIME.format(d) }
 }
 
 /** A date-only value ("2026-10-30" → "Oct 30, 2026"), in the style of

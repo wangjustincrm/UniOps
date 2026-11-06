@@ -1,4 +1,4 @@
-import { Badge, CountdownCell, Hint, RelativeCell, StatusCell } from '@/platform-ui'
+import { Badge, CountdownCell, Hint, RelativeCell, StatusCell, dateAndTime } from '@/platform-ui'
 import type { OrderRead } from './ordersApi'
 import { orderStatusColour, shopifyBadges, statusDetailText } from './orderStatus'
 
@@ -12,16 +12,22 @@ export function OrderStatusBadge({ o }: { o: Pick<OrderRead, 'order_status' | 'o
   )
 }
 
-/** What the Status does not say: the fact, and how far away its time is. A time still to come turns red once it passes. */
+/** What the Status does not say, in two short lines: the fact and its day, then the time and how far
+ *  away it is. A time still to come turns red once it passes. */
 export function StatusDetail({ o }: { o: Pick<OrderRead, 'status_detail' | 'status_detail_at' | 'status_detail_kind'> }) {
   const text = statusDetailText(o)
   if (!text) return null
+  const at = o.status_detail_at
+  const { day, time } = dateAndTime(at)
   return (
-    <span className="block min-w-44 max-w-xs text-sm text-neutral-700">
-      <span className="line-clamp-2" title={text}>{text}</span>
-      {o.status_detail_at && (o.status_detail_kind === 'countdown'
-        ? <CountdownCell value={o.status_detail_at} className="text-xs" />
-        : <span className="text-xs text-neutral-500"><RelativeCell value={o.status_detail_at} /></span>)}
+    <span className="block max-w-56 leading-tight" title={text}>
+      <span className="line-clamp-2 text-neutral-800">{o.status_detail}{at ? ` ${day}` : ''}</span>
+      {at && (
+        <span className="flex flex-wrap gap-x-1 whitespace-nowrap text-xs text-neutral-500">
+          {time && <span>{time} ·</span>}
+          {o.status_detail_kind === 'countdown' ? <CountdownCell value={at} className="text-xs" /> : <RelativeCell value={at} />}
+        </span>
+      )}
     </span>
   )
 }
