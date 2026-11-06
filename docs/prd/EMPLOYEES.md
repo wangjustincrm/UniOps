@@ -1,9 +1,13 @@
 # UniOps Staff (Employee Master) & ADP Roster Import — Product Requirements Document
 
-**Version:** 0.3
+**Version:** 0.4
 **Date:** 2026-11-04
 **Status:** First version built (not yet released); decisions recorded 2026-11-02
 **Scope:** A new employee master in UniOps, kept up to date from the ADP Workforce Now roster that HR exports every two weeks; creating UniOps user accounts from employee records; and a to-do list that keeps the NC65 HR person records in step with UniOps, checked automatically by reading NC.
+
+**What changed in v0.4** (2026-11-06)
+
+- Saving a department mapping now fills in the department for employees waiting on it (MAP-005). It used to reach only later imports, which left people imported first on Needs department.
 
 **What changed in v0.3** (2026-11-05)
 
@@ -177,6 +181,7 @@ ADP departments are payroll groups. They are coarser than UniOps departments and
 | **MAP-002** | An ADP department name seen for the first time is **unmapped**. The preview lists it. Apply still updates the employee's ADP department, but leaves their UniOps department unchanged and flags them as needing a department. |
 | **MAP-003** | The UniOps department is a **default, not a rule**. The import sets it from the mapping only when the employee is new or their ADP department changed. A department chosen by hand otherwise survives later imports. For *Choose per employee*, the import never sets it. |
 | **MAP-004** | A UniOps department's **code is its NC department code** (0100 to 0113). NC to-dos use it to tell HR which NC department to choose (§7). A department that NC does not have, such as Business Development, cannot show as different from NC. |
+| **MAP-005** | Saving a mapping to a UniOps department also gives that department to every employee of that ADP department who is **waiting on Needs department**, and the page says how many. An employee with a department chosen by hand is not waiting and is not changed. Employees under *Choose per employee* keep waiting until someone picks their department. The new departments are compared with NC straight away, against the last NC read. |
 
 Initial mapping, from the 2026-11-02 roster (HR to confirm):
 

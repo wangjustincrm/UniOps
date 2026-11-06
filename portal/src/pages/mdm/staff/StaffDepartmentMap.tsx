@@ -15,6 +15,7 @@ export default function StaffDepartmentMap() {
   const qc = useQueryClient()
   const { can } = useStaffPerm()
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
   const { data } = useQuery<{ items: MapRow[] }>({
     queryKey: ['staff-department-map'], queryFn: () => mdmApi.get('/staff/department-map'),
@@ -30,23 +31,27 @@ export default function StaffDepartmentMap() {
 
   const save = async (row: MapRow, value: string) => {
     if (busy || !value) return
-    setBusy(true); setError('')
+    setBusy(true); setError(''); setNotice('')
     try {
-      await mdmApi.put('/staff/department-map', value === CHOOSE
+      const { applied } = await mdmApi.put<{ applied: number }>('/staff/department-map', value === CHOOSE
         ? { adp_department: row.adp_department, department_id: null, choose_per_employee: true }
         : { adp_department: row.adp_department, department_id: value, choose_per_employee: false })
       qc.invalidateQueries({ queryKey: ['staff-department-map'] })
       qc.invalidateQueries({ queryKey: ['staff-import-current'] })
+      qc.invalidateQueries({ queryKey: ['staff'] })
+      if (applied) setNotice(`${applied} waiting employee(s) now have this department.`)
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
 
   return (
     <StaffShell permission="employee.view">
       <p className="mb-3 text-sm text-neutral-500">
-        The department an import gives a new employee, or one whose ADP department changed. It is a default:
-        a department chosen by hand on an employee stays until their ADP department changes.
+        The department an import gives a new employee, or one whose ADP department changed. Saving also fills it in
+        for employees waiting on Needs department. It is a default: a department chosen by hand on an employee stays
+        until their ADP department changes.
       </p>
       {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+      {notice && <p className="mb-3 text-sm text-[#085E5E]">{notice}</p>}
       <div className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
         <div className="max-h-[calc(100vh-280px)] overflow-auto">
           <table className="w-full">

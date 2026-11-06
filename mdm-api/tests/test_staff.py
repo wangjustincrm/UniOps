@@ -316,6 +316,52 @@ async def map_dept(db, adp, department=None, choose=False):
 
 
 @pytest.mark.asyncio
+async def test_saving_a_mapping_reaches_employees_imported_before_it(client, db_session, nc):
+    """MAP-005: 2026-11-06, a first import ahead of the map left everyone on Needs department."""
+    finance = await dept(db_session)
+    await do_import(client, roster(row(), row("000053", email="b@example.com", dept="Other")))
+    assert (await employee(db_session)).needs_department is True
+    r = await client.put("/mdm/v1/staff/department-map",
+                         json={"adp_department": "Finance", "department_id": str(finance.id)})
+    assert r.json()["applied"] == 1
+    e = await employee(db_session)
+    assert e.department_id == finance.id and e.needs_department is False
+    assert (await employee(db_session, "000053")).needs_department is True
+
+
+@pytest.mark.asyncio
+async def test_saving_a_mapping_keeps_a_department_chosen_by_hand(client, db_session, nc):
+    finance, hand = await dept(db_session), await dept(db_session, "0105", "Quality Assurance")
+    await do_import(client, roster(row()))
+    e = await employee(db_session)
+    await client.patch(f"/mdm/v1/staff/{e.id}", json={"department_id": str(hand.id)})
+    r = await client.put("/mdm/v1/staff/department-map",
+                         json={"adp_department": "Finance", "department_id": str(finance.id)})
+    assert r.json()["applied"] == 0
+    assert (await employee(db_session)).department_id == hand.id
+
+
+@pytest.mark.asyncio
+async def test_choose_per_employee_leaves_them_waiting(client, db_session, nc):
+    await do_import(client, roster(row()))
+    r = await client.put("/mdm/v1/staff/department-map",
+                         json={"adp_department": "Finance", "department_id": None, "choose_per_employee": True})
+    assert r.json()["applied"] == 0
+    assert (await employee(db_session)).needs_department is True
+
+
+@pytest.mark.asyncio
+async def test_a_mapped_department_differing_from_nc_raises_a_todo_at_once(client, db_session, nc):
+    finance = await dept(db_session)
+    nc[:] = [person(dept="0104"), person("000300", dept="0103")]
+    await do_import(client, roster(row()))
+    assert not await todos(db_session)
+    await client.put("/mdm/v1/staff/department-map",
+                     json={"adp_department": "Finance", "department_id": str(finance.id)})
+    assert [t.type for t in await todos(db_session)] == ["fix_mismatch"]
+
+
+@pytest.mark.asyncio
 async def test_unmapped_updates_adp_department_and_flags(client, db_session, nc):
     await do_import(client, roster(row(dept="Brand New")))
     e = await employee(db_session)

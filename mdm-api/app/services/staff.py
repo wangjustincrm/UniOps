@@ -154,6 +154,16 @@ def _mapped_department(department_map: dict, adp_department: str | None):
     return mapping["department_id"], False
 
 
+async def apply_department_map(db: AsyncSession, adp_department: str, department_id: uuid.UUID, *, by) -> int:
+    """MAP-005: an import will not revisit these people, so saving the mapping has to."""
+    waiting = (await db.execute(select(Employee).where(
+        Employee.adp_department == adp_department, Employee.needs_department.is_(True)))).scalars().all()
+    for employee in waiting:
+        set_field(db, employee, "department_id", department_id, by=by, reason="Department mapping applied")
+        employee.needs_department = False
+    return len(waiting)
+
+
 async def apply_import(db: AsyncSession, imp: AdpImport, *, by: uuid.UUID | None) -> dict:
     """IMP-005. Classifies again from the stored file, so what is written matches
     the database now, not when the preview was taken. The caller's transaction

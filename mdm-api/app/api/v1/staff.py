@@ -417,7 +417,7 @@ class DepartmentMapUpdate(BaseModel):
 
 
 @router.put("/department-map")
-async def set_department_map(body: DepartmentMapUpdate, db: Db, _: EditDep):
+async def set_department_map(body: DepartmentMapUpdate, db: Db, payload: EditDep):
     if body.choose_per_employee == (body.department_id is not None):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "Pick a department, or Choose per employee")
@@ -427,7 +427,16 @@ async def set_department_map(body: DepartmentMapUpdate, db: Db, _: EditDep):
         db.add(row)
     row.department_id = body.department_id
     row.choose_per_employee = body.choose_per_employee
-    return {"ok": True}
+    applied = 0
+    if body.department_id is not None:
+        applied = await staff.apply_department_map(db, body.adp_department, body.department_id, by=_actor(payload))
+    if applied:
+        await db.flush()
+        latest = await nc_readback.latest_run(db)
+        if latest:
+            await nc_readback.evaluate(db, latest.persons)
+            await nc_readback.sync_task(db)
+    return {"ok": True, "applied": applied}
 
 
 # ── NC to-dos and read-back ──────────────────────────────────────────────────
