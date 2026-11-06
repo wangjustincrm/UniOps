@@ -277,6 +277,8 @@ async def verify(
         # once every action on that item is done.
         from app.crud.asset import back_in_service_if_done
         await back_in_service_if_done(db, action, user_id=user_id)
+        from app.crud.jhsc import action_closed
+        await action_closed(db, action.id)
     else:
         action.status = "in_progress"
         await task_service.close_tasks_for(

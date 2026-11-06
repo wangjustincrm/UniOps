@@ -306,6 +306,43 @@ async def first_status(db: AsyncSession):
     )).scalars().first()
 
 
+def state_after_reply(outcome: str | None, capa_status: str | None) -> str | None:
+    """Where a reply leaves a recommendation. Review, round 11; HSE may yet say
+    otherwise. Accepted with its action closed is done; declined or deferred
+    stays where it is (None); anything else is being worked on. Migration 0086
+    applies the same rule to replies made before this existed."""
+    if outcome in ("declined", "deferred"):
+        return None
+    return "completed" if outcome == "accepted" and capa_status == "closed" else "in_progress"
+
+
+async def follow_reply(db: AsyncSession, rec: JhscRecommendation, *, moved_from: tuple[str, ...]):
+    """Moves the state on, unless a person has already put it somewhere else."""
+    from app.models.action import Action
+    from app.models.vocabulary import VocabularyItem
+    if rec.status_item_id is not None:
+        current = await db.get(VocabularyItem, rec.status_item_id)
+        if current is not None and current.code not in moved_from:
+            return
+    capa = await db.get(Action, rec.action_id) if rec.action_id else None
+    code = state_after_reply(rec.outcome, capa.status if capa else None)
+    if code is None:
+        return
+    item = (await db.execute(select(VocabularyItem).where(
+        VocabularyItem.vocabulary_code == STATUS_VOCABULARY, VocabularyItem.code == code,
+        VocabularyItem.is_active.is_(True)))).scalars().first()
+    if item is not None:
+        rec.status_item_id, rec.status_label = item.id, item.label
+
+
+async def action_closed(db: AsyncSession, action_id: uuid.UUID) -> None:
+    """A recommendation's corrective action has been verified."""
+    rec = (await db.execute(select(JhscRecommendation).where(
+        JhscRecommendation.action_id == action_id))).scalars().first()
+    if rec is not None:
+        await follow_reply(db, rec, moved_from=("new_request", "in_progress"))
+
+
 async def set_status(db: AsyncSession, rec: JhscRecommendation, item_id: uuid.UUID):
     """Round 10, TC-11: the recommendation's current state, from HSE's list."""
     from app.models.vocabulary import VocabularyItem
@@ -385,6 +422,7 @@ async def respond(
     rec.responded_by = user_id
     rec.responded_by_name = await _name(db, user_id)
     rec.action_id = action_id
+    await follow_reply(db, rec, moved_from=("new_request",))
     await db.flush()
 
     deadline = await deadline_service.ensure_jhsc_reply_deadline(

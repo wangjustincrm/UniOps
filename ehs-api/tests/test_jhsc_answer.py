@@ -301,3 +301,60 @@ async def test_a_new_recommendation_starts_at_new_request_wherever_it_sorts(
     person, _ = asked
     _, rec = await _sent(hse, [person])
     assert rec["status_label"] == "New request"
+
+
+def _codes(states):
+    for item, code in zip(states, ("new_request", "maintenance_review", "in_progress", "completed")):
+        item.code = code
+
+
+async def _state(client, rec_id):
+    return (await client.get(f"/api/v1/jhsc/recommendations/{rec_id}")).json()["status_label"]
+
+
+async def test_the_state_follows_the_reply_to_completed(hse_manager, asked, states, db_session):
+    """★ Review: accepted is being worked on until its action is closed."""
+    _codes(states)
+    await db_session.flush()
+    _, hse = hse_manager
+    person, client = asked
+    _, rec = await _sent(hse, [person])
+    answered = await client.post(f"/api/v1/jhsc/recommendations/{rec['id']}/answer",
+                                 json=_answer(person))
+    assert answered.status_code == 200, answered.text
+    assert await _state(hse, rec["id"]) == "Work in progress"
+
+    action_id = answered.json()["action"]["id"]
+    from app.models.action import Action
+    action = await db_session.get(Action, uuid.UUID(action_id))
+    action.status = "pending_verification"
+    await db_session.flush()
+    verified = await hse.post(f"/api/v1/actions/{action_id}/verify",
+                              json={"is_effective": True, "notes": "Guard fitted and checked."})
+    assert verified.status_code == 200, verified.text
+    assert await _state(hse, rec["id"]) == "Completed"
+
+
+async def test_declined_stays_where_it_is(hse_manager, asked, states, db_session):
+    _codes(states)
+    await db_session.flush()
+    _, hse = hse_manager
+    person, _ = asked
+    _, rec = await _sent(hse, [person])
+    done = await hse.post(f"/api/v1/jhsc/recommendations/{rec['id']}/respond",
+                          json={"response": "Not this year.", "outcome": "declined"})
+    assert done.status_code == 200, done.text
+    assert await _state(hse, rec["id"]) == "New request"
+
+
+async def test_a_reply_does_not_undo_a_state_a_person_chose(hse_manager, asked, states, db_session):
+    _codes(states)
+    await db_session.flush()
+    _, hse = hse_manager
+    person, client = asked
+    _, rec = await _sent(hse, [person])
+    chosen = await hse.put(f"/api/v1/jhsc/recommendations/{rec['id']}/status",
+                           json={"item_id": str(states[1].id)})
+    assert chosen.status_code == 200, chosen.text
+    await client.post(f"/api/v1/jhsc/recommendations/{rec['id']}/answer", json=_answer(person))
+    assert await _state(hse, rec["id"]) == "Under review by maintenance"

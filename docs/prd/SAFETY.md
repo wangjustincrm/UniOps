@@ -248,7 +248,7 @@ UAT 11 closed at 10 passed and 9 failed (ver 11.3). HSE's 91 further requests ar
 - A closed incident no longer offers Close incident (TC-09).
 - Editing an investigation or a hazard: a further corrective action on a root cause is raised. Only one with the same title as an action still open on that cause is skipped, because the screen saves the whole set. Saved actions are listed under their cause. Save waits while a started action is unfinished or its cause is not chosen; Not now releases it.
 - Editing equipment changes only the fields the form sends. It used to blank manufacturer, model, serial number, description and department, and put a retired machine back in service.
-- Every JHSC recommendation has a state: one already answered is Completed, any other New request (migration 0085). A new one starts at New request wherever HSE has moved it on the list. The state also shows on the meeting page.
+- Every JHSC recommendation has a state (migrations 0085, 0086). A new one starts at New request wherever HSE has moved it on the list. A reply moves it: accepted with its corrective action closed is Completed; declined or deferred stays at New request; anything else is Work in progress. Closing the action moves it to Completed. A state a person chose is not overwritten. The state also shows on the meeting page. This rule is awaiting HSE's confirmation.
 - The body picture runs from yellow (fewest) to red (most), in proportion; a part nobody hurt stays neutral.
 - Staff File: Near misses have their own box, apart from Incidents.
 - Section B can be minimised: closed by default on the report, open on the investigation. Closed, it keeps what was typed.
