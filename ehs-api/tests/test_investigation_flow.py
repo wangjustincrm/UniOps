@@ -425,6 +425,27 @@ class TestACorrectiveActionRaisedWithItsCause:
         actions = second.json()["root"][0]["actions"]
         assert len(actions) == 1, f"saving twice raised {len(actions)} actions"
 
+    async def test_a_second_action_on_a_cause_is_raised(
+            self, hse_manager, submitted_incident, an_owner):
+        """★ Round 11: "when editing the investigation, adding corrective actions
+        are not saved." The guard above must stop the same action twice, not
+        every action after the first."""
+        _, client = hse_manager
+        due = (plant_today() + timedelta(days=10)).isoformat()
+
+        def body(title):
+            return {"causes": [{"cause_type": "root", "label": "Procedure not followed",
+                                "action": {"title": title, "owner_id": an_owner, "due_date": due}}]}
+
+        first = await client.put(f"/api/v1/incidents/{submitted_incident}/causes",
+                                 json=body("Re-brief the crew"))
+        assert first.status_code == 200, first.text
+        second = await client.put(f"/api/v1/incidents/{submitted_incident}/causes",
+                                  json=body("Rewrite the procedure"))
+        assert second.status_code == 200, second.text
+        titles = {a["title"] for a in second.json()["root"][0]["actions"]}
+        assert titles == {"Re-brief the crew", "Rewrite the procedure"}
+
     async def test_a_cause_with_no_action_is_still_flagged(
             self, hse_manager, submitted_incident):
         """The admission: the field is optional and the flag still works.

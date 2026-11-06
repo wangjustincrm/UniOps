@@ -27,7 +27,7 @@ import { VocabularyMultiSelect, VocabularySelect, type VocabItem } from '@/compo
 import { useMyProfile } from '@/hooks/useMyProfile'
 import { useEhsAuth } from '@/store/auth'
 import {
-  CausesEditor, causesPayload, spendActionDrafts, type CauseDraft,
+  CausesEditor, causesPayload, spendActionDrafts, unfinishedAction, type CauseDraft,
 } from '@/components/CausesEditor'
 
 interface Investigation {
@@ -375,7 +375,11 @@ export default function InvestigationPage() {
       </Section>
 
       {showMedical && (
-        <Section title="Section B — injury detail (required by WSIB)">
+        <details open className="mb-6 rounded-xl border border-neutral-200 bg-white p-4">
+          <summary className="cursor-pointer text-sm font-semibold text-neutral-800">
+            Section B — injury detail (required by WSIB)
+          </summary>
+          <div className="mt-3">
           <Field label="Supervisor"
                  help="The follow-up goes to this person, so it has to be a name the system knows.">
             <PersonPicker
@@ -414,7 +418,8 @@ export default function InvestigationPage() {
           )}
 
           <InjuryDetailFields value={med} onChange={setMed} />
-        </Section>
+          </div>
+        </details>
       )}
 
       <Section title="Sign off">
@@ -427,6 +432,12 @@ export default function InvestigationPage() {
         <p className="mb-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>
       )}
 
+      {unfinishedAction(causes) && (
+        <p className="mb-2 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700">
+          A corrective action above is not finished. Choose its root cause, then fill in what it
+          is, who owns it and when it is due, or press Not now.
+        </p>
+      )}
       <div className="flex gap-2">
         <button
           type="button"
@@ -437,7 +448,7 @@ export default function InvestigationPage() {
         </button>
         <button
           type="button"
-          disabled={save.isPending}
+          disabled={save.isPending || unfinishedAction(causes)}
           onClick={() => { setError(null); save.mutate({ sign: false }) }}
           className="min-h-[44px] flex-1 rounded-lg border border-neutral-300 px-4 text-sm font-medium text-neutral-700 disabled:opacity-50"
         >
@@ -445,7 +456,7 @@ export default function InvestigationPage() {
         </button>
         <button
           type="button"
-          disabled={save.isPending || !signature}
+          disabled={save.isPending || !signature || unfinishedAction(causes)}
           onClick={() => { setError(null); save.mutate({ sign: true }) }}
           className="min-h-[44px] flex-[1.4] rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white disabled:opacity-50"
         >

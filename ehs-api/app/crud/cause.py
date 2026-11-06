@@ -148,9 +148,23 @@ async def replace(
     result.extend({c.id: c for c in [*keep_by_label.values(), *keep_by_item.values()]}.values())
     await db.flush()
 
+    # ★ Round 11: "when editing the investigation, adding corrective actions are
+    # not saved." This skipped any cause that already had an action, so a second
+    # one was dropped with a 200. A root cause can carry several; what must not
+    # happen is the same one twice, because the screen saves the whole set.
+    raised = {
+        (c_id, title.strip().casefold()) for c_id, title in (await db.execute(
+            select(Action.cause_id, Action.title).where(
+                Action.cause_id.in_([c.id for c in result]))
+        )).all()
+    } if result else set()
     for cause, item in zip(result, causes, strict=False):
-        if getattr(item, "action", None) is None or cause.id in attached:
+        if getattr(item, "action", None) is None:
             continue
+        key = (cause.id, item.action.title.strip().casefold())
+        if key in raised:
+            continue
+        raised.add(key)
         await create_action(db, ActionCreate(
             source_type=source_type,
             source_id=source_id,

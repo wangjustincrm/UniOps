@@ -69,8 +69,8 @@ class CauseIn(BaseModel):
     # signed investigation has to keep reading the way it was signed.
     label: str = Field(min_length=1, max_length=200)
     note: str | None = None
-    # Raised with it. Ignored when this cause already has one, so saving the
-    # investigation a second time does not raise a duplicate.
+    # Raised with it. Ignored when this cause already has one of the same title,
+    # so saving the investigation a second time does not raise a duplicate.
     action: CauseActionIn | None = None
 
 

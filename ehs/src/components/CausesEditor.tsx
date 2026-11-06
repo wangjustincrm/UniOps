@@ -12,11 +12,20 @@
  * `causesPayload` and spend their drafts through `spendActionDrafts`, so the two
  * rules that are easy to get subtly wrong are written once.
  */
+import { Link } from 'react-router-dom'
 import { Plus, Trash2 } from 'lucide-react'
 import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
 import {
   ActionFields, actionIsComplete, emptyActionDraft, type ActionDraft,
 } from '@/components/ActionFields'
+
+/** An action already raised against a cause. */
+export interface SavedAction {
+  id: string
+  action_no: string
+  title: string
+  status: string
+}
 
 export interface CauseDraft {
   id?: string
@@ -27,6 +36,8 @@ export interface CauseDraft {
   /** Raised with the cause when it is filled in. Root causes only: an immediate
    *  cause describes what happened, not work to do. */
   action?: ActionDraft
+  /** Already raised, and shown so nobody raises them again. Never sent back. */
+  actions?: SavedAction[]
 }
 
 /** What the server is sent for a set of causes. An incomplete action box is
@@ -63,6 +74,18 @@ export function causesPayload(causes: CauseDraft[]) {
  * lives here. */
 export function spendActionDrafts(causes: CauseDraft[]): CauseDraft[] {
   return causes.map((c) => (c.action ? { ...c, action: undefined } : c))
+}
+
+/** ★ What a save would lose. A half-filled action box, or one under a cause with
+ *  nothing picked, is left out of the payload, and the page then closes: round
+ *  11, "adding corrective actions are not saved". The save is held until the
+ *  box is finished or dismissed. A box nobody typed in loses nothing. */
+export function unfinishedAction(causes: CauseDraft[]): boolean {
+  return causes.some((c) => {
+    if (!c.action) return false
+    const typed = Boolean(c.action.title.trim() || c.action.description.trim() || c.action.ownerId)
+    return typed && (!actionIsComplete(c.action) || !c.label.trim())
+  })
 }
 
 export function CausesEditor({
@@ -112,6 +135,16 @@ export function CausesEditor({
             placeholder="Note (optional)"
             className="mt-2 min-h-[38px] w-full rounded-md border border-neutral-200 px-2.5 text-sm focus:border-primary-400 focus:outline-none"
           />
+          {/* ★ Round 11: saved actions were shown only on the incident, so on
+              this form they read as lost. */}
+          {(c.actions ?? []).map((a) => (
+            <p key={a.id} className="mt-2 rounded-md bg-neutral-50 px-2.5 py-1.5 text-xs text-neutral-700">
+              <Link to={`/actions/${a.id}`} className="font-medium text-primary-700 hover:underline">
+                {a.action_no}
+              </Link>{' '}
+              {a.title} · {a.status.replace(/_/g, ' ')}
+            </p>
+          ))}
           {/* ★ What is being done about it, on this form. Root causes only — an
               immediate cause describes what happened, and offering a box there
               invites one action per cause where the hierarchy of controls asks
@@ -147,7 +180,7 @@ export function CausesEditor({
                       onClick={() => update(i, { action: emptyActionDraft() })}
                       className="mt-2 flex min-h-[36px] items-center gap-1.5 text-xs font-medium text-primary-700">
                 <Plus className="h-3.5 w-3.5" aria-hidden />
-                Raise a corrective action for this
+                {c.actions?.length ? 'Raise another corrective action' : 'Raise a corrective action for this'}
               </button>
             )
           )}

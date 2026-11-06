@@ -18,7 +18,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ShieldAlert, Plus, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import {
-  CausesEditor, causesPayload, spendActionDrafts, type CauseDraft,
+  CausesEditor, causesPayload, spendActionDrafts, unfinishedAction, type CauseDraft, type SavedAction,
 } from '@/components/CausesEditor'
 import { Pagination, SearchBox, useListView, DateRangeFilter } from '@/components/ListView'
 import { formatDate } from '@/lib/formatDate'
@@ -285,14 +285,15 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
   // until they arrive so the editor does not open empty and then jump.
   const existingCauses = useQuery({
     queryKey: ['hazard', existing?.id, 'causes'],
-    queryFn: () => api.get<{ immediate: CauseDraft[]; root: CauseDraft[] }>(
+    queryFn: () => api.get<{ immediate: CauseDraft[]; root: CauseDraft[]; actions: Record<string, SavedAction[]> }>(
       `/api/v1/hazards/${existing!.id}/causes`),
     enabled: Boolean(existing?.id),
   })
   const [causesLoaded, setCausesLoaded] = useState(false)
   if (!causesLoaded && existingCauses.data) {
     setCausesLoaded(true)
-    setCauses([...existingCauses.data.immediate, ...existingCauses.data.root])
+    const { immediate, root, actions } = existingCauses.data
+    setCauses([...immediate, ...root].map((c) => ({ ...c, actions: c.id ? actions[c.id] : undefined })))
   }
 
   const body = () => ({
@@ -449,7 +450,7 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
       <div className="mt-3 flex justify-end gap-2">
         <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>
         <button type="button" className={primaryButton}
-                disabled={!title.trim() || create.isPending
+                disabled={!title.trim() || create.isPending || unfinishedAction(causes)
                           || (editing && !causesLoaded && !existingCauses.isError)}
                 onClick={() => { if (!create.isPending) create.mutate() }}>
           {create.isPending
