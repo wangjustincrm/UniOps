@@ -1,3 +1,4 @@
+import { factTone } from '@/features/common/statusTones'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
@@ -145,7 +146,7 @@ function Detail({ row }: { row: TransferRead }) {
         loading={q.isLoading} error={q.error} errorMessages={errorMessages}
         refresh={sheetRefresh}
         facts={t ? [
-          { label: 'Status', value: t.status, tone: ['Failed', 'Discrepancy'].includes(t.status) ? 'danger' : t.status === 'Partially Received' ? 'warning' : 'neutral' },
+          { label: 'Status', value: t.status, tone: factTone(t.status) },
           { label: 'Sent EA', value: sent },
           { label: 'Received EA', value: received, tone: t.receipts.length > 0 && received < sent ? 'warning' : 'neutral' },
           { label: '943', value: t.control ?? '—', hint: t.file_status ?? undefined },

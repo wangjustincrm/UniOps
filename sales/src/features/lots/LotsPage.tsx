@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Download } from 'lucide-react'
 import {
   Badge, Button, Dialog, ListPage, Textarea, type ColumnDef, type Filter,
-  IconButton, Callout, TrackingLink, useNotices, columnsOf
+  IconButton, Callout, useNotices, columnsOf
  } from '@/platform-ui'
 import { PartnerCell } from '@/features/common/PartnerCell'
 import { exportLots, lotsClient, parseLots, type LotRead } from './lotsApi'
@@ -22,8 +22,7 @@ const columns: ColumnDef<LotRead, unknown>[] = [
   colLotRead.text('order_number', 'Internal no.'),
   { accessorKey: 'partner_name', header: 'Partner', cell: ({ row }) => <PartnerCell name={row.original.partner_name} code={row.original.partner_code} /> },
   { accessorKey: 'ship_to_city', header: 'Ship to', cell: ({ row }) => [row.original.ship_to_city, row.original.ship_to_postal].filter(Boolean).join(' · ') },
-  { accessorKey: 'tracking', header: 'Tracking', cell: ({ row }) => row.original.tracking
-    ? <TrackingLink number={row.original.tracking} url={row.original.tracking_url} /> : '—' },
+  colLotRead.tracking('tracking', 'Tracking', { url: 'tracking_url' }),
   { accessorKey: 'sscc', header: 'Pallet (SSCC)', cell: ({ row }) => row.original.sscc ?? '—' },
   { accessorKey: 'document_id', header: '945', cell: ({ row: { original: r } }) => (
     <span className="inline-flex items-center gap-1">#{r.document_id}

@@ -41,8 +41,7 @@ const rowColumns = (s: ShipmentRead, numbers: Map<number, number>, orderId: numb
   colRow.date('expiry', 'Expiry'),
   { accessorKey: 'sscc', header: 'SSCC', cell: ({ row }) => <span className="tabular-nums">{row.original.sscc ?? '—'}</span> },
   { accessorKey: 'lx_number', header: 'LX no.', cell: ({ row }) => row.original.lx_number ?? row.original.lx_index },
-  { accessorKey: 'tracking', header: 'Tracking', cell: ({ row: { original: r } }) => r.tracking
-    ? <TrackingLink number={r.tracking} url={r.tracking_url} /> : '—' },
+  colRow.tracking('tracking', 'Tracking', { url: 'tracking_url' }),
   { id: 'match', header: 'Match', cell: ({ row }) => (
     <span className="inline-flex flex-wrap items-center gap-1">
       <Match r={row.original} />

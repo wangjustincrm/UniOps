@@ -1,3 +1,4 @@
+import { factTone } from '@/features/common/statusTones'
 import { Server, ShoppingBag } from 'lucide-react'
 import { Badge, CrudPage, DateTimeCell, Hint, StatusCell, Tooltip, formatDateTime, type ColumnDef } from '@/platform-ui'
 import { historyTab } from '../historyTab'
@@ -78,7 +79,7 @@ export default function ConnectionsPage() {
         { label: 'Health', value: connectionHealth(c).label, tone: connectionHealth(c).tone },
         { label: 'Mode', value: c.mode === 'LIVE' ? 'Live' : 'Test', tone: c.mode === 'LIVE' ? 'success' : 'neutral' },
         { label: 'Schedule', value: c.schedule_paused ? 'Paused' : `Every ${c.schedule_minutes} min`, tone: c.schedule_paused ? 'warning' : 'neutral' },
-        { label: 'Last run', value: c.last_run_status ?? '—', tone: c.last_run_status === 'FAILED' ? 'danger' : c.last_run_status === 'PARTIAL' ? 'warning' : 'neutral',
+        { label: 'Last run', value: c.last_run_status ?? '—', tone: factTone(c.last_run_status),
           hint: c.last_run_at ? formatDateTime(c.last_run_at) : undefined },
         { label: 'Next run', value: <NextRun c={c} />, tone: c.overdue ? 'danger' : 'neutral' },
       ]}

@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react'
 import type { ColumnDef } from './DataTable'
 import {
-  BooleanCell, CountdownCell, DateCell, DateTimeCell, MoneyCell, NumberCell, RelativeCell, StatusCell, TagsCell,
+  BooleanCell, CountdownCell, DateCell, DateTimeCell, DurationCell, FileCell, MoneyCell, NumberCell, ReferenceCell, RelativeCell,
+  StatusCell, TagsCell, TrackingCell,
 } from './cells'
 import type { BadgeVariant } from './StatusBadge'
 
@@ -30,6 +31,13 @@ export function columnsOf<T>() {
         const v = read(r, key) as string | null
         return <StatusCell value={v} tone={v && opts?.tone ? opts.tone(v) : undefined} className={v && opts?.colour ? opts.colour(v) : undefined} />
       }),
+    reference: (key: Key<T>, header: string) => cell(key, header, (r) => <ReferenceCell value={read(r, key) as Value} />),
+    tracking: (key: Key<T>, header: string, opts?: { url?: Key<T> }) =>
+      cell(key, header, (r) => <TrackingCell value={read(r, key) as string | null} url={opts?.url ? read(r, opts.url) as string | null : undefined} />),
+    duration: (id: string, header: string, from: Key<T>, to: Key<T>): ColumnDef<T, unknown> => (
+      { id, header, enableSorting: false, cell: ({ row }) => <DurationCell from={read(row.original, from) as string | null} to={read(row.original, to) as string | null} /> }),
+    file: (key: Key<T>, header: string, opts: { label: (row: T) => string; onDownload: (row: T) => void }) =>
+      cell(key, header, (r) => <FileCell name={read(r, key) as string | null} label={opts.label(r)} onDownload={() => opts.onDownload(r)} />),
     bool: (key: Key<T>, header: string) => cell(key, header, (r) => <BooleanCell value={read(r, key) as boolean | null} />),
     tags: (key: Key<T>, header: string) => cell(key, header, (r) => <TagsCell values={read(r, key) as string[] | null} />),
   }

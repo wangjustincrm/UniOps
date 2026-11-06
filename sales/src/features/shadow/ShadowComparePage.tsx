@@ -1,3 +1,4 @@
+import { factTone } from '@/features/common/statusTones'
 import { useState } from 'react'
 import { PartnerCell } from '@/features/common/PartnerCell'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -105,7 +106,7 @@ function Detail({ row, close }: { row: ShadowMatchRead; close: () => void }) {
       size="xl" loading={q.isLoading} error={q.error}
       refresh={sheetRefresh}
       facts={m ? [
-        { label: 'Status', value: m.status, tone: m.status === 'Match' || m.status === 'Expected difference' ? 'success' : 'warning' },
+        { label: 'Status', value: m.status, tone: factTone(m.status) },
         { label: 'Differences', value: differing, tone: differing ? 'warning' : 'neutral' },
         { label: 'Segments', value: m.rows.length },
         { label: 'Kind', value: m.kind },

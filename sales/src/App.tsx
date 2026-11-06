@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import AppLayout from '@/components/layout/AppLayout'
 import { ToastProvider } from '@/platform-ui'
 import { refetchOnWindowFocus } from '@/app/recoverFailedQueries'
+import '@/features/common/statusTones'
 
 const queryClient = new QueryClient({
   // Window focus refetches only failed queries (app/recoverFailedQueries.ts).

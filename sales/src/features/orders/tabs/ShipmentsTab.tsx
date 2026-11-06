@@ -1,4 +1,4 @@
-import { Badge, CopyChip, LocalTable, Section, TrackingLink, columnsOf, type ColumnDef } from '@/platform-ui'
+import { Badge, LocalTable, Section, TrackingLink, columnsOf, type ColumnDef } from '@/platform-ui'
 import { lineNumbers, type OrderDetail, type PackingRead } from '../ordersApi'
 import { Shipments } from '../Shipments'
 
@@ -9,7 +9,7 @@ const col = columnsOf<LotRow>()
 
 const lotColumns: ColumnDef<LotRow, unknown>[] = [
   { accessorKey: 'item', header: 'Item' },
-  { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => row.original.lot ? <CopyChip text={row.original.lot} /> : '—' },
+  col.reference('lot', 'Lot'),
   col.date('expiry', 'Expiry'),
   { accessorKey: 'qty_shipped_ea', header: 'Qty EA', cell: ({ row }) => <span className="tabular-nums">{row.original.qty_shipped_ea}</span> },
   { accessorKey: 'sscc', header: 'Pallet (SSCC)', cell: ({ row }) => row.original.sscc ?? '—' },

@@ -1,3 +1,4 @@
+import { factTone } from '@/features/common/statusTones'
 import {
   ActionButton, ListPage, LocalTable, PageHeader, RecordSheet, StatusCell, Tabs, formatDateTime,
   type ColumnDef, type QuerySpec, Callout, Muted, columnsOf
@@ -30,6 +31,7 @@ const runColumns: ColumnDef<RunRead, unknown>[] = [
   { id: 'failed', header: 'Failed', cell: ({ row }) => total(row.original, 'failed') },
   { id: 'summary', header: 'Summary', cell: ({ row }) => row.original.summary?.text ?? '' },
   colRunRead.datetime('finished_at', 'Finished'),
+  colRunRead.duration('took', 'Took', 'started_at', 'finished_at'),
 ]
 
 const logColumns: ColumnDef<LogRead, unknown>[] = [
@@ -63,7 +65,7 @@ function RunDetail({ run }: { run: RunRead }) {
       subtitle={`${runFor(run)} · ${run.trigger}`}
       badges={<StatusCell value={run.status} />}
       facts={[
-        { label: 'Status', value: run.status, tone: run.status === 'FAILED' ? 'danger' : run.status === 'PARTIAL' ? 'warning' : run.status === 'SUCCEEDED' ? 'success' : 'info' },
+        { label: 'Status', value: run.status, tone: factTone(run.status) },
         { label: 'Started', value: formatDateTime(run.started_at) },
         { label: 'Finished', value: run.finished_at ? formatDateTime(run.finished_at) : 'Running…' },
         { label: 'Stored', value: passes.reduce((n, p) => n + p.stored, 0) },

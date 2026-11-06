@@ -7,13 +7,13 @@ type Tone = 'neutral' | 'info' | 'success' | 'warning'
 // Each stage has its own colour, so where an order is reads at a glance; the name is always written too.
 const STATUS_COLOUR: Record<string, string> = {
   Draft: 'bg-neutral-100 text-neutral-600',
-  'To Fulfill': 'bg-blue-100 text-blue-800',
-  Sent: 'bg-cyan-100 text-cyan-800',
-  Fulfilling: 'bg-violet-100 text-violet-800',
-  Shipped: 'bg-indigo-100 text-indigo-800',
-  'To Invoice': 'bg-orange-100 text-orange-800',
-  Completed: 'bg-green-100 text-green-800',
-  'On Hold': 'bg-red-100 text-red-800',
+  'To Fulfill': 'bg-stage-fulfill text-stage-fulfill-fg',
+  Sent: 'bg-stage-sent text-stage-sent-fg',
+  Fulfilling: 'bg-stage-fulfilling text-stage-fulfilling-fg',
+  Shipped: 'bg-stage-shipped text-stage-shipped-fg',
+  'To Invoice': 'bg-stage-invoice text-stage-invoice-fg',
+  Completed: 'bg-stage-done text-stage-done-fg',
+  'On Hold': 'bg-stage-hold text-stage-hold-fg',
   Cancelled: 'bg-neutral-200 text-neutral-500',
 }
 export const orderStatusColour = (status: string): string => STATUS_COLOUR[status] ?? 'bg-neutral-100 text-neutral-600'

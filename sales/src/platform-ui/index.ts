@@ -23,7 +23,9 @@ export {
   BooleanCell, CountdownCell, DateTimeCell, DateCell, MoneyCell, NumberCell, RelativeCell, StatusCell, TagsCell,
 } from './primitives/cells'
 export { columnsOf } from './primitives/columns'
-export { formatDateTime, formatDate, formatDuration, formatTime, formatMoney, formatNumber, timeFromNow } from './primitives/format'
+export {
+  formatDateTime, formatDate, formatDuration, formatTime, formatMoney, formatNumber, registerStatusTones, statusTone, timeFromNow,
+} from './primitives/format'
 export { useNow } from './primitives/useNow'
 export { Autocomplete } from './primitives/Autocomplete'
 export { DateInput, DateTimeInput, Textarea } from './primitives/FieldInputs'

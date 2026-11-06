@@ -8,6 +8,25 @@
 @source "../../packages/shell/src";
 @import "@uniops/shell/tokens.css";
 
+/* Sales: one colour per order stage, by what it means. The shell's tokens stop at neutral / primary /
+   success / warning / danger; these are the module's own, so code names a stage and never a colour. */
+@theme {
+  --color-stage-fulfill: #dbeafe;
+  --color-stage-fulfill-fg: #1e40af;
+  --color-stage-sent: #cffafe;
+  --color-stage-sent-fg: #155e75;
+  --color-stage-fulfilling: #ede9fe;
+  --color-stage-fulfilling-fg: #5b21b6;
+  --color-stage-shipped: #e0e7ff;
+  --color-stage-shipped-fg: #3730a3;
+  --color-stage-invoice: #ffedd5;
+  --color-stage-invoice-fg: #9a3412;
+  --color-stage-done: #dcfce7;
+  --color-stage-done-fg: #166534;
+  --color-stage-hold: #fee2e2;
+  --color-stage-hold-fg: #991b1b;
+}
+
 /* platform-ui BusyBar: the indeterminate stripe sweeping across (none with reduced motion). */
 @keyframes platform-busy {
   0% { transform: translateX(-100%); }

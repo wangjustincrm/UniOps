@@ -1,7 +1,11 @@
 import { Badge } from './shell'
 import type { BadgeVariant } from './StatusBadge'
+import { Download } from 'lucide-react'
 import { cn } from '../lib/cn'
-import { formatDate, formatDateTime, formatMoney, formatNumber, statusTone, timeFromNow } from './format'
+import { CopyChip } from './Copy'
+import { IconButton } from './IconButton'
+import { TrackingLink } from './TrackingLink'
+import { formatDate, formatDateTime, formatDuration, formatMoney, formatNumber, instant, statusTone, timeFromNow } from './format'
 import { useNow } from './useNow'
 
 // The standard cells (and detail values) of every list: one way to show a
@@ -52,6 +56,36 @@ export function CountdownCell({ value, className }: { value: string | null | und
 export function TagsCell({ values }: { values: (string | null | undefined)[] | null | undefined }) {
   const tags = (values ?? []).filter((v): v is string => !!v)
   return <span className="inline-flex flex-wrap gap-1">{tags.map((t) => <Badge key={t} variant="neutral">{t}</Badge>)}</span>
+}
+
+/** A code a person copies: a lot, a reference. */
+export function ReferenceCell({ value }: { value: string | number | null | undefined }) {
+  if (value === null || value === undefined || value === '') return <span className="text-neutral-400">—</span>
+  return <CopyChip text={String(value)} />
+}
+
+/** A tracking number with the carrier's link when there is one. */
+export function TrackingCell({ value, url }: { value: string | null | undefined; url?: string | null }) {
+  if (!value) return <span className="text-neutral-400">—</span>
+  return <TrackingLink number={value} url={url} />
+}
+
+/** How long something took: "3d 4h", "2h 33m". */
+export function DurationCell({ from, to }: { from: string | null | undefined; to: string | null | undefined }) {
+  const start = instant(from)
+  const end = instant(to)
+  if (start === null || end === null) return <span className="text-neutral-400">—</span>
+  return <span className="whitespace-nowrap tabular-nums">{formatDuration(end - start)}</span>
+}
+
+/** A file: its name, and the way to get it. */
+export function FileCell({ name, label, onDownload }: { name: string | null | undefined; label: string; onDownload: () => void }) {
+  return (
+    <span className="flex items-center gap-1">
+      <span className="min-w-0 break-all">{name ?? '—'}</span>
+      <IconButton label={label} icon={<Download className="h-4 w-4" />} onClick={onDownload} />
+    </span>
+  )
 }
 
 /** A status as a badge; `tone` overrides the shared map (e.g. a derived order state). */

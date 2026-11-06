@@ -1,3 +1,4 @@
+import '@/features/common/statusTones'
 import '@testing-library/jest-dom/vitest'
 
 // jsdom lacks what Radix Select / Checkbox measure and capture with. Tests

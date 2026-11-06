@@ -73,6 +73,13 @@ export function timeFromNow(iso: string | null | undefined, now: number): TimeFr
   return { text: past ? `${formatDuration(now - at)} ago` : `in ${formatDuration(at - now)}`, past }
 }
 
+/** A date-time as ms since the epoch; null when it is not one. */
+export function instant(iso: string | null | undefined): number | null {
+  if (!iso) return null
+  const at = new Date(iso).getTime()
+  return Number.isNaN(at) ? null : at
+}
+
 /** A number in the module's style, e.g. "1,200". */
 export function formatNumber(value: string | number | null | undefined): string {
   if (value === null || value === undefined || value === '') return ''
@@ -94,22 +101,17 @@ export function formatMoney(amount: string | number | null | undefined, currency
   return currency ? `${text} ${currency}` : text
 }
 
-// One status → tone map for every state machine of the module; a status it
-// does not name gets its tone from its words (a new enum value from /meta
-// still looks right).
-const TONES: Record<string, BadgeVariant> = {
-  Pending: 'info', Processing: 'info', Processed: 'success', Failed: 'danger', Skipped: 'neutral', Duplicate: 'neutral',
-  RUNNING: 'info', SUCCEEDED: 'success', PARTIAL: 'warning', FAILED: 'danger',
-  ERROR: 'danger', WARNING: 'warning', INFO: 'neutral',
-  'Ready To Send': 'info', Sending: 'info', Sent: 'success', Suppressed: 'warning', Replaced: 'neutral', Cancelled: 'neutral',
-  Waiting: 'info', Accepted: 'success', 'Accepted by 945': 'success', Rejected: 'danger', Timeout: 'warning',
-  'Not Required': 'neutral', Draft: 'neutral', Review: 'warning', 'Payment Hold': 'warning', 'Archive Suppressed': 'warning',
-  Shipped: 'success', 'On Hold': 'warning', Active: 'success', Inactive: 'neutral', Completed: 'success',
+// The module's status → tone map, given at startup (business names stay out of this library).
+// A status it does not name gets its tone from its words (a new enum value from /meta still looks right).
+let tones: Record<string, BadgeVariant> = {}
+
+export function registerStatusTones(map: Record<string, BadgeVariant>): void {
+  tones = map
 }
 
 export function statusTone(status: string | null | undefined): BadgeVariant {
   if (!status) return 'neutral'
-  if (TONES[status]) return TONES[status]
+  if (tones[status]) return tones[status]
   const s = status.toLowerCase()
   if (/(fail|reject|error|refused)/.test(s)) return 'danger'
   if (/(timeout|hold|review|partial|suppress|warn|short)/.test(s)) return 'warning'

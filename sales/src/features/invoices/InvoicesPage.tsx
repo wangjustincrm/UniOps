@@ -1,3 +1,4 @@
+import { factTone } from '@/features/common/statusTones'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
@@ -163,7 +164,7 @@ function Detail({ row }: { row: InvoiceRead }) {
         refresh={sheetRefresh}
         facts={inv ? [
           { label: 'Total', value: formatMoney(inv.total, inv.currency), hint: inv.currency },
-          { label: 'Status', value: inv.status ?? '—', tone: inv.status === 'Blocked' || inv.status === 'Failed' ? 'warning' : inv.status === 'Sent' ? 'success' : 'neutral' },
+          { label: 'Status', value: inv.status ?? '—', tone: factTone(inv.status) },
           { label: 'Method', value: inv.method },
           { label: 'Invoice date', value: formatDate(inv.invoice_date) },
           { label: 'Delivery no.', value: inv.delivery_number ?? '—' },
