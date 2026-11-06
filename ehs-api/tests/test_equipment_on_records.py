@@ -61,3 +61,23 @@ async def test_hazards_and_job_analyses_refuse_retired_equipment(hse_manager, db
     jsa = await hse.post("/api/v1/jsa", json={"title": "Change the capper heads",
                                                       "equipment_id": str(retired.id)})
     assert jsa.status_code == 422, jsa.text
+
+
+async def test_editing_keeps_what_the_form_does_not_send(hse_manager, db_session):
+    """★ The form sends asset number, name, kind and area. Everything else on
+    the record came from the import, and an edit must leave it alone."""
+    _, client = hse_manager
+    e = await _equipment(db_session)
+    e.manufacturer, e.model, e.serial_no, e.description = "Krones", "K-200", "SN1", "Main capper"
+    e.is_active = False
+    await db_session.flush()
+
+    saved = await client.patch(f"/api/v1/equipment/{e.id}", json={
+        "asset_no": e.asset_no, "name": "Capper 2", "equipment_type": "Capper",
+        "location_id": None})
+    assert saved.status_code == 200, saved.text
+    await db_session.refresh(e)
+    assert e.name == "Capper 2", "the edit itself must land"
+    assert (e.manufacturer, e.model, e.serial_no, e.description) == (
+        "Krones", "K-200", "SN1", "Main capper")
+    assert e.is_active is False, "an edit must not put a retired machine back in service"

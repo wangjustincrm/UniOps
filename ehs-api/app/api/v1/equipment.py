@@ -105,7 +105,10 @@ async def update_equipment(
     row = await db.get(Equipment, equipment_id)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Equipment not found")
-    for field, value in payload.model_dump().items():
+    # ★ Only what was sent. The form sends four fields; writing the whole model
+    # blanked manufacturer, model, serial, description and department on every
+    # save, and put a retired machine back in service.
+    for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(row, field, value)
     await _fill_place(db, row)
     await db.flush()
