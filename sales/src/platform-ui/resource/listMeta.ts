@@ -19,6 +19,8 @@ export interface FieldMeta {
   operators: FilterOp[]
   /** Summed in the list's `totals` (the footer and group headers). */
   summable?: boolean
+  /** Values of other records are offered while typing (`GET <resource>/suggest`). */
+  suggestable?: boolean
 }
 
 /** A system view: declared with the list on the server, not editable. */

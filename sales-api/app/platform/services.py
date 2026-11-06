@@ -77,6 +77,10 @@ class ReadOnlyService(Generic[T, R]):
         return Page[Any](items=[self.to_read(e) for e in page.items], total=page.total,
                          groups=page.groups, groups_truncated=page.groups_truncated, totals=page.totals)
 
+    async def suggest(self, field: str, text: str = "") -> list[str]:
+        await self._authorize(self.read_permission)
+        return await self.repo.suggest(field, text)
+
     META_VERSION: ClassVar[int] = 1
 
     async def meta(self) -> dict[str, Any]:

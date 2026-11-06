@@ -28,6 +28,7 @@ OPERATE = "sales.order.operate"  # delivery and returns are order work (FR-OB-61
 class InvoiceRepository(Repository[Invoice]):
     model = Invoice
     search_fields = ("invoice_number", "order_ref_sql", "partner_name_sql", "delivery_number")
+    suggestable = ("invoice_number", "order_ref", "partner_name")
     search_numbers = ("order_number_sql",)  # the Internal no., matched exactly
     list_fields = ("id", "invoice_number", "order_id", "delivery_number", "method",
                    "invoice_date", "currency", "total", "sent_at", "send_count", "error", "created_at")

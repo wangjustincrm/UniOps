@@ -73,6 +73,8 @@ export interface DataTableProps<T> {
   grouping?: Grouping<T>
   /** First in the toolbar row (e.g. the view picker). */
   leading?: ReactNode
+  /** Right after the search box (e.g. the search panel, then the view's Save / Reset). */
+  afterSearch?: ReactNode
   /** Columns can be dragged to a new place: `id` goes before `beforeId` (null = last).
    *  The keyboard way is the column chooser's ↑ ↓. */
   onColumnMove?: (id: string, beforeId: string | null) => void
@@ -107,7 +109,7 @@ export type RowAttrs = { className?: string } & { [data: `data-${string}`]: stri
  *  query contract — QueryTable (patterns) adapts it to a QuerySpec. */
 export function DataTable<T>({
   columns, rows, rowKey, onRowClick, loading, fetching, stale, busyNow, highlight, fit, statusBar, errorMessage, onRetry, emptyTitle = 'Nothing here yet',
-  sort, sortable = [], onSortChange, headerAddon, leadingHeader, chips, grouping, leading, onColumnMove, search, filters,
+  sort, sortable = [], onSortChange, headerAddon, leadingHeader, chips, grouping, leading, afterSearch, onColumnMove, search, filters,
   toolbar, pagination, ariaLabel, density = 'normal', footer, rowAttrs, expand,
 }: DataTableProps<T>) {
   const cellPad = density === 'compact' ? 'px-2 py-1' : 'px-3 py-2'
@@ -165,7 +167,7 @@ export function DataTable<T>({
   ) : null
   return (
     <div className="flex flex-col gap-3">
-      {(search || toolbar || filters || leading) && (
+      {(search || toolbar || filters || leading || afterSearch) && (
         <div className="flex flex-wrap items-center gap-2">
           {leading}
           {search && (
@@ -180,6 +182,7 @@ export function DataTable<T>({
               }}
             />
           )}
+          {afterSearch}
           {filters}
           <div className="ml-auto flex gap-2">{toolbar}</div>
         </div>

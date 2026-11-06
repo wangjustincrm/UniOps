@@ -10,7 +10,7 @@ import {
 import { viewStateOf, type Layout, type ViewState } from '../resource/viewState'
 import { errorText } from '../resource/businessError'
 import { ColumnChooser } from '../primitives/ColumnChooser'
-import { ViewPicker } from './ViewPicker'
+import { ViewActions, ViewPicker } from './ViewPicker'
 import type { ViewPickerModel } from './views'
 import { ColumnMenu } from './ColumnMenu'
 import { FilterChips } from './FilterChips'
@@ -34,7 +34,7 @@ export interface QueryTableProps<T> {
   onSpecChange: (spec: QuerySpec) => void
   /** The resource whose `/meta` drives the column menus, chips and search
    *  panel (a ResourceClient). Without it the table has the page's columns only. */
-  resource?: { basePath: string; meta: () => Promise<ListMeta> }
+  resource?: { basePath: string; meta: () => Promise<ListMeta>; suggest?: (field: string, query: string) => Promise<string[]> }
   /** Fields the page filters on itself (not shown in the panel, not removable). */
   locked?: string[]
   /** Column ids the back end accepts as sort keys, beyond what /meta says. */
@@ -120,13 +120,13 @@ type ViewProps<T> = Omit<QueryTableProps<T>, 'resource'>
 
 function WithMeta<T>({ resource, ...props }: ViewProps<T> & { resource: NonNullable<QueryTableProps<T>['resource']> }) {
   // A failed /meta leaves the plain table (the page's columns, header sort, search).
-  return <QueryTableView {...props} meta={useListMeta(resource).data} />
+  return <QueryTableView {...props} meta={useListMeta(resource).data} suggest={resource.suggest} />
 }
 
 function QueryTableView<T>({
   columns, spec, onSpecChange, meta, locked = [], sortable = [], total, groups, groupsTruncated, totals, searchable, error,
-  errorMessages, toolbar, onViewChange, layout: layoutProp, onLayoutChange, picker, ...view
-}: ViewProps<T> & { meta: ListMeta | undefined }) {
+  errorMessages, toolbar, onViewChange, layout: layoutProp, onLayoutChange, picker, suggest, ...view
+}: ViewProps<T> & { meta: ListMeta | undefined; suggest?: (field: string, query: string) => Promise<string[]> }) {
   const fields = useMemo(() => new Map((meta?.fields ?? []).map((f) => [f.name, f])), [meta])
   const [ownLayout, setOwnLayout] = useState<Layout>({ columns: [], hidden: [] })
   const layout = layoutProp ?? ownLayout
@@ -267,7 +267,7 @@ function QueryTableView<T>({
           value: spec.search ?? '',
           onSubmit: (v) => change({ ...spec, page: 1, search: v || undefined }),
         } : undefined}
-        toolbar={(panelFields.length > 0 || toolbar) ? (
+        afterSearch={(panelFields.length > 0 || picker) ? (
           <>
             {panelFields.length > 0 && (
               <SearchPanel
@@ -276,15 +276,17 @@ function QueryTableView<T>({
                 fields={panelFields}
                 filters={(spec.filters ?? []).filter((f) => !locked.includes(f.field))}
                 focusField={panel.focus}
+                suggest={suggest}
                 onApply={(next: Filter[]) => {
                   const keep = (spec.filters ?? []).filter((f) => locked.includes(f.field) || !panelFields.some((p) => p.name === f.field))
                   change({ ...spec, page: 1, filters: [...keep, ...next] })
                 }}
               />
             )}
-            {toolbar}
+            {picker && <ViewActions model={picker} />}
           </>
         ) : undefined}
+        toolbar={toolbar}
         pagination={{
           page: spec.page,
           pageSize: clampPageSize(spec.pageSize),

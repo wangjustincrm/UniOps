@@ -25,6 +25,11 @@ async def lots_meta(u: UoW) -> dict:
     return await LotService(u).meta()
 
 
+@router.get("/suggest")
+async def lots_suggest(u: UoW, field: str, q: str = "") -> list[str]:
+    return await LotService(u).suggest(field, q[:100])
+
+
 @router.get("/export.csv")
 async def export_lots(u: UoW, spec: Spec) -> Response:
     return Response(await LotService(u).export_csv(spec), media_type="text/csv",

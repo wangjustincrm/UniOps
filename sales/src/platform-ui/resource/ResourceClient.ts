@@ -39,6 +39,8 @@ export interface ResourceClient<TRead, TCreate, TUpdate> {
   list: (spec: QuerySpec) => Promise<Page<TRead>>
   /** The list's fields, labels, types and operators (`GET <resource>/meta`). */
   meta: () => Promise<ListMeta>
+  /** The values of a field already in the list, for the search panel. */
+  suggest: (field: string, query: string) => Promise<string[]>
   get: (id: number) => Promise<TRead>
   create: (data: TCreate) => Promise<TRead>
   /** `data` holds only the fields to change; a field set to null is cleared. */
@@ -59,6 +61,7 @@ export function createResourceClient<TRead, TCreate, TUpdate = TCreate>(
     basePath: base,
     list: (spec) => http.get<Page<TRead>>(`${base}?${toSearchParams(spec)}`),
     meta: () => http.get<ListMeta>(`${base}/meta`),
+    suggest: (field, query) => http.get<string[]>(`${base}/suggest?${new URLSearchParams({ field, q: query })}`),
     get: (id) => http.get<TRead>(`${base}/${id}`),
     create: (data) => http.post<TRead>(base, data),
     update: (id, data, version) =>

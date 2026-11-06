@@ -15,8 +15,8 @@ import type { CurrentView, ViewPickerModel } from './views'
 const ERRORS = { 'view.name_taken': 'You already have a view with that name.' }
 
 /** The view picker left of a list's toolbar (design §13.19): system views and
- *  my views; a dot when the list differs from the chosen view, then Save /
- *  Save as new / Reset; per view of mine: Rename, Set as default, Delete. */
+ *  my views; a dot when the list differs from the chosen view (ViewActions then offers
+ *  Save / Save as new / Reset); per view of mine: Rename, Set as default, Delete. */
 export function ViewPicker({ model }: { model: ViewPickerModel }) {
   // What a view action did, in the list's status row (a name the server refuses stays at its field).
   const notices = useNotices()
@@ -87,21 +87,6 @@ export function ViewPicker({ model }: { model: ViewPickerModel }) {
           })}
         </Section>
       </Popover>
-      {dirty && (
-        // The dot on the picker says "unsaved"; Save (mine) / Save as new / Reset are icons.
-        <span className="inline-flex items-center gap-1">
-          {current?.kind === 'mine' && (
-            <IconButton label="Save view" icon={<Save className="h-4 w-4" />} disabled={model.busy} className={TOOL}
-              onClick={() => { void said(() => model.save(), () => `View "${current.name}" saved`)().catch(() => {}) }} />
-          )}
-          <SaveAsNew busy={model.busy} save={said(model.saveAs, (n) => `Saved as the view "${n}"`)} />
-          <IconButton label="Reset to the saved view" icon={<RotateCcw className="h-4 w-4" />} disabled={model.busy} className={TOOL}
-            onClick={model.reset} />
-        </span>
-      )}
-      {model.stale && !dirty && (
-        <span role="status" className="text-xs text-warning-700">Saved by an older version: review it, then Save.</span>
-      )}
       {naming && <NameDialog {...naming} onClose={() => setNaming(null)} />}
       <ConfirmAction
         open={deleting !== null}
@@ -175,6 +160,33 @@ function NameDialog({ title, initial, done, onClose }: {
 }
 
 // Toolbar icons share one size with the other toolbar controls.
+/** What the list's changes can become: Save (my view), Save as new, Reset. Shown only when there are changes. */
+export function ViewActions({ model }: { model: ViewPickerModel }) {
+  const notices = useNotices()
+  const said = <A extends unknown[]>(fn: (...a: A) => Promise<void>, text: (...a: A) => string) => async (...a: A) => {
+    try {
+      await fn(...a)
+      notices.notify({ key: 'view', tone: 'success', text: text(...a) })
+    } catch (e) {
+      notices.notify({ key: 'view', tone: 'error', text: `The view was not saved: ${errorText(e, ERRORS)}` })
+      throw e
+    }
+  }
+  const { current, dirty } = model
+  if (!dirty) return model.stale ? <span role="status" className="text-xs text-warning-700">Saved by an older version: review it, then Save.</span> : null
+  return (
+    <span className="inline-flex items-center gap-1">
+      {current?.kind === 'mine' && (
+        <IconButton label="Save view" icon={<Save className="h-4 w-4" />} disabled={model.busy} className={TOOL}
+          onClick={() => { void said(() => model.save(), () => `View "${current.name}" saved`)().catch(() => {}) }} />
+      )}
+      <SaveAsNew busy={model.busy} save={said(model.saveAs, (n) => `Saved as the view "${n}"`)} />
+      <IconButton label="Reset to the saved view" icon={<RotateCcw className="h-4 w-4" />} disabled={model.busy} className={TOOL}
+        onClick={model.reset} />
+    </span>
+  )
+}
+
 const TOOL = 'h-8 w-8 rounded-lg border border-neutral-200 bg-white'
 
 /** Save as new: an icon opening a small popover with the name. */

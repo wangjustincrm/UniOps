@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import * as RP from '@radix-ui/react-popover'
 import { cn } from '../lib/cn'
 import { Chip } from './Chip'
@@ -15,6 +15,12 @@ export interface MultiSelectProps {
   onChange: (values: string[]) => void
   /** The field's accessible name. */
   label: string
+  /** Options for what was typed, read as you type (`options` is then not used). */
+  loadOptions?: (query: string) => Promise<MultiOption[]>
+  /** What was typed can be a value of its own: it is offered first, as it is. */
+  freeText?: boolean
+  /** The text typed and not yet added, for an owner that adds it on submit. */
+  onDraftChange?: (draft: string) => void
   placeholder?: string
   disabled?: boolean
   className?: string
@@ -24,7 +30,9 @@ export interface MultiSelectProps {
  *  to narrow the list below it, which offers only what is not chosen yet. Keys: ↑ ↓ open and move, Enter
  *  chooses and closes (Enter on the closed box goes to the form), Backspace removes the last tag, Escape
  *  closes. A click chooses and leaves the list open for the next one. */
-export function MultiSelect({ options, values, onChange, label, placeholder = 'Select…', disabled, className }: MultiSelectProps) {
+export function MultiSelect({
+  options, values, onChange, label, loadOptions, freeText, onDraftChange, placeholder = 'Select…', disabled, className,
+}: MultiSelectProps) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
@@ -33,11 +41,28 @@ export function MultiSelect({ options, values, onChange, label, placeholder = 'S
   const id = useId()
   const listId = `${id}-list`
   const q = query.trim().toLowerCase()
-  const shown = options.filter((o) => !values.includes(o.value) && (!q || `${o.label} ${o.hint ?? ''}`.toLowerCase().includes(q)))
+  const [loaded, setLoaded] = useState<{ query: string; options: MultiOption[] } | null>(null)
+  const load = useRef(loadOptions)
+  useEffect(() => { load.current = loadOptions }, [loadOptions])
+  useEffect(() => {
+    if (!open || !load.current) return undefined
+    let live = true
+    const timer = setTimeout(() => {
+      load.current?.(q).then((found) => { if (live) setLoaded({ query: q, options: found }) }, () => { if (live) setLoaded({ query: q, options: [] }) })
+    }, 200)
+    return () => { live = false; clearTimeout(timer) }
+  }, [open, q])
+  const waiting = !!loadOptions && loaded?.query !== q
+  const pool = loadOptions ? (loaded?.options ?? []) : options
+  const found = pool.filter((o) => !values.includes(o.value) && (!!loadOptions || !q || `${o.label} ${o.hint ?? ''}`.toLowerCase().includes(q)))
+  const typed = query.trim()
+  const offerTyped = freeText && typed && !values.includes(typed) && !found.some((o) => o.value === typed)
+  const shown = offerTyped ? [{ value: typed, label: typed, hint: 'as typed' }, ...found] : found
   const row = Math.min(active, shown.length - 1)
   const show = () => { if (!disabled) setOpen(true) }
-  const close = () => { setOpen(false); setQuery(''); setActive(0) }
-  const add = (v: string) => { onChange([...values, v]); setQuery(''); setActive(0) }
+  const type = (text: string) => { setQuery(text); onDraftChange?.(text) }
+  const close = () => { setOpen(false); type(''); setActive(0) }
+  const add = (v: string) => { onChange([...values, v]); type(''); setActive(0) }
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); if (open) setActive(Math.min(row + 1, shown.length - 1)); else show() }
     else if (e.key === 'ArrowUp') { e.preventDefault(); if (open) setActive(Math.max(row - 1, 0)); else show() }
@@ -61,17 +86,17 @@ export function MultiSelect({ options, values, onChange, label, placeholder = 'S
           <input ref={input} role="combobox" aria-label={label} aria-expanded={open} aria-controls={listId} aria-autocomplete="list"
             aria-activedescendant={open && shown[row] ? `${id}-${row}` : undefined} disabled={disabled} value={query}
             placeholder={values.length ? '' : placeholder} onKeyDown={onKey}
-            onChange={(e) => { setQuery(e.target.value); setActive(0); show() }}
+            onChange={(e) => { type(e.target.value); setActive(0); show() }}
             className="h-7 min-w-[5rem] flex-1 bg-transparent px-1 outline-none placeholder:text-neutral-400" />
         </div>
       </RP.Anchor>
       <RP.Portal>
         <RP.Content align="start" sideOffset={4} onOpenAutoFocus={(e) => e.preventDefault()} onCloseAutoFocus={(e) => e.preventDefault()}
-          onInteractOutside={(e) => { if (box.current?.contains(e.target as Node)) e.preventDefault(); else close() }}
+          onInteractOutside={(e) => { if (box.current?.contains(e.target as Node)) e.preventDefault(); else if (freeText) setOpen(false); else close() }}
           onEscapeKeyDown={(e) => { e.preventDefault(); close() }}
           className="z-50 w-[var(--radix-popover-trigger-width)] min-w-[12rem] rounded-lg border border-neutral-200 bg-white p-1 shadow-lg focus:outline-none">
           <ul id={listId} role="listbox" aria-multiselectable aria-label={label} className="max-h-64 overflow-y-auto">
-            {shown.length === 0 && <li className="px-2 py-2 text-sm text-neutral-400">{q ? 'No match' : 'All chosen'}</li>}
+            {shown.length === 0 && <li className="px-2 py-2 text-sm text-neutral-400">{waiting ? 'Searching…' : q ? 'No match' : loadOptions ? 'Nothing to suggest' : 'All chosen'}</li>}
             {shown.map((o, i) => (
               <li key={o.value} id={`${id}-${i}`} role="option" aria-selected={i === row} onMouseEnter={() => setActive(i)}
                 onMouseDown={(e) => e.preventDefault()} onClick={() => add(o.value)}

@@ -43,6 +43,7 @@ async def _require(session, model, column, value, field: str, what: str) -> None
 class ItemRepository(Repository[Item]):
     model = Item
     search_fields = ("item_code", "description", "sku", "upc", "gtin")
+    suggestable = ("item_code", "sku")
     list_fields = ("item_code", "description", "sku", "upc", "gtin", "gross_weight_lb_per_ea", "warehouse_held",
                    "active", "created_at", "updated_at")
     labels = {"sku": "SKU", "upc": "UPC", "gtin": "GTIN", "gross_weight_lb_per_ea": "Gross weight per EA (lb)",

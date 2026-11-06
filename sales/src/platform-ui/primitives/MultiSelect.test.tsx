@@ -116,3 +116,38 @@ describe('MultiChoice', () => {
     expect(screen.getAllByRole('checkbox')).toHaveLength(7)
   })
 })
+
+describe('suggestions from other records', () => {
+  function Suggest({ load, onDraft }: { load: (q: string) => Promise<{ value: string; label: string }[]>; onDraft?: (d: string) => void }) {
+    const [values, setValues] = useState<string[]>([])
+    return <MultiSelect label="Partner" options={[]} freeText loadOptions={load} values={values} onChange={setValues} onDraftChange={onDraft} />
+  }
+  const input = () => screen.getByRole('combobox', { name: 'Partner' })
+
+  it('reads the values for what is typed, and offers the typed text first', async () => {
+    const load = vi.fn(async () => [{ value: 'Walmart', label: 'Walmart' }])
+    render(<Suggest load={load} />)
+    fireEvent.change(input(), { target: { value: 'wal' } })
+    expect(await screen.findByRole('option', { name: /Walmart/ })).toBeInTheDocument()
+    expect(load).toHaveBeenCalledWith('wal')
+    expect(screen.getByRole('option', { name: /wal.*as typed/ })).toHaveAttribute('aria-selected', 'true')
+    fireEvent.keyDown(input(), { key: 'ArrowDown' })
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    expect(screen.getByRole('button', { name: 'Remove Walmart' })).toBeInTheDocument()
+  })
+
+  it('Enter keeps the text as typed when no suggestion is wanted', async () => {
+    render(<Suggest load={async () => []} />)
+    fireEvent.change(input(), { target: { value: 'CF00' } })
+    await screen.findByRole('option', { name: /CF00/ })
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    expect(screen.getByRole('button', { name: 'Remove CF00' })).toBeInTheDocument()
+  })
+
+  it('tells its owner what is typed, so a Search button can add it', () => {
+    const onDraft = vi.fn()
+    render(<Suggest load={async () => []} onDraft={onDraft} />)
+    fireEvent.change(input(), { target: { value: 'x' } })
+    expect(onDraft).toHaveBeenCalledWith('x')
+  })
+})

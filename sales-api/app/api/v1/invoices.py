@@ -32,6 +32,11 @@ async def invoices_meta(u: UoW) -> dict:
     return await InvoiceService(u).meta()
 
 
+@router.get("/suggest")
+async def invoices_suggest(u: UoW, field: str, q: str = "") -> list[str]:
+    return await InvoiceService(u).suggest(field, q[:100])
+
+
 @router.post("/confirm", response_model=InvoiceDetail)
 async def confirm(u: UoW, rt: Rt, body: ConfirmIn):
     out = await InvoiceService(u).confirm(rt.invoicing, body)

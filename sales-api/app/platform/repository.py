@@ -36,6 +36,7 @@ from app.platform.query import (  # noqa: F401 — FilterRule, parse_bool re-exp
 )
 
 T = TypeVar("T")
+MAX_SUGGESTIONS = 20
 
 
 def _like_escape(s: str) -> str:
@@ -59,6 +60,9 @@ class Repository(Generic[T]):
     # Fields the list can be grouped by (sortable or filterable keys): the
     # values that repeat — a status, a partner, a flag — not free text.
     groupable: ClassVar[tuple[str, ...]] = ()
+    # Filterable text fields whose existing values are offered while typing (/suggest). Opt in, field by
+    # field: never a person's name, email, phone or address, or anyone could read them out letter by letter.
+    suggestable: ClassVar[tuple[str, ...]] = ()
     # Numeric fields (sortable keys) summed over the whole filtered result —
     # the list footer and the group headers — per value of `sum_currency`.
     summable: ClassVar[tuple[str, ...]] = ()
@@ -76,6 +80,9 @@ class Repository(Generic[T]):
             cols = {n: getattr(cls.model, n) for n in cls.list_fields}
             cls.sortable = {**cols, **cls.sortable}
             cls.filterable = {**{n: FilterRule(c) for n, c in cols.items()}, **cls.filterable}
+        missing = [n for n in cls.suggestable if n not in cls.filterable]
+        if missing:
+            raise TypeError(f"{cls.__name__}.suggestable: not filterable: {missing}")
 
     def __init__(self, uow) -> None:
         self.uow = uow
@@ -111,6 +118,19 @@ class Repository(Generic[T]):
         q = self._order(q, spec).offset((spec.page - 1) * spec.page_size).limit(spec.page_size)
         items = list((await self.session.execute(q)).scalars().all())
         return Page[Any](items=items, total=total, groups=groups, groups_truncated=truncated, totals=totals)
+
+    async def suggest(self, field: str, text: str = "") -> list[str]:
+        """The values of a field already in the list, most used first; the same rows the list reads."""
+        if field not in self.suggestable:
+            raise InvalidInput("query.not_suggestable", f"no suggestions for {field!r}",
+                               {"field": field, "allowed": list(self.suggestable)})
+        col = self.filterable[field].column
+        q = self._apply(self.base_query(), QuerySpec(), open_work=False).where(col.is_not(None), col != "")
+        if text.strip():
+            q = q.where(col.ilike(f"%{_like_escape(text.strip())}%", escape="\\"))
+        rows = await self.session.execute(q.with_only_columns(col, func.count()).group_by(col)
+                                          .order_by(func.count().desc(), col.asc()).limit(MAX_SUGGESTIONS))
+        return [str(r[0]) for r in rows]
 
     # ── totals (the list footer) ─────────────────────────────────────────────
     def _sum_columns(self) -> tuple[Any, list[Any]]:
@@ -248,6 +268,7 @@ class Repository(Generic[T]):
                 "name": n, "label": cls.labels.get(n) or _humanise(n), "type": cls.field_kind(n),
                 "enum_values": list(cls.enums.get(n, ())), "filterable": n in cls.filterable,
                 "sortable": n in cls.sortable, "groupable": n in cls.groupable, "operators": list(cls.field_ops(n)),
+                **({"suggestable": True} if n in cls.suggestable else {}),
                 **({"summable": True} if n in cls.summable else {}),
             })
         return out

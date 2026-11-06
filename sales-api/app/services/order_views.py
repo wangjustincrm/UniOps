@@ -108,6 +108,7 @@ class OrderRepository(Repository[Order]):
     summable = ("total_amount", "net_amount", "total_refunded")
     sum_currency = "currency"
     default_sort = ("-order_number",)
+    suggestable = ("partner_name", "source_order_number", "source_reference")
     groupable = ("order_status", "on_hold_reason", "order_state", "partner_name", "partner_code", "source_type", "fulfillment_status", "invoice_status", "hold_reason", "order_date",
                  "currency", "historical", "archive_suppressed", "shopify_financial_status", "source_name")
     # System views (§13.19). Review reason is shown where it says something.

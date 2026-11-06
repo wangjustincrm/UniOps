@@ -64,6 +64,8 @@ export interface SearchPanelProps {
   focusField?: string | null
   /** Every filter of these fields, replacing the current ones. */
   onApply: (filters: Filter[]) => void
+  /** Values of other records for a field, while typing (fields marked suggestable). */
+  suggest?: (field: string, query: string) => Promise<string[]>
 }
 
 /** Search on any field: tick it, choose how to compare, give one or more
@@ -82,7 +84,7 @@ export function SearchPanel({ open, onOpenChange, ...rest }: SearchPanelProps) {
   )
 }
 
-function SearchForm({ fields, filters, focusField, onApply, close }: Omit<SearchPanelProps, 'open' | 'onOpenChange'> & { close: () => void }) {
+function SearchForm({ fields, filters, focusField, onApply, suggest, close }: Omit<SearchPanelProps, 'open' | 'onOpenChange'> & { close: () => void }) {
   const [drafts, setDrafts] = useState<Record<string, Draft>>(() => Object.fromEntries(fields.map((f) => {
     const d = draftFrom(f, filters)
     return [f.name, f.name === focusField ? { ...d, on: true } : d]
@@ -112,7 +114,7 @@ function SearchForm({ fields, filters, focusField, onApply, close }: Omit<Search
                       options={ops.map((op) => ({ value: op, label: opLabel(op, f.type) }))}
                     />
                   )}
-                  <ValueInput field={f} draft={d} set={(p) => set(f.name, p)} autoFocus={f.name === focusField} />
+                  <ValueInput field={f} draft={d} set={(p) => set(f.name, p)} autoFocus={f.name === focusField} suggest={suggest} />
                 </div>
               )}
             </li>
@@ -128,7 +130,9 @@ function SearchForm({ fields, filters, focusField, onApply, close }: Omit<Search
   )
 }
 
-function ValueInput({ field, draft, set, autoFocus }: { field: FieldMeta; draft: Draft; set: (p: Partial<Draft>) => void; autoFocus: boolean }) {
+function ValueInput({ field, draft, set, autoFocus, suggest }: {
+  field: FieldMeta; draft: Draft; set: (p: Partial<Draft>) => void; autoFocus: boolean; suggest?: SearchPanelProps['suggest']
+}) {
   const label = `${field.label}: value`
   if (draft.op === 'is_null' || draft.op === 'not_null') return null
   if (field.type === 'enum') {
@@ -157,6 +161,11 @@ function ValueInput({ field, draft, set, autoFocus }: { field: FieldMeta; draft:
   }
   if (draft.op === 'gt' || draft.op === 'gte' || draft.op === 'lt' || draft.op === 'lte') {
     return one(label, draft.values[0] ?? draft.draft, (v) => set({ values: [], draft: v }), autoFocus)
+  }
+  if (field.suggestable && suggest) {
+    return <MultiSelect label={label} options={[]} freeText values={draft.values} onChange={(values) => set({ values })}
+      onDraftChange={(v) => set({ draft: v })} placeholder="Type or choose…"
+      loadOptions={(q) => suggest(field.name, q).then((found) => found.map((v) => ({ value: v, label: v })))} />
   }
   return (
     <TagInput label={label} type={tagType(field)} values={draft.values} onChange={(values) => set({ values })}

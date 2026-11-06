@@ -55,6 +55,10 @@ def read_router(
     async def meta(u: UoW) -> dict:
         return await service_cls(u).meta()
 
+    @r.get("/suggest")
+    async def suggest(u: UoW, field: str, q: str = "") -> list[str]:
+        return await service_cls(u).suggest(field, q[:100])
+
     @r.get("/{id}", response_model=Read)
     async def get(u: UoW, id: int):
         return await service_cls(u).get(id)
@@ -83,6 +87,10 @@ def crud_router(
     @r.get("/meta")
     async def meta(u: UoW) -> dict:
         return await service_cls(u).meta()
+
+    @r.get("/suggest")
+    async def suggest(u: UoW, field: str, q: str = "") -> list[str]:
+        return await service_cls(u).suggest(field, q[:100])
 
     @r.get("/export.csv")
     async def export(u: UoW, spec: Spec) -> Response:

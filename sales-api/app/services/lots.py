@@ -37,6 +37,7 @@ class LotRepository(Repository[LotRow]):
               "order_ref": "Order ref", "order_number": "Internal no.", "partner_name": "Partner", "partner_code": "Partner code",
               "ship_to_city": "Ship-to city", "ship_to_postal": "Ship-to postal code", "document_id": "945 document",
               "our_reference": "940 reference (N9*E1)", "bol": "BOL", "applied": "Applied"}
+    suggestable = ("lot", "item_code", "partner_name", "order_ref")
     groupable = ("lot", "item_code", "expiry", "ship_date", "partner_name", "order_ref", "ship_to_city")
     summable = ("qty_shipped_ea",)
     default_sort = ("-ship_date", "lot")
