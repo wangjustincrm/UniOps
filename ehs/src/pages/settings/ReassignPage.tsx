@@ -167,6 +167,12 @@ function Plan({ person, onBack }: { person: Person; onBack: () => void }) {
         </Card>
       ))}
 
+      {p.is_active && (
+        <p className="rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+          Still with us: their own tasks and certificates stay with them.
+        </p>
+      )}
+
       {own.length > 0 && (
         <Card>
           <SectionTitle className="mb-1">Closed, not moved (their own)</SectionTitle>

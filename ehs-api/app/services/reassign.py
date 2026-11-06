@@ -275,27 +275,31 @@ async def carry_out(db: AsyncSession, leaver: User, plan: dict[str, uuid.UUID | 
                       "to_email": to.email, "items": items}
         await db.flush()
 
-    # Their own tasks: closed, saying why — never as done by them.
+    # ★ Round 11 review: this page also serves somebody still here, such as a
+    # supervisor handing work to a crew member. They keep their own tasks and
+    # their certificate clocks; only somebody who has left loses them.
     closed = 0
-    for t in await personal(db, leaver.id):
-        t.is_completed = True
-        t.completed_at = now
-        t.completed_by = actor
-        t.description = (t.description or "") + (
-            f"\n\nClosed by {actor_name or 'HSE'} on {plant_today():%-d %b %Y}: "
-            f"{leaver.full_name} has left. Not done by them.")
-        closed += 1
-    # A clock on their own certificate: not required, not renewed.
-    certs = list((await db.execute(select(WorkerCertification.id).where(
-        WorkerCertification.user_id == leaver.id))).scalars())
-    if certs:
-        for d in (await db.execute(select(StatutoryDeadline).where(
-                StatutoryDeadline.source_type == "cert",
-                StatutoryDeadline.source_id.in_(certs),
-                StatutoryDeadline.satisfied_at.is_(None)))).scalars().all():
-            await deadline_service.satisfy(
-                db, d, user_id=actor, user_name=actor_name,
-                evidence_note=f"Not required: employee left on {plant_today():%-d %b %Y}",
-                when=now)
+    if not leaver.is_active:
+        # Their own tasks: closed, saying why — never as done by them.
+        for t in await personal(db, leaver.id):
+            t.is_completed = True
+            t.completed_at = now
+            t.completed_by = actor
+            t.description = (t.description or "") + (
+                f"\n\nClosed by {actor_name or 'HSE'} on {plant_today():%-d %b %Y}: "
+                f"{leaver.full_name} has left. Not done by them.")
+            closed += 1
+        # A clock on their own certificate: not required, not renewed.
+        certs = list((await db.execute(select(WorkerCertification.id).where(
+            WorkerCertification.user_id == leaver.id))).scalars())
+        if certs:
+            for d in (await db.execute(select(StatutoryDeadline).where(
+                    StatutoryDeadline.source_type == "cert",
+                    StatutoryDeadline.source_id.in_(certs),
+                    StatutoryDeadline.satisfied_at.is_(None)))).scalars().all():
+                await deadline_service.satisfy(
+                    db, d, user_id=actor, user_name=actor_name,
+                    evidence_note=f"Not required: employee left on {plant_today():%-d %b %Y}",
+                    when=now)
     await db.flush()
     return {"moved": moved, "closed_own": closed}

@@ -61,7 +61,8 @@ async def preview(user_id: uuid.UUID, db: SessionDep, user: CanManageSettings): 
         groups=[GroupOut(key=k.key, label=k.label, needs=k.needs,
                          items=[_item(i) for i in found[k.key]])
                 for k in reassign.KINDS if found.get(k.key)],
-        own_tasks=own,
+        # Somebody still here keeps theirs; see `reassign.carry_out`.
+        own_tasks={} if leaver.is_active else own,
         open_permits=[_item(i) for i in await reassign.open_permits(db, leaver.id)])
 
 

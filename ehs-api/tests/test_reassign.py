@@ -119,6 +119,7 @@ async def test_their_own_tasks_close_without_reading_as_done(test_engine, db_ses
         doc_id=doc_id, doc_number="DOC-9", title="Read and sign: Lockout",
         assigned_role="requester", assigned_user_id=leaver.id)
     await db_session.flush()
+    await _leave(test_engine, leaver)
     pre = (await hse.get(f"/api/v1/reassign/{leaver.id}")).json()
     assert pre["own_tasks"] == {task_service.TASK_READ_SIGN: 1}
     done = await hse.post(f"/api/v1/reassign/{leaver.id}", json={"to": {}, "reason": "Left in June"})
@@ -162,3 +163,59 @@ async def test_only_hse(test_engine, db_session, worker):
     assert (await someone.get(f"/api/v1/reassign/{leaver.id}")).status_code == 403
     assert (await someone.post(f"/api/v1/reassign/{leaver.id}", json={
         "to": {}, "reason": "Not mine to do"})).status_code == 403
+
+
+async def _own_task_and_cert(db, person):
+    """A read-and-sign task and a certificate clock, both only theirs."""
+    from app.models.training import WorkerCertification
+    from app.services import deadlines as deadline_service
+    task = await task_service.open_task(
+        db, task_type=task_service.TASK_READ_SIGN, doc_type=task_service.DOC_DOCUMENT,
+        doc_id=uuid.uuid4(), doc_number="DOC-8", title="Read and sign: Guarding",
+        assigned_role="requester", assigned_user_id=person.id)
+    cert = WorkerCertification(id=uuid.uuid4(), user_id=person.id, user_name=person.full_name,
+                               cert_type_label="Forklift", expires_on=date.today() + timedelta(days=60))
+    db.add(cert)
+    await db.flush()
+    clock = await deadline_service.ensure_certification_deadline(db, cert)
+    await db.flush()
+    return task, clock
+
+
+async def test_somebody_still_here_keeps_their_own_tasks_and_certificates(
+        test_engine, db_session, hse_manager):
+    """★ Review: a supervisor handing a CAPA to a crew member is the ordinary case.
+    Their read-and-sign stays open and their certificate keeps its reminders."""
+    _, hse = hse_manager
+    person = await make_user(test_engine, role="requester", full_name="Sam Staying")
+    heir = await make_user(test_engine, role="requester", full_name="Ann Heir")
+    action = await _action(hse, person)
+    task, clock = await _own_task_and_cert(db_session, person)
+
+    pre = (await hse.get(f"/api/v1/reassign/{person.id}")).json()
+    assert pre["is_active"] is True and pre["own_tasks"] == {}, "nothing is offered as closing"
+    done = await hse.post(f"/api/v1/reassign/{person.id}", json={
+        "to": {"action": str(heir.id)}, "reason": "Crew change"})
+    assert done.status_code == 200, done.text
+    assert done.json()["summary"]["own_tasks_closed"] == 0
+    assert done.json()["summary"]["moved"]["action"]["count"] == 1, "the work itself still moves"
+    assert action["id"]
+
+    await db_session.refresh(task)
+    await db_session.refresh(clock)
+    assert not task.is_completed and "has left" not in (task.description or "")
+    assert clock.satisfied_at is None, "the certificate must keep its reminders"
+
+
+async def test_somebody_who_left_loses_their_certificate_clock(test_engine, db_session, hse_manager):
+    """The other half: the same set-up, after they have gone."""
+    _, hse = hse_manager
+    person = await make_user(test_engine, role="requester", full_name="Lou Leaving")
+    task, clock = await _own_task_and_cert(db_session, person)
+    await _leave(test_engine, person)
+    done = await hse.post(f"/api/v1/reassign/{person.id}", json={"to": {}, "reason": "Left in June"})
+    assert done.status_code == 200, done.text
+    await db_session.refresh(task)
+    await db_session.refresh(clock)
+    assert task.is_completed
+    assert clock.satisfied_at is not None and "employee left" in clock.evidence_note
