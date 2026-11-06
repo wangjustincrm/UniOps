@@ -78,6 +78,11 @@ const pickedAmount = (d: Due, picked: Set<string>) =>
     : Number(d.amount)
 const pickAll = (d: Due) => new Set(openInvoices(d).map((i) => i.id))
 
+// The search box matches a document number or any of its invoice numbers.
+const matchesSearch = (d: Due, term: string) =>
+  [d.doc_number, d.vendor_inv_no, ...(d.invoices ?? []).map((i) => i.number)]
+    .some((v) => v?.toLowerCase().includes(term))
+
 // Keeps a long list's header in view: the list scrolls in its own box.
 const listBox = 'max-h-[calc(100vh-15rem)] overflow-auto rounded-lg border border-neutral-200'
 const listHead = 'sticky top-0 z-10 bg-neutral-50 text-left text-xs text-neutral-500 shadow-[0_1px_0_#e5e5e5]'
@@ -183,9 +188,12 @@ export default function PaymentBatchPage() {
   }, [dueAll])
   // Column sort (client-side; the list is loaded whole for one currency).
   // null = API order. Empties (no due date / no invoice) sit last either way.
+  const [search, setSearch] = useState('')
+  const term = search.trim().toLowerCase()
   const dueOfType = useMemo(
-    () => (dueType === 'all' ? dueAll : dueAll.filter((d) => dueTypeOf(d) === dueType)),
-    [dueAll, dueType])
+    () => dueAll.filter((d) => (dueType === 'all' || dueTypeOf(d) === dueType)
+                               && (!term || matchesSearch(d, term))),
+    [dueAll, dueType, term])
   const { rows: due, sort, onSort } = useSortableRows(dueOfType, {
     document: (d) => d.doc_number,
     submitted: (d) => d.submitted_at,
@@ -345,6 +353,9 @@ export default function PaymentBatchPage() {
                 {selected.size} selected · <span className="font-mono">{fmtMoney(String(selectedTotal), currency)}</span>
               </span>
             )}
+            <input type="search" value={search} onChange={(e) => setSearch(e.target.value)}
+                   placeholder="Search PA or invoice no" aria-label="Search PA or invoice number"
+                   className={cn(inputCls, 'w-56')} />
             {canPay && (
               <button onClick={() => {
                 const held = heldInDrafts()
@@ -367,8 +378,16 @@ export default function PaymentBatchPage() {
               <tr>
                 <th className="px-3 py-2 w-10">
                   <input type="checkbox" checked={allChecked}
-                         onChange={(e) => setSelected(e.target.checked
-                           ? new Map(due.map((d) => [d.doc_id, pickAll(d)])) : new Map())} />
+                         onChange={(e) => setSelected((prev) => {
+                           // Only the rows on screen: picks made under another
+                           // search stay picked.
+                           const next = new Map(prev)
+                           for (const d of due) {
+                             if (e.target.checked) next.set(d.doc_id, pickAll(d))
+                             else next.delete(d.doc_id)
+                           }
+                           return next
+                         })} />
                 </th>
                 <SortTh label="Document" sortKey="document" sort={sort} onSort={onSort} className="px-3 py-2 w-40" />
                 <SortTh label="Submitted" sortKey="submitted" sort={sort} onSort={onSort} className="px-3 py-2 w-28" />
@@ -382,7 +401,8 @@ export default function PaymentBatchPage() {
             <tbody>
               {due.length === 0 && (
                 <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">
-                  {dueType === 'claim'
+                  {term ? `Nothing matches "${search.trim()}".`
+                    : dueType === 'claim'
                     ? `No approved ${currency} expense claims awaiting payment.`
                     : `No approved ${currency} payments awaiting a run.`}</td></tr>
               )}

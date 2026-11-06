@@ -272,7 +272,9 @@ modules:
         batch can be cancelled (Cancel Draft, same roles that can pay): nothing
         is paid and its documents are simply no longer marked.
       - >-
-        Payment Batches has two tabs: Due for Payment and Batches. A PA with
+        Payment Batches has two tabs: Due for Payment and Batches. The search
+        box beside Create Batch finds a PA, claim or invoice by its number, and
+        rows already ticked stay ticked while searching. A PA with
         several invoices that add up to the PA amount lists them under its row,
         and any of them can be ticked on its own to pay just those; a PA whose
         invoices do not add up says "Paid as a whole". The PA stays approved and
