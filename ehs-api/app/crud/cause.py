@@ -21,7 +21,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.crud.action import create as create_action
+from app.crud.action import OPEN_STATUSES, create as create_action
 from app.models.action import Action
 from app.models.incident import Cause
 from app.schemas.action import ActionCreate
@@ -151,11 +151,14 @@ async def replace(
     # ★ Round 11: "when editing the investigation, adding corrective actions are
     # not saved." This skipped any cause that already had an action, so a second
     # one was dropped with a 200. A root cause can carry several; what must not
-    # happen is the same one twice, because the screen saves the whole set.
+    # happen is the same one twice, because the screen saves the whole set. Only
+    # a live one counts: one already closed does not stop the work being raised
+    # again.
     raised = {
         (c_id, title.strip().casefold()) for c_id, title in (await db.execute(
             select(Action.cause_id, Action.title).where(
-                Action.cause_id.in_([c.id for c in result]))
+                Action.cause_id.in_([c.id for c in result]),
+                Action.status.in_(OPEN_STATUSES))
         )).all()
     } if result else set()
     for cause, item in zip(result, causes, strict=False):

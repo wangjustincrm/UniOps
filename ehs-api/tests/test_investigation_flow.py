@@ -446,6 +446,32 @@ class TestACorrectiveActionRaisedWithItsCause:
         titles = {a["title"] for a in second.json()["root"][0]["actions"]}
         assert titles == {"Re-brief the crew", "Rewrite the procedure"}
 
+    async def test_an_action_no_longer_open_does_not_stop_the_same_title(
+            self, hse_manager, submitted_incident, an_owner, db_session):
+        """★ Review: a closed or cancelled action with the same title used to
+        swallow the new one with a 200, which is the fault round 11 reported."""
+        from sqlalchemy import select
+        from app.models.action import Action
+        _, client = hse_manager
+        due = (plant_today() + timedelta(days=10)).isoformat()
+        body = {"causes": [{"cause_type": "root", "label": "Procedure not followed",
+                            "action": {"title": "Re-brief the crew", "owner_id": an_owner,
+                                       "due_date": due}}]}
+        url = f"/api/v1/incidents/{submitted_incident}/causes"
+        assert (await client.put(url, json=body)).status_code == 200
+        for gone in ("cancelled", "closed"):
+            rows = (await db_session.execute(select(Action).where(
+                Action.title == "Re-brief the crew"))).scalars().all()
+            for row in rows:
+                row.status = gone
+            await db_session.flush()
+            saved = await client.put(url, json=body)
+            assert saved.status_code == 200, saved.text
+            assert len(saved.json()["root"][0]["actions"]) == len(rows) + 1, gone
+            # The new one is open, so saving again raises nothing more.
+            again = await client.put(url, json=body)
+            assert len(again.json()["root"][0]["actions"]) == len(rows) + 1, gone
+
     async def test_a_cause_with_no_action_is_still_flagged(
             self, hse_manager, submitted_incident):
         """The admission: the field is optional and the flag still works.
