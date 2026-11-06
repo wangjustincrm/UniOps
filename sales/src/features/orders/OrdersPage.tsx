@@ -1,4 +1,4 @@
-import { DateCell, ListPage, MoneyCell, type ColumnDef, type ListCreate, type QuerySpec, type RecordTab } from '@/platform-ui'
+import { ListPage, MoneyCell, columnsOf, type ColumnDef, type ListCreate, type QuerySpec, type RecordTab } from '@/platform-ui'
 import { OrderSheet } from './OrderDetailView'
 import { OrderStatusBadge, ShopifyCell, StatusDetail } from './OrderStatusCells'
 import { ReturnAfterShipment } from '@/features/invoices/ReturnAfterShipment'
@@ -9,21 +9,23 @@ import { Recheck } from './Recheck'
 import { ordersClient, type OrderRead } from './ordersApi'
 import { PartnerCell } from '@/features/common/PartnerCell'
 
+const col = columnsOf<OrderRead>()
+
 const orderColumns: ColumnDef<OrderRead, unknown>[] = [
   { accessorKey: 'source_reference', header: 'Order ref', cell: ({ row }) => <span className="font-medium">{row.original.source_reference ?? ''}</span> },
-  { accessorKey: 'order_number', header: 'Internal no.' },
+  col.text('order_number', 'Internal no.'),
   { accessorKey: 'partner_name', header: 'Partner', cell: ({ row }) => <PartnerCell name={row.original.partner_name} code={row.original.partner_code} /> },
-  { accessorKey: 'source_order_number', header: 'Customer PO / ref.' },
-  { accessorKey: 'order_date', header: 'Ordered', cell: ({ row }) => <DateCell value={row.original.order_date} /> },
+  col.text('source_order_number', 'Customer PO / ref.'),
+  col.date('order_date', 'Ordered'),
   { accessorKey: 'order_status', header: 'Status', cell: ({ row }) => <OrderStatusBadge o={row.original} /> },
   { id: 'status_detail', header: 'Detail', cell: ({ row }) => <StatusDetail o={row.original} /> },
   { id: 'shopify', header: 'Shopify', cell: ({ row }) => <ShopifyCell o={row.original} /> },
-  { accessorKey: 'total_amount', header: 'Total', cell: ({ row }) => <MoneyCell amount={row.original.total_amount} currency={row.original.currency} /> },
+  col.money('total_amount', 'Total', { currency: 'currency' }),
   { accessorKey: 'backordered_ea', header: 'Backordered EA', cell: ({ row }) => row.original.backordered_ea
     ? <span className="font-medium text-warning-700">{row.original.backordered_ea}</span> : '' },
   { accessorKey: 'total_refunded', header: 'Refunded', cell: ({ row }) => Number(row.original.total_refunded ?? 0)
     ? <MoneyCell amount={row.original.total_refunded} currency={row.original.currency} /> : '' },
-  { accessorKey: 'net_amount', header: 'Net', cell: ({ row }) => <MoneyCell amount={row.original.net_amount} currency={row.original.currency} /> },
+  col.money('net_amount', 'Net', { currency: 'currency' }),
   { accessorKey: 'review_reason', header: 'Review reason', cell: ({ row }) => (
     <span className="line-clamp-2 max-w-md whitespace-pre-line text-xs text-neutral-600">{row.original.review_reason ?? ''}</span>
   ) },
@@ -32,7 +34,7 @@ const orderColumns: ColumnDef<OrderRead, unknown>[] = [
 /** A list of orders with the order's detail in a sheet; Review orders carry
  *  Re-check in the list and the detail (FR-OB-15). With `fixed` filters (a
  *  list inside another page) it has no views. */
-const dueColumn: ColumnDef<OrderRead, unknown> = { accessorKey: 'delivery_due_date', header: 'Delivery due', cell: ({ row }) => <DateCell value={row.original.delivery_due_date} /> }
+const dueColumn = col.date('delivery_due_date', 'Delivery due')
 const dueOrderColumns = [...orderColumns.slice(0, 5), dueColumn, ...orderColumns.slice(5)]
 
 export function OrderList({ fixed, title, description, emptyTitle, detailActions, detailTabs, toolbar, create, showDue }: {

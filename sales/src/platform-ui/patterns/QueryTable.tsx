@@ -1,3 +1,4 @@
+import { BooleanCell, DateCell, DateTimeCell, NumberCell } from '../primitives/cells'
 import { useMemo, useState, type ReactNode } from 'react'
 import { DataTable, type ColumnDef, type Grouping } from '../primitives/DataTable'
 import { groupKey } from '../primitives/groupKey'
@@ -74,11 +75,11 @@ const headerText = <T,>(c: ColumnDef<T, unknown>, field?: FieldMeta): string =>
 
 function formatValue(field: FieldMeta, v: unknown): ReactNode {
   if (v === null || v === undefined || v === '') return ''
-  if (field.type === 'bool') return v ? 'Yes' : 'No'
-  if (field.type === 'datetime') {
-    const d = new Date(String(v))
-    return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString()
-  }
+  // A field added from the chooser looks like the same kind of value in any list.
+  if (field.type === 'bool') return <BooleanCell value={Boolean(v)} />
+  if (field.type === 'datetime') return <DateTimeCell value={String(v)} />
+  if (field.type === 'date') return <DateCell value={String(v)} />
+  if (field.type === 'number') return <NumberCell value={v as string | number} />
   return String(v)
 }
 

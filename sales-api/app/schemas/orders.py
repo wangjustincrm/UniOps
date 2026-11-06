@@ -46,6 +46,7 @@ class OrderRead(BaseModel):
     short_shipped: bool = False
     status_detail: str | None = None
     status_detail_at: datetime | date | None = None
+    status_detail_kind: str | None = None  # "countdown": a time that is coming, late once it passes
     hold_reason: str | None
     review_reason: str | None
     historical: bool

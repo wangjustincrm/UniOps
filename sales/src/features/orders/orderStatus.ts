@@ -18,7 +18,7 @@ const STATUS_COLOUR: Record<string, string> = {
 }
 export const orderStatusColour = (status: string): string => STATUS_COLOUR[status] ?? 'bg-neutral-100 text-neutral-600'
 
-/** "Sends at Nov 4, 2026, 3:00 p.m.": the message and the time it names, in the viewer's format. */
+/** "Sends Nov 4, 2026, 3:00 p.m.": the message and the time it names, in the viewer's format. */
 export function statusDetailText(o: Pick<OrderRead, 'status_detail' | 'status_detail_at'>): string {
   if (!o.status_detail) return ''
   const at = o.status_detail_at

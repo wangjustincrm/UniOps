@@ -14,7 +14,7 @@ from app.domain.carriers import tracking_url
 from app.domain.lifecycle import backordered, line_state, spread
 from app.domain.order_rules import ON_HOLD_FULFILLMENT, can_cancel, hold_exits, order_state, payment_satisfied, to_ea
 from app.domain.order_status import (
-    HOLD_REASONS as ON_HOLD_REASONS, NOT_OPEN_STATUSES, ORDER_STATUSES, DetailFacts, StatusFacts, display, send_time, status_detail,
+    HOLD_REASONS as ON_HOLD_REASONS, NOT_OPEN_STATUSES, ORDER_STATUSES, DetailFacts, StatusFacts, detail_kind, display, send_time, status_detail,
 )
 from app.domain.orders import HOLD_REASONS, ORDER_STATES, SOURCE_TYPES
 from app.domain.row_matching import identifiers, line_identifiers
@@ -160,6 +160,7 @@ def detail_facts(o: Order) -> DetailFacts:
         manual_sending=o.fact("partner_sending_mode_sql") == "MANUAL",
         send_at=_send_at(o),
         sent_at=o.fact("sent_940_at_sql"), requested_date=o.requested_delivery_date, review_reason=o.review_reason,
+        delivery_due=o.fact("delivery_due_sql"), shipped_on=o.fact("last_ship_date_sql"),
         archived_at=o.archived_in_shopify_at, cancelled_at=o.source_cancelled_at, file_note=o.fact("file_note_sql"),
         shopify_error=o.fact("shopify_error_sql"), invoice_error=o.fact("invoice_error_sql"))
 
@@ -195,6 +196,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         out.order_status, out.on_hold_reason, out.order_status_label = d.order_status, d.on_hold_reason, d.label
         out.short_shipped = d.short_shipped
         out.status_detail, out.status_detail_at = status_detail(d, facts, detail_facts(o))
+        out.status_detail_kind = detail_kind(out.status_detail)
         return out
 
     @requires(READ)

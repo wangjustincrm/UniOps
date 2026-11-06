@@ -41,6 +41,7 @@ export interface OrderRead {
   /** Only what the Status does not say (a time, the hold's detail); usually empty. */
   status_detail: string | null
   status_detail_at: string | null
+  status_detail_kind: string | null
   shopify_fulfillment_status: string | null
   source_cancelled_at: string | null
   hold_reason: string | null

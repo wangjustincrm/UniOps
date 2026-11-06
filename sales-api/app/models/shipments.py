@@ -91,6 +91,8 @@ def _any_shipment(*where):
 
 
 Order.has_945_sql = _any_shipment()
+Order.last_ship_date_sql = column_property(
+    select(func.max(Shipment.ship_date)).where(Shipment.order_id == Order.id).correlate_except(Shipment).scalar_subquery())
 Order.shopify_failed_sql = _any_shipment(Shipment.shopify_status.in_(("Failed", "Suppressed")))
 Order.shopify_pending_sql = _any_shipment(Shipment.shopify_status == "Pending")
 Order.shopify_error_sql = column_property(

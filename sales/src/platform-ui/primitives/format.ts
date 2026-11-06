@@ -31,6 +31,55 @@ export function formatDate(day: string | null | undefined): string {
   return DAY.format(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])))
 }
 
+const MINUTE = 60_000
+const HOUR = 60 * MINUTE
+const DAY_MS = 24 * HOUR
+
+/** A length of time, the two largest units: "3d 4h", "2h 33m", "12m", "under 1m". */
+export function formatDuration(ms: number): string {
+  const t = Math.abs(ms)
+  if (t < MINUTE) return 'under 1m'
+  const d = Math.floor(t / DAY_MS)
+  const h = Math.floor((t % DAY_MS) / HOUR)
+  const m = Math.floor((t % HOUR) / MINUTE)
+  if (d) return h ? `${d}d ${h}h` : `${d}d`
+  if (h) return m ? `${h}h ${m}m` : `${h}h`
+  return `${m}m`
+}
+
+export interface TimeFromNow {
+  /** "in 2h 33m", "3d ago", "today", "in 12 days", "3 days ago". */
+  text: string
+  past: boolean
+}
+
+/** How far a moment is from now. A date-only value counts whole days on its own calendar day:
+ *  it never goes through `new Date("YYYY-MM-DD")`. */
+export function timeFromNow(iso: string | null | undefined, now: number): TimeFromNow | null {
+  if (!iso) return null
+  const day = DATE_ONLY.test(iso) ? /^(\d{4})-(\d{2})-(\d{2})/.exec(iso) : null
+  if (day) {
+    const today = new Date(now)
+    const days = Math.round((Date.UTC(Number(day[1]), Number(day[2]) - 1, Number(day[3]))
+      - Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())) / DAY_MS)
+    if (days === 0) return { text: 'today', past: false }
+    const n = Math.abs(days)
+    const unit = n === 1 ? 'day' : 'days'
+    return days > 0 ? { text: `in ${n} ${unit}`, past: false } : { text: `${n} ${unit} ago`, past: true }
+  }
+  const at = new Date(iso).getTime()
+  if (Number.isNaN(at)) return null
+  const past = at <= now
+  return { text: past ? `${formatDuration(now - at)} ago` : `in ${formatDuration(at - now)}`, past }
+}
+
+/** A number in the module's style, e.g. "1,200". */
+export function formatNumber(value: string | number | null | undefined): string {
+  if (value === null || value === undefined || value === '') return ''
+  const n = Number(value)
+  return Number.isFinite(n) ? n.toLocaleString('en-CA', { maximumFractionDigits: 4 }) : String(value)
+}
+
 /** The time of a moment (ms since epoch), e.g. "2:05:31 p.m.". */
 export function formatTime(ms: number): string {
   return TIME.format(ms)

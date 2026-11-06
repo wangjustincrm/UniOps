@@ -23,6 +23,7 @@ from app.domain.status import Invoice as Inv
 DRAFT, CANCELLED, ON_HOLD, COMPLETED = "Draft", "Cancelled", "On Hold", "Completed"
 WAITING_TO_SEND, WAITING_997, WAITING_945 = "To Fulfill", "Sent", "Fulfilling"
 WAITING_DELIVERY, WAITING_INVOICE = "Shipped", "To Invoice"
+SENDS, DELIVERY_DUE = "Sends", "Delivery due"  # the Detail texts that count down
 ORDER_STATUSES = (DRAFT, WAITING_TO_SEND, WAITING_997, WAITING_945, WAITING_DELIVERY, WAITING_INVOICE, COMPLETED, ON_HOLD,
                   CANCELLED)
 WAREHOUSE_STATUSES = (WAITING_TO_SEND, WAITING_997, WAITING_945)
@@ -169,6 +170,8 @@ class DetailFacts:
     send_at: datetime | None = None         # the delay's end
     sent_at: datetime | None = None         # the 940's
     requested_date: date | None = None
+    delivery_due: date | None = None        # the requested date (DC routing: do-not-deliver-after)
+    shipped_on: date | None = None          # the last 945's ship date
     review_reason: str | None = None
     archived_at: datetime | None = None
     cancelled_at: datetime | None = None
@@ -182,12 +185,13 @@ def _line(text: str | None) -> str | None:
 
 
 def status_detail(d: Display, f: StatusFacts, n: DetailFacts) -> tuple[str | None, datetime | date | None]:
-    """Only what the Status does not already say, and the time it names (shown beside it
-    in the viewer's format); nothing otherwise. Never an instruction."""
+    """What the Status does not already say, and the time it names (shown beside it in the
+    viewer's format): where the order stands in its stage; nothing when there is no fact to add."""
     s, reason = d.order_status, d.on_hold_reason
     if s == ON_HOLD:
         return {
             NEEDS_REVIEW: (_line(n.review_reason), None),
+            PAYMENT_REQUIRED: ("Payment not received", None),
             ARCHIVED: ("Archived", n.archived_at) if n.archived_at else (None, None),
             CANCELLED_AT_SOURCE: ("Cancelled", n.cancelled_at) if n.cancelled_at else (None, None),
             REJECTED_940: (_line(n.file_note), None),
@@ -199,17 +203,30 @@ def status_detail(d: Display, f: StatusFacts, n: DetailFacts) -> tuple[str | Non
     if s == WAITING_TO_SEND and f.fulfillment == F.PENDING:
         if n.manual_sending:
             return "This partner sends by hand", None
-        return ("Sends at", n.send_at) if n.send_at else (None, None)
+        return (SENDS, n.send_at) if n.send_at else (None, None)
     if s == WAITING_945 and f.shadow:  # no 940 of ours: the archive date when Zoho has fulfilled it, else the delay's end
         since = (n.archived_at if f.fulfilled_in_shopify else None) or n.send_at
-        return ("Since", since) if since else (None, None)
-    if s == WAITING_997 or (s == WAITING_945 and f.fulfillment != F.SHIPPED):
-        return ("Since", n.sent_at) if n.sent_at else (None, None)
+        return ("At warehouse since", since) if since else (None, None)
+    if s == WAITING_997:
+        return ("Sent to warehouse", n.sent_at) if n.sent_at else (None, None)
+    if s == WAITING_945 and f.fulfillment != F.SHIPPED:
+        return ("At warehouse since", n.sent_at) if n.sent_at else (None, None)
     if s == WAITING_945:
         return "Writing the tracking to Shopify", None
-    if s == WAITING_DELIVERY and f.invoice == Inv.AWAITING_REQUESTED_DATE and n.requested_date:
-        return "Requested date", n.requested_date
+    if s == WAITING_DELIVERY:
+        return (DELIVERY_DUE, n.delivery_due) if n.delivery_due else ("Ready to confirm delivery", None)
+    if s == WAITING_INVOICE:
+        return ("Invoice queued" if f.invoice == Inv.QUEUED.value else "Invoice ready to send"), None
+    if s == COMPLETED:
+        return ("Shipped", n.shipped_on) if n.shipped_on else (None, None)
+    if s == CANCELLED:
+        return ("Cancelled", n.cancelled_at) if n.cancelled_at else (None, None)
     return None, None
+
+
+def detail_kind(text: str | None) -> str | None:
+    """A time that is coming, and late once it passes, against a time that has been."""
+    return "countdown" if text in (SENDS, DELIVERY_DUE) else None
 
 
 def send_time(*, from_receipt: bool, received_at: datetime, paid_at: datetime | None, delay_minutes: int | None) -> datetime | None:

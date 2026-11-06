@@ -4,14 +4,14 @@ condition of its own."""
 import ast
 import itertools
 import pathlib
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pytest
 import sqlalchemy as sa
 
 from app.domain.order_status import (
     ARCHIVED, CANCELLED_AT_SOURCE, COMPLETED, CONFLICT_945, HOLD_REASONS, ON_HOLD, ORDER_STATUSES, SHOPIFY_FAILED, TIMEOUT_997, WAITING_945, WAITING_DELIVERY, WAITING_TO_SEND, DetailFacts, StatusFacts,
-    display, status_detail,
+    detail_kind, display, status_detail,
 )
 from app.domain.status import Fulfillment as F
 from app.domain.status import Invoice as Inv
@@ -120,10 +120,10 @@ def detail(n=None, **k):
 
 @pytest.mark.parametrize(("facts", "n", "want"), [
     (dict(fulfillment="Review"), DetailFacts(review_reason="line 1: item not in the Item Master\nsecond"), ("line 1: item not in the Item Master", None)),
-    (dict(fulfillment="Pending"), DetailFacts(send_at=T0), ("Sends at", T0)),
+    (dict(fulfillment="Pending"), DetailFacts(send_at=T0), ("Sends", T0)),
     (dict(fulfillment="Pending"), DetailFacts(manual_sending=True), ("This partner sends by hand", None)),
-    (dict(fulfillment="940 Sent"), DetailFacts(sent_at=T0), ("Since", T0)),
-    (dict(fulfillment="940 Accepted"), DetailFacts(sent_at=T0), ("Since", T0)),
+    (dict(fulfillment="940 Sent"), DetailFacts(sent_at=T0), ("Sent to warehouse", T0)),
+    (dict(fulfillment="940 Accepted"), DetailFacts(sent_at=T0), ("At warehouse since", T0)),
     (dict(fulfillment="940 Timeout"), DetailFacts(sent_at=T0), ("No 997 since", T0)),
     (dict(fulfillment="940 Rejected"), DetailFacts(file_note="AK9 R"), ("AK9 R", None)),
     (dict(fulfillment="Shipped", invoice="Not Required", shopify_failed=True), DetailFacts(shopify_error="the fulfillment: 403"), ("the fulfillment: 403", None)),
@@ -136,11 +136,31 @@ def test_the_status_detail_adds_what_the_status_does_not_say(facts, n, want):
     assert detail(n, **facts) == want
 
 
+DAY = date(2026, 11, 18)
+
+
 @pytest.mark.parametrize(("facts", "n", "want"), [
-    (dict(fulfillment="Pending", shadow=True, delay_over=True), DetailFacts(send_at=T0), ("Since", T0)),
-    (dict(fulfillment="Pending", shadow=True, fulfilled_in_shopify=True, delay_over=True), DetailFacts(send_at=T0, archived_at=T1), ("Since", T1)),
-    (dict(fulfillment="Archive Suppressed", shadow=True, fulfilled_in_shopify=True, archived=True), DetailFacts(archived_at=T1), ("Since", T1)),
-    (dict(fulfillment="Pending", shadow=True), DetailFacts(send_at=T0), ("Sends at", T0)),
+    (dict(fulfillment="Shipped", invoice="Awaiting Requested Date", invoicing=True), DetailFacts(delivery_due=DAY), ("Delivery due", DAY)),
+    (dict(fulfillment="Shipped", invoice="Pending", invoicing=True), DetailFacts(), ("Ready to confirm delivery", None)),
+    (dict(fulfillment="Shipped", invoice="Ready", invoicing=True), DetailFacts(), ("Invoice ready to send", None)),
+    (dict(fulfillment="Shipped", invoice="Queued", invoicing=True), DetailFacts(), ("Invoice queued", None)),
+    (dict(fulfillment="Shipped", invoice="Not Required"), DetailFacts(shipped_on=DAY), ("Shipped", DAY)),
+    (dict(fulfillment="Cancelled"), DetailFacts(cancelled_at=T0), ("Cancelled", T0)),
+    (dict(fulfillment="Payment Hold"), DetailFacts(), ("Payment not received", None)),
+])
+def test_every_stage_says_something_useful(facts, n, want):
+    assert detail(n, **facts) == want
+
+
+def test_only_a_time_still_to_come_counts_down():
+    assert [detail_kind(t) for t in ("Sends", "Delivery due", "At warehouse since", None)] == ["countdown", "countdown", None, None]
+
+
+@pytest.mark.parametrize(("facts", "n", "want"), [
+    (dict(fulfillment="Pending", shadow=True, delay_over=True), DetailFacts(send_at=T0), ("At warehouse since", T0)),
+    (dict(fulfillment="Pending", shadow=True, fulfilled_in_shopify=True, delay_over=True), DetailFacts(send_at=T0, archived_at=T1), ("At warehouse since", T1)),
+    (dict(fulfillment="Archive Suppressed", shadow=True, fulfilled_in_shopify=True, archived=True), DetailFacts(archived_at=T1), ("At warehouse since", T1)),
+    (dict(fulfillment="Pending", shadow=True), DetailFacts(send_at=T0), ("Sends", T0)),
 ])
 def test_the_shadow_detail_gives_a_date_we_have(facts, n, want):
     assert detail(n, **facts) == want
@@ -151,12 +171,10 @@ def test_no_status_says_shadow():
 
 
 @pytest.mark.parametrize("facts", [
-    dict(fulfillment="Shipped", invoice="Waiting for Delivery Confirmation"),  # no "Confirm delivery"
-    dict(fulfillment="Shipped", invoice="Ready"), dict(fulfillment="Shipped", invoice="Sent"),
+    dict(fulfillment="Shipped", invoice="Sent"),
     dict(fulfillment="Shipped", invoice="Not Required"), dict(fulfillment="Draft"), dict(fulfillment="Cancelled"),
-    dict(fulfillment="Payment Hold"), dict(fulfillment="On Hold"), dict(fulfillment="940 Generated"),
+    dict(fulfillment="On Hold"), dict(fulfillment="940 Generated"),
     dict(fulfillment="Pending", shadow=True, has_945=True, source_type="SHOPIFY"),
-    dict(fulfillment="Pending", shadow=True, has_945=True, invoicing=True),
 ])
 def test_the_status_detail_is_empty_when_it_has_nothing_to_add(facts):
     full = DetailFacts(send_at=T0, sent_at=T0, requested_date=T0.date(), file_note="x", shopify_error="x", invoice_error="x")

@@ -15,7 +15,7 @@ const order: OrderRead = {
   id: 4, order_number: 104, partner_code: 'SHOP', source_type: 'SHOPIFY', source_order_id: '1', source_order_number: '9302',
   source_reference: 'SHOP-9302', partner_name: 'Shopify', order_date: '2026-10-29', requested_delivery_date: null, ship_to: { name: 'A B', city: 'Montréal' },
   currency: 'CAD', total: '100.00', fulfillment_status: 'Review', invoice_status: 'Not Required', order_state: 'On Hold',
-  order_status: 'On Hold', on_hold_reason: 'Needs Review', order_status_label: 'On Hold: Needs Review', short_shipped: false, status_detail: 'line 5: item not in the Item Master', status_detail_at: null,
+  order_status: 'On Hold', on_hold_reason: 'Needs Review', order_status_label: 'On Hold: Needs Review', short_shipped: false, status_detail: 'line 5: item not in the Item Master', status_detail_at: null, status_detail_kind: null,
   shadow: false, shopify_fulfillment_status: null, source_cancelled_at: null,
   hold_reason: null, review_reason: 'line 5: item not in the Item Master (sku=NOPE; 1 CASE)', historical: false,
   first_received_at: '2026-10-29T12:00:00Z', paid_at: '2026-10-29T12:00:00Z', archived_in_shopify_at: null,
@@ -570,7 +570,7 @@ describe('Orders: backordered quantities and the invoice price before the invoic
   beforeEach(() => { Object.values(api).forEach((f) => f.mockReset()) })
   // invoiced here (an order whose invoice is Not Required has no invoice price)
   const shipped = { ...pending, fulfillment_status: 'Shipped', order_state: 'Active' as const, backordered_ea: 80, short_shipped: true,
-    order_status: 'Shipped', order_status_label: 'Shipped', status_detail: null, status_detail_at: null,
+    order_status: 'Shipped', order_status_label: 'Shipped', status_detail: null, status_detail_at: null, status_detail_kind: null,
     invoice_status: 'Waiting for Delivery Confirmation' }
   const line = { ...detail.lines[0], id: 2, line_no: 2, item_code: 'CF0093', ordered_qty: '40', order_unit: 'CASE', unit_price: '150.00',
     problem: null, qty_ea: 480, shipped_ea: 400, backordered_ea: 80, state: 'Short shipped', invoice_price: '150.00', packing: [] }
@@ -659,7 +659,7 @@ describe('the order sheet: facts, actions and tabs', () => {
     fireEvent.click(await screen.findByText('SHOP-9303'))
     const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
     expect(within(sheet).getByText('Internal no. 105 · Shopify · PO 9303')).toBeInTheDocument()  // the subtitle: the name said once
-    expect(within(sheet).getByText(/^Detail: Sends at /)).toBeInTheDocument()  // the line under the Status
+    expect(within(sheet).getByText(/^Detail: Sends /)).toBeInTheDocument()  // the line under the Status
     const facts = await within(sheet).findByLabelText('Key facts')
     expect(facts).toHaveTextContent('Total6,000.00 CAD1 line')
     expect(facts).toHaveTextContent('Net5,963.00 CAD37.00 CAD refunded')

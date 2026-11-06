@@ -12,7 +12,7 @@ const order: OrderRead = {
   id: 7, order_number: 107, partner_code: 'LBL', source_type: 'EDI_850', source_order_id: 'PO-1', source_order_number: 'PO-1',
   source_reference: 'LBL-PO-1', partner_name: 'Loblaws', order_date: '2026-10-28', requested_delivery_date: '2026-11-05', ship_to: null, currency: 'CAD', total: '500.00',
   fulfillment_status: 'Shipped', invoice_status: 'Waiting for Delivery Confirmation', order_state: 'Active', hold_reason: null,
-  order_status: 'Shipped', on_hold_reason: null, order_status_label: 'Shipped', short_shipped: false, status_detail: null, status_detail_at: null,
+  order_status: 'Shipped', on_hold_reason: null, order_status_label: 'Shipped', short_shipped: false, status_detail: null, status_detail_at: null, status_detail_kind: null,
   shadow: false, shopify_fulfillment_status: null, source_cancelled_at: null,
   review_reason: null, historical: false, first_received_at: '2026-10-28T12:00:00Z', paid_at: null, archived_in_shopify_at: null,
   archive_suppressed: false, shopify_financial_status: null, source_updated_at: null, version: 1, created_at: '2026-10-28T12:00:00Z', updated_at: null,
