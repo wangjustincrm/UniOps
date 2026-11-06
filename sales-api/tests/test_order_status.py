@@ -31,13 +31,13 @@ ALL_I = [s.value for s in Inv]
 
 # fulfillment → (Order status, reason) when the invoice has nothing to say
 STATUS_OF = {"Draft": ("Draft", None), "Review": (ON_HOLD, "Needs Review"), "Payment Hold": (ON_HOLD, "Payment Required"),
-             "Pending": ("Waiting to Send", None), "Archive Suppressed": (ON_HOLD, ARCHIVED), "940 Generated": ("Waiting to Send", None),
-             "940 Sent": ("Waiting for 997", None), "940 Accepted": ("Waiting for Packing List", None),
+             "Pending": ("To Fulfill", None), "Archive Suppressed": (ON_HOLD, ARCHIVED), "940 Generated": ("To Fulfill", None),
+             "940 Sent": ("Sent", None), "940 Accepted": ("Fulfilling", None),
              "940 Rejected": (ON_HOLD, "940 Rejected"), "940 Timeout": (ON_HOLD, TIMEOUT_997), "940 Failed": (ON_HOLD, "940 Failed"),
              "On Hold": (ON_HOLD, CONFLICT_945), "Cancelled": ("Cancelled", None)}
-SHIPPED_BY_INVOICE = {"Not Required": COMPLETED, "Pending": "Waiting for Delivery", "Awaiting Requested Date": "Waiting for Delivery",
-                      "Waiting for Delivery Confirmation": "Waiting for Delivery", "Ready": "Waiting for Invoice",
-                      "Queued": "Waiting for Invoice", "Sent": COMPLETED}
+SHIPPED_BY_INVOICE = {"Not Required": COMPLETED, "Pending": "Shipped", "Awaiting Requested Date": "Shipped",
+                      "Waiting for Delivery Confirmation": "Shipped", "Ready": "To Invoice",
+                      "Queued": "To Invoice", "Sent": COMPLETED}
 
 
 @pytest.mark.parametrize(("fulfillment", "invoice"), list(itertools.product(ALL_F, ALL_I)))
@@ -69,7 +69,7 @@ CASES = [
     # a short shipment is final: closed by its one 945, and it goes on through delivery and invoice
     (dict(fulfillment="Shipped", invoice="Not Required", short=True, source_type="SHOPIFY"), (COMPLETED, True)),
     (dict(fulfillment="Shipped", invoice="Waiting for Delivery Confirmation", short=True, source_type="EDI_850", invoicing=True),
-     ("Waiting for Delivery", True)),
+     ("Shipped", True)),
     (dict(fulfillment="Shipped", invoice="Sent", short=True, invoicing=True), (COMPLETED, True)),
     # Shopify's write
     (dict(fulfillment="Shipped", invoice="Not Required", source_type="SHOPIFY", shopify_pending=True), (WAITING_945, False)),

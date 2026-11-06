@@ -1,12 +1,12 @@
 import { Badge, Hint, StatusCell } from '@/platform-ui'
 import type { OrderRead } from './ordersApi'
-import { orderStatusTone, shopifyBadges, statusDetailText } from './orderStatus'
+import { orderStatusColour, shopifyBadges, statusDetailText } from './orderStatus'
 
 /** The Status, and beside it Short shipped when the 945 left something unshipped: a mark, not a status. */
 export function OrderStatusBadge({ o }: { o: Pick<OrderRead, 'order_status' | 'order_status_label' | 'short_shipped'> }) {
   return (
     <span className="inline-flex flex-wrap items-center gap-1">
-      <StatusCell value={o.order_status_label} tone={orderStatusTone(o.order_status)} />
+      <StatusCell value={o.order_status_label} className={orderStatusColour(o.order_status)} />
       {o.short_shipped && <Badge variant="warning">Short shipped</Badge>}
     </span>
   )

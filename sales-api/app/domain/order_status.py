@@ -21,8 +21,8 @@ from app.domain.status import Fulfillment as F
 from app.domain.status import Invoice as Inv
 
 DRAFT, CANCELLED, ON_HOLD, COMPLETED = "Draft", "Cancelled", "On Hold", "Completed"
-WAITING_TO_SEND, WAITING_997, WAITING_945 = "Waiting to Send", "Waiting for 997", "Waiting for Packing List"
-WAITING_DELIVERY, WAITING_INVOICE = "Waiting for Delivery", "Waiting for Invoice"
+WAITING_TO_SEND, WAITING_997, WAITING_945 = "To Fulfill", "Sent", "Fulfilling"
+WAITING_DELIVERY, WAITING_INVOICE = "Shipped", "To Invoice"
 ORDER_STATUSES = (DRAFT, WAITING_TO_SEND, WAITING_997, WAITING_945, WAITING_DELIVERY, WAITING_INVOICE, COMPLETED, ON_HOLD,
                   CANCELLED)
 WAREHOUSE_STATUSES = (WAITING_TO_SEND, WAITING_997, WAITING_945)
@@ -123,7 +123,7 @@ def status_rules(f, b) -> Rules:
         (is_f(F.DRAFT), DRAFT),
         (b.any_(*(c for c, _ in hold_rules(f, b))), ON_HOLD),
         # The shadow run: Zoho sends the 940 and Sales cannot tell which 997 answers it, so what
-        # shows is inferred. Only a 945 proves shipped; Waiting for 997 and Waiting for Invoice never show.
+        # shows is inferred. Only a 945 proves shipped; Sent and To Invoice never show.
         (b.all_(f.shadow, f.has_945, f.invoicing), WAITING_DELIVERY),
         (b.all_(f.shadow, f.has_945), COMPLETED),
         (b.all_(f.shadow, b.any_(f.fulfilled_in_shopify, f.delay_over)), WAITING_945),

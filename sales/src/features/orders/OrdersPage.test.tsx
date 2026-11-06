@@ -23,7 +23,7 @@ const order: OrderRead = {
   created_at: '2026-10-29T12:00:00Z', updated_at: null,
 }
 const pending: OrderRead = { ...order, id: 5, order_number: 105, source_order_number: '9303', source_reference: 'SHOP-9303', fulfillment_status: 'Pending',
-  order_state: 'Active', review_reason: null, order_status: 'Waiting to Send', on_hold_reason: null, order_status_label: 'Waiting to Send', status_detail: 'Sends at', status_detail_at: '2026-10-29T15:00:00Z' }
+  order_state: 'Active', review_reason: null, order_status: 'To Fulfill', on_hold_reason: null, order_status_label: 'To Fulfill', status_detail: 'Sends at', status_detail_at: '2026-10-29T15:00:00Z' }
 const detail: OrderDetail = { ...order, bill_to: null, dc_number: null, notes: null, shipments: [], documents: [{ id: 9, kind: 'SHOPIFY_ORDER_JSON', direction: 'IN', remote_name: 'orders page 1', created_at: order.created_at,
     file_status: null, ack_status: null, st02: null, sent_at: null, error: null, ack_detail: null }],
   timeline: [], lines: [{ id: 1, line_no: 5, item_code: null, source: { sku: 'NOPE' }, ordered_qty: '1', order_unit: 'CASE', factor_ea: null,
@@ -570,7 +570,7 @@ describe('Orders: backordered quantities and the invoice price before the invoic
   beforeEach(() => { Object.values(api).forEach((f) => f.mockReset()) })
   // invoiced here (an order whose invoice is Not Required has no invoice price)
   const shipped = { ...pending, fulfillment_status: 'Shipped', order_state: 'Active' as const, backordered_ea: 80, short_shipped: true,
-    order_status: 'Waiting for Delivery', order_status_label: 'Waiting for Delivery', status_detail: null, status_detail_at: null,
+    order_status: 'Shipped', order_status_label: 'Shipped', status_detail: null, status_detail_at: null,
     invoice_status: 'Waiting for Delivery Confirmation' }
   const line = { ...detail.lines[0], id: 2, line_no: 2, item_code: 'CF0093', ordered_qty: '40', order_unit: 'CASE', unit_price: '150.00',
     problem: null, qty_ea: 480, shipped_ea: 400, backordered_ea: 80, state: 'Short shipped', invoice_price: '150.00', packing: [] }
@@ -581,7 +581,7 @@ describe('Orders: backordered quantities and the invoice price before the invoic
     renderAs(['sales.read'])
     const row = (await screen.findByText('SHOP-9303')).closest('tr')!
     expect(row).toHaveTextContent('Short shipped')
-    expect(row).toHaveTextContent('Waiting for Delivery')
+    expect(row).toHaveTextContent('Shipped')
     expect(row).not.toHaveTextContent('Confirm delivery')
     expect(row).toHaveTextContent('80')
     fireEvent.click(within(row).getByText('SHOP-9303'))

@@ -141,5 +141,5 @@ async def test_the_open_view_over_http_filter_sort_and_count(api):
     r = await api.get("/api/v1/orders", params={"filter": f"{f['field']}:{f['op']}:{'|'.join(f['value'])}", "sort": "-order_status"}, headers=READER)
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["total"] == 2 and [o["order_status_label"] for o in body["items"]] == ["Waiting to Send", "On Hold: Needs Review"]
+    assert body["total"] == 2 and [o["order_status_label"] for o in body["items"]] == ["To Fulfill", "On Hold: Needs Review"]
 

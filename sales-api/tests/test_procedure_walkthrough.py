@@ -241,18 +241,18 @@ async def test_a_shopify_normal(t):
     o = await shopify(t, 1, 9301, financial="pending")
     await see(t, o, "A1 received, unpaid", "Payment Hold", "Not Required", "On Hold", reason="Payment Required")
     o = await shopify(t, 1, 9301, financial="paid")
-    await see(t, o, "A2 paid", "Pending", "Not Required", "Waiting to Send", detail="Sends at")
+    await see(t, o, "A2 paid", "Pending", "Not Required", "To Fulfill", detail="Sends at")
     await system(t)
-    await see(t, o, "A3 cycle, delay running", "Pending", "Not Required", "Waiting to Send", detail="Sends at")
+    await see(t, o, "A3 cycle, delay running", "Pending", "Not Required", "To Fulfill", detail="Sends at")
     assert outgoing(t)["sftp"] == []
     after(t, minutes=181)
     await system(t)
-    await see(t, o, "A4 delay over, 940 sent", "940 Sent", "Not Required", "Waiting for 997", detail="Since")
+    await see(t, o, "A4 delay over, 940 sent", "940 Sent", "Not Required", "Sent", detail="Since")
     assert outgoing(t)["sftp"] == ["put"]
     await accept(t, o)
-    await see(t, o, "A5 997 accepted", "940 Accepted", "Not Required", "Waiting for Packing List", detail="Since")
+    await see(t, o, "A5 997 accepted", "940 Accepted", "Not Required", "Fulfilling", detail="Since")
     await ship(t, o, [("CF0092", 12, 12)])
-    await see(t, o, "A6 945 read, write queued", "Shipped", "Not Required", "Waiting for Packing List",
+    await see(t, o, "A6 945 read, write queued", "Shipped", "Not Required", "Fulfilling",
               detail="Writing the tracking to Shopify")
     await system(t)
     await see(t, o, "A7 fulfilled and closed", "Shipped", "Not Required", "Completed")
@@ -263,28 +263,28 @@ async def test_a_shopify_normal(t):
 # ── B / C. Retailer ──────────────────────────────────────────────────────────
 async def retailer_to_shipped(t, number, tag, *, partner="LBL", rows=(("CF0092", 12, 12), ("CF0010", 12, 12)), short=False):
     o = await retailer(t, number, partner=partner, requested=today(t, 3))
-    await see(t, o, f"{tag}1 850 read", "Pending", "Pending", "Waiting to Send", detail="Sends at")
+    await see(t, o, f"{tag}1 850 read", "Pending", "Pending", "To Fulfill", detail="Sends at")
     await system(t)
-    await see(t, o, f"{tag}2 940 sent", "940 Sent", "Pending", "Waiting for 997", detail="Since")
+    await see(t, o, f"{tag}2 940 sent", "940 Sent", "Pending", "Sent", detail="Since")
     await accept(t, o)
-    await see(t, o, f"{tag}3 997 accepted", "940 Accepted", "Pending", "Waiting for Packing List", detail="Since")
+    await see(t, o, f"{tag}3 997 accepted", "940 Accepted", "Pending", "Fulfilling", detail="Since")
     await ship(t, o, list(rows), tracking=None)
-    await see(t, o, f"{tag}4 945 read", "Shipped", "Pending", "Waiting for Delivery", short=short)
+    await see(t, o, f"{tag}4 945 read", "Shipped", "Pending", "Shipped", short=short)
     await system(t)
-    await see(t, o, f"{tag}5 before the requested date", "Shipped", "Awaiting Requested Date", "Waiting for Delivery",
+    await see(t, o, f"{tag}5 before the requested date", "Shipped", "Awaiting Requested Date", "Shipped",
               short=short, detail="Requested date")
     after(t, days=4)
     await system(t)
-    await see(t, o, f"{tag}6 requested date reached", "Shipped", "Waiting for Delivery Confirmation", "Waiting for Delivery", short=short)
+    await see(t, o, f"{tag}6 requested date reached", "Shipped", "Waiting for Delivery Confirmation", "Shipped", short=short)
     return o
 
 
 async def test_b_retailer_810(t):
     o = await retailer_to_shipped(t, "4800000011", "B")
     inv = await confirm(t, o)
-    await see(t, o, "B7 delivery confirmed", "Shipped", "Ready", "Waiting for Invoice")
+    await see(t, o, "B7 delivery confirmed", "Shipped", "Ready", "To Invoice")
     await send_invoice(t, inv.id)
-    await see(t, o, "B8 invoice queued", "Shipped", "Queued", "Waiting for Invoice")
+    await see(t, o, "B8 invoice queued", "Shipped", "Queued", "To Invoice")
     await system(t)
     await see(t, o, "B9 810 sent", "Shipped", "Sent", "Completed")
     [path] = [p for p in t.sftp.files if p.startswith(TC_OUT)]
@@ -298,7 +298,7 @@ async def test_c_retailer_invoice_by_email(t):
         await u.commit()
     o = await retailer_to_shipped(t, "4800000012", "C", partner="SOB")
     inv = await confirm(t, o)
-    await see(t, o, "C7 delivery confirmed", "Shipped", "Ready", "Waiting for Invoice")
+    await see(t, o, "C7 delivery confirmed", "Shipped", "Ready", "To Invoice")
     await send_invoice(t, inv.id)
     await system(t)
     await see(t, o, "C8 email sent", "Shipped", "Sent", "Completed")
@@ -314,7 +314,7 @@ async def test_d_short_shopify(t):
     await system(t)
     await accept(t, o)
     await ship(t, o, [("CF0092", 12, 6)])
-    await see(t, o, "D1 short 945", "Shipped", "Not Required", "Waiting for Packing List", short=True,
+    await see(t, o, "D1 short 945", "Shipped", "Not Required", "Fulfilling", short=True,
               detail="Writing the tracking to Shopify")
     await system(t)
     await see(t, o, "D2 Shopify written", "Shipped", "Not Required", "Completed", short=True)
@@ -325,7 +325,7 @@ async def test_d_short_shopify(t):
 async def test_d_short_retailer_invoices_the_confirmed_quantity(t):
     o = await retailer_to_shipped(t, "4800000013", "D", rows=(("CF0092", 12, 6), ("CF0010", 12, 12)), short=True)
     inv = await confirm(t, o)
-    await see(t, o, "D7 delivery confirmed", "Shipped", "Ready", "Waiting for Invoice", short=True)
+    await see(t, o, "D7 delivery confirmed", "Shipped", "Ready", "To Invoice", short=True)
     rows = await t.q("SELECT item_code, qty, uom, amount FROM sales_invoice_lines WHERE invoice_id = :i ORDER BY line_no", i=inv.id)
     assert [(r["item_code"], r["qty"]) for r in rows] == [("CF0092", 1), ("CF0010", 1)]  # 6 EA = 1 case, not the 2 ordered
     await send_invoice(t, inv.id)
@@ -360,9 +360,9 @@ async def test_e_manual_automatic_partner(t):
     await system(t)
     await see(t, o.id, "E2 a draft gets no 940", "Draft", "Not Required", "Draft")
     await submit(t, o)
-    await see(t, o.id, "E3 submitted", "Pending", "Not Required", "Waiting to Send", detail="Sends at")
+    await see(t, o.id, "E3 submitted", "Pending", "Not Required", "To Fulfill", detail="Sends at")
     await system(t)
-    await see(t, o.id, "E4 940 sent", "940 Sent", "Not Required", "Waiting for 997", detail="Since")
+    await see(t, o.id, "E4 940 sent", "940 Sent", "Not Required", "Sent", detail="Since")
     await accept(t, o.id)
     await ship(t, o.id, [("CF0092", 12, 12)])
     await see(t, o.id, "E5 945 read", "Shipped", "Not Required", "Completed")
@@ -371,13 +371,13 @@ async def test_e_manual_automatic_partner(t):
 async def test_e_manual_mode_partner_needs_send_940_now(t):
     o = await manual(t, "HAND")
     await submit(t, o)
-    await see(t, o.id, "E6 submitted", "Pending", "Not Required", "Waiting to Send", detail="This partner sends by hand")
+    await see(t, o.id, "E6 submitted", "Pending", "Not Required", "To Fulfill", detail="This partner sends by hand")
     await system(t)
-    await see(t, o.id, "E7 the cycle sends nothing", "Pending", "Not Required", "Waiting to Send", detail="This partner sends by hand")
+    await see(t, o.id, "E7 the cycle sends nothing", "Pending", "Not Required", "To Fulfill", detail="This partner sends by hand")
     await send_now(t, o.id)
-    await see(t, o.id, "E8 Send 940 now", "940 Generated", "Not Required", "Waiting to Send")
+    await see(t, o.id, "E8 Send 940 now", "940 Generated", "Not Required", "To Fulfill")
     await system(t)
-    await see(t, o.id, "E9 sent", "940 Sent", "Not Required", "Waiting for 997", detail="Since")
+    await see(t, o.id, "E9 sent", "940 Sent", "Not Required", "Sent", detail="Since")
 
 
 # ── F. Holds ─────────────────────────────────────────────────────────────────
@@ -405,7 +405,7 @@ async def test_f_needs_review_and_recheck(t):
     async with t.factory(OP) as u:
         await OrderService(u).resolve_review(o, t.rt.tasks, t.shop)
         await u.commit()
-    await see(t, o, "F2 Re-check clears it", "Pending", "Not Required", "Waiting to Send", detail="Sends at")
+    await see(t, o, "F2 Re-check clears it", "Pending", "Not Required", "To Fulfill", detail="Sends at")
     assert await tasks(t, "order_review") == [True]
 
 
@@ -414,7 +414,7 @@ async def test_f_archived_in_shopify_and_unarchived(t):
     await see(t, o, "F3 archived before the 940", "Archive Suppressed", "Not Required", "On Hold", reason="Archived in Shopify", detail="Archived")
     assert await tasks(t, "order_archived") == [False]
     o = await shopify(t, 5, 9305)
-    await see(t, o, "F4 un-archived", "Pending", "Not Required", "Waiting to Send", detail="Sends at")
+    await see(t, o, "F4 un-archived", "Pending", "Not Required", "To Fulfill", detail="Sends at")
     assert await tasks(t, "order_archived") == [True]
 
 
@@ -425,7 +425,7 @@ async def test_f_940_rejected_and_resent(t):
     await see(t, o, "F5 997 rejected", "940 Rejected", "Not Required", "On Hold", reason="940 Rejected", detail=r)
     await send_now(t, o)
     await system(t)
-    await see(t, o, "F6 resent", "940 Sent", "Not Required", "Waiting for 997", detail="Since")
+    await see(t, o, "F6 resent", "940 Sent", "Not Required", "Sent", detail="Since")
 
 
 async def test_f_940_failed_and_resent(t):
@@ -437,7 +437,7 @@ async def test_f_940_failed_and_resent(t):
     t.sftp.fail.clear()
     await send_now(t, o)
     await system(t)
-    await see(t, o, "F8 resent", "940 Sent", "Not Required", "Waiting for 997", detail="Since")
+    await see(t, o, "F8 resent", "940 Sent", "Not Required", "Sent", detail="Since")
 
 
 async def test_f_997_timeout_then_a_late_997(t):
@@ -446,7 +446,7 @@ async def test_f_997_timeout_then_a_late_997(t):
     await system(t)
     await see(t, o, "F9 no 997 in time", "940 Timeout", "Not Required", "On Hold", reason="997 Timeout", detail="No 997 since")
     await accept(t, o)
-    await see(t, o, "F10 late 997", "940 Accepted", "Not Required", "Waiting for Packing List", detail="Since")
+    await see(t, o, "F10 late 997", "940 Accepted", "Not Required", "Fulfilling", detail="Since")
     assert await tasks(t, "940_timeout") == [True]
 
 
@@ -455,7 +455,7 @@ async def test_f_997_timeout_then_a_late_945(t):
     after(t, minutes=121)
     await system(t)
     await ship(t, o, [("CF0092", 12, 12)])
-    await see(t, o, "F11 late 945", "Shipped", "Not Required", "Waiting for Packing List", detail="Writing the tracking to Shopify")
+    await see(t, o, "F11 late 945", "Shipped", "Not Required", "Fulfilling", detail="Writing the tracking to Shopify")
     await system(t)
     await see(t, o, "F12 written", "Shipped", "Not Required", "Completed")
 
@@ -507,7 +507,7 @@ async def test_f_shopify_update_failed_and_retry(t):
     async with t.factory(OP) as u:
         await OrderService(u).retry_shopify(sh["id"], t.rt.shipments)
         await u.commit()
-    await see(t, o, "F17 Retry queued", "Shipped", "Not Required", "Waiting for Packing List", detail="Writing the tracking to Shopify")
+    await see(t, o, "F17 Retry queued", "Shipped", "Not Required", "Fulfilling", detail="Writing the tracking to Shopify")
     await system(t)
     await see(t, o, "F18 written", "Shipped", "Not Required", "Completed")
 
@@ -563,10 +563,10 @@ async def test_f_release_waits_for_the_row_and_accepting_it_lets_the_invoice_go(
         await resolve_row(t)
     assert e.value.code == "shipment.reason_required"
     await resolve_row(t, reason="extra sample, no charge")
-    await see(t, o, "F22 row accepted", "Shipped", "Pending", "Waiting for Delivery")
+    await see(t, o, "F22 row accepted", "Shipped", "Pending", "Shipped")
     assert await tasks(t, "invoice_hold") == [True]
     await system(t)
-    await see(t, o, "F23 next cycle stays released", "Shipped", "Waiting for Delivery Confirmation", "Waiting for Delivery")
+    await see(t, o, "F23 next cycle stays released", "Shipped", "Waiting for Delivery Confirmation", "Shipped")
     assert await t.q("SELECT 1 FROM sales_audit WHERE reason LIKE '945 row CRMMARK002: accepted%'")
     inv = await confirm(t, o)
     rows = await t.q("SELECT item_code FROM sales_invoice_lines WHERE invoice_id = :i ORDER BY line_no", i=inv.id)
@@ -601,7 +601,7 @@ async def test_f_a_row_of_the_same_item_links_and_counts_on_the_line_and_the_inv
         d = await OrderService(u).detail(o)
     assert [r.matching_lines for s in d.shipments for r in s.rows if r.needs_review] == [[line["id"]]]
     await resolve_row(t, line["id"])
-    await see(t, o, "F30 linked", "Shipped", "Pending", "Waiting for Delivery")
+    await see(t, o, "F30 linked", "Shipped", "Pending", "Shipped")
     assert (await t.q("SELECT shipped_ea FROM sales_order_lines WHERE id = :i", i=line["id"]))[0]["shipped_ea"] == 12
     assert await t.q("SELECT 1 FROM sales_shipment_rows WHERE needs_review") == []
 
@@ -613,9 +613,9 @@ async def test_f_a_part_case_holds_the_invoice_and_release_lets_it_go(t):
     async with t.factory(OP) as u:
         await InvoiceService(u).release(t.rt.invoicing, ReleaseIn(order_id=o, reason="agreed with the buyer"))
         await u.commit()
-    await see(t, o, "F25 released", "Shipped", "Ready", "Waiting for Invoice", short=True)
+    await see(t, o, "F25 released", "Shipped", "Ready", "To Invoice", short=True)
     await system(t)
-    await see(t, o, "F26 stays released", "Shipped", "Ready", "Waiting for Invoice", short=True)
+    await see(t, o, "F26 stays released", "Shipped", "Ready", "To Invoice", short=True)
     await send_invoice(t, inv.id)
     await system(t)
     await see(t, o, "F27 sent", "Shipped", "Sent", "Completed", short=True)
@@ -656,7 +656,7 @@ async def test_f_cancel_an_order_with_a_generated_940_writes_nothing(t):
     o = await shopify(t, 17, 9317)
     after(t, minutes=181)
     await t.rt.outbound.queue_due()
-    await see(t, o, "F30 940 generated", "940 Generated", "Not Required", "Waiting to Send")
+    await see(t, o, "F30 940 generated", "940 Generated", "Not Required", "To Fulfill")
     await cancel(t, o)
     await see(t, o, "F31 cancelled", "Cancelled", "Not Required", "Cancelled")
     [d] = await t.q("SELECT file_status FROM sales_documents WHERE kind = '940_EDI'")
@@ -685,7 +685,7 @@ async def test_f_cancelled_at_source_exits(t):
         await release(t, o, "Shipped")
     assert e.value.code == "order.hold_exit"
     await release(t, o, "940 Sent")
-    await see(t, o, "F33 back to what it held", "940 Sent", "Not Required", "Waiting for 997", detail="Since")
+    await see(t, o, "F33 back to what it held", "940 Sent", "Not Required", "Sent", detail="Since")
     assert await tasks(t, "cancel_after_940") == [True]
 
 
@@ -707,7 +707,7 @@ async def test_f_a_945_after_cancelled_at_source_stays_held_until_a_person_says_
     assert "CF0092 12" in task["description"] and not task["is_completed"]
     assert await exits(t, o) == (True, ["Cancelled", "Shipped", "940 Sent"])
     await release(t, o, "Shipped")
-    await see(t, o, "F36 a person says Shipped", "Shipped", "Not Required", "Waiting for Packing List", detail="Writing the tracking to Shopify")
+    await see(t, o, "F36 a person says Shipped", "Shipped", "Not Required", "Fulfilling", detail="Writing the tracking to Shopify")
     await system(t)
     await see(t, o, "F37 written", "Shipped", "Not Required", "Completed")
     assert outgoing(t)["shopify"] == ["create_fulfillment", "close_order"]
@@ -807,7 +807,7 @@ async def test_g_a_shadow_order_not_yet_due_stays_off_the_delivery_list(t):
     async with t.factory(OP) as u:
         waiting = await OrderService(u).list(QuerySpec(page=1, page_size=50, filters=[Filter(field="to_confirm", op="eq", value="true")]))
         d = await OrderService(u).get(o)
-    assert d.order_status == "Waiting for Delivery" and waiting.items == []
+    assert d.order_status == "Shipped" and waiting.items == []
 
 
 async def test_g_a_cancelled_order_leaves_the_delivery_list(t):
@@ -888,7 +888,7 @@ async def test_d_the_invoice_takes_the_confirmed_quantity_not_the_shipped_one(t)
     o = await retailer_to_shipped(t, "4800000018", "D")
     lines = await t.q("SELECT id, item_code FROM sales_order_lines WHERE order_id = :o ORDER BY line_no", o=o)
     inv = await confirm(t, o, [{"order_line_id": ln["id"], "delivered_qty": 6 if ln["item_code"] == "CF0092" else 12} for ln in lines])
-    await see(t, o, "D9 confirmed less than shipped", "Shipped", "Ready", "Waiting for Invoice")
+    await see(t, o, "D9 confirmed less than shipped", "Shipped", "Ready", "To Invoice")
     rows = await t.q("SELECT item_code, qty FROM sales_invoice_lines WHERE invoice_id = :i ORDER BY line_no", i=inv.id)
     assert [(r["item_code"], r["qty"]) for r in rows] == [("CF0092", 1), ("CF0010", 1)]  # 6 of the 12 shipped
 
@@ -926,7 +926,7 @@ async def test_one_item_on_two_lines_in_full_is_not_short_applied(t):
     await system(t)
     await accept(t, o)
     await ship(t, o, [("CF0092", 7, 6), ("CF0092", 7, 1)])  # the 6 first: it fills line 1 and most of line 2
-    await see(t, o, "H1 two lines, 7 of 7, applied", "Shipped", "Not Required", "Waiting for Packing List",
+    await see(t, o, "H1 two lines, 7 of 7, applied", "Shipped", "Not Required", "Fulfilling",
               detail="Writing the tracking to Shopify")
     assert await figures(t, o) == [(1, 1, 0, None, None), (6, 6, 0, None, None)]
     assert await rows_of(t, o) == [(6, 6), (1, 1)]  # each row under its own line
@@ -943,7 +943,7 @@ async def test_one_item_on_two_lines_really_short_applied(t):
     await system(t)
     await accept(t, o)
     await ship(t, o, [("CF0092", 2, 1)])
-    await see(t, o, "H3 two lines, 1 of 2, applied", "Shipped", "Not Required", "Waiting for Packing List", short=True,
+    await see(t, o, "H3 two lines, 1 of 2, applied", "Shipped", "Not Required", "Fulfilling", short=True,
               detail="Writing the tracking to Shopify")
     assert await figures(t, o) == [(1, 1, 0, None, None), (1, 0, 1, None, None)]
     assert await tasks(t, "short_shipment") == [False]
@@ -971,7 +971,7 @@ async def test_a_row_that_fits_no_line_keeps_the_totals_and_notifies(t):
     await system(t)
     await accept(t, o)
     await ship(t, o, [("CF0092", 7, 3), ("CF0092", 7, 4)])
-    await see(t, o, "H6 rows 3 and 4 on lines 1 and 6", "Shipped", "Not Required", "Waiting for Packing List",
+    await see(t, o, "H6 rows 3 and 4 on lines 1 and 6", "Shipped", "Not Required", "Fulfilling",
               detail="Writing the tracking to Shopify")
     assert await figures(t, o) == [(1, 1, 0, None, None), (6, 6, 0, None, None)]
     assert await rows_of(t, o) == [(3, 6), (4, 6)]  # the 3 did not fit: linked to the largest line
@@ -1017,16 +1017,16 @@ async def test_g_shadow_statuses_and_nothing_goes_out(t):
         await SETTINGS.set(u.session, SHADOW_MODE, True)
         await mark_open_orders(u)
         await u.commit()
-    await see(t, open_shop, "G1 Shopify, delay running", "Pending", "Not Required", "Waiting to Send", detail="Sends at")
-    await see(t, retail, "G2 retailer, delay over", "Pending", "Pending", "Waiting for Packing List", detail="Since")
+    await see(t, open_shop, "G1 Shopify, delay running", "Pending", "Not Required", "To Fulfill", detail="Sends at")
+    await see(t, retail, "G2 retailer, delay over", "Pending", "Pending", "Fulfilling", detail="Since")
     await radiant(t, x945(t, "9308", "9308", [("CF0092", 12, 12)]))
     await radiant(t, x945(t, "001009000", "4800000016", [("CF0092", 12, 12), ("CF0010", 12, 12)], tracking=None))
     await see(t, shipped_shop, "G3 Shopify with a 945", "Pending", "Not Required", "Completed")
-    await see(t, retail, "G4 retailer with a 945", "Pending", "Pending", "Waiting for Delivery")
+    await see(t, retail, "G4 retailer with a 945", "Pending", "Pending", "Shipped")
     after(t, days=5)
     await system(t)
     await see(t, shipped_shop, "G5 after a cycle", "Pending", "Not Required", "Completed")
-    await see(t, retail, "G6 after a cycle", "Pending", "Pending", "Waiting for Delivery")
+    await see(t, retail, "G6 after a cycle", "Pending", "Pending", "Shipped")
     assert outgoing(t) == {"sftp": [], "mail": 0, "shopify": []}
     assert await t.q("SELECT 1 FROM sales_documents WHERE direction = 'OUT'") == []
     assert await t.q("SELECT 1 FROM sales_order_lines WHERE shipped_ea IS NOT NULL") == []
@@ -1046,7 +1046,7 @@ async def test_g_fulfilled_and_archived_without_a_945_is_with_zoho_until_the_945
     t.shop.orders = [order]
     after(t, seconds=1)
     await job(t, t.store)
-    await see(t, o, "G8 fulfilled and archived, no 945", "Archive Suppressed", "Not Required", "Waiting for Packing List", detail="Since")
+    await see(t, o, "G8 fulfilled and archived, no 945", "Archive Suppressed", "Not Required", "Fulfilling", detail="Since")
     state = OrderRepository.presets[0].as_dict()["state"]["filters"][0]
     async with t.factory(OP) as u:
         found = await OrderService(u).list(QuerySpec(page=1, page_size=50, filters=[Filter(field=state["field"], op=state["op"], value=state["value"])]))

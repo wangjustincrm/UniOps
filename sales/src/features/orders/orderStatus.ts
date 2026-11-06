@@ -4,10 +4,19 @@ import type { OrderRead, ShipmentRead } from './ordersApi'
 type Tone = 'neutral' | 'info' | 'success' | 'warning'
 
 // The one place the Status gets its colour; the values come from sales-api (app/domain/order_status.py).
-const STATUS_TONE: Record<string, Tone> = {
-  Draft: 'neutral', Cancelled: 'neutral', 'On Hold': 'warning', Completed: 'success',
+// Each stage has its own colour, so where an order is reads at a glance; the name is always written too.
+const STATUS_COLOUR: Record<string, string> = {
+  Draft: 'bg-neutral-100 text-neutral-600',
+  'To Fulfill': 'bg-blue-100 text-blue-800',
+  Sent: 'bg-cyan-100 text-cyan-800',
+  Fulfilling: 'bg-violet-100 text-violet-800',
+  Shipped: 'bg-indigo-100 text-indigo-800',
+  'To Invoice': 'bg-orange-100 text-orange-800',
+  Completed: 'bg-green-100 text-green-800',
+  'On Hold': 'bg-red-100 text-red-800',
+  Cancelled: 'bg-neutral-200 text-neutral-500',
 }
-export const orderStatusTone = (status: string): Tone => STATUS_TONE[status] ?? 'info'
+export const orderStatusColour = (status: string): string => STATUS_COLOUR[status] ?? 'bg-neutral-100 text-neutral-600'
 
 /** "Sends at Nov 4, 2026, 3:00 p.m.": the message and the time it names, in the viewer's format. */
 export function statusDetailText(o: Pick<OrderRead, 'status_detail' | 'status_detail_at'>): string {

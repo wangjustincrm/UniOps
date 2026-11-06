@@ -275,11 +275,11 @@ Four status lines are the source; each value has a closed list (FR-OB-08). They 
 | Cancelled | Fulfillment Cancelled |
 | Draft | Fulfillment Draft |
 | On Hold: *reason* | One of the reasons below |
-| Waiting to Send | Pending (delay running, or a Manual-mode partner waiting for Send 940 now) or 940 Generated |
-| Waiting for 997 | 940 Sent |
-| Waiting for Packing List | 940 Accepted. Also Shipped while the Shopify tracking write is queued (minutes): the order is not Completed until it is written |
-| Waiting for Delivery | Shipped, invoice Pending, Awaiting Requested Date or Waiting for Delivery Confirmation |
-| Waiting for Invoice | Shipped, invoice Ready or Queued |
+| To Fulfill | Pending (delay running, or a Manual-mode partner waiting for Send 940 now) or 940 Generated |
+| Sent | 940 Sent |
+| Fulfilling | 940 Accepted. Also Shipped while the Shopify tracking write is queued (minutes): the order is not Completed until it is written |
+| Shipped | Shipped, invoice Pending, Awaiting Requested Date or Waiting for Delivery Confirmation |
+| To Invoice | Shipped, invoice Ready or Queued |
 | Completed | Shipped and invoice Sent, or Shipped, invoice Not Required and the Shopify write done (or none needed) |
 
 A short shipment is final (D18): it never stays open, and a retailer short shipment still passes delivery and invoice. **Short shipped** is a badge beside the Status, not a Status: shown when the 945 left a line unshipped, the shadow run's 945 included.

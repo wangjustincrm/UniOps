@@ -18,7 +18,7 @@ export function MoneyCell({ amount, currency }: { amount: string | number | null
 }
 
 /** A status as a badge; `tone` overrides the shared map (e.g. a derived order state). */
-export function StatusCell({ value, tone }: { value: string | null | undefined; tone?: BadgeVariant }) {
+export function StatusCell({ value, tone, className }: { value: string | null | undefined; tone?: BadgeVariant; className?: string }) {
   if (!value) return <span className="text-neutral-400">—</span>
-  return <Badge variant={tone ?? statusTone(value)}>{value}</Badge>
+  return <Badge variant={tone ?? statusTone(value)} className={className}>{value}</Badge>
 }
