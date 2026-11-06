@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
 import { Check, ChevronsUpDown } from 'lucide-react'
 import { Popover } from './Popover'
+import { CHOOSING } from './submitOnEnter'
 import type { ComboOption } from './Combobox'
 import { cn } from '../lib/cn'
 
@@ -102,7 +103,7 @@ export function Autocomplete({
         </button>
       }
     >
-      <input autoFocus value={query} onKeyDown={onKey} aria-label={`${aria['aria-label'] ?? 'Options'}: search`}
+      <input {...CHOOSING} autoFocus value={query} onKeyDown={onKey} aria-label={`${aria['aria-label'] ?? 'Options'}: search`}
         aria-controls={listId} placeholder={minChars > 1 ? `Type ${minChars} or more characters…` : 'Type to search…'}
         onChange={(e) => setQuery(e.target.value)}
         className="mb-1 h-9 w-full rounded-md border border-neutral-200 px-2 text-sm outline-none focus:border-primary-600" />

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Chip } from './Chip'
 import { Input } from './shell'
+import { CHOOSING } from './submitOnEnter'
 
 export interface TagInputProps {
   values: string[]
@@ -13,7 +14,7 @@ export interface TagInputProps {
   autoFocus?: boolean
 }
 
-/** Several values as tags: Enter (or a comma, for text) adds the typed value,
+/** Several values as tags: Enter (or a comma, for text) adds the typed value, and with nothing typed goes to the form;
  *  Backspace in an empty box removes the last one. */
 export function TagInput({ values, onChange, draft, onDraftChange, label, type = 'text', autoFocus }: TagInputProps) {
   const [focused, setFocused] = useState(false)
@@ -28,6 +29,7 @@ export function TagInput({ values, onChange, draft, onDraftChange, label, type =
         <Chip key={v} onRemove={() => onChange(values.filter((x) => x !== v))} removeLabel={`Remove ${v}`}>{v}</Chip>
       ))}
       <Input
+        {...(draft.trim() ? CHOOSING : {})}
         aria-label={label}
         type={type}
         value={draft}
@@ -44,7 +46,7 @@ export function TagInput({ values, onChange, draft, onDraftChange, label, type =
           } else onDraftChange(v)
         }}
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
+          if (e.key === 'Enter' && draft.trim()) {  // an empty box: Enter belongs to the form
             e.preventDefault()
             add()
           } else if (e.key === 'Backspace' && draft === '' && values.length) onChange(values.slice(0, -1))

@@ -3,7 +3,8 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { Controller, useForm, useWatch, type FieldValues, type Resolver, type UseFormReturn } from 'react-hook-form'
 import type { z } from 'zod'
 import { Autocomplete } from '../primitives/Autocomplete'
-import { Checkbox, CheckboxList } from '../primitives/Checkbox'
+import { Checkbox } from '../primitives/Checkbox'
+import { MultiChoice } from '../primitives/MultiChoice'
 import { DayChips, PresetNumber, Segmented } from '../primitives/ChoiceControls'
 import type { ComboOption } from '../primitives/Combobox'
 import { DateInput, NumberInput, Textarea } from '../primitives/FieldInputs'
@@ -166,7 +167,7 @@ export function SchemaFields({ form, fields, readOnly, idPrefix = 'sf' }: {
         } else if (f.type === 'multiselect') {
           control = (
             <Controller control={form.control} name={f.name} render={({ field }) => (
-              <CheckboxList label={f.label} options={f.options ?? []} values={Array.isArray(field.value) ? field.value : []}
+              <MultiChoice label={f.label} options={f.options ?? []} values={Array.isArray(field.value) ? field.value : []}
                 onChange={field.onChange} disabled={common.disabled} />
             )} />
           )

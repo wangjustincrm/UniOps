@@ -242,3 +242,19 @@ describe('list totals (summed by the server over the whole filtered result)', ()
     expect(document.querySelector('tfoot')).toBeNull()
   })
 })
+
+describe('the search panel, by keyboard', () => {
+  it('Enter on the field after choosing runs the search', async () => {
+    const t = renderTable({})
+    fireEvent.click(await screen.findByRole('button', { name: /^Search on any field/ }))
+    const panel = await screen.findByRole('dialog', { name: 'Search on any field' })
+    fireEvent.click(within(panel).getByLabelText('Item code'))
+    const code = within(panel).getByLabelText('Item code: value')
+    fireEvent.change(code, { target: { value: 'CF' } })
+    fireEvent.keyDown(code, { key: 'Enter' })  // adds the value; the panel stays
+    expect(screen.getByRole('dialog', { name: 'Search on any field' })).toBeInTheDocument()
+    fireEvent.keyDown(code, { key: 'Enter' })  // nothing left to add: searches
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Search on any field' })).toBeNull())
+    expect(t.request().getAll('filter').join()).toContain('CF')
+  })
+})

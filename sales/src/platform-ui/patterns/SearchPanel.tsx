@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
-import { Checkbox, CheckboxList } from '../primitives/Checkbox'
+import { Checkbox } from '../primitives/Checkbox'
 import { DateInput, DateTimeInput, NumberInput } from '../primitives/FieldInputs'
+import { MultiChoice } from '../primitives/MultiChoice'
 import { Select } from '../primitives/Select'
+import { submitOnEnter } from '../primitives/submitOnEnter'
 import { Button } from '../primitives/shell'
 import { TagInput } from '../primitives/TagInput'
 import type { FieldMeta } from '../resource/listMeta'
@@ -91,7 +93,7 @@ function SearchForm({ fields, filters, focusField, onApply, close }: Omit<Search
     close()
   }
   return (
-    <form className="flex flex-col gap-1" onSubmit={(e) => { e.preventDefault(); apply() }}>
+    <form className="flex flex-col gap-1" onKeyDownCapture={submitOnEnter} onSubmit={(e) => { e.preventDefault(); apply() }}>
       <ul className="flex flex-col divide-y divide-neutral-100">
         {fields.map((f) => {
           const d = drafts[f.name]
@@ -130,7 +132,7 @@ function ValueInput({ field, draft, set, autoFocus }: { field: FieldMeta; draft:
   const label = `${field.label}: value`
   if (draft.op === 'is_null' || draft.op === 'not_null') return null
   if (field.type === 'enum') {
-    return <CheckboxList label={label} options={field.enum_values.map((v) => ({ value: v, label: v }))}
+    return <MultiChoice label={label} options={field.enum_values.map((v) => ({ value: v, label: v }))}
       values={draft.values} onChange={(values) => set({ values })} />
   }
   if (field.type === 'bool') {

@@ -97,3 +97,7 @@ The folder sits inside `src/`, so `tsconfig.app.json` (typecheck), Vite (build, 
 ## List columns
 
 A list column says what it holds: `const col = columnsOf<OrderRead>()`, then `col.date('order_date', 'Ordered')`, `col.money('total', 'Total', { currency: 'currency' })`, `col.countdown(...)`, `col.relative(...)`, `col.status(...)`, `col.number(...)`, `col.bool(...)`, `col.tags(...)`, `col.reference(...)`, `col.tracking(...)`, `col.duration(...)`, `col.file(...)`, `col.text(...)`. A kind of value then looks the same in every list; a column with a look of its own stays a plain `ColumnDef`. ESLint refuses a hand-made date cell in a feature. Countdown and relative cells share one clock (`useNow`).
+
+## Choosing and searching
+
+`MultiChoice` shows several values from a known list: checkboxes up to six choices, else a searchable `MultiSelect`; `display` overrides it. A search form puts `submitOnEnter` on `onKeyDownCapture`: while a list is open, or text waits to be added, Enter chooses; after that Enter confirms and searches. An input that owns its Enter carries `CHOOSING`.

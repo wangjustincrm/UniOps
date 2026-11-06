@@ -6,7 +6,7 @@ import { expect } from 'vitest'
 
 /** Opens a Select (Enter on its trigger) and picks the option with this name. */
 export async function chooseOption(trigger: HTMLElement, label: string) {
-  fireEvent.keyDown(trigger, { key: 'Enter' })
+  fireEvent.keyDown(trigger, { key: 'ArrowDown' })
   fireEvent.click(await screen.findByRole('option', { name: label }))
   await settled(() => screen.queryByRole('listbox'))
 }
