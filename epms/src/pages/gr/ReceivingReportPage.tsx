@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Download, Loader2, PackageSearch, Search } from 'lucide-react'
+import { SortTh, sortParams, useSort, type Sort } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Pagination } from '@/components/ui/Pagination'
 import { cn, formatDate } from '@/lib/utils'
 import { useDepartments } from '@/hooks/useDepartments'
+import { useVendors } from '@/hooks/useVendors'
 import { useReceivingReport } from '@/hooks/useGrReport'
 import { grReportService, type ReceivingReportRow } from '@/services/grReport'
 
@@ -50,19 +52,30 @@ function presetRange(preset: Preset): { from: string; to: string } {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+// GET /gr/receiving-report sort keys (epms-api crud/gr_report.py SORTABLE).
+type SortKey =
+  | 'material_id' | 'description' | 'supplier' | 'po_number' | 'unit' | 'quantity'
+  | 'department' | 'requested_by' | 'date_ordered' | 'arrival_date' | 'left_warehouse_date'
+  | 'warehouse_receiver' | 'person_accepting' | 'lead_time_days' | 'gr_number'
+
 const inputCls = 'h-9 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-800 focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 export default function ReceivingReportPage() {
   const [preset, setPreset] = useState<Preset>('this_month')
   const [range, setRange] = useState(() => presetRange('this_month'))
   const [departmentId, setDepartmentId] = useState('')
+  const [vendorId, setVendorId] = useState('')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  // The report is paged by the API, so the API sorts (all pages, not the 50
+  // on screen); a new order starts again at page 1.
+  const [sort, onSort] = useSort<SortKey>(null, () => setPage(1))
 
   const { data: departments } = useDepartments()
+  const { data: vendors } = useVendors()
 
   // What the window selects, independent of which page of it is on screen.
   // The export sends exactly this — a spreadsheet of page 3 of 7 would be a
@@ -71,11 +84,12 @@ export default function ReceivingReportPage() {
     date_from: range.from || undefined,
     date_to: range.to || undefined,
     department_id: departmentId || undefined,
+    vendor_id: vendorId || undefined,
     search: search.trim() || undefined,
-  }), [range.from, range.to, departmentId, search])
+  }), [range.from, range.to, departmentId, vendorId, search])
 
   const { data, isLoading, isFetching, isError, error } = useReceivingReport({
-    ...windowFilters, page, page_size: pageSize,
+    ...windowFilters, ...sortParams(sort), page, page_size: pageSize,
   })
   const rows = useMemo(() => data?.items ?? [], [data])
   const total = data?.total ?? 0
@@ -104,7 +118,8 @@ export default function ReceivingReportPage() {
     setExporting(true)
     setExportError(null)
     try {
-      await grReportService.exportReceiving(windowFilters)
+      // Exported in the order the table is sorted by.
+      await grReportService.exportReceiving({ ...windowFilters, ...sortParams(sort) })
     } catch (e) {
       setExportError(e instanceof Error ? e.message : 'Export failed')
     } finally {
@@ -169,7 +184,7 @@ export default function ReceivingReportPage() {
           </div>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-neutral-500">Arrival From</label>
             <input type="date" className={inputCls} value={range.from}
@@ -187,6 +202,16 @@ export default function ReceivingReportPage() {
               <option value="">All Departments</option>
               {(departments?.items ?? []).map((d) => (
                 <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-neutral-500">Vendor</label>
+            <select className={inputCls} value={vendorId}
+              onChange={(e) => setVendorId(e.target.value)}>
+              <option value="">All Vendors</option>
+              {(vendors?.items ?? []).map((v) => (
+                <option key={v.id} value={v.id}>{v.name}</option>
               ))}
             </select>
           </div>
@@ -240,21 +265,21 @@ export default function ReceivingReportPage() {
             <table className="w-full text-sm whitespace-nowrap">
               <thead>
                 <tr>
-                  <Th>Material ID</Th>
-                  <Th>Description</Th>
-                  <Th>Manufacturer / Supplier</Th>
-                  <Th>PO Number</Th>
-                  <Th>UoM</Th>
-                  <Th align="right">Quantity</Th>
-                  <Th>Department</Th>
-                  <Th>Requested By</Th>
-                  <Th>Date Ordered</Th>
-                  <Th>Arrival Date</Th>
-                  <Th>Left Warehouse</Th>
-                  <Th>Warehouse Receiver</Th>
-                  <Th>Person Accepting</Th>
-                  <Th align="right">Lead Time</Th>
-                  <Th>GR Number</Th>
+                  <Th label="Material ID" sortKey="material_id" sort={sort} onSort={onSort} />
+                  <Th label="Description" sortKey="description" sort={sort} onSort={onSort} />
+                  <Th label="Manufacturer / Supplier" sortKey="supplier" sort={sort} onSort={onSort} />
+                  <Th label="PO Number" sortKey="po_number" sort={sort} onSort={onSort} />
+                  <Th label="UoM" sortKey="unit" sort={sort} onSort={onSort} />
+                  <Th label="Quantity" sortKey="quantity" sort={sort} onSort={onSort} align="right" />
+                  <Th label="Department" sortKey="department" sort={sort} onSort={onSort} />
+                  <Th label="Requested By" sortKey="requested_by" sort={sort} onSort={onSort} />
+                  <Th label="Date Ordered" sortKey="date_ordered" sort={sort} onSort={onSort} />
+                  <Th label="Arrival Date" sortKey="arrival_date" sort={sort} onSort={onSort} />
+                  <Th label="Left Warehouse" sortKey="left_warehouse_date" sort={sort} onSort={onSort} />
+                  <Th label="Warehouse Receiver" sortKey="warehouse_receiver" sort={sort} onSort={onSort} />
+                  <Th label="Person Accepting" sortKey="person_accepting" sort={sort} onSort={onSort} />
+                  <Th label="Lead Time" sortKey="lead_time_days" sort={sort} onSort={onSort} align="right" />
+                  <Th label="GR Number" sortKey="gr_number" sort={sort} onSort={onSort} />
                 </tr>
               </thead>
               <tbody>
@@ -297,19 +322,26 @@ function Stat({ label, value }: { label: string; value: string }) {
   )
 }
 
-function Th({ children, align = 'left' }: { children: React.ReactNode; align?: 'left' | 'right' }) {
+function Th({ label, sortKey, sort, onSort, align = 'left' }: {
+  label: string
+  sortKey: SortKey
+  sort: Sort<SortKey> | null
+  onSort: (key: SortKey) => void
+  align?: 'left' | 'right'
+}) {
   return (
     // Sticky on the th rather than the thead: the row itself cannot carry the
     // background, and a transparent sticky header lets rows show through it.
     // The inset shadow draws the bottom rule, which a border on a sticky cell
     // scrolls away from.
-    <th className={cn(
-      'sticky top-0 z-10 bg-neutral-50 px-3 py-3 text-xs font-semibold uppercase tracking-wide',
-      'text-neutral-500 whitespace-nowrap shadow-[inset_0_-1px_0_var(--color-neutral-200)]',
-      align === 'right' ? 'text-right' : 'text-left',
-    )}>
-      {children}
-    </th>
+    <SortTh
+      label={label} sortKey={sortKey} sort={sort} onSort={onSort} align={align}
+      className={cn(
+        'sticky top-0 z-10 bg-neutral-50 px-3 py-3 text-xs font-semibold uppercase tracking-wide',
+        'text-neutral-500 whitespace-nowrap shadow-[inset_0_-1px_0_var(--color-neutral-200)]',
+        align === 'right' ? 'text-right' : 'text-left',
+      )}
+    />
   )
 }
 

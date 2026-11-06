@@ -31,7 +31,7 @@ export interface PrepaymentConfig {
 export interface BudgetAdminConfig {
   yellow_threshold_pct: number
   red_threshold_pct: number
-  over_budget_mode: 'fm_gm_opm' | 'fm_only' | 'hard_block'
+  over_budget_mode: 'fm_gm_opm' | 'fm_only' | 'allow' | 'hard_block'
   /**
    * Fiscal years offered in the "New Budget Plan" dropdown and plan-list
    * year filter. Edited in Portal → Budget Config. May be missing on
@@ -45,7 +45,10 @@ export interface BudgetAdminConfig {
 }
 
 export interface CollectionConfig {
+  // Legacy: stored (default true) but never read — kept so a save round-trips it.
   collection_required: boolean
+  // The real switch (ISS-0146), off unless an admin turns it on.
+  collection_gate_enabled?: boolean
   reminder_days: number
   manager_escalation_days: number
   fm_alert_days: number
@@ -144,12 +147,28 @@ export interface UpdateRolePermissionsBody {
   permissions: RolePermissionMatrix
 }
 
+/**
+ * One Incoterms code in Admin → Incoterms Settings. `needs_freight` /
+ * `needs_customs` say whether a raw-material PO on this term expects a freight /
+ * customs invoice per arrival (epms-api crud/po_fee.py). Codes are deactivated,
+ * never removed — the server refuses a list that drops one.
+ */
+export interface IncotermDef {
+  code: string
+  label: string
+  needs_freight: boolean
+  needs_customs: boolean
+  active: boolean
+}
+
 export interface CompanyConfig {
   role_permissions: RolePermissionMatrix
   custom_roles: CustomRole[]
   email_templates: Record<string, EmailTemplate>
   notification_settings: NotificationSettings
   vendor_categories: string[]
+  /** Effective list — the server fills in the Incoterms 2020 defaults while none is stored. */
+  incoterms_terms: IncotermDef[]
   name: string
   tagline: string
   // 3-way match variance tolerance as a percent (e.g. 5 = 5%). Invoices whose

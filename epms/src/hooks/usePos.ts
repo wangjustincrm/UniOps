@@ -118,7 +118,9 @@ export function useUpdatePoImportedDetails(id: string) {
   })
 }
 
-export function usePoAction(id: string) {
+// alertOnError: false leaves the refusal to the caller, which shows it on the
+// page (mutation.error) instead of in a browser alert.
+export function usePoAction(id: string, { alertOnError = true }: { alertOnError?: boolean } = {}) {
   const queryClient = useQueryClient()
 
   return useMutation({
@@ -129,7 +131,9 @@ export function usePoAction(id: string) {
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Purchase order action failed'),
+    onError: alertOnError
+      ? (err: unknown) => alert(err instanceof Error ? err.message : 'Purchase order action failed')
+      : undefined,
   })
 }
 

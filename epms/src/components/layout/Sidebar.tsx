@@ -18,6 +18,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ArrowLeft,
+  Truck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth.store'
@@ -37,6 +38,8 @@ interface NavItemDef {
   badge?: number
   roles?: UserRole[]
   permission?: keyof RolePermissions
+  /** Visible when the user holds ANY of these keys (system_admin always). */
+  anyPermission?: string[]
 }
 
 const NAV_SECTIONS: NavSection[] = [
@@ -57,6 +60,9 @@ const NAV_SECTIONS: NavSection[] = [
       { label: 'Invoices', href: '/invoices', icon: <FileText className="h-4 w-4" />, permission: 'view_invoice' },
       { label: 'Vendor Credits', href: '/vendor-credits', icon: <FileText className="h-4 w-4" />, permission: 'view_invoice' },
       { label: 'Payment Applications', href: '/pa', icon: <CreditCard className="h-4 w-4" />, permission: 'view_pa' },
+      // Freight: registrars (buyers who ship parcels) and the supply-chain
+      // people who match carrier invoices. Same keys freight.py's /freight/me checks.
+      { label: 'Freight', href: '/freight', icon: <Truck className="h-4 w-4" />, anyPermission: ['epms.freight.register', 'epms.freight.manage', 'epms.freight.admin'] },
       { label: 'Agreements', href: '/agreements', icon: <FileSignature className="h-4 w-4" />, permission: 'epms.agreement.read' },
       // epms.agreement.read (read), NOT epms.agreement.receipt.write — anyone
       // who can see an agreement should be able to see its receipts too,
@@ -135,6 +141,9 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
     if (!user) return false
     if (item.permission) {
       return user.role === 'system_admin' || !!perms?.[item.permission]
+    }
+    if (item.anyPermission) {
+      return user.role === 'system_admin' || item.anyPermission.some((k) => !!perms?.[k])
     }
     if (item.roles) return item.roles.includes(user.role)
     return true
@@ -219,7 +228,9 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-3 px-2">
+      {/* No scrollbar of its own (ISS-0182): Chrome on Windows gives it ~15px,
+          narrowing the menu out of line with the logo above; it still scrolls. */}
+      <nav className="flex-1 overflow-y-auto py-3 px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {NAV_SECTIONS.map((section) => {
           if (!isSectionVisible(section)) return null
           return (

@@ -35,6 +35,9 @@ export interface EntitySchema {
   list_columns: string[]
   search_fields: string[]
   order_by: string
+  /** list_columns the API's ?sort= accepts (real columns only). Missing on an
+   *  older service → no column sorts. */
+  sortable_columns?: string[]
   allow_edit?: boolean   // false = delete-only (no edit). Missing → editable.
   allow_delete?: boolean // false = edit-only (VMS compliance records). Missing → deletable.
   fields: FieldSpec[]
@@ -165,7 +168,8 @@ export const adminApi = {
     )
     return results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
   },
-  list: (system: string, entity: string, params: { page: number; page_size: number; search?: string }) =>
+  list: (system: string, entity: string,
+         params: { page: number; page_size: number; search?: string; sort?: string; dir?: 'asc' | 'desc' }) =>
     request<ListResult>(system, 'GET', `/admin/${entity}${qs(params)}`),
   get: (system: string, entity: string, id: string) =>
     request<Record<string, unknown>>(system, 'GET', `/admin/${entity}/${id}`),
@@ -174,9 +178,13 @@ export const adminApi = {
   lookup: (system: string, source: string, q: string) =>
     request<RefHit[]>(system, 'GET', `/admin/lookup/${source}${qs({ q, limit: 20 })}`),
   editWithOptions: (system: string, entity: string, id: string,
-                    patch: Record<string, unknown>, opts?: { regeneratePoNumber?: boolean }) =>
+                    patch: Record<string, unknown>,
+                    opts?: { regeneratePoNumber?: boolean; acceptLineTotal?: boolean }) =>
     request<Record<string, unknown>>(system, 'PATCH',
-      `/admin/${entity}/${id}${qs({ regenerate_po_number: opts?.regeneratePoNumber ? 1 : 0 })}`, patch),
+      `/admin/${entity}/${id}${qs({
+        regenerate_po_number: opts?.regeneratePoNumber ? 1 : 0,
+        accept_line_total: opts?.acceptLineTotal ? 1 : 0,
+      })}`, patch),
   editApprovalState: (system: string, entity: string, id: string, patch: Record<string, unknown>) =>
     request<ApprovalStateResult>(system, 'PATCH', `/admin/${entity}/${id}/approval-state`, patch),
   workflowSteps: (system: string, entity: string, id: string) =>

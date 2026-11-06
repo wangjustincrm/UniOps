@@ -3,7 +3,8 @@
  * is right now, and a way to refresh it on the spot.
  *
  * Why this section exists: mrp-api mirrors the Flux WMS into Postgres (the
- * Inventory screen, aging, and every purchase suggestion read that mirror, not
+ * Inventory module's WMS Inventory screen, aging, and every MRP purchase
+ * suggestion read that mirror, not
  * the warehouse). Until now nothing refreshed it on a schedule — the only
  * trigger was an HTTP endpoint with no button anywhere, so the mirror moved
  * when somebody remembered. On release day nobody did, and production ran for
@@ -133,7 +134,7 @@ export function WmsSyncSection() {
     <div className="rounded-xl border border-neutral-200 bg-white p-6">
       <SectionHeader
         title="WMS Sync"
-        description="Flux warehouse stock is mirrored into UniOps and read by MRP Inventory, aging and purchase suggestions. This is how often that mirror refreshes."
+        description="Flux warehouse stock is mirrored into UniOps and read by Inventory → WMS Inventory, aging and MRP purchase suggestions. This is how often that mirror refreshes."
       />
 
       {status && !status.configured && (

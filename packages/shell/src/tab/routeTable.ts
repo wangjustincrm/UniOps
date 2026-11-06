@@ -50,5 +50,6 @@ export function deriveTabMeta(routes: RouteDef[], pathname: string, search = '')
     icon: spec.icon,
     pinned: spec.pinned ?? false,
     closable: spec.pinned ? false : spec.closable ?? true,
+    ...(spec.reloadOnQuery ? { reloadOnQuery: true } : {}),
   }
 }

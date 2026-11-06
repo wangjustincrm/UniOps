@@ -65,8 +65,8 @@ def fake_file_server(mocker):
     async def _delete(storage_key, token):
         deleted.append(storage_key)
 
-    mocker.patch("app.api.v1.travel.upload_to_file_server", side_effect=_upload)
-    mocker.patch("app.api.v1.travel.delete_from_file_server", side_effect=_delete)
+    mocker.patch("app.services.attachment_helper.upload_to_file_server", side_effect=_upload)
+    mocker.patch("app.services.attachment_helper.delete_from_file_server", side_effect=_delete)
     return {"keys": keys, "deleted": deleted}
 
 

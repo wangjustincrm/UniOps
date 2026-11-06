@@ -12,6 +12,7 @@ from uniops_authz import effective_permissions, role_matrix, user_role_codes
 from app.core.config import settings
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_permission
 from app.crud import config as config_crud
+from app.crud import po_fee as po_fee_crud
 from app.services import approval_client
 from app.schemas.config import ConfigResponse, ConfigUpdate
 from app.crud.config import BUILT_IN_ROLES, LOCKED_PERMISSIONS, PERMISSION_KEYS
@@ -72,7 +73,9 @@ async def _forward_identity(
 
 async def _full_response(db, user_payload: dict) -> ConfigResponse:
     cfg = await config_crud.get_or_create(db)
-    return ConfigResponse.model_validate(cfg)
+    resp = ConfigResponse.model_validate(cfg)
+    resp.incoterms_terms = po_fee_crud.effective_terms(cfg)
+    return resp
 
 
 # ── Config endpoints ─────────────────────────────────────────────────────────
@@ -150,12 +153,90 @@ async def test_smtp(body: TestSmtpRequest, db: SessionDep, _: AdminDep):
 
 
 @router.patch("", response_model=ConfigResponse)
-async def update_config(body: ConfigUpdate, db: SessionDep, user: AdminDep):
+async def update_config(body: ConfigUpdate, db: SessionDep, user: AdminDep, token: BearerToken):
     """Update company config (system_admin only)."""
     cfg = await config_crud.get_or_create(db)
+    if body.incoterms_terms is not None:
+        try:
+            new_terms = po_fee_crud.normalise_terms(body.incoterms_terms)
+        except po_fee_crud.FeeLinkInvalid as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
+        gone = po_fee_crud.removed_codes(po_fee_crud.effective_terms(cfg), new_terms)
+        if gone:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Incoterms {', '.join(gone)} cannot be removed — deactivate them "
+                       "instead, so purchase orders that use them keep their meaning.")
+        body.incoterms_terms = new_terms
     await config_crud.update(db, cfg, body, uuid.UUID(user["sub"]))
     await db.commit()
-    return await _full_response(db, user)
+    resp = await _full_response(db, user)
+    if body.budget_admin_config is not None:
+        resp.over_budget_resync = await _resync_over_budget(token)
+    return resp
+
+
+async def _resync_over_budget(token: str) -> str:
+    """After a Budget Config save, let the approval engine re-align in-flight
+    over-budget PRs: a looser over-budget mode waives the steps they are still
+    waiting on (the Finance Manager's task moves on). Runs on every Budget Config
+    save, not only on a mode change — it is idempotent and cheap, and re-saving
+    is then the way to apply it after an outage. Best-effort: the save is
+    committed (approval-api reads the shared DB on its own connection) and must
+    survive an approval-api outage; the caller is told the outcome instead."""
+    try:
+        result = await approval_client.resync_over_budget(bearer_token=token)
+        return f"ok: {len(result.get('resynced') or [])} in-flight over-budget PR(s) re-aligned"
+    except Exception as e:
+        logger.warning("budget config saved but over-budget resync failed: %s", e)
+        return f"failed: {e}"
+
+
+# ── Per-task-type notification policy (Portal → Admin → Notifications) ───────
+
+class TaskNotificationRow(BaseModel):
+    task_type: str
+    email: bool
+    mode: str = "immediate"
+
+
+class TaskNotificationUpdate(BaseModel):
+    policies: list[TaskNotificationRow]
+
+
+@router.get("/task-notifications")
+async def get_task_notifications(db: SessionDep, user: AdminDep):
+    """Every task type the system can create, with whether it emails and when.
+    The list is derived (see services/task_notify_policy.py), so a new task
+    type appears here without anyone adding it."""
+    from app.services.task_notify_policy import list_policies
+
+    cfg = await config_crud.get_or_create(db)
+    rows = await list_policies(db, cfg.notification_settings)
+    return {"policies": [r.as_dict() for r in rows]}
+
+
+@router.put("/task-notifications")
+async def put_task_notifications(body: TaskNotificationUpdate, db: SessionDep, user: AdminDep):
+    """Replace the stored policy with the submitted rows. The only writer of
+    notification_settings.task_notifications — the generic PATCH /config
+    ignores that key (crud.config.SERVER_MANAGED_NOTIFICATION_KEYS)."""
+    from sqlalchemy.orm.attributes import flag_modified
+    from app.services.task_notify_policy import SETTINGS_KEY, list_policies, validate_update
+
+    try:
+        stored = validate_update([r.model_dump() for r in body.policies])
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    cfg = await config_crud.get_or_create(db)
+    ns = dict(cfg.notification_settings or {})
+    ns[SETTINGS_KEY] = stored
+    cfg.notification_settings = ns
+    flag_modified(cfg, "notification_settings")
+    cfg.updated_by = uuid.UUID(user["sub"])
+    await db.commit()
+    rows = await list_policies(db, cfg.notification_settings)
+    return {"policies": [r.as_dict() for r in rows]}
 
 
 # ── Role Permissions endpoints ───────────────────────────────────────────────

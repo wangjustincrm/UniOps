@@ -1,5 +1,6 @@
 /** VMS home dashboard (PRD §6.5.5 / §2.5.2 VMS-AU-016). */
 import { Link } from 'react-router-dom'
+import { SortTh, useSort, sortParams } from '@uniops/shell'
 import {
   UserCheck, CalendarCheck, CalendarRange, AlertTriangle, ArrowRight,
   ShieldCheck, FileWarning, MoonStar, Inbox,
@@ -10,14 +11,17 @@ import {
 } from '@/services/api'
 import { StatusBadge, AccessAreaBadge } from '@/components/StatusBadge'
 import { formatDateTime, localToday } from '@/lib/utils'
+import type { VisitSortKey } from './VisitListPage'
 
 export default function DashboardPage() {
   const overview = useDashboardOverview()
   const compliance = useComplianceMetrics()
   const myTasks = useMyVmsTasks()
   const today = localToday()
+  // Server-sorted: only the first 50 of today's visits are fetched.
+  const [sort, onSort] = useSort<VisitSortKey>(null)
   const todayVisits = useVisits({
-    date_from: today, date_to: today, page_size: 50,
+    date_from: today, date_to: today, page_size: 50, ...sortParams(sort),
   })
 
   // The banner counts every open VMS task, so only call them approvals when
@@ -175,10 +179,10 @@ export default function DashboardPage() {
           <table className="min-w-full divide-y divide-neutral-200">
             <thead className="bg-neutral-50 text-left text-xs font-semibold uppercase tracking-wider text-neutral-500">
               <tr>
-                <th className="px-4 py-2.5">Visit</th>
-                <th className="px-4 py-2.5 hidden md:table-cell">Planned arrival</th>
-                <th className="px-4 py-2.5">Area</th>
-                <th className="px-4 py-2.5">Status</th>
+                <SortTh label="Visit" sortKey="visitor" sort={sort} onSort={onSort} className="px-4 py-2.5" />
+                <SortTh label="Planned arrival" sortKey="planned_arrival" sort={sort} onSort={onSort} className="px-4 py-2.5 hidden md:table-cell" />
+                <SortTh label="Area" sortKey="access_area" sort={sort} onSort={onSort} className="px-4 py-2.5" />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-2.5" />
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-100 bg-white text-sm">
@@ -217,6 +221,14 @@ export default function DashboardPage() {
               ))}
             </tbody>
           </table>
+          {/* Summary widget, not a list: it shows the first 50 of today's
+              visits; the full paged list lives on Today's Visits. */}
+          {(todayVisits.data?.total ?? 0) > (todayVisits.data?.items.length ?? 0) && (
+            <div className="border-t border-neutral-100 px-4 py-2.5 text-xs text-neutral-500">
+              Showing {todayVisits.data?.items.length} of {todayVisits.data?.total} visits today ·{' '}
+              <Link to="/" className="text-primary-700 hover:underline">View all</Link>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -42,6 +42,7 @@ class WmsInventoryLot(Base, UUIDPrimaryKey, TimestampMixin):
     inbound_date: Mapped[object | None] = mapped_column(Date)  # <- LOTATT03
 
     supplier_batch: Mapped[str | None] = mapped_column(String(100))  # <- LOTATT05
+    qc_batch: Mapped[str | None] = mapped_column(String(100))  # <- LOTATT04 (NC QC batch)
     supplier_code: Mapped[str | None] = mapped_column(String(50))  # <- LOTATT13
     source_doc: Mapped[str | None] = mapped_column(String(100))  # <- LOTATT14
 

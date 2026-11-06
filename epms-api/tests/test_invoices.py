@@ -11,7 +11,9 @@ _PO_LINE = {"description": "Widget", "qty": "10", "unit": "EA", "unit_price": "1
 
 async def _make_vendor(client, code):
     r = await client.post(VENDOR_URL, json={
-        "code": code, "name": "Inv Vendor", "category": "Parts",
+        # A name per vendor: invoice numbers repeat across these tests, and the
+        # server refuses the same vendor name + invoice # twice (INV-004).
+        "code": code, "name": f"Inv Vendor {code}", "category": "Parts",
         "contact_name": "X", "contact_email": "x@x.com",
         "payment_terms": "net30", "currency": "CAD",
     })
@@ -168,7 +170,7 @@ async def test_resolve_exception_credit_note(admin_client):
     await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={"po_id": po["id"]})
 
     r = await admin_client.post(f"{INV_URL}/{inv['id']}/exception", json={
-        "resolution": "credit_note_requested"
+        "resolution": "credit_note_requested", "note": "Ask vendor for credit"
     })
     assert r.status_code == 200
     # credit note → stays as exception (not auto-matched)

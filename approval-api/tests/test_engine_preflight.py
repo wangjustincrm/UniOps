@@ -199,3 +199,27 @@ async def test_budget_hard_block_is_reported_and_is_the_users_to_fix(engine_db_s
     assert budget.message == MSG_BUDGET_HARD_BLOCK
     # Splitting the PR or freeing up budget is squarely the requester's call.
     assert budget.fixable_by_user is True
+
+
+async def test_budget_allow_mode_passes_preflight_and_submits_without_ob_step(engine_db_session):
+    db = engine_db_session
+    dept_id = uuid.uuid4()
+    requester = await _requester(db, dept_id=dept_id)
+    await _dept_manager(db, dept_id)
+    db.add(CompanyConfig(id=uuid.uuid4(),
+                         budget_admin_config={"over_budget_mode": "allow"}))
+    await db.flush()
+    pr = await _draft_pr(db, requester, over_budget=True)
+
+    checks = await preflight_submit(db, "pr", pr.id)
+    assert _check(checks, "budget_hard_block").passed is True
+
+    await execute_action(db, "pr", pr.id, "submit", requester.id, "requester")
+    await db.refresh(pr)
+    assert pr.status == "submitted"
+    # No over-budget pre-approval: the first pending step is a normal workflow
+    # step (the base PR workflow carries no ob_* steps of its own).
+    from app.crud.engine import build_effective_workflow
+    cfg = (await db.execute(select(CompanyConfig))).scalars().first()
+    workflow = await build_effective_workflow(db, "pr", pr, cfg)
+    assert not workflow[pr.approval_step_idx]["id"].startswith("ob_")

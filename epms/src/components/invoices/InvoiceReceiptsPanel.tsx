@@ -13,19 +13,21 @@ import { RECEIPT_TYPE_LABELS, receiptTotal, type ApiReceipt, type ReceiptStatus 
 // are typed — counter slip / delivery note / service sign-off), the
 // reference #, the receipt date and its total.
 function ReceiptCandidateRow({
-  receipt, selected, onToggle, currency,
-}: { receipt: ApiReceipt; selected: boolean; onToggle: () => void; currency: string }) {
+  receipt, selected, onToggle, currency, disabled = false,
+}: { receipt: ApiReceipt; selected: boolean; onToggle: () => void; currency: string; disabled?: boolean }) {
   return (
     <label
       className={cn(
-        'flex items-start gap-3 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors',
-        selected ? 'border-primary-400 bg-primary-50' : 'border-neutral-200 bg-white hover:bg-neutral-50',
+        'flex items-start gap-3 rounded-lg border px-3 py-2.5 transition-colors',
+        disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+        selected ? 'border-primary-400 bg-primary-50' : cn('border-neutral-200 bg-white', !disabled && 'hover:bg-neutral-50'),
       )}
     >
       <input
         type="checkbox"
         checked={selected}
         onChange={onToggle}
+        disabled={disabled}
         className="mt-1 h-4 w-4 rounded text-primary-600 focus:ring-primary-500"
       />
       <div className="min-w-0 flex-1">
@@ -118,6 +120,12 @@ function InvoiceReceiptsPanelBody({
   // reach for "Settle without receipt evidence", quietly bypassing the
   // evidence chain Tasks 1-7 built.
   const receiptsErrored = receiptsQuery.isError
+  // 403 is not a load failure: this caller may read the invoice but not
+  // reconcile it. Rendering it as "Couldn't load" (with Retry, and the settle
+  // form still live) sent the agreement owner round in circles — see
+  // _require_invoice_receipt_access in epms-api.
+  const receiptsForbidden =
+    (receiptsQuery.error as (Error & { status?: number }) | null)?.status === 403
   const hasReceiptList = relevantReceipts.length > 0
   const sortedReceipts = useMemo(
     () => [...relevantReceipts].sort((a, b) => new Date(b.receipt_date).getTime() - new Date(a.receipt_date).getTime()),
@@ -162,6 +170,10 @@ function InvoiceReceiptsPanelBody({
     )
   }, [allReceipts])
 
+  // AGR-032: once a non-cancelled PA lists this invoice, neither the receipts
+  // nor the no-evidence declaration can change — the server answers both with
+  // a 422. Say so before the click instead of after it (ISS-0134).
+  const lockedByPa = invoice.receipts_locked_by_pa ?? null
   const [selectedReceiptIds, setSelectedReceiptIds] = useState<string[]>(invoice.receipt_ids ?? [])
   const [varianceReason, setVarianceReason] = useState(invoice.receipt_variance_reason ?? '')
   const [legacyReason, setLegacyReason] = useState(invoice.legacy_settlement_reason ?? '')
@@ -222,7 +234,7 @@ function InvoiceReceiptsPanelBody({
   // including the operator's own click — is never claimed, so a manual
   // selection can never be silently unpicked by a later accelerator swap.
   useEffect(() => {
-    if (!receiptsSettled) return
+    if (!receiptsSettled || lockedByPa) return
 
     const committedRef = receiptRefCommitted.trim()
     const refMatch = committedRef
@@ -268,11 +280,12 @@ function InvoiceReceiptsPanelBody({
       if (desiredId && !next.includes(desiredId)) next = [...next, desiredId]
       return next
     })
-  }, [receiptsSettled, openReceipts, receiptRefCommitted, invoiceTotalAmount, invoice.invoice_date])
+  }, [receiptsSettled, lockedByPa, openReceipts, receiptRefCommitted, invoiceTotalAmount, invoice.invoice_date])
 
   const setReceiptsMutation = useSetInvoiceReceipts()
   const settleMutation = useSettleWithoutReceipt()
-  const pending = setReceiptsMutation.isPending || settleMutation.isPending
+  // A locked panel behaves as permanently busy: every write control is off.
+  const pending = setReceiptsMutation.isPending || settleMutation.isPending || !!lockedByPa
 
   // Is there anything left to submit? Without this the Save button stayed
   // armed forever and a successful save changed NOTHING on screen — the
@@ -291,6 +304,8 @@ function InvoiceReceiptsPanelBody({
   // crud/invoice.py stores the reason as NULL, never ''.
   const persistedReceiptIds = invoice.receipt_ids ?? []
   const nextVariance = varianceIsZero ? '' : varianceReason.trim()
+  // A difference needs its reason before it can be saved (ISS-0116).
+  const varianceReasonMissing = !varianceIsZero && !varianceReason.trim()
   const receiptsDirty =
     persistedReceiptIds.length !== selectedReceiptIds.length ||
     !selectedReceiptIds.every((id) => heldIds.has(id)) ||
@@ -334,9 +349,32 @@ function InvoiceReceiptsPanelBody({
 
   const activeError = setReceiptsMutation.error ?? settleMutation.error
 
+  if (receiptsForbidden) {
+    return (
+      <div className="rounded-lg border border-neutral-200 bg-white p-4 flex flex-col gap-2">
+        <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Receipt Evidence</p>
+        <p className="text-xs text-neutral-600">
+          You can view this invoice but not attach receipts to it. Receipts are attached by AP,
+          the invoice's uploader, the agreement's owner, or whoever holds this invoice's
+          Match Invoice / Attach Invoice Receipts task.
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className="rounded-lg border border-neutral-200 bg-white p-4 flex flex-col gap-3">
       <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">Receipt Evidence</p>
+
+      {lockedByPa && (
+        <div className="flex items-start gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-xs text-neutral-700">
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-neutral-500" />
+          <p>
+            <span className="font-medium">Locked — used by {lockedByPa}.</span>{' '}
+            Receipt evidence cannot be changed while a payment application lists this invoice.
+          </p>
+        </div>
+      )}
 
       {/* Reference-number accelerator — matches on blur/Enter, never on every
           keystroke (see the comment above receiptRefCommitted). */}
@@ -348,6 +386,7 @@ function InvoiceReceiptsPanelBody({
           type="text"
           value={receiptRefInput}
           onChange={(e) => setReceiptRefInput(e.target.value)}
+          disabled={!!lockedByPa}
           onBlur={() => setReceiptRefCommitted(receiptRefInput)}
           onKeyDown={(e) => {
             if (e.key !== 'Enter') return
@@ -409,6 +448,7 @@ function InvoiceReceiptsPanelBody({
                     selected={selectedReceiptIds.includes(receipt.id)}
                     onToggle={() => toggleReceipt(receipt.id)}
                     currency={currency}
+                    disabled={!!lockedByPa}
                   />
                 ))}
               </div>
@@ -430,13 +470,16 @@ function InvoiceReceiptsPanelBody({
             </span>
           </div>
           )}
-          {/* A non-zero difference asks for an explanation but never blocks
-              submit — counter purchases routinely differ from the receipt
-              total by freight, discounts, or tax. */}
+          {/* A non-zero difference is allowed — counter purchases routinely
+              differ from the receipt total by freight, discounts, or tax — but
+              only with a reason (PRD AGR-032, ISS-0116): Save stays disabled
+              until it is filled, and the server refuses it too
+              (crud/invoice.py set_receipts). The PA shows it with the
+              difference. */}
           {!varianceIsZero && (
             <div className="flex flex-col gap-1">
               <label className="text-xs font-medium text-neutral-700">
-                Explain the difference <span className="text-warning-700">(recommended)</span>
+                Explain the difference <span className="text-danger-600">*</span>
               </label>
               <textarea
                 rows={2}
@@ -459,7 +502,7 @@ function InvoiceReceiptsPanelBody({
                 {setReceiptsMutation.isSuccess ? 'Receipt evidence saved' : 'Saved — no changes to submit'}
               </span>
             )}
-            <Button size="sm" onClick={handleSaveReceipts} disabled={pending || !receiptsDirty}>
+            <Button size="sm" onClick={handleSaveReceipts} disabled={pending || !receiptsDirty || varianceReasonMissing}>
               {setReceiptsMutation.isPending ? 'Saving…' : 'Save Receipt Evidence'}
             </Button>
           </div>
@@ -504,6 +547,7 @@ function InvoiceReceiptsPanelBody({
             rows={3}
             value={legacyReason}
             onChange={(e) => setLegacyReason(e.target.value)}
+            disabled={!!lockedByPa}
             placeholder="e.g. Monthly house-account statement; the receipts it covers have not been digitized."
             className="px-3 py-2 rounded-lg border border-neutral-300 bg-white text-xs resize-none focus:outline-none focus:ring-1 focus:ring-primary-600"
           />

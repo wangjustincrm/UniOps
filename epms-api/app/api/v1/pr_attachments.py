@@ -104,7 +104,7 @@ async def regenerate_pdf(
     cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
     company_name = cfg.name if cfg else "EPMS"
     filename = f"{pr.number}.pdf"
-    requester_name, approvals = await approval_signatories(db, "pr", pr_id, pr.created_by)
+    requester_name, approvals = await approval_signatories(db, "pr", pr_id, pr.created_by, token=token)
     budget_account_name = await budget_client.get_account_name(token, pr.budget_code)
     # Same resolution the approval-time generator uses, so Regenerate cannot
     # print a different owner than the original PDF did.

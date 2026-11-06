@@ -7,16 +7,14 @@
 import { useMemo, useState } from 'react'
 import { CheckCircle2, Loader2, ArrowUp, ArrowDown } from 'lucide-react'
 import {
-  useBadgeConfig, useUpdateBadgeConfig, BADGE_CONFIG_DEFAULTS,
-  type BadgeConfig, type AccessArea,
+  useAreaRules, useBadgeConfig, useUpdateBadgeConfig, BADGE_CONFIG_DEFAULTS,
+  type BadgeAreaStyle, type BadgeConfig,
   type Visit, type Visitor, type UserBrief,
 } from '@/services/api'
 import { BadgePreview } from '@/components/BadgePreview'
 import { localToday } from '@/lib/utils'
+import { badgeAreaStyle, zoneOptions } from '@/lib/visitOptions'
 
-const AREA_ORDER: AccessArea[] = [
-  'office', 'warehouse', 'production_non_gmp', 'production_gmp', 'laboratory', 'all',
-]
 
 // Sample data so the preview shows a realistic badge while editing.
 const SAMPLE_VISIT = {
@@ -40,6 +38,9 @@ const headCls = 'text-xs font-semibold uppercase tracking-wider text-neutral-500
 
 export default function BadgeTemplatesPage() {
   const { data, isLoading } = useBadgeConfig()
+  // One band per active zone (VMS Admin → Zones), in the zones' order.
+  const { data: areaRules } = useAreaRules()
+  const zones = zoneOptions(areaRules)
   const save = useUpdateBadgeConfig()
 
   const server = useMemo<BadgeConfig>(() => data ?? BADGE_CONFIG_DEFAULTS, [data])
@@ -114,19 +115,26 @@ export default function BadgeTemplatesPage() {
             </div>
             <p className={headCls}>Zones (label + colors + risk)</p>
             <div className="space-y-1">
-              {AREA_ORDER.map((a) => (
-                <div key={a} className="flex items-center gap-2">
-                  <span className="w-32 shrink-0 text-[11px] text-neutral-500">{a}</span>
-                  <input className={`${inputCls} flex-1`} value={cfg.band.areas[a].label}
-                    onChange={(e) => update((c) => { c.band.areas[a].label = e.target.value })} />
-                  <input type="color" className="h-7 w-9 rounded border" value={cfg.band.areas[a].bg}
-                    onChange={(e) => update((c) => { c.band.areas[a].bg = e.target.value.toUpperCase() })} title="background" />
-                  <input type="color" className="h-7 w-9 rounded border" value={cfg.band.areas[a].fg}
-                    onChange={(e) => update((c) => { c.band.areas[a].fg = e.target.value.toUpperCase() })} title="text" />
-                  <input className={`${inputCls} w-24`} value={cfg.band.areas[a].risk}
-                    onChange={(e) => update((c) => { c.band.areas[a].risk = e.target.value })} title="risk label" />
-                </div>
-              ))}
+              {zones.map(({ value: a, label: zoneLabel }) => {
+                const st = badgeAreaStyle(cfg, a, areaRules?.[a])
+                // A zone with no band yet starts from its default style.
+                const set = (k: keyof BadgeAreaStyle, v: string) => update((c) => {
+                  c.band.areas[a] = { ...badgeAreaStyle(c, a, areaRules?.[a]), [k]: v }
+                })
+                return (
+                  <div key={a} className="flex items-center gap-2">
+                    <span className="w-32 shrink-0 truncate text-[11px] text-neutral-500" title={zoneLabel}>{zoneLabel}</span>
+                    <input className={`${inputCls} flex-1`} value={st.label}
+                      onChange={(e) => set('label', e.target.value)} />
+                    <input type="color" className="h-7 w-9 rounded border" value={st.bg}
+                      onChange={(e) => set('bg', e.target.value.toUpperCase())} title="background" />
+                    <input type="color" className="h-7 w-9 rounded border" value={st.fg}
+                      onChange={(e) => set('fg', e.target.value.toUpperCase())} title="text" />
+                    <input className={`${inputCls} w-24`} value={st.risk}
+                      onChange={(e) => set('risk', e.target.value)} title="risk label" />
+                  </div>
+                )
+              })}
             </div>
           </div>
 

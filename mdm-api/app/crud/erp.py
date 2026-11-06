@@ -1,4 +1,5 @@
 from sqlalchemy import func, select
+from sqlalchemy.sql.elements import ColumnElement
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.erp_material import ErpMaterial
 from app.models.erp_supplier import ErpSupplier
@@ -11,9 +12,55 @@ from app.models.erp_person import ErpPerson
 _STATUS_ALIASES = {"A": ("A", "2"), "B": ("B", "3")}
 
 
+class UnknownSortKey(Exception):
+    """?sort= named a column the list does not offer -> HTTP 422."""
+
+
+# ?sort= keys -> ORDER BY expression. These dicts are the SQL-injection boundary;
+# each key is a column the Portal / EPMS table shows. Text sorts case-insensitively.
+MATERIAL_SORTABLE: dict[str, ColumnElement] = {
+    "erp_part_no": func.lower(ErpMaterial.erp_part_no),
+    "description": func.lower(ErpMaterial.description),
+    "unit_meas": func.lower(ErpMaterial.unit_meas),
+    "dim_quality": func.lower(ErpMaterial.dim_quality),
+    "item_mes_type": func.lower(ErpMaterial.item_mes_type),
+    "part_status": func.lower(ErpMaterial.part_status),
+    "erp_rowversion": ErpMaterial.erp_rowversion,
+}
+SUPPLIER_SORTABLE: dict[str, ColumnElement] = {
+    "erp_supplier_code": func.lower(ErpSupplier.erp_supplier_code),
+    "supplier_name": func.lower(ErpSupplier.supplier_name),
+    "supplier_type": func.lower(ErpSupplier.supplier_type),
+    "supplier_tel": func.lower(ErpSupplier.supplier_tel),
+    "supplier_address": func.lower(ErpSupplier.supplier_address),
+}
+PERSON_SORTABLE: dict[str, ColumnElement] = {
+    "erp_person_code": func.lower(ErpPerson.erp_person_code),
+    "person_name": func.lower(ErpPerson.person_name),
+    "company_name": func.lower(ErpPerson.company_name),
+    # The cell reads "<department_name> (<department_code>)".
+    "department_name": func.lower(ErpPerson.department_name),
+    # Shown as Yes/No: ascending puts "No" (false) first.
+    "is_valid": ErpPerson.is_valid,
+}
+
+
+def _order(q, sort: str | None, dir: str, whitelist: dict, default, tiebreak):
+    """No sort -> the list's historical order; else the whitelisted column,
+    NULLs last in both directions, `tiebreak` keeping pages stable."""
+    if sort is None:
+        return q.order_by(default)
+    if sort not in whitelist:
+        raise UnknownSortKey(f"unknown sort column {sort!r}")
+    expr = whitelist[sort]
+    expr = expr.asc() if dir == "asc" else expr.desc()
+    return q.order_by(expr.nulls_last(), tiebreak)
+
+
 async def list_materials(
     db: AsyncSession, *, search: str | None = None, part_status: str | None = None,
     item_mes_type: str | None = None, page: int = 1, page_size: int = 20,
+    sort: str | None = None, dir: str = "asc",
 ) -> tuple[list[ErpMaterial], int]:
     q = select(ErpMaterial)
     if search:
@@ -26,7 +73,8 @@ async def list_materials(
         q = q.where(ErpMaterial.item_mes_type == item_mes_type)
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     items = list((await db.execute(
-        q.order_by(ErpMaterial.erp_part_no).offset((page - 1) * page_size).limit(page_size)
+        _order(q, sort, dir, MATERIAL_SORTABLE, ErpMaterial.erp_part_no, ErpMaterial.id)
+        .offset((page - 1) * page_size).limit(page_size)
     )).scalars().all())
     return items, total
 
@@ -40,6 +88,7 @@ async def get_material_by_code(db: AsyncSession, code: str) -> ErpMaterial | Non
 async def list_suppliers(
     db: AsyncSession, *, search: str | None = None, exclude_codes: list[str] | None = None,
     page: int = 1, page_size: int = 20,
+    sort: str | None = None, dir: str = "asc",
 ) -> tuple[list[ErpSupplier], int]:
     q = select(ErpSupplier)
     if search:
@@ -51,7 +100,8 @@ async def list_suppliers(
         q = q.where(~ErpSupplier.erp_supplier_code.in_(exclude_codes))
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     items = list((await db.execute(
-        q.order_by(ErpSupplier.erp_supplier_code).offset((page - 1) * page_size).limit(page_size)
+        _order(q, sort, dir, SUPPLIER_SORTABLE, ErpSupplier.erp_supplier_code, ErpSupplier.id)
+        .offset((page - 1) * page_size).limit(page_size)
     )).scalars().all())
     return items, total
 
@@ -65,6 +115,7 @@ async def get_supplier_by_code(db: AsyncSession, code: str) -> ErpSupplier | Non
 async def list_persons(
     db: AsyncSession, *, search: str | None = None, exclude_codes: list[str] | None = None,
     page: int = 1, page_size: int = 20,
+    sort: str | None = None, dir: str = "asc",
 ) -> tuple[list[ErpPerson], int]:
     q = select(ErpPerson)
     if search:
@@ -76,7 +127,8 @@ async def list_persons(
         q = q.where(~ErpPerson.erp_person_code.in_(exclude_codes))
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     items = list((await db.execute(
-        q.order_by(ErpPerson.person_name).offset((page - 1) * page_size).limit(page_size)
+        _order(q, sort, dir, PERSON_SORTABLE, ErpPerson.person_name, ErpPerson.id)
+        .offset((page - 1) * page_size).limit(page_size)
     )).scalars().all())
     return items, total
 

@@ -220,6 +220,8 @@ async def create_direct_pa(
         title=title.strip(),
         po_id=None,
         po_number=None,
+        # 'direct' is EPMS's Direct PA (epms-api dp01_direct_pa); OA's is its own.
+        source="oa_direct",
         vendor_id=body.vendor_id or inv.vendor_id or uuid.UUID('00000000-0000-0000-0000-000000000000'),
         vendor_name=body.vendor_name,
         invoice_ids=[str(body.invoice_id)],

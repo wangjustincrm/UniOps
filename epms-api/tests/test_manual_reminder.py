@@ -8,6 +8,7 @@ there is nobody to reach, it will not mail the same approver twice a day, and
 it never nudges the holder of a non-approval task on the same document.
 """
 import copy
+import re
 import uuid
 from datetime import timedelta
 
@@ -213,6 +214,8 @@ async def test_second_reminder_inside_the_cooldown_is_refused(
     second = await requester_client.post(f"/api/v1/pr/{pr.id}/remind")
     assert second.status_code == 429, second.text
     assert "already sent" in second.json()["detail"]
+    # DD/MM/YYYY HH:MM, still UTC (ISS-0183 — format only, zone unchanged).
+    assert re.search(r"after \d{2}/\d{2}/\d{4} \d{2}:\d{2} UTC\.", second.json()["detail"]), second.json()
 
     await drain(5)
     assert _to(captured_emails).count(approver.email) == 1, \
@@ -327,6 +330,73 @@ async def test_reminder_refused_when_the_assignee_was_deactivated(
 async def test_reminder_on_a_missing_document_is_404(requester_client):
     resp = await requester_client.post(f"/api/v1/pr/{uuid.uuid4()}/remind")
     assert resp.status_code == 404
+
+
+# ── OA expense claims ────────────────────────────────────────────────────────
+# expense_claims is expense-api's table (absent from this test DB); the endpoint
+# only needs the claim id + claim_type to find approval-api's approve_<code> tasks.
+
+async def _expense_task(db, approver, *, code="exp", task_type=None):
+    claim_id = uuid.uuid4()
+    number = f"EXP-{uuid.uuid4().hex[:8]}"
+    task = Task(
+        type=task_type or f"approve_{code}",
+        document_type=code, document_id=claim_id, document_number=number,
+        assigned_role=approver.role, assigned_user_id=approver.id,
+        title=f"Approve {number}",
+    )
+    db.add(task)
+    await db.flush()
+    return claim_id, number
+
+
+async def test_expense_claim_reminder_emails_the_pending_approver(
+    requester_client, captured_emails,
+):
+    async with session_module.AsyncSessionLocal() as db:
+        await _set_notif_settings(db, default_channel="email_only")
+        approver = await _user(db, name="Expense Approver")
+        claim_id, number = await _expense_task(db, approver)
+        await db.commit()
+
+    resp = await requester_client.post(
+        f"/api/v1/expense-claims/{claim_id}/remind", json={"claim_type": "EXP"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["recipients"] == ["Expense Approver"]
+    assert resp.json()["document_number"] == number
+
+    await drain(5)
+    assert approver.email in _to(captured_emails)
+    html = next(h for to, _, h in captured_emails if to == approver.email)
+    # Deep link lands on OA's claim page, not an EPMS route.
+    assert f"/expenses/{claim_id}" in html
+
+    again = await requester_client.post(
+        f"/api/v1/expense-claims/{claim_id}/remind", json={"claim_type": "EXP"})
+    assert again.status_code == 429
+
+
+async def test_expense_claim_reminder_ignores_the_reimbursement_task(
+    requester_client, captured_emails,
+):
+    """process_expense goes to Finance BP after approval — not an approver."""
+    async with session_module.AsyncSessionLocal() as db:
+        await _set_notif_settings(db, default_channel="email_only")
+        fbp = await _user(db, role="finance_bp", name="Finance BP")
+        claim_id, _ = await _expense_task(db, fbp, task_type="process_expense")
+        await db.commit()
+
+    resp = await requester_client.post(
+        f"/api/v1/expense-claims/{claim_id}/remind", json={"claim_type": "EXP"})
+    assert resp.status_code == 409
+    await drain(5)
+    assert fbp.email not in _to(captured_emails)
+
+
+async def test_expense_claim_reminder_rejects_a_malformed_claim_type(requester_client):
+    resp = await requester_client.post(
+        f"/api/v1/expense-claims/{uuid.uuid4()}/remind", json={"claim_type": "x' OR 1=1"})
+    assert resp.status_code == 422
 
 
 # ── Template ─────────────────────────────────────────────────────────────────

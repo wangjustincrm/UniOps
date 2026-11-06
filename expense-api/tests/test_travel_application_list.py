@@ -34,7 +34,7 @@ import app.db.base as db_module
 from app.core.config import settings
 from app.main import create_app
 from app.models.company_config_mirror import EpmsCompanyConfig
-from app.models.expense import ExpenseClaim
+from app.models.expense import ExpenseClaim, ExpenseTraveler
 from app.models.task_mirror import TaskMirror
 
 
@@ -192,3 +192,59 @@ async def test_dept_manager_does_not_see_others_draft_tra():
         assert tra_id not in _ids(resp.json())
     finally:
         await _restore_workflow_defs(previous)
+
+
+async def _tra_with_traveler(status: str, traveler_id: str) -> str:
+    applicant = uuid.uuid4()
+    async with db_module.AsyncSessionLocal() as db:
+        tra = ExpenseClaim(
+            claim_number=f"TRA-TEST-{uuid.uuid4().hex[:8]}", claim_type="TRA",
+            employee_id=applicant, employee_name="Applicant", department_name="Ops",
+            submission_date=date(2026, 8, 3), status=status, created_by=applicant,
+        )
+        db.add(tra)
+        await db.flush()
+        db.add(ExpenseTraveler(claim_id=tra.id, user_id=uuid.UUID(traveler_id),
+                               user_name="Traveler", seq=0))
+        await db.commit()
+        return str(tra.id)
+
+
+@pytest.mark.asyncio
+async def test_listed_traveler_sees_the_tra_in_list_and_detail():
+    traveler_id = str(uuid.uuid4())
+    tra_id = await _tra_with_traveler("approved", traveler_id)
+
+    async with _client_for("requester", traveler_id) as traveler:
+        listed = await traveler.get("/api/v1/expenses", params={"type": "TRA"})
+        detail = await traveler.get(f"/api/v1/expenses/{tra_id}")
+        perms = await traveler.get(f"/api/v1/expenses/{tra_id}/permissions")
+        attachments = await traveler.get(f"/api/v1/expenses/{tra_id}/attachments")
+    assert tra_id in _ids(listed.json())
+    assert detail.status_code == 200, detail.text
+    assert attachments.status_code == 200, attachments.text
+    # Reading it does not make it theirs: Edit / Submit / Delete stay the applicant's.
+    assert perms.json()["is_owner"] is False and perms.json()["can_delete"] is False
+
+
+@pytest.mark.asyncio
+async def test_listed_traveler_cannot_see_the_applicants_draft():
+    traveler_id = str(uuid.uuid4())
+    tra_id = await _tra_with_traveler("draft", traveler_id)
+
+    async with _client_for("requester", traveler_id) as traveler:
+        listed = await traveler.get("/api/v1/expenses", params={"type": "TRA"})
+        detail = await traveler.get(f"/api/v1/expenses/{tra_id}")
+    assert tra_id not in _ids(listed.json())
+    assert detail.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_user_not_on_the_tra_still_cannot_see_it():
+    tra_id = await _tra_with_traveler("approved", str(uuid.uuid4()))
+
+    async with _client_for("requester", str(uuid.uuid4())) as stranger:
+        listed = await stranger.get("/api/v1/expenses", params={"type": "TRA"})
+        detail = await stranger.get(f"/api/v1/expenses/{tra_id}")
+    assert tra_id not in _ids(listed.json())
+    assert detail.status_code == 403

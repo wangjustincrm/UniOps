@@ -165,6 +165,12 @@ class AdminBookingListOut(BaseModel):
     total: int
 
 
+class MyBookingPageOut(BaseModel):
+    """Response from GET /bookings/mine/paged."""
+    items: list[BookingOut]
+    total: int
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Day-summary schemas  (GET /bookings/day)
 # ─────────────────────────────────────────────────────────────────────────────

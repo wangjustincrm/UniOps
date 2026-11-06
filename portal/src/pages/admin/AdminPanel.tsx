@@ -1,19 +1,23 @@
-import { useState, useRef } from 'react'
-import { Navigate } from 'react-router-dom'
+import { useEffect, useState, useRef } from 'react'
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Building2, ShieldCheck, Users, CreditCard, Bell, Landmark,
+  Building2, ShieldCheck, CreditCard, Bell,
   Plus, Pencil, Trash2, X, Check, Eye, EyeOff, Search,
   CheckCircle2, AlertCircle, Loader2, ArrowLeft,
   Download, Upload, ChevronLeft, ChevronRight, FileText,
   Workflow, ChevronDown, ChevronUp, Database, Ruler, Mail, DatabaseZap, Warehouse,
 } from 'lucide-react'
+import { SortTh, useSort, useSortableRows, sortParams, type Sort } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
+import { useRolePermissions } from '@/hooks/useRolePermissions'
+import { adminPageLinks } from '@/components/layout/navConfig'
 import { epmsApi, epmsDownload, epmsUpload, mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { UnitsOfMeasure } from './UnitsOfMeasure'
 import { NcSyncSection } from './nc-sync/NcSyncSection'
 import { WmsSyncSection } from './WmsSyncSection'
+import { TaskNotificationPolicies } from './TaskNotificationPolicies'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,7 +29,7 @@ interface WorkflowNodeDef {
   sig_slot?: 'initials' | 'signature' | null
 }
 
-type ActionKey = 'pr' | 'po' | 'posign' | 'agr' | 'pa' | 'pa_dir' | 'exp' | 'mil' | 'trv' | 'tra' | 'cfm' | 'budget_plan' | 'vms_visit'
+type ActionKey = 'pr' | 'po' | 'posign' | 'agr' | 'pa' | 'pa_frt' | 'pa_dir' | 'exp' | 'mil' | 'trv' | 'tra' | 'cfm' | 'budget_plan' | 'vms_visit'
 
 interface CompanyConfig {
   name: string
@@ -55,6 +59,12 @@ interface CompanyConfig {
     daily_followup_enabled?: boolean
     service_gr_due_enabled?: boolean
     service_gr_due_dry_run?: boolean
+    agreement_overdue_enabled?: boolean
+    gr_ack_due_enabled?: boolean
+    gr_ack_due_dry_run?: boolean
+    budget_alert_enabled?: boolean
+    budget_alert_dry_run?: boolean
+    pa_approved_notify_requester?: boolean
     role_shared_mailboxes?: Record<string, string>
     [key: string]: unknown
   }
@@ -103,10 +113,20 @@ const ROLE_LABELS: Record<string,string> = {
   erp_pa_officer:'ERP PA Officer',
   payment_officer:'Payment Officer',
   finance_director:'Finance Director',
+  hr:'HR',
   system_admin:'System Admin',
 }
 
 // ── Shared UI helpers ─────────────────────────────────────────────────────────
+
+/** Header-cell classes shared by the admin list tables below. */
+const ADMIN_TH = 'px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500'
+
+/** Copy `{ sort, dir }` (or nothing) onto a list's query string. */
+function setSortQs<K extends string>(qs: URLSearchParams, sort: Sort<K> | null) {
+  const p = sortParams(sort)
+  if (p.sort) { qs.set('sort', p.sort); qs.set('dir', p.dir ?? 'asc') }
+}
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
@@ -372,13 +392,16 @@ function SecuritySettings() {
 
 // ── 3. Department Management ──────────────────────────────────────────────────
 
-function DepartmentManagement() {
+export function DepartmentManagement() {
   // Source of truth lives in mdm-api (master-data service). The shared Postgres
   // DB means epms-api / budget-api still read the same physical rows.
   const qc = useQueryClient()
   const { data, isLoading } = useQuery<{ items: ApiDepartment[]; total: number }>({
     queryKey: ['portal-departments'],
     queryFn: () => mdmApi.get<{ items: ApiDepartment[]; total: number }>('/departments'),
+  })
+  const depts = useSortableRows(data?.items, {
+    code: (d) => d.code, name: (d) => d.name, status: (d) => (d.is_active ? 'Active' : 'Inactive'),
   })
   const [modal, setModal] = useState<{ mode: 'create' | 'edit'; dept?: ApiDepartment } | null>(null)
   const [form, setForm] = useState({ name: '', code: '', is_active: true })
@@ -429,14 +452,15 @@ function DepartmentManagement() {
           <table className="w-full text-sm">
             <thead className="border-b border-neutral-100 bg-neutral-50">
               <tr>
-                {['Code','Name','Status',''].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>
-                ))}
+                <SortTh label="Code" sortKey="code" sort={depts.sort} onSort={depts.onSort} className={ADMIN_TH} />
+                <SortTh label="Name" sortKey="name" sort={depts.sort} onSort={depts.onSort} className={ADMIN_TH} />
+                <SortTh label="Status" sortKey="status" sort={depts.sort} onSort={depts.onSort} className={ADMIN_TH} />
+                <th className={ADMIN_TH} />
               </tr>
             </thead>
             <tbody>
-              {data.items.map((d, i) => (
-                <tr key={d.id} className={cn('border-b border-neutral-100', i === data.items.length - 1 && 'border-b-0')}>
+              {depts.rows.map((d, i) => (
+                <tr key={d.id} className={cn('border-b border-neutral-100', i === depts.rows.length - 1 && 'border-b-0')}>
                   <td className="px-4 py-3 font-mono text-xs text-neutral-600">{d.code}</td>
                   <td className="px-4 py-3 font-medium text-neutral-800">{d.name}</td>
                   <td className="px-4 py-3">
@@ -490,22 +514,26 @@ const PAGE_SIZE = 20
 
 interface ImportResult { created: number; updated: number; errors: string[] }
 
-function UserManagement() {
+export function UserManagement() {
   const qc = useQueryClient()
 
   // ── Filters + pagination ──
   const [search, setSearch] = useState('')
   const [roleFilter, setRoleFilter] = useState('')
   const [page, setPage] = useState(1)
+  // Server-sorted: /users pages, so the API sorts (no sort = by name, as before).
+  const [userSort, onUserSort] = useSort<'full_name' | 'role' | 'department' | 'erp_person_code' | 'status'>(
+    null, () => setPage(1))
 
   const qs = new URLSearchParams()
   qs.set('page', String(page))
   qs.set('page_size', String(PAGE_SIZE))
   if (search) qs.set('search', search)
   if (roleFilter) qs.set('role', roleFilter)
+  setSortQs(qs, userSort)
 
   const { data, isLoading } = useQuery<{ items: ApiUser[]; total: number }>({
-    queryKey: ['portal-users', page, search, roleFilter],
+    queryKey: ['portal-users', page, search, roleFilter, userSort],
     queryFn: () => epmsApi.get<{ items: ApiUser[]; total: number }>(`/users?${qs}`),
     placeholderData: (prev) => prev,
   })
@@ -545,6 +573,26 @@ function UserManagement() {
     setShowPwd(false); setError(''); setModal({ mode: 'edit', user: u })
   }
 
+  // Staff → Create user: the employee's data fills the form as defaults (EMPLOYEES.md
+  // UGEN-002). Every field stays editable except the ERP code, which is the link.
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const fromEmployee = searchParams.get('from_employee')
+  const { data: employee } = useQuery<{ employee_number: string; display_name: string; work_email: string | null; department_id: string | null }>({
+    queryKey: ['staff', 'detail', fromEmployee],
+    queryFn: () => mdmApi.get(`/staff/${fromEmployee}`),
+    enabled: !!fromEmployee,
+  })
+  useEffect(() => {
+    if (!employee) return
+    setForm({ email: employee.work_email ?? '', full_name: employee.display_name, role: 'requester', department_id: employee.department_id ?? '', supervisor_id: '', password: '', is_active: true, teams_account: '', erp_person_code: employee.employee_number })
+    setShowPwd(false); setError(''); setModal({ mode: 'create' })
+  }, [employee])
+  const closeModal = () => {
+    setModal(null)
+    if (fromEmployee) navigate(`/mdm/staff/${fromEmployee}`)
+  }
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault(); setError(''); setSaving(true)
     try {
@@ -552,7 +600,8 @@ function UserManagement() {
       if (modal?.mode === 'create') { body.password = form.password; body.erp_person_code = form.erp_person_code.trim(); await epmsApi.post('/users', body) }
       else { if (form.password) body.password = form.password; body.erp_person_code = form.erp_person_code.trim(); await epmsApi.patch(`/users/${modal?.user?.id}`, body) }
       qc.invalidateQueries({ queryKey: ['portal-users'] })
-      setModal(null)
+      qc.invalidateQueries({ queryKey: ['staff'] })
+      closeModal()
     } catch (err: any) { setError(err.message) } finally { setSaving(false) }
   }
 
@@ -687,9 +736,12 @@ function UserManagement() {
           <table className="w-full text-sm">
             <thead className="border-b border-neutral-100 bg-neutral-50">
               <tr>
-                {['Name / Email', 'Role', 'Department', 'ERP Code', 'Status', ''].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>
-                ))}
+                <SortTh label="Name / Email" sortKey="full_name" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
+                <SortTh label="Role" sortKey="role" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
+                <SortTh label="Department" sortKey="department" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
+                <SortTh label="ERP Code" sortKey="erp_person_code" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
+                <SortTh label="Status" sortKey="status" sort={userSort} onSort={onUserSort} className={ADMIN_TH} />
+                <th className={ADMIN_TH} />
               </tr>
             </thead>
             <tbody>
@@ -773,7 +825,7 @@ function UserManagement() {
           <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-xl overflow-y-auto max-h-[90vh]">
             <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
               <h3 className="font-semibold text-neutral-900">{modal.mode === 'create' ? 'Add User' : 'Edit User'}</h3>
-              <button onClick={() => setModal(null)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100"><X className="h-4 w-4" /></button>
+              <button onClick={closeModal} className="rounded p-1 text-neutral-400 hover:bg-neutral-100"><X className="h-4 w-4" /></button>
             </div>
             <form onSubmit={handleSave} className="flex flex-col gap-4 p-5">
               <div className="grid grid-cols-2 gap-3">
@@ -819,6 +871,7 @@ function UserManagement() {
                 <Field label={modal.mode === 'create' ? 'ERP Code *' : 'ERP Code'}>
                   <Input value={form.erp_person_code}
                     onChange={(e) => setForm((p) => ({ ...p, erp_person_code: e.target.value }))}
+                    readOnly={!!fromEmployee && modal.mode === 'create'}
                     required={modal.mode === 'create'}
                     placeholder="e.g. EMP00123" />
                 </Field>
@@ -829,7 +882,7 @@ function UserManagement() {
               </div>
               {error && <Toast ok={false} msg={error} />}
               <div className="flex justify-end gap-2 border-t border-neutral-100 pt-3">
-                <button type="button" onClick={() => setModal(null)} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">Cancel</button>
+                <button type="button" onClick={closeModal} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">Cancel</button>
                 <SaveButton loading={saving} />
               </div>
             </form>
@@ -907,8 +960,13 @@ function NotificationSettings() {
   const [channel, setChannel] = useState('')
   const [webhook, setWebhook] = useState('')
   const [followup, setFollowup] = useState('')
-  const [dailyFollowup, setDailyFollowup] = useState<boolean | null>(null)
   const [serviceGrDue, setServiceGrDue] = useState<boolean | null>(null)
+  const [agreementOverdue, setAgreementOverdue] = useState<boolean | null>(null)
+  const [grAckDue, setGrAckDue] = useState<boolean | null>(null)
+  const [grAckDryRun, setGrAckDryRun] = useState<boolean | null>(null)
+  const [budgetAlert, setBudgetAlert] = useState<boolean | null>(null)
+  const [budgetAlertDryRun, setBudgetAlertDryRun] = useState<boolean | null>(null)
+  const [paApprovedNotify, setPaApprovedNotify] = useState<boolean | null>(null)
   const [serviceGrDryRun, setServiceGrDryRun] = useState<boolean | null>(null)
   const [mailboxes, setMailboxes] = useState<Record<string, string> | null>(null)
   const [mailboxError, setMailboxError] = useState<string | null>(null)
@@ -924,11 +982,20 @@ function NotificationSettings() {
   const webhookVal = webhook !== '' ? webhook : (ns?.teams_webhook_url ?? '')
   // '08:00' mirrors the backend default (_DEFAULT_NOTIFICATION_SETTINGS / scheduler fallback).
   const followupVal = followup || ns?.followup_time || '08:00'
-  const dailyFollowupVal = dailyFollowup ?? ns?.daily_followup_enabled ?? false
   // Fallbacks mirror the server (crud/config.py): the sweep is off until
   // switched on, and once on it stays in dry-run until explicitly released.
   const serviceGrDueVal = serviceGrDue ?? ns?.service_gr_due_enabled ?? false
   const serviceGrDryRunVal = serviceGrDryRun ?? ns?.service_gr_due_dry_run ?? true
+  // ISS-0137. Fallbacks mirror crud/config.py: the overdue chase is on unless
+  // switched off; the PA-approved email is off unless switched on.
+  const agreementOverdueVal = agreementOverdue ?? ns?.agreement_overdue_enabled ?? true
+  // ISS-0146 ①: off, and dry run first — mirrors crud/config.py.
+  const grAckDueVal = grAckDue ?? ns?.gr_ack_due_enabled ?? false
+  const grAckDryRunVal = grAckDryRun ?? ns?.gr_ack_due_dry_run ?? true
+  // ISS-0146 ③: off, and dry run first — mirrors crud/config.py.
+  const budgetAlertVal = budgetAlert ?? ns?.budget_alert_enabled ?? false
+  const budgetAlertDryRunVal = budgetAlertDryRun ?? ns?.budget_alert_dry_run ?? true
+  const paApprovedNotifyVal = paApprovedNotify ?? ns?.pa_approved_notify_requester ?? true
   const mailboxesVal = mailboxes ?? ns?.role_shared_mailboxes ?? {}
 
   const setMailboxFor = (code: string, value: string) => {
@@ -972,9 +1039,14 @@ function NotificationSettings() {
           default_channel: channelVal as any,
           teams_webhook_url: webhookVal || null,
           followup_time: followupVal,
-          daily_followup_enabled: dailyFollowupVal,
           service_gr_due_enabled: serviceGrDueVal,
           service_gr_due_dry_run: serviceGrDryRunVal,
+          agreement_overdue_enabled: agreementOverdueVal,
+          gr_ack_due_enabled: grAckDueVal,
+          gr_ack_due_dry_run: grAckDryRunVal,
+          budget_alert_enabled: budgetAlertVal,
+          budget_alert_dry_run: budgetAlertDryRunVal,
+          pa_approved_notify_requester: paApprovedNotifyVal,
           role_shared_mailboxes: mailboxesVal,
         },
         smtp_host: smtpVal.host || null,
@@ -1092,17 +1164,11 @@ function NotificationSettings() {
         {mailboxError && <p className="mt-2 text-xs text-red-600">{mailboxError}</p>}
       </div>
 
-      <Field label="Daily Follow-up" hint="When on, users with open tasks receive a reminder email every day. Off by default.">
-        <div className="flex items-center gap-2 pt-1.5">
-          <Toggle checked={dailyFollowupVal} onChange={(v) => setDailyFollowup(v)} />
-          <span className="text-xs text-neutral-500">{dailyFollowupVal ? 'On — daily reminders are sent' : 'Off — no daily reminders'}</span>
-        </div>
-      </Field>
-      <Field label="Daily Follow-up Time (UTC)" hint="Time to send pending task reminders each day. Changes take effect within 15 minutes — no restart needed.">
+      <Field label="Daily Digest Time (UTC)" hint="When the once-a-day task digest goes out — see Task Notifications below for which tasks it covers. Changes take effect within 15 minutes — no restart needed.">
         <Input type="time" value={followupVal} onChange={(e) => setFollowup(e.target.value)} />
       </Field>
 
-      <Field label="Service Completion Reminder" hint="When on, service and project POs whose expected completion date has passed raise a task asking the PR requester to create a GR. Runs at the follow-up time above. Off by default.">
+      <Field label="Service Completion Reminder" hint="When on, service and project POs whose expected completion date has passed raise a task asking the PR requester to create a GR. Runs at the digest time above. Off by default.">
         <div className="flex items-center gap-2 pt-1.5">
           <Toggle checked={serviceGrDueVal} onChange={(v) => setServiceGrDue(v)} />
           <span className="text-xs text-neutral-500">{serviceGrDueVal ? 'On — overdue service POs are chased' : 'Off — no completion reminders'}</span>
@@ -1120,6 +1186,50 @@ function NotificationSettings() {
           </div>
         </Field>
       )}
+
+      <Field label="GR Acknowledgement Reminder" hint="When on, a goods receipt still waiting for acknowledgement past the GR Notification SLA (EPMS → Admin) is reminded daily to the PR owner, and escalated once to their Department Manager. Runs at the digest time above. Off by default.">
+        <div className="flex items-center gap-2 pt-1.5">
+          <Toggle checked={grAckDueVal} onChange={(v) => setGrAckDue(v)} />
+          <span className="text-xs text-neutral-500">{grAckDueVal ? 'On — waiting receipts are chased' : 'Off — no acknowledgement reminders'}</span>
+        </div>
+      </Field>
+      {grAckDueVal && (
+        <Field label="GR Acknowledgement Reminder — Dry Run" hint="Leave on for the first days: administrators get the list of receipts it would chase, and nobody is reminded. Turn off once the list looks right.">
+          <div className="flex items-center gap-2 pt-1.5">
+            <Toggle checked={grAckDryRunVal} onChange={(v) => setGrAckDryRun(v)} />
+            <span className="text-xs text-neutral-500">{grAckDryRunVal ? 'Dry run — admins get a preview only' : 'Live — owners and their managers are notified'}</span>
+          </div>
+        </Field>
+      )}
+
+      <Field label="Budget Threshold Alerts" hint="When on, every budget line (cost center × account) is checked against Finance → Budget Config thresholds: reaching the warning level sends the Department Manager a daily digest (at the digest time); reaching the over-budget level is reported within the hour by email to the Department Manager, Finance Manager and the department's GM/OPM, plus a Teams card (Teams Webhook URL above) when one of them chose Teams. Once per crossing. Off by default.">
+        <div className="flex items-center gap-2 pt-1.5">
+          <Toggle checked={budgetAlertVal} onChange={(v) => setBudgetAlert(v)} />
+          <span className="text-xs text-neutral-500">{budgetAlertVal ? 'On — budget lines are checked daily' : 'Off — no budget alert emails'}</span>
+        </div>
+      </Field>
+      {budgetAlertVal && (
+        <Field label="Budget Threshold Alerts — Dry Run" hint="Leave on first: administrators get the list of lines that would be reported, nobody else is emailed and nothing is marked as sent. Turn off once the list looks right.">
+          <div className="flex items-center gap-2 pt-1.5">
+            <Toggle checked={budgetAlertDryRunVal} onChange={(v) => setBudgetAlertDryRun(v)} />
+            <span className="text-xs text-neutral-500">{budgetAlertDryRunVal ? 'Dry run — admins get a preview only' : 'Live — managers are emailed'}</span>
+          </div>
+        </Field>
+      )}
+
+      <Field label="Agreement Overdue Reminder" hint="When a purchase agreement's billing period is overdue with no invoice, the agreement owner gets a Chase Invoice task and an email. Turning this off stops both the email and the task (the period is still marked overdue on the agreement). On by default.">
+        <div className="flex items-center gap-2 pt-1.5">
+          <Toggle checked={agreementOverdueVal} onChange={(v) => setAgreementOverdue(v)} />
+          <span className="text-xs text-neutral-500">{agreementOverdueVal ? 'On — overdue agreement periods are chased' : 'Off — no overdue reminders or chase tasks'}</span>
+        </div>
+      </Field>
+
+      <Field label="PA Approved — Notify Requester" hint="When on, the person who raised a Payment Application gets an email once it is fully approved. Information only — no task. On by default (PRD PA-007); switch off to stop these emails.">
+        <div className="flex items-center gap-2 pt-1.5">
+          <Toggle checked={paApprovedNotifyVal} onChange={(v) => setPaApprovedNotify(v)} />
+          <span className="text-xs text-neutral-500">{paApprovedNotifyVal ? 'On — requesters are emailed on final approval' : 'Off — requesters are not emailed'}</span>
+        </div>
+      </Field>
 
       {/* Test notification */}
       <div className="flex items-center gap-2">
@@ -1389,7 +1499,7 @@ function RemittanceSettings() {
 // so a key missing from this list is not merely uneditable, it is DELETED by
 // the next workflow save. approval-api reseeds it on its next boot (main.py
 // only fills gaps), but until then `workflow_defs->'agr'` reads NULL.
-const ACTION_KEYS: ActionKey[] = ['pr', 'po', 'posign', 'agr', 'pa', 'pa_dir', 'exp', 'mil', 'trv', 'tra', 'cfm', 'budget_plan', 'vms_visit']
+const ACTION_KEYS: ActionKey[] = ['pr', 'po', 'posign', 'agr', 'pa', 'pa_frt', 'pa_dir', 'exp', 'mil', 'trv', 'tra', 'cfm', 'budget_plan', 'vms_visit']
 
 const ACTION_KEY_LABELS: Record<ActionKey, string> = {
   pr:          'Purchase Request',
@@ -1397,6 +1507,7 @@ const ACTION_KEY_LABELS: Record<ActionKey, string> = {
   posign:      'PO Sign-off (NC imports)',
   agr:         'Purchase Agreement',
   pa:          'PA (PO-Linked)',
+  pa_frt:      'PA (Courier Freight)',
   pa_dir:      'PA (Direct)',
   exp:         'General Expense',
   mil:         'Mileage Claim',
@@ -1414,6 +1525,15 @@ const ACTION_KEY_LABELS: Record<ActionKey, string> = {
 const SIGNOFF_ROLE_VALUES = new Set([
   'gm', 'opm', 'procurement_manager', 'finance_manager', 'vendor_manager',
   'finance_director',
+])
+
+// A Freight PA pays one courier invoice split over several departments, so no
+// step can resolve by department: a department-scoped role would resolve
+// against whoever raised the PA, and gm_or_opm would always land on the GM.
+// Only company-level posts are offered (approval-api engine.workflow_key).
+const FREIGHT_ROLE_VALUES = new Set([
+  'opm', 'gm', 'procurement_manager', 'finance_manager', 'finance_director',
+  'finance_bp', 'ap_clerk',
 ])
 
 const SIG_SLOTS: { value: '' | 'initials' | 'signature'; label: string }[] = [
@@ -1434,10 +1554,13 @@ const WORKFLOW_ROLES = [
   { value: 'finance_director',    label: 'Finance Director' },
   { value: 'finance_bp',          label: 'Finance BP' },
   { value: 'ap_clerk',            label: 'AP Clerk' },
-  // VMS-local role — vms-api resolves the specific user from
-  // `vms_config.quality_manager_user_ids` (see S2_ARCHITECTURE_REVIEW.md F2).
+  // VMS-local role — goes to the managers of the visit's access zone
+  // (VMS Admin → Zones), one task each; skipped when the zone has none.
   // Only meaningful on the vms_visit workflow.
-  { value: 'quality_manager',     label: 'Quality Manager (VMS-local)' },
+  { value: 'zone_manager',        label: 'Zone Manager (VMS zone managers)' },
+  // Its name before zones were configurable. Same behaviour — kept so a
+  // workflow saved with it still shows its step; switch it to Zone Manager.
+  { value: 'quality_manager',     label: 'Quality Manager (legacy — same as Zone Manager)' },
 ]
 
 const WORKFLOW_DEFAULTS: Record<ActionKey, WorkflowNodeDef[]> = {
@@ -1452,6 +1575,13 @@ const WORKFLOW_DEFAULTS: Record<ActionKey, WorkflowNodeDef[]> = {
   // Mirrors approval-api crud/engine.py::_WORKFLOW_DEFAULTS['agr'].
   agr:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'procurement_manager', role: 'procurement_manager', label: 'Procurement Manager' }, { id: 'finance_manager', role: 'finance_manager', label: 'Finance Manager' }],
   pa:     [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'gm_or_opm', role: 'gm_or_opm', label: 'GM / OPM' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }],
+  // Mirrors approval-api crud/engine.py::_WORKFLOW_DEFAULTS['pa_frt'].
+  pa_frt: [
+    { id: 'opm', role: 'opm', label: 'Operations Manager' },
+    { id: 'gm', role: 'gm', label: 'General Manager' },
+    { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' },
+    { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' },
+  ],
   pa_dir: [{ id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }],
   exp:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }],
   mil:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_bp', role: 'finance_bp', label: 'Finance BP' }],
@@ -1459,8 +1589,8 @@ const WORKFLOW_DEFAULTS: Record<ActionKey, WorkflowNodeDef[]> = {
   tra:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }, { id: 'gm', role: 'gm', label: 'General Manager' }],
   cfm:    [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }],
   budget_plan: [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }, { id: 'finance_mgr', role: 'finance_manager', label: 'Finance Manager' }],
-  // VMS visit: default single-step. Admin adds a `quality_manager` row for
-  // GMP / Lab dual approval (S2_ARCHITECTURE_REVIEW.md §"locked decisions").
+  // VMS visit: default single-step. Admin adds a `zone_manager` row so zones
+  // with managers (VMS Admin → Zones) also need their sign-off.
   vms_visit: [{ id: 'dept_manager', role: 'dept_manager', label: 'Department Manager' }],
 }
 
@@ -1504,15 +1634,18 @@ function ApprovalWorkflows() {
     setSteps(steps.filter((_, idx) => idx !== i))
 
   const isSignoff = activeKey === 'posign'
+  const isFreight = activeKey === 'pa_frt'
   const roleOptions = isSignoff
     ? WORKFLOW_ROLES.filter(r => SIGNOFF_ROLE_VALUES.has(r.value))
-    : WORKFLOW_ROLES
+    : isFreight
+      ? WORKFLOW_ROLES.filter(r => FREIGHT_ROLE_VALUES.has(r.value))
+      : WORKFLOW_ROLES
 
   const addStep = () =>
     setSteps([...steps, {
       id: crypto.randomUUID(), label: 'New Step',
       // dept_manager cannot route a sign-off — see SIGNOFF_ROLE_VALUES.
-      role: isSignoff ? 'procurement_manager' : 'dept_manager',
+      role: isSignoff ? 'procurement_manager' : isFreight ? 'finance_manager' : 'dept_manager',
       ...(isSignoff ? { sig_slot: null } : {}),
     }])
 
@@ -1565,6 +1698,7 @@ function ApprovalWorkflows() {
             )}
           >
             {key === 'pa_dir'      ? 'PA-DIR'
+              : key === 'pa_frt'    ? 'Freight PA'
               : key === 'vms_visit' ? 'VMS Visit'
               : key === 'posign'    ? 'PO Sign-off'
               : key.toUpperCase()}
@@ -1577,6 +1711,12 @@ function ApprovalWorkflows() {
         <p className="text-xs text-neutral-400 font-medium uppercase tracking-wide">
           {ACTION_KEY_LABELS[activeKey]} — approval chain
         </p>
+        {isFreight && (
+          <p className="text-xs text-neutral-500">
+            Courier invoices (EPMS → Freight) cover several departments at once, so only
+            company-level roles can approve them. Department-based roles are not offered.
+          </p>
+        )}
 
         {steps.length === 0 && (
           <div className="rounded-lg border border-dashed border-neutral-200 py-6 text-center text-sm text-neutral-400">
@@ -1807,11 +1947,14 @@ function ErpMaterialsTab() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'A' | 'B' | ''>('A')
   const [page, setPage] = useState(1)
+  const [sort, onSort] = useSort<'erp_part_no' | 'description' | 'unit_meas' | 'dim_quality' | 'item_mes_type' | 'part_status' | 'erp_rowversion'>(
+    null, () => setPage(1))
   const qs = new URLSearchParams({ page: String(page), page_size: '20' })
   if (search) qs.set('search', search)
   if (statusFilter) qs.set('part_status', statusFilter)
+  setSortQs(qs, sort)
   const { data, isLoading } = useQuery<{ items: ErpMaterial[]; total: number }>({
-    queryKey: ['erp', 'material', page, search, statusFilter],
+    queryKey: ['erp', 'material', page, search, statusFilter, sort],
     queryFn: () => mdmApi.get(`/erp/materials?${qs}`),
     placeholderData: (prev) => prev,
   })
@@ -1842,9 +1985,13 @@ function ErpMaterialsTab() {
           <table className="w-full text-sm">
             <thead className="border-b border-neutral-100 bg-neutral-50">
               <tr>
-                {['Part No', 'Description', 'Unit', 'Spec', 'MES Type', 'Status', 'ERP rowversion'].map(h =>
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>
-                )}
+                <SortTh label="Part No" sortKey="erp_part_no" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                <SortTh label="Description" sortKey="description" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                <SortTh label="Unit" sortKey="unit_meas" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                <SortTh label="Spec" sortKey="dim_quality" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                <SortTh label="MES Type" sortKey="item_mes_type" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                <SortTh label="Status" sortKey="part_status" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                <SortTh label="ERP rowversion" sortKey="erp_rowversion" sort={sort} onSort={onSort} className={ADMIN_TH} />
               </tr>
             </thead>
             <tbody>
@@ -1901,10 +2048,13 @@ interface ErpSupplierRow {
 function ErpSuppliersTab() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [sort, onSort] = useSort<'erp_supplier_code' | 'supplier_name' | 'supplier_type' | 'supplier_tel' | 'supplier_address'>(
+    null, () => setPage(1))
   const qs = new URLSearchParams({ page: String(page), page_size: '20' })
   if (search) qs.set('search', search)
+  setSortQs(qs, sort)
   const { data, isLoading } = useQuery<{ items: ErpSupplierRow[]; total: number }>({
-    queryKey: ['erp', 'supplier', page, search],
+    queryKey: ['erp', 'supplier', page, search, sort],
     queryFn: () => mdmApi.get(`/erp/suppliers?${qs}`),
     placeholderData: (prev) => prev,
   })
@@ -1919,8 +2069,12 @@ function ErpSuppliersTab() {
           : !data?.items.length ? <div className="py-10 text-center text-sm text-neutral-400">No suppliers. Click Sync.</div>
           : <table className="w-full text-sm">
               <thead className="border-b border-neutral-100 bg-neutral-50">
-                <tr>{['Code', 'Name', 'Type', 'Tel', 'Address'].map(h =>
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>)}
+                <tr>
+                  <SortTh label="Code" sortKey="erp_supplier_code" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Name" sortKey="supplier_name" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Type" sortKey="supplier_type" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Tel" sortKey="supplier_tel" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Address" sortKey="supplier_address" sort={sort} onSort={onSort} className={ADMIN_TH} />
                 </tr>
               </thead>
               <tbody>
@@ -1963,13 +2117,18 @@ interface ErpPersonRow {
   erp_rowversion: string | null; synced_at: string
 }
 
+/** mdm-api /erp/persons ?sort= keys (app/crud/erp.py PERSON_SORTABLE). */
+type ErpPersonSortKey = 'erp_person_code' | 'person_name' | 'company_name' | 'department_name' | 'is_valid'
+
 function ErpPersonsTab() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
+  const [sort, onSort] = useSort<ErpPersonSortKey>(null, () => setPage(1))
   const qs = new URLSearchParams({ page: String(page), page_size: '20' })
   if (search) qs.set('search', search)
+  setSortQs(qs, sort)
   const { data, isLoading } = useQuery<{ items: ErpPersonRow[]; total: number }>({
-    queryKey: ['erp', 'person', page, search],
+    queryKey: ['erp', 'person', page, search, sort],
     queryFn: () => mdmApi.get(`/erp/persons?${qs}`),
     placeholderData: (prev) => prev,
   })
@@ -1984,8 +2143,12 @@ function ErpPersonsTab() {
           : !data?.items.length ? <div className="py-10 text-center text-sm text-neutral-400">No persons. Click Sync.</div>
           : <table className="w-full text-sm">
               <thead className="border-b border-neutral-100 bg-neutral-50">
-                <tr>{['Code', 'Name', 'Company', 'Department', 'Valid'].map(h =>
-                  <th key={h} className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-neutral-500">{h}</th>)}
+                <tr>
+                  <SortTh label="Code" sortKey="erp_person_code" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Name" sortKey="person_name" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Company" sortKey="company_name" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Department" sortKey="department_name" sort={sort} onSort={onSort} className={ADMIN_TH} />
+                  <SortTh label="Valid" sortKey="is_valid" sort={sort} onSort={onSort} className={ADMIN_TH} />
                 </tr>
               </thead>
               <tbody>
@@ -2035,6 +2198,7 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [excludeImported, setExcludeImported] = useState(true)
+  const [sort, onSort] = useSort<ErpPersonSortKey>(null, () => setPage(1))
   const [selected, setSelected] = useState<Record<string, { email: string }>>({})
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -2064,9 +2228,10 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
   const qs = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) })
   if (search) qs.set('search', search)
   if (excludeImported && importedCodes.length) qs.set('exclude_codes', importedCodes.join(','))
+  setSortQs(qs, sort)
 
   const { data, isLoading } = useQuery<{ items: ErpPersonRow[]; total: number }>({
-    queryKey: ['erp-import-persons', page, search, excludeImported, importedCodes.join(',')],
+    queryKey: ['erp-import-persons', page, search, excludeImported, importedCodes.join(','), sort],
     queryFn: () => mdmApi.get(`/erp/persons?${qs}`),
     placeholderData: (prev) => prev,
   })
@@ -2163,9 +2328,9 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
                     <thead className="border-b border-neutral-200">
                       <tr>
                         <th className="px-2 py-2"></th>
-                        <th className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500">Code</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500">Name</th>
-                        <th className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500">Dept</th>
+                        <SortTh label="Code" sortKey="erp_person_code" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500" />
+                        <SortTh label="Name" sortKey="person_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500" />
+                        <SortTh label="Dept" sortKey="department_name" sort={sort} onSort={onSort} className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500" />
                         <th className="px-2 py-2 text-left text-xs font-medium uppercase text-neutral-500">Email *</th>
                       </tr>
                     </thead>
@@ -2238,9 +2403,7 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
 const SECTIONS = [
   { key: 'company',      label: 'Company Settings',     icon: Building2 },
   { key: 'security',     label: 'Security',             icon: ShieldCheck },
-  { key: 'departments',  label: 'Departments',          icon: Landmark },
   { key: 'uom',          label: 'Units of Measure',     icon: Ruler },
-  { key: 'users',        label: 'User Management',      icon: Users },
   { key: 'currency',     label: 'Currency Settings',    icon: CreditCard },
   { key: 'notifications',label: 'Notification Settings',icon: Bell },
   { key: 'remittance',   label: 'Remittance Advice',    icon: Mail },
@@ -2250,8 +2413,16 @@ const SECTIONS = [
   { key: 'wms_sync',     label: 'WMS Sync',             icon: Warehouse },
 ]
 
+// Sections that moved to Portal → MDM. Old deep links (/admin?section=users)
+// land on the new page instead of silently falling back to Company Settings.
+const MOVED_SECTIONS: Record<string, string> = {
+  users: '/mdm/users',
+  departments: '/mdm/departments',
+}
+
 export default function AdminPanel() {
   const { user } = useAuthStore()
+  const movedTo = MOVED_SECTIONS[new URLSearchParams(window.location.search).get('section') ?? '']
   // ?section=<key> makes each panel deep-linkable — the NC sync error tasks in
   // the Task Inbox link straight to /admin?section=nc_sync. An unknown or absent
   // key falls back to the default panel.
@@ -2259,8 +2430,16 @@ export default function AdminPanel() {
     const wanted = new URLSearchParams(window.location.search).get('section')
     return wanted && SECTIONS.some((s) => s.key === wanted) ? wanted : 'company'
   })
+  // Above the early return (Rules of Hooks).
+  const perms = useRolePermissions().data?.permissions
 
   if (user?.role !== 'system_admin') return <Navigate to="/" replace />
+  if (movedTo) return <Navigate to={movedTo} replace />
+
+  // Pages that live outside this panel but belong to administration — listed
+  // here too, or an admin who comes in through "Portal → Admin" never finds
+  // Approval Delegation / Routing / Access Control (ISS-0027).
+  const otherPages = adminPageLinks(user?.role ?? null, perms)
 
   const currentSection = SECTIONS.find((s) => s.key === section)
 
@@ -2308,6 +2487,24 @@ export default function AdminPanel() {
               {label}
             </button>
           ))}
+
+          {otherPages.length > 0 && (
+            <div className="mt-3 border-t border-white/10 pt-3 space-y-0.5">
+              <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/40">
+                More admin pages
+              </p>
+              {otherPages.map(({ label, icon: Icon, href }) => (
+                <Link
+                  key={href}
+                  to={href.slice('portal:'.length)}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm text-white/65 hover:bg-white/10 hover:text-white transition-colors"
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  {label}
+                </Link>
+              ))}
+            </div>
+          )}
         </div>
       </nav>
 
@@ -2328,11 +2525,9 @@ export default function AdminPanel() {
         <main className="flex-1 overflow-y-auto p-6">
           {section === 'company'       && <CompanySettings />}
           {section === 'security'      && <SecuritySettings />}
-          {section === 'departments'   && <DepartmentManagement />}
           {section === 'uom'           && <UnitsOfMeasure />}
-          {section === 'users'         && <UserManagement />}
           {section === 'currency'      && <CurrencySettings />}
-          {section === 'notifications' && <NotificationSettings />}
+          {section === 'notifications' && <><NotificationSettings /><TaskNotificationPolicies /></>}
           {section === 'remittance'    && <RemittanceSettings />}
           {section === 'workflows'     && <ApprovalWorkflows />}
           {section === 'erp_mdm'     && <ErpMdmSection />}

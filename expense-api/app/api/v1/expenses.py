@@ -1,7 +1,7 @@
 """Expense claim endpoints — EXP / MIL / TRV / CFM (OA module)."""
 import logging
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 import sqlalchemy as sa
 from fastapi import APIRouter, HTTPException, Query, status
@@ -21,7 +21,7 @@ from app.schemas.expense import (
 )
 from app.services.approval_client import delegate_action
 from app.services.attachment_helper import delete_from_file_server
-from app.services import finance_client
+from app.services import claim_pdf, finance_client
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
@@ -311,6 +311,35 @@ def can_delete_claim(claim, user_id: uuid.UUID, role: str) -> bool:
     return role == "system_admin" or claim.employee_id == user_id
 
 
+def _expense_sortable():
+    """Sortable columns of the Expense Claims / Travel Applications lists
+    (sort=<key>&dir=asc|desc). "Date" on the Expense Claims list shows
+    submitted_at, falling back to created_at for drafts; the Travel list's
+    "Date" is submission_date. Status codes sort like their labels
+    ("in_review" / "In Review"), so the code is used as is."""
+    from sqlalchemy import func
+    from app.core.list_sort import lower_text
+    from app.models.expense import ExpenseClaim as EC
+    return {
+        "claim_number": lower_text(EC.claim_number),
+        "claim_type": lower_text(EC.claim_type),
+        "employee_name": lower_text(EC.employee_name),
+        "department_name": lower_text(EC.department_name),
+        "travel_destination": lower_text(EC.travel_destination),
+        "net_amount": EC.net_amount,
+        "status": lower_text(EC.status),
+        "submission_date": EC.submission_date,
+        "date": func.coalesce(EC.submitted_at, EC.created_at),
+    }
+
+
+def _expense_ordering(sort: str | None, dir: str):
+    """ORDER BY for the expense list; None keeps the default newest-first."""
+    from app.core.list_sort import sort_clauses
+    from app.models.expense import ExpenseClaim as EC
+    return sort_clauses(sort, dir, _expense_sortable(), tiebreak=[EC.created_at.desc(), EC.id])
+
+
 def _list_item(claim, user_id: uuid.UUID, role: str) -> ExpenseClaimListItem:
     """Serialize one list row, stamping the server-computed delete permission."""
     item = ExpenseClaimListItem.model_validate(claim)
@@ -326,6 +355,8 @@ async def list_expenses(
     status_filter: Annotated[str | None, Query(alias="status")] = None,
     exclude_type: Annotated[str | None, Query(alias="exclude_type")] = None,
     my_claims: bool = False,
+    sort: Annotated[str | None, Query(description="Column key; unknown -> 422")] = None,
+    dir: Annotated[Literal["asc", "desc"], Query()] = "asc",
     page: int = 1,
     page_size: Annotated[int, Query(le=100)] = 20,
 ):
@@ -347,6 +378,7 @@ async def list_expenses(
     role = user.get("role", "")
     user_id = uuid.UUID(user["sub"])
     excluded = [t.strip() for t in exclude_type.split(",") if t.strip()] if exclude_type else []
+    ordering = _expense_ordering(sort, dir)
 
     # Full visibility: system_admin (config) and ap_clerk (processes payments across all
     # claims — must keep seeing a claim after it is marked paid, not just while approved).
@@ -355,7 +387,7 @@ async def list_expenses(
         items, total = await expense_crud.list_claims(
             db, claim_type=claim_type, status=status_filter,
             employee_id=employee_id, exclude_types=excluded,
-            page=page, page_size=page_size,
+            order_by=ordering, page=page, page_size=page_size,
         )
         return ExpenseClaimListResponse(
             items=[_list_item(c, user_id, role) for c in items],
@@ -384,9 +416,14 @@ async def list_expenses(
         db, user_id, role, doc_types=OA_CLAIM_DOC_TYPES)
 
     conditions = [EC.employee_id == user_id]                    # raised by me
+    conditions.append((EC.claim_type == "TRV") & (EC.created_by == user_id))  # filed for a traveler
     if approvable:
         conditions.append(EC.id.in_(approvable))                # waiting for me
     conditions.append(EC.id.in_(acted_on_documents(user_id)))   # acted on by me
+    # A TRA is also the travelers' document once it has left the applicant's
+    # drafts; they claim against it. Same rule as _can_view_claim.
+    conditions.append((EC.status != "draft")
+                      & EC.id.in_(expense_crud.traveler_claim_ids(user_id)))
 
     # Payment is a stage of the document's life, not an approval step, and it is
     # keyed on a role pool rather than a per-document task — so the finance
@@ -407,7 +444,8 @@ async def list_expenses(
         sa_select(func.count()).select_from(q.subquery())
     )).scalar_one()
     paged = list((await db.execute(
-        q.order_by(EC.created_at.desc()).offset((page - 1) * page_size).limit(page_size)
+        q.order_by(*(ordering or [EC.created_at.desc()]))
+        .offset((page - 1) * page_size).limit(page_size)
     )).scalars().all())
 
     return ExpenseClaimListResponse(
@@ -427,10 +465,29 @@ async def create_expense(
         raise HTTPException(status_code=400, detail=f"claim_type must be one of {allowed} or CFM_<code>")
 
     user_id = uuid.UUID(user["sub"])
-    user_name = user.get("full_name") or user.get("name") or ""
-    dept_id_raw = user.get("department_id")
+    if body.claimant_id and body.claim_type != "TRV":
+        raise HTTPException(status_code=400,
+            detail="Only travel expense claims can be filed for someone else")
+    claimant_id = body.claimant_id or user_id
+
+    # TRV reimbursement gate: must reference an APPROVED TRA the claimant travels on.
+    roster_name = ""
+    if body.claim_type == "TRV":
+        if not body.travel_application_id:
+            raise HTTPException(status_code=400,
+                detail="A Travel Application is required for travel expense claims")
+        tra = await _require_trv_application(db, body.travel_application_id, claimant_id)
+        if claimant_id != user_id and user_id != tra.employee_id:
+            raise HTTPException(status_code=403,
+                detail="Only the applicant can file a claim for another traveler")
+        roster_name = next(t.user_name for t in tra.travelers if t.user_id == claimant_id)
+
+    # The token describes the caller, so it says nothing about someone else.
+    on_behalf = claimant_id != user_id
+    user_name = "" if on_behalf else (user.get("full_name") or user.get("name") or "")
+    dept_id_raw = None if on_behalf else user.get("department_id")
     dept_id = uuid.UUID(dept_id_raw) if dept_id_raw else None
-    dept_name = user.get("department_name") or ""
+    dept_name = "" if on_behalf else (user.get("department_name") or "")
 
     # The access token carries only {sub, role, type} — full_name / department are
     # NOT in it (identity-api create_access_token). Resolve them from the shared
@@ -449,7 +506,7 @@ async def create_expense(
                         "FROM users u LEFT JOIN departments d ON d.id = u.department_id "
                         "WHERE u.id = :uid"
                     ),
-                    {"uid": user_id},
+                    {"uid": claimant_id},
                 )).first()
         except Exception:
             row = None
@@ -459,31 +516,20 @@ async def create_expense(
                 dept_id = row.department_id
             dept_name = dept_name or (row.department_name or "")
 
-    user_name = user_name or user.get("email", "")
+    user_name = user_name or roster_name or user.get("email", "")
 
-    # TRV reimbursement gate: must reference an APPROVED TRA the user travels on.
-    if body.claim_type == "TRV":
-        if not body.travel_application_id:
-            raise HTTPException(status_code=400,
-                detail="A Travel Application is required for travel expense claims")
-        tra = await expense_crud.get_by_id(db, body.travel_application_id)
-        if not tra or tra.claim_type != "TRA":
-            raise HTTPException(status_code=404, detail="Travel Application not found")
-        if tra.status != "approved":
-            raise HTTPException(status_code=400,
-                detail="The selected Travel Application is not approved yet")
-        if user_id not in {t.user_id for t in tra.travelers}:
-            raise HTTPException(status_code=403,
-                detail="You are not listed as a traveler on this Travel Application")
-
-    claim = await expense_crud.create_claim(
-        db,
-        data=body,
-        user_id=user_id,
-        user_name=user_name,
-        department_id=dept_id,
-        department_name=dept_name,
-    )
+    try:
+        claim = await expense_crud.create_claim(
+            db,
+            data=body,
+            user_id=claimant_id,
+            user_name=user_name,
+            department_id=dept_id,
+            department_name=dept_name,
+            prepared_by=user_id,
+        )
+    except ValueError as exc:  # TRV line rules (_check_trv_lines)
+        raise HTTPException(status_code=422, detail=str(exc))
     return ExpenseClaimResponse.model_validate(claim)
 
 
@@ -544,6 +590,21 @@ async def my_actions(db: SessionDep, user: CurrentUserDep):
     )
 
 
+async def _require_trv_application(db, tra_id: uuid.UUID, claimant_id: uuid.UUID):
+    """The approved TRA a TRV rests on, with the claimant on its roster. A TRV
+    pays its claimant, so being the TRA's applicant is not enough."""
+    tra = await expense_crud.get_by_id(db, tra_id)
+    if not tra or tra.claim_type != "TRA":
+        raise HTTPException(status_code=404, detail="Travel Application not found")
+    if tra.status != "approved":
+        raise HTTPException(status_code=400,
+            detail="The selected Travel Application is not approved yet")
+    if claimant_id not in {t.user_id for t in tra.travelers}:
+        raise HTTPException(status_code=403,
+            detail="The claimant is not listed as a traveler on this Travel Application")
+    return tra
+
+
 async def _can_view_claim(db, claim, user_id: uuid.UUID, role: str) -> bool:
     """Object-level read gate — the same rule list_expenses filters on.
 
@@ -553,7 +614,11 @@ async def _can_view_claim(db, claim, user_id: uuid.UUID, role: str) -> bool:
     here was exactly that hole — it let any holder of any step role read any
     claim of that type, company-wide.
     """
-    if claim.employee_id == user_id or role == "system_admin":
+    if (claim.employee_id == user_id or role == "system_admin"
+            or expense_crud.is_preparer(claim, user_id)):
+        return True
+    if (claim.claim_type == "TRA" and claim.status != "draft"
+            and await expense_crud.is_listed_traveler(db, claim.id, user_id)):
         return True
     # Finance/AP settle claims they never approved; they need to read them.
     # Role UNION, not the JWT role: these are usually assignments here.
@@ -569,6 +634,36 @@ async def _can_view_claim(db, claim, user_id: uuid.UUID, role: str) -> bool:
     if acted:
         return True
     return await _can_act_on_claim(db, claim, user_id, role)
+
+
+async def can_regenerate_pdf(db, claim, user: dict) -> bool:
+    """Regenerate PDF is open to whoever may read the claim. Regenerating only
+    re-renders what the claim and its approval record already say, so it is a
+    read in substance — and the approvers who acted are exactly the people who
+    notice a wrong name on the printed record."""
+    return await _can_view_claim(db, claim, uuid.UUID(user["sub"]), user.get("role", ""))
+
+
+@router.post("/{claim_id}/regenerate-pdf")
+async def regenerate_claim_pdf(claim_id: uuid.UUID, db: SessionDep,
+                               user: CurrentUserDep, token: BearerTokenDep):
+    """(Re)generate the claim's PDF and (re)attach it as <claim_number>.pdf.
+
+    Backfills claims approved before PDFs existed, retries one whose
+    approval-time generation failed, and refreshes it after a name or
+    workflow-label change. Replaces the earlier file; never adds a second.
+    """
+    claim = await expense_crud.get_by_id(db, claim_id)
+    if not claim:
+        raise HTTPException(status_code=404, detail="Expense claim not found")
+    if not await can_regenerate_pdf(db, claim, user):
+        raise HTTPException(status_code=403, detail="Not authorized to regenerate this document")
+    if claim.claim_type != "TRA" and claim.status not in claim_pdf.PDF_STATUSES:
+        raise HTTPException(status_code=409, detail="The PDF is only available once the claim is approved")
+    try:
+        return await claim_pdf.attach_pdf(db, claim, token)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 @router.get("/{claim_id}", response_model=ExpenseClaimResponse)
@@ -601,6 +696,17 @@ async def _claim_history(db, claim) -> list[ApprovalEventResponse]:
     return sorted(legacy + shared, key=lambda e: e.created_at)
 
 
+# approval-api writes action="approve" rows no person decided — a skipped step
+# (no Director, claimant holds the step, …) or a PMS-migration backfill. Their
+# actor is the submitter, so naming them would show the claimant signing their
+# own claim. Same markers as epms-api app/crud/signatories.py.
+_MACHINE_APPROVAL_MARKERS = ("Auto-skipped", "Auto-approved on behalf of")
+
+
+def is_machine_approval(comment: str | None) -> bool:
+    return any(marker in (comment or "") for marker in _MACHINE_APPROVAL_MARKERS)
+
+
 async def _shared_approval_events(db, claim_id: uuid.UUID) -> list[ApprovalEventResponse]:
     """Events approval-api recorded for the claim, with actor names resolved."""
     from sqlalchemy import bindparam, select as sa_select, text
@@ -622,7 +728,8 @@ async def _shared_approval_events(db, claim_id: uuid.UUID) -> list[ApprovalEvent
     return [
         ApprovalEventResponse(
             id=e.id, actor_id=e.actor_id,
-            actor_name=names.get(e.actor_id) or e.actor_role,
+            actor_name=("System" if e.action == "approve" and is_machine_approval(e.comment)
+                        else names.get(e.actor_id) or e.actor_role),
             action=e.action, comment=e.comment, step_idx=e.step_idx,
             created_at=e.created_at,
         )
@@ -632,6 +739,7 @@ async def _shared_approval_events(db, claim_id: uuid.UUID) -> list[ApprovalEvent
 
 class ClaimPermissions(BaseModel):
     is_owner: bool
+    can_edit: bool
     can_approve: bool      # may approve / return / reject the current pending step
     can_pay: bool          # may record payment (status = approved)
     can_delete: bool = False   # may hard-delete (unapproved Travel Applications only)
@@ -665,6 +773,7 @@ async def get_claim_permissions(claim_id: uuid.UUID, db: SessionDep, user: Curre
 
     return ClaimPermissions(
         is_owner=is_owner,
+        can_edit=is_owner or expense_crud.is_preparer(claim, user_id),
         can_approve=can_approve,
         can_pay=can_pay,
         can_delete=can_delete_claim(claim, user_id, role),
@@ -726,6 +835,7 @@ async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, user: Current
     out: list[ApprovalStepOut] = []
     for i, step in enumerate(steps):
         ev = approve_by_step.get(i)
+        machine = ev is not None and is_machine_approval(ev.comment)
         if status == "draft":
             state = "waiting"
         elif status in ("approved", "paid"):
@@ -763,13 +873,52 @@ async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, user: Current
             role=step.get("role", ""),
             label=step.get("label") or step.get("role", f"Step {i + 1}"),
             state=state,
-            actor_name=(names.get(ev.actor_id) if ev else None),
+            actor_name=(names.get(ev.actor_id) if ev and not machine else None),
             actor_role=(ev.actor_role if ev else None),
             acted_at=(ev.created_at.isoformat() if ev else None),
             action=(ev.action if ev else None),
             comment=(ev.comment if ev else None),
         ))
     return out
+
+
+class ReminderOut(BaseModel):
+    sent: bool
+    document_number: str
+    recipients: list[str]
+    next_allowed_at: str
+
+
+@router.post("/{claim_id}/remind", response_model=ReminderOut)
+async def remind_claim_approver(
+    claim_id: uuid.UUID, db: SessionDep, user: CurrentUserDep, token: BearerTokenDep,
+):
+    """Nudge whoever holds this claim's open approval step ("Send reminder" on
+    the Approval Status card).
+
+    The read gate is the only gate — anyone who may open the claim may chase it,
+    same as PR/PO in EPMS. The send itself, the recipient resolution and the 24h
+    cooldown happen in epms-api, whose 409/429 refusals are passed through
+    verbatim: they are sentences written for the clicker.
+    """
+    from app.services.epms_reminder_client import ReminderRefused, send_expense_reminder
+
+    claim = await expense_crud.get_by_id(db, claim_id)
+    if not claim:
+        raise HTTPException(status_code=404, detail="Expense claim not found")
+    if not await _can_view_claim(db, claim, uuid.UUID(user["sub"]), user.get("role", "")):
+        raise HTTPException(status_code=403, detail="Not authorized to view this expense claim")
+    if claim.status not in ("submitted", "in_review"):
+        raise HTTPException(
+            status_code=409,
+            detail="This claim is not waiting on an approver right now, so there is nobody to remind.",
+        )
+    try:
+        return await send_expense_reminder(claim.id, claim.claim_type, token)
+    except ReminderRefused as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 @router.patch("/{claim_id}", response_model=ExpenseClaimResponse)
@@ -783,8 +932,12 @@ async def update_expense(
     if not claim:
         raise HTTPException(status_code=404, detail="Expense claim not found")
     user_id = uuid.UUID(user["sub"])
-    if claim.employee_id != user_id and user.get("role") not in ("system_admin", "finance_manager"):
+    if (claim.employee_id != user_id and not expense_crud.is_preparer(claim, user_id)
+            and user.get("role") not in ("system_admin", "finance_manager")):
         raise HTTPException(status_code=403, detail="Cannot edit another employee's claim")
+    if (claim.claim_type == "TRV" and body.travel_application_id
+            and body.travel_application_id != claim.travel_application_id):
+        await _require_trv_application(db, body.travel_application_id, claim.employee_id)
     try:
         await expense_crud.update_claim(db, claim, body)
     except ValueError as exc:
@@ -901,7 +1054,11 @@ async def expense_action(
             )
 
     # EXP-007 / TRV-008: receipt-based claims require ≥1 attachment before submission.
-    if action == "submit" and claim.claim_type in ("EXP", "TRV"):
+    # A TRV made only of date-range lines is exempt: those are claimed at a
+    # daily rate and an invoice is optional (business rule 2026-10-16).
+    trv_all_period = claim.claim_type == "TRV" and bool(claim.line_items) and all(
+        li.period_from is not None for li in claim.line_items)
+    if action == "submit" and claim.claim_type in ("EXP", "TRV") and not trv_all_period:
         from sqlalchemy import func, select
         from app.models.expense import ExpenseAttachment
         att_count = (await db.execute(
@@ -924,6 +1081,7 @@ async def expense_action(
     # All other actions (submit / approve / return / reject / recall / cancel)
     # are delegated to approval-api which drives the configurable workflow.
     key = _action_key(claim.claim_type)
+    status_before = claim.status
     try:
         await delegate_action(key, str(claim_id), action, body.comment, token)
     except LookupError as exc:
@@ -934,7 +1092,25 @@ async def expense_action(
         raise HTTPException(status_code=502, detail=str(exc))
 
     # approval-api wrote back to the shared DB; refresh to get updated state.
+    # Columns too, not only the relationships: refresh(claim, [names]) reloads
+    # just those names, so status stayed whatever it was before the action.
+    await db.refresh(claim)
     await db.refresh(claim, ["line_items", "trip_items", "attachments", "approval_events"])
+
+    # The action that finished the chain files the claim's PDF, with the
+    # approval record on it. Usually the last approve — but a submit can finish
+    # it too when the engine skips every step, hence the status transition
+    # rather than the action name. Best-effort: the approval has already
+    # happened in approval-api, so a PDF failure must not turn it into an error
+    # for the approver — Regenerate PDF on the claim is the retry.
+    if status_before != "approved" and claim.status == "approved":
+        try:
+            await claim_pdf.attach_pdf(db, claim, token)
+        except Exception:
+            logger.warning("claim PDF generation failed for %s", claim.claim_number, exc_info=True)
+            await db.rollback()
+            await db.refresh(claim)          # rollback expired every column
+        await db.refresh(claim, ["line_items", "trip_items", "attachments", "approval_events"])
     return ExpenseClaimResponse.model_validate(claim)
 
 

@@ -376,43 +376,72 @@ async def test_match_candidates_carry_already_allocated(admin_client):
 async def test_reassign_notifies_new_assignee_not_previous(admin_client, monkeypatch):
     """改派后,通知邮件必须发给【新】被指派人,而不是上一个。
 
-    回归 fire-and-forget 通知竞态:后台通知器用一个新 session 按 assigned_user_id
-    解析收件人;若在请求 commit 前派发,后台读到的是【旧】被指派人(改派前已提交
-    的值),邮件就发错人——而 UI 徽章读的是 commit 后的新值,两边对不上。修复=改派
-    在派发通知前先 db.commit()。
+    原先是 fire-and-forget 竞态(后台读到改派前的 assigned_user_id)。现在由
+    outbox 通知器(app/tasks/task_notifier.py)发信:改派把任务重新排队
+    (queue_task_notification → notified_at=NULL),通知器按**已提交**的指派人
+    解析收件人。这里两次都让通知器真跑一轮,断言首派发给第一人、改派发给第二人。
     """
-    import asyncio
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import update as sa_update
+
     import app.services.email as email_mod
     import app.db.session as session_module
+    from app.crud.config import get_or_create as get_config
+    from app.models.config import CompanyConfig
     from app.models.notification_log import NotificationLog
+    from app.models.task import Task
+    from app.tasks import task_notifier
 
     async def _fake_send_email(to, subject, html, **kw):  # 无 SMTP:直接“成功”,避免重试延迟
         return None
     monkeypatch.setattr(email_mod, "send_email", _fake_send_email)
 
     await _ensure_company_config()   # 通知需要 CompanyConfig(default_channel=email_only)
+    async with session_module.AsyncSessionLocal() as db:
+        cfg = await get_config(db)
+        ns = {**(cfg.notification_settings or {}),
+              "task_notifier_started_at": "2026-10-08T00:00:00+00:00"}
+        ns.pop("task_notifications", None)        # match_invoice: default ON, immediate
+        await db.execute(sa_update(CompanyConfig).values(notification_settings=ns))
+        await db.commit()
+
+    async def _notifier_pass(task_id):
+        # Let the row "settle" (SETTLE window) and run the notifier to completion.
+        async with session_module.AsyncSessionLocal() as db:
+            await db.execute(sa_update(Task).where(Task.id == task_id).values(
+                updated_at=datetime.now(timezone.utc) - timedelta(minutes=1)))
+            await db.commit()
+        for _ in range(100):
+            if await task_notifier.run_once() < task_notifier.BATCH:
+                break
+
+    async def _logged_users(task_id):
+        async with session_module.AsyncSessionLocal() as db:
+            logs = (await db.execute(
+                select(NotificationLog)
+                .where(NotificationLog.task_id == task_id)
+                .order_by(NotificationLog.sent_at)
+            )).scalars().all()
+        return [log.user_id for log in logs]
 
     v = await _make_vendor(admin_client, "VND-ASSIGN-NOTIF")
     inv = await _make_invoice(admin_client, v["id"], number="ASSIGN-NOTIF")
     first, second = await _make_user(), await _make_user()
 
     await admin_client.post(f"{INV_URL}/{inv['id']}/assign-match", json={"user_id": str(first)})
-    await asyncio.sleep(0.3)   # 让首派的后台通知跑完
-    await admin_client.post(f"{INV_URL}/{inv['id']}/assign-match", json={"user_id": str(second)})
-    await asyncio.sleep(0.3)   # 让改派的后台通知跑完
-
     task = await _open_match_task(inv["id"])
-    async with session_module.AsyncSessionLocal() as db:
-        logs = (await db.execute(
-            select(NotificationLog)
-            .where(NotificationLog.task_id == task.id)
-            .order_by(NotificationLog.sent_at)
-        )).scalars().all()
+    await _notifier_pass(task.id)
+    assert await _logged_users(task.id) == [first]
 
-    logged_users = {log.user_id for log in logs}
-    assert second in logged_users, "改派后新被指派人从未收到通知(收件人解析到了旧值)"
-    # 最后一次通知应当发给新被指派人
-    assert logs[-1].user_id == second
+    await admin_client.post(f"{INV_URL}/{inv['id']}/assign-match", json={"user_id": str(second)})
+    task = await _open_match_task(inv["id"])
+    await _notifier_pass(task.id)
+    users = await _logged_users(task.id)
+    assert second in users, "改派后新被指派人从未收到通知(收件人解析到了旧值)"
+    # 最后一次通知应当发给新被指派人,且旧被指派人没有被再通知一次
+    assert users[-1] == second
+    assert users.count(first) == 1
 
 
 # ── Whole-branch review (D): the assignment task's copy was hard-coded PO

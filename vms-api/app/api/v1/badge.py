@@ -89,7 +89,7 @@ async def print_visit_badge(
     # Check-in compliance follow-ups (GMP / Lab / all). Fire once, on the first
     # print (= check-in). Training/PPE happen after the visitor is on-site, so
     # these are post-entry confirmations, not entry gates.
-    if was_first and compliance_svc.visit_requires_compliance(visit):
+    if was_first and await compliance_svc.visit_requires_compliance(db, visit):
         all_visitor_ids = [visit.visitor_id, *(visit.additional_visitor_ids or [])]
         wanted: list = []
         for vid in all_visitor_ids:

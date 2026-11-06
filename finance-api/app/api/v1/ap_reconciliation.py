@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser
+from app.core.list_sort import SortDir, order_sql
 from app.db.base import get_db
 from app.models.nc_ap import NcApSyncRun
 from app.services import ap_reconciliation as svc
@@ -68,12 +69,15 @@ async def items(user: CurrentUser,
                 include_paid: bool = True,
                 limit: int = Query(200, ge=1, le=1000),
                 offset: int = Query(0, ge=0),
+                sort: str | None = Query(None),
+                dir: SortDir = Query("asc"),
                 db: AsyncSession = Depends(get_db)):
     if category not in _CATEGORIES:
         raise HTTPException(status_code=422,
                             detail=f"unknown category; expected one of {sorted(_CATEGORIES)}")
+    order = order_sql(sort, dir, svc.ITEM_SORT, tiebreak="id")
     return await svc.items(db, _filters(date_from, date_to, include_paid),
-                           category, limit=limit, offset=offset)
+                           category, limit=limit, offset=offset, order=order)
 
 
 @router.get("/date-anomalies")

@@ -25,7 +25,7 @@ from app.api.v1.params import (
     WMS_SYNC_INTERVAL_KEY,
     get_param,
 )
-from app.core.authz import require_permission
+from app.core.authz import require_any_permission
 from app.core.deps import SessionDep
 from app.models.sync_state import MrpSyncState
 from app.services.wms_sync.lock import is_sync_running, wms_sync_lock
@@ -34,8 +34,10 @@ from app.services.wms_sync.service import run_wms_sync, wms_configured
 
 router = APIRouter(prefix="/admin", tags=["admin-sync"])
 
-ReadDep = Annotated[dict, Depends(require_permission("mrp.report.view"))]
-WriteDep = Annotated[dict, Depends(require_permission("mrp.param.write"))]
+# Also the Inventory module's keys: its WMS Inventory screen shows this
+# freshness and offers the same Refresh.
+ReadDep = Annotated[dict, Depends(require_any_permission("mrp.report.view", "inventory.view"))]
+WriteDep = Annotated[dict, Depends(require_any_permission("mrp.param.write", "inventory.admin"))]
 
 _SOURCE = "wms"
 

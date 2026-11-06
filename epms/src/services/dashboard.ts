@@ -96,7 +96,7 @@ export interface PaRow {
   id: string
   pa_number: string
   vendor_name: string
-  po_number: string
+  po_number: string | null   // null: agreement / freight / Direct PA (no PO)
   // Every PO the payment settles (a PA may cover several); po_number above is
   // just the primary. Optional so a response cached from before multi-PO
   // shipped still type-checks.

@@ -6,11 +6,11 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import delete as sa_delete
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.core.delegation import local_today
+from app.crud._list_order import lower_text, sort_clauses
 from app.crud import agreement as agreement_crud
 from app.crud import agreement_receipt as agreement_receipt_crud
 from app.crud import agreement_schedule as agreement_schedule_crud
@@ -40,6 +40,60 @@ logger = logging.getLogger(__name__)
 
 
 # ── Claimed receipts (Task 5) ───────────────────────────────────────────────────
+
+async def attach_cumulative_variance(db: AsyncSession, invoice: Invoice) -> None:
+    """Put the variance that decides Matched / Exception on the invoice for its
+    detail page (ISS-0129). match() measures each allocated PO line against the
+    pre-tax amount every invoice allocated to it (INV-3WM-001); the header
+    `variance` is this invoice alone against the PO, which on a second bill for
+    the same goods reads "+0%" while the invoice sits in Exception.
+
+    Same query as match() step 4, run now, so it also reflects invoices matched
+    to those lines after this one. When any line is over-billed, the figure is
+    the over-billed lines only (what raises the Exception); otherwise the net.
+    """
+    rows = [a for a in (invoice.allocations or [])]
+    if not rows:
+        return
+    keys = list(dict.fromkeys((a.po_id, a.po_line_id) for a in rows))
+    per_key: list[tuple[Decimal, Decimal]] = []
+    for po_id, po_line_id in keys:
+        if po_line_id is not None:
+            reference = (await db.execute(
+                select(PoLineItem.line_total).where(PoLineItem.id == po_line_id)
+            )).scalar_one_or_none()
+        else:
+            reference = (await db.execute(
+                select(PurchaseOrder.subtotal).where(PurchaseOrder.id == po_id)
+            )).scalar_one_or_none()
+        if reference is None:
+            return
+        q = select(func.coalesce(func.sum(InvoicePoAllocation.allocated_amount), Decimal("0"))) \
+            .where(InvoicePoAllocation.po_id == po_id)
+        q = q.where(InvoicePoAllocation.po_line_id == po_line_id) if po_line_id is not None \
+            else q.where(InvoicePoAllocation.po_line_id.is_(None))
+        invoiced = (await db.execute(q)).scalar_one() or Decimal("0")
+        per_key.append((invoiced - reference, reference))
+    over = [(v, r) for v, r in per_key if v > Decimal("0")]
+    chosen = over or per_key
+    variance = sum((v for v, _ in chosen), Decimal("0"))
+    reference = sum((r for _, r in chosen), Decimal("0"))
+    invoice.cumulative_variance = variance
+    invoice.cumulative_variance_pct = (
+        (variance / reference * 100).quantize(Decimal("0.0001"))
+        if reference != Decimal("0") else Decimal("0"))
+
+    conds = [and_(InvoicePoAllocation.po_id == po_id,
+                  InvoicePoAllocation.po_line_id == po_line_id if po_line_id is not None
+                  else InvoicePoAllocation.po_line_id.is_(None))
+             for po_id, po_line_id in keys]
+    invoice.cumulative_other_invoices = list((await db.execute(
+        select(Invoice.internal_ref).distinct()
+        .join(InvoicePoAllocation, InvoicePoAllocation.invoice_id == Invoice.id)
+        .where(or_(*conds), Invoice.id != invoice.id)
+        .order_by(Invoice.internal_ref)
+    )).scalars().all())
+
 
 async def attach_claimed_receipts(db: AsyncSession, invoices: list) -> None:
     """Inject `claimed_receipts` onto ORM invoice instances, batched.
@@ -105,8 +159,8 @@ async def attach_claimed_receipts(db: AsyncSession, invoices: list) -> None:
 
 
 async def attach_allocation_display_fields(db: AsyncSession, invoices: list) -> None:
-    """Inject `po_number` + `po_line_description` onto each invoice's
-    allocation rows, batched — display-only fields resolved at read time,
+    """Inject `po_number` + `po_line_description` + `po_reference` onto each
+    invoice's allocation rows, batched — display-only fields resolved at read time,
     never stored on `InvoicePoAllocation` (see that model).
 
     Same batching shape as `attach_claimed_receipts` above: every `po_id`
@@ -129,20 +183,30 @@ async def attach_allocation_display_fields(db: AsyncSession, invoices: list) -> 
     line_ids = {a.po_line_id for a in all_allocs if a.po_line_id is not None}
 
     po_numbers: dict = {}
+    po_subtotals: dict = {}
     if po_ids:
-        po_numbers = dict((await db.execute(
-            select(PurchaseOrder.id, PurchaseOrder.number).where(PurchaseOrder.id.in_(po_ids))
-        )).all())
+        for pid, number, subtotal in (await db.execute(
+            select(PurchaseOrder.id, PurchaseOrder.number, PurchaseOrder.subtotal)
+            .where(PurchaseOrder.id.in_(po_ids))
+        )).all():
+            po_numbers[pid] = number
+            po_subtotals[pid] = subtotal
 
     line_descs: dict = {}
+    line_totals: dict = {}
     if line_ids:
-        line_descs = dict((await db.execute(
-            select(PoLineItem.id, PoLineItem.description).where(PoLineItem.id.in_(line_ids))
-        )).all())
+        for lid, desc, total in (await db.execute(
+            select(PoLineItem.id, PoLineItem.description, PoLineItem.line_total)
+            .where(PoLineItem.id.in_(line_ids))
+        )).all():
+            line_descs[lid] = desc
+            line_totals[lid] = total
 
     for a in all_allocs:
         a.po_number = po_numbers.get(a.po_id)
         a.po_line_description = line_descs.get(a.po_line_id) if a.po_line_id else None
+        a.po_reference = (line_totals.get(a.po_line_id) if a.po_line_id
+                          else po_subtotals.get(a.po_id))
 
 
 # ── Number generation ──────────────────────────────────────────────────────────
@@ -165,23 +229,46 @@ async def _match_tolerance_pct(db: AsyncSession) -> Decimal:
 
 
 async def _next_ref(db: AsyncSession) -> str:
+    """INV-YYYY-NNNN: the year it was entered, then the next number never used
+    in that year — a deleted invoice's number is not handed out again (see
+    app.models.document_counter). Shared with the Freight upload."""
+    from app.crud._numbering import next_number_never_reused
     year = datetime.now(timezone.utc).strftime("%Y")
-    prefix = f"INV-{year}-"
-    # Highest existing suffix + 1 — NOT count()+1: invoices are hard-deleted, so a
-    # delete makes the count fall behind the surviving maximum and the next create
-    # collides with the internal_ref unique index. Order by length before value so
-    # a five-digit suffix (…-10000) outranks …-9999.
-    last = (await db.execute(
-        select(Invoice.internal_ref)
-        .where(Invoice.internal_ref.like(f"{prefix}%"))
-        .order_by(func.length(Invoice.internal_ref).desc(), Invoice.internal_ref.desc())
-        .limit(1)
-    )).scalar_one_or_none()
-    n = int(last[len(prefix):]) if last else 0
-    return f"{prefix}{n + 1:04d}"
+    return await next_number_never_reused(db, Invoice.internal_ref, f"INV-{year}-", width=4)
 
 
 # ── Reads ──────────────────────────────────────────────────────────────────────
+
+# Sortable columns of the invoice list (sort=<key>&dir=asc|desc). Each key sorts
+# what its column SHOWS: the "Invoice #" of the Unmatched/Exceptions tabs is the
+# internal ref, "Upload Date" is created_at (uploaded_at is derived from it),
+# "Status" is the badge label, not the code.
+_INVOICE_STATUS_LABEL = case(
+    (Invoice.status == "unmatched", "Unmatched"),
+    (Invoice.status == "matched", "Matched"),
+    (Invoice.status == "exception", "Exception"),
+    (Invoice.status == "match_review", "Pending Review"),
+    (Invoice.status == "approved", "Approved"),
+    (Invoice.status == "paid", "Paid"),
+    else_=Invoice.status,
+)
+INVOICE_SORTABLE = {
+    "internal_ref": lower_text(Invoice.internal_ref),
+    "vendor_name": lower_text(Invoice.vendor_name),
+    "vendor_invoice_number": lower_text(Invoice.vendor_invoice_number),
+    "total_amount": Invoice.total_amount,
+    "invoice_date": Invoice.invoice_date,
+    "due_date": Invoice.due_date,
+    "uploaded_at": Invoice.created_at,
+    # SLA badge = days since upload, so "least elapsed first" is newest upload.
+    "sla": func.now() - Invoice.created_at,
+    "status": func.lower(_INVOICE_STATUS_LABEL),
+    "po_number": lower_text(Invoice.po_number),
+    "po_total": Invoice.po_total,
+    "variance": Invoice.variance,
+    "variance_pct": Invoice.variance_pct,
+}
+
 
 async def get_all(
     db: AsyncSession,
@@ -192,10 +279,16 @@ async def get_all(
     agreement_id: uuid.UUID | None = None,
     search: str | None = None,
     sort: str | None = None,
+    dir: str = "asc",
     overdue: bool = False,
     po_ids_subq=None,
     own_uploads_user_id: uuid.UUID | None = None,
     task_user_id: uuid.UUID | None = None,
+    freight_visible: bool = False,
+    agreement_visible: bool = False,
+    agr_ids_subq=None,
+    direct_subq=None,
+    route: str | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[Invoice], int]:
@@ -207,7 +300,10 @@ async def get_all(
         # and the assistant's controlled query admit exactly the same rows.
         from app.core.ontology import invoice_scope_conditions
         scope_conds = await invoice_scope_conditions(
-            db, po_ids_subq, own_uploads_user_id, task_user_id)
+            db, po_ids_subq, own_uploads_user_id, task_user_id,
+            freight_visible=freight_visible,
+            agreement_visible=agreement_visible, agr_ids_subq=agr_ids_subq,
+            direct_subq=direct_subq)
         q = q.where(or_(*scope_conds))
 
     if status:
@@ -221,6 +317,13 @@ async def get_all(
         q = q.where(or_(Invoice.po_id == po_id, Invoice.id.in_(alloc_by_po)))
     if agreement_id:
         q = q.where(Invoice.agreement_id == agreement_id)
+    if route in ("agreement", "freight", "direct"):
+        q = q.where(Invoice.match_route == route)
+    elif route == "po":
+        # Legacy rows carry NULL; everything that is not one of the three
+        # non-PO routes is a PO invoice.
+        q = q.where(func.coalesce(Invoice.match_route, "po").notin_(
+            ("agreement", "freight", "direct")))
     if search and search.strip():
         term = f"%{search.strip()}%"
         q = q.where(or_(
@@ -240,17 +343,20 @@ async def get_all(
         #   - a paid invoice is never chased. Without this the filter is
         #     dominated by historic settled invoices, which is precisely the
         #     noise it exists to cut through.
-        q = q.where(Invoice.due_date < local_today(), Invoice.status != "paid")
+        # The condition itself is Invoice.overdue, shared with the Assistant's
+        # invoice.overdue field so the two count the same rows (ISS-0013).
+        q = q.where(Invoice.overdue)
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
     # created_at desc stays the default AND the tiebreaker: several invoices
     # routinely share a due date, and without a stable second key the same row
     # can appear on two pages or on none.
-    if sort == "due_date":
-        ordering = [Invoice.due_date.asc(), Invoice.created_at.desc()]
-    elif sort == "-due_date":
-        ordering = [Invoice.due_date.desc(), Invoice.created_at.desc()]
-    else:
+    # Legacy form `sort=-due_date` (descending) is still accepted.
+    if sort is not None and sort.startswith("-"):
+        sort, dir = sort[1:], "desc"
+    ordering = sort_clauses(sort, dir, INVOICE_SORTABLE,
+                            tiebreak=[Invoice.created_at.desc(), Invoice.id])
+    if ordering is None:
         ordering = [Invoice.created_at.desc()]
     items = list((await db.execute(
         q.order_by(*ordering).offset(offset).limit(page_size)
@@ -297,6 +403,10 @@ async def is_visible(db: AsyncSession, invoice: Invoice, scope: dict) -> bool:
     # Matcher retention: once a user has matched an invoice they retain visibility
     # even after their task is completed (you can see what you acted on).
     conds.append(Invoice.matched_by == user_id)
+    # On a Direct PA the caller may open (ontology.invoice_scope_conditions).
+    if scope.get("direct_subq") is not None:
+        from app.core.ontology import direct_pa_invoice_cond
+        conds.append(direct_pa_invoice_cond(scope["direct_subq"]))
 
     if not conds:
         return True  # unrestricted
@@ -483,9 +593,13 @@ async def _recompute_consumed(db: AsyncSession, agreement_id: uuid.UUID) -> None
     Deriving it from the invoice set makes re-match idempotent: incrementing
     would double-count every correction, and the number drives the NTE warning
     banner AP looks at.
+
+    Pre-tax (Invoice.amount), like the Not-to-Exceed and the stage / period
+    amounts it is compared with (ISS-0128): summing the tax-inclusive total put
+    an agreement invoiced exactly to its stages over its ceiling by the tax.
     """
     total = (await db.execute(
-        select(func.coalesce(func.sum(Invoice.total_amount), Decimal("0")))
+        select(func.coalesce(func.sum(Invoice.amount), Decimal("0")))
         .where(Invoice.agreement_id == agreement_id)
     )).scalar_one()
     agr = (await db.execute(
@@ -959,8 +1073,25 @@ async def set_receipts(
 
     if receipt_ids:
         claimed = await agreement_receipt_crud.claim(db, agr, receipt_ids, invoice)
+        reason = (variance_reason or "").strip() or None
+        # PRD AGR-032 "with a reason if amounts differ" (ISS-0116). Same
+        # comparison InvoiceReceiptsPanel shows and the PA's "Receipts differ
+        # from invoice by …" line reads (matchVariance.ts receiptSummary):
+        # tax-inclusive totals, only receipts that carry an amount, to the cent.
+        # Nothing priced selected = nothing to compare. Raised after the claim
+        # on purpose: the request session rolls the release + claim back.
+        priced = [r.total_amount for r in claimed if r.total_amount is not None]
+        if priced and reason is None:
+            selected = sum(priced, Decimal("0")).quantize(Decimal("0.01"))
+            billed = Decimal(invoice.total_amount).quantize(Decimal("0.01"))
+            if selected != billed:
+                raise ValueError(
+                    f"The selected receipts total {invoice.currency} {selected} but the "
+                    f"invoice is {invoice.currency} {billed} (difference "
+                    f"{selected - billed:+}). Explain the difference before saving "
+                    f"the receipt evidence.")
         invoice.receipt_ids = [str(r.id) for r in claimed]
-        invoice.receipt_variance_reason = (variance_reason or "").strip() or None
+        invoice.receipt_variance_reason = reason
         # 挂上了凭证就不再是无凭证结算 —— 这两个状态互斥,协议详情页那个
         # 健康度计数依赖它们互斥才有意义。
         invoice.legacy_settlement = False
@@ -1103,6 +1234,14 @@ async def match(
             )).scalar_one_or_none()
             if po is None:
                 raise ValueError(f"Purchase order {a.po_id} not found")
+            # ISS-0120: the candidate list offers only this vendor's POs, but
+            # the endpoint took any PO id it was sent. Same rule as the
+            # fee-only link and the agreement route below.
+            if invoice.vendor_id is not None and po.vendor_id != invoice.vendor_id:
+                raise AllocationImbalance(
+                    f"{po.number} is a purchase order of {po.vendor_name}, not of "
+                    f"{invoice.vendor_name}. An invoice can only be matched to its own "
+                    "vendor's purchase orders.")
             po_cache[a.po_id] = po
         if a.po_line_id is not None:
             exists = (await db.execute(
@@ -1249,9 +1388,12 @@ async def match(
         invoice.exception_reason = None
     elif any_exception:
         invoice.status = "exception"
+        # Pre-tax on both sides, the figures the variance is measured on
+        # (INV-3WM-001) — total_amount includes tax, the PO reference does not.
         invoice.exception_reason = (
             "One or more PO lines are outside tolerance "
-            f"(invoice total {invoice.total_amount} vs reference {summary_reference})"
+            f"(invoice pre-tax {summary_reference + invoice.variance:.2f} "
+            f"vs PO pre-tax {summary_reference:.2f})"
         )
     else:
         invoice.status = "matched"
@@ -1355,6 +1497,66 @@ async def unmatch_po(db: AsyncSession, invoice: Invoice) -> tuple[list[uuid.UUID
     return po_ids, before
 
 
+class DirectRouteInvalid(ValueError):
+    """The invoice cannot go to / come back from the Direct PA route."""
+
+
+async def mark_direct(db: AsyncSession, invoice: Invoice, *, matched_by: uuid.UUID) -> Invoice:
+    """Route an unmatched invoice to a Direct PA: no PO, no agreement.
+
+    The invoice becomes `matched` with match_route='direct' — "ready to pay",
+    exactly what a PO / agreement match means to everything downstream (the AP
+    mirror posts it, the Create Direct PA picker offers it). There is nothing to
+    compare it against, so there is no variance, no tolerance and no review.
+    The department / cost centre / budget account it is charged to are chosen
+    on the Direct PA (crud.pa.create_direct), not here.
+    """
+    if invoice.match_route == "freight":
+        raise DirectRouteInvalid("A courier invoice is matched to shipments, not paid by a Direct PA.")
+    if invoice.status != "unmatched":
+        raise DirectRouteInvalid(
+            f"Only an unmatched invoice can be sent to a Direct PA (this one is '{invoice.status}'). "
+            "Unmatch it first.")
+    if invoice.po_id is not None or invoice.agreement_id is not None:
+        raise DirectRouteInvalid("This invoice is still linked to a PO or agreement. Unmatch it first.")
+    has_alloc = (await db.execute(select(InvoicePoAllocation.id).where(
+        InvoicePoAllocation.invoice_id == invoice.id).limit(1))).first() is not None
+    if has_alloc:
+        raise DirectRouteInvalid("This invoice still has PO allocations. Unmatch it first.")
+    name = (await db.execute(select(User.full_name).where(User.id == matched_by))).scalar_one_or_none()
+    invoice.match_route = "direct"
+    invoice.match_route_auto = False
+    invoice.status = "matched"
+    invoice.matched_at = datetime.now(timezone.utc)
+    invoice.matched_by = matched_by
+    invoice.matched_by_name = name
+    invoice.variance = None
+    invoice.variance_pct = None
+    invoice.exception_reason = None
+    await db.flush()
+    return invoice
+
+
+async def unmatch_direct(db: AsyncSession, invoice: Invoice) -> dict:
+    """Take an invoice back off the Direct PA route, to `unmatched`. The caller
+    has already checked no live PA holds it (gr_unlink_blocker). Returns the
+    `before` snapshot for the audit row."""
+    if invoice.match_route != "direct":
+        raise DirectRouteInvalid("This invoice is not on the Direct PA route.")
+    before = {
+        "status": invoice.status, "match_route": invoice.match_route,
+        "matched_at": invoice.matched_at.isoformat() if invoice.matched_at else None,
+        "matched_by_name": invoice.matched_by_name,
+    }
+    invoice.match_route = None
+    invoice.status = "unmatched"
+    invoice.matched_at = None
+    invoice.matched_by = None
+    invoice.matched_by_name = None
+    await db.flush()
+    return before
+
+
 async def unmatch_gr(db: AsyncSession, invoice: Invoice) -> tuple[list[uuid.UUID], dict]:
     """Withdraw only the receipt evidence. The invoice stays matched to its
     PO(s) — `matched` describes the PO match, not the receipt — so the
@@ -1410,9 +1612,12 @@ async def review_match(
         )
         if any_exception:
             invoice.status = "exception"
+            # Pre-tax on both sides, as in match() (INV-3WM-001).
+            po_pre_tax = invoice.po_total or Decimal("0")
             invoice.exception_reason = (
                 "Reviewed: variance outside tolerance "
-                f"(invoice total {invoice.total_amount} vs reference {invoice.po_total})"
+                f"(invoice pre-tax {po_pre_tax + (invoice.variance or Decimal('0')):.2f} "
+                f"vs PO pre-tax {po_pre_tax:.2f})"
             )
         else:
             invoice.status = "matched"
@@ -1514,6 +1719,7 @@ async def rematch_from_existing(
         inv.exception_resolved_at = None
         inv.exception_resolved_by = None
         inv.exception_resolved_by_name = None
+        inv.exception_resolution_note = None
 
     # Allocations are PRE-TAX (tax stays at the invoice header), so balance them
     # against the pre-tax amount — mirroring match()'s integrity check. Comparing
@@ -1637,8 +1843,10 @@ async def resolve_exception(
     invoice.exception_resolved_by = resolved_by
     invoice.exception_resolved_by_name = resolver_result.scalar_one_or_none()
     invoice.exception_resolution = req.resolution
-    if req.note:
-        invoice.exception_reason = req.note
+    # Not exception_reason: that is match()'s system-written variance
+    # description, and re-matching rewrites it — the justification stored there
+    # disappeared from every page once the invoice left "exception".
+    invoice.exception_resolution_note = req.note
     # After resolution, move to matched (accepted) or stay as-is
     if req.resolution == "accepted":
         invoice.status = "matched"
@@ -1654,6 +1862,14 @@ async def delete(db: AsyncSession, invoice: Invoice) -> None:
         raise ValueError(
             f"Cannot delete invoice in '{invoice.status}' status. "
             "Only unmatched or exception invoices may be deleted."
+        )
+    # ISS-0125: the PA would stay payable for a bill that no longer exists.
+    held_by = await _invoice_referenced_by_active_pa(db, invoice.id)
+    if held_by is not None:
+        raise ValueError(
+            f"Payment Application {held_by.pa_number} ({held_by.status}) still pays this "
+            "invoice. Remove the invoice from that payment application, or cancel it, "
+            "before deleting the invoice."
         )
     po_id = invoice.po_id
     agreement_id = invoice.agreement_id

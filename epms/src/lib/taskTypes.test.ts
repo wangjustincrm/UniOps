@@ -14,7 +14,7 @@ vi.mock('@/stores/auth.store', () => ({
   useAuthStore: { getState: () => ({ token: null, refreshToken: null, user: null }) },
 }))
 
-import { TASK_TYPE_LABELS, taskHref } from './taskTypes'
+import { EPMS_INBOX_DOC_TYPES, EPMS_PAGE_DOC_TYPES, TASK_TYPE_LABELS, isEpmsInboxTask, taskHref } from './taskTypes'
 import { VMS_URL } from './api'
 
 const VISIT_ID = '11111111-1111-4111-8111-111111111111'
@@ -57,6 +57,11 @@ describe('taskHref — EPMS doc types still resolve in-app', () => {
   it('sends create_pa to the prefilled PA create page', () => {
     expect(taskHref({ type: 'create_pa', document_type: 'po', document_id: VISIT_ID }))
       .toBe(`/pa/create?poId=${VISIT_ID}`)
+  })
+
+  it('sends confirm_receipt to New GR pre-filled with the PO (ISS-0094)', () => {
+    expect(taskHref({ type: 'confirm_receipt', document_type: 'po', document_id: VISIT_ID }))
+      .toBe(`/gr/new?poId=${VISIT_ID}`)
   })
 })
 
@@ -159,5 +164,64 @@ describe('taskHref — duplicate NC invoices', () => {
 
   it('labels the type', () => {
     expect(TASK_TYPE_LABELS.resolve_ap_duplicate_invoice).toBe('Resolve Duplicate NC Invoices')
+  })
+})
+
+describe('isEpmsInboxTask — EPMS inbox shows EPMS work only', () => {
+  it('keeps every EPMS document type', () => {
+    for (const docType of ['pr', 'po', 'gr', 'invoice', 'pa', 'agr', 'posign', 'nc_sync']) {
+      expect(isEpmsInboxTask({ document_type: docType })).toBe(true)
+    }
+  })
+
+  it("drops other modules' tasks — they live in Portal's inbox", () => {
+    // OA (claims, mileage, travel expense, travel application, custom forms,
+    // retired Direct PA), Finance, VMS. The OA ones are what reached a Finance
+    // Manager's EPMS inbox (approve_tra etc., no label, dead link).
+    for (const docType of [
+      'exp', 'mil', 'trv', 'tra', 'cfm', 'cfm_travel_advance', 'pa_dir',
+      'budget_plan', 'jv_validation', 'ap_duplicate_invoice',
+      'vms_visit', 'vms_train', 'vms_ppe',
+    ]) {
+      expect(isEpmsInboxTask({ document_type: docType })).toBe(false)
+    }
+  })
+
+  it('drops an unknown document type by default', () => {
+    expect(isEpmsInboxTask({ document_type: 'some_future_module' })).toBe(false)
+  })
+
+  it('still lets EPMS pages read budget_plan tasks (embedded plan editor Approve gate)', () => {
+    expect(EPMS_PAGE_DOC_TYPES.has('budget_plan')).toBe(true)
+    for (const docType of EPMS_INBOX_DOC_TYPES) expect(EPMS_PAGE_DOC_TYPES.has(docType)).toBe(true)
+    for (const docType of ['exp', 'tra', 'trv', 'mil', 'vms_visit', 'pa_dir']) {
+      expect(EPMS_PAGE_DOC_TYPES.has(docType)).toBe(false)
+    }
+  })
+})
+
+describe('overBudgetJustification (ISS-0126)', () => {
+  it('reads the justification off an over-budget pre-approval task', async () => {
+    const { overBudgetJustification } = await import('./taskTypes')
+    expect(overBudgetJustification({
+      type: 'approve_pr',
+      description: '⚠️ OVER-BUDGET PRE-APPROVAL — PR amount: 60.00\nJustification: Needed for\nthe line 3 repair',
+    })).toBe('Needed for\nthe line 3 repair')
+  })
+
+  it('an over-budget task without a justification is still recognised', async () => {
+    const { overBudgetJustification } = await import('./taskTypes')
+    expect(overBudgetJustification({
+      type: 'approve_pr',
+      description: '⚠️ OVER-BUDGET PRE-APPROVAL — PR amount: 60.00\nJustification: (no justification provided)',
+    })).toBe('')
+  })
+
+  it('a plain PR approval is not one', async () => {
+    const { overBudgetJustification } = await import('./taskTypes')
+    expect(overBudgetJustification({
+      type: 'approve_pr', description: 'Step 1/3: Department Manager approval required.',
+    })).toBeNull()
+    expect(overBudgetJustification({ type: 'approve_po', description: 'OVER-BUDGET PRE-APPROVAL' })).toBeNull()
   })
 })

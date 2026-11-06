@@ -1,7 +1,7 @@
 /**
  * Departments — read-only hook for EPMS pages (PR create, User forms, etc.).
  *
- * Writes (create/update/delete) have moved to Portal → Admin → Departments,
+ * Writes (create/update/delete) have moved to Portal → MDM → Departments,
  * which calls mdm-api directly. Use that surface, not this hook.
  */
 import { useQuery } from '@tanstack/react-query'

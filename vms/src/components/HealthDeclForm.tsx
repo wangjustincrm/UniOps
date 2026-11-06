@@ -101,7 +101,7 @@ export function HealthDeclForm({ visitId, visitorId, visitorName, onClose, onSub
             </p>
             <p className="mt-1 text-xs">
               To allow office-only access, use “Edit visit” on the visit page to
-              change the access area to Office / Lobby, then print the badge.
+              change the access zone to a non-GMP zone (e.g. Office), then print the badge.
             </p>
           </div>
         )}

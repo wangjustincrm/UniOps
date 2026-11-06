@@ -115,7 +115,16 @@ export function formatCADCompact(amount: number): string {
   const sign = amount < 0 ? '-' : ''
   if (abs >= 1_000_000) return `${sign}CA$${(abs / 1_000_000).toFixed(1)}M`
   if (abs >= 1_000) return `${sign}CA$${(abs / 1_000).toFixed(0)}K`
-  return formatCAD(amount)
+  // Not formatCAD: its en-CA locale prints "$0.00", next to "CA$11K" cards.
+  return formatAmount(amount, 'CAD')
+}
+
+/** A quantity as entered: the NUMERIC(15,4) columns come back as "3.0000";
+ *  show "3" (or "2.5") — trailing zeros dropped, real decimals kept. */
+export function formatQty(qty: number | string | null | undefined): string {
+  if (qty === null || qty === undefined || qty === '') return '—'
+  const n = Number(qty)
+  return Number.isFinite(n) ? String(n) : String(qty)
 }
 
 /** Human-readable file size, e.g. "512 B", "3.4 KB", "1.2 MB". */

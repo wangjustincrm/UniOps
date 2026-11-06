@@ -3,9 +3,11 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
+from sqlalchemy import select
 
 from app.core.deps import CurrentUserPayload, SessionDep
 from app.crud import task as task_crud
+from app.models.user import User
 from app.schemas.task import TaskListResponse, TaskResponse
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -24,6 +26,15 @@ async def list_tasks(
         user_id=uuid.UUID(user["sub"]),
         is_completed=is_completed,
     )
+    # Completed tab: say who closed each task (ISS-0131). One lookup for the
+    # whole list; tasks the system closed have no completed_by.
+    closer_ids = {t.completed_by for t in items if t.completed_by is not None}
+    if closer_ids:
+        names = dict((await db.execute(
+            select(User.id, User.full_name).where(User.id.in_(closer_ids))
+        )).all())
+        for t in items:
+            t.completed_by_name = names.get(t.completed_by)
     return {"items": items, "total": len(items)}
 
 

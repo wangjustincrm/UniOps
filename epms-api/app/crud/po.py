@@ -3,12 +3,15 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import case, exists, func, select
 from sqlalchemy.dialects.postgresql import array as sa_array
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ontology import scope_po
+from app.crud._list_order import lower_text, sort_clauses
 from app.crud._numbering import next_number
+from app.crud.current_step import status_step_sort_keys
+from app.crud.pr import type_label_key
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
 from app.models.cost_center import CostCenter
@@ -63,6 +66,27 @@ def _compute_totals(items_in, tax_rate: Decimal):
 
 # ── Reads ──────────────────────────────────────────────────────────────────────
 
+# GET /po ?sort= keys → what the PO list's column shows (whitelist = the
+# SQL-injection boundary; unknown key → 422).
+SORTABLE = {
+    "number": lower_text(PurchaseOrder.number),
+    # "PR Ref." prints pr_number only when the PO is linked to a PR.
+    "pr_number": case((PurchaseOrder.pr_id.is_not(None), lower_text(PurchaseOrder.pr_number))),
+    # "Title / Vendor" — the title is the cell's headline; the vendor is the
+    # grey second line, so it is a separate key.
+    "title": lower_text(PurchaseOrder.title),
+    "vendor_name": lower_text(PurchaseOrder.vendor_name),
+    "type": type_label_key(PurchaseOrder.type),
+    "total": PurchaseOrder.total,
+    # status → current approval step in chain order → approver name.
+    "status": status_step_sort_keys(PurchaseOrder.status, PurchaseOrder.id, "po"),
+    "created_at": PurchaseOrder.created_at,
+    "is_prepaid": PurchaseOrder.is_prepaid,
+    "expected_delivery": PurchaseOrder.expected_delivery,
+}
+SORT_TIEBREAK = (PurchaseOrder.id.asc(),)
+
+
 async def get_all(
     db: AsyncSession,
     *,
@@ -77,7 +101,10 @@ async def get_all(
     po_ids_subq=None,
     page: int = 1,
     page_size: int = 20,
+    sort: str | None = None,
+    dir: str = "asc",
 ) -> tuple[list[PurchaseOrder], int]:
+    order = sort_clauses(sort, dir, SORTABLE, SORT_TIEBREAK) or [PurchaseOrder.created_at.desc()]
     q = select(PurchaseOrder)
     # Row scope lives in ontology.scope_po — see the note in crud/pr.py.
     q = await scope_po(q, {"po_subq": po_ids_subq}, db)
@@ -113,7 +140,7 @@ async def get_all(
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
     items = list((await db.execute(
-        q.order_by(PurchaseOrder.created_at.desc()).offset(offset).limit(page_size)
+        q.order_by(*order).offset(offset).limit(page_size)
     )).scalars().all())
     return items, total
 
@@ -140,6 +167,7 @@ async def create(
     vendor_code: str,
     vendor_name: str,
     created_by: uuid.UUID,
+    vendor_payment_terms: str | None = None,
 ) -> PurchaseOrder:
     number = await _next_number(db, vendor_code)
     subtotal, tax_amount, total = _compute_totals(payload.line_items, payload.tax_rate)
@@ -171,6 +199,8 @@ async def create(
         pr_id=payload.pr_id,
         pr_number=pr_number,
         is_prepaid=getattr(payload, "is_prepaid", False) or False,
+        # PRD §3.12.1: defaulted from the vendor, overridable (ISS-0087).
+        payment_terms=payload.payment_terms or vendor_payment_terms,
         created_by=created_by,
     )
     db.add(po)
@@ -205,7 +235,8 @@ async def update(
     vendor_name: str | None = None,
 ) -> PurchaseOrder:
     for field in ("title", "type", "currency", "budget_code",
-                  "expected_delivery", "delivery_address", "notes", "is_prepaid"):
+                  "expected_delivery", "delivery_address", "notes", "is_prepaid",
+                  "payment_terms"):
         val = getattr(payload, field)
         if val is not None:
             setattr(po, field, val)
@@ -401,7 +432,7 @@ async def update_imported_details(
         after[field] = str(value) if value is not None else None
         setattr(po, field, value)
 
-    for field in ("expected_delivery", "delivery_address", "incoterms",
+    for field in ("expected_delivery", "delivery_address", "incoterms_code", "incoterms",
                   "tax_code", "buyer_notes"):
         _set(field, getattr(payload, field))
     _set("is_prepaid", payload.is_prepaid, nullable=False)
@@ -588,6 +619,9 @@ async def action(
         if po.status != "approved":
             raise ValueError(f"Cannot issue PO in status '{po.status}'")
         po.status = "issued"
+        # Same catch-up as place_order (ISS-0108).
+        from app.crud.gr import sync_po_receipt_status
+        await sync_po_receipt_status(db, po.id)
 
     elif act == "cancel":
         if po.status not in ("draft", "returned", "submitted"):
@@ -699,14 +733,16 @@ async def _create_revise_task(db: AsyncSession, po: PurchaseOrder) -> None:
     ))
 
 
-async def _complete_tasks(db: AsyncSession, doc_type: str, doc_id: uuid.UUID) -> None:
-    result = await db.execute(
-        select(Task).where(
-            Task.document_type == doc_type,
-            Task.document_id == doc_id,
-            Task.is_completed.is_(False),
-        )
+async def _complete_tasks(db: AsyncSession, doc_type: str, doc_id: uuid.UUID,
+                          task_type: str | None = None) -> None:
+    q = select(Task).where(
+        Task.document_type == doc_type,
+        Task.document_id == doc_id,
+        Task.is_completed.is_(False),
     )
+    if task_type is not None:
+        q = q.where(Task.type == task_type)
+    result = await db.execute(q)
     now = datetime.now(timezone.utc)
     for task in result.scalars().all():
         task.is_completed = True
@@ -735,7 +771,16 @@ async def place_order(
     elif req.method == "online":
         po.place_order_reference = req.reference
 
-    await _complete_tasks(db, "po", po.id)
+    # A service PO may be confirmed while still approved (GR-S-008); its
+    # receipt status could not move then (PT-008). Catch up now, or a fully
+    # received PO sits at issued forever (ISS-0108).
+    from app.crud.gr import sync_po_receipt_status
+    await sync_po_receipt_status(db, po.id)
+
+    # Only the place_order task is done now. Other PO tasks have their own
+    # close condition — create_prepayment_pa closes when a prepayment PA
+    # exists (§3.7.1), not when the order is placed (ISS-0135).
+    await _complete_tasks(db, "po", po.id, task_type="place_order")
 
     db.add(ApprovalEvent(
         document_type="po",
@@ -791,19 +836,8 @@ async def po_has_receipt_evidence(db: AsyncSession, po_id: uuid.UUID) -> bool:
     the invoice on it could never reach 3-way — no create_pa either, the goods
     silently going unpaid until someone raised the PA by hand.
     """
-    gr = (await db.execute(
-        select(GoodsReceipt.id).where(
-            GoodsReceipt.po_id == po_id,
-            GoodsReceipt.status.not_in(DEAD_GR_STATUSES),
-        ).limit(1)
-    )).scalar_one_or_none()
-    if gr is not None:
-        return True
-    return (await db.execute(
-        select(PoLineItem.id).where(
-            PoLineItem.po_id == po_id, PoLineItem.received_qty > 0
-        ).limit(1)
-    )).scalar_one_or_none() is not None
+    from app.core.receipt_evidence import receipt_evidence
+    return bool((await db.execute(select(receipt_evidence(po_id)))).scalar())
 
 
 async def pr_department_id(db: AsyncSession, pr_id: uuid.UUID | None) -> uuid.UUID | None:
@@ -842,39 +876,52 @@ async def po_has_three_way_matched_invoice(db: AsyncSession, po_id: uuid.UUID) -
     matched 也永远判「未收货」,拿不到 create_pa,只会反复收到一条谁也满足不了
     的催收货任务(生产 11 条僵尸任务)。
     """
-    header = (await db.execute(
-        select(Invoice.id).where(
-            Invoice.po_id == po_id,
-            Invoice.status == "matched",
-            Invoice.gr_id.is_not(None),
-        ).limit(1)
-    )).scalar_one_or_none()
-    if header is not None:
-        return True
+    # One definition, shared with the Assistant's purchase_order.three_way_matched
+    # (core.po_facts) — it used to be three queries here and a guess there.
+    from app.core.po_facts import three_way_matched
+    return bool((await db.execute(select(three_way_matched(po_id)))).scalar())
 
-    # 表头 matched 但 gr_id 为空 —— 回落到本 PO 自己的收货证据。gr_id 为空既可能
-    # 是历史单从来没有 GR,也可能是自动挂接漏了(生产 22 张 matched 发票 gr_id
-    # 为空而其 PO 有 GR);两种都不该被读成「货没到」。
-    header_no_gr = (await db.execute(
-        select(Invoice.id).where(
-            Invoice.po_id == po_id,
-            Invoice.status == "matched",
-        ).limit(1)
-    )).scalar_one_or_none()
-    if header_no_gr is not None and await po_has_receipt_evidence(db, po_id):
-        return True
 
-    allocated = (await db.execute(
-        select(InvoicePoAllocation.invoice_id)
-        .join(Invoice, Invoice.id == InvoicePoAllocation.invoice_id)
-        .where(
-            InvoicePoAllocation.po_id == po_id,
-            Invoice.status == "matched",
-        ).limit(1)
-    )).scalar_one_or_none()
-    if allocated is None:
-        return False
-    return await po_has_receipt_evidence(db, po_id)
+async def collection_gate_on(db: AsyncSession) -> bool:
+    """Admin → Collection Config → "Collection Confirmation Required" (ISS-0146).
+
+    Read from collection_config.collection_gate_enabled, off unless switched
+    on. Not the older collection_required key: that one was stored (and
+    defaulted to true) for years while nothing read it, so honouring it would
+    switch the gate on everywhere the moment this shipped."""
+    from app.models.config import CompanyConfig
+    cfg = (await db.execute(select(CompanyConfig).limit(1))).scalar_one_or_none()
+    return bool(((cfg.collection_config if cfg else None) or {}).get("collection_gate_enabled", False))
+
+
+async def po_collection_cleared(db: AsyncSession, po) -> bool:
+    """False only while the collection gate is on, the PO is for physical goods
+    and nothing on it has been collected yet: no GR collected / confirmed (or
+    later flagged discrepancy) and no received quantity — quantities reach the
+    PO lines only on collection (GR-P-003). Service / project POs are confirmed,
+    not collected, and are never held back."""
+    from app.crud.gr import COUNTED_GR_STATUSES
+    from app.models.gr import GoodsReceipt
+    from app.schemas.gr import is_physical
+
+    if not is_physical(po.type) or not await collection_gate_on(db):
+        return True
+    collected = await db.execute(select(
+        exists(select(GoodsReceipt.id).where(
+            GoodsReceipt.po_id == po.id, GoodsReceipt.status.in_(COUNTED_GR_STATUSES)))
+        | exists(select(PoLineItem.id).where(
+            PoLineItem.po_id == po.id, PoLineItem.received_qty > 0))
+    ))
+    return bool(collected.scalar())
+
+
+async def po_ready_for_pa(db: AsyncSession, po) -> bool:
+    """The PA receipt gate and the create_pa task: 3-way matched and, when the
+    collection gate is on, collected. The confirm-receipt nudge keeps reading
+    po_has_three_way_matched_invoice alone — a GR that exists but is not yet
+    collected must not be chased as "no receipt"."""
+    return (await po_has_three_way_matched_invoice(db, po.id)
+            and await po_collection_cleared(db, po))
 
 
 async def payable_invoice_po_ids(

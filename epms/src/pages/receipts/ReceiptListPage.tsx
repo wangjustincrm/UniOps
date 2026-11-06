@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Search, Receipt, Plus, CheckCircle2, XCircle, Trash2, Paperclip, AlertTriangle } from 'lucide-react'
+import { SortTh, sortParams, useSort, type Sort } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { StatusBadge, statusLabel } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
@@ -10,6 +11,7 @@ import { useRolePermissions } from '@/hooks/useConfig'
 import { useAllReceipts, useVoidReceiptAny, useApReviewReceiptAny } from '@/hooks/useAgreementReceipts'
 import { useUserDirectory } from '@/hooks/useUsers'
 import { VOIDABLE_STATUSES } from '@/components/agreements/ReceiptTable'
+import { RejectReceiptDialog } from '@/components/agreements/RejectReceiptDialog'
 import { receiptTotal, RECEIPT_TYPE_LABELS } from '@/services/agreementReceipts'
 import type { ApiReceiptWithAgreement, ReceiptStatus, ReceiptType } from '@/services/agreementReceipts'
 import type { DocumentStatus } from '@/types'
@@ -45,6 +47,11 @@ const TYPE_FILTERS: { value: ReceiptType | 'all'; label: string }[] = [
   { value: 'service',       label: RECEIPT_TYPE_LABELS.service },
 ]
 
+// GET /agreement-receipts sort keys (epms-api crud/agreement_receipt.py SORTABLE).
+type SortField =
+  | 'receipt_date' | 'receipt_type' | 'receipt_ref' | 'vendor_name' | 'agreement_number'
+  | 'total_amount' | 'received_by_name' | 'status' | 'attachment_count' | 'invoice_ref'
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ReceiptListPage() {
@@ -53,11 +60,14 @@ export default function ReceiptListPage() {
   const [typeFilter, setTypeFilter] = useState<ReceiptType | 'all'>('all')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  // Paged by the API, so the API sorts; a new order starts again at page 1.
+  const [sort, onSort] = useSort<SortField>(null, () => setPage(1))
 
   const { data, isLoading } = useAllReceipts({
     search: search || undefined,
     status: statusFilter !== 'all' ? statusFilter : undefined,
     receipt_type: typeFilter !== 'all' ? typeFilter : undefined,
+    ...sortParams(sort),
     page,
     page_size: pageSize,
   })
@@ -99,17 +109,16 @@ export default function ReceiptListPage() {
     voidReceipt.mutate({ agreementId, receiptId }, { onSettled: () => setPendingVoidId(null) })
   }
 
+  // Reject has no way back: crud/agreement_receipt.py writes status =
+  // "rejected", which is in RETIRED (not EDITABLE, not VOIDABLE), and
+  // ap_review only accepts FROM pending_ap_review — there is no endpoint
+  // that can move a rejected receipt anywhere else. Approve and Reject sit
+  // 8px apart in the same row (fix round 2, Important): a mis-click here is
+  // not "undo available", it's "re-key the whole receipt from scratch".
+  // So Reject asks first — in-page, not the browser's confirm() (ISS-0115).
+  const [rejectTarget, setRejectTarget] = useState<{ agreementId: string; receiptId: string; label: string } | null>(null)
+
   const handleReview = (agreementId: string, receiptId: string, action: 'approve' | 'reject') => {
-    // Reject has no way back: crud/agreement_receipt.py writes status =
-    // "rejected", which is in RETIRED (not EDITABLE, not VOIDABLE), and
-    // ap_review only accepts FROM pending_ap_review — there is no endpoint
-    // that can move a rejected receipt anywhere else. Approve and Reject sit
-    // 8px apart in the same row (fix round 2, Important): a mis-click here is
-    // not "undo available", it's "re-key the whole receipt from scratch".
-    if (action === 'reject' && !confirm(
-      'Reject this receipt? This is final — a rejected receipt can never be approved, removed, or edited afterward. ' +
-      'The only way to record this spend again is to enter a brand-new receipt.'
-    )) return
     setPendingReviewKey(`${receiptId}:${action}`)
     apReview.mutate({ agreementId, receiptId, action }, { onSettled: () => setPendingReviewKey(null) })
   }
@@ -187,9 +196,9 @@ export default function ReceiptListPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50">
-                <Th>Date</Th>
-                <Th>Type</Th>
-                <Th>Reference #</Th>
+                <SortHead label="Date" sortKey="receipt_date" sort={sort} onSort={onSort} />
+                <SortHead label="Type" sortKey="receipt_type" sort={sort} onSort={onSort} />
+                <SortHead label="Reference #" sortKey="receipt_ref" sort={sort} onSort={onSort} />
                 {/* Task 13: the merchant printed ON the slip, which is NOT
                     necessarily the vendor the house account is with. Showing
                     the agreement's own vendor here would have been free and
@@ -197,19 +206,19 @@ export default function ReceiptListPage() {
                     to, so it could never expose the mis-posting this column
                     exists to expose (shop A's slip charged to shop B's
                     account). */}
-                <Th>Vendor on Receipt</Th>
-                <Th>Agreement</Th>
-                <Th align="right">Amount</Th>
-                <Th>Received By</Th>
-                <Th>Status</Th>
+                <SortHead label="Vendor on Receipt" sortKey="vendor_name" sort={sort} onSort={onSort} />
+                <SortHead label="Agreement" sortKey="agreement_number" sort={sort} onSort={onSort} />
+                <SortHead label="Amount" sortKey="total_amount" sort={sort} onSort={onSort} align="right" />
+                <SortHead label="Received By" sortKey="received_by_name" sort={sort} onSort={onSort} />
+                <SortHead label="Status" sortKey="status" sort={sort} onSort={onSort} />
                 {/* Whole-branch review (I2): AP approves/rejects from THIS
                     page and nowhere else, so the two facts that decision
                     rests on have to be on it — whether a photo was ever
                     attached (this column) and, for a pending_ap_review row,
                     the reason it was routed here (the sub-row below). Before
                     this, the only per-row information was date and amount. */}
-                <Th>Evidence</Th>
-                <Th>Linked Invoice</Th>
+                <SortHead label="Evidence" sortKey="attachment_count" sort={sort} onSort={onSort} />
+                <SortHead label="Linked Invoice" sortKey="invoice_ref" sort={sort} onSort={onSort} />
                 <Th>Actions</Th>
               </tr>
             </thead>
@@ -231,7 +240,11 @@ export default function ReceiptListPage() {
                     anyReviewPending={apReview.isPending}
                     onVoid={() => handleVoid(receipt.agreement_id, receipt.id, receipt.receipt_ref)}
                     onApprove={() => handleReview(receipt.agreement_id, receipt.id, 'approve')}
-                    onReject={() => handleReview(receipt.agreement_id, receipt.id, 'reject')}
+                    onReject={() => setRejectTarget({
+                      agreementId: receipt.agreement_id,
+                      receiptId: receipt.id,
+                      label: `${receipt.receipt_ref ?? '(no reference #)'} · ${receipt.agreement_number}`,
+                    })}
                   />
                 )
               })}
@@ -243,11 +256,40 @@ export default function ReceiptListPage() {
       <div className="rounded-xl border border-neutral-200 bg-white">
         <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(s) => { setPageSize(s); setPage(1) }} />
       </div>
+
+      {rejectTarget && (
+        <RejectReceiptDialog
+          receiptLabel={rejectTarget.label}
+          onClose={() => setRejectTarget(null)}
+          onConfirm={() => {
+            handleReview(rejectTarget.agreementId, rejectTarget.receiptId, 'reject')
+            setRejectTarget(null)
+          }}
+        />
+      )}
     </div>
   )
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+function SortHead({ label, sortKey, sort, onSort, align = 'left' }: {
+  label: string
+  sortKey: SortField
+  sort: Sort<SortField> | null
+  onSort: (key: SortField) => void
+  align?: 'left' | 'right'
+}) {
+  return (
+    <SortTh
+      label={label} sortKey={sortKey} sort={sort} onSort={onSort} align={align}
+      className={cn(
+        'px-4 py-3 text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap',
+        align === 'right' ? 'text-right' : 'text-left'
+      )}
+    />
+  )
+}
 
 function Th({ children, align = 'left' }: { children: React.ReactNode; align?: 'left' | 'right' }) {
   return (

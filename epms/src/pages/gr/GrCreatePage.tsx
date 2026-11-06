@@ -4,14 +4,13 @@ import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, AlertTriangle, CheckCircle2, Package, Paperclip, X, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn, formatAmount, formatDate } from '@/lib/utils'
+import { cn, formatAmount, formatDate, formatQty } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth.store'
 import { usePo, usePos } from '@/hooks/usePos'
-import { useCreateGr } from '@/hooks/useGrs'
+import { useCreateGr, usePoOpenQuantities } from '@/hooks/useGrs'
 import { type GrLineCondition, type GrAttachmentIn } from '@/services/gr'
 import { type ApiPo } from '@/services/po'
-
-const MAX_FILE_SIZE = 10 * 1024 * 1024  // 10 MB
+import { ATTACHMENT_RULE, partitionUploads } from '@/lib/uploadLimits'
 
 async function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -56,6 +55,10 @@ interface FormGrLineItem {
   material_id?: string
   qty_ordered: number
   qty_received: number
+  // From GET /gr/open-quantities; null when the PO line has no figures (fallback)
+  already_received: number | null
+  pending: number | null
+  open: number | null
   unit: string
   unit_price: number
   line_total: number
@@ -69,6 +72,8 @@ export default function GrCreatePage() {
   const replaceTab = useReplaceTab(epmsRoutes)
   const [searchParams] = useSearchParams()
   const createGr = useCreateGr()
+  const savingRef = useRef(false)
+  const [saving, setSaving] = useState(false)
   const { data: posData } = usePos()
   const eligiblePos = (posData?.items ?? []).filter(canReceive)
   const { user } = useAuthStore()
@@ -102,13 +107,25 @@ export default function GrCreatePage() {
       : null
 
   const [receivedAt, setReceivedAt] = useState(new Date().toISOString().slice(0, 10))
+  // GR-P-002: title and received by are the user's to enter (ISS-0091). They
+  // start from the PO title and the signed-in user, who is often not the
+  // person who physically received the goods.
+  const [title, setTitle] = useState('')
+  const [receivedBy, setReceivedBy] = useState('')
   const [storageLocation, setStorageLocation] = useState('')
   const [notes, setNotes] = useState('')
   const [lineItems, setLineItems] = useState<FormGrLineItem[]>([])
   const [packListFiles, setPackListFiles] = useState<File[]>([])
+  const [packListError, setPackListError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [submitted, setSubmitted] = useState(false)
+  const [overReceiptReason, setOverReceiptReason] = useState('')
+
+  // Received / pending / open per PO line. Pending = GRs created but not yet
+  // collected — they reach the PO line only on collection, so the PO's own
+  // received_qty alone let two GRs each take the full remainder (ISS-0169).
+  const openQtyQuery = usePoOpenQuantities(selectedPo?.id ?? '')
 
   // When PO changes, rebuild line items from PO lines.
   //
@@ -125,25 +142,40 @@ export default function GrCreatePage() {
   useEffect(() => {
     if (!selectedPoId) { appliedForPoRef.current = null; setLineItems([]); return }
     if (!selectedPo) return
+    if (!openQtyQuery.isFetched) return
     if (appliedForPoRef.current === selectedPoId) return
     appliedForPoRef.current = selectedPoId
+    const openByLine = new Map((openQtyQuery.data ?? []).map((o) => [o.po_line_id, o]))
     setLineItems(
-      selectedPo.line_items.map((li) => ({
-        id: crypto.randomUUID(),
-        po_line_id: li.id,
-        description: li.description,
-        material_id: li.material_id,
-        qty_ordered: Number(li.qty),
-        qty_received: Math.max(0, Number(li.qty) - Number(li.received_qty ?? 0)),
-        unit: li.unit,
-        unit_price: Number(li.unit_price),
-        line_total: Number(li.line_total),
-        condition: 'good' as GrLineCondition,
-        discrepancy_notes: '',
-      }))
+      selectedPo.line_items.map((li) => {
+        const o = openByLine.get(li.id)
+        const qty = o ? Number(o.open) : Math.max(0, Number(li.qty) - Number(li.received_qty ?? 0))
+        return {
+          id: crypto.randomUUID(),
+          po_line_id: li.id,
+          description: li.description,
+          material_id: li.material_id,
+          qty_ordered: Number(li.qty),
+          // Default to what is still open, so a second GR does not repeat a pending one.
+          qty_received: qty,
+          already_received: o ? Number(o.received) : null,
+          pending: o ? Number(o.pending) : null,
+          open: o ? Number(o.open) : null,
+          unit: li.unit,
+          unit_price: Number(li.unit_price),
+          line_total: Math.round(qty * Number(li.unit_price) * 100) / 100,
+          condition: 'good' as GrLineCondition,
+          discrepancy_notes: '',
+        }
+      })
     )
+    setOverReceiptReason('')
+    setTitle(selectedPo.title)
+    setReceivedBy((prev) => prev || user?.name || '')
+    // Pre-filled from the PO's delivery address and editable. Whether the
+    // warehouse should fill in the bay instead (ISS-0132) is an open question.
     if (selectedPo.delivery_address) setStorageLocation(selectedPo.delivery_address)
-  }, [selectedPoId, selectedPo])
+  }, [selectedPoId, selectedPo, openQtyQuery.isFetched, openQtyQuery.data])
 
   const updateLine = (idx: number, patch: Partial<FormGrLineItem>) => {
     setLineItems((prev) => {
@@ -160,7 +192,10 @@ export default function GrCreatePage() {
 
   const addFiles = (incoming: FileList | null) => {
     if (!incoming) return
-    const valid = Array.from(incoming).filter((f) => f.size <= MAX_FILE_SIZE)
+    // Same rule as every other attachment area; a refused file is named, not
+    // silently dropped (the old 10 MB filter just left it out).
+    const { ok: valid, problems } = partitionUploads(Array.from(incoming), ATTACHMENT_RULE)
+    setPackListError(problems.length ? problems.join(' ') : null)
     setPackListFiles((prev) => {
       const existing = new Set(prev.map((f) => f.name + f.size))
       return [...prev, ...valid.filter((f) => !existing.has(f.name + f.size))]
@@ -173,11 +208,16 @@ export default function GrCreatePage() {
   // Lines actually being received (qty > 0); lines with 0 are skipped in this shipment
   const receivedLines = lineItems.filter((l) => l.qty_received > 0)
 
+  // Over-receipt is allowed, but only with a reason (ISS-0098/0169).
+  const overLines = lineItems.filter(isOverReceipt)
+  const needsOverReason = overLines.length > 0
+
   // ── Validation ──────────────────────────────────────────────────────────────
   const errors: string[] = []
   if (submitted) {
     if (!selectedPo) errors.push('Select a Purchase Order')
     if (!receivedAt) errors.push('Enter the receipt date')
+    if (!title.trim()) errors.push('Enter a title')
     if (!storageLocation.trim() && selectedPo && isPhysicalGr(selectedPo.type)) errors.push('Enter a storage location')
     if (receivedLines.length === 0) errors.push('At least one line must have a received quantity greater than 0')
     lineItems.forEach((l, i) => {
@@ -186,21 +226,33 @@ export default function GrCreatePage() {
         errors.push(`Line ${i + 1}: Discrepancy/damage notes are required`)
       }
     })
+    if (needsOverReason && !overReceiptReason.trim()) {
+      errors.push('Give a reason for receiving more than the open quantity')
+    }
   }
 
   const handleSubmit = async () => {
     setSubmitted(true)
+    // A double-click created two GRs for one delivery (GR-20261027-0004/0005,
+    // ISS-0152): the button stayed live while the pack list was encoded and the
+    // request was out. The ref stops the second click synchronously; `saving`
+    // shows it.
+    if (savingRef.current) return
     if (!selectedPo) return
 
     const errs: string[] = []
     if (!receivedAt) errs.push('date')
+    if (!title.trim()) errs.push('title')
     if (!storageLocation.trim() && isPhysicalGr(selectedPo.type)) errs.push('location')
     if (receivedLines.length === 0) errs.push('noLines')
     lineItems.forEach((l, i) => {
       if (l.qty_received > 0 && (l.condition === 'discrepancy' || l.condition === 'damaged') && !l.discrepancy_notes?.trim()) errs.push(`notes${i}`)
     })
+    if (needsOverReason && !overReceiptReason.trim()) errs.push('overReason')
     if (errs.length > 0) return
 
+    savingRef.current = true
+    setSaving(true)
     try {
       const attachments: GrAttachmentIn[] = await Promise.all(
         packListFiles.map(async (f) => ({
@@ -212,11 +264,12 @@ export default function GrCreatePage() {
       const newGr = await createGr.mutateAsync({
         // gr_type and vendor_id are derived from the PO server-side; line_total is
         // recomputed there too — send only the fields the user actually controls.
-        title: selectedPo.title,
+        title: title.trim(),
         currency: selectedPo.currency,
         po_id: selectedPo.id,
-        storage_location: storageLocation.trim() || undefined,
-        received_by: user?.name,
+        // Not applicable to a service / project GR (the field is disabled there).
+        storage_location: isPhysicalGr(selectedPo.type) ? storageLocation.trim() || undefined : undefined,
+        received_by: receivedBy.trim() || undefined,
         line_items: receivedLines.map((l) => ({
           po_line_id: l.po_line_id,
           description: l.description,
@@ -230,10 +283,14 @@ export default function GrCreatePage() {
         })),
         notes: notes.trim() || undefined,
         attachments: attachments.length > 0 ? attachments : undefined,
+        over_receipt_reason: needsOverReason ? overReceiptReason.trim() : undefined,
       })
       replaceTab(`/gr/${newGr.id}`)
     } catch {
       // error already in mutation state
+    } finally {
+      savingRef.current = false
+      setSaving(false)
     }
   }
 
@@ -273,6 +330,12 @@ export default function GrCreatePage() {
           <ul className="list-disc list-inside text-sm text-danger-600 space-y-0.5">
             {errors.map((e) => <li key={e}>{e}</li>)}
           </ul>
+        </div>
+      )}
+
+      {createGr.isError && (
+        <div className="rounded-lg border border-danger-200 bg-danger-50 p-4 text-sm text-danger-700">
+          {createGr.error instanceof Error ? createGr.error.message : 'The goods receipt could not be saved'}
         </div>
       )}
 
@@ -381,6 +444,34 @@ export default function GrCreatePage() {
             <h2 className="text-base font-semibold text-neutral-900">Receipt Details</h2>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <FormField
+                label="Title"
+                required
+                error={submitted && !title.trim() ? 'Required' : ''}
+              >
+                <input
+                  type="text"
+                  maxLength={255}
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                />
+              </FormField>
+              <FormField
+                label="Received By"
+                hint={isPhysicalGr(selectedPo.type)
+                  ? 'The person who physically received the goods — left empty, it is you'
+                  : 'The person recording the service — left empty, it is you'}
+              >
+                <input
+                  type="text"
+                  maxLength={200}
+                  placeholder={user?.name ?? ''}
+                  value={receivedBy}
+                  onChange={(e) => setReceivedBy(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg border border-neutral-300 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
+                />
+              </FormField>
+              <FormField
                 label="Receipt Date"
                 required
                 error={submitted && !receivedAt ? 'Required' : ''}
@@ -423,7 +514,7 @@ export default function GrCreatePage() {
           <div className="rounded-xl border border-neutral-200 bg-white p-6 flex flex-col gap-4">
             <div>
               <h2 className="text-base font-semibold text-neutral-900">Pack List / Supporting Documents</h2>
-              <p className="mt-0.5 text-sm text-neutral-500">Optional — attach scanned packing lists, delivery notes, or photos (max 10 MB each)</p>
+              <p className="mt-0.5 text-sm text-neutral-500">Optional — attach scanned packing lists, delivery notes, or photos</p>
             </div>
 
             {/* Drop zone */}
@@ -439,16 +530,17 @@ export default function GrCreatePage() {
             >
               <Upload className="h-7 w-7 text-neutral-400" />
               <p className="text-sm font-medium text-neutral-600">Drop files here or click to browse</p>
-              <p className="text-xs text-neutral-400">PDF, JPG, PNG, Excel — up to 10 MB each</p>
+              <p className="text-xs text-neutral-400">{ATTACHMENT_RULE.hint}</p>
               <input
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".pdf,.jpg,.jpeg,.png,.xls,.xlsx"
+                accept={ATTACHMENT_RULE.accept}
                 className="hidden"
-                onChange={(e) => addFiles(e.target.files)}
+                onChange={(e) => { addFiles(e.target.files); e.target.value = '' }}
               />
             </div>
+            {packListError && <p role="alert" className="text-xs text-danger-600">{packListError}</p>}
 
             {/* File list */}
             {packListFiles.length > 0 && (
@@ -520,6 +612,35 @@ export default function GrCreatePage() {
             </div>
           </div>
 
+          {/* Over-receipt: allowed with a reason */}
+          {needsOverReason && (
+            <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
+              <AlertTriangle className="h-5 w-5 text-warning-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 flex flex-col gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-warning-700">Receiving more than the PO line has open</p>
+                  <p className="text-sm text-warning-600 mt-0.5">
+                    {overLines.map((l) => `${l.description}: ${l.qty_received} received, ${l.open} open`).join('; ')}.
+                    {' '}Over-receipt is allowed, but the reason is required and is kept on the GR.
+                  </p>
+                </div>
+                <label className="text-xs font-medium text-warning-700">
+                  Over-receipt reason <span className="text-danger-600">*</span>
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Vendor shipped a full case; extra units kept as spares"
+                  value={overReceiptReason}
+                  onChange={(e) => setOverReceiptReason(e.target.value)}
+                  className={cn(
+                    'w-full px-3 py-1.5 rounded border text-sm bg-white focus:outline-none focus:ring-1 focus:ring-warning-400 resize-none',
+                    submitted && !overReceiptReason.trim() ? 'border-danger-400' : 'border-warning-300'
+                  )}
+                />
+              </div>
+            </div>
+          )}
+
           {/* Issues warning */}
           {hasIssues && (
             <div className="rounded-lg border border-warning-200 bg-warning-50 p-4 flex gap-3">
@@ -527,8 +648,9 @@ export default function GrCreatePage() {
               <div>
                 <p className="text-sm font-semibold text-warning-700">One or more lines have issues</p>
                 <p className="text-sm text-warning-600 mt-0.5">
-                  Submitting will flag this GR as Discrepancy and notify the Procurement Officer.
-                  Invoice creation will be blocked until the discrepancy is resolved.
+                  Submitting will raise an urgent Report Goods Damage task for the Procurement Officers
+                  to arrange a return, credit or replacement with the vendor. The GR still goes through
+                  acknowledgement and collection as usual, and invoices for this PO are not blocked.
                 </p>
               </div>
             </div>
@@ -548,9 +670,9 @@ export default function GrCreatePage() {
             <Link to="/gr">
               <Button variant="secondary">Cancel</Button>
             </Link>
-            <Button onClick={handleSubmit} className="gap-2">
+            <Button onClick={handleSubmit} disabled={saving} className="gap-2">
               <Package className="h-4 w-4" />
-              Submit Goods Receipt
+              {saving ? 'Submitting…' : 'Submit Goods Receipt'}
             </Button>
           </div>
         </>
@@ -573,6 +695,7 @@ function LineRow({
   const hasIssue = line.condition === 'discrepancy' || line.condition === 'damaged'
   const noteError = submitted && line.qty_received > 0 && hasIssue && !line.discrepancy_notes?.trim()
   const qtyError = submitted && line.qty_received < 0
+  const over = isOverReceipt(line)
 
   return (
     <>
@@ -583,7 +706,12 @@ function LineRow({
           {line.material_id && <div className="text-xs text-neutral-400 font-mono mt-0.5">{line.material_id}</div>}
         </td>
         <td className="px-4 py-3 text-right text-neutral-500 font-mono text-xs">
-          {line.qty_ordered} {line.unit}
+          {formatQty(line.qty_ordered)} {line.unit}
+          {line.open !== null && (
+            <div className="mt-0.5 text-[10px] text-neutral-400 whitespace-nowrap">
+              Received {line.already_received} · Pending {line.pending} · Open {line.open}
+            </div>
+          )}
         </td>
         <td className="px-4 py-3 text-right">
           <div className="flex flex-col items-end gap-0.5">
@@ -599,10 +727,11 @@ function LineRow({
               placeholder="0"
               className={cn(
                 'w-20 h-8 text-right px-2 rounded border text-sm font-mono focus:outline-none focus:ring-1 focus:ring-primary-600',
-                qtyError ? 'border-danger-400 bg-danger-50' : 'border-neutral-300'
+                qtyError ? 'border-danger-400 bg-danger-50' : over ? 'border-warning-400 bg-warning-50' : 'border-neutral-300'
               )}
             />
             {qtyError && <span className="text-[10px] text-danger-600">Required</span>}
+            {over && <span className="text-[10px] text-warning-600">Over open qty</span>}
           </div>
         </td>
         <td className="px-4 py-3 text-neutral-500 text-xs">{line.unit}</td>
@@ -656,6 +785,10 @@ function LineRow({
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function isOverReceipt(line: FormGrLineItem): boolean {
+  return line.open !== null && line.qty_received > 0 && line.qty_received > line.open
+}
 
 function FormField({
   label, required, hint, error, children,

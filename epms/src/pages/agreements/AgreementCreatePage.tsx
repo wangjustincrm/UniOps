@@ -9,8 +9,8 @@ import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
 import { DropdownPortal, useAnchorRect } from '@/components/ui/DropdownPortal'
 import { useConfig } from '@/hooks/useConfig'
-import { cn } from '@/lib/utils'
-import { CURRENCIES } from '@/types'
+import { cn, formatBytes } from '@/lib/utils'
+import { enabledCurrencyOptions } from '@/lib/currencies'
 import type { Currency } from '@/types'
 import { useCreateAgreement } from '@/hooks/useAgreements'
 import { agreementService, type AgreementType, type CreateAgreementBody, type MilestoneRowIn } from '@/services/agreement'
@@ -23,6 +23,7 @@ import { userService, type ApiUserBrief } from '@/services/users'
 import { BudgetAccountCascade } from '@/components/budget/BudgetAccountCascade'
 import { RecurringFields, EMPTY_RECURRING_FIELDS, type RecurringFieldsValue } from '@/components/agreements/RecurringFields'
 import { MilestoneEditor } from '@/components/agreements/MilestoneEditor'
+import { errorMessage, rememberSubmitFailure } from '@/lib/submitFailure'
 
 const TYPE_OPTIONS: { value: AgreementType; label: string; hint: string }[] = [
   // Whole-branch review (M8): a house account is not necessarily a counter
@@ -228,7 +229,18 @@ export default function AgreementCreatePage() {
         }
       }
       if (submitForApproval) {
-        await agreementService.action(newAgreement.id, { action: 'submit' })
+        // A refused submit used to leave the user on this form with the reason
+        // only in the console, and each further click saved another identical
+        // draft (AGR-202610-0016…0020, ISS-0090). The agreement exists now —
+        // go to it either way, and say there why it was not submitted.
+        try {
+          await agreementService.action(newAgreement.id, { action: 'submit' })
+        } catch (err) {
+          rememberSubmitFailure(
+            newAgreement.id,
+            `Saved as a draft but not submitted: ${errorMessage(err, 'the submission was refused')}`,
+          )
+        }
       }
       replaceTab(`/agreements/${newAgreement.id}`)
     } finally {
@@ -414,9 +426,9 @@ export default function AgreementCreatePage() {
 
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               <FormField
-                label="Not to Exceed"
+                label="Not to Exceed (pre-tax)"
                 htmlFor="notToExceed"
-                hint="Optional ceiling. Spend past this amount only warns — it never blocks matching or approval."
+                hint="Optional ceiling, before tax — compared with the pre-tax total of the invoices matched to the agreement. Spend past it only warns; it never blocks matching or approval."
               >
                 <Input
                   id="notToExceed"
@@ -440,7 +452,7 @@ export default function AgreementCreatePage() {
                   }}
                   className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600"
                 >
-                  {CURRENCIES.filter((c) => (config?.enabled_currencies ?? ['CAD', 'USD', 'EUR', 'RMB']).includes(c.value)).map((c) => (
+                  {enabledCurrencyOptions(config).map((c) => (
                     <option key={c.value} value={c.value}>{c.value} — {c.label}</option>
                   ))}
                 </select>
@@ -605,7 +617,7 @@ export default function AgreementCreatePage() {
             {attachments.map((f, i) => (
               <div key={i} className="flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm">
                 <span className="flex-1 truncate text-neutral-700">📎 {f.name}</span>
-                <span className="text-neutral-400 text-xs">{(f.size / 1024 / 1024).toFixed(1)} MB</span>
+                <span className="text-neutral-400 text-xs">{formatBytes(f.size)}</span>
                 <button
                   type="button"
                   onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}

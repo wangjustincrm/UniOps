@@ -34,8 +34,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.notification_log import NotificationLog
 from app.models.task import Task
 from app.services.notification import (
-    fire_and_forget_notify,
     resolve_task_recipients,
+    send_task_notification_now,
 )
 
 # Template key (seeded in app/crud/config.py, editable in EPMS Admin → Email
@@ -55,6 +55,16 @@ APPROVAL_TASK_TYPES: dict[str, tuple[str, ...]] = {
 }
 
 
+def expense_approval_task_types(claim_type: str) -> tuple[str, ...]:
+    """OA expense claims: approval-api files each step as ``approve_<code>`` with
+    ``document_type = <code>`` (claim_type lowercased — EXP / MIL / TRV / CFM and
+    custom forms alike; see _expense_meta in approval-api's engine). Like PR/PO,
+    the ``process_expense`` task Finance BP gets after approval is NOT an
+    approval and must never be nudged from the approval card.
+    """
+    return (f"approve_{claim_type.lower()}",)
+
+
 class ReminderUnavailable(Exception):
     """Nothing to remind about, or nobody the reminder could reach (→ 409)."""
 
@@ -67,7 +77,9 @@ class ReminderCooldown(Exception):
         super().__init__(
             f"A reminder was already sent for this step in the last {COOLDOWN_HOURS} "
             f"hours. You can send another one after "
-            f"{retry_at.strftime('%Y-%m-%d %H:%M')} UTC."
+            # DD/MM/YYYY like the rest of the app (UI-DATE-001, ISS-0183). Format
+            # only — the time is still the UTC instant (zone left as is).
+            f"{retry_at.strftime('%d/%m/%Y %H:%M')} UTC."
         )
 
 
@@ -83,13 +95,14 @@ class ReminderResult:
 
 async def _open_approval_tasks(
     db: AsyncSession, document_type: str, document_id: uuid.UUID,
+    task_types: tuple[str, ...],
 ) -> list[Task]:
     result = await db.execute(
         select(Task).where(
             Task.document_type == document_type,
             Task.document_id == document_id,
             Task.is_completed.is_(False),
-            Task.type.in_(APPROVAL_TASK_TYPES[document_type]),
+            Task.type.in_(task_types),
         )
     )
     return list(result.scalars().all())
@@ -125,13 +138,17 @@ async def send_manual_reminder(
     *,
     document_type: str,
     document_id: uuid.UUID,
+    task_types: tuple[str, ...] | None = None,
 ) -> ReminderResult:
     """Send a reminder to the current approver(s). Raises on every no-op path.
 
     The caller must commit: the cooldown marker rows are added to `db` here but
     the background dispatch is only spawned after the commit, by the endpoint.
     """
-    tasks = await _open_approval_tasks(db, document_type, document_id)
+    tasks = await _open_approval_tasks(
+        db, document_type, document_id,
+        task_types or APPROVAL_TASK_TYPES[document_type],
+    )
     if not tasks:
         raise ReminderUnavailable(
             "This document is not waiting on an approver right now, so there is "
@@ -204,8 +221,8 @@ async def send_manual_reminder(
 def dispatch_manual_reminder(db: AsyncSession, tasks: list[Task], sender_name: str) -> None:
     """Spawn the actual sends. Call AFTER the commit that persists the markers."""
     for task in tasks:
-        fire_and_forget_notify(
-            task, db,
+        send_task_notification_now(
+            task,
             template_key=MANUAL_REMINDER_TEMPLATE,
             extra_vars={
                 "sender_name": sender_name,
@@ -220,6 +237,7 @@ async def remind_document(
     document_type: str,
     document_id: uuid.UUID,
     actor_id: uuid.UUID,
+    task_types: tuple[str, ...] | None = None,
 ) -> "ReminderResponse":
     """Endpoint-level wrapper: resolve → stage marker → commit → dispatch.
 
@@ -235,6 +253,7 @@ async def remind_document(
     try:
         result = await send_manual_reminder(
             db, document_type=document_type, document_id=document_id,
+            task_types=task_types,
         )
     except ReminderCooldown as exc:
         raise HTTPException(status_code=429, detail=str(exc))

@@ -19,6 +19,7 @@ import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Download, Loader2 } from 'lucide-react'
+import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -45,6 +46,9 @@ interface LineRow {
   department_code: string | null; expected_cost_center_code: string | null
   budget_account_code: string | null; income_expense_text: string | null
 }
+/** GET /gl/jv-validation/lines sort keys (finance-api jv_validation.ROW_SORT). */
+type LineSortKey = 'jv_number' | 'account_code' | 'debit' | 'cost_center' | 'nc_dept'
+  | 'income_expense' | 'finding'
 interface LinesResp { total: number; limit: number; offset: number; rows: LineRow[] }
 
 const PAGE = 200
@@ -90,6 +94,10 @@ export default function JvValidationPage() {
   const [jvId, setJvId] = useState<string | null>(null)
 
   const range = `period_from=${from}&period_to=${to}`
+  // Paged by the API, so sorted by the API; a new sort starts at the top.
+  const [sort, onSort] = useSort<LineSortKey>(null, () => setOffset(0))
+  const { sort: sortKey, dir: sortDir } = sortParams(sort)
+  const sortSuffix = sortKey ? `&sort=${sortKey}&dir=${sortDir}` : ''
 
   const { data: summary, isFetching: loadingSummary } = useQuery({
     queryKey: ['jv-validation', from, to],
@@ -97,10 +105,10 @@ export default function JvValidationPage() {
   })
 
   const { data: lines, isFetching: loadingLines } = useQuery({
-    queryKey: ['jv-validation-lines', from, to, rule, offset],
+    queryKey: ['jv-validation-lines', from, to, rule, offset, sort],
     queryFn: () => financeApi.get<LinesResp>(
       `/gl/jv-validation/lines?${range}&limit=${PAGE}&offset=${offset}` +
-      (rule ? `&rule=${rule}` : '')),
+      (rule ? `&rule=${rule}` : '') + sortSuffix),
   })
 
   const { data: perms } = useQuery({
@@ -124,7 +132,7 @@ export default function JvValidationPage() {
     for (let off = 0; ; off += 1000) {
       const page = await financeApi.get<LinesResp>(
         `/gl/jv-validation/lines?${range}&limit=1000&offset=${off}` +
-        (rule ? `&rule=${rule}` : ''))
+        (rule ? `&rule=${rule}` : '') + sortSuffix)
       all.push(...page.rows)
       if (all.length >= page.total || page.rows.length === 0) break
     }
@@ -253,13 +261,13 @@ export default function JvValidationPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
-                  <th className="px-3 py-2 text-left font-medium">Voucher</th>
-                  <th className="px-3 py-2 text-left font-medium">Account</th>
-                  <th className="px-3 py-2 text-right font-medium">Debit</th>
-                  <th className="px-3 py-2 text-left font-medium">Cost Center</th>
-                  <th className="px-3 py-2 text-left font-medium">NC / Dept</th>
-                  <th className="px-3 py-2 text-left font-medium">Income / Expense</th>
-                  <th className="px-3 py-2 text-left font-medium">Finding</th>
+                  <SortTh label="Voucher" sortKey="jv_number" sort={sort} onSort={onSort} className="px-3 py-2 font-medium text-left" />
+                  <SortTh label="Account" sortKey="account_code" sort={sort} onSort={onSort} className="px-3 py-2 font-medium text-left" />
+                  <SortTh label="Debit" sortKey="debit" sort={sort} onSort={onSort} align="right" className="px-3 py-2 font-medium" />
+                  <SortTh label="Cost Center" sortKey="cost_center" sort={sort} onSort={onSort} className="px-3 py-2 font-medium text-left" />
+                  <SortTh label="NC / Dept" sortKey="nc_dept" sort={sort} onSort={onSort} className="px-3 py-2 font-medium text-left" />
+                  <SortTh label="Income / Expense" sortKey="income_expense" sort={sort} onSort={onSort} className="px-3 py-2 font-medium text-left" />
+                  <SortTh label="Finding" sortKey="finding" sort={sort} onSort={onSort} className="px-3 py-2 font-medium text-left" />
                   <th className="px-3 py-2 w-20"></th>
                 </tr>
               </thead>

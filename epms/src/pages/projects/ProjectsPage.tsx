@@ -10,6 +10,9 @@ import { useProjects, useCreateProject, useUpdateProject } from '@/hooks/useProj
 import type { ApiProject, CreateProjectBody, UpdateProjectBody, ProjectStatus } from '@/services/projects'
 import { useAuthStore } from '@/stores/auth.store'
 import type { UserRole } from '@/types'
+import { SortTh, useSortableRows } from '@uniops/shell'
+
+const PROJECT_TH = 'px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -339,6 +342,18 @@ export default function ProjectsPage() {
     const matchStatus = statusTab === 'all' || p.status === statusTab
     return matchSearch && matchStatus
   })
+  // The whole project list is loaded (GET /projects is not paged), so sorting
+  // the rows here is exact.
+  const { rows: sortedProjects, sort, onSort } = useSortableRows(filtered, {
+    code: (p) => p.code,
+    name: (p) => p.name,
+    owner_dept: (p) => p.owner_dept,
+    manager_name: (p) => p.manager_name,
+    budget: (p) => Number(p.budget),
+    start_date: (p) => p.start_date,
+    end_date: (p) => p.end_date,
+    status: (p) => STATUS_LABELS[p.status],
+  })
 
   // ── Validation ──────────────────────────────────────────────────────────────
   const validate = (f: ProjectFormData): boolean => {
@@ -515,24 +530,15 @@ export default function ProjectsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50">
-                {[
-                  'Code',
-                  'Name',
-                  'Department',
-                  'Manager',
-                  'Budget',
-                  'Start',
-                  'End',
-                  'Status',
-                  ...(canWrite ? [''] : []),
-                ].map((h) => (
-                  <th
-                    key={h}
-                    className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500 whitespace-nowrap"
-                  >
-                    {h}
-                  </th>
-                ))}
+                <SortTh label="Code" sortKey="code" sort={sort} onSort={onSort} className={PROJECT_TH} />
+                <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className={PROJECT_TH} />
+                <SortTh label="Department" sortKey="owner_dept" sort={sort} onSort={onSort} className={PROJECT_TH} />
+                <SortTh label="Manager" sortKey="manager_name" sort={sort} onSort={onSort} className={PROJECT_TH} />
+                <SortTh label="Budget" sortKey="budget" sort={sort} onSort={onSort} className={PROJECT_TH} />
+                <SortTh label="Start" sortKey="start_date" sort={sort} onSort={onSort} className={PROJECT_TH} />
+                <SortTh label="End" sortKey="end_date" sort={sort} onSort={onSort} className={PROJECT_TH} />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={PROJECT_TH} />
+                {canWrite && <th className={PROJECT_TH} />}
               </tr>
             </thead>
             <tbody>
@@ -549,7 +555,7 @@ export default function ProjectsPage() {
                   </td>
                 </tr>
               )}
-              {filtered.map((project, i) => (
+              {sortedProjects.map((project, i) => (
                 <tr
                   key={project.id}
                   className={cn(

@@ -5,7 +5,7 @@ import { PrPipeline } from '@/components/dashboard/PrPipeline'
 import { Card } from '@/components/ui/card'
 import { useDashboard } from '@/hooks/useDashboard'
 import { useTasks } from '@/hooks/useTasks'
-import { taskHref } from '@/lib/taskTypes'
+import { isEpmsInboxTask, taskHref } from '@/lib/taskTypes'
 import type { PrPipelineItem } from '@/components/dashboard/PrPipeline'
 import type { DocumentStatus, TaskItem } from '@/types'
 import type { ApiTask } from '@/services/tasks'
@@ -71,7 +71,7 @@ export default function RequesterDashboard() {
 
   const kpi = (title: string) => data?.kpis.find((k) => k.title === title)
   const pipeline = mapPipeline(data?.pr_pipeline)
-  const openTasks = mapTasks(tasksData?.items ?? [])
+  const openTasks = mapTasks((tasksData?.items ?? []).filter(isEpmsInboxTask))
 
   return (
     <div className="flex flex-col gap-6">

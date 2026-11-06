@@ -66,7 +66,7 @@ export function ResolveExceptionPanel({ inv, onClose }: { inv: ApiInvoice; onClo
         <label className="text-xs font-medium text-neutral-700">
           {resolution === 'accepted' ? 'Justification' : 'Instructions'} <span className="text-danger-600">*</span>
         </label>
-        <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)}
+        <textarea rows={2} maxLength={4000} value={note} onChange={(e) => setNote(e.target.value)}
           placeholder={resolution === 'accepted'
             ? 'Explain why the excess amount is acceptable...'
             : 'Instructions for the vendor to issue a credit note...'}
@@ -76,6 +76,13 @@ export function ResolveExceptionPanel({ inv, onClose }: { inv: ApiInvoice; onClo
           )} />
         {submitted && !note.trim() && <p className="text-xs text-danger-600">Required</p>}
       </div>
+
+      {resolution === 'credit_note_requested' && (
+        <p className="text-xs text-neutral-500">
+          The invoice stays in Exception and the task stays open as "Awaiting credit note" until
+          the credit arrives and you accept or edit the invoice.
+        </p>
+      )}
 
       {resolveExceptionMutation.isError && (
         <p className="text-xs text-danger-600 text-right">

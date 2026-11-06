@@ -4,7 +4,7 @@ import io
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Annotated
+from typing import Annotated, Literal
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, UploadFile, File, status
@@ -32,6 +32,9 @@ from app.schemas.user import (
     ErpImportResponse,
     ErpImportCreated,
     ErpImportError,
+    BulkCreateError,
+    BulkCreateRequest,
+    BulkCreateResponse,
 )
 from app.services import approval_client
 from app.services.mdm_client import MdmClient
@@ -83,6 +86,25 @@ async def _post_conflict(db, role: str, exclude_user_id: uuid.UUID | None = None
     return row[0] if row is not None else None
 
 
+# ?sort= goes straight into ORDER BY, so only these keys are accepted (the
+# SQL-injection boundary). Each sorts by what the Users table cell shows:
+# - role: the cell shows a label ("Dept Manager", "ERP PA Officer") that is
+#   the code with "_" → " " up to letter case, so lower(replace(code)) orders
+#   exactly like the labels.
+# - department: the department NAME, not the FK.
+# - status: the cell shows "Active"/"Inactive" — Active sorts first ascending.
+_USER_SORTABLE = {
+    "full_name": func.lower(User.full_name),
+    "email": func.lower(User.email),
+    "role": func.lower(func.replace(User.role, "_", " ")),
+    "department": (select(func.lower(Department.name))
+                   .where(Department.id == User.department_id)
+                   .correlate(User).scalar_subquery()),
+    "erp_person_code": func.lower(User.erp_person_code),
+    "status": sa.case((User.is_active.is_(True), 0), else_=1),
+}
+
+
 async def _with_dept_names(db: SessionDep, users: list[User]) -> list[UserAdminResponse]:
     """Attach department_name to each user in one extra query."""
     dept_ids = {u.department_id for u in users if u.department_id}
@@ -110,9 +132,22 @@ async def list_users(
     search: str | None = None,
     role: str | None = None,
     is_active: bool | None = None,
+    sort: str | None = Query(None),
+    dir: Literal["asc", "desc"] = Query("asc"),
 ):
-    """List users with optional search, role filter, and pagination."""
-    q = select(User).order_by(User.full_name)
+    """List users with optional search, role filter, and pagination.
+
+    sort/dir: one of _USER_SORTABLE (Portal → Admin → Users headers); no sort
+    keeps the historical full_name order."""
+    if sort is not None and sort not in _USER_SORTABLE:
+        raise HTTPException(status_code=422, detail=f"unknown sort column {sort!r}")
+    q = select(User)
+    if sort is None:
+        q = q.order_by(User.full_name)
+    else:
+        col = _USER_SORTABLE[sort]
+        col = col.asc() if dir == "asc" else col.desc()
+        q = q.order_by(col.nulls_last(), User.id.asc())
     if search:
         q = q.where(
             or_(User.full_name.ilike(f"%{search}%"), User.email.ilike(f"%{search}%"))
@@ -523,6 +558,34 @@ def _extract_bearer(authorization: str | None) -> str:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="missing bearer token")
     return authorization.split(None, 1)[1]
+
+
+@router.post("/bulk-create", response_model=BulkCreateResponse)
+async def bulk_create_users(body: BulkCreateRequest, db: SessionDep, _: AdminDep):
+    """Staff → Create users (EMPLOYEES.md UGEN-004). All Requesters, on the same
+    initial password as an ERP import. A row that fails is reported; the others stay."""
+    created: list[ErpImportCreated] = []
+    errors: list[BulkCreateError] = []
+    for item in body.items:
+        code = item.erp_person_code.strip()
+        email = (item.email or "").strip().lower()
+        if not email:
+            errors.append(BulkCreateError(erp_person_code=code, reason="no email"))
+        elif await user_crud.get_by_email(db, email):
+            errors.append(BulkCreateError(erp_person_code=code, reason=f"email already in use: {email}"))
+        elif await user_crud.get_by_erp_person_code(db, code):
+            errors.append(BulkCreateError(erp_person_code=code, reason="already has a user"))
+        else:
+            db.add(User(
+                email=email, hashed_password=hash_password(INITIAL_PASSWORD), full_name=item.full_name,
+                role="requester", department_id=item.department_id, is_active=True,
+                must_change_password=True, erp_person_code=code,
+                password_changed_at=datetime.now(timezone.utc),
+            ))
+            await db.flush()
+            created.append(ErpImportCreated(email=email, full_name=item.full_name, temp_password=INITIAL_PASSWORD))
+    await db.commit()
+    return BulkCreateResponse(created=created, errors=errors)
 
 
 @router.post("/import-from-erp", response_model=ErpImportResponse)

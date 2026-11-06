@@ -42,8 +42,10 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   place_order: 'Place Order',
   confirm_settlement: 'Confirm Settlement',
   review_match: 'Confirm Invoice Match',
-  match_invoice: 'Match Invoice to PO',
+  match_invoice: 'Match Invoice',
   resolve_exception: 'Resolve Match Exception',
+  // house_account 发票 match 后还没挂凭证,派给协议 owner(epms-api crud/attach_receipts_task.py)
+  attach_receipts: 'Attach Invoice Receipts',
   process_pa: 'Process Payment Application',
   approve_agr: 'Approve Agreement',
   revise_agr: 'Revise Agreement',
@@ -80,6 +82,59 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   // services/ap_duplicate_invoice_tasks.py). ap_clerk, one standing task that
   // closes itself when nothing unreviewed is left.
   resolve_ap_duplicate_invoice: 'Resolve Duplicate NC Invoices',
+}
+
+// ─── Which tasks EPMS shows ────────────────────────────────────────────────────
+//
+// `tasks` is ONE table shared by every module (EPMS, the approval engine on
+// behalf of OA claims / travel applications / budget plans / visits, Finance,
+// VMS), and epms-api's GET /tasks returns all of a user's rows. Only Portal's
+// home inbox aggregates every module; EPMS's own Task Inbox — the page, the
+// header bell and the dashboard list — shows the work done in EPMS (PRD EPMS
+// §3.7.1). The other modules each have their own inbox.
+//
+// An ALLOW-list on purpose. This used to be a deny-list (VMS + pa_dir), so
+// every module that later started writing tasks leaked in by default: OA's
+// approve_tra / approve_exp / approve_trv / approve_mil landed in a Finance
+// Manager's EPMS inbox with no label and a dead "/<uuid>" link. A new EPMS
+// document type must be added here deliberately.
+//
+// nc_sync is EPMS's: the NC purchase-order sync (Import ERP Vendor → /vendors).
+// pa_dir is NOT: EPMS Direct PAs carry document_type 'pa'; 'pa_dir' rows are
+// OA's retired Direct PA.
+export const EPMS_INBOX_DOC_TYPES: ReadonlySet<string> = new Set([
+  'pr', 'po', 'gr', 'invoice', 'pa', 'agr', 'posign', 'nc_sync',
+])
+
+// Doc types EPMS PAGES read tasks for, which is the inbox set plus budget_plan:
+// Finance's Budget Plan page embeds EPMS's plan editor (finance EpmsEmbed), and
+// that editor shows Approve / Return / Reject only while the user holds an open
+// approve_budget_plan task. Budget is a Finance module, so its tasks stay off
+// the EPMS inbox surfaces (isEpmsInboxTask) but must reach that page.
+export const EPMS_PAGE_DOC_TYPES: ReadonlySet<string> = new Set([
+  ...EPMS_INBOX_DOC_TYPES, 'budget_plan',
+])
+
+export function isEpmsInboxTask(task: { document_type: string }): boolean {
+  return EPMS_INBOX_DOC_TYPES.has(task.document_type.toLowerCase())
+}
+
+// The marker approval-api writes at the head of the description of an
+// over-budget pre-approval task (engine._create_approve_task, OBG-002):
+// "⚠️ OVER-BUDGET PRE-APPROVAL — PR amount: …\nJustification: …".
+const OVER_BUDGET_MARKER = 'OVER-BUDGET PRE-APPROVAL'
+
+/** For an over-budget pre-approval task, the requester's justification
+ *  ('' when none was given); null for every other task. The engine puts no
+ *  structured flag on the task, only this description (ISS-0126). */
+export function overBudgetJustification(
+  task: { type: string; description?: string | null },
+): string | null {
+  if (task.type !== 'approve_pr' || !task.description?.includes(OVER_BUDGET_MARKER)) return null
+  // Everything after the label: a justification may run over several lines.
+  const at = task.description.indexOf('Justification:')
+  const text = at < 0 ? '' : task.description.slice(at + 'Justification:'.length).trim()
+  return text === '(no justification provided)' ? '' : text
 }
 
 // Portal origin — NC sync errors that are not a missing vendor are resolved in
@@ -165,6 +220,12 @@ export function taskHref(task: TaskHrefInput): string {
   // same PaCreatePage).
   if (task.type === 'create_pa' || task.type === 'create_prepayment_pa') {
     return `/pa/create?poId=${task.document_id}`
+  }
+
+  // confirm_receipt anchors on the PO and opens New GR pre-filled with it
+  // (GR-L-002) — the same link its email carries (notification._task_link).
+  if (task.type === 'confirm_receipt') {
+    return `/gr/new?poId=${task.document_id}`
   }
 
   return `${HREF_MAP[docType] ?? '/'}/${task.document_id}`

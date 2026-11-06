@@ -192,3 +192,29 @@ async def test_a_requester_who_is_neither_is_still_refused(test_engine):
     async with _client_for(outsider) as c:
         r = await c.post(GR_URL, json=_gr_payload(po_id))
     assert r.status_code == 403, r.text
+
+
+@pytest.mark.asyncio
+async def test_cancel_gr_only_by_recorder_receiver_or_admin(test_engine):
+    """Cancel used to be accepted from any signed-in user. Now: the person who
+    recorded the GR, a warehouse receiver, or a System Admin."""
+    # Linked to a PR so the GR waits for acknowledgement (a PR-less GR is
+    # completed at once and could no longer be cancelled).
+    receiver, po_id = await _setup(test_engine, base_role="warehouse_staff",
+                                   link_pr_to_user=True)
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        outsider = await _user(db, base_role="requester")
+        await db.commit()
+    async with _client_for(receiver) as c:
+        r = await c.post(GR_URL, json=_gr_payload(po_id))
+        assert r.status_code == 201, r.text
+        assert r.json()["status"] == "pending_ack"
+        gr_id = r.json()["id"]
+    async with _client_for(outsider) as c:
+        r = await c.post(f"{GR_URL}/{gr_id}/action", json={"action": "cancel"})
+    assert r.status_code == 403, r.text
+    async with _client_for(receiver) as c:
+        r = await c.post(f"{GR_URL}/{gr_id}/action", json={"action": "cancel"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "cancelled"

@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useDocTabTitle } from '@/components/BackLink'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useRef } from 'react'
-import { ArrowLeft, CheckCircle, XCircle, RotateCcw, Banknote, AlertTriangle, Paperclip, Upload, Download, Trash2, Circle, Clock } from 'lucide-react'
+import { ArrowLeft, CheckCircle, XCircle, RotateCcw, Banknote, AlertTriangle, Paperclip, Upload, Download, Trash2, Circle, Clock, FileText } from 'lucide-react'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { STATUS, ACTION, isEditable, isInApproval } from '@/lib/status'
@@ -32,6 +32,13 @@ interface LineItem {
   total_amount: number
   tax_amount: number
   net_amount: number
+  tax_code?: string | null
+  // TRV date-range line (null on single-day lines)
+  period_from?: string | null
+  period_to?: string | null
+  period_days?: number | null
+  daily_rate?: number | null
+  invoice_amount?: number | null
 }
 
 interface TripItem {
@@ -77,6 +84,7 @@ interface ExpenseClaim {
   travelers?: { id: string; user_name: string }[]
   transport_modes?: string[]
   travel_destination?: string | null
+  travel_country?: string | null
   travel_from_date?: string | null
   travel_to_date?: string | null
   leave_from_date?: string | null
@@ -122,11 +130,21 @@ const ACTION_LABELS: Record<string, string> = {
 
 // ── Attachments card ──────────────────────────────────────────────────────────
 
-function AttachmentsCard({ claimId, canUpload }: { claimId: string; canUpload: boolean }) {
+function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
+  claimId: string; canUpload: boolean
+  // Approved / paid claims: the PDF with the approval record is filed here at
+  // approval; this rebuilds it (backfill, failed first attempt, name changes).
+  canRegeneratePdf: boolean
+}) {
   const qc = useQueryClient()
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
+
+  const regenPdf = useMutation({
+    mutationFn: () => api.post(`/api/v1/expenses/${claimId}/regenerate-pdf`, {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['expense-attachments', claimId] }),
+  })
 
   const { data: attachments = [] } = useQuery<Attachment[]>({
     queryKey: ['expense-attachments', claimId],
@@ -184,6 +202,18 @@ function AttachmentsCard({ claimId, canUpload }: { claimId: string; canUpload: b
           <Paperclip className="h-4 w-4 text-neutral-400" />
           Attachments {attachments.length > 0 && `(${attachments.length})`}
         </h2>
+        <div className="flex items-center gap-4">
+        {canRegeneratePdf && (
+          <button
+            type="button"
+            disabled={regenPdf.isPending}
+            onClick={() => regenPdf.mutate()}
+            className="flex items-center gap-1.5 text-xs font-medium text-primary-700 hover:text-primary-900 disabled:opacity-50"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            {regenPdf.isPending ? 'Generating…' : 'Regenerate PDF'}
+          </button>
+        )}
         {canUpload && (
           <button
             type="button"
@@ -195,6 +225,7 @@ function AttachmentsCard({ claimId, canUpload }: { claimId: string; canUpload: b
             {uploading ? 'Uploading…' : 'Upload file'}
           </button>
         )}
+        </div>
         <input ref={fileRef} type="file" className="hidden" onChange={handleFileChange}
           accept=".pdf,.jpg,.jpeg,.png,.webp,.xlsx,.csv,.doc,.docx" />
       </div>
@@ -202,6 +233,11 @@ function AttachmentsCard({ claimId, canUpload }: { claimId: string; canUpload: b
       {uploadError && (
         <div className="mx-5 mt-3">
           <ErrorBanner message={uploadError} />
+        </div>
+      )}
+      {regenPdf.isError && (
+        <div className="mx-5 mt-3">
+          <ErrorBanner message={regenPdf.error instanceof Error ? regenPdf.error.message : 'PDF generation failed'} />
         </div>
       )}
 
@@ -244,10 +280,33 @@ function AttachmentsCard({ claimId, canUpload }: { claimId: string; canUpload: b
 
 // ── Approval status card ──────────────────────────────────────────────────────
 
+interface ReminderResponse {
+  sent: boolean
+  document_number: string
+  recipients: string[]
+  next_allowed_at: string
+}
+
 function ApprovalStatusCard({ claimId }: { claimId: string }) {
   const { data: steps = [], isLoading } = useQuery<ApprovalStep[]>({
     queryKey: ['approval-status', claimId],
     queryFn: () => api.get<ApprovalStep[]>(`/api/v1/expenses/${claimId}/approval-status`),
+  })
+
+  // "Send reminder" under the pending step — same behaviour as EPMS's Approval
+  // Timeline. The action changes nothing on the page, so the outcome is shown
+  // next to the button; the server's 409 (nobody to remind / unreachable) and
+  // 429 (already reminded in the last 24h) are sentences meant for the user and
+  // are shown verbatim.
+  const [reminderMsg, setReminderMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const remindMutation = useMutation({
+    mutationFn: () => api.post<ReminderResponse>(`/api/v1/expenses/${claimId}/remind`, {}),
+    onMutate: () => setReminderMsg(null),
+    onSuccess: (res) => setReminderMsg({ ok: true, text: `Reminder sent to ${res.recipients.join(', ')}.` }),
+    onError: (err) => setReminderMsg({
+      ok: false,
+      text: err instanceof Error ? err.message : 'Could not send the reminder.',
+    }),
   })
 
   if (isLoading || steps.length === 0) return null
@@ -301,7 +360,22 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
                 </p>
               )}
               {s.state === 'current' && (
-                <p className="mt-0.5 text-xs text-neutral-400">Awaiting this approver</p>
+                <>
+                  <p className="mt-0.5 text-xs text-neutral-400">Awaiting this approver</p>
+                  <button
+                    type="button"
+                    onClick={() => remindMutation.mutate()}
+                    disabled={remindMutation.isPending}
+                    className="mt-1 text-xs text-primary-700 hover:underline disabled:cursor-not-allowed disabled:text-neutral-400 disabled:no-underline"
+                  >
+                    {remindMutation.isPending ? 'Sending reminder…' : 'Send reminder'}
+                  </button>
+                  {reminderMsg && !remindMutation.isPending && (
+                    <p className={cn('mt-1 text-xs', reminderMsg.ok ? 'text-success-700' : 'text-warning-700')}>
+                      {reminderMsg.text}
+                    </p>
+                  )}
+                </>
               )}
               {/* Comments are shown once, in the Approval Timeline below. */}
             </div>
@@ -335,7 +409,7 @@ export default function ExpenseDetailPage() {
 
   // Server-computed permissions — approval roles (Finance BP, etc.) are assignments,
   // not JWT roles, so authorization is resolved server-side via tasks + role_management.
-  const { data: perms } = useQuery<{ is_owner: boolean; can_approve: boolean; can_pay: boolean; can_delete: boolean }>({
+  const { data: perms } = useQuery<{ is_owner: boolean; can_edit: boolean; can_approve: boolean; can_pay: boolean; can_delete: boolean }>({
     queryKey: ['expense-permissions', id],
     queryFn: () => api.get(`/api/v1/expenses/${id}/permissions`),
   })
@@ -392,11 +466,16 @@ export default function ExpenseDetailPage() {
     ?? (claim.claim_type.startsWith('CFM') ? `Custom Form (${claim.claim_type.replace(/^CFM_?/, '')})` : claim.claim_type)
 
   // EXP-007 / TRV-008: receipt-based claims require ≥1 attachment before submission.
-  const requiresAttachment = ['EXP', 'TRV'].includes(claim.claim_type)
-  const missingAttachment = requiresAttachment && claim.status === STATUS.DRAFT && attachments.length === 0
+  // A TRV made only of date-range lines is exempt (same rule as the server).
+  const trvAllRange = claim.claim_type === 'TRV' && claim.line_items.length > 0
+    && claim.line_items.every((li) => li.period_from)
+  const requiresAttachment = ['EXP', 'TRV'].includes(claim.claim_type) && !trvAllRange
+  // Draft and returned alike: a returned claim is resubmitted from here too.
+  const missingAttachment = requiresAttachment && isEditable(claim.status) && attachments.length === 0
 
   // Permissions resolved server-side (see the /permissions query above).
-  const isOwner = perms?.is_owner ?? false
+  // The claimant, or whoever filed the claim on their behalf.
+  const canEdit = perms?.can_edit ?? false
   const canApprove = perms?.can_approve ?? false
   const canPay = perms?.can_pay ?? false
   // False server-side for EXP/MIL/TRV, so this shared component needs no
@@ -437,7 +516,11 @@ export default function ExpenseDetailPage() {
 
           {/* Action buttons */}
           <div className="flex gap-2">
-            {claim.status === STATUS.DRAFT && isOwner && (
+            {/* Returned claims need Submit as well as Edit: Save Changes leaves the
+                claim `returned` (approval-api accepts submit from draft or
+                returned), and with only Edit here a returned claim could be
+                changed but never sent back into approval. */}
+            {isEditable(claim.status) && canEdit && (
               <button
                 onClick={() => setActiveAction(ACTION.SUBMIT)}
                 disabled={missingAttachment}
@@ -447,7 +530,7 @@ export default function ExpenseDetailPage() {
                 Submit
               </button>
             )}
-            {claim.status === STATUS.RETURNED && isOwner && (
+            {isEditable(claim.status) && canEdit && (
               <button
                 onClick={() => navigate(`/expenses/${claim.id}/edit`)}
                 className="rounded-lg border border-neutral-200 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
@@ -519,7 +602,9 @@ export default function ExpenseDetailPage() {
             <p className="mt-0.5 text-sm font-medium text-neutral-800">{claim.vehicle_description}</p>
           </div>
         )}
-        {claim.total_km != null && (
+        {/* Only a mileage claim has km (user, 2026-10-14) — a general expense
+            once carried total_km = 0 from a save bug and showed "Total km". */}
+        {claim.claim_type === 'MIL' && claim.total_km != null && (
           <div>
             <p className="text-xs font-medium text-neutral-500">Total km</p>
             <p className="mt-0.5 text-sm font-mono font-medium text-neutral-800">{Number(claim.total_km).toFixed(1)} km</p>
@@ -580,8 +665,11 @@ export default function ExpenseDetailPage() {
       {/* Line items (EXP / TRV / CFM — MIL uses the trip log below, TRA has no line items) */}
       {claim.claim_type !== 'MIL' && claim.claim_type !== 'TRA' && claim.line_items.length > 0 && (
         <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-          <div className="border-b border-neutral-100 px-5 py-3">
+          <div className="border-b border-neutral-100 px-5 py-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-neutral-700">Line Items</h2>
+            {claim.claim_type === 'TRV' && claim.travel_country && claim.travel_country !== 'CA' && (
+              <span className="text-xs text-neutral-500">Outside Canada ({claim.travel_country}) — no sales tax</span>
+            )}
           </div>
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 border-b border-neutral-100">
@@ -599,8 +687,23 @@ export default function ExpenseDetailPage() {
               {claim.line_items.map((li) => (
                 <tr key={li.id} className="border-b border-neutral-100">
                   <td className="px-4 py-2 text-xs text-neutral-400 font-mono">{li.line_number}</td>
-                  <td className="px-4 py-2 text-xs text-neutral-600">{formatDate(li.expense_date)}</td>
-                  <td className="px-4 py-2 text-xs text-neutral-800">{li.description}</td>
+                  <td className="px-4 py-2 text-xs text-neutral-600">
+                    {li.period_from
+                      ? <>{formatDate(li.period_from)} –<br />{formatDate(li.period_to!)}</>
+                      : formatDate(li.expense_date)}
+                  </td>
+                  <td className="px-4 py-2 text-xs text-neutral-800">
+                    {li.description}
+                    {li.period_from && (
+                      <div className="text-neutral-500">{li.period_days} days × {formatAmount(li.daily_rate ?? 0)}</div>
+                    )}
+                    {claim.claim_type === 'TRV' && li.tax_code && (
+                      <div className="text-neutral-500">Tax {li.tax_code}</div>
+                    )}
+                    {li.invoice_amount != null && (
+                      <div className="text-neutral-500">Invoice {formatAmount(li.invoice_amount)}</div>
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-xs text-neutral-600">{li.budget_account_code} — {li.budget_account_name}</td>
                   <td className="px-4 py-2 text-right text-xs font-mono">{formatAmount(li.total_amount)}</td>
                   <td className="px-4 py-2 text-right text-xs font-mono text-neutral-500">{formatAmount(li.tax_amount)}</td>
@@ -659,7 +762,13 @@ export default function ExpenseDetailPage() {
       )}
 
       {/* Attachments */}
-      <AttachmentsCard claimId={claim.id} canUpload={isEditable(claim.status)} />
+      <AttachmentsCard
+        claimId={claim.id}
+        canUpload={isEditable(claim.status)}
+        // TRA keeps its own button on the Travel Application card.
+        canRegeneratePdf={claim.claim_type !== 'TRA'
+          && (claim.status === STATUS.APPROVED || claim.status === STATUS.PAID)}
+      />
       </div>
 
       {/* Right: approval chain + history */}

@@ -23,6 +23,7 @@ import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CalendarX2, CheckCircle2, Download, Loader2, Scale } from 'lucide-react'
+import { SortTh, sortParams, useSort, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -75,6 +76,10 @@ interface ItemRow {
   nc_amount_match: AltSide | null
 }
 interface ItemsResp { total: number; items: ItemRow[] }
+/** GET /ap-recon/items sort keys (finance-api ap_reconciliation.ITEM_SORT). */
+type ItemSortKey = 'ap_invoice_number' | 'vendor_name' | 'vendor_invoice_number' | 'total_amount'
+  | 'invoice_date' | 'due_date' | 'po_number' | 'nc_bill_no' | 'nc_money_cr' | 'nc_money_bal'
+  | 'alt_invoice_no' | 'alt_bill_no' | 'alt_day_gap'
 
 interface AnomalyRow {
   id: string
@@ -169,6 +174,11 @@ function csvEscape(v: unknown) {
 /** Date-only strings must not go through new Date() — in a UTC-behind zone that
  *  renders yesterday. These are already YYYY-MM-DD from the API. */
 function day(v: string | null) { return v ? v.slice(0, 10) : '—' }
+function anomalyReason(reason: string) {
+  return reason === 'due_before_invoice'
+    ? 'Due date is before the invoice date'
+    : 'Invoice is dated in the future'
+}
 
 export default function ApReconciliationPage() {
   const { user } = useAuthStore()
@@ -179,15 +189,19 @@ export default function ApReconciliationPage() {
   const [showGaps, setShowGaps] = useState(false)
 
   const qs = `include_paid=${includePaid}`
+  // The drill-down is paged by the API, so the API sorts it (default: by money).
+  const [itemSort, onItemSort, setItemSort] = useSort<ItemSortKey>(null, () => setOffset(0))
+  const { sort: sortKey, dir: sortDir } = sortParams(itemSort)
+  const sortSuffix = sortKey ? `&sort=${sortKey}&dir=${sortDir}` : ''
 
   const { data: summary, isFetching: loadingSummary } = useQuery({
     queryKey: ['ap-recon-summary', includePaid],
     queryFn: () => financeApi.get<SummaryResp>(`/ap-recon/summary?${qs}`),
   })
   const { data: items, isFetching: loadingItems, error: itemsError } = useQuery({
-    queryKey: ['ap-recon-items', category, offset, includePaid],
+    queryKey: ['ap-recon-items', category, offset, includePaid, itemSort],
     queryFn: () => financeApi.get<ItemsResp>(
-      `/ap-recon/items?category=${category}&limit=${PAGE}&offset=${offset}&${qs}`),
+      `/ap-recon/items?category=${category}&limit=${PAGE}&offset=${offset}&${qs}${sortSuffix}`),
   })
   const { data: anomalies } = useQuery({
     queryKey: ['ap-recon-anomalies', includePaid],
@@ -201,6 +215,22 @@ export default function ApReconciliationPage() {
     queryFn: () => financeApi.get<GapsResp>(`/ap-recon/amount-mismatches?${qs}`),
   })
 
+  // Both side panels are loaded whole (no paging), so they sort on the page.
+  const gapSort = useSortableRows(gaps?.items, {
+    ap_invoice_number: (r) => r.ap_invoice_number, vendor: (r) => r.vendor_name,
+    invoice: (r) => r.vendor_invoice_number, po: (r) => r.po_number,
+    ours: (r) => Number(r.total_amount ?? NaN), nc_billed: (r) => Number(r.nc_money_cr),
+    difference: (r) => Number(r.amount_gap), nc_bill: (r) => r.nc_bill_no,
+    // The cell reads "credit note" / "open · <bal>" / "settled"
+    state: (r) => (r.is_credit ? 'credit note' : r.category === 'in_nc_open' ? 'open' : 'settled'),
+  })
+  const anomalySort = useSortableRows(anomalies?.items, {
+    ap_invoice_number: (r) => r.ap_invoice_number, vendor: (r) => r.vendor_name,
+    invoice: (r) => r.vendor_invoice_number, amount: (r) => Number(r.total_amount ?? NaN),
+    invoice_date: (r) => r.invoice_date, due_date: (r) => r.due_date,
+    why: (r) => anomalyReason(r.reason),
+  })
+
   const byKey = useMemo(() => {
     const m: Record<string, CategoryRow> = {}
     for (const c of summary?.categories ?? []) m[c.category] = c
@@ -210,13 +240,15 @@ export default function ApReconciliationPage() {
   const mirror = summary?.mirror
   const active = CATEGORIES.find((c) => c.key === category)
 
-  const pick = (key: string) => { setCategory(key); setOffset(0) }
+  // The NC columns differ per category, so a sort on one of them must not
+  // carry over to a category that does not show it.
+  const pick = (key: string) => { setCategory(key); setOffset(0); setItemSort(null) }
 
   const exportCsv = async () => {
     const all: ItemRow[] = []
     for (let off = 0; ; off += 1000) {
       const page = await financeApi.get<ItemsResp>(
-        `/ap-recon/items?category=${category}&limit=1000&offset=${off}&${qs}`)
+        `/ap-recon/items?category=${category}&limit=1000&offset=${off}&${qs}${sortSuffix}`)
       all.push(...page.items)
       if (all.length >= page.total || page.items.length === 0) break
     }
@@ -338,27 +370,27 @@ export default function ApReconciliationPage() {
           <table className="w-full min-w-[900px] text-sm">
             <thead>
               <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
-                <th className="px-3 py-2 text-left font-medium">AP No.</th>
-                <th className="px-3 py-2 text-left font-medium">Vendor</th>
-                <th className="px-3 py-2 text-left font-medium">Our invoice no.</th>
-                <th className="px-3 py-2 text-right font-medium">Amount</th>
-                <th className="px-3 py-2 text-left font-medium">Invoice</th>
-                <th className="px-3 py-2 text-left font-medium">Due</th>
-                <th className="px-3 py-2 text-left font-medium">PO</th>
+                <SortTh label="AP No." sortKey="ap_invoice_number" sort={itemSort} onSort={onItemSort} className="px-3 py-2 font-medium text-left" />
+                <SortTh label="Vendor" sortKey="vendor_name" sort={itemSort} onSort={onItemSort} className="px-3 py-2 font-medium text-left" />
+                <SortTh label="Our invoice no." sortKey="vendor_invoice_number" sort={itemSort} onSort={onItemSort} className="px-3 py-2 font-medium text-left" />
+                <SortTh label="Amount" sortKey="total_amount" sort={itemSort} onSort={onItemSort} align="right" className="px-3 py-2 font-medium" />
+                <SortTh label="Invoice" sortKey="invoice_date" sort={itemSort} onSort={onItemSort} className="px-3 py-2 font-medium text-left" />
+                <SortTh label="Due" sortKey="due_date" sort={itemSort} onSort={onItemSort} className="px-3 py-2 font-medium text-left" />
+                <SortTh label="PO" sortKey="po_number" sort={itemSort} onSort={onItemSort} className="px-3 py-2 font-medium text-left" />
                 {category === 'invoice_no_mismatch' ? (
                   <>
-                    <th className="px-3 py-2 text-left font-medium">NC invoice no.</th>
-                    <th className="px-3 py-2 text-left font-medium">NC bill</th>
-                    <th className="px-3 py-2 text-right font-medium">Gap</th>
+                    <SortTh label="NC invoice no." sortKey="alt_invoice_no" sort={itemSort} onSort={onItemSort} className="px-3 py-2 font-medium text-left" />
+                    <SortTh label="NC bill" sortKey="alt_bill_no" sort={itemSort} onSort={onItemSort} className="px-3 py-2 font-medium text-left" />
+                    <SortTh label="Gap" sortKey="alt_day_gap" sort={itemSort} onSort={onItemSort} align="right" className="px-3 py-2 font-medium" />
                   </>
                 ) : (
                   <>
-                    <th className="px-3 py-2 text-left font-medium">NC bill</th>
+                    <SortTh label="NC bill" sortKey="nc_bill_no" sort={itemSort} onSort={onItemSort} className="px-3 py-2 font-medium text-left" />
                     {/* NC's own billed figure, next to ours. Without it an
                         invoice that matched for the WRONG amount reads as
                         perfectly reconciled on this screen. */}
-                    <th className="px-3 py-2 text-right font-medium">NC billed</th>
-                    <th className="px-3 py-2 text-right font-medium">NC open</th>
+                    <SortTh label="NC billed" sortKey="nc_money_cr" sort={itemSort} onSort={onItemSort} align="right" className="px-3 py-2 font-medium" />
+                    <SortTh label="NC open" sortKey="nc_money_bal" sort={itemSort} onSort={onItemSort} align="right" className="px-3 py-2 font-medium" />
                   </>
                 )}
               </tr>
@@ -481,15 +513,15 @@ export default function ApReconciliationPage() {
                 <table className="w-full min-w-[860px] text-sm">
                   <thead>
                     <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
-                      <th className="px-3 py-2 text-left font-medium">AP No.</th>
-                      <th className="px-3 py-2 text-left font-medium">Vendor</th>
-                      <th className="px-3 py-2 text-left font-medium">Invoice no.</th>
-                      <th className="px-3 py-2 text-left font-medium">PO</th>
-                      <th className="px-3 py-2 text-right font-medium">Ours</th>
-                      <th className="px-3 py-2 text-right font-medium">NC billed</th>
-                      <th className="px-3 py-2 text-right font-medium">Difference</th>
-                      <th className="px-3 py-2 text-left font-medium">NC bill</th>
-                      <th className="px-3 py-2 text-left font-medium">State in NC</th>
+                      <SortTh label="AP No." sortKey="ap_invoice_number" sort={gapSort.sort} onSort={gapSort.onSort} className="px-3 py-2 font-medium text-left" />
+                      <SortTh label="Vendor" sortKey="vendor" sort={gapSort.sort} onSort={gapSort.onSort} className="px-3 py-2 font-medium text-left" />
+                      <SortTh label="Invoice no." sortKey="invoice" sort={gapSort.sort} onSort={gapSort.onSort} className="px-3 py-2 font-medium text-left" />
+                      <SortTh label="PO" sortKey="po" sort={gapSort.sort} onSort={gapSort.onSort} className="px-3 py-2 font-medium text-left" />
+                      <SortTh label="Ours" sortKey="ours" sort={gapSort.sort} onSort={gapSort.onSort} align="right" className="px-3 py-2 font-medium" />
+                      <SortTh label="NC billed" sortKey="nc_billed" sort={gapSort.sort} onSort={gapSort.onSort} align="right" className="px-3 py-2 font-medium" />
+                      <SortTh label="Difference" sortKey="difference" sort={gapSort.sort} onSort={gapSort.onSort} align="right" className="px-3 py-2 font-medium" />
+                      <SortTh label="NC bill" sortKey="nc_bill" sort={gapSort.sort} onSort={gapSort.onSort} className="px-3 py-2 font-medium text-left" />
+                      <SortTh label="State in NC" sortKey="state" sort={gapSort.sort} onSort={gapSort.onSort} className="px-3 py-2 font-medium text-left" />
                     </tr>
                   </thead>
                   <tbody>
@@ -497,7 +529,7 @@ export default function ApReconciliationPage() {
                       <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">
                         Every matched invoice agrees with NC to the cent.
                       </td></tr>
-                    ) : gaps!.items.map((r) => (
+                    ) : gapSort.rows.map((r) => (
                       <tr key={r.id} className="border-t border-neutral-100 hover:bg-neutral-50/60">
                         <td className="px-3 py-2 font-mono text-xs">{r.ap_invoice_number ?? '—'}</td>
                         <td className="px-3 py-2">{r.vendor_name ?? '—'}</td>
@@ -565,13 +597,13 @@ export default function ApReconciliationPage() {
                 <table className="w-full min-w-[720px] text-sm">
                   <thead>
                     <tr className="border-b border-neutral-100 bg-neutral-50 text-xs text-neutral-500">
-                      <th className="px-3 py-2 text-left font-medium">AP No.</th>
-                      <th className="px-3 py-2 text-left font-medium">Vendor</th>
-                      <th className="px-3 py-2 text-left font-medium">Invoice no.</th>
-                      <th className="px-3 py-2 text-right font-medium">Amount</th>
-                      <th className="px-3 py-2 text-left font-medium">Invoice date</th>
-                      <th className="px-3 py-2 text-left font-medium">Due date</th>
-                      <th className="px-3 py-2 text-left font-medium">Why</th>
+                      <SortTh label="AP No." sortKey="ap_invoice_number" sort={anomalySort.sort} onSort={anomalySort.onSort} className="px-3 py-2 font-medium text-left" />
+                      <SortTh label="Vendor" sortKey="vendor" sort={anomalySort.sort} onSort={anomalySort.onSort} className="px-3 py-2 font-medium text-left" />
+                      <SortTh label="Invoice no." sortKey="invoice" sort={anomalySort.sort} onSort={anomalySort.onSort} className="px-3 py-2 font-medium text-left" />
+                      <SortTh label="Amount" sortKey="amount" sort={anomalySort.sort} onSort={anomalySort.onSort} align="right" className="px-3 py-2 font-medium" />
+                      <SortTh label="Invoice date" sortKey="invoice_date" sort={anomalySort.sort} onSort={anomalySort.onSort} className="px-3 py-2 font-medium text-left" />
+                      <SortTh label="Due date" sortKey="due_date" sort={anomalySort.sort} onSort={anomalySort.onSort} className="px-3 py-2 font-medium text-left" />
+                      <SortTh label="Why" sortKey="why" sort={anomalySort.sort} onSort={anomalySort.onSort} className="px-3 py-2 font-medium text-left" />
                     </tr>
                   </thead>
                   <tbody>
@@ -579,7 +611,7 @@ export default function ApReconciliationPage() {
                       <tr><td colSpan={7} className="px-3 py-6 text-center text-neutral-400">
                         No impossible dates.
                       </td></tr>
-                    ) : anomalies!.items.map((r) => (
+                    ) : anomalySort.rows.map((r) => (
                       <tr key={r.id} className="border-t border-neutral-100">
                         <td className="px-3 py-2 font-mono text-xs">{r.ap_invoice_number ?? '—'}</td>
                         <td className="px-3 py-2">{r.vendor_name ?? '—'}</td>
@@ -587,11 +619,7 @@ export default function ApReconciliationPage() {
                         <td className="px-3 py-2 text-right font-mono tabular-nums">{money(r.total_amount)}</td>
                         <td className="px-3 py-2 text-xs text-amber-800">{day(r.invoice_date)}</td>
                         <td className="px-3 py-2 text-xs text-neutral-600">{day(r.due_date)}</td>
-                        <td className="px-3 py-2 text-xs text-neutral-500">
-                          {r.reason === 'due_before_invoice'
-                            ? 'Due date is before the invoice date'
-                            : 'Invoice is dated in the future'}
-                        </td>
+                        <td className="px-3 py-2 text-xs text-neutral-500">{anomalyReason(r.reason)}</td>
                       </tr>
                     ))}
                   </tbody>

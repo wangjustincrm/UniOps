@@ -307,6 +307,16 @@ class ReceiptListResponse(BaseModel):
     total: int
 
 
+class ReceiptVendorCheckResponse(BaseModel):
+    """GET /agreements/{id}/receipts/vendor-check — the New / Edit Receipt
+    form's live flag (ISS-0114, PRD AGR-030 "flagged when it differs from the
+    agreement's vendor"). Same verdict as a saved receipt's `vendor_mismatch`
+    (receipt_vendor_mismatch), asked before saving, so the form never carries a
+    copy of the rule."""
+    vendor_mismatch: bool
+    agreement_vendor_name: str
+
+
 class ReceiptWithAgreementResponse(ReceiptResponse):
     """Same shape as ReceiptResponse plus the parent agreement's human number
     (and currency), plus the linked invoice's human reference if any.

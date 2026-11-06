@@ -1,5 +1,6 @@
 """enrich_current_step attaches the open approval task's role/approver/since
-to in_review list items, sourced from the tasks mirror (not approval_step_idx)."""
+to list items awaiting approval (submitted / in_review), sourced from the tasks
+mirror (not approval_step_idx)."""
 import uuid
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -67,6 +68,34 @@ async def test_enrich_pool_task_has_null_approver_and_non_in_review_is_none(test
     assert items[0].current_step["approver_name"] is None
     assert items[1].current_step is None   # not in_review
     assert items[2].current_step is None   # in_review but no open task
+
+
+async def test_submitted_document_waiting_on_its_first_approver_has_a_step(test_engine):
+    """ISS-0047 / ISS-0076: a PR waits on its first approver in status
+    `submitted` (in_review comes only after the first approval). Reading
+    in_review alone left the list's Current Step blank and the Assistant
+    called the PR fully approved."""
+    from sqlalchemy import select
+
+    from app.crud.current_step import status_step_sort_keys
+    from app.models.pr import PurchaseRequest
+
+    sf = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    doc_id = uuid.uuid4()
+    async with sf() as db:
+        db.add(_task(doc_id, role="dept_manager", user_id=None))
+        await db.commit()
+
+        items = [SimpleNamespace(id=doc_id, status="submitted")]
+        await enrich_current_step(db, "pr", items)
+
+    assert items[0].current_step["label"] == "Dept Manager"
+
+    # The list's Status sort reads the same set of statuses.
+    _, step_order, _ = status_step_sort_keys(
+        PurchaseRequest.status, PurchaseRequest.id, "pr")
+    sql = str(select(step_order).compile(compile_kwargs={"literal_binds": True}))
+    assert "'submitted'" in sql and "'in_review'" in sql
 
 
 def test_role_maps_cover_default_workflow_roles():
@@ -174,3 +203,53 @@ async def test_enrich_current_step_batches_stand_in_lookup_no_n_plus_1(test_engi
         "Approver 1 (delegated: Delegate 1)",
         "Approver 2 (delegated: Delegate 2)",
     }
+
+
+# ── ISS-0107/0144 (rule question 6): the configured step name ─────────────────
+
+async def test_enrich_uses_the_configured_step_name(test_engine, monkeypatch):
+    """With the caller's token the label is the engine's configured step name;
+    a step whose role no longer matches the task, or no engine, falls back."""
+    from app.crud import current_step as cs_mod
+    from app.services import approval_client
+
+    sf = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    named, renamed, down = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    steps = {
+        str(named): [{"role": "dept_manager", "label": "Dept Manager"},
+                     {"role": "finance_bp", "label": "Finance Director of Oversea Department"}],
+        str(renamed): [{"role": "dept_manager", "label": "Dept Manager"}],
+    }
+
+    async def _steps(doc_type, doc_id, token):
+        if doc_id not in steps:
+            raise RuntimeError("engine down")
+        return steps[doc_id]
+    monkeypatch.setattr(approval_client, "get_workflow_steps", _steps)
+    cs_mod._steps_cache.clear()
+
+    async with sf() as db:
+        for d in (named, renamed, down):
+            db.add(_task(d, role="finance_bp"))
+        await db.commit()
+        items = [SimpleNamespace(id=d, status="in_review", approval_step_idx=1)
+                 for d in (named, renamed, down)]
+        await enrich_current_step(db, "pr", items, token="t")
+
+    assert items[0].current_step["label"] == "Finance Director of Oversea Department"
+    assert items[1].current_step["label"] == "Finance BP"   # no step with that role
+    assert items[2].current_step["label"] == "Finance BP"   # engine unreachable
+    cs_mod._steps_cache.clear()
+
+
+def test_configured_label_prefers_the_step_index_then_the_role():
+    from app.crud.current_step import configured_label
+
+    steps = [{"role": "finance_manager", "label": "Over-Budget — Finance Manager"},
+             {"role": "dept_manager", "label": "Dept Manager"},
+             {"role": "finance_manager", "label": "Finance Manager Approval"}]
+    assert configured_label(steps, 2, "finance_manager") == "Finance Manager Approval"
+    assert configured_label(steps, 0, "finance_manager") == "Over-Budget — Finance Manager"
+    assert configured_label(steps, None, "finance_manager") == "Over-Budget — Finance Manager"
+    assert configured_label(steps, 1, "gm") is None
+    assert configured_label([{"role": "gm_or_opm", "label": "GM / OPM step"}], 0, "opm") == "GM / OPM step"

@@ -9,7 +9,7 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -57,6 +57,15 @@ class ApInvoice(UUIDPrimaryKey, TimestampMixin, Base):
     entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     nc_exported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     nc_export_batch_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # AP push to NC via XChange (2026-10-27). nc_bill_pk/no = the payable bill
+    # NC created for the last successful push (a re-push replaces the saved bill
+    # and NC numbers it anew). nc_push_status: pushed | failed | None (never).
+    nc_bill_pk: Mapped[str | None] = mapped_column(String(25), nullable=True)
+    nc_bill_no: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    nc_push_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    nc_push_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nc_pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    nc_pushed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 
 class ApInvoiceTaxLine(UUIDPrimaryKey, TimestampMixin, Base):

@@ -15,4 +15,6 @@ class User(UUIDPrimaryKey, TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     teams_account: Mapped[str | None] = mapped_column(String(255), nullable=True)
     notification_channel: Mapped[str] = mapped_column(String(20), default="email_only", nullable=False)
+    # Equals employees.employee_number for a user linked to an employee.
+    erp_person_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # hashed_password and mfa_secret intentionally omitted — MDM never exposes credentials

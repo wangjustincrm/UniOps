@@ -1,11 +1,10 @@
 """Goods Receipt endpoints."""
 import uuid
 from datetime import date
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
-from sqlalchemy import select
 
 from uniops_authz import has_permission
 
@@ -13,18 +12,26 @@ from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.core.access_scope import build_scope
 from app.crud import gr as gr_crud
+from app.crud._list_order import sort_clauses
 from app.crud import gr_report as gr_report_crud
 from app.crud import po as po_crud
 from app.crud.pr_owner import get_pr_owner_id
-from app.models.task import Task
-from app.schemas.gr import GrActionRequest, GrCreate, GrListResponse, GrResponse, is_service
+from app.schemas.gr import (
+    GrActionRequest, GrCreate, GrListResponse, GrResponse, PoLineOpenQty, is_service,
+)
 from app.schemas.gr_report import (
     ReceivingReportResponse,
     ReceivingReportRow,
     ReceivingReportSummary,
 )
-from app.services.notification import fire_and_forget_notify
 from app.services.receiving_report_xlsx import build_receiving_workbook
+
+# The PO statuses a new receipt is accepted in. Constants so the Assistant's
+# rule (knowledge/rules/gr.yaml gr_create_statuses) states this exact list —
+# it answered "can a fully received PO take another GR?" without naming the
+# other refused statuses (ISS-0017).
+SERVICE_GR_PO_STATUSES = ("approved", "issued", "partially_received")
+PHYSICAL_GR_PO_STATUSES = ("issued", "partially_received")
 
 router = APIRouter(prefix="/gr", tags=["goods-receipts"])
 
@@ -42,7 +49,10 @@ async def list_grs(
     gr_type: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, le=200),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
 ):
+    sort_clauses(sort, dir, gr_crud.SORTABLE, ())   # unknown key → 422, before any work
     scope = await build_scope(db, user)
     # Access Control Matrix gate — return empty when view_gr is disabled.
     if not scope["perms"].get("view_gr", False):
@@ -50,8 +60,8 @@ async def list_grs(
     items, total = await gr_crud.get_all(
         db, status=status, po_id=po_id, vendor_id=vendor_id,
         search=search, gr_type=gr_type,
-        po_ids_subq=scope["po_subq"],
-        page=page, page_size=page_size,
+        po_ids_subq=scope["gr_po_subq"],
+        page=page, page_size=page_size, sort=sort, dir=dir,
     )
     return GrListResponse(items=items, total=total)
 
@@ -97,7 +107,7 @@ async def create_gr(body: GrCreate, db: SessionDep, user: CurrentUserPayload, to
         may_confirm = actor_id in {i for i in (pr_requester_id, pr_owner_id) if i}
         if not can_receive and not may_confirm:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
-        if po.status not in ("approved", "issued", "partially_received"):
+        if po.status not in SERVICE_GR_PO_STATUSES:
             raise HTTPException(
                 status_code=409,
                 detail=f"Cannot create GR for PO in status '{po.status}'"
@@ -105,23 +115,27 @@ async def create_gr(body: GrCreate, db: SessionDep, user: CurrentUserPayload, to
     else:
         if not can_receive:
             raise HTTPException(status_code=403, detail="Insufficient permissions")
-        if po.status not in ("issued", "partially_received"):
+        if po.status not in PHYSICAL_GR_PO_STATUSES:
             raise HTTPException(
                 status_code=409,
                 detail=f"Cannot create GR for PO in status '{po.status}' (must be issued or partially_received)"
             )
 
-    gr = await gr_crud.create(db, body, po=po, created_by=uuid.UUID(user["sub"]), token=token)
-    # Notify requester to acknowledge (acknowledge_gr task)
-    new_tasks_result = await db.execute(
-        select(Task).where(
-            Task.document_type == "gr",
-            Task.document_id == gr.id,
-            Task.is_completed.is_(False),
+    # The New GR form's own rule, held here too: a request with no lines (or
+    # lines sent under a misspelt key, which Pydantic drops) was saved as an
+    # empty GR — and with no PR on the PO went straight to Collected (ISS-0181).
+    if not any(li.qty_received > 0 for li in body.line_items):
+        raise HTTPException(
+            status_code=422,
+            detail="At least one line must have a received quantity greater than 0.",
         )
-    )
-    for task in new_tasks_result.scalars().all():
-        fire_and_forget_notify(task, db)
+
+    try:
+        gr = await gr_crud.create(db, body, po=po, created_by=uuid.UUID(user["sub"]), token=token)
+    except gr_crud.OverReceiptReasonRequired as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    # New tasks need no notify call: app/tasks/task_notifier.py picks up every
+    # un-notified task and applies the admin's per-type policy.
     return gr
 
 
@@ -133,7 +147,7 @@ async def create_gr(body: GrCreate, db: SessionDep, user: CurrentUserPayload, to
 
 
 async def _receiving_rows(db, user, *, date_from, date_to, department_id, vendor_id,
-                          search, page=None, page_size=None):
+                          search, page=None, page_size=None, sort=None, dir="asc"):
     """Shared body of the JSON and xlsx endpoints — same rows, same gate.
 
     Visibility is the GR list's, not a looser one: a report is a different
@@ -147,8 +161,8 @@ async def _receiving_rows(db, user, *, date_from, date_to, department_id, vendor
         db,
         date_from=date_from, date_to=date_to,
         department_id=department_id, vendor_id=vendor_id, search=search,
-        po_ids_subq=scope["po_subq"],
-        page=page, page_size=page_size,
+        po_ids_subq=scope["gr_po_subq"],
+        page=page, page_size=page_size, sort=sort, dir=dir,
     )
 
 
@@ -163,12 +177,15 @@ async def receiving_report(
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=500),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
 ):
     """One page of the window's received lines, with the window's own totals."""
+    sort_clauses(sort, dir, gr_report_crud.SORTABLE, ())   # unknown key → 422
     rows, total, summary, truncated = await _receiving_rows(
         db, user, date_from=date_from, date_to=date_to,
         department_id=department_id, vendor_id=vendor_id, search=search,
-        page=page, page_size=page_size,
+        page=page, page_size=page_size, sort=sort, dir=dir,
     )
     return ReceivingReportResponse(
         items=[ReceivingReportRow.model_validate(r) for r in rows],
@@ -187,11 +204,16 @@ async def export_receiving_report(
     department_id: uuid.UUID | None = Query(default=None),
     vendor_id: uuid.UUID | None = Query(default=None),
     search: str | None = Query(default=None),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
 ):
-    """The whole window as an xlsx download — never just the page on screen."""
+    """The whole window as an xlsx download — never just the page on screen,
+    in the order the screen is sorted by."""
+    sort_clauses(sort, dir, gr_report_crud.SORTABLE, ())   # unknown key → 422
     rows, _total, _summary, _truncated = await _receiving_rows(
         db, user, date_from=date_from, date_to=date_to,
         department_id=department_id, vendor_id=vendor_id, search=search,
+        sort=sort, dir=dir,
     )
     content = build_receiving_workbook(rows, date_from=date_from, date_to=date_to)
     filename = f"receiving-report-{date.today()}.xlsx"
@@ -205,6 +227,24 @@ async def export_receiving_report(
             "Access-Control-Expose-Headers": "Content-Disposition",
         },
     )
+
+
+@router.get("/open-quantities", response_model=list[PoLineOpenQty])
+async def po_open_quantities(
+    db: SessionDep, user: CurrentUserPayload, po_id: uuid.UUID = Query(...),
+):
+    """Per PO line: ordered, received, pending in GRs not yet collected, and
+    what is still open — the New GR form shows these and warns past ``open``."""
+    from app.core.access_scope import is_po_visible
+    scope = await build_scope(db, user)
+    if not await is_po_visible(db, po_id, scope):
+        raise HTTPException(status_code=404, detail="Purchase order not found")
+    rows = await gr_crud.open_qty_by_po_line(db, po_id)
+    return [
+        PoLineOpenQty(po_line_id=pl_id, ordered=r["ordered"], received=r["received"],
+                      pending=r["pending"], open=max(r["open"], 0))
+        for pl_id, r in rows.items()
+    ]
 
 
 @router.get("/{gr_id}", response_model=GrResponse)
@@ -230,18 +270,29 @@ async def gr_action(
     gr = await gr_crud.get_by_id(db, gr_id)
     if gr is None:
         raise HTTPException(status_code=404, detail="GR not found")
+    # Recording the return / credit is Procurement's job (the gr_damage_report
+    # task goes to the Procurement Officer pool) — the same matrix key that
+    # lets them write POs.
+    if body.action.lower() == "resolve_damage" and not await has_permission(
+            db, uuid.UUID(user["sub"]), user.get("role", ""), "epms.po.write"):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+    # Cancel was open to any signed-in user. Same people the GR page offers it
+    # to (documentActions.ts canCancelGr): whoever recorded the receipt, a
+    # warehouse receiver (epms.gr.receive, the key that records one) or a
+    # System Admin.
+    if body.action.lower() == "cancel" and not (
+            user.get("role") == "system_admin"
+            or gr.created_by == uuid.UUID(user["sub"])
+            or await has_permission(db, uuid.UUID(user["sub"]), user.get("role", ""),
+                                    "epms.gr.receive")):
+        raise HTTPException(
+            status_code=403,
+            detail="Only the person who recorded this goods receipt, warehouse receiving staff "
+                   "or a System Admin can cancel it.")
     try:
         result = await gr_crud.action(db, gr, body, actor_id=uuid.UUID(user["sub"]), token=token)
-        # Notify recipients for any newly created open tasks on this GR
-        new_tasks_result = await db.execute(
-            select(Task).where(
-                Task.document_type == "gr",
-                Task.document_id == gr_id,
-                Task.is_completed.is_(False),
-            )
-        )
-        for task in new_tasks_result.scalars().all():
-            fire_and_forget_notify(task, db)
         return result
+    except gr_crud.OverReceiptReasonRequired as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))

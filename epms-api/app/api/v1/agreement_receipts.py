@@ -1,6 +1,6 @@
 """House-account agreement receipt endpoints (entry / list / void / AP review)."""
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -12,6 +12,7 @@ from app.core.authz import require_permission
 from app.core.deps import SessionDep
 from app.crud import agreement as agr_crud
 from app.crud import agreement_receipt as receipt_crud
+from app.crud._list_order import sort_clauses
 from app.crud import vendor as vendor_crud
 from app.crud.agreement_receipt import RETIRED as RETIRED_RECEIPT_STATUSES
 from app.crud.agreement_receipt import ReceiptRow
@@ -24,6 +25,7 @@ from app.schemas.agreement_receipt import (
     ReceiptListResponse,
     ReceiptResponse,
     ReceiptUpdate,
+    ReceiptVendorCheckResponse,
     ReceiptWithAgreementResponse,
     receipt_vendor_mismatch,
 )
@@ -88,6 +90,15 @@ def _sqlstate(exc: IntegrityError) -> str | None:
     return getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
 
 
+# Same labels as the status badge (epms components/ui/badge.tsx). Only live
+# statuses can hold a reference, so retired ones never reach the message.
+_RECEIPT_STATUS_LABELS = {
+    "open": "Open",
+    "pending_ap_review": "Pending AP Review",
+    "reconciled": "Reconciled",
+}
+
+
 async def _receipt_integrity_error(
     db: SessionDep, exc: IntegrityError, agreement_id: uuid.UUID,
     agr_number: str, receipt_ref: str | None,
@@ -146,16 +157,20 @@ async def _receipt_integrity_error(
             # receipt back to `open` via _release_agreement_evidence.
             if conflict.status == "reconciled":
                 remedy = (f"It has already been claimed by an invoice. Re-match or "
-                          f"detach that invoice first — the receipt returns to 'open' "
+                          f"detach that invoice first — the receipt returns to Open "
                           f"and its reference is free again.")
             else:
                 remedy = ("Remove or reject that receipt if it was entered in error, "
                           "then record this one again.")
+            # Plain words (ISS-0115): the reference the recorder typed and the
+            # status as the receipt list labels it — not the receipt's UUID or
+            # the raw status code. The reference already identifies the row:
+            # it is unique among live receipts on this agreement (AGR-031).
+            label = _RECEIPT_STATUS_LABELS.get(conflict.status, conflict.status)
             return HTTPException(
                 status_code=409,
-                detail=f"Receipt reference '{receipt_ref}' is already recorded for "
-                       f"agreement {agr_number} by receipt {conflict.id}, which is "
-                       f"'{conflict.status}'. {remedy}",
+                detail=f"Reference # {receipt_ref} is already recorded on agreement "
+                       f"{agr_number} (status: {label}). {remedy}",
             )
 
     constraint = getattr(getattr(exc, "orig", None), "constraint_name", None)
@@ -178,6 +193,37 @@ async def list_receipts(
     await _get_agreement_or_404(db, user, agreement_id)
     items = await receipt_crud.list_for_agreement(db, agreement_id, status=status_filter)
     return {"items": items, "total": len(items)}
+
+
+@router.get("/vendor-check", response_model=ReceiptVendorCheckResponse)
+async def check_receipt_vendor(
+    agreement_id: uuid.UUID,
+    db: SessionDep,
+    user: ReceiptReadDep,
+    vendor_id: Annotated[uuid.UUID | None, Query()] = None,
+    vendor_name: Annotated[str | None, Query(max_length=255)] = None,
+):
+    """Would a receipt with this merchant be flagged on this agreement?
+    (ISS-0114, PRD AGR-030.) The New / Edit Receipt form asks while the
+    recorder picks or types the merchant; the verdict is the one a saved
+    receipt gets in _with_agreement below, so the form and the saved receipt
+    cannot disagree. A reminder only — nothing here blocks a save.
+    """
+    agr = await _get_agreement_or_404(db, user, agreement_id)
+    if vendor_id is not None:
+        # A bound merchant is compared by id; its stored name is the vendor
+        # master's, exactly as _bind_vendor_master_data would save it.
+        vendor = await vendor_crud.get_by_id(db, vendor_id)
+        vendor_name = vendor.name if vendor is not None else vendor_name
+    return ReceiptVendorCheckResponse(
+        vendor_mismatch=receipt_vendor_mismatch(
+            receipt_vendor_id=vendor_id,
+            receipt_vendor_name=vendor_name,
+            agreement_vendor_id=agr.vendor_id,
+            agreement_vendor_name=agr.vendor_name,
+        ),
+        agreement_vendor_name=agr.vendor_name or "",
+    )
 
 
 async def _bind_vendor_master_data(
@@ -335,12 +381,15 @@ async def list_all_receipts(
     # negative OFFSET, which Postgres rejects — an unhandled 500 instead of a
     # clean 422 on a malformed request.
     page_size: int = Query(default=20, ge=1, le=200),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
 ):
+    sort_clauses(sort, dir, receipt_crud.SORTABLE, ())   # unknown key → 422, before any work
     scope = await build_scope(db, user)
     rows, total = await receipt_crud.list_all(
         db, agreement_id=agreement_id, receipt_type=receipt_type, status=status_filter,
         search=search, agreement_ids_subq=scope["agr_subq"],
-        page=page, page_size=page_size,
+        page=page, page_size=page_size, sort=sort, dir=dir,
     )
     return {"items": [_with_agreement(row) for row in rows], "total": total}
 

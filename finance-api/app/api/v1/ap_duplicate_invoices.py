@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.ap_ledger_health import _authorize_judgement
 from app.core.deps import CurrentUser
+from app.core.list_sort import SortDir
 from app.core.read_authz import authorize_finance_read
 from app.db.base import get_db
 from app.models.nc_ap import DUP_REVIEW_REASONS
@@ -26,14 +27,19 @@ async def report(user: CurrentUser,
                  currency: str | None = Query(None),
                  q: str | None = Query(None, max_length=100),
                  limit: int = Query(500, ge=1, le=2000),
+                 offset: int = Query(0, ge=0),
+                 sort: str | None = Query(None),
+                 dir: SortDir = Query("asc"),
                  db: AsyncSession = Depends(get_db)):
-    """Findings, biggest exposure first, plus a summary over ALL of them."""
+    """Findings, biggest exposure first (or `sort`), plus a summary over ALL
+    of them. Paged with limit/offset; `total` counts every matching group."""
     await authorize_finance_read(db, user)
     if kind is not None and kind not in svc.KINDS:
         raise HTTPException(status_code=422, detail=f"kind must be one of {list(svc.KINDS)}")
     flag = {"no": False, "yes": True, "all": None}[reviewed]
     return await svc.report(db, kind=kind, reviewed=flag, currency=currency or None,
-                            q=(q or "").strip() or None, limit=limit)
+                            q=(q or "").strip() or None, limit=limit, offset=offset,
+                            sort=sort, dir=dir)
 
 
 @router.get("/reasons")

@@ -66,3 +66,21 @@ export function budgetCheckPayload(args: BudgetCheckArgs): Record<string, unknow
     amount: args.amount,
   }
 }
+
+/**
+ * The two figures the over-budget warning shows, kept apart: how much of THIS
+ * PR does not fit in what is left (all of it once the account is already
+ * overdrawn), and where the account stands after it. The % is measured against
+ * the annual budget, so there is none when no budget was planned (null).
+ * Display only — whether the PR is over budget is decided elsewhere.
+ */
+export function overBudgetFigures(thisAmount: number, available: number, annualBudget: number): {
+  thisPrOver: number
+  afterThis: number
+  pctOverAnnual: number | null
+} {
+  const thisPrOver = Math.max(thisAmount - Math.max(available, 0), 0)
+  const afterThis = available - thisAmount
+  const pctOverAnnual = annualBudget > 0 && afterThis < 0 ? (-afterThis / annualBudget) * 100 : null
+  return { thisPrOver, afterThis, pctOverAnnual }
+}

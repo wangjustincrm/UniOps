@@ -6,15 +6,19 @@ from decimal import Decimal
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud._list_order import blank_as_null, lower_text, sort_clauses
 from app.crud._numbering import next_number
+from app.crud.current_step import status_step_sort_keys
 from app.models.agreement import PurchaseAgreement
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
 from app.models.cost_center import CostCenter
+from app.models.freight import PaCostAllocation
 from app.models.invoice import Invoice
 from app.models.pa import PaLineItem, PaymentApplication
 from app.models.pa_po_link import PaPoLink
-from app.crud.pa_links import pa_ids_for_po, pa_ids_for_pos
+from app.crud.pa_links import pa_ids_for_po, pa_ids_for_pos, pa_is_live, po_ids_of_pa
+from app.crud.pa_lines import derive_lines, invoice_lines
 from app.models.po import PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.pa_attachment import PaAttachment
@@ -50,6 +54,12 @@ def _build_line_items(pa_id: uuid.UUID, items_in) -> list[PaLineItem]:
         )
         for i, item in enumerate(items_in)
     ]
+
+
+def _build_derived_line_items(pa_id: uuid.UUID, lines: list[dict]) -> list[PaLineItem]:
+    # line_total is taken as derived (the allocated amount), not re-multiplied:
+    # qty × an OCR-rounded unit price would drift a cent off the invoice.
+    return [PaLineItem(pa_id=pa_id, sort_order=i, **line) for i, line in enumerate(lines)]
 
 
 async def set_po_links(
@@ -118,6 +128,35 @@ def _compute_payment(payload) -> Decimal:
 
 # ── Reads ──────────────────────────────────────────────────────────────────────
 
+# The "Linked PO / Invoice" cell's first line: the PA's first linked PO by
+# sort_order, else the header PO (attach_po_links' fallback); NULL for an
+# agreement PA, which shows no PO.
+_FIRST_LINKED_PO = (
+    select(PaPoLink.po_number)
+    .where(PaPoLink.pa_id == PaymentApplication.id)
+    .order_by(PaPoLink.sort_order.asc(), PaPoLink.id.asc())
+    .limit(1)
+    .correlate_except(PaPoLink)
+    .scalar_subquery()
+)
+
+# GET /pa ?sort= keys → what the PA list's column shows (whitelist = the
+# SQL-injection boundary; unknown key → 422).
+SORTABLE = {
+    "pa_number": PaymentApplication.pa_number,
+    "vendor_name": lower_text(PaymentApplication.vendor_name),
+    # Labels Balance / Prepayment / Regular / Settlement sort the same as the codes.
+    "pa_type": PaymentApplication.pa_type,
+    "po_number": blank_as_null(func.coalesce(_FIRST_LINKED_PO, PaymentApplication.po_number)),
+    # The Amount cell prints payment_amount in the PA's own currency.
+    "payment_amount": PaymentApplication.payment_amount,
+    "created_at": PaymentApplication.created_at,
+    # status → current approval step in chain order → approver name.
+    "status": status_step_sort_keys(PaymentApplication.status, PaymentApplication.id, "pa"),
+}
+SORT_TIEBREAK = (PaymentApplication.id.asc(),)
+
+
 async def get_all(
     db: AsyncSession,
     *,
@@ -129,18 +168,22 @@ async def get_all(
     search: str | None = None,
     po_ids_subq=None,
     agr_ids_subq=None,
+    freight_all: bool = False,
+    viewer_id: uuid.UUID | None = None,
+    direct_subq=None,
     page: int = 1,
     page_size: int = 20,
+    sort: str | None = None,
+    dir: str = "asc",
 ) -> tuple[list[PaymentApplication], int]:
-    # EPMS owns PO-based AND agreement-based PAs; OA's Direct PAs have BOTH
-    # columns NULL, which is what keeps them out of this list. This is an
+    order = sort_clauses(sort, dir, SORTABLE, SORT_TIEBREAK) or [PaymentApplication.created_at.desc()]
+    # EPMS owns PO, agreement, Freight and Direct PAs; OA's retired Direct
+    # PAs (source 'oa_direct') are kept out of this list. This is an
     # ownership filter (is this row EPMS's at all), not a visibility filter —
     # the po_ids_subq/agr_ids_subq block below is what scopes a restricted
     # caller down further.
-    q = select(PaymentApplication).where(or_(
-        PaymentApplication.po_id.is_not(None),
-        PaymentApplication.agreement_id.is_not(None),
-    ))
+    from app.core.ontology import epms_owned_pa, pa_scope_conditions
+    q = select(PaymentApplication).where(epms_owned_pa())
     if po_ids_subq is not None or agr_ids_subq is not None:
         # A restricted (non-admin) caller: admit a PA if its PO falls inside
         # their PO scope, OR its agreement falls inside their agreement scope,
@@ -149,8 +192,8 @@ async def get_all(
         # keyed off the same "any unrestricted role" check) or both set — but
         # each branch below is written to stand on its own rather than lean on
         # that coupling, in case the two ever diverge.
-        from app.core.ontology import pa_scope_conditions
-        q = q.where(or_(*pa_scope_conditions(po_ids_subq, agr_ids_subq, created_by)))
+        q = q.where(or_(*pa_scope_conditions(po_ids_subq, agr_ids_subq, created_by,
+                                             freight_all, viewer_id, direct_subq)))
     elif created_by:
         q = q.where(PaymentApplication.created_by == created_by)
     if status:
@@ -193,11 +236,18 @@ async def get_all(
             PaymentApplication.agreement_id.in_(
                 select(PurchaseAgreement.id).where(PurchaseAgreement.department_id == department_id)
             ),
+            # Freight PA: any of its cost-centre allocations in the department.
+            PaymentApplication.id.in_(
+                select(PaCostAllocation.pa_id).where(PaCostAllocation.department_id == department_id)
+            ),
+            # Direct PA: the department named on its own header.
+            and_(PaymentApplication.source == "direct",
+                 PaymentApplication.department_id == department_id),
         ))
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
     items = list((await db.execute(
-        q.order_by(PaymentApplication.created_at.desc()).offset(offset).limit(page_size)
+        q.order_by(*order).offset(offset).limit(page_size)
     )).scalars().all())
     return items, total
 
@@ -280,7 +330,16 @@ async def create(
     db.add(pa)
     await db.flush()
 
-    for item in _build_line_items(pa.id, payload.line_items):
+    # Invoices matched line by line decide the lines; the hand-picked ones the
+    # client sent only stand when the invoices cannot (see crud.pa_lines).
+    derived = await derive_lines(db, payload.invoice_ids, [po_id for po_id, _ in links])
+    if derived is None and not payload.line_items:
+        # Nothing to derive from PO lines and none picked: the invoices' own
+        # lines (always the case on the agreement route — ISS-0109).
+        derived = await invoice_lines(db, payload.invoice_ids)
+    items = (_build_derived_line_items(pa.id, derived) if derived is not None
+             else _build_line_items(pa.id, payload.line_items))
+    for item in items:
         db.add(item)
 
     for i, (link_po_id, link_po_number) in enumerate(links):
@@ -353,6 +412,12 @@ async def update(
         if field in sent:
             setattr(pa, field, getattr(payload, field))
 
+    # Direct PA dimensions (the API refuses them on any other PA, and refuses
+    # a null — a Direct PA must always say what it is charged to).
+    for field in ("department_id", "cost_center_id", "budget_account_code"):
+        if field in sent and getattr(payload, field) is not None:
+            setattr(pa, field, getattr(payload, field))
+
     if payload.invoice_ids is not None:
         pa.invoice_ids = [str(i) for i in payload.invoice_ids]
     if payload.gr_ids is not None:
@@ -362,11 +427,23 @@ async def update(
     net = pa.subtotal + pa.tax_amount + pa.shipping_amount + pa.other_charges - applied
     pa.payment_amount = net if net > Decimal("0") else Decimal("0")
 
-    if payload.line_items is not None:
+    derived = None
+    if pa.po_id is not None and (payload.invoice_ids is not None
+                                 or payload.line_items is not None
+                                 or po_links is not None):
+        po_ids = list((await db.execute(po_ids_of_pa(pa.id))).scalars().all())
+        derived = await derive_lines(db, pa.invoice_ids or [], po_ids)
+        if derived is None and payload.line_items is not None and not payload.line_items:
+            derived = await invoice_lines(db, pa.invoice_ids or [])
+    elif pa.agreement_id is not None and payload.invoice_ids is not None:
+        derived = await invoice_lines(db, pa.invoice_ids or [])
+    if derived is not None or payload.line_items is not None:
         for old in list(pa.line_items):
             await db.delete(old)
         await db.flush()
-        for item in _build_line_items(pa.id, payload.line_items):
+        items = (_build_derived_line_items(pa.id, derived) if derived is not None
+                 else _build_line_items(pa.id, payload.line_items))
+        for item in items:
             db.add(item)
 
     await db.flush()
@@ -410,15 +487,44 @@ def _settlement_variance(pa: PaymentApplication, prepaid: Decimal) -> Decimal:
     return _settlement_gross(pa) - prepaid
 
 
+async def settlement_prepayment_pool(
+    db: AsyncSession, orig: PaymentApplication,
+) -> list[PaymentApplication]:
+    """The prepayments one settlement reconciles: the one it references plus
+    every other PAID, still-pending prepayment on the same PO.
+
+    A PO may be prepaid in stages (e.g. 30% on order, 70% before shipment) and
+    then settled once; the settlement's prepayment_pa_id names just one of them.
+    The referenced one is always included, whatever its status, so a settlement
+    raised the old way (against a single prepayment) behaves as before.
+    """
+    pool = [orig]
+    if orig.po_id is None:
+        return pool
+    siblings = (await db.execute(
+        select(PaymentApplication).where(
+            PaymentApplication.id.in_(pa_ids_for_po(orig.po_id)),
+            PaymentApplication.id != orig.id,
+            PaymentApplication.pa_type == "prepayment",
+            PaymentApplication.status == "processed",
+            PaymentApplication.settlement_status == "pending",
+        ).order_by(PaymentApplication.created_at)
+    )).scalars().all()
+    return pool + list(siblings)
+
+
 async def mark_prepayment_settled(
     db: AsyncSession,
     settlement_pa: PaymentApplication,
     actor_id: uuid.UUID,
 ) -> None:
-    """Reconcile a settlement PA's source prepayment PA.
+    """Reconcile every prepayment a settlement PA covers (see
+    settlement_prepayment_pool).
 
-    Variance = final invoice − prepaid applied (the true over/under, which may be
+    Variance = final invoice − total prepaid (the true over/under, which may be
     negative when overpaid — distinct from payment_amount that is clamped at 0).
+    It is recorded once, on the referenced prepayment; the others in the group
+    carry 0 so summing variances never counts it twice.
     Idempotent: skips if the source prepayment is missing or already settled.
     """
     if settlement_pa.prepayment_pa_id is None:
@@ -428,17 +534,27 @@ async def mark_prepayment_settled(
         return
     if orig.settlement_status == "settled":
         return
-    settler = await db.execute(select(User.full_name).where(User.id == actor_id))
-    variance = _settlement_variance(settlement_pa, orig.payment_amount)
-    orig.settlement_status = "settled"
-    orig.settled_at = datetime.now(timezone.utc)
-    orig.settled_by = actor_id
-    orig.settled_by_name = settler.scalar_one_or_none()
-    orig.settlement_variance = variance
-    note = f"Settled via {settlement_pa.pa_number}"
-    if variance < 0:
-        note += f" — overpaid by {abs(variance)}, credit note expected"
-    orig.settlement_note = note
+    pool = await settlement_prepayment_pool(db, orig)
+    settler = (await db.execute(
+        select(User.full_name).where(User.id == actor_id))).scalar_one_or_none()
+    prepaid = sum((p.payment_amount for p in pool), Decimal("0"))
+    variance = _settlement_variance(settlement_pa, prepaid)
+    now = datetime.now(timezone.utc)
+    for p in pool:
+        p.settlement_status = "settled"
+        p.settled_at = now
+        p.settled_by = actor_id
+        p.settled_by_name = settler
+        p.settlement_variance = variance if p is orig else Decimal("0")
+        note = f"Settled via {settlement_pa.pa_number}"
+        others = [o.pa_number for o in pool if o is not p]
+        if others:
+            note += f" together with {', '.join(others)}"
+        if p is orig and variance < 0:
+            note += f" — overpaid by {abs(variance)}, credit note expected"
+        elif p is not orig:
+            note += f" (variance recorded on {orig.pa_number})"
+        p.settlement_note = note
     await db.flush()
 
 
@@ -471,6 +587,10 @@ async def _attach_pa_pdf(db: AsyncSession, pa: PaymentApplication, company_name:
     # The PDF lists every PO on the payment; make sure the transient list is
     # there even when the caller loaded the PA without it.
     await attach_po_links(db, [pa])
+    if getattr(pa, "source", None) == "freight":
+        from app.crud.freight import cost_allocations as _cost_allocations
+        pa.cost_allocations = await _cost_allocations(db, pa.id)
+    await attach_direct_labels(db, [pa])
     loop = asyncio.get_running_loop()
     pdf_bytes = await loop.run_in_executor(None, generate_pa_pdf, pa, company_name)
     db.add(PaAttachment(
@@ -524,6 +644,127 @@ async def _create_revise_task(db: AsyncSession, pa: PaymentApplication) -> None:
         amount=pa.payment_amount,
         vendor=pa.vendor_name,
     ))
+
+
+# ── Direct PA (source='direct') ───────────────────────────────────────────────
+
+class DirectPaInvalid(Exception):
+    def __init__(self, status: int, detail: str):
+        super().__init__(detail)
+        self.status, self.detail = status, detail
+
+
+async def validate_direct_dims(
+    db: AsyncSession, department_id: uuid.UUID, cost_center_id: uuid.UUID,
+) -> None:
+    """The department must exist and be active; the cost centre must be an
+    active one OF that department — the picker filters it so, and a PA charged
+    to another department's cost centre would book its actual to the wrong
+    budget in NC."""
+    from app.models.department import Department
+    dept = await db.get(Department, department_id)
+    if dept is None or not dept.is_active:
+        raise DirectPaInvalid(422, "Department not found or inactive")
+    cc = await db.get(CostCenter, cost_center_id)
+    if cc is None or not cc.is_active:
+        raise DirectPaInvalid(422, "Cost center not found or inactive")
+    if cc.department_id != department_id:
+        raise DirectPaInvalid(422, f"Cost center {cc.code} does not belong to department {dept.name}")
+
+
+async def create_direct(db: AsyncSession, payload, user_id: uuid.UUID) -> PaymentApplication:
+    """Draft Direct PA over one or more `direct`-route invoices of one vendor
+    and one currency. Amounts are the invoices' own (pre-tax + tax); one line
+    per invoice. Invoices are row-locked: two people raising a PA on the same
+    invoice at once must not both succeed (one bill, paid twice)."""
+    ids = list(dict.fromkeys(payload.invoice_ids))
+    invs = list((await db.execute(
+        select(Invoice).where(Invoice.id.in_(ids)).order_by(Invoice.id).with_for_update()
+    )).scalars().all())
+    if len(invs) != len(ids):
+        raise DirectPaInvalid(404, "Invoice not found")
+    not_direct = [i.vendor_invoice_number for i in invs if i.match_route != "direct"]
+    if not_direct:
+        raise DirectPaInvalid(
+            422, f"Not matched for a Direct PA: {', '.join(not_direct)}. On the invoice, "
+                 "use Match → Direct PA first.")
+    not_ready = [i.vendor_invoice_number for i in invs if i.status != "matched"]
+    if not_ready:
+        raise DirectPaInvalid(422, f"Not ready to pay: {', '.join(not_ready)}")
+    # Re-checked under the lock: a Direct invoice must carry no PO / agreement
+    # link or allocation, or a PO PA could pay it too.
+    from app.models.invoice_allocation import InvoicePoAllocation
+    linked = [i.vendor_invoice_number for i in invs
+              if i.po_id is not None or i.agreement_id is not None]
+    allocated = set((await db.execute(select(InvoicePoAllocation.invoice_id).where(
+        InvoicePoAllocation.invoice_id.in_(ids)))).scalars().all())
+    linked += [i.vendor_invoice_number for i in invs if i.id in allocated and
+               i.vendor_invoice_number not in linked]
+    if linked:
+        raise DirectPaInvalid(409, f"Linked to a PO or agreement: {', '.join(linked)}")
+    if len({i.vendor_id for i in invs}) != 1:
+        raise DirectPaInvalid(422, "All invoices on one PA must be from the same vendor")
+    if len({i.currency for i in invs}) != 1:
+        raise DirectPaInvalid(422, "All invoices on one PA must be in the same currency")
+    for i in invs:
+        held = (await db.execute(select(PaymentApplication.pa_number).where(
+            PaymentApplication.invoice_ids.contains([str(i.id)]),
+            PaymentApplication.status != "cancelled").limit(1))).scalar_one_or_none()
+        if held is not None:
+            raise DirectPaInvalid(409, f"Invoice {i.vendor_invoice_number} is already on {held}")
+    await validate_direct_dims(db, payload.department_id, payload.cost_center_id)
+
+    invs.sort(key=lambda i: (i.invoice_date, i.vendor_invoice_number))
+    subtotal = sum((i.amount for i in invs), Decimal("0"))
+    tax = sum((i.tax_amount for i in invs), Decimal("0"))
+    title = (payload.title or "").strip() or (
+        f"Direct Payment — {invs[0].vendor_name} "
+        + ", ".join(i.vendor_invoice_number for i in invs))
+    pa = PaymentApplication(
+        pa_number=await _next_number(db), title=title[:255], source="direct",
+        vendor_id=invs[0].vendor_id, vendor_name=invs[0].vendor_name,
+        invoice_ids=[str(i.id) for i in invs], gr_ids=[], pa_type="regular",
+        subtotal=subtotal, tax_amount=tax, shipping_amount=Decimal("0"),
+        other_charges=Decimal("0"), payment_amount=subtotal + tax,
+        currency=invs[0].currency, notes=payload.notes.strip(), status="draft",
+        department_id=payload.department_id, cost_center_id=payload.cost_center_id,
+        budget_account_code=payload.budget_account_code.strip(),
+        created_by=user_id,
+    )
+    db.add(pa)
+    await db.flush()
+    for n, inv in enumerate(invs):
+        db.add(PaLineItem(
+            pa_id=pa.id, sort_order=n, qty=Decimal("1"), unit="invoice",
+            description=f"Invoice {inv.vendor_invoice_number} ({inv.invoice_date.isoformat()})"[:500],
+            unit_price=inv.amount, line_total=inv.amount))
+    await db.flush()
+    await db.refresh(pa)
+    return pa
+
+
+async def attach_direct_labels(db: AsyncSession, pas: list) -> None:
+    """department_name / cost_center_code / cost_center_name onto Direct PAs
+    (display only, resolved at read time)."""
+    from app.models.department import Department
+    direct = [p for p in pas if getattr(p, "source", None) == "direct"]
+    if not direct:
+        return
+    dept_ids = {p.department_id for p in direct if p.department_id}
+    cc_ids = {p.cost_center_id for p in direct if p.cost_center_id}
+    depts: dict = {}
+    if dept_ids:
+        depts = dict((await db.execute(select(Department.id, Department.name)
+                                       .where(Department.id.in_(dept_ids)))).all())
+    ccs: dict = {}
+    if cc_ids:
+        ccs = {r.id: r for r in (await db.execute(
+            select(CostCenter).where(CostCenter.id.in_(cc_ids)))).scalars()}
+    for p in direct:
+        p.department_name = depts.get(p.department_id)
+        cc = ccs.get(p.cost_center_id)
+        p.cost_center_code = cc.code if cc else None
+        p.cost_center_name = cc.name if cc else None
 
 
 async def create_settlement_confirm_task(
@@ -598,19 +839,21 @@ async def reopen_create_pa_tasks_if_unpaid(
     """Undo _complete_create_pa_tasks for a PO that no PA covers any more.
 
     Creating a PA COMPLETES the PO's create_pa prompt, so a PO that later drops
-    out of every PA (removed from a draft's PO set, or its only PA deleted in
-    Data Maintenance) is left with a done prompt and no payment — and a
-    requester, whose only entry point is that prompt, can no longer raise one.
+    out of every PA (removed from a draft's PO set, its only PA deleted in
+    Data Maintenance, or its only live PA rejected / cancelled) is left with a
+    done prompt and no payment — and a requester, whose only entry point is
+    that prompt, can no longer raise one.
 
-    Returns the number of tasks reopened; 0 when another PA still covers the PO.
-    Shared by Data Maintenance's PA delete and the PATCH PO-set edit so both
-    self-heal identically.
+    Returns the number of tasks reopened; 0 when another live PA still covers
+    the PO (a cancelled / rejected PA covers nothing — ISS-0172). Shared by
+    Data Maintenance's PA delete, the PATCH PO-set edit and the PA action that
+    cancels, so all self-heal identically.
     """
     from app.models.gr import GoodsReceipt
 
     remaining = (
         select(func.count()).select_from(PaymentApplication)
-        .where(PaymentApplication.id.in_(pa_ids_for_po(po_id)))
+        .where(PaymentApplication.id.in_(pa_ids_for_po(po_id)), pa_is_live())
     )
     if exclude_pa_id is not None:
         remaining = remaining.where(PaymentApplication.id != exclude_pa_id)

@@ -13,7 +13,7 @@
  */
 import {
   Home, ShoppingCart, Wallet, UserCheck, Settings, Database, Landmark, CalendarClock, ShieldCheck, GitBranch,
-  Network, Repeat,
+  Network, Repeat, Warehouse, Layers, IdCard, Users, Building2,
   HardHat,
 } from 'lucide-react'
 
@@ -25,7 +25,7 @@ import {
 // importers keep working; lib/api is where every module origin now lives, so
 // the returnUrl allow-list sees these too. Safety's is here for the same
 // reason: it sends people to Portal with ?returnUrl= when its session is gone.
-import { EHS_URL, MRP_URL } from '@/lib/api'
+import { EHS_URL, MRP_URL, INVENTORY_URL } from '@/lib/api'
 export { EHS_URL, MRP_URL }
 
 export interface NavItemDef {
@@ -49,13 +49,17 @@ export interface NavItemDef {
 }
 
 /** Permissions that grant access to the Finance module (finance + budget pages). */
-export const FINANCE_ACCESS_PERMS = ['view_finance', 'view_budget_dashboard', 'view_budget_plans']
+export const FINANCE_ACCESS_PERMS = ['view_finance', 'view_budget_dashboard', 'view_budget_plans', 'finance.analysis.view']
 
 /** Permissions that grant access to the Booking module. */
 export const BOOKING_ACCESS_PERMS = ['view_booking', 'manage_meeting_rooms']
 
 export interface NavSectionDef {
   title?: string
+  /** Render as one expandable sidebar entry (label = title) instead of a
+   *  heading with the items always listed. Opens by itself when the current
+   *  page is one of its items. */
+  collapsible?: { icon: React.ComponentType<{ className?: string }> }
   items: NavItemDef[]
 }
 
@@ -93,6 +97,22 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
       // production worker opens UniOps at all. Gating it on a narrower key
       // would hide the module from the people it exists for.
       { label: 'Safety',      icon: HardHat,      href: 'ehs', permission: 'ehs.incident.report' },
+      // Inventory: WMS and NC stock side by side. Every page reads under
+      // inventory.view; cost columns and Settings writes have their own keys
+      // and are gated inside the module.
+      { label: 'Inventory',   icon: Warehouse,    href: 'inventory', permission: 'inventory.view' },
+    ],
+  },
+  {
+    // Master data, gathered in one place. Users and Departments moved here
+    // from the Admin Panel; Staff (employee master, docs/prd/EMPLOYEES.md) and
+    // the other MDM pages follow as they are built or moved.
+    title: 'MDM',
+    collapsible: { icon: Layers },
+    items: [
+      { label: 'Staff',       icon: IdCard,    href: 'portal:/mdm/staff',       permission: 'employee.view' },
+      { label: 'Users',       icon: Users,     href: 'portal:/mdm/users',       adminOnly: true },
+      { label: 'Departments', icon: Building2, href: 'portal:/mdm/departments', adminOnly: true },
     ],
   },
   {
@@ -125,6 +145,29 @@ export function isNavItemVisible(
   return true
 }
 
+/** The ADMIN entries that are pages of their own, not the Admin Panel itself
+ *  (Access Control, Approval Routing, Approval Delegation, Data Maintenance).
+ *
+ *  The Admin Panel at /admin draws its own sidebar, and an admin who goes
+ *  "Portal → Admin" — as the PRD words it — lands there and never sees this
+ *  sidebar again, so the three approval/access pages read as missing from
+ *  production (ISS-0027). The panel lists these as links. They are read from
+ *  the ADMIN section above, under the same visibility rule, so the two menus
+ *  cannot drift apart. */
+export function adminPageLinks(
+  userRole: string | null,
+  perms: Record<string, boolean> | undefined,
+): NavItemDef[] {
+  // MDM pages are listed too: Users and Departments used to be panel sections,
+  // and an admin inside the panel must still find them (same reason as above).
+  return PORTAL_NAV_SECTIONS
+    .filter((s) => s.title === 'MDM' || s.title === 'ADMIN')
+    .flatMap((s) => s.items)
+    .filter((item) =>
+      (item.href.startsWith('portal:/mdm/') || item.href.startsWith('portal:/admin/'))
+      && isNavItemVisible(item, userRole, perms))
+}
+
 export interface HrefContext {
   epmsHref: string
   oaHref: string
@@ -148,6 +191,7 @@ export function resolveNavHref(key: string, ctx: HrefContext): string {
   // still needed because MRP is a separate origin.
   if (key === 'mrp') return ctx.session ? `${MRP_URL}/#__session=${ctx.session}` : MRP_URL
   if (key === 'ehs') return ctx.session ? `${EHS_URL}/#__session=${ctx.session}` : EHS_URL
+  if (key === 'inventory') return ctx.session ? `${INVENTORY_URL}/#__session=${ctx.session}` : INVENTORY_URL
   if (key === 'admin') return '/admin'
   if (key.startsWith('portal:')) return key.slice('portal:'.length)
   if (key.startsWith('epms:')) {

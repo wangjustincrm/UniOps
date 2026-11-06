@@ -112,6 +112,9 @@ async def _ensure_chase_task(db, agr: PurchaseAgreement, owner: User, count: int
     db.add(Task(
         type=CHASE_TASK_TYPE,
         priority="normal",
+        # The overdue email below is this task's notification; stamp it so the
+        # per-type notifier leaves it alone (task_notify_policy.SELF_NOTIFIED).
+        notified_at=datetime.now(timezone.utc),
         document_type="agr",
         document_id=agr.id,
         document_number=agr.number,

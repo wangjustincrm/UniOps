@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  isImportedEditablePo, isImportedTaxLocked, isNcSourced,
+  isImportedEditablePo, isImportedTaxLocked, isNcSourced, isRawMaterialPo,
   manualLinesTotal, subtotalWith,
 } from './importedPoEdit'
 
@@ -106,5 +106,27 @@ describe('subtotalWith', () => {
   it('leaves a PO that never had a manual line alone', () => {
     expect(subtotalWith(100, 0, [{ ncSourced: true, qty: 10, unitPrice: 10 }]))
       .toBe(100)
+  })
+})
+
+// Mirrors epms-api crud/po_fee.py::is_raw_material_po — the Incoterms
+// requirement on Edit Details and the Freight & Customs panel both hang off it.
+describe('isRawMaterialPo', () => {
+  it('accepts an NC raw-material order in any non-milk status', () => {
+    for (const status of ['issued', 'nc_pending', 'closed']) {
+      expect(isRawMaterialPo({ type: 1, source: 'nc', status, notes: 'memo' })).toBe(true)
+    }
+  })
+
+  it('excludes milk, approved or still pending', () => {
+    expect(isRawMaterialPo({ type: 1, source: 'nc', status: 'nc_milk' })).toBe(false)
+    expect(isRawMaterialPo({ type: 1, source: 'nc', status: 'nc_pending',
+                             notes: '[Milk / 21-Cxx-CRM05] [NC Pending]' })).toBe(false)
+  })
+
+  it('excludes EPMS orders and other types', () => {
+    expect(isRawMaterialPo({ type: 1, source: null, status: 'issued' })).toBe(false)
+    expect(isRawMaterialPo({ type: 2, source: 'nc', status: 'issued' })).toBe(false)
+    expect(isRawMaterialPo(null)).toBe(false)
   })
 })

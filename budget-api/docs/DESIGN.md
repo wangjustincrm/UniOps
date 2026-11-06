@@ -2,7 +2,7 @@
 
 **版本:** v1.0  
 **日期:** 2026-05-15  
-**PRD 引用:** [PRD.md](./PRD.md) v1.0
+**PRD 引用:** [BUDGET.md](../../docs/prd/BUDGET.md)(原 budget-api/docs/PRD.md v1.0,已迁至 docs/prd/)
 
 ---
 
@@ -72,7 +72,6 @@ budget-api/
 │   ├── env.py
 │   └── versions/
 ├── docs/
-│   ├── PRD.md
 │   └── DESIGN.md
 ├── tests/
 │   ├── conftest.py

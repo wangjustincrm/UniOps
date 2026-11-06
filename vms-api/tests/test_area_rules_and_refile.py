@@ -5,7 +5,6 @@ from sqlalchemy import select
 
 import app.db.session as session_module
 from app.models.audit_log import AuditLog
-from app.services import area_rules
 from app.models.visit import AccessArea
 from tests.test_health_decl import (
     _FAIL_ANSWERS, _PASS_ANSWERS, _force_approve_visit, _make_visitor, _mark_compliance_fresh, _payload,
@@ -15,12 +14,13 @@ from tests.test_health_decl import (
 async def test_area_rules_endpoint_matches_server_rules(requester):
     _u, client = requester
     rules = {r["area"]: r for r in (await client.get("/api/v1/area-rules")).json()}
-    assert set(rules) == {a.value for a in AccessArea}
-    for a in AccessArea:
-        assert rules[a.value]["requires_health_declaration"] == (a in area_rules.HEALTH_DECLARATION_AREAS)
-        assert rules[a.value]["requires_quality_manager"] == (a in area_rules.QUALITY_MANAGER_AREAS)
+    assert {a.value for a in AccessArea} <= set(rules)
+    for r in rules.values():
+        assert r["requires_health_declaration"] == r["gmp_grade"]
+        assert r["compliance_tasks_at_check_in"] == r["gmp_grade"]
+        assert r["requires_approval"] == bool(r["managers"])
     assert rules["all"]["requires_health_declaration"] is True
-    assert rules["office"]["requires_approval"] is False
+    assert rules["office"]["requires_health_declaration"] is False
 
 
 async def test_entire_plant_badge_needs_a_passing_declaration(requester):

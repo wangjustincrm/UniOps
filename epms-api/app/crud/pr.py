@@ -3,11 +3,13 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ontology import scope_pr
+from app.crud._list_order import lower_text, sort_clauses
 from app.crud._numbering import next_number
+from app.crud.current_step import status_step_sort_keys
 from app.crud.pr_owner import owner_id_of
 from app.models.approval import ApprovalEvent
 from app.models.config import CompanyConfig
@@ -93,6 +95,39 @@ def _sum_items(items_in) -> Decimal:
 
 # ── Reads ──────────────────────────────────────────────────────────────────────
 
+# The words the PR and PO lists print in their Type column (epms
+# PrListPage/PoListPage TYPE_LABELS). Sorting the label, not the 1–6 code, is
+# what makes the column read alphabetically.
+TYPE_LABELS: dict[int, str] = {
+    1: "Raw Mat./Pack.", 2: "Consumables", 3: "Spare Parts",
+    4: "Service", 5: "Fixed Asset", 6: "Project",
+}
+
+
+def type_label_key(type_col):
+    return func.lower(case(TYPE_LABELS, value=type_col))
+
+
+# GET /pr ?sort= keys → what the PR list's column shows. The key goes into
+# ORDER BY, so this dict is the SQL-injection boundary (unknown key → 422).
+SORTABLE = {
+    "number": lower_text(PurchaseRequest.number),
+    "title": lower_text(PurchaseRequest.title),
+    # Requester column = the creator's full name (as _attach_creator_names
+    # resolves it), never the created_by uuid.
+    "created_by_name": func.lower(PurchaseRequest.requester_full_name),
+    # The list prints the vendor_name snapshot column.
+    "vendor_name": lower_text(PurchaseRequest.vendor_name),
+    "amount": PurchaseRequest.amount,
+    "type": type_label_key(PurchaseRequest.type),
+    "is_prepaid": PurchaseRequest.is_prepaid,
+    # status → current approval step in chain order → approver name.
+    "status": status_step_sort_keys(PurchaseRequest.status, PurchaseRequest.id, "pr"),
+    "submitted_at": PurchaseRequest.submitted_at,
+}
+SORT_TIEBREAK = (PurchaseRequest.id.asc(),)
+
+
 async def get_all(
     db: AsyncSession,
     *,
@@ -102,11 +137,15 @@ async def get_all(
     department_id: uuid.UUID | None = None,
     is_prepaid: bool | None = None,
     created_by: uuid.UUID | None = None,
+    has_po: bool | None = None,
     pr_ids_subq=None,
     search: str | None = None,
     page: int = 1,
     page_size: int = 50,
+    sort: str | None = None,
+    dir: str = "asc",
 ) -> tuple[list[PurchaseRequest], int]:
+    order = sort_clauses(sort, dir, SORTABLE, SORT_TIEBREAK) or [PurchaseRequest.created_at.desc()]
     q = select(PurchaseRequest)
     # Row scope lives in ontology.scope_pr so the assistant's controlled
     # query layer and this list endpoint share one implementation.
@@ -126,6 +165,8 @@ async def get_all(
         q = q.where(PurchaseRequest.is_prepaid == is_prepaid)
     if created_by:
         q = q.where(PurchaseRequest.created_by == created_by)
+    if has_po is not None:
+        q = q.where(PurchaseRequest.po_id.is_not(None) if has_po else PurchaseRequest.po_id.is_(None))
     if search:
         term = f"%{search}%"
         # Match the fields the UI advertises: PR#, title, vendor name, budget code.
@@ -143,7 +184,7 @@ async def get_all(
         )
     total: int = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     offset = (page - 1) * page_size
-    items = list((await db.execute(q.order_by(PurchaseRequest.created_at.desc()).offset(offset).limit(page_size))).scalars().all())
+    items = list((await db.execute(q.order_by(*order).offset(offset).limit(page_size))).scalars().all())
     await _attach_creator_names(db, items)
     return items, total
 

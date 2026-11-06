@@ -1,11 +1,34 @@
 """Pydantic schemas for Vendor."""
+import re
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Annotated
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import AfterValidator, BaseModel, EmailStr, Field
 
-PAYMENT_TERMS = {"net15", "net30", "net60", "net90", "cod", "prepayment"}
+# `net<N>` = due N days after the invoice date (any N in 1..365 — vendors on
+# Net 14 / Net 21 exist, the form's presets are just the common ones), plus
+# the two non-day terms. finance-api's AP cash-flow forecast reads N straight
+# out of the code, so anything outside this pattern would forecast as
+# "no term on file". Keep in step with mdm-api and epms/src/lib/paymentTerms.ts.
+MAX_NET_DAYS = 365
+NON_DAY_TERMS = {"cod", "prepayment"}
+_NET_RE = re.compile(r"net\s*(\d{1,3})")
+
+
+def normalize_payment_terms(v: str) -> str:
+    s = v.strip().lower()
+    if s in NON_DAY_TERMS:
+        return s
+    m = _NET_RE.fullmatch(s)   # also takes "Net 21" from a hand-made CSV
+    if m and 1 <= int(m.group(1)) <= MAX_NET_DAYS:
+        return f"net{int(m.group(1))}"
+    raise ValueError(
+        f"payment terms must be net<days> (1-{MAX_NET_DAYS}), cod or prepayment; got {v!r}")
+
+
+PaymentTerms = Annotated[str, AfterValidator(normalize_payment_terms)]
 
 
 class VendorCreate(BaseModel):
@@ -21,7 +44,7 @@ class VendorCreate(BaseModel):
     remittance_email: str = Field(default="", max_length=255)
     phone: str | None = Field(default=None, max_length=50)
     address: str | None = None
-    payment_terms: str = Field(default="net30", max_length=20)
+    payment_terms: PaymentTerms = "net30"
     max_prepayment_pct: Decimal | None = Field(default=None, ge=1, le=100)
     currency: str = Field(default="CAD", min_length=1, max_length=10)
     notes: str | None = None
@@ -42,7 +65,7 @@ class VendorUpdate(BaseModel):
     remittance_email: str | None = Field(default=None, max_length=255)
     phone: str | None = Field(default=None, max_length=50)
     address: str | None = None
-    payment_terms: str | None = Field(default=None, max_length=20)
+    payment_terms: PaymentTerms | None = None
     max_prepayment_pct: Decimal | None = Field(default=None, ge=1, le=100)
     currency: str | None = Field(default=None, max_length=10)
     notes: str | None = None
@@ -81,7 +104,7 @@ class VendorCsvRow(BaseModel):
     remittance_email: str = Field(default="", max_length=255)
     phone: str | None = Field(default=None, max_length=50)
     address: str | None = None
-    payment_terms: str = Field(default="net30", max_length=20)
+    payment_terms: PaymentTerms = "net30"
     currency: str = Field(default="CAD", max_length=10)
     notes: str | None = None
     is_active: bool = True
@@ -111,7 +134,7 @@ class VendorBrief(BaseModel):
 
 class ErpVendorImportDefaults(BaseModel):
     category: str = "other"
-    payment_terms: str = "net30"
+    payment_terms: PaymentTerms = "net30"
     currency: str = "CAD"
 
 

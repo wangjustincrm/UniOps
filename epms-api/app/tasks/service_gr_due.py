@@ -28,7 +28,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -152,6 +152,9 @@ async def _ensure_task(db: AsyncSession, due: DueService) -> tuple[Task, bool]:
     task = Task(
         type="confirm_receipt",
         priority="normal",
+        # This sweep mails the task itself (its own due-date template, below),
+        # so the per-type notifier must not send a second, generic one.
+        notified_at=datetime.now(timezone.utc),
         document_type="po",
         document_id=due.po.id,
         document_number=due.po.number,

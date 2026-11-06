@@ -3,6 +3,7 @@ import {
   paService,
   type PaFilters,
   type CreatePaBody,
+  type CreateDirectPaBody,
   type UpdatePaBody,
   type PaActionBody,
   type ApiPa,
@@ -23,16 +24,11 @@ export function usePas(filters?: PaFilters, enabled = true) {
 // usePas({ po_id }) so the caches are shared. De-duplicated by id — a PA that
 // already covers two of the selected POs comes back from both queries, and
 // counting it twice would double its invoices in the "already claimed" lock.
-export function usePasForPos(poIds: string[], enabled = true) {
-  const results = useQueries({
-    queries: poIds.map((poId) => ({
-      queryKey: ['pas', { po_id: poId }],
-      queryFn: () => paService.listAll({ po_id: poId }),
-      enabled,
-    })),
-  })
-  const settled = poIds.length === 0 || results.every((r) => r.data !== undefined)
-  if (!settled) return { items: undefined as ApiPa[] | undefined, isLoading: true }
+//
+// `combine` is module-level so the result keeps its identity until the data
+// changes — see combineGrs in useGrs.ts (ISS-0097).
+function combinePas(results: { data?: { items: ApiPa[] } }[]) {
+  if (!results.every((r) => r.data !== undefined)) return { items: undefined as ApiPa[] | undefined, isLoading: true }
   const seen = new Set<string>()
   const items: ApiPa[] = []
   for (const r of results) {
@@ -42,7 +38,18 @@ export function usePasForPos(poIds: string[], enabled = true) {
       items.push(pa)
     }
   }
-  return { items, isLoading: false }
+  return { items: items as ApiPa[] | undefined, isLoading: false }
+}
+
+export function usePasForPos(poIds: string[], enabled = true) {
+  return useQueries({
+    queries: poIds.map((poId) => ({
+      queryKey: ['pas', { po_id: poId }],
+      queryFn: () => paService.listAll({ po_id: poId }),
+      enabled,
+    })),
+    combine: combinePas,
+  })
 }
 
 export function usePa(id: string) {
@@ -78,9 +85,27 @@ export function useCreatePa() {
       queryClient.invalidateQueries({ queryKey: ['pas'] })
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
     },
-    // Surface the server error (e.g. a 422 validation failure) rather than
-    // swallowing it — the create pages catch the throw silently.
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to create payment application'),
+    // No onError alert: New PA shows the server's refusal (e.g. a 422) in its
+    // red error box from the mutation's error state (ISS-0188).
+  })
+}
+
+export function useDirectPaCandidates() {
+  return useQuery({
+    queryKey: ['pas', 'direct-candidates'],
+    queryFn: () => paService.directCandidates(),
+  })
+}
+
+// No onError alert: the Direct PA form shows the server's message inline.
+export function useCreateDirectPa() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: CreateDirectPaBody) => paService.createDirect(body),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pas'] })
+      queryClient.invalidateQueries({ queryKey: ['invoices'] })
+    },
   })
 }
 
@@ -94,9 +119,8 @@ export function useUpdatePa() {
       queryClient.invalidateQueries({ queryKey: ['pas'] })
       queryClient.invalidateQueries({ queryKey: ['pas', id] })
     },
-    // Surface the server error (e.g. a 422 validation failure) rather than
-    // swallowing it — the edit page catches the throw silently.
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Failed to update payment application'),
+    // No onError alert: the edit pages show the server's refusal inline from
+    // the mutation's error state (ISS-0188).
   })
 }
 
@@ -122,6 +146,9 @@ export function usePaAction(id: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['pas'] })
       queryClient.invalidateQueries({ queryKey: ['pas', id] })
+      // The final approval stores the PA PDF as an attachment (PA-006); the
+      // Attachments tab showed it only after F5 (ISS-0104).
+      queryClient.invalidateQueries({ queryKey: ['pa-attachments', id] })
       queryClient.invalidateQueries({ queryKey: ['tasks'] })
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },

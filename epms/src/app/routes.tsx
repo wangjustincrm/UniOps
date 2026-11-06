@@ -40,6 +40,8 @@ import PartsListPage from '@/pages/parts/PartsListPage'
 import ProfilePage from '@/pages/profile/ProfilePage'
 import AdminPanel from '@/pages/admin/AdminPanel'
 import { VendorCreditsPage } from '@/pages/vendorcredits/VendorCreditsPage'
+import FreightPage from '@/pages/freight/FreightPage'
+import FreightInvoiceRedirect from '@/pages/freight/FreightInvoiceRedirect'
 
 // Short, distinguishable title for an id-keyed detail/edit tab (UUIDs too long).
 const short = (id: string) => (id.length > 8 ? id.slice(0, 8) : id)
@@ -49,18 +51,18 @@ export const epmsRoutes: RouteDef[] = [
   { path: '/tasks', element: <TaskInboxPage />, tab: { title: 'Task Inbox', icon: 'CheckSquare', keyStrategy: 'static' } },
 
   { path: '/pr', element: <PrListPage />, tab: { title: 'Purchase Requisitions', icon: 'ClipboardList', keyStrategy: 'static' } },
-  { path: '/pr/new', element: <PrCreatePage />, tab: { title: 'New PR', icon: 'Plus', keyStrategy: 'static' } },
+  { path: '/pr/new', element: <PrCreatePage />, tab: { title: 'New PR', icon: 'Plus', keyStrategy: 'static', reloadOnQuery: true } },
   { path: '/pr/:id/edit', element: <PrEditPage />, tab: { title: (p) => `Edit PR ${short(p.id)}`, icon: 'ClipboardList', keyStrategy: 'param', paramName: 'id' } },
   { path: '/pr/:id', element: <PrDetailPage />, tab: { title: (p) => `PR ${short(p.id)}`, icon: 'ClipboardList', keyStrategy: 'param', paramName: 'id' } },
 
   { path: '/po', element: <PoListPage />, tab: { title: 'Purchase Orders', icon: 'Package', keyStrategy: 'static' } },
-  { path: '/po/new', element: <PoCreatePage />, tab: { title: 'New PO', icon: 'Plus', keyStrategy: 'static' } },
+  { path: '/po/new', element: <PoCreatePage />, tab: { title: 'New PO', icon: 'Plus', keyStrategy: 'static', reloadOnQuery: true } },
   { path: '/po/:id/edit', element: <PoEditPage />, tab: { title: (p) => `Edit PO ${short(p.id)}`, icon: 'Package', keyStrategy: 'param', paramName: 'id' } },
   { path: '/po/:id/edit-imported', element: <PoImportedEditPage />, tab: { title: (p) => `Edit Details ${short(p.id)}`, icon: 'Package', keyStrategy: 'param', paramName: 'id' } },
   { path: '/po/:id', element: <PoDetailPage />, tab: { title: (p) => `PO ${short(p.id)}`, icon: 'Package', keyStrategy: 'param', paramName: 'id' } },
 
   { path: '/gr', element: <GrListPage />, tab: { title: 'Goods Receipt', icon: 'Warehouse', keyStrategy: 'static' } },
-  { path: '/gr/new', element: <GrCreatePage />, tab: { title: 'New GR', icon: 'Plus', keyStrategy: 'static' } },
+  { path: '/gr/new', element: <GrCreatePage />, tab: { title: 'New GR', icon: 'Plus', keyStrategy: 'static', reloadOnQuery: true } },
   // Literal, so it must sit above /gr/:id — that route would otherwise claim
   // 'report' as a document id.
   { path: '/gr/report', element: <ReceivingReportPage />, tab: { title: 'Receiving Report', icon: 'ClipboardList', keyStrategy: 'static' } },
@@ -78,16 +80,21 @@ export const epmsRoutes: RouteDef[] = [
   { path: '/agreements/:id', element: <AgreementDetailPage />, tab: { title: (p) => `Agreement ${short(p.id)}`, icon: 'FileSignature', keyStrategy: 'param', paramName: 'id' } },
 
   { path: '/receipts', element: <ReceiptListPage />, tab: { title: 'Agreement Receipts', icon: 'Receipt', keyStrategy: 'static' } },
-  { path: '/receipts/new', element: <ReceiptCreatePage />, tab: { title: 'New Receipt', icon: 'Plus', keyStrategy: 'static' } },
+  { path: '/receipts/new', element: <ReceiptCreatePage />, tab: { title: 'New Receipt', icon: 'Plus', keyStrategy: 'static', reloadOnQuery: true } },
   // After /receipts/new, matching how /gr/:id and /agreements/:id sit below
   // their own literal sub-paths in this table.
   { path: '/receipts/:id', element: <ReceiptDetailPage />, tab: { title: (p) => `Receipt ${short(p.id)}`, icon: 'Receipt', keyStrategy: 'param', paramName: 'id' } },
 
   { path: '/pa', element: <PaListPage />, tab: { title: 'Payment Applications', icon: 'CreditCard', keyStrategy: 'static' } },
-  { path: '/pa/new', element: <PaCreatePage />, tab: { title: 'New PA', icon: 'Plus', keyStrategy: 'static' } },
-  { path: '/pa/create', element: <PaCreatePage />, tab: { title: 'New PA', icon: 'Plus', keyStrategy: 'static' } },
+  { path: '/pa/new', element: <PaCreatePage />, tab: { title: 'New PA', icon: 'Plus', keyStrategy: 'static', reloadOnQuery: true } },
+  { path: '/pa/create', element: <PaCreatePage />, tab: { title: 'New PA', icon: 'Plus', keyStrategy: 'static', reloadOnQuery: true } },
   { path: '/pa/:id/edit', element: <PaEditPage />, tab: { title: (p) => `Edit PA ${short(p.id)}`, icon: 'CreditCard', keyStrategy: 'param', paramName: 'id' } },
   { path: '/pa/:id', element: <PaDetailPage />, tab: { title: (p) => `PA ${short(p.id)}`, icon: 'CreditCard', keyStrategy: 'param', paramName: 'id' } },
+
+  // ?tab= picks Shipments / Invoices / Create PA inside the one static tab;
+  // links from other tabs re-point it first (pages/freight/useFreightNav.ts).
+  { path: '/freight', element: <FreightPage />, tab: { title: 'Freight', icon: 'Truck', keyStrategy: 'static' } },
+  { path: '/freight/invoices/:id', element: <FreightInvoiceRedirect />, tab: { title: (p) => `Freight Invoice ${short(p.id)}`, icon: 'Truck', keyStrategy: 'param', paramName: 'id' } },
 
   { path: '/budget', element: <BudgetDashboard />, tab: { title: 'Budget Dashboard', icon: 'PiggyBank', keyStrategy: 'static' } },
   { path: '/budget/catalog', element: <BudgetCatalogPage />, tab: { title: 'Account Catalog', icon: 'FolderTree', keyStrategy: 'static' } },

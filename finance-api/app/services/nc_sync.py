@@ -200,6 +200,11 @@ class NcExtract:
     # BD_CUSTOMER because 客商 has no master of its own. Default None keeps old
     # fixtures constructible.
     parties: dict | None = None
+    # EVERY voucher pk in the book -> _voucher_state(), same unlimited read as
+    # `tallied`. Lets the backfill see a voucher discarded after import, and one
+    # NC deleted outright (absent here -> 'deleted'). None = not read (old
+    # fixtures): the state backfill is skipped rather than marking all deleted.
+    states: dict | None = None
 
 
 # ── auxiliary (辅助核算) type resolution ───────────────────────────────────────
@@ -776,8 +781,12 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
         # it would sit at draft forever (spec §14.4.1). Two columns x ~40k rows.
         cur.execute("select pk_voucher, tallydate, discardflag, tempsaveflag, errmessage "
                     "from NCSC.GL_VOUCHER where pk_accountingbook = :b", b=PK_BOOK)
-        tallied = {pk for pk, td, dis, tmp, err in cur
-                   if _tallied(td) and _voucher_state(dis, tmp, err) == "normal"}
+        tallied: set = set()
+        states: dict = {}
+        for pk, td, dis, tmp, err in cur:
+            states[pk] = _voucher_state(dis, tmp, err)
+            if _tallied(td) and states[pk] == "normal":
+                tallied.add(pk)
 
         # details: fetch the whole book; transform() filters by pk2id membership.
         # DEBITQUANTITY/CREDITQUANTITY are filled on 108,163 of this book's
@@ -817,7 +826,7 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
     return NcExtract(ccy=ccy, aux=aux, vouchers=vouchers, details=details,
                      parties=parties,
                      max_creationtime=max_ct, tallied=tallied,
-                     bank_accounts=bank_master)
+                     bank_accounts=bank_master, states=states)
 
 
 # ── run lifecycle (worker) ─────────────────────────────────────────────────────────
@@ -878,6 +887,35 @@ def _sync_statuses(cur, tallied: set) -> tuple[int, int]:
         cur.execute("update journal_vouchers set status = 'draft', updated_at = now() "
                     "where nc_source_pk = any(%s)", (to_draft,))
     return len(to_posted), len(to_draft)
+
+
+def _sync_voucher_states(cur, states: dict | None) -> int:
+    """Align every NC-sourced voucher's nc_voucher_state with NC, for the same
+    reason _sync_statuses exists: incremental never revisits an imported pk.
+
+    Status alone cannot say "this draft is not a real voucher any more". A
+    voucher NC discards after import, or deletes outright (month-end close
+    regenerates its IA / OT / carry-forward vouchers), keeps reading `draft` /
+    `normal` here forever — and every "include unposted" report counts it.
+    Measured 2026-10-08: 29 of 715 mirrored drafts no longer exist in NC.
+    A pk NC no longer has is marked 'deleted', not removed: a full sync removes
+    it anyway, and until then the voucher list can still show what happened.
+
+    `states` None or empty = NC's side was not read; do nothing rather than mark
+    the whole mirror deleted."""
+    if not states:
+        return 0
+    cur.execute("select nc_source_pk, nc_voucher_state from journal_vouchers "
+                "where nc_source_pk is not null")
+    changes: dict[str, list] = {}
+    for pk, st in cur.fetchall():
+        want = states.get(pk, "deleted")
+        if st != want:
+            changes.setdefault(want, []).append(pk)
+    for want, pks in changes.items():
+        cur.execute("update journal_vouchers set nc_voucher_state = %s, updated_at = now() "
+                    "where nc_source_pk = any(%s)", (want, pks))
+    return sum(len(p) for p in changes.values())
 
 
 def _mark_terminal(dsn, run_id, **fields):
@@ -1115,6 +1153,8 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
         n_posted, n_draft = _sync_statuses(cur, extract.tallied)
         logger.info("nc_sync run %s: status backfill flipped %d to posted, %d to draft",
                     run_id, n_posted, n_draft)
+        n_state = _sync_voucher_states(cur, extract.states)
+        logger.info("nc_sync run %s: voucher-state backfill changed %d", run_id, n_state)
 
         # What the run could not PLACE (as opposed to could not read): lines with
         # no resolvable cost center / income-expense item never reach the Budget

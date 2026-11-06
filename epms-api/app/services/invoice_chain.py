@@ -87,6 +87,11 @@ async def build_chain(
         steps.append(_step("match_po", DONE,
                            [_ref("agreement", invoice.agreement_id,
                                  invoice.agreement_number)]))
+    elif invoice.match_route == "direct" and invoice.status != "unmatched":
+        # Matched to nothing on purpose: a Direct PA pays it.
+        matched = True
+        steps.append(_step("match_po", DONE,
+                           detail="Direct PA — no PO or agreement"))
     else:
         matched = False
         steps.append(_step("match_po", PENDING))
@@ -96,6 +101,10 @@ async def build_chain(
     if not matched:
         gr_state = BLOCKED
         steps.append(_step("link_gr", BLOCKED))
+    elif invoice.match_route == "direct":
+        gr_state = NOT_APPLICABLE
+        steps.append(_step("link_gr", NOT_APPLICABLE,
+                           detail="Direct PA — there is no goods receipt"))
     elif on_agreement_route:
         # Agreement invoices are reconciled against agreement receipts; there
         # is no goods receipt to wait for and never will be.

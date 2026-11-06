@@ -1,7 +1,7 @@
 """Purchase Request endpoints."""
 import logging
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -9,8 +9,8 @@ from sqlalchemy import select
 from app.core.access_scope import build_scope
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_roles
 from app.crud import pr as pr_crud
+from app.crud._list_order import sort_clauses
 from app.crud.current_step import enrich_current_step
-from app.models.task import Task
 from app.schemas.pr import (
     ApprovalEventResponse,
     BudgetCheckRequest,
@@ -27,7 +27,6 @@ from app.services.approval_client import delegate_action
 from app.services.budget_client import ensure_known_budget_code
 from app.services.doc_preflight import field_checks_for
 from app.services.manual_reminder import remind_document
-from app.services.notification import fire_and_forget_notify
 
 router = APIRouter(prefix="/pr", tags=["purchase-requests"])
 
@@ -39,17 +38,23 @@ router = APIRouter(prefix="/pr", tags=["purchase-requests"])
 async def list_prs(
     db: SessionDep,
     user: CurrentUserPayload,
+    token: BearerToken,
     status: str | None = Query(default=None),
     pr_type: int | None = Query(default=None),
     cost_center_id: uuid.UUID | None = Query(default=None),
     department_id: uuid.UUID | None = Query(default=None),
     is_prepaid: bool | None = Query(default=None),
     created_by: uuid.UUID | None = Query(default=None),
+    # false = only PRs no PO has been raised from yet (New PO's Linked PR list).
+    has_po: bool | None = Query(default=None),
     mine: bool = False,
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=200),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
 ):
+    sort_clauses(sort, dir, pr_crud.SORTABLE, ())   # unknown key → 422, before any work
     # §1.3 PL-001–006: server-side scope enforcement — cannot be bypassed by client params.
     # build_scope encodes per-role visibility AND multi-role expansion via Role Management
     # (a dept_manager who is also the configured procurement_manager gets unrestricted scope).
@@ -65,12 +70,15 @@ async def list_prs(
         department_id=department_id,
         is_prepaid=is_prepaid,
         created_by=created_by,   # narrows WITHIN the enforced scope — safe
+        has_po=has_po,
         pr_ids_subq=scope["pr_subq"],
         search=search,
         page=page,
         page_size=page_size,
+        sort=sort,
+        dir=dir,
     )
-    await enrich_current_step(db, "pr", items)
+    await enrich_current_step(db, "pr", items, token)
     return PrListResponse(items=items, total=total)
 
 
@@ -162,7 +170,7 @@ async def budget_check(
 
 
 @router.get("/{pr_id}", response_model=PrResponse)
-async def get_pr(pr_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+async def get_pr(pr_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload, token: BearerToken):
     from app.core.access_scope import is_pr_visible
     pr = await pr_crud.get_by_id(db, pr_id)
     if pr is None:
@@ -170,6 +178,10 @@ async def get_pr(pr_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
     scope = await build_scope(db, user)
     if not await is_pr_visible(db, pr_id, scope):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="PR not found")
+    # The Approval Timeline names who the current step is waiting on (and any
+    # stand-in) from this — the same open-task reading as the list's Status
+    # cell, so the two cannot disagree (ISS-0085).
+    await enrich_current_step(db, "pr", [pr], token)
     return pr
 
 
@@ -238,7 +250,7 @@ async def _generate_pr_pdf_background(pr_id: uuid.UUID, pr_number: str, token: s
 
             from app.crud.signatories import approval_signatories
             requester_name, approvals = await approval_signatories(
-                fresh_db, "pr", pr_id, pr_row.created_by
+                fresh_db, "pr", pr_id, pr_row.created_by, token=token
             )
             owner_name = await _owner_display_name(fresh_db, pr_row, requester_name)
 
@@ -293,7 +305,8 @@ async def pr_action(
             if not check.passed:
                 raise HTTPException(status_code=409, detail=check.message)
     try:
-        await delegate_action("pr", str(pr_id), body.action, body.comment, token)
+        await delegate_action("pr", str(pr_id), body.action, body.comment, token,
+                              expected_step=body.expected_step)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:
@@ -307,16 +320,8 @@ async def pr_action(
         from app.core.background import spawn
         spawn(_generate_pr_pdf_background(pr_id, pr.number, token), name=f"pr_pdf:{pr.number}")
 
-    # Fire notifications for newly opened tasks
-    new_tasks_result = await db.execute(
-        select(Task).where(
-            Task.document_type == "pr",
-            Task.document_id == pr_id,
-            Task.is_completed.is_(False),
-        )
-    )
-    for task in new_tasks_result.scalars().all():
-        fire_and_forget_notify(task, db)
+    # New tasks need no notify call: app/tasks/task_notifier.py picks up every
+    # un-notified task and applies the admin's per-type policy.
     return pr
 
 

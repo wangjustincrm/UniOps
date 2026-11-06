@@ -370,3 +370,55 @@ async def test_customised_email_template_is_not_overwritten(admin_client, test_e
     async with factory() as db:
         cfg = await get_or_create(db)
         assert cfg.email_templates["match_review_request"] == custom_template
+
+
+# ── Budget Config save → in-flight over-budget PRs re-aligned ───────────────
+# 2026-10-16 (ISS-0006): Budget Config moved fm_only → allow and five PRs stayed
+# parked on the Finance Manager. A Budget Config save now asks approval-api to
+# waive the over-budget steps the looser mode no longer requires.
+
+@pytest.mark.asyncio
+async def test_budget_config_save_triggers_over_budget_resync(admin_client, monkeypatch):
+    from app.services import approval_client
+    calls = []
+
+    async def fake(bearer_token):
+        calls.append(bearer_token)
+        return {"resynced": [{"number": "PR-1"}, {"number": "PR-2"}], "errors": []}
+
+    monkeypatch.setattr(approval_client, "resync_over_budget", fake)
+    r = await admin_client.patch(CONFIG_URL, json={
+        "budget_admin_config": {"over_budget_mode": "allow"}})
+    assert r.status_code == 200
+    assert len(calls) == 1 and calls[0]
+    assert r.json()["over_budget_resync"].startswith("ok: 2 ")
+
+
+@pytest.mark.asyncio
+async def test_budget_config_save_survives_engine_outage(admin_client, monkeypatch):
+    from app.services import approval_client
+
+    async def down(bearer_token):
+        raise RuntimeError("resync-over-budget 503: unavailable")
+
+    monkeypatch.setattr(approval_client, "resync_over_budget", down)
+    r = await admin_client.patch(CONFIG_URL, json={
+        "budget_admin_config": {"over_budget_mode": "fm_only"}})
+    assert r.status_code == 200
+    assert r.json()["budget_admin_config"]["over_budget_mode"] == "fm_only"
+    assert r.json()["over_budget_resync"].startswith("failed: ")
+
+
+@pytest.mark.asyncio
+async def test_other_config_saves_do_not_resync(admin_client, monkeypatch):
+    from app.services import approval_client
+    calls = []
+
+    async def fake(bearer_token):
+        calls.append(1)
+        return {"resynced": []}
+
+    monkeypatch.setattr(approval_client, "resync_over_budget", fake)
+    r = await admin_client.patch(CONFIG_URL, json={"tagline": "x"})
+    assert r.status_code == 200
+    assert calls == [] and r.json()["over_budget_resync"] is None

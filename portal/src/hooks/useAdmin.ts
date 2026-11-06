@@ -1,13 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { sortParams, type Sort } from '@uniops/shell'
 import { adminApi } from '@/services/adminApi'
 
 export const useAdminEntities = () =>
   useQuery({ queryKey: ['admin', 'entities'], queryFn: adminApi.entities })
 
-export const useAdminList = (system: string, entity: string, page: number, search: string) =>
+export const useAdminList = (system: string, entity: string, page: number, search: string,
+                             sort: Sort | null = null) =>
   useQuery({
-    queryKey: ['admin', system, entity, page, search],
-    queryFn: () => adminApi.list(system, entity, { page, page_size: 20, search: search || undefined }),
+    queryKey: ['admin', system, entity, page, search, sort],
+    queryFn: () => adminApi.list(system, entity,
+      { page, page_size: 20, search: search || undefined, ...sortParams(sort) }),
     enabled: !!entity,
   })
 

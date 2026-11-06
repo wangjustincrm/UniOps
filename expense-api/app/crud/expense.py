@@ -3,7 +3,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -78,17 +78,75 @@ async def _trv_over_meal_limit(db: AsyncSession, line_items) -> bool:
     WF-002). Accepts either the inbound schema objects or the persisted rows;
     both expose .description and .net_amount.
     """
+    limits = await _meal_limits(db)
+    for li in line_items:
+        meal = _meal_of(li, limits)
+        # A period line's net is days x rate; the cap is per day.
+        if meal and float(_per_day(li)) > limits[meal]:
+            return True
+    return False
+
+
+async def _meal_limits(db: AsyncSession) -> dict[str, float]:
     policy = await _get_policy(db)
-    limits = {
+    return {
         meal: float(getattr(policy, f"meal_{meal}_limit")) if policy else default
         for meal, default in _MEAL_FALLBACKS.items()
     }
+
+
+def _meal_of(li, limits: dict[str, float]) -> str | None:
+    desc = (li.description or "").lower()
+    return next((meal for meal in limits if meal in desc), None)
+
+
+def _per_day(li) -> Decimal:
+    return li.daily_rate if li.period_from is not None else li.net_amount
+
+
+def _is_abroad(country: str | None) -> bool:
+    return country is not None and country != "CA"
+
+
+async def _check_trv_lines(db: AsyncSession, from_date, to_date, country, currency,
+                           line_items) -> None:
+    """Rules for a TRV's lines that need the policy or the claim header.
+
+    Raises ValueError (the routes answer 409/422 with the message). Run on
+    the inbound values before anything is written, on create and on every
+    edit — an edit that only moves the trip dates must re-check the periods.
+
+    - A period line's daily rate is HARD-capped at the meal/incidental limit
+      (business rule 2026-10-16). Single-day lines keep the soft rule: flagged
+      over-limit, not refused (_trv_over_meal_limit).
+    - A period must sit inside the trip's From/To dates.
+    - Abroad (travel_country other than CA) lines carry no Canadian sales tax
+      and no tax code. In Canada the claimant picks the code per line.
+    - TRV is claimed in CAD only; the claimant converts foreign receipts
+      (business rule 2026-10-16).
+    """
+    if currency != "CAD":
+        raise ValueError(
+            f"travel expense claims are in CAD only (got {currency}); "
+            "convert foreign-currency amounts to CAD")
+    if country is not None and (len(country) != 2 or not country.isalpha() or not country.isupper()):
+        raise ValueError(f"travel_country must be a two-letter upper-case country code, got {country!r}")
+    limits = await _meal_limits(db)
     for li in line_items:
-        desc = (li.description or "").lower()
-        for meal, limit in limits.items():
-            if meal in desc and float(li.net_amount) > limit:
-                return True
-    return False
+        if li.period_from is not None:
+            meal = _meal_of(li, limits)
+            if meal and float(li.daily_rate) > limits[meal]:
+                raise ValueError(
+                    f"line {li.line_number}: daily rate {li.daily_rate} exceeds the "
+                    f"{meal} limit {limits[meal]:.2f}")
+            if (from_date and li.period_from < from_date) or (to_date and li.period_to > to_date):
+                raise ValueError(
+                    f"line {li.line_number}: period {li.period_from} – {li.period_to} "
+                    f"is outside the trip dates {from_date} – {to_date}")
+        if _is_abroad(country) and (li.tax_amount != 0 or li.tax_code):
+            raise ValueError(
+                f"line {li.line_number}: travel outside Canada carries no sales tax "
+                f"(tax_amount {li.tax_amount}, tax_code {li.tax_code})")
 
 
 async def create_claim(
@@ -98,7 +156,13 @@ async def create_claim(
     user_name: str,
     department_id: uuid.UUID | None,
     department_name: str,
+    prepared_by: uuid.UUID | None = None,
 ) -> ExpenseClaim:
+    """`user_id` is the claimant. `prepared_by` is who filed it, when that is
+    someone else (a TRV filed on a traveler's behalf)."""
+    if data.claim_type == "TRV":
+        await _check_trv_lines(db, data.travel_from_date, data.travel_to_date,
+                               data.travel_country, data.currency, data.line_items)
     claim_number = await _next_number(db, data.claim_type)
     claim = ExpenseClaim(
         claim_number=claim_number,
@@ -117,12 +181,13 @@ async def create_claim(
         travel_from_date=data.travel_from_date,
         travel_to_date=data.travel_to_date,
         travel_destination=data.travel_destination,
+        travel_country=data.travel_country,
         transport_modes=data.transport_modes,
         leave_from_date=data.leave_from_date,
         leave_to_date=data.leave_to_date,
         travel_application_id=data.travel_application_id,
         status="draft",
-        created_by=user_id,
+        created_by=prepared_by or user_id,
     )
     db.add(claim)
     await db.flush()
@@ -190,6 +255,15 @@ async def update_claim(
     if claim.status not in ("draft", "returned"):
         raise ValueError("Only draft or returned claims can be edited")
 
+    if claim.claim_type == "TRV":
+        def eff(field):
+            val = getattr(data, field, None)
+            return val if val is not None else getattr(claim, field)
+        await _check_trv_lines(
+            db, eff("travel_from_date"), eff("travel_to_date"), eff("travel_country"),
+            eff("currency"),
+            data.line_items if data.line_items is not None else claim.line_items)
+
     # Every scalar field ExpenseClaimUpdate accepts is applied here. The list
     # used to stop after vehicle_owned_by, so the travel fields — which the
     # schema takes and the client sends — were parsed, validated, and silently
@@ -198,7 +272,7 @@ async def update_claim(
     for field in ("submission_date", "currency", "project_id", "notes", "purpose",
                   "vehicle_description", "vehicle_owned_by",
                   "travel_from_date", "travel_to_date", "travel_destination",
-                  "transport_modes", "leave_from_date", "leave_to_date",
+                  "travel_country", "transport_modes", "leave_from_date", "leave_to_date",
                   "travel_application_id"):
         val = getattr(data, field, None)
         if val is not None:
@@ -218,7 +292,17 @@ async def update_claim(
         await db.flush()
         await db.refresh(claim, ["travelers"])
 
-    if data.line_items is not None:
+    # Only a MIL claim has mileage (user, 2026-10-14). The OA form sends a
+    # general expense with `trip_items: []`; when both branches ran, that empty
+    # trip list re-computed the claim as mileage — total 0.00, total_km 0 —
+    # over the totals the lines had just produced (EXP-20260929-0001). So each
+    # collection is applied only to the claim type it belongs to, and a non-MIL
+    # claim never carries a km figure.
+    is_mil = claim.claim_type == "MIL"
+    if not is_mil:
+        claim.total_km = None
+
+    if data.line_items is not None and not is_mil:
         for existing in list(claim.line_items):
             await db.delete(existing)
         await db.flush()
@@ -233,7 +317,7 @@ async def update_claim(
         if claim.claim_type == "TRV":
             claim.is_over_budget = await _trv_over_meal_limit(db, claim.line_items)
 
-    if data.trip_items is not None:
+    if data.trip_items is not None and is_mil:
         for existing in list(claim.trip_items):
             await db.delete(existing)
         await db.flush()
@@ -273,10 +357,13 @@ async def list_claims(
     status: str | None = None,
     employee_id: uuid.UUID | None = None,
     exclude_types: list[str] | None = None,
+    order_by: list | None = None,
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[ExpenseClaim], int]:
-    q = select(ExpenseClaim).order_by(ExpenseClaim.created_at.desc())
+    """`order_by` = ORDER BY clauses for a click-sorted list; None keeps the
+    default newest-first order."""
+    q = select(ExpenseClaim).order_by(*(order_by or [ExpenseClaim.created_at.desc()]))
     if claim_type:
         q = q.where(ExpenseClaim.claim_type == claim_type)
     if exclude_types:
@@ -322,18 +409,41 @@ async def count_pending(db: AsyncSession) -> int:
     return result.scalar_one()
 
 
+def is_preparer(claim: ExpenseClaim, user_id: uuid.UUID) -> bool:
+    """Whether `user_id` filed this TRV on a traveler's behalf.
+
+    A TRV's claimant is always a traveler, the person paid; the TRA's applicant
+    may not be one (TRA-20261102-0001), so `created_by` can differ from
+    `employee_id`. TRV only: no other claim type is filed on behalf, so this
+    grants nothing on those.
+    """
+    return claim.claim_type == "TRV" and claim.created_by == user_id
+
+
+def traveler_claim_ids(user_id: uuid.UUID):
+    """Subquery of the TRAs that list `user_id` as a traveler."""
+    return select(ExpenseTraveler.claim_id).where(ExpenseTraveler.user_id == user_id)
+
+
+async def is_listed_traveler(db: AsyncSession, claim_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+    q = select(func.count()).select_from(ExpenseTraveler).where(
+        ExpenseTraveler.claim_id == claim_id, ExpenseTraveler.user_id == user_id)
+    return (await db.execute(q)).scalar_one() > 0
+
+
 async def list_eligible_travel_apps(db: AsyncSession, user_id: uuid.UUID) -> list[ExpenseClaim]:
-    """Approved TRAs on which `user_id` is a listed traveler (for the TRV picker)."""
+    """Approved TRAs `user_id` travels on or applied for (for the TRV picker)."""
     q = (
         select(ExpenseClaim)
-        .join(ExpenseTraveler, ExpenseTraveler.claim_id == ExpenseClaim.id)
+        .options(selectinload(ExpenseClaim.travelers))
         .where(ExpenseClaim.claim_type == "TRA",
                ExpenseClaim.status == "approved",
-               ExpenseTraveler.user_id == user_id)
+               or_(ExpenseClaim.employee_id == user_id,
+                   ExpenseClaim.id.in_(traveler_claim_ids(user_id))))
         .order_by(ExpenseClaim.travel_from_date.desc().nullslast(),
                   ExpenseClaim.created_at.desc())
     )
-    return list((await db.execute(q)).scalars().unique().all())
+    return list((await db.execute(q)).scalars().all())
 
 
 

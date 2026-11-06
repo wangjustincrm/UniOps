@@ -60,7 +60,9 @@ export function TabHost({ routes, pageClassName }: TabHostProps) {
               // without nesting a Router — this preserves all app-level React context
               // (QueryClientProvider, zustand stores, etc.) inside the tab.
               <div className={pageClassName}>
-                <RouteRenderer routes={routes} path={t.path!} />
+                {/* reloadOnQuery: a new path is a new page instance, so its
+                    state initialises from the new query (ISS-0150). */}
+                <RouteRenderer key={t.reloadOnQuery ? t.path : undefined} routes={routes} path={t.path!} />
               </div>
             )}
           </div>

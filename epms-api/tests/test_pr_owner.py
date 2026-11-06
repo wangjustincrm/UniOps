@@ -412,13 +412,10 @@ async def test_the_invoice_matched_nudge_also_goes_to_the_owner(
     """Same confirm_receipt task, same PO, raised by a different trigger — the
     two paths reuse each other's row, so a different assignee rule here would
     mean whichever fired first decided who owns it."""
-    import app.api.v1.invoices as invoices_mod
     from app.api.v1.invoices import _create_or_renotify_confirm_receipt
 
-    # The real notifier spawns a background coroutine on its own DB session;
-    # this test is about WHO the row names, so keep the dispatch out of it.
-    monkeypatch.setattr(invoices_mod, "fire_and_forget_notify",
-                        lambda *a, **k: None)
+    # Notifying is now only a mark on the row (the outbox notifier sends), so
+    # nothing has to be kept out of this test.
 
     async with _factory(test_engine)() as db:
         pr, po, existing, requester = await _pr_po_with_task(db)

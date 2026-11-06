@@ -3,6 +3,8 @@ import uuid
 import sqlalchemy as sa
 from sqlalchemy import Select, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.list_sort import lower
+from app.models.bank import BankAccount
 from app.models.mirrors import ExpenseClaim
 from app.models.payment import PaymentRecord
 from app.models.pa import PaymentApplication
@@ -100,12 +102,65 @@ def _filtered(*, pa_id=None, vendor_id=None, date_from=None, date_to=None,
     return stmt
 
 
+def _payee_name_expr():
+    """What the Payee column shows (app/api/v1/payments.py _payee_names): the
+    claimant for a claim payment, the vendor name for everything else; ''
+    reads as empty."""
+    claimant = (select(ExpenseClaim.employee_name)
+                .where(ExpenseClaim.id == PaymentRecord.doc_id)
+                .correlate(PaymentRecord).scalar_subquery())
+    return func.lower(func.nullif(sa.case(
+        (PaymentRecord.doc_kind == "expense_claim", claimant),
+        else_=PaymentRecord.vendor_name), ""))
+
+
+def _bank_label_expr():
+    """The Bank Account column's label (payments._bank_label): name, then
+    " · …<masked>", then " · Card" for a credit card."""
+    label = (BankAccount.name
+             + func.coalesce(" · …" + BankAccount.account_masked, "")
+             + sa.case((BankAccount.kind == "credit_card", " · Card"), else_=""))
+    return lower(select(label).where(BankAccount.id == PaymentRecord.bank_account_id)
+                 .correlate(PaymentRecord).scalar_subquery())
+
+
+def _remittance_expr():
+    """'sent' / 'not_sent' — the same existence check _remittance_status runs
+    per page, so sorting agrees with the column."""
+    sent = select(RemittanceNotification.id).where(sa.and_(
+        RemittanceNotification.status == SENT,
+        sa.text("payment_remittance_notifications.payment_record_ids @> "
+                "to_jsonb(payment_records.id::text)"),
+    )).exists()
+    return sa.case((sent, "sent"), else_="not_sent")
+
+
+# GET /payments click-to-sort whitelist (finance/src/pages/finance/PaymentsPage.tsx).
+# Credit shows a dash unless something was netted, so 0 sorts as empty.
+PAYMENT_SORT = {
+    "payment_date": PaymentRecord.payment_date,
+    "doc_number": lower(PaymentRecord.doc_number),
+    "payee": _payee_name_expr(),
+    "amount": PaymentRecord.amount,
+    "credit_applied": sa.case((PaymentRecord.credit_applied > 0, PaymentRecord.credit_applied),
+                              else_=None),
+    "bank_account": _bank_label_expr(),
+    "source": sa.case((PaymentRecord.batch_id.is_(None), "Single"), else_="Batch"),
+    "status": PaymentRecord.status,
+    "remittance": _remittance_expr(),
+}
+
+
 async def get_all(db: AsyncSession, *, page: int = 1, page_size: int = 50,
+                  order: list | None = None,
                   **filters) -> tuple[list[PaymentRecord], int]:
+    """`order` is a whitelisted ORDER BY from app.core.list_sort over
+    PAYMENT_SORT; None keeps newest-first."""
     q = _filtered(**filters)
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
     items = list((await db.execute(
-        q.order_by(PaymentRecord.payment_date.desc(), PaymentRecord.created_at.desc())
+        q.order_by(*(order or (PaymentRecord.payment_date.desc(),
+                               PaymentRecord.created_at.desc())))
         .offset((page - 1) * page_size).limit(page_size)
     )).scalars().all())
     return items, total

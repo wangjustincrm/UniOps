@@ -55,8 +55,9 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import Select, case, func, or_, select
 
-from app.core.authz import require_permission
+from app.core.authz import require_any_permission
 from app.core.deps import SessionDep
+from app.core.list_sort import SortDir, resolve, sort_rows
 from app.models.epms_mirror import MdmMaterial
 from app.models.status_mapping import MrpStatusMapping
 from app.models.wms_inventory import WmsInventoryLot
@@ -77,7 +78,9 @@ from app.services.inventory_aging import (
 
 router = APIRouter(prefix="/inventory", tags=["inventory"])
 
-ReadDep = Annotated[dict, Depends(require_permission("mrp.report.view"))]
+# mrp.report.view (MRP) or inventory.view (the Inventory module, where the
+# WMS Inventory screens now live).
+ReadDep = Annotated[dict, Depends(require_any_permission("mrp.report.view", "inventory.view"))]
 
 #: The shelf-life horizon the summary warns on, asked for separately from the
 #: aging bands (which are 30 / 60 / 180). Kept as a named constant so the
@@ -144,6 +147,9 @@ class WmsInventoryLotResponse(BaseModel):
     #: Shelf-life band, or None for a lot that does not expire.
     aging_bucket: str | None = None
     supplier_batch: str | None
+    #: LOTATT04 — NC's QC batch number (empty on finished goods, where NC's
+    #: batch sits in LOTATT05 instead).
+    qc_batch: str | None = None
     supplier_code: str | None
     source_doc: str | None
     wms_edit_time: datetime | None
@@ -325,6 +331,7 @@ def _apply_lot_filters(
             WmsInventoryLot.material_code.ilike(needle),
             WmsInventoryLot.lot_no.ilike(needle),
             WmsInventoryLot.supplier_batch.ilike(needle),
+            WmsInventoryLot.qc_batch.ilike(needle),
             MdmMaterial.name.ilike(needle),
         ))
     if expiring_before:
@@ -436,6 +443,9 @@ class InventoryBatchResponse(BaseModel):
     base_uom: str | None = None
     #: None for stock the warehouse recorded without one (92 lots today).
     supplier_batch: str | None
+    #: NC QC batch numbers (LOTATT04) among this batch's lots, comma-separated;
+    #: None when none of them carries one.
+    qc_batches: str | None = None
     qty: Decimal
     qty_allocated: Decimal
     qty_onhold: Decimal
@@ -520,6 +530,46 @@ class InventoryBatchListResponse(BaseModel):
     expiry_warning_days: int
 
 
+#: Sort keys `GET /inventory/batches` accepts — one per column the Batches and
+#: Aging tables show. The expressions are built over the GROUPED query, so
+#: each sorts the value the row displays (earliest date, summed qty, the
+#: quality LABEL rather than the Flux code, "mixed" for a split batch).
+_BATCH_SORT_KEYS = (
+    "material_code", "supplier_batch", "qc_batches", "qty", "lots",
+    "production_date", "expiry_date", "days_to_expiry", "inbound_date",
+    "quality_status", "mapped_status",
+)
+
+
+def _batch_sort_columns() -> dict:
+    lot = WmsInventoryLot
+    quality_code = func.min(lot.wms_status)
+    quality_label = case(
+        (func.count(func.distinct(lot.wms_status)) == 1,
+         func.coalesce(
+             select(MrpStatusMapping.description)
+             .where(MrpStatusMapping.wms_code == quality_code)
+             .scalar_subquery(),
+             quality_code)),
+        else_="Mixed")
+    expiry = func.min(lot.expiry_date)
+    return {
+        "material_code": lot.material_code,
+        "supplier_batch": func.lower(lot.supplier_batch),
+        "qc_batches": func.lower(func.string_agg(func.distinct(lot.qc_batch), ", ")),
+        "qty": func.sum(lot.qty),
+        "lots": func.count(),
+        "production_date": func.min(lot.production_date),
+        "expiry_date": expiry,
+        # The "Shelf life" / "Days" columns: days left is expiry minus today.
+        "days_to_expiry": expiry,
+        "inbound_date": func.min(lot.inbound_date),
+        "quality_status": func.lower(quality_label),
+        "mapped_status": case((func.count(func.distinct(lot.mapped_status)) == 1,
+                               func.min(lot.mapped_status)), else_="mixed"),
+    }
+
+
 @router.get("/batches", response_model=InventoryBatchListResponse)
 async def list_batches(
     db: SessionDep,
@@ -543,8 +593,11 @@ async def list_batches(
     include_byproducts: bool = Query(
         default=False,
         description="Include CF00AF Animal Feed and CF00WT Waste Powder, which the ERP files as finished goods but which are not sellable product"),
-    sort: Literal["material_code", "supplier_batch", "production_date", "expiry_date", "qty", "inbound_date"] = "expiry_date",
-    descending: bool = False,
+    sort: str | None = Query(
+        default=None,
+        description="Column key (see _BATCH_SORT); absent = earliest expiry first"),
+    dir_: SortDir | None = Query(default=None, alias="dir"),
+    descending: bool = Query(default=False, description="Legacy direction flag; `dir` wins when given"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=500),
 ):
@@ -562,6 +615,9 @@ async def list_batches(
     belong to — a batch whose lots carry different expiry dates appears in each
     band it genuinely has stock in, counted only for the lots that are there.
     """
+    if sort is None and descending:
+        sort = "expiry_date"    # legacy: `descending` alone reversed the expiry default
+    srt = resolve(sort, dir_, _BATCH_SORT_KEYS, "desc" if descending else "asc")
     today = date.today()
     filters = dict(
         material_code=material_code, mapped_status=mapped_status,
@@ -603,6 +659,7 @@ async def list_batches(
         case((func.count(func.distinct(WmsInventoryLot.wms_status)) == 1,
               func.min(WmsInventoryLot.wms_status)),
              else_="mixed"),
+        func.string_agg(func.distinct(WmsInventoryLot.qc_batch), ", "),
     ).outerjoin(MdmMaterial, MdmMaterial.code == WmsInventoryLot.material_code)
     base = _apply_lot_filters(base, **filters).group_by(*grouping)
 
@@ -656,21 +713,21 @@ async def list_batches(
              soon_batches, batches, lots) in (await db.execute(summary_stmt)).all()
     ]
 
-    order_column = {
-        "material_code": WmsInventoryLot.material_code,
-        "supplier_batch": WmsInventoryLot.supplier_batch,
-        "production_date": func.min(WmsInventoryLot.production_date),
-        "expiry_date": func.min(WmsInventoryLot.expiry_date),
-        "qty": func.sum(WmsInventoryLot.qty),
-        "inbound_date": func.min(WmsInventoryLot.inbound_date),
-    }[sort]
-    stmt = base.order_by(
-        order_column.desc() if descending else order_column,
-        # A stable tiebreak: without it two batches sorting equal can swap
-        # between queries and a row appears on two pages while another appears
-        # on none.
-        WmsInventoryLot.material_code, WmsInventoryLot.supplier_batch,
-    ).offset((page - 1) * page_size).limit(page_size)
+    if srt is None:
+        # The default order, unchanged: earliest expiry first.
+        order_terms = [func.min(WmsInventoryLot.expiry_date),
+                       WmsInventoryLot.material_code, WmsInventoryLot.supplier_batch]
+    else:
+        order_column = _batch_sort_columns()[srt[0]]
+        order_terms = [
+            (order_column.desc() if srt[1] == "desc" else order_column.asc()).nulls_last(),
+            # A stable tiebreak over the grouping key: without it two batches
+            # sorting equal can swap between queries and a row appears on two
+            # pages while another appears on none.
+            WmsInventoryLot.material_code, WmsInventoryLot.supplier_batch,
+            WmsInventoryLot.warehouse_id,
+        ]
+    stmt = base.order_by(*order_terms).offset((page - 1) * page_size).limit(page_size)
 
     # The warehouse's own quality-status dictionary (three rows), so the screen
     # shows "Release" rather than "02". Loaded once per request, never per row.
@@ -683,7 +740,7 @@ async def list_batches(
     items = []
     for (warehouse, code, batch, name, qty_, allocated, onhold, lot_count,
          expiry_min, expiry_max, inbound, status, supplier_code,
-         base_uom, produced_min, produced_max, quality) in (
+         base_uom, produced_min, produced_max, quality, qc_batches) in (
             await db.execute(stmt)).all():
         items.append(InventoryBatchResponse(
             warehouse_id=warehouse,
@@ -691,6 +748,7 @@ async def list_batches(
             material_name=name,
             base_uom=base_uom,
             supplier_batch=batch,
+            qc_batches=qc_batches,
             qty=qty_,
             qty_allocated=allocated,
             qty_onhold=onhold,
@@ -831,6 +889,21 @@ async def aging_summary(
     }
 
 
+#: Sort keys `GET /inventory/materials` accepts, one per column of the
+#: Materials table, as the value that column shows.
+_MATERIAL_SORT = {
+    "material_code": lambda r: r.material_code.lower(),
+    "on_hand": lambda r: r.on_hand,
+    "available": lambda r: r.available,
+    "on_hold": lambda r: r.on_hold,
+    "expired_qty": lambda r: r.expired_qty,
+    "next_expiry": lambda r: r.next_expiry,
+    "in_transit": lambda r: r.in_transit,
+    # Only meaningful with something on order; the page shows "—" otherwise.
+    "earliest_arrival": lambda r: r.earliest_arrival if r.in_transit else None,
+}
+
+
 @router.get("/materials", response_model=MaterialStockListResponse)
 async def material_stock(
     db: SessionDep,
@@ -842,6 +915,8 @@ async def material_stock(
     include_byproducts: bool = Query(
         default=False,
         description="Include CF00AF Animal Feed and CF00WT Waste Powder"),
+    sort: str | None = Query(default=None, description="Column key; absent = by material code"),
+    dir_: SortDir = Query(default="asc", alias="dir"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=500),
 ):
@@ -853,6 +928,7 @@ async def material_stock(
     exactly the row a planner is looking for, and either join direction would
     drop one of the two cases.
     """
+    srt = resolve(sort, dir_, _MATERIAL_SORT)
     today = date.today()
 
     stock_stmt = (
@@ -952,6 +1028,12 @@ async def material_stock(
             earliest_arrival=t.earliest_arrival if t else None,
             open_po_lines=t.open_lines if t else 0,
         ))
+
+    # Built in Python (stock and on-order come from different systems), so
+    # sorted here — still over the WHOLE filtered list, before the page cut.
+    # `rows` is already in code order, which is the tiebreak.
+    if srt is not None:
+        rows = sort_rows(rows, _MATERIAL_SORT[srt[0]], srt[1])
 
     total = len(rows)
     start = (page - 1) * page_size

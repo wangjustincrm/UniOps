@@ -223,6 +223,7 @@ export default function ReceiptCreatePage() {
             <ReceiptEntryForm
               agreementId={selectedAgreement.id}
               receiptType={receiptType}
+              taxRate={selectedAgreement.tax_rate != null ? Number(selectedAgreement.tax_rate) : null}
               onSuccess={() => replaceTab(cancelHref)}
             />
           </div>

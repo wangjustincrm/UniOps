@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   CreditCard, Receipt, BookOpen, FileText, Banknote, Landmark, LayoutDashboard,
-  ClipboardList, FolderTree, FlaskConical, SlidersHorizontal, Percent, Settings,
+  ClipboardList, FolderTree, FlaskConical, SlidersHorizontal, Percent, Coins, Settings,
   ArrowLeft, Menu, ChevronLeft, ChevronRight, LogOut, User, ChevronDown, Scale, Target,
   RefreshCw, Wallet, Download, ShieldAlert, ClipboardCheck, HeartPulse, TrendingUp, CopyX,
+  Activity, GitBranch, Network, PieChart, Boxes, Ruler, Table2,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -58,6 +59,7 @@ const NAV: NavSection[] = [
     title: 'Voucher',
     items: [
       { label: 'Journal Vouchers', href: '/finance/journal-vouchers', icon: FileText, permission: 'view_finance' },
+      { label: 'JV Detail', href: '/finance/jv-lines', icon: Table2, permission: 'view_finance' },
       { label: 'JV Validation', href: '/finance/jv-validation', icon: ShieldAlert, permission: 'view_finance' },
     ],
   },
@@ -82,10 +84,23 @@ const NAV: NavSection[] = [
     ],
   },
   {
+    // Unit costs and margins: its own Access Control key, not view_finance.
+    title: 'AI Financial Analysis',
+    items: [
+      { label: 'Gross Margin', href: '/finance/analysis/margin', icon: PieChart, permission: 'finance.analysis.view' },
+      { label: 'Cost Anomalies', href: '/finance/analysis/anomalies', icon: Activity, permission: 'finance.analysis.view' },
+      { label: 'Cost Chain', href: '/finance/analysis/chain', icon: Network, permission: 'finance.analysis.view' },
+      { label: 'Batch Cost', href: '/finance/analysis/batches', icon: Boxes, permission: 'finance.analysis.view' },
+      { label: 'Standard Cost', href: '/finance/analysis/standard', icon: Ruler, permission: 'finance.analysis.view' },
+      { label: 'Material Cost Trace', href: '/finance/analysis/trace', icon: GitBranch, permission: 'finance.analysis.view' },
+    ],
+  },
+  {
     title: 'Settings',
     items: [
       { label: 'Chart of Accounts', href: '/finance/coa', icon: FolderTree, permission: 'view_finance' },
       { label: 'Tax Settings', href: '/finance/tax', icon: Percent, permission: 'view_finance' },
+      { label: 'Exchange Rates', href: '/finance/fx-rates', icon: Coins, permission: 'view_finance' },
       { label: 'QuickBooks', href: '/finance/qbo', icon: RefreshCw, permission: 'view_finance' },
       // Throwaway: remove with QboCreditImportPage when QuickBooks is retired.
       // Gated on the credit-manage key, not view_finance — this writes spendable
@@ -157,7 +172,9 @@ function Sidebar({ mobileOpen, onClose, collapsed, onToggleCollapse }: {
         </button>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-2 py-4">
+      {/* No scrollbar of its own (ISS-0182): Chrome on Windows gives it ~15px,
+          narrowing the menu out of line with the logo above; it still scrolls. */}
+      <nav className="flex-1 overflow-y-auto px-2 py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {NAV.map((section) => {
           const items = section.items.filter(isVisible)
           if (items.length === 0) return null
@@ -252,7 +269,10 @@ export default function AppLayout() {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const userId = useAuthStore((s) => s.user?.id)
   const userRole = useAuthStore((s) => s.user?.role ?? null)
-  const { data: myPermissions, isLoading: permsLoading } = useRolePermissions()
+  const {
+    data: myPermissions, isLoading: permsLoading, isError: permsFailed,
+    error: permsError, refetch: refetchPerms, isFetching: permsRefetching,
+  } = useRolePermissions()
   const perms = myPermissions?.permissions
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -286,6 +306,37 @@ export default function AppLayout() {
   // Wait for the permission matrix before building the (permission-derived) shell.
   if (permsLoading) {
     return <div className="flex h-screen items-center justify-center text-sm text-neutral-500">Loading…</div>
+  }
+
+  // A failed permission request must not read as "no access": with no matrix
+  // every item is hidden, which looked exactly like a revoked role when the
+  // real cause was the browser never reaching EPMS (e.g. Chrome blocking the
+  // call under VPN — local network access).
+  if (permsFailed && !myPermissions) {
+    // fetch() rejects with a TypeError when the request never got a response
+    // (network down, CORS / local-network-access block); anything else is a
+    // server answer and its message is worth showing.
+    const unreachable = permsError instanceof TypeError
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-3 px-4 text-center text-sm text-neutral-500">
+        <p className="font-medium text-neutral-700">Couldn't load your Finance permissions.</p>
+        <p className="max-w-md">
+          {unreachable
+            ? "Your browser couldn't reach the UniOps server. Check your network or VPN connection; if Chrome asked about local network access for this site, allow it in Site settings."
+            : `The server returned an error: ${permsError?.message ?? 'unknown error'}`}
+        </p>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => refetchPerms()}
+            disabled={permsRefetching}
+            className="font-medium text-primary-600 hover:underline disabled:opacity-50"
+          >
+            {permsRefetching ? 'Retrying…' : 'Try again'}
+          </button>
+          <a href={PORTAL_URL} className="font-medium text-primary-600 hover:underline">Back to UniOps Portal</a>
+        </div>
+      </div>
+    )
   }
 
   if (!homePath) {

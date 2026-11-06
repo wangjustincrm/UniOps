@@ -11,11 +11,12 @@ import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Badge, StatusBadge } from '@/components/ui/badge'
 import { ApprovalTimeline } from '@/components/pr/ApprovalTimeline'
-import { formatAmount, formatDate, formatUnitPrice, cn } from '@/lib/utils'
-import type { ApprovalStep, DocumentStatus, WorkflowNodeDef } from '@/types'
+import { formatAmount, formatDate, formatQty, formatUnitPrice, cn } from '@/lib/utils'
+import type { ApprovalStep, CurrentStep, DocumentStatus, WorkflowNodeDef } from '@/types'
 import { useAuthStore } from '@/stores/auth.store'
 import { DocumentChainTree } from '@/components/shared/DocumentChainTree'
 import { PoSignoffPanel } from '@/components/po/PoSignoffPanel'
+import { PoFeePanel } from '@/components/po/PoFeePanel'
 import { generatePoHtml } from '@/lib/po-document'
 import { buildEmailVars, renderTemplate } from '@/lib/email-template'
 import { useConfig, useRolePermissions } from '@/hooks/useConfig'
@@ -25,13 +26,18 @@ import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
 import { useGrs } from '@/hooks/useGrs'
 
 import { useTasks } from '@/hooks/useTasks'
+import { useCloseOnEscape } from '@/hooks/useCloseOnEscape'
 import { poService } from '@/services/po'
 import type { ApiPo, ApiPoLineItem } from '@/services/po'
 import { useApprovalReminder } from '@/hooks/useApprovalReminder'
 import type { ApiEvent } from '@/services/pr'
+import { historyLine } from '@/lib/approvalHistory'
+import { buildApprovalNodes } from '@/lib/approvalTimeline'
 import type { GrStatus } from '@/services/gr'
 import { vendorService } from '@/services/vendors'
 import { isImportedEditablePo } from '@/lib/importedPoEdit'
+import { canWithdrawDocument } from '@/lib/documentActions'
+import { formatPaymentTerms } from '@/lib/paymentTerms'
 
 const TYPE_LABELS: Record<number, string> = {
   1: 'Raw Mat./Pack.',
@@ -73,15 +79,10 @@ const GR_STATUS_DOC: Record<GrStatus, DocumentStatus> = {
 
 // ─── Approval Timeline ─────────────────────────────────────────────────────────
 
-function buildWorkflowSteps(nodes: WorkflowNodeDef[], status: string, stepIdx: number, events: ApiEvent[] = []): ApprovalStep[] {
-  // Index approve events by step_idx so each workflow node shows who acted.
-  const approveEventByStep = events
-    .filter((e) => e.action === 'approve')
-    .reduce<Record<number, ApiEvent>>((acc, e) => {
-      if (!(e.step_idx in acc)) acc[e.step_idx] = e
-      return acc
-    }, {})
-
+function buildWorkflowSteps(
+  nodes: WorkflowNodeDef[], status: string, stepIdx: number, events: ApiEvent[] = [],
+  currentStep?: CurrentStep | null,
+): ApprovalStep[] {
   const created: ApprovalStep = {
     id: 'created',
     role: 'Procurement Officer',
@@ -93,26 +94,16 @@ function buildWorkflowSteps(nodes: WorkflowNodeDef[], status: string, stepIdx: n
     action: 'Created',
     channel: 'Web',
   }
-  const approvalNodes: ApprovalStep[] = nodes.map((node, i) => {
-    let s: ApprovalStep['status']
-    if (['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_milk'].includes(status)) {
-      s = 'completed'
-    } else if (status === 'cancelled') {
-      s = i < stepIdx ? 'completed' : i === stepIdx ? 'skipped' : 'pending'
-    } else if (status === 'submitted' || status === 'nc_pending') {
-      // 'nc_pending' = awaiting approval in NC, where the real signatories are.
-      // Every UniOps step renders as pending rather than 'current': no task was
-      // ever raised here, and showing one as current invites somebody to wait
-      // for an approval that will never arrive in this system.
-      s = i < stepIdx ? 'completed' : 'pending'
-    } else {
-      s = i < stepIdx ? 'completed' : i === stepIdx ? 'current' : 'pending'
-    }
-    const evt = approveEventByStep[i]
-    if (evt?.comment?.includes('Auto-skipped')) {
-      s = 'skipped'
-    }
-    return { id: node.id, role: node.label, actorName: evt?.comment?.includes('Auto-skipped') ? undefined : evt?.actor_name ?? undefined, status: s }
+  // Shared with the PR / Agreement / PA timelines. A `submitted` PO sits on its
+  // first approver's open task like any other document and shows that step as
+  // current (ISS-0088); it used to be lumped with nc_pending and showed none.
+  // 'nc_pending' = awaiting approval in NC, where the real signatories are: it
+  // is not an awaiting status there, so every UniOps step renders as pending
+  // rather than 'current' — no task was ever raised here.
+  const approvalNodes = buildApprovalNodes({
+    nodes, status, stepIdx, events, currentStep,
+    doneStatuses: ['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_milk'],
+    ownerLabel: 'Procurement Officer',
   })
   return [created, ...approvalNodes]
 }
@@ -521,6 +512,8 @@ export default function PoDetailPage() {
   const { data: grsData, isLoading: grsLoading } = useGrs({ po_id: id ?? '' }, Boolean(id))
   const linkedGrs = (grsData?.items ?? []).filter((g) => g.status !== 'cancelled')
   const poAction = usePoAction(id ?? '')
+  // Withdraw shows its refusal in the header rather than in an alert().
+  const poWithdraw = usePoAction(id ?? '', { alertOnError: false })
   const { reminder, sendReminder } = useApprovalReminder(() => poService.remind(id ?? ''))
   const { user } = useAuthStore()
   const { data: config } = useConfig()
@@ -531,6 +524,7 @@ export default function PoDetailPage() {
   const [showPlaceOrder, setShowPlaceOrder] = useState(false)
   const [moreOpen, setMoreOpen] = useState(false)
   const moreRef = useRef<HTMLDivElement>(null)
+  useCloseOnEscape(moreOpen, () => setMoreOpen(false))
 
   const isProcurementOfficer = user?.role === 'procurement_officer' || user?.role === 'procurement_manager' || user?.role === 'system_admin'
 
@@ -580,7 +574,10 @@ export default function PoDetailPage() {
   const canEditImported =
     isImportedEditablePo(po) &&
     (user?.role === 'system_admin' || !!perms?.['epms.po.edit_imported'])
-  const canWithdraw = isProcurementOfficer && po && ['draft', 'submitted'].includes(po.status)
+  // Same parties and statuses as the engine's cancel (lib/documentActions.ts):
+  // draft / returned / submitted, by the creator, a System Admin or the
+  // approver holding it — not "any procurement role" (ISS-0082).
+  const canWithdraw = !!po && canWithdrawDocument('po', po, user ?? {}, hasApproveTask)
   // PA creation is permission-driven, exactly like the PA list's Create button
   // (PaListPage): the Access Control matrix decides, not a hard-coded role list.
   // A hard-coded list also read only the JWT's primary role, so an ADDITIONAL
@@ -600,7 +597,7 @@ export default function PoDetailPage() {
   // moment "unpaid" stopped being sufficient.
   const canCreatePa =
     po &&
-    ['issued', 'partially_received', 'fully_received'].includes(po.status) &&
+    ['issued', 'partially_received', 'fully_received', 'nc_milk'].includes(po.status) &&
     (po.is_prepaid || po.has_unpaid_invoice) &&
     (user?.role === 'system_admin' || !!paPerms?.['epms.pa.write'])
   // Types 4 (Service) and 6 (Project-Related) both run the service GR flow —
@@ -621,11 +618,14 @@ export default function PoDetailPage() {
   const canConfirmService =
     (!!po?.pr_owner_id && po.pr_owner_id === user?.id) ||
     (!!po?.pr_requester_id && po.pr_requester_id === user?.id)
-  const canCreateGr =
+  // A service PO confirmed while still approved keeps that status (PT-008),
+  // so the status alone cannot tell that nothing is left to confirm (ISS-0108).
+  const hasOpenQty = (po?.line_items ?? []).some((li) => Number(li.received_qty ?? 0) < Number(li.qty))
+  const canCreateGr = (!isServicePo || hasOpenQty) && (
     (['warehouse_staff', 'procurement_officer', 'procurement_manager', 'system_admin'].includes(user?.role ?? '') &&
       ['issued', 'partially_received'].includes(po?.status ?? '')) ||
     (isServicePo && canConfirmService &&
-      ['approved', 'issued', 'partially_received'].includes(po?.status ?? ''))
+      ['approved', 'issued', 'partially_received'].includes(po?.status ?? '')))
 
   const handleDownloadPdf = () => {
     if (!po || !config) return
@@ -656,7 +656,7 @@ export default function PoDetailPage() {
     )
   }
 
-  const approvalSteps = buildWorkflowSteps(workflowSteps ?? [], po.status, po.approval_step_idx ?? 0, events ?? [])
+  const approvalSteps = buildWorkflowSteps(workflowSteps ?? [], po.status, po.approval_step_idx ?? 0, events ?? [], po.current_step)
   // Mirrors the PDF: the Sample column only appears when some line carries one,
   // so POs without samples keep their existing layout.
   const showSample = po.line_items.some((li) => li.sample)
@@ -738,11 +738,21 @@ export default function PoDetailPage() {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => poAction.mutate({ action: 'cancel' })}
-                disabled={poAction.isPending}
+                className="border-danger-200 text-danger-600 hover:bg-danger-50"
+                onClick={() => {
+                  if (confirm(`Withdraw ${po.number}? This will cancel the PO.`)) {
+                    poWithdraw.mutate({ action: 'cancel' })
+                  }
+                }}
+                disabled={poWithdraw.isPending}
               >
                 Withdraw
               </Button>
+            )}
+            {poWithdraw.isError && (
+              <span className="text-xs text-danger-600">
+                {poWithdraw.error instanceof Error ? poWithdraw.error.message : 'Could not withdraw the PO'}
+              </span>
             )}
             {canPlaceOrder && (
               <button
@@ -805,6 +815,15 @@ export default function PoDetailPage() {
             <PoSignoffPanel poId={po.id} source={po.source ?? null} />
           )}
 
+          {/* Freight & Customs — every PO (the panel hides itself on a milk
+              order with no Incoterms and nothing linked, and on an EPMS PO with
+              nothing linked). Right under the sign-off, above the order
+              details: "are this order's fee invoices in?" is what a
+              raw-material PO is opened to find out. */}
+          {activeTab === 'Details' && (
+            <PoFeePanel poId={po.id} canEditDetails={canEditImported} />
+          )}
+
           {/* Details Tab */}
           {activeTab === 'Details' && (
             <div className="rounded-xl bg-white shadow-[0_1px_3px_rgba(10,124,124,0.08)] p-6 flex flex-col gap-6">
@@ -815,10 +834,20 @@ export default function PoDetailPage() {
                     ['Procurement Type', `Type ${po.type} — ${TYPE_LABELS[po.type]}`],
                     ['Vendor', po.vendor_name],
                     ['Currency', po.currency],
+                    // ISS-0087: the PO's own terms, or the vendor's on a PO that has none.
+                    ['Payment Terms', po.payment_terms
+                      ? formatPaymentTerms(po.payment_terms)
+                      : po.vendor_payment_terms ? `${formatPaymentTerms(po.vendor_payment_terms)} (vendor's terms)` : '—'],
                     ['Budget Code', po.budget_code ?? '—'],
                     ['Created', formatDate(po.created_at)],
                     ['Expected Delivery', expectedDeliveryDisplay],
-                    ['Delivery Address', po.delivery_address || '—'],
+                    // PO-IMP-002: an NC PO's Delivery Address defaults to the company
+                    // delivery address until the buyer edits it — Edit Details
+                    // pre-fills it, so the detail shows it too (ISS-0183). Display
+                    // only; nothing is written to the PO.
+                    ['Delivery Address', po.delivery_address
+                      || (po.source === 'nc' && config?.delivery_address
+                        ? `${config.delivery_address} (company default)` : '—')],
                     ['PR Reference', po.pr_number || '—'],
                   ] as [string, string][]).map(([label, value]) => (
                     <div key={label} className="flex flex-col gap-0.5">
@@ -826,10 +855,12 @@ export default function PoDetailPage() {
                       <dd className="text-neutral-900">{value}</dd>
                     </div>
                   ))}
-                  {po.incoterms && (
+                  {(po.incoterms_code || po.incoterms) && (
                     <div className="flex flex-col gap-0.5">
                       <dt className="text-xs font-medium text-neutral-500">Incoterms</dt>
-                      <dd className="text-neutral-900">{po.incoterms}</dd>
+                      <dd className="text-neutral-900">
+                        {[po.incoterms_code, po.incoterms].filter(Boolean).join(' ')}
+                      </dd>
                     </div>
                   )}
                   {/* purchase_orders.notes means two different things depending on origin:
@@ -933,7 +964,7 @@ export default function PoDetailPage() {
                                 <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{item.material_id || '—'}</td>
                               )}
                               <td className="px-4 py-2.5 font-mono text-xs text-neutral-600">{item.supplier_item_id || '—'}</td>
-                              <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{item.qty}</td>
+                              <td className="px-4 py-2.5 text-right font-mono text-neutral-900">{formatQty(item.qty)}</td>
                               <td className="px-4 py-2.5 text-neutral-500">{item.unit}</td>
                               {showSample && (
                                 <td className="px-4 py-2.5 text-neutral-500">{item.sample || '—'}</td>
@@ -947,7 +978,7 @@ export default function PoDetailPage() {
                               <td className="px-4 py-2.5 amount text-right font-semibold text-neutral-900">{formatAmount(item.line_total, po.currency)}</td>
                               <td className="px-4 py-2.5">
                                 <div className="flex flex-col items-center gap-1">
-                                  <span className="text-xs text-neutral-600">{item.received_qty} / {item.qty}</span>
+                                  <span className="text-xs text-neutral-600">{formatQty(item.received_qty)} / {formatQty(item.qty)}</span>
                                   <div className="h-1.5 w-full rounded-full bg-neutral-200">
                                     <div
                                       style={{ width: `${pct}%` }}
@@ -1076,17 +1107,20 @@ export default function PoDetailPage() {
               <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-4">Audit History</h2>
               {events && events.length > 0 ? (
                 <ul className="flex flex-col gap-3">
-                  {events.map((e) => (
-                    <li key={e.id} className="flex gap-3 text-sm">
-                      <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDate(e.created_at)}</span>
-                      <div>
-                        <span className="font-medium text-neutral-800 capitalize">{e.action.replace(/_/g, ' ')}</span>
-                        <span className="text-neutral-500 ml-1">by {e.actor_role.replace(/_/g, ' ')}</span>
-                        {e.actor_name && <span className="text-neutral-400 ml-1">— {e.actor_name}</span>}
-                        {e.comment && <p className="text-neutral-400 text-xs mt-0.5 italic">{e.comment}</p>}
-                      </div>
-                    </li>
-                  ))}
+                  {events.map((e) => {
+                    const line = historyLine(e, workflowSteps)
+                    return (
+                      <li key={e.id} className="flex gap-3 text-sm">
+                        <span className="text-xs text-neutral-400 whitespace-nowrap pt-0.5">{formatDate(e.created_at)}</span>
+                        <div>
+                          <span className="font-medium text-neutral-800 capitalize">{line.action}</span>
+                          <span className="text-neutral-500 ml-1">{line.role}</span>
+                          {line.actorName && <span className="text-neutral-400 ml-1">— {line.actorName}</span>}
+                          {line.note && <p className="text-neutral-400 text-xs mt-0.5 italic">{line.note}</p>}
+                        </div>
+                      </li>
+                    )
+                  })}
                 </ul>
               ) : (
                 <div className="text-sm text-neutral-400 text-center py-8">No history yet</div>

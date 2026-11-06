@@ -12,7 +12,7 @@ Access control (PRD §INV-VIS):
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Query
@@ -21,6 +21,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUserDep, SessionDep
+from app.core.list_sort import check_sort_key, sort_in_memory
 from app.models.epms_mirrors import (
     EpmsCostCenter,
     EpmsInvoice,
@@ -235,12 +236,29 @@ async def _build_invoice_scope(db: AsyncSession, user: dict) -> dict:
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────
 
+# Sortable columns (sort=<key>&dir=asc|desc). The list is a union of two
+# sources assembled in Python, so it is sorted here — over the WHOLE result,
+# before the page is sliced — with the same rules as the SQL lists.
+_UNIFIED_SORTABLE = {
+    "invoice_number": lambda r: r.invoice_number,
+    "vendor_name": lambda r: r.vendor_name,
+    "total_amount": lambda r: r.total_amount,
+    "invoice_date": lambda r: r.invoice_date,
+    "status": lambda r: r.status,
+    "pa_number": lambda r: r.pa_number,
+    "attachment_count": lambda r: r.attachment_count,
+    "created_at": lambda r: r.created_at,
+}
+
+
 @router.get("/all", response_model=UnifiedInvoiceList)
 async def list_all_invoices(
     db: SessionDep,
     user: CurrentUserDep,
     search: Optional[str] = Query(None),
     source: Optional[str] = Query(None),  # 'epms' | 'oa' | None=both
+    sort: Optional[str] = Query(None, description="Column key; unknown -> 422"),
+    dir: Literal["asc", "desc"] = Query("asc"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
@@ -249,6 +267,7 @@ async def list_all_invoices(
     Applies role-based visibility: requester sees own chain; dept_manager sees
     department chain; all other roles see everything.
     """
+    check_sort_key(sort, _UNIFIED_SORTABLE)   # 422 before any query runs
     scope = await _build_invoice_scope(db, user)
     results: list[UnifiedInvoice] = []
 
@@ -340,6 +359,9 @@ async def list_all_invoices(
 
     # Sort by created_at desc, paginate
     results.sort(key=lambda x: x.created_at, reverse=True)
+    if sort is not None:
+        results = sort_in_memory(results, sort, dir, _UNIFIED_SORTABLE,
+                                 tiebreak=lambda x: (x.source, x.id))
     total = len(results)
     start = (page - 1) * page_size
     return UnifiedInvoiceList(items=results[start:start + page_size], total=total)

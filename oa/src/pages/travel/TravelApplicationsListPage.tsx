@@ -8,6 +8,9 @@ import { STATUS } from '@/lib/status'
 import { Pagination } from '@/components/ui/Pagination'
 import { StatusBadge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
+import { SortTh, useSort } from '@uniops/shell'
+
+type TravelSortKey = 'claim_number' | 'employee_name' | 'department_name' | 'travel_destination' | 'submission_date' | 'status'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -38,16 +41,19 @@ export default function TravelApplicationsListPage() {
   const activeStatus = params.get('status') ?? 'all'
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  // Paged by expense-api, so the API sorts (null = its default, newest first).
+  const [sort, onSort] = useSort<TravelSortKey>(null, () => setPage(1))
 
   const qc = useQueryClient()
   const [pendingDelete, setPendingDelete] = useState<TravelApp | null>(null)
   const [deleteError, setDeleteError] = useState('')
 
   const { data, isLoading } = useQuery<TravelAppList>({
-    queryKey: ['travel-list', activeStatus, page, pageSize],
+    queryKey: ['travel-list', activeStatus, page, pageSize, sort],
     queryFn: () => {
       const qs = new URLSearchParams({ type: 'TRA', page: String(page), page_size: String(pageSize) })
       if (activeStatus !== 'all') qs.set('status', activeStatus)
+      if (sort) { qs.set('sort', sort.key); qs.set('dir', sort.dir) }
       return api.get<TravelAppList>(`/api/v1/expenses?${qs}`)
     },
   })
@@ -119,12 +125,12 @@ export default function TravelApplicationsListPage() {
           <table className="w-full text-sm">
             <thead className="border-b border-neutral-100 bg-neutral-50">
               <tr>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide">Application #</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide">Applicant</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide">Department</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide">Destination</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide">Date</th>
-                <th className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide">Status</th>
+                <SortTh label="Application #" sortKey="claim_number" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
+                <SortTh label="Applicant" sortKey="employee_name" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
+                <SortTh label="Department" sortKey="department_name" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
+                <SortTh label="Destination" sortKey="travel_destination" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
+                <SortTh label="Date" sortKey="submission_date" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-4 py-3 text-left font-medium text-neutral-500 text-xs uppercase tracking-wide" />
                 <th className="px-4 py-3 text-right font-medium text-neutral-500 text-xs uppercase tracking-wide">Actions</th>
               </tr>
             </thead>

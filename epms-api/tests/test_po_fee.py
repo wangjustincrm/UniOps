@@ -1,0 +1,465 @@
+"""PO Fee Invoices — Incoterms settings, the required Incoterms code on a
+raw-material PO, freight / customs invoices linked to its arrivals, and the
+per-PO fee status (design: 2026-10-23-po-fee-invoices)."""
+import importlib.util
+import pathlib
+import uuid
+from datetime import datetime, timezone
+from decimal import Decimal
+
+import pytest
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+import app.db.session as session_module
+from app.crud import po_fee
+from app.models.gr import GoodsReceipt
+from app.models.invoice import Invoice
+from app.models.invoice_fee_link import InvoiceFeeLink
+from app.models.po import PurchaseOrder
+from app.models.user import User
+from app.models.vendor import Vendor
+
+pytestmark = pytest.mark.asyncio
+
+INV_URL = "/api/v1/invoices"
+PO_URL = "/api/v1/po"
+CFG_URL = "/api/v1/config"
+
+_MIGRATION = (pathlib.Path(__file__).resolve().parents[1]
+              / "alembic" / "versions" / "pf01_po_fee_invoices.py")
+
+
+def _migration():
+    spec = importlib.util.spec_from_file_location("pf01", _MIGRATION)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _factory(test_engine):
+    return async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+async def _vendor(db, name="Supplier") -> Vendor:
+    s = uuid.uuid4().hex[:6]
+    v = Vendor(id=uuid.uuid4(), code=f"V{s}", name=f"{name} {s}", category="supplier",
+               contact_name="C", contact_email=f"{s}@example.com", payment_terms="net30",
+               currency="CAD", is_active=True, is_supplier=True, is_customer=False)
+    db.add(v)
+    await db.flush()
+    return v
+
+
+async def _po(test_engine, *, code=None, type_=1, source="nc", status="issued",
+              notes=None, arrivals=0, place=None):
+    """An NC PO with `arrivals` goods receipts. Returns (po_id, [gr_id, ...])."""
+    async with _factory(test_engine)() as db:
+        creator = (await db.execute(select(User).limit(1))).scalar_one()
+        v = await _vendor(db)
+        po = PurchaseOrder(
+            id=uuid.uuid4(), number=f"PO-FEE-{uuid.uuid4().hex[:8]}", title="NC import",
+            type=type_, status=status, currency="CAD", subtotal=Decimal("100"),
+            tax_rate=Decimal("0"), tax_amount=Decimal("0"), total=Decimal("100"),
+            vendor_id=v.id, vendor_name=v.name, source=source,
+            nc_source_pk=uuid.uuid4().hex if source == "nc" else None,
+            created_by=creator.id, incoterms_code=code, incoterms=place, notes=notes)
+        db.add(po)
+        await db.flush()
+        grs = []
+        for i in range(arrivals):
+            g = GoodsReceipt(number=f"DH-{uuid.uuid4().hex[:8]}", title="arrival", po_id=po.id,
+                             po_number=po.number, vendor_id=v.id, vendor_name=v.name,
+                             gr_type="physical", procurement_type=1, status="collected",
+                             source=source, created_by=creator.id,
+                             received_at=datetime(2026, 9, 1 + i, tzinfo=timezone.utc))
+            db.add(g)
+            await db.flush()
+            grs.append(g.id)
+        await db.commit()
+        return po.id, grs
+
+
+async def _fee_invoice(admin_client, *, lines=1, number=None):
+    async with session_module.AsyncSessionLocal() as db:
+        v = await _vendor(db, "Forwarder")
+        await db.commit()
+    r = await admin_client.post(INV_URL, json={
+        "vendor_id": str(v.id), "vendor_invoice_number": number or f"FEE-{uuid.uuid4().hex[:8]}",
+        "amount": str(100 * lines), "tax_amount": "0", "currency": "CAD",
+        "invoice_date": "2026-10-01", "due_date": "2026-10-31",
+        "line_items": [{"description": f"Line {i}", "quantity": "1", "unit_price": "100",
+                        "line_total": "100"} for i in range(lines)],
+    })
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def _put_links(client, inv_id, links):
+    return await client.put(f"{INV_URL}/{inv_id}/fee-links", json={"links": [
+        {k: (str(v) if isinstance(v, uuid.UUID) else v) for k, v in l.items()} for l in links]})
+
+
+# ── Incoterms settings ───────────────────────────────────────────────────────
+
+async def test_migration_seed_matches_the_code_defaults():
+    seed = [{"code": c, "label": l, "needs_freight": f, "needs_customs": cu, "active": True}
+            for c, l, f, cu in _migration()._SEED]
+    assert seed == po_fee.DEFAULT_INCOTERMS
+
+
+async def test_config_serves_the_defaults_and_refuses_removing_a_code(admin_client):
+    r = await admin_client.get(CFG_URL)
+    assert r.status_code == 200, r.text
+    terms = r.json()["incoterms_terms"]
+    assert {t["code"] for t in terms} >= {"FOB", "DAP", "DDP"}
+
+    # Deactivating is fine…
+    changed = [{**t, "active": t["code"] != "CIF"} for t in terms]
+    r = await admin_client.patch(CFG_URL, json={"incoterms_terms": changed})
+    assert r.status_code == 200, r.text
+    assert next(t for t in r.json()["incoterms_terms"] if t["code"] == "CIF")["active"] is False
+    # …removing is not.
+    r = await admin_client.patch(CFG_URL, json={"incoterms_terms": changed[1:]})
+    assert r.status_code == 422
+    assert changed[0]["code"] in r.json()["detail"]
+    # Codes are normalised; duplicates refused.
+    r = await admin_client.patch(CFG_URL, json={"incoterms_terms": changed + [{"code": "fob"}]})
+    assert r.status_code == 422
+    # Restore.
+    r = await admin_client.patch(CFG_URL, json={"incoterms_terms": po_fee.DEFAULT_INCOTERMS})
+    assert r.status_code == 200, r.text
+
+
+async def test_backfill_splits_code_and_place(test_engine):
+    rows = {"DAP CRM": ("DAP", "CRM"), "FOB, Arbuckle, CA": ("FOB", "Arbuckle, CA"),
+            "EXW": ("EXW", None), "fca  Toronto": ("FCA", "Toronto"),
+            "Delivered to plant": (None, "Delivered to plant"), "DAPX": (None, "DAPX")}
+    ids = {}
+    for raw in rows:
+        pid, _ = await _po(test_engine, place=raw)
+        ids[raw] = pid
+    mig = _migration()
+    async with _factory(test_engine)() as db:
+        await db.execute(text(mig.SPLIT_SQL).bindparams(codes=[c for c, *_ in mig._SEED]))
+        await db.commit()
+        for raw, (code, place) in rows.items():
+            po = (await db.execute(select(PurchaseOrder).where(
+                PurchaseOrder.id == ids[raw]))).scalar_one()
+            assert (po.incoterms_code, po.incoterms) == (code, place), raw
+
+
+# ── Edit Details: Incoterms required on raw-material orders ──────────────────
+
+async def test_raw_material_po_cannot_be_saved_without_incoterms(admin_client, test_engine):
+    pid, _ = await _po(test_engine)
+    url = f"{PO_URL}/{pid}/imported-details"
+    r = await admin_client.patch(url, json={"buyer_notes": "x"})
+    assert r.status_code == 422 and "Incoterms is required" in r.json()["detail"]
+    r = await admin_client.patch(url, json={"incoterms_code": "XYZ"})
+    assert r.status_code == 422
+    r = await admin_client.patch(url, json={"incoterms_code": "fob", "incoterms": "Arbuckle, CA"})
+    assert r.status_code == 200, r.text
+    assert (r.json()["incoterms_code"], r.json()["incoterms"]) == ("FOB", "Arbuckle, CA")
+    # And it cannot be cleared again.
+    r = await admin_client.patch(url, json={"incoterms_code": None})
+    assert r.status_code == 422
+
+
+async def test_milk_orders_do_not_require_incoterms(admin_client, test_engine):
+    approved, _ = await _po(test_engine, status="nc_milk")
+    pending, _ = await _po(test_engine, status="nc_pending", notes="[Milk / 21-Cxx-CRM05]")
+    for pid in (approved, pending):
+        r = await admin_client.patch(f"{PO_URL}/{pid}/imported-details", json={"buyer_notes": "x"})
+        assert r.status_code == 200, r.text
+
+
+# ── Links and fee status ─────────────────────────────────────────────────────
+
+async def test_freight_per_arrival_and_customs_per_line_complete_the_po(admin_client, test_engine):
+    pid, (g1, g2) = await _po(test_engine, code="FOB", arrivals=2)
+    other_pid, (g3,) = await _po(test_engine, code="FOB", arrivals=1)
+
+    detail = (await admin_client.get(f"{PO_URL}/{pid}/fee-status")).json()
+    assert detail["status"] == "missing"
+    assert detail["term"]["needs_freight"] and detail["term"]["needs_customs"]
+    assert [a["gr_id"] for a in detail["arrivals"]] == [str(g1), str(g2)]
+
+    # One freight bill for both arrivals (the carrier combined them).
+    freight = await _fee_invoice(admin_client)
+    r = await _put_links(admin_client, freight["id"], [
+        {"fee_type": "freight", "po_id": pid, "gr_id": g1},
+        {"fee_type": "freight", "po_id": pid, "gr_id": g2}])
+    assert r.status_code == 200, r.text
+    assert (await admin_client.get(f"{PO_URL}/{pid}/fee-status")).json()["status"] == "missing"
+
+    # One customs invoice, one line per PO.
+    customs = await _fee_invoice(admin_client, lines=3)
+    l0, l1, l2 = (li["id"] for li in customs["line_items"])
+    r = await _put_links(admin_client, customs["id"], [
+        {"fee_type": "customs", "po_id": pid, "gr_id": g1, "invoice_line_id": l0},
+        {"fee_type": "customs", "po_id": pid, "gr_id": g2, "invoice_line_id": l1},
+        {"fee_type": "customs", "po_id": other_pid, "gr_id": g3, "invoice_line_id": l2}])
+    assert r.status_code == 200, r.text
+
+    detail = (await admin_client.get(f"{PO_URL}/{pid}/fee-status")).json()
+    assert detail["status"] == "complete"
+    a1 = detail["arrivals"][0]
+    assert [i["invoice_id"] for i in a1["freight"]] == [freight["id"]]
+    assert a1["customs"][0]["line_description"] == "Line 0"
+    # Customs alone does not complete the other PO — it has no freight yet.
+    assert (await admin_client.get(f"{PO_URL}/{other_pid}/fee-status")).json()["status"] == "missing"
+
+    # The list carries the same roll-up as the detail.
+    async with _factory(test_engine)() as db:
+        number = (await db.execute(select(PurchaseOrder.number).where(PurchaseOrder.id == pid))).scalar_one()
+    items = (await admin_client.get(PO_URL, params={"search": number})).json()["items"]
+    assert [(p["id"], p["fee_status"]) for p in items] == [(str(pid), "complete")]
+
+
+async def test_status_follows_the_incoterms_term(admin_client, test_engine):
+    ddp, _ = await _po(test_engine, code="DDP", arrivals=1)
+    unset, _ = await _po(test_engine, arrivals=1)
+    dap_no_arrival, _ = await _po(test_engine, code="DAP")
+    dap, _ = await _po(test_engine, code="DAP", arrivals=1)
+    type2, _ = await _po(test_engine, code="FOB", type_=2, source=None, status="issued")
+    for pid, want in ((ddp, "not_required"), (unset, "not_set"),
+                      (dap_no_arrival, "no_arrivals"), (dap, "missing"), (type2, None)):
+        assert (await admin_client.get(f"{PO_URL}/{pid}")).json()["fee_status"] == want, want
+
+
+async def test_linking_never_touches_matching_or_payment(admin_client, test_engine):
+    pid, (g1,) = await _po(test_engine, code="FOB", arrivals=1)
+    inv = await _fee_invoice(admin_client)
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/mark-direct")
+    assert r.status_code == 200, r.text
+    r = await _put_links(admin_client, inv["id"], [{"fee_type": "freight", "po_id": pid, "gr_id": g1}])
+    assert r.status_code == 200, r.text
+    after = (await admin_client.get(f"{INV_URL}/{inv['id']}")).json()
+    assert (after["status"], after["match_route"], after["po_id"]) == ("matched", "direct", None)
+
+
+async def test_link_validation(admin_client, test_engine):
+    pid, (g1,) = await _po(test_engine, code="FOB", arrivals=1)
+    other, (g_other,) = await _po(test_engine, code="FOB", arrivals=1)
+    no_arrival, _ = await _po(test_engine, code="FOB")
+    cancelled, _ = await _po(test_engine, code="FOB", status="cancelled", arrivals=1)
+    epms_draft, _ = await _po(test_engine, type_=2, source=None, status="draft")
+    inv = await _fee_invoice(admin_client)
+
+    async def put(*links):
+        return await _put_links(admin_client, inv["id"], list(links))
+
+    # Cancelled, and EPMS POs not approved yet, are refused.
+    for po_id in (cancelled, epms_draft):
+        r = await put({"fee_type": "freight", "po_id": po_id})
+        assert r.status_code == 422 and "not approved" in r.json()["detail"], r.text
+    assert (await put({"fee_type": "freight", "po_id": pid, "gr_id": g_other})).status_code == 422
+    # Every link names an arrival — whether or not the PO has any yet.
+    assert (await put({"fee_type": "freight", "po_id": pid})).status_code == 422
+    assert (await put({"fee_type": "freight", "po_id": no_arrival})).status_code == 422
+    assert (await put({"fee_type": "freight", "po_id": pid, "gr_id": g1,
+                       "invoice_line_id": str(uuid.uuid4())})).status_code == 422
+    # Duplicates collapse.
+    r = await put({"fee_type": "freight", "po_id": pid, "gr_id": g1},
+                  {"fee_type": "freight", "po_id": pid, "gr_id": g1})
+    assert r.status_code == 200 and len(r.json()) == 1
+    got = (await admin_client.get(f"{INV_URL}/{inv['id']}/fee-links")).json()
+    assert [(l["po_id"], l["gr_id"]) for l in got] == [(str(pid), str(g1))]
+
+
+async def test_epms_raised_pos_take_fee_links(admin_client, test_engine):
+    # Opened up 2026-10-30: EPMS's own POs carry freight and customs invoices
+    # too (INV-2026-0844 → PO-678-2606-01). Every fee type, no Incoterms; an
+    # arrival when the PO has one, the whole PO while it has none.
+    bare, _ = await _po(test_engine, type_=2, source=None, status="approved")
+    received, (g1,) = await _po(test_engine, type_=2, source=None, status="fully_received", arrivals=1)
+    inv = await _fee_invoice(admin_client, lines=2)
+    line_ids = [li["id"] for li in inv["line_items"]]
+
+    async def put(*links):
+        return await _put_links(admin_client, inv["id"], list(links))
+
+    # With an arrival on the PO, the link must name it.
+    assert (await put({"fee_type": "freight", "po_id": received})).status_code == 422
+    r = await put({"fee_type": "freight", "po_id": received, "gr_id": g1, "invoice_line_id": line_ids[0]},
+                  {"fee_type": "customs", "po_id": bare, "invoice_line_id": line_ids[1]})
+    assert r.status_code == 200, r.text
+    assert {(l["po_id"], l["gr_id"]) for l in r.json()} == {(str(received), str(g1)), (str(bare), None)}
+
+    # The PO page lists the whole-PO link; nothing is judged without Incoterms.
+    detail = (await admin_client.get(f"{PO_URL}/{bare}/fee-status")).json()
+    assert detail["applies"] is True and detail["is_nc"] is False
+    assert detail["incoterms_required"] is False and detail["term"] is None
+    assert [i["fee_type"] for i in detail["unassigned"]] == ["customs"]
+    po = (await admin_client.get(f"{PO_URL}/{bare}")).json()
+    assert po["fee_status"] is None
+
+
+async def test_milk_orders_take_fee_links_too(admin_client, test_engine):
+    # Opened up 2026-10-26: any NC order with an arrival, milk included —
+    # approved (nc_milk) or still pending with its [Milk / …] tag.
+    approved, (g1,) = await _po(test_engine, status="nc_milk", arrivals=1)
+    pending, (g2,) = await _po(test_engine, status="nc_pending",
+                               notes="[Milk / 21-Cxx-CRM05]", arrivals=1)
+    inv = await _fee_invoice(admin_client)
+    # Without Incoterms a milk order only takes "other" (user 2026-10-26)…
+    for fee_type in ("freight", "customs"):
+        r = await _put_links(admin_client, inv["id"], [{"fee_type": fee_type, "po_id": pending, "gr_id": g2}])
+        assert r.status_code == 422 and "Other" in r.json()["detail"], r.text
+    r = await _put_links(admin_client, inv["id"], [
+        {"fee_type": "other", "po_id": approved, "gr_id": g1, "note": "Lab test"},
+        {"fee_type": "other", "po_id": pending, "gr_id": g2, "note": "Lab test"}])
+    assert r.status_code == 200, r.text
+
+    detail = (await admin_client.get(f"{PO_URL}/{approved}/fee-status")).json()
+    assert detail["applies"] is True and detail["incoterms_required"] is False
+    assert [i["invoice_id"] for i in detail["arrivals"][0]["other"]] == [inv["id"]]
+    # No Incoterms on a milk order: nothing to judge, so the list stays blank
+    # rather than flagging every milk order "Incoterms not set"…
+    assert (await admin_client.get(f"{PO_URL}/{approved}")).json()["fee_status"] is None
+    # …until someone gives it a code.
+    r = await admin_client.patch(f"{PO_URL}/{approved}/imported-details", json={"incoterms_code": "DAP"})
+    assert r.status_code == 200, r.text
+    assert (await admin_client.get(f"{PO_URL}/{approved}")).json()["fee_status"] == "missing"
+    # …and once it has Incoterms, freight / customs are accepted too.
+    r = await _put_links(admin_client, inv["id"], [{"fee_type": "customs", "po_id": approved, "gr_id": g1}])
+    assert r.status_code == 200, r.text
+    assert (await admin_client.get(f"{PO_URL}/{approved}")).json()["fee_status"] == "complete"
+
+
+async def test_an_other_fee_needs_a_note(admin_client, test_engine):
+    pid, (g1,) = await _po(test_engine, code="FOB", arrivals=1)
+    inv = await _fee_invoice(admin_client)
+    for note in (None, "", "   "):
+        r = await _put_links(admin_client, inv["id"],
+                             [{"fee_type": "other", "po_id": pid, "gr_id": g1, "note": note}])
+        assert r.status_code == 422 and "note" in r.json()["detail"].lower(), (note, r.text)
+    r = await _put_links(admin_client, inv["id"], [
+        {"fee_type": "other", "po_id": pid, "gr_id": g1, "note": "  Cold storage  "},
+        {"fee_type": "freight", "po_id": pid, "gr_id": g1, "note": "ignored"}])
+    assert r.status_code == 200, r.text
+    assert sorted((l["fee_type"], l["note"]) for l in r.json()) == [("freight", None), ("other", "Cold storage")]
+    detail = (await admin_client.get(f"{PO_URL}/{pid}/fee-status")).json()
+    assert [i["note"] for i in detail["arrivals"][0]["other"]] == ["Cold storage"]
+
+
+async def test_po_route_invoice_cannot_take_links_but_can_drop_them(admin_client, test_engine):
+    pid, (g1,) = await _po(test_engine, code="FOB", arrivals=1)
+    inv = await _fee_invoice(admin_client)
+    assert (await _put_links(admin_client, inv["id"],
+                             [{"fee_type": "freight", "po_id": pid, "gr_id": g1}])).status_code == 200
+    async with _factory(test_engine)() as db:
+        row = (await db.execute(select(Invoice).where(Invoice.id == uuid.UUID(inv["id"])))).scalar_one()
+        row.match_route = "po"
+        await db.commit()
+    assert (await _put_links(admin_client, inv["id"],
+                             [{"fee_type": "freight", "po_id": pid, "gr_id": g1}])).status_code == 422
+    r = await _put_links(admin_client, inv["id"], [])
+    assert r.status_code == 200 and r.json() == []
+
+
+async def test_candidates_are_nc_orders_with_arrivals_and_approved_epms_pos(admin_client, test_engine):
+    pid, (g1,) = await _po(test_engine, code="FOB", arrivals=1)
+    milk, (gm,) = await _po(test_engine, status="nc_milk", arrivals=1)
+    no_arrival, _ = await _po(test_engine, code="FOB")
+    epms_po, (ge,) = await _po(test_engine, type_=2, source=None, arrivals=1)
+    epms_bare, _ = await _po(test_engine, type_=2, source=None, status="approved")
+    epms_draft, _ = await _po(test_engine, type_=2, source=None, status="draft")
+
+    async def number_of(po_id):
+        async with _factory(test_engine)() as db:
+            return (await db.execute(select(PurchaseOrder.number).where(PurchaseOrder.id == po_id))).scalar_one()
+
+    async with _factory(test_engine)() as db:
+        gr_no = (await db.execute(select(GoodsReceipt.number).where(GoodsReceipt.id == g1))).scalar_one()
+    for q in (await number_of(pid), gr_no):   # by PO number, and by arrival number
+        r = await admin_client.get(f"{INV_URL}/fee-link-candidates", params={"q": q})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["total"] == 1
+        assert [(p["id"], [a["id"] for a in p["arrivals"]]) for p in body["items"]] == [(str(pid), [str(g1)])]
+    body = (await admin_client.get(f"{INV_URL}/fee-link-candidates", params={"q": await number_of(milk)})).json()
+    assert [(p["id"], p["is_milk"]) for p in body["items"]] == [(str(milk), True)]
+    # A milk order with no Incoterms is offered for "other" only.
+    for fee_type, offered in (("other", True), ("freight", False), ("customs", False)):
+        body = (await admin_client.get(f"{INV_URL}/fee-link-candidates",
+                                       params={"q": await number_of(milk), "fee_type": fee_type})).json()
+        assert (body["total"] == 1) is offered, fee_type
+    # The raw-material order is offered for every type.
+    body = (await admin_client.get(f"{INV_URL}/fee-link-candidates",
+                                   params={"q": await number_of(pid), "fee_type": "customs"})).json()
+    assert body["total"] == 1
+    # EPMS-raised POs (since 2026-10-30): approved ones, with or without an
+    # arrival, for every fee type.
+    for po_id, arrivals in ((epms_po, [str(ge)]), (epms_bare, [])):
+        for fee_type in ("freight", "customs", "other"):
+            body = (await admin_client.get(f"{INV_URL}/fee-link-candidates",
+                                           params={"q": await number_of(po_id), "fee_type": fee_type})).json()
+            assert [(p["id"], p["source"], p["is_milk"], [a["id"] for a in p["arrivals"]])
+                    for p in body["items"]] == [(str(po_id), "epms", False, arrivals)], fee_type
+    # An NC order with no arrival yet, and an EPMS draft, are not offered.
+    for excluded in (no_arrival, epms_draft):
+        body = (await admin_client.get(f"{INV_URL}/fee-link-candidates",
+                                       params={"q": await number_of(excluded)})).json()
+        assert body == {"total": 0, "items": []}
+
+
+async def test_candidates_put_the_latest_arrival_first_and_report_the_total(admin_client, test_engine):
+    # A fee invoice follows a delivery: the order that received goods most
+    # recently comes first, even when another order was created after it.
+    tag = uuid.uuid4().hex[:6]
+    arrived, _ = await _po(test_engine, code="FOB", arrivals=1)
+    fresh, _ = await _po(test_engine, code="FOB", arrivals=1)
+    async with _factory(test_engine)() as db:
+        for pid, n in ((arrived, "A"), (fresh, "B")):
+            po = (await db.execute(select(PurchaseOrder).where(PurchaseOrder.id == pid))).scalar_one()
+            po.vendor_name = f"Sort {tag} {n}"
+        await db.execute(text("update goods_receipts set received_at = now() where po_id = :p")
+                         .bindparams(p=arrived))
+        await db.commit()
+    r = await admin_client.get(f"{INV_URL}/fee-link-candidates", params={"q": f"Sort {tag}", "limit": 1})
+    body = r.json()
+    assert body["total"] == 2
+    assert [p["id"] for p in body["items"]] == [str(arrived)]
+
+
+# ── Data protection ──────────────────────────────────────────────────────────
+
+async def test_deleting_an_arrival_keeps_the_link_as_unassigned(admin_client, test_engine):
+    pid, (g1,) = await _po(test_engine, code="FOB", arrivals=1)
+    inv = await _fee_invoice(admin_client)
+    await _put_links(admin_client, inv["id"], [{"fee_type": "freight", "po_id": pid, "gr_id": g1}])
+    async with _factory(test_engine)() as db:
+        await db.execute(text("delete from goods_receipts where id = :g").bindparams(g=g1))
+        await db.commit()
+    detail = (await admin_client.get(f"{PO_URL}/{pid}/fee-status")).json()
+    assert detail["arrivals"] == []
+    assert [i["invoice_id"] for i in detail["unassigned"]] == [inv["id"]]
+
+
+async def test_full_reload_keeps_pos_with_fee_links_or_incoterms(admin_client, test_engine, test_pg_dsn):
+    from app.services.nc_purchase_sync.service import _full_reload_delete
+    linked, (g1,) = await _po(test_engine, arrivals=1)
+    coded, _ = await _po(test_engine, code="FOB")
+    plain, _ = await _po(test_engine)
+    inv = await _fee_invoice(admin_client)
+    async with _factory(test_engine)() as db:
+        db.add(InvoiceFeeLink(invoice_id=uuid.UUID(inv["id"]), fee_type="freight",
+                              po_id=linked, gr_id=g1))
+        await db.commit()
+
+    import psycopg2
+    conn = psycopg2.connect(test_pg_dsn)
+    try:
+        with conn.cursor() as cur:
+            _full_reload_delete(cur)
+        conn.commit()
+    finally:
+        conn.close()
+
+    async with _factory(test_engine)() as db:
+        left = set((await db.execute(select(PurchaseOrder.id).where(
+            PurchaseOrder.id.in_([linked, coded, plain])))).scalars())
+        assert left == {linked, coded}
+        assert (await db.execute(select(GoodsReceipt.id).where(GoodsReceipt.id == g1))).first()

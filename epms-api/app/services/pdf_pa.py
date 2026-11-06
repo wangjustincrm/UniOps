@@ -17,7 +17,7 @@ from reportlab.platypus import (
 
 from app.models.pa import PaymentApplication
 from app.services.pdf_template import (
-    approvals_element, build_logo, footer_note_element, get_tmpl,
+    approvals_element, build_logo, esc, footer_note_element, get_tmpl,
     header_note_element, qty_text, terms_element, unit_price_text,
 )
 
@@ -72,7 +72,7 @@ def generate_pa_pdf(
     # ── Header ───────────────────────────────────────────────────────────────
     pa_type_label = "Prepayment Application" if pa.pa_type == "prepayment" else "Payment Application"
     logo = build_logo(logo_data_url) if tmpl.get("show_logo", True) else None
-    left_col = [logo, Spacer(1, 1 * mm), Paragraph(company_name, co_style), Paragraph(pa_type_label, sub_style)] if logo else [Paragraph(company_name, co_style), Paragraph(pa_type_label, sub_style)]
+    left_col = [logo, Spacer(1, 1 * mm), Paragraph(esc(company_name), co_style), Paragraph(pa_type_label, sub_style)] if logo else [Paragraph(esc(company_name), co_style), Paragraph(pa_type_label, sub_style)]
     header = Table(
         [[left_col, [Paragraph(pa.pa_number, num_style), Paragraph("PAYMENT APPLICATION", tag_style)]]],
         colWidths=[W * 0.6, W * 0.4],
@@ -86,10 +86,11 @@ def generate_pa_pdf(
 
     # ── Meta grid ────────────────────────────────────────────────────────────
     def _cell(lbl: str, val: str | None) -> list:
-        return [Paragraph(lbl, lbl_style), Paragraph(val or "—", val_style)]
+        return [Paragraph(lbl, lbl_style), Paragraph(esc(val) or "—", val_style)]
 
-    submitted_str = pa.submitted_at.strftime("%Y-%m-%d") if pa.submitted_at else "—"
-    approved_str = pa.approved_at.strftime("%Y-%m-%d") if pa.approved_at else "—"
+    # DD/MM/YYYY like every page of the app (UI-DATE-001, ISS-0183) — format only.
+    submitted_str = pa.submitted_at.strftime("%d/%m/%Y") if pa.submitted_at else "—"
+    approved_str = pa.approved_at.strftime("%d/%m/%Y") if pa.approved_at else "—"
 
     # A PA may settle several POs. `po_numbers` is the transient list attached by
     # crud.pa.attach_po_links; the header snapshot is the fallback for a PA
@@ -99,6 +100,20 @@ def generate_pa_pdf(
         po_numbers = [pa.po_number]
     po_label = "PO Numbers" if len(po_numbers) > 1 else "PO Number"
     po_value = ", ".join(po_numbers)
+    allocations = list(getattr(pa, "cost_allocations", None) or [])
+    if getattr(pa, "source", None) == "freight":
+        # No PO: say what the payment is instead of printing an empty cell.
+        po_label, po_value = "Payment For", "Courier freight (cost split below)"
+    elif not po_numbers and getattr(pa, "agreement_number", None):
+        # Agreement route: the agreement is what authorises the payment
+        # (ISS-0109 — the PDF printed "PO Number —" and no agreement at all).
+        po_label, po_value = "Agreement", pa.agreement_number
+    elif getattr(pa, "source", None) == "direct":
+        # Direct PA: no PO either — print what it is charged to.
+        po_label = "Charged To"
+        po_value = " · ".join(v or "—" for v in (
+            getattr(pa, "department_name", None), getattr(pa, "cost_center_code", None),
+            getattr(pa, "budget_account_code", None)))
 
     meta = Table(
         [
@@ -135,9 +150,9 @@ def generate_pa_pdf(
     for i, item in enumerate(pa.line_items, 1):
         rows.append([
             Paragraph(str(i), td_style),
-            Paragraph(item.description, td_style),
+            Paragraph(esc(item.description), td_style),
             Paragraph(qty_text(item.qty), td_style),
-            Paragraph(item.unit, td_style),
+            Paragraph(esc(item.unit), td_style),
             # pa_line_items.unit_price holds five decimals (it is copied from
             # the PO line, and NC quotes purchase prices to five) -- printing
             # it at two silently rounds the price the PDF vouches for. Line
@@ -160,6 +175,36 @@ def generate_pa_pdf(
     ]))
     elements.append(items_tbl)
 
+    # ── Freight cost split ───────────────────────────────────────────────────
+    if allocations:
+        elements.append(Spacer(1, 4 * mm))
+        elements.append(Paragraph("Cost Allocation", sec_style))
+        a_rows: list = [[Paragraph(h, th_style) for h in
+                         ("Invoice", "Department", "Cost Center", "Budget", "Amount", "Tax")]]
+        for a in allocations:
+            cc = " ".join(x for x in (a.get("cost_center_code"), a.get("cost_center_name")) if x)
+            a_rows.append([
+                Paragraph(esc(a.get("invoice_number")) or "—", td_style),
+                Paragraph(esc(a.get("department_name")) or "—", td_style),
+                Paragraph(esc(cc) or "—", td_style),
+                Paragraph(esc(a.get("budget_code")) or "—", td_style),
+                Paragraph(f"{a['amount']:,.2f}", td_style),
+                Paragraph(f"{a['tax_amount']:,.2f}", td_style),
+            ])
+        a_tbl = Table(a_rows, colWidths=[W * 0.16, W * 0.18, W * 0.28, W * 0.14, W * 0.12, W * 0.12],
+                      repeatRows=1)
+        a_tbl.setStyle(TableStyle([
+            ("BACKGROUND",    (0, 0), (-1, 0), _PRIMARY),
+            ("ROWBACKGROUNDS",(0, 1), (-1, -1), [colors.white, _LIGHT]),
+            ("TOPPADDING",    (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 4),
+            ("ALIGN",         (4, 0), (-1, -1), "RIGHT"),
+            ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ]))
+        elements.append(a_tbl)
+
     # ── Payment summary ──────────────────────────────────────────────────────
     elements.append(Spacer(1, 4 * mm))
     summary_rows = [
@@ -170,7 +215,7 @@ def generate_pa_pdf(
     if pa.shipping_amount:
         summary_rows.append([Paragraph("Shipping", lbl_style), Paragraph(f"{pa.shipping_amount:,.2f}", val_style)])
     if pa.other_charges:
-        note = f" ({pa.other_charges_note})" if pa.other_charges_note else ""
+        note = f" ({esc(pa.other_charges_note)})" if pa.other_charges_note else ""
         summary_rows.append([Paragraph(f"Other Charges{note}", lbl_style), Paragraph(f"{pa.other_charges:,.2f}", val_style)])
 
     summary_tbl = Table(summary_rows, colWidths=[W * 0.75, W * 0.25])
@@ -207,7 +252,7 @@ def generate_pa_pdf(
         elements.append(Paragraph("Prepayment Details", sec_style))
         prep_data = [
             *_cell("Prepayment %", f"{pa.prepayment_pct}%"),
-            *_cell("Expected Settlement", str(pa.expected_settlement_date) if pa.expected_settlement_date else "—"),
+            *_cell("Expected Settlement", pa.expected_settlement_date.strftime("%d/%m/%Y") if pa.expected_settlement_date else "—"),
         ]
         prep_tbl = Table([prep_data], colWidths=[W * 0.12, W * 0.38, W * 0.12, W * 0.38])
         prep_tbl.setStyle(TableStyle([
@@ -220,7 +265,7 @@ def generate_pa_pdf(
     if pa.notes:
         elements.append(Spacer(1, 5 * mm))
         elements.append(Paragraph("Notes", sec_style))
-        elements.append(Paragraph(pa.notes, val_style))
+        elements.append(Paragraph(esc(pa.notes), val_style))
 
     # ── Footer ───────────────────────────────────────────────────────────────
     elements.append(Spacer(1, 8 * mm))

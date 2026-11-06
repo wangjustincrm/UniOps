@@ -6,13 +6,14 @@
  * EPMS catalog page reads from here when an admin clicks "From Library…" on
  * an account.
  */
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Layers, Plus, Pencil, Trash2, X, Check, Search,
   ChevronDown, ChevronRight, AlertCircle,
 } from 'lucide-react'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { budgetApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -86,6 +87,13 @@ function FactorLibrary() {
     })
   }, [templates, search, showActiveOnly])
 
+  // Loaded whole. Each template and its expanded values editor share one keyed
+  // Fragment, so a re-sort moves the open editor with its own template.
+  const tplSort = useSortableRows(filtered, {
+    code: (t) => t.factor_code, name: (t) => t.factor_name,
+    values: (t) => t.values.filter((v) => v.is_active).length,
+    status: (t) => (t.is_active ? 'Active' : 'Inactive'),
+  })
   const editing = typeof mode === 'object' ? templates.find((t) => t.id === mode.edit) : null
   const usedCodes = (excludeId?: string) =>
     templates.filter((t) => t.id !== excludeId).map((t) => t.factor_code.toLowerCase())
@@ -217,24 +225,21 @@ function FactorLibrary() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50">
-                {['', 'Code', 'Name', 'Values', 'Status', ''].map((h, i) => (
-                  <th
-                    key={i}
-                    className={cn(
-                      'px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500',
-                      i === 0 && 'w-8', i === 3 && 'w-20 text-center', i === 4 && 'w-24', i === 5 && 'w-24',
-                    )}
-                  >{h}</th>
-                ))}
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500 w-8" />
+                <SortTh label="Code" sortKey="code" sort={tplSort.sort} onSort={tplSort.onSort} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Name" sortKey="name" sort={tplSort.sort} onSort={tplSort.onSort} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Values" sortKey="values" sort={tplSort.sort} onSort={tplSort.onSort} align="center" className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 w-20" />
+                <SortTh label="Status" sortKey="status" sort={tplSort.sort} onSort={tplSort.onSort} className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500 w-24" />
+                <th className="px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500 w-24" />
               </tr>
             </thead>
             <tbody>
-              {filtered.map((t, i) => {
+              {tplSort.rows.map((t, i) => {
                 const isOpen = expanded.has(t.id)
                 const activeValues = t.values.filter((v) => v.is_active).length
                 return (
-                  <>
-                    <tr key={t.id} className={cn('border-b border-neutral-100', i % 2 === 1 ? 'bg-neutral-50' : 'bg-white')}>
+                  <Fragment key={t.id}>
+                    <tr className={cn('border-b border-neutral-100', i % 2 === 1 ? 'bg-neutral-50' : 'bg-white')}>
                       <td className="px-3 py-2.5">
                         <button onClick={() => toggleExpanded(t.id)} className="text-neutral-400 hover:text-neutral-600">
                           {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -280,7 +285,7 @@ function FactorLibrary() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 )
               })}
             </tbody>

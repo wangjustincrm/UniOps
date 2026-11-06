@@ -100,7 +100,7 @@ export function MilestoneEditor(props: {
     update(index, { amount_pct: pctStr, expected_amount: amount })
   }
 
-  // Amount -> a read-only derived % shown next to it (see derivedPct below),
+  // Amount -> a derived % shown in the % field (see derivedPct below),
   // NOT a stored amount_pct. Review finding 2 (round 2): this used to
   // backfill amount_pct whenever pctEnabled, which made a row the user typed
   // as a flat dollar amount indistinguishable — in the stored data — from
@@ -193,12 +193,6 @@ export function MilestoneEditor(props: {
                     onChange={(e) => updateFromAmount(i, e.target.value)}
                     className={cn(cellInputClass, 'text-right')}
                   />
-                  {/* Read-only, computed at render time, never stored — see
-                      derivedPct's comment. Only shown for a row the user
-                      defined in dollars (no amount_pct of its own). */}
-                  {dp !== null && (
-                    <p className="mt-0.5 text-right text-[10px] text-neutral-400">≈ {dp}% of NTE</p>
-                  )}
                 </td>
                 <td className="px-3 py-2">
                   <input
@@ -206,7 +200,13 @@ export function MilestoneEditor(props: {
                     min={0}
                     max={100}
                     step="0.01"
-                    value={row.amount_pct ?? ''}
+                    // A row entered as an amount shows its % in this field the
+                    // way a row entered as a % shows its amount (AGR-004 "the
+                    // other is derived", ISS-0130) — but from derivedPct, at
+                    // render time, never stored: the row stays dollar-defined,
+                    // follows an NTE change, and the server derives the same
+                    // % on save. Typing here makes it a %-defined row.
+                    value={row.amount_pct || dp || ''}
                     disabled={disabled || !pctEnabled}
                     onChange={(e) => updateFromPct(i, e.target.value)}
                     className={cn(cellInputClass, 'text-right')}
@@ -262,7 +262,9 @@ export function MilestoneEditor(props: {
         </div>
       )}
 
-      {!pctEnabled && (
+      {pctEnabled ? (
+        <p className="text-xs text-neutral-500">Enter an amount or a %; the other is calculated.</p>
+      ) : (
         <p className="text-xs text-neutral-500">
           Set a not-to-exceed ceiling on the agreement to enter percentages
         </p>

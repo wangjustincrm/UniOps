@@ -1631,3 +1631,30 @@ async def test_match_review_reject_releases_claimed_receipts(admin_client, test_
     assert len(released_rows) == 3
     assert all(r.status == "open" for r in released_rows)
     assert all(r.invoice_id is None for r in released_rows)
+
+
+async def test_consumed_is_pre_tax(admin_client, test_engine):
+    """ISS-0128: Not-to-Exceed and stage amounts are pre-tax, so consumed is
+    too — 900 + 117 HST consumes 900, not 1,017, and an agreement invoiced
+    exactly to its NTE is not over it."""
+    vendor_id, _vn, user_id = await seed_vendor_and_user(test_engine)
+    agr = await _make_active_agreement(test_engine, vendor_id, user_id,
+                                       not_to_exceed=Decimal("900.00"))
+    r = await admin_client.post(INV_URL, json={
+        "vendor_id": str(vendor_id), "vendor_invoice_number": f"MS-{uuid.uuid4().hex[:6]}",
+        "amount": "900.00", "tax_amount": "117.00", "currency": "CAD",
+        "invoice_date": "2026-07-31", "due_date": "2026-08-30",
+        "line_items": [{"description": "Stage 1", "quantity": "1",
+                        "unit_price": "900.00", "line_total": "900.00"}],
+    })
+    r.raise_for_status()
+    inv = r.json()
+    r = await admin_client.post(f"{INV_URL}/{inv['id']}/match", json={"agreement_id": str(agr.id)})
+    assert r.status_code == 200, r.text
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        fresh = (await db.execute(select(PurchaseAgreement).where(
+            PurchaseAgreement.id == agr.id))).scalar_one()
+    assert fresh.consumed_amount == Decimal("900.00")
+    assert fresh.remaining_amount == Decimal("0.00")

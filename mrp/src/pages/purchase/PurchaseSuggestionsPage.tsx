@@ -12,7 +12,7 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CalendarClock, Download, Loader2, RefreshCw } from 'lucide-react'
-import { Badge, Button } from '@uniops/shell'
+import { Badge, Button, SortTh, useSortableRows } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { saveBlob } from '@/pages/forecast/forecastApi'
 import { cn } from '@/lib/utils'
@@ -100,6 +100,20 @@ export default function PurchaseSuggestionsPage() {
     const all = run?.lines ?? []
     return hideDone ? all.filter((l) => l.status === 'pending') : all
   }, [run, hideDone])
+  // Client sort over the run's lines (one run is loaded whole). Rows keep
+  // their identity by id, so a status change re-sorts without losing the row.
+  const STATUS_LABEL: Record<PurchaseLineStatus, string> = { pending: 'Pending', ordered: 'Ordered', ignored: 'Ignored' }
+  const { rows: sortedLines, sort, onSort } = useSortableRows(lines, {
+    order_date: (l) => l.order_date,
+    material: (l) => l.material_code,
+    supplier: (l) => l.partner_code,
+    need_week: (l) => l.need_week,
+    gross: (l) => Number(l.gross_qty),
+    available: (l) => Number(l.available_qty),
+    net: (l) => Number(l.net_qty),
+    suggested: (l) => Number(l.suggested_qty),
+    status: (l) => STATUS_LABEL[l.status] ?? l.status,
+  })
 
   const stats = run?.stats ?? null
 
@@ -189,15 +203,15 @@ export default function PurchaseSuggestionsPage() {
         <table className="min-w-full text-sm">
           <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
             <tr>
-              <th className="px-3 py-2 text-left">Order by</th>
-              <th className="px-3 py-2 text-left">Material</th>
-              <th className="px-3 py-2 text-left">Supplier</th>
-              <th className="px-3 py-2 text-right">Needed</th>
-              <th className="px-3 py-2 text-right">Gross</th>
-              <th className="px-3 py-2 text-right">Available</th>
-              <th className="px-3 py-2 text-right">Net</th>
-              <th className="px-3 py-2 text-right">Suggested</th>
-              <th className="px-3 py-2 text-center">Status</th>
+              <SortTh label="Order by" sortKey="order_date" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
+              <SortTh label="Material" sortKey="material" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
+              <SortTh label="Supplier" sortKey="supplier" sort={sort} onSort={onSort} className="px-3 py-2 text-left" />
+              <SortTh label="Needed" sortKey="need_week" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
+              <SortTh label="Gross" sortKey="gross" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
+              <SortTh label="Available" sortKey="available" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
+              <SortTh label="Net" sortKey="net" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
+              <SortTh label="Suggested" sortKey="suggested" sort={sort} onSort={onSort} align="right" className="px-3 py-2" />
+              <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} align="center" className="px-3 py-2" />
             </tr>
           </thead>
           <tbody>
@@ -214,7 +228,7 @@ export default function PurchaseSuggestionsPage() {
                 {hideDone ? 'Everything here has been dealt with.' : 'This calculation produced no suggestions.'}
               </td></tr>
             )}
-            {lines.map((line) => (
+            {sortedLines.map((line) => (
               <tr key={line.id} className={cn('border-t border-neutral-100',
                 line.order_date_passed && 'bg-danger-50/40')}>
                 <td className="px-3 py-2 font-mono text-xs"

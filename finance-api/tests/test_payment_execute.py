@@ -49,9 +49,9 @@ def _pa(status="approved", po_id=None, invoice_ids=None, agreement_id=None,
     )
 
 
-def _claim(status="approved") -> ExpenseClaim:
+def _claim(status="approved", claim_type="EXP") -> ExpenseClaim:
     return ExpenseClaim(
-        claim_number=f"EXP-{uuid.uuid4().hex[:8]}", claim_type="EXP", status=status,
+        claim_number=f"{claim_type}-{uuid.uuid4().hex[:8]}", claim_type=claim_type, status=status,
         employee_name="Jane Doe", currency="CAD",
         total_amount=Decimal("113.00"), tax_amount=Decimal("13.00"),
         net_amount=Decimal("100.00"),
@@ -178,6 +178,22 @@ async def test_execute_agreement_pa_marks_invoices_paid_and_posts_as_pa(client, 
     assert ev.source_doc_type == "pa"
 
 
+async def test_execute_refuses_travel_application(client, db_session):
+    """The batch path reaches the executor without expense-api's own TRA guard."""
+    tra = _claim(claim_type="TRA")
+    db_session.add(tra)
+    await db_session.flush()
+
+    r = await _execute(client, "expense_claim", tra.id)
+    assert r.status_code == 409, r.text
+    assert "Travel Applications are not payable" in r.json()["detail"]
+    await db_session.refresh(tra)
+    assert tra.status == "approved"
+    assert (await db_session.execute(
+        select(PostingEvent).where(PostingEvent.source_doc_id == tra.id)
+    )).scalar_one_or_none() is None
+
+
 async def test_execute_claim_flips_paid_and_emits_three_lines(client, db_session):
     claim = _claim()
     db_session.add(claim)
@@ -300,7 +316,8 @@ async def test_self_payment_blocked_for_pa_creator(client, db_session):
 
     r = await _execute(client, "pa_dir", pa.id, user_id=payer)
     assert r.status_code == 403
-    assert "self_payment" in r.json()["detail"]
+    # Plain words, not the rule code (ISS-0115).
+    assert r.json()["detail"] == "You created this PA — another payment officer must pay it."
 
 
 async def test_self_payment_blocked_for_claimant(client, db_session):
@@ -313,6 +330,7 @@ async def test_self_payment_blocked_for_claimant(client, db_session):
 
     r = await _execute(client, "expense_claim", claim.id, user_id=payer)
     assert r.status_code == 403
+    assert r.json()["detail"] == "This is your own expense claim — another payment officer must pay it."
 
 
 async def test_self_payment_allowed_when_rule_disabled(client, db_session):

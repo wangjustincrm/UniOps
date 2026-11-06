@@ -46,8 +46,37 @@ modules:
       - Match a vendor invoice against the order and the receipt
       - Raise a payment application once it is all lined up
       - Record a vendor credit so it is deducted from the next payment to that vendor
+      - Register a courier tracking number and pay the courier's invoice (Freight)
+      - Pay an invoice that has no purchase order or agreement (Direct PA)
     documents: [pr, po, gr, invoice, pa, agreement]
     notes:
+      - >-
+        An invoice with no purchase order or agreement behind it is paid by a
+        Direct PA, which moved here from OA. Either upload it from EPMS →
+        Payment Applications → Create Direct PA → Upload Invoice (it is matched
+        for a Direct PA as it is saved and comes back ticked), or upload it as
+        usual on EPMS → Invoices → Upload Invoice and choose the Direct PA tab on
+        its Match panel. Then EPMS → Payment Applications → Create Direct PA
+        (or the Create Direct PA button on the invoice) takes one or more such
+        invoices of one vendor, with the department it is charged to (your own
+        by default), a cost center of that department, a budget account and the
+        reason. It is approved on the "PA (Direct)" workflow set in Portal →
+        Admin → Approval Workflows, and paid like any other PA.
+      - >-
+        Courier freight (UPS, FedEx, Purolator…) does not go through PR → PO.
+        A buyer registers the tracking number of each pickup with the department
+        / cost center that bears it on EPMS → Freight → Shipments (Register
+        Courier Shipments permission); carriers are set up on Freight →
+        Carriers. The carrier's invoice is uploaded like any other invoice, on
+        EPMS → Invoices → Upload Invoice, by anyone who uploads invoices: when
+        the vendor is a carrier's, the form turns into the courier review by
+        itself (no carrier to choose). The supply-chain person (Match Courier
+        Invoices permission) then matches it. The AI reads
+        every shipment line, the lines are matched to the registered tracking
+        numbers on that invoice's page, unregistered ones and pickup / late fees
+        are assigned by hand, and the matched invoices are paid from EPMS →
+        Payment Applications → New Freight PA, one PA split by cost center. All
+        freight is charged to budget account CRM00204.
       - >-
         A vendor credit (money the vendor owes back — a credit note, or an
         overpayment or duplicate payment they acknowledge) is not an invoice.
@@ -56,6 +85,10 @@ modules:
         automatically, oldest first, from the next payment to that vendor in
         the same currency. A credit-note PDF is uploaded through Upload Invoice,
         which recognises the negative total and switches to Credit Note.
+        To see where a credit went, click it on Vendor Credits: the Usage
+        section lists each payment it was deducted from (payment application,
+        date, batch, amount deducted and cash actually paid). Fully used
+        credits are under the Exhausted tab. Finance roles only.
       - >-
         When the vendor will not issue a credit note — typically they email
         "use invoice #…REV -2,216.15 on your next payment" — use Vendor Credits
@@ -65,6 +98,23 @@ modules:
         .msg or .eml, or printed to PDF. The basis and the attached email are
         both required: the email is the only document behind the credit, and a
         manual credit cannot be approved until it is attached.
+      - >-
+        A document an approver returns (requisition, order, payment
+        application, agreement, and so on) goes back to whoever raised it to
+        change and resubmit. Resubmitting does not start the approval over: it
+        goes straight back to the approver who returned it, and the approvals
+        given before that stand. The same holds for every kind of document in
+        UniOps.
+      - >-
+        Any list in UniOps can be sorted by clicking a column header: once for
+        ascending, again to reverse. On a list that runs over several pages the
+        whole list is sorted, not just the page on screen, and sorting goes
+        back to page 1. Rows with nothing in that column stay at the bottom
+        either way. On requisitions, orders and payment applications, sorting
+        by Status also groups the ones waiting for approval by how far along
+        the approval chain they are, then by approver. Requisitions open newest
+        submitted first, agreements by number and goods receipts by received
+        date, newest first.
 
   - key: oa
     label: OA — Office Automation
@@ -86,45 +136,183 @@ modules:
         A receipt scanned on a claim line (Scan) is kept as that line's receipt
         and attached to the claim automatically when it is saved — it does not
         need uploading again. General and travel expense claims need at least
-        one attachment before they can be submitted. The comment typed when
-        submitting appears in the claim's Approval Timeline.
+        one attachment before they can be submitted — except a travel expense
+        claim whose lines are all date-range lines, which may go without one.
+        The comment typed when submitting appears in the claim's Approval
+        Timeline.
+      - >-
+        Long trips need not be claimed one day at a time. On a Travel Expense
+        line, switch Single day to Date range and give the From and To dates
+        (inside the trip dates): Days claimed starts at the number of days in
+        the range and can be lowered but not raised; enter the Daily rate,
+        and the line amount is days × rate. For meals and incidentals the
+        daily rate may not exceed the limit set in Expense Config. An invoice
+        is optional on a date-range line, but if one is attached its amount
+        must be entered and the line total may not exceed it — one hotel
+        invoice can cover the whole stay. The trip's Country decides tax: in
+        Canada each line has a Tax picker (GST, the province's HST, PST, QST
+        or No tax; it starts on Ontario HST), anywhere else adds no tax.
+        Travel expense claims are in CAD only — convert foreign-currency
+        receipts to CAD yourself before entering them.
+      - >-
+        A claim an approver returns can be changed and sent back by the person
+        who raised it: open the claim, Edit, Save Changes, then Submit. It goes
+        straight back to the approver who returned it — the approvals given
+        before that stand and are not asked for again.
+      - >-
+        A Travel Expense claim is always for a traveller listed on an approved
+        Travel Application, and is paid to that traveller. Travellers file
+        their own; the person who applied can also file for any traveller on
+        it by choosing them under Claim for, and both can then see, edit and
+        submit it. Listed travellers see the application under Travel
+        Applications once it is submitted, read-only; only the applicant can
+        edit or delete it.
+      - >-
+        Nobody approves their own claim or travel application. When the
+        person who raised it is the only one who holds an approval step — a
+        Department Manager's own claim at the Department Manager step, for
+        example — that step is skipped and the claim goes straight to the next
+        approver; the step shows as skipped, not as approved by them. If every
+        step would be theirs, Submit is refused and an administrator has to
+        change the approval workflow.
+      - >-
+        A submitted claim that is stuck with an approver can be chased from the
+        claim itself: Approval Status → Send reminder under the pending step
+        emails whoever holds that step (their delegate if they are away) and
+        says who it reached. It is refused, with the reason shown, when nobody
+        can be reached or a reminder for that step went out recently.
+      - >-
+        When the last approver approves a claim (general expense, mileage,
+        travel expense or a custom form), a PDF of the claim is added to its
+        Attachments as <claim number>.pdf. It carries the approval record —
+        who submitted and who approved each step, when, and their comments.
+        Once a claim is approved or paid, Regenerate PDF on the Attachments
+        card rebuilds it (for claims approved before this existed, or if the
+        first attempt failed) and replaces the old file rather than adding a
+        second. A Travel Application has its own form, regenerated from the
+        Travel Application card.
 
   - key: vms
     label: VMS — Visitor Management
     covers: Visitors coming on site, and the approvals and health checks around it.
-    who: Whoever is hosting a visitor, plus the approvers for the areas being visited.
+    who: Whoever is hosting a visitor, plus the zone managers of the zones being visited.
     typical:
-      - Register a visitor and the areas they need access to
+      - Register a visitor and the zone they need access to
       - Get the visit approved before they arrive
       - Print a badge on the day
+      - Set up access zones and who approves each one (System Admin, VMS Admin → Zones)
     notes:
       - >-
-        The access area decides the route: Office / Lobby is confirmed at
-        once; Warehouse and non-GMP production need the Department Manager;
-        GMP, Laboratory and Entire Plant also need the Quality Manager, and
-        every visitor needs a passing health declaration before the badge
-        prints.
+        The access zone decides the route. Zones, and who manages each, are
+        set by a System Admin in VMS Admin → Zones — the booking page lists
+        the current ones, so name a zone only as the person picked it. A zone
+        with no zone managers needs no approval: the visit is confirmed when
+        booked. A zone with zone managers goes through the VMS visit approval
+        workflow (its steps are set in Portal → Admin → Approval Workflows);
+        at its Zone Manager step every manager of that zone gets the task and
+        any one of them can approve. If none of a zone's managers is still
+        active, the visit stays Pending Approval until an admin updates the
+        zone and it is submitted again. A zone marked GMP-grade also needs a
+        passing health declaration for every visitor before the badge prints.
+      - >-
+        Who approves is fixed when the visit is submitted: changing a zone's
+        managers afterwards does not move a visit already waiting for
+        approval. A confirmed visit can only be moved to a zone that needs no
+        approval or whose managers already had it; otherwise cancel it and
+        book again.
       - >-
         A visit an approver returns for edit comes back to its Host or the
         person who booked it: open the visit, use Edit visit, then Submit for
         approval. The Host can also cancel a visit someone else booked for
-        them.
+        them. A resubmitted visit goes straight back to the approver who
+        returned it; earlier approvals stand.
 
   - key: finance
     label: Finance
     covers: >
       The accounting side: the ledger, accounts payable and receivable, bank
       and payment execution, and the exchange with NC and QuickBooks.
-    who: Finance staff. Bank reconciliation is also open to whoever holds the Bank Reconciliation permission in Access Control — Payment Officers by default. Most people never open it.
+    who: Finance staff. Bank reconciliation is also open to whoever holds the Bank Reconciliation permission in Access Control — Payment Officers by default. AI Financial Analysis (unit costs and cost anomalies) needs its own AI Financial Analysis permission — Finance Manager and Finance Director by default — and is not visible with ordinary Finance access. Most people never open it.
     typical:
       - Execute approved payments and issue remittance advice
       - Reconcile accounts payable against what EPMS says is owed
+      - Send AP invoices to NC as saved payable bills, and see which NC payable document each invoice already has (Finance → Accounts Payable → Push to NC, NC AP Doc column)
+      - Look up the exchange rate a document of a given date takes, fetch Bank of Canada rates, or set a day's rate by hand (Finance → Exchange Rates)
       - Find an invoice keyed into NC more than once, before the extra copy is approved or paid
-      - Post and review journal vouchers
+      - Look up NC's journal vouchers and their lines (the list shows NC's vouchers only — UniOps does not book its own)
+      - List every voucher line for a period with each auxiliary (department, income-expense item, cost centre, party, item…) in its own column, sort by any column, and export it to CSV in that order for analysis (Finance → JV Detail)
       - Find a voucher across several months, or by the item, project or party it was booked against
       - See who prepared, checked and posted a voucher in NC, and whether it was cancelled
       - Reconcile a bank statement against the ledger and sign the period off (a USD or CNY account reconciles in its own currency, not in CAD)
+      - Find why a material's or product's cost looks wrong in a month — a negative or swinging unit cost, value left on zero stock — and where that value went (AI Financial Analysis → Cost Anomalies)
+      - Rebuild one material's cost month by month from NC's own ledger, with provisional receipts paired to their settlement and each issue adjustment traced to the product it landed on (AI Financial Analysis → Material Cost Trace)
+      - See each product's gross margin month by month, invoice by invoice, and why a month went negative or swung — a document that put stock back at a wrong value, conversion cost spread by quantity, or a negative-cost input upstream (AI Financial Analysis → Gross Margin)
+      - Walk a finished good's cost level by level down to purchased materials and find the deepest abnormal node, and see what a unit of it is made of all the way down — milk, ingredients, packaging, payroll, overhead, utilities, accounting adjustments (AI Financial Analysis → Cost Chain; the composition is an analytical figure that adds up to NC's own cost)
+      - Cost each production batch on its own — a figure NC does not have, since NC costs a product per month — and see how far NC's booking for a batch is from what it actually cost, followed batch by batch upstream (AI Financial Analysis → Batch Cost)
+      - Get a suggested standard cost for a product — usage from actual consumption against the BOM, settled prices, conversion per unit — and see what 2026 would have looked like under it (AI Financial Analysis → Standard Cost; a suggestion only, nothing is written to NC, and the conversion basis is Finance's decision)
     notes:
+      - >-
+        Approved expense claims waiting to be paid show on Finance → Payments
+        as a banner per currency (how many, and the total), since that page
+        otherwise lists only payments already made. The banner links to
+        Payment Batches, whose due list can be narrowed to Expense Claim (or
+        PA / Direct PA) with a count on each; clicking a claim number opens the
+        claim, and clicking a PA's vendor invoice number opens that invoice.
+        The Due Date column is the earliest due date among the PA's invoices,
+        shown in red once it has passed; claims have none. Every column header
+        sorts the list — click once for ascending, again to reverse — so the
+        oldest due date or the largest amount can be brought to the top; rows
+        with no value in that column stay at the bottom. Travel Applications
+        are not listed there and cannot be paid — they carry no money.
+        A document already in a draft batch is marked "In draft BP-…" in the
+        due list: it can still be picked into another batch (with a
+        confirmation), but it is paid only once — whichever batch is executed
+        first pays it, the other records that line as failed, and a document
+        that already has a completed payment is never paid again. A draft
+        batch can be cancelled (Cancel Draft, same roles that can pay): nothing
+        is paid and its documents are simply no longer marked.
+      - >-
+        Bank reconciliation counts unposted vouchers (ones NC has not tallied
+        yet) on the ledger side by default — "Include unposted vouchers" at the
+        top of the period is ticked. The choice is saved on that period, so the
+        difference, auto-match and the sign-off report all follow it, and the
+        report says so. Unposted ledger lines are tagged "Unposted". Untick it
+        to reconcile against posted vouchers only; that is refused while a
+        cleared group still holds an unposted line (unmatch it first). A period
+        signed off before this change stays on posted vouchers only. Vouchers NC
+        has discarded or deleted are never counted.
+      - >-
+        Push to NC (Finance → Accounts Payable) replaced the Excel "Export to
+        NC" file. Tick invoices and click Push to NC: each one becomes its own
+        payable bill in NC, in saved state, with the person who clicked as the
+        bill maker — their ERP ID on their UniOps user must match an NC user.
+        The AP clerk then checks, approves and makes the voucher in NC as
+        before. The NC summary is the PO number and title (several POs: the PO
+        numbers only), the agreement number and title, or for a Direct invoice
+        the PA number and title; a courier bill is "Freight" plus its invoice
+        number. A foreign-currency invoice takes the Bank of Canada rate of its
+        issue date (a weekend or holiday: the previous business day). An
+        invoice with more than one tax rate becomes one row per rate. Pushing
+        the same invoice again replaces the NC bill while it is still saved;
+        once approved in NC it is refused and must be changed in NC. An
+        invoice already keyed into NC by hand is not pushed again. The NC AP
+        Doc column shows the NC bill number and whether it is saved or
+        approved (from the hourly NC sync); "Hide in NC" hides invoices NC
+        already has. Invoice numbers are compared ignoring case, spaces and
+        hyphens; a bill found only by dropping the hyphens is marked
+        "Hyphens ignored" with NC's own number, to check it is the same
+        invoice. Invoices on a PO imported from NC (type 1, raw material and
+        packaging) are tagged "NC flow" and cannot be ticked: NC creates
+        that payable itself from its purchase invoice, so they are never
+        pushed, and "Hide in NC" hides them too. A push is refused, with the reason shown, when there is
+        no exchange rate, the vendor has no ERP ID, or the issue date is after
+        the entry or due date (day and month probably swapped).
+      - >-
+        Finance → Exchange Rates holds every rate the system uses: Bank of
+        Canada daily averages, fetched each business day after BoC publishes,
+        plus any rate a finance manager typed in (marked Manual, with a note,
+        and never overwritten by the daily fetch). The rate a document gets is
+        the one of its own date, else the latest within the week before it.
       - >-
         A vendor's invoice number must be unique (vendor name + invoice
         number), and NC itself does not check it. Finance → AP Duplicate
@@ -133,6 +321,24 @@ modules:
         whatever the amounts. The same number from a different vendor is not a
         duplicate, and a bill reversed by an equal credit is not counted as a
         copy.
+      - >-
+        AI Financial Analysis reads NC's inventory-accounting and product-cost
+        data (2026 onwards) and only analyses it — it never changes NC and
+        sends no notifications or tasks; people open it to look. Unit costs
+        and product cost are NC's own figures. A month NC has not closed yet
+        is marked "Not closed in NC" and its figures can still change. Usage
+        means material consumption, not production picking: picking only moves
+        stock from the warehouse to the line and is shown as a transfer.
+        Milk components bought at a provisional price and settled later are
+        the typical cause of a cost jump: if the stock was already consumed,
+        NC pushes the settlement variance onto whatever consumes the material
+        in the month of settlement. Material Cost Trace opens with a Summary that
+        states the cause first — which month went wrong, what drove it (a
+        settlement variance, a month-end tail adjustment, a negative-cost input,
+        cost carried in, a small run), what the months would have cost without
+        it, and, for a product that inherited the problem, the upstream
+        material and month where it started — with the figures and NC document
+        numbers as evidence underneath.
 
   - key: budget
     label: Budget
@@ -148,14 +354,14 @@ modules:
       - budget_plan_vs_actual
     notes:
       - >-
-        You meet this without opening it — the budget widget on the Create PR
-        form is this module, and an over-budget request is stopped or needs
-        justification because of it.
+        You meet this without opening it — the budget widget on the New PR
+        and Edit PR forms is this module, and an over-budget request is stopped
+        or needs justification because of it.
       - >-
-        The Plan vs Actual grid stacks three figures in every cell — plan,
-        actual (docs) and NC posted. Ask about any of them and the rule behind
-        it can be read out, including which cost centre a posting is charged to
-        and why.
+        The Plan vs Actual grid stacks two figures in every cell — plan and NC
+        posted (optionally including vouchers NC has not tallied yet). Ask about
+        either and the rule behind it can be read out, including which cost
+        centre a posting is charged to and why.
 
   - key: mrp
     label: MRP — Material Requirements Planning
@@ -180,6 +386,39 @@ modules:
       - Find a free room and book it
       - Cancel a booking you made
 
+  - key: mdm
+    label: MDM (Master Data)
+    covers: >
+      The company's shared master data, in Portal → MDM. Staff is the employee
+      master, kept up to date from the ADP roster that HR uploads every two
+      weeks before payroll. Users are sign-in accounts. Departments drive
+      budgets and approval routing.
+    who: >
+      HR and system administrators. Staff is personal data, so it needs its own
+      permissions. People in HR get them from the HR additional role, given in
+      Access Control. Creating a user stays with system administrators. An
+      employee who is not in NC is only flagged, not a to-do: HR adds people to
+      NC as needed.
+    typical:
+      - Upload the ADP roster, check the preview and apply it (MDM → Staff → Import)
+      - Map an ADP department to a UniOps department (MDM → Staff → Department Mapping)
+      - Create a sign-in account for an employee (Create user on the employee)
+      - Work the list of changes HR must make in NC (MDM → Staff → NC To-do)
+    notes:
+      - >-
+        An employee and a user are separate records. The employee number, the
+        last six digits of the ADP Position ID, is the key across ADP, UniOps
+        and NC. An ADP import changes employees only, never user accounts, so
+        names and departments on a user are changed on purpose, with Apply to
+        user on the employee.
+      - >-
+        An import never marks anyone as left. People who left are simply not in
+        the ADP file, so they are listed on the import result and someone
+        decides for each one.
+      - >-
+        UniOps cannot write people into NC. HR makes the change in NC's HR
+        module from the NC To-do list, and each item closes by itself when
+        UniOps reads NC and sees the change.
   - key: admin
     label: Admin
     covers: >
@@ -192,7 +431,15 @@ modules:
       - Change how a document type is routed for approval
       - Set up approval cover for someone on leave
       - Correct data through Data Maintenance
+      - Choose which tasks send an email, and whether immediately or in a daily digest
     notes:
       - Permissions are configured here rather than written into the code, so
         what you can see and do is a setting, not a fixed property of your job
         title.
+      - >-
+        Whether a new task emails the person it is assigned to is also a
+        setting, per kind of task (Admin → Notification Settings → Task
+        Notifications): off, sent the moment the task is created, or listed in
+        a once-a-day digest of that person's open tasks. It covers tasks from
+        every module, applies to tasks created after it is changed, and someone
+        who turned notifications off in their own profile is not emailed.

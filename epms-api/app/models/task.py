@@ -4,7 +4,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
@@ -18,7 +18,7 @@ class Task(UUIDPrimaryKey, TimestampMixin, Base):
     #   PO : approve_po | revise_po | place_order | create_prepayment_pa
     #   GR : acknowledge_gr | collect_goods | confirm_service_gr | gr_damage_report | create_pa
     #   PA : approve_pa | revise_pa | process_pa | confirm_settlement
-    #   INV: review_match | match_invoice | resolve_exception
+    #   INV: review_match | match_invoice | resolve_exception | attach_receipts
     #   AGR: confirm_period | chase_agreement_invoice
     # (settle_prepayment / link_invoice are NOT emitted — legacy names only.)
     type: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
@@ -50,3 +50,13 @@ class Task(UUIDPrimaryKey, TimestampMixin, Base):
     created_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+
+    # Notification outbox (app/tasks/task_notifier.py). NULL = not yet handled:
+    # every service that writes tasks (approval-api, vms-api, finance-api, this
+    # one) leaves it NULL, so the notifier sees every new task no matter who
+    # created it. Set once the per-type policy has been applied — sent, digest
+    # or off alike. Setting it back to NULL asks for one more notification.
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Template variables only the creating call site knows (e.g. the invoice
+    # number on a PO-anchored match task), carried to the notifier.
+    notify_vars: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

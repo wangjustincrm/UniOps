@@ -290,6 +290,25 @@ async def test_department_filter(admin_client, test_engine):
     assert gr["number"] not in [r["gr_number"] for r in other.json()["items"]]
 
 
+@pytest.mark.asyncio
+async def test_receiving_report_vendor_filter(admin_client, test_engine):
+    """ISS-0192 #1 (PRD §3.13.5 lists a vendor filter): ?vendor_id= keeps that
+    vendor's receipts and drops everyone else's."""
+    po, vendor_id = await _make_issued_po(admin_client, test_engine, "VND-B12B-RPT-A")
+    gr = await _create_gr(admin_client, po["id"])
+    other_po, _ = await _make_issued_po(admin_client, test_engine, "VND-B12B-RPT-B")
+    other_gr = await _create_gr(admin_client, other_po["id"])
+
+    hit = await admin_client.get(REPORT_URL, params={"vendor_id": vendor_id, **WIDE})
+    assert hit.status_code == 200, hit.text
+    numbers = [r["gr_number"] for r in hit.json()["items"]]
+    assert gr["number"] in numbers
+    assert other_gr["number"] not in numbers
+
+    none = await admin_client.get(REPORT_URL, params={"vendor_id": str(_uuid.uuid4()), **WIDE})
+    assert none.json()["items"] == []
+
+
 # ── Export ────────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

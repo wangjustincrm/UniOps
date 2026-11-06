@@ -199,7 +199,13 @@ def _full_reload_delete(cur) -> int:
         # The reload's job is to rebuild what NC owns, not to discard what it
         # never held.
         "     or exists (select 1 from po_line_items l "
-        "                where l.po_id = po.id and l.nc_source_pk is null))")
+        "                where l.po_id = po.id and l.nc_source_pk is null) "
+        # Same reasoning for what a person recorded against the order: a fee
+        # invoice linked to it (invoice_fee_links would cascade away with the
+        # PO) and the Incoterms code its Edit Details requires — neither is
+        # anything NC holds or the reload can bring back.
+        "     or exists (select 1 from invoice_fee_links f where f.po_id = po.id) "
+        "     or po.incoterms_code is not null)")
     protected = [pid for (pid,) in cur.fetchall()]
     if protected:
         cur.execute("delete from goods_receipts where source='nc' "

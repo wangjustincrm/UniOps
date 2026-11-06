@@ -6,7 +6,6 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.visit import (
-    AccessArea,
     HealthDeclStatus,
     VisitPurpose,
     VisitStatus,
@@ -57,7 +56,8 @@ class VisitCreate(BaseModel):
     planned_arrival: datetime
     planned_departure: datetime | None = None
     visit_purpose: VisitPurpose
-    access_area: AccessArea
+    # A zone code (vms_zones.code); must be an active zone — checked in the route.
+    access_area: str = Field(min_length=1, max_length=40)
     accompanying_count: int | None = Field(default=None, ge=0, le=100)
     vehicle_plate: str | None = Field(default=None, max_length=20)
     notes: str | None = None
@@ -71,7 +71,7 @@ class VisitUpdate(BaseModel):
     planned_arrival: datetime | None = None
     planned_departure: datetime | None = None
     visit_purpose: VisitPurpose | None = None
-    access_area: AccessArea | None = None
+    access_area: str | None = Field(default=None, min_length=1, max_length=40)
     accompanying_count: int | None = Field(default=None, ge=0, le=100)
     vehicle_plate: str | None = Field(default=None, max_length=20)
     notes: str | None = None
@@ -102,7 +102,7 @@ class VisitResponse(BaseModel):
     actual_departure: datetime | None
 
     visit_purpose: VisitPurpose
-    access_area: AccessArea
+    access_area: str
     status: VisitStatus
 
     health_decl_status: HealthDeclStatus | None
@@ -121,7 +121,7 @@ class VisitResponse(BaseModel):
     approval_step_idx: int | None
     submitted_at: datetime | None
     visit_title: str
-    quality_approver_id: uuid.UUID | None
+    zone_approver_ids: list[uuid.UUID] = []
     host_notified_at: datetime | None
 
     created_at: datetime

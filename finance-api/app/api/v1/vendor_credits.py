@@ -15,6 +15,7 @@ role, could read payment amounts through this router.
 """
 import uuid
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
@@ -26,6 +27,8 @@ from app.core.read_authz import authorize_finance_read
 from app.crud import vendor_credit as crud
 from app.db.base import get_db
 from app.models.mirrors import User
+from app.models.payment import PaymentRecord
+from app.models.payment_batch import PaymentBatch
 from app.models.pa import PaymentApplication
 from app.models.vendor_credit import VendorCreditApplication
 from app.schemas.vendor_credit import (
@@ -39,12 +42,32 @@ router = APIRouter(prefix="/vendor-credits", tags=["vendor-credits"])
 _MANAGE_KEY = "epms.vendor_credit.manage"
 
 
-def _actor(user: dict) -> tuple[uuid.UUID, str | None]:
+async def _actor(db: AsyncSession, user: dict) -> tuple[uuid.UUID, str | None]:
     try:
         uid = uuid.UUID(str(user.get("sub", "")))
     except ValueError:
         raise HTTPException(status_code=401, detail="Token has no usable subject")
-    return uid, user.get("full_name") or user.get("email")
+    # The token has no name claim — look the person up (ISS-0089).
+    name = user.get("full_name") or user.get("email")
+    if not name:
+        name = (await crud.user_names(db, {uid})).get(uid)
+    return uid, name
+
+
+async def _named(db: AsyncSession, credits) -> list[VendorCreditResponse]:
+    """Responses with "Recorded by" / "Reviewed by" names filled in for rows
+    whose stored name is empty — every credit recorded before ISS-0089 was
+    fixed. Read-side only; the rows are not rewritten."""
+    out = [VendorCreditResponse.model_validate(c) for c in credits]
+    missing = {r.uploaded_by for r in out if not r.uploaded_by_name}
+    missing |= {r.reviewed_by for r in out if r.reviewed_by and not r.reviewed_by_name}
+    names = await crud.user_names(db, missing)
+    for r in out:
+        if not r.uploaded_by_name:
+            r.uploaded_by_name = names.get(r.uploaded_by)
+        if r.reviewed_by and not r.reviewed_by_name:
+            r.reviewed_by_name = names.get(r.reviewed_by)
+    return out
 
 
 async def _load(db: AsyncSession, credit_id: uuid.UUID):
@@ -67,7 +90,7 @@ async def _load_for_update(db: AsyncSession, credit_id: uuid.UUID):
 @router.post("", response_model=VendorCreditResponse, status_code=201)
 async def create_vendor_credit(payload: VendorCreditCreate, user: CurrentUser,
                                db: AsyncSession = Depends(get_db)):
-    uid, name = _actor(user)
+    uid, name = await _actor(db, user)
     try:
         credit = await crud.create(db, payload=payload, uploaded_by=uid,
                                    uploaded_by_name=name, source=payload.source)
@@ -77,19 +100,28 @@ async def create_vendor_credit(payload: VendorCreditCreate, user: CurrentUser,
         raise HTTPException(status_code=422, detail=str(exc))
     await db.commit()
     await db.refresh(credit)
-    return credit
+    return (await _named(db, [credit]))[0]
 
 
 @router.get("", response_model=VendorCreditListResponse)
 async def list_vendor_credits(user: CurrentUser,
                               status: str | None = Query(default=None),
                               vendor_id: uuid.UUID | None = Query(default=None),
+                              sort: str | None = Query(
+                                  default=None,
+                                  description="Key of crud.vendor_credit.VENDOR_CREDIT_SORTABLE; "
+                                              "unknown -> 422. Omit for newest first."),
+                              dir: Literal["asc", "desc"] = Query(default="asc"),
                               limit: int = Query(default=100, ge=1, le=500),
                               offset: int = Query(default=0, ge=0),
                               db: AsyncSession = Depends(get_db)):
-    items, total = await crud.get_all(db, status=status, vendor_id=vendor_id,
-                                      limit=limit, offset=offset)
-    return VendorCreditListResponse(items=items, total=total)
+    """Paged with limit/offset; `total` is the full count for the pager."""
+    try:
+        items, total = await crud.get_all(db, status=status, vendor_id=vendor_id,
+                                          sort=sort, dir=dir, limit=limit, offset=offset)
+    except crud.UnknownSortKey as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return VendorCreditListResponse(items=await _named(db, items), total=total)
 
 
 @router.get("/suggest", response_model=CreditSuggestResponse)
@@ -143,7 +175,7 @@ async def suggest_credits(user: CurrentUser,
 @router.get("/{credit_id}", response_model=VendorCreditResponse)
 async def get_vendor_credit(credit_id: uuid.UUID, user: CurrentUser,
                             db: AsyncSession = Depends(get_db)):
-    return await _load(db, credit_id)
+    return (await _named(db, [await _load(db, credit_id)]))[0]
 
 
 @router.get("/{credit_id}/applications",
@@ -179,10 +211,36 @@ async def list_vendor_credit_applications(credit_id: uuid.UUID, user: CurrentUse
         )).scalars().all():
             names[u.id] = u.full_name or u.email
 
+    # What the payment itself looked like — the cash that actually left the
+    # bank alongside this credit, and the batch it went out in — so the
+    # drawer reads as "PA X: 25.14 netted, 502.33 paid, batch BP-…" without
+    # sending AP to the Payments hub for each row.
+    payments: dict[uuid.UUID, PaymentRecord] = {}
+    batch_numbers: dict[uuid.UUID, str] = {}
+    if rows:
+        for p in (await db.execute(
+            select(PaymentRecord)
+            .where(PaymentRecord.id.in_({r.payment_record_id for r in rows}))
+        )).scalars().all():
+            payments[p.id] = p
+        batch_ids = {r.batch_id for r in rows if r.batch_id}
+        if batch_ids:
+            for b_id, b_no in (await db.execute(
+                select(PaymentBatch.id, PaymentBatch.batch_number)
+                .where(PaymentBatch.id.in_(batch_ids))
+            )).all():
+                batch_numbers[b_id] = b_no
+
     items = []
     for r in rows:
         row = VendorCreditApplicationRow.model_validate(r)
         row.applied_by_name = names.get(r.applied_by)
+        row.batch_number = batch_numbers.get(r.batch_id) if r.batch_id else None
+        p = payments.get(r.payment_record_id)
+        if p is not None:
+            row.payment_date = p.payment_date
+            row.cash_paid = p.amount
+            row.payment_status = p.status
         items.append(row)
     return VendorCreditApplicationListResponse(
         items=items, total=len(items), total_applied=total_applied)
@@ -193,7 +251,7 @@ async def approve_vendor_credit(credit_id: uuid.UUID, body: VendorCreditReview,
                                 user: dict = Depends(require_permission(_MANAGE_KEY)),
                                 db: AsyncSession = Depends(get_db)):
     credit = await _load_for_update(db, credit_id)
-    uid, name = _actor(user)
+    uid, name = await _actor(db, user)
     try:
         credit = await crud.approve(db, credit, reviewed_by=uid,
                                     reviewed_by_name=name, note=body.note)
@@ -201,7 +259,7 @@ async def approve_vendor_credit(credit_id: uuid.UUID, body: VendorCreditReview,
         raise HTTPException(status_code=409, detail=str(exc))
     await db.commit()
     await db.refresh(credit)
-    return credit
+    return (await _named(db, [credit]))[0]
 
 
 @router.post("/{credit_id}/reject", response_model=VendorCreditResponse)
@@ -209,7 +267,7 @@ async def reject_vendor_credit(credit_id: uuid.UUID, body: VendorCreditReject,
                                user: dict = Depends(require_permission(_MANAGE_KEY)),
                                db: AsyncSession = Depends(get_db)):
     credit = await _load_for_update(db, credit_id)
-    uid, name = _actor(user)
+    uid, name = await _actor(db, user)
     try:
         credit = await crud.reject(db, credit, reviewed_by=uid,
                                    reviewed_by_name=name, note=body.note)
@@ -217,7 +275,7 @@ async def reject_vendor_credit(credit_id: uuid.UUID, body: VendorCreditReject,
         raise HTTPException(status_code=409, detail=str(exc))
     await db.commit()
     await db.refresh(credit)
-    return credit
+    return (await _named(db, [credit]))[0]
 
 
 @router.post("/{credit_id}/void", response_model=VendorCreditResponse)
@@ -225,7 +283,7 @@ async def void_vendor_credit(credit_id: uuid.UUID, body: VendorCreditReject,
                              user: dict = Depends(require_permission(_MANAGE_KEY)),
                              db: AsyncSession = Depends(get_db)):
     credit = await _load_for_update(db, credit_id)
-    uid, name = _actor(user)
+    uid, name = await _actor(db, user)
     try:
         credit = await crud.void(db, credit, reviewed_by=uid,
                                  reviewed_by_name=name, note=body.note)
@@ -233,4 +291,4 @@ async def void_vendor_credit(credit_id: uuid.UUID, body: VendorCreditReject,
         raise HTTPException(status_code=409, detail=str(exc))
     await db.commit()
     await db.refresh(credit)
-    return credit
+    return (await _named(db, [credit]))[0]

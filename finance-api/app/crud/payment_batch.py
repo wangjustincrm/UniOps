@@ -10,7 +10,7 @@ from app.crud import payment_execute
 from app.crud.payment_execute import PaymentPermissionError
 from app.models.mirrors import ExpenseClaim, ExpenseInvoice, Invoice
 from app.models.pa import PaymentApplication
-from app.models.payment_batch import DRAFT, EXECUTED, PaymentBatch, PaymentBatchLine
+from app.models.payment_batch import CANCELLED, DRAFT, EXECUTED, PaymentBatch, PaymentBatchLine
 from app.schemas.payment_execute import PaymentExecuteRequest
 
 
@@ -91,6 +91,49 @@ async def vendor_inv_no_map(db: AsyncSession,
     return out
 
 
+async def epms_invoice_refs(db: AsyncSession,
+                            pas: list[PaymentApplication]) -> dict[uuid.UUID, dict]:
+    """{pa.id: {"invoices": [{"id", "number"}], "due_date": iso | None}} for the
+    due list: the epms invoices a PA settles, so each vendor invoice number can
+    open its EPMS detail page, and the earliest of their due dates (invoices on
+    one PA fall due within 7 days of each other, so the earliest is the one
+    that matters for the run). OA Direct PAs' invoice_ids are expense_invoices
+    ids (see vendor_inv_no_map) and OA no longer has an invoice detail page, so
+    they get no links — the row falls back to the plain vendor_inv_no text."""
+    per_pa: dict[uuid.UUID, list[uuid.UUID]] = {}
+    for r in pas:
+        ids: list[uuid.UUID] = []
+        for iid in r.invoice_ids or []:
+            try:
+                ids.append(uuid.UUID(str(iid)))
+            except (ValueError, TypeError):
+                continue
+        per_pa[r.id] = ids
+    all_ids = {u for ids in per_pa.values() for u in ids}
+    by_id: dict[uuid.UUID, tuple[str | None, date]] = {}
+    if all_ids:
+        rows = (await db.execute(
+            select(Invoice.id, Invoice.vendor_invoice_number, Invoice.due_date)
+            .where(Invoice.id.in_(all_ids))
+        )).all()
+        by_id = {iid: (no, due) for iid, no, due in rows}
+
+    out: dict[uuid.UUID, dict] = {}
+    for pid, ids in per_pa.items():
+        invoices: list[dict] = []
+        dues: list[date] = []
+        for u in dict.fromkeys(ids):
+            if u not in by_id:
+                continue
+            no, due = by_id[u]
+            invoices.append({"id": str(u), "number": no or ""})
+            if due:
+                dues.append(due)
+        out[pid] = {"invoices": invoices,
+                    "due_date": min(dues).isoformat() if dues else None}
+    return out
+
+
 async def vendor_inv_no_for_lines(db: AsyncSession,
                                   lines: list["PaymentBatchLine"]) -> dict[uuid.UUID, str]:
     """{line.doc_id: vendor invoice number(s)} for PA / Direct-PA batch lines.
@@ -111,26 +154,64 @@ async def list_due(db: AsyncSession, currency: str | None = None) -> list[dict]:
         pq = pq.where(PaymentApplication.currency == currency)
     pas = (await db.execute(pq.order_by(PaymentApplication.submitted_at))).scalars().all()
 
-    cq = select(ExpenseClaim).where(ExpenseClaim.status == "approved")
+    # A Travel Application is approved like a claim but pays nothing (total 0)
+    # — leaving it in made it a pickable $0 "Claim" row in every run.
+    cq = select(ExpenseClaim).where(
+        ExpenseClaim.status == "approved",
+        ExpenseClaim.claim_type.notin_(payment_execute.NON_PAYABLE_CLAIM_TYPES))
     if currency:
         cq = cq.where(ExpenseClaim.currency == currency)
     claims = (await db.execute(cq.order_by(ExpenseClaim.created_at))).scalars().all()
 
     inv_no = await vendor_inv_no_map(db, pas)
+    refs = await epms_invoice_refs(db, pas)
+    in_drafts = await draft_batches_by_doc(db, [r.id for r in pas] + [c.id for c in claims])
     rows = [
         {"doc_kind": "pa_dir" if r.is_direct else "pa",
          "doc_id": str(r.id), "doc_number": r.pa_number,
          "payee": r.vendor_name, "vendor_inv_no": inv_no.get(r.id, ""),
-         "amount": str(r.payment_amount), "currency": r.currency}
+         "invoices": refs[r.id]["invoices"], "due_date": refs[r.id]["due_date"],
+         "amount": str(r.payment_amount), "currency": r.currency,
+         "claim_type": None,
+         # po | agreement | freight | direct — lets the UI tell a Freight PA
+         # (doc_kind 'pa', EPMS-owned) apart from a PO/agreement PA.
+         "pa_source": r.source,
+         "in_draft_batches": in_drafts.get(r.id, []),
+         "submitted_at": r.submitted_at.isoformat() if r.submitted_at else None}
         for r in pas
     ]
     rows += [
         {"doc_kind": "expense_claim", "doc_id": str(c.id), "doc_number": c.claim_number,
          "payee": c.employee_name, "vendor_inv_no": "",
-         "amount": str(c.total_amount), "currency": c.currency}
+         "invoices": [], "due_date": None,
+         "amount": str(c.total_amount), "currency": c.currency,
+         "claim_type": c.claim_type,
+         "pa_source": None,
+         "in_draft_batches": in_drafts.get(c.id, []),
+         "submitted_at": c.submitted_at.isoformat() if c.submitted_at else None}
         for c in claims
     ]
     return rows
+
+
+async def draft_batches_by_doc(db: AsyncSession, doc_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[str]]:
+    """doc_id → numbers of the DRAFT batches already holding it.
+
+    A draft reserves nothing, so a document may sit in several (ISS-0163: it
+    stays selectable, but marked); only one execution can pay it — the
+    executor locks the document and refuses a second payment."""
+    if not doc_ids:
+        return {}
+    rows = (await db.execute(
+        select(PaymentBatchLine.doc_id, PaymentBatch.batch_number)
+        .join(PaymentBatch, PaymentBatch.id == PaymentBatchLine.batch_id)
+        .where(PaymentBatch.status == DRAFT, PaymentBatchLine.doc_id.in_(doc_ids))
+        .order_by(PaymentBatch.batch_number)
+    )).all()
+    out: dict[uuid.UUID, list[str]] = {}
+    for doc_id, number in rows:
+        out.setdefault(doc_id, []).append(number)
+    return out
 
 
 async def create_batch(db: AsyncSession, *, docs: list[tuple[str, uuid.UUID]],
@@ -160,6 +241,10 @@ async def create_batch(db: AsyncSession, *, docs: list[tuple[str, uuid.UUID]],
                     + [c.claim_number for c in claims if c.status != "approved"])
     if not_approved:
         raise ValueError(f"Not in approved status: {not_approved}")
+    not_payable = [c.claim_number for c in claims
+                   if c.claim_type in payment_execute.NON_PAYABLE_CLAIM_TYPES]
+    if not_payable:
+        raise ValueError(f"Travel Applications are not payable: {not_payable}")
     currencies = {p.currency for p in pas} | {c.currency for c in claims}
     if len(currencies) > 1:
         raise ValueError(f"A batch must be single-currency; got {sorted(currencies)}")
@@ -190,6 +275,17 @@ async def create_batch(db: AsyncSession, *, docs: list[tuple[str, uuid.UUID]],
             batch_id=batch.id, doc_kind="expense_claim",
             doc_id=c.id, doc_number=c.claim_number, amount=c.total_amount,
         ))
+    await db.flush()
+    return batch
+
+
+async def cancel_batch(db: AsyncSession, batch: PaymentBatch) -> PaymentBatch:
+    """Cancel a draft batch (ISS-0163). Its lines stay as history; nothing
+    else changes, because a draft reserves nothing — its documents are still
+    approved and simply stop showing the "in draft" mark."""
+    if batch.status != DRAFT:
+        raise ValueError(f"Only a draft batch can be cancelled (this one is {batch.status})")
+    batch.status = CANCELLED
     await db.flush()
     return batch
 

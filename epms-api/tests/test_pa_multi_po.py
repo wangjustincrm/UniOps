@@ -242,7 +242,11 @@ async def test_invoice_from_an_unlisted_po_refused(admin_client, test_engine):
     r = await admin_client.post(PA_URL, json=_payload(
         [po1["id"]], invoice_ids=[inv2]))
     assert r.status_code == 422, r.text
-    assert "do not belong" in r.json()["detail"]
+    detail = r.json()["detail"]
+    assert "do not belong" in detail
+    # ISS-0115: the invoice is named by its number, not its UUID.
+    assert str(inv2) not in detail
+    assert ": I-" in detail          # internal_ref (vendor invoice #)
 
 
 @pytest.mark.asyncio

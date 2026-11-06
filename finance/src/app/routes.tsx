@@ -10,6 +10,7 @@ import JournalVouchersPage from '@/pages/finance/JournalVouchersPage'
 import AccountBalancePage from '@/pages/finance/AccountBalancePage'
 import BudgetActualPage from '@/pages/finance/BudgetActualPage'
 import JvValidationPage from '@/pages/finance/JvValidationPage'
+import JvLinesPage from '@/pages/finance/JvLinesPage'
 import PaymentsPage from '@/pages/finance/PaymentsPage'
 import PaymentBatchPage from '@/pages/finance/PaymentBatchPage'
 import BankReconciliationPage from '@/pages/finance/BankReconciliationPage'
@@ -17,6 +18,7 @@ import BankStatementCsvPage from '@/pages/finance/BankStatementCsvPage'
 import CoaConfigPage from '@/pages/finance/CoaConfigPage'
 import TaxSettingsPage from '@/pages/finance/TaxSettingsPage'
 import BankSettingsPage from '@/pages/finance/BankSettingsPage'
+import ExchangeRatesPage from '@/pages/finance/ExchangeRatesPage'
 import QboMirrorPage from '@/pages/finance/QboMirrorPage'
 import QboCreditImportPage from '@/pages/finance/QboCreditImportPage'
 import BudgetConfigPage from '@/pages/budget/BudgetConfigPage'
@@ -25,6 +27,12 @@ import BudgetPlansPage from '@/pages/budget/BudgetPlansPage'
 import BudgetPlanDetailPage from '@/pages/budget/BudgetPlanDetailPage'
 import BudgetCatalogPage from '@/pages/budget/BudgetCatalogPage'
 import FactorLibraryPage from '@/pages/budget/FactorLibraryPage'
+import CostAnomaliesPage from '@/pages/finance/CostAnomaliesPage'
+import MaterialTracePage from '@/pages/finance/MaterialTracePage'
+import GrossMarginPage from '@/pages/finance/GrossMarginPage'
+import CostChainPage from '@/pages/finance/CostChainPage'
+import BatchCostPage from '@/pages/finance/BatchCostPage'
+import StandardCostPage from '@/pages/finance/StandardCostPage'
 
 export const financeRoutes: RouteDef[] = [
   { path: '/finance/ap', element: <AccountsPayablePage />, tab: { title: 'Accounts Payable', icon: 'CreditCard', keyStrategy: 'static', pinned: true } },
@@ -37,6 +45,7 @@ export const financeRoutes: RouteDef[] = [
   { path: '/finance/journal-vouchers', element: <JournalVouchersPage />, tab: { title: 'Journal Vouchers', icon: 'FileText', keyStrategy: 'static' } },
   { path: '/finance/account-balance', element: <AccountBalancePage />, tab: { title: 'Account Balance', icon: 'Scale', keyStrategy: 'static' } },
   { path: '/finance/budget-actual', element: <BudgetActualPage />, tab: { title: 'Budget Actual', icon: 'Target', keyStrategy: 'static' } },
+  { path: '/finance/jv-lines', element: <JvLinesPage />, tab: { title: 'JV Detail', icon: 'Table2', keyStrategy: 'static' } },
   { path: '/finance/jv-validation', element: <JvValidationPage />, tab: { title: 'JV Validation', icon: 'ShieldAlert', keyStrategy: 'static' } },
   { path: '/finance/payments', element: <PaymentsPage />, tab: { title: 'Payments', icon: 'Wallet', keyStrategy: 'static' } },
   { path: '/finance/payment-batches', element: <PaymentBatchPage />, tab: { title: 'Payment Batches', icon: 'Banknote', keyStrategy: 'static' } },
@@ -59,4 +68,20 @@ export const financeRoutes: RouteDef[] = [
   { path: '/finance/coa', element: <CoaConfigPage />, tab: { title: 'Chart of Accounts', icon: 'FolderTree', keyStrategy: 'static' } },
   { path: '/finance/tax', element: <TaxSettingsPage />, tab: { title: 'Tax Settings', icon: 'Percent', keyStrategy: 'static' } },
   { path: '/finance/bank-settings', element: <BankSettingsPage />, tab: { title: 'Bank Settings', icon: 'Settings', keyStrategy: 'static' } },
+  { path: '/finance/fx-rates', element: <ExchangeRatesPage />, tab: { title: 'Exchange Rates', icon: 'Coins', keyStrategy: 'static' } },
+
+  // AI Financial Analysis (finance.analysis.view — not view_finance).
+  { path: '/finance/analysis/anomalies', element: <CostAnomaliesPage />, tab: { title: 'Cost Anomalies', icon: 'Activity', keyStrategy: 'static' } },
+  // The picker (sidebar entry) and one tab PER MATERIAL. A single static tab
+  // was re-focused with its old query when a second Trace link was clicked —
+  // the shell's openTab focuses an existing key without touching its path.
+  { path: '/finance/analysis/trace', element: <MaterialTracePage />, tab: { title: 'Material Cost Trace', icon: 'GitBranch', keyStrategy: 'static' } },
+  { path: '/finance/analysis/margin', element: <GrossMarginPage />, tab: { title: 'Gross Margin', icon: 'Percent', keyStrategy: 'static' } },
+  { path: '/finance/analysis/chain', element: <CostChainPage />, tab: { title: 'Cost Chain', icon: 'Network', keyStrategy: 'static' } },
+  { path: '/finance/analysis/chain/:material', element: <CostChainPage />, tab: { title: (p) => `Chain ${p.material ?? ''}`, icon: 'Network', keyStrategy: 'param', paramName: 'material' } },
+  { path: '/finance/analysis/batches', element: <BatchCostPage />, tab: { title: 'Batch Cost', icon: 'Boxes', keyStrategy: 'static' } },
+  { path: '/finance/analysis/batches/:material', element: <BatchCostPage />, tab: { title: (p) => `Batches ${p.material ?? ''}`, icon: 'Boxes', keyStrategy: 'param', paramName: 'material' } },
+  { path: '/finance/analysis/standard', element: <StandardCostPage />, tab: { title: 'Standard Cost', icon: 'Ruler', keyStrategy: 'static' } },
+  { path: '/finance/analysis/standard/:material', element: <StandardCostPage />, tab: { title: (p) => `Standard ${p.material ?? ''}`, icon: 'Ruler', keyStrategy: 'param', paramName: 'material' } },
+  { path: '/finance/analysis/trace/:material', element: <MaterialTracePage />, tab: { title: (p) => `Trace ${p.material ?? ''}`, icon: 'GitBranch', keyStrategy: 'param', paramName: 'material' } },
 ]

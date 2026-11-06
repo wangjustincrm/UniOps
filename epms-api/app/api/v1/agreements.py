@@ -1,7 +1,7 @@
 """Purchase Agreement endpoints."""
 import logging
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -10,6 +10,8 @@ from app.core.access_scope import _effective_role_codes, build_scope, is_agreeme
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.crud import agreement as agr_crud
+from app.crud._list_order import sort_clauses
+from app.crud.current_step import enrich_current_step
 from app.crud import agreement_schedule as agr_sched_crud
 from app.crud import vendor as vendor_crud
 from app.models.agreement import PurchaseAgreement
@@ -48,13 +50,16 @@ async def list_agreements(
     search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, le=200),
+    sort: str | None = Query(default=None),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
 ):
+    sort_clauses(sort, dir, agr_crud.SORTABLE, ())   # unknown key → 422, before any work
     scope = await build_scope(db, user)
     items, total = await agr_crud.get_all(
         db, status=status_filter, vendor_id=vendor_id,
         agreement_type=agreement_type, search=search,
         ids_subq=scope["agr_subq"],
-        page=page, page_size=page_size,
+        page=page, page_size=page_size, sort=sort, dir=dir,
     )
     return {"items": items, "total": total}
 
@@ -98,8 +103,11 @@ async def _visible_agreement_or_404(
 
 
 @router.get("/{agreement_id}", response_model=AgreementResponse)
-async def get_agreement(agreement_id: uuid.UUID, db: SessionDep, user: AgrReadDep):
-    return await _visible_agreement_or_404(db, user, agreement_id)
+async def get_agreement(agreement_id: uuid.UUID, db: SessionDep, user: AgrReadDep, token: BearerToken):
+    agr = await _visible_agreement_or_404(db, user, agreement_id)
+    # Who the current approval step is waiting on — see get_pr (ISS-0085).
+    await enrich_current_step(db, "agr", [agr], token)
+    return agr
 
 
 @router.get("/{agreement_id}/events", response_model=list[ApprovalEventResponse])

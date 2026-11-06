@@ -2,7 +2,7 @@
 
 > **版本** v0.1 · 2026-09-20 · **状态**:待评审(本文所有数字均为当日实测,取数口径见附录 A)
 > **作者** Justin Wang / Claude
-> **关系** 本文**取代**《Finance-Module-Full-PRD.md》中关于**模块定位**的表述。
+> **关系** 本文**取代**《Finance-Module-Full-PRD.md》(已并入 [docs/prd/FINANCE.md](prd/FINANCE.md))中关于**模块定位**的表述。
 > 该 PRD 里的功能明细仍然有效,但它把 UniOps Finance 定位成「自建财务中台」,
 > 这一条**已被本文推翻**。后续章节(应收 / 总账 / 费用 / 固定资产)会陆续补入本文。
 

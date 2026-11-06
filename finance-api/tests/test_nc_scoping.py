@@ -205,3 +205,10 @@ async def test_budget_actual_partner_export_endpoint_smoke(
         assert r.status_code == 200, r.text
         assert r.headers["content-type"] == (
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        # "Expand vendor" adds the per-account vendor rows under the same scope
+        r = await client.get(
+            "/finance/v1/gl/budget-actual/partner-export"
+            "?fiscal_year=2026&expand_vendor=true&include_unposted=true",
+            headers={"Authorization": f"Bearer {tok}"})
+        assert r.status_code == 200, r.text
+        assert "-by-vendor" in r.headers["content-disposition"]

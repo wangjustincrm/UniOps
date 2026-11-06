@@ -14,6 +14,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Check, Loader2, Search } from 'lucide-react'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import {
   qboCreditImportApi,
   type ImportRunResponse,
@@ -83,6 +84,19 @@ export default function QboCreditImportPage() {
 
   const candidates = data?.candidates ?? []
   const drift = data?.drift ?? []
+  // Both loaded whole. Rows are keyed by QBO vendor id and the decisions
+  // (chosen vendor / skipped) are kept by that id, so re-sorting is safe. The
+  // EPMS vendor column is a picker (an input), so it is not a sort column.
+  const driftSort = useSortableRows(drift, {
+    credit: (d) => d.credit_number, vendor: (d) => d.vendor_name,
+    imported: (d) => Number(d.imported_total), qbo: (d) => Number(d.qbo_balance),
+    applied: (d) => Number(d.applied_amount),
+  })
+  const candSort = useSortableRows(candidates, {
+    vendor: (c) => c.qbo_display_name, credits: (c) => c.credit_count,
+    balance: (c) => Number(c.credit_total), currency: (c) => c.currencies.join(', '),
+    status: (c) => c.already_imported || null,
+  })
 
   const mapping = useMemo(() => {
     const out: Record<string, string> = {}
@@ -177,15 +191,15 @@ export default function QboCreditImportPage() {
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-amber-900">
                 <tr>
-                  <th className="py-1 pr-3 font-medium">Credit</th>
-                  <th className="py-1 pr-3 font-medium">Vendor</th>
-                  <th className="py-1 pr-3 text-right font-medium">Imported</th>
-                  <th className="py-1 pr-3 text-right font-medium">QuickBooks now</th>
-                  <th className="py-1 text-right font-medium">Applied here</th>
+                  <SortTh label="Credit" sortKey="credit" sort={driftSort.sort} onSort={driftSort.onSort} className="py-1 pr-3 font-medium" />
+                  <SortTh label="Vendor" sortKey="vendor" sort={driftSort.sort} onSort={driftSort.onSort} className="py-1 pr-3 font-medium" />
+                  <SortTh label="Imported" sortKey="imported" sort={driftSort.sort} onSort={driftSort.onSort} align="right" className="py-1 pr-3 font-medium" />
+                  <SortTh label="QuickBooks now" sortKey="qbo" sort={driftSort.sort} onSort={driftSort.onSort} align="right" className="py-1 pr-3 font-medium" />
+                  <SortTh label="Applied here" sortKey="applied" sort={driftSort.sort} onSort={driftSort.onSort} align="right" className="py-1 font-medium" />
                 </tr>
               </thead>
               <tbody>
-                {drift.map((d) => (
+                {driftSort.rows.map((d) => (
                   <tr key={d.source_ref} className="border-t border-amber-200">
                     <td className="py-1 pr-3 font-mono text-xs">{d.credit_number}</td>
                     <td className="py-1 pr-3">{d.vendor_name}</td>
@@ -203,12 +217,12 @@ export default function QboCreditImportPage() {
           <table className="w-full text-sm">
             <thead className="text-left text-xs text-neutral-500">
               <tr>
-                <th className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium">QuickBooks vendor</th>
-                <th className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 text-right font-medium">Credits</th>
-                <th className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 text-right font-medium">Open balance</th>
-                <th className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium">Currency</th>
+                <SortTh label="QuickBooks vendor" sortKey="vendor" sort={candSort.sort} onSort={candSort.onSort} className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium" />
+                <SortTh label="Credits" sortKey="credits" sort={candSort.sort} onSort={candSort.onSort} align="right" className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium" />
+                <SortTh label="Open balance" sortKey="balance" sort={candSort.sort} onSort={candSort.onSort} align="right" className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium" />
+                <SortTh label="Currency" sortKey="currency" sort={candSort.sort} onSort={candSort.onSort} className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium" />
                 <th className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium">EPMS vendor</th>
-                <th className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium">Status</th>
+                <SortTh label="Status" sortKey="status" sort={candSort.sort} onSort={candSort.onSort} className="border-b border-neutral-200 bg-neutral-50 px-3 py-2 font-medium" />
               </tr>
             </thead>
             <tbody>
@@ -220,7 +234,7 @@ export default function QboCreditImportPage() {
                 <tr><td colSpan={6} className="px-3 py-6 text-center text-neutral-400">
                   No QuickBooks vendor credits with an open balance.</td></tr>
               )}
-              {candidates.map((c) => {
+              {candSort.rows.map((c) => {
                 const skipped = decisions.skipped.includes(c.qbo_vendor_id)
                 const chosen = decisions.chosen[c.qbo_vendor_id] ?? null
                 return (

@@ -13,11 +13,21 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.db.session as session_module
+from tests.conftest import make_user
 from app.models.visit import Visit
 from app.services import notifications as notif
 
 
 # ── Email capture ───────────────────────────────────────────────────────────-
+
+@pytest.fixture(autouse=True)
+async def _zones_need_approval(test_engine, zone_managers):
+    """These tests are about visits that go through approval: give every zone
+    but Office a manager, as before zones were configurable."""
+    approver = await make_user(test_engine, role="requester")
+    for code in ("warehouse", "production_non_gmp", "production_gmp", "laboratory", "all"):
+        await zone_managers(code, [approver.id])
+
 
 @pytest.fixture(autouse=True)
 def _capture_emails(monkeypatch):

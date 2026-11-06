@@ -122,14 +122,22 @@ export interface UpdatePrBody {
 export interface PrActionBody {
   action: PrAction
   comment?: string
+  // approve / return / reject: the step the decision is for — the server
+  // refuses it once the PR has moved past that step (ISS-0079).
+  expected_step?: number
 }
 
 export interface PrFilters {
+  // Server-side column sort (GET … ?sort=<key>&dir=asc|desc); omitted = API default order.
+  sort?: string
+  dir?: 'asc' | 'desc'
   status?: PrStatus
   pr_type?: number
   department_id?: string
   is_prepaid?: boolean
   created_by?: string
+  /** false = only PRs no PO has been raised from yet. */
+  has_po?: boolean
   search?: string
   page?: number
   page_size?: number
@@ -140,6 +148,14 @@ export interface PrListResponse {
   total: number
 }
 
+/** What an approval event really was (epms-api app/core/approval_event_kind.py).
+ *  `skipped`: the engine skipped the step — stored as an "approve" by whoever
+ *  triggered the skip, so the actor is NOT the approver (ISS-0077).
+ *  `imported`: an approval backfilled by the PMS import account.
+ *  `same_approver`: auto-approved for the person holding both steps (a real
+ *  decision). `manual`: everything else. */
+export type ApprovalEventKind = 'manual' | 'skipped' | 'imported' | 'same_approver'
+
 export interface ApiEvent {
   id: string
   step_idx: number
@@ -149,6 +165,9 @@ export interface ApiEvent {
   actor_name?: string | null
   comment?: string | null
   created_at: string
+  kind: ApprovalEventKind
+  /** Why the step was skipped, marker stripped; set only when kind is skipped. */
+  skip_reason?: string | null
 }
 
 export const prService = {

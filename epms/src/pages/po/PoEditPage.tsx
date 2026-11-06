@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
@@ -12,7 +13,7 @@ import { BudgetAccountSelect } from '@/components/budget/BudgetAccountSelect'
 import { useConfig } from '@/hooks/useConfig'
 import { formatAmount, cn } from '@/lib/utils'
 import type { ProcurementType, PrLineItem, Currency } from '@/types'
-import { CURRENCIES } from '@/types'
+import { enabledCurrencyOptions } from '@/lib/currencies'
 import { usePo, useUpdatePo, usePoAction, usePoAttachments, useUploadPoAttachment, useDeletePoAttachment } from '@/hooks/usePos'
 import { poAttachmentService } from '@/services/poAttachments'
 import { AttachmentsEditor } from '@/components/shared/AttachmentsEditor'
@@ -20,6 +21,8 @@ import { poService } from '@/services/po'
 import { useVendors } from '@/hooks/useVendors'
 import { useTaxCodes } from '@/hooks/useTaxCodes'
 import type { ApiVendor } from '@/services/vendors'
+import { PaymentTermsField } from '@/components/po/PaymentTermsField'
+import { formatPaymentTerms } from '@/lib/paymentTerms'
 
 const TYPE_LABELS: Record<number, string> = {
   1: 'Type 1 — Raw Mat./Packaging',
@@ -42,10 +45,14 @@ export default function PoEditPage() {
   useDocTabTitle(po?.number && `Edit ${po.number}`)
   const { data: config } = useConfig()
   const updatePo = useUpdatePo()
+  const queryClient = useQueryClient()
   const poAction = usePoAction(id ?? '')
 
   const [title, setTitle] = useState('')
   const [selectedVendor, setSelectedVendor] = useState<ApiVendor | null>(null)
+  // ISS-0087: the PO's saved terms (or the vendor's, for a PO saved before
+  // POs had their own); picking a different vendor re-defaults them.
+  const [paymentTerms, setPaymentTerms] = useState('')
   const [vendorQuery, setVendorQuery] = useState('')
   const [vendorOpen, setVendorOpen] = useState(false)
   const [procurementType, setProcurementType] = useState<ProcurementType | null>(null)
@@ -81,6 +88,7 @@ export default function PoEditPage() {
     setTaxCode(po.tax_code ?? null)
     setExpectedDelivery(po.expected_delivery ?? '')
     setDeliveryAddress(po.delivery_address ?? '')
+    setPaymentTerms(po.payment_terms ?? po.vendor_payment_terms ?? '')
     setNotes(po.notes ?? '')
     setIsPrepaid(po.is_prepaid ?? false)
     setLineItems(po.line_items.map((li) => ({
@@ -105,6 +113,11 @@ export default function PoEditPage() {
     }
   }, [po?.id])
 
+  useEffect(() => {
+    if (!po || !selectedVendor || selectedVendor.id === po.vendor_id) return
+    if (selectedVendor.payment_terms) setPaymentTerms(selectedVendor.payment_terms)
+  }, [selectedVendor?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const subtotal = lineItemsTotal(lineItems)
   const effectiveTaxRate = currency === 'CAD' ? taxRate : 0
   const taxAmount = Math.round(subtotal * effectiveTaxRate * 100) / 100
@@ -114,6 +127,7 @@ export default function PoEditPage() {
     const e: Record<string, string> = {}
     if (!title.trim()) e.title = 'Title is required'
     if (!selectedVendor) e.vendor = 'Please select a vendor'
+    if (selectedVendor && !paymentTerms) e.paymentTerms = 'Choose the payment terms'
     if (mode === 'submitted' && !expectedDelivery) e.expectedDelivery = 'Expected delivery date is required'
     setErrors(e)
     return Object.keys(e).length === 0
@@ -141,6 +155,7 @@ export default function PoEditPage() {
           title,
           type: procurementType ?? 2,
           vendor_id: selectedVendor!.id,
+          payment_terms: paymentTerms || undefined,
           currency,
           tax_rate: effectiveTaxRate,
           tax_code: effectiveTaxRate > 0 ? taxCode ?? undefined : null,
@@ -167,6 +182,13 @@ export default function PoEditPage() {
       })
       if (andSubmit) {
         await poService.action(id!, { action: 'submit' })
+        // The PO detail tab is kept alive and does not refetch on show: without
+        // this it kept showing Returned, Edit and the old timeline until F5
+        // (ISS-0122). ['pos'] covers the PO and its events.
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['pos'] }),
+          queryClient.invalidateQueries({ queryKey: ['tasks'] }),
+        ])
       }
       replaceTab(`/po/${id}`)
     } finally {
@@ -301,6 +323,16 @@ export default function PoEditPage() {
               </div>
             </div>
 
+            <FormField label="Payment Terms" htmlFor="paymentTerms">
+              <PaymentTermsField
+                value={paymentTerms}
+                onChange={(t) => { setPaymentTerms(t); setErrors((p) => ({ ...p, paymentTerms: '' })) }}
+                invalid={!!errors.paymentTerms}
+                hint={errors.paymentTerms || (selectedVendor?.payment_terms
+                  ? `Vendor's terms: ${formatPaymentTerms(selectedVendor.payment_terms)}` : null)}
+              />
+            </FormField>
+
             <FormField
               label="Delivery Address / Location"
               htmlFor="deliveryAddress"
@@ -333,7 +365,7 @@ export default function PoEditPage() {
                 <select value={currency}
                   onChange={(e) => { const c = e.target.value as Currency; setCurrency(c); if (c !== 'CAD') { setTaxRate(0); setTaxCode(null) } else setTaxRate(0.13) }}
                   className="h-10 rounded-md border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600">
-                  {CURRENCIES.filter((c) => (config?.enabled_currencies ?? ['CAD','USD','EUR','RMB']).includes(c.value)).map((c) => (
+                  {enabledCurrencyOptions(config, currency).map((c) => (
                     <option key={c.value} value={c.value}>{c.value} — {c.label}</option>
                   ))}
                 </select>

@@ -8,7 +8,7 @@ import {
   Users, Workflow, Building2, Clock, Bell, Send, CreditCard,
   PiggyBank, PackageCheck, ShieldCheck,
   Plus, Pencil, Trash2, X, Check, Search, ImagePlus, Landmark, KeyRound, Eye, EyeOff, Mail, FileText,
-  Download, Upload, ChevronDown,
+  Download, Upload, ChevronDown, Ship,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -25,7 +25,7 @@ import {
   type PdfTemplateSettings,
   type ServiceGrSlaConfig, type GrNotificationSlaConfig,
   type PrepaymentConfig, type CollectionConfig,
-  type NotificationSettings, type EmailTemplate,
+  type NotificationSettings, type EmailTemplate, type IncotermDef,
 } from '@/services/config'
 import { ROLE_LABELS } from '@/stores/user.store'
 import { TEMPLATE_VARIABLE_DOCS } from '@/lib/email-template'
@@ -65,7 +65,7 @@ function primaryRoleLabels(roles: CustomRole[] | undefined): Record<string, stri
 
 type Section =
   | 'company' | 'security' | 'currency' | 'email_templates' | 'pdf_templates'
-  | 'users' | 'vendor_settings'
+  | 'users' | 'vendor_settings' | 'incoterms'
   | 'workflows' | 'service_gr_sla' | 'gr_notification_sla'
   | 'prepayment' | 'budget' | 'collection'
   | 'notifications' | 'pms_import'
@@ -80,6 +80,7 @@ const NAV: NavEntry[] = [
   { id: 'pdf_templates',       label: 'PDF Templates',          icon: FileText },
   { id: 'users',               label: 'User Management',        icon: Users },
   { id: 'vendor_settings',    label: 'Vendor Settings',        icon: Building2 },
+  { id: 'incoterms',           label: 'Incoterms Settings',     icon: Ship },
   { id: 'workflows',           label: 'Approval Workflows',     icon: Workflow },
   { id: 'service_gr_sla',        label: 'Service GR SLA',         icon: Clock },
   { id: 'gr_notification_sla', label: 'GR Notification SLA',    icon: Bell },
@@ -1736,6 +1737,143 @@ function VendorSettingsSection() {
   )
 }
 
+// ─── Incoterms Settings ──────────────────────────────────────────────────────
+// The PO Edit Details picker, and — per code — whether a raw-material PO on
+// that term expects a freight / customs invoice for every arrival (the PO page's
+// Freight & Customs panel and the PO list's Fees column read it live). Codes
+// can be deactivated but never removed: the server refuses a list that drops a
+// code, so a PO that carries one keeps its meaning.
+
+function IncotermsSettingsSection() {
+  const { data: config } = useConfig()
+  const updateConfig = useUpdateConfig()
+  const [terms, setTerms] = useState<IncotermDef[]>([])
+  const [newCode, setNewCode] = useState('')
+  const [newLabel, setNewLabel] = useState('')
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (config?.incoterms_terms) setTerms(config.incoterms_terms)
+  }, [config?.incoterms_terms])
+
+  const setTerm = (code: string, patch: Partial<IncotermDef>) =>
+    setTerms((prev) => prev.map((t) => (t.code === code ? { ...t, ...patch } : t)))
+
+  const code = newCode.trim().toUpperCase()
+  const codeTaken = terms.some((t) => t.code === code)
+  const canAdd = /^[A-Z0-9]{1,10}$/.test(code) && !codeTaken
+
+  const addTerm = () => {
+    if (!canAdd) return
+    setTerms((prev) => [...prev, {
+      code, label: newLabel.trim(), needs_freight: false, needs_customs: false, active: true,
+    }])
+    setNewCode('')
+    setNewLabel('')
+  }
+
+  const handleSave = async () => {
+    if (updateConfig.isPending) return
+    setError(null)
+    try {
+      await updateConfig.mutateAsync({ incoterms_terms: terms })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save Incoterms')
+    }
+  }
+
+  const check = 'h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600'
+
+  return (
+    <div className="flex flex-col gap-6 max-w-3xl">
+      <section className="flex flex-col gap-3">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Incoterms</h3>
+        <p className="text-sm text-neutral-500">
+          These codes are offered in PO Edit Details, where an Incoterms code is required on NC raw-material /
+          packaging orders. Tick what each term leaves to us: a raw-material PO then expects a freight and/or
+          customs invoice for every arrival, shown on the PO&apos;s Freight &amp; Customs panel and in the PO
+          list&apos;s Fees column. Changes apply to every PO at once. A code in use cannot be removed — untick
+          Active to hide it from the picker.
+        </p>
+
+        <div className="overflow-x-auto rounded-lg border border-neutral-200">
+          <table className="w-full text-sm">
+            <thead className="bg-neutral-50 text-xs uppercase tracking-wide text-neutral-500">
+              <tr>
+                <th className="px-3 py-2 text-left font-semibold">Code</th>
+                <th className="px-3 py-2 text-left font-semibold">Name</th>
+                <th className="px-3 py-2 text-center font-semibold">Freight invoice</th>
+                <th className="px-3 py-2 text-center font-semibold">Customs invoice</th>
+                <th className="px-3 py-2 text-center font-semibold">Active</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-neutral-100">
+              {terms.map((t) => (
+                <tr key={t.code} className={cn(!t.active && 'text-neutral-400')}>
+                  <td className="px-3 py-2 font-mono font-medium">{t.code}</td>
+                  <td className="px-3 py-2">
+                    <input
+                      className="h-8 w-full rounded border border-neutral-200 bg-white px-2 text-sm focus:outline-none focus:border-primary-600"
+                      value={t.label}
+                      maxLength={100}
+                      onChange={(e) => setTerm(t.code, { label: e.target.value })}
+                    />
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <input type="checkbox" className={check} checked={t.needs_freight}
+                           aria-label={`${t.code} needs a freight invoice`}
+                           onChange={(e) => setTerm(t.code, { needs_freight: e.target.checked })} />
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <input type="checkbox" className={check} checked={t.needs_customs}
+                           aria-label={`${t.code} needs a customs invoice`}
+                           onChange={(e) => setTerm(t.code, { needs_customs: e.target.checked })} />
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <input type="checkbox" className={check} checked={t.active}
+                           aria-label={`${t.code} active`}
+                           onChange={(e) => setTerm(t.code, { active: e.target.checked })} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <input
+            className={cn(inputCls(!!code && !canAdd), 'w-28 font-mono uppercase')}
+            placeholder="Code"
+            value={newCode}
+            maxLength={10}
+            onChange={(e) => setNewCode(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTerm() } }}
+          />
+          <input
+            className={cn(inputCls(), 'flex-1 min-w-[12rem]')}
+            placeholder="Name (e.g. Free On Board)"
+            value={newLabel}
+            maxLength={100}
+            onChange={(e) => setNewLabel(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTerm() } }}
+          />
+          <Button type="button" variant="secondary" onClick={addTerm} disabled={!canAdd}>
+            <Plus className="h-4 w-4" />
+            Add
+          </Button>
+        </div>
+        {codeTaken && <p className="text-xs text-danger-600">{code} is already in the list.</p>}
+        {error && <p className="text-sm text-danger-600">{error}</p>}
+      </section>
+
+      <SaveBar saved={saved} onSave={handleSave} />
+    </div>
+  )
+}
+
 function PrepaymentConfigSection() {
   const { data: config } = useConfig()
   const updateConfig = useUpdateConfig()
@@ -1786,6 +1924,7 @@ function PrepaymentConfigSection() {
 
 const DEFAULT_COLLECTION_CONFIG: CollectionConfig = {
   collection_required: true,
+  collection_gate_enabled: false,
   reminder_days: 2,
   manager_escalation_days: 5,
   fm_alert_days: 10,
@@ -1803,29 +1942,33 @@ function CollectionConfigSection() {
   return (
     <div className="flex flex-col gap-6 max-w-lg">
       <p className="text-sm text-neutral-500">
-        Controls the <strong>Physical Goods Collection Confirmation</strong> step (§6.3). After Warehouse Staff confirm a Physical GR,
-        the Requester must physically collect the goods and record the collection in EPMS before a PA can be created.
+        Controls the <strong>Physical Goods Collection Confirmation</strong> step. After the warehouse records a physical GR,
+        the PR's requester collects the goods and records the collection in EPMS (Confirm Collection).
       </p>
 
+      {/* collection_gate_enabled is the switch the server reads (ISS-0146);
+          collection_required was stored for years and never read. */}
       <ToggleRow
         label="Collection Confirmation Required"
-        description="When enabled, PA creation for physical GRs is blocked until the Requester submits a Collection Confirmation. When disabled, PA creation is unlocked on GR acknowledgement (legacy behaviour)."
-        checked={cfg.collection_required}
-        onToggle={() => set('collection_required', !cfg.collection_required)}
+        description="When on, a PA for a physical PO cannot be created — and no Create PA task is raised — until goods on that PO have been collected (a GR collected or confirmed); someone with the receipt-override permission can still override with a reason. Service / project POs and prepayment PAs are not affected. When off (default), a PA is allowed as soon as a goods receipt is recorded."
+        checked={!!cfg.collection_gate_enabled}
+        onToggle={() => set('collection_gate_enabled', !cfg.collection_gate_enabled)}
       />
 
-      {cfg.collection_required ? (
+      {cfg.collection_gate_enabled ? (
         <div className="flex flex-col gap-3">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Collection SLA Escalation</h3>
-          <p className="text-sm text-neutral-500">Timers start from the date the Physical GR is saved.</p>
+          <p className="rounded-lg bg-neutral-50 border border-neutral-200 px-3 py-2 text-xs text-neutral-600">
+            Checked once a day (at the daily digest time) while collection is required; counted from the day the GR was saved. The Dept. Manager and Finance Manager are each told once, after the requester has been reminded.
+          </p>
           <SlaRow label="Requester reminder" description="Reminder: 'Goods are ready to collect at Technical Warehouse for PO [#].'" value={cfg.reminder_days} onChange={(v) => set('reminder_days', v)} />
           <SlaRow label="Dept. Manager escalation" description="Dept. Manager notified: 'Goods for PO [#] have not been collected. Please follow up.'" value={cfg.manager_escalation_days} onChange={(v) => set('manager_escalation_days', v)} min={cfg.reminder_days + 1} />
           <SlaRow label="Finance Manager alert" description="Finance Manager notified. GR flagged 'Collection Overdue' on dashboard." value={cfg.fm_alert_days} onChange={(v) => set('fm_alert_days', v)} min={cfg.manager_escalation_days + 1} />
         </div>
       ) : (
         <div className="rounded-lg bg-warning-50 border border-warning-200 px-4 py-3 text-xs text-warning-700">
-          <p className="font-medium mb-0.5">Collection step is disabled</p>
-          <p>PA creation for physical GRs is unlocked upon GR acknowledgement. Collection SLA timers are not active.</p>
+          <p className="font-medium mb-0.5">Collection is not required</p>
+          <p>A PA for a physical PO is allowed as soon as a goods receipt is recorded.</p>
         </div>
       )}
 
@@ -1844,6 +1987,7 @@ const NOTIF_CHANNEL_OPTIONS = [
 ]
 
 const EMAIL_TEMPLATE_LABELS: Record<string, string> = {
+  task_assigned: 'General — New Task (any task without its own template)',
   pr_approval_request: 'PR — Approval Request',
   pr_returned: 'PR — Returned for Revision',
   pr_rejected: 'PR — Rejected',
@@ -2061,11 +2205,19 @@ export default function AdminPanel() {
       case 'currency':            return <MovedToPortal section="Currency Settings" />
       case 'email_templates':     return <EmailTemplates />
       case 'pdf_templates':       return <PdfTemplates />
-      case 'users':               return <MovedToPortal section="User Management" />
+      case 'users':               return (
+        <MovedToPortal
+          section="User Management"
+          path="/mdm/users"
+          linkLabel="Open Users in Portal"
+          description="Users are now managed in the UniOps Portal under MDM → Users, shared across all modules."
+        />
+      )
       case 'workflows':           return <MovedToPortal section="Approval Workflows" />
       case 'service_gr_sla':        return <ServiceGrSla />
       case 'gr_notification_sla': return <GrNotificationSla />
       case 'vendor_settings':     return <VendorSettingsSection />
+      case 'incoterms':           return <IncotermsSettingsSection />
       case 'prepayment':          return <PrepaymentConfigSection />
       case 'budget':              return (
         <MovedToPortal

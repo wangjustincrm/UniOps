@@ -24,6 +24,10 @@ class PurchaseRequest(UUIDPrimaryKey, TimestampMixin, Base):
     # read by approval-api engine.py at submit time to inject pre-approval steps.
     over_budget: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     over_budget_justification: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Over-budget mode frozen at submission (none | fm_only | fm_gm_opm | allow) —
+    # the engine builds the step list from this, not from Budget Config as it
+    # stands later. NULL = never submitted. See engine._ob_prefix.
+    ob_mode_applied: Mapped[str | None] = mapped_column(String(20), nullable=True)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False

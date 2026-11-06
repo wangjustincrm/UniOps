@@ -34,6 +34,28 @@ export function isImportedEditablePo(po: ImportedEditablePo | null | undefined):
   return po?.source === 'nc'
 }
 
+/** The shape isRawMaterialPo reads. */
+export interface RawMaterialPoLike {
+  type?: number
+  source?: string | null
+  status?: string
+  notes?: string | null
+}
+
+/**
+ * An NC raw-material / packaging order — the only POs that take freight /
+ * customs fee links and whose Edit Details requires an Incoterms code. Milk is
+ * excluded whether or not NC has approved it yet: the sync tags a milk order
+ * "[Milk / <trade type>]" in its notes from the first run, before its status
+ * turns nc_milk.
+ *
+ * Must stay in step with epms-api app/crud/po_fee.py::is_raw_material_po.
+ */
+export function isRawMaterialPo(po: RawMaterialPoLike | null | undefined): boolean {
+  return !!po && po.type === 1 && po.source === 'nc' && po.status !== 'nc_milk'
+    && !(po.notes ?? '').includes('[Milk /')
+}
+
 /**
  * Whether the tax control must be locked.
  *

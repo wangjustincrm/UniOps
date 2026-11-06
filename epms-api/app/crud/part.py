@@ -1,9 +1,10 @@
 """CRUD operations for Parts Catalog."""
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.crud._list_order import lower_text, sort_clauses
 from app.models.part import Part
 from app.schemas.part import PartCreate, PartCsvRow, PartImportResult, PartUpdate
 
@@ -31,6 +32,20 @@ def _build_query(
     return q
 
 
+# Sortable columns of the Parts Catalog list (sort=<key>&dir=asc|desc). "Status"
+# sorts the badge text ("Active" / "Inactive"), not the boolean.
+PART_SORTABLE = {
+    "code": lower_text(Part.code),
+    "category": lower_text(Part.category),
+    "name": lower_text(Part.name),
+    "supplier": lower_text(Part.supplier),
+    "supplier_part_no": lower_text(Part.supplier_part_no),
+    "unit_price": Part.unit_price,
+    "unit": lower_text(Part.unit),
+    "status": case((Part.is_active.is_(True), "Active"), else_="Inactive"),
+}
+
+
 async def get_all(
     db: AsyncSession,
     *,
@@ -38,13 +53,16 @@ async def get_all(
     supplier: str | None = None,
     search: str | None = None,
     active_only: bool = False,
+    sort: str | None = None,
+    dir: str = "asc",
     page: int = 1,
     page_size: int = 20,
 ) -> tuple[list[Part], int]:
     base = _build_query(category, supplier, search, active_only)
     total: int = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
     offset = (page - 1) * page_size
-    items = list((await db.execute(base.order_by(Part.code).offset(offset).limit(page_size))).scalars().all())
+    ordering = sort_clauses(sort, dir, PART_SORTABLE, tiebreak=[Part.code, Part.id]) or [Part.code]
+    items = list((await db.execute(base.order_by(*ordering).offset(offset).limit(page_size))).scalars().all())
     return items, total
 
 

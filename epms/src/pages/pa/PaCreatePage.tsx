@@ -1,12 +1,14 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { FreightPaCreate } from './FreightPaCreate'
+import { DirectPaCreate } from './DirectPaCreate'
 import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, AlertTriangle, CreditCard, Info, Package, FileText, CircleDot } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
-import { cn, formatAmount, formatDate } from '@/lib/utils'
+import { cn, formatAmount, formatDate, formatQty } from '@/lib/utils'
 import { useCreatePa, usePas, usePasForPos, usePa } from '@/hooks/usePas'
 import { paService } from '@/services/pa'
 import { usePos } from '@/hooks/usePos'
@@ -14,12 +16,17 @@ import { useAuthStore } from '@/stores/auth.store'
 import { useInvoices, useInvoicesForPos } from '@/hooks/useInvoices'
 import { useGrsForPos } from '@/hooks/useGrs'
 import { useAgreement } from '@/hooks/useAgreements'
-import { useRolePermissions } from '@/hooks/useConfig'
+import { useConfig, useRolePermissions } from '@/hooks/useConfig'
+import { errorMessage, rememberSubmitFailure } from '@/lib/submitFailure'
+import { isPaRequesterScoped, scopedRequesterMayPay } from '@/lib/paCreateScope'
 import type { ApiPo } from '@/services/po'
 import type { ApiInvoice } from '@/services/invoices'
 import type { DocumentStatus } from '@/types'
 import { DueWindowNotice } from './DueWindowNotice'
+import { DerivedPaLinesTable } from './DerivedPaLinesTable'
+import { derivePaLines, derivedLinesTotal, invoiceOwnLines } from '@/lib/paLinesFromInvoices'
 import { dueWindowViolation, earliestDueGroup, PA_INVOICE_DUE_WINDOW_DAYS } from './invoiceDueWindow'
+import { invoiceClaims } from './invoiceClaims'
 
 // Invoice multi-select list — shared by the PO route (the PO's invoices) and
 // the agreement route (matched-but-unpaid invoices only). Both routes hand it
@@ -43,6 +50,15 @@ function isPreselectableAgreementInvoice(inv: ApiInvoice): boolean {
   return (inv.receipt_ids?.length ?? 0) > 0
 }
 
+// AGR-061: a house-account invoice with neither receipts attached nor an
+// explicit no-evidence settlement cannot be paid — the server refuses the PA
+// with a 422. It stays in the picker, greyed out with the reason, rather than
+// being tickable into that refusal (ISS-0134).
+function lacksReceiptEvidence(inv: ApiInvoice): boolean {
+  return inv.agreement_type === 'house_account'
+    && (inv.receipt_ids?.length ?? 0) === 0 && !inv.legacy_settlement
+}
+
 // Says why a row is (or isn't) pre-ticked. Without it the new default reads as
 // an arbitrary subset — the operator sees some boxes ticked and no reason for
 // the others, which is how "the system missed one" starts.
@@ -64,12 +80,13 @@ function ReceiptEvidenceBadge({ invoice }: { invoice: ApiInvoice }) {
   if (invoice.legacy_settlement) {
     return <span className={cn(cls, 'bg-warning-50 text-warning-700')}>Settled without receipts</span>
   }
-  return <span className={cn(cls, 'bg-danger-50 text-danger-700')}>No receipt evidence</span>
+  return <span className={cn(cls, 'bg-danger-50 text-danger-700')}>No receipt evidence yet</span>
 }
 
 // Only invoices this payment could actually settle reach here — one already
-// claimed by another live PA is filtered out by the caller rather than shown
-// greyed out, so every row in this list is tickable.
+// claimed by another live PA is filtered out by the caller. The one exception
+// is a house-account invoice still waiting for receipt evidence: it is shown
+// greyed out and cannot be ticked (lacksReceiptEvidence).
 function InvoiceSelectList({
   invoices, selectedIds, onToggle, enforceDueWindow,
 }: {
@@ -83,11 +100,14 @@ function InvoiceSelectList({
     <div className="flex flex-col gap-1.5">
     <div className="rounded-lg border border-neutral-200 divide-y divide-neutral-100">
       {invoices.map((inv) => {
+        const blocked = lacksReceiptEvidence(inv)
         return (
           <label
             key={inv.id}
+            title={blocked ? 'No receipt evidence yet — attach its receipts (or settle without receipt evidence) on the invoice first.' : undefined}
             className={cn(
-              'flex items-center gap-3 px-4 py-3 transition-colors cursor-pointer hover:bg-primary-50',
+              'flex items-center gap-3 px-4 py-3 transition-colors',
+              blocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:bg-primary-50',
               selectedIds.has(inv.id) && 'bg-primary-50'
             )}
           >
@@ -95,11 +115,12 @@ function InvoiceSelectList({
               type="checkbox"
               checked={selectedIds.has(inv.id)}
               onChange={() => onToggle(inv.id)}
+              disabled={blocked && !selectedIds.has(inv.id)}
               className="h-4 w-4 rounded border-neutral-300 text-primary-600 focus:ring-primary-600"
             />
             <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2 min-w-0">
                   <span className="font-mono text-xs font-semibold text-primary-700">{inv.internal_ref}</span>
                   <ReceiptEvidenceBadge invoice={inv} />
                 </div>
@@ -123,13 +144,29 @@ function InvoiceSelectList({
   )
 }
 
+/** /pa/new: a Freight payment (?source=freight) and a Direct PA
+ *  (?source=direct) are their own forms; everything else — PO, settlement,
+ *  agreement — is the PO-family form below. Separate component types, so
+ *  switching the query on a kept-alive tab remounts cleanly instead of
+ *  changing the hook order. */
 export default function PaCreatePage() {
+  const [searchParams] = useSearchParams()
+  if (searchParams.get('source') === 'freight') {
+    return <FreightPaCreate preselectInvoiceId={searchParams.get('invoice')} />
+  }
+  if (searchParams.get('source') === 'direct') {
+    return <DirectPaCreate preselectInvoiceId={searchParams.get('invoice')} />
+  }
+  return <PoPaCreate />
+}
+
+function PoPaCreate() {
   const replaceTab = useReplaceTab(epmsRoutes)
   const queryClient = useQueryClient()
   const [searchParams] = useSearchParams()
   const createPa = useCreatePa()
   const { user } = useAuthStore()
-  const { data: posData } = usePos()
+  const { data: posData, isLoading: posLoading } = usePos()
   const allPos = posData?.items ?? []
   // 从 Prepayment 详情页「Settle」进入：加载来源预付以预填并锁定上下文
   const settleFromId = searchParams.get('settleFrom') ?? ''
@@ -197,29 +234,15 @@ export default function PaCreatePage() {
   // ── Derived ────────────────────────────────────────────────────────────────
   const myAuthz = useRolePermissions().data
   const perms = myAuthz?.permissions
-  // A plain requester may only pay against POs linked to a PR they raised — even
-  // if a special role assignment (e.g. finance_bp via Role Management) widened
-  // their backend PO scope to all POs — UNLESS they hold a role that authorises
-  // paying on someone else's behalf (see epms-api pa.py::_may_create_pa_on_behalf,
-  // which this list MUST stay in step with, or the picker offers POs the POST
-  // rejects / hides POs it would accept). Privileged roles keep full visibility.
-  //
-  //   procurement_officer — any PO, company-wide.
-  //   dept_admin          — their own department's requisitions. Dropping the
-  //     own-requisition filter is right for them because the PO list the API
-  //     returns to a dept_admin is ALREADY department-scoped server-side
-  //     (access_scope.visible_po_subquery via visible_pr_subquery's dept branch),
-  //     so what is left is what the backend accepts. The one residual gap is a PO
-  //     pulled in by the scope's task-chain OR-condition from another department;
-  //     that one still 403s on submit rather than silently paying.
-  const ON_BEHALF_ROLES = ['procurement_officer', 'dept_admin']
-  const requesterScoped =
-    user?.role === 'requester' &&
-    !myAuthz?.roles?.some((r) => ON_BEHALF_ROLES.includes(r))
+  // A plain requester may only pay against POs linked to a PR they raised,
+  // unless they also hold a role that pays on someone else's behalf (§3.15.2;
+  // the rule and its exceptions live in lib/paCreateScope, shared with PA
+  // Detail's Settle). Privileged roles keep full visibility.
+  const requesterScoped = isPaRequesterScoped(user?.role, myAuthz?.roles)
   const eligiblePos = allPos.filter((p) =>
-    ['approved', 'issued', 'partially_received', 'fully_received', 'closed'].includes(p.status) &&
+    ['approved', 'issued', 'partially_received', 'fully_received', 'closed', 'nc_milk'].includes(p.status) &&
     (p.is_prepaid || p.has_unpaid_invoice) &&
-    (!requesterScoped || p.pr_requester_id === user?.id)
+    (!requesterScoped || scopedRequesterMayPay(p, user?.id, myAuthz?.roles))
   )
 
   const filteredPos = eligiblePos.filter((p) =>
@@ -281,11 +304,17 @@ export default function PaCreatePage() {
   // Kept under the old names so the effects below still read as "wait until the
   // lists for this selection have resolved" — undefined until every PO's query
   // has landed, exactly as a single useQuery's `data` behaved.
-  const invoicesData = isAgreementMode
+  // Memoised: the effects below list these as dependencies and the GR effect
+  // sets state, so a fresh wrapper object each render re-ran it on every
+  // render — an endless render loop for as long as New PA was open, which
+  // starved every router navigation (sidebar links changed the URL but not
+  // the page) until the tab was closed (ISS-0097).
+  const invoicesData = useMemo(() => (isAgreementMode
     ? agreementInvoicesData
-    : (poInvoices.items === undefined ? undefined : { items: poInvoices.items })
-  const grsData = poGrsQuery.items === undefined ? undefined : { items: poGrsQuery.items }
-  const poActivePas = poPasQuery.items === undefined ? undefined : { items: poPasQuery.items }
+    : (poInvoices.items === undefined ? undefined : { items: poInvoices.items })),
+  [isAgreementMode, agreementInvoicesData, poInvoices.items])
+  const grsData = useMemo(() => (poGrsQuery.items === undefined ? undefined : { items: poGrsQuery.items }), [poGrsQuery.items])
+  const poActivePas = useMemo(() => (poPasQuery.items === undefined ? undefined : { items: poPasQuery.items }), [poPasQuery.items])
   // GET /pa has no agreement_id filter — narrow server-side via `search` on the
   // agreement number (matches PaymentApplication.agreement_number ilike), then
   // re-filter client-side on the real agreement_id column below.
@@ -307,7 +336,22 @@ export default function PaCreatePage() {
   )
   const isPrepayment = paType === 'prepayment'
   const canOverride = user?.role === 'system_admin' || !!perms?.pa_override_receipt
-  const receiptBlocked = !isAgreementMode && !isPrepayment && !hasThreeWay
+  // Admin → Collection Config "Collection Confirmation Required" (ISS-0146):
+  // the server also refuses a physical PO whose goods nothing has collected —
+  // the same rule as epms-api crud/po.py po_collection_cleared (physical types
+  // 1/2/3/5; a GR collected / confirmed / discrepancy, or a received quantity),
+  // and the same receipt override. Said here as soon as the PO is chosen
+  // instead of only after Submit (ISS-0188).
+  const collectionGateOn = !!useConfig().data?.collection_config?.collection_gate_enabled
+  const uncollectedPos = (!isAgreementMode && !isPrepayment && collectionGateOn && grsData !== undefined)
+    ? selectedPos.filter((p) =>
+        [1, 2, 3, 5].includes(p.type)
+        && !grsData.items.some((g) => g.po_id === p.id && ['collected', 'confirmed', 'discrepancy'].includes(g.status))
+        && !p.line_items.some((l) => Number(l.received_qty) > 0))
+    : []
+  const receiptBlocked = !isAgreementMode && !isPrepayment && (!hasThreeWay || uncollectedPos.length > 0)
+  // Which of the two the warning names — the server reports "no receipt" first.
+  const blockedByCollection = receiptBlocked && hasThreeWay
   const receiptOverrideMissing = receiptBlocked && (!canOverride || !receiptOverride || !receiptOverrideReason.trim())
 
   // settlement/balance「Original Prepayment PA」下拉数据源:本 PO 下未作废的预付 PA
@@ -315,6 +359,9 @@ export default function PaCreatePage() {
   const linkablePrepayments = (poActivePas?.items ?? []).filter(
     (p) => p.pa_type === 'prepayment' && !['cancelled', 'rejected'].includes(p.status)
   )
+  // A PO may be prepaid in stages (e.g. 30% on order, 70% before shipment); the
+  // vendor cap bounds the SUM of the stages (backend _assert_prepayment_cap).
+  const priorPrepaidPct = linkablePrepayments.reduce((sum, p) => sum + Number(p.prepayment_pct ?? 0), 0)
 
   // Invoices already claimed by an active PA (not cancelled/rejected) — on this
   // PO in PO mode, or on this agreement in agreement mode.
@@ -325,13 +372,8 @@ export default function PaCreatePage() {
   // because the invoice is HIDDEN from the picker below rather than shown
   // greyed out, and an invoice that silently is not there is a hunt: the note
   // that replaces the row has to be able to say where it went.
-  const claimedByPaNumber = new Map<string, string>()
-  for (const pa of (isAgreementMode ? agreementPaItems : (poActivePas?.items ?? []))) {
-    if (['cancelled', 'rejected'].includes(pa.status)) continue
-    for (const invId of pa.invoice_ids) {
-      if (!claimedByPaNumber.has(invId)) claimedByPaNumber.set(invId, pa.pa_number)
-    }
-  }
+  const claimedByPaNumber = invoiceClaims(
+    isAgreementMode ? agreementPaItems : (poActivePas?.items ?? []), paType)
   const lockedInvoiceIds = new Set<string>(claimedByPaNumber.keys())
 
   // "Claimed" describes a fact about the invoice, not about this form: another
@@ -358,6 +400,17 @@ export default function PaCreatePage() {
   )
   const autoSubtotal = selectedPoLines.reduce((s, l) => s + Number(l.line_total), 0)
 
+  // ISS-0133: a prepayment's pre-tax amount is the % of the whole PO's pre-tax
+  // total — computed, not typed (the server recomputes it on save,
+  // api/v1/pa.py::_prepayment_amounts). Tax is pre-filled with the same share
+  // of the PO's tax and stays editable, like freight, as on any PA.
+  const prepayPctNum = parseFloat(prepaymentPct) || 0
+  const prepayBase   = Number(selectedPo?.subtotal ?? 0)
+  const prepayPretax = Math.round(prepayBase * prepayPctNum) / 100
+  const prepayTax    = prepayBase > 0
+    ? Math.round(prepayPretax * Number(selectedPo?.tax_amount ?? 0) / prepayBase * 100) / 100
+    : Math.round(prepayPretax * Number(selectedPo?.tax_rate ?? 0) * 100) / 100
+
   // Selected-invoice aggregates. The PA pays these invoices, so their real
   // pre-tax/tax are the source of truth for the charge breakdown — a PO whose
   // snapshotted tax_rate is 0/null (e.g. a freight vendor set up without a rate)
@@ -366,6 +419,16 @@ export default function PaCreatePage() {
   const hasLinkedInvoices = selectedInvoices.length > 0
   const invoiceSubtotal   = selectedInvoices.reduce((s, inv) => s + Number(inv.amount), 0)
   const invoiceTax        = selectedInvoices.reduce((s, inv) => s + Number(inv.tax_amount), 0)
+  // Invoices matched line by line decide the PA's lines (and, for an invoice
+  // split across POs, this PA's share of it); the PO line picker only remains
+  // for invoices matched against the PO total. The server re-derives on save.
+  // Agreement PA: the invoices' own lines (ISS-0109). Preview only; the
+  // server builds the same lines on save (crud/pa_lines.py::invoice_lines).
+  const agreementLines = isAgreementMode ? invoiceOwnLines(selectedInvoices) : null
+  const derivedLines = isAgreementMode ? null : derivePaLines(
+    selectedInvoices, selectedPos.map((p) => p.id),
+    new Map(selectedPos.flatMap((p) => p.line_items.map((l) => [l.id, l] as const))),
+  )
 
   // Per-line received qty (sum across all GRs for this PO)
   const receivedQtyByPoLineId: Record<string, number> = {}
@@ -378,6 +441,9 @@ export default function PaCreatePage() {
   // Computed total
   const subtotalNum  = parseFloat(subtotal)  || 0
   const taxNum       = parseFloat(taxAmount) || 0
+  // Tax is required (the label says so): an empty field used to be read as 0
+  // and let the PA through without the invoice's tax (ISS-0136 follow-up).
+  const taxMissing   = taxAmount.trim() === ''
   const shippingNum  = parseFloat(shippingAmount) || 0
   const otherNum     = parseFloat(otherCharges) || 0
   const appliedNum   = parseFloat(prepaymentApplied) || 0
@@ -390,7 +456,19 @@ export default function PaCreatePage() {
   const selectedPrepaymentPa =
     linkablePrepayments.find((p) => p.id === prepaymentPaId) ??
     (sourcePrepay?.id === prepaymentPaId ? sourcePrepay : undefined)
-  const prepaidAmount = Number(selectedPrepaymentPa?.payment_amount ?? 0)
+  // One settlement reconciles every stage: the referenced prepayment plus every
+  // other PAID, still-pending prepayment on the PO (backend
+  // settlement_prepayment_pool). Its total is the ceiling for what can be applied.
+  const settlementPool = selectedPrepaymentPa
+    ? [selectedPrepaymentPa, ...linkablePrepayments.filter((p) =>
+        p.id !== selectedPrepaymentPa.id && p.status === 'processed' && p.settlement_status === 'pending')]
+    : []
+  // A stage still in draft/approval would be paid after the settlement and never
+  // reconciled — the backend refuses the settlement until it is paid or cancelled.
+  const unpaidStages = selectedPrepaymentPa
+    ? linkablePrepayments.filter((p) => p.id !== selectedPrepaymentPa.id && p.status !== 'processed')
+    : []
+  const prepaidAmount = settlementPool.reduce((sum, p) => sum + Number(p.payment_amount ?? 0), 0)
   // Net payable = 全额 − 预付抵扣(余款);非 settlement 类型即全额
   const netPayable   = isSettlementType ? Math.max(grossTotal - appliedNum, 0) : grossTotal
   const isOverpaid   = isSettlementType && grossTotal - appliedNum < -0.01
@@ -467,6 +545,17 @@ export default function PaCreatePage() {
     setPrepaymentPaId(sourcePrepay.id)
     setPrepaymentApplied(String(sourcePrepay.payment_amount ?? ''))
   }, [sourcePrepay?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Prefill "Prepayment applied" with the whole pool once per pool — with staged
+  // prepayments that is the sum of every stage, not the one picked. Keyed so a
+  // background refetch does not overwrite an amount the user has since edited.
+  const poolKey = settlementPool.map((p) => p.id).join(',')
+  const prefilledPoolRef = useRef('')
+  useEffect(() => {
+    if (!isSettlementType || !poolKey || prefilledPoolRef.current === poolKey) return
+    prefilledPoolRef.current = poolKey
+    setPrepaymentApplied(prepaidAmount.toFixed(2))
+  }, [isSettlementType, poolKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Pre-select the PO's matched invoices (and the GRs they were matched against)
   // once their data has loaded. Matched invoices are the ones ready to pay, so
@@ -552,18 +641,41 @@ export default function PaCreatePage() {
 
   // Auto-fill pre-tax: prefer the linked invoices' real pre-tax; fall back to the
   // selected PO lines when the PA links no invoice (GR-only / manual payment).
+  // A prepayment's pre-tax is its % of the PO (above), never anything else.
   useEffect(() => {
-    const auto = hasLinkedInvoices ? invoiceSubtotal : autoSubtotal
+    if (isPrepayment) {
+      setSubtotal(prepayPretax > 0 ? prepayPretax.toFixed(2) : '')
+      return
+    }
+    const auto = !hasLinkedInvoices ? autoSubtotal
+      : derivedLines ? derivedLinesTotal(derivedLines) : invoiceSubtotal
     if (auto > 0) {
       setSubtotal(String(Number(auto.toFixed(2))))
+    } else if (isAgreementMode) {
+      // An agreement PA has no PO lines to fall back to: with every invoice
+      // unticked there is nothing to pay, not the last invoice's amount
+      // (ISS-0113).
+      setSubtotal('')
     }
-  }, [hasLinkedInvoices, invoiceSubtotal, autoSubtotal]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isPrepayment, prepayPretax, hasLinkedInvoices, invoiceSubtotal, autoSubtotal, derivedLines ? derivedLinesTotal(derivedLines) : null]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-fill tax. When invoices are linked, use their real tax — authoritative
   // and survives a PO whose snapshotted tax_rate is 0/null. Otherwise fall back
   // to the PO's tax rate × pre-tax for CAD. Skipped once the user edits tax.
+  //
+  // `taxCleared` is a dependency so the fill runs again after the reset above
+  // wipes the field. That reset waits for the PO list; arriving from the PO
+  // page or a task, the invoices are already cached, so the tax was filled
+  // first, then wiped, and the pre-tax amount and the invoice ticks were put
+  // back in the same pass — none of the other inputs changed, the fill never
+  // re-ran, and the PA showed Tax empty with the invoice ticked (ISS-0136).
+  const taxCleared = taxAmount === ''
   useEffect(() => {
     if (taxManuallyEdited) return
+    if (isPrepayment) {
+      setTaxAmount(prepayPretax > 0 ? prepayTax.toFixed(2) : '')
+      return
+    }
     if (hasLinkedInvoices) {
       setTaxAmount(invoiceTax.toFixed(2))
     } else if (formCurrency === 'CAD' && subtotalNum > 0) {
@@ -571,7 +683,7 @@ export default function PaCreatePage() {
     } else {
       setTaxAmount('')
     }
-  }, [hasLinkedInvoices, invoiceTax, subtotalNum, formCurrency, paTaxRate, taxManuallyEdited]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isPrepayment, prepayPretax, prepayTax, hasLinkedInvoices, invoiceTax, subtotalNum, formCurrency, paTaxRate, taxManuallyEdited, taxCleared]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Validation
   const errors: string[] = []
@@ -583,6 +695,7 @@ export default function PaCreatePage() {
       if (!title.trim()) errors.push('PA Title is required')
       if (subtotalNum <= 0) errors.push('Pre-tax amount must be greater than zero')
       if (taxNum < 0) errors.push('Tax amount cannot be negative')
+      if (taxMissing) errors.push('Tax amount is required — enter 0 if there is no tax')
       if (netPayable <= 0) errors.push('Total payment amount must be greater than zero')
     } else {
       if (!selectedPo)     errors.push('Please select at least one PO')
@@ -615,12 +728,17 @@ export default function PaCreatePage() {
       if (!title.trim())   errors.push('PA Title is required')
       if (subtotalNum <= 0) errors.push('Pre-tax amount must be greater than zero')
       if (taxNum < 0)      errors.push('Tax amount cannot be negative')
+      if (taxMissing)      errors.push('Tax amount is required — enter 0 if there is no tax')
       if (paType === 'prepayment' && (!prepaymentPct || parseFloat(prepaymentPct) <= 0 || parseFloat(prepaymentPct) > 100))
         errors.push('Prepayment percentage must be between 1 and 100')
+      else if (paType === 'prepayment' && priorPrepaidPct + parseFloat(prepaymentPct) > 100)
+        errors.push(`Prepayment percentage cannot exceed ${100 - priorPrepaidPct}% — ${priorPrepaidPct}% of this PO is already prepaid`)
       if (paType === 'prepayment' && !expectedSettlement)
         errors.push('Expected settlement date is required for prepayment')
       if (isSettlementType && !prepaymentPaId)
         errors.push('Original Prepayment PA is required')
+      if (isSettlementType && unpaidStages.length > 0)
+        errors.push(`Prepayment ${unpaidStages.map((p) => p.pa_number).join(', ')} is not paid yet — wait until it is paid, or cancel it, before settling`)
       // A settlement may net to zero (fully covered by the prepayment — pure
       // reconciliation). Only non-settlement PAs require a positive amount; the
       // invoice value itself is already guarded by the pre-tax check above.
@@ -630,12 +748,20 @@ export default function PaCreatePage() {
         errors.push('Prepayment applied cannot exceed the invoice total')
       if (receiptOverrideMissing)
         errors.push(
-          canOverride
-            ? 'Check the override box and provide a reason to proceed without a goods receipt'
-            : 'No goods receipt linked to a matched invoice — create a Goods Receipt first',
+          blockedByCollection
+            ? (canOverride
+              ? 'Check the override box and provide a reason to proceed before the goods are collected'
+              : `The goods for ${uncollectedPos.map((p) => p.number).join(', ')} have not been collected yet — the requester records the collection on the goods receipt`)
+            : canOverride
+              ? 'Check the override box and provide a reason to proceed without a goods receipt'
+              : 'No goods receipt linked to a matched invoice — create a Goods Receipt first',
         )
     }
   }
+
+  const shownErrors = createPa.isError
+    ? [...errors, errorMessage(createPa.error, 'Failed to create payment application')]
+    : errors
 
   // Drives the red styling on the invoice block — same condition the validation
   // above pushes an error for, kept in one place so they can never disagree.
@@ -689,13 +815,11 @@ export default function PaCreatePage() {
     await queryClient.invalidateQueries({ queryKey: ['pas'] })
     if (isAgreementMode) await queryClient.invalidateQueries({ queryKey: ['agreements'] })
     if (submitError) {
-      alert(
-        `Payment application created, but it could not be submitted for approval:
-
-${submitError}
-
-` +
-        'It has been saved as a draft — open it and use Submit to try again.'
+      // Said on the draft's page, not in a browser pop-up (ISS-0188).
+      rememberSubmitFailure(
+        newPa.id,
+        `Payment application created, but it could not be submitted for approval: ${submitError} ` +
+        'It has been saved as a draft — use Submit to try again.',
       )
       replaceTab(`/pa/${newPa.id}`)
       return
@@ -713,7 +837,7 @@ ${submitError}
     if (!isAgreementMode && dueWindowViolation(selectedInvoices)) return
     if (isAgreementMode) {
       if (!agreement) return
-      if (!title.trim() || subtotalNum <= 0 || taxNum < 0) return
+      if (!title.trim() || subtotalNum <= 0 || taxNum < 0 || taxMissing) return
       if (selectedInvoiceIds.size === 0) return
       if (netPayable <= 0) return
       try {
@@ -747,16 +871,22 @@ ${submitError}
     if (selectedPos.some((p) => p.vendor_id !== selectedPos[0].vendor_id)) return
     if (selectedPos.some((p) => (p.currency ?? 'CAD') !== (selectedPos[0].currency ?? 'CAD'))) return
 
-    if (!title.trim() || subtotalNum <= 0 || taxNum < 0) return
+    if (!title.trim() || subtotalNum <= 0 || taxNum < 0 || taxMissing) return
     if (!isSettlementType && netPayable <= 0) return
     if (isSettlementType && (appliedNum > grossTotal + 0.01)) return
-    if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement)) return
+    // Same bounds as the on-page message above — sending 120% only bought a
+    // second, raw copy of it in a browser pop-up (ISS-0115).
+    if (paType === 'prepayment' && (!prepaymentPct || !expectedSettlement || prepayPctNum <= 0 || prepayPctNum > 100
+      || priorPrepaidPct + prepayPctNum > 100)) return
     if (isSettlementType && !prepaymentPaId) return
     if (receiptOverrideMissing) return
     try {
       // Lines from every PO on the payment, each still carrying its own
       // po_line_id so the PA's lines stay traceable to the order they came from.
-      const paLineItems = selectedPos.flatMap((p) =>
+      // A prepayment's single line is built by the server from the %.
+      const paLineItems = isPrepayment ? undefined : derivedLines
+        ? derivedLines.map(({ line_total: _lt, ...l }) => l)
+        : selectedPos.flatMap((p) =>
         p.line_items
           .filter((l) => selectedLineIds.has(l.id))
           .map((l) => ({
@@ -830,9 +960,9 @@ ${submitError}
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Main form */}
-        <div className="col-span-2 flex flex-col gap-5">
+        <div className="lg:col-span-2 min-w-0 flex flex-col gap-5">
 
           {/* ── Step 1 — Select PO / Agreement ─────────────────────────────── */}
           {isAgreementMode ? (
@@ -863,7 +993,7 @@ ${submitError}
                   <div className="text-xs text-neutral-400 mt-0.5">{agreement.vendor_name}</div>
                   <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-neutral-500">
                     <span>
-                      Consumed {formatAmount(agreementConsumed, agreement.currency)}
+                      Consumed (pre-tax) {formatAmount(agreementConsumed, agreement.currency)}
                       {agreementCeiling !== null ? ` / NTE ${formatAmount(agreementCeiling, agreement.currency)}` : ' / No ceiling'}
                     </span>
                     {agreementOverCeiling && (
@@ -943,7 +1073,9 @@ ${submitError}
                   and a currency; the first one ticked is the primary PO.
                 </p>
                 <div className="rounded-lg border border-neutral-200 max-h-56 overflow-y-auto">
-                  {filteredPos.length === 0 ? (
+                  {posLoading ? (
+                    <p className="px-3 py-4 text-xs text-neutral-400 text-center">Loading…</p>
+                  ) : filteredPos.length === 0 ? (
                     <p className="px-3 py-4 text-xs text-neutral-400 text-center">No eligible POs found</p>
                   ) : (
                     filteredPos.map((po) => {
@@ -1124,6 +1256,9 @@ ${submitError}
                 )}
               </div>
 
+              {derivedLines ? (
+                <DerivedPaLinesTable lines={derivedLines} currency={selectedPo.currency} />
+              ) : (<>
               {/* PO Line Items */}
               <div className="flex flex-col gap-2">
                 <p className="text-xs font-medium text-neutral-600 flex items-center gap-1.5">
@@ -1189,7 +1324,7 @@ ${submitError}
                                 {isReceived ? `Received (${receivedQty} ${line.unit})` : 'Not yet received'}
                               </div>
                             </td>
-                            <td className="px-3 py-2.5 text-right font-mono text-neutral-500">{line.qty} {line.unit}</td>
+                            <td className="px-3 py-2.5 text-right font-mono text-neutral-500">{formatQty(line.qty)} {line.unit}</td>
                             <td className="px-3 py-2.5 text-right font-mono font-medium text-neutral-700">
                               {receivedQty > 0 ? `${receivedQty} ${line.unit}` : '—'}
                             </td>
@@ -1212,6 +1347,7 @@ ${submitError}
                   )}
                 </div>
               </div>
+              </>)}
 
               {/* PA Type — the choices follow the PO's prepayment flag: a prepaid
                   PO can only be paid via prepayment/settlement, a standard PO only
@@ -1282,6 +1418,29 @@ ${submitError}
                         The prepayment this {paType} reconciles. Auto-loaded from the selected PO.
                       </p>
                     </div>
+                    {settlementPool.length > 1 && (
+                      <div className="flex flex-col gap-1 rounded-md border border-amber-200 bg-white px-3 py-2">
+                        <p className="text-xs font-medium text-neutral-700">
+                          This {paType} reconciles all {settlementPool.length} prepayments on this PO:
+                        </p>
+                        {settlementPool.map((p) => (
+                          <p key={p.id} className="text-xs text-neutral-600 flex justify-between gap-3">
+                            <span>{p.pa_number}{p.prepayment_pct != null ? ` · ${Number(p.prepayment_pct)}%` : ''}</span>
+                            <span className="font-mono">{formatAmount(p.payment_amount, p.currency)}</span>
+                          </p>
+                        ))}
+                        <p className="text-xs font-semibold text-neutral-800 flex justify-between gap-3 border-t border-neutral-100 pt-1">
+                          <span>Total prepaid</span>
+                          <span className="font-mono">{formatAmount(prepaidAmount, formCurrency)}</span>
+                        </p>
+                      </div>
+                    )}
+                    {unpaidStages.length > 0 && (
+                      <p className="text-[11px] text-danger-600">
+                        Prepayment {unpaidStages.map((p) => p.pa_number).join(', ')} on this PO is not paid yet.
+                        Wait until it is paid, or cancel it, before settling — the settlement covers every prepayment on the PO.
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -1291,6 +1450,14 @@ ${submitError}
                       <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                       Prepayment requires settlement after goods/services are received and the final invoice is matched.
                     </div>
+                    {linkablePrepayments.length > 0 && (
+                      <p className="text-xs text-info-700">
+                        Already prepaid on this PO: {linkablePrepayments.map((p) =>
+                          `${p.pa_number} (${Number(p.prepayment_pct ?? 0)}%, ${p.status})`).join(', ')}
+                        {' '}— {priorPrepaidPct}% in total. This stage adds to it; all stages are
+                        settled together by one Settlement PA.
+                      </p>
+                    )}
                     <div className="grid grid-cols-2 gap-3">
                       <div className="flex flex-col gap-1">
                         <label className="text-xs font-medium text-neutral-700">
@@ -1303,7 +1470,7 @@ ${submitError}
                             onChange={(e) => setPrepaymentPct(e.target.value)}
                             className={cn(
                               'h-9 w-full pl-3 pr-8 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
-                              submitted && (!prepaymentPct || parseFloat(prepaymentPct) <= 0) ? 'border-danger-400' : 'border-neutral-300'
+                              submitted && (!prepaymentPct || parseFloat(prepaymentPct) <= 0 || parseFloat(prepaymentPct) > 100) ? 'border-danger-400' : 'border-neutral-300'
                             )}
                           />
                           <span className="absolute right-3 top-2 text-sm text-neutral-400">%</span>
@@ -1324,6 +1491,10 @@ ${submitError}
                         />
                       </div>
                     </div>
+                    <p className="text-[11px] text-info-700">
+                      Pre-tax = {prepayPctNum || 0}% × PO pre-tax {formatAmount(prepayBase, selectedPo.currency)}
+                      {' '}= {formatAmount(prepayPretax, selectedPo.currency)}
+                    </p>
                   </div>
                 )}
               </div>
@@ -1377,6 +1548,9 @@ ${submitError}
                   </div>
                 )}
               </div>
+              {agreementLines && (
+                <DerivedPaLinesTable lines={agreementLines} currency={formCurrency} fromInvoiceLines />
+              )}
             </div>
           )}
 
@@ -1422,12 +1596,17 @@ ${submitError}
                       type="number" min={0} step={0.01}
                       value={subtotal}
                       onChange={(e) => setSubtotal(e.target.value)}
+                      readOnly={isPrepayment}
                       placeholder="0.00"
                       className={cn(
                         'h-10 px-3 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
+                        isPrepayment && 'bg-neutral-50 text-neutral-600',
                         submitted && subtotalNum <= 0 ? 'border-danger-400' : 'border-neutral-300'
                       )}
                     />
+                    {isPrepayment && (
+                      <p className="text-[11px] text-neutral-400">Prepayment % × PO pre-tax — change the % to change it</p>
+                    )}
                     {submitted && subtotalNum <= 0 && (
                       <p className="text-xs text-danger-600">Pre-tax amount is required</p>
                     )}
@@ -1437,10 +1616,13 @@ ${submitError}
                   <div className="flex flex-col gap-1">
                     <label className="text-xs font-medium text-neutral-700">
                       Tax Amount <span className="text-danger-600">*</span>
-                      {!taxManuallyEdited && hasLinkedInvoices && (
+                      {isPrepayment && !taxManuallyEdited && (
+                        <span className="ml-1.5 text-[10px] font-normal text-neutral-400">same share of the PO's tax</span>
+                      )}
+                      {!isPrepayment && !taxManuallyEdited && hasLinkedInvoices && (
                         <span className="ml-1.5 text-[10px] font-normal text-neutral-400">from invoice</span>
                       )}
-                      {!taxManuallyEdited && !hasLinkedInvoices && formCurrency === 'CAD' && subtotalNum > 0 && (
+                      {!isPrepayment && !taxManuallyEdited && !hasLinkedInvoices && formCurrency === 'CAD' && subtotalNum > 0 && (
                         <span className="ml-1.5 text-[10px] font-normal text-neutral-400">{`${(paTaxRate * 100).toFixed(0)}% HST`}</span>
                       )}
                     </label>
@@ -1451,7 +1633,7 @@ ${submitError}
                       placeholder="0.00"
                       className={cn(
                         'h-10 px-3 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
-                        submitted && taxNum < 0 ? 'border-danger-400' : 'border-neutral-300'
+                        submitted && (taxNum < 0 || taxMissing) ? 'border-danger-400' : 'border-neutral-300'
                       )}
                     />
                   </div>
@@ -1575,13 +1757,27 @@ ${submitError}
             </div>
           )}
 
-          {/* Receipt gate — no matched, GR-backed invoice on this PO */}
+          {/* Receipt gate — no matched, GR-backed invoice on this PO, or (with
+              Collection Confirmation Required on) goods not collected yet */}
           {receiptBlocked && (
             <div className="rounded-md border border-warning-300 bg-warning-50 px-4 py-3 flex flex-col gap-2">
-              <p className="text-sm font-medium text-warning-800">No goods receipt linked to a matched invoice yet.</p>
-              <p className="text-xs text-warning-700">
-                A Payment Application normally requires goods to be received. Create a Goods Receipt first.
-              </p>
+              {blockedByCollection ? (
+                <>
+                  <p className="text-sm font-medium text-warning-800">
+                    The goods for {uncollectedPos.map((p) => p.number).join(', ')} have not been collected yet.
+                  </p>
+                  <p className="text-xs text-warning-700">
+                    Collection Confirmation is required before a PA. The requester records it on the goods receipt.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium text-warning-800">No goods receipt linked to a matched invoice yet.</p>
+                  <p className="text-xs text-warning-700">
+                    A Payment Application normally requires goods to be received. Create a Goods Receipt first.
+                  </p>
+                </>
+              )}
               {canOverride && (
                 <label className="flex items-start gap-2 text-xs text-warning-800">
                   <input
@@ -1590,7 +1786,11 @@ ${submitError}
                     onChange={(e) => setReceiptOverride(e.target.checked)}
                     className="mt-0.5"
                   />
-                  <span>Override — proceed without goods receipt (a reason is required).</span>
+                  <span>
+                    {blockedByCollection
+                      ? 'Override — proceed before the goods are collected (a reason is required).'
+                      : 'Override — proceed without goods receipt (a reason is required).'}
+                  </span>
                 </label>
               )}
               {canOverride && receiptOverride && (
@@ -1605,10 +1805,11 @@ ${submitError}
             </div>
           )}
 
-          {/* Errors */}
-          {errors.length > 0 && (
-            <div className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 flex flex-col gap-1">
-              {errors.map((e) => (
+          {/* Errors — the form's own checks, then the server's refusal of the
+              last Submit (shown here, not as a browser pop-up — ISS-0188) */}
+          {shownErrors.length > 0 && (
+            <div role="alert" className="rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 flex flex-col gap-1">
+              {shownErrors.map((e) => (
                 <p key={e} className="text-xs text-danger-700 flex items-center gap-1.5">
                   <AlertTriangle className="h-3 w-3 shrink-0" /> {e}
                 </p>

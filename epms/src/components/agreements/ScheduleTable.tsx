@@ -43,7 +43,8 @@ function resolveUserName(users: ApiUserBrief[] | undefined, id: string | null): 
 function PeriodInvoices({ row, currency }: { row: ApiScheduleRow; currency: string }) {
   const invoices = row.invoices ?? []
   if (invoices.length === 0) return <span className="text-neutral-300">—</span>
-  const total = invoices.reduce((sum, i) => sum + Number(i.total_amount), 0)
+  // Pre-tax, like the expected / stage amount in the same row (ISS-0128).
+  const total = invoices.reduce((sum, i) => sum + Number(i.amount), 0)
   return (
     <div className="flex flex-col gap-0.5">
       {invoices.map((i) => (
@@ -53,7 +54,7 @@ function PeriodInvoices({ row, currency }: { row: ApiScheduleRow; currency: stri
           className="inline-flex items-center gap-1.5 text-xs text-primary-700 hover:text-primary-900"
         >
           <span className="font-medium">{i.internal_ref ?? 'Invoice'}</span>
-          <span className="amount text-neutral-500">{formatAmount(Number(i.total_amount), currency)}</span>
+          <span className="amount text-neutral-500" title="Pre-tax">{formatAmount(Number(i.amount), currency)}</span>
         </Link>
       ))}
       {invoices.length > 1 && (

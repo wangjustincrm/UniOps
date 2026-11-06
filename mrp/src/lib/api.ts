@@ -14,6 +14,21 @@ const EPMS_BASE = (import.meta.env.VITE_EPMS_API_URL as string | undefined) || '
 // fallback default covered local dev; a real deployment silently hung on
 // localhost:8002 without this).
 const MDM_BASE = (import.meta.env.VITE_MDM_API_URL as string | undefined) || 'http://localhost:8002'
+// The Inventory module's front end. WMS Inventory moved there from MRP
+// (inventory design §7.1); the sidebar links out to it with a session
+// handoff. Wired via VITE_INVENTORY_URL in both docker-compose.*.yml and
+// mrp/Dockerfile (ARG + ENV, or the build silently falls back to localhost).
+export const INVENTORY_URL = (import.meta.env.VITE_INVENTORY_URL as string | undefined) || 'http://localhost:5181'
+
+// Session handoff to another module via `#__session=<base64>` — the same
+// encoding as portal/finance encodeSession (UTF-8 bytes, then base64: btoa()
+// alone throws on non-Latin1 names); the receiving app's main.tsx decodes it.
+export function encodeSession(token: string, refreshToken: string, user: object): string {
+  const bytes = new TextEncoder().encode(JSON.stringify({ token, refreshToken, user }))
+  let bin = ''
+  for (const b of bytes) bin += String.fromCharCode(b)
+  return btoa(bin)
+}
 
 function getToken(): string | null {
   try {

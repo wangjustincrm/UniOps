@@ -86,7 +86,8 @@ def build_rollup_xlsx(*, rollup: dict[str, Any], group_by: str,
     ws["A1"] = f"Budget vs Actual — by {level_header.lower()}"
     ws["A1"].font = Font(size=14, bold=True)
     ws["A2"] = (f"FY {year} · {window_label} · amounts in CAD · "
-                f"actual = NC posted")
+                + ("actual = NC posted + unposted (not yet tallied)"
+                   if rollup.get("include_unposted") else "actual = NC posted"))
     ws["A2"].font = Font(size=10, color=_rgb("737373"))
 
     months = (list(range(rollup["month_from"], rollup["month_to"] + 1))

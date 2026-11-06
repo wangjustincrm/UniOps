@@ -2,7 +2,7 @@
 import csv
 import io
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -39,6 +39,8 @@ async def list_parts(
     supplier: str | None = Query(default=None),
     search: str | None = Query(default=None),
     active_only: bool = False,
+    sort: str | None = Query(default=None, description="Key of crud.part.PART_SORTABLE; unknown -> 422"),
+    dir: Literal["asc", "desc"] = Query(default="asc"),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=500),
 ):
@@ -48,6 +50,8 @@ async def list_parts(
         supplier=supplier,
         search=search,
         active_only=active_only,
+        sort=sort,
+        dir=dir,
         page=page,
         page_size=page_size,
     )

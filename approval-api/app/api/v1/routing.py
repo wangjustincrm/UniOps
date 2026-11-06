@@ -198,6 +198,24 @@ async def resync_inflight(db: AsyncSession = Depends(get_db), user: CurrentUser 
     return result
 
 
+@router.post("/resync-over-budget")
+async def resync_over_budget(db: AsyncSession = Depends(get_db), _: CurrentUser = ...):
+    """Realign in-flight over-budget PRs to Budget Config as SAVED. Called by
+    epms-api right after a Budget Config save: a loosened over-budget mode waives
+    the pre-approval steps those PRs are still waiting on (the Finance Manager's
+    task moves on to the next approver) — see engine._ob_step_waived.
+
+    Deliberately not system_admin-gated like resync-inflight: Budget Config is
+    saved by whoever holds `admin_panel` (the Finance Manager among them), which
+    epms-api has already checked, and the JWT here carries only the primary
+    role. It takes no input and is idempotent — it can only bring documents in
+    line with configuration an authorised user already saved.
+    """
+    result = await resync_inflight_approvals(db, over_budget_prs_only=True)
+    await db.commit()
+    return result
+
+
 @router.post("/resync-document")
 async def resync_document(body: dict, db: AsyncSession = Depends(get_db), user: CurrentUser = ...):
     """Realign ONE in-flight document to current routing config (single-doc variant of

@@ -128,6 +128,14 @@ class CompanyConfig(Base):
         ]
     )
 
+    # ── Incoterms ───────────────────────────────────────────────────────────
+    # [{code, label, needs_freight, needs_customs, active}] — the PO Edit
+    # Details picker, and whether a raw-material PO on that term expects a
+    # freight / customs invoice per arrival (crud.po_fee). Entries are never
+    # deleted, only deactivated, so a PO's stored code always resolves.
+    incoterms_terms: Mapped[list] = mapped_column(JSONB, nullable=False, default=list,
+                                                  server_default="[]")
+
     # ── Audit ───────────────────────────────────────────────────────────────
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

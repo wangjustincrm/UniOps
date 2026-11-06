@@ -23,6 +23,16 @@ from app.models.pa import PaymentApplication
 from app.models.pa_po_link import PaPoLink
 
 
+# A cancelled (rejected) PA pays nothing — its invoices are free again — so it
+# does not "cover" its PO for the create_pa task (§3.14.2, INV-013; ISS-0172).
+# Same set as api/v1/pa.py _RELEASED_PA_STATUSES. A returned PA is still live.
+RELEASED_PA_STATUSES = ("cancelled", "rejected")
+
+
+def pa_is_live():
+    return PaymentApplication.status.notin_(RELEASED_PA_STATUSES)
+
+
 def po_ids_with_pa(*conditions) -> Select:
     """PO ids covered by a PA, optionally narrowed by PA-level predicates
     (status, pa_type, ...)."""

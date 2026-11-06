@@ -6,7 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, literal, select
 
 from app.core.deps import BearerTokenDep, CurrentUserDep, SessionDep
 from app.models.epms_mirrors import EpmsInvoice, EpmsVendor
@@ -50,6 +50,11 @@ class InvoiceCreate(BaseModel):
 
 # ── Dedup helper ──────────────────────────────────────────────────────────────
 
+def _invoice_key(value):
+    """epms-api INVOICE_KEY_SQL as an expression — keep the two identical."""
+    return func.ltrim(func.upper(func.regexp_replace(value, "[^[:alnum:]]", "", "g")), "0")
+
+
 async def _check_dedup(
     db: SessionDep,
     vendor_id: uuid.UUID | None,
@@ -57,18 +62,26 @@ async def _check_dedup(
     exclude_id: uuid.UUID | None = None,
 ) -> dict | None:
     """Uniqueness check: (vendor_id, invoice_number) must be unique across OA + EPMS.
-    Skipped only when both vendor_id and invoice_number are absent."""
+    Skipped only when both vendor_id and invoice_number are absent.
+
+    Numbers are compared by the same key EPMS uses (epms-api
+    app.models.invoice.INVOICE_KEY_SQL, PRD INV-004): letters and digits only,
+    upper-cased, leading zeros dropped — "INV-0012" and "inv 12" are one
+    invoice. It used to be exact equality, so a re-spelt number slipped past
+    here and was then silently dropped by Finance AP's own uniqueness."""
     if not vendor_id and not invoice_number:
         return None                     # nothing to check — both missing
     if not vendor_id or not invoice_number:
         return None                     # can't enforce vendor-scoped uniqueness without both
 
-    inv_num = invoice_number.strip()
+    key = (await db.execute(select(_invoice_key(literal(invoice_number))))).scalar_one()
+    if not key:
+        return None                     # no letter or digit — nothing to compare
 
     # 1. Check OA expense_invoices
     q = select(ExpenseInvoice).where(
         ExpenseInvoice.vendor_id == vendor_id,
-        ExpenseInvoice.invoice_number == inv_num,
+        _invoice_key(ExpenseInvoice.invoice_number) == key,
     )
     if exclude_id:
         q = q.where(ExpenseInvoice.id != exclude_id)
@@ -85,7 +98,7 @@ async def _check_dedup(
     epms = (await db.execute(
         select(EpmsInvoice).where(
             EpmsInvoice.vendor_id == vendor_id,
-            EpmsInvoice.vendor_invoice_number == inv_num,
+            _invoice_key(EpmsInvoice.vendor_invoice_number) == key,
         ).limit(1)
     )).scalar_one_or_none()
     if epms:

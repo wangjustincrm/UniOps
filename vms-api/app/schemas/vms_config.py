@@ -24,12 +24,6 @@ class VmsConfigResponse(BaseModel):
     updated_by: uuid.UUID | None
 
 
-class QualityManagerRosterUpdate(BaseModel):
-    """Replaces the full VMS-local Quality Manager roster atomically
-    (PUT /admin/quality-managers)."""
-    user_ids: list[uuid.UUID] = Field(default_factory=list)
-
-
 class NotificationContactsUpdate(BaseModel):
     """Replaces notification_contacts (PUT /admin/notification-contacts).
 

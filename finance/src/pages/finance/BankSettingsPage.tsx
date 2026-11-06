@@ -13,6 +13,7 @@ import { useMemo, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Check, CreditCard, Landmark, Loader2, Pencil, Plus, X } from 'lucide-react'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -67,9 +68,16 @@ export default function BankSettingsPage() {
   })
 
   const flash = (k: 'ok' | 'err', text: string) => { setBanner({ kind: k, text }); setTimeout(() => setBanner(null), 5000) }
-  const rows = useMemo(
+  const filtered = useMemo(
     () => accounts.filter((a) => !kindFilter || a.kind === kindFilter),
     [accounts, kindFilter])
+  // Loaded whole; edits open a modal on the row object, so order is free.
+  const { rows, sort, onSort } = useSortableRows(filtered, {
+    name: (a) => a.name, bank: (a) => a.bank_name, kind: (a) => KIND_LABEL[a.kind] ?? a.kind,
+    account: (a) => a.account_masked, currency: (a) => a.currency,
+    gl: (a) => a.ledger_account_code, nc: (a) => a.nc_bank_account_code,
+    status: (a) => (a.is_active ? 'active' : 'inactive'),
+  })
 
   if (!user) return <Navigate to="/login" replace />
 
@@ -105,14 +113,14 @@ export default function BankSettingsPage() {
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
               <tr>
-                <th className="px-3 py-2">Name</th>
-                <th className="px-3 py-2">Bank / Issuer</th>
-                <th className="px-3 py-2 w-32">Type</th>
-                <th className="px-3 py-2 w-24">Account</th>
-                <th className="px-3 py-2 w-16">Ccy</th>
-                <th className="px-3 py-2 w-28">GL Account</th>
-                <th className="px-3 py-2 w-44">NC bank account</th>
-                <th className="px-3 py-2 w-20">Status</th>
+                <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className="px-3 py-2" />
+                <SortTh label="Bank / Issuer" sortKey="bank" sort={sort} onSort={onSort} className="px-3 py-2" />
+                <SortTh label="Type" sortKey="kind" sort={sort} onSort={onSort} className="px-3 py-2 w-32" />
+                <SortTh label="Account" sortKey="account" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
+                <SortTh label="Ccy" sortKey="currency" sort={sort} onSort={onSort} className="px-3 py-2 w-16" />
+                <SortTh label="GL Account" sortKey="gl" sort={sort} onSort={onSort} className="px-3 py-2 w-28" />
+                <SortTh label="NC bank account" sortKey="nc" sort={sort} onSort={onSort} className="px-3 py-2 w-44" />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-3 py-2 w-20" />
                 <th className="px-3 py-2 w-16" />
               </tr>
             </thead>

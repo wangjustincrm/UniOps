@@ -124,7 +124,31 @@ export const mdmApi = {
   get:    <T>(path: string)                  => mdmRequest<T>('GET',    path),
   post:   <T>(path: string, body?: unknown)  => mdmRequest<T>('POST',   path, body),
   patch:  <T>(path: string, body?: unknown)  => mdmRequest<T>('PATCH',  path, body),
+  put:    <T>(path: string, body?: unknown)  => mdmRequest<T>('PUT',    path, body),
   delete: <T>(path: string)                  => mdmRequest<T>('DELETE', path),
+}
+
+/** POST multipart form data to mdm-api. */
+export async function mdmUpload<T>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(`${MDM_API}/mdm/v1${path}`, { method: 'POST', headers: authHeaders(), body: form })
+  if (res.status === 401) { globalSignOut() }
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(extractDetail(b.detail, res.status))
+  }
+  return res.json()
+}
+
+/** Download a file from mdm-api. The server's filename wins when it sends one. */
+export async function mdmDownload(path: string, fallbackName: string): Promise<void> {
+  const res = await fetch(`${MDM_API}/mdm/v1${path}`, { headers: authHeaders() })
+  if (res.status === 401) { globalSignOut(); return }
+  if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`)
+  const named = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = url; a.download = named?.[1] ?? fallbackName; a.click()
+  URL.revokeObjectURL(url)
 }
 
 export const epmsApi = {
@@ -366,6 +390,7 @@ export const FINANCE_URL = (import.meta.env.VITE_FINANCE_URL as string | undefin
 export const BOOKING_URL = (import.meta.env.VITE_BOOKING_URL as string | undefined) || 'http://localhost:5178'
 export const MRP_URL  = (import.meta.env.VITE_MRP_URL  as string | undefined) || 'http://localhost:5179'
 export const EHS_URL  = (import.meta.env.VITE_EHS_URL  as string | undefined) || 'http://localhost:5180'
+export const INVENTORY_URL = (import.meta.env.VITE_INVENTORY_URL as string | undefined) || 'http://localhost:5181'
 
 // btoa() only handles Latin1; user data (e.g. Chinese full_name) is UTF-8, which
 // makes btoa throw "characters outside of the Latin1 range". Encode the JSON as
@@ -388,7 +413,7 @@ export function encodeSession(token: string, refreshToken: string, user: object)
 // hands the session back to that origin via the same `#__session=` mechanism
 // the nav links use, so the user lands on the page they originally asked for.
 
-const RETURN_URL_ORIGINS = [EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, BOOKING_URL, MRP_URL, EHS_URL]
+const RETURN_URL_ORIGINS = [EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, BOOKING_URL, MRP_URL, EHS_URL, INVENTORY_URL]
 
 /**
  * Validate a caller-supplied returnUrl against the module origins we know.

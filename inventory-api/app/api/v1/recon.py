@@ -1,0 +1,217 @@
+"""Reconciliation page: WMS × NC stock × NC cost × NC GL on any date (design §7.3).
+
+Gated inventory.view; every amount (IA/GL amounts, GL−IA amount, amount
+parts of categories, GL-by-source breakdown, impairment) is withheld without
+inventory.cost.view.
+"""
+from datetime import date
+from decimal import Decimal
+from typing import Annotated, Literal
+
+from fastapi import APIRouter, HTTPException, Query
+
+from app.api.v1.nc_inventory import _s
+from app.api.v1.perms import ViewDep, can_view_cost
+from app.core.deps import SessionDep
+from app.core.list_sort import SortDir, resolve, sort_rows
+from app.services import asof, params, recon
+
+router = APIRouter(prefix="/recon", tags=["reconciliation"])
+
+# The difference columns (and the Sort menu's "largest unexplained" presets)
+# sort by the size of the UNEXPLAINED remainder, sign ignored (PRD INV-056) —
+# largest first unless `dir` says so. `gl_ia` is the amount for callers who
+# see amounts and the quantity for everyone else; `gl_ia_qty` is always the
+# quantity (the GL−IA qty column when amounts are shown too).
+_UNEXPLAINED_KEYS = ("ic_wms", "ia_ic", "gl_ia", "gl_ia_qty")
+_LEGACY_DIR: dict[str, SortDir] = {k: "desc" for k in _UNEXPLAINED_KEYS}
+
+_STATUS_LABEL = {"ok": "OK", "explained": "Explained", "unexplained": "Unexplained"}
+
+# The other column sorts: each key sorts what its column shows (the status by
+# its label). Amount keys are only honoured with inventory.cost.view —
+# ordering by a withheld amount leaks it.
+_COLUMN_KEYS = (
+    "material", "wms", "ic_wms_qty", "ic_elsewhere", "ic_total", "ia_qty", "gl_qty",
+    "ia_amount", "gl_amount", "status",
+)
+_AMOUNT_KEYS = {"ia_amount", "gl_amount"}
+
+
+@router.get("")
+async def reconciliation(
+    db: SessionDep, payload: ViewDep,
+    date_: Annotated[date | None, Query(alias="date")] = None,
+    expand_batches: bool = False,
+    only_differences: bool = False,
+    status: Annotated[list[Literal["ok", "explained", "unexplained"]] | None, Query()] = None,
+    category: Annotated[list[str] | None, Query()] = None,
+    class_code: Annotated[str | None, Query(max_length=40)] = None,
+    search: Annotated[str | None, Query(max_length=100)] = None,
+    include_unposted: bool = True,
+    sort: str | None = Query(None),
+    dir_: Annotated[SortDir | None, Query(alias="dir")] = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> dict:
+    srt = resolve(sort, dir_, _UNEXPLAINED_KEYS + _COLUMN_KEYS, _LEGACY_DIR)
+    tz = await params.get_param(db, params.NC_TIME_ZONE_KEY)
+    d = date_ or asof.today_local()
+    if d > asof.today_local():
+        raise HTTPException(status_code=422, detail="Date is in the future")
+    a = asof.make_asof(d, tz)
+    qty_tol = Decimal(str(await params.get_param(db, params.QTY_TOLERANCE_KEY)))
+    amt_tol = Decimal(str(await params.get_param(db, params.AMOUNT_TOLERANCE_KEY)))
+    show_amt = await can_view_cost(payload, db)
+
+    wms_start = await recon.wms_history_start(db)
+    wms_live = d >= wms_start
+    rows = await recon.load(db, a, include_unposted, wms_start)
+    for r in rows.values():
+        recon.attribute(r, d, qty_tol, amt_tol)
+
+    # Batch groups for EVERY batchable material (not just the page), so that
+    # the batch_label cause takes part in the status, the counts and the
+    # category filter like every other cause. ~1.4k materials, three queries.
+    batches: dict[str, list[dict]] = {}
+    if expand_batches:
+        batches = await recon.load_batches(
+            db, a, [r.code for r in rows.values() if not (r.no_batch_since and r.no_batch_since <= d)], wms_start)
+        for code, groups in batches.items():
+            r = rows[code]
+            # C10: totals agree but batches do not → a labelling difference.
+            if (r.wms is not None and r.residual["ic_wms"] is not None
+                    and abs(r.residual["ic_wms"]) <= qty_tol
+                    and any(abs(g["ic_wms"] - g["wms"]) > qty_tol for g in groups)):
+                r.categories.append({"code": "batch_label", "side": "ic_wms",
+                                     "qty": Decimal(0), "amount": Decimal(0)})
+    statuses = {code: recon.status_of(r, qty_tol, amt_tol) for code, r in rows.items()}
+
+    # Totals over everything (before filtering), so the cards never change
+    # with the table filters.
+    def tot(attr):
+        return sum((getattr(r, attr) for r in rows.values() if getattr(r, attr) is not None), Decimal(0))
+
+    totals = {
+        "wms": _s(tot("wms")) if wms_live else None,
+        "ic_wms": _s(tot("ic_wms")), "ic_external": _s(tot("ic_external")),
+        "ic_production": _s(tot("ic_production")), "ic_transient": _s(tot("ic_transient")),
+        "ic_total": _s(sum((r.ic_total for r in rows.values()), Decimal(0))),
+        "ia_qty": _s(tot("ia_qty")), "gl_qty": _s(tot("gl_qty")),
+        "ia_amount": _s(tot("ia_amt")) if show_amt else None,
+        "gl_amount": _s(tot("gl_amt")) if show_amt else None,
+        "materials": len(rows),
+        "by_status": {s: sum(1 for v in statuses.values() if v == s) for s in ("ok", "explained", "unexplained")},
+    }
+
+    # Filters.
+    sel = list(rows.values())
+    if only_differences:
+        sel = [r for r in sel if statuses[r.code] != "ok"]
+    if status:
+        sel = [r for r in sel if statuses[r.code] in status]
+    if category:
+        sel = [r for r in sel if any(c["code"] in category for c in r.categories)]
+    if class_code:
+        sel = [r for r in sel if (r.class_code or "").startswith(class_code)]
+    if search:
+        s = search.strip().lower()
+        sel = [r for r in sel if s in r.code.lower() or s in (r.name or "").lower()]
+
+    if srt and srt[0] in _AMOUNT_KEYS and not show_amt:
+        srt = None
+    if srt is None or srt[0] == "material" and srt[1] == "asc":
+        sel.sort(key=lambda r: r.code)          # the default order, unchanged
+    else:
+        sel = sort_rows(sel, _recon_getter(srt[0], show_amt, statuses), srt[1],
+                        tiebreak=lambda r: r.code)
+    total = len(sel)
+    page_rows = sel[(page - 1) * page_size: page * page_size]
+
+    def cat_out(c):
+        return {"code": c["code"], "label": recon.CATEGORIES[c["code"]][1], "side": c["side"],
+                "qty": _s(c["qty"]), "amount": _s(c["amount"]) if show_amt and c["amount"] else None}
+
+    items = []
+    for r in page_rows:
+        res = r.residual
+        no_batch = bool(r.no_batch_since and r.no_batch_since <= d)
+        item = {
+            "material_code": r.code, "material_name": r.name, "uom": r.uom, "class_code": r.class_code,
+            "in_nc": r.in_nc, "wms_uom": r.wms_uom, "unit_check": recon.unit_check(r.uom, r.wms_uom), "no_batch_since": r.no_batch_since.isoformat() if r.no_batch_since else None,
+            "wms": _s(r.wms), "ic_wms": _s(r.ic_wms), "ic_external": _s(r.ic_external),
+            "ic_production": _s(r.ic_production), "ic_transient": _s(r.ic_transient),
+            "ic_total": _s(r.ic_total), "ia_qty": _s(r.ia_qty), "gl_qty": _s(r.gl_qty),
+            "ia_amount": _s(r.ia_amt) if show_amt else None,
+            "gl_amount": _s(r.gl_amt) if show_amt else None,
+            "diff": {
+                "ic_wms": _s(r.ic_wms - r.wms) if r.wms is not None else None,
+                "ia_ic": _s(r.ia_qty - r.ic_total),
+                "gl_ia_qty": _s(r.gl_qty - r.ia_qty),
+                "gl_ia_amount": _s(r.gl_amt - r.ia_amt) if show_amt else None,
+            },
+            "unexplained": {
+                "ic_wms": _s(res["ic_wms"]), "ia_ic": _s(res["ia_ic"]),
+                "gl_ia_qty": _s(res["gl_ia_qty"]),
+                "gl_ia_amount": _s(res["gl_ia_amount"]) if show_amt else None,
+            },
+            "categories": [cat_out(c) for c in r.categories],
+            "gl_by_source": ({k: _s(v) for k, v in r.gl_by_source.items()} if show_amt else None),
+            "status": statuses[r.code],
+            "batch_expandable": not no_batch,
+        }
+        if expand_batches and not no_batch:
+            groups = batches.get(r.code, [])
+            item["batches"] = [{
+                **{k: g[k] for k in ("label", "nc_batches", "wms_lots", "supplier_batches", "match")},
+                "wms": _s(g["wms"]) if r.wms is not None else None,
+                "ic_wms": _s(g["ic_wms"]), "ic_other": _s(g["ic_other"]), "ia": _s(g["ia"]),
+                "diff_ic_wms": _s(g["ic_wms"] - g["wms"]) if r.wms is not None else None,
+            } for g in groups]
+        items.append(item)
+
+    extra = await recon.unattributable(db, a, include_unposted)
+
+    def gl_extra(r):
+        return {"account_code": r.account_code, "account_name": r.name, "qty": _s(r.q),
+                "amount": _s(r.amt) if show_amt else None}
+
+    return {
+        "date": d.isoformat(), "nc_time_zone": tz, "period": a.period,
+        "wms_live": wms_live, "wms_history": recon.wms_history_info(wms_start),
+        "include_unposted": include_unposted,
+        "amounts_visible": show_amt, "tolerance": {"qty": str(qty_tol), "amount": str(amt_tol)},
+        # batch_label is only computed with expand_batches; listing it
+        # otherwise would offer a filter that can never match.
+        "categories": [{"code": k, "side": v[0], "label": v[1]} for k, v in recon.CATEGORIES.items()
+                       if k != "batch_label" or expand_batches],
+        "sort_note": "Difference sorts order by the UNEXPLAINED remainder, largest first.",
+        "totals": totals,
+        "total": total, "page": page, "page_size": page_size, "items": items,
+        "gl_impairment": [gl_extra(r) for r in extra["impairment"]],
+        "gl_no_material": [gl_extra(r) for r in extra["no_material"]],
+    }
+
+
+def _recon_getter(key: str, show_amt: bool, statuses: dict):
+    """Sort value for one material row (None = empty, sorts last)."""
+    if key == "gl_ia_qty":
+        return lambda r: abs(r.residual["gl_ia_qty"])
+    if key == "ic_wms":
+        return lambda r: abs(r.residual["ic_wms"] or 0)
+    if key == "ia_ic":
+        return lambda r: abs(r.residual["ia_ic"])
+    if key == "gl_ia":
+        return lambda r: abs(r.residual["gl_ia_amount"]) if show_amt else abs(r.residual["gl_ia_qty"])
+    return {
+        "material": lambda r: r.code.lower(),
+        "wms": lambda r: r.wms,
+        "ic_wms_qty": lambda r: r.ic_wms,
+        "ic_elsewhere": lambda r: (r.ic_external or 0) + (r.ic_production or 0),
+        "ic_total": lambda r: r.ic_total,
+        "ia_qty": lambda r: r.ia_qty,
+        "gl_qty": lambda r: r.gl_qty,
+        "ia_amount": lambda r: r.ia_amt,
+        "gl_amount": lambda r: r.gl_amt,
+        "status": lambda r: _STATUS_LABEL[statuses[r.code]],
+    }[key]

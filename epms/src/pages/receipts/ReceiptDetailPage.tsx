@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { BackLink, useDocTabTitle } from '@/components/BackLink'
+import { useDocTabTitle } from '@/components/BackLink'
+import { NotFoundState } from '@/components/shared/NotFoundState'
 import {
   ArrowLeft, Trash2, CheckCircle2, XCircle, Paperclip, Upload, X,
   AlertTriangle, Lock, ExternalLink,
@@ -23,6 +24,7 @@ import {
   useApReviewReceiptAny,
 } from '@/hooks/useAgreementReceipts'
 import { VOIDABLE_STATUSES } from '@/components/agreements/ReceiptTable'
+import { RejectReceiptDialog } from '@/components/agreements/RejectReceiptDialog'
 import {
   ReceiptVendorPicker,
   type ReceiptVendorValue,
@@ -88,17 +90,13 @@ export default function ReceiptDetailPage() {
 
   if (isError || !receipt) {
     return (
-      <div className="flex flex-col items-center justify-center py-24">
-        <p className="text-lg font-semibold text-neutral-500">Receipt not found</p>
-        {isError && (
-          <p className="mt-2 text-sm text-neutral-400">
-            {error instanceof Error ? error.message : 'It may have been removed.'}
-          </p>
-        )}
-        <BackLink to="/receipts" className="mt-4 text-sm text-primary-600 hover:underline">
-          ← Back to Agreement Receipts
-        </BackLink>
-      </div>
+      <NotFoundState
+        title="Receipt Not Found"
+        message={isError
+          ? (error instanceof Error ? error.message : 'It may have been removed.')
+          : "The agreement receipt you're looking for doesn't exist."}
+        backTo="/receipts" backLabel="Back to Agreement Receipts"
+      />
     )
   }
 
@@ -276,16 +274,15 @@ function ReceiptDetail({
     voidReceipt.mutate({ agreementId, receiptId: receipt.id })
   }
 
+  const [confirmReject, setConfirmReject] = useState(false)
+
   const handleReview = (action: 'approve' | 'reject') => {
     // Reject has no way back: the backend writes status = "rejected", which is
     // in RETIRED (neither EDITABLE nor VOIDABLE), and ap_review only accepts
     // FROM pending_ap_review — no endpoint can move a rejected receipt
     // anywhere. Approve is deliberately NOT confirmed: it is the high-frequency
     // action and it lands on `open`, which is still editable and voidable.
-    if (action === 'reject' && !confirm(
-      'Reject this receipt? This is final — a rejected receipt can never be approved, removed, or ' +
-      'edited afterward. The only way to record this spend again is to enter a brand-new receipt.'
-    )) return
+    // Reject is confirmed in RejectReceiptDialog (ISS-0115), which calls here.
     setPendingReview(action)
     apReview.mutate({ agreementId, receiptId: receipt.id, action }, {
       onSettled: () => setPendingReview(null),
@@ -332,7 +329,7 @@ function ReceiptDetail({
               <Button
                 variant="secondary"
                 className="gap-2"
-                onClick={() => handleReview('reject')}
+                onClick={() => setConfirmReject(true)}
                 disabled={anyPending}
               >
                 <XCircle className="h-4 w-4" />
@@ -485,6 +482,7 @@ function ReceiptDetail({
                       value={vendor}
                       onChange={touch(setVendor)}
                       disabled={anyPending}
+                      agreementId={agreementId}
                     />
                   </FormField>
                   <FormField label={`Amount before tax (${receipt.currency})`} required htmlFor="receipt-amount">
@@ -673,6 +671,14 @@ function ReceiptDetail({
           </div>
         </div>
       </div>
+
+      {confirmReject && (
+        <RejectReceiptDialog
+          receiptLabel={`${heading} · ${receipt.agreement_number}`}
+          onClose={() => setConfirmReject(false)}
+          onConfirm={() => { setConfirmReject(false); handleReview('reject') }}
+        />
+      )}
     </div>
   )
 }

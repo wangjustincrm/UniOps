@@ -220,3 +220,48 @@ def test_role_label_renders_ap_clerk_uppercase():
     assert role_label("ap_clerk") == "AP Clerk"
     # the fallback still covers roles with no explicit entry
     assert role_label("quality_manager") == "Quality Manager"
+
+
+@pytest.mark.asyncio
+async def test_approval_signatories_use_the_configured_step_labels(test_engine, monkeypatch):
+    """ISS-0107/0144: the PDF prints each step as configured in the approval
+    engine ("Finance Director of Oversea Department", "AP Review"), not a fixed
+    role name — but only while that step's role still matches the approver's."""
+    from app.services import approval_client
+
+    steps = [
+        {"role": "dept_manager", "label": "Department Manager"},
+        {"role": "gm_or_opm", "label": "GM/OPM"},
+        {"role": "finance_bp", "label": "Finance Director of Oversea Department"},
+        {"role": "ap_clerk", "label": "AP Review"},
+        {"role": "finance_manager", "label": "Finance Manager"},
+    ]
+
+    async def _steps(doc_type, doc_id, token):
+        assert token == "tok"
+        return steps
+    monkeypatch.setattr(approval_client, "get_workflow_steps", _steps)
+
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        requester = await _user(db, "Rita Requester")
+        approver = await _user(db, "Amy Approver")
+        pr = await _pr(db, requester.id)
+        db.add_all([
+            _event(pr, 0, approver.id, "dept_manager"),
+            _event(pr, 1, approver.id, "gm_or_opm"),
+            _event(pr, 2, approver.id, "finance_bp"),
+            _event(pr, 3, approver.id, "ap_clerk"),
+            _event(pr, 4, approver.id, "finance_bp"),   # step now says finance_manager → mismatch
+        ])
+        await db.commit()
+
+        _, approvals = await approval_signatories(db, "pr", pr.id, pr.created_by, token="tok")
+        assert [a["role"] for a in approvals] == [
+            "Department Manager", "GM/OPM", "Finance Director of Oversea Department",
+            "AP Review", "Finance BP",
+        ]
+
+        # No token (or the engine unreachable): the fixed role names, never a failure.
+        _, approvals = await approval_signatories(db, "pr", pr.id, pr.created_by)
+        assert approvals[2]["role"] == "Finance BP" and approvals[3]["role"] == "AP Clerk"

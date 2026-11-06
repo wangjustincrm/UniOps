@@ -17,6 +17,11 @@ export function TabRouterSync({ routes }: { routes: RouteDef[] }) {
       api.getState().setTabPath(meta.key, meta.path!)
       return
     }
+    // A deep link into an open reloadOnQuery tab (Create PO on a PR while a New
+    // PO tab is open) carries a query that tab is not showing: point the tab at
+    // it before focusing, or the old form stays on screen (ISS-0150).
+    const open = api.getState().tabs.find((t) => t.key === meta.key)
+    if (open?.reloadOnQuery && open.path !== meta.path) api.getState().setTabPath(meta.key, meta.path!)
     api.getState().openTab(meta) // openTab dedups → focus or create
   }, [pathname, search, routes, api])
 

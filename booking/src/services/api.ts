@@ -18,6 +18,8 @@ import type {
   DaySummaryOut,
   DirectoryUserOut,
   ImportResult,
+  MyBookingPageFilters,
+  MyBookingPageOut,
   NotificationListOut,
   NotificationLogOut,
   RoomCreate,
@@ -192,6 +194,20 @@ export const bookingService = {
     return api.get<BookingOut[]>(`/api/v1/bookings/mine?${qs.toString()}`)
   },
 
+  /** One booking (organizer or booking admin; anyone else gets 404). */
+  get(id: string) {
+    return api.get<BookingOut>(`/api/v1/bookings/${id}`)
+  },
+
+  /** My Bookings page: server-paged, server-sorted, one tab (scope) at a time. */
+  minePaged(filters: MyBookingPageFilters = {}) {
+    const qs = new URLSearchParams()
+    for (const [k, v] of Object.entries(filters)) {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, String(v))
+    }
+    return api.get<MyBookingPageOut>(`/api/v1/bookings/mine/paged?${qs.toString()}`)
+  },
+
   update(id: string, payload: BookingUpdatePayload) {
     return api.patch<BookingOut>(`/api/v1/bookings/${id}`, payload)
   },
@@ -215,12 +231,24 @@ export const bookingService = {
 
 // ── React Query hooks for bookings ────────────────────────────────────────────
 
-export function useMyBookings(limit = 200, offset = 0) {
-  return useQuery<BookingOut[]>({
-    queryKey: ['booking-mine', limit, offset],
-    queryFn: () => bookingService.mine(limit, offset),
+/** Keyed under 'booking-mine' so every booking mutation's invalidation refreshes it. */
+export function useMyBookingsPaged(filters: MyBookingPageFilters) {
+  return useQuery<MyBookingPageOut>({
+    queryKey: ['booking-mine', 'paged', filters],
+    queryFn: () => bookingService.minePaged(filters),
     staleTime: 30_000,
     refetchInterval: 60_000,
+    placeholderData: (prev) => prev,
+  })
+}
+
+/** One booking by id — the edit page's fallback when it has no router state. */
+export function useBooking(id: string | undefined, enabled = true) {
+  return useQuery<BookingOut>({
+    queryKey: ['booking-mine', 'one', id],
+    queryFn: () => bookingService.get(id as string),
+    enabled: !!id && enabled,
+    retry: false,
   })
 }
 
@@ -512,7 +540,7 @@ export function useAdminForceCancel() {
 // ── Admin — Notifications service ─────────────────────────────────────────────
 
 export const adminNotificationService = {
-  list(filters: { status?: string; notif_type?: string; limit?: number; offset?: number } = {}) {
+  list(filters: { status?: string; notif_type?: string; limit?: number; offset?: number; sort?: string; dir?: 'asc' | 'desc' } = {}) {
     const qs = new URLSearchParams()
     for (const [k, v] of Object.entries(filters)) {
       if (v !== undefined && v !== null && v !== '') qs.set(k, String(v))
@@ -527,7 +555,7 @@ export const adminNotificationService = {
 }
 
 export function useAdminNotifications(
-  filters: { status?: string; notif_type?: string; limit?: number; offset?: number } = {},
+  filters: { status?: string; notif_type?: string; limit?: number; offset?: number; sort?: string; dir?: 'asc' | 'desc' } = {},
 ) {
   return useQuery<NotificationListOut>({
     queryKey: ['admin-notifications', filters],

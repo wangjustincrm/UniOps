@@ -331,7 +331,8 @@ async def auto_match(db: AsyncSession, rec: BankReconciliation, account: BankAcc
     if rec.status == FINALIZED:
         raise Frozen("This period is finalized. Reopen it before matching again.")
 
-    period = await bank_book.book_period(db, account, rec.period_start, rec.period_end)
+    period = await bank_book.book_period(db, account, rec.period_start, rec.period_end,
+                                         rec.include_unposted)
     claimed_txn, claimed_book = await _claimed(db, rec)
 
     txns = [t for t in await _period_txns(db, rec) if t.id not in claimed_txn]
@@ -450,7 +451,8 @@ async def recompute(db: AsyncSession, rec: BankReconciliation,
     """
     if rec.status == FINALIZED:
         return _summary_from_stored(rec, account)
-    period = await bank_book.book_period(db, account, rec.period_start, rec.period_end)
+    period = await bank_book.book_period(db, account, rec.period_start, rec.period_end,
+                                         rec.include_unposted)
 
     # The statement for THIS period is the one that overlaps it most, not the
     # latest that touches it. A bank dates each statement from the previous
@@ -555,7 +557,8 @@ async def manual_group(db: AsyncSession, rec: BankReconciliation, account: BankA
     if len(txns) != len(set(txn_ids)):
         raise LookupError("One of those statement lines no longer exists.")
 
-    period = await bank_book.book_period(db, account, rec.period_start, rec.period_end)
+    period = await bank_book.book_period(db, account, rec.period_start, rec.period_end,
+                                         rec.include_unposted)
     book_by_id = {b.jv_line_id: b for b in period.lines}
     missing = [i for i in jv_line_ids if i not in book_by_id]
     if missing:
@@ -594,6 +597,32 @@ async def manual_group(db: AsyncSession, rec: BankReconciliation, account: BankA
             line_no=b.line_no, account_code=b.account_code, amount=b.amount))
     await db.flush()
     return match
+
+
+async def set_basis(db: AsyncSession, rec: BankReconciliation, account: BankAccount,
+                    include_unposted: bool) -> None:
+    """Switch the period's voucher basis.
+
+    Unticking is refused while a match still clears an unposted line: that line
+    would drop out of the ledger side while its group kept the statement lines
+    cleared, so the period would show them cleared against nothing.
+    """
+    if rec.status == FINALIZED:
+        raise Frozen("This period is finalized. Reopen it before changing its basis.")
+    if include_unposted == rec.include_unposted:
+        return
+    if not include_unposted:
+        period = await bank_book.book_period(db, account, rec.period_start,
+                                             rec.period_end, True)
+        unposted = {b.jv_line_id for b in period.lines if not b.posted}
+        _claimed_txn, claimed_book = await _claimed(db, rec)
+        held = unposted & claimed_book
+        if held:
+            raise ValueError(
+                f"{len(held)} cleared ledger line(s) are on vouchers NC has not posted "
+                f"yet. Unmatch those groups first, or keep unposted vouchers included.")
+    rec.include_unposted = include_unposted
+    await db.flush()
 
 
 async def unmatch(db: AsyncSession, rec: BankReconciliation, match_id: uuid.UUID) -> None:

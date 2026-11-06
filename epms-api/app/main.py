@@ -27,6 +27,10 @@ async def lifespan(app: FastAPI):
     logger.info("Starting up %s v%s [%s]", settings.APP_NAME, settings.APP_VERSION, settings.ENVIRONMENT)
     from app.tasks.daily_followup import daily_followup_loop
     followup_task = asyncio.create_task(daily_followup_loop())
+    # Turns every new task (whichever service wrote it) into its notification
+    # under the per-task-type policy — see app/tasks/task_notifier.py.
+    from app.tasks.task_notifier import task_notifier_loop
+    notifier_task = asyncio.create_task(task_notifier_loop())
     from app.tasks.agreement_overdue import agreement_overdue_loop
     overdue_task = asyncio.create_task(agreement_overdue_loop())
     # Keeps the NC65 purchase mirror current on a schedule instead of on
@@ -37,12 +41,30 @@ async def lifespan(app: FastAPI):
     # its expected completion date (PRD GR-S-001a). Gated OFF by default.
     from app.tasks.service_gr_due import service_gr_due_loop
     service_gr_task = asyncio.create_task(service_gr_due_loop())
+    # Reminds the PR owner to acknowledge a waiting GR and escalates to their
+    # manager (GR Notification SLA, ISS-0146 ①). Gated OFF by default.
+    from app.tasks.gr_ack_due import gr_ack_due_loop
+    gr_ack_task = asyncio.create_task(gr_ack_due_loop())
+    # Budget threshold alert emails (Budget Config thresholds, ISS-0146 ③).
+    # Gated OFF by default.
+    from app.tasks.budget_alerts import budget_alerts_loop, budget_over_alerts_loop
+    budget_alert_task = asyncio.create_task(budget_alerts_loop())
+    budget_over_alert_task = asyncio.create_task(budget_over_alerts_loop())
+    # Collection SLA reminders / escalation (Collection Config timers,
+    # ISS-0146 ②). Active only while collection is required.
+    from app.tasks.gr_collect_due import gr_collect_due_loop
+    gr_collect_task = asyncio.create_task(gr_collect_due_loop())
     yield
     logger.info("Shutting down — closing connections")
     followup_task.cancel()
+    notifier_task.cancel()
     overdue_task.cancel()
     nc_sync_task.cancel()
     service_gr_task.cancel()
+    gr_ack_task.cancel()
+    budget_alert_task.cancel()
+    budget_over_alert_task.cancel()
+    gr_collect_task.cancel()
     # Settle fire-and-forget work (notification emails, PDF generation, PMS
     # import) BEFORE disposing the engine. Each of those owns its own session;
     # tearing the pool down underneath one leaves it mid-transaction. Brief
@@ -67,6 +89,47 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # ── Catch-all, INSIDE CORS ────────────────────────────────────────────────
+    # Starlette runs exception_handler(Exception) in ServerErrorMiddleware, the
+    # outermost layer — outside CORSMiddleware — so that 500 carried no
+    # Access-Control-Allow-Origin. The browser then hides the response and the
+    # frontends (which call this API cross-origin) show only "Failed to fetch"
+    # (ISS-0052). Added before CORS, this sits inside it: every unhandled error
+    # becomes a 500 the page can read. The handler below stays for anything
+    # raised after a response has started.
+    from starlette.types import ASGIApp, Receive, Scope, Send
+
+    class _CatchAllMiddleware:
+        def __init__(self, app: ASGIApp) -> None:
+            self.app = app
+
+        async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+            if scope["type"] != "http":
+                await self.app(scope, receive, send)
+                return
+            started = False
+
+            async def _send_wrapper(message):
+                nonlocal started
+                if message["type"] == "http.response.start":
+                    started = True
+                await send(message)
+
+            try:
+                await self.app(scope, receive, _send_wrapper)
+            except Exception:
+                if started:
+                    raise
+                request = Request(scope)
+                logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+                response = JSONResponse(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    content={"detail": "Internal server error"},
+                )
+                await response(scope, receive, send)
+
+    app.add_middleware(_CatchAllMiddleware)
+
     # ── CORS ──────────────────────────────────────────────────────────────────
     app.add_middleware(
         CORSMiddleware,
@@ -77,8 +140,6 @@ def create_app() -> FastAPI:
     )
 
     # ── Request logging middleware (pure ASGI — no BaseHTTPMiddleware task spawn) ─
-    from starlette.types import ASGIApp, Receive, Scope, Send
-
     class _LoggingMiddleware:
         def __init__(self, app: ASGIApp) -> None:
             self.app = app

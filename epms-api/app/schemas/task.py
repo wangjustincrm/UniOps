@@ -27,6 +27,10 @@ class TaskResponse(BaseModel):
     vendor: str | None
     is_completed: bool
     completed_at: datetime | None
+    # Who closed it. NULL = the system closed it when the document moved on
+    # (approval engine, self-healing); the inbox shows "Closed automatically".
+    completed_by: uuid.UUID | None = None
+    completed_by_name: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

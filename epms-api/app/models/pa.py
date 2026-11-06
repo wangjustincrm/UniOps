@@ -1,13 +1,18 @@
 """ORM models for Payment Application (PA) and its line items."""
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, cast, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
+
+# EPMS PAs that have neither a PO nor an agreement. Anything else with both
+# NULL is OA's retired Direct PA (source 'oa_direct'), which EPMS does not own.
+EPMS_PO_LESS_SOURCES = ("freight", "direct")
 
 
 class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
@@ -16,9 +21,9 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
     pa_number: Mapped[str] = mapped_column(String(30), unique=True, index=True, nullable=False)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    # Physically nullable: OA (expense-api) shares this table for PO-less Direct
-    # PAs (NULL po_id/po_number). EPMS owns PO-based PAs only — its list/detail
-    # endpoints filter Direct PAs out (see crud.pa.get_all / api guards).
+    # Physically nullable: agreement, Freight and Direct PAs have no PO, and OA
+    # (expense-api) shares this table for its retired PO-less PA-DIRs, which
+    # EPMS's list/detail endpoints filter out (see ontology.epms_owned_pa).
     po_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("purchase_orders.id", ondelete="RESTRICT"),
         nullable=True, index=True
@@ -32,6 +37,25 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
         nullable=True, index=True
     )
     agreement_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+    # Which flow raised this PA: po | agreement | freight | direct | oa_direct.
+    # `direct` is EPMS's Direct PA (dp01_direct_pa): invoices matched to no PO
+    # and no agreement, paid with the department / cost centre / budget account
+    # below and approved on the `pa_dir` chain. `oa_direct` is OA's retired
+    # PA-DIR, whose invoice_ids hold expense_invoices ids — not EPMS's.
+    # Freight and direct both have po_id and agreement_id NULL, so "both NULL"
+    # means nothing on its own any more: every such test reads this column.
+    source: Mapped[str] = mapped_column(String(20), nullable=False, default="po",
+                                        server_default="po", index=True)
+
+    # Direct PA only (source='direct'): what the payment is charged to. The PO
+    # and agreement routes take these from their PR / agreement instead.
+    department_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("departments.id", ondelete="RESTRICT"),
+        nullable=True, index=True
+    )
+    cost_center_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    budget_account_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     vendor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("business_partners.id", ondelete="RESTRICT"),
@@ -79,6 +103,22 @@ class PaymentApplication(UUIDPrimaryKey, TimestampMixin, Base):
     # Set once when the PA reaches approved (approval engine). Dashboards key
     # "Approved Today" on it rather than the onupdate-bumped updated_at.
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # The payment date as Finance recorded it (ISS-0043, ISS-0072). finance-api
+    # payment_execute stores the chosen payment DATE as midnight UTC, so read
+    # in plant time it falls on the evening before; the UTC calendar date is
+    # the date that was entered. The instance side feeds PaResponse.paid_on
+    # (PA Detail's "Payment Processed"), the expression side the Assistant.
+    @hybrid_property
+    def paid_on(self) -> date | None:
+        if self.paid_at is None:
+            return None
+        return self.paid_at.astimezone(timezone.utc).date()
+
+    @paid_on.inplace.expression
+    @classmethod
+    def _paid_on_expression(cls):
+        return cast(func.timezone("UTC", cls.paid_at), Date)
 
     # Prepayment fields
     prepayment_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)

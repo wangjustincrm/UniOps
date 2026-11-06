@@ -77,7 +77,7 @@ async def test_service_and_project_prs_print_the_owner(test_engine, pr_type):
     # The pair travels together — a completion date with nobody accountable for
     # it is the gap this whole feature closes.
     assert "Expected Completion" in shown
-    assert "2026-11-30" in shown
+    assert "30/11/2026" in shown   # DD/MM/YYYY (UI-DATE-001, ISS-0183)
 
 
 @pytest.mark.parametrize("pr_type", [1, 2, 3, 5])

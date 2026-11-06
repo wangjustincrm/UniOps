@@ -18,7 +18,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Download, Send, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { SortTh, deriveTabMeta, sortParams, useOptionalTabStoreApi, useSort } from '@uniops/shell'
+import { Download, Receipt, Send, X } from 'lucide-react'
+import { financeRoutes } from '@/app/routes'
 import { financeApi, financeDownload, mdmApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
@@ -27,6 +30,10 @@ import { RemittanceDialog } from '@/components/remittance/RemittanceDialog'
 import { primaryBtn, secondaryBtn } from '@/components/remittance/buttonStyles'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
+
+/** GET /payments sort keys (finance-api crud/payment.PAYMENT_SORT). */
+type PaymentSortKey = 'payment_date' | 'doc_number' | 'payee' | 'amount' | 'credit_applied'
+  | 'bank_account' | 'source' | 'status' | 'remittance'
 
 interface PaymentRow {
   id: string
@@ -286,6 +293,8 @@ export default function PaymentsPage() {
   }, [filters.q])
 
   const [page, setPage] = useState(1)
+  // Paged by the API, so sorted by the API; a new sort goes back to page 1.
+  const [sort, onSort] = useSort<PaymentSortKey>(null, () => setPage(1))
   const [openRow, setOpenRow] = useState<PaymentRow | null>(null)
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
@@ -327,9 +336,10 @@ export default function PaymentsPage() {
   }
 
   const { data: list, isLoading } = useQuery({
-    queryKey: ['payments', qs, page],
+    queryKey: ['payments', qs, page, sort],
     queryFn: () => financeApi.get<{ items: PaymentRow[]; total: number }>(
-      `/payments?${toQuery({ ...queryFilters, page: String(page), page_size: String(PAGE_SIZE) })}`),
+      `/payments?${toQuery({ ...queryFilters, page: String(page), page_size: String(PAGE_SIZE),
+                             ...sortParams(sort) })}`),
   })
   const rows = list?.items ?? []
   const total = list?.total ?? 0
@@ -338,7 +348,7 @@ export default function PaymentsPage() {
   // The filtered set or the visible page changed — the checked ids may no
   // longer even be on screen, so drop the selection rather than carry stale
   // ids forward silently.
-  useEffect(() => { setSelectedIds(new Set()) }, [qs, page])
+  useEffect(() => { setSelectedIds(new Set()) }, [qs, page, sort])
 
   const selectedRows = rows.filter((r) => selectedIds.has(r.id))
   // Payee identity for the one-payee guard is `vendor_id`, not `payee_name`:
@@ -420,6 +430,7 @@ export default function PaymentsPage() {
       subtitle="Every payment made, single or batched — send remittance advice for the ones a batch never covered"
     >
       <div className="mx-auto max-w-6xl">
+        <AwaitingClaimsBanner />
         <div className="mb-4 flex flex-wrap gap-4">
           {summary.map((s) => (
             <div key={s.currency} className="rounded-lg border border-neutral-200 bg-white px-5 py-4">
@@ -552,20 +563,20 @@ export default function PaymentsPage() {
                          onChange={(e) => toggleAllOnPage(e.target.checked)}
                          aria-label="Select all payments on this page" />
                 </th>
-                <th className="px-3 py-2">Date</th>
-                <th className="px-3 py-2">Document</th>
-                <th className="px-3 py-2">Payee</th>
-                <th className="px-3 py-2 text-right" title="Cash that left the bank, net of any vendor credit">Amount</th>
-                <th className="px-3 py-2 text-right" title="Vendor credit netted off this payment. Gross = Amount + Credit.">Credit</th>
+                <SortTh label="Date" sortKey="payment_date" sort={sort} onSort={onSort} className="px-3 py-2" />
+                <SortTh label="Document" sortKey="doc_number" sort={sort} onSort={onSort} className="px-3 py-2" />
+                <SortTh label="Payee" sortKey="payee" sort={sort} onSort={onSort} className="px-3 py-2" />
+                <SortTh label="Amount" sortKey="amount" sort={sort} onSort={onSort} align="right" title="Cash that left the bank, net of any vendor credit" className="px-3 py-2" />
+                <SortTh label="Credit" sortKey="credit_applied" sort={sort} onSort={onSort} align="right" title="Vendor credit netted off this payment. Gross = Amount + Credit." className="px-3 py-2" />
                 {/* Bank account, NOT payment method: the method is one of four
                     near-constant values and is still both filterable (above)
                     and exported, whereas "which account did this money leave
                     from" was previously unanswerable anywhere in the list. The
                     method stays visible per payment in the row drawer. */}
-                <th className="px-3 py-2" title="The account the money was paid from">Bank Account</th>
-                <th className="px-3 py-2">Source</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2" title="Send history only — open a row to check whether it can actually be sent">Remittance</th>
+                <SortTh label="Bank Account" sortKey="bank_account" sort={sort} onSort={onSort} title="The account the money was paid from" className="px-3 py-2" />
+                <SortTh label="Source" sortKey="source" sort={sort} onSort={onSort} className="px-3 py-2" />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className="px-3 py-2" />
+                <SortTh label="Remittance" sortKey="remittance" sort={sort} onSort={onSort} title="Send history only — open a row to check whether it can actually be sent" className="px-3 py-2" />
               </tr>
             </thead>
             <tbody>
@@ -693,5 +704,71 @@ function PaymentDetailModal({ row, onClose }: { row: PaymentRow; onClose: () => 
         </div>
       }
     />
+  )
+}
+
+
+interface DueRow { doc_kind: string; amount: string; currency: string }
+
+/**
+ * This page lists money already paid, so an approved expense claim is
+ * invisible here until someone pays it — and on Payment Batches it sits among
+ * hundreds of PAs. Surface approved-but-unpaid claims (per currency) with a
+ * link straight to the claims-only due list. Same read authority as the page
+ * (`/payments/due` uses `_authorize_read`); Travel Applications are excluded
+ * server-side.
+ */
+function AwaitingClaimsBanner() {
+  const tabs = useOptionalTabStoreApi()
+  const { data: due = [] } = useQuery({
+    queryKey: ['payments-due', 'all-currencies'],
+    queryFn: () => financeApi.get<DueRow[]>('/payments/due'),
+  })
+  const byCurrency = useMemo(() => {
+    const m = new Map<string, { count: number; total: number }>()
+    for (const d of due) {
+      if (d.doc_kind !== 'expense_claim') continue
+      const cur = m.get(d.currency) ?? { count: 0, total: 0 }
+      cur.count += 1
+      cur.total += Number(d.amount)
+      m.set(d.currency, cur)
+    }
+    return [...m.entries()]
+  }, [due])
+  if (byCurrency.length === 0) return null
+
+  // Payment Batches is a static-key tab: if it is already open, the shell only
+  // focuses it and keeps its old ?query — point it at this link first.
+  const retarget = (href: string) => {
+    if (!tabs) return
+    const q = href.indexOf('?')
+    const meta = deriveTabMeta(financeRoutes, href.slice(0, q), href.slice(q))
+    if (meta && tabs.getState().tabs.some((t) => t.key === meta.key)) {
+      tabs.getState().setTabPath(meta.key, meta.path!)
+    }
+  }
+
+  return (
+    <div className="mb-4 flex flex-col gap-2">
+      {byCurrency.map(([ccy, { count, total }]) => {
+        const href = `/finance/payment-batches?type=claim&currency=${ccy}`
+        return (
+          <div key={ccy} className="flex flex-wrap items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <Receipt className="h-4 w-4 shrink-0" />
+            <span>
+              <span className="font-semibold">{count} expense claim{count === 1 ? '' : 's'}</span> approved and awaiting payment
+              {' · '}
+              <span className="font-mono">
+                {total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {ccy}
+              </span>
+            </span>
+            <Link to={href} onClick={() => retarget(href)}
+                  className="ml-auto whitespace-nowrap font-medium text-[#085E5E] underline hover:text-[#064A4A]">
+              View in Payment Batches →
+            </Link>
+          </div>
+        )
+      })}
+    </div>
   )
 }

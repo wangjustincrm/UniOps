@@ -41,6 +41,18 @@ PHASE2_KEYS: dict[str, tuple[str, str, int]] = {
     "finance.budget.view_dept": ("finance", "Department-Related Budget View",   114),
     "finance.bank.reconcile": ("finance", "Bank Reconciliation",               115),
     "finance.bank.settings":  ("finance", "Manage Bank Accounts",              116),
+    # identity 0021_fin_analysis_perm — unit costs and margins, not view_finance.
+    "finance.analysis.view":  ("finance", "AI Financial Analysis",             117),
+    # identity 0022_inventory_perms — the Inventory module. Quantities and
+    # amounts are separate keys on purpose.
+    "inventory.view":         ("inventory", "View Inventory (quantities)",     140),
+    "inventory.cost.view":    ("inventory", "View Inventory Amounts",          141),
+    "inventory.admin":        ("inventory", "Inventory Settings & Sync",       142),
+    # identity 0024_employee_perms — Staff. Personal data, so gated even for read.
+    "employee.view":          ("mdm", "View Staff & NC To-dos",                150),
+    "employee.edit":          ("mdm", "Edit Staff & Department Mapping",       151),
+    "employee.import":        ("mdm", "Import ADP Roster",                     152),
+    "employee.nc_todo":       ("mdm", "Work NC To-dos",                        153),
     "budget.catalog.write":  ("budget",  "Edit Budget Catalog",     120),
     "budget.plan.write":     ("budget",  "Edit Budget Plans",       121),
     "budget.opening.write":  ("budget",  "Edit Opening Balances",   122),
@@ -71,6 +83,19 @@ PHASE2_DEFAULTS: dict[str, tuple[str, ...]] = {
     # plus payment_officer.
     "finance.bank.reconcile": ("system_admin", "finance_manager", "payment_officer"),
     "finance.bank.settings":  ("system_admin", "finance_manager", "payment_officer"),
+    # 0021_fin_analysis_perm also grants finance_director (a post created by
+    # migration 0015, not by seed_authz, so not listed here).
+    "finance.analysis.view":  ("system_admin", "finance_manager"),
+    # 0022_inventory_perms: system_admin only — every other role is assigned by
+    # the user in Access Control (decision 2026-10-14).
+    "inventory.view":         ("system_admin",),
+    "inventory.cost.view":    ("system_admin",),
+    "inventory.admin":        ("system_admin",),
+    # 0025_hr_role also grants these four to hr (a role this script does not seed).
+    "employee.view":          ("system_admin",),
+    "employee.edit":          ("system_admin",),
+    "employee.import":        ("system_admin",),
+    "employee.nc_todo":       ("system_admin",),
     # The two halves of 0010_budget_view_scope_perms' grants. That migration
     # seeds view_dept with a NOT IN over role_defs, so it also covers
     # admin-created custom roles AND payment_officer (added later, by migration

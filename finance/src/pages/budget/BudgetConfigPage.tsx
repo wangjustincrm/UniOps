@@ -7,6 +7,7 @@ import {
   Calendar, Plus, X, Search, Pencil, Trash2, Building2,
   Wallet, Upload, Download,
 } from 'lucide-react'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi, mdmApi, budgetApi, budgetUpload, EPMS_URL, encodeSession } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -17,12 +18,14 @@ import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 interface BudgetAdminConfig {
   yellow_threshold_pct: number
   red_threshold_pct: number
-  over_budget_mode: 'fm_gm_opm' | 'fm_only' | 'hard_block'
+  over_budget_mode: 'fm_gm_opm' | 'fm_only' | 'allow' | 'hard_block'
   available_fiscal_years: number[]
 }
 
 interface CompanyConfigPartial {
   budget_admin_config?: Partial<BudgetAdminConfig>
+  // PATCH only: outcome of re-aligning in-flight over-budget PRs after the save.
+  over_budget_resync?: string | null
 }
 
 
@@ -242,8 +245,24 @@ function CompanyConfigSection() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      await save.mutateAsync({ budget_admin_config: form })
-      setToast({ ok: true, msg: 'Budget Config saved.' })
+      const res = await save.mutateAsync({ budget_admin_config: form })
+      const resync = res?.over_budget_resync ?? ''
+      if (resync.startsWith('failed')) {
+        // Saved, but PRs already in approval were not re-aligned — say so, the
+        // Finance Manager may still be holding steps the new mode waives.
+        setToast({
+          ok: false,
+          msg: 'Budget Config saved, but PRs already in approval could not be updated. Save again to retry.',
+        })
+        return
+      }
+      const moved = Number(/^ok: (\d+)/.exec(resync)?.[1] ?? 0)
+      setToast({
+        ok: true,
+        msg: moved > 0
+          ? `Budget Config saved. ${moved} over-budget PR(s) already in approval were updated.`
+          : 'Budget Config saved.',
+      })
       setTimeout(() => setToast(null), 3500)
     } catch (err: any) {
       setToast({ ok: false, msg: err.message ?? 'Save failed' })
@@ -274,19 +293,19 @@ function CompanyConfigSection() {
       <SectionCard
         icon={Gauge}
         title="Budget Alert Thresholds"
-        description="Controls the colour-coded budget utilisation alerts on the Budget Dashboard."
+        description="Colours the Budget Dashboard alerts, and sets the levels for the budget alert emails (switched on in Portal → Admin → Notification Settings → Budget Threshold Alerts)."
       >
         <div className="flex flex-col gap-3 max-w-2xl">
           {[
             {
               k: 'yellow_threshold_pct' as const, label: 'Warning threshold',
               badge: 'bg-amber-100 text-amber-700', badgeLabel: 'Yellow',
-              desc: 'Budget row highlighted amber. Daily email digest sent to Dept. Manager.',
+              desc: 'Budget row highlighted amber. When budget alert emails are on: a daily digest to the Dept. Manager (Finance Manager if the department has none).',
             },
             {
               k: 'red_threshold_pct' as const, label: 'Over-budget threshold',
               badge: 'bg-red-100 text-red-700', badgeLabel: 'Red',
-              desc: 'Budget row highlighted red. Immediate email + Teams alert to Dept. Manager, Finance Manager, and GM/OPM.',
+              desc: 'Budget row highlighted red. When budget alerts are on: within the hour (NC actuals sync hourly), an email + Teams alert (for those who chose Teams) to the Dept. Manager, Finance Manager and GM/OPM.',
             },
           ].map(({ k, label, badge, badgeLabel, desc }) => (
             <div key={k} className="flex items-start justify-between gap-4 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3.5">
@@ -320,6 +339,12 @@ function CompanyConfigSection() {
         description="Determines what happens when a Purchase Request would push a budget account past its annual limit."
       >
         <div className="flex flex-col gap-3 max-w-2xl">
+          <p className="text-xs text-neutral-500">
+            A PR keeps the mode it was submitted under. A change applies to new submissions; PRs already in
+            approval only ever get lighter — an over-budget step the new mode no longer requires is skipped
+            (e.g. switching to "Allow" passes a PR waiting on the Finance Manager to its next approver). A
+            stricter mode never adds steps to them.
+          </p>
           {[
             {
               v: 'fm_gm_opm' as const, label: 'Finance Manager + GM/OPM',
@@ -328,6 +353,10 @@ function CompanyConfigSection() {
             {
               v: 'fm_only' as const, label: 'Finance Manager only',
               desc: 'Single approval. Faster, but GM/OPM visibility is bypassed.',
+            },
+            {
+              v: 'allow' as const, label: 'Allow without extra approval',
+              desc: 'No over-budget approval step is added; the PR follows its normal approval workflow. The requester must still enter an Over-Budget Justification, which every approver can see.',
             },
             {
               v: 'hard_block' as const, label: 'Hard block',
@@ -736,6 +765,13 @@ function CostCentersSection() {
     const matchDept = !filterDeptId || cc.department_id === filterDeptId
     return matchSearch && matchDept
   })
+  // Loaded whole; rows keep cc.id keys and edit/delete state is by id, so
+  // re-ordering never moves an open action onto another row.
+  const ccSort = useSortableRows(filtered, {
+    name: (cc) => cc.name, code: (cc) => cc.code,
+    department: (cc) => deptMap[cc.department_id]?.name || cc.department_name,
+    status: (cc) => (cc.is_active ? 'Active' : 'Inactive'),
+  })
   const editingCc = typeof mode === 'object' ? ccs.find((c) => c.id === mode.edit) : null
   const usedCodes = (excludeId?: string) =>
     ccs.filter((c) => c.id !== excludeId).map((c) => c.code.toUpperCase())
@@ -842,19 +878,15 @@ function CostCentersSection() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 bg-neutral-50">
-                {['Cost Center', 'Code', 'Department', 'Status', ''].map((h, i) => (
-                  <th
-                    key={i}
-                    className={cn(
-                      'px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500',
-                      i === 3 && 'w-24', i === 4 && 'w-24',
-                    )}
-                  >{h}</th>
-                ))}
+                <SortTh label="Cost Center" sortKey="name" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Code" sortKey="code" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Department" sortKey="department" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500" />
+                <SortTh label="Status" sortKey="status" sort={ccSort.sort} onSort={ccSort.onSort} className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500 w-24" />
+                <th className="px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-neutral-500 w-24" />
               </tr>
             </thead>
             <tbody>
-              {filtered.map((cc, i) => {
+              {ccSort.rows.map((cc, i) => {
                 const dept = deptMap[cc.department_id]
                 return (
                   <tr key={cc.id} className={cn('border-b border-neutral-100 last:border-b-0', i % 2 === 1 ? 'bg-neutral-50' : 'bg-white')}>

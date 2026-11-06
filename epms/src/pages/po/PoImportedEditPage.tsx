@@ -14,7 +14,7 @@ import { useTaxCodes } from '@/hooks/useTaxCodes'
 import { useConfig } from '@/hooks/useConfig'
 import { formatAmount, formatDate } from '@/lib/utils'
 import {
-  isImportedEditablePo, isImportedTaxLocked, isNcSourced,
+  isImportedEditablePo, isImportedTaxLocked, isNcSourced, isRawMaterialPo,
   manualLinesTotal, subtotalWith,
 } from '@/lib/importedPoEdit'
 import type { ImportedDetailsBody } from '@/services/po'
@@ -54,6 +54,10 @@ export default function PoImportedEditPage() {
 
   const [expectedDelivery, setExpectedDelivery] = useState('')
   const [deliveryAddress, setDeliveryAddress] = useState('')
+  // Incoterms = a code from Incoterms Settings (required on a raw-material
+  // order — it decides whether freight / customs invoices are expected) plus
+  // an optional named place, kept in the old `incoterms` column.
+  const [incotermsCode, setIncotermsCode] = useState('')
   const [incoterms, setIncoterms] = useState('')
   const [taxCode, setTaxCode] = useState<string | null>(null)
   const [taxRate, setTaxRate] = useState(0)
@@ -95,6 +99,7 @@ export default function PoImportedEditPage() {
     // is rebuilt from scratch alongside it rather than surviving stale from
     // the first mount.
     deliveryAddressTouched.current = false
+    setIncotermsCode(po.incoterms_code ?? '')
     setIncoterms(po.incoterms ?? '')
     setTaxCode(po.tax_code ?? null)
     setTaxRate(Number(po.tax_rate))
@@ -183,6 +188,13 @@ export default function PoImportedEditPage() {
   // An added row with no description would come back a 422 the buyer has to
   // decode. The server still enforces it — this only saves the round trip.
   const blankAddedLine = lines.some((l) => !l.ncSourced && !l.description.trim())
+  const incotermsRequired = isRawMaterialPo(po)
+  const missingIncoterms = incotermsRequired && !incotermsCode
+  // Active codes, plus the PO's own code if it has since been deactivated, so
+  // a save that does not touch Incoterms is not forced to change it.
+  const incotermOptions = (config?.incoterms_terms ?? []).filter(
+    (t) => t.active || t.code === po?.incoterms_code)
+  const selectedTerm = incotermOptions.find((t) => t.code === incotermsCode)
   const effectiveTaxRate = isCadOrder ? taxRate : 0
   // Live, so the buyer sees what an added line does to the order before saving.
   // Same reconstruction the endpoint performs, so the figure cannot jump on save.
@@ -216,6 +228,7 @@ export default function PoImportedEditPage() {
     try {
       const payload: ImportedDetailsBody = {
         delivery_address: deliveryAddress || null,
+        incoterms_code: incotermsCode || null,
         incoterms: incoterms || null,
         is_prepaid: isPrepaid,
         buyer_notes: buyerNotes || null,
@@ -343,11 +356,40 @@ export default function PoImportedEditPage() {
               <p id="expectedDelivery" className="text-sm text-neutral-900">{expectedDeliveryDisplay}</p>
             )}
           </FormField>
-          <FormField label="Incoterms" htmlFor="incoterms">
-            <Input id="incoterms" type="text" value={incoterms} maxLength={100}
-                   placeholder="e.g. FOB Shanghai"
-                   onChange={(e) => setIncoterms(e.target.value)} />
-          </FormField>
+          <div className="grid grid-cols-[8rem_1fr] gap-2">
+            <FormField
+              label="Incoterms"
+              htmlFor="incotermsCode"
+              required={incotermsRequired}
+              error={missingIncoterms ? 'Required' : undefined}
+            >
+              <select
+                id="incotermsCode"
+                value={incotermsCode}
+                onChange={(e) => setIncotermsCode(e.target.value)}
+                className="h-9 w-full rounded border border-neutral-300 bg-white px-2 text-sm"
+              >
+                <option value="">{incotermsRequired ? 'Select…' : '—'}</option>
+                {incotermOptions.map((t) => (
+                  <option key={t.code} value={t.code}>
+                    {t.code}{t.label ? ` — ${t.label}` : ''}{t.active ? '' : ' (inactive)'}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+            <FormField
+              label="Named place"
+              htmlFor="incoterms"
+              hint={selectedTerm && incotermsRequired
+                ? `Expects: ${[selectedTerm.needs_freight && 'freight', selectedTerm.needs_customs && 'customs']
+                    .filter(Boolean).join(' + ') || 'no fee invoices'} per arrival`
+                : undefined}
+            >
+              <Input id="incoterms" type="text" value={incoterms} maxLength={100}
+                     placeholder="e.g. Shanghai"
+                     onChange={(e) => setIncoterms(e.target.value)} />
+            </FormField>
+          </div>
         </div>
 
         <FormField label="Delivery Address" htmlFor="deliveryAddress">
@@ -426,13 +468,18 @@ export default function PoImportedEditPage() {
           Every added line needs a description.
         </p>
       )}
+      {missingIncoterms && (
+        <p className="text-right text-sm text-danger-600">
+          Choose an Incoterms code — it decides whether freight and customs invoices are expected.
+        </p>
+      )}
 
       <div className="flex justify-end gap-2">
         <BackLink to={`/po/${po.id}`}>
           <Button variant="secondary" type="button">Cancel</Button>
         </BackLink>
         <Button type="button" onClick={handleSave}
-                disabled={isSubmitting || blankAddedLine}>
+                disabled={isSubmitting || blankAddedLine || missingIncoterms}>
           {isSubmitting ? 'Saving…' : 'Save & Regenerate PDF'}
         </Button>
       </div>

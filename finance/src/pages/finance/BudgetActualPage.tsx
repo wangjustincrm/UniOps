@@ -6,10 +6,11 @@
  * NC posted JV period debit (via /gl/budget-actual-grid); budget = budget-api
  * current approved plan. Read-only; each actual drills into its composing vouchers.
  */
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
+import { SortTh, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -70,6 +71,11 @@ export default function BudgetActualPage() {
   const [scope, setScope] = useState<Scope | null>(null)
   const [drill, setDrill] = useState<Drill | null>(null)
   const [jvId, setJvId] = useState<string | null>(null)
+  // One basis for every panel on the page: a summary on one basis over a
+  // composition on another would not add up to the row that was clicked.
+  // Ticked by default: a month still being closed reads nearly empty on
+  // tallied vouchers alone.
+  const [includeUnposted, setIncludeUnposted] = useState(true)
 
   const { data: perms } = useQuery({
     queryKey: ['jv-permissions'],
@@ -77,11 +83,18 @@ export default function BudgetActualPage() {
   })
 
   const { data, isFetching } = useQuery({
-    queryKey: ['budget-actual-grid', period],
-    queryFn: () => financeApi.get<GridResp>(`/gl/budget-actual-grid?period=${period}`),
+    queryKey: ['budget-actual-grid', period, includeUnposted],
+    queryFn: () => financeApi.get<GridResp>(
+      `/gl/budget-actual-grid?period=${period}&include_unposted=${includeUnposted}`),
   })
 
-  const unmapped = useMemo(() => data?.unmapped ?? [], [data])
+  // The exceptions list: one plain row per account x NC cost center, whole.
+  const unmappedSort = useSortableRows(data?.unmapped, {
+    account: (u) => u.account_code, nc_cc: (u) => u.nc_cc_code,
+    income_expense: (u) => u.income_expense_code, actual: (u) => Number(u.actual),
+    lines: (u) => u.line_count,
+  })
+  const unmapped = unmappedSort.rows
 
   const onJvActed = () => {
     qc.invalidateQueries({ queryKey: ['account-balance'] })
@@ -105,7 +118,9 @@ export default function BudgetActualPage() {
     <PortalChromeLayout
       activeKey="portal:/finance/budget-actual"
       title="Budget vs Actual"
-      subtitle="Budget (approved plan) vs NC posted actual, per cost center × income-expense item (CAD)"
+      subtitle={includeUnposted
+        ? 'Budget (approved plan) vs NC actual incl. unposted vouchers, per cost center × income-expense item (CAD)'
+        : 'Budget (approved plan) vs NC posted actual, per cost center × income-expense item (CAD)'}
     >
       {/* Room to scroll the last rows clear of the panel. The panel is sized
           against <main>; this is against the viewport, so it is a close-enough
@@ -119,11 +134,14 @@ export default function BudgetActualPage() {
                             onFiscalYearChange={(y) => setPeriod(`${y}${period.slice(4)}`)}
                             window={win}
                             onWindowChange={(w, label) => { setWin(w); setWinLabel(label) }}
-                            scope={scope} onScopeChange={setScope} />
+                            scope={scope} onScopeChange={setScope}
+                            includeUnposted={includeUnposted}
+                            onIncludeUnpostedChange={setIncludeUnposted} />
 
         {scope && (
           <BudgetActualBreakdown fiscalYear={Number(period.slice(0, 4))}
                                  window={win} windowLabel={winLabel} scope={scope}
+                                 includeUnposted={includeUnposted}
                                  onClose={() => setScope(null)} />
         )}
 
@@ -234,16 +252,16 @@ export default function BudgetActualPage() {
             {unmapped.length > 0 && (
               <div className="overflow-hidden rounded-lg border border-amber-200">
                 <div className="bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
-                  Exceptions — posted lines with no cost center ({unmapped.length}). Fix in NC or add to the mapping.
+                  Exceptions — {includeUnposted ? 'lines' : 'posted lines'} with no cost center ({unmapped.length}). Fix in NC or add to the mapping.
                 </div>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-neutral-100 text-xs text-neutral-500">
-                      <th className="px-3 py-2 text-left font-medium">Account</th>
-                      <th className="px-3 py-2 text-left font-medium">NC Cost Center</th>
-                      <th className="px-3 py-2 text-left font-medium">Income / Expense</th>
-                      <th className="px-3 py-2 text-right font-medium">Actual</th>
-                      <th className="px-3 py-2 text-right font-medium">Lines</th>
+                      <SortTh label="Account" sortKey="account" sort={unmappedSort.sort} onSort={unmappedSort.onSort} className="px-3 py-2 font-medium text-left" />
+                      <SortTh label="NC Cost Center" sortKey="nc_cc" sort={unmappedSort.sort} onSort={unmappedSort.onSort} className="px-3 py-2 font-medium text-left" />
+                      <SortTh label="Income / Expense" sortKey="income_expense" sort={unmappedSort.sort} onSort={unmappedSort.onSort} className="px-3 py-2 font-medium text-left" />
+                      <SortTh label="Actual" sortKey="actual" sort={unmappedSort.sort} onSort={unmappedSort.onSort} align="right" className="px-3 py-2 font-medium" />
+                      <SortTh label="Lines" sortKey="lines" sort={unmappedSort.sort} onSort={unmappedSort.onSort} align="right" className="px-3 py-2 font-medium" />
                       <th className="px-3 py-2 w-20"></th>
                     </tr>
                   </thead>
@@ -282,6 +300,7 @@ export default function BudgetActualPage() {
       {drill && (
         <AccountVouchersModal accountCode={drill.accountCode} period={period}
                               dimsValues={drill.dimsValues} title={drill.title}
+                              includeUnposted={includeUnposted}
                               onClose={() => setDrill(null)} onOpenJv={(id) => setJvId(id)} />
       )}
       {jvId && (

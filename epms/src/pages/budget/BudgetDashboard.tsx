@@ -5,14 +5,17 @@
  * selected (cost_center, fiscal_year) scope. Replaces the old /budget/summary
  * aggregation that lived in epms-api.
  *
- * Actual is NC posted throughout — the cards, the cells and the over-budget
- * marks. budget-api's doc-side `actual_spent` is deliberately not shown: see
+ * Actual is NC posted plus what NC holds but has not tallied yet — the cards,
+ * the cells and the over-budget marks — while "Include unposted vouchers" is
+ * ticked (the default; a month still being closed reads nearly empty
+ * otherwise), or NC posted alone when it is cleared. One flag drives every NC read on the page, drills and export too. budget-api's doc-side `actual_spent` is deliberately not shown: see
  * PlanActualCell.
  */
 import { useState, useMemo, Fragment } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, TrendingUp, Building2, ChevronRight } from 'lucide-react'
-import { cn, formatAmount, formatCADCompact } from '@/lib/utils'
+import { cn, formatAmount } from '@/lib/utils'
+import { CompactAmount } from '@/components/ui/CompactAmount'
 import { Card, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useActualsSummary, useMonthlyActualsSummary, useAvailableFiscalYears, useNcActualsMonthly, useNcPartnerMonthly, useNcPartnerVouchers, useActualsScope } from '@/hooks/useBudget'
@@ -58,14 +61,24 @@ export default function BudgetDashboard() {
   const [ccId, setCcId] = useState<string>('all')
   const [highlightId, setHighlightId] = useState<string | null>(null)
   const [collapsedL1, setCollapsedL1] = useState<Set<string>>(new Set())
+  const [includeUnposted, setIncludeUnposted] = useState(true)
+  const ncLabel = includeUnposted ? 'NC incl. unposted' : 'NC posted'
   const [exporting, setExporting] = useState(false)
+  // Export only: follow each budget account with its vendor rows (the inline
+  // drill, for every account at once). Does not change what the grid shows.
+  const [exportByVendor, setExportByVendor] = useState(false)
   const handleExport = async () => {
     setExporting(true)
     try {
       await downloadFinanceFile(
         '/gl/budget-actual/partner-export',
-        { fiscal_year: fiscalYear, ...(ccId !== 'all' ? { cost_center_id: ccId } : {}) },
-        `budget-actual-FY${fiscalYear}.xlsx`,
+        {
+          fiscal_year: fiscalYear,
+          ...(ccId !== 'all' ? { cost_center_id: ccId } : {}),
+          ...(includeUnposted ? { include_unposted: true } : {}),
+          ...(exportByVendor ? { expand_vendor: true } : {}),
+        },
+        `budget-actual-FY${fiscalYear}${exportByVendor ? '-by-vendor' : ''}.xlsx`,
       )
     } catch {
       alert('Export failed. Please try again.')
@@ -87,7 +100,7 @@ export default function BudgetDashboard() {
     () => (monthlyData?.accounts ?? []).filter((a) => !isExcludedFromDashboard(a.account_code)), [monthlyData])
 
   // NC posted actual (finance-api) per account × month — the second cell line.
-  const { data: ncData } = useNcActualsMonthly(summaryParams)
+  const { data: ncData } = useNcActualsMonthly({ ...summaryParams, include_unposted: includeUnposted })
   const ncByAccount = useMemo(() => ncData?.accounts ?? {}, [ncData])
 
   const monthlyByL1 = useMemo(() => {
@@ -217,6 +230,13 @@ export default function BudgetDashboard() {
               {visibleCCs.map((cc) => <option key={cc.id} value={cc.id}>{cc.code} — {cc.name}</option>)}
             </select>
           )}
+          <label className="inline-flex cursor-pointer select-none items-center gap-1.5 text-sm text-neutral-700"
+                 title="Also count vouchers entered in NC but not yet tallied (记账). Discarded or deleted vouchers never count.">
+            <input type="checkbox" checked={includeUnposted}
+                   onChange={(e) => setIncludeUnposted(e.target.checked)}
+                   className="h-4 w-4 cursor-pointer rounded border-neutral-300 accent-primary-600" />
+            Include unposted vouchers
+          </label>
           <Link to="/budget/plans" className="inline-flex items-center gap-1 text-sm text-primary-600 hover:underline">
             Manage Plans <ChevronRight className="h-3.5 w-3.5" />
           </Link>
@@ -233,14 +253,14 @@ export default function BudgetDashboard() {
       ) : (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           {[
-            { label: 'Total Annual Budget', value: formatCADCompact(totalBudget), sub: 'Approved plan' },
-            { label: 'Total Committed',     value: formatCADCompact(totalCommitted), sub: 'PA in-flight' },
-            { label: 'Total Actual Spent',  value: formatCADCompact(totalNcSpent), sub: 'NC posted' },
-            { label: 'Total Available',     value: formatCADCompact(totalAvailable), sub: `${totalPct}% utilised`, alert: totalAvailable < 0 },
+            { label: 'Total Annual Budget', value: totalBudget, sub: 'Approved plan' },
+            { label: 'Total Committed',     value: totalCommitted, sub: 'PA in-flight' },
+            { label: 'Total Actual Spent',  value: totalNcSpent, sub: ncLabel },
+            { label: 'Total Available',     value: totalAvailable, sub: `${totalPct}% utilised`, alert: totalAvailable < 0 },
           ].map((s) => (
             <Card key={s.label} className={cn('p-4', s.alert && 'ring-1 ring-danger-200')}>
               <p className="text-xs text-neutral-500">{s.label}</p>
-              <p className={cn('text-xl font-bold mt-1 font-mono', s.alert ? 'text-danger-600' : 'text-neutral-900')}>{s.value}</p>
+              <p className={cn('text-xl font-bold mt-1 font-mono', s.alert ? 'text-danger-600' : 'text-neutral-900')}><CompactAmount value={s.value} /></p>
               <p className="text-xs text-neutral-400 mt-0.5">{s.sub}</p>
             </Card>
           ))}
@@ -253,7 +273,7 @@ export default function BudgetDashboard() {
           <div className="flex items-center gap-2 mb-3">
             <AlertTriangle className="h-4 w-4 text-danger-600 shrink-0" />
             <h2 className="text-sm font-semibold text-danger-700">
-              {overBudget.length} account{overBudget.length !== 1 ? 's' : ''} over budget (NC posted)
+              {overBudget.length} account{overBudget.length !== 1 ? 's' : ''} over budget ({ncLabel})
             </h2>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -280,7 +300,7 @@ export default function BudgetDashboard() {
           <div className="flex items-center gap-2 mb-3">
             <TrendingUp className="h-4 w-4 text-warning-600 shrink-0" />
             <h2 className="text-sm font-semibold text-warning-700">
-              {nearBudget.length} account{nearBudget.length !== 1 ? 's' : ''} approaching budget limit (NC posted)
+              {nearBudget.length} account{nearBudget.length !== 1 ? 's' : ''} approaching budget limit ({ncLabel})
             </h2>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -304,6 +324,13 @@ export default function BudgetDashboard() {
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-base font-semibold text-neutral-900">Monthly Plan vs Actual</h2>
             <div className="flex items-center gap-2 text-xs">
+              <label className="inline-flex cursor-pointer select-none items-center gap-1 text-neutral-600"
+                     title="In the exported file, list each budget account's NC actual by vendor under the account row">
+                <input type="checkbox" checked={exportByVendor} disabled={exporting}
+                       onChange={(e) => setExportByVendor(e.target.checked)}
+                       className="h-3.5 w-3.5 cursor-pointer rounded border-neutral-300 accent-primary-600" />
+                Expand vendor
+              </label>
               <button type="button" onClick={handleExport} disabled={exporting}
                 className="rounded-md border border-primary-300 bg-white px-2.5 py-1 font-medium text-primary-700 hover:bg-primary-50 disabled:opacity-50">
                 {exporting ? 'Exporting…' : 'Export XLSX'}
@@ -316,7 +343,7 @@ export default function BudgetDashboard() {
           </div>
           <p className="text-xs text-neutral-500 mt-0.5">
             Each cell: <span className="text-neutral-600 font-medium">plan</span> /{' '}
-            <span className="text-emerald-700 font-medium">NC posted actual</span> · over budget in red
+            <span className="text-emerald-700 font-medium">{ncLabel} actual</span> · over budget in red
             {ccId === 'all' && <span className="ml-2 text-neutral-400">· Aggregated across cost centers</span>}
           </p>
         </CardHeader>
@@ -355,6 +382,7 @@ export default function BudgetDashboard() {
               {monthlyByL1.map((g) => (
                 <MonthlyL1Group key={g.code} l1Code={g.code} accounts={g.accounts} ncByAccount={ncByAccount}
                   fiscalYear={fiscalYear} costCenterId={ccId !== 'all' ? ccId : undefined} highlightId={highlightId}
+                  includeUnposted={includeUnposted}
                   expanded={!collapsedL1.has(g.code)} onToggle={() => toggleL1(g.code)} />
               ))}
             </tbody>
@@ -397,15 +425,15 @@ function PlanActualCell({ plan, nc, strong }: { plan: number; nc?: number; stron
   return (
     <div className="flex flex-col items-end leading-tight font-mono">
       <span className={cn('text-[11px] whitespace-nowrap text-neutral-500', strong && 'font-semibold text-neutral-600')}>
-        {plan ? formatCADCompact(plan) : '–'}
+        {plan ? <CompactAmount value={plan} hint="Plan" /> : '–'}
       </span>
       {nc !== undefined && (
         <span className={cn(
           'text-[11px] whitespace-nowrap',
           over ? 'text-danger-600 font-bold' : 'text-emerald-700',
           strong && 'font-semibold',
-        )} title="NC posted actual (red = over budget)">
-          {nc ? formatCADCompact(nc) : '–'}
+        )}>
+          {nc ? <CompactAmount value={nc} hint="NC actual (red = over budget)" /> : '–'}
         </span>
       )}
     </div>
@@ -414,10 +442,11 @@ function PlanActualCell({ plan, nc, strong }: { plan: number; nc?: number; stron
 
 // ── L1 group with expandable monthly rows ─────────────────────────────────────
 
-function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterId, highlightId, expanded, onToggle }: {
+function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterId, highlightId, includeUnposted, expanded, onToggle }: {
   l1Code: string; accounts: ApiMonthlyAccountSummary[]
   ncByAccount: Record<string, Record<number, string>>
   fiscalYear: number; costCenterId?: string; highlightId?: string | null
+  includeUnposted: boolean
   expanded: boolean; onToggle: () => void
 }) {
   const [expandedAcct, setExpandedAcct] = useState<string | null>(null)
@@ -486,7 +515,8 @@ function MonthlyL1Group({ l1Code, accounts, ncByAccount, fiscalYear, costCenterI
                 <PlanActualCell plan={Number(a.plan_year)} nc={ncYearFor(a.account_id)} strong />
               </td>
             </tr>
-            {isOpen && <PartnerRows account={a} fiscalYear={fiscalYear} costCenterId={costCenterId} />}
+            {isOpen && <PartnerRows account={a} fiscalYear={fiscalYear} costCenterId={costCenterId}
+                                    includeUnposted={includeUnposted} />}
           </Fragment>
         )
       })}
@@ -507,13 +537,15 @@ const NO_VENDOR_LABEL: Record<string, string> = {
   mixed: '(no vendor)',
 }
 
-function PartnerRows({ account, fiscalYear, costCenterId }: {
+function PartnerRows({ account, fiscalYear, costCenterId, includeUnposted }: {
   account: ApiMonthlyAccountSummary
   fiscalYear: number
   costCenterId?: string
+  includeUnposted: boolean
 }) {
   const { data, isLoading } = useNcPartnerMonthly({
     income_expense_item_id: account.account_id, fiscal_year: fiscalYear, cost_center_id: costCenterId,
+    include_unposted: includeUnposted,
   })
   const partners = data?.partners ?? []
   const [voucherKey, setVoucherKey] = useState<string | null>(null)  // `${partnerId}:${month}`
@@ -555,16 +587,17 @@ function PartnerRows({ account, fiscalYear, costCenterId }: {
                       <button className={cn('font-mono text-[11px] hover:underline',
                         voucherKey === key ? 'font-semibold text-emerald-900' : 'text-emerald-700')}
                         onClick={() => setVoucherKey((k) => (k === key ? null : key))}>
-                        {formatCADCompact(v)}
+                        <CompactAmount value={v} />
                       </button>
                     ) : <span className="text-[11px] text-neutral-300">–</span>}
                   </td>
                 )
               })}
-              <td className="py-1.5 px-2 text-right font-mono text-[11px] font-semibold bg-emerald-100">{formatCADCompact(Number(p.year_total))}</td>
+              <td className="py-1.5 px-2 text-right font-mono text-[11px] font-semibold bg-emerald-100"><CompactAmount value={Number(p.year_total)} /></td>
             </tr>
             {voucherKey && voucherKey.startsWith(`${pid}:`) && (
               <VoucherRow account={account} fiscalYear={fiscalYear} costCenterId={costCenterId}
+                includeUnposted={includeUnposted}
                 partnerKey={p.key} partnerName={p.partner_name || NO_VENDOR_LABEL[p.source]}
                 month={Number(voucherKey.split(':')[1])} />
             )}
@@ -575,17 +608,18 @@ function PartnerRows({ account, fiscalYear, costCenterId }: {
   )
 }
 
-function VoucherRow({ account, fiscalYear, costCenterId, partnerKey, partnerName, month }: {
+function VoucherRow({ account, fiscalYear, costCenterId, includeUnposted, partnerKey, partnerName, month }: {
   account: ApiMonthlyAccountSummary
   fiscalYear: number
   costCenterId?: string
+  includeUnposted: boolean
   partnerKey: string
   partnerName: string | null
   month: number
 }) {
   const { data, isLoading } = useNcPartnerVouchers({
     income_expense_item_id: account.account_id, fiscal_year: fiscalYear, month,
-    cost_center_id: costCenterId, partner_id: partnerKey,
+    cost_center_id: costCenterId, partner_id: partnerKey, include_unposted: includeUnposted,
   })
   const rows = data?.rows ?? []
   return (
@@ -613,10 +647,18 @@ function VoucherRow({ account, fiscalYear, costCenterId, partnerKey, partnerName
               {rows.map((r, i) => (
                 <tr key={`${r.jv_id}-${i}`} className="border-t border-neutral-100">
                   <td className="px-2 py-1 font-mono text-neutral-600">{r.voucher_date}</td>
-                  <td className="px-2 py-1 font-mono">{r.jv_number}</td>
+                  <td className="px-2 py-1 font-mono">
+                    {r.jv_number}
+                    {r.posted === false && (
+                      <span className="ml-1.5 rounded bg-amber-50 px-1.5 py-0.5 font-sans text-[10px] font-medium text-amber-700"
+                            title="Entered in NC, not yet tallied">
+                        Unposted
+                      </span>
+                    )}
+                  </td>
                   <td className="px-2 py-1 font-mono text-neutral-600">{r.account_code}</td>
                   <td className="px-2 py-1 text-neutral-700">{r.summary || '—'}</td>
-                  <td className="px-2 py-1 text-right font-mono">{formatCADCompact(Number(r.local_debit))}</td>
+                  <td className="px-2 py-1 text-right font-mono"><CompactAmount value={Number(r.local_debit)} /></td>
                 </tr>
               ))}
             </tbody>

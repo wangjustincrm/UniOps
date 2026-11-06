@@ -6,11 +6,12 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import ARRAY, JSON, Enum, String, cast, func, or_, select
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.po_number import regenerate_and_cascade
-from app.admin.recompute import PA_CHARGE_FIELDS, recompute_header, recompute_pa_header_only
+from app.admin.recompute import PA_CHARGE_FIELDS, pa_lines_total, recompute_header, recompute_pa_header_only
 from app.admin.registry import REGISTRY, EntitySpec
 from app.admin.resolvers import get_resolver
 from app.crud.agreement_schedule import reassign_open_confirm_tasks
@@ -43,6 +44,41 @@ def _spec(entity: str) -> EntitySpec:
     if spec is None:
         raise ValueError(f"Unknown entity '{entity}'")
     return spec
+
+
+class UnknownSortKey(Exception):
+    """?sort= named a column this entity's list does not offer -> HTTP 422."""
+
+
+def _sort_expr(model, name: str):
+    """ORDER BY expression for one list column, or None when it cannot sort.
+
+    Only real mapped columns qualify — list_columns is free text in the
+    registry, and this lookup is the SQL-injection boundary for ?sort=.
+    Text sorts case-insensitively ("amazon" with "Amazon"); an enum by its
+    label (a PG enum would otherwise order by declaration position);
+    JSON/array columns are not sortable."""
+    col = sa_inspect(model).columns.get(name)
+    if col is None:
+        return None
+    attr = getattr(model, name)
+    t = col.type
+    if isinstance(t, (JSON, ARRAY)):
+        return None
+    if isinstance(t, Enum):            # Enum subclasses String: check it first
+        return func.lower(cast(attr, String))
+    if isinstance(t, String):          # Text is a String too
+        return func.lower(func.nullif(func.trim(attr), ""))   # trimmed; blank = empty
+    return attr
+
+
+# entity -> {list column -> ORDER BY expression}. Built once from the registry,
+# so the list page can only ever sort by a column it actually shows.
+SORTABLE: dict[str, dict] = {
+    key: {c: e for c in spec.schema.list_columns
+          if (e := _sort_expr(spec.model, c)) is not None}
+    for key, spec in REGISTRY.items()
+}
 
 
 def _serialize(spec: EntitySpec, row) -> dict:
@@ -80,9 +116,12 @@ def _coerce(field_type: str, value):
 
 
 async def list_records(db: AsyncSession, entity: str, *, page: int, page_size: int,
-                       search: str | None) -> tuple[list[dict], int]:
+                       search: str | None, sort: str | None = None,
+                       dir: str = "asc") -> tuple[list[dict], int]:
     spec = _spec(entity)
     model = spec.model
+    if sort is not None and sort not in SORTABLE[entity]:
+        raise UnknownSortKey(f"'{entity}' cannot be sorted by {sort!r}")
     stmt = select(model)
     if search and spec.schema.search_fields:
         clauses = [getattr(model, f).ilike(f"%{search}%") for f in spec.schema.search_fields]
@@ -90,9 +129,15 @@ async def list_records(db: AsyncSession, entity: str, *, page: int, page_size: i
     total = int((await db.execute(
         select(func.count()).select_from(stmt.subquery())
     )).scalar_one())
-    col, _, direction = spec.schema.order_by.partition(" ")
-    order = getattr(model, col)
-    stmt = stmt.order_by(order.desc() if direction.lower() == "desc" else order.asc())
+    if sort is None:
+        col, _, direction = spec.schema.order_by.partition(" ")
+        order = getattr(model, col)
+        stmt = stmt.order_by(order.desc() if direction.lower() == "desc" else order.asc())
+    else:
+        expr = SORTABLE[entity][sort]
+        expr = expr.asc() if dir == "asc" else expr.desc()
+        # NULLs last both ways (PG DESC puts them first); id keeps pages stable.
+        stmt = stmt.order_by(expr.nulls_last(), model.id.asc())
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
     rows = (await db.execute(stmt)).scalars().all()
     return [_serialize(spec, r) for r in rows], total
@@ -125,7 +170,30 @@ async def get_record(db: AsyncSession, entity: str, record_id: uuid.UUID) -> dic
             .order_by(child.model.sort_order.asc()))).scalars().all()
         rec["line_items"] = [_serialize_child(child, li) for li in lis]
     rec["_ref_list_labels"] = await _ref_list_labels(db, spec, rec)
+    rec["_ref_labels"] = await _ref_labels(db, spec, rec)
     return rec
+
+
+async def _ref_labels(db: AsyncSession, spec: EntitySpec, rec: dict) -> dict:
+    """{field: label} for every single reference field that has no denormalized
+    name column (the user references: Requester, PA Creator, Agreement Owner…),
+    so the editor names the person instead of showing their uuid (UI-USER-001,
+    ISS-0183). Display only. An id that resolves to nothing is left out and the
+    editor falls back to the raw value, as before."""
+    out: dict[str, str] = {}
+    for f in spec.schema.fields:
+        if f.type != "reference" or not f.ref_source or f.ref_name_field:
+            continue
+        raw = rec.get(f.name)
+        if not raw:
+            continue
+        try:
+            hit = await get_resolver(f.ref_source).fetch_by_id(db, uuid.UUID(str(raw)))
+        except (ValueError, TypeError):
+            hit = None
+        if hit is not None:
+            out[f.name] = hit.label
+    return out
 
 
 async def _ref_list_labels(db: AsyncSession, spec: EntitySpec, rec: dict) -> dict:
@@ -325,14 +393,19 @@ async def _apply_line_items(db, spec, row, items: list[dict]):
 async def _recompute_pa_from_stored_lines(db, spec, row, *, rate_changed: bool):
     """Header recompute for a PA edit that did not touch the lines.
 
-    With lines: the same full recompute a line edit gets — tax is lines × rate,
-    shipping and other charges untaxed. Without: the stored subtotal stands in
-    (an empty array would zero 91 production PAs); see recompute_pa_header_only."""
+    With lines that add up to the stored subtotal: the same full recompute a
+    line edit gets — tax is lines × rate, shipping and other charges untaxed.
+    Without lines, or with lines that do not add up: the stored subtotal stands
+    in (see recompute_pa_header_only). An empty array would zero 91 production
+    PAs; lines that disagree with the header — a fifth of PO-route PAs, most
+    often every PO line ticked on a partial payment — would silently replace
+    what the PA pays with the PO's full value when only a shipping fee changed."""
     Model = spec.schema.child.model
     lines = (await db.execute(
         select(Model).where(getattr(Model, spec.schema.child.fk_field) == row.id))).scalars().all()
-    if lines:
-        totals = recompute_header("pa", row, [{"line_total": l.line_total} for l in lines])
+    line_dicts = [{"line_total": l.line_total} for l in lines]
+    if lines and pa_lines_total(line_dicts) == Decimal(str(row.subtotal or 0)):
+        totals = recompute_header("pa", row, line_dicts)
     else:
         totals = recompute_pa_header_only(row, rate_changed=rate_changed)
     for hk, hv in totals.items():
@@ -362,6 +435,7 @@ async def _refresh_invoice_gr_value(db, gr) -> int:
 async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch: dict,
                       *, actor_id: uuid.UUID, actor_email: str,
                       regenerate_po_number: bool = False,
+                      accept_line_total: bool = False,
                       bearer_token: str | None = None) -> dict:
     spec = _spec(entity)
     if not spec.schema.allow_edit:
@@ -415,7 +489,20 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
             await _recompute_pa_from_stored_lines(db, spec, row, rate_changed="tax_rate" in changed)
     received_qty_resynced = 0
     if line_items is not None:
+        subtotal_before = getattr(row, "subtotal", None)
         await _apply_line_items(db, spec, row, line_items)
+        if entity == "pa" and row.subtotal != subtotal_before and not accept_line_total:
+            # subtotal is not editable here — the lines are its only input, so a
+            # line edit is a payment change. Make that explicit: fixing a typo
+            # in one description on a PA whose lines never matched its header
+            # would otherwise move the payment by the whole difference.
+            raise ValueError(
+                f"These lines total {row.subtotal}, but this PA's pre-tax amount is "
+                f"{subtotal_before}. Saving would change the pre-tax amount to {row.subtotal} "
+                f"and the payment to {row.payment_amount}. Adjust the lines to total "
+                f"{subtotal_before}, or confirm that the line total should become the "
+                "pre-tax amount."
+            )
         if entity == "po":
             # received_qty is hand-editable on PO lines; the PO's receipt status is
             # derived from it, so a corrected quantity has to drag the status with
@@ -463,6 +550,9 @@ async def edit_record(db: AsyncSession, entity: str, record_id: uuid.UUID, patch
         # Confirm button and the old assignee would keep the to-do.
         await db.flush()
         confirm_tasks_reassigned = await reassign_open_confirm_tasks(db, row)
+        # Same reason for the house-account receipt hand-off.
+        from app.crud import attach_receipts_task
+        await attach_receipts_task.reassign_for_agreement(db, row)
 
     cascade = None
     if entity == "po" and regenerate_po_number:

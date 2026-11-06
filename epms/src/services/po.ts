@@ -1,4 +1,5 @@
 import { api, fetchAllPages } from '@/lib/api'
+import type { FeeStatus } from './poFee'
 import type { ApiEvent } from './pr'
 import type { WorkflowNodeDef, CurrentStep } from '@/types'
 import type { ReminderResponse } from './reminder'
@@ -84,8 +85,18 @@ export interface ApiPo {
   // contain internal [NC Paid] / [NC Closed] markers — never show it as
   // buyer text on an NC PO.
   buyer_notes?: string | null
+  // Incoterms = code (picked from Incoterms Settings; required on a raw-material
+  // NC PO's Edit Details) + named place. `incoterms` is the PLACE.
+  incoterms_code?: string | null
   incoterms?: string | null
+  // ISS-0087: the PO's own terms; null on older / NC POs, which use the
+  // vendor's (vendor_payment_terms, on the detail read).
+  payment_terms?: string | null
+  vendor_payment_terms?: string | null
   buyer_edited_at?: string | null
+  // Raw-material NC POs only (null otherwise) — are the freight / customs
+  // invoices in? See services/poFee.ts FeeStatus.
+  fee_status?: FeeStatus | null
   pr_id?: string
   pr_number?: string
   pr_requester_id?: string | null
@@ -100,6 +111,7 @@ export interface ApiPo {
   pr_department_id?: string | null
   approval_step_idx: number
   line_items: ApiPoLineItem[]
+  created_by?: string
   created_by_name?: string | null
   created_at: string
   updated_at: string
@@ -118,6 +130,7 @@ export interface CreatePoBody {
   tax_rate: number
   tax_code?: string | null
   vendor_id: string
+  payment_terms?: string
   is_prepaid?: boolean
   budget_code?: string
   expected_delivery?: string
@@ -135,6 +148,7 @@ export interface UpdatePoBody {
   tax_rate?: number
   tax_code?: string | null
   vendor_id?: string
+  payment_terms?: string
   is_prepaid?: boolean
   budget_code?: string
   expected_delivery?: string
@@ -153,6 +167,7 @@ export interface ImportedDetailsLineBody {
 export interface ImportedDetailsBody {
   expected_delivery?: string | null
   delivery_address?: string | null
+  incoterms_code?: string | null
   incoterms?: string | null
   tax_code?: string | null
   tax_rate?: number | null
@@ -192,6 +207,9 @@ export interface PlaceOrderBody {
 }
 
 export interface PoFilters {
+  // Server-side column sort (GET … ?sort=<key>&dir=asc|desc); omitted = API default order.
+  sort?: string
+  dir?: 'asc' | 'desc'
   status?: PoStatus
   pr_type?: number
   department_id?: string

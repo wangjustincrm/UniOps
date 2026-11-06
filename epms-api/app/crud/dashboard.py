@@ -98,6 +98,106 @@ async def _over_budget_count(
     return 0
 
 
+# Per cost-center summaries are the same for every caller allowed to see that
+# cost center, so they are shared for a short while: a GM's dashboard reads
+# ~20 of them and each one makes budget-api ask finance for NC actuals.
+_CC_SUMMARY_TTL = 120.0
+_cc_summary_cache: dict[tuple[str, int], tuple[float, list]] = {}
+
+
+async def _approver_budget(
+    db: AsyncSession, token: str | None, red_threshold: float,
+) -> tuple[BudgetOverview, int, int]:
+    """Budget Overview, over-budget departments and over-budget accounts for the
+    Approver dashboard (BUD-OI-11, ISS-0168).
+
+    Judged per cost center × account: summing one account over several cost
+    centers first would let one department's overrun hide behind another's
+    unspent budget. The cost centers are the ones budget-api says the caller
+    may see (/actuals/scope) — only those are asked for, because budget-api
+    answers an out-of-scope cost_center_id with the caller's whole department.
+    An account is over budget once committed + actual reach the red threshold,
+    or it has spend with no budget; a department is over budget when any of
+    its cost centers has such an account. The overview groups by L1. Empty,
+    never an error, when budget-api cannot be reached.
+    """
+    import asyncio
+    import time
+
+    from sqlalchemy import text
+
+    from app.services import budget_client
+
+    empty = BudgetOverview(total_budget=_ZERO, total_committed=_ZERO,
+                           total_spent=_ZERO, utilisation_pct=0.0, groups=[])
+    if not token:
+        return empty, 0, 0
+    scope = await budget_client.get_actuals_scope(token)
+    ccs = [cc for cc in ((scope or {}).get("cost_centers") or []) if cc.get("id")]
+    if not ccs:
+        return empty, 0, 0
+    year = _today().year
+    sem = asyncio.Semaphore(6)
+
+    async def _accounts(cc_id: str) -> list:
+        key = (cc_id, year)
+        hit = _cc_summary_cache.get(key)
+        if hit and time.monotonic() - hit[0] < _CC_SUMMARY_TTL:
+            return hit[1]
+        async with sem:
+            # Unposted included: the Budget Dashboard's default and the basis
+            # of the budget alert emails, so the three agree.
+            data = await budget_client.get_actuals_summary(token, year, uuid.UUID(cc_id),
+                                                           include_unposted=True)
+        if data is None:
+            return []
+        accounts = data.get("accounts") or []
+        _cc_summary_cache[key] = (time.monotonic(), accounts)
+        return accounts
+
+    per_cc = await asyncio.gather(*(_accounts(cc["id"]) for cc in ccs))
+
+    l1_names: dict[str, str] = {}
+    if (await db.execute(text("SELECT to_regclass('public.budget_l1')"))).scalar() is not None:
+        l1_names = dict((await db.execute(text("SELECT code, name FROM budget_l1"))).all())
+
+    def _d(v) -> Decimal:
+        return Decimal(str(v or 0))
+
+    red = Decimal(str(red_threshold))
+    sums: dict[str, list[Decimal]] = {}
+    over_accounts = 0
+    over_depts: set[str] = set()
+    for cc, accounts in zip(ccs, per_cc):
+        for a in accounts:
+            budget, committed, spent = _d(a.get("annual_budget")), _d(a.get("committed")), _d(a.get("actual_spent"))
+            used = committed + spent
+            if (budget > 0 and used * 100 >= budget * red) or (budget <= 0 and used > 0):
+                over_accounts += 1
+                over_depts.add(str(cc.get("department_id") or cc["id"]))
+            s = sums.setdefault(a.get("l1_code") or "—", [_ZERO, _ZERO, _ZERO])
+            s[0] += budget
+            s[1] += committed
+            s[2] += spent
+
+    def _pct(budget: Decimal, used: Decimal) -> float:
+        return round(float(used / budget * 100), 1) if budget > 0 else 0.0
+
+    groups = [
+        BudgetGroupRow(l1_code=code, l1_name=l1_names.get(code) or code,
+                       annual_budget=b, committed=c, actual_spent=s,
+                       available=b - c - s, utilisation_pct=_pct(b, c + s))
+        for code, (b, c, s) in sorted(sums.items())
+        if b > 0 or c > 0 or s > 0
+    ]
+    tb = sum((g.annual_budget for g in groups), _ZERO)
+    tc = sum((g.committed for g in groups), _ZERO)
+    ts = sum((g.actual_spent for g in groups), _ZERO)
+    overview = BudgetOverview(total_budget=tb, total_committed=tc, total_spent=ts,
+                              utilisation_pct=_pct(tb, tc + ts), groups=groups)
+    return overview, len(over_depts), over_accounts
+
+
 # ── Pending approvals (PRs + POs + PAs in submitted/in_review) ───────────────
 
 async def _effective_roles(db: AsyncSession, role: str, user_id: uuid.UUID) -> set[str]:
@@ -449,38 +549,52 @@ async def build_requester(db: AsyncSession, user_id: uuid.UUID) -> DashboardResp
     )
 
 
-async def build_approver(db: AsyncSession, user_id: uuid.UUID, role: str) -> DashboardResponse:
+# Approver roles whose Open POs / Total Committed are their own department's
+# (ISS-0168) — the POs they can open on the PO list. GM, OPM, Director and
+# Supervisor keep the company-wide figures.
+_DEPT_SCOPED_APPROVERS = ("dept_manager", "dept_admin")
+
+
+async def build_approver(
+    db: AsyncSession, user_id: uuid.UUID, role: str,
+    user: dict | None = None, token: str | None = None,
+) -> DashboardResponse:
     # Pending approvals count — filtered to this user's assigned tasks only
     pending_items = await _pending_approvals(db, user_id, role)
     pending_count = len(pending_items)
 
+    open_po_where = [PurchaseOrder.status.notin_(["cancelled", "closed", "draft"])]
+    if role in _DEPT_SCOPED_APPROVERS and user is not None:
+        from app.core.access_scope import build_scope
+        scope = await build_scope(db, user)
+        if scope["po_subq"] is not None:   # None = an unrestricted role is also held
+            open_po_where.append(PurchaseOrder.id.in_(scope["po_subq"]))
+
     # Open POs
     po_open = await db.execute(
-        select(func.count()).select_from(PurchaseOrder).where(
-            PurchaseOrder.status.notin_(["cancelled", "closed", "draft"])
-        )
+        select(func.count()).select_from(PurchaseOrder).where(*open_po_where)
     )
     open_pos = po_open.scalar_one()
 
     # Total committed (active POs)
     committed_result = await db.execute(
-        select(func.coalesce(func.sum(PurchaseOrder.total), 0)).where(
-            PurchaseOrder.status.notin_(["cancelled", "closed", "draft"])
-        )
+        select(func.coalesce(func.sum(PurchaseOrder.total), 0)).where(*open_po_where)
     )
     total_committed = Decimal(str(committed_result.scalar_one()))
 
-    yellow_thresh, red_thresh = await _get_budget_thresholds(db)
-    over_budget = await _over_budget_count(db, red_threshold=red_thresh)
-    budget = await _budget_overview(db, yellow_threshold=yellow_thresh, red_threshold=red_thresh)
+    scope_note = "Your department" if len(open_po_where) > 1 else "Company-wide"
+
+    _yellow, red_thresh = await _get_budget_thresholds(db)
+    budget, over_depts, over_accounts = await _approver_budget(db, token, red_thresh)
 
     return DashboardResponse(
         role="approver",
         kpis=[
             KpiCard(title="Pending Approvals", value=str(pending_count), alert=pending_count > 0),
-            KpiCard(title="Open POs", value=str(open_pos)),
-            KpiCard(title="Total Committed (FY)", value=_fmt(total_committed)),
-            KpiCard(title="Over-Budget Depts", value=str(over_budget), alert=over_budget > 0),
+            KpiCard(title="Open POs", value=str(open_pos), subtitle=scope_note),
+            KpiCard(title="Total Committed (FY)", value=_fmt(total_committed), subtitle=scope_note),
+            KpiCard(title="Over-Budget Depts", value=str(over_depts), alert=over_depts > 0,
+                    subtitle=f"{over_accounts} account{'' if over_accounts == 1 else 's'} over budget"),
         ],
         pending_approvals=pending_items,
         budget_overview=budget,
@@ -572,11 +686,27 @@ async def build_warehouse(db: AsyncSession) -> DashboardResponse:
 
     ack_count = ack_r.scalar_one()
     disc_count = disc_r.scalar_one()
+    # "GR flagged 'Collection Overdue' on dashboard" (Collection Config, Finance
+    # Manager alert): waiting past fm_alert_days, while collection is required.
+    from app.crud.config import get_or_create as get_config
+    from app.tasks.gr_collect_due import collection_overdue_cutoff
+
+    cutoff = collection_overdue_cutoff(await get_config(db))
+    overdue = 0
+    if cutoff is not None:
+        overdue = (await db.execute(
+            select(func.count()).select_from(GoodsReceipt).where(
+                GoodsReceipt.status == "collection_pending",
+                func.coalesce(GoodsReceipt.received_at, GoodsReceipt.created_at) < cutoff,
+            )
+        )).scalar_one()
     return DashboardResponse(
         role="warehouse",
         kpis=[
             KpiCard(title="GRs Awaiting ACK", value=str(ack_count), alert=ack_count > 0),
-            KpiCard(title="Collection Pending", value=str(col_r.scalar_one())),
+            KpiCard(title="Collection Pending", value=str(col_r.scalar_one()),
+                    subtitle=f"{overdue} Collection Overdue" if overdue else None,
+                    alert=overdue > 0),
             KpiCard(title="Discrepancies", value=str(disc_count), alert=disc_count > 0),
             KpiCard(title="Completed This Month", value=str(done_r.scalar_one())),
         ],
@@ -875,7 +1005,10 @@ _PRIMARY_WITH_DASHBOARD = frozenset({
 })
 
 
-async def build(db: AsyncSession, role: str, user_id: uuid.UUID) -> DashboardResponse:
+async def build(
+    db: AsyncSession, role: str, user_id: uuid.UUID,
+    user: dict | None = None, token: str | None = None,
+) -> DashboardResponse:
     if role not in _PRIMARY_WITH_DASHBOARD:
         # The primary role has no dashboard of its own (requester, or a custom
         # role). An additional role may still carry one — this is what makes
@@ -890,7 +1023,7 @@ async def build(db: AsyncSession, role: str, user_id: uuid.UUID) -> DashboardRes
     # through to build_requester here, so their "Pending Approvals" list was
     # structurally empty (the requester payload has no pending_approvals at all).
     if role in ("dept_manager", "gm", "opm", "director", "supervisor", "dept_admin"):
-        return await build_approver(db, user_id, role)
+        return await build_approver(db, user_id, role, user=user, token=token)
     if role in ("procurement_officer", "procurement_manager"):
         return await build_procurement(db)
     if role == "warehouse_staff":

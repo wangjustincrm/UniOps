@@ -85,7 +85,11 @@ function RefLink({ refItem }: { refItem: ChainStepRef }) {
 
 function StepRow({ step, last }: { step: ChainStep; last: boolean }) {
   const style = STATE_STYLES[step.state]
-  const caption = STEP_CAPTIONS[step.key][step.state]
+  // A step with no document to link may say why itself (the Direct PA route:
+  // matched to nothing, no goods receipt) — that wins over the generic caption.
+  const caption = step.refs.length === 0 && step.detail && step.key !== 'payment'
+    ? step.detail
+    : STEP_CAPTIONS[step.key][step.state]
 
   return (
     <li className="flex gap-3">

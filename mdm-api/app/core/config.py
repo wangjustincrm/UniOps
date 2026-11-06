@@ -24,6 +24,8 @@ class Settings(BaseSettings):
 
     # 部署级总开关。关掉 = 这个进程不起调度循环(手动触发不受影响)。
     nc_sync_scheduler_enabled: bool = True
+    # NCT-005: an NC to-do open longer than this is highlighted (one payroll cycle).
+    nc_todo_overdue_days: int = 14
 
     allowed_origins: list[str] = [
         "http://localhost:5173", "http://localhost:5174",

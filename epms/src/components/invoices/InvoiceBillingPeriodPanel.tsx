@@ -33,7 +33,8 @@ export function InvoiceBillingPeriodPanel({
   invoice, canChange, changeBlockedReason,
 }: {
   invoice: ApiInvoice
-  // Same gate as Unmatch on this page (epms.invoice.match / system_admin).
+  // AP (epms.invoice.match / system_admin — the Unmatch gate) or the
+  // agreement's owner.
   canChange: boolean
   changeBlockedReason: string | null
 }) {

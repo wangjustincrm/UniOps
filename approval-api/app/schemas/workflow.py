@@ -18,9 +18,27 @@ class WorkflowNodeDef(BaseModel):
     condition: str | None = None
 
 
+class OverBudgetRule(BaseModel):
+    """What happens to a PR that is over budget, as Budget Config stands now."""
+    mode: str
+    mode_label: str
+    # Steps put in front of the normal chain for an over-budget PR, in order.
+    added_steps: list[WorkflowNodeDef]
+    blocks_submission: bool
+    # Whether the PR form demands a written justification from an over-budget
+    # requester. Stated because "no extra steps" (allow) was read as "nothing
+    # extra needed at all" and the Assistant said no justification was required
+    # (ISS-0025); the form requires one in every mode that lets the PR submit.
+    justification_required: bool = False
+    note: str
+
+
 class WorkflowDef(BaseModel):
     doc_type: str
     steps: list[WorkflowNodeDef]
+    # PR only: the over-budget rule. Not in `steps` because it does not apply to
+    # every PR — only to one whose total exceeds what is left on its budget.
+    over_budget: OverBudgetRule | None = None
 
 
 class AllWorkflowDefs(BaseModel):

@@ -4,7 +4,7 @@ import {
   useAreaRules, useUpdateVisit,
   type AccessArea, type Visit, type VisitPurpose,
 } from '@/services/api'
-import { ACCESS_AREAS, PURPOSES, approvalTier } from '@/lib/visitOptions'
+import { PURPOSES, mayMoveConfirmed, zoneOptions } from '@/lib/visitOptions'
 
 /** "HH:MM" of an ISO instant in the browser's (the plant's) time zone. */
 function localTime(iso: string | null): string {
@@ -16,11 +16,11 @@ function localTime(iso: string | null): string {
 /**
  * Edit an appointment before check-in: schedule, purpose, access area, notes.
  *
- * The access area is constrained the same way vms-api constrains it:
- *  - visit returned for edit / not yet submitted → any area (the next
- *    "Submit for approval" routes by the new area);
- *  - confirmed visit → only areas needing the same or less approval than it
- *    already has (e.g. GMP → Office after a failed health declaration).
+ * The access zone is constrained the same way vms-api constrains it:
+ *  - visit returned for edit / not yet submitted → any active zone (the next
+ *    "Submit for approval" routes by the new zone);
+ *  - confirmed visit → only zones that need no approval, or whose managers
+ *    already had this visit (e.g. GMP → Office after a failed health declaration).
  */
 export function EditVisitModal({ visit, onClose }: { visit: Visit; onClose: () => void }) {
   const { data: rules } = useAreaRules()
@@ -34,11 +34,11 @@ export function EditVisitModal({ visit, onClose }: { visit: Visit; onClose: () =
   const [notes, setNotes] = useState(visit.notes ?? '')
 
   const awaitingResubmit = visit.approval_status === 'draft' || visit.approval_status === 'returned'
-  const currentTier = approvalTier(rules?.[visit.access_area])
   const inFlight = visit.approval_status === 'submitted' || visit.approval_status === 'in_review'
   const areaAllowed = (a: AccessArea) =>
     a === visit.access_area
-    || (!inFlight && (awaitingResubmit || approvalTier(rules?.[a]) <= currentTier))
+    || (!inFlight && (awaitingResubmit || visit.status !== 'confirmed'
+        || mayMoveConfirmed(visit, rules?.[a])))
 
   const save = () => {
     update.mutate(
@@ -63,7 +63,7 @@ export function EditVisitModal({ visit, onClose }: { visit: Visit; onClose: () =
         <p className="mt-1 text-xs text-neutral-500">
           {awaitingResubmit
             ? 'Make the changes the approver asked for, then use “Submit for approval”.'
-            : 'Changes are logged. The access area can only move to an area that needs the same or less approval — for a higher-risk area, cancel and book a new visit.'}
+            : 'Changes are logged. The access zone can only move to a zone that needs no approval or is managed by the same zone managers — otherwise cancel and book a new visit.'}
         </p>
 
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -83,9 +83,9 @@ export function EditVisitModal({ visit, onClose }: { visit: Visit; onClose: () =
               {PURPOSES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
-          <label className="text-xs font-medium text-neutral-600">Access area
+          <label className="text-xs font-medium text-neutral-600">Access zone
             <select value={area} onChange={(e) => setArea(e.target.value as AccessArea)} className={inputCls}>
-              {ACCESS_AREAS.filter((o) => areaAllowed(o.value)).map((o) => (
+              {zoneOptions(rules, visit.access_area).filter((o) => areaAllowed(o.value)).map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>

@@ -116,6 +116,17 @@ async def test_create_gr(admin_client, test_engine):
 
 
 @pytest.mark.asyncio
+async def test_create_gr_keeps_the_entered_title_and_received_by(admin_client, test_engine):
+    """ISS-0091 / GR-P-002: the New GR form now sends a typed title and a
+    free-text Received By; the API keeps both instead of the PO title / creator."""
+    po, _ = await _make_issued_po(admin_client, test_engine, "VND-GR-CREATE-02")
+    gr = await _create_gr(admin_client, po["id"], title="Pump delivery, 2nd truck",
+                          received_by="Wanda Warehouse")
+    assert gr["title"] == "Pump delivery, 2nd truck"
+    assert gr["received_by"] == "Wanda Warehouse"
+
+
+@pytest.mark.asyncio
 async def test_create_gr_with_negative_discount_line(admin_client, test_engine):
     """PO 放宽了负单价折扣行(cad9d17),GR 镜像同一 PO 行时必须同样放行,
     否则仓库对带折扣行的 PO 无法收货(生产复现:POST /gr 422)。
@@ -175,6 +186,37 @@ async def test_create_gr_requires_issued_po(admin_client):
     })
     resp = await admin_client.post(GR_URL, json=_gr_payload(po.json()["id"]))
     assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("po_type, with_pr", [(3, True), (3, False), (4, True), (4, False)])
+async def test_create_gr_needs_a_received_line(admin_client, test_engine, po_type, with_pr):
+    """ISS-0181: POST /gr with the lines under a misspelt key ("lines") was saved
+    as a GR with no lines — on a PO with no PR, straight to Collected. Physical
+    and service POs, with and without a PR, all go through the same create; the
+    New GR form's rule (one line received above 0) is the server's too."""
+    po, _ = await _make_issued_po(
+        admin_client, test_engine, f"VND-GR-EMPTY-{po_type}{int(with_pr)}",
+        po_type=po_type, with_pr=with_pr)
+    zero_line = {**_gr_payload(po["id"])["line_items"][0], "qty_received": "0"}
+    for body in (
+        {k: v for k, v in _gr_payload(po["id"]).items() if k != "line_items"},
+        {**_gr_payload(po["id"], line_items=[]),
+         "lines": _gr_payload(po["id"])["line_items"]},
+        _gr_payload(po["id"], line_items=[zero_line]),
+    ):
+        r = await admin_client.post(GR_URL, json=body)
+        assert r.status_code == 422, r.text
+        assert r.json()["detail"] == (
+            "At least one line must have a received quantity greater than 0.")
+    listed = await admin_client.get(GR_URL, params={"po_id": po["id"]})
+    assert listed.json()["total"] == 0
+
+    # A zero line beside a received one is fine — the form sends only received
+    # lines, but the rule is "at least one".
+    gr = await _create_gr(admin_client, po["id"], line_items=[
+        zero_line, _gr_payload(po["id"])["line_items"][0]])
+    assert len(gr["line_items"]) == 2
 
 
 @pytest.mark.asyncio
@@ -243,6 +285,25 @@ async def test_gr_cancel(admin_client, test_engine):
 
 
 @pytest.mark.asyncio
+async def test_gr_cancel_only_before_collection(admin_client, test_engine):
+    """PRD GR-C-004 (ISS-0124): cancel is accepted in collection_pending too,
+    and refused once the goods are collected."""
+    po, _ = await _make_issued_po(admin_client, test_engine, "VND-GR-CANCEL-02")
+    gr = await _create_gr(admin_client, po["id"])
+    r = await admin_client.post(f"{GR_URL}/{gr['id']}/action", json={"action": "acknowledge"})
+    assert r.json()["status"] == "collection_pending"
+    r = await admin_client.post(f"{GR_URL}/{gr['id']}/action", json={"action": "cancel"})
+    assert r.status_code == 200 and r.json()["status"] == "cancelled"
+
+    po2, _ = await _make_issued_po(admin_client, test_engine, "VND-GR-CANCEL-03")
+    gr2 = await _create_gr(admin_client, po2["id"])
+    await admin_client.post(f"{GR_URL}/{gr2['id']}/action", json={"action": "acknowledge"})
+    await admin_client.post(f"{GR_URL}/{gr2['id']}/action", json={"action": "collect"})
+    r = await admin_client.post(f"{GR_URL}/{gr2['id']}/action", json={"action": "cancel"})
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
 async def test_service_gr_flow(admin_client, test_engine):
     """Type 4 (Service) GR → service flow."""
     po, _ = await _make_issued_po(admin_client, test_engine, "VND-GR-SVC-01", po_type=4)
@@ -258,6 +319,62 @@ async def test_service_gr_flow(admin_client, test_engine):
     # confirm → confirmed
     r = await admin_client.post(f"{GR_URL}/{gr['id']}/action", json={"action": "confirm"})
     assert r.json()["status"] == "confirmed"
+
+
+@pytest.mark.asyncio
+async def test_service_po_confirmed_before_place_order_ends_fully_received(admin_client, test_engine):
+    """ISS-0108: a service PO may be confirmed while still approved (GR-S-008);
+    PT-008 leaves it at approved then. Placing the order afterwards must land it
+    on fully_received, not issued."""
+    from app.models.po import PurchaseOrder
+    po, _ = await _make_issued_po(admin_client, test_engine, "VND-GR-SVC-PO1", po_type=4)
+    po_id = po["id"]
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        row = (await db.execute(
+            _select(PurchaseOrder).where(PurchaseOrder.id == _uuid.UUID(po_id)))).scalar_one()
+        row.status = "approved"
+        await db.commit()
+
+    gr = await _create_gr(admin_client, po_id, line_items=[{
+        "po_line_id": po["line_items"][0]["id"],
+        "description": "Hydraulic Pump", "qty_ordered": "2", "qty_received": "2",
+        "unit": "EA", "unit_price": "350.00", "condition": "good",
+    }])
+    r = await admin_client.post(f"{GR_URL}/{gr['id']}/action", json={"action": "confirm"})
+    assert r.json()["status"] == "confirmed", r.text
+    assert (await admin_client.get(f"{PO_URL}/{po_id}")).json()["status"] == "approved"
+
+    r = await admin_client.post(f"{PO_URL}/{po_id}/place-order", json={"method": "online"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "fully_received"
+
+
+@pytest.mark.asyncio
+async def test_service_gr_reject_only_after_acknowledge(admin_client, test_engine):
+    """GR-S-005 (ISS-0121, ISS-0179): a service GR can be rejected only in
+    collection_pending; from pending_ack the refusal is a 409 with a message
+    (the confirm page now offers Reject only in collection_pending). Reject
+    sets rejected and closes the GR's tasks."""
+    po, _ = await _make_issued_po(admin_client, test_engine, "VND-GR-SVC-REJ", po_type=4)
+    gr = await _create_gr(admin_client, po["id"])
+    assert gr["status"] == "pending_ack"
+
+    r = await admin_client.post(f"{GR_URL}/{gr['id']}/action",
+                                json={"action": "reject", "collection_notes": "Not done at all"})
+    assert r.status_code == 409
+    assert "collection_pending" in r.json()["detail"]
+
+    r = await admin_client.post(f"{GR_URL}/{gr['id']}/action", json={"action": "acknowledge"})
+    assert r.json()["status"] == "collection_pending"
+    assert await _open_requester_tasks(test_engine, gr["id"])   # confirm_service_gr
+
+    r = await admin_client.post(f"{GR_URL}/{gr['id']}/action",
+                                json={"action": "reject", "collection_notes": "Not done at all"})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "rejected"
+    assert r.json()["collection_notes"] == "Not done at all"
+    assert await _open_requester_tasks(test_engine, gr["id"]) == []
 
 
 # ── GR on a PO with no linked PR (imported POs) ────────────────────────────────

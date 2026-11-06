@@ -37,11 +37,12 @@ function money(v: string) {
 const pct = (v: string | null) => (v === null ? '—' : `${v}%`)
 
 export function BudgetActualBreakdown({ fiscalYear, window: win, windowLabel, scope,
-                                        onClose }: {
+                                        includeUnposted = false, onClose }: {
   fiscalYear: number
   window: [number, number]
   windowLabel: string
   scope: Scope
+  includeUnposted?: boolean
   onClose: () => void
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set())
@@ -61,10 +62,11 @@ export function BudgetActualBreakdown({ fiscalYear, window: win, windowLabel, sc
   useEffect(() => { bodyRef.current?.scrollTo({ top: 0 }) }, [scope.kind, scope.key])
 
   const { data, isFetching } = useQuery({
-    queryKey: ['budget-actual-breakdown', fiscalYear, from, to, scope.kind, scope.key],
+    queryKey: ['budget-actual-breakdown', fiscalYear, from, to, scope.kind, scope.key, includeUnposted],
     queryFn: () => financeApi.get<Resp>(
       `/gl/budget-actual/breakdown?fiscal_year=${fiscalYear}&month_from=${from}&month_to=${to}` +
-      `&scope_kind=${scope.kind}&scope_key=${encodeURIComponent(scope.key)}`),
+      `&scope_kind=${scope.kind}&scope_key=${encodeURIComponent(scope.key)}` +
+      `&include_unposted=${includeUnposted}`),
   })
 
   const rows = data?.accounts ?? []

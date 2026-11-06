@@ -89,6 +89,53 @@ async def test_eligible_excludes_unapproved_tra_even_when_traveler(
     assert str(submitted.id) not in ids
 
 
+async def test_eligible_includes_approved_tra_the_user_applied_for_without_traveling(
+        client, auth_headers, db_session, current_user_id):
+    mine = ExpenseClaim(claim_number="TRA-E-4", claim_type="TRA",
+        employee_id=current_user_id, employee_name="Me", department_name="Ops",
+        submission_date=date(2026, 8, 3), status="approved", created_by=current_user_id)
+    mine_pending = ExpenseClaim(claim_number="TRA-E-5", claim_type="TRA",
+        employee_id=current_user_id, employee_name="Me", department_name="Ops",
+        submission_date=date(2026, 8, 3), status="submitted", created_by=current_user_id)
+    db_session.add_all([mine, mine_pending]); await db_session.flush()
+    db_session.add(ExpenseTraveler(claim_id=mine.id, user_id=uuid.uuid4(), user_name="X", seq=0))
+    await db_session.commit()
+    r = await client.get("/api/v1/travel-applications/eligible", headers=auth_headers)
+    assert r.status_code == 200, r.text
+    ids = [row["id"] for row in r.json()]
+    assert ids.count(str(mine.id)) == 1 and str(mine_pending.id) not in ids
+    # The applicant files for the roster; they are not on it themselves.
+    row = next(row for row in r.json() if row["id"] == str(mine.id))
+    assert [c["name"] for c in row["claimants"]] == ["X"]
+    assert row["claimants"][0]["is_self"] is False
+
+
+async def test_eligible_offers_a_traveler_only_themselves(
+        client, auth_headers, db_session, current_user_id):
+    tra = ExpenseClaim(claim_number="TRA-E-7", claim_type="TRA",
+        employee_id=uuid.uuid4(), employee_name="C", department_name="Ops",
+        submission_date=date(2026, 8, 3), status="approved", created_by=uuid.uuid4())
+    db_session.add(tra); await db_session.flush()
+    db_session.add(ExpenseTraveler(claim_id=tra.id, user_id=current_user_id, user_name="Me", seq=0))
+    db_session.add(ExpenseTraveler(claim_id=tra.id, user_id=uuid.uuid4(), user_name="X", seq=1))
+    await db_session.commit()
+    r = await client.get("/api/v1/travel-applications/eligible", headers=auth_headers)
+    row = next(row for row in r.json() if row["id"] == str(tra.id))
+    assert [(c["name"], c["is_self"]) for c in row["claimants"]] == [("Me", True)]
+
+
+async def test_eligible_lists_a_tra_once_when_applicant_is_also_a_traveler(
+        client, auth_headers, db_session, current_user_id):
+    both = ExpenseClaim(claim_number="TRA-E-6", claim_type="TRA",
+        employee_id=current_user_id, employee_name="Me", department_name="Ops",
+        submission_date=date(2026, 8, 3), status="approved", created_by=current_user_id)
+    db_session.add(both); await db_session.flush()
+    db_session.add(ExpenseTraveler(claim_id=both.id, user_id=current_user_id, user_name="Me", seq=0))
+    await db_session.commit()
+    r = await client.get("/api/v1/travel-applications/eligible", headers=auth_headers)
+    assert [row["id"] for row in r.json()].count(str(both.id)) == 1
+
+
 async def test_user_directory_returns_a_list(client, auth_headers):
     """The `users` table is identity-owned and absent from expense_test (see module
     docstring). This asserts the endpoint is reachable and defensively returns `[]`

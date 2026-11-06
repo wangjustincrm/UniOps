@@ -4,8 +4,10 @@ import uuid
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
 
+from app.core.approval_event_kind import EventKind, event_kind
+from app.core.approval_event_kind import skip_reason as _skip_reason
 from app.schemas.current_step import CurrentStep
 
 
@@ -165,6 +167,10 @@ class PrActionRequest(BaseModel):
     """Payload for submit / approve / return / reject / cancel."""
     action: str = Field(min_length=1, max_length=20)
     comment: str | None = None
+    # approve / return / reject: the approval step the decision is for. The
+    # engine refuses the action once the PR has moved past it, so a second
+    # click cannot approve the next step as well (ISS-0079).
+    expected_step: int | None = None
 
 
 class PrResponse(BaseModel):
@@ -229,5 +235,19 @@ class ApprovalEventResponse(BaseModel):
     actor_name: str | None = None
     comment: str | None
     created_at: datetime
+
+    # What the event was, not just its action: a step the engine skipped is
+    # stored as an "approve" by whoever triggered the skip (ISS-0077). Readers
+    # show `kind` instead of matching comment text — see
+    # app/core/approval_event_kind.py.
+    @computed_field
+    @property
+    def kind(self) -> EventKind:
+        return event_kind(self.action, self.comment)
+
+    @computed_field
+    @property
+    def skip_reason(self) -> str | None:
+        return _skip_reason(self.comment) if self.kind == "skipped" else None
 
     model_config = {"from_attributes": True}

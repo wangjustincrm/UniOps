@@ -5,6 +5,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.schemas.current_step import CurrentStep
+
 # 独立审批流(用户决策:不复用 PO 链)。这是种子默认值 —— 生产以 CompanyConfig
 # .workflow_defs["agr"] 为准,管理员可在 Portal Admin 改。
 AGR_WORKFLOW = [
@@ -344,6 +346,9 @@ class AgreementResponse(BaseModel):
     overdue_after_days: int | None
     status: str
     approval_step_idx: int
+    # Filled on GET /agreements/{id} only (ISS-0085): who the open approval
+    # step is waiting on, as on PR / PO / PA.
+    current_step: CurrentStep | None = None
     notes: str | None
     created_by: uuid.UUID
     created_at: datetime

@@ -95,7 +95,9 @@ export function useConfirmPeriod(agreementId: string) {
   })
 }
 
-export function useAgreementAction(id: string) {
+// alertOnError: false leaves the refusal to the caller, which shows it on the
+// page (mutation.error) instead of in a browser alert.
+export function useAgreementAction(id: string, { alertOnError = true }: { alertOnError?: boolean } = {}) {
   const queryClient = useQueryClient()
 
   return useMutation({
@@ -125,7 +127,9 @@ export function useAgreementAction(id: string) {
       ])
       queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
-    onError: (err: unknown) => alert(err instanceof Error ? err.message : 'Agreement action failed'),
+    onError: alertOnError
+      ? (err: unknown) => alert(err instanceof Error ? err.message : 'Agreement action failed')
+      : undefined,
   })
 }
 

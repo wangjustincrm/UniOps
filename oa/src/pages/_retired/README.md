@@ -25,6 +25,13 @@ retirement is of OA's own entry point, not of the PA tables.
 To restore: set `DIRECT_PA_RETIRED = False`, move this directory back to
 `src/pages/pa`, and re-add the four `/pa` routes and the sidebar entry.
 
+**2026-10-20: Direct PA now lives in EPMS** (docs/prd/EPMS.md §3.22) — the
+invoice is uploaded on EPMS → Invoices, matched with Match → Direct PA, and
+paid from Payment Applications → Create Direct PA on the same `pa_dir`
+workflow. Restoring OA's copy would give users two ways to do one thing; don't.
+OA's own rows are `source = 'oa_direct'` (epms-api dp01_direct_pa) and creation
+here writes that too, so EPMS and finance never take them for EPMS Direct PAs.
+
 ## invoices/ — the OA invoice list and detail
 
 These existed to feed the Direct PA: upload a vendor invoice, OCR it, confirm

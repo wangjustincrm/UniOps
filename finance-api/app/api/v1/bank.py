@@ -295,10 +295,12 @@ async def upsert_rate(body: RateIn, user: CurrentUser, db: AsyncSession = Depend
             ExchangeRate.effective_date == body.effective_date,
         )
     )).scalar_one_or_none()
+    # typed in by hand → manual, so the daily BoC fetch leaves it alone
     if existing:
         existing.rate = body.rate
+        existing.source = "manual"
     else:
-        db.add(ExchangeRate(**body.model_dump()))
+        db.add(ExchangeRate(**body.model_dump(), source="manual"))
     await db.flush()
     await db.commit()
     return {"ok": True}

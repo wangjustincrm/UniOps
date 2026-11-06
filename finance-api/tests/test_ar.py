@@ -140,7 +140,7 @@ async def test_aging_buckets(client):
     # overdue invoice (due in the past)
     await client.post("/finance/v1/ar/invoices", headers=_h(),
                       json=_invoice_body("800.00", invoice_date="2026-01-01", due_date="2026-01-31"))
-    invs = (await client.get("/finance/v1/ar/invoices?status=draft", headers=_h())).json()
+    invs = (await client.get("/finance/v1/ar/invoices?status=draft", headers=_h())).json()["items"]
     await client.post(f"/finance/v1/ar/invoices/{invs[0]['id']}/post", headers=_h())
 
     r = await client.get("/finance/v1/ar/aging", headers=_h())

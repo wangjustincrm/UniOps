@@ -27,6 +27,12 @@ const COPY: Record<UnmatchScope, { title: string; body: string; confirm: string 
         + 'and keeps its allocations.',
     confirm: 'Unmatch GR',
   },
+  direct: {
+    title: 'Take Off the Direct PA Route',
+    body: 'This returns the invoice to Unmatched, so it can be matched to a PO or agreement '
+        + 'instead. Not possible while a payment application still lists it.',
+    confirm: 'Unmatch',
+  },
 }
 
 export function UnmatchDialog({

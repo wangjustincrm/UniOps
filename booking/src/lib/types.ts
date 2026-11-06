@@ -254,6 +254,26 @@ export interface AdminBookingFilters {
   date_from?: string
   date_to?: string
   status?: string
+  /** Organizer name contains (case-insensitive) — filtered by the API. */
+  organizer?: string
+  limit?: number
+  offset?: number
+  /** Server sort (booking-api ?sort=&dir=). */
+  sort?: string
+  dir?: 'asc' | 'desc'
+}
+
+/** GET /bookings/mine/paged response. */
+export interface MyBookingPageOut {
+  items: BookingOut[]
+  total: number
+}
+
+export interface MyBookingPageFilters {
+  /** upcoming = confirmed and not yet ended; past = everything else. */
+  scope?: 'upcoming' | 'past'
+  sort?: string
+  dir?: 'asc' | 'desc'
   limit?: number
   offset?: number
 }

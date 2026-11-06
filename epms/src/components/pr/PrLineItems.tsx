@@ -29,6 +29,34 @@ function recompute(item: PrLineItem): PrLineItem {
   return { ...item, lineTotal: Math.round(item.qty * item.unitPrice * 100) / 100 }
 }
 
+// Unit price may be 0 or negative (PRD §3.2.1 / §3.12.1), so the box shows the
+// text being typed rather than re-deriving it from the number: `value || ''`
+// turned a typed 0 into an empty box, which then looked like a missing price
+// (ISS-0083). No `min`: a credit line is negative. A price set from outside —
+// a part picked from the catalog, a PR copied or pre-filled — still replaces
+// the text, because it no longer matches what was typed.
+function UnitPriceInput({ value, onChange, ...rest }: {
+  value: number
+  onChange: (value: number) => void
+  className?: string
+  'aria-invalid'?: boolean
+}) {
+  const [text, setText] = useState(() => String(value))
+  useEffect(() => {
+    setText((t) => ((parseFloat(t) || 0) === value ? t : String(value)))
+  }, [value])
+  return (
+    <input
+      type="number"
+      step="0.01"
+      value={text}
+      onChange={(e) => { setText(e.target.value); onChange(parseFloat(e.target.value) || 0) }}
+      onFocus={(e) => e.target.select()}
+      {...rest}
+    />
+  )
+}
+
 interface LineErrors {
   description?: string
   qty?: string
@@ -543,12 +571,9 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
                   <td className="px-3 py-2">
                     <div className="relative">
                       <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-neutral-400">$</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={item.unitPrice || ''}
-                        onChange={(e) => update(i, { unitPrice: parseFloat(e.target.value) || 0 })}
+                      <UnitPriceInput
+                        value={item.unitPrice}
+                        onChange={(unitPrice) => update(i, { unitPrice })}
                         className={cn(
                           'h-8 w-full rounded border bg-white pl-5 pr-2 text-sm text-right font-mono focus:outline-none focus:ring-1 focus:ring-primary-600',
                           rowErrors.unitPrice ? 'border-danger-600' : 'border-neutral-300'
@@ -719,12 +744,9 @@ export function PrLineItems({ procurementType, items, onChange, errors = {} }: P
                   <label className="text-xs text-neutral-500">Unit Price *</label>
                   <div className="relative">
                     <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-neutral-400">$</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={item.unitPrice || ''}
-                      onChange={(e) => update(i, { unitPrice: parseFloat(e.target.value) || 0 })}
+                    <UnitPriceInput
+                      value={item.unitPrice}
+                      onChange={(unitPrice) => update(i, { unitPrice })}
                       className="h-9 w-full rounded border border-neutral-300 pl-5 pr-2 text-right font-mono text-sm focus:outline-none focus:ring-1 focus:ring-primary-600"
                     />
                   </div>

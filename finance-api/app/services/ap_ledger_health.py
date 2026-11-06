@@ -44,6 +44,9 @@ from decimal import Decimal
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services import nc_ap_bill_evidence
+from app.services.nc_ap_bill_invoices import invoices, lines_agg
+
 CONSISTENT = "consistent"
 INCONSISTENT = "inconsistent"
 ABANDONED = "abandoned"
@@ -121,6 +124,7 @@ with ab as (
     select b.bill_no, b.currency, b.bill_date::date as bill_date, b.bill_year,
            b.bill_status, b.approve_status,
            l.supplier_code, l.supplier_name, l.invoice_no, l.invoice_no_norm,
+           l.purchase_order, l.scomment, l.row_no, l.nc_pk,
            l.money_cr, l.money_bal
       from nc_ap_bill_lines l
       join nc_ap_bills b on b.id = l.bill_id
@@ -156,32 +160,113 @@ async def abandoned_summary(db: AsyncSession) -> dict:
     } for r in rows}
 
 
+# Click-to-sort whitelists (SQL fragments written here; the request key is only
+# looked up). Each sorts what that column of ApLedgerHealthPage shows.
+ABANDONED_SORT = {
+    "bill_no": "bill_no",
+    "bill_date": "bill_date",
+    "supplier": "lower(coalesce(nullif(max(supplier_name), ''), supplier_code))",
+    "invoice_no": "lower(nullif(max(invoice_no), ''))",
+    "money_cr": "sum(money_cr)",
+    "money_bal": "sum(money_bal)",
+    "status": "bill_status || '/' || approve_status",
+}
+ABANDONED_TIEBREAK = "bill_no, currency"
+
+SUPPLIER_SORT = {
+    "supplier": "lower(coalesce(nullif(supplier_name, ''), supplier_code))",
+    "billed": "billed",
+    "paid": "paid",
+    "subledger_open": "subledger_open",
+    "billed_minus_paid": "billed_minus_paid",
+    "gap": "gap",
+}
+SUPPLIER_TIEBREAK = "supplier_code, currency"
+_SUPPLIER_DEFAULT_ORDER = ("(open_after_ignored = 0 and ignored_bills > 0), "
+                           "abs(gap) desc, open_after_ignored desc, subledger_open desc, "
+                           "supplier_code, currency")
+
+BILL_SORT = {
+    "bill_no": "l.bill_no",
+    "bill_date": "min(l.bill_date)",
+    "supplier": "lower(coalesce(nullif(min(l.supplier_name), ''), min(l.supplier_code)))",
+    "invoice_no": "lower(nullif(min(l.invoice_no), ''))",
+    "purchase_order": "lower(nullif(min(l.purchase_order), ''))",
+    "money_cr": "sum(l.money_cr)",
+    "money_bal": "sum(l.money_bal)",
+}
+BILL_TIEBREAK = "l.bill_no"
+
+
+def _vendor_like(q: str | None, params: dict, name_col: str, code_col: str) -> str | None:
+    """The vendor search box (name or code, case-insensitive), as a WHERE
+    predicate. It used to run in the browser over the rows already loaded,
+    which stops working once the list is paged."""
+    if not q or not q.strip():
+        return None
+    params["vendor_q"] = f"%{q.strip()}%"
+    return f"({name_col} ilike :vendor_q or {code_col} ilike :vendor_q)"
+
+
+# Below this the invoice arm of the search would match half the ledger ("1",
+# "20"); vendor names still match from the first character.
+INVOICE_Q_MIN = 3
+
+
+def _invoice_q(q: str | None, params: dict) -> bool:
+    """Puts the invoice-number form of the search box into `params` as
+    :inv_q, normalised exactly like nc_ap_sync.normalise_invoice_no (upper
+    case, whitespace removed) so it compares against invoice_no_norm. False
+    when the text is too short to search invoices by."""
+    norm = "".join(ch for ch in (q or "").upper() if not ch.isspace())
+    if len(norm) < INVOICE_Q_MIN:
+        return False
+    params["inv_q"] = f"%{norm}%"
+    return True
+
+
 async def abandoned_items(db: AsyncSession, currency: str | None = None,
-                          limit: int = 500) -> dict:
-    """Payable documents NC never approved, biggest balance first."""
-    params: dict = {"limit": max(1, min(limit, 2000))}
-    clause = ""
+                          limit: int = 500, offset: int = 0, q: str | None = None,
+                          order: str | None = None) -> dict:
+    """Payable documents NC never approved, biggest balance first (or `order`,
+    an ORDER BY body from list_sort.order_sql over ABANDONED_SORT). `total`
+    counts every matching document, not the page."""
+    params: dict = {"limit": max(1, min(limit, 2000)), "offset": max(0, offset)}
+    where = []
     if currency:
-        clause = " where currency = :ccy"
+        where.append("currency = :ccy")
         params["ccy"] = currency
+    vendor = _vendor_like(q, params, "supplier_name", "supplier_code")
+    if vendor and _invoice_q(q, params):
+        # Whole bills: a document is listed when any of its lines carries the
+        # number, and its totals still cover every line.
+        vendor = (f"({vendor} or bill_no in (select x.bill_no from flagged x "
+                  f"where x.invoice_no_norm like :inv_q))")
+    if vendor:
+        where.append(vendor)
+    clause = (" where " + " and ".join(where)) if where else ""
+    grouped = f"""
+          from flagged {clause}
+         group by bill_no, currency, bill_date, bill_year, bill_status,
+                  approve_status, supplier_code"""
     rows = (await db.execute(text(_ABANDONED + f"""
         select bill_no, currency, bill_date, bill_year, bill_status, approve_status,
                supplier_code, max(supplier_name) as supplier_name,
-               max(invoice_no) as invoice_no,
+               {lines_agg("")} as invoice_lines,
                sum(money_cr) as money_cr, sum(money_bal) as money_bal,
                bool_or(superseded) as superseded
-          from flagged {clause}
-         group by bill_no, currency, bill_date, bill_year, bill_status,
-                  approve_status, supplier_code
-         order by abs(sum(money_bal)) desc
-         limit :limit
+        {grouped}
+         order by {order or "abs(sum(money_bal)) desc, bill_no, currency"}
+         limit :limit offset :offset
     """), params)).mappings().all()
-    return {"total": len(rows), "items": [{
+    total = (await db.execute(text(_ABANDONED + f"""
+        select count(*) from (select 1 {grouped}) x"""), params)).scalar_one()
+    return {"total": int(total), "items": [{
         "bill_no": r["bill_no"], "currency": r["currency"],
         "bill_date": r["bill_date"].isoformat() if r["bill_date"] else None,
         "bill_year": r["bill_year"], "bill_status": r["bill_status"],
         "approve_status": r["approve_status"], "supplier_code": r["supplier_code"],
-        "supplier_name": r["supplier_name"], "invoice_no": r["invoice_no"],
+        "supplier_name": r["supplier_name"], "invoices": invoices(r["invoice_lines"]),
         "money_cr": str(r["money_cr"]), "money_bal": str(r["money_bal"]),
         "superseded": r["superseded"],
     } for r in rows]}
@@ -240,16 +325,34 @@ async def summary(db: AsyncSession) -> dict:
 
 
 async def items(db: AsyncSession, health: str | None = None,
-                currency: str | None = None, limit: int = 200) -> dict:
+                currency: str | None = None, limit: int = 200, offset: int = 0,
+                q: str | None = None, order: str | None = None) -> dict:
     """Supplier-level detail, worst gap first — that is the order it gets
-    worked in, and the biggest gaps are the ones distorting the forecast."""
-    where, params = [], {"limit": max(1, min(limit, 1000))}
+    worked in, and the biggest gaps are the ones distorting the forecast.
+    `order` (from list_sort.order_sql over SUPPLIER_SORT) replaces that order
+    when the user sorts a column. `total` counts every matching supplier."""
+    where, params = [], {"limit": max(1, min(limit, 1000)), "offset": max(0, offset)}
     if health:
         where.append("health = :health")
         params["health"] = health
     if currency:
         where.append("currency = :currency")
         params["currency"] = currency
+    vendor = _vendor_like(q, params, "supplier_name", "supplier_code")
+    by_invoice = _invoice_q(q, params)
+    if vendor and by_invoice:
+        # The box searches invoice numbers too: a supplier is listed when any
+        # of its approved bills in this currency carries a matching number,
+        # paid or not — "where is invoice X" is the question.
+        vendor = f"""({vendor} or exists (
+            select 1 from nc_ap_bill_lines il
+              join nc_ap_bills ib on ib.id = il.bill_id
+             where il.supplier_code = classified.supplier_code
+               and ib.currency = classified.currency
+               and ib.bill_status = 1 and ib.approve_status = 1
+               and il.invoice_no_norm like :inv_q))"""
+    if vendor:
+        where.append(vendor)
     clause = (" where " + " and ".join(where)) if where else ""
     sql = _BASE + f"""
     select supplier_code, supplier_name, currency, health,
@@ -260,12 +363,14 @@ async def items(db: AsyncSession, health: str | None = None,
      -- Suppliers whose whole balance has been set aside sink to the bottom:
      -- that is the point of setting it aside. They are not dropped — the row
      -- still states what was ignored and who ignored it.
-     order by (open_after_ignored = 0 and ignored_bills > 0),
-              abs(gap) desc, open_after_ignored desc, subledger_open desc
-     limit :limit
+     order by {order or _SUPPLIER_DEFAULT_ORDER}
+     limit :limit offset :offset
     """
     rows = (await db.execute(text(sql), params)).mappings().all()
-    return {"total": len(rows), "items": [{
+    total = (await db.execute(text(_BASE + f" select count(*) from classified {clause}"),
+                              params)).scalar_one()
+    hits = await _invoice_hits(db, rows, params) if by_invoice else {}
+    return {"total": int(total), "items": [{
         "supplier_code": r["supplier_code"],
         "supplier_name": r["supplier_name"],
         "currency": r["currency"],
@@ -278,7 +383,41 @@ async def items(db: AsyncSession, health: str | None = None,
         "ignored_bal": str(r["ignored_bal"]),
         "ignored_bills": int(r["ignored_bills"]),
         "open_after_ignored": str(r["open_after_ignored"]),
+        # Only when the search text matched invoice numbers: which bills.
+        "invoice_hits": hits.get((r["supplier_code"], r["currency"]), []),
     } for r in rows]}
+
+
+async def _invoice_hits(db: AsyncSession, rows, params: dict, per_row: int = 5) -> dict:
+    """For each supplier row on the page, the approved bills whose invoice
+    number matched the search — so a supplier that appeared because of an
+    invoice says which bill it is, and whether it is still open."""
+    codes = sorted({r["supplier_code"] for r in rows if r["supplier_code"]})
+    if not codes:
+        return {}
+    found = (await db.execute(text(f"""
+        select l.supplier_code, b.currency, l.bill_no, min(l.bill_date)::date as bill_date,
+               string_agg(distinct l.invoice_no, ' / ') as invoice_no,
+               sum(l.money_cr) as money_cr, sum(l.money_bal) as money_bal,
+               bool_or(d.bill_no is not null) as dismissed
+          from nc_ap_bill_lines l
+          join nc_ap_bills b on b.id = l.bill_id
+          left join nc_ap_bill_dismissals d
+            on d.bill_no = l.bill_no and d.restored_at is null
+         where {_EFFECTIVE} and l.supplier_code = any(:codes)
+           and l.invoice_no_norm like :inv_q
+         group by l.supplier_code, b.currency, l.bill_no
+         order by l.bill_no
+    """), {"codes": codes, "inv_q": params["inv_q"]})).mappings().all()
+    out: dict = {}
+    for f in found:
+        lst = out.setdefault((f["supplier_code"], f["currency"]), [])
+        if len(lst) < per_row:
+            lst.append({"bill_no": f["bill_no"], "invoice_no": f["invoice_no"],
+                        "bill_date": f["bill_date"].isoformat() if f["bill_date"] else None,
+                        "money_cr": str(f["money_cr"]), "money_bal": str(f["money_bal"]),
+                        "dismissed": bool(f["dismissed"])})
+    return out
 
 
 async def trusted_supplier_codes(db: AsyncSession, currency: str | None = None) -> set[str]:
@@ -321,14 +460,14 @@ async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
     would read as if it had been paid several times over.
     """
     lim = max(1, min(limit, 2000))
-    bills = (await db.execute(text("""
+    bills = (await db.execute(text(f"""
         select l.bill_no,
                min(l.bill_date)::date as bill_date,
                min(l.bill_year) as bill_year,
+               min(l.supplier_name) as supplier_name,
                sum(l.money_cr)  as money_cr,
                sum(l.money_bal) as money_bal,
-               min(l.invoice_no) as invoice_no,
-               min(l.purchase_order) as purchase_order,
+               {lines_agg()} as invoice_lines,
                min(b.trade_type) as trade_type,
                -- What NC's own payment documents say was paid against this
                -- exact bill. When this equals the billed amount and the bill is
@@ -436,6 +575,31 @@ async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
     def m(v):
         return str(v) if v is not None else None
 
+    open_bills = [{
+            "bill_no": r["bill_no"], "bill_date": d(r["bill_date"]),
+            "bill_year": r["bill_year"],
+            "money_cr": m(r["money_cr"]), "money_bal": m(r["money_bal"]),
+            "paid_against": m(r["paid_against"]),
+            "payment_lines": int(r["payment_lines"]),
+            "invoices": invoices(r["invoice_lines"]),
+            "trade_type": r["trade_type"],
+            "supplier_code": supplier_code, "supplier_name": r["supplier_name"],
+            "dismissed": None if not r["dismiss_reason"] else {
+                "reason": r["dismiss_reason"],
+                "note": r["dismiss_note"],
+                "by": r["dismissed_by_name"],
+                "at": r["dismissed_at"].isoformat() if r["dismissed_at"] else None,
+            },
+        } for r in bills]
+    await nc_ap_bill_evidence.attach(db, open_bills, currency_of=lambda b: currency)
+    name = next((b["supplier_name"] for b in open_bills if b["supplier_name"]), None)
+    if name is None:
+        name = (await db.execute(text(
+            "select max(supplier_name) from nc_ap_bill_lines where supplier_code = :code"),
+            {"code": supplier_code})).scalar()
+    unattributed = await nc_ap_bill_evidence.unattributed_clearings(
+        db, supplier_code, name, currency)
+
     return {
         "supplier_code": supplier_code,
         "currency": currency,
@@ -452,21 +616,10 @@ async def supplier_detail(db: AsyncSession, supplier_code: str, currency: str,
             "lines": int(pay_tot["lines"]),
             "money_de": str(pay_tot["money_de"]),
         },
-        "open_bills": [{
-            "bill_no": r["bill_no"], "bill_date": d(r["bill_date"]),
-            "bill_year": r["bill_year"],
-            "money_cr": m(r["money_cr"]), "money_bal": m(r["money_bal"]),
-            "paid_against": m(r["paid_against"]),
-            "payment_lines": int(r["payment_lines"]),
-            "invoice_no": r["invoice_no"], "purchase_order": r["purchase_order"],
-            "trade_type": r["trade_type"],
-            "dismissed": None if not r["dismiss_reason"] else {
-                "reason": r["dismiss_reason"],
-                "note": r["dismiss_note"],
-                "by": r["dismissed_by_name"],
-                "at": r["dismissed_at"].isoformat() if r["dismissed_at"] else None,
-            },
-        } for r in bills],
+        # Payable clearings that name no invoice — see
+        # nc_ap_bill_evidence.unattributed_clearings.
+        "unattributed_clearings": unattributed,
+        "open_bills": open_bills,
         "payments": [{
             "bill_no": r["bill_no"], "pay_date": d(r["pay_date"]),
             "doc_date": d(r["doc_date"]), "bill_year": r["bill_year"],
@@ -525,7 +678,7 @@ async def gl_clearing_candidates(db: AsyncSession, supplier_name: str, currency:
                l.orig_debit, l.orig_credit, l.currency
           from journal_voucher_lines l
           join journal_vouchers v on v.id = l.jv_id
-         where l.partner_name = :name
+         where trim(l.partner_name) = trim(:name)
            and l.account_code like '{_AP_ACCOUNT_PREFIX}%'
            and v.source_subsystem is distinct from 'AP'
            and (coalesce(l.orig_debit, 0) <> 0 or coalesce(l.orig_credit, 0) <> 0)
@@ -551,7 +704,7 @@ async def gl_clearing_candidates(db: AsyncSession, supplier_name: str, currency:
                coalesce(sum(l.orig_credit), 0) as credit
           from journal_voucher_lines l
           join journal_vouchers v on v.id = l.jv_id
-         where l.partner_name = :name
+         where trim(l.partner_name) = trim(:name)
            and l.account_code like '{_AP_ACCOUNT_PREFIX}%'
            and v.source_subsystem is distinct from 'AP'
            and (coalesce(l.orig_debit, 0) <> 0 or coalesce(l.orig_credit, 0) <> 0)
@@ -876,8 +1029,13 @@ async def date_clusters(db: AsyncSession, currency: str | None = None,
 async def open_bills(db: AsyncSession, currency: str | None = None,
                      date_from=None, date_to=None, supplier_code: str | None = None,
                      include_dismissed: bool = False, min_amount=None,
-                     limit: int = 500, offset: int = 0) -> dict:
+                     limit: int = 500, offset: int = 0, order: str | None = None,
+                     with_evidence: bool = False) -> dict:
     """Every open approved bill matching the filter, biggest first.
+
+    `with_evidence` adds what nc_ap_bill_evidence finds (JV clearings, the same
+    invoice in another currency) — for the screen, not for the bulk action,
+    which only needs the bill numbers.
 
     Returns the totals for the WHOLE match, not for the page — a bulk action
     needs to state what it is about to affect, and "total of the rows that
@@ -905,15 +1063,19 @@ async def open_bills(db: AsyncSession, currency: str | None = None,
                min(l.bill_date)::date as bill_date,
                min(l.supplier_code) as supplier_code,
                min(l.supplier_name) as supplier_name,
-               min(l.invoice_no) as invoice_no,
-               min(l.purchase_order) as purchase_order,
+               {lines_agg()} as invoice_lines,
                min(b.trade_type) as trade_type,
                sum(l.money_cr) as money_cr,
                sum(l.money_bal) as money_bal,
+               coalesce((select count(*)
+                           from nc_ap_payment_lines p
+                           join nc_ap_payments ph on ph.id = p.payment_id
+                          where p.top_bill_id = min(b.nc_pk)
+                            and ph.bill_status = 1 and ph.approve_status = 1), 0) as payment_lines,
                d.reason as dismiss_reason, d.note as dismiss_note,
                d.dismissed_by_name, d.dismissed_at
         {body(not include_dismissed)}
-         order by abs(sum(l.money_bal)) desc, l.bill_no
+         order by {order or "abs(sum(l.money_bal)) desc, l.bill_no"}
          limit :limit offset :offset
     """), page)).mappings().all()
 
@@ -928,6 +1090,27 @@ async def open_bills(db: AsyncSession, currency: str | None = None,
           ) x
     """), params)).mappings().one()
 
+    items = [{
+            "bill_no": r["bill_no"],
+            "currency": r["currency"],
+            "bill_date": r["bill_date"].isoformat() if r["bill_date"] else None,
+            "supplier_code": r["supplier_code"],
+            "supplier_name": r["supplier_name"],
+            "invoices": invoices(r["invoice_lines"]),
+            "trade_type": r["trade_type"],
+            "money_cr": str(r["money_cr"]),
+            "money_bal": str(r["money_bal"]),
+            "payment_lines": int(r["payment_lines"]),
+            "dismissed": None if not r["dismiss_reason"] else {
+                "reason": r["dismiss_reason"],
+                "note": r["dismiss_note"],
+                "by": r["dismissed_by_name"],
+                "at": r["dismissed_at"].isoformat() if r["dismissed_at"] else None,
+            },
+        } for r in rows]
+    if with_evidence:
+        await nc_ap_bill_evidence.attach(db, items)
+
     return {
         # Over the WHOLE match, dismissed included — see _bill_filters.
         "total": int(tot["bills"]),
@@ -935,24 +1118,7 @@ async def open_bills(db: AsyncSession, currency: str | None = None,
         "dismissed_bills": int(tot["dismissed_bills"]),
         "dismissed_bal": str(tot["dismissed_bal"]),
         "showing_dismissed": include_dismissed,
-        "items": [{
-            "bill_no": r["bill_no"],
-            "currency": r["currency"],
-            "bill_date": r["bill_date"].isoformat() if r["bill_date"] else None,
-            "supplier_code": r["supplier_code"],
-            "supplier_name": r["supplier_name"],
-            "invoice_no": r["invoice_no"],
-            "purchase_order": r["purchase_order"],
-            "trade_type": r["trade_type"],
-            "money_cr": str(r["money_cr"]),
-            "money_bal": str(r["money_bal"]),
-            "dismissed": None if not r["dismiss_reason"] else {
-                "reason": r["dismiss_reason"],
-                "note": r["dismiss_note"],
-                "by": r["dismissed_by_name"],
-                "at": r["dismissed_at"].isoformat() if r["dismissed_at"] else None,
-            },
-        } for r in rows],
+        "items": items,
     }
 
 

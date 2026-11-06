@@ -30,6 +30,10 @@ class WhereClause(BaseModel):
 
 class Period(BaseModel):
     field: str | None = None
+    # A named calendar period, resolved server-side (controlled_query.
+    # calendar_range); shift_years moves it, -1 = same period last year.
+    calendar: str | None = None
+    shift_years: int | None = None
     last_n_months: int | None = None
     last_n_days: int | None = None
     # `from` is a Python keyword, so the wire name is set via alias.
@@ -122,6 +126,9 @@ async def _describe_field(db, entity, name, f, scope) -> dict:
         # Both directions: the planner filters on the code, and whatever reports
         # the result needs to say what the code means.
         out["value_labels"] = {k: v for k, v in f.value_labels}
+    if f.value_notes:
+        # What the codes mean beyond their names — for the planner (ISS-0013).
+        out["value_notes"] = {k: v for k, v in f.value_notes}
     if f.values:
         out["values"] = list(f.values)
     elif f.enumerate_values:
@@ -213,6 +220,7 @@ async def assistant_export_xlsx(body: QueryRequest, db: SessionDep,
         labels=labels,
         headers=_column_headings(entity, labels),
         totals=result.get("totals"),
+        currency_split=result.get("currency_split"),
         truncated=result.get("truncated", False),
         row_cap=result.get("row_cap", 0),
         generated_for=user.get("email") or None,

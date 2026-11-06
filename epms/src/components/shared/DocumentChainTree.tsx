@@ -29,7 +29,7 @@ import {
   FileText, FileSignature, Package, Warehouse, CreditCard, Receipt, Ticket,
   ArrowRight, ChevronRight, Paperclip, AlertTriangle,
 } from 'lucide-react'
-import { cn, formatAmount } from '@/lib/utils'
+import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/badge'
 import { ChainAttachmentsPanel } from '@/components/shared/ChainAttachmentsPanel'
 import { usePr } from '@/hooks/usePrs'
@@ -286,7 +286,24 @@ export interface DocumentChainTreeProps {
   id: string
 }
 
+/** A PA that covers several POs appears under each of them (PRD §3.12.4,
+ *  ISS-0190): the chain is drawn once per PO on the payment, primary first. */
 export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
+  const { data: currentPa } = usePa(currentType === 'pa' ? id : '')
+  const morePoIds = currentType === 'pa' && currentPa?.po_id
+    ? (currentPa.po_ids ?? []).filter((p) => p && p !== currentPa.po_id)
+    : []
+  return (
+    <>
+      <ChainForPo currentType={currentType} id={id} />
+      {morePoIds.map((p) => <ChainForPo key={p} currentType={currentType} id={id} poIdOverride={p} />)}
+    </>
+  )
+}
+
+/** One PO's chain. `poIdOverride` draws it for a further PO of a multi-PO PA,
+ *  without the header the first one carries. */
+function ChainForPo({ currentType, id, poIdOverride }: DocumentChainTreeProps & { poIdOverride?: string }) {
   // ── Fetch the "entry point" document ───────────────────────────────────────
   const { data: currentPr } = usePr(currentType === 'pr' ? id : '')
   const { data: currentPo } = usePo(currentType === 'po' ? id : '')
@@ -295,6 +312,7 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
 
   // ── Resolve the PO id (pivot for all child fetches) ────────────────────────
   const poId: string =
+    poIdOverride ? poIdOverride :
     currentType === 'po' ? id :
     currentType === 'pr' ? (currentPr?.po_id ?? '') :
     (currentPa?.po_id ?? '')
@@ -517,8 +535,8 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
   )
 
   return (
-    <div className="mt-5 border-t border-neutral-100 pt-4">
-      <div className="mb-3 flex items-center justify-between">
+    <div className={poIdOverride ? 'mt-3 border-t border-dashed border-neutral-100 pt-3' : 'mt-5 border-t border-neutral-100 pt-4'}>
+      {!poIdOverride && <div className="mb-3 flex items-center justify-between">
         <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
           Document Chain
         </h3>
@@ -531,9 +549,9 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
             <Paperclip className="h-3 w-3" /> Attachments
           </button>
         )}
-      </div>
+      </div>}
 
-      {isPa && currentPa && showAttachments && (
+      {!poIdOverride && isPa && currentPa && showAttachments && (
         <ChainAttachmentsPanel
           paId={currentPa.id}
           paNumber={currentPa.pa_number}
@@ -620,7 +638,7 @@ export function DocumentChainTree({ currentType, id }: DocumentChainTreeProps) {
               icon={<Warehouse className="h-3 w-3" />}
               label="Goods Receipt"
               number={gr.number}
-              meta={`${gr.gr_type === 'physical' ? 'Physical' : 'Service'} · ${new Date(gr.received_at).toLocaleDateString('en-CA')}`}
+              meta={`${gr.gr_type === 'physical' ? 'Physical' : 'Service'} · ${formatDate(gr.received_at)}`}
               statusDoc={grStatusToDoc(gr.status)}
               statusLabel={GR_STATUS_LABELS[gr.status]}
               extraBadge={gr.notes?.includes('NC Paid') ? <StatusBadge status="paid" label="Paid" /> : undefined}

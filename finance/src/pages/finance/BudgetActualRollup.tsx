@@ -82,13 +82,16 @@ function presetRange(preset: Preset, now: number): [number, number] {
 const selectCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 
 export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win,
-                                    onWindowChange, scope, onScopeChange }: {
+                                    onWindowChange, scope, onScopeChange,
+                                    includeUnposted, onIncludeUnpostedChange }: {
   fiscalYear: number
   onFiscalYearChange: (y: number) => void
   window: [number, number]
   onWindowChange: (w: [number, number], label: string) => void
   scope: Scope | null
   onScopeChange: (s: Scope | null) => void
+  includeUnposted: boolean
+  onIncludeUnpostedChange: (v: boolean) => void
 }) {
   const thisYear = new Date().getFullYear()
   const currentMonth = fiscalYear === thisYear ? new Date().getMonth() + 1 : 12
@@ -123,9 +126,10 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
   }
 
   const { data, isFetching } = useQuery({
-    queryKey: ['budget-actual-rollup', fiscalYear, from, to],
+    queryKey: ['budget-actual-rollup', fiscalYear, from, to, includeUnposted],
     queryFn: () => financeApi.get<Rollup>(
-      `/gl/budget-actual/rollup?fiscal_year=${fiscalYear}&month_from=${from}&month_to=${to}`),
+      `/gl/budget-actual/rollup?fiscal_year=${fiscalYear}&month_from=${from}&month_to=${to}` +
+      `&include_unposted=${includeUnposted}`),
   })
 
   const nodes = useMemo(
@@ -180,10 +184,25 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
             </select>
           </span>
         )}
+        {/* NC counts a voucher once it is tallied (记账); a month still being
+            closed reads nearly empty without this. Same toggle as Account
+            Balance's, same rule (finance-api fiscal.status_filter). */}
+        <label className="ml-2 inline-flex cursor-pointer select-none items-center gap-1.5 text-xs text-neutral-700"
+               title="Also count vouchers entered in NC but not yet tallied (记账). Discarded or deleted vouchers never count.">
+          <input type="checkbox" checked={includeUnposted}
+                 onChange={(e) => onIncludeUnpostedChange(e.target.checked)}
+                 className="h-3.5 w-3.5 cursor-pointer rounded border-neutral-300 accent-primary-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-600" />
+          Include unposted vouchers
+        </label>
         <span className="ml-auto text-xs text-neutral-400">
           {isFetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : `${windowLabel} ${fiscalYear}`}
         </span>
       </div>
+      {includeUnposted && (
+        <p className="border-b border-amber-100 bg-amber-50 px-4 py-1.5 text-xs text-amber-800">
+          Actual includes vouchers not yet tallied in NC — these figures can still change until the month is closed.
+        </p>
+      )}
 
       {!data ? (
         <div className="py-10 text-center"><Loader2 className="mx-auto h-5 w-5 animate-spin text-neutral-400" /></div>
@@ -249,7 +268,8 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
                   await financeDownload(
                     `/gl/budget-actual/rollup/export?fiscal_year=${fiscalYear}` +
                     `&month_from=${from}&month_to=${to}&group_by=${tab}` +
-                    (months.length ? '&by_month=true' : ''),
+                    (months.length ? '&by_month=true' : '') +
+                    (includeUnposted ? '&include_unposted=true' : ''),
                     `budget-actual-${tab}-FY${fiscalYear}.xlsx`)
                 } catch (e) {
                   setExportError(e instanceof Error ? e.message : 'Export failed')
@@ -376,6 +396,7 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
         <UnallocatedLinesModal
           fiscalYear={fiscalYear} window={win} windowLabel={windowLabel}
           bucket={drillBucket.key} label={drillBucket.label}
+          includeUnposted={includeUnposted}
           onClose={() => setDrillBucket(null)} onOpenJv={(id) => setJvId(id)} />
       )}
       {jvId && (

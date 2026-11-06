@@ -75,6 +75,7 @@ async def actuals_summary(
     db: SessionDep, user: CurrentUserPayload, token: BearerToken,
     fiscal_year: int = Query(..., ge=2020, le=2100),
     cost_center_id: uuid.UUID | None = Query(default=None),
+    include_unposted: bool = Query(default=False),
 ):
     # The caller's own token goes on to finance-api, which clamps the NC side
     # to the caller's department by the same rule `scope` clamps the plan here.
@@ -83,10 +84,10 @@ async def actuals_summary(
     if scope.full_access:
         return await balance_crud.get_actuals_summary(
             db, cost_center_id=cost_center_id, fiscal_year=fiscal_year,
-            bearer_token=token)
+            bearer_token=token, include_unposted=include_unposted)
     return await balance_crud.get_actuals_summary(
         db, cost_center_id=None, fiscal_year=fiscal_year, cc_ids=cc_ids,
-        bearer_token=token)
+        bearer_token=token, include_unposted=include_unposted)
 
 
 @router.get("/actuals/monthly-summary", response_model=MonthlyActualsSummaryResponse)

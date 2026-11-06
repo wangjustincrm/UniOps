@@ -3,10 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import {
   UserCheck,
   ArrowRight, CheckCircle2, AlertCircle,
-  Briefcase, CreditCard, Activity, Cloud, Landmark, CalendarClock, Network, HardHat,
+  Briefcase, CreditCard, Activity, Cloud, Landmark, CalendarClock, Network, HardHat, Warehouse,
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
-import { epmsApi, oaApi, EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, BOOKING_URL, encodeSession } from '@/lib/api'
+import { epmsApi, oaApi, EPMS_URL, OA_URL, VMS_URL, FINANCE_URL, BOOKING_URL, INVENTORY_URL, encodeSession } from '@/lib/api'
 import { cn, formatAmount, timeAgo } from '@/lib/utils'
 import { groupTasks } from '@/lib/groupTasks'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
@@ -263,7 +263,7 @@ const EPMS_TYPE_LABELS: Record<string, string> = {
   place_order: 'Place Order',
   confirm_settlement: 'Confirm Settlement',
   review_match: 'Review Invoice Match',
-  match_invoice: 'Match Invoice to PO',
+  match_invoice: 'Match Invoice',
   process_pa: 'Process Payment Application',
   approve_agr: 'Approve Agreement',
   revise_agr: 'Revise Agreement',
@@ -280,6 +280,8 @@ const EPMS_TYPE_LABELS: Record<string, string> = {
   // services/nc_purchase_sync/error_tasks.py); system_admin only.
   import_erp_vendor: 'Import ERP Vendor',
   resolve_nc_sync_error: 'Resolve NC Sync Error',
+  // mdm-api services/nc_readback.py: one standing task for the whole NC To-do list.
+  resolve_nc_person_todos: 'NC Person Updates',
   // Standing finance-api tasks whose subject is a set of NC rows, not a
   // document: services/jv_validation_tasks.py and ap_duplicate_invoice_tasks.py.
   resolve_jv_validation: 'Resolve JV Validation Findings',
@@ -513,6 +515,9 @@ export default function PortalHome() {
   // every MRP page's on-load reads need it); system_admin sees everything.
   const hasMrpAccess =
     role === 'system_admin' || !!perms?.['mrp.report.view']
+  // Inventory mirrors the sidebar (navConfig: gated on inventory.view).
+  const hasInventoryAccess =
+    role === 'system_admin' || !!perms?.['inventory.view']
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
 
@@ -535,6 +540,7 @@ export default function PortalHome() {
   // everyone who holds that key.
   const hasSafetyAccess = role === 'system_admin' || !!perms?.['ehs.incident.report']
   const safetyHref = session ? `${EHS_URL}/#__session=${session}` : EHS_URL
+  const inventoryHref = session ? `${INVENTORY_URL}/#__session=${session}` : INVENTORY_URL
 
   const allTasks = useMemo<UnifiedTask[]>(() => {
     const withSession = (url: string) => (session ? `${url}#__session=${session}` : url)
@@ -576,6 +582,9 @@ export default function PortalHome() {
           path = ''
           selfHref = '/admin?section=nc_sync'
         }
+      } else if (t.document_type === 'nc_person') {
+        path = ''
+        selfHref = '/mdm/staff/nc-todo'
       } else if (isVms) {
         module = 'VMS'; base = VMS_URL
         path = vmsDeeplinkPath(t.document_type, t.document_id)
@@ -595,6 +604,15 @@ export default function PortalHome() {
         // wraps the EPMS plan editor in Portal chrome), not bare EPMS.
         base = FINANCE_URL
         path = `/budget/plans/${t.document_id}`
+      } else if (t.type === 'create_pa' || t.type === 'create_prepayment_pa') {
+        // Same targets as the EPMS Task Inbox (epms/src/lib/taskTypes.ts
+        // taskHref): both anchor on the PO and open New PA pre-filled with it
+        // (PRD §3.9.2) — not PO Detail (ISS-0186).
+        path = `/pa/create?poId=${t.document_id}`
+      } else if (t.type === 'confirm_receipt') {
+        // Confirm goods receipt / service completion: New GR pre-filled for
+        // the PO (§3.9.2, GR-L-002), as in the EPMS Task Inbox (ISS-0186).
+        path = `/gr/new?poId=${t.document_id}`
       } else {
         path = `${DOC_PATH[t.document_type] ?? '/dashboard'}/${t.document_id}`
       }
@@ -719,6 +737,15 @@ export default function PortalHome() {
       label: 'Safety',
       description: 'Report an incident, corrective actions, statutory deadlines',
       href: safetyHref,
+      healthy: undefined,
+      loading: false,
+    }] : []),
+    ...(hasInventoryAccess ? [{
+      icon: <Warehouse className="h-5 w-5 text-emerald-600" />,
+      iconBg: 'bg-emerald-50',
+      label: 'Inventory',
+      description: 'WMS and NC stock side by side — reconcile, explain differences, trace batches.',
+      href: inventoryHref,
       healthy: undefined,
       loading: false,
     }] : []),

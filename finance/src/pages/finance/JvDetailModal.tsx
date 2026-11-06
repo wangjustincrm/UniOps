@@ -15,17 +15,6 @@ const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
 const dangerBtn = 'flex items-center gap-1.5 rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50'
 
-// NC's auxiliary names, keyed by the dim_code the sync writes. An unlisted code
-// shows raw rather than being guessed at.
-const DIM_LABELS: Record<string, string> = {
-  department: 'Department', cost_center: 'Cost Center',
-  income_expense_item: 'Income/Expense Item', supplier: 'Supplier',
-  customer: 'Customer', partner: 'Partner', bank_account: 'Bank Account',
-  item: 'Item', item_category: 'Item Category', project: 'Project',
-  employee: 'Employee',
-}
-function dimLabel(code: string) { return DIM_LABELS[code] ?? code }
-
 function money(v: string | null | undefined) {
   const n = Number(v ?? 0)
   return n ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''
@@ -62,7 +51,9 @@ interface JvLine {
   cost_center_code: string | null; cost_center_name: string | null
   department_code: string | null; department_name: string | null
   partner_name: string | null; tax_code: string | null
-  dims: { dim_code: string; value_text: string | null }[]
+  /** In NC's Aux. Acctg order; `display` is "code/name" as NC prints it
+   *  (the code alone when UniOps holds no name for it). */
+  dims: { dim_code: string; value_text: string | null; label: string; display: string }[]
 }
 interface JvDetail { voucher: JvHeader; lines: JvLine[] }
 
@@ -127,7 +118,7 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
   // says what is actually meant: the voucher is the child overlay.
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
-      <div className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl"
+      <div className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl"
            onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-base font-semibold text-neutral-800">
@@ -191,7 +182,8 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
                   <tr>
                     <th className="px-3 py-2 w-8">#</th>
                     <th className="px-3 py-2">Account</th>
-                    <th className="px-3 py-2">Summary / Dimensions</th>
+                    <th className="px-3 py-2">Summary</th>
+                    <th className="px-3 py-2">Aux. Acctg</th>
                     {multiCurrency && <th className="px-3 py-2 w-24 text-right">Orig Dr</th>}
                     {multiCurrency && <th className="px-3 py-2 w-24 text-right">Orig Cr</th>}
                     <th className="px-3 py-2 w-28 text-right">Debit (CAD)</th>
@@ -209,20 +201,26 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
                       <td className="px-3 py-2">
                         {l.summary && <div className="text-neutral-700">{l.summary}</div>}
                         <div className="mt-0.5 flex flex-wrap gap-1">
-                          {l.cost_center_code && <Dim label={`CC ${l.cost_center_code}`} title={l.cost_center_name} />}
-                          {l.department_code && <Dim label={`Dept ${l.department_code}`} title={l.department_name} />}
-                          {l.partner_name && <Dim label={l.partner_name} />}
+                          {/* UniOps' own mapping — only for lines NC gave no
+                              auxiliaries (internal vouchers); on NC lines the
+                              Aux. Acctg column already says it, in NC's terms. */}
+                          {l.dims.length === 0 && l.cost_center_code && <Dim label={`CC ${l.cost_center_code}`} title={l.cost_center_name} />}
+                          {l.dims.length === 0 && l.department_code && <Dim label={`Dept ${l.department_code}`} title={l.department_name} />}
+                          {l.dims.length === 0 && l.partner_name && <Dim label={l.partner_name} />}
                           {l.tax_code && <Dim label={`Tax ${l.tax_code}`} />}
-                          {/* Reads like NC's own Aux. Acctg cell
-                              (【物料基本信息：CR0017】). Every auxiliary lands here
-                              now — before 0038 only 收支项目 did, so a line whose
-                              only dimension was 物料 showed nothing at all. */}
-                          {l.dims.map((d, j) => (
-                            <Dim key={j} label={`${dimLabel(d.dim_code)}: ${d.value_text ?? ''}`} />
-                          ))}
                           {l.currency !== 'CAD' && <Dim label={`${l.currency} @ ${l.fx_rate}`} />}
                           {l.quantity && <Dim label={`${l.quantity} ${l.unit ?? ''} @ ${l.price ?? ''}`} />}
                         </div>
+                      </td>
+                      {/* Reads like NC's own Aux. Acctg cell:
+                          【Department: 0106/Engineering】【Cost Center: E04】 */}
+                      <td className="px-3 py-2 text-xs text-neutral-700">
+                        {l.dims.length === 0 ? <span className="text-neutral-300">—</span>
+                          : l.dims.map((d, j) => (
+                            <span key={j} className="mr-1 inline-block whitespace-nowrap">
+                              【<span className="text-neutral-500">{d.label}:</span> {d.display}】
+                            </span>
+                          ))}
                       </td>
                       {multiCurrency && <td className="px-3 py-2 text-right font-mono">{money(l.orig_debit)}</td>}
                       {multiCurrency && <td className="px-3 py-2 text-right font-mono">{money(l.orig_credit)}</td>}
@@ -233,7 +231,7 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-neutral-200 bg-neutral-50 font-semibold">
-                    <td className="px-3 py-2" colSpan={multiCurrency ? 5 : 3}>Totals (CAD)</td>
+                    <td className="px-3 py-2" colSpan={multiCurrency ? 6 : 4}>Totals (CAD)</td>
                     <td className="px-3 py-2 text-right font-mono">{money(v.total_local_debit)}</td>
                     <td className="px-3 py-2 text-right font-mono">{money(v.total_local_credit)}</td>
                   </tr>

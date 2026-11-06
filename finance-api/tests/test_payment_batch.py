@@ -48,9 +48,11 @@ def _pa(amount="100.00", status="approved", currency="CAD", po_id=None,
     )
 
 
-def _claim(amount="100.00", status="approved", currency="CAD") -> ExpenseClaim:
+def _claim(amount="100.00", status="approved", currency="CAD", claim_type="EXP",
+           submitted_at=None) -> ExpenseClaim:
     return ExpenseClaim(
-        claim_number=f"EXP-{uuid.uuid4().hex[:8]}", claim_type="EXP", status=status,
+        claim_number=f"{claim_type}-{uuid.uuid4().hex[:8]}", claim_type=claim_type, status=status,
+        submitted_at=submitted_at,
         employee_id=uuid.uuid4(), employee_name="Jane Doe", currency=currency,
         total_amount=Decimal(amount), tax_amount=Decimal("0"), net_amount=Decimal(amount),
     )
@@ -79,6 +81,43 @@ async def test_due_classifies_agreement_pa_as_pa_not_pa_dir(client, db_session):
     assert row["doc_kind"] == "pa"
 
 
+async def test_due_classifies_freight_pa_as_pa_with_source(client, db_session):
+    """A Freight PA has no PO and no agreement either — it must still be paid as
+    an EPMS `pa` (so the executor writes the EPMS invoice back to paid), and the
+    row says it is freight so the batch page can label it."""
+    freight = _pa("86.82", po_id=None)
+    freight.source = "freight"
+    direct = _pa("10.00", po_id=None)          # OA Direct PA: source left at its default
+    db_session.add_all([freight, direct])
+    await db_session.flush()
+    assert freight.is_direct is False and direct.is_direct is True
+
+    rows = (await client.get("/finance/v1/payments/due", headers=_h())).json()
+    f = next(r for r in rows if r["doc_id"] == str(freight.id))
+    d = next(r for r in rows if r["doc_id"] == str(direct.id))
+    assert (f["doc_kind"], f["pa_source"]) == ("pa", "freight")
+    assert d["doc_kind"] == "pa_dir"
+
+
+async def test_due_classifies_epms_direct_pa_as_pa_with_source(client, db_session):
+    """EPMS's Direct PA (source='direct', epms dp01_direct_pa) pays EPMS
+    invoices: it is a `pa` (the executor writes them back to paid), not OA's
+    pa_dir — which is now source 'oa_direct'."""
+    epms_direct = _pa("1130.00", po_id=None)
+    epms_direct.source = "direct"
+    oa_direct = _pa("10.00", po_id=None)
+    oa_direct.source = "oa_direct"
+    db_session.add_all([epms_direct, oa_direct])
+    await db_session.flush()
+    assert epms_direct.is_direct is False and oa_direct.is_direct is True
+
+    rows = (await client.get("/finance/v1/payments/due", headers=_h())).json()
+    e = next(r for r in rows if r["doc_id"] == str(epms_direct.id))
+    o = next(r for r in rows if r["doc_id"] == str(oa_direct.id))
+    assert (e["doc_kind"], e["pa_source"]) == ("pa", "direct")
+    assert o["doc_kind"] == "pa_dir"
+
+
 async def test_due_surfaces_vendor_invoice_number(client, db_session):
     """A PA's linked invoice(s) surface as vendor_inv_no in the due list;
     multiple invoices join, and PAs/claims without invoices show blank."""
@@ -103,6 +142,37 @@ async def test_due_surfaces_vendor_invoice_number(client, db_session):
     by_num = {r["doc_number"]: r for r in rows}
     assert by_num[pa.pa_number]["vendor_inv_no"] == "VINV-001, VINV-002"
     assert by_num[bare.pa_number]["vendor_inv_no"] == ""
+
+
+async def test_due_carries_invoice_links_and_earliest_due_date(client, db_session):
+    """Each PA row lists its epms invoices (id + number, for the detail link)
+    and the earliest of their due dates; PAs without invoices and claims get
+    no links and no due date."""
+    def _inv(no, due):
+        return Invoice(
+            internal_ref=f"INV-{uuid.uuid4().hex[:8]}", vendor_invoice_number=no,
+            vendor_id=uuid.uuid4(), vendor_name="ACME", amount=Decimal("100"),
+            tax_amount=Decimal("0"), total_amount=Decimal("100"), currency="CAD",
+            invoice_date=date(2026, 6, 1), due_date=due, status="matched")
+    late, early = _inv("VINV-L", date(2026, 7, 8)), _inv("VINV-E", date(2026, 7, 3))
+    db_session.add_all([late, early])
+    await db_session.flush()
+    pa = _pa("200.00", po_id=uuid.uuid4(), invoice_ids=[str(late.id), str(early.id)])
+    bare = _pa("50.00")
+    claim = _claim("30.00")
+    db_session.add_all([pa, bare, claim])
+    await db_session.flush()
+
+    rows = (await client.get("/finance/v1/payments/due", headers=_h())).json()
+    by_num = {r["doc_number"]: r for r in rows}
+    row = by_num[pa.pa_number]
+    assert row["invoices"] == [{"id": str(late.id), "number": "VINV-L"},
+                               {"id": str(early.id), "number": "VINV-E"}]
+    assert row["due_date"] == "2026-07-03"
+    assert by_num[bare.pa_number]["invoices"] == []
+    assert by_num[bare.pa_number]["due_date"] is None
+    assert by_num[claim.claim_number]["invoices"] == []
+    assert by_num[claim.claim_number]["due_date"] is None
 
 
 async def test_batch_detail_surfaces_vendor_invoice_number(client, db_session):
@@ -254,6 +324,40 @@ async def test_due_includes_approved_claims(client, db_session):
     assert all("payee" in x for x in rows)
 
 
+async def test_due_claim_row_carries_type_and_submitted_at(client, db_session):
+    when = datetime(2026, 10, 9, 15, 0, tzinfo=timezone.utc)
+    db_session.add(_claim("2824.99", submitted_at=when))
+    await db_session.flush()
+    rows = (await client.get("/finance/v1/payments/due", headers=_h())).json()
+    claim_rows = [x for x in rows if x["doc_kind"] == "expense_claim"]
+    assert len(claim_rows) == 1
+    assert claim_rows[0]["claim_type"] == "EXP"
+    assert claim_rows[0]["submitted_at"].startswith("2026-10-09")
+
+
+async def test_due_excludes_approved_travel_application(client, db_session):
+    """An approved TRA (total 0) is a pre-trip approval, not money owed."""
+    tra, exp = _claim("0.00", claim_type="TRA"), _claim("50.00")
+    db_session.add_all([tra, exp])
+    await db_session.flush()
+    rows = (await client.get("/finance/v1/payments/due", headers=_h())).json()
+    ids = {x["doc_id"] for x in rows}
+    assert str(tra.id) not in ids
+    assert str(exp.id) in ids
+
+
+async def test_create_batch_rejects_travel_application(client, db_session):
+    tra = _claim("0.00", claim_type="TRA")
+    db_session.add(tra)
+    await db_session.flush()
+    r = await client.post("/finance/v1/payments/batches", headers=_h(),
+                          json={"docs": [{"doc_kind": "expense_claim", "doc_id": str(tra.id)}]})
+    assert r.status_code == 409, r.text
+    assert "Travel Applications are not payable" in r.json()["detail"]
+    await db_session.refresh(tra)
+    assert tra.status == "approved"
+
+
 async def test_batch_with_claim_executes_and_flips_status(client, db_session):
     pa, claim = _pa("100.00"), _claim("75.00")
     db_session.add_all([pa, claim])
@@ -273,3 +377,104 @@ async def test_batch_with_claim_executes_and_flips_status(client, db_session):
     await db_session.refresh(pa); await db_session.refresh(claim)
     assert pa.status == "processed"
     assert claim.status == "paid"
+
+
+# ── ISS-0163: cancel a draft, mark documents already in a draft ─────────────────
+
+async def _draft(client, *pas, role="finance_manager"):
+    r = await client.post("/finance/v1/payments/batches", headers=_h(role),
+                          json={"docs": [{"doc_kind": "pa", "doc_id": str(p.id)} for p in pas]})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+async def test_due_marks_a_pa_already_in_a_draft_batch(client, db_session):
+    a, b = _pa("100.00"), _pa("50.00")
+    db_session.add_all([a, b])
+    await db_session.flush()
+    batch = await _draft(client, a)
+
+    rows = {r["doc_id"]: r for r in (await client.get(
+        "/finance/v1/payments/due", headers=_h())).json()}
+    assert rows[str(a.id)]["in_draft_batches"] == [batch["batch_number"]]
+    assert rows[str(b.id)]["in_draft_batches"] == []
+
+    # Still selectable into another batch (decision 2B) — it is only marked.
+    second = await _draft(client, a)
+    rows = {r["doc_id"]: r for r in (await client.get(
+        "/finance/v1/payments/due", headers=_h())).json()}
+    assert sorted(rows[str(a.id)]["in_draft_batches"]) == sorted(
+        [batch["batch_number"], second["batch_number"]])
+
+
+async def test_cancelling_a_draft_releases_its_documents(client, db_session):
+    a = _pa("100.00")
+    db_session.add(a)
+    await db_session.flush()
+    batch = await _draft(client, a)
+
+    r = await client.post(f"/finance/v1/payments/batches/{batch['id']}/cancel",
+                          headers=_h("payment_officer"))
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "cancelled"
+    await db_session.refresh(a)
+    assert a.status == "approved"
+    rows = {r["doc_id"]: r for r in (await client.get(
+        "/finance/v1/payments/due", headers=_h())).json()}
+    assert rows[str(a.id)]["in_draft_batches"] == []
+
+    # A cancelled (or executed) batch cannot be cancelled or executed again.
+    r = await client.post(f"/finance/v1/payments/batches/{batch['id']}/cancel", headers=_h())
+    assert r.status_code == 409
+    r = await client.post(f"/finance/v1/payments/batches/{batch['id']}/execute", headers=_h())
+    assert r.status_code == 409
+
+
+async def test_cancel_needs_payment_authority(client, db_session):
+    a = _pa("100.00")
+    db_session.add(a)
+    await db_session.flush()
+    batch = await _draft(client, a)
+    r = await client.post(f"/finance/v1/payments/batches/{batch['id']}/cancel",
+                          headers=_h("requester"))
+    assert r.status_code == 403
+    r = await client.post(f"/finance/v1/payments/batches/{batch['id']}/cancel",
+                          headers=_h("finance_manager"))
+    assert r.status_code == 200, r.text
+
+
+async def test_pa_in_two_drafts_is_paid_once(client, db_session):
+    a = _pa("100.00")
+    db_session.add(a)
+    await db_session.flush()
+    first, second = await _draft(client, a), await _draft(client, a)
+
+    r = await client.post(f"/finance/v1/payments/batches/{first['id']}/execute",
+                          headers=_h("payment_officer"))
+    assert r.status_code == 200 and r.json()["paid"] == 1, r.text
+    r = await client.post(f"/finance/v1/payments/batches/{second['id']}/execute",
+                          headers=_h("payment_officer"))
+    assert r.status_code == 200 and r.json()["paid"] == 0 and r.json()["failed"] == 1
+    recs = (await db_session.execute(
+        select(PaymentRecord).where(PaymentRecord.doc_id == a.id))).scalars().all()
+    assert len(recs) == 1
+
+
+async def test_a_paid_pa_edited_back_to_approved_is_not_paid_twice(client, db_session):
+    """PA-20260930-0001 on the test site: paid, set back to approved in Data
+    Maintenance, paid again. A completed payment record now refuses it."""
+    a = _pa("116.24")
+    db_session.add(a)
+    await db_session.flush()
+    first = await _draft(client, a)
+    r = await client.post(f"/finance/v1/payments/batches/{first['id']}/execute",
+                          headers=_h("payment_officer"))
+    assert r.json()["paid"] == 1
+
+    a.status = "approved"          # what the Data Maintenance edit did
+    await db_session.flush()
+    second = await _draft(client, a)
+    r = await client.post(f"/finance/v1/payments/batches/{second['id']}/execute",
+                          headers=_h("payment_officer"))
+    assert r.json()["paid"] == 0 and r.json()["failed"] == 1
+    assert "already paid" in r.json()["lines"][0]["error"]

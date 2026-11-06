@@ -427,3 +427,39 @@ async def test_export_rejects_an_unknown_entity(db_session):
     app.dependency_overrides.clear()
     assert r.status_code == 404
     assert "unknown entity" in r.json()["detail"]
+
+
+# ── ISS-0164: sync, full reload and the vendor-email backfill are System Admin only ──
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["payment_officer", "finance_manager", "ap_clerk"])
+async def test_non_admin_cannot_sync_or_backfill(db_session, monkeypatch, role):
+    monkeypatch.setattr(qbo_sync, "qbo_configured", lambda: True)
+    monkeypatch.setattr(qbo_sync, "launch_sync", lambda **kw: pytest.fail("must not start a sync"))
+    app.dependency_overrides[get_token_payload] = lambda: {
+        "sub": "00000000-0000-0000-0000-000000000002", "role": role}
+
+    async def _db():
+        yield db_session
+    app.dependency_overrides[get_db] = _db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        status = await c.get("/finance/v1/qbo/sync/status", headers={"Authorization": "Bearer x"})
+        inc = await c.post("/finance/v1/qbo/sync", json={"mode": "incremental"},
+                           headers={"Authorization": "Bearer x"})
+        full = await c.post("/finance/v1/qbo/sync", json={"mode": "full", "confirm": "RELOAD"},
+                            headers={"Authorization": "Bearer x"})
+        fill = await c.post("/finance/v1/qbo/vendor-emails/backfill",
+                            headers={"Authorization": "Bearer x"})
+    app.dependency_overrides.clear()
+    assert status.status_code == 200 and status.json()["can_sync"] is False
+    assert inc.status_code == 403 and full.status_code == 403 and fill.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_status_says_can_sync(db_session, monkeypatch):
+    monkeypatch.setattr(qbo_sync, "qbo_configured", lambda: True)
+    _override_auth_and_db(db_session)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.get("/finance/v1/qbo/sync/status", headers={"Authorization": "Bearer x"})
+    app.dependency_overrides.clear()
+    assert r.json()["can_sync"] is True

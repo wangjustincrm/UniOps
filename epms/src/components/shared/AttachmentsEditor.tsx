@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Upload, Paperclip, X } from 'lucide-react'
+import { ATTACHMENT_RULE, partitionUploads } from '@/lib/uploadLimits'
+import { formatBytes } from '@/lib/utils'
 
 export interface EditableAttachment {
   id: string
@@ -37,15 +39,17 @@ export function AttachmentsEditor({
     const files = Array.from(e.target.files ?? [])
     e.target.value = ''
     if (files.length === 0) return
-    setError(null)
+    // Refused here, with the reason, rather than by the server after the fact.
+    const { ok, problems } = partitionUploads(files, ATTACHMENT_RULE)
+    setError(problems.length ? problems.join(' ') : null)
     try {
       // Sequential so the first failure stops the batch instead of firing them
       // all off and leaving a partial upload the user can't reason about.
-      for (const file of files) {
+      for (const file of ok) {
         await onUpload(file)
       }
     } catch {
-      setError('Upload failed. Each file must be 25 MB or smaller.')
+      setError(`Upload failed. Accepted: ${ATTACHMENT_RULE.hint}.`)
     }
   }
 
@@ -60,12 +64,13 @@ export function AttachmentsEditor({
           <p className="text-sm font-medium text-neutral-700">
             {isUploading ? 'Uploading…' : 'Drag & drop or click to upload'}
           </p>
-          <p className="text-xs text-neutral-400 mt-1">Any format · Max 25 MB per file</p>
+          <p className="text-xs text-neutral-400 mt-1">{ATTACHMENT_RULE.hint}</p>
         </div>
         <input
           id={inputId}
           type="file"
           multiple
+          accept={ATTACHMENT_RULE.accept}
           className="sr-only"
           disabled={isUploading}
           onChange={handleFileInput}
@@ -81,7 +86,7 @@ export function AttachmentsEditor({
         >
           <Paperclip className="h-4 w-4 shrink-0 text-neutral-400" />
           <span className="flex-1 truncate text-neutral-700">{att.filename}</span>
-          <span className="text-xs text-neutral-400">{(att.file_size / 1024 / 1024).toFixed(1)} MB</span>
+          <span className="text-xs text-neutral-400">{formatBytes(att.file_size)}</span>
           <button
             type="button"
             onClick={() => onDownload(att)}

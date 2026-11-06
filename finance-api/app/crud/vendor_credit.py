@@ -15,6 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud._numbering import next_number
+from app.models.mirrors import User
 from app.models.vendor_credit import (
     AVAILABLE, EXHAUSTED, PENDING_REVIEW, SOURCE_UPLOAD, VOID, VendorCredit,
 )
@@ -147,6 +148,22 @@ async def create(db: AsyncSession, *, payload: VendorCreditCreate,
     return vc
 
 
+async def user_names(db: AsyncSession, ids) -> dict[uuid.UUID, str]:
+    """Full names for user ids, from the shared users table (ISS-0089).
+
+    The access token carries only `sub` and `role` (identity-api
+    create_access_token), so a name read off the token was always None and
+    "Recorded by" / "Reviewed by" showed "—". PRD UI-USER-001: a user actor is
+    shown by full name."""
+    ids = {i for i in ids if i is not None}
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        select(User.id, User.full_name, User.email).where(User.id.in_(ids))
+    )).all()
+    return {r.id: r.full_name or r.email for r in rows}
+
+
 class InvalidTransition(Exception):
     """The requested review action is not legal from the current status."""
 
@@ -224,8 +241,33 @@ async def get_for_update(db: AsyncSession,
     )).scalars().first()
 
 
+def _text(col):
+    """Case-insensitive text sort key; '' counts as empty (sorts last)."""
+    return func.lower(func.nullif(func.trim(col), ""))
+
+
+# Sortable columns of the Vendor Credits list (sort=<key>&dir=asc|desc). The key
+# goes into ORDER BY, so only these are accepted (unknown -> ValueError, which
+# the router turns into a 422).
+VENDOR_CREDIT_SORTABLE = {
+    "credit_number": _text(VendorCredit.credit_number),
+    "vendor_name": _text(VendorCredit.vendor_name),
+    "vendor_credit_number": _text(VendorCredit.vendor_credit_number),
+    "credit_date": VendorCredit.credit_date,
+    "total_amount": VendorCredit.total_amount,
+    "applied_amount": VendorCredit.applied_amount,
+    "remaining_amount": VendorCredit.remaining_amount,
+    "po_number": _text(VendorCredit.po_number),
+}
+
+
+class UnknownSortKey(ValueError):
+    pass
+
+
 async def get_all(db: AsyncSession, *, status: str | None = None,
                   vendor_id: uuid.UUID | None = None,
+                  sort: str | None = None, dir: str = "asc",
                   limit: int = 100, offset: int = 0) -> tuple[list[VendorCredit], int]:
     q = select(VendorCredit)
     c = select(func.count()).select_from(VendorCredit)
@@ -235,9 +277,19 @@ async def get_all(db: AsyncSession, *, status: str | None = None,
     if vendor_id:
         q = q.where(VendorCredit.vendor_id == vendor_id)
         c = c.where(VendorCredit.vendor_id == vendor_id)
+    if sort is None:
+        ordering = [VendorCredit.created_at.desc()]          # unchanged default
+    elif sort not in VENDOR_CREDIT_SORTABLE:
+        raise UnknownSortKey(f"unknown sort column {sort!r}")
+    else:
+        col = VENDOR_CREDIT_SORTABLE[sort]
+        # nulls_last both ways (Postgres DESC puts NULLs first); created_at,
+        # id keep the order stable so offset paging never repeats or skips.
+        ordering = [(col.desc() if dir == "desc" else col.asc()).nulls_last(),
+                    VendorCredit.created_at.desc(), VendorCredit.id]
     total = (await db.execute(c)).scalar_one()
     rows = (await db.execute(
-        q.order_by(VendorCredit.created_at.desc()).limit(limit).offset(offset)
+        q.order_by(*ordering).limit(limit).offset(offset)
     )).scalars().all()
     return list(rows), total
 

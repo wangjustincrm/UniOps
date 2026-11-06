@@ -102,7 +102,8 @@ def _money(v) -> str:
 
 def build_snapshot(rec, account_label: str, summary: dict, cleared_debits: list,
                    cleared_credits: list, outstanding_bank: list,
-                   outstanding_book: list, prepared_by: str) -> dict:
+                   outstanding_book: list, prepared_by: str,
+                   unposted_count: int = 0) -> dict:
     """Everything the report needs, frozen. Plain JSON — no ORM objects — so it
     survives a schema change as well as an NC re-sync."""
     return {
@@ -111,6 +112,8 @@ def build_snapshot(rec, account_label: str, summary: dict, cleared_debits: list,
         "period_end": rec.period_end.isoformat(),
         "currency": rec.currency,
         "prepared_by": prepared_by,
+        "include_unposted": bool(getattr(rec, "include_unposted", False)),
+        "unposted_count": unposted_count,
         "summary": summary,
         "cleared_payments": cleared_debits,
         "cleared_deposits": cleared_credits,
@@ -132,6 +135,17 @@ def _base_only_note(snapshot: dict) -> str | None:
             f"revaluation / CAD-only adjustments, CAD "
             f"{_money(s.get('base_only_local_total'))} — are not bank movements "
             f"and are excluded.")
+
+
+def _basis_note(snapshot: dict) -> str | None:
+    """The register side's voucher basis. Snapshots signed before 2026-10-14 have
+    no key and were posted-only; they get no note, as before."""
+    if not snapshot.get("include_unposted"):
+        return None
+    n = int(snapshot.get("unposted_count") or 0)
+    return ("Register includes unposted vouchers (not yet tallied in NC)"
+            + (f": {n} ledger line(s) in this period." if n else
+               "; none in this period."))
 
 
 # ── PDF ────────────────────────────────────────────────────────────────────────
@@ -201,9 +215,10 @@ def render_pdf(snapshot: dict, reconciled_on: date, reconciled_by: str) -> bytes
         ("TOPPADDING", (0, 0), (-1, -1), 3),
     ]))
     flow.append(t)
-    if note := _base_only_note(snapshot):
-        flow.append(Spacer(1, 4))
-        flow.append(Paragraph(escape(note), small))
+    for note in (_basis_note(snapshot), _base_only_note(snapshot)):
+        if note:
+            flow.append(Spacer(1, 4))
+            flow.append(Paragraph(escape(note), small))
     flow.append(Spacer(1, 10))
 
     def detail(title: str, rows: list, negative: bool):
@@ -286,9 +301,11 @@ def render_xlsx(snapshot: dict, reconciled_on: date, reconciled_by: str) -> byte
         ws.cell(ws.max_row, 2).number_format = money
     ws.cell(ws.max_row, 1).font = bold
     ws.cell(ws.max_row, 2).font = bold
-    if note := _base_only_note(snapshot):
+    notes = [n for n in (_basis_note(snapshot), _base_only_note(snapshot)) if n]
+    if notes:
         ws.append([])
-        ws.append([note])
+        for note in notes:
+            ws.append([note])
     ws.column_dimensions["A"].width = 46
     ws.column_dimensions["B"].width = 18
 

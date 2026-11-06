@@ -66,7 +66,7 @@ class PrepaymentConfig(BaseModel):
 class BudgetAdminConfig(BaseModel):
     yellow_threshold_pct: float = 80
     red_threshold_pct: float = 100
-    over_budget_mode: str = "fm_gm_opm"   # fm_gm_opm | fm_only | hard_block
+    over_budget_mode: str = "fm_gm_opm"   # fm_gm_opm | fm_only | allow | hard_block
     # Fiscal years selectable in "New Budget Plan" / plan filter dropdowns.
     # Edited in Portal → Budget Config so finance can add e.g. 2028 in advance
     # without a code change. Stored as a sorted list of distinct integers.
@@ -139,6 +139,9 @@ class ConfigUpdate(BaseModel):
     custom_currencies: list[dict[str, Any]] | None = None
 
     vendor_categories: list[str] | None = None
+    # Incoterms Settings — the complete list (validated and normalised in
+    # api.v1.config.update_config; a code may be deactivated, never removed).
+    incoterms_terms: list[dict[str, Any]] | None = None
 
     mfa_enabled: bool | None = None
     password_expiry_days: int | None = None
@@ -230,6 +233,9 @@ class ConfigResponse(BaseModel):
     custom_currencies: list[dict[str, Any]]
 
     vendor_categories: list[str]
+    # Effective list: the stored one, or the Incoterms 2020 defaults while
+    # nothing has been stored (crud.po_fee.effective_terms).
+    incoterms_terms: list[dict[str, Any]] = []
 
     mfa_enabled: bool
     password_expiry_days: int | None
@@ -276,3 +282,7 @@ class ConfigResponse(BaseModel):
 
     updated_at: datetime
     updated_by: uuid.UUID | None
+
+    # PATCH only: outcome of re-aligning in-flight over-budget PRs after a
+    # Budget Config save ("ok: N …" / "failed: …"); None when not attempted.
+    over_budget_resync: str | None = None
