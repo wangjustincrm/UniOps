@@ -172,6 +172,8 @@ approved_pa as (
       join invoices i on i.id::text = x.invoice_id
       join vendors v on v.id = i.vendor_id
      where p.status = '{PA_APPROVED}'
+       -- A PA paid invoice by invoice stays approved until the last one.
+       and i.status <> 'paid'
 ),
 line_pa as (
     select o.id as line_id, o.bill_no, a.pa_number

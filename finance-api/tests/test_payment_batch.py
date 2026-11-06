@@ -166,8 +166,8 @@ async def test_due_carries_invoice_links_and_earliest_due_date(client, db_sessio
     rows = (await client.get("/finance/v1/payments/due", headers=_h())).json()
     by_num = {r["doc_number"]: r for r in rows}
     row = by_num[pa.pa_number]
-    assert row["invoices"] == [{"id": str(late.id), "number": "VINV-L"},
-                               {"id": str(early.id), "number": "VINV-E"}]
+    assert [(i["id"], i["number"]) for i in row["invoices"]] == [
+        (str(late.id), "VINV-L"), (str(early.id), "VINV-E")]
     assert row["due_date"] == "2026-07-03"
     assert by_num[bare.pa_number]["invoices"] == []
     assert by_num[bare.pa_number]["due_date"] is None

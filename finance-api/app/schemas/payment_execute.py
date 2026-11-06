@@ -20,6 +20,11 @@ class PaymentExecuteRequest(BaseModel):
     #   []    -> apply nothing this run
     #   [ids] -> apply only these; any that is no longer applicable aborts the payment
     credit_ids: list[uuid.UUID] | None = None
+    # Which of a PA's invoices to pay. None -> everything still unpaid on it.
+    invoice_ids: list[uuid.UUID] | None = None
+    # What the caller expects a split payment to come to (a batch line's amount).
+    # A different figure aborts the payment: part of the PA was paid since.
+    expected_amount: Decimal | None = None
 
 
 class PaymentExecuteResponse(BaseModel):

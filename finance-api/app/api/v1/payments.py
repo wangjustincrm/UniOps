@@ -267,6 +267,7 @@ class BatchLineOut(BaseModel):
     doc_number: str | None
     vendor_inv_no: str = ""
     amount: str
+    invoice_ids: list[str] | None = None  # set when the line pays part of a PA
     status: str
     error: str | None
 
@@ -306,6 +307,8 @@ class BatchOut(BaseModel):
 class DocRef(BaseModel):
     doc_kind: str
     doc_id: uuid.UUID
+    # Some of a PA's invoices; omitted = everything still unpaid on the document.
+    invoice_ids: list[uuid.UUID] | None = None
 
 
 class CreateBatchRequest(BaseModel):
@@ -417,7 +420,7 @@ async def create_batch(body: CreateBatchRequest, user: CurrentUser,
         raise HTTPException(status_code=403, detail=str(e))
     try:
         batch = await batch_crud.create_batch(
-            db, docs=[(d.doc_kind, d.doc_id) for d in body.docs],
+            db, docs=[(d.doc_kind, d.doc_id, d.invoice_ids) for d in body.docs],
             payment_method=body.payment_method,
             batch_date=body.batch_date or date.today(),
             created_by=uuid.UUID(user["sub"]),

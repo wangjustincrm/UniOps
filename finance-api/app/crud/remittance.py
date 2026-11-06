@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.crud.payment_batch import vendor_inv_no_map
+from app.crud.payment_batch import invoice_numbers, join_invoice_numbers, vendor_inv_no_map
 from app.models.mirrors import BusinessPartner, ExpenseClaim, User
 from app.models.pa import PaymentApplication
 from app.models.payment import PaymentRecord
@@ -284,6 +284,8 @@ async def _vendor_groups(db: AsyncSession,
     )).scalars().all()
     pa_by_id = {p.id: p for p in pas}
     inv_no = await vendor_inv_no_map(db, list(pas))
+    split_numbers = await invoice_numbers(
+        db, [i for r in records for i in r.invoice_ids or []])
     credit_notes_by_payment = await applied_credit_notes_by_payment(
         db, [r.id for r in records])
 
@@ -310,7 +312,9 @@ async def _vendor_groups(db: AsyncSession,
             g = PayeeGroup(recipient_kind=KIND_VENDOR, party_id=pa.vendor_id,
                             party_name=pa.vendor_name, email=email, currency=r.currency)
             out[pa.vendor_id] = g
-        number = inv_no.get(pa.id, "")
+        # A vendor must see only what this payment settled.
+        number = (join_invoice_numbers(r.invoice_ids, split_numbers) if r.invoice_ids
+                  else inv_no.get(pa.id, ""))
         g.lines.append(GroupLine(vendor_inv_no=number, doc_number=pa.pa_number,
                                   payment_date=r.payment_date, amount=r.amount,
                                   credit_applied=r.credit_applied,
