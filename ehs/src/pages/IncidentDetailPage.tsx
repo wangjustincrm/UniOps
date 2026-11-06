@@ -522,6 +522,9 @@ export default function IncidentDetailPage() {
                   has reviewed it.
                 </p>
               )}
+              {/* ★ Round 11, TC-09: the button stayed under Reopen on a closed
+                  incident. It belongs to the two open states only. */}
+              {inc.status !== 'closed' && (
               <div className="flex gap-2">
                 {!inc.hse_reviewed_at && (
                   <button
@@ -542,6 +545,7 @@ export default function IncidentDetailPage() {
                   {closeIncident.isPending ? 'Closing…' : 'Close incident'}
                 </button>
               </div>
+              )}
               {/* ★ Round 8, TC-11: "when trying to record a HSE review, place a
                   warning reminding the user why the incident can not be reviewed
                   just like trying to close." The review refused in silence —
