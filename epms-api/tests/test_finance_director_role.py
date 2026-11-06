@@ -3,7 +3,7 @@ payment sign-off after Finance Manager (identity migration 0015 seeds it,
 approval-api routes the step).
 
 Handled like payment_officer: an ADDITIONAL role, so it is in the built-in
-fallback constants but never in VALID_ROLES (the primary-login-role list).
+fallback constants but never in FALLBACK_ROLES (the primary-login-role list).
 """
 import httpx
 import pytest
@@ -27,8 +27,8 @@ async def test_listed_with_label_when_identity_down(admin_client, mocker):
 
 
 def test_is_not_a_primary_login_role():
-    from app.schemas.user import VALID_ROLES
-    assert "finance_director" not in VALID_ROLES
+    from app.schemas.user import FALLBACK_ROLES
+    assert "finance_director" not in FALLBACK_ROLES
 
 
 def test_holder_can_open_any_pa():
