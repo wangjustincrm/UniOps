@@ -3,11 +3,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   ActionButton, AddressView, Autocomplete, Callout, DetailList, ErrorMessage, Hint, LocalTable, Section, Skeleton, formatDate, queryKeys, requestOpen,
-  useNotices, type ColumnDef,
-} from '@/platform-ui'
+  useNotices, type ColumnDef, columnsOf
+ } from '@/platform-ui'
 import { documentsClient } from '@/features/operations/operationsApi'
 import { partnerOptions } from '@/features/configuration/lookups'
 import { createOrderFrom945, fetchShipmentsWithoutOrder, ordersClient, type OrderFrom945Plan } from './ordersApi'
+
+const colLine = columnsOf<Line>()
 
 const OPERATE = 'sales.order.operate'
 type Line = OrderFrom945Plan['lines'][number]
@@ -20,7 +22,7 @@ const errorMessages: Record<string, string> = {
 }
 
 const columns: ColumnDef<Line, unknown>[] = [
-  { accessorKey: 'received', header: 'Item' },
+  colLine.text('received', 'Item'),
   { accessorKey: 'qty_ea', header: 'Qty EA', cell: ({ row }) => <span className="tabular-nums">{row.original.qty_ea}</span> },
   { accessorKey: 'shipped_ea', header: 'Shipped EA', cell: ({ row }) => <span className="tabular-nums">{row.original.shipped_ea}</span> },
   { accessorKey: 'problem', header: 'Note', cell: ({ row }) => row.original.problem ?? '' },

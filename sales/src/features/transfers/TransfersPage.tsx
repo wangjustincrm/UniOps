@@ -2,16 +2,20 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, Autocomplete, ConfirmAction, DateCell, DateTimeCell, DetailList, ListPage, LocalTable,
+  ActionButton, Autocomplete, ConfirmAction, DateCell, DetailList, ListPage, LocalTable,
   MasterDetailForm, RecordSheet, Section, StatusCell, numberColumn, queryKeys,
   type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab,
-  compareRecord, useRefresh, Muted,
-} from '@/platform-ui'
+  compareRecord, useRefresh, Muted, columnsOf
+ } from '@/platform-ui'
 import { itemOptions, warehouseOptions } from '../configuration/lookups'
 import {
   cancelTransfer, createTransfer, fetchTransfer, readyTransfer, resendTransfer, transfersClient, updateTransfer,
   type ReceiptRowRead, type TransferDetail, type TransferLineRead, type TransferRead,
 } from './transfersApi'
+
+const colReceiptRowRead = columnsOf<ReceiptRowRead>()
+const colTransferLineRead = columnsOf<TransferLineRead>()
+const colTransferRead = columnsOf<TransferRead>()
 
 const MANAGE = 'sales.transfer.manage'
 const CANCELLABLE = ['Draft', 'Ready To Send', '943 Generated', 'Failed']
@@ -23,26 +27,26 @@ const errorMessages: Record<string, string> = {
 }
 
 const columns: ColumnDef<TransferRead, unknown>[] = [
-  { accessorKey: 'transfer_number', header: 'Transfer' },
-  { accessorKey: 'from_warehouse', header: 'From' },
-  { accessorKey: 'to_warehouse', header: 'To' },
-  { accessorKey: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={row.original.status} /> },
-  { accessorKey: 'created_at', header: 'Created', cell: ({ row }) => <DateTimeCell value={row.original.created_at} /> },
+  colTransferRead.text('transfer_number', 'Transfer'),
+  colTransferRead.text('from_warehouse', 'From'),
+  colTransferRead.text('to_warehouse', 'To'),
+  colTransferRead.status('status', 'Status'),
+  colTransferRead.datetime('created_at', 'Created'),
   { accessorKey: 'error', header: 'Note', cell: ({ row }) => <Muted className="line-clamp-1">{row.original.error ?? ''}</Muted> },
 ]
 const lineColumns: ColumnDef<TransferLineRead, unknown>[] = [
-  { accessorKey: 'line_no', header: '#' },
-  { accessorKey: 'item_code', header: 'Item' },
-  { accessorKey: 'qty_ea', header: 'Requested EA' },
-  { accessorKey: 'received_ea', header: 'Received EA' },
-  { accessorKey: 'line_status', header: 'Line', cell: ({ row }) => <StatusCell value={row.original.line_status} /> },
+  colTransferLineRead.text('line_no', '#'),
+  colTransferLineRead.text('item_code', 'Item'),
+  colTransferLineRead.text('qty_ea', 'Requested EA'),
+  colTransferLineRead.text('received_ea', 'Received EA'),
+  colTransferLineRead.status('line_status', 'Line'),
 ]
 const rowColumns: ColumnDef<ReceiptRowRead, unknown>[] = [
-  { accessorKey: 'position', header: 'W07' },
-  { accessorKey: 'lx_number', header: 'LX' },
+  colReceiptRowRead.text('position', 'W07'),
+  colReceiptRowRead.text('lx_number', 'LX'),
   { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => row.original.item_code ?? row.original.upc ?? '—' },
-  { accessorKey: 'lot', header: 'Lot' },
-  { accessorKey: 'qty_ea', header: 'EA' },
+  colReceiptRowRead.text('lot', 'Lot'),
+  colReceiptRowRead.text('qty_ea', 'EA'),
   { accessorKey: 'transfer_line_no', header: 'To line', cell: ({ row }) => row.original.transfer_line_no ?? <span className="text-danger-600">not on the transfer</span> },
 ]
 

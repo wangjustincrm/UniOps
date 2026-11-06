@@ -1,11 +1,13 @@
 import { z } from 'zod'
-import { CrudPage, type ColumnDef, type FieldSpec } from '@/platform-ui'
+import { CrudPage, type ColumnDef, type FieldSpec , columnsOf } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import { itemOptions, partnerOptions } from '../lookups'
 import {
   downloadPartnerCodes, fetchPartnerCodeAudit, partnerCodesClient,
   type PartnerCodeCreate, type PartnerCodeRead, type PartnerCodeUpdate,
 } from './partnerCodesApi'
+
+const colPartnerCodeRead = columnsOf<PartnerCodeRead>()
 
 const required = z.string().trim().min(1, 'Required').max(100)
 const createSchema = z.object({ partner_code: required, buyer_part: required, item_code: required })
@@ -16,9 +18,9 @@ const fields: FieldSpec[] = [
   { name: 'item_code', label: 'Item', required: true, type: 'reference', loadOptions: itemOptions },
 ]
 const columns: ColumnDef<PartnerCodeRead, unknown>[] = [
-  { accessorKey: 'partner_code', header: 'Partner' },
-  { accessorKey: 'buyer_part', header: 'Buyer part' },
-  { accessorKey: 'item_code', header: 'Item' },
+  colPartnerCodeRead.text('partner_code', 'Partner'),
+  colPartnerCodeRead.text('buyer_part', 'Buyer part'),
+  colPartnerCodeRead.text('item_code', 'Item'),
 ]
 
 /** Configuration → Partner codes (FR-OB-02): buyer part numbers per partner. */

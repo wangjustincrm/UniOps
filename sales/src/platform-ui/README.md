@@ -93,3 +93,7 @@ The folder sits inside `src/`, so `tsconfig.app.json` (typecheck), Vite (build, 
 ## Tests
 
 `*.test.ts(x)` next to the code: `npm test` (vitest, jsdom).
+
+## List columns
+
+A list column says what it holds: `const col = columnsOf<OrderRead>()`, then `col.date('order_date', 'Ordered')`, `col.money('total', 'Total', { currency: 'currency' })`, `col.countdown(...)`, `col.relative(...)`, `col.status(...)`, `col.number(...)`, `col.bool(...)`, `col.tags(...)`, `col.text(...)`. A kind of value then looks the same in every list; a column with a look of its own stays a plain `ColumnDef`. ESLint refuses a hand-made date cell in a feature. Countdown and relative cells share one clock (`useNow`).

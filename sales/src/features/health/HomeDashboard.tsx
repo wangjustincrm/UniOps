@@ -1,20 +1,22 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
-  Button, DateTimeCell, ErrorView, LocalTable, PageHeader, Section, Skeleton, StatCard, StatusCell, requestView, type ColumnDef,
-  useRefresh, Hint, Muted,
-} from '@/platform-ui'
+  Button, ErrorView, LocalTable, PageHeader, Section, Skeleton, StatCard, requestView, type ColumnDef,
+  useRefresh, Hint, Muted, columnsOf
+ } from '@/platform-ui'
 import { fetchEvents } from '@/features/configuration/notifications/notificationsApi'
 import { fetchDashboard, fetchHealth, type DashboardRead } from './healthApi'
 import { HealthBadge } from './HealthBadge'
 import { openList } from './openList'
 
+const colRunRow = columnsOf<RunRow>()
+
 type RunRow = DashboardRead['runs'][number]
 const runColumns: ColumnDef<RunRow, unknown>[] = [
-  { accessorKey: 'id', header: 'Run' },
-  { accessorKey: 'trigger', header: 'Trigger' },
-  { accessorKey: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={row.original.status} /> },
-  { accessorKey: 'started_at', header: 'Started', cell: ({ row }) => <DateTimeCell value={row.original.started_at} /> },
+  colRunRow.text('id', 'Run'),
+  colRunRow.text('trigger', 'Trigger'),
+  colRunRow.status('status', 'Status'),
+  colRunRow.datetime('started_at', 'Started'),
   { accessorKey: 'error', header: 'Error', cell: ({ row }) => row.original.error ?? '' },
 ]
 

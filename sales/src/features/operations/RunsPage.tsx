@@ -1,8 +1,12 @@
 import {
-  ActionButton, DateTimeCell, ListPage, LocalTable, PageHeader, RecordSheet, StatusCell, Tabs, formatDateTime,
-  type ColumnDef, type QuerySpec, Callout, Muted,
-} from '@/platform-ui'
+  ActionButton, ListPage, LocalTable, PageHeader, RecordSheet, StatusCell, Tabs, formatDateTime,
+  type ColumnDef, type QuerySpec, Callout, Muted, columnsOf
+ } from '@/platform-ui'
 import { logClient, runFor, runNow, runsClient, type LogRead, type PassReport, type RunRead } from './operationsApi'
+
+const colLogRead = columnsOf<LogRead>()
+const colPass = columnsOf<Pass>()
+const colRunRead = columnsOf<RunRead>()
 
 const RETRY = 'sales.file.retry'
 const PASS_COLUMNS: (keyof PassReport)[] = ['listed', 'too_new', 'already_here', 'not_ours', 'stored', 'duplicates', 'failed']
@@ -18,23 +22,23 @@ function total(r: RunRead, k: keyof PassReport): number {
 }
 
 const runColumns: ColumnDef<RunRead, unknown>[] = [
-  { accessorKey: 'started_at', header: 'Started', cell: ({ row }) => <DateTimeCell value={row.original.started_at} /> },
+  colRunRead.datetime('started_at', 'Started'),
   { accessorKey: 'scope', header: 'For', cell: ({ row }) => runFor(row.original) },
-  { accessorKey: 'trigger', header: 'Trigger' },
-  { accessorKey: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={row.original.status} /> },
+  colRunRead.text('trigger', 'Trigger'),
+  colRunRead.status('status', 'Status'),
   { id: 'stored', header: 'Stored', cell: ({ row }) => total(row.original, 'stored') },
   { id: 'failed', header: 'Failed', cell: ({ row }) => total(row.original, 'failed') },
   { id: 'summary', header: 'Summary', cell: ({ row }) => row.original.summary?.text ?? '' },
-  { accessorKey: 'finished_at', header: 'Finished', cell: ({ row }) => <DateTimeCell value={row.original.finished_at} /> },
+  colRunRead.datetime('finished_at', 'Finished'),
 ]
 
 const logColumns: ColumnDef<LogRead, unknown>[] = [
-  { accessorKey: 'at', header: 'At', cell: ({ row }) => <DateTimeCell value={row.original.at} /> },
-  { accessorKey: 'level', header: 'Level', cell: ({ row }) => <StatusCell value={row.original.level} /> },
-  { accessorKey: 'step', header: 'Step' },
+  colLogRead.datetime('at', 'At'),
+  colLogRead.status('level', 'Level'),
+  colLogRead.text('step', 'Step'),
   { accessorKey: 'message', header: 'Message', cell: ({ row }) => <span className="break-words">{row.original.message}</span> },
-  { accessorKey: 'run_id', header: 'Run' },
-  { accessorKey: 'document_id', header: 'Document' },
+  colLogRead.text('run_id', 'Run'),
+  colLogRead.text('document_id', 'Document'),
 ]
 
 function LogTable({ fixed, searchable = true }: { fixed?: QuerySpec['filters']; searchable?: boolean }) {
@@ -47,7 +51,7 @@ type Pass = PassReport & { name: string }
 const passColumns: ColumnDef<Pass, unknown>[] = [
   { accessorKey: 'name', header: 'Connection', cell: ({ row }) => <span className="font-medium">{row.original.name}</span> },
   ...PASS_COLUMNS.map((k): ColumnDef<Pass, unknown> => ({ accessorKey: k, header: k.replace('_', ' ') })),
-  { accessorKey: 'status', header: 'State' },
+  colPass.text('status', 'State'),
 ]
 
 function RunDetail({ run }: { run: RunRead }) {

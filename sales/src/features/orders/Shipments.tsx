@@ -2,8 +2,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   ActionButton, AddressView, Badge, Button, DateCell, DateTimeCell, Tooltip, LocalTable, StatusCell, TrackingLink, queryKeys, requestOpen,
-  type ColumnDef, Hint,
-} from '@/platform-ui'
+  type ColumnDef, Hint, columnsOf
+ } from '@/platform-ui'
 import { LineNo } from './LineNo'
 import { downloadPackingList, ordersClient, retryShopify, type LineRead, type ShipmentRead, type ShipmentRowRead } from './ordersApi'
 import { ResolveRow } from './ResolveRow'
@@ -27,6 +27,8 @@ function Match({ r }: { r: ShipmentRowRead }) {
   return <Badge variant="neutral">Not linked</Badge>
 }
 
+const colRow = columnsOf<ShipmentRowRead>()
+
 const rowColumns = (s: ShipmentRead, numbers: Map<number, number>, orderId: number, lines: LineRead[]): ColumnDef<ShipmentRowRead, unknown>[] => [
   { id: 'line', header: 'Line', cell: ({ row: { original: r } }) => r.line_no != null
     ? <span className="whitespace-nowrap">#<LineNo lineNo={r.line_no} numbers={numbers} /> · {r.item_code ?? '?'}</span> : '—' },
@@ -36,7 +38,7 @@ const rowColumns = (s: ShipmentRead, numbers: Map<number, number>, orderId: numb
   { accessorKey: 'qty_shipped_ea', header: 'Qty EA', cell: ({ row: { original: r } }) => (
     <span className="whitespace-nowrap tabular-nums">{r.qty_shipped_ea}{cases(r) && <Hint> ({cases(r)})</Hint>}</span>) },
   { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => row.original.lot ?? '—' },
-  { accessorKey: 'expiry', header: 'Expiry', cell: ({ row }) => <DateCell value={row.original.expiry} /> },
+  colRow.date('expiry', 'Expiry'),
   { accessorKey: 'sscc', header: 'SSCC', cell: ({ row }) => <span className="tabular-nums">{row.original.sscc ?? '—'}</span> },
   { accessorKey: 'lx_number', header: 'LX no.', cell: ({ row }) => row.original.lx_number ?? row.original.lx_index },
   { accessorKey: 'tracking', header: 'Tracking', cell: ({ row: { original: r } }) => r.tracking

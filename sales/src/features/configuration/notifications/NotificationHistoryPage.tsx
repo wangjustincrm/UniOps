@@ -1,5 +1,7 @@
-import { Badge, DateTimeCell, ListPage, type ColumnDef } from '@/platform-ui'
+import { Badge, ListPage, type ColumnDef , columnsOf } from '@/platform-ui'
 import { historyClient, type NotificationRead } from './notificationsApi'
+
+const colNotificationRead = columnsOf<NotificationRead>()
 
 const DELIVERY: Record<string, 'success' | 'warning' | 'danger' | 'neutral'> = {
   DONE: 'success', 'Task written': 'success', PENDING: 'neutral', IN_FLIGHT: 'neutral', SUPPRESSED: 'warning',
@@ -8,11 +10,11 @@ const DELIVERY: Record<string, 'success' | 'warning' | 'danger' | 'neutral'> = {
 const DELIVERY_LABEL: Record<string, string> = { DONE: 'Sent', SUPPRESSED: 'Not sent (switch off)', PENDING: 'Queued', IN_FLIGHT: 'Sending' }
 
 const columns: ColumnDef<NotificationRead, unknown>[] = [
-  { accessorKey: 'at', header: 'When', cell: ({ row }) => <DateTimeCell value={row.original.at} /> },
+  colNotificationRead.datetime('at', 'When'),
   { accessorKey: 'event_type', header: 'Event', cell: ({ row }) => row.original.event_label + (row.original.test ? ' (test)' : '') },
   { accessorKey: 'channel', header: 'Channel', cell: ({ row }) => (row.original.channel === 'TASK' ? 'Task' : 'Email') },
   { id: 'recipients', header: 'To', cell: ({ row }) => row.original.recipients.join(', ') || 'the operator' },
-  { accessorKey: 'subject', header: 'Subject' },
+  colNotificationRead.text('subject', 'Subject'),
   { id: 'delivery', header: 'Delivery', cell: ({ row: { original: n } }) => n.delivery
     ? <Badge variant={DELIVERY[n.delivery] ?? 'neutral'}>{DELIVERY_LABEL[n.delivery] ?? n.delivery}</Badge> : '—' },
 ]

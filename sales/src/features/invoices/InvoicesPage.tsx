@@ -2,14 +2,16 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, ConfirmAction, DateCell, DetailList, ListPage, LocalTable, MasterDetailForm, MoneyCell,
+  ActionButton, ConfirmAction, DetailList, ListPage, LocalTable, MasterDetailForm, MoneyCell,
   RecordSheet, Section, StatusCell, formatDate, formatDateTime, formatMoney, numberColumn, queryKeys, readColumn, textColumn,
   type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab,
-  compareRecord, useRefresh, Callout,
-} from '@/platform-ui'
+  compareRecord, useRefresh, Callout, columnsOf
+ } from '@/platform-ui'
 import { editInvoice, fetchInvoice, invoicesClient, releaseInvoice, sendInvoice, type InvoiceDetail, type InvoiceRead } from './invoicesApi'
 import { PartnerCell } from '@/features/common/PartnerCell'
 import { partnerLabel } from '@/features/common/labels'
+
+const colInvoiceRead = columnsOf<InvoiceRead>()
 
 const MANAGE = 'sales.invoice.manage'
 const errorMessages: Record<string, string> = {
@@ -21,15 +23,15 @@ const errorMessages: Record<string, string> = {
 }
 
 const columns: ColumnDef<InvoiceRead, unknown>[] = [
-  { accessorKey: 'invoice_number', header: 'Invoice' },
+  colInvoiceRead.text('invoice_number', 'Invoice'),
   { accessorKey: 'order_ref', header: 'Order ref', cell: ({ row }) => row.original.order_ref ?? '' },
-  { accessorKey: 'order_number', header: 'Internal no.' },
+  colInvoiceRead.text('order_number', 'Internal no.'),
   { accessorKey: 'partner_name', header: 'Partner', cell: ({ row }) => <PartnerCell name={row.original.partner_name} code={row.original.partner_code} /> },
-  { accessorKey: 'po', header: 'PO' },
-  { accessorKey: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={row.original.status} /> },
-  { accessorKey: 'method', header: 'Method' },
-  { accessorKey: 'invoice_date', header: 'Date', cell: ({ row }) => <DateCell value={row.original.invoice_date} /> },
-  { accessorKey: 'total', header: 'Amount', cell: ({ row }) => <MoneyCell amount={row.original.total} currency={row.original.currency} /> },
+  colInvoiceRead.text('po', 'PO'),
+  colInvoiceRead.status('status', 'Status'),
+  colInvoiceRead.text('method', 'Method'),
+  colInvoiceRead.date('invoice_date', 'Date'),
+  colInvoiceRead.money('total', 'Amount', { currency: 'currency' }),
   { accessorKey: 'send_count', header: 'Sent', cell: ({ row }) => row.original.sent_at ? `${row.original.send_count}× · ${formatDateTime(row.original.sent_at)}` : '—' },
 ]
 

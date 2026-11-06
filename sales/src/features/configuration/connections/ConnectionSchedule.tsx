@@ -1,19 +1,21 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
-  Button, DateTimeCell, DetailList, LocalTable, SchemaForm, Section, StatusCell, formatDateTime, queryKeys,
-  requestView, useCan, useNotices, type ColumnDef,
-} from '@/platform-ui'
+  Button, DetailList, LocalTable, SchemaForm, Section, formatDateTime, queryKeys,
+  requestView, useCan, useNotices, type ColumnDef, columnsOf
+ } from '@/platform-ui'
 import { runsClient, type RunRead } from '@/features/operations/operationsApi'
 import { connectionsClient, type ConnectionRead } from './connectionsApi'
 import { connectionScheduleSchema, connectionToFormValues, scheduleFields } from './connectionSchema'
 import { RunNowButton } from './RunNowButton'
 import { NextRun } from './SchedulerState'
 
+const colRunRead = columnsOf<RunRead>()
+
 const runColumns: ColumnDef<RunRead, unknown>[] = [
-  { accessorKey: 'started_at', header: 'Started', cell: ({ row }) => <DateTimeCell value={row.original.started_at} /> },
-  { accessorKey: 'trigger', header: 'Trigger' },
-  { accessorKey: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={row.original.status} /> },
+  colRunRead.datetime('started_at', 'Started'),
+  colRunRead.text('trigger', 'Trigger'),
+  colRunRead.status('status', 'Status'),
   { id: 'summary', header: 'Summary', cell: ({ row }) => row.original.summary?.text ?? row.original.error ?? '' },
 ]
 

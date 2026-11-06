@@ -1,7 +1,9 @@
-import { Badge, DateCell, LocalTable, MoneyCell, StatusCell, formatMoney, type ColumnDef, Hint } from '@/platform-ui'
+import { Badge, LocalTable, MoneyCell, StatusCell, formatMoney, type ColumnDef, Hint , columnsOf } from '@/platform-ui'
 import { VsPo } from '../InvoicePrices'
 import { LineNo } from '../LineNo'
 import { lineNumbers, type LineRead, type OrderDetail, type PackingRead } from '../ordersApi'
+
+const colPackingRead = columnsOf<PackingRead>()
 
 /** A line's amount at the PO price: ordered quantity × unit price (in the order's unit). */
 function lineAmount(ln: LineRead): number | null {
@@ -61,10 +63,10 @@ const HIDDEN_LINE_COLUMNS = ['line_no', 'order_unit', 'discount_amount', 'tax_am
 const packingColumns: ColumnDef<PackingRead, unknown>[] = [
   { accessorKey: 'sscc', header: 'Pallet (SSCC)', cell: ({ row }) => row.original.sscc ?? '—' },
   { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => row.original.lot ?? '—' },
-  { accessorKey: 'expiry', header: 'Expiry', cell: ({ row }) => <DateCell value={row.original.expiry} /> },
-  { accessorKey: 'qty_shipped_ea', header: 'Qty EA' },
+  colPackingRead.date('expiry', 'Expiry'),
+  colPackingRead.text('qty_shipped_ea', 'Qty EA'),
   { accessorKey: 'tracking', header: 'Tracking', cell: ({ row }) => row.original.tracking ?? '—' },
-  { accessorKey: 'ship_date', header: 'Ship date', cell: ({ row }) => <DateCell value={row.original.ship_date} /> },
+  colPackingRead.date('ship_date', 'Ship date'),
   { id: 'doc', header: '945', cell: ({ row: { original: p } }) => (
     <span className="inline-flex items-center gap-1">#{p.document_id}
       {!p.shadow && !p.applied && <Badge variant="warning">Second 945</Badge>}

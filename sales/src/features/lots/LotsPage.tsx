@@ -2,22 +2,24 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Download } from 'lucide-react'
 import {
-  Badge, Button, DateCell, Dialog, ListPage, Textarea, type ColumnDef, type Filter,
-  IconButton, Callout, TrackingLink, useNotices,
-} from '@/platform-ui'
+  Badge, Button, Dialog, ListPage, Textarea, type ColumnDef, type Filter,
+  IconButton, Callout, TrackingLink, useNotices, columnsOf
+ } from '@/platform-ui'
 import { PartnerCell } from '@/features/common/PartnerCell'
 import { exportLots, lotsClient, parseLots, type LotRead } from './lotsApi'
+
+const colLotRead = columnsOf<LotRead>()
 
 const MAX_LOTS = 100  // the list query's limit on one filter's values
 
 const columns: ColumnDef<LotRead, unknown>[] = [
   { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => <span className="font-medium">{row.original.lot ?? '—'}</span> },
-  { accessorKey: 'item_code', header: 'Item' },
-  { accessorKey: 'expiry', header: 'Expiry', cell: ({ row }) => <DateCell value={row.original.expiry} /> },
-  { accessorKey: 'qty_shipped_ea', header: 'Qty EA' },
-  { accessorKey: 'ship_date', header: 'Ship date', cell: ({ row }) => <DateCell value={row.original.ship_date} /> },
-  { accessorKey: 'order_ref', header: 'Order ref' },
-  { accessorKey: 'order_number', header: 'Internal no.' },
+  colLotRead.text('item_code', 'Item'),
+  colLotRead.date('expiry', 'Expiry'),
+  colLotRead.text('qty_shipped_ea', 'Qty EA'),
+  colLotRead.date('ship_date', 'Ship date'),
+  colLotRead.text('order_ref', 'Order ref'),
+  colLotRead.text('order_number', 'Internal no.'),
   { accessorKey: 'partner_name', header: 'Partner', cell: ({ row }) => <PartnerCell name={row.original.partner_name} code={row.original.partner_code} /> },
   { accessorKey: 'ship_to_city', header: 'Ship to', cell: ({ row }) => [row.original.ship_to_city, row.original.ship_to_postal].filter(Boolean).join(' · ') },
   { accessorKey: 'tracking', header: 'Tracking', cell: ({ row }) => row.original.tracking

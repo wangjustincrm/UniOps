@@ -4,13 +4,16 @@ import { useNavigate } from 'react-router-dom'
 import {
   ActionButton, Badge, Button, DetailList, ErrorMessage, ErrorView, LocalTable, PageHeader, Section, Skeleton, StatCard, formatDateTime,
   requestOpen, type ColumnDef,
-  useRefresh,
-} from '@/platform-ui'
+  useRefresh, columnsOf
+ } from '@/platform-ui'
 import { testConnection, type ConnectionTest } from '@/features/configuration/connections/connectionsApi'
 import { fetchHealth, type CheckRead, type GateEventRead, type HealthRead } from './healthApi'
 import { HealthBadge } from './HealthBadge'
 import { openList } from './openList'
 import { SchedulerSection } from './SchedulerSection'
+
+const colCheckRead = columnsOf<CheckRead>()
+const colGateEventRead = columnsOf<GateEventRead>()
 
 // FR-OB-52a's count cards, in its order.
 const CARDS: [string, string, string?][] = [
@@ -58,8 +61,8 @@ export default function HealthPage() {
   }
   const columns: ColumnDef<CheckRead, unknown>[] = [
     { accessorKey: 'result', header: 'Result', cell: ({ row }) => <HealthBadge result={row.original.result} /> },
-    { accessorKey: 'label', header: 'Check' },
-    { accessorKey: 'detail', header: 'Detail' },
+    colCheckRead.text('label', 'Check'),
+    colCheckRead.text('detail', 'Detail'),
     { id: 'open', header: '', cell: ({ row: { original: c } }) => (
       <span className="flex gap-2">
         {c.link && <Button size="sm" variant="secondary" onClick={() => open(c)}>Open</Button>}
@@ -69,8 +72,8 @@ export default function HealthPage() {
   ]
   const gateColumns: ColumnDef<GateEventRead, unknown>[] = [
     { accessorKey: 'ok', header: 'Ready', cell: ({ row }) => <Badge variant={row.original.ok ? 'success' : 'danger'}>{row.original.ok ? 'Ready' : 'Not ready'}</Badge> },
-    { accessorKey: 'label', header: 'Event' },
-    { accessorKey: 'recipients', header: 'Recipients' },
+    colGateEventRead.text('label', 'Event'),
+    colGateEventRead.text('recipients', 'Recipients'),
     { accessorKey: 'tested_at', header: 'Last test', cell: ({ row }) => (row.original.tested_at ? formatDateTime(row.original.tested_at) : '—') },
     { accessorKey: 'problem', header: 'Missing', cell: ({ row }) => row.original.problem ?? '' },
   ]

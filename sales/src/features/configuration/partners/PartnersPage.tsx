@@ -1,16 +1,18 @@
-import { Badge, CrudPage, type ColumnDef } from '@/platform-ui'
+import { Badge, CrudPage, type ColumnDef , columnsOf } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import { downloadPartners, fetchPartnerAudit, partnersClient, type PartnerCreate, type PartnerRead, type PartnerUpdate } from './partnersApi'
 import {
   partnerCreateSchema, partnerEmptyValues, partnerFields, partnerToFormValues, partnerUpdateSchema,
 } from './partnerSchema'
 
+const colPartnerRead = columnsOf<PartnerRead>()
+
 const columns: ColumnDef<PartnerRead, unknown>[] = [
-  { accessorKey: 'code', header: 'Code' },
-  { accessorKey: 'name', header: 'Name' },
-  { accessorKey: 'channel', header: 'Channel' },
-  { accessorKey: 'settlement_mode', header: 'Settlement' },
-  { accessorKey: 'invoice_method', header: 'Invoice' },
+  colPartnerRead.text('code', 'Code'),
+  colPartnerRead.text('name', 'Name'),
+  colPartnerRead.text('channel', 'Channel'),
+  colPartnerRead.text('settlement_mode', 'Settlement'),
+  colPartnerRead.text('invoice_method', 'Invoice'),
   {
     accessorKey: 'active', header: 'Status',
     cell: ({ row }) => <Badge variant={row.original.active ? 'success' : 'neutral'}>{row.original.active ? 'Active' : 'Inactive'}</Badge>,

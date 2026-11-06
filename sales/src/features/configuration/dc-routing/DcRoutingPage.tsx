@@ -1,11 +1,13 @@
 import { z } from 'zod'
-import { Badge, CrudPage, type ColumnDef, type FieldSpec } from '@/platform-ui'
+import { Badge, CrudPage, type ColumnDef, type FieldSpec , columnsOf } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import { partnerOptions } from '../lookups'
 import {
   dcRoutingClient, downloadDcRouting, fetchDcRoutingAudit,
   type DcRoutingCreate, type DcRoutingRead, type DcRoutingUpdate,
 } from './dcRoutingApi'
+
+const colDcRoutingRead = columnsOf<DcRoutingRead>()
 
 const required = z.string().trim().min(1, 'Required').max(50)
 const base = { dc_number: required, notes: z.string().trim().nullable().optional(), active: z.boolean() }
@@ -19,9 +21,9 @@ const fields: FieldSpec[] = [
   { name: 'active', label: 'Active', type: 'checkbox' },
 ]
 const columns: ColumnDef<DcRoutingRead, unknown>[] = [
-  { accessorKey: 'partner_code', header: 'Partner' },
-  { accessorKey: 'ship_to_gln', header: 'Ship-to GLN' },
-  { accessorKey: 'dc_number', header: 'DC' },
+  colDcRoutingRead.text('partner_code', 'Partner'),
+  colDcRoutingRead.text('ship_to_gln', 'Ship-to GLN'),
+  colDcRoutingRead.text('dc_number', 'DC'),
   { accessorKey: 'active', header: 'Status',
     cell: ({ row }) => <Badge variant={row.original.active ? 'success' : 'neutral'}>{row.original.active ? 'Active' : 'Inactive'}</Badge> },
 ]

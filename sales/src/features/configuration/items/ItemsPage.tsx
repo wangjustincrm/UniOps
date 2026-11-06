@@ -1,13 +1,15 @@
-import { Badge, CrudPage, type ColumnDef } from '@/platform-ui'
+import { Badge, CrudPage, type ColumnDef , columnsOf } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import { downloadItems, fetchItemAudit, itemsClient, unitsText, type ItemCreate, type ItemRead, type ItemUpdate } from './itemsApi'
 import { itemCreateSchema, itemEmptyValues, itemFields, itemToFormValues, itemUpdateSchema } from './itemSchema'
 
+const colItemRead = columnsOf<ItemRead>()
+
 const columns: ColumnDef<ItemRead, unknown>[] = [
-  { accessorKey: 'item_code', header: 'Item' },
-  { accessorKey: 'description', header: 'Description' },
-  { accessorKey: 'sku', header: 'SKU' },
-  { accessorKey: 'gtin', header: 'GTIN' },
+  colItemRead.text('item_code', 'Item'),
+  colItemRead.text('description', 'Description'),
+  colItemRead.text('sku', 'SKU'),
+  colItemRead.text('gtin', 'GTIN'),
   { id: 'units', header: 'Units', cell: ({ row }) => unitsText(row.original.units) },
   { accessorKey: 'active', header: 'Status',
     cell: ({ row }) => <Badge variant={row.original.active ? 'success' : 'neutral'}>{row.original.active ? 'Active' : 'Inactive'}</Badge> },

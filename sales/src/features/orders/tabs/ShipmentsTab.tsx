@@ -1,18 +1,21 @@
-import { Badge, CopyChip, DateCell, LocalTable, Section, TrackingLink, type ColumnDef } from '@/platform-ui'
+import { Badge, CopyChip, LocalTable, Section, TrackingLink, columnsOf, type ColumnDef } from '@/platform-ui'
 import { lineNumbers, type OrderDetail, type PackingRead } from '../ordersApi'
 import { Shipments } from '../Shipments'
 
 // Every pallet row the warehouse packed for the order, with its lot and
 // tracking (a recall's view of this order).
-const lotColumns: ColumnDef<PackingRead & { item: string | null; links: Map<string, string | null> }, unknown>[] = [
+type LotRow = PackingRead & { item: string | null; links: Map<string, string | null> }
+const col = columnsOf<LotRow>()
+
+const lotColumns: ColumnDef<LotRow, unknown>[] = [
   { accessorKey: 'item', header: 'Item' },
   { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => row.original.lot ? <CopyChip text={row.original.lot} /> : '—' },
-  { accessorKey: 'expiry', header: 'Expiry', cell: ({ row }) => <DateCell value={row.original.expiry} /> },
+  col.date('expiry', 'Expiry'),
   { accessorKey: 'qty_shipped_ea', header: 'Qty EA', cell: ({ row }) => <span className="tabular-nums">{row.original.qty_shipped_ea}</span> },
   { accessorKey: 'sscc', header: 'Pallet (SSCC)', cell: ({ row }) => row.original.sscc ?? '—' },
   { accessorKey: 'tracking', header: 'Tracking', cell: ({ row: { original: p } }) => p.tracking
     ? <span className="flex flex-wrap gap-1">{p.tracking.split(', ').map((t) => <TrackingLink key={t} number={t} url={p.links.get(t)} />)}</span> : '—' },
-  { accessorKey: 'ship_date', header: 'Ship date', cell: ({ row }) => <DateCell value={row.original.ship_date} /> },
+  col.date('ship_date', 'Ship date'),
   { id: 'doc', header: '945', cell: ({ row: { original: p } }) => (
     <span className="inline-flex items-center gap-1">#{p.document_id}
       {!p.shadow && !p.applied && <Badge variant="warning">Second 945</Badge>}

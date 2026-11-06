@@ -1,17 +1,19 @@
 import {
-  ActionButton, DateTimeCell, DetailList, ListPage, RecordSheet, Section, StatusCell, formatDateTime, type ColumnDef, Muted,
-} from '@/platform-ui'
+  ActionButton, DetailList, ListPage, RecordSheet, Section, StatusCell, formatDateTime, type ColumnDef, Muted, columnsOf
+ } from '@/platform-ui'
 import { OrderFrom945 } from '@/features/orders/OrderFrom945'
 import { documentsClient, downloadOriginal, type DocumentRead } from './operationsApi'
+
+const colDocumentRead = columnsOf<DocumentRead>()
 
 const status = (d: DocumentRead) => d.processing_status ?? d.file_status
 
 const columns: ColumnDef<DocumentRead, unknown>[] = [
-  { accessorKey: 'created_at', header: 'Received', cell: ({ row }) => <DateTimeCell value={row.original.created_at} /> },
-  { accessorKey: 'remote_name', header: 'File' },
-  { accessorKey: 'kind', header: 'Kind' },
+  colDocumentRead.datetime('created_at', 'Received'),
+  colDocumentRead.text('remote_name', 'File'),
+  colDocumentRead.text('kind', 'Kind'),
   { id: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={status(row.original)} /> },
-  { accessorKey: 'size', header: 'Bytes' },
+  colDocumentRead.text('size', 'Bytes'),
   { accessorKey: 'error', header: 'Note', cell: ({ row }) => <Muted className="line-clamp-1">{row.original.error ?? ''}</Muted> },
 ]
 

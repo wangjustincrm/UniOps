@@ -1,10 +1,12 @@
 import { z } from 'zod'
-import { Badge, CrudPage, type ColumnDef, type FieldSpec } from '@/platform-ui'
+import { Badge, CrudPage, type ColumnDef, type FieldSpec , columnsOf } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import {
   WAREHOUSE_ROLES, downloadWarehouses, fetchWarehouseAudit, warehousesClient,
   type WarehouseCreate, type WarehouseRead, type WarehouseUpdate,
 } from './warehousesApi'
+
+const colWarehouseRead = columnsOf<WarehouseRead>()
 
 const opt = (max: number) => z.string().trim().max(max).nullable().optional()
 const base = {
@@ -29,11 +31,11 @@ const fields: FieldSpec[] = [
   { name: 'active', label: 'Active', type: 'checkbox' },
 ]
 const columns: ColumnDef<WarehouseRead, unknown>[] = [
-  { accessorKey: 'code', header: 'Code' },
-  { accessorKey: 'name', header: 'Name' },
-  { accessorKey: 'role', header: 'Role' },
-  { accessorKey: 'edi_id', header: 'EDI id' },
-  { accessorKey: 'city', header: 'City' },
+  colWarehouseRead.text('code', 'Code'),
+  colWarehouseRead.text('name', 'Name'),
+  colWarehouseRead.text('role', 'Role'),
+  colWarehouseRead.text('edi_id', 'EDI id'),
+  colWarehouseRead.text('city', 'City'),
   { accessorKey: 'active', header: 'Status',
     cell: ({ row }) => <Badge variant={row.original.active ? 'success' : 'neutral'}>{row.original.active ? 'Active' : 'Inactive'}</Badge> },
 ]

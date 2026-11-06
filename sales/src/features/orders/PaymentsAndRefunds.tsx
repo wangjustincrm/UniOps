@@ -1,10 +1,13 @@
 import {
-  Badge, DateTimeCell, DetailList, LocalTable, MoneyCell, Section, StatusCell, formatMoney, type ColumnDef, Hint,
-} from '@/platform-ui'
+  Badge, DetailList, LocalTable, MoneyCell, Section, StatusCell, formatMoney, type ColumnDef, Hint, columnsOf
+ } from '@/platform-ui'
 import type { OrderDetail, PaymentRead, RefundRead } from './ordersApi'
 
+const colPaymentRead = columnsOf<PaymentRead>()
+const colRefundRead = columnsOf<RefundRead>()
+
 const paymentColumns: ColumnDef<PaymentRead, unknown>[] = [
-  { accessorKey: 'processed_at', header: 'When', cell: ({ row }) => <DateTimeCell value={row.original.processed_at} /> },
+  colPaymentRead.datetime('processed_at', 'When'),
   { accessorKey: 'kind', header: 'Kind', cell: ({ row }) => <span className="capitalize">{row.original.kind}</span> },
   { accessorKey: 'gateway', header: 'Gateway', cell: ({ row }) => row.original.gateway ?? '—' },
   { accessorKey: 'status', header: 'Status', cell: ({ row }) => (
@@ -19,7 +22,7 @@ const paymentColumns: ColumnDef<PaymentRead, unknown>[] = [
 ]
 
 const refundColumns = (currency: string): ColumnDef<RefundRead, unknown>[] => [
-  { accessorKey: 'refunded_at', header: 'When', cell: ({ row }) => <DateTimeCell value={row.original.refunded_at} /> },
+  colRefundRead.datetime('refunded_at', 'When'),
   { accessorKey: 'note', header: 'Note', cell: ({ row }) => row.original.note ?? '' },
   { accessorKey: 'lines_amount', header: 'Lines (incl. tax)', cell: ({ row }) => <MoneyCell amount={row.original.lines_amount} currency={currency} /> },
   { accessorKey: 'shipping_amount', header: 'Shipping', cell: ({ row }) => <MoneyCell amount={row.original.shipping_amount} currency={currency} /> },

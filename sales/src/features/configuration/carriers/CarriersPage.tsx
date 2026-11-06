@@ -1,10 +1,12 @@
 import { z } from 'zod'
-import { Badge, CrudPage, type ColumnDef, type FieldSpec } from '@/platform-ui'
+import { Badge, CrudPage, type ColumnDef, type FieldSpec , columnsOf } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import {
   carriersClient, downloadCarriers, fetchCarrierAudit,
   type CarrierCreate, type CarrierRead, type CarrierUpdate,
 } from './carriersApi'
+
+const colCarrierRead = columnsOf<CarrierRead>()
 
 const template = z.string().trim().max(500)
   .refine((v) => v === '' || v.startsWith('https://'), 'An https:// address')
@@ -20,8 +22,8 @@ const fields: FieldSpec[] = [
   { name: 'active', label: 'Active', type: 'checkbox' },
 ]
 const columns: ColumnDef<CarrierRead, unknown>[] = [
-  { accessorKey: 'scac', header: 'SCAC' },
-  { accessorKey: 'name', header: 'Name' },
+  colCarrierRead.text('scac', 'SCAC'),
+  colCarrierRead.text('name', 'Name'),
   { accessorKey: 'tracking_url', header: 'Tracking link', cell: ({ row }) => row.original.tracking_url ?? '—' },
   { accessorKey: 'active', header: 'Status',
     cell: ({ row }) => <Badge variant={row.original.active ? 'success' : 'neutral'}>{row.original.active ? 'Active' : 'Inactive'}</Badge> },
