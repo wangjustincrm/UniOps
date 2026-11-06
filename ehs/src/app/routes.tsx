@@ -321,7 +321,7 @@ export const ehsRoutes: RouteDef[] = [
   {
     path: '/settings/expiry-notices',
     element: <ExpiryNoticesPage />,
-    tab: { title: 'Expiry notices', icon: 'Mail', keyStrategy: 'static' },
+    tab: { title: 'Training notifications', icon: 'Mail', keyStrategy: 'static' },
   },
   {
     path: '/staff-file',
@@ -336,11 +336,11 @@ export const ehsRoutes: RouteDef[] = [
   {
     path: '/settings/reassign',
     element: <ReassignPage />,
-    tab: { title: 'Reassign a leaver', icon: 'Users', keyStrategy: 'static' },
+    tab: { title: 'Reallocate Items', icon: 'Users', keyStrategy: 'static' },
   },
   {
     path: '/settings/undelivered-email',
     element: <UndeliveredEmailPage />,
-    tab: { title: 'Undelivered email', icon: 'Mail', keyStrategy: 'static' },
+    tab: { title: 'Communications', icon: 'Mail', keyStrategy: 'static' },
   },
 ]

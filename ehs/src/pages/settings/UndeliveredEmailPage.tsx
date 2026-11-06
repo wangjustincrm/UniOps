@@ -28,7 +28,7 @@ export default function UndeliveredEmailPage() {
   })
   return (
     <div className="p-4">
-      <PageHeader title="Undelivered email"
+      <PageHeader title="Communications"
                   subtitle="Messages Safety filed but could not send, newest first." />
       <p className="mb-3 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
         A run of these usually means the mail server under Admin → Company Settings is

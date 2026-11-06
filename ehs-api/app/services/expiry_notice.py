@@ -66,7 +66,7 @@ def _body(rule: CertExpiryRule, due: list[Expiring], today: date) -> str:
         left = "today" if days == 0 else f"in {days} day{'s' if days != 1 else ''}"
         lines.append(f"• {e.person} — {e.what} — expires {e.expires_on.isoformat()} ({left})")
     lines += ["", "Each certificate is listed once per rule. Rules are kept under "
-              "Settings → Expiry notices."]
+              "Settings → Training notifications."]
     return "\n".join(lines)
 
 

@@ -47,7 +47,7 @@ export default function ReassignPage() {
   })
   return (
     <div className="mx-auto max-w-4xl p-4">
-      <PageHeader title="Reassign a leaver"
+      <PageHeader title="Reallocate Items"
                   subtitle="Hand somebody's open work in Safety to others." />
       {leaver ? (
         <Plan person={leaver} onBack={() => setLeaver(null)} />
@@ -55,8 +55,8 @@ export default function ReassignPage() {
         <>
           <label className="relative mb-3 block">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-400" aria-hidden />
-            <input className={`${inputClass} pl-9`} value={term} aria-label="Who is leaving"
-                   placeholder="Who is leaving? Name or email" onChange={(e) => setTerm(e.target.value)} />
+            <input className={`${inputClass} pl-9`} value={term} aria-label="Whose items"
+                   placeholder="Whose items? Name or email" onChange={(e) => setTerm(e.target.value)} />
           </label>
           {people.isError && <LoadProblem error={people.error} noun="people" />}
           <ul className="flex flex-col gap-1.5">

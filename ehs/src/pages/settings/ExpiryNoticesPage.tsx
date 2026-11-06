@@ -29,7 +29,7 @@ export default function ExpiryNoticesPage() {
   const [adding, setAdding] = useState(false)
   return (
     <div className="p-4">
-      <PageHeader title="Expiry notices"
+      <PageHeader title="Training notifications"
                   subtitle="Email an address before training certificates expire.">
         {!adding && (
           <button type="button" className={primaryButton} onClick={() => setAdding(true)}>

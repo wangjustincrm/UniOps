@@ -119,7 +119,7 @@ async def carry_out(user_id: uuid.UUID, payload: PlanIn, db: SessionDep, user: C
                     db, to=[v["to_email"]],
                     subject=f"JHSC recommendation {it.ref} now awaits your reply",
                     body="\n".join([
-                        f"{leaver.full_name} has left, and HSE has asked you to reply to this "
+                        f"{leaver.full_name}'s work has been reallocated, and HSE has asked you to reply to this "
                         "JHSC recommendation in their place.", "",
                         it.obj.recommendation, "",
                         (f"The written reply is due {due.astimezone(statutory.ONTARIO):%-d %b %Y %H:%M} "
@@ -131,7 +131,7 @@ async def carry_out(user_id: uuid.UUID, payload: PlanIn, db: SessionDep, user: C
             continue
         by_person.setdefault(v["to_email"], []).append(v)
     for email, groups in by_person.items():
-        lines = [f"{leaver.full_name} has left, and HSE ({me.full_name if me else 'Safety'}) "
+        lines = [f"{leaver.full_name}'s work has been reallocated, and HSE ({me.full_name if me else 'Safety'}) "
                  "has handed you their open work in Safety:", ""]
         for g in groups:
             lines.append(f"{g['label']} — {len(g['items'])}")

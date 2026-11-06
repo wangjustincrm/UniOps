@@ -182,9 +182,9 @@ const SETTINGS_NAV: NavItem[] = [
   // Round 7: what each kind of permit has to have confirmed before it is issued.
   { label: 'Permit checks', href: '/settings/permit-checks', icon: ShieldCheck, permission: 'ehs.settings.manage' },
   // Round 8: an address emailed N days before training certificates expire.
-  { label: 'Expiry notices', href: '/settings/expiry-notices', icon: Mail, permission: 'ehs.settings.manage' },
-  { label: 'Reassign a leaver', href: '/settings/reassign', icon: Users, permission: 'ehs.settings.manage' },
-  { label: 'Undelivered email', href: '/settings/undelivered-email', icon: MailWarning, permission: 'ehs.settings.manage' },
+  { label: 'Training notifications', href: '/settings/expiry-notices', icon: Mail, permission: 'ehs.settings.manage' },
+  { label: 'Reallocate Items', href: '/settings/reassign', icon: Users, permission: 'ehs.settings.manage' },
+  { label: 'Communications', href: '/settings/undelivered-email', icon: MailWarning, permission: 'ehs.settings.manage' },
 ]
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
