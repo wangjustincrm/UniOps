@@ -1,7 +1,7 @@
 """The real Shopify client against httpx.MockTransport — never the real
 store from tests. Client-credentials token: obtained once, cached, renewed
 600 s before expiry; the static token only as a logged fallback; the order
-query never asks for `customer` (FR-OB-10); secrets never in a message."""
+query asks for `customer`, of which only the id, email and phone are kept; secrets never in a message."""
 import json
 import logging
 from types import SimpleNamespace
@@ -71,13 +71,13 @@ async def test_the_static_token_is_only_a_logged_fallback(caplog):
     assert all("shpat_STATIC" not in r.getMessage() for r in caplog.records)
 
 
-async def test_the_order_query_never_asks_for_customer_and_follows_link_pages():
+async def test_the_order_query_asks_for_customer_and_follows_link_pages():
     store = Store()
     gw = client(store)
     first = await gw.orders_page(CONN, updated_at_min="2026-10-28T12:00:00+00:00", limit=2)
     assert [o["id"] for o in first.orders] == [1, 2] and first.next_page_info == "abc123"
     q = store.requests[-1].url.params
-    assert "customer" not in q["fields"].split(",") and q["status"] == "any" and q["order"] == "updated_at asc"
+    assert "customer" in q["fields"].split(",") and q["status"] == "any" and q["order"] == "updated_at asc"
     assert q["updated_at_min"] == "2026-10-28T12:00:00+00:00"
     second = await gw.orders_page(CONN, page_info=first.next_page_info, limit=2)
     q = store.requests[-1].url.params
@@ -126,7 +126,7 @@ async def test_finance_reads_strip_card_data_everywhere_and_keep_gift_card():
         order = {"id": 1, "line_items": [{"id": 11, "gift_card": False}],
                  "refunds": [{"id": 9, "transactions": [CARD_TX | {"id": 7002, "kind": "refund"}]}]}
         if request.url.path.endswith("/orders/1.json"):
-            assert "source_name" in request.url.params["fields"] and "customer" not in request.url.params["fields"]
+            assert "source_name" in request.url.params["fields"] and "customer" in request.url.params["fields"]
             return httpx.Response(200, json={"order": order})
         return httpx.Response(200, json={"orders": [order]})
     gw = client(store)

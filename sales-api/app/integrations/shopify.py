@@ -15,8 +15,9 @@ secret are absent does the gateway use a static token in `<secret_name>` (a
 fallback, logged once). Secret values never appear in a message or a log.
 
 The host must be a `*.myshopify.com` store, so a token is never sent anywhere
-else. The order query never asks for `customer` (FR-OB-10: without
-read_customers Shopify fails the whole page).
+else. The order query asks for `customer` (the app has read_customers, 2026-11-06):
+its id is the N1 id of the Shopify 940. Only `CUSTOMER_KEYS` are kept; the rest
+of the customer record never reaches a document.
 
 Finance (user 2026-11-03, read_orders): one order and its transactions. No
 card data is kept anywhere: every JSON this client returns has the card
@@ -47,12 +48,12 @@ TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 _STORE_HOST = re.compile(r"^[a-z0-9][a-z0-9-]*\.myshopify\.com$")
 _NEXT_LINK = re.compile(r'<[^>]*[?&]page_info=([^&>]+)[^>]*>;\s*rel="next"')
 
-# What the order pages carry — explicitly, so `customer` is never requested.
+# What the order pages carry — explicitly.
 ORDER_FIELDS = (
     "id", "name", "order_number", "created_at", "updated_at", "processed_at", "cancelled_at", "cancel_reason",
     "closed_at", "financial_status", "fulfillment_status", "currency", "current_total_price", "total_price",
     "subtotal_price", "total_tax", "total_discounts", "total_shipping_price_set", "email", "phone", "note",
-    "tags", "test", "shipping_address", "billing_address", "line_items", "refunds", "shipping_lines",
+    "tags", "test", "shipping_address", "billing_address", "line_items", "refunds", "shipping_lines", "customer",
     # finance (user 2026-11-03)
     "source_name", "payment_gateway_names", "discount_codes", "tax_lines",
 )
@@ -74,6 +75,17 @@ def strip_card_data(value: Any) -> Any:
     if isinstance(value, list):
         return [strip_card_data(v) for v in value]
     return value
+
+
+CUSTOMER_KEYS = ("id", "email", "phone")
+
+
+def slim_customer(order: dict[str, Any]) -> dict[str, Any]:
+    """The order with only what the 940 needs of its customer."""
+    customer = order.get("customer")
+    if not isinstance(customer, dict):
+        return order
+    return {**order, "customer": {k: customer.get(k) for k in CUSTOMER_KEYS}}
 
 
 def page_bytes(page: dict[str, Any]) -> bytes:
@@ -277,12 +289,12 @@ class HttpShopify:
                 params["updated_at_min"] = updated_at_min
         r = await self._get(conn, "orders.json", params)
         m = _NEXT_LINK.search(r.headers.get("link", ""))
-        return OrdersPage(strip_card_data(r.json().get("orders", [])), m.group(1) if m else None)
+        return OrdersPage([slim_customer(o) for o in strip_card_data(r.json().get("orders", []))], m.group(1) if m else None)
 
     async def order(self, conn: Any, order_id: str) -> dict[str, Any]:
         """One order, the same fields as the pages (a finance refresh of an order already here)."""
         r = await self._get(conn, f"orders/{_digits(order_id)}.json", {"fields": ",".join(ORDER_FIELDS)})
-        return strip_card_data(r.json()["order"])
+        return slim_customer(strip_card_data(r.json()["order"]))
 
     async def transactions(self, conn: Any, order_id: str) -> list[dict[str, Any]]:
         """The order's payments: sales, authorizations, captures, refunds, voids (read_orders)."""

@@ -212,3 +212,12 @@ async def test_outside_the_shadow_run_zohos_number_is_not_matched_by_po(p5):
     await p5.ships.process_945s()
     [sh] = await p5.q("SELECT order_id FROM sales_shipments")
     assert sh["order_id"] is None  # FR-OB-28's own keys only: a live 945 carries Sales' number
+
+
+def test_only_the_customers_id_email_and_phone_are_kept():
+    from app.integrations.shopify import ORDER_FIELDS, slim_customer
+    assert "customer" in ORDER_FIELDS  # the 940's N1 id: a fetch without it would send every N1 without an id
+    o = slim_customer({"id": 1, "customer": {"id": 77, "email": "a@b.example", "phone": "1", "first_name": "A",
+                                             "default_address": {"address1": "x"}}})
+    assert o["customer"] == {"id": 77, "email": "a@b.example", "phone": "1"}
+    assert slim_customer({"id": 1, "customer": None}) == {"id": 1, "customer": None}
