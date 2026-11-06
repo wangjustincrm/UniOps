@@ -107,6 +107,13 @@ export default function TrainingGapsPanel() {
         <Stat label="Expired" value={String(expiredTotal)} tone={expiredTotal ? 'warn' : 'ok'} />
       </div>
 
+      {/* ★ Round 11. Here rather than with the filters, which only appear when
+          there is a gap. */}
+      <p className="mb-3 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+        The courses below come from the Positions register: a course counts for somebody only
+        if their position lists it.
+      </p>
+
       {gaps.length === 0 ? (
         <p className="rounded-xl border border-success-500 bg-success-50 p-4 text-sm text-success-700">
           Everyone is up to date on their required training.

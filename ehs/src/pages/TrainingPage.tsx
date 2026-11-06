@@ -12,7 +12,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { CalendarDays, Plus, Printer, Sheet, Upload, X, Paperclip } from 'lucide-react'
 import MaterialsList from '@/components/MaterialsList'
 import { api, apiBlob, useFileOpener } from '@/lib/api'
-import { Pagination, SearchBox, useListView, DateRangeFilter, useDateFilter } from '@/components/ListView'
+import { Pagination, useListView, DateRangeFilter, useDateFilter } from '@/components/ListView'
+import { CoursePicker } from '@/components/CoursePicker'
 import { formatDate, todayForInput } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
@@ -260,7 +261,6 @@ function NewSessionForm({ onClose }: { onClose: () => void }) {
     queryKey: ['courses'],
     queryFn: () => api.get<Course[]>('/api/v1/training/courses'),
   })
-  const courseList = useListView(courses.data, (c) => [c.name])
 
   const create = useMutation({
     mutationFn: async () => {
@@ -299,17 +299,7 @@ function NewSessionForm({ onClose }: { onClose: () => void }) {
 
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Course">
-          <select className={inputClass} value={courseId}
-                  onChange={(e) => setCourseId(e.target.value)}>
-            <option value="">Select…</option>
-          <SearchBox value={courseList.query} onChange={courseList.setQuery}
-                     placeholder="Search courses by name" />
-            {courseList.pageRows.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}{c.is_statutory ? ' (required)' : ''}
-              </option>
-            ))}
-          </select>
+          <CoursePicker courses={courses.data ?? []} value={courseId} onChange={setCourseId} />
         </Field>
         <Field label="Title" hint="Leave blank to use the course name">
           <input className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)}
@@ -357,11 +347,8 @@ function NewSessionForm({ onClose }: { onClose: () => void }) {
                 </button>
               </li>
             ))}
-          </ul>        )}
-
-
-          <Pagination page={courseList.page} pageCount={courseList.pageCount}
-                      total={courseList.total} onPage={courseList.setPage} noun="courses" />
+          </ul>
+        )}
       </div>
 
       <ErrorNote error={create.error} />
@@ -759,7 +746,6 @@ function CoursesTab({ mayWrite }: { mayWrite: boolean }) {
                 <span className="mt-0.5 block text-xs text-neutral-500">
                   {/* ★ Round 8: the name is the course; the code stays
                       internal (it is what other pages link by). */}
-                  {c.is_statutory && 'Required by law · '}
                   {c.validity_months ? `Valid ${c.validity_months} months` : 'Does not expire'}
                 </span>
               </span>
@@ -972,10 +958,6 @@ function NewCourseForm({ onClose }: { onClose: () => void }) {
           {create.isPending ? 'Adding…' : 'Add'}
         </button>
       </div>
-      <p className="mt-2 text-xs text-neutral-500">
-        Courses required by law are seeded with the regulation behind them and
-        cannot be created here.
-      </p>
     </Card>
   )
 }

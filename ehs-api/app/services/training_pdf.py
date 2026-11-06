@@ -37,7 +37,8 @@ ZEBRA = HexColor("#f4f5f7")
 
 PAGE_W, PAGE_H = landscape(A4)
 MARGIN = 14 * mm
-# Person · Course · Completed · Expires · How · Entered by. Widths are in mm and
+# Person · Course · Completed · Expires · Length · Provider · Run by · Instructor.
+# Widths are in mm and
 # add up to the printable width; the two that identify a row get the room.
 # ★ Round 5, TC-08: "report has a heading called HOW and the data shows here.
 # remove how and add the run by name and the instructors name."
@@ -51,14 +52,14 @@ MARGIN = 14 * mm
 # session here. Still adds up to the printable width (269 mm).
 COLUMNS: tuple[tuple[str, float], ...] = (
     ("Person", 42),
-    ("Course", 44),
+    ("Course", 67),
     ("Completed", 20),
     ("Expires", 20),
-    ("Length", 13),
+    # ★ Round 11: 13 mm cut "1 h 30 min" short. "Entered by" gave up its room.
+    ("Length", 20),
     ("Provider", 40),
     ("Run by", 30),
     ("Instructor", 30),
-    ("Entered by", 30),
 )
 
 
@@ -194,7 +195,6 @@ def render(
             r.get("provider"),
             r["run_by_name"],
             r["instructor_name"],
-            r["recorded_by_name"],
         )
         for (label, w), value in zip(COLUMNS, values, strict=True):
             _cell(c, value or "—", x, y, w * mm - 3 * mm,

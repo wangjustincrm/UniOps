@@ -241,11 +241,6 @@ function RequirementsEditor(
               {c.applies_to_all && (
                 <span className="shrink-0 text-xs">Everyone takes this</span>
               )}
-              {c.is_statutory && !c.applies_to_all && (
-                <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-600">
-                  Required by law
-                </span>
-              )}
             </label>
           </li>
         ))}
