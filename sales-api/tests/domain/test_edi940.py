@@ -108,6 +108,12 @@ def test_what_fails_validation_is_named(over, error):
     assert not b.ok and any(error in e for e in b.errors)
 
 
+def test_a_curly_apostrophe_is_sent_as_a_plain_one():
+    b = build_940(shopify(ship_to=Address(name="Ana", address1="1 rue", city="Val-d’Or", province="QC", zip="J9P 1A1")), 30, NOW)
+    assert b.ok, b.issues.errors
+    assert seg(b, "N4")[0][1] == "Val-d'Or"
+
+
 def test_text_is_ascii_and_never_a_question_mark():
     b = build_940(shopify(ship_to=Address(name="王小明", address1="1 Main", city="Toronto", province="ON", zip="M5V 1A1")), 41, NOW)
     assert not b.ok and b.issues.errors[0] == "ST.name: '王' has no ASCII form — edit the value"

@@ -25,10 +25,15 @@ class TextIssues:
     errors: list[str] = field(default_factory=list)    # "ship_to.name: '北' has no ASCII form"
 
 
+# Punctuation a phone keyboard types in an address ("Val-d’Or"): it has a plain form, NFKD just does not know it.
+_TYPOGRAPHIC = str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"', "–": "-", "—": "-"})
+
+
 def ascii_value(name: str, value: object, issues: TextIssues) -> str:
     """`value` as plain ASCII X12 text (FR-OB-29a)."""
     text = "" if value is None else str(value).strip()
     text = re.sub(r"\s+", " ", text)
+    text = text.translate(_TYPOGRAPHIC)
     out = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
     if out != text:
         lost = [c for c in text if not unicodedata.normalize("NFKD", c).encode("ascii", "ignore")
