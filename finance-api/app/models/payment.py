@@ -3,7 +3,7 @@ import uuid
 from datetime import date
 from decimal import Decimal
 from sqlalchemy import Boolean, Date, ForeignKey, Numeric, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base, UUIDPrimaryKey, TimestampMixin
 
@@ -28,6 +28,9 @@ class PaymentRecord(UUIDPrimaryKey, TimestampMixin, Base):
     # actually left the bank; gross = amount + credit_applied.
     credit_applied: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False, default=Decimal("0"))
     currency: Mapped[str] = mapped_column(String(10), nullable=False, default="CAD")
+    # The invoices of a PA this payment settled, when it was paid invoice by
+    # invoice; NULL = the whole document (see payment_execute.pa_payment_scope).
+    invoice_ids: Mapped[list | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
     recorded_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="completed")  # pending|completed|cancelled

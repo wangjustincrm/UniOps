@@ -357,7 +357,101 @@ async def _book_claim_budget(db: AsyncSession, claim: ExpenseClaim,
     )
 
 
-async def apply_pa_invoice_writeback(db: AsyncSession, pa: PaymentApplication) -> dict:
+def split_amounts(pa: PaymentApplication,
+                  totals: dict[str, Decimal]) -> dict[str, Decimal] | None:
+    """{invoice id: amount} when this PA can be paid invoice by invoice, else None.
+
+    `totals` holds the invoices' total_amount by id. An invoice's share of a PA
+    is known only when the invoices add up to the PA exactly. Where they do not
+    (freight or other charges on the PA, a merged invoice shared with another
+    PA, a settlement net of its prepayment) any per-invoice figure would be a
+    guess, so such a PA is paid whole. Prepayments, settlements and OA Direct
+    PAs never split: their amounts are not invoice amounts.
+    """
+    ids = list(dict.fromkeys(str(i) for i in pa.invoice_ids or []))
+    if pa.pa_type != "regular" or pa.is_direct or len(ids) < 2:
+        return None
+    if any(i not in totals for i in ids):
+        return None
+    amounts = {i: totals[i] for i in ids}
+    return amounts if sum(amounts.values(), _ZERO) == pa.payment_amount else None
+
+
+async def _invoice_totals(db: AsyncSession, pa: PaymentApplication) -> dict[str, Decimal]:
+    ids: list[uuid.UUID] = []
+    for raw in pa.invoice_ids or []:
+        try:
+            ids.append(uuid.UUID(str(raw)))
+        except (ValueError, TypeError):
+            continue
+    if not ids:
+        return {}
+    rows = (await db.execute(
+        select(Invoice.id, Invoice.total_amount).where(Invoice.id.in_(ids))
+    )).all()
+    return {str(i): total for i, total in rows}
+
+
+async def pa_split_payments(db: AsyncSession, pa_ids: list[uuid.UUID],
+                            ) -> dict[uuid.UUID, tuple[set[str], Decimal]]:
+    """{pa id: (invoice ids paid so far, gross paid so far)} over the completed
+    invoice-by-invoice payments. A PA paid whole is not in here. Gross, because
+    a vendor credit settles invoices just as cash does."""
+    if not pa_ids:
+        return {}
+    rows = (await db.execute(
+        select(PaymentRecord.pa_id, PaymentRecord.invoice_ids,
+               PaymentRecord.amount, PaymentRecord.credit_applied)
+        .where(PaymentRecord.pa_id.in_(pa_ids),
+               PaymentRecord.status == "completed",
+               PaymentRecord.invoice_ids.is_not(None))
+    )).all()
+    out: dict[uuid.UUID, tuple[set[str], Decimal]] = {}
+    for pa_id, inv_ids, amount, credit in rows:
+        paid, gross = out.get(pa_id, (set(), _ZERO))
+        out[pa_id] = (paid | {str(i) for i in inv_ids}, gross + amount + credit)
+    return out
+
+
+async def pa_payment_scope(db: AsyncSession, pa: PaymentApplication,
+                           requested: list[uuid.UUID] | None,
+                           paid: tuple[set[str], Decimal] | None,
+                           ) -> tuple[Decimal, list[str] | None, bool]:
+    """What paying this PA now covers: (gross, invoice ids, closes the PA).
+
+    Invoice ids of None is the ordinary payment of the whole PA. `requested` of
+    None means everything still unpaid, so paying a part-paid PA from anywhere
+    (EPMS Process included) pays the remainder and never the full amount again.
+    `paid` is this PA's entry from pa_split_payments. Raises ValueError.
+    """
+    paid_ids, paid_gross = paid or (set(), _ZERO)
+    if requested is None and not paid_ids:
+        return pa.payment_amount, None, True
+
+    amounts = split_amounts(pa, await _invoice_totals(db, pa))
+    if amounts is None:
+        raise ValueError(
+            f"{pa.pa_number} cannot be paid invoice by invoice: its invoices do not "
+            "add up to the PA amount, so it can only be paid as a whole.")
+    open_ids = [i for i in amounts if i not in paid_ids]
+    chosen = open_ids if requested is None else list(dict.fromkeys(str(i) for i in requested))
+    if not chosen:
+        raise ValueError(f"Select at least one invoice of {pa.pa_number} to pay")
+    if set(chosen) - set(amounts):
+        raise ValueError(f"{pa.pa_number} does not hold the selected invoice(s)")
+    if set(chosen) & paid_ids:
+        raise ValueError(f"Part of the selection on {pa.pa_number} is already paid")
+
+    closes = set(chosen) == set(open_ids)
+    if closes and not paid_ids:
+        return pa.payment_amount, None, True
+    gross = (pa.payment_amount - paid_gross if closes
+             else sum((amounts[i] for i in chosen), _ZERO))
+    return gross, chosen, closes
+
+
+async def apply_pa_invoice_writeback(db: AsyncSession, pa: PaymentApplication,
+                                     only: list[str] | None = None) -> dict:
     """Bring a paid PA's invoices and AP subledger rows in step with it.
 
     Extracted from execute() so it can be REPLAYED. The two loops used to live
@@ -380,11 +474,14 @@ async def apply_pa_invoice_writeback(db: AsyncSession, pa: PaymentApplication) -
     PA: a Direct (OA) PA's invoice_ids hold expense_invoices ids, which live in
     a different table and would never match here — but their ap_invoices rows
     do exist and are keyed by the same id, so the AP half runs for both.
+
+    `only` limits it to the invoices a split payment just settled; the PA's
+    other invoices are still owed.
     """
     closed = settled = 0
     inv_status = "partially_paid" if pa.pa_type == "prepayment" else "paid"
 
-    for inv_id_str in pa.invoice_ids or []:
+    for inv_id_str in (pa.invoice_ids or []) if only is None else only:
         try:
             inv_id = uuid.UUID(str(inv_id_str))
         except (ValueError, TypeError):
@@ -413,6 +510,8 @@ async def apply_pa_invoice_writeback(db: AsyncSession, pa: PaymentApplication) -
 async def _refuse_second_payment(db: AsyncSession, column: str, doc_id: uuid.UUID,
                                  doc_number: str | None) -> None:
     """A document that already has a completed payment is never paid again.
+    Invoice-by-invoice payments do not count: they cover part of a PA, and
+    pa_payment_scope refuses paying the same invoice twice.
 
     The status check alone is not enough: a status edited back to "approved"
     (Data Maintenance) let a paid PA be paid a second time — PA-20260930-0001
@@ -422,6 +521,7 @@ async def _refuse_second_payment(db: AsyncSession, column: str, doc_id: uuid.UUI
         select(PaymentRecord.payment_date).where(
             getattr(PaymentRecord, column) == doc_id,
             PaymentRecord.status == "completed",
+            PaymentRecord.invoice_ids.is_(None),
         ).limit(1)
     )).scalar_one_or_none()
     if existing is not None:
@@ -455,18 +555,31 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
             raise ValueError(f"Cannot pay PA in status '{pa.status}'")
         await _refuse_second_payment(db, "pa_id", pa.id, pa.pa_number)
         await _check_invoice_link(db, pa)
+        gross, invoice_ids, closes = await pa_payment_scope(
+            db, pa, req.invoice_ids, (await pa_split_payments(db, [pa.id])).get(pa.id))
+        if invoice_ids is not None:
+            if req.amount_paid is not None and req.amount_paid != gross:
+                raise ValueError(f"{pa.pa_number} is paid by invoice: the amount cannot be changed")
+            if req.expected_amount is not None and req.expected_amount != gross:
+                raise ValueError(
+                    f"{pa.pa_number}: this line is for {req.expected_amount} but {gross} is "
+                    "now payable, because part of the PA was paid since. Cancel this draft "
+                    "and create a new batch.")
         # actual kind derives from the document, not the client
         doc_kind = "pa_dir" if pa.is_direct else "pa"
-        pa.status = "processed"
-        # Stamp the real payment date (honours a back-dated req.payment_date).
-        # Dashboards read paid_at, never the onupdate-bumped updated_at.
-        pa.paid_at = datetime.combine(pay_date, datetime.min.time(), tzinfo=timezone.utc)
-        await _complete_open_tasks(db, ["pa", "pa_dir"], pa.id)
-
-        await apply_pa_invoice_writeback(db, pa)
+        if closes:
+            pa.status = "processed"
+            # Stamp the real payment date (honours a back-dated req.payment_date).
+            # Dashboards read paid_at, never the onupdate-bumped updated_at.
+            pa.paid_at = datetime.combine(pay_date, datetime.min.time(), tzinfo=timezone.utc)
+            await _complete_open_tasks(db, ["pa", "pa_dir"], pa.id)
+            await apply_pa_invoice_writeback(db, pa)
+        else:
+            # The PA stays approved and on the due list for what is left.
+            await apply_pa_invoice_writeback(db, pa, only=invoice_ids)
 
         bank = await _resolve_bank(db, req.bank_account_id, pa.currency)
-        base = req.amount_paid if req.amount_paid is not None else pa.payment_amount
+        base = req.amount_paid if req.amount_paid is not None else gross
 
         # Vendor credits reduce the cash that leaves the bank. Selection takes row
         # locks, so it must happen inside this transaction, immediately before the
@@ -490,7 +603,7 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
             vendor_id=pa.vendor_id, vendor_name=pa.vendor_name,
             payment_date=pay_date, payment_method=req.payment_method,
             reference=req.reference, amount=net, credit_applied=credit_applied,
-            currency=pa.currency,
+            currency=pa.currency, invoice_ids=invoice_ids,
             recorded_by=recorded_by, notes=req.notes, batch_id=batch_id,
             bank_account_id=req.bank_account_id,
         )
@@ -542,14 +655,16 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
             db,
             source_service="finance",
             source_doc_type=doc_kind,
-            source_doc_id=pa.id,
+            # emit_event is idempotent on this id: keyed on the PA, every split
+            # payment after the first would be dropped from the ledger.
+            source_doc_id=pa.id if invoice_ids is None else record.id,
             source_doc_number=pa.pa_number,
             event_type="payment",
             lines=await _stamp_fx(db, await _stamp_account_codes(db, posting_lines), pay_date),
         )
         return PaymentExecuteResponse(
             doc_kind=doc_kind, doc_id=pa.id, doc_number=pa.pa_number,
-            new_status="processed", payment_record_id=record.id,
+            new_status=pa.status, payment_record_id=record.id,
             posting_event_id=event_id,
         )
 

@@ -125,6 +125,20 @@ async def test_only_bills_on_an_approved_pa_count(db_session):
     assert cad["total"] == "100.00"
 
 
+async def test_an_invoice_paid_out_of_a_part_paid_pa_leaves_cash_flow(db_session):
+    """A PA paid invoice by invoice stays approved until its last invoice."""
+    _vendors_table()
+    v = _vendor("0000008", "net30")
+    day = date.today() - timedelta(days=5)
+    _bill("D3101", "100.00", sc="0000008", day=day, inv="P-1")
+    _bill("D3102", "200.00", sc="0000008", day=day, inv="P-2")
+    _pa("PA-T-0111", v, ["P-1", "P-2"])
+    _exec("update invoices set status = 'paid' where vendor_invoice_number = 'P-1'")
+
+    got = await svc.items(db_session, "CAD", limit=1000)
+    assert [r["bill_no"] for r in got["items"]] == ["D3102"]
+
+
 async def test_reversal_pair_nets_out(db_session):
     _vendors_table()
     v = _vendor("0000963", "net30")

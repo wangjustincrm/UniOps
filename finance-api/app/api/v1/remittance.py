@@ -200,7 +200,11 @@ async def _reference_for(db: AsyncSession, rec: PaymentRecord) -> str:
             select(PaymentApplication).where(PaymentApplication.id == rec.doc_id)
         )).scalar_one_or_none()
         if pa is not None:
-            inv_no = (await batch_crud.vendor_inv_no_map(db, [pa])).get(pa.id, "")
+            if rec.invoice_ids:  # paid invoice by invoice: only what this payment settled
+                inv_no = batch_crud.join_invoice_numbers(
+                    rec.invoice_ids, await batch_crud.invoice_numbers(db, rec.invoice_ids))
+            else:
+                inv_no = (await batch_crud.vendor_inv_no_map(db, [pa])).get(pa.id, "")
             if inv_no:
                 return inv_no
             if pa.pa_type == "prepayment" and pa.po_number:

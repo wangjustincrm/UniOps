@@ -25,6 +25,7 @@ from app.core.authz import require_permission
 from app.core.deps import CurrentUser
 from app.core.read_authz import authorize_finance_read
 from app.crud import vendor_credit as crud
+from app.crud.payment_execute import pa_split_payments
 from app.db.base import get_db
 from app.models.mirrors import User
 from app.models.payment import PaymentRecord
@@ -128,8 +129,12 @@ async def list_vendor_credits(user: CurrentUser,
 async def suggest_credits(user: CurrentUser,
                           doc_kind: str = Query(...),
                           doc_id: uuid.UUID = Query(...),
+                          amount: Decimal | None = Query(default=None, gt=0),
                           db: AsyncSession = Depends(get_db)):
     """Preview which credits would be netted off a payment, without locking.
+
+    `amount` is what a batch line pays when that is only part of the PA; without
+    it the gross is what is still owed on the PA.
 
     Declared before /{credit_id} so FastAPI does not try to parse the literal
     "suggest" as a UUID.
@@ -149,16 +154,19 @@ async def suggest_credits(user: CurrentUser,
     if pa is None:
         raise HTTPException(status_code=404, detail="Payment application not found")
 
+    already_paid = (await pa_split_payments(db, [pa.id])).get(pa.id, (None, Decimal("0.00")))[1]
+    gross = amount if amount is not None else pa.payment_amount - already_paid
     picks = await crud.select_credits_for_payment(
         db, vendor_id=pa.vendor_id, currency=pa.currency,
-        base=pa.payment_amount, credit_ids=None, lock=False,
+        base=gross, credit_ids=None, lock=False,
     )
     # Decimal("0") has scale 0, so an empty `picks` would serialize
     # credit_applied as "0" instead of "0.00" — start the accumulator at
     # scale 2 to match pa.payment_amount's precision either way.
     applied = sum((take for _, take in picks), Decimal("0.00"))
     return CreditSuggestResponse(
-        gross=pa.payment_amount,
+        gross=gross,
+        already_paid=already_paid,
         suggested=[
             CreditSuggestion(
                 credit_id=c.id, credit_number=c.credit_number,
@@ -168,7 +176,7 @@ async def suggest_credits(user: CurrentUser,
             for c, take in picks
         ],
         credit_applied=applied,
-        net=pa.payment_amount - applied,
+        net=gross - applied,
     )
 
 
