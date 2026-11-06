@@ -358,3 +358,57 @@ async def test_a_reply_does_not_undo_a_state_a_person_chose(hse_manager, asked, 
     assert chosen.status_code == 200, chosen.text
     await client.post(f"/api/v1/jhsc/recommendations/{rec['id']}/answer", json=_answer(person))
     assert await _state(hse, rec["id"]) == "Under review by maintenance"
+
+
+async def test_the_backfill_moves_only_what_0085_wrote(hse_manager, asked, states, db_session):
+    """★ 0086 changed nothing and printed 0: with no action the join gives NULL,
+    and the rows it was for fell out. So the row with no action is the case."""
+    import importlib.util
+    import pathlib
+    from sqlalchemy import delete, text
+    from app.models.action import Action
+    from app.models.change_log import ChangeLogEntry as ChangeLog
+    from app.models.jhsc import JhscRecommendation
+
+    _codes(states)
+    done = states[3]
+    _, hse = hse_manager
+    person, _ = asked
+    made = []
+    for _i in range(4):
+        _, rec = await _sent(hse, [person])
+        made.append(rec["id"])
+    no_action, with_closed, chosen, declined = [
+        await db_session.get(JhscRecommendation, uuid.UUID(i)) for i in made]
+    closed = (await db_session.execute(select(Action).limit(1))).scalars().first()
+    if closed is None:
+        closed = await db_session.get(Action, uuid.UUID((await hse.post("/api/v1/actions", json={
+            "source_type": "manual", "title": "Guard it", "owner_id": str(person.id),
+            "due_date": (date.today() + timedelta(days=7)).isoformat()})).json()["id"]))
+    closed.status = "closed"
+    for rec in (no_action, with_closed, chosen, declined):
+        rec.outcome, rec.status_item_id, rec.status_label = "accepted", done.id, done.label
+    with_closed.action_id = closed.id
+    declined.outcome = "declined"
+    await db_session.flush()
+    await db_session.execute(delete(ChangeLog).where(
+        ChangeLog.table_name == "ehs_jhsc_recommendations",
+        ChangeLog.row_id.in_(made), ChangeLog.field == "status_item_id"))
+    db_session.add(ChangeLog(id=uuid.uuid4(), table_name="ehs_jhsc_recommendations",
+                             row_id=str(chosen.id), action="update", field="status_item_id",
+                             new_value=str(done.id)))
+    await db_session.flush()
+
+    path = next(pathlib.Path("alembic/versions").glob("*_0087_*.py"))
+    spec = importlib.util.spec_from_file_location("m0087", path)
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+    moved = await db_session.execute(text(migration.STATE_FROM_REPLY))
+    assert moved.rowcount == 2, "the row with no action, and the declined one"
+
+    for rec in (no_action, with_closed, chosen, declined):
+        await db_session.refresh(rec)
+    assert no_action.status_label == "Work in progress"
+    assert declined.status_label == "New request"
+    assert with_closed.status_label == "Completed", "accepted with its action closed is done"
+    assert chosen.status_label == "Completed", "a state a person chose stays"
