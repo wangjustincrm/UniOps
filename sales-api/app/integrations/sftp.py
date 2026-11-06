@@ -120,13 +120,27 @@ def live_only(method: str, args: tuple, kwargs: dict) -> str | None:  # noqa: AR
     return None if getattr(conn, "mode", None) == "LIVE" else "connection not LIVE"
 
 
+def _folder(path: Any) -> str:
+    return "/" + str(path or "").strip().strip("/")
+
+
+def test_folder_put(method: str, args: tuple, kwargs: dict) -> bool:
+    """The one write a TEST connection may make: a put into its test outbound folder, and only
+    when that folder is not its real one (a test folder set to the real path is refused)."""
+    conn = args[0] if args else kwargs.get("conn")
+    folder = args[1] if len(args) > 1 else kwargs.get("folder")
+    test, real = getattr(conn, "test_outbound_folder", None), getattr(conn, "outbound_folder", None)
+    return (method == "put" and getattr(conn, "mode", None) == "TEST" and bool(str(test or "").strip("/ "))
+            and _folder(folder) == _folder(test) and _folder(test) != _folder(real))
+
+
 def writes_allowed(settings: Any) -> Callable[[str, tuple, dict], str | None]:
     """The guard's allow check for SFTP writes: a LIVE connection AND its host
     listed in SALES_SFTP_WRITE_HOSTS — read at call time, so switching it off
     takes effect at once; empty = no write anywhere. Runs before any traffic."""
     def allow(method: str, args: tuple, kwargs: dict) -> str | None:
         reason = live_only(method, args, kwargs)
-        if reason:
+        if reason and not test_folder_put(method, args, kwargs):
             return reason
         conn = args[0] if args else kwargs.get("conn")
         host = (getattr(conn, "host", None) or "").strip().lower()

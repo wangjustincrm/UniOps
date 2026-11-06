@@ -78,7 +78,7 @@ def test_a_retail_940_carries_lo_and_dp_even_empty_and_mr_only_for_walmart_0020(
     assert b.ok, b.errors
     assert seg(b, "W05") == [["W05", "N", "000000104", "PO-778"]]
     n9 = seg(b, "N9")
-    assert ["N9", "LO", ""] in n9 and ["N9", "DP", ""] in n9 and ["N9", "LB", "UCC_CRM_LBW"] in n9  # AC-OB-26
+    assert ["N9", "LO"] in n9 and ["N9", "DP"] in n9 and ["N9", "LB", "UCC_CRM_LBW"] in n9  # AC-OB-26
     assert not any(s[1] == "MR" for s in n9) and not seg(b, "PER")
     assert [s[1] for s in seg(b, "G62")] == ["01", "10", "38", "79"]
     assert seg(b, "W66") == [["W66", "PP", "LT", "", "", "", "", "", "", "", "WIFS"]]

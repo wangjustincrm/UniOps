@@ -168,11 +168,11 @@ def build_940(o: Order940, control_no: int, now: datetime) -> Built940:
                  segment("N9", "E1", v("reference", f"CRM-940_{o.order_number:09d}_{''.join((o.partner_name or o.partner_code).split())}"
                                                     f"_{o.source_order_number}", issues)),
                  segment("N9", "LB", label),
-                 f"N9*LO*{v('dc_number', o.dc_number, issues)}",       # sent even when empty (AC-OB-26)
+                 f"N9*LO*{v('dc_number', o.dc_number, issues)}".rstrip("*"),  # sent even when empty (AC-OB-26), as `N9*LO`
                  ]
         if o.walmart and (o.order_type or "").strip() == "0020":
             body.append(segment("N9", "MR", "0020"))
-        body.append(f"N9*DP*{v('department', o.department, issues)}")  # sent even when empty (AC-OB-26)
+        body.append(f"N9*DP*{v('department', o.department, issues)}".rstrip("*"))  # sent even when empty (AC-OB-26), as `N9*DP`
     today = now.strftime("%Y%m%d")
     if o.requested_delivery:
         body.append(segment("G62", "01", _d(o.requested_delivery)))

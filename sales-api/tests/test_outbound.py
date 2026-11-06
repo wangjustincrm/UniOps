@@ -147,7 +147,8 @@ async def test_an_eligible_order_gets_its_940_put_through_the_guard(edi):
 async def test_a_write_is_suppressed_without_live_or_without_a_write_host(edi):
     o = await a_paid_order(edi)
     async with edi.env.factory(SYSTEM_ACTOR) as u:
-        (await u.session.get(Connection, edi.conn_id)).mode = "TEST"
+        c = await u.session.get(Connection, edi.conn_id)
+        c.mode, c.test_outbound_folder = "TEST", c.outbound_folder  # a "test folder" that is the real one writes nothing
         await u.commit()
     await edi.out.queue_due()
     assert (await edi.worker.run_once()).suppressed == 1

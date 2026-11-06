@@ -420,3 +420,28 @@ async def test_the_document_model_refuses_content_less_rows_other_than_identity_
                                  processing_status="Pending", content=None))
         with pytest.raises(IntegrityError, match="ck_sales_documents_content"):
             await uow.session.flush()
+
+
+# ── a TEST connection's one write: its own test folder (user 2026-11-06) ─────
+def _test_conn(**over):
+    return SimpleNamespace(**({"mode": "TEST", "host": "h.example", "outbound_folder": "/prod/in/",
+                               "test_outbound_folder": "/test/in/"} | over))
+
+
+def _allow(*args, method="put", hosts=("h.example",)):
+    return sftp_mod.writes_allowed(SimpleNamespace(sftp_write_hosts=frozenset(hosts)))(method, args, {})
+
+
+def test_a_test_connection_may_put_only_into_its_test_folder():
+    assert _allow(_test_conn(), "/test/in", "a.edi", b"x") is None  # the positive case, trailing slash ignored
+    assert _allow(_test_conn(), "/prod/in/", "a.edi", b"x") == "connection not LIVE"
+    assert _allow(_test_conn(), "/test/in/", method="move") == "connection not LIVE"
+    assert _allow(_test_conn(), "/test/in/", method="delete") == "connection not LIVE"
+    assert _allow(_test_conn(), "/test/in/", "a.edi", b"x", hosts=()) == "host not in SALES_SFTP_WRITE_HOSTS"
+
+
+def test_a_test_folder_that_is_the_real_folder_or_empty_is_refused():
+    same = _test_conn(outbound_folder="/Import/Transaction/", test_outbound_folder="/Import/Transaction")
+    assert _allow(same, "/Import/Transaction/", "a.json", b"x") == "connection not LIVE"
+    assert _allow(_test_conn(test_outbound_folder=None), "/", "a.edi", b"x") == "connection not LIVE"
+    assert _allow(_test_conn(test_outbound_folder="/"), "/", "a.edi", b"x") == "connection not LIVE"
