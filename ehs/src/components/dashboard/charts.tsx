@@ -249,14 +249,17 @@ export function BodyMap({ regions, names, rows, offPicture, linkFor }: {
         <Figure shapes={FRONT} counts={regions} min={min} max={max} names={names} title="Front" />
         <Figure shapes={BACK} counts={regions} min={min} max={max} names={names} title="Back" />
       </div>
-      <ul className="flex items-center justify-center gap-1 text-[11px] text-neutral-500" aria-label="Shading key">
-        <li className="h-2.5 w-5 rounded-sm border border-neutral-200 bg-neutral-100" />
-        <li className="mr-2">None</li>
-        <li>Fewest ({min})</li>
-        <li className="h-2.5 w-20 rounded-sm"
-            style={{ background: `linear-gradient(to right, rgb(${LEAST.join(' ')}), rgb(${MOST.join(' ')}))` }} />
-        <li>Most ({max})</li>
-      </ul>
+      {/* No key with nothing coloured: every injury may sit off the picture. */}
+      {hurt.length > 0 && (
+        <ul className="flex items-center justify-center gap-1 text-[11px] text-neutral-500" aria-label="Shading key">
+          <li className="h-2.5 w-5 rounded-sm border border-neutral-200 bg-neutral-100" />
+          <li className="mr-2">None</li>
+          <li>Fewest ({min})</li>
+          <li className="h-2.5 w-20 rounded-sm"
+              style={{ background: `linear-gradient(to right, rgb(${LEAST.join(' ')}), rgb(${MOST.join(' ')}))` }} />
+          <li>Most ({max})</li>
+        </ul>
+      )}
       {/* The list stays: the picture shows where, the list is what opens. */}
       <Bars rows={rows} linkFor={linkFor} />
       {offPicture.length > 0 && (
