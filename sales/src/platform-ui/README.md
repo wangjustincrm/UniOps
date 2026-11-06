@@ -100,4 +100,4 @@ A list column says what it holds: `const col = columnsOf<OrderRead>()`, then `co
 
 ## Choosing and searching
 
-`MultiSelect` shows what is chosen as tags in the box, and the box is the search for the list below it, which offers what is not chosen yet; the search panel always uses it. `MultiChoice` is for forms: checkboxes up to six choices, else `MultiSelect`; `display` overrides it. A search form puts `submitOnEnter` on `onKeyDownCapture`: while a list is open, or text waits to be added, Enter chooses; after that Enter confirms and searches. An input that owns its Enter carries `CHOOSING`.
+`MultiSelect` shows what is chosen as tags in the box, and the box is the search for the list below it, which offers what is not chosen yet; the search panel always uses it. `MultiChoice` is the same in forms; `display="checkboxes"` keeps every choice in view. A search form puts `submitOnEnter` on `onKeyDownCapture`: while a list is open, or text waits to be added, Enter chooses; after that Enter confirms and searches. An input that owns its Enter carries `CHOOSING`.

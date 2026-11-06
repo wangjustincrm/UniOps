@@ -109,10 +109,8 @@ describe('other fields under the same rule', () => {
 })
 
 describe('MultiChoice', () => {
-  it('a short list shows its checkboxes, a long one a dropdown; the page can choose', () => {
+  it('is the tags box, whatever the length; a page can ask for checkboxes', () => {
     const { rerender } = render(<MultiChoice label="L" options={OPTIONS.slice(0, 3)} values={[]} onChange={() => {}} />)
-    expect(screen.getAllByRole('checkbox')).toHaveLength(3)
-    rerender(<MultiChoice label="L" options={OPTIONS} values={[]} onChange={() => {}} />)
     expect(screen.getByRole('combobox', { name: 'L' })).toBeInTheDocument()
     rerender(<MultiChoice label="L" display="checkboxes" options={OPTIONS} values={[]} onChange={() => {}} />)
     expect(screen.getAllByRole('checkbox')).toHaveLength(7)

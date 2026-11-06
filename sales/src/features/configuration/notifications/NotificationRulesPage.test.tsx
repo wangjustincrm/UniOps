@@ -42,7 +42,8 @@ describe('Configuration → Notifications (FR-OB-56)', () => {
     expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual(['—', '940 failed'])  // the ruled one is not offered
     fireEvent.click(screen.getByRole('option', { name: '940 failed' }))
     await chooseOption(within(sheet).getByRole('combobox', { name: /^Channel/ }), 'Task and email')
-    fireEvent.click(await within(sheet).findByRole('checkbox', { name: 'Bob (bob@x.example)' }))
+    fireEvent.keyDown(await within(sheet).findByRole('combobox', { name: 'Users' }), { key: 'ArrowDown' })
+    fireEvent.click(await screen.findByRole('option', { name: 'Bob (bob@x.example)' }))
     fireEvent.change(within(sheet).getByLabelText(/^Other email addresses/), { target: { value: 'qa@x.example\nnot-an-address' } })
     fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
     expect(await within(sheet).findByText('Not an email address')).toBeInTheDocument()

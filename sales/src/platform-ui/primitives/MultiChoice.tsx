@@ -1,21 +1,18 @@
 import { CheckboxList } from './Checkbox'
 import { MultiSelect, type MultiOption } from './MultiSelect'
 
-export const MANY_CHOICES = 6
-
 export interface MultiChoiceProps {
   options: MultiOption[]
   values: string[]
   onChange: (values: string[]) => void
   label: string
-  /** Checkboxes show every choice at once, a dropdown saves room. Auto: checkboxes up to MANY_CHOICES. */
-  display?: 'auto' | 'checkboxes' | 'dropdown'
+  /** The tags box with its list by default; checkboxes when every choice should stay in view. */
+  display?: 'dropdown' | 'checkboxes'
   placeholder?: string
   disabled?: boolean
 }
 
-/** Several values from a known list, in whichever form suits how many there are. */
-export function MultiChoice({ display = 'auto', ...props }: MultiChoiceProps) {
-  const dropdown = display === 'dropdown' || (display === 'auto' && props.options.length > MANY_CHOICES)
-  return dropdown ? <MultiSelect {...props} /> : <CheckboxList {...props} />
+/** Several values from a known list, in the module's one way unless a page asks for checkboxes. */
+export function MultiChoice({ display = 'dropdown', ...props }: MultiChoiceProps) {
+  return display === 'checkboxes' ? <CheckboxList {...props} /> : <MultiSelect {...props} />
 }
