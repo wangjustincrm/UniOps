@@ -255,7 +255,12 @@ export default function FormsListPage({ initialTab = 'due' as Tab }) {
 
       {starting && (
         <StartDialog template={starting} onClose={() => setStarting(null)}
-                     onStarted={(id) => navigate(`/forms/submissions/${id}`)} />
+                     onStarted={(id) => {
+                       // ★ The tab stays alive, so an open dialog was still here
+                       // when the form was closed: "Which area?" came back.
+                       setStarting(null)
+                       navigate(`/forms/submissions/${id}`)
+                     }} />
       )}
     </div>
   )
