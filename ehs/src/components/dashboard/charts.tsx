@@ -187,19 +187,22 @@ const BACK: Record<string, Shape[]> = {
 const ORDER = ['head', 'face', 'ear', 'eye', 'mouth', 'neck', 'shoulder', 'chest', 'abdomen',
   'back', 'hip', 'arm', 'elbow', 'wrist', 'hand', 'leg', 'knee', 'ankle', 'foot']
 
-/* Five steps from "none" to "the most". Steps rather than a continuous ramp:
-   the reader can match a shade to the key, which a gradient does not allow. */
-const SHADES = ['fill-neutral-100', 'fill-primary-200', 'fill-primary-400', 'fill-primary-600', 'fill-primary-800']
-const KEY = ['bg-neutral-100', 'bg-primary-200', 'bg-primary-400', 'bg-primary-600', 'bg-primary-800']
+/* ★ Round 11, TC-08: "the body part with the greatest count, red, the least
+   count yellow. all other numbers in between should be shades of red to
+   yellow." A part nobody hurt stays neutral, so yellow still means "some". */
+const LEAST = [250, 204, 21]
+const MOST = [220, 38, 38]
 
-function shadeFor(n: number, max: number): number {
-  if (n <= 0) return 0
-  return Math.min(4, 1 + Math.floor(((n - 1) / Math.max(max, 1)) * 4))
+export function heatColour(n: number, min: number, max: number): string | null {
+  if (n <= 0) return null
+  const t = max > min ? (n - min) / (max - min) : 1
+  return `rgb(${LEAST.map((c, i) => Math.round(c + (MOST[i] - c) * t)).join(' ')})`
 }
 
-function Figure({ shapes, counts, max, names, title }: {
+function Figure({ shapes, counts, min, max, names, title }: {
   shapes: Record<string, Shape[]>
   counts: Record<string, number>
+  min: number
   max: number
   names: Record<string, string>
   title: string
@@ -211,8 +214,10 @@ function Figure({ shapes, counts, max, names, title }: {
              .map((r) => `${names[r] ?? r} ${counts[r]}`).join(', ') || 'no injuries'}`}>
         {ORDER.filter((r) => shapes[r]).map((region) => {
           const n = counts[region] ?? 0
+          const colour = heatColour(n, min, max)
           return (
-            <g key={region} className={`${SHADES[shadeFor(n, max)]} stroke-neutral-400`} strokeWidth="0.8">
+            <g key={region} className={`${colour ? '' : 'fill-neutral-100'} stroke-neutral-400`}
+               style={colour ? { fill: colour } : undefined} strokeWidth="0.8">
               <title>{`${names[region] ?? region}: ${n}`}</title>
               {shapes[region].map((s, i) => s.k === 'e'
                 ? <ellipse key={i} cx={s.cx} cy={s.cy} rx={s.rx} ry={s.ry} />
@@ -235,16 +240,21 @@ export function BodyMap({ regions, names, rows, offPicture, linkFor }: {
   offPicture: CountRow[]
   linkFor: (row: CountRow) => string
 }) {
-  const max = Math.max(1, ...Object.values(regions))
+  const hurt = Object.values(regions).filter((n) => n > 0)
+  const max = Math.max(1, ...hurt)
+  const min = hurt.length ? Math.min(...hurt) : 1
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-start justify-center gap-6">
-        <Figure shapes={FRONT} counts={regions} max={max} names={names} title="Front" />
-        <Figure shapes={BACK} counts={regions} max={max} names={names} title="Back" />
+        <Figure shapes={FRONT} counts={regions} min={min} max={max} names={names} title="Front" />
+        <Figure shapes={BACK} counts={regions} min={min} max={max} names={names} title="Back" />
       </div>
       <ul className="flex items-center justify-center gap-1 text-[11px] text-neutral-500" aria-label="Shading key">
-        <li>None</li>
-        {KEY.map((cls) => <li key={cls} className={`h-2.5 w-5 rounded-sm border border-neutral-200 ${cls}`} />)}
+        <li className="h-2.5 w-5 rounded-sm border border-neutral-200 bg-neutral-100" />
+        <li className="mr-2">None</li>
+        <li>Fewest ({min})</li>
+        <li className="h-2.5 w-20 rounded-sm"
+            style={{ background: `linear-gradient(to right, rgb(${LEAST.join(' ')}), rgb(${MOST.join(' ')}))` }} />
         <li>Most ({max})</li>
       </ul>
       {/* The list stays: the picture shows where, the list is what opens. */}
