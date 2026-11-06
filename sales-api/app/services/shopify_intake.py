@@ -41,7 +41,7 @@ from app.platform.pipeline import isolated
 from app.services import oplog
 from app.services.settings import SETTINGS, SHADOW_MODE
 from app.services.intake import ConnectionSnapshot
-from app.services.orders import BarcodeLookup, OrderSync
+from app.services.orders import BarcodeLookup, Catalog, OrderSync, add_barcodes
 from app.services.problems import SHOPIFY_AUTH_FAILED, SHOPIFY_FETCH_FAILED, problem
 from app.services.shopify_finance import REFRESH_PER_PASS, stale_finance, store_finance
 
@@ -112,8 +112,14 @@ class ShopifyIntake:
             doc_id = await self._store_page(conn, page.orders, report.pages)
             for o in page.orders:
                 report.orders += 1
+                # Shopify is called with no transaction open: a slow store never holds an order's row lock.
+                ready = await isolated(f"{conn.name}:order {o.get('id')}", lambda uow, o=o: self._read_ahead(conn, o, abbrev, barcodes),
+                                       uow_factory=self.uow_factory, log=self._order_failed(conn, o, run_id))
+                if not ready.ok:
+                    report.failed += 1
+                    continue
                 outcome = await isolated(f"{conn.name}:order {o.get('id')}",
-                                         lambda uow, o=o: self._one(uow, conn, o, abbrev, doc_id, barcodes),
+                                         lambda uow, o=o, txs=ready.result: self._one(uow, conn, o, abbrev, doc_id, barcodes, txs),
                                          uow_factory=self.uow_factory, log=self._order_failed(conn, o, run_id))
                 if not outcome.ok:
                     report.failed += 1
@@ -142,22 +148,38 @@ class ShopifyIntake:
             report.cursor_after = report.cursor_before
         return report
 
-    async def _one(self, uow, conn: ConnectionSnapshot, o: dict, abbrev, doc_id, barcodes: BarcodeLookup) -> str:
+    async def _read_ahead(self, conn: ConnectionSnapshot, o: dict, abbrev, barcodes: BarcodeLookup) -> list | None:
+        """What the order needs from Shopify, read before its unit opens: the barcodes of lines whose
+        SKU is unknown, and the transactions unless the order is the unchanged boundary order."""
+        src = from_shopify(o, partner_code=conn.partner_code, partner_abbrev=abbrev, cutoff=conn.order_number_cutoff)
+        async with self.uow_factory(SYSTEM_ACTOR) as uow:
+            s = uow.session
+            catalog = await Catalog.load(s)
+            existing = (await s.execute(select(Order.source_updated_at, Order.finance_updated_at).where(
+                Order.partner_code == src.partner_code, Order.source_order_id == src.source_order_id))).one_or_none()
+        await add_barcodes(src, catalog, barcodes)  # fills the run's cache; the upsert reads it there
+        unchanged = existing is not None and existing[0] is not None and src.updated_at == existing[0] and existing[1] == existing[0]
+        return None if unchanged else await self.shopify.transactions(conn, str(o["id"]))
+
+    async def _one(self, uow, conn: ConnectionSnapshot, o: dict, abbrev, doc_id, barcodes: BarcodeLookup,
+                   transactions: list | None = None) -> str:
         src = from_shopify(o, partner_code=conn.partner_code, partner_abbrev=abbrev, cutoff=conn.order_number_cutoff)
         key = (Order.partner_code == src.partner_code, Order.source_order_id == src.source_order_id)
         existing = (await uow.session.execute(select(Order.source_updated_at, Order.finance_updated_at).where(*key))).one_or_none()
         if existing is not None and existing[0] is not None and src.updated_at == existing[0]:
             if existing[1] != existing[0]:  # here before its finance was read
-                await self._finance(uow, conn, o, key)
+                await self._finance(uow, conn, o, key, transactions)
             return "unchanged"  # the boundary order, seen again (AC-OB-10)
         await OrderSync(uow, self.tasks).upsert(src, connection_id=conn.id, document_id=doc_id, received_at=self.clock(),
                                                 barcodes=barcodes)
-        await self._finance(uow, conn, o, key)
+        await self._finance(uow, conn, o, key, transactions)
         return "updated" if existing is not None else "created"
 
-    async def _finance(self, uow, conn, o: dict, key) -> None:
+    async def _finance(self, uow, conn, o: dict, key, transactions: list | None) -> None:
+        if transactions is None:  # changed between the read-ahead and this unit: rare, and read here
+            transactions = await self.shopify.transactions(conn, str(o["id"]))
         order = (await uow.session.execute(select(Order).where(*key))).scalar_one()
-        await store_finance(uow, order, o, await self.shopify.transactions(conn, str(o["id"])))
+        await store_finance(uow, order, o, transactions)
 
     async def _refresh_finance(self, conn: ConnectionSnapshot, report: ShopifyReport, run_id) -> None:
         """Up to REFRESH_PER_PASS orders already here whose finance is missing or stale."""
@@ -165,12 +187,13 @@ class ShopifyIntake:
             todo = (await uow.session.execute(stale_finance(conn.id).limit(REFRESH_PER_PASS))).all()
 
         async def one(uow, order_id: int, source_id: str) -> bool:
-            o = await self.shopify.order(conn, source_id)
+            o = await self.shopify.order(conn, source_id)  # both reads before the unit touches the database
+            transactions = await self.shopify.transactions(conn, source_id)
             order = await uow.session.get(Order, order_id)
             changed = datetime.fromisoformat(o["updated_at"]) if o.get("updated_at") else None
             if changed is not None and order.source_updated_at is not None and changed != order.source_updated_at:
                 return False  # changed since it was imported: the next pass's pages bring it whole
-            await store_finance(uow, order, o, await self.shopify.transactions(conn, source_id))
+            await store_finance(uow, order, o, transactions)
             return True
 
         for order_id, source_id in todo:
@@ -225,8 +248,8 @@ class ShopifyIntake:
 
     async def _latch(self, conn, reason: str, run_id) -> None:
         async with self.uow_factory(SYSTEM_ACTOR, reason="shopify auth failed") as uow:
-            await uow.session.execute(update(Connection).where(Connection.id == conn.id).values(
-                auth_failed_at=self.clock(), auth_failed_reason=reason[:2000]))
+            c = await uow.session.get(Connection, conn.id, with_for_update=True)  # audited, like the SFTP latch
+            c.auth_failed_at, c.auth_failed_reason = self.clock(), reason[:2000]
             await oplog.write(uow.session, "ERROR", STEP, f"{conn.name}: login refused; connection latched: {reason}",
                               run_id=run_id, connection_id=conn.id)
             await self.tasks.raise_problem(uow.session, SHOPIFY_AUTH_FAILED, conn.id, problem(

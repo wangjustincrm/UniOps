@@ -165,9 +165,13 @@ class SystemJob(ScheduledJob):
         trouble = 0
         if self.tasks is not None:  # partners whose orders would get no Order ref
             from app.services.problems import partners_without_abbreviation
-            async with self.uow_factory(SYSTEM_ACTOR) as uow:
-                out["partners_without_abbreviation"] = await partners_without_abbreviation(uow.session, self.tasks)
-                await uow.commit()
+            try:
+                async with self.uow_factory(SYSTEM_ACTOR) as uow:
+                    out["partners_without_abbreviation"] = await partners_without_abbreviation(uow.session, self.tasks)
+                    await uow.commit()
+            except Exception as e:  # noqa: BLE001 — a reminder never stops the sends after it
+                await oplog.write_alone(self.uow_factory, "ERROR", "cycle", f"abbreviation check failed: {e}", run_id=run.id)
+                trouble += 1
         if self.outbound:  # the orders that qualify get their 940 (queued)
             q = await self.outbound.queue_due(run_id=run.id)
             out["940"] = asdict(q)
@@ -177,7 +181,9 @@ class SystemJob(ScheduledJob):
             out["943"] = asdict(t)
             trouble += t.failed
         if self.invoicing:  # shipped orders move toward the delivery-confirmation worklist
-            out["invoices"] = asdict(await self.invoicing.advance(run_id=run.id))
+            inv = await self.invoicing.advance(run_id=run.id)
+            out["invoices"] = asdict(inv)
+            trouble += inv.failed
         ob = asdict(await self.outbox_worker.run_once())
         out["outbox"] = ob
         trouble += ob.get("failed", 0)

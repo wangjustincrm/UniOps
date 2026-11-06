@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -87,6 +89,36 @@ describe('RecordSheet in a ListPage', () => {
     expect(within(sheet).getByText('overview of B2')).toBeInTheDocument()     // so the first tab shows
     fireEvent.keyDown(within(sheet).getByText('overview of B2'), { key: 'ArrowUp', altKey: true })
     expect(await screen.findByRole('dialog', { name: 'A1' })).toBeInTheDocument()
+  })
+
+  it('prev / next gives the next record its own state: nothing of the previous one survives', async () => {
+    function Detail({ r }: { r: Row }) {
+      const [editing, setEditing] = useState(false)
+      return <RecordSheet title={r.code} tabs={[{ id: 'o', label: 'Overview', render: () => (
+        <button type="button" onClick={() => setEditing(true)}>{editing ? 'editing' : 'start editing'}</button>) }]} />
+    }
+    wrap(<ListPage<Row> resource={resource('/own-state')} title="Things" columns={[{ accessorKey: 'code', header: 'Code' }]}
+      renderDetail={(r) => <Detail r={r} />} />)
+    fireEvent.click(await screen.findByText('A1'))
+    let sheet = await screen.findByRole('dialog', { name: 'A1' })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'start editing' }))
+    expect(within(sheet).getByRole('button', { name: 'editing' })).toBeInTheDocument()
+    fireEvent.keyDown(sheet, { key: 'j' })
+    sheet = await screen.findByRole('dialog', { name: 'B2' })
+    expect(within(sheet).getByRole('button', { name: 'start editing' })).toBeInTheDocument()
+  })
+
+  it('J in a dialog opened from the sheet stays there: the record behind does not move', async () => {
+    function Detail({ r }: { r: Row }) {
+      return <RecordSheet title={r.code} tabs={[{ id: 'o', label: 'Overview', render: () => (
+        createPortal(<button type="button">inside a portal</button>, document.body)) }]} />
+    }
+    wrap(<ListPage<Row> resource={resource('/portal-key')} title="Things" columns={[{ accessorKey: 'code', header: 'Code' }]}
+      renderDetail={(r) => <Detail r={r} />} />)
+    fireEvent.click(await screen.findByText('A1'))
+    await screen.findByRole('dialog', { name: 'A1' })
+    fireEvent.keyDown(await screen.findByText('inside a portal'), { key: 'j' })
+    expect(screen.getByRole('dialog', { name: 'A1' })).toBeInTheDocument()
   })
 
   it('a link opens the record on the tab it asks for (a Task Inbox link)', async () => {

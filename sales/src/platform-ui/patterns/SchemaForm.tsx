@@ -1,3 +1,4 @@
+import { useReportUnsaved } from '../primitives/unsaved'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Controller, useForm, useWatch, type FieldValues, type Resolver, type UseFormReturn } from 'react-hook-form'
 import type { z } from 'zod'
@@ -88,7 +89,8 @@ export function SchemaForm({
     defaultValues: blankToEmpty(defaultValues),
   })
   const [error, setError] = useState<unknown>(null)
-  const { errors, isSubmitting, dirtyFields } = form.formState
+  const { errors, isSubmitting, dirtyFields, isDirty } = form.formState
+  useReportUnsaved(isDirty)
 
   const submit = form.handleSubmit(async (values) => {
     setError(null)

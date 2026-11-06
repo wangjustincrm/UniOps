@@ -16,7 +16,7 @@ const blank: ManualLine = { item_code: '', quantity: 1, unit: 'EA' }
 
 const schema = z.object({
   partner_code: z.string().min(1, 'Choose the customer'),
-  customer_reference: z.string().trim().max(100).nullable().optional(),
+  customer_reference: z.string().trim().max(50).nullable().optional(),
   requested_delivery_date: z.string().nullable().optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
   ship_to: addressSchema({ phone: true }),

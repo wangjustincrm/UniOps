@@ -153,7 +153,7 @@ async def test_a_write_is_suppressed_without_live_or_without_a_write_host(edi):
     await edi.out.queue_due()
     assert (await edi.worker.run_once()).suppressed == 1
     assert edi.store.files == {} and edi.store.calls == []  # nothing reached the store
-    assert [d["file_status"] for d in await docs(edi)] == ["Suppressed"] and await status(edi, o.id) == F.GENERATED_940
+    assert [d["file_status"] for d in await docs(edi)] == ["Suppressed"] and await status(edi, o.id) == F.FAILED_940
     assert edi.refused[-1].context["reason"] == "connection not LIVE"
     [t] = await tasks_of(edi, "send_refused")  # P8: a refused send is a task, not only a log row
     assert f"the 940 for order {o.source_reference} (internal no. {o.order_number}) was not sent" in t["description"]
@@ -166,7 +166,13 @@ async def test_a_write_is_suppressed_without_live_or_without_a_write_host(edi):
     await edi.out.queue_due()
     assert (await edi.worker.run_once()).suppressed == 1 and edi.store.files == {}
     assert edi.refused[-1].context["reason"] == "host not in SALES_SFTP_WRITE_HOSTS"
-    assert await status(edi, o2.id) == F.GENERATED_940
+    assert await status(edi, o2.id) == F.FAILED_940
+    # the way out: once the switch is right a person sends it again
+    edi.settings.sftp_write_hosts = frozenset({"commhub.example"})
+    async with edi.env.factory(SYSTEM_ACTOR) as u:
+        await edi.out.send_now(u, o2.id)
+        await u.commit()
+    assert (await edi.worker.run_once()).done == 1 and await status(edi, o2.id) == F.SENT_940
 
 
 async def test_ac30_a_940_that_fails_validation_is_not_sent_and_raises_a_task(edi):

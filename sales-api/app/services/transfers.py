@@ -369,26 +369,43 @@ class Transfers:
         return 1
 
     async def timeouts(self, *, run_id: int | None = None) -> TransferReport:
+        """One unit per document: one that cannot be handled never stops the others."""
         report = TransferReport()
         async with self.uow_factory(SYSTEM_ACTOR) as uow:
             s = uow.session
             minutes = await SETTINGS.get(s, ACK_TIMEOUT_MINUTES)
             due = self.clock() - timedelta(minutes=minutes)
-            docs = list((await s.execute(select(Document).where(
-                Document.kind == "943_EDI", Document.direction == "OUT", Document.file_status == OutboundFile.SENT.value,
-                Document.ack_status == Ack.WAITING.value, Document.sent_at <= due).with_for_update(skip_locked=True))).scalars())
-            for doc in docs:
-                ACK.transition(doc, Ack.TIMEOUT, actor=uow.actor, events=uow.events, reason=f"no 997 within {minutes} minutes")
-                t = await s.get(Transfer, (doc.body_json or {}).get("transfer_id"))
-                if t is not None:
-                    await self.tasks.raise_problem(s, EDI_943_TIMEOUT, t.id, problem(
-                        EDI_943_TIMEOUT, f"No 997 for transfer {t.transfer_number}",
-                        f"No 997 arrived within {minutes} minutes for the 943 of transfer {t.transfer_number} (control "
-                        f"{doc.st02}, sent {doc.sent_at.astimezone(TORONTO):%Y-%m-%d %H:%M} Toronto time). The transfer "
-                        "waits; check with the warehouse."))
-                report.timeouts += 1
-            await uow.commit()
+            ids = list((await s.execute(select(Document.id).where(*self._overdue(due)))).scalars())
+
+        async def log(o) -> None:
+            await oplog.write_alone(self.uow_factory, "ERROR", STEP, f"{o.unit}: {o.error_type}: {o.message}", run_id=run_id)
+        for did in ids:
+            outcome = await isolated(f"943 timeout {did}", lambda uow, did=did: self._timeout(uow, did, due, minutes),
+                                     uow_factory=self.uow_factory, log=log)
+            if outcome.ok:
+                report.timeouts += int(outcome.result)
         return report
+
+    @staticmethod
+    def _overdue(due: datetime) -> tuple:
+        return (Document.kind == "943_EDI", Document.direction == "OUT", Document.file_status == OutboundFile.SENT.value,
+                Document.ack_status == Ack.WAITING.value, Document.sent_at <= due)
+
+    async def _timeout(self, uow, did: int, due: datetime, minutes: int) -> bool:
+        s = uow.session
+        doc = (await s.execute(select(Document).where(Document.id == did, *self._overdue(due))
+                               .with_for_update(skip_locked=True))).scalar_one_or_none()
+        if doc is None:  # answered, or another run has it
+            return False
+        ACK.transition(doc, Ack.TIMEOUT, actor=uow.actor, events=uow.events, reason=f"no 997 within {minutes} minutes")
+        t = await s.get(Transfer, (doc.body_json or {}).get("transfer_id"))
+        if t is not None:
+            await self.tasks.raise_problem(s, EDI_943_TIMEOUT, t.id, problem(
+                EDI_943_TIMEOUT, f"No 997 for transfer {t.transfer_number}",
+                f"No 997 arrived within {minutes} minutes for the 943 of transfer {t.transfer_number} (control "
+                f"{doc.st02}, sent {doc.sent_at.astimezone(TORONTO):%Y-%m-%d %H:%M} Toronto time). The transfer "
+                "waits; check with the warehouse."))
+        return True
 
     # ── the 944 ──────────────────────────────────────────────────────────────
     async def process_944s(self, *, run_id: int | None = None, connection_id: int | None = None) -> TransferReport:

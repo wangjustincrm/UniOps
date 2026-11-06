@@ -57,7 +57,7 @@ export function InvoicePricesForm({ o, onSaved, onCancel }: { o: OrderDetail; on
           price: ln.invoice_price == null ? '' : String(Number(ln.invoice_price)) })) }}
       // A price that differs from the PO needs its reason (the server refuses it without one).
       blocked={({ values, lines }) => (lines.some((l) => differs(l.price, l.po_price) || (l.po_price == null && l.price.trim() !== ''))
-        && !String(values.reason ?? '').trim() ? 'An invoice price differs from the PO: give the reason.' : null)}
+        && String(values.reason ?? '').trim().length < 3 ? 'An invoice price differs from the PO: give the reason.' : null)}
       submitLabel="Save prices" errorMessages={errorMessages} onCancel={onCancel}
       onSubmit={async (v, lines) => onSaved(await setInvoicePrices(o.id, {
         reason: (v.reason as string | null) ?? null,

@@ -267,7 +267,9 @@ class OutboxWorker:
         batch: int = 50,
         lease: timedelta = timedelta(minutes=15),
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        on_hook_failed: Hook | None = None,
     ) -> None:
+        self.on_hook_failed = on_hook_failed
         self.outbox = outbox
         self.kinds = kinds
         self.uow_factory = uow_factory
@@ -357,23 +359,45 @@ class OutboxWorker:
             logger.exception("outbox %s (%s): could not record the outcome", claim.row_id, claim.kind)
             return "unknown"
 
+    async def _hook(self, uow, hook: Hook | None, row, exc: BaseException | None) -> None:
+        """Runs a business hook in a SAVEPOINT: if it raises, its own writes are
+        undone and the row's status stays. The effect may have happened, so a
+        failed hook is put where a person sees it, not only in the log."""
+        if hook is None:
+            return
+        try:
+            async with uow.session.begin_nested():
+                await hook(row, exc, uow)
+        except Exception as e:  # noqa: BLE001
+            logger.exception("outbox %s (%s): hook %s failed", row.id, row.kind, getattr(hook, "__name__", hook))
+            row.last_error = f"result not recorded: {_describe(e)}"[:2000]
+            if self.on_hook_failed is not None:
+                try:
+                    async with uow.session.begin_nested():
+                        await self.on_hook_failed(row, e, uow)
+                except Exception:  # noqa: BLE001
+                    logger.exception("outbox %s (%s): could not report the failed hook", row.id, row.kind)
+
     async def _apply(self, uow, row, exc: BaseException | None, kind: OutboxKind, now: datetime) -> str:
         if exc is None:
             outcome = self._done(row, now)
             await uow.session.flush()  # DONE is written before the hook, which cannot undo it
-            await _hook(uow, kind.on_done, row, None)
+            await self._hook(uow, kind.on_done, row, None)
             return outcome
         if isinstance(exc, AcceptedThenFailed):
             # Delivered: never resend. The error is kept for the log only.
             logger.warning("outbox %s (%s) delivered, later step failed: %s", row.id, row.kind, exc)
             row.last_error = f"after delivery: {_describe(exc)}"
-            return self._done(row, now)
+            outcome = self._done(row, now)
+            await uow.session.flush()
+            await self._hook(uow, kind.on_done, row, None)  # delivered is delivered: the record says so too
+            return outcome
         if isinstance(exc, Suppressed):
             row.status = SUPPRESSED
             row.finished_at = now
             row.last_error = str(exc)
             await uow.session.flush()
-            await _hook(uow, kind.on_suppressed, row, exc)
+            await self._hook(uow, kind.on_suppressed, row, exc)
             return "suppressed"
         if not isinstance(exc, OutcomeUnknown) and kind.policy.should_retry(exc, row.attempts):
             row.status = PENDING
@@ -396,20 +420,8 @@ class OutboxWorker:
         row.last_error = _describe(exc)
         logger.warning("outbox %s (%s) FAILED after %s attempt(s): %s", row.id, row.kind, row.attempts, exc)
         await uow.session.flush()  # FAILED is written before the hook, which cannot undo it
-        await _hook(uow, kind.on_failed if kind else None, row, exc)
+        await self._hook(uow, kind.on_failed if kind else None, row, exc)
         return "failed"
-
-
-async def _hook(uow, hook: Hook | None, row, exc: BaseException) -> None:
-    """Runs a business hook in a SAVEPOINT: if it raises, its own writes are
-    undone, the row's status stays."""
-    if hook is None:
-        return
-    try:
-        async with uow.session.begin_nested():
-            await hook(row, exc, uow)
-    except Exception:  # noqa: BLE001
-        logger.exception("outbox %s (%s): hook %s failed", row.id, row.kind, getattr(hook, "__name__", hook))
 
 
 def _describe(exc: BaseException) -> str:

@@ -131,6 +131,10 @@ class Outbound940:
         if await SETTINGS.get(uow.session, SHADOW_MODE):  # second barrier: a row queued before the switch-on
             await oplog.write(uow.session, "WARNING", STEP, f"shadow run: 940 {doc.st02} for order {order.label} "
                               "not sent (outbox row cancelled)", order_id=order.id, document_id=doc.id)
+            if doc.file_status == OutboundFile.READY_TO_SEND:
+                OUTBOUND_FILE.transition(doc, OutboundFile.CANCELLED, actor=uow.actor, events=uow.events, reason="shadow run on")
+            if order.fulfillment_status == F.GENERATED_940:  # never left waiting for a send that will not happen
+                FULFILLMENT.transition(order, F.FAILED_940, actor=uow.actor, events=uow.events, reason="940 not sent: shadow run on")
             return "the shadow run is on: nothing is sent"
         if doc.file_status not in (OutboundFile.READY_TO_SEND, OutboundFile.SUPPRESSED):
             return f"the 940 is {doc.file_status}"
@@ -173,6 +177,8 @@ class Outbound940:
         if doc.file_status == OutboundFile.SENDING:
             OUTBOUND_FILE.transition(doc, OutboundFile.SUPPRESSED, actor=uow.actor, events=uow.events,
                                      reason=f"refused by the write guard: {exc}")
+        if order.fulfillment_status == F.GENERATED_940:  # a person can send it again once the switch is right
+            FULFILLMENT.transition(order, F.FAILED_940, actor=uow.actor, events=uow.events, reason="940 refused by the write guard")
         await oplog.write(uow.session, "WARNING", STEP, f"940 for order {order.label} suppressed: {exc}",
                           document_id=doc.id, order_id=order.id)
         await send_refused(self.tasks, uow.session, row, f"the 940 for order {order.label}", exc)
@@ -495,30 +501,45 @@ class Outbound940:
 
     # ── timeout (FR-OB-23) ───────────────────────────────────────────────────
     async def timeouts(self, *, run_id: int | None = None) -> EdiReport:
+        """One unit per document: one that cannot be handled never stops the others."""
         report = EdiReport()
         async with self.uow_factory(SYSTEM_ACTOR) as uow:
             s = uow.session
             minutes = await SETTINGS.get(s, ACK_TIMEOUT_MINUTES)
             due = self.clock() - timedelta(minutes=minutes)
-            docs = list((await s.execute(select(Document).where(
-                Document.kind == "940_EDI", Document.direction == "OUT", Document.file_status == OutboundFile.SENT.value,
-                Document.ack_status == Ack.WAITING.value, Document.sent_at <= due).with_for_update(skip_locked=True))).scalars())
-            for doc in docs:
-                ACK.transition(doc, Ack.TIMEOUT, actor=uow.actor, events=uow.events,
-                               reason=f"no 997 within {minutes} minutes (FR-OB-23)")
-                order = (await s.execute(select(Order).join(DocumentLink, and_(
-                    DocumentLink.entity_id == Order.id, DocumentLink.entity_type == "order",
-                    DocumentLink.document_id == doc.id)).with_for_update())).scalar_one()
-                if order.fulfillment_status == F.SENT_940:
-                    FULFILLMENT.transition(order, F.TIMEOUT_940, actor=uow.actor, events=uow.events, reason="no 997 (FR-OB-23)")
-                sent = doc.sent_at.astimezone(TORONTO).strftime("%Y-%m-%d %H:%M")
-                await self._task(uow, EDI_940_TIMEOUT, order, f"No 997 for order {order.label}",
-                                 f"No 997 arrived within {minutes} minutes for the 940 of order {order.label} "
-                                 f"sent {sent} Toronto time "
-                                 f"(control {doc.st02}). It is not resent automatically; check with Radiant.")
-                report.timeouts += 1
-            await uow.commit()
+            ids = list((await s.execute(select(Document.id).where(*self._overdue(due)))).scalars())
+        for did in ids:
+            outcome = await isolated(f"940 timeout {did}", lambda uow, did=did: self._timeout(uow, did, due, minutes),
+                                     uow_factory=self.uow_factory, log=self._log_failure(run_id))
+            if outcome.ok:
+                report.timeouts += int(outcome.result)
+            else:
+                report.failed += 1
         return report
+
+    @staticmethod
+    def _overdue(due: datetime) -> tuple:
+        return (Document.kind == "940_EDI", Document.direction == "OUT", Document.file_status == OutboundFile.SENT.value,
+                Document.ack_status == Ack.WAITING.value, Document.sent_at <= due)
+
+    async def _timeout(self, uow, did: int, due: datetime, minutes: int) -> bool:
+        s = uow.session
+        doc = (await s.execute(select(Document).where(Document.id == did, *self._overdue(due))
+                               .with_for_update(skip_locked=True))).scalar_one_or_none()
+        if doc is None:  # answered, or another run has it
+            return False
+        ACK.transition(doc, Ack.TIMEOUT, actor=uow.actor, events=uow.events, reason=f"no 997 within {minutes} minutes (FR-OB-23)")
+        order = (await s.execute(select(Order).join(DocumentLink, and_(
+            DocumentLink.entity_id == Order.id, DocumentLink.entity_type == "order",
+            DocumentLink.document_id == doc.id)).with_for_update())).scalar_one()
+        if order.fulfillment_status == F.SENT_940:
+            FULFILLMENT.transition(order, F.TIMEOUT_940, actor=uow.actor, events=uow.events, reason="no 997 (FR-OB-23)")
+        sent = doc.sent_at.astimezone(TORONTO).strftime("%Y-%m-%d %H:%M")
+        await self._task(uow, EDI_940_TIMEOUT, order, f"No 997 for order {order.label}",
+                         f"No 997 arrived within {minutes} minutes for the 940 of order {order.label} "
+                         f"sent {sent} Toronto time "
+                         f"(control {doc.st02}). It is not resent automatically; check with Radiant.")
+        return True
 
     async def check_after_940(self, uow, order: Order, new_lines: dict[str, dict[str, Any]],
                               new_ship_to: dict[str, Any] | None) -> bool:

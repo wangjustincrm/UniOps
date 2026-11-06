@@ -125,5 +125,16 @@ async def send_refused(tasks, session, row, what: str, exc: BaseException | None
     await tasks.raise_problem(session, SEND_REFUSED, row.id, problem(
         SEND_REFUSED, f"Not sent: {what}"[:255],
         f"{what} was not sent: the write guard refused it ({exc}). Nothing goes out by itself: check the switch "
-        f"and the connection, then send it again (outbox row {row.id})."))
+        f"and the connection, then send it again from its order, invoice or transfer."))
+
+
+def hook_failed(tasks):
+    """The outbox's report of a result that could not be recorded: the send may have happened
+    while the order or document still shows it did not. One task per outbox row."""
+    async def report(row, exc: BaseException, uow) -> None:
+        await tasks.raise_problem(uow.session, SEND_REFUSED, row.id, problem(
+            SEND_REFUSED, f"Check a send: {row.kind} (outbox row {row.id})"[:255],
+            f"The {row.kind} of outbox row {row.id} ran, but recording its result failed: {exc}. The order or document "
+            "may show the wrong state. Check it before sending again."))
+    return report
 

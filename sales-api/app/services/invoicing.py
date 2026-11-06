@@ -47,6 +47,7 @@ from app.models.shipments import Shipment, ShipmentRow
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.errors import BusinessError
 from app.platform.outbox import ONCE, Outbox, OutboxKind
+from app.platform.pipeline import isolated
 from app.services import oplog
 from app.services.intake import ConnectionSnapshot
 from app.services.invoice_pdf import Party, PdfDoc, PdfLine, render
@@ -68,11 +69,16 @@ SELLER = Party("Canada Royal Milk ULC", [])
 EDITABLE = (Inv.READY, Inv.FAILED, Inv.SENT, Inv.BLOCKED)
 
 
+_TO_ADVANCE = (Order.fulfillment_status == F.SHIPPED.value, Order.shadow.is_(False),
+               Order.invoice_status.in_((Inv.PENDING.value, Inv.AWAITING_REQUESTED_DATE.value)))
+
+
 @dataclass
 class AdvanceReport:
     waiting: int = 0
     awaiting: int = 0
     held: int = 0
+    failed: int = 0
     skipped: str | None = None
     detail: list[str] = field(default_factory=list)
 
@@ -102,38 +108,48 @@ class Invoicing:
 
     # ── the worklist (FR-OB-31) ──────────────────────────────────────────────
     async def advance(self, *, run_id: int | None = None) -> AdvanceReport:
+        """One unit per order: one that cannot be moved never stops the others, or the sends after this step."""
         report = AdvanceReport()
         async with self.uow_factory(SYSTEM_ACTOR) as uow:
             s = uow.session
             if await _shadow(s):
                 report.skipped = "shadow run: nothing is invoiced"
                 return report
-            rows = (await s.execute(select(Order, Partner).join(Partner, Partner.code == Order.partner_code).where(
-                Order.fulfillment_status == F.SHIPPED.value, Order.shadow.is_(False),
-                Order.invoice_status.in_((Inv.PENDING.value, Inv.AWAITING_REQUESTED_DATE.value)))
-                .order_by(Order.id).with_for_update(of=Order))).all()
-            today = self.today()
-            for order, partner in rows:
-                review = await rows_to_review(s, order.id)
-                if review:
-                    await self._hold(uow, order, "a 945 line matches no order line (FR-OB-25: lot exception)",
-                                     f"945 item(s) {', '.join(x or '?' for x in review)} match no line of order "
-                                     f"{order.label}. Decide (correct the order or the shipment), then Release.")
-                    report.held += 1
-                    continue
-                due = delivery_due(order, partner)
-                target = Inv.WAITING_FOR_DELIVERY_CONFIRMATION if due is None or due <= today else Inv.AWAITING_REQUESTED_DATE
-                if target.value == order.invoice_status:
-                    continue
-                INVOICE.transition(order, target, actor=uow.actor, events=uow.events,
-                                   reason="shipped; the requested delivery date is reached" if target ==
-                                   Inv.WAITING_FOR_DELIVERY_CONFIRMATION else "shipped; waiting for the requested delivery date")
-                if target == Inv.WAITING_FOR_DELIVERY_CONFIRMATION:
-                    report.waiting += 1
-                else:
-                    report.awaiting += 1
-            await uow.commit()
+            ids = list((await s.execute(select(Order.id).where(*_TO_ADVANCE).order_by(Order.id))).scalars())
+
+        async def log(o) -> None:
+            await oplog.write_alone(self.uow_factory, "ERROR", STEP, f"{o.unit}: {o.error_type}: {o.message}", run_id=run_id)
+        for oid in ids:
+            outcome = await isolated(f"invoice worklist, order {oid}", lambda uow, oid=oid: self._advance(uow, oid),
+                                     uow_factory=self.uow_factory, log=log)
+            if not outcome.ok:
+                report.failed += 1
+                report.detail.append(f"order {oid}: {outcome.message}")
+            elif outcome.result:
+                setattr(report, outcome.result, getattr(report, outcome.result) + 1)
         return report
+
+    async def _advance(self, uow, order_id: int) -> str | None:
+        s = uow.session
+        row = (await s.execute(select(Order, Partner).join(Partner, Partner.code == Order.partner_code).where(
+            Order.id == order_id, *_TO_ADVANCE).with_for_update(of=Order))).first()
+        if row is None:
+            return None
+        order, partner = row
+        review = await rows_to_review(s, order.id)
+        if review:
+            await self._hold(uow, order, "a 945 line matches no order line (FR-OB-25: lot exception)",
+                             f"945 item(s) {', '.join(x or '?' for x in review)} match no line of order "
+                             f"{order.label}. Decide (correct the order or the shipment), then Release.")
+            return "held"
+        due = delivery_due(order, partner)
+        target = Inv.WAITING_FOR_DELIVERY_CONFIRMATION if due is None or due <= self.today() else Inv.AWAITING_REQUESTED_DATE
+        if target.value == order.invoice_status:
+            return None
+        INVOICE.transition(order, target, actor=uow.actor, events=uow.events,
+                           reason="shipped; the requested delivery date is reached" if target ==
+                           Inv.WAITING_FOR_DELIVERY_CONFIRMATION else "shipped; waiting for the requested delivery date")
+        return "waiting" if target == Inv.WAITING_FOR_DELIVERY_CONFIRMATION else "awaiting"
 
     async def _hold(self, uow, order: Order, reason: str, description: str) -> None:
         if order.invoice_status != Inv.BLOCKED.value:
@@ -252,6 +268,10 @@ class Invoicing:
             if "qty" in change:
                 if int(change["qty"]) < 0:
                     raise BusinessError("invoice.line", "a quantity cannot be negative")
+                if int(change["qty"]) != ln.qty:  # a quantity is money: every change is on the record
+                    await oplog.write(s, "INFO", STEP, f"invoice {inv.invoice_number}: line {ln.line_no} {ln.item_code or ''} "
+                                      f"quantity {ln.qty} → {int(change['qty'])}", order_id=order.id,
+                                      context={"invoice_id": inv.id, "reason": (reason or "").strip() or None})
                 ln.qty = int(change["qty"])
             if "unit_price" in change:
                 price = Decimal(str(change["unit_price"]))

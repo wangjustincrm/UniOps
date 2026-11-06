@@ -1,3 +1,4 @@
+import { confirmDiscard } from './unsaved'
 import * as RD from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import type { KeyboardEvent, ReactNode } from 'react'
@@ -42,7 +43,7 @@ export function Sheet({
   open, onOpenChange, title, description, children, footer, className, size = 'md', header, bodyClassName, onKeyDown, statusBar,
 }: SheetProps) {
   return (
-    <RD.Root open={open} onOpenChange={onOpenChange}>
+    <RD.Root open={open} onOpenChange={(next) => { if (next || confirmDiscard()) onOpenChange?.(next) }}>
       <RD.Portal>
         <RD.Overlay className="fixed inset-0 z-50 bg-black/30" />
         <RD.Content

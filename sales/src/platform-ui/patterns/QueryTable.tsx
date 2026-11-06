@@ -17,6 +17,8 @@ import { SearchPanel } from './SearchPanel'
 import { specFromSorting } from './sorting'
 
 export interface QueryTableProps<T> {
+  /** The table's accessible name. */
+  ariaLabel?: string
   columns: ColumnDef<T, unknown>[]
   rows: T[]
   total: number

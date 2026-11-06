@@ -271,7 +271,11 @@ export function DataTable<T>({
                       {...rowData}
                       data-highlight={flash || undefined}
                       onClick={onRowClick ? () => onRowClick(r.original) : undefined}
-                      className={cn('border-t border-neutral-100', onRowClick && 'cursor-pointer hover:bg-neutral-50', rowClass,
+                      tabIndex={onRowClick ? 0 : undefined}
+                      onKeyDown={onRowClick ? (e) => {
+                        if (e.target === e.currentTarget && e.key === 'Enter') { e.preventDefault(); onRowClick(r.original) }
+                      } : undefined}
+                      className={cn('border-t border-neutral-100', onRowClick && 'cursor-pointer hover:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary-500', rowClass,
                         flash && 'bg-primary-50 animate-[platform-flash_2s_ease-out_forwards] motion-reduce:animate-none')}
                     >
                       {leadCell && (

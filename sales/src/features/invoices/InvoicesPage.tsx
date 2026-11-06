@@ -98,7 +98,7 @@ function InvoiceForm({ inv, onSaved, onCancel }: { inv: InvoiceDetail; onSaved: 
           amount: l.amount, qty: String(l.qty), unit_price: String(Number(l.unit_price)), was: String(Number(l.unit_price)),
           po_price: l.po_price })) }}
       // A changed price needs its reason (the server refuses it without one).
-      blocked={({ values, lines }) => (lines.some((l) => differs(l.unit_price, l.was)) && !String(values.reason ?? '').trim()
+      blocked={({ values, lines }) => (lines.some((l) => differs(l.unit_price, l.was)) && String(values.reason ?? '').trim().length < 3
         ? 'An invoice price changed: give the reason for the price change.' : null)}
       submitLabel="Save changes" errorMessages={errorMessages} onCancel={onCancel}
       onSubmit={async (v, lines) => onSaved(await editInvoice(inv.id, inv.version, {

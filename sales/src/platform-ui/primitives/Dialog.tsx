@@ -1,3 +1,4 @@
+import { confirmDiscard } from './unsaved'
 import * as RD from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import type { ReactNode } from 'react'
@@ -16,12 +17,12 @@ export interface DialogProps {
 /** Centred modal. Rendered in a portal, so it is never clipped by a table or tab. */
 export function Dialog({ open, onOpenChange, title, description, children, footer, className }: DialogProps) {
   return (
-    <RD.Root open={open} onOpenChange={onOpenChange}>
+    <RD.Root open={open} onOpenChange={(next) => { if (next || confirmDiscard()) onOpenChange?.(next) }}>
       <RD.Portal>
         <RD.Overlay className="fixed inset-0 z-50 bg-black/40" />
         <RD.Content
           className={cn(
-            'fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2',
+            'fixed left-1/2 top-1/2 z-50 max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto',
             'rounded-xl border border-neutral-200 bg-white p-6 shadow-xl focus:outline-none',
             className,
           )}

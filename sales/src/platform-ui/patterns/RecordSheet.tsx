@@ -147,7 +147,8 @@ export function RecordSheet(props: RecordSheetProps) {
 
   const choose = (id: string) => (host?.onTabChange ? host.onTabChange(id) : setOwn(id))
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (typing(e.target) || e.ctrlKey || e.metaKey) return
+    // React bubbles through portals: a key in a dialog or menu opened from this sheet is not for the sheet.
+    if (!e.currentTarget.contains(e.target as Node) || typing(e.target) || e.ctrlKey || e.metaKey) return
     const back = e.key === 'k' || e.key === 'K' || (e.altKey && e.key === 'ArrowUp')
     const fwd = e.key === 'j' || e.key === 'J' || (e.altKey && e.key === 'ArrowDown')
     if (back && host?.prev) { e.preventDefault(); host.prev() }

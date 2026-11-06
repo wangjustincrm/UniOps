@@ -28,7 +28,7 @@ from app.services.transfers import SEND_943, Transfers
 from app.services.shipments import CLOSE, FULFILL, Shipments
 from app.services.shopify_intake import ShopifyIntake
 from app.services.notifications import NOTIFY_EMAIL, email_kind
-from app.services.problems import task_service
+from app.services.problems import hook_failed, task_service
 
 
 @dataclass
@@ -81,7 +81,7 @@ def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify:
     worker = OutboxWorker(Outbox(OutboxRecord), {SEND_940: outbound.outbox_kind(), FULFILL: shipments.fulfill_kind(),
                                                  CLOSE: shipments.close_kind(), SEND_INVOICE: invoicing.outbox_kind(),
                                                  SEND_943: transfers.outbox_kind(), NOTIFY_EMAIL: email_kind(container.email)},
-                          uow_factory)
+                          uow_factory, on_hook_failed=hook_failed(tasks))
     scheduler = SalesScheduler(uow_factory=uow_factory, run_model=Run, intake=intake, outbox_worker=worker,
                                shopify_intake=shopify_intake, edi_intake=edi_intake, outbound=outbound, shadow=shadow,
                                shipments=shipments, invoicing=invoicing, transfers=transfers, tasks=tasks)

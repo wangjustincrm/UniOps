@@ -1,3 +1,4 @@
+import { useReportUnsaved } from '../primitives/unsaved'
 import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useForm, useWatch, type FieldValues, type Resolver } from 'react-hook-form'
 import type { z } from 'zod'
@@ -73,6 +74,8 @@ export function MasterDetailForm<L>({
   }, [schema, fields, defaultValues])
   const form = useForm<FieldValues>({ resolver, defaultValues: blankToEmpty(defaultValues) })
   const [lines, setLines] = useState<L[]>(spec.initial)
+  const [startLines] = useState(lines)
+  useReportUnsaved(form.formState.isDirty || lines !== startLines)
   const [error, setError] = useState<unknown>(null)
   const inFlight = useRef(false)
   const values = useWatch({ control: form.control }) as FieldValues

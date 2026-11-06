@@ -55,7 +55,7 @@ async def test_with_writes_on_the_shadow_run_puts_nothing(edi):
         assert await edi.out.preview(u.session) == []
     assert edi.store.files == {} and edi.store.calls == []       # zero puts, zero traffic
     assert await outbox(edi) == [{"kind": "send_940", "status": "CANCELLED"}]  # none added
-    assert await status(edi, queued_before.id) == F.GENERATED_940
+    assert await status(edi, queued_before.id) == F.FAILED_940  # not left waiting for a send that will not happen
     log = await edi.env.q("SELECT message FROM sales_log WHERE message LIKE 'shadow run: 940%'")
     assert len(log) == 1
 

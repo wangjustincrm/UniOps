@@ -271,12 +271,14 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
 
     @requires(OPERATE)
     async def resolve_review(self, id: int, tasks, shopify=None) -> ReviewResult:
+        barcodes = await self._barcodes(await self.repo.get(id), shopify)
+        await self._read_barcodes(id, barcodes)  # Shopify first: a slow store never holds the row lock
         o = await self.repo.get(id, for_update=True)
         if o.fulfillment_status != F.REVIEW:
             raise BusinessError("order.not_in_review", "the order is not in review",
                                 {"status": o.fulfillment_status})
         self.uow.set_reason("re-check review")
-        remaining = await OrderSync(self.uow, tasks).recheck(o, await self._barcodes(o, shopify))
+        remaining = await OrderSync(self.uow, tasks).recheck(o, barcodes)
         return ReviewResult(order=self.to_read(o), remaining=remaining)
 
 
@@ -450,6 +452,14 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
     async def eligibility_preview(self, outbound) -> list[dict]:
         """AC-OB-21: the orders the next cycle would send a 940 for (writes nothing)."""
         return await outbound.preview(self.uow.session)
+
+    async def _read_barcodes(self, order_id: int, barcodes: BarcodeLookup | None) -> None:
+        if barcodes is None:
+            return
+        rows = (await self.uow.session.execute(select(OrderLine.source).where(
+            OrderLine.order_id == order_id, OrderLine.item_code.is_(None)))).scalars()
+        for variant in {str(r.get("variant_id") or "").strip() for r in rows} - {""}:
+            await barcodes.get(variant)
 
     async def _barcodes(self, o: Order, shopify) -> BarcodeLookup | None:
         """The store the order came from: the active SHOPIFY connection of its
