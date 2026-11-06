@@ -623,16 +623,23 @@ export default function IncidentReportPage() {
               opened it the pulse and the pain score were being written from
               memory. The timeline stays there — it is built as treatment goes
               on, not in the minute the form is filled in. */}
-          <p className="mt-3 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
-            <span className="font-semibold">Private.</span> The WSIB detail below is
-            visible only to people who may read medical information, and can be
-            added to later from the investigation.
-          </p>
-          <InjuryDetailFields
-            value={form.injury}
-            onChange={(v) => set('injury', v)}
-            showTimeline={false}
-          />
+          {/* ★ Round 11: minimised, because it may not be required when the
+              report is made. Closed, its fields keep what was typed. */}
+          <details className="mt-3 rounded-lg border border-neutral-200 bg-white p-3">
+            <summary className="cursor-pointer text-sm font-semibold text-neutral-800">
+              Section B — medical detail (optional now)
+            </summary>
+            <p className="mt-2 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+              <span className="font-semibold">Private.</span> The WSIB detail below is
+              visible only to people who may read medical information, and can be
+              added to later from the investigation.
+            </p>
+            <InjuryDetailFields
+              value={form.injury}
+              onChange={(v) => set('injury', v)}
+              showTimeline={false}
+            />
+          </details>
         </>
       )}
 
