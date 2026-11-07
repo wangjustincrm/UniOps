@@ -392,7 +392,9 @@ modules:
       The company's shared master data, in Portal → MDM. Staff is the employee
       master, kept up to date from the ADP roster that HR uploads every two
       weeks before payroll. Users are sign-in accounts. Departments drive
-      budgets and approval routing.
+      budgets and approval routing. Org Chart shows departments and who really
+      reports to whom. It is separate from approvals: changing it changes no
+      approver, and a supervisor on the chart need not be an approver.
     who: >
       HR and system administrators. Staff is personal data, so it needs its own
       permissions. People in HR get them from the HR additional role, given in
@@ -404,6 +406,7 @@ modules:
       - Map an ADP department to a UniOps department (MDM → Staff → Department Mapping)
       - Create a sign-in account for an employee (Create user on the employee)
       - Work the list of changes HR must make in NC (MDM → Staff → NC To-do)
+      - See or adjust departments and reporting lines (MDM → Org Chart)
     notes:
       - >-
         An employee and a user are separate records. The employee number, the
