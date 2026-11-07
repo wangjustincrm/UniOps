@@ -20,6 +20,7 @@ import StaffDetail from '@/pages/mdm/staff/StaffDetail'
 import StaffImport from '@/pages/mdm/staff/StaffImport'
 import StaffDepartmentMap from '@/pages/mdm/staff/StaffDepartmentMap'
 import StaffNcTodo from '@/pages/mdm/staff/StaffNcTodo'
+import OrgChart from '@/pages/mdm/org/OrgChart'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } },
@@ -106,6 +107,7 @@ export default function App() {
           {/* Public logout route — clears Portal session, no auth guard */}
           <Route path="/mdm/users" element={<ProtectedRoute><MdmUsers /></ProtectedRoute>} />
           <Route path="/mdm/departments" element={<ProtectedRoute><MdmDepartments /></ProtectedRoute>} />
+          <Route path="/mdm/org-chart" element={<ProtectedRoute><OrgChart /></ProtectedRoute>} />
           <Route path="/mdm/staff" element={<ProtectedRoute><StaffList /></ProtectedRoute>} />
           <Route path="/mdm/staff/import" element={<ProtectedRoute><StaffImport /></ProtectedRoute>} />
           <Route path="/mdm/staff/department-mapping" element={<ProtectedRoute><StaffDepartmentMap /></ProtectedRoute>} />

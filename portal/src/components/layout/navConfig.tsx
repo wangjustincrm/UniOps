@@ -104,6 +104,7 @@ export const PORTAL_NAV_SECTIONS: NavSectionDef[] = [
     collapsible: { icon: Layers },
     items: [
       { label: 'Staff',       icon: IdCard,    href: 'portal:/mdm/staff',       permission: 'employee.view' },
+      { label: 'Org Chart',   icon: Network,   href: 'portal:/mdm/org-chart',   permission: 'employee.view' },
       { label: 'Users',       icon: Users,     href: 'portal:/mdm/users',       adminOnly: true },
       { label: 'Departments', icon: Building2, href: 'portal:/mdm/departments', adminOnly: true },
     ],
