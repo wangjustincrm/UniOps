@@ -7,7 +7,7 @@ is no foreign key and no new column on the users table shared by seven services.
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, LargeBinary, String, Text, func, text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -38,6 +38,40 @@ class Employee(UUIDPrimaryKey, TimestampMixin, Base):
     # unknown | in_step | not_in_nc | different_department | different_status | different_code
     nc_state: Mapped[str] = mapped_column(String(25), nullable=False, default="unknown", index=True)
     nc_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OrgUnit(UUIDPrimaryKey, TimestampMixin, Base):
+    """A box on the department chart: a department, or a grouping with none."""
+    __tablename__ = "org_units"
+
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    department_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, unique=True)
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("org_units.id", ondelete="SET NULL"), nullable=True, index=True)
+    head_employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    relation: Mapped[str] = mapped_column(String(10), nullable=False, default="child")   # child | assistant
+    tone: Mapped[str | None] = mapped_column(String(10), nullable=True)                  # teal | violet | outside
+    sort: Mapped[int] = mapped_column(Integer, nullable=False, default=0)                # among siblings
+
+
+class OrgNode(UUIDPrimaryKey, TimestampMixin, Base):
+    """A box on the reporting lines (EMPLOYEES.md §13): an employee, or a free box
+    for someone with no employee record. Not users.supervisor_id, which drives
+    approvals: most real supervisors are deliberately not approvers."""
+    __tablename__ = "org_nodes"
+
+    employee_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("employees.id", ondelete="CASCADE"), nullable=True, unique=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)      # free box only
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)     # overrides the job title when set
+    parent_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("org_nodes.id", ondelete="SET NULL"), nullable=True, index=True)
+    relation: Mapped[str] = mapped_column(String(10), nullable=False, default="child")   # child | assistant
+    tone: Mapped[str | None] = mapped_column(String(10), nullable=True)                  # teal | violet | outside
+    sort: Mapped[int] = mapped_column(Integer, nullable=False, default=0)                # among siblings
+    source: Mapped[str] = mapped_column(String(10), nullable=False, default="manual")    # auto | manual
+    review: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class EmployeeHistory(UUIDPrimaryKey, Base):

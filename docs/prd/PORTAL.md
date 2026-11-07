@@ -387,6 +387,7 @@ The identity service holds switchable separation-of-duties rules. Anyone can rea
 | Section / page | Route | Access |
 |---|---|---|
 | Company Settings, Security, Units of Measure, Currency Settings, Notification Settings (incl. Task Notifications), Remittance Advice, Approval Workflows, ERP MDM, NC Sync, WMS Sync | `/admin` | System Admin |
+| Org Chart (EMPLOYEES.md §13) — MDM group | `/mdm/org-chart` | `employee.view` (changes: `employee.edit`) |
 | Staff (EMPLOYEES.md) — MDM group | `/mdm/staff`, `/mdm/staff/import`, `/mdm/staff/department-mapping`, `/mdm/staff/nc-todo` | `employee.view` (Import: `employee.import`) |
 | Users (§5.5) — MDM group | `/mdm/users` | System Admin |
 | Departments (§5.4) — MDM group | `/mdm/departments` | System Admin |

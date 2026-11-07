@@ -1,9 +1,14 @@
 # UniOps Staff (Employee Master) & ADP Roster Import — Product Requirements Document
 
-**Version:** 0.4
+**Version:** 0.5
 **Date:** 2026-11-04
-**Status:** First version built (not yet released); decisions recorded 2026-11-02
+**Status:** In production; decisions recorded 2026-11-02
 **Scope:** A new employee master in UniOps, kept up to date from the ADP Workforce Now roster that HR exports every two weeks; creating UniOps user accounts from employee records; and a to-do list that keeps the NC65 HR person records in step with UniOps, checked automatically by reading NC.
+
+**What changed in v0.5** (2026-11-06)
+
+- A change to an employee's UniOps department or notes takes effect only on **Save** (EMP-004).
+- New Org Chart page under MDM: a department chart and reporting lines, generated from existing data and then adjusted by hand (§13).
 
 **What changed in v0.4** (2026-11-06)
 
@@ -104,7 +109,7 @@ The module is called **Staff** in the UI. It is an entry in the expandable **MDM
 | **EMP-001** | The **Staff** list (Portal → MDM → Staff) shows employee number, display name, email, job title, ADP department, UniOps department, status, source, linked user and NC state. It follows the standard list rules: sortable headers (EPMS.md §3.20, UI-SORT-001…007), server-side paging and sorting, a locked header row, search by number, name or email, and filters for status, source, UniOps department, has user / no user, and NC state (in step / to-do open / not in NC). |
 | **EMP-002** | **Employee detail** shows every field in §3, the history, the linked user (with a link to it), the open NC to-dos, and the differences between employee and user (§6.4). |
 | **EMP-003** | **Non-ADP employees** are created and edited by hand. The employee number must be six digits and must not be in use. |
-| **EMP-004** | For **ADP employees**, name, email, job title, ADP department and status are read-only in the UI, because the next import overwrites them. UniOps department and notes stay editable. |
+| **EMP-004** | For **ADP employees**, name, email, job title, ADP department and status are read-only in the UI, because the next import overwrites them. UniOps department and notes stay editable. A change to either takes effect only on **Save**; until then the page shows it as not saved. |
 | **EMP-005** | **Mark as Left** (both sources) asks for the date. It creates an NC to-do (§7). If the employee has an active user, it offers to deactivate that user through the existing deactivation, which also re-syncs their in-flight approvals (PORTAL.md USR-003). It never deactivates the user silently. **Reinstate** reverses Left. |
 | **EMP-006** | **Correct employee number** is allowed for administrators only. It asks for a reason, refuses a number that is already in use, updates the linked user's ERP person code in the same step, records the change in history and creates an NC to-do. |
 | **EMP-007** | Employees cannot be deleted; they are marked Left. |
@@ -359,3 +364,25 @@ NC65's external exchange interface (XChange) has a person-record import. It was 
 | EMP-OI-07 | Plan B: estimate for custom NC import into the HR module (§10) | Future |
 | EMP-OI-08 | ADP API connection or automatic pick-up of an emailed roster, instead of manual upload (D4) | Future |
 | EMP-OI-09 | Ownership of the users table moving from EPMS to MDM. This is separate work; this PRD does not depend on it. | Future |
+
+---
+
+## 13. Org chart
+
+Portal → MDM → **Org Chart** shows how the company is really organised. It has two views: **Departments** and **Reporting Lines**.
+
+**It is separate from approvals.** Many real supervisors have no Supervisor role in UniOps, on purpose, to keep purchasing approvals short. The chart shows them as they are. It never reads or writes a user's role or Supervisor field, and changing it changes no approver.
+
+| FR ID | Requirement |
+|---|---|
+| **ORG-001** | **Generate first version** works out the chart from existing data. Holders of `employee.edit` can run it again at any time as **Regenerate**. It fills in what is missing and refreshes generated lines. Anything set by a person stays. |
+| **ORG-002** | **Department boxes.** The first version has the company at the top with the General Manager, an Operations box with the Operations Manager, and every active department under whichever of the two Approval Routing names for it. A department's head is its routing Director, else its highest-level employee by job title. An approval role does not make someone the head; a Department Manager counts only as a candidate, and wins a tie on level. A department head and a reporting line are set separately: changing one does not change the other, and Regenerate leaves existing heads alone. |
+| **ORG-003** | A box can be moved, given another head or no head, and given a style (plain, green, purple or dashed for people outside the team). A department's name comes from MDM → Departments, and a department box cannot be removed. |
+| **ORG-004** | **Reporting lines, first version.** The level comes from the job title: General Manager and Chief; Director and Operations Manager; Manager; Supervisor; Team Lead and Lead Hand; everyone else. Key Accounts and Project Managers count as staff. A person reports to the nearest higher level in the same ADP department, so a shift's staff report to that shift's lead, and someone there in the same trade comes first, so an electrician goes to the electrical lead. Failing that, to the nearest Supervisor or above in the same UniOps department; then the department's head; then the General Manager or Operations Manager under Approval Routing. |
+| **ORG-005** | When several people are equally near, the first by employee number is used and the line is marked **To check**. A person with no department is marked too. |
+| **ORG-006** | A line can be changed by dragging a card onto the new manager or in the panel. **Confirm this line** keeps a generated line as it is. Either way it counts as set by a person: it is no longer marked To check and Regenerate leaves it. The change is recorded in the employee's history. Nothing is refused: a card can go under someone below it, and that person then comes up to the card's old place, so A → B → C with A moved under C becomes C → A → B. Dropped beside its own report, a card and that report become peers. |
+| **ORG-007** | Left employees are not on the chart. Their reports are shown at the top of the chart until they are given a new manager. New employees from an import have no line until Regenerate is run or someone sets one. |
+| **ORG-008** | Viewing needs `employee.view`. Changing anything needs `employee.edit`. |
+| **ORG-009** | In both views a box can be **added** from any card, in three positions: **Below** (a report), **Beside** (same level) and **On the line** (beside the line under the card, like an assistant: under that card and above the boxes below it). A card already placed can be switched between Below and On the line. |
+| **ORG-010** | An added box on Reporting Lines is free text: a name and title for someone with no employee record, such as a head-office leader. Employees can report to it. It can be renamed and removed; removing it moves what was under it up a level. An employee's box cannot be removed and its name comes from Staff, but it can show a **title on the chart** that differs from the job title; the employee record does not change, and clearing it brings the job title back. |
+| **ORG-011** | Dragging a card onto the **middle** of another puts it below that card. Dragging it to the **edge** of another puts it next to that card at the same level, so the order of peers can be changed; a line shows where it will land. Changing only the order of peers is not a new reporting line. The order is kept across Regenerate. |

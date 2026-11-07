@@ -49,7 +49,10 @@ export default function StaffDetail() {
   const { data: depts } = useQuery<{ items: Department[] }>({
     queryKey: ['portal-departments'], queryFn: () => mdmApi.get('/departments'),
   })
+  // Held here until Save, so nobody changes a record without knowing it.
   const [notes, setNotes] = useState<string | null>(null)
+  const [departmentId, setDepartmentId] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
 
   const run = async (action: () => Promise<unknown>) => {
     if (busy) return
@@ -63,6 +66,10 @@ export default function StaffDetail() {
   if (!e) return <StaffShell permission="employee.view"><p className="text-sm text-neutral-400">Loading…</p></StaffShell>
 
   const editable = can('employee.edit')
+  const pending: { department_id?: string | null; notes?: string } = {}
+  if (departmentId !== null && departmentId !== (e.department_id ?? '')) pending.department_id = departmentId || null
+  if (notes !== null && notes !== (e.notes ?? '')) pending.notes = notes
+  const changes = Object.keys(pending).length ? pending : null
   const applyDifference = (d: Difference) => {
     if (d.field === 'email' && !confirm(`This changes ${e.display_name}'s sign-in to ${d.employee}. Continue?`)) return
     run(() => epmsApi.patch(`/users/${e.user!.id}`, { [d.field]: d.value }))
@@ -137,8 +144,8 @@ export default function StaffDetail() {
             <div className="col-span-2">
               <dt className="text-xs text-neutral-500">UniOps department</dt>
               {editable ? (
-                <select className={`${INPUT} mt-1 w-full`} value={e.department_id ?? ''} disabled={busy}
-                  onChange={(ev) => run(() => mdmApi.patch(`/staff/${e.id}`, { department_id: ev.target.value || null }))}>
+                <select className={`${INPUT} mt-1 w-full`} value={departmentId ?? e.department_id ?? ''} disabled={busy}
+                  onChange={(ev) => { setDepartmentId(ev.target.value); setSaved(false) }}>
                   <option value="">Not set</option>
                   {depts?.items.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                 </select>
@@ -148,11 +155,24 @@ export default function StaffDetail() {
               <dt className="text-xs text-neutral-500">Notes</dt>
               {editable ? (
                 <textarea className={`${INPUT} mt-1 w-full`} rows={2} value={notes ?? e.notes ?? ''}
-                  onChange={(ev) => setNotes(ev.target.value)}
-                  onBlur={() => { if (notes !== null && notes !== (e.notes ?? '')) run(() => mdmApi.patch(`/staff/${e.id}`, { notes })) }} />
+                  onChange={(ev) => { setNotes(ev.target.value); setSaved(false) }} />
               ) : <dd className="text-sm text-neutral-800">{e.notes ?? '—'}</dd>}
             </div>
           </dl>
+          {editable && (changes || saved) && (
+            <div className="mt-3 flex items-center gap-2">
+              {changes ? (
+                <>
+                  <button className={PRIMARY_BTN} disabled={busy} onClick={() => run(async () => {
+                    await mdmApi.patch(`/staff/${e.id}`, changes)
+                    setDepartmentId(null); setNotes(null); setSaved(true)
+                  })}>{busy ? 'Saving…' : 'Save'}</button>
+                  <button className={SECONDARY_BTN} disabled={busy} onClick={() => { setDepartmentId(null); setNotes(null) }}>Cancel</button>
+                  <span className="text-xs text-amber-700">Not saved yet</span>
+                </>
+              ) : <span className="text-sm text-[#085E5E]">Saved</span>}
+            </div>
+          )}
           {e.source === 'adp' && <p className="mt-3 text-xs text-neutral-400">Name, email, job title, ADP department and status come from ADP and are overwritten by each import.</p>}
         </section>
 
