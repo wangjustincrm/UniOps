@@ -50,7 +50,7 @@ from app.platform.outbox import ONCE, Outbox, OutboxKind
 from app.platform.pipeline import isolated
 from app.services import oplog
 from app.services.intake import ConnectionSnapshot
-from app.services.invoice_pdf import Party, PdfDoc, PdfLine, render
+from app.services import print_docs
 from app.services.outbound import TORONTO
 from app.services.problems import INVOICE_FAILED, INVOICE_HOLD, ORDER_RETURN, problem, send_refused
 from app.services.settings import INVOICE_CONNECTION_ID, SETTINGS, SHADOW_MODE
@@ -65,7 +65,7 @@ def delivery_due(order: Order, partner: Partner) -> date | None:
     return order.do_not_deliver_after if partner.dc_routing_required else order.requested_delivery_date
 SEND_INVOICE = "send_invoice"
 OUTBOX = Outbox(OutboxRecord)
-SELLER = Party("Canada Royal Milk ULC", [])
+SELLER = print_docs.SELLER
 EDITABLE = (Inv.READY, Inv.FAILED, Inv.SENT, Inv.BLOCKED)
 
 
@@ -440,29 +440,9 @@ class Invoicing:
         return doc
 
     async def _email(self, s, inv: Invoice, order: Order, partner: Partner, lines: list[InvoiceLine]):
-        st = order.ship_to or {}
-        bt = order.bill_to or st
-        def party(a: dict) -> Party:
-            return Party(a.get("name"), [x for x in (a.get("address1"), " ".join(filter(None, (a.get("city"), a.get("province"),
-                                                                                        a.get("zip"))))) if x])
-        olines = list((await s.execute(select(OrderLine).where(OrderLine.order_id == order.id, OrderLine.removed.is_(False))
-                                       .order_by(OrderLine.line_no))).scalars())
-        rows = (await s.execute(select(ShipmentRow).join(Shipment, Shipment.id == ShipmentRow.shipment_id).where(
-            Shipment.order_id == order.id, Shipment.applied.is_(True)).order_by(ShipmentRow.lx_index, ShipmentRow.w12_index))).scalars().all()
-        common = dict(po=order.source_order_number, order_number=order.order_number, order_ref=order.source_reference,
-                      delivery_number=inv.delivery_number, seller=SELLER, buyer=party(bt),
-                      ship_to=party(st))
-        invoice_pdf = render(PdfDoc(title="Invoice", number=inv.invoice_number, when=inv.invoice_date, terms=inv.payment_terms,
-                                    currency=inv.currency, total=inv.total, lines=[
-                                        PdfLine(ln.item_code, ln.description, ln.qty, ln.uom, ln.unit_price, ln.amount) for ln in lines],
-                                    **common))
-        po_pdf = render(PdfDoc(title="Purchase order", number=order.source_order_number or str(order.order_number),
-                               when=order.order_date, lines=[PdfLine(ln.item_code, (ln.source or {}).get("buyer_part"),
-                                                                     f"{ln.ordered_qty.normalize():f}", ln.order_unit or "EA",
-                                                                     ln.unit_price, None) for ln in olines], **common))
-        packing_pdf = render(PdfDoc(title="Packing list", number=str(order.order_number), when=inv.invoice_date, priced=False,
-                                    lines=[PdfLine(r.item_code, None, r.qty_shipped_ea, "EA",
-                                                   extra=" / ".join(x for x in (r.lot, r.sscc) if x)) for r in rows], **common))
+        invoice_pdf = await print_docs.invoice_pdf(s, inv, order)
+        po_pdf = await print_docs.po_pdf(s, order)
+        packing_pdf = await print_docs.shipped_pdf(s, order, inv.invoice_date, inv.delivery_number)
         po = order.source_order_number or ""
         subject = f"Order Documents | {partner.name} | {order.order_number} | {po}"  # A.12
         esc = html.escape

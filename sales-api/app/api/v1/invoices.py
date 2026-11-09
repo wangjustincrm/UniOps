@@ -4,7 +4,7 @@ return after shipment. Permissions are checked by the service; each write
 commits once."""
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 
 from app.core.deps import get_uow
 from app.platform.crud_router import page_body
@@ -25,6 +25,12 @@ router = APIRouter(prefix="/invoices", tags=["invoices"])
 @router.get("")
 async def list_invoices(u: UoW, spec: Spec) -> dict:
     return page_body(await InvoiceService(u).list(spec))
+
+
+@router.get("/{id}/invoice.pdf")
+async def invoice_pdf(u: UoW, id: int) -> Response:
+    name, pdf = await InvoiceService(u).pdf(id)
+    return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{name}"'})
 
 
 @router.get("/meta")

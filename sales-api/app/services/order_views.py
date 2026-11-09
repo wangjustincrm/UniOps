@@ -38,6 +38,7 @@ from app.schemas.orders import (
     PaymentRead, RefundAdjustmentRead, RefundLineRead, RefundRead, ReviewResult, ShipmentRead, ShipmentRowRead,
     TimelineEntry, TrackingLinkRead,
 )
+from app.services import print_docs
 from app.services import oplog
 from app.services.carriers import carriers_by_scac
 from app.services.intake import ConnectionSnapshot
@@ -417,6 +418,17 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         return out
 
     @requires(READ)
+    @requires(READ)
+    async def po_pdf(self, order_id: int) -> tuple[str, bytes]:
+        o = await self.repo.get(order_id)
+        return f"PO-{o.source_order_number or o.order_number}.pdf", await print_docs.po_pdf(self.uow.session, o)
+
+    @requires(READ)
+    async def packet(self, order_id: int) -> tuple[str, bytes]:
+        """The order's audit packet: every stored file and the PDFs (FR-OB-55)."""
+        o = await self.repo.get(order_id)
+        return f"Order-{o.ref or o.order_number}.zip", await print_docs.packet(self.uow.session, o)
+
     async def packing_list(self, order_id: int, shipment_id: int) -> tuple[str, bytes]:
         """One shipment's packing list (PDF): pallets → items → lots → expiry →
         qty, with tracking, BOL and its 945. Any 945 kept — a shadow-run or

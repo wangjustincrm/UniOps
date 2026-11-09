@@ -39,3 +39,5 @@ export const updateTransfer = (id: number, version: number, body: TransferIn) =>
 export const readyTransfer = (id: number, version: number) => api.post<TransferDetail>(`/transfers/${id}/ready?version=${version}`)
 export const cancelTransfer = (id: number, version: number, reason: string) => api.post<TransferDetail>(`/transfers/${id}/cancel?version=${version}`, { reason })
 export const resendTransfer = (id: number, version: number) => api.post<TransferDetail>(`/transfers/${id}/resend?version=${version}`)
+
+export const printTransfer = (id: number, number: string) => api.download(`/transfers/${id}/print.pdf`, `TO-${number}.pdf`)

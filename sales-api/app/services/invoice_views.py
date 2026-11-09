@@ -12,6 +12,7 @@ from app.domain.status import Invoice as Inv
 from app.models.config import ItemUnit
 from app.models.invoices import DeliveryConfirmation, Invoice, InvoiceLine
 from app.models.orders import Order, OrderLine
+from app.services import print_docs
 from app.platform.authorization import authorize, requires
 from app.platform.errors import BusinessError
 from app.platform.query import FilterRule
@@ -68,6 +69,12 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
     repo_cls = InvoiceRepository
     read_schema = InvoiceRead
     read_permission = READ
+
+    @requires(READ)
+    async def pdf(self, invoice_id: int) -> tuple[str, bytes]:
+        inv = await self.repo.get(invoice_id)
+        order = await self.uow.session.get(Order, inv.order_id)
+        return f"{inv.invoice_number}.pdf", await print_docs.invoice_pdf(self.uow.session, inv, order)
 
     async def _with_order(self, items: list[InvoiceRead]) -> list[InvoiceRead]:
         ids = {i.order_id for i in items}

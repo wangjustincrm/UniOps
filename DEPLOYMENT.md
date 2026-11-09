@@ -604,13 +604,17 @@ the first Sales release:
    --transfer <T>` shows the change; add `--apply`. N is above Zoho's highest internal number
    (1,008,686 in its archive on 2026-11-05) and T above its last transfer (00106). A sequence is only
    raised. Without this a 945 that carries a Shopify order number can match a Sales internal number.
-5. Load the Radiant export once by hand (retailer and manual orders, tracking, lots). The load
+5. Check the configuration the Zoho replay settled (Configuration pages): Walmart needs DC routing,
+   with the three DC rows 0681131037136 → 7101, 0681131037228 → 7102, 0681131037310 → 7103; every
+   item a retailer orders in cases has an active CASE unit (S0156 too); the 2PACK units list the
+   Shopify titles `2-Can, 2-Pack`. Then run `/srv/uniops/sales-zoho-check/tools/check.sh`: PASS.
+6. Load the Radiant export once by hand (retailer and manual orders, tracking, lots). The load
    must not raise a 940, invoice, email, task or Shopify write.
-6. Stop Zoho's sending, then turn off `shadow_mode`, set the guards above, and put the Radiant
+7. Stop Zoho's sending, then turn off `shadow_mode`, set the guards above, and put the Radiant
    and TrueCommerce connections in LIVE. Set `edi.warehouse_connection_id` and
    `invoice.connection_id`. Check Health: every gate passes.
-7. Turn on Automatic runs (Connections, the Automatic runs card: Off by default).
-8. Watch the first day: Sent (waiting for the 997), Delivery confirmation, Failed files.
+8. Turn on Automatic runs (Connections, the Automatic runs card: Off by default).
+9. Watch the first day: Sent (waiting for the 997), Delivery confirmation, Failed files.
 
 Rollback: stop `sales-api` and `sales-web` and leave the permissions
 ungranted; no other service needs a change.

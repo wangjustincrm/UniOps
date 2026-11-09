@@ -271,3 +271,17 @@ async def test_shadow_no_943_is_sent_and_a_944_is_compared_never_applied(p7, tmp
     assert (m["kind"], m["status"], m["would"]["outcome"]) == ("944", "Match", "Discrepancy")
     assert await p7.q("SELECT 1 FROM tasks") == []
     assert await p7.q("SELECT applied, shadow FROM sales_receipts") == [{"applied": False, "shadow": True}]
+
+
+async def test_a_943_without_a_997_in_time_times_out_once_and_raises_a_task(p7):  # FR-OB-82 / FR-OB-23
+    from datetime import timedelta
+    x = await sent_transfer(p7)
+    assert (await p7.tr.timeouts()).timeouts == 0                 # not due yet
+    p7.tr.clock = lambda: NOW + timedelta(hours=6)
+    r = await p7.tr.timeouts()
+    assert r.timeouts == 1
+    [doc] = await p7.q("SELECT ack_status FROM sales_documents WHERE kind = '943_EDI'")
+    assert doc["ack_status"] == "Timeout" and await status(p7, x.id) == "Waiting for 997"  # the transfer waits
+    [t] = await tasks(p7, "943_timeout")
+    assert x.transfer_number in t
+    assert (await p7.tr.timeouts()).timeouts == 0                 # once

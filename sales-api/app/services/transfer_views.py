@@ -12,6 +12,7 @@ from app.platform.authorization import requires
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
+from app.services import print_docs
 from app.schemas.transfers import ReceiptRead, ReceiptRowRead, TransferDetail, TransferLineRead, TransferRead
 
 READ = "sales.read"
@@ -40,6 +41,11 @@ class TransferService(ReadOnlyService[Transfer, TransferRead]):
     repo_cls = TransferRepository
     read_schema = TransferRead
     read_permission = READ
+
+    @requires(READ)
+    async def pdf(self, transfer_id: int) -> tuple[str, bytes]:
+        t = await self.repo.get(transfer_id)
+        return f"TO-{t.transfer_number}.pdf", await print_docs.transfer_pdf(self.uow.session, t)
 
     async def _named(self, items: list[TransferRead]) -> list[TransferRead]:
         ids = {i.from_warehouse_id for i in items} | {i.to_warehouse_id for i in items}

@@ -318,6 +318,11 @@ export interface EligibleOrder {
 }
 export const fetchEligibility = () => api.get<EligibleOrder[]>('/orders/eligibility-preview')
 /** One shipment's packing list (PDF): pallets → items → lots → expiry → qty, tracking and BOL. */
+export const downloadPoPdf = (o: Pick<OrderRead, 'id' | 'source_order_number' | 'order_number'>) =>
+  api.download(`/orders/${o.id}/po.pdf`, `PO-${o.source_order_number ?? o.order_number}.pdf`)
+export const downloadPacket = (o: Pick<OrderRead, 'id' | 'source_reference' | 'order_number'>) =>
+  api.download(`/orders/${o.id}/packet.zip`, `Order-${o.source_reference ?? o.order_number}.zip`)
+export const downloadInvoicePdf = (invoiceId: number, number: string) => api.download(`/invoices/${invoiceId}/invoice.pdf`, `${number}.pdf`)
 export const downloadPackingList = (orderId: number, shipmentId: number) =>
   api.download(`/orders/${orderId}/shipments/${shipmentId}/packing-list.pdf`, `PackingList-${shipmentId}.pdf`)
 export interface InvoicePricesBody { reason: string | null; lines: { id: number; invoice_unit_price: string | null }[] }

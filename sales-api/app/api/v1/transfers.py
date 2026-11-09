@@ -3,7 +3,7 @@ Draft, Ready to send, Cancel, Resend. Permissions are checked by the
 service; each write commits once."""
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 
 from app.core.deps import get_uow
 from app.platform.crud_router import page_body
@@ -35,6 +35,12 @@ async def create_transfer(u: UoW, rt: Rt, body: TransferIn):
     out = await TransferService(u).create(rt.transfers, body)
     await u.commit()
     return out
+
+
+@router.get("/{id}/print.pdf")
+async def transfer_pdf(u: UoW, id: int) -> Response:
+    name, pdf = await TransferService(u).pdf(id)
+    return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{name}"'})
 
 
 @router.get("/{id}", response_model=TransferDetail)

@@ -41,6 +41,18 @@ async def send_940_now(u: UoW, rt: Rt, id: int, replace: bool = False) -> dict:
     return out
 
 
+@router.get("/{id}/po.pdf")
+async def po_pdf(u: UoW, id: int) -> Response:
+    name, pdf = await OrderService(u).po_pdf(id)
+    return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="{name}"'})
+
+
+@router.get("/{id}/packet.zip")
+async def packet(u: UoW, id: int) -> Response:
+    name, data = await OrderService(u).packet(id)
+    return Response(data, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
 @router.get("/{id}/shipments/{shipment_id}/packing-list.pdf")
 async def packing_list(u: UoW, id: int, shipment_id: int) -> Response:
     name, pdf = await OrderService(u).packing_list(id, shipment_id)

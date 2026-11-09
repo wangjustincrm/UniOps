@@ -59,7 +59,10 @@ describe('Transfers', () => {
     const rows = within(dialog).getByRole('table', { name: '944 944-16468.edi lines' })
     expect(within(rows).getByText('CF0103').closest('tr')).toHaveTextContent('not on the transfer')
     expect(within(dialog).getByText('CF0103 7200 EA received but not on the transfer')).toBeInTheDocument()
-    expect(within(dialog).queryByRole('button', { name: 'More actions' })).toBeNull()  // no Cancel: the 943 is sent
+    fireEvent.keyDown(within(dialog).getByRole('button', { name: 'More actions' }), { key: 'Enter' })  // print only: the 943 is sent
+    expect(await screen.findByRole('menuitem', { name: 'Print transfer order (PDF)' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Cancel transfer' })).toBeNull()
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
   })
 
   it('a new draft: warehouses and lines; Save needs both warehouses and a quantity', async () => {
@@ -87,7 +90,10 @@ describe('Transfers', () => {
     fireEvent.click(await screen.findByText('00105'))
     let dialog = await screen.findByRole('dialog')
     await within(dialog).findByRole('tab', { name: /^Lines/ })
-    expect(within(dialog).queryByRole('button', { name: 'More actions' })).toBeNull()  // Cancel is under More, with the permission
+    fireEvent.keyDown(within(dialog).getByRole('button', { name: 'More actions' }), { key: 'Enter' })  // Cancel needs the permission
+    expect(await screen.findByRole('menuitem', { name: 'Print transfer order (PDF)' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Cancel transfer' })).toBeNull()
+    fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
     expect(within(dialog).queryByRole('button', { name: 'Edit draft' })).toBeNull()
     unmount()
     renderAs(['sales.read', 'sales.transfer.manage'])

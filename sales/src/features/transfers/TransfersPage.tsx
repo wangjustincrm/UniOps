@@ -11,7 +11,7 @@ import {
 import { itemOptions, warehouseOptions } from '../configuration/lookups'
 import {
   cancelTransfer, createTransfer, fetchTransfer, readyTransfer, resendTransfer, transfersClient, updateTransfer,
-  type ReceiptRowRead, type TransferDetail, type TransferLineRead, type TransferRead,
+  printTransfer, type ReceiptRowRead, type TransferDetail, type TransferLineRead, type TransferRead,
 } from './transfersApi'
 
 const colReceiptRowRead = columnsOf<ReceiptRowRead>()
@@ -159,8 +159,11 @@ function Detail({ row }: { row: TransferRead }) {
             {t.status === 'Failed' && <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done="943 queued again" onAction={() => resend.mutateAsync()}>Resend 943</ActionButton>}
           </>
         ) : undefined}
-        more={t && !editing && CANCELLABLE.includes(t.status)
-          ? [{ label: 'Cancel transfer', permission: MANAGE, onSelect: () => setCancelling(true), opensDialog: true }] : undefined}
+        more={t && !editing ? [
+          { label: 'Print transfer order (PDF)', onSelect: () => { printTransfer(t.id, t.transfer_number).catch(() => {}) } },
+          ...(CANCELLABLE.includes(t.status)
+            ? [{ label: 'Cancel transfer', permission: MANAGE, onSelect: () => setCancelling(true), opensDialog: true }] : []),
+        ] : undefined}
         tabs={tabs}
       />
       {t && (
