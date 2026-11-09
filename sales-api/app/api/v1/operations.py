@@ -4,6 +4,8 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Response
 
+from pydantic import BaseModel, Field
+
 from app.core.deps import get_uow
 from app.models.config import Connection
 from app.platform.crud_router import crud_router, read_router
@@ -12,12 +14,12 @@ from app.schemas.audit import AuditEntryRead
 from app.schemas.connections import (
     ConnectionRead, ConnectionTestRead, CursorReset, EdiSettings, SchedulerSettings, SchedulerUpdate, ShadowSetting,
 )
-from app.schemas.operations import RunStarted
+from app.schemas.operations import DocumentRead, RunStarted
 from app.services import audit
 from app.services.connections import (
     READ, ConnectionService, EdiSettingsService, SchedulerSettingsService, ShadowSettingService,
 )
-from app.services.operations import DocumentService, LogService, RunService
+from app.services.operations import DocumentActions, DocumentService, LogService, RunService
 
 UoW = Annotated[Any, Depends(get_uow)]
 Rt = Annotated[Runtime, Depends(get_runtime)]
@@ -64,6 +66,31 @@ async def document_raw(u: UoW, id: int) -> Response:
     safe = name.replace('"', "").replace("\r", "").replace("\n", "")
     return Response(content, media_type="application/octet-stream",
                     headers={"Content-Disposition": f'attachment; filename="{safe}"'})
+
+
+class DocumentReason(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
+
+
+@documents.post("/{id}/read-again", response_model=DocumentRead)
+async def document_read_again(u: UoW, rt: Rt, id: int):
+    doc = await DocumentActions(u).read_again(id, rt.tasks)
+    await u.commit()
+    return await DocumentService(u).get(doc.id)
+
+
+@documents.post("/{id}/ignore", response_model=DocumentRead)
+async def document_ignore(u: UoW, rt: Rt, id: int, body: DocumentReason):
+    doc = await DocumentActions(u).ignore(id, body.reason, rt.tasks)
+    await u.commit()
+    return await DocumentService(u).get(doc.id)
+
+
+@documents.post("/{id}/send-again")
+async def document_send_again(u: UoW, rt: Rt, id: int) -> dict:
+    text = await DocumentActions(u).send_again(id, rt)
+    await u.commit()
+    return {"result": text}
 
 
 runs = read_router("/runs", RunService, uow=get_uow, tags=["runs"])

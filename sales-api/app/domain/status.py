@@ -214,7 +214,8 @@ INBOUND_FILE_TABLE = {
 }
 INBOUND_FILE_ADDITIONS = {
     # Design §6 (documents): reparse / ignore a failed file.
-    InboundFile.FAILED: {InboundFile.PROCESSING, InboundFile.SKIPPED},
+    # FR-OB-62: a person reads a failed file again (it waits for the next pass) or marks it ignored.
+    InboundFile.FAILED: {InboundFile.PROCESSING, InboundFile.SKIPPED, InboundFile.PENDING},
 }
 INBOUND_FILE = StateMachine(
     {s: INBOUND_FILE_TABLE[s] | INBOUND_FILE_ADDITIONS.get(s, set()) for s in INBOUND_FILE_TABLE},

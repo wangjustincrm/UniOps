@@ -7,15 +7,19 @@ from sqlalchemy import select
 
 from app.domain.documents import DIRECTIONS, KINDS, LOG_LEVELS, ORIGINS, RUN_STATUSES, RUN_TRIGGERS, SYSTEMS
 from app.domain.status import Ack, InboundFile, OutboundFile
-from app.models.documents import Document, LogEntry, Run
-from app.platform.authorization import requires
+from app.domain.intake import classify
+from app.domain.status import INBOUND_FILE
+from app.models.documents import Document, DocumentLink, LogEntry, Run
+from app.models.invoices import Invoice
+from app.platform.authorization import authorize, requires
 from app.models.shipments import Shipment  # noqa: F401 — maps Document.shipments_without_order
-from app.platform.errors import BusinessError
+from app.platform.errors import BusinessError, NotFound
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.schemas.operations import DocumentRead, LogRead, RunRead
+from app.services.problems import ORDER_FILE_UNREADABLE, UNREADABLE_FILE
 
 READ = "sales.read"
 FILE_RETRY = "sales.file.retry"
@@ -122,3 +126,88 @@ class LogService(ReadOnlyService[LogEntry, LogRead]):
     repo_cls = LogRepository
     read_schema = LogRead
     read_permission = READ
+
+
+class DocumentActions:
+    """The file register's actions (FR-OB-24 / 54 / 62; sales.file.retry): read a received file again,
+    mark it ignored, or send a sent file again. A resend goes through the same rules as sending from its
+    order, transfer or invoice, so it also needs that permission."""
+
+    def __init__(self, uow) -> None:
+        self.uow = uow
+        self.s = uow.session
+
+    async def _doc(self, id: int) -> Document:
+        doc = await self.s.get(Document, id, with_for_update=True)
+        if doc is None:
+            raise NotFound("Document", id)
+        return doc
+
+    async def _resolve(self, tasks, doc: Document) -> None:
+        for event in (UNREADABLE_FILE, ORDER_FILE_UNREADABLE):
+            await tasks.resolve_problem(self.s, event, doc.id, by=self.uow.actor.user_id)
+
+    @staticmethod
+    def _stuck(doc: Document) -> bool:
+        """Failed, or kept as a file nobody could read (an unknown kind still waiting)."""
+        return doc.direction == "IN" and (doc.processing_status == InboundFile.FAILED.value
+                                          or (doc.processing_status == InboundFile.PENDING.value and doc.kind == "OTHER"))
+
+    @requires(FILE_RETRY)
+    async def read_again(self, id: int, tasks) -> Document:
+        """The file is classified again from its bytes and waits for the next pass."""
+        doc = await self._doc(id)
+        if not self._stuck(doc):
+            raise BusinessError("document.not_failed", f"only a received file that failed can be read again (it is {doc.processing_status})")
+        content = (await self.s.execute(select(Document.content).where(Document.id == id))).scalar_one()
+        if content is None:
+            raise BusinessError("document.no_content", "this record keeps no bytes of its own")
+        c = classify(bytes(content))
+        self.uow.set_reason("read again")
+        doc.kind, doc.isa13, doc.gs06, doc.st02 = c.kind, c.isa13, c.gs06, c.st02
+        doc.error = None if c.readable else c.problem
+        if doc.processing_status == InboundFile.FAILED.value:
+            INBOUND_FILE.transition(doc, InboundFile.PENDING, actor=self.uow.actor, events=self.uow.events, reason="read again")
+        await self._resolve(tasks, doc)
+        await self.s.flush()
+        return doc
+
+    @requires(FILE_RETRY)
+    async def ignore(self, id: int, reason: str, tasks) -> Document:
+        doc = await self._doc(id)
+        if not self._stuck(doc):
+            raise BusinessError("document.not_failed", f"only a received file that failed can be ignored (it is {doc.processing_status})")
+        if len(reason.strip()) < 3:
+            raise BusinessError("document.reason", "say why it is ignored", {"field": "reason"}, status_code=422)
+        self.uow.set_reason(f"ignored: {reason.strip()}")
+        if doc.processing_status == InboundFile.PENDING.value:
+            INBOUND_FILE.transition(doc, InboundFile.PROCESSING, actor=self.uow.actor, events=self.uow.events, reason="ignored")
+        INBOUND_FILE.transition(doc, InboundFile.SKIPPED, actor=self.uow.actor, events=self.uow.events, reason=reason.strip()[:200])
+        doc.error = f"Ignored by {self.uow.actor.name}: {reason.strip()}"[:2000]
+        await self._resolve(tasks, doc)
+        await self.s.flush()
+        return doc
+
+    @requires(FILE_RETRY)
+    async def send_again(self, id: int, rt) -> str:
+        """A sent file again, as its owner would send it: the 940 of its order, the 943 of its transfer,
+        the invoice. Each keeps its own rules (a live 940 is replaced only from the order)."""
+        doc = await self._doc(id)
+        if doc.direction != "OUT":
+            raise BusinessError("document.not_outbound", "only a file we send can be sent again")
+        if doc.kind == "940_EDI":
+            await authorize(self.uow, "sales.order.operate")
+            order_id = (await self.s.execute(select(DocumentLink.entity_id).where(
+                DocumentLink.document_id == doc.id, DocumentLink.entity_type == "order"))).scalar_one()
+            new = await rt.outbound.send_now(self.uow, order_id)
+            return f"940 {new.st02} queued for the order"
+        if doc.kind == "943_EDI":
+            await authorize(self.uow, "sales.transfer.manage")
+            await rt.transfers.resend(self.uow, int((doc.body_json or {})["transfer_id"]), None)
+            return "943 queued for the transfer"
+        inv = (await self.s.execute(select(Invoice).where(Invoice.document_id == doc.id))).scalar_one_or_none()
+        if inv is not None:
+            await authorize(self.uow, "sales.invoice.manage")
+            await rt.invoicing.send(self.uow, inv.id)
+            return f"invoice {inv.invoice_number} queued"
+        raise BusinessError("document.not_resendable", f"a {doc.kind} is not sent again from here")

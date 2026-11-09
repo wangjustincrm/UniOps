@@ -80,6 +80,11 @@ export const runsClient = createResourceClient<RunRead, never>(api, '/runs')
 export const logClient = createResourceClient<LogRead, never>(api, '/log')
 export const downloadDocument = (id: number, name: string) => api.download(`/documents/${id}/raw`, name)
 export const downloadOriginal = (d: DocumentRead) => downloadDocument(d.id, d.remote_name ?? `document-${d.id}`)
+/** FR-OB-62: a received file that failed: read it again (the next pass reads it), or ignore it with a reason. */
+export const readAgain = (id: number) => api.post<DocumentRead>(`/documents/${id}/read-again`)
+export const ignoreDocument = (id: number, reason: string) => api.post<DocumentRead>(`/documents/${id}/ignore`, { reason })
+/** FR-OB-24: a sent file again, by its order's, transfer's or invoice's own rules. */
+export const sendAgain = (id: number) => api.post<{ result: string }>(`/documents/${id}/send-again`)
 export const runNow = () => api.post<{ run_id: number }>('/runs/run-now')
 /** The system job alone, now (Health). */
 export const runSystemNow = () => api.post<{ run_id: number }>('/runs/run-now/system')
