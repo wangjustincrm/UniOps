@@ -150,9 +150,9 @@ async def test_the_detail_and_the_list_show_payments_refunds_net_and_the_refund_
     assert (rf.note, [ln.quantity for ln in rf.lines], [a.kind for a in rf.adjustments]) == ("damaged in transit", [1], ["shipping_refund"])
     assert (d.source_name, d.tags, d.payment_gateways, d.discount_codes[0]["code"]) == ("web", "wholesale, vip", ["shopify_payments"], "WELCOME5")
     assert "payment_details" not in d.model_dump_json() and "4242" not in d.model_dump_json()
-    views = {v["key"]: v["state"]["filters"] for v in meta["views"] if v["key"] in ("refunded", "partially_refunded")}
-    assert views == {"refunded": [{"field": "shopify_financial_status", "op": "eq", "value": "refunded"}],
-                     "partially_refunded": [{"field": "shopify_financial_status", "op": "eq", "value": "partially_refunded"}]}
+    # no refund views (user 2026-11-09): the payment status stays a filter of every list
+    assert not {"refunded", "partially_refunded"} & {v["key"] for v in meta["views"]}
+    assert any(f["name"] == "shopify_financial_status" and f["filterable"] for f in meta["fields"])
     labels = {f["name"]: f["label"] for f in meta["fields"]}
     assert (labels["source_name"], labels["tags"], labels["net_amount"], labels["total_refunded"], labels["shopify_financial_status"]) == (
         "Sales channel", "Tags", "Net", "Refunded", "Shopify Payment")

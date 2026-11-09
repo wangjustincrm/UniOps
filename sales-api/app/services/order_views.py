@@ -135,24 +135,18 @@ class OrderRepository(Repository[Order]):
             "hidden": ["order_number", "shopify", "total_refunded", "net_amount", "review_reason"]}),
         Preset("pending", "To fulfill", {"filters": [{"field": "order_status", "op": "eq", "value": "To Fulfill"}], "hidden": ["review_reason"],
                                        "sort": [{"field": "first_received_at", "desc": False}]}),
+        # Every problem in one view (user 2026-11-09), grouped by its reason: review, payment, archived,
+        # 940 / 997, a second 945, Shopify or invoice failures.
         Preset("on_hold", "On hold", {"filters": [{"field": "order_status", "op": "eq", "value": "On Hold"}],
+                                    "group": [{"field": "on_hold_reason", "desc": False}],
                                     "sort": [{"field": "first_received_at", "desc": False}]}),
-        Preset("needs_review", "Needs review", {"filters": [{"field": "on_hold_reason", "op": "eq", "value": "Needs Review"}]}),
-        Preset("payment_hold", "Payment hold", {"filters": [{"field": "on_hold_reason", "op": "eq", "value": "Payment Required"}], "hidden": ["review_reason"]}),
-        Preset("archive_suppressed", "Archived in Shopify", {"filters": [{"field": "on_hold_reason", "op": "eq", "value": "Archived in Shopify"}], "hidden": ["review_reason"]}),
+        # Shipped and not invoiced yet (retailers): waiting for delivery confirmation, or the invoice to go.
+        Preset("delivery", "To invoice",
+               {"filters": [{"field": "order_status", "op": "in", "value": ["Shipped", "To Invoice"]}],
+                "sort": [{"field": "delivery_due_date", "desc": False}], "hidden": ["review_reason"]}),
         Preset("manual_drafts", "Manual drafts", {"filters": [{"field": "source_type", "op": "eq", "value": "MANUAL"},
                                                                {"field": "order_status", "op": "eq", "value": "Draft"}]}),
-        Preset("delivery", "Shipped",
-               {"filters": [{"field": "order_status", "op": "eq", "value": "Shipped"}]}),
-        # FR-OB-25: a short 945 closes the fulfilment (Shipped) — what it left unshipped stays visible here.
-        Preset("backordered", "Backordered (partially shipped)",
-               {"filters": [{"field": "backordered_ea", "op": "gt", "value": 0}], "hidden": ["review_reason"]}),
-        Preset("refunded", "Refunded", {"filters": [{"field": "shopify_financial_status", "op": "eq", "value": "refunded"}],
-                                        "hidden": ["review_reason"]}),
-        Preset("partially_refunded", "Partially refunded", {
-            "filters": [{"field": "shopify_financial_status", "op": "eq", "value": "partially_refunded"}], "hidden": ["review_reason"]}),
         Preset("all", "All", {"hidden": ["review_reason"]}),
-        Preset("historical", "Historical", {"filters": [{"field": "historical", "op": "eq", "value": "true"}], "includeHistorical": True, "hidden": ["review_reason"]}),
     )
     historical_column = "historical"
 

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { NEEDS_REVIEW } from '@/app/oldAddresses'
 import { useNavigate } from 'react-router-dom'
 import {
   Button, ErrorView, LocalTable, PageHeader, Section, Skeleton, StatCard, requestView, type ColumnDef,
@@ -53,7 +54,7 @@ export function HomeDashboard() {
       <Section title="Needs a person" plain level={2}>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <StatCard label="Orders in review" count={d.needs_review} tone={d.needs_review ? 'warning' : 'neutral'}
-            onOpen={() => { requestView('orders', 'needs_review'); go('/orders') }} />
+            onOpen={() => { requestView('orders', NEEDS_REVIEW); go('/orders') }} />
           <StatCard label="Waiting for delivery confirmation" count={d.waiting_delivery} onOpen={() => go('/deliveries')} />
           {d.open_tasks.map((t) => (
             <StatCard key={t.type} label={label(t.type)} count={t.count} tone="warning">

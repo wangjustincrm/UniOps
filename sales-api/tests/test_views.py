@@ -141,12 +141,10 @@ async def test_views_need_the_lists_read_permission_and_a_known_list(http):
 
 async def test_system_views_are_in_meta_and_fit_their_list(http):
     m = (await http.get("/api/v1/orders/meta", headers=AS_ANN)).json()
-    assert [v["key"] for v in m["views"]] == ["open", "open_shopify", "open_retailers", "pending", "on_hold", "needs_review", "payment_hold",
-                                              "archive_suppressed", "manual_drafts", "delivery", "backordered", "refunded",
-                                              "partially_refunded", "all", "historical"]
-    review = next(v for v in m["views"] if v["key"] == "needs_review")
-    assert review["name"] == "Needs review" and review["state"]["filters"] == [
-        {"field": "on_hold_reason", "op": "eq", "value": "Needs Review"}]
+    assert [v["key"] for v in m["views"]] == ["open", "open_shopify", "open_retailers", "pending", "on_hold", "delivery",
+                                              "manual_drafts", "all"]  # user 2026-11-09: one hold, no Shopify money views
+    hold = next(v for v in m["views"] if v["key"] == "on_hold")
+    assert hold["state"]["group"] == [{"field": "on_hold_reason", "desc": False}]
     for resource, svc in LISTS.items():  # every system view of every list is a state its list accepts
         repo = svc.repo_cls
         assert repo.presets, resource
