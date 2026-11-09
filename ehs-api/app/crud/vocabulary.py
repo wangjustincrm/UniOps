@@ -233,6 +233,8 @@ _REFERENCES: tuple[tuple[str, str], ...] = (
      "select count(*) from ehs_jhsc_recommendations where status_item_id = :id"),
     ("Safety equipment (type)",
      "select count(*) from ehs_safety_assets where asset_type_id = :id"),
+    ("Equipment register (System)",
+     "select count(*) from ehs_equipment where system_id = :id"),
     # GHS classes: a locked, flat list (nothing goes inside an entry, nothing
     # is added), so its label is still the one the chemical form sends rather
     # than label_for's — deliberately; the wording is the regulated class name.
