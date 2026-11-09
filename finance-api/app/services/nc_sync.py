@@ -205,6 +205,22 @@ class NcExtract:
     # NC deleted outright (absent here -> 'deleted'). None = not read (old
     # fixtures): the state backfill is skipped rather than marking all deleted.
     states: dict | None = None
+    # Vouchers NC has EDITED since the watermark (MODIFIEDTIME >= watermark).
+    # Incremental pk-dedup would otherwise keep an imported voucher frozen at
+    # its import-time content forever: NC lets a voucher be re-dated,
+    # re-numbered, re-amounted and re-lined while it is still un-tallied, and
+    # the mirror kept serving the old version (measured 2026-11-09: 12 of the
+    # 2026 vouchers carried stale amounts/lines, 2 stale numbers — one of them
+    # JV-202610-0388, which NC had re-numbered 668, so a lookup of 388 in NC
+    # found a different voucher). Each pk here that is already mirrored is
+    # deleted and re-imported from the rows in `vouchers`/`details`.
+    # Default empty keeps old fixtures constructible.
+    modified: frozenset = frozenset()
+    # EVERY voucher pk in the book -> (审核 name, 记账 name), same unlimited read
+    # as `states`. Checking/tallying a voucher in NC does not make it "new", so
+    # the names captured at import went stale (679 of 2026's vouchers showed no
+    # checker while NC had one). None = not read: the backfill is skipped.
+    names: dict | None = None
 
 
 # ── auxiliary (辅助核算) type resolution ───────────────────────────────────────
@@ -768,23 +784,44 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
               "  left join NCSC.SM_USER um on um.cuserid = trim(v.pk_manager) "
               "  left join NCSC.BD_VOUCHERTYPE bt on bt.pk_vouchertype = trim(v.pk_vouchertype) "
               " where v.pk_accountingbook = :b")
+        # MODIFIEDTIME is CHAR(19) with NC's '~' blank sentinel, and '~' sorts
+        # AFTER every digit — a bare `>= :wm` would select every never-edited
+        # voucher in the book. Require a digit first.
+        edited = ("substr(v.modifiedtime, 1, 1) between '0' and '9' "
+                  "and v.modifiedtime >= :wm")
+        modified: frozenset = frozenset()
         if watermark:
-            cur.execute(vq + " and v.creationtime >= :wm", b=PK_BOOK, wm=watermark)
+            cur.execute(vq + f" and (v.creationtime >= :wm or ({edited}))",
+                        b=PK_BOOK, wm=watermark)
+            vouchers = list(cur.fetchall())
+            cur.execute("select v.pk_voucher from NCSC.GL_VOUCHER v "
+                        f"where v.pk_accountingbook = :b and {edited}",
+                        b=PK_BOOK, wm=watermark)
+            modified = frozenset(r[0] for r in cur.fetchall())
         else:
             cur.execute(vq, b=PK_BOOK)
-        vouchers = list(cur.fetchall())
-        max_ct = _max_creationtime(v[6] for v in vouchers)
+            vouchers = list(cur.fetchall())
+        # The watermark stays a CREATIONTIME watermark: an edited voucher is
+        # fetched because of its MODIFIEDTIME, and folding that into the max
+        # would let one edit skip past vouchers created just before it.
+        max_ct = _max_creationtime(v[6] for v in vouchers if v[0] not in modified)
 
         # Status backfill feed: the whole book's tally facts, deliberately NOT
         # watermark-limited. A voucher created in June and tallied in July keeps
         # its June creationtime, so the watermark would never bring it back and
         # it would sit at draft forever (spec §14.4.1). Two columns x ~40k rows.
-        cur.execute("select pk_voucher, tallydate, discardflag, tempsaveflag, errmessage "
-                    "from NCSC.GL_VOUCHER where pk_accountingbook = :b", b=PK_BOOK)
+        cur.execute("select v.pk_voucher, v.tallydate, v.discardflag, v.tempsaveflag, "
+                    "       v.errmessage, uc.user_name, um.user_name "
+                    "  from NCSC.GL_VOUCHER v "
+                    "  left join NCSC.SM_USER uc on uc.cuserid = trim(v.pk_checked) "
+                    "  left join NCSC.SM_USER um on um.cuserid = trim(v.pk_manager) "
+                    " where v.pk_accountingbook = :b", b=PK_BOOK)
         tallied: set = set()
         states: dict = {}
-        for pk, td, dis, tmp, err in cur:
+        names: dict = {}
+        for pk, td, dis, tmp, err, checked, manager in cur:
             states[pk] = _voucher_state(dis, tmp, err)
+            names[pk] = (_strip_char(checked), _strip_char(manager))
             if _tallied(td) and states[pk] == "normal":
                 tallied.add(pk)
 
@@ -826,7 +863,8 @@ def fetch_from_nc(watermark: str | None) -> NcExtract:
     return NcExtract(ccy=ccy, aux=aux, vouchers=vouchers, details=details,
                      parties=parties,
                      max_creationtime=max_ct, tallied=tallied,
-                     bank_accounts=bank_master, states=states)
+                     bank_accounts=bank_master, states=states,
+                     modified=modified, names=names)
 
 
 # ── run lifecycle (worker) ─────────────────────────────────────────────────────────
@@ -916,6 +954,55 @@ def _sync_voucher_states(cur, states: dict | None) -> int:
         cur.execute("update journal_vouchers set nc_voucher_state = %s, updated_at = now() "
                     "where nc_source_pk = any(%s)", (want, pks))
     return sum(len(p) for p in changes.values())
+
+
+def _sync_voucher_names(cur, names: dict | None) -> int:
+    """Align 审核/记账 names with NC for every mirrored voucher — the same
+    revisit-everything reason as _sync_statuses. None/empty = not read."""
+    if not names:
+        return 0
+    cur.execute("select nc_source_pk, nc_checked_name, nc_manager_name "
+                "from journal_vouchers where nc_source_pk is not null")
+    rows = [(pk, *names[pk]) for pk, chk, mgr in cur.fetchall()
+            if pk in names and names[pk] != (chk, mgr)]
+    if rows:
+        execute_values(cur,
+            "update journal_vouchers v set nc_checked_name = d.chk, "
+            "  nc_manager_name = d.mgr, updated_at = now() "
+            "from (values %s) as d(pk, chk, mgr) where v.nc_source_pk = d.pk",
+            rows, template="(%s, %s, %s)")
+    return len(rows)
+
+
+def _repoint_recon_refs(cur, pks: list) -> int:
+    """Re-attach bank-reconciliation references to re-imported vouchers.
+
+    Re-importing an edited voucher regenerates its line ids; the SET NULL
+    foreign keys orphan the match rows rather than delete them, and the
+    natural key (voucher pk, line no) finds the new line — the same rule
+    crud.bank_recon.heal_matches applies after a full sync, done here in the
+    same transaction so an incremental run never leaves a match dangling.
+    Finalized periods are skipped for the same reason heal_matches skips
+    them: the signed-off snapshot is the record."""
+    if not pks:
+        return 0
+    cur.execute(
+        "update bank_recon_match_books b set jv_line_id = l.id "
+        "  from bank_recon_matches m, bank_reconciliations r, "
+        "       journal_vouchers v, journal_voucher_lines l "
+        " where m.id = b.match_id and r.id = m.reconciliation_id "
+        "   and r.status <> 'finalized' and b.jv_line_id is null "
+        "   and b.nc_voucher_pk = any(%s) "
+        "   and v.nc_source_pk = b.nc_voucher_pk and l.jv_id = v.id "
+        "   and l.line_no = b.line_no", (pks,))
+    n = cur.rowcount
+    cur.execute(
+        "update bank_payment_advice_lines a set matched_jv_line_id = l.id "
+        "  from journal_vouchers v, journal_voucher_lines l "
+        " where a.matched_jv_line_id is null and a.matched_nc_voucher_pk = any(%s) "
+        "   and v.nc_source_pk = a.matched_nc_voucher_pk and l.jv_id = v.id "
+        "   and l.line_no = a.matched_line_no", (pks,))
+    return n
 
 
 def _mark_terminal(dsn, run_id, **fields):
@@ -1067,7 +1154,10 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
         logger.info("nc_sync run %s: %d bank accounts upserted, %d known",
                     run_id, bank_upserted, len(uni_bank))
 
-        skip = existing if mode == "incremental" else set()
+        # An already-mirrored voucher NC has edited since the watermark is
+        # re-imported, not skipped (see NcExtract.modified).
+        refresh = sorted(existing & set(extract.modified)) if mode == "incremental" else []
+        skip = (existing - set(refresh)) if mode == "incremental" else set()
         vouchers, lines, dims, unmapped, partner_counts = transform(
             extract, uni_cc, uni_dept, uni_ba, uni_sup, uni_cust, skip,
             cc_map_rows=cc_map_rows, category_of=category_of, uni_bank=uni_bank,
@@ -1102,6 +1192,17 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
         if mode == "full":
             cur.execute("delete from journal_vouchers where nc_source_pk is not null")
             deleted = cur.rowcount
+        elif refresh:
+            # Only the ones this run actually re-imports: an edited pk that the
+            # fetch did not return rows for keeps its old copy rather than
+            # vanishing.
+            back = {v["nc_pk"] for v in vouchers}
+            refresh = [pk for pk in refresh if pk in back]
+            cur.execute("delete from journal_vouchers where nc_source_pk = any(%s)",
+                        (refresh,))
+            deleted = cur.rowcount
+            logger.info("nc_sync run %s: re-importing %d vouchers NC edited since the "
+                        "watermark", run_id, deleted)
 
         # Indexed, not a positional unpack: the line tuple has grown twice now and
         # a `_`-padded unpack silently mis-binds every column after the new one.
@@ -1150,6 +1251,12 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
                 template="(%s,%s,%s,%s,%s, now(), now())")
             _mark(dsn, run_id, dims_inserted=min(i + _CHUNK, len(dims)))
 
+        if refresh:
+            n_heal = _repoint_recon_refs(cur, refresh)
+            logger.info("nc_sync run %s: re-pointed %d bank-reconciliation matches "
+                        "onto re-imported vouchers", run_id, n_heal)
+        n_names = _sync_voucher_names(cur, extract.names)
+        logger.info("nc_sync run %s: checker/poster names refreshed on %d", run_id, n_names)
         n_posted, n_draft = _sync_statuses(cur, extract.tallied)
         logger.info("nc_sync run %s: status backfill flipped %d to posted, %d to draft",
                     run_id, n_posted, n_draft)

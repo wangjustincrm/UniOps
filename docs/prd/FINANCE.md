@@ -1,9 +1,13 @@
 # Finance — Product Requirements Document
 
-**Version:** 2.22
-**Date:** 2026-11-06
+**Version:** 2.23
+**Date:** 2026-11-09
 **Status:** Current. Describes the system as built on the main line, under the 2026-09-20 positioning decision.
 **Scope:** The UniOps Finance module: Finance web app and finance service. Covers the NC65 data mirror, the checks and reports built on it, AP handoff to NC, payments, remittance, vendor credits, bank reconciliation and the remaining finance-held records.
+
+**What changed in version 2.23** (2026-11-09)
+
+- JV sync: a voucher edited in NC after import (re-numbered, re-dated, re-amounted or re-lined) is re-imported on the next incremental run. It used to stay at its import-time content until a full reload. Checker and tallier names are refreshed on every run (FIN-SYNC-02, FIN-SYNC-08).
 
 **What changed in version 2.22** (2026-11-06)
 
@@ -262,13 +266,13 @@ A failed permission load shows "Couldn't load your Finance permissions" with a r
 | FR ID | Requirement |
 |---|---|
 | FIN-SYNC-01 | Only the Canada Royal Milk account book is mirrored. The other books in the shared NC database are excluded. |
-| FIN-SYNC-02 | **Incremental sync** uses a watermark plus de-duplication on the NC voucher key. **Full reload** clears and reloads the mirror, and requires typing the confirmation phrase "FULL RELOAD". Only one run at a time; a second trigger is refused. Progress is shown live. |
+| FIN-SYNC-02 | **Incremental sync** uses a watermark plus de-duplication on the NC voucher key. A voucher NC has **edited** since the watermark (NC modified time) is deleted from the mirror and re-imported, so its number, date, lines and amounts follow NC. Bank reconciliation matches on it are re-attached by (NC voucher key, line number), except in finalized periods. **Full reload** clears and reloads the mirror, and requires typing the confirmation phrase "FULL RELOAD". Only one run at a time; a second trigger is refused. Progress is shown live. |
 | FIN-SYNC-03 | **Scheduled sync** runs incremental only, every N minutes. Default 60, maximum 1,440, 0 turns it off. The interval is re-read every minute, so a change takes effect without a restart. It counts from the last run's start, so an unreachable NC is retried once per interval. Full reload is never scheduled. |
 | FIN-SYNC-04 | Trigger and interval are **System Admin only**: Finance → Journal Vouchers (NC Sync button) and Portal → Admin → NC Sync → **JV Sync** tab. |
 | FIN-SYNC-05 | A mirrored voucher is `posted` only when NC has tallied it (记账) and its state is normal. Otherwise it is `draft`. Status changes in NC are backfilled on later runs. |
 | FIN-SYNC-06 | The NC voucher state (normal / discarded / temp-saved / error) is mirrored. Vouchers discarded in NC are kept and marked, not dropped. A voucher deleted in NC after import is marked `deleted` and stays listed until the next full sync. None of these states counts as spend under any basis. |
 | FIN-SYNC-07 | NC red-entry (negative) signs are preserved. Voucher numbers use the `JV-YYYYMM-NNNN` form and keep NC's numbers. |
-| FIN-SYNC-08 | NC header facts are mirrored: preparer, checker, tallier, NC system (GL / AP / AR …), voucher kind, attachments. |
+| FIN-SYNC-08 | NC header facts are mirrored: preparer, checker, tallier, NC system (GL / AP / AR …), voucher kind, attachments. Checker and tallier are refreshed for every voucher on every run. |
 | FIN-SYNC-09 | Auxiliary dimensions are resolved per line: department, cost centre, income-expense item, partner (supplier ∪ customer), material, project, employee and bank account. A missing auxiliary raises an error. It never silently empties the dimension. |
 | FIN-SYNC-10 | Cost-centre resolution: on the five budget categories (5101, 5301, 6601, 6602, 6603) the cost centre is resolved **account-aware** through the cost-centre map. All other accounts use the curated NC-code map: the NC code decides when present, otherwise the department. **A synthesised cost centre is a derived value, not an NC fact.** Manufacturing accounts (5xxx) carry NC's real cost centre on 100% of lines. Period-expense accounts (66xx) carry none, so their cost centre is always derived. |
 | FIN-SYNC-11 | After each run, JV dimension validation runs and refreshes one standing task (§7). |
