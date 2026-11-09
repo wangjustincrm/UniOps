@@ -1,12 +1,16 @@
 # Safety (EHS) — Product Requirements Document
 
-**Version**: 0.15
-**Date**: 2026-11-06
+**Version**: 0.16
+**Date**: 2026-11-09
 **Status**: In Development (branch, not deployed)
 **Scope**: A workplace health and safety module for the Kingston plant (Ontario OHSA / WSIB), replacing SiteDocs. It covers incidents and statutory clocks, corrective actions, inspections and forms, training, JHSC, chemicals/WHMIS, permits, equipment, documents, and dashboards.
 **Source**: Consolidated from the Safety Module PRD series in `/srv/uniops/`. The baseline is the full requirement list in v0.2 (`Safety-Module-PRD-EN-v0.2.docx`, 28 Aug 2026). Changes come from v0.3 and the HSE reply to it (`Safety-Module-PRD-EN-v0.3_Reply.docx`, 31 Aug), and from v0.4 and the HSE reply to it (`Safety-Module-PRD-EN-v0.4_Reply.docx`, 1 Sep). v0.3 and v0.4 were delta documents, so they do not restate the full list.
 
-**What changed in this version (0.14 → 0.15)**
+**What changed in this version (0.15 → 0.16)**
+- §1.6 "Round 12, second batch": the equipment register — every machine, a box per System, the System as a list HSE keep and merge, retire and delete, a template and an upload matched on the area's path; equipment pickers search as you type and offer the machines in the record's area; safety equipment can be retired and deleted.
+- §2.11 E56 restated.
+
+**What changed in version 0.15 (0.14 → 0.15)**
 - §1.6 "Round 11, first batch": the faults HSE found in UAT 11, and the renames they asked for.
 - `origin/main` merged into the branch again (Staff among it); §9.
 
@@ -258,6 +262,22 @@ UAT 11 closed at 10 passed and 9 failed (ver 11.3). HSE's 91 further requests ar
 - Closing a form returns to the list of forms, not to "Which area?".
 - Renamed: Expiry notices → Training notifications, Reassign a leaver → Reallocate Items, Undelivered email → Communications. Paths and tables are unchanged. The Communications page still lists undelivered mail only.
 - The Portal rule that a supervisor is in the same department stays (PORTAL.md USR-002). TC-10 failed because the test accounts had no department.
+
+Round 12, second batch (built)
+
+UAT 12 closed at 13 passed and 1 failed. HSE answered every question; this batch is the equipment register (EQ-01 to EQ-06, INC-10, INC-11, INC-13) on answers Q1 and Q3.
+
+- The register shows every machine. It returned the first 200 of 7,170 by name and said nothing; it now pages through all of them and says how many there are. Search covers name, asset number, System and area.
+- "Kind" is now System, an entry of the Equipment System list (Settings → Lists), seeded from the 148 values the machines had (migration 0088). A machine shows its System's current name, so renaming or merging a System changes every machine at once. This is a deliberate exception to "a record keeps the label it was given": a machine is reference data, not a signed record.
+- A box per System across the top counts the machines in service; the largest show first, and all of them one press away. A box shows only that System. With a System chosen, HSE can merge it into another: every machine moves, and the emptied System is retired from the list.
+- Retire (Q3) takes a machine out of every picker; the records that already name it still show it, marked retired. When and by whom are kept, and Retired is a box of its own. Put back in service undoes it. Delete is offered and refused unless no incident, hazard, job analysis or permit names the machine.
+- The same for safety equipment: Retire takes the item off its check cycle and closes the checks it was still owed, with a reason in its history; Show retired brings it back into the list. Delete only before anything has been recorded against it (a check, a change of status, a corrective action, a form).
+- The edit form has every field: name, asset number, System, area, the department it belongs to, manufacturer, model, serial number, description. The department is its own choice; the plant areas do not carry one.
+- A CSV template to download (EQ-04). The upload reads description, System, manufacturer, model and serial too; a System not on the list is added and named in the result. The area is matched on its full path ("Production/103 – Dryer/Line 1"), because several areas share a name (four are called Line 1); a bare name still matches when only one area has it, and a name several share is reported, not guessed.
+- Every equipment picker (incident report, incident page, hazards, job analyses, work permits) finds a machine by typing, across the whole register (INC-13). It offered the first 500 by name, so the WWTP's and the warehouse's could not be chosen.
+- Given the area the record is filed against, the picker offers that area's machines and everything beneath it, plus the 15 with no area (INC-10, INC-11). An area with none of its own — 46 of the 68 — offers the nearest area above it that has some, and says which. Show all areas is the way out when a machine was moved and the register not told.
+- A record names its machine by looking it up, retired or not; a list of records looks its machines up together. Previously a machine outside the first 500 read "Equipment not in the register".
+- Not done: whether the 208 machines whose System is "Archive" should start retired was asked and not answered; they are in service until HSE retires them or merges the System.
 ## 2. Functional Requirements — 57 Items
 
 Priority: **P0** legally required or the loop breaks without it · **P1** needed day to day · **P2** strengthens the system · **P3** needed for COR. **Phase** is as stated in v0.2–v0.4; "—" means the source did not assign one.
@@ -366,7 +386,7 @@ Priority: **P0** legally required or the loop breaks without it · **P1** needed
 | E46 | Safety equipment register | Extinguishers, AEDs, eyewash stations, safety showers, first-aid cabinets, gas detectors, ladders, lift trucks, fall-arrest equipment (harnesses, lanyards). | P2 | 2 |
 | E47 | Periodic equipment inspection | Scheduled checks via the checklist engine, so a missed monthly check is visible. | P2 | 2 |
 | E48 | Emergency preparedness | Emergency plans, drill records with evaluation, first-aider and fire-warden rosters. | P2 | — |
-| E56 | Production equipment register | A separate register from E46: production equipment that appears on incident forms, mapped to its department/area (e.g. Line 1 DSI → Evaporator). HSE maintains it, with spreadsheet upload. Choosing equipment on a form fills in the department. | P1 | 2 |
+| E56 | Production equipment register | A separate register from E46: production equipment that appears on incident forms, with its area, department and System (a list HSE maintain and merge). HSE maintains it by hand or by spreadsheet (template provided). Pickers search the whole register and offer the machines in the record's area first. Retired machines leave the pickers and stay on the records that name them. | P1 | 2 |
 
 ### 2.12 Documents and policies
 
@@ -438,6 +458,7 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | 0.13 | 2026-10-28 | Round 10 third batch built: lists as trees (§1.6); SF-15 narrowed; SF-16. |
 | 0.14 | 2026-10-29 | Round 10 fourth batch built: the dashboard, phone install (§1.6); Reports rates corrected; SF-15 narrowed. |
 | 0.15 | 2026-11-06 | Round 11 first batch: UAT 11 faults and renames (§1.6); `origin/main` merged in with Staff (§9). |
+| 0.16 | 2026-11-09 | Round 12 second batch: the equipment register and pickers; retiring safety equipment (§1.6, E56). |
 
 ---
 
