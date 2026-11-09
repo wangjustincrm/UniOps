@@ -292,10 +292,11 @@ async def test_a_retried_fulfillment_reads_first_and_creates_nothing_twice(p5):
     assert writes(p5).count("create_fulfillment") == 1  # only the first attempt; the retry found it
 
 
-async def test_a_test_mode_store_is_never_written(p5):  # the guard: LIVE only
+async def test_a_test_mode_store_is_never_written(p5):  # a Test-mode store: skipped, not a failure
     await shipped_order(p5, x945("9301", ["LX*1", "W12*CP*12*12*0*EA**VN*CF0092"]))
-    assert (await p5.worker.run_once()).suppressed == 1 and writes(p5) == []
-    assert (await p5.q("SELECT shopify_status FROM sales_shipments"))[0]["shopify_status"] == "Suppressed"
+    await p5.worker.run_once()
+    assert writes(p5) == []
+    assert (await p5.q("SELECT shopify_status FROM sales_shipments"))[0]["shopify_status"] == "Not needed"
 
 
 # ── the shadow run ───────────────────────────────────────────────────────────
@@ -339,3 +340,23 @@ async def test_a_write_queued_before_the_switch_on_is_cancelled(p5):
         await u.commit()
     assert (await p5.worker.run_once()).cancelled == 1 and writes(p5) == []
     assert (await p5.q("SELECT shopify_status FROM sales_shipments"))[0]["shopify_status"] == "Suppressed"
+
+
+async def test_a_test_store_skips_the_shopify_write_and_the_order_goes_on_as_in_production(p5):
+    """dev2 (user 2026-11-06): the only difference from production is that a Test-mode store is not
+    written to — no hold, no task, the order completes; the shipment says the write was skipped."""
+    o, d = await sent_order(p5.edi)
+    async with p5.factory(SYSTEM_ACTOR) as u:
+        conn = (await u.session.execute(sa.select(Connection).where(Connection.kind == "SHOPIFY"))).scalar_one()
+        conn.mode = "TEST"
+        await u.commit()
+    await store_945(p5, x945(f"{o.order_number:09d}", PALLET_12[:0] + ["LX*1", "W12*CP*12*12*0*EA**VN*CF0092", "N9*LT*L1"]),
+                    "945-test-store.edi")
+    await p5.ships.process_945s()
+    await p5.worker.run_once()
+    [sh] = await p5.q("SELECT shopify_status FROM sales_shipments")
+    assert sh["shopify_status"] == "Not needed"
+    assert writes(p5) == []
+    assert await p5.q("SELECT type FROM tasks WHERE type LIKE 'sales_shopify%' OR type = 'sales_send_refused'") == []
+    [row] = await p5.q("SELECT fulfillment_status FROM sales_orders WHERE id = :i", i=o.id)
+    assert row["fulfillment_status"] == "Shipped"
