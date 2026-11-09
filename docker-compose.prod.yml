@@ -385,6 +385,11 @@ services:
       SALES_SMTP_FROM: ${SALES_SMTP_FROM:-}
       SALES_SMTP_STARTTLS: ${SALES_SMTP_STARTTLS:-true}
       SALES_SECRET_SMTP: ${SALES_SECRET_SMTP:-}
+      # Partner credentials: each connection names its env var (secret_name on Configuration →
+      # Connections); the values live only in .env. Without these the connection cannot log in.
+      SALES_SECRET_RADIANT: ${SALES_SECRET_RADIANT:-}
+      SALES_SECRET_TRUECOMMERCE: ${SALES_SECRET_TRUECOMMERCE:-}
+      SALES_SECRET_SHOPIFY: ${SALES_SECRET_SHOPIFY:-}
     ports: ["8014:8014"]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8014
     healthcheck:

@@ -560,8 +560,8 @@ the first Sales release:
 4. **SFTP (when intake is turned on)** — `SALES_SFTP_ALLOWED_HOSTS` in `.env`
    lists the partner hosts explicitly (empty = no SFTP connection at all,
    fail closed); each connection's password is an env var named by its
-   `secret_name` (e.g. `SALES_SECRET_RADIANT_SFTP`), passed to `sales-api`
-   in `docker-compose.prod.yml` at that release. On Configuration →
+   `secret_name` (`SALES_SECRET_RADIANT`, `SALES_SECRET_TRUECOMMERCE`, `SALES_SECRET_SHOPIFY`),
+   passed to `sales-api` in `docker-compose.prod.yml`: put the rotated values in `.env`. On Configuration →
    Connections, run **Test connection**, compare the SHA256 fingerprint with
    the partner's and **Pin this key** — an unpinned connection never logs in.
 
