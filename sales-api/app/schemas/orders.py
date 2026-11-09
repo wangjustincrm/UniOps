@@ -293,6 +293,7 @@ class OrderDetail(OrderRead):
     documents: list[OrderDocumentRead] = []
     shipments: list[ShipmentRead] = []
     cancellable: bool = False                # Cancel order is offered
+    send_940: str | None = None              # Send 940 offers "send" / "replace"; nothing once it shipped
     hold_exits: list[str] = []               # where Release hold can take it (none: not On Hold, or a shadow order)
     # Shopify finance (sales17): gateways, discount codes, the order's tax lines,
     # its transactions and refunds

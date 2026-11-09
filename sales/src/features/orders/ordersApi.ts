@@ -201,6 +201,8 @@ export interface ShipmentRead {
 export interface OrderDetail extends OrderRead {
   /** Cancel order is open (the server's rule; never for a shadow order). */
   cancellable?: boolean
+  /** What Send 940 offers (sales-api decides): nothing once the goods have left. */
+  send_940?: 'send' | 'replace' | null
   /** Where Release hold can take the order: none when it is not On Hold. */
   hold_exits?: string[]
   bill_to: Record<string, string | null> | null

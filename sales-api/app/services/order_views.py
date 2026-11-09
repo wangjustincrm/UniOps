@@ -12,7 +12,7 @@ from sqlalchemy import and_, case, or_, select
 from app.domain.address import address_flags
 from app.domain.carriers import tracking_url
 from app.domain.lifecycle import backordered, line_state, spread
-from app.domain.order_rules import ON_HOLD_FULFILLMENT, can_cancel, hold_exits, order_state, payment_satisfied, to_ea
+from app.domain.order_rules import ON_HOLD_FULFILLMENT, can_cancel, hold_exits, send_940_action, order_state, payment_satisfied, to_ea
 from app.domain.order_status import (
     HOLD_REASONS as ON_HOLD_REASONS, NOT_OPEN_STATUSES, ORDER_STATUSES, DetailFacts, StatusFacts, detail_kind, display, send_time, status_detail,
 )
@@ -224,6 +224,8 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
             documents=[OrderDocumentRead(**d._asdict()) for d in docs],
             shipments=shipments,
             cancellable=can_cancel(o.fulfillment_status),
+            send_940=send_940_action(o.fulfillment_status, source_type=o.source_type, historical=o.historical,
+                                     has_945=bool(shipments)),
             hold_exits=hold_exits(o.fulfillment_status, o.fulfillment_status_before_hold,
                                   cancelled_at_source=o.source_cancelled_at is not None,
                                   applied_945=any(x.applied for x in shipments)),

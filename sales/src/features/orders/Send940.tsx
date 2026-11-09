@@ -2,13 +2,9 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ActionButton, ConfirmAction, queryKeys, useNotices } from '@/platform-ui'
 import { useTestRunRefusal } from '@/features/common/testRun'
-import { ordersClient, send940, type OrderRead, type Send940Result } from './ordersApi'
+import { ordersClient, send940, type OrderDetail, type Send940Result } from './ordersApi'
 
 const OPERATE = 'sales.order.operate'
-// Pending: now, without the delay and for a Manual-mode partner; the others: a resend (FR-OB-03c).
-const SENDABLE = ['Pending', '940 Rejected', '940 Timeout', '940 Failed']
-// A live 940: only as a confirmed replacement.
-const REPLACEABLE = ['940 Sent', '940 Accepted']
 
 const errorMessages: Record<string, string> = {
   'send940.historical': 'A historical order is never sent to the warehouse.',
@@ -21,7 +17,7 @@ const errorMessages: Record<string, string> = {
 /** Send 940 now / Replace 940 (FR-OB-03c; sales.order.operate). The 940 is
  *  queued and put by the next outbox pass; its file and 997 status show
  *  under Warehouse 940s. */
-export function Send940({ o }: { o: OrderRead }) {
+export function Send940({ o }: { o: OrderDetail }) {
   const qc = useQueryClient()
   const [confirming, setConfirming] = useState(false)
   const notices = useNotices()
@@ -37,8 +33,9 @@ export function Send940({ o }: { o: OrderRead }) {
       await qc.invalidateQueries({ queryKey: queryKeys.detail(ordersClient, o.id) })
     },
   })
-  const replace = REPLACEABLE.includes(o.fulfillment_status)
-  if (!replace && !SENDABLE.includes(o.fulfillment_status)) return null
+  // sales-api says what is offered (app/domain/order_rules.py send_940_action): never once a 945 came.
+  if (!o.send_940) return null
+  const replace = o.send_940 === 'replace'
   return (
     <section aria-label="Send 940" className="flex flex-col gap-2 text-sm">
       {replace ? (

@@ -44,6 +44,21 @@ def can_cancel(fulfillment: str) -> bool:
     return fulfillment != F.DRAFT and FULFILLMENT.can(F(fulfillment), F.CANCELLED)
 
 
+SEND_940_FROM = (F.PENDING, F.REJECTED_940, F.TIMEOUT_940, F.FAILED_940)  # now, or a resend (FR-OB-03c)
+REPLACE_940_FROM = (F.SENT_940, F.ACCEPTED_940)                          # a live 940: only as a confirmed replacement
+
+
+def send_940_action(fulfillment: str, *, source_type: str, historical: bool, has_945: bool) -> str | None:
+    """What Send 940 offers: "send", "replace" or nothing. Never once the goods have left (a 945),
+    for an order made from a 945, or for a historical one. A shadow order is offered as in production;
+    the server refuses it when used."""
+    if historical or has_945 or source_type == FROM_945:
+        return None
+    if fulfillment in SEND_940_FROM:
+        return "send"
+    return "replace" if fulfillment in REPLACE_940_FROM else None
+
+
 def hold_exits(fulfillment: str, before: str | None, *, cancelled_at_source: bool, applied_945: bool) -> list[str]:
     """Where a person can take an order On Hold. Cancelled at source: Cancelled, Shipped (a 945
     says it left) or what it held before. 945 conflict: keep the applied 945 (Shipped) or Cancelled."""

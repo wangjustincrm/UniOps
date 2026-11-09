@@ -199,7 +199,7 @@ describe('Orders: 940s (P4)', () => {
   })
 
   it('Send 940 now needs sales.order.operate and says the 940 is queued', async () => {
-    api.fetchOrder.mockResolvedValue({ ...detail, ...pending, documents: [] })
+    api.fetchOrder.mockResolvedValue({ ...detail, ...pending, documents: [], send_940: 'send' })
     const { unmount } = renderAs(['sales.read'])
     fireEvent.click(await screen.findByText('9303'))
     let dialog = await screen.findByRole('dialog')
@@ -216,7 +216,7 @@ describe('Orders: 940s (P4)', () => {
   })
 
   it('a sent 940 shows Sent and the 997 apart; a change goes only through a confirmed replacement', async () => {
-    api.fetchOrder.mockResolvedValue({ ...detail, ...sentOrder, documents: [out(30, 'Sent', 'Waiting', '000000122')] })
+    api.fetchOrder.mockResolvedValue({ ...detail, ...sentOrder, documents: [out(30, 'Sent', 'Waiting', '000000122')], send_940: 'replace' })
     api.send.mockResolvedValue({ order: sentOrder, document_id: 31, file_status: 'Ready To Send', control: '000000124', errors: [] })
     renderAs(['sales.read', 'sales.order.operate'])
     fireEvent.click(await screen.findByText('9304'))
@@ -235,7 +235,7 @@ describe('Orders: 940s (P4)', () => {
   })
 
   it('a 940 that fails its checks says why and that it was not sent', async () => {
-    api.fetchOrder.mockResolvedValue({ ...detail, ...pending, documents: [] })
+    api.fetchOrder.mockResolvedValue({ ...detail, ...pending, documents: [], send_940: 'send' })
     api.send.mockResolvedValue({ order: pending, document_id: 21, file_status: 'Cancelled', control: '000000125',
       errors: ['ship_to.zip is empty'] })
     renderAs(['sales.read', 'sales.order.operate'])
