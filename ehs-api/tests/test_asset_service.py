@@ -138,3 +138,40 @@ async def test_everyone_reads_what_is_out_of_service(hse_manager, worker):
     [mine] = [r for r in rows if r["id"] == a["id"]]
     assert mine["name"] == a["name"] and mine["since"]
     assert set(mine) == {"id", "asset_no", "name", "location_path", "since"}
+
+
+async def test_retire_takes_it_off_its_cycle_and_delete_only_an_unused_item(hse_manager, db_session):
+    """★ Round 12, Q3: "Include this function on all equipment and safety items"."""
+    from app.crud.asset import generate_due
+    from app.models.asset import AssetInspection
+    from app.models.mirrors import Task
+
+    _, client = hse_manager
+    a = await _asset(client, f"Extinguisher {uuid.uuid4().hex[:5]}")
+    await client.patch(f"/api/v1/safety-assets/{a['id']}", json={
+        "inspection_frequency": "monthly", "next_due_on": plant_today().isoformat()})
+    await generate_due(db_session)
+    await db_session.commit()
+    owed = list((await db_session.execute(select(AssetInspection.id).where(
+        AssetInspection.asset_id == uuid.UUID(a["id"])))).scalars())
+    assert owed, "precondition: a check is owed"
+
+    retired = await client.post(f"/api/v1/safety-assets/{a['id']}/retire",
+                                json={"reason": "Replaced with a new unit"})
+    assert retired.status_code == 200 and retired.json()["status"] == "retired", retired.text
+    db_session.expire_all()
+    assert not list((await db_session.execute(select(AssetInspection.id).where(
+        AssetInspection.asset_id == uuid.UUID(a["id"])))).scalars()), "the owed check goes"
+    open_tasks = (await db_session.execute(select(Task).where(
+        Task.document_id.in_(owed), Task.is_completed.is_(False)))).scalars().all()
+    assert not open_tasks, "and so does its task"
+    history = (await client.get(f"/api/v1/safety-assets/{a['id']}/history")).json()
+    assert history[0]["status"] == "retired" and history[0]["reason"] == "Replaced with a new unit"
+
+    # It has a history now, so it cannot be deleted.
+    refused = await client.delete(f"/api/v1/safety-assets/{a['id']}")
+    assert refused.status_code == 409 and "status changes" in refused.text, refused.text
+
+    fresh = await _asset(client, f"Typo {uuid.uuid4().hex[:5]}")
+    assert (await client.delete(f"/api/v1/safety-assets/{fresh['id']}")).status_code == 204
+    assert (await client.get(f"/api/v1/safety-assets/{fresh['id']}")).status_code == 404

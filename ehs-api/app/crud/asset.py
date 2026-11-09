@@ -519,6 +519,79 @@ async def return_to_service(db: AsyncSession, asset: SafetyAsset, *,
     return asset
 
 
+async def retire(db: AsyncSession, asset: SafetyAsset, *,
+                 user_id: uuid.UUID, reason: str | None) -> SafetyAsset:
+    """Round 12, Q3: retire, applied to safety items too ("Include this function
+    on all equipment and safety items").
+
+    The checks it was still owed go with it — a retired extinguisher left with
+    an open "inspect this" task is a task nobody can complete. Checks already
+    done stay: they are its history.
+    """
+    if asset.status == "retired":
+        return asset
+    owed = list((await db.execute(select(AssetInspection).where(
+        AssetInspection.asset_id == asset.id, AssetInspection.result == "due"))).scalars())
+    for inspection in owed:
+        await task_service.close_tasks_for(
+            db, doc_type=DOC_ASSET, doc_id=inspection.id, completed_by=user_id)
+        await db.delete(inspection)
+    asset.status = "retired"
+    asset.next_due_on = None
+    await status_event(db, asset, "retired", by_id=user_id, reason=reason)
+    await db.flush()
+    return asset
+
+
+async def reinstate(db: AsyncSession, asset: SafetyAsset, *,
+                    user_id: uuid.UUID, reason: str | None) -> SafetyAsset:
+    """Undo a retirement made by mistake. Back in service, on its cycle again."""
+    if asset.status != "retired":
+        return asset
+    asset.status = "in_service"
+    await status_event(db, asset, "in_service", by_id=user_id, reason=reason)
+    if asset.inspection_frequency:
+        asset.next_due_on = next_due(plant_today(), asset.inspection_frequency)
+    await db.flush()
+    return asset
+
+
+async def references(db: AsyncSession, asset: SafetyAsset) -> list[tuple[str, int]]:
+    """What would lose this item if it were deleted. Checks still only owed are
+    not history and do not count; a check done, a status change, a corrective
+    action or a form filled in about it does."""
+    from sqlalchemy import text
+    out = []
+    for what, sql in (
+        ("checks recorded", "select count(*) from ehs_asset_inspections"
+                            " where asset_id = :id and result <> 'due'"),
+        ("status changes", "select count(*) from ehs_asset_status_events where asset_id = :id"),
+        ("corrective actions", "select count(*) from ehs_actions where asset_id = :id"),
+        ("forms", "select count(*) from ehs_form_submissions"
+                  " where source_type = 'asset' and source_id = :id"),
+    ):
+        n = (await db.execute(text(sql), {"id": asset.id})).scalar() or 0
+        if n:
+            out.append((what, n))
+    return out
+
+
+async def delete(db: AsyncSession, asset: SafetyAsset, *, user_id: uuid.UUID) -> None:
+    used = await references(db, asset)
+    if used:
+        named = ", ".join(f"{n} {what}" for what, n in used)
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            f"{asset.name} has {named}. Retire it instead — it keeps "
+                            "that history.")
+    owed = list((await db.execute(select(AssetInspection).where(
+        AssetInspection.asset_id == asset.id))).scalars())
+    for inspection in owed:
+        await task_service.close_tasks_for(
+            db, doc_type=DOC_ASSET, doc_id=inspection.id, completed_by=user_id)
+    await db.delete(asset)
+    await db.flush()
+
+
 async def coverage(db: AsyncSession) -> list[dict]:
     """Working equipment by type, and how much of it is unavailable.
 

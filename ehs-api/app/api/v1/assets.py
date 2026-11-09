@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from sqlalchemy import select
@@ -183,10 +183,17 @@ async def get_asset(asset_id: uuid.UUID, db: SessionDep, user: CanReadAsset):  #
 
 @router.patch("/{asset_id}", response_model=AssetOut)
 async def update_asset(
-    asset_id: uuid.UUID, payload: AssetPatch, db: SessionDep, user: CanManageAsset,  # noqa: ARG001
+    asset_id: uuid.UUID, payload: AssetPatch, db: SessionDep, user: CanManageAsset,
 ):
     asset = await crud.get_asset(db, asset_id)
-    return await crud.update_asset(db, asset, payload.model_dump(exclude_unset=True))
+    fields = payload.model_dump(exclude_unset=True)
+    # Retiring by edit goes the same way as the Retire button: off its cycle,
+    # owed checks closed, and in its history.
+    if fields.get("status") == "retired":
+        fields.pop("status")
+        asset = await crud.update_asset(db, asset, fields)
+        return await crud.retire(db, asset, user_id=_user_id(user), reason=None)
+    return await crud.update_asset(db, asset, fields)
 
 
 class ReturnIn(BaseModel):
@@ -201,6 +208,33 @@ async def return_to_service(
     ones put back when their corrective actions were verified (round 10)."""
     return await crud.return_to_service(db, await crud.get_asset(db, asset_id),
                                         user_id=_user_id(user), reason=payload.reason.strip())
+
+
+class RetireIn(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
+
+
+@router.post("/{asset_id}/retire", response_model=AssetOut)
+async def retire_asset(asset_id: uuid.UUID, payload: RetireIn, db: SessionDep,
+                       user: CanManageAsset):
+    """Round 12, Q3: out of the register's working list and off its cycle;
+    its checks and history stay."""
+    return await crud.retire(db, await crud.get_asset(db, asset_id),
+                             user_id=_user_id(user), reason=(payload.reason or "").strip() or None)
+
+
+@router.post("/{asset_id}/reinstate", response_model=AssetOut)
+async def reinstate_asset(asset_id: uuid.UUID, payload: RetireIn, db: SessionDep,
+                          user: CanManageAsset):
+    return await crud.reinstate(db, await crud.get_asset(db, asset_id),
+                                user_id=_user_id(user), reason=(payload.reason or "").strip() or None)
+
+
+@router.delete("/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_asset(asset_id: uuid.UUID, db: SessionDep, user: CanManageAsset):
+    """Only an item nothing has been recorded against (Q3)."""
+    await crud.delete(db, await crud.get_asset(db, asset_id), user_id=_user_id(user))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 class InspectionFormOut(BaseModel):
