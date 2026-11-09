@@ -50,6 +50,9 @@ EDI_944_NO_TRANSFER = "944_no_transfer"    # entity: receipt id (FR-OB-84)
 SEND_REFUSED = "send_refused"              # entity: outbox row id (§5.5: a send refused by the write guard)
 EDI_945_VALIDATION = "945_validation"      # entity: shipment id (FR-OB-25d; notify only)
 PARTIAL_RECEIPT = "partial_receipt"        # entity: transfer id (FR-OB-84; notify only)
+# Questions about getting the goods out (entity: order id): a 945 answers them all — the goods left
+# (user 2026-11-09). Closed when the order ships; a resolve with none open does nothing.
+SETTLED_BY_SHIPMENT = (ORDER_REVIEW, ORDER_ARCHIVED, EDI_940_FAILED, EDI_940_REJECTED, EDI_940_TIMEOUT)
 # Order refs (user 2026-11-03)
 PARTNER_NO_ABBREV = "partner_no_abbrev"    # entity: partner id (its orders get no Order ref)
 

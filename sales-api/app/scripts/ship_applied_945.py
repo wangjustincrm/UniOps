@@ -1,7 +1,7 @@
 """Once (user 2026-11-09, order 9567): orders whose 945 was applied before
 fc094c9a stayed in the status they had (mostly Archive suppressed), because
 only Sent / Accepted / Timeout could become Shipped. This moves each such order
-to Shipped, as the 945 would now, and closes its archive / review task.
+to Shipped, as the 945 would now, and closes its open 940 / archive / review tasks.
 Status and tasks only: no quantity (already set by the 945), no Shopify write,
 no file. Idempotent.
 
@@ -24,9 +24,7 @@ from app.models.shipments import Shipment
 from app.platform.actors import SYSTEM_ACTOR
 from app.scripts.redact_card_documents import quiet_sql
 from app.services import oplog
-from app.services.problems import ORDER_ARCHIVED, ORDER_REVIEW, task_service
-
-CLOSES = {F.ARCHIVE_SUPPRESSED: ORDER_ARCHIVED, F.REVIEW: ORDER_REVIEW}
+from app.services.problems import SETTLED_BY_SHIPMENT, task_service
 
 
 async def main(apply: bool) -> dict:
@@ -48,8 +46,8 @@ async def main(apply: bool) -> dict:
                 continue
             FULFILLMENT.transition(order, F.SHIPPED, actor=u.actor, events=u.events,
                                    reason=f"945 applied as shipment {sh.id} before fc094c9a (one-off repair)")
-            if was in CLOSES:
-                await tasks.resolve_problem(s, CLOSES[was], order.id)
+            for event in SETTLED_BY_SHIPMENT:
+                await tasks.resolve_problem(s, event, order.id)
         if apply and moved:
             await oplog.write(s, "INFO", "repair", f"ship_applied_945: {len(moved)} orders moved to Shipped",
                               context={"orders": moved})

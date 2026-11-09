@@ -362,12 +362,13 @@ async def test_a_test_store_skips_the_shopify_write_and_the_order_goes_on_as_in_
     assert row["fulfillment_status"] == "Shipped"
 
 
-@pytest.mark.parametrize("before", [F.ARCHIVE_SUPPRESSED, F.PENDING, F.REVIEW])
+@pytest.mark.parametrize("before", [F.ARCHIVE_SUPPRESSED, F.PENDING, F.REVIEW, F.REJECTED_940, F.FAILED_940])
 async def test_a_945_ships_an_order_no_940_of_ours_went_for_and_says_so(p5, before):
     """User 2026-11-09 (9567): archived in Shopify, Zoho's 940 went, the 945 came back → Shipped, not stuck."""
-    from app.services.problems import ORDER_ARCHIVED, ORDER_REVIEW, problem
+    from app.services.problems import EDI_940_FAILED, EDI_940_REJECTED, ORDER_ARCHIVED, ORDER_REVIEW, problem
     o = await a_paid_order(p5.edi, number=9567)
-    event = {F.ARCHIVE_SUPPRESSED: ORDER_ARCHIVED, F.REVIEW: ORDER_REVIEW}.get(before)
+    event = {F.ARCHIVE_SUPPRESSED: ORDER_ARCHIVED, F.REVIEW: ORDER_REVIEW, F.REJECTED_940: EDI_940_REJECTED,
+             F.FAILED_940: EDI_940_FAILED}.get(before)
     async with p5.factory(SYSTEM_ACTOR) as u:
         (await u.session.get(type(o), o.id)).fulfillment_status = before.value
         if event:
@@ -380,4 +381,4 @@ async def test_a_945_ships_an_order_no_940_of_ours_went_for_and_says_so(p5, befo
     assert (await checks(p5))["order state"]["message"] == "no 940 was sent by Sales for this order"
     if event:
         done = [r["is_completed"] for r in await p5.q("SELECT is_completed FROM tasks WHERE type = :t", t=f"sales_{event}")]
-        assert done == [True]  # the goods left: the archive / review question is closed
+        assert done == [True]  # the goods left: the question about sending them is closed
