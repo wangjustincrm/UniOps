@@ -20,7 +20,8 @@ export { Tabs } from './primitives/Tabs'
 export { PageHeader } from './primitives/PageHeader'
 export { DetailList } from './primitives/DetailList'
 export {
-  BooleanCell, CountdownCell, DateTimeCell, DateCell, MoneyCell, NumberCell, RelativeCell, StackedDateTimeCell, StatusCell, TagsCell,
+  BooleanCell, CountdownCell, DateTimeCell, DateCell, MoneyCell, NumberCell, RefsCell, RelativeCell, StackedDateTimeCell, StatusCell, TagsCell,
+  type RecordRef,
 } from './primitives/cells'
 export { columnsOf } from './primitives/columns'
 export {

@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react'
 import type { ColumnDef } from './DataTable'
 import {
-  BooleanCell, CountdownCell, DateCell, DurationCell, FileCell, MoneyCell, NumberCell, ReferenceCell, RelativeCell,
+  BooleanCell, CountdownCell, DateCell, DurationCell, FileCell, MoneyCell, NumberCell, ReferenceCell, RefsCell, RelativeCell,
   StackedDateTimeCell, StatusCell, TagsCell, TrackingCell,
 } from './cells'
 import type { BadgeVariant } from './StatusBadge'
+import type { RecordRef } from './cells'
 
 type Key<T> = Extract<keyof T, string>
 type Value = string | number | null | undefined
@@ -40,5 +41,13 @@ export function columnsOf<T>() {
       cell(key, header, (r) => <FileCell name={read(r, key) as string | null} label={opts.label(r)} onDownload={() => opts.onDownload(r)} />),
     bool: (key: Key<T>, header: string) => cell(key, header, (r) => <BooleanCell value={read(r, key) as boolean | null} />),
     tags: (key: Key<T>, header: string) => cell(key, header, (r) => <TagsCell values={read(r, key) as string[] | null} />),
+    /** Records the row belongs to, as links: the first few, "+N more" for the rest; with none, why. */
+    refs: (id: string, header: string, opts: {
+      refs: (row: T) => RecordRef[]; onOpen: (ref: RecordRef, row: T) => void; total?: (row: T) => number
+      empty?: (row: T) => string | null | undefined; max?: number; noun?: string
+    }): ColumnDef<T, unknown> => ({
+      id, header, enableSorting: false, cell: ({ row }) => (
+        <RefsCell refs={opts.refs(row.original)} total={opts.total?.(row.original)} onOpen={(ref) => opts.onOpen(ref, row.original)}
+          empty={opts.empty?.(row.original)} max={opts.max} noun={opts.noun} />) }),
   }
 }

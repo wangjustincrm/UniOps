@@ -41,7 +41,7 @@ from app.platform.pipeline import isolated
 from app.services import oplog
 from app.services.settings import SETTINGS, SHADOW_MODE
 from app.services.intake import ConnectionSnapshot
-from app.services.orders import BarcodeLookup, Catalog, OrderSync, add_barcodes
+from app.services.orders import BarcodeLookup, Catalog, OrderSync, add_barcodes, link_document
 from app.services.problems import SHOPIFY_AUTH_FAILED, SHOPIFY_FETCH_FAILED, problem
 from app.services.shopify_finance import REFRESH_PER_PASS, stale_finance, store_finance
 
@@ -165,10 +165,13 @@ class ShopifyIntake:
                    transactions: list | None = None) -> str:
         src = from_shopify(o, partner_code=conn.partner_code, partner_abbrev=abbrev, cutoff=conn.order_number_cutoff)
         key = (Order.partner_code == src.partner_code, Order.source_order_id == src.source_order_id)
-        existing = (await uow.session.execute(select(Order.source_updated_at, Order.finance_updated_at).where(*key))).one_or_none()
+        existing = (await uow.session.execute(select(Order.source_updated_at, Order.finance_updated_at, Order.id)
+                                              .where(*key))).one_or_none()
         if existing is not None and existing[0] is not None and src.updated_at == existing[0]:
             if existing[1] != existing[0]:  # here before its finance was read
                 await self._finance(uow, conn, o, key, transactions)
+            if doc_id is not None:  # the page holds it too (Documents shows the order, user 2026-11-09)
+                await link_document(uow.session, doc_id, existing[2])
             return "unchanged"  # the boundary order, seen again (AC-OB-10)
         await OrderSync(uow, self.tasks).upsert(src, connection_id=conn.id, document_id=doc_id, received_at=self.clock(),
                                                 barcodes=barcodes)

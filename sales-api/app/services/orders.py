@@ -224,6 +224,15 @@ def review_reasons(src: SourceOrder, partner: Partner | None, plans: list[LinePl
 
 
 # ── upsert ───────────────────────────────────────────────────────────────────
+
+async def link_document(session, document_id: int, order_id: int) -> None:
+    """The document is one of the order's (its source page or file); once."""
+    exists = (await session.execute(select(DocumentLink.id).where(
+        DocumentLink.document_id == document_id, DocumentLink.entity_type == "order",
+        DocumentLink.entity_id == order_id))).scalar_one_or_none()
+    if exists is None:
+        session.add(DocumentLink(document_id=document_id, entity_type="order", entity_id=order_id))
+
 class OrderSync:
     def __init__(self, uow, tasks) -> None:
         self.uow = uow
@@ -249,11 +258,7 @@ class OrderSync:
         else:
             await self._update(order, src, partner, plans, reasons, received_at)
         if document_id is not None:
-            exists = (await self.s.execute(select(DocumentLink.id).where(
-                DocumentLink.document_id == document_id, DocumentLink.entity_type == "order",
-                DocumentLink.entity_id == order.id))).scalar_one_or_none()
-            if exists is None:
-                self.s.add(DocumentLink(document_id=document_id, entity_type="order", entity_id=order.id))
+            await link_document(self.s, document_id, order.id)
         await self.s.flush()
         return order
 

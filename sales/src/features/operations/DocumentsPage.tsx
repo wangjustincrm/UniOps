@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, ConfirmAction, DetailList, ListPage, RecordSheet, Section, StatusCell, formatDateTime, queryKeys, type ColumnDef, Muted,
-  columnsOf,
+  ActionButton, ConfirmAction, DetailList, ListPage, LocalTable, RecordSheet, RefsCell, Section, StatusCell, formatDateTime, queryKeys,
+  requestOpen, type ColumnDef, type RecordRef, Muted, columnsOf,
 } from '@/platform-ui'
 import { OrderFrom945 } from '@/features/orders/OrderFrom945'
 import { documentsClient, downloadOriginal, ignoreDocument, readAgain, sendAgain, type DocumentRead } from './operationsApi'
@@ -11,14 +12,53 @@ const colDocumentRead = columnsOf<DocumentRead>()
 
 const status = (d: DocumentRead) => d.processing_status ?? d.file_status
 
-const columns: ColumnDef<DocumentRead, unknown>[] = [
-  colDocumentRead.datetime('created_at', 'Received'),
-  colDocumentRead.text('remote_name', 'File'),
-  colDocumentRead.text('kind', 'Kind'),
-  { id: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={status(row.original)} /> },
-  colDocumentRead.text('size', 'Bytes'),
-  { accessorKey: 'error', header: 'Note', cell: ({ row }) => <Muted className="line-clamp-1">{row.original.error ?? ''}</Muted> },
-]
+/** Opening an order or a transfer from a document: its list, its sheet. */
+function useOpenRef() {
+  const navigate = useNavigate()
+  return useMemo(() => ({
+    order: (r: RecordRef) => { requestOpen('/orders', r.id); navigate('/orders') },
+    transfer: (r: RecordRef) => { requestOpen('/transfers', r.id); navigate('/transfers') },
+  }), [navigate])
+}
+
+/** Orders first, then a transfer; none: why. */
+const belongsTo = (d: DocumentRead) => (d.orders_total || !d.transfers.length ? d.orders : d.transfers)
+
+function useColumns(): ColumnDef<DocumentRead, unknown>[] {
+  const open = useOpenRef()
+  return useMemo(() => [
+    colDocumentRead.datetime('created_at', 'Received'),
+    colDocumentRead.text('remote_name', 'File'),
+    colDocumentRead.text('kind', 'Kind'),
+    { id: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={status(row.original)} /> },
+    colDocumentRead.refs('orders', 'Orders', {
+      refs: belongsTo, total: (d) => (d.orders_total || d.transfers.length), noun: 'order',
+      onOpen: (r, d) => (d.orders_total ? open.order(r) : open.transfer(r)), empty: (d) => d.no_order_reason }),
+    colDocumentRead.text('size', 'Bytes'),
+    { accessorKey: 'error', header: 'Note', cell: ({ row }) => <Muted className="line-clamp-1">{row.original.error ?? ''}</Muted> },
+  ], [open])
+}
+
+/** The record sheet's tab: every order (and transfer) of the document, each opening its record. */
+function BelongsTo({ d }: { d: DocumentRead }) {
+  const open = useOpenRef()
+  const cols: ColumnDef<RecordRef, unknown>[] = useMemo(() => [
+    { id: 'ref', header: 'Order', cell: ({ row }) => <RefsCell refs={[row.original]} onOpen={open.order} noun="order" /> },
+  ], [open])
+  return (
+    <>
+      {d.transfers.length > 0 && (
+        <Section title="Transfer"><RefsCell refs={d.transfers} onOpen={open.transfer} noun="transfer" max={10} /></Section>
+      )}
+      <Section title={`Orders (${d.orders_total})`}>
+        <LocalTable<RecordRef> ariaLabel="Orders of this document" columns={cols} rows={d.orders} rowKey={(r) => r.id} />
+        {d.orders_total > d.orders.length && (
+          <Muted as="p">The first {d.orders.length} of {d.orders_total}: search Documents by an order's ref to find this file.</Muted>
+        )}
+      </Section>
+    </>
+  )
+}
 
 const RETRY = 'sales.file.retry'
 const RESENDABLE = ['940_EDI', '943_EDI', '810_JSON', 'INVOICE_EMAIL']
@@ -50,6 +90,8 @@ function Detail({ d }: { d: DocumentRead }) {
         { label: 'Bytes', value: d.size ?? '—' },
         { label: 'Received', value: formatDateTime(d.created_at) },
         ...(d.ack_status ? [{ label: '997', value: d.ack_status }] : []),
+        { label: 'Orders', value: d.orders_total || (d.transfers.length ? d.transfers.map((t) => t.label).join(', ') : 'None'),
+          tone: d.orders_total || d.transfers.length ? 'neutral' : 'warning' },
       ]}
       actions={d.has_content ? (
         <>
@@ -70,10 +112,13 @@ function Detail({ d }: { d: DocumentRead }) {
         ['Bytes', d.size], ['Remote modified', formatDateTime(d.remote_mtime)],
         ['Received', `${formatDateTime(d.created_at)} · ${d.created_by_name}`], ['SHA-256', <span key="h" className="break-all">{d.sha256}</span>],
         ['ISA13 / GS06 / ST02', [d.isa13, d.gs06, d.st02].filter(Boolean).join(' / ') || null], ['Note', d.error],
+        ...(d.no_order_reason ? [['No order', d.no_order_reason] as [string, string]] : []),
       ]} />
       {!d.has_content && <Muted as="p">This record keeps no bytes of its own (see the note).</Muted>}
         </Section>
-      ) }, ...(d.shipments_without_order > 0 ? [{
+      ) }, ...(d.orders_total || d.transfers.length ? [{
+        id: 'orders', label: 'Orders', count: d.orders_total || d.transfers.length, render: () => <BelongsTo d={d} />,
+      }] : []), ...(d.shipments_without_order > 0 ? [{
         id: 'no-order', label: 'No order', tone: 'warning' as const, render: () => <OrderFrom945 documentId={d.id} />,
       }] : [])]}
     />
@@ -83,11 +128,12 @@ function Detail({ d }: { d: DocumentRead }) {
 
 /** Operations → Documents: every file read or written, its original bytes kept (FR-OB-05). */
 export default function DocumentsPage() {
+  const columns = useColumns()
   return (
     <ListPage<DocumentRead>
       resource={documentsClient}
       title="Documents"
-      description="Every file read from or sent to a partner, with its original bytes. Nothing is ever deleted."
+      description="Every file read from or sent to a partner, with its original bytes and the orders it belongs to. Search by an order's ref to find its files. Nothing is ever deleted."
       columns={columns}
       emptyTitle="No documents yet"
       renderDetail={(d) => <Detail d={d} />}

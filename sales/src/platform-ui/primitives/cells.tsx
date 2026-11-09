@@ -4,6 +4,7 @@ import { Download } from 'lucide-react'
 import { cn } from '../lib/cn'
 import { CopyChip } from './Copy'
 import { IconButton } from './IconButton'
+import { Popover } from './Popover'
 import { TrackingLink } from './TrackingLink'
 import { dateAndTime, formatDate, formatDateTime, formatDuration, formatMoney, formatNumber, instant, statusTone, timeFromNow } from './format'
 import { useNow } from './useNow'
@@ -103,4 +104,39 @@ export function FileCell({ name, label, onDownload }: { name: string | null | un
 export function StatusCell({ value, tone, className }: { value: string | null | undefined; tone?: BadgeVariant; className?: string }) {
   if (!value) return <span className="text-neutral-400">—</span>
   return <Badge variant={tone ?? statusTone(value)} className={className}>{value}</Badge>
+}
+
+/** A record a row points at (an order, a transfer): what to open and what to call it. */
+export interface RecordRef { id: number; label: string }
+
+const refButton = 'whitespace-nowrap rounded px-1 text-left text-primary-700 underline-offset-2 hover:underline focus-visible:outline-2'
+
+/** Several records as links (user 2026-11-09): the first `max` in the cell, "+N more" opens all of them.
+ *  `total` is how many there are in all when only the first ones came; with none, `empty` says why.
+ *  A click opens the record and never the row. */
+export function RefsCell({ refs, total, onOpen, empty, max = 2, noun = 'record' }: {
+  refs: RecordRef[]; total?: number; onOpen: (ref: RecordRef) => void; empty?: string | null; max?: number; noun?: string
+}) {
+  const all = Math.max(total ?? 0, refs.length)
+  if (all === 0) return <span className="text-xs text-neutral-500">{empty ?? '—'}</span>
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
+  const link = (r: RecordRef) => (
+    <button key={r.id} type="button" className={refButton} onClick={(e) => { stop(e); onOpen(r) }}>{r.label}</button>
+  )
+  const rest = all - Math.min(max, refs.length)
+  // e.g. "3 orders"; one: "1 order"
+  return (
+    <span className="flex flex-wrap items-center gap-x-1" onClick={stop} onKeyDown={stop}>
+      {refs.slice(0, max).map(link)}
+      {rest > 0 && (
+        <Popover align="start" className="max-h-72 w-64 overflow-y-auto"
+          trigger={<button type="button" className="whitespace-nowrap rounded bg-neutral-100 px-1.5 text-xs text-neutral-700 hover:bg-neutral-200"
+            aria-label={`${rest} more ${rest === 1 ? noun : `${noun}s`}`} onClick={stop}>+{rest} more</button>}>
+          <p className="mb-1 text-xs font-medium text-neutral-500">{all} {noun}s</p>
+          <ul className="flex flex-col">{refs.map((r) => <li key={r.id}>{link(r)}</li>)}</ul>
+          {all > refs.length && <p className="mt-1 text-xs text-neutral-500">and {all - refs.length} more: search by the {noun}.</p>}
+        </Popover>
+      )}
+    </span>
+  )
 }

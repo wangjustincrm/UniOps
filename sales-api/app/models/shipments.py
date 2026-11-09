@@ -84,6 +84,14 @@ Document.shipments_without_order = column_property(
     select(func.count(Shipment.id)).where(Shipment.document_id == Document.id, Shipment.order_id.is_(None))
     .correlate_except(Shipment).scalar_subquery())
 
+# The refs of the orders a document is linked to, as one text (Documents: search and filter by order,
+# user 2026-11-09). Deferred: only a WHERE reads it; the rows get their orders from DocumentService.
+Document.order_refs = column_property(
+    select(func.string_agg(func.concat_ws(" ", Order.source_reference, Order.order_number, Order.source_order_number), " "))
+    .select_from(DocumentLink).join(Order, Order.id == DocumentLink.entity_id)
+    .where(DocumentLink.document_id == Document.id, DocumentLink.entity_type == "order")
+    .correlate_except(DocumentLink, Order).scalar_subquery(), deferred=True)
+
 
 # What the Order status reads of the order's 945s and 940 (app/domain/order_status.py).
 def _any_shipment(*where):

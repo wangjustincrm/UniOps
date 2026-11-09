@@ -1,4 +1,4 @@
-import { createResourceClient } from '@/platform-ui'
+import { createResourceClient, type RecordRef } from '@/platform-ui'
 import { api } from '@/lib/api'
 
 // Mirrors sales-api app/schemas/operations.py (hand-written, see partnersApi.ts).
@@ -30,6 +30,12 @@ export interface DocumentRead {
   created_by_name: string
   /** Its 945 sets that have no order (FR-OB-25c). */
   shipments_without_order: number
+  /** The orders it belongs to: the first 50, and how many in all (user 2026-11-09). */
+  orders: RecordRef[]
+  orders_total: number
+  transfers: RecordRef[]
+  /** With no order and no transfer: why. */
+  no_order_reason: string | null
 }
 
 /** One connection's pass (FR-OB-76): listed = the sum of the other six. */

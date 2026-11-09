@@ -3,7 +3,10 @@
 path and needs sales.file.retry."""
 from __future__ import annotations
 
-from sqlalchemy import select
+from collections import defaultdict
+from typing import Any
+
+from sqlalchemy import func, select, union_all
 
 from app.domain.documents import DIRECTIONS, KINDS, LOG_LEVELS, ORIGINS, RUN_STATUSES, RUN_TRIGGERS, SYSTEMS
 from app.domain.status import Ack, InboundFile, OutboundFile
@@ -11,14 +14,16 @@ from app.domain.intake import classify
 from app.domain.status import INBOUND_FILE
 from app.models.documents import Document, DocumentLink, LogEntry, Run
 from app.models.invoices import Invoice
+from app.models.orders import Order
+from app.models.transfers import Receipt, Transfer
 from app.platform.authorization import authorize, requires
 from app.models.shipments import Shipment  # noqa: F401 — maps Document.shipments_without_order
 from app.platform.errors import BusinessError, NotFound
-from app.platform.query import FilterRule
+from app.platform.query import FilterRule, Page
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
-from app.schemas.operations import DocumentRead, LogRead, RunRead
+from app.schemas.operations import DocumentRead, EntityRef, LogRead, RunRead
 from app.services.problems import ORDER_FILE_UNREADABLE, UNREADABLE_FILE
 
 READ = "sales.read"
@@ -27,16 +32,18 @@ FILE_RETRY = "sales.file.retry"
 
 class DocumentRepository(Repository[Document]):
     model = Document
-    search_fields = ("remote_name", "sha256", "error")
+    search_fields = ("remote_name", "sha256", "error", "order_refs")
     list_fields = ("id", "direction", "origin", "system", "connection_id", "kind", "remote_name", "size",
                    "remote_mtime", "sha256", "processing_status", "file_status", "ack_status", "isa13", "gs06",
                    "st02", "partner_code", "error", "sent_at", "created_at")
     labels = {"remote_name": "File", "remote_mtime": "Modified on the server", "isa13": "ISA13", "gs06": "GS06",
-              "st02": "ST02", "sha256": "SHA-256"}
+              "st02": "ST02", "sha256": "SHA-256", "order_refs": "Order"}
     enums = {"direction": DIRECTIONS, "origin": ORIGINS, "system": SYSTEMS, "kind": KINDS,
              "processing_status": tuple(s.value for s in InboundFile),
              "file_status": tuple(s.value for s in OutboundFile), "ack_status": tuple(s.value for s in Ack)}
-    filterable = {"shipments_without_order": FilterRule(Document.shipments_without_order)}
+    filterable = {"shipments_without_order": FilterRule(Document.shipments_without_order),
+                  # an order's ref, internal or source number (user 2026-11-09): its documents
+                  "order_refs": FilterRule(Document.order_refs, kind="text", cast=str)}
     meta_hidden = ("shipments_without_order",)
     default_sort = ("-created_at",)
     groupable = ("direction", "origin", "system", "kind", "processing_status", "file_status", "ack_status",
@@ -51,10 +58,79 @@ class DocumentRepository(Repository[Document]):
     )
 
 
+MAX_REFS = 50  # a Shopify page holds up to 250 orders: the first 50 and the count
+
+
+def no_order_reason(d: Document) -> str:
+    """Why a document belongs to no order or transfer, from what is stored about it."""
+    status, kind = d.processing_status, d.kind
+    if status == "Duplicate":
+        return "Duplicate of a file already read"
+    if status == "Failed":
+        return f"Not read: {d.error}" if d.error else "Not read"
+    if status == "Pending":
+        return "Not read yet"
+    if status == "Skipped":
+        return d.error or "Skipped: not for Sales"
+    if d.shadow:
+        return "Shadow run: Zoho handled it"
+    if kind == "997_EDI":
+        return "997 for a file Sales did not send (Zoho's)"
+    if kind == "945_EDI":
+        return "945 for an order that is not in Sales" if d.shipments_without_order else "945 with no order"
+    if kind == "SHOPIFY_ORDER_JSON":
+        return "Its orders are before the store's start number, or were not imported"
+    if kind == "850_JSON":
+        return "No order was made from it"
+    if kind == "OTHER":
+        return "Not an order file"
+    return "Not linked to an order"
+
+
 class DocumentService(ReadOnlyService[Document, DocumentRead]):
     repo_cls = DocumentRepository
     read_schema = DocumentRead
     read_permission = READ
+
+    async def get(self, id: int) -> DocumentRead:
+        await self._authorize(self.read_permission)
+        return (await self._with_refs([await self.repo.get(id)]))[0]
+
+    async def list(self, spec) -> Page[DocumentRead]:
+        await self._authorize(self.read_permission)
+        page = await self.repo.list(spec)
+        return Page[Any](items=await self._with_refs(page.items), total=page.total, groups=page.groups,
+                         groups_truncated=page.groups_truncated, totals=page.totals)
+
+    async def _with_refs(self, docs) -> list[DocumentRead]:
+        """Each row's orders (the first MAX_REFS and the count) and transfers, two queries for the page."""
+        rows = [self.to_read(d) for d in docs]
+        ids = [r.id for r in rows]
+        if not ids:
+            return rows
+        s = self.uow.session
+        ranked = (select(DocumentLink.document_id, Order.id, Order.source_reference, Order.order_number,
+                         func.row_number().over(partition_by=DocumentLink.document_id, order_by=Order.id).label("n"),
+                         func.count().over(partition_by=DocumentLink.document_id).label("total"))
+                  .join(Order, Order.id == DocumentLink.entity_id)
+                  .where(DocumentLink.document_id.in_(ids), DocumentLink.entity_type == "order").subquery())
+        orders: dict[int, list[EntityRef]] = defaultdict(list)
+        totals: dict[int, int] = {}
+        for did, oid, ref, number, n, total in (await s.execute(select(ranked).where(ranked.c.n <= MAX_REFS))).all():
+            orders[did].append(EntityRef(id=oid, label=ref or f"Internal no. {number}"))
+            totals[did] = total
+        pairs = union_all(select(Transfer.document_id.label("d"), Transfer.id.label("t")).where(Transfer.document_id.in_(ids)),
+                          select(Receipt.document_id, Receipt.transfer_id).where(Receipt.document_id.in_(ids),
+                                                                                  Receipt.transfer_id.is_not(None))).subquery()
+        transfers: dict[int, list[EntityRef]] = defaultdict(list)
+        for did, tid, number in (await s.execute(select(pairs.c.d, Transfer.id, Transfer.transfer_number)
+                                                 .join(Transfer, Transfer.id == pairs.c.t).distinct())).all():
+            transfers[did].append(EntityRef(id=tid, label=f"TO-{number}"))
+        by_id = {d.id: d for d in docs}
+        for r in rows:
+            r.orders, r.orders_total, r.transfers = orders.get(r.id, []), totals.get(r.id, 0), transfers.get(r.id, [])
+            r.no_order_reason = None if (r.orders or r.transfers) else no_order_reason(by_id[r.id])
+        return rows
 
     @requires(READ)
     async def raw(self, id: int) -> tuple[str, bytes]:

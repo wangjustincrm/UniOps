@@ -8,6 +8,12 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 
+class EntityRef(BaseModel):
+    """A record a row points at: what to open and what to call it."""
+    id: int
+    label: str
+
+
 class DocumentRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -36,6 +42,12 @@ class DocumentRead(BaseModel):
     created_at: datetime
     created_by_name: str
     shipments_without_order: int = 0  # FR-OB-25c: its 945 sets that have no order
+    # The orders and transfers it belongs to (user 2026-11-09): the first MAX_REFS, and how many in all;
+    # with none, why (a Zoho 997, an order before the store's start, a duplicate …).
+    orders: list[EntityRef] = []
+    orders_total: int = 0
+    transfers: list[EntityRef] = []
+    no_order_reason: str | None = None
 
 
 class RunRead(BaseModel):
