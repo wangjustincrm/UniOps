@@ -599,12 +599,18 @@ the first Sales release:
    order with two tracking numbers (the GraphQL path has never run on a real store).
 3. Set the start: the Shopify cursor and `order_number_cutoff` to the first order Sales owns.
    An older order that returns then arrives Historical, and never gets a 940.
-4. Load the Radiant export once by hand (retailer and manual orders, tracking, lots). The load
+4. Raise Sales' numbers above Zoho's last ones (internal order number, X12 control, transfer
+   number): `docker exec -i <sales-api> python -m app.scripts.raise_numbers --order <N> --control <N>
+   --transfer <T>` shows the change; add `--apply`. N is above Zoho's highest internal number
+   (1,008,686 in its archive on 2026-11-05) and T above its last transfer (00106). A sequence is only
+   raised. Without this a 945 that carries a Shopify order number can match a Sales internal number.
+5. Load the Radiant export once by hand (retailer and manual orders, tracking, lots). The load
    must not raise a 940, invoice, email, task or Shopify write.
-5. Stop Zoho's sending, then turn off `shadow_mode`, set the guards above, and put the Radiant
+6. Stop Zoho's sending, then turn off `shadow_mode`, set the guards above, and put the Radiant
    and TrueCommerce connections in LIVE. Set `edi.warehouse_connection_id` and
    `invoice.connection_id`. Check Health: every gate passes.
-6. Watch the first day: Waiting for 997, Delivery confirmation, Failed files.
+7. Turn on Automatic runs (Connections, the Automatic runs card: Off by default).
+8. Watch the first day: Sent (waiting for the 997), Delivery confirmation, Failed files.
 
 Rollback: stop `sales-api` and `sales-web` and leave the permissions
 ungranted; no other service needs a change.
