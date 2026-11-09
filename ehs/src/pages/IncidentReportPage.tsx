@@ -549,7 +549,8 @@ export default function IncidentReportPage() {
       <Field label="Which equipment was involved?"
              help="From the equipment register. Leave it empty if none was, or it is not listed.">
         <EquipmentSelect value={form.equipmentId ?? null}
-                         onChange={(id) => set('equipmentId', id)} />
+                         onChange={(id) => set('equipmentId', id)}
+                         locationId={form.locationId || null} />
       </Field>
 
       {form.kind === 'medical' && (

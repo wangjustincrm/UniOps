@@ -845,7 +845,7 @@ function NewPermitForm({ onClose }: { onClose: () => void }) {
         </Field>
         {/* Round 10: the equipment register, as on the incident forms. */}
         <Field label="Equipment">
-          <EquipmentSelect value={equipmentId} onChange={setEquipmentId} />
+          <EquipmentSelect value={equipmentId} onChange={setEquipmentId} locationId={locationId} />
         </Field>
         <div className="sm:col-span-2">
           <Field label="What is being done">

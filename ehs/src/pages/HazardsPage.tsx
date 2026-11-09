@@ -369,7 +369,7 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
         </Field>
         {/* Round 10: the equipment register, as on the incident forms. */}
         <Field label="Equipment">
-          <EquipmentSelect value={equipmentId} onChange={setEquipmentId} />
+          <EquipmentSelect value={equipmentId} onChange={setEquipmentId} locationId={locationId} />
         </Field>
         <div className="sm:col-span-2">
           <Field label="Description">

@@ -938,7 +938,8 @@ function EditReport({ incident, isHse, onDone, onCancel }: {
         <textarea className={area} value={form.description} onChange={(e) => set('description', e.target.value)} />
       </label>
       <div className="sm:col-span-2 text-xs font-medium text-neutral-700">Equipment, from the register
-        <EquipmentSelect value={form.equipment_id || null} onChange={(id) => set('equipment_id', id ?? '')} />
+        <EquipmentSelect value={form.equipment_id || null} onChange={(id) => set('equipment_id', id ?? '')}
+                         locationId={form.location_id || null} />
       </div>
       <label className="text-xs font-medium text-neutral-700">Equipment involved, in words
         <textarea className={area} value={form.equipment_involved} onChange={(e) => set('equipment_involved', e.target.value)} />

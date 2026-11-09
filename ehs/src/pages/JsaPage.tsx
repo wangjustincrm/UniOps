@@ -179,7 +179,7 @@ function NewJsaForm({ onClose }: { onClose: () => void }) {
         </Field>
         {/* Round 10: the equipment register, as on the incident forms. */}
         <Field label="Equipment">
-          <EquipmentSelect value={equipmentId} onChange={setEquipmentId} />
+          <EquipmentSelect value={equipmentId} onChange={setEquipmentId} locationId={locationId} />
         </Field>
         <Field label="PPE for the whole job">
           <input className={inputClass} value={ppe} onChange={(e) => setPpe(e.target.value)}
