@@ -53,7 +53,7 @@ from app.services.intake import ConnectionSnapshot
 from app.services import print_docs
 from app.services.outbound import TORONTO
 from app.services.problems import INVOICE_FAILED, INVOICE_HOLD, ORDER_RETURN, problem, send_refused
-from app.services.settings import INVOICE_CONNECTION_ID, SETTINGS, SHADOW_MODE
+from app.services.settings import INVOICE_CONNECTION_ID, INVOICE_FINANCE_EMAIL, SETTINGS, SHADOW_MODE
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,7 @@ def delivery_due(order: Order, partner: Partner) -> date | None:
     """No carrier reports a delivery: it is due on the requested date (dc routing: do-not-deliver-after)."""
     return order.do_not_deliver_after if partner.dc_routing_required else order.requested_delivery_date
 SEND_INVOICE = "send_invoice"
+FINANCE_COPY = "invoice_finance_copy"  # FR-OB-32: the order documents to finance AR
 OUTBOX = Outbox(OutboxRecord)
 SELLER = print_docs.SELLER
 EDITABLE = (Inv.READY, Inv.FAILED, Inv.SENT, Inv.BLOCKED)
@@ -440,6 +441,14 @@ class Invoicing:
         return doc
 
     async def _email(self, s, inv: Invoice, order: Order, partner: Partner, lines: list[InvoiceLine]):
+        """The partner's invoice email; finance AR on copy (FR-OB-32)."""
+        cc = tuple(x.strip() for x in (partner.invoice_cc or "").replace(";", ",").split(",") if x.strip())
+        finance = await SETTINGS.get(s, INVOICE_FINANCE_EMAIL)
+        if finance and finance not in cc:
+            cc = (*cc, finance)
+        return await self._documents_email(s, inv, order, partner, to=(partner.invoice_email,), cc=cc)
+
+    async def _documents_email(self, s, inv: Invoice, order: Order, partner: Partner, *, to: tuple[str, ...], cc: tuple[str, ...]):
         invoice_pdf = await print_docs.invoice_pdf(s, inv, order)
         po_pdf = await print_docs.po_pdf(s, order)
         packing_pdf = await print_docs.shipped_pdf(s, order, inv.invoice_date, inv.delivery_number)
@@ -451,8 +460,7 @@ class Invoicing:
         body_html = (f"<p>Please find attached invoice <b>{esc(inv.invoice_number)}</b> for your PO <b>{esc(po)}</b> "
                      f"(order {esc(str(order.order_number))}), with the purchase order and the packing list.</p>"
                      f"<p>Total: {esc(inv.currency)} {inv.total:.2f}</p>")
-        cc = tuple(x.strip() for x in (partner.invoice_cc or "").replace(";", ",").split(",") if x.strip())
-        msg = ExternalEmail(to=(partner.invoice_email,), cc=cc, subject=subject, body_text=text, body_html=body_html,
+        msg = ExternalEmail(to=to, cc=cc, subject=subject, body_text=text, body_html=body_html,
                             attachments=((f"{inv.invoice_number}.pdf", invoice_pdf, "application/pdf"),
                                          (f"PO-{po or order.order_number}.pdf", po_pdf, "application/pdf"),
                                          (f"PackingList-{order.order_number}.pdf", packing_pdf, "application/pdf")))
@@ -468,6 +476,27 @@ class Invoicing:
             INVOICE.transition(order, Inv.SENT, actor=uow.actor, events=uow.events, reason=f"invoice {inv.method} sent")
         inv.sent_at, inv.send_count, inv.error = self.clock(), inv.send_count + 1, None  # the invoice row is the send record
         await self.tasks.resolve_problem(uow.session, INVOICE_FAILED, order.id)
+        if inv.method == "810_JSON" and await SETTINGS.get(uow.session, INVOICE_FINANCE_EMAIL):  # an emailed one copies finance itself
+            OUTBOX.add(uow.session, FINANCE_COPY, {"invoice_id": inv.id}, entity=inv)
+
+    # ── finance AR's copy of the documents (FR-OB-32) ────────────────────────
+    def finance_kind(self) -> OutboxKind:
+        return OutboxKind(effect=self._finance_copy, policy=ONCE, on_failed=self._finance_not_sent, on_suppressed=self._finance_not_sent)
+
+    async def _finance_copy(self, payload: dict[str, Any], ctx) -> None:
+        async with self.uow_factory(SYSTEM_ACTOR) as uow:
+            s = uow.session
+            to = await SETTINGS.get(s, INVOICE_FINANCE_EMAIL)
+            if not to:
+                return
+            inv = await s.get(Invoice, payload["invoice_id"])
+            order = await s.get(Order, inv.order_id)
+            partner = (await s.execute(select(Partner).where(Partner.code == order.partner_code))).scalar_one()
+            msg, _ = await self._documents_email(s, inv, order, partner, to=(to,), cc=())
+        await self.email.send_external(msg)  # guarded: SALES_EXTERNAL_EMAIL_ENABLED
+
+    async def _finance_not_sent(self, row, exc, uow) -> None:
+        await oplog.write(uow.session, "WARNING", STEP, f"finance copy of invoice {row.payload.get('invoice_id')} not sent: {exc}")
 
     async def _failed(self, row, exc, uow) -> None:
         inv, order = await self._pair(row, uow)

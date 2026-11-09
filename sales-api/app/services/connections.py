@@ -32,7 +32,7 @@ from app.services.cycle import window_of
 from app.services.intake import ConnectionSnapshot
 from app.services.problems import SFTP_AUTH_FAILED
 from app.services.settings import (
-    ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, INVOICE_CONNECTION_ID, SCHEDULER_PAUSED, SETTINGS, SHADOW_MODE, SYSTEM_MINUTES,
+    ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, INVOICE_CONNECTION_ID, INVOICE_FINANCE_EMAIL, SCHEDULER_PAUSED, SETTINGS, SHADOW_MODE, SYSTEM_MINUTES,
 )
 
 logger = logging.getLogger(__name__)
@@ -248,7 +248,8 @@ class EdiSettingsService:
         s = self.uow.session
         return EdiSettings(connection_id=await SETTINGS.get(s, EDI_CONNECTION_ID),
                            ack_timeout_minutes=await SETTINGS.get(s, ACK_TIMEOUT_MINUTES),
-                           invoice_connection_id=await SETTINGS.get(s, INVOICE_CONNECTION_ID))
+                           invoice_connection_id=await SETTINGS.get(s, INVOICE_CONNECTION_ID),
+                           finance_email=await SETTINGS.get(s, INVOICE_FINANCE_EMAIL))
 
     @requires(CONFIG)
     async def update(self, body: EdiSettings) -> EdiSettings:
@@ -262,6 +263,7 @@ class EdiSettingsService:
         await SETTINGS.set(s, EDI_CONNECTION_ID, body.connection_id)
         await SETTINGS.set(s, ACK_TIMEOUT_MINUTES, body.ack_timeout_minutes)
         await SETTINGS.set(s, INVOICE_CONNECTION_ID, body.invoice_connection_id)
+        await SETTINGS.set(s, INVOICE_FINANCE_EMAIL, body.finance_email or None)
         return body
 
 

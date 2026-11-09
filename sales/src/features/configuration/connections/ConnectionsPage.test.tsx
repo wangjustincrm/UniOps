@@ -169,7 +169,7 @@ describe('Connections page: warehouse EDI settings (P4)', () => {
     const sheet = await screen.findByRole('dialog', { name: 'Warehouse EDI and 810 invoices' })
     fireEvent.change(within(sheet).getByLabelText(/997 wait \(minutes\)/), { target: { value: '90' } })
     fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(api.saveEdi).toHaveBeenCalledWith({ connection_id: null, ack_timeout_minutes: 90, invoice_connection_id: null }))
+    await waitFor(() => expect(api.saveEdi).toHaveBeenCalledWith({ connection_id: null, ack_timeout_minutes: 90, invoice_connection_id: null, finance_email: null }))
   })
 })
 

@@ -51,6 +51,11 @@ SHADOW_MODE = SETTINGS.declare(Setting(
 INVOICE_CONNECTION_ID = SETTINGS.declare(Setting(
     "invoice.connection_id", None, lambda v: None if v in (None, "") else int(v), safe=None,
     description="SFTP connection for 810 invoices"))
+# FR-OB-32: finance AR gets the order documents (PO, invoice, packing list) of every invoice sent:
+# copied on an emailed invoice, a message of its own for an 810. Unset: nobody.
+INVOICE_FINANCE_EMAIL = SETTINGS.declare(Setting(
+    "invoice.finance_email", None, lambda v: (str(v).strip() or None) if v is not None else None, safe=None,
+    description="Finance AR address: the order documents of every invoice sent"))
 # FR-OB-23: no 997 within this time → Timeout and a task.
 ACK_TIMEOUT_MINUTES = SETTINGS.declare(Setting(
     "edi.ack_timeout_minutes", 120, int, validate=minimum(1), safe=120,

@@ -419,3 +419,39 @@ async def test_ac40_cancelled_after_the_940_holds_with_one_task_stating_what_shi
     assert (await p6.q("SELECT fulfillment_status FROM sales_orders WHERE id = :i", i=o.id))[0]["fulfillment_status"] == "On Hold"
     [t] = await tasks(p6, "cancel_after_940")
     assert "Nothing has shipped yet: tell the warehouse not to ship it." in t
+
+
+async def test_finance_ar_gets_the_order_documents_of_every_invoice_sent(p6):  # FR-OB-32
+    from app.platform.outbox import Outbox, OutboxWorker
+    from app.services.invoicing import FINANCE_COPY
+    from app.services.settings import INVOICE_FINANCE_EMAIL
+    worker = OutboxWorker(Outbox(OutboxRecord), {SEND_INVOICE: p6.inv.outbox_kind(), FINANCE_COPY: p6.inv.finance_kind()}, p6.factory)
+    async with p6.factory(SYSTEM_ACTOR) as u:
+        await SETTINGS.set(u.session, INVOICE_FINANCE_EMAIL, "ar@crm.example")
+        await u.commit()
+    p6.edi.settings.SALES_EXTERNAL_EMAIL_ENABLED = True
+    o = await shipped_850(p6)                        # an 810 partner
+    await p6.inv.advance()
+    await send(p6, (await confirm(p6, o.id)).id)
+    await worker.run_once()                          # the 810, then finance's copy
+    await worker.run_once()
+    [m] = p6.mail.sent
+    assert m.to == ("ar@crm.example",) and [a[0].split("-")[0] for a in m.attachments] == [f"IN", "PO", "PackingList"]
+    [inv] = await p6.q("SELECT invoice_status FROM sales_orders WHERE id = :i", i=o.id)
+    assert inv["invoice_status"] == "Sent"
+
+
+async def test_an_emailed_invoice_copies_finance_ar(p6):  # FR-OB-32
+    from app.services.settings import INVOICE_FINANCE_EMAIL
+    async with p6.factory(SYSTEM_ACTOR) as u:
+        await SETTINGS.set(u.session, INVOICE_FINANCE_EMAIL, "finance@crm.example")
+        await u.commit()
+    await email_partner(p6, cc="ar@crm.example")
+    o = await shipped_850(p6, "PO-F", partner="SOB")
+    await p6.inv.advance()
+    out = await confirm(p6, o.id)
+    p6.edi.settings.SALES_EXTERNAL_EMAIL_ENABLED = True
+    await send(p6, out.id)
+    await p6.worker.run_once()
+    [m] = p6.mail.sent
+    assert m.cc == ("ar@crm.example", "finance@crm.example")
