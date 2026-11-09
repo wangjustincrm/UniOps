@@ -289,7 +289,12 @@ function RegisterTab({
   const [checkingNow, setCheckingNow] = useState<Asset | null>(null)
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<Asset | null>(null)
-  const shown = focusedId ? assets.filter((a) => a.id === focusedId) : assets
+  // ★ Round 12, Q3: a retired item leaves the working list; it is one press away.
+  const [showRetired, setShowRetired] = useState(false)
+  const retiredCount = assets.filter((a) => a.status === 'retired').length
+  const shown = focusedId
+    ? assets.filter((a) => a.id === focusedId)
+    : assets.filter((a) => showRetired || a.status !== 'retired')
 
   // The item a code was just scanned on, once it has arrived from the server.
   const scanned = checkOnOpen && focusedId && mayInspect
@@ -358,7 +363,15 @@ function RegisterTab({
       {editing && <AssetForm existing={editing} onClose={() => setEditing(null)} />}
 
       <SearchBox value={list.query} onChange={list.setQuery}
-                 placeholder="Search by number, what it is, serial or area" />
+                 placeholder="Search by number, what it is, serial or area">
+        {!focusedId && retiredCount > 0 && (
+          <label className="flex min-h-[44px] shrink-0 items-center gap-2 text-sm text-neutral-700">
+            <input type="checkbox" checked={showRetired}
+                   onChange={(e) => setShowRetired(e.target.checked)} />
+            Show retired ({retiredCount})
+          </label>
+        )}
+      </SearchBox>
 
       {shown.length === 0 && !adding ? (
         <Empty>
@@ -585,8 +598,11 @@ function ServiceHistory({ assetId }: { assetId: string }) {
           <li key={n} className="flex flex-wrap items-baseline gap-x-2 text-xs">
             <span className="font-medium tabular-nums text-neutral-800">{formatDateTime(e.at)}</span>
             <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-              e.status === 'in_service' ? 'bg-success-50 text-success-700' : 'bg-danger-50 text-danger-700'}`}>
-              {e.status === 'in_service' ? 'Back in service' : 'Out of service'}
+              e.status === 'in_service' ? 'bg-success-50 text-success-700'
+                : e.status === 'retired' ? 'bg-neutral-100 text-neutral-600'
+                : 'bg-danger-50 text-danger-700'}`}>
+              {e.status === 'in_service' ? 'Back in service'
+                : e.status === 'retired' ? 'Retired' : 'Out of service'}
             </span>
             {e.by_name && <span className="text-neutral-500">by {e.by_name}</span>}
             {e.reason && <span className="min-w-0 text-neutral-600">— {e.reason}</span>}
@@ -653,6 +669,30 @@ function AssetForm({ existing, onClose }: { existing?: Asset; onClose: () => voi
       onClose()
     },
   })
+
+  // ★ Round 12, Q3: retire (off its cycle, history kept) and delete (only
+  // before anything has been recorded against it — the server decides).
+  const [retiring, setRetiring] = useState(false)
+  const [reason, setReason] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const done = () => {
+    queryClient.invalidateQueries({ queryKey: ['safety-assets'] })
+    queryClient.invalidateQueries({ queryKey: ['asset-coverage'] })
+    queryClient.invalidateQueries({ queryKey: ['asset-history'] })
+    onClose()
+  }
+  const retire = useMutation({
+    mutationFn: () => api.post(
+      `/api/v1/safety-assets/${existing!.id}/${existing!.status === 'retired' ? 'reinstate' : 'retire'}`,
+      { reason: reason.trim() || null }),
+    onSuccess: done,
+  })
+  const remove = useMutation({
+    mutationFn: () => api.del(`/api/v1/safety-assets/${existing!.id}`),
+    onSuccess: done,
+    onError: () => setConfirmDelete(false),
+  })
+  const busy = create.isPending || retire.isPending || remove.isPending
 
   return (
     <Card className="mb-4">
@@ -726,16 +766,64 @@ function AssetForm({ existing, onClose }: { existing?: Asset; onClose: () => voi
           )}
         </div>
       </div>
-      <ErrorNote error={create.error} />
-      <div className="mt-3 flex justify-end gap-2">
+      <ErrorNote error={create.error ?? retire.error ?? remove.error} />
+      {existing && retiring && (
+        <label className="mt-3 block text-xs font-medium text-neutral-700">
+          {existing.status === 'retired' ? 'Why is it back?' : 'Why is it being retired?'}
+          <input className={`${inputClass} mt-1`} value={reason}
+                 onChange={(e) => setReason(e.target.value)}
+                 placeholder={existing.status === 'retired'
+                   ? 'Retired by mistake' : 'Replaced, condemned, removed from the plant'} />
+        </label>
+      )}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {existing && !retiring && (
+            <button type="button" className={secondaryButton} disabled={busy}
+                    onClick={() => setRetiring(true)}>
+              {existing.status === 'retired' ? 'Put back in service' : 'Retire'}
+            </button>
+          )}
+          {existing && retiring && (
+            <>
+              <button type="button" className={primaryButton} disabled={busy}
+                      onClick={() => { if (!busy) retire.mutate() }}>
+                {retire.isPending ? 'Saving…'
+                  : existing.status === 'retired' ? 'Put it back' : 'Retire it'}
+              </button>
+              <button type="button" className={secondaryButton}
+                      onClick={() => setRetiring(false)}>Not now</button>
+            </>
+          )}
+          {existing && !retiring && !confirmDelete && (
+            <button type="button" disabled={busy} onClick={() => setConfirmDelete(true)}
+                    className="min-h-[44px] px-2 text-sm font-medium text-danger-700 hover:underline disabled:opacity-50">
+              Delete
+            </button>
+          )}
+          {existing && confirmDelete && (
+            <span className="flex flex-wrap items-center gap-2 text-xs text-neutral-700">
+              Delete for good? Only possible before anything is recorded against it.
+              <button type="button" disabled={busy}
+                      onClick={() => { if (!busy) remove.mutate() }}
+                      className="min-h-[36px] rounded-md bg-danger-600 px-3 font-semibold text-white disabled:opacity-50">
+                {remove.isPending ? 'Deleting…' : 'Delete'}
+              </button>
+              <button type="button" className="min-h-[36px] px-2 font-medium text-neutral-600"
+                      onClick={() => setConfirmDelete(false)}>Keep it</button>
+            </span>
+          )}
+        </div>
+        <div className="flex gap-2">
         <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>
         <button type="button" className={primaryButton}
-                disabled={!name.trim() || create.isPending}
+                disabled={!name.trim() || busy}
                 onClick={() => { if (!create.isPending) create.mutate() }}>
           {create.isPending
             ? (editing ? 'Saving…' : 'Registering…')
             : (editing ? 'Save' : 'Register')}
         </button>
+        </div>
       </div>
     </Card>
   )
