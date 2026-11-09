@@ -124,11 +124,15 @@ def test_invoice_matches_prd_table(prd_present):
 def test_the_listed_additions_are_exactly_the_agreed_ones():
     F, Inv = st.Fulfillment, st.Invoice
     assert st.FULFILLMENT_ADDITIONS == {
-        F.GENERATED_940: {F.CANCELLED},
+        # + Shipped from every status before our 940 is out: only a 945 proves shipment (user 2026-11-09)
+        F.GENERATED_940: {F.CANCELLED, F.SHIPPED},
         F.TIMEOUT_940: {F.ACCEPTED_940, F.REJECTED_940, F.SHIPPED},
-        F.PENDING: {F.REVIEW},           # FR-OB-15 + FR-OB-16 (2026-10-29)
-        F.PAYMENT_HOLD: {F.REVIEW},      # FR-OB-15 + FR-OB-16
-        F.REVIEW: {F.PAYMENT_HOLD},      # FR-OB-12
+        F.PENDING: {F.REVIEW, F.SHIPPED},           # FR-OB-15 + FR-OB-16 (2026-10-29)
+        F.PAYMENT_HOLD: {F.REVIEW, F.SHIPPED},      # FR-OB-15 + FR-OB-16
+        F.REVIEW: {F.PAYMENT_HOLD, F.SHIPPED},      # FR-OB-12
+        F.ARCHIVE_SUPPRESSED: {F.SHIPPED},
+        F.REJECTED_940: {F.SHIPPED},
+        F.FAILED_940: {F.SHIPPED},
         F.SENT_940: {F.GENERATED_940},   # FR-OB-03c confirmed replacement (P4, 2026-10-30)
         F.ACCEPTED_940: {F.GENERATED_940},
     }

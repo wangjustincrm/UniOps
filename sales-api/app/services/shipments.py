@@ -38,7 +38,7 @@ from app.domain.lifecycle import spread
 from app.domain.orders import FROM_945
 from app.domain.row_matching import assign_rows, identifiers, line_identifiers
 from app.domain.shadow import TEST_RUN_REFUSAL
-from app.domain.status import FULFILLMENT, INBOUND_FILE, Ack, InboundFile
+from app.domain.status import FULFILLMENT, INBOUND_FILE, SHIPPED_WITHOUT_OUR_940, Ack, InboundFile
 from app.domain.status import Fulfillment as F
 from app.domain.x12 import X12Error
 from app.integrations.shopify import ShopifyForbidden, readable as shopify_readable
@@ -56,7 +56,8 @@ from app.services.intake import ConnectionSnapshot
 from app.services.order_from_945 import SYNTHETIC_PREFIX, attach, warehouse_number_is
 from app.services.outbound import TORONTO, latest_940
 from app.services.problems import (
-    CANCELLED_AFTER_940, EDI_945_LINE_UNMATCHED, EDI_945_NO_ORDER, EDI_945_VALIDATION, ORDER_FILE_UNREADABLE, SECOND_945,
+    CANCELLED_AFTER_940, EDI_945_LINE_UNMATCHED, EDI_945_NO_ORDER, EDI_945_VALIDATION, ORDER_ARCHIVED, ORDER_FILE_UNREADABLE,
+    ORDER_REVIEW, SECOND_945,
     SHOPIFY_WRITE_FAILED, SHORT_SHIPMENT, problem, send_refused,
 )
 from app.services.settings import SETTINGS, SHADOW_MODE
@@ -292,7 +293,7 @@ class Shipments:
                                        line=ln.line_no, found=got, expected=want))
         await self._checks(s, order, sh, sent, locked, p, shadow=doc.shadow)
         status = F(order.fulfillment_status)
-        if status in SHIPPABLE:
+        if status in SHIPPABLE or status in SHIPPED_WITHOUT_OUR_940:
             p.status_to = F.SHIPPED.value
         if sent is not None and sent.ack_status in (Ack.WAITING.value, Ack.TIMEOUT.value):
             p.accept_940 = True
@@ -394,8 +395,11 @@ class Shipments:
             sent = await latest_940(s, order.id, for_update=True)
             await self.outbound.accept_by_945(uow, sent, f"945 {doc.remote_name} arrived before any 997")
         if p.status_to == F.SHIPPED.value:
+            was = F(order.fulfillment_status)
             FULFILLMENT.transition(order, F.SHIPPED, actor=uow.actor, events=uow.events,
                                    reason=f"945 {doc.remote_name}" + (" (short)" if p.short else ""))
+            for event in {F.ARCHIVE_SUPPRESSED: (ORDER_ARCHIVED,), F.REVIEW: (ORDER_REVIEW,)}.get(was, ()):
+                await self.tasks.resolve_problem(s, event, order.id)  # the goods left: that question is closed
         if p.short:
             await self.tasks.raise_problem(s, SHORT_SHIPMENT, order.id, problem(
                 SHORT_SHIPMENT, f"Short shipment: order {order.label}",

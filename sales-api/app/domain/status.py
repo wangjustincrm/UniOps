@@ -101,6 +101,12 @@ FULFILLMENT_ADDITIONS = {
     F.SENT_940: {F.GENERATED_940},
     F.ACCEPTED_940: {F.GENERATED_940},
 }
+# User 2026-11-09: only a 945 proves shipment, and it always does: goods that left are Shipped also when
+# no 940 of ours went (archived in Shopify, sent by hand, held for review or payment). Its checks still warn.
+SHIPPED_WITHOUT_OUR_940 = (F.PENDING, F.REVIEW, F.PAYMENT_HOLD, F.ARCHIVE_SUPPRESSED, F.GENERATED_940, F.REJECTED_940,
+                           F.FAILED_940)
+for _s in SHIPPED_WITHOUT_OUR_940:
+    FULFILLMENT_ADDITIONS[_s] = FULFILLMENT_ADDITIONS.get(_s, set()) | {F.SHIPPED}
 FULFILLMENT_HOLD_ENTRIES = {
     # 9.1 lists Shipped → On Hold (second 945, FR-OB-25). FR-OB-18: a source
     # cancellation after the 940 is sent puts the order on hold.
