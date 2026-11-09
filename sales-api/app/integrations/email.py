@@ -34,13 +34,39 @@ class EmailGateway(Protocol):
         (connection failure, refusal before DATA completed) and
         outbox.AcceptedThenFailed when it did and something later failed."""
 
+    async def send_internal(self, msg: ExternalEmail) -> None:
+        """The same send, to the company's own addresses only (its own switch and allow check)."""
 
-WRITES = ("send_external",)
+
+WRITES = ("send_external", "send_internal")
 READS: tuple[str, ...] = ()
 
 
-def guarded(switch: str) -> dict[str, str]:
-    return {m: switch for m in WRITES}
+def guarded(external_switch: str, internal_switch: str | None = None) -> dict[str, str]:
+    return {"send_external": external_switch, "send_internal": internal_switch or external_switch}
+
+
+def domain(address: str) -> str:
+    return address.rpartition("@")[2].strip().lower().rstrip(">")
+
+
+def is_internal(addresses, domains) -> bool:
+    """Every address is in one of the company's domains (and there is at least one)."""
+    addresses = [a for a in addresses if a]
+    return bool(addresses) and bool(domains) and all(domain(a) in domains for a in addresses)
+
+
+def internal_only(settings: Any) -> Callable[[str, tuple, dict], str | None]:
+    """The guard's allow check: send_internal reaches only the company's domains, read at call time."""
+    def allow(method: str, args: tuple, kwargs: dict) -> str | None:
+        if method != "send_internal":
+            return None
+        msg: ExternalEmail = args[0] if args else kwargs["msg"]
+        domains = getattr(settings, "internal_email_domains", frozenset())
+        if not is_internal([*msg.to, *msg.cc], domains):
+            return "a recipient is not in SALES_INTERNAL_EMAIL_DOMAINS"
+        return None
+    return allow
 
 
 def _sha256(data: bytes | str | None) -> str | None:
@@ -74,6 +100,9 @@ class FakeEmail:
         if self.script is not None:
             self.script(self.attempts)
         self.sent.append(msg)
+
+    async def send_internal(self, msg: ExternalEmail) -> None:
+        await self.send_external(msg)
 
 
 class SmtpEmail:
@@ -115,3 +144,6 @@ class SmtpEmail:
             raise NotAccepted(f"the mail server did not take the message: {type(e).__name__}") from e
         except aiosmtplib.SMTPException as e:
             raise AcceptedThenFailed(f"the mail server failed after the message: {type(e).__name__}") from e
+
+    async def send_internal(self, msg: ExternalEmail) -> None:
+        await self.send_external(msg)

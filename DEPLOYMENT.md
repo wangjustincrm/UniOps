@@ -581,6 +581,10 @@ the first Sales release:
      / `SALES_SMTP_FROM` / `SALES_SMTP_STARTTLS`, the password as
      `SALES_SECRET_SMTP`. Invoice emails go out only with
      `SALES_EXTERNAL_EMAIL_ENABLED=true`.
+   - Internal mail (the company copy of every invoice sent, notifications to staff):
+     `SALES_INTERNAL_EMAIL_ENABLED=true` and `SALES_INTERNAL_EMAIL_DOMAINS=canadaroyalmilk.com`;
+     a message with any other recipient is refused. The addresses are set on Configuration →
+     Connections → Internal invoice recipients.
    - 810 JSON: add TrueCommerce to `SALES_SFTP_WRITE_HOSTS`
      (`commhub.wheelsgroup.com,sftp.truecommerce.com`), set its connection
      LIVE with the Import folder as its outbound folder, and choose it as the

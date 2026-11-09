@@ -14,6 +14,21 @@ def _uuid_or_none(v: Any) -> uuid.UUID | None:
     return None if v in (None, "") else uuid.UUID(str(v))
 
 
+def email_list(v: Any) -> list[str]:
+    """A list, or one string split on commas / semicolons; blanks dropped, order kept, no repeats."""
+    items = v if isinstance(v, (list, tuple)) else str(v or "").replace(";", ",").split(",")
+    out: list[str] = []
+    for x in (str(i).strip() for i in items):
+        if x and x.lower() not in (o.lower() for o in out):
+            out.append(x)
+    return out
+
+
+def _addresses(v: list[str]) -> str | None:
+    bad = [x for x in v if "@" not in x or " " in x or x.startswith("@") or x.endswith("@")]
+    return f"not an email address: {', '.join(bad)}" if bad else (None if len(v) <= 20 else "at most 20 addresses")
+
+
 SETTINGS = SettingsRegistry(SettingRow)
 
 # FR-OB-07: every 5 minutes by default; can be paused. A bad stored interval
@@ -51,11 +66,13 @@ SHADOW_MODE = SETTINGS.declare(Setting(
 INVOICE_CONNECTION_ID = SETTINGS.declare(Setting(
     "invoice.connection_id", None, lambda v: None if v in (None, "") else int(v), safe=None,
     description="SFTP connection for 810 invoices"))
-# FR-OB-32: finance AR gets the order documents (PO, invoice, packing list) of every invoice sent:
-# copied on an emailed invoice, a message of its own for an 810. Unset: nobody.
-INVOICE_FINANCE_EMAIL = SETTINGS.declare(Setting(
-    "invoice.finance_email", None, lambda v: (str(v).strip() or None) if v is not None else None, safe=None,
-    description="Finance AR address: the order documents of every invoice sent"))
+# FR-OB-32, widened by the user 2026-11-09: every time an invoice is sent, these company addresses get a
+# message of their own with all its documents (invoice, PO, packing list, and the 810 file when it is
+# one), whatever the partner's channel does and also in TEST. Sent as internal mail
+# (SALES_INTERNAL_EMAIL_ENABLED + SALES_INTERNAL_EMAIL_DOMAINS). Empty: nobody.
+INVOICE_INTERNAL_EMAILS = SETTINGS.declare(Setting(
+    "invoice.internal_emails", [], email_list, validate=_addresses, safe=[],
+    description="Company addresses that get the documents of every invoice sent"))
 # FR-OB-23: no 997 within this time → Timeout and a task.
 ACK_TIMEOUT_MINUTES = SETTINGS.declare(Setting(
     "edi.ack_timeout_minutes", 120, int, validate=minimum(1), safe=120,

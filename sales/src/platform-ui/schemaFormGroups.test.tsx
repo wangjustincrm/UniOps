@@ -179,3 +179,24 @@ describe('the choice controls', () => {
     expect(screen.getByRole('radio', { name: 'Custom' })).toBeChecked()
   })
 })
+
+describe('tags', () => {
+  const tagSchema = z.object({ to: z.array(z.string().email('Each one must be an email address')) })
+  const tagFields: FieldSpec[] = [{ name: 'to', label: 'Recipients', type: 'tags' }]
+  it('Enter adds a value, a value typed and not added is kept on Save, and a bad one is refused', async () => {
+    const onSubmit = vi.fn()
+    render(<SchemaForm schema={tagSchema} fields={tagFields} onSubmit={onSubmit} defaultValues={{ to: ['a@crm.example'] }} />)
+    const box = screen.getByRole('textbox', { name: 'Recipients' })
+    fireEvent.change(box, { target: { value: 'b@crm.example' } })
+    fireEvent.keyDown(box, { key: 'Enter' })
+    fireEvent.change(box, { target: { value: 'c@crm.example' } })
+    fireEvent.blur(box)
+    save()
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toEqual({ to: ['a@crm.example', 'b@crm.example', 'c@crm.example'] })
+    fireEvent.change(box, { target: { value: 'not-an-address' } })
+    fireEvent.blur(box)
+    save()
+    expect(await screen.findByText('Each one must be an email address')).toBeTruthy()
+  })
+})

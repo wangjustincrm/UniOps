@@ -28,6 +28,7 @@ from app.platform.guard import Refused
 
 EXTERNAL_EMAIL_SWITCH = "SALES_EXTERNAL_EMAIL_ENABLED"
 PARTNER_WRITES_SWITCH = "SALES_PARTNER_WRITES_ENABLED"
+INTERNAL_EMAIL_SWITCH = "SALES_INTERNAL_EMAIL_ENABLED"
 @dataclass(frozen=True)
 class RefusalRecord:
     """One "would have sent / written" log row (§5.5)."""
@@ -92,7 +93,8 @@ def build_container(settings: Any, *, real_sftp=None, real_email=None, real_shop
         ),
         email=gateway(
             settings, real=real_email or _not_built_yet("email", "P6/P8"), fake=FakeEmail,
-            guarded=email.guarded(EXTERNAL_EMAIL_SWITCH), reads=email.READS, name="email",
+            guarded=email.guarded(EXTERNAL_EMAIL_SWITCH, INTERNAL_EMAIL_SWITCH), reads=email.READS, name="email",
+            allow=email.internal_only(settings),
             summarise=email.summary, on_refused=on_refused,
         ),
         shopify=gateway(

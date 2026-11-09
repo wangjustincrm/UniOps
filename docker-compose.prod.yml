@@ -374,6 +374,9 @@ services:
       SALES_SCHEDULER_ENABLED: ${SALES_SCHEDULER_ENABLED:-false}
       SALES_EXTERNAL_EMAIL_ENABLED: ${SALES_EXTERNAL_EMAIL_ENABLED:-false}
       SALES_PARTNER_WRITES_ENABLED: ${SALES_PARTNER_WRITES_ENABLED:-false}
+      # Mail to the company's own domains only (invoice copies, notifications); its own switch.
+      SALES_INTERNAL_EMAIL_ENABLED: ${SALES_INTERNAL_EMAIL_ENABLED:-false}
+      SALES_INTERNAL_EMAIL_DOMAINS: ${SALES_INTERNAL_EMAIL_DOMAINS:-}
       # SFTP hosts this server may connect to; empty = none (fail closed, §5.1).
       SALES_SFTP_ALLOWED_HOSTS: ${SALES_SFTP_ALLOWED_HOSTS:-}
       # SFTP hosts a write may touch; empty = no write anywhere (fail closed, P4).
@@ -390,6 +393,8 @@ services:
       SALES_SECRET_RADIANT: ${SALES_SECRET_RADIANT:-}
       SALES_SECRET_TRUECOMMERCE: ${SALES_SECRET_TRUECOMMERCE:-}
       SALES_SECRET_SHOPIFY: ${SALES_SECRET_SHOPIFY:-}
+      SALES_SECRET_SHOPIFY_CLIENT_ID: ${SALES_SECRET_SHOPIFY_CLIENT_ID:-}
+      SALES_SECRET_SHOPIFY_CLIENT_SECRET: ${SALES_SECRET_SHOPIFY_CLIENT_SECRET:-}
     ports: ["8014:8014"]
     command: uvicorn app.main:app --host 0.0.0.0 --port 8014
     healthcheck:

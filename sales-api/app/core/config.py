@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     # (app/container.py wires the names into app.platform's GuardedGateway).
     SALES_EXTERNAL_EMAIL_ENABLED: bool = False
     SALES_PARTNER_WRITES_ENABLED: bool = False
+    # Internal email (user 2026-11-09): mail whose every recipient is in SALES_INTERNAL_EMAIL_DOMAINS
+    # (the company's own domains, comma-separated). Its own switch, so a test stack can mail staff
+    # (invoice copies, notifications) while partners and customers get nothing. Empty domains: none.
+    SALES_INTERNAL_EMAIL_ENABLED: bool = False
+    SALES_INTERNAL_EMAIL_DOMAINS: str = ""
     # Where the Sales front end is reached from a mail client (a notification's link); empty: no link.
     SALES_PUBLIC_URL: str = ""
 
@@ -95,6 +100,10 @@ class Settings(BaseSettings):
     SALES_SMTP_USER: str = ""
     SALES_SMTP_FROM: str = ""
     SALES_SMTP_STARTTLS: bool = True
+
+    @property
+    def internal_email_domains(self) -> frozenset[str]:
+        return frozenset(d.strip().lower().lstrip("@") for d in self.SALES_INTERNAL_EMAIL_DOMAINS.split(",") if d.strip())
 
     @property
     def sftp_write_hosts(self) -> frozenset[str]:

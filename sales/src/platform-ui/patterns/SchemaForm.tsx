@@ -9,6 +9,7 @@ import { DayChips, PresetNumber, Segmented } from '../primitives/ChoiceControls'
 import type { ComboOption } from '../primitives/Combobox'
 import { DateInput, NumberInput, Textarea } from '../primitives/FieldInputs'
 import { Select } from '../primitives/Select'
+import { TagInput } from '../primitives/TagInput'
 import { Button, FormField, Input } from '../primitives/shell'
 import { ErrorMessage } from './ErrorMessage'
 import { applyServerError, blankToEmpty, emptyToNull, hiddenFields, notShown, prepare, withDefaultsWhenHidden } from './formValues'
@@ -22,9 +23,10 @@ import { zodResolver } from './zodResolver'
 // `options` (an array of values), segmented → Segmented over a few short
 // `options`, days → DayChips (an array of values; `options` default to the week),
 // presets → PresetNumber (a number: a few usual `options`, or Custom), note → a
-// line computed from the values (`note`; no value of its own).
+// line computed from the values (`note`; no value of its own), tags → TagInput (an array of
+// typed values, e.g. addresses; what is typed and not yet added is added when the box loses focus).
 export type FieldType = 'text' | 'email' | 'number' | 'textarea' | 'checkbox' | 'select' | 'date' | 'reference' | 'multiselect' | 'segmented' | 'days'
-  | 'presets' | 'note'
+  | 'presets' | 'note' | 'tags'
 
 export interface FieldSpec {
   name: string
@@ -154,7 +156,7 @@ export function SchemaFields({ form, fields, readOnly, idPrefix = 'sf' }: {
       {group.map((f) => {
         if (f.type === 'note') return <p key={f.name} className="text-sm font-medium text-neutral-700">{f.note?.(values)}</p>
         const id = `${idPrefix}-${f.name}`
-        const err = errors[f.name]?.message
+        const err = errorOf(errors[f.name])
         const common = { id, disabled: readOnly || f.readOnly, 'aria-invalid': err ? true : undefined }
         let control
         if (f.type === 'checkbox') {
@@ -169,6 +171,13 @@ export function SchemaFields({ form, fields, readOnly, idPrefix = 'sf' }: {
             <Controller control={form.control} name={f.name} render={({ field }) => (
               <MultiChoice label={f.label} options={f.options ?? []} values={Array.isArray(field.value) ? field.value : []}
                 onChange={field.onChange} disabled={common.disabled} />
+            )} />
+          )
+        } else if (f.type === 'tags') {
+          control = (
+            <Controller control={form.control} name={f.name} render={({ field }) => (
+              <TagsControl label={f.label} values={Array.isArray(field.value) ? field.value : []} onChange={field.onChange}
+                disabled={common.disabled} />
             )} />
           )
         } else if (f.type === 'segmented') {
@@ -246,4 +255,37 @@ export function SchemaFields({ form, fields, readOnly, idPrefix = 'sf' }: {
       })}
     </>
   )
+}
+
+
+/** TagInput in a form: the typed value that was not added yet is added when focus leaves the box (Save too). */
+function TagsControl({ label, values, onChange, disabled }: {
+  label: string; values: string[]; onChange: (v: string[]) => void; disabled?: boolean
+}) {
+  const [draft, setDraft] = useState('')
+  if (disabled) return <p className="text-sm text-neutral-700">{values.length ? values.join(', ') : '—'}</p>
+  return (
+    <div onBlur={(e) => {
+      if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+      const v = draft.trim()
+      if (v && !values.includes(v)) onChange([...values, v])
+      if (v) setDraft('')
+    }}>
+      <TagInput label={label} values={values} onChange={onChange} draft={draft} onDraftChange={setDraft} />
+    </div>
+  )
+}
+
+
+/** A field's message; for a list (tags, multiselect) the first of its items' messages. */
+function errorOf(e: unknown): string | undefined {
+  if (!e || typeof e !== 'object') return undefined
+  const own = (e as { message?: unknown }).message
+  if (typeof own === 'string' && own) return own
+  const items = Array.isArray(e) ? e : Object.values(e as Record<string, unknown>)
+  for (const x of items) {
+    const m = x && typeof x === 'object' ? (x as { message?: unknown }).message : undefined
+    if (typeof m === 'string' && m) return m
+  }
+  return undefined
 }

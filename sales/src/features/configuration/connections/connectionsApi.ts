@@ -86,8 +86,8 @@ export const downloadConnections = (path: string) => api.download(path, 'connect
 /** P4: the warehouse SFTP connection for 940s and 997s, and the 997 wait. */
 export interface EdiSettings {
   connection_id: number | null; ack_timeout_minutes: number; invoice_connection_id?: number | null
-  /** FR-OB-32: finance AR gets the order documents of every invoice sent. */
-  finance_email?: string | null
+  /** FR-OB-32: company addresses that get every document of each invoice sent. */
+  internal_emails?: string[]
 }
 export const fetchEdiSettings = () => api.get<EdiSettings>('/config/edi-settings')
 export const saveEdiSettings = (data: EdiSettings) => api.put<EdiSettings>('/config/edi-settings', data)

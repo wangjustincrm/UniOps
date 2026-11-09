@@ -421,37 +421,58 @@ async def test_ac40_cancelled_after_the_940_holds_with_one_task_stating_what_shi
     assert "Nothing has shipped yet: tell the warehouse not to ship it." in t
 
 
-async def test_finance_ar_gets_the_order_documents_of_every_invoice_sent(p6):  # FR-OB-32
-    from app.platform.outbox import Outbox, OutboxWorker
-    from app.services.invoicing import FINANCE_COPY
-    from app.services.settings import INVOICE_FINANCE_EMAIL
-    worker = OutboxWorker(Outbox(OutboxRecord), {SEND_INVOICE: p6.inv.outbox_kind(), FINANCE_COPY: p6.inv.finance_kind()}, p6.factory)
+async def internal(p6, *addresses):
+    from app.services.settings import INVOICE_INTERNAL_EMAILS
     async with p6.factory(SYSTEM_ACTOR) as u:
-        await SETTINGS.set(u.session, INVOICE_FINANCE_EMAIL, "ar@crm.example")
+        await SETTINGS.set(u.session, INVOICE_INTERNAL_EMAILS, list(addresses))
         await u.commit()
-    p6.edi.settings.SALES_EXTERNAL_EMAIL_ENABLED = True
-    o = await shipped_850(p6)                        # an 810 partner
+    p6.edi.settings.SALES_INTERNAL_EMAIL_ENABLED = True
+    p6.edi.settings.internal_email_domains = frozenset({"crm.example"})
+    from app.platform.outbox import Outbox, OutboxWorker
+    from app.services.invoicing import INTERNAL_COPY
+    return OutboxWorker(Outbox(OutboxRecord), {SEND_INVOICE: p6.inv.outbox_kind(), INTERNAL_COPY: p6.inv.internal_kind()},
+                        p6.factory)
+
+
+async def test_the_company_gets_every_document_of_an_810_also_when_the_partner_send_is_refused(p6):  # FR-OB-32
+    worker = await internal(p6, "ar@crm.example", "sales@crm.example")
+    o = await shipped_850(p6)                        # an 810 partner; partner writes stay as the fixture has them
     await p6.inv.advance()
     await send(p6, (await confirm(p6, o.id)).id)
-    await worker.run_once()                          # the 810, then finance's copy
     await worker.run_once()
-    [m] = p6.mail.sent
-    assert m.to == ("ar@crm.example",) and [a[0].split("-")[0] for a in m.attachments] == [f"IN", "PO", "PackingList"]
-    [inv] = await p6.q("SELECT invoice_status FROM sales_orders WHERE id = :i", i=o.id)
-    assert inv["invoice_status"] == "Sent"
+    await worker.run_once()
+    [m] = p6.mail.sent                               # only the company's copy: external email is off
+    assert m.to == ("ar@crm.example", "sales@crm.example") and m.subject.startswith("Invoice sent (copy)")
+    assert [a[0].split("-")[0] for a in m.attachments] == ["IN", "PO", "PackingList", "810"]
+    data = m.attachments[3][1]
+    assert data.startswith(b"{") and b"PO-1" in data  # the 810 as built for TrueCommerce
 
 
-async def test_an_emailed_invoice_copies_finance_ar(p6):  # FR-OB-32
-    from app.services.settings import INVOICE_FINANCE_EMAIL
-    async with p6.factory(SYSTEM_ACTOR) as u:
-        await SETTINGS.set(u.session, INVOICE_FINANCE_EMAIL, "finance@crm.example")
-        await u.commit()
+async def test_the_company_copy_never_leaves_the_company(p6):
+    worker = await internal(p6, "ar@crm.example", "someone@partner.example")
+    o = await shipped_850(p6)
+    await p6.inv.advance()
+    await send(p6, (await confirm(p6, o.id)).id)
+    await worker.run_once()
+    await worker.run_once()
+    assert p6.mail.sent == []
+    assert any("SALES_INTERNAL_EMAIL_DOMAINS" in str(r.message) for r in p6.refused)
+
+
+async def test_an_emailed_invoice_goes_to_the_partner_only_with_external_email_and_the_company_copy_apart(p6):
+    worker = await internal(p6, "finance@crm.example")
     await email_partner(p6, cc="ar@crm.example")
     o = await shipped_850(p6, "PO-F", partner="SOB")
     await p6.inv.advance()
     out = await confirm(p6, o.id)
+    await send(p6, out.id)
+    await worker.run_once()
+    await worker.run_once()
+    assert [m.to for m in p6.mail.sent] == [("finance@crm.example",)]   # external off: the partner got nothing
+    p6.mail.sent.clear()
     p6.edi.settings.SALES_EXTERNAL_EMAIL_ENABLED = True
     await send(p6, out.id)
-    await p6.worker.run_once()
-    [m] = p6.mail.sent
-    assert m.cc == ("ar@crm.example", "finance@crm.example")
+    await worker.run_once()
+    await worker.run_once()
+    partner = [m for m in p6.mail.sent if not m.subject.startswith("Invoice sent (copy)")]
+    assert len(partner) == 1 and partner[0].cc == ("ar@crm.example",)  # the partner's own cc, no company address

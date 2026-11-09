@@ -21,12 +21,13 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import datetime, timezone
+from collections.abc import Callable
 from typing import Any
 
 from sqlalchemy import select
 
 from app.domain.notifications import ACTION, BY_KEY, EVENT_TYPES, GATE_EVENTS
-from app.integrations.email import ExternalEmail
+from app.integrations.email import ExternalEmail, is_internal
 from app.integrations.epms_users import find_users, search_users
 from app.models.config import NotificationRule
 from app.models.records import NotificationRecord, OutboxRecord
@@ -111,12 +112,12 @@ async def queue_email(session, event: str, key: str | None, to: list[str], title
     return row
 
 
-def email_kind(email) -> OutboxKind:
+def email_kind(email, domains: Callable[[], frozenset[str]] = frozenset) -> OutboxKind:
     """The email of a notification: retried while the server has not taken it
-    (§13.7), never after."""
+    (§13.7), never after. To company addresses only, it is internal mail (its own switch)."""
     async def effect(payload: dict[str, Any], ctx) -> None:  # noqa: ARG001
-        await email.send_external(ExternalEmail(to=tuple(payload["to"]), subject=payload["subject"],
-                                                body_text=payload["body"]))
+        msg = ExternalEmail(to=tuple(payload["to"]), subject=payload["subject"], body_text=payload["body"])
+        await (email.send_internal if is_internal(msg.to, domains()) else email.send_external)(msg)
 
     async def failed(row, exc, uow) -> None:
         await oplog.write(uow.session, "ERROR", "notify", f"notification email {row.id} not sent: {exc}",

@@ -1,22 +1,17 @@
-import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Download } from 'lucide-react'
 import {
-  Button, DetailList, ErrorMessage, Section, StatusCell, formatDate, formatDateTime, formatMoney, queryKeys, requestOpen, useNotices,
+  Button, DetailList, ErrorMessage, Section, StatusCell, formatDate, formatDateTime, formatMoney, requestOpen, useNotices,
 } from '@/platform-ui'
-import { invoicesClient } from '@/features/invoices/invoicesApi'
 import { downloadDocument } from '@/features/operations/operationsApi'
 import { downloadInvoicePdf, type OrderDetail } from '../ordersApi'
+import { useOrderInvoice } from '../useOrderInvoice'
 
 /** The order's invoice: status, number, method, total, the file it was sent as; opened on Invoices. */
 export function InvoiceTab({ o }: { o: OrderDetail }) {
   const navigate = useNavigate()
   const notices = useNotices()
-  const q = useQuery({
-    queryKey: [...queryKeys.list(invoicesClient), 'order', o.id],
-    queryFn: () => invoicesClient.list({ page: 1, pageSize: 1, filters: [{ field: 'order_id', op: 'eq', value: String(o.id) }] }),
-    enabled: !!o.has_invoice,
-  })
+  const q = useOrderInvoice(o)
   const inv = q.data?.items[0]
   return (
     <Section title="Invoice">
