@@ -20,6 +20,9 @@ export interface OrderRead {
   partner_name: string | null
   order_date: string | null
   requested_delivery_date: string | null
+  /** The PO's last dates (retailers). */
+  cancel_date?: string | null
+  do_not_deliver_after?: string | null
   delivery_due_date?: string | null
   ship_to: Record<string, string | null> | null
   currency: string

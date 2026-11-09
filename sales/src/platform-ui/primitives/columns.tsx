@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { ColumnDef } from './DataTable'
 import {
-  BooleanCell, CountdownCell, DateCell, DurationCell, FileCell, MoneyCell, NumberCell, ReferenceCell, RefsCell, RelativeCell,
+  BooleanCell, CountdownCell, DateCell, DurationCell, FileCell, MoneyCell, NumberCell, PlaceCell, ReferenceCell, RefsCell, RelativeCell,
   StackedDateTimeCell, StatusCell, TagsCell, TrackingCell,
 } from './cells'
 import type { BadgeVariant } from './StatusBadge'
@@ -41,6 +41,10 @@ export function columnsOf<T>() {
       cell(key, header, (r) => <FileCell name={read(r, key) as string | null} label={opts.label(r)} onDownload={() => opts.onDownload(r)} />),
     bool: (key: Key<T>, header: string) => cell(key, header, (r) => <BooleanCell value={read(r, key) as boolean | null} />),
     tags: (key: Key<T>, header: string) => cell(key, header, (r) => <TagsCell values={read(r, key) as string[] | null} />),
+    /** Where an address is (city, province; `withName`: the place's name above, e.g. a DC). Not sortable. */
+    place: (id: string, header: string, address: (row: T) => Record<string, unknown> | null | undefined, opts?: { withName?: (row: T) => boolean }):
+      ColumnDef<T, unknown> => ({ id, header, enableSorting: false,
+        cell: ({ row }) => <PlaceCell address={address(row.original)} withName={opts?.withName?.(row.original)} /> }),
     /** Records the row belongs to, as links: the first few, "+N more" for the rest; with none, why. */
     refs: (id: string, header: string, opts: {
       refs: (row: T) => RecordRef[]; onOpen: (ref: RecordRef, row: T) => void; total?: (row: T) => number

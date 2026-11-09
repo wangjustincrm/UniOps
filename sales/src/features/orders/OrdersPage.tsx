@@ -29,13 +29,22 @@ const orderColumns: ColumnDef<OrderRead, unknown>[] = [
   { accessorKey: 'review_reason', header: 'Review reason', cell: ({ row }) => (
     <span className="line-clamp-2 max-w-md whitespace-pre-line text-xs text-neutral-600">{row.original.review_reason ?? ''}</span>
   ) },
+  // A channel's own columns (user 2026-11-09): shown where a view names them (Open Shopify, Open retailers).
+  col.datetime('first_received_at', 'Received'),
+  col.status('shopify_financial_status', 'Payment'),
+  col.date('delivery_due_date', 'Delivery due'),
+  col.date('cancel_date', 'Cancel by'),  // the PO's cancel date; do-not-deliver-after is in Delivery due
+  col.place('ship_to_place', 'Ship to', (o) => o.ship_to, { withName: (o) => o.source_type !== 'SHOPIFY' }),
 ]
+/** Shown only where a view names them. */
+const CHANNEL_COLUMNS = ['first_received_at', 'shopify_financial_status', 'delivery_due_date', 'cancel_date', 'ship_to_place']
 
 /** A list of orders with the order's detail in a sheet; Review orders carry
  *  Re-check in the list and the detail (FR-OB-15). With `fixed` filters (a
  *  list inside another page) it has no views. */
-const dueColumn = col.date('delivery_due_date', 'Delivery due')
-const dueOrderColumns = [...orderColumns.slice(0, 5), dueColumn, ...orderColumns.slice(5)]
+const dueColumnIndex = orderColumns.findIndex((c) => 'accessorKey' in c && c.accessorKey === 'delivery_due_date')
+const dueOrderColumns = [...orderColumns.slice(0, 5), orderColumns[dueColumnIndex],
+  ...orderColumns.slice(5).filter((_, i) => i + 5 !== dueColumnIndex)]
 
 export function OrderList({ fixed, title, description, emptyTitle, detailActions, detailTabs, toolbar, create, showDue }: {
   fixed?: QuerySpec['filters']; title: string; description: string; emptyTitle: string
@@ -56,6 +65,7 @@ export function OrderList({ fixed, title, description, emptyTitle, detailActions
       emptyTitle={emptyTitle}
       fixed={fixed}
       columns={showDue ? dueOrderColumns : orderColumns}
+      defaultHidden={showDue ? CHANNEL_COLUMNS.filter((c) => c !== 'delivery_due_date') : CHANNEL_COLUMNS}
       toolbar={toolbar ? (ctx) => (typeof toolbar === 'function' ? toolbar(ctx) : toolbar) : undefined}
       create={create}
       rowActions={(o) => (o.fulfillment_status === 'Review' ? <Recheck o={o} compact />

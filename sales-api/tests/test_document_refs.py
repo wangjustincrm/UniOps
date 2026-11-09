@@ -52,3 +52,24 @@ async def test_a_shopify_page_links_the_orders_on_it_that_did_not_change(env):
     pages = sorted(await listed(env), key=lambda d: d.id)
     assert len(pages) == 2
     assert [sorted(r.label for r in p.orders) for p in pages] == [["SHOP-9301"], ["SHOP-9301", "SHOP-9302"]]
+
+
+async def test_the_channel_views_split_open_orders_by_where_they_came_from(env):
+    """Open Shopify and Open retailers (user 2026-11-09): the same Open rule, one channel each."""
+    from app.platform.query import Filter, SortKey
+    from app.services.order_views import OrderRepository, OrderService
+    env.shop.orders = [shopify_order(1, 9301)]
+    await env.pull()
+    await run_850(env, {"PurchaseOrder": [po("LBL", "PO-R", [{"Line": 1, "BuyerPart": "X", "Quantity": 1, "UOM": "CA"}])]})
+    views = {p.key: p.as_dict()["state"] for p in OrderRepository.presets}
+
+    async def keys(view):
+        st = views[view]
+        async with env.factory(OP) as u:
+            page = await OrderService(u).list(QuerySpec(filters=[Filter(**f) for f in st["filters"]],
+                                                        sort=[SortKey(**k) for k in st.get("sort", [])]))
+        return sorted((o.source_type, o.source_order_number) for o in page.items)
+
+    assert await keys("open_shopify") == [("SHOPIFY", "9301")]
+    assert await keys("open_retailers") == [("EDI_850", "PO-R")]
+    assert len(await keys("open")) == 2

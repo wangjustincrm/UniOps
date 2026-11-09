@@ -30,6 +30,9 @@ class OrderRead(BaseModel):
     source_reference: str | None
     order_date: date | None
     requested_delivery_date: date | None
+    # the PO's last dates (retailers): cancel the PO after / do not deliver after (Open retailers)
+    cancel_date: date | None = None
+    do_not_deliver_after: date | None = None
     ship_to: dict[str, Any] | None
     currency: str
     total: Decimal | None

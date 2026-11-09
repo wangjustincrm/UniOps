@@ -132,3 +132,20 @@ describe('filter adapter', () => {
     expect(setFilter(s, 'price', 'range', [null, null]).filters).toHaveLength(1)
   })
 })
+
+describe('QueryTable defaultHidden', () => {
+  type R = { id: number; code: string; city: string }
+  const cols: ColumnDef<R, unknown>[] = [
+    { id: 'code', header: 'Code', accessorKey: 'code' }, { id: 'city', header: 'City', accessorKey: 'city' }]
+  const rows = [{ id: 1, code: 'A1', city: 'Laval' }]
+  const spec: QuerySpec = { page: 1, pageSize: 25, sort: [], filters: [] }
+  it('a default-hidden column shows only where the layout names it', () => {
+    const { rerender } = render(<QueryTable<R> columns={cols} defaultHidden={['city']} rows={rows} rowKey={(r) => r.id} total={1} spec={spec}
+      onSpecChange={() => {}} layout={{ columns: [], hidden: [] }} onLayoutChange={() => {}} />)
+    expect(screen.getByText('A1')).toBeInTheDocument()
+    expect(screen.queryByText('Laval')).not.toBeInTheDocument()
+    rerender(<QueryTable<R> columns={cols} defaultHidden={['city']} rows={rows} rowKey={(r) => r.id} total={1} spec={spec}
+      onSpecChange={() => {}} layout={{ columns: ['code', 'city'], hidden: [] }} onLayoutChange={() => {}} />)
+    expect(screen.getByText('Laval')).toBeInTheDocument()
+  })
+})

@@ -41,6 +41,8 @@ export interface ListPageProps<T extends { id: number }> {
   title?: string
   description?: ReactNode
   columns: ColumnDef<T, unknown>[]
+  /** Columns shown only where a view names them (see QueryTable). */
+  defaultHidden?: string[]
   /** The open record — always as the list now has it — as a RecordSheet (the
    *  list is its host: open / close, previous / next, the tab, refresh). */
   renderDetail?: (row: T, close: () => void) => ReactNode
@@ -194,6 +196,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
       <QueryTable<T>
         ariaLabel={props.title}
         columns={allColumns}
+        defaultHidden={props.defaultHidden}
         resource={resource}
         locked={fixed.map((f) => f.field)}
         rows={rows}

@@ -140,3 +140,18 @@ export function RefsCell({ refs, total, onOpen, empty, max = 2, noun = 'record' 
     </span>
   )
 }
+
+/** Where an address is, in a list: "City, PR" (and, with `withName`, the place's name above it: a DC). */
+export function PlaceCell({ address, withName }: { address: Record<string, unknown> | null | undefined; withName?: boolean }) {
+  const a = address ?? {}
+  const text = (k: string) => (typeof a[k] === 'string' ? (a[k] as string).trim() : '')
+  const where = [text('city'), text('province_code') || text('province')].filter(Boolean).join(', ')
+  const name = withName ? text('name') : ''
+  if (!where && !name) return <span className="text-neutral-400">—</span>
+  return (
+    <span className="inline-flex flex-col leading-tight" title={[name, where, text('zip')].filter(Boolean).join(' · ')}>
+      {name && <span className="line-clamp-1">{name}</span>}
+      <span className={name ? 'text-xs text-neutral-500' : 'whitespace-nowrap'}>{where || '—'}</span>
+    </span>
+  )
+}

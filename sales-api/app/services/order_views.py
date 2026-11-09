@@ -117,23 +117,41 @@ class OrderRepository(Repository[Order]):
         # The first view is what Orders opens on (unless the person has a default of their own).
         Preset("open", "Open", {"filters": [{"field": "order_status", "op": "not_in", "value": list(NOT_OPEN_STATUSES)}],
                                 "hidden": ["review_reason"]}),
-        Preset("all", "All", {"hidden": ["review_reason"]}),
-        Preset("on_hold", "On hold", {"filters": [{"field": "order_status", "op": "eq", "value": "On Hold"}]}),
+        # By channel (user 2026-11-09): each with what that work needs, oldest / most urgent first.
+        Preset("open_shopify", "Open Shopify", {
+            "filters": [{"field": "order_status", "op": "not_in", "value": list(NOT_OPEN_STATUSES)},
+                        {"field": "source_type", "op": "eq", "value": "SHOPIFY"}],
+            "sort": [{"field": "first_received_at", "desc": False}],
+            "columns": ["source_reference", "first_received_at", "order_status", "status_detail", "shopify", "shopify_financial_status",
+                        "ship_to_place", "total_amount"],
+            "hidden": ["order_number", "partner_name", "source_order_number", "order_date", "total_refunded", "net_amount",
+                       "backordered_ea", "review_reason"]}),
+        Preset("open_retailers", "Open retailers", {
+            "filters": [{"field": "order_status", "op": "not_in", "value": list(NOT_OPEN_STATUSES)},
+                        {"field": "source_type", "op": "in", "value": ["EDI_850", "FROM_945"]}],
+            "sort": [{"field": "delivery_due_date", "desc": False}],
+            "columns": ["source_reference", "partner_name", "source_order_number", "order_date", "delivery_due_date",
+                        "cancel_date", "ship_to_place", "order_status", "status_detail", "total_amount", "backordered_ea"],
+            "hidden": ["order_number", "shopify", "total_refunded", "net_amount", "review_reason"]}),
+        Preset("pending", "To fulfill", {"filters": [{"field": "order_status", "op": "eq", "value": "To Fulfill"}], "hidden": ["review_reason"],
+                                       "sort": [{"field": "first_received_at", "desc": False}]}),
+        Preset("on_hold", "On hold", {"filters": [{"field": "order_status", "op": "eq", "value": "On Hold"}],
+                                    "sort": [{"field": "first_received_at", "desc": False}]}),
         Preset("needs_review", "Needs review", {"filters": [{"field": "on_hold_reason", "op": "eq", "value": "Needs Review"}]}),
         Preset("payment_hold", "Payment hold", {"filters": [{"field": "on_hold_reason", "op": "eq", "value": "Payment Required"}], "hidden": ["review_reason"]}),
-        Preset("pending", "To fulfill", {"filters": [{"field": "order_status", "op": "eq", "value": "To Fulfill"}], "hidden": ["review_reason"]}),
+        Preset("archive_suppressed", "Archived in Shopify", {"filters": [{"field": "on_hold_reason", "op": "eq", "value": "Archived in Shopify"}], "hidden": ["review_reason"]}),
         Preset("manual_drafts", "Manual drafts", {"filters": [{"field": "source_type", "op": "eq", "value": "MANUAL"},
                                                                {"field": "order_status", "op": "eq", "value": "Draft"}]}),
+        Preset("delivery", "Shipped",
+               {"filters": [{"field": "order_status", "op": "eq", "value": "Shipped"}]}),
         # FR-OB-25: a short 945 closes the fulfilment (Shipped) — what it left unshipped stays visible here.
         Preset("backordered", "Backordered (partially shipped)",
                {"filters": [{"field": "backordered_ea", "op": "gt", "value": 0}], "hidden": ["review_reason"]}),
-        Preset("delivery", "Shipped",
-               {"filters": [{"field": "order_status", "op": "eq", "value": "Shipped"}]}),
-        Preset("archive_suppressed", "Archived in Shopify", {"filters": [{"field": "on_hold_reason", "op": "eq", "value": "Archived in Shopify"}], "hidden": ["review_reason"]}),
         Preset("refunded", "Refunded", {"filters": [{"field": "shopify_financial_status", "op": "eq", "value": "refunded"}],
                                         "hidden": ["review_reason"]}),
         Preset("partially_refunded", "Partially refunded", {
             "filters": [{"field": "shopify_financial_status", "op": "eq", "value": "partially_refunded"}], "hidden": ["review_reason"]}),
+        Preset("all", "All", {"hidden": ["review_reason"]}),
         Preset("historical", "Historical", {"filters": [{"field": "historical", "op": "eq", "value": "true"}], "includeHistorical": True, "hidden": ["review_reason"]}),
     )
     historical_column = "historical"

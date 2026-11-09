@@ -21,6 +21,8 @@ export interface QueryTableProps<T> {
   /** The table's accessible name. */
   ariaLabel?: string
   columns: ColumnDef<T, unknown>[]
+  /** Page columns shown only where a view names them (a channel's own columns), like the extra fields. */
+  defaultHidden?: string[]
   rows: T[]
   total: number
   /** The list response's `groups` / `groups_truncated` (when spec.group is set). */
@@ -124,7 +126,7 @@ function WithMeta<T>({ resource, ...props }: ViewProps<T> & { resource: NonNulla
 }
 
 function QueryTableView<T>({
-  columns, spec, onSpecChange, meta, locked = [], sortable = [], total, groups, groupsTruncated, totals, searchable, error,
+  columns, defaultHidden = [], spec, onSpecChange, meta, locked = [], sortable = [], total, groups, groupsTruncated, totals, searchable, error,
   errorMessages, toolbar, onViewChange, layout: layoutProp, onLayoutChange, picker, suggest, ...view
 }: ViewProps<T> & { meta: ListMeta | undefined; suggest?: (field: string, query: string) => Promise<string[]> }) {
   const fields = useMemo(() => new Map((meta?.fields ?? []).map((f) => [f.name, f])), [meta])
@@ -147,8 +149,9 @@ function QueryTableView<T>({
   const order = layout.columns.length
     ? [...layout.columns.filter((id) => allIds.includes(id)), ...allIds.filter((id) => !layout.columns.includes(id))]
     : allIds
+  const shownByDefault = (id: string) => pageIds.has(id) && !defaultHidden.includes(id)
   const isHidden = (id: string) =>
-    layout.hidden.includes(id) || (!pageIds.has(id) && !(layout.columns.length > 0 && layout.columns.includes(id)))
+    layout.hidden.includes(id) || (!shownByDefault(id) && !(layout.columns.length > 0 && layout.columns.includes(id)))
   const hidden = order.filter(isHidden)
 
   const setLayout = (next: Layout) => {

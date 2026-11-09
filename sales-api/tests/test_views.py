@@ -141,8 +141,9 @@ async def test_views_need_the_lists_read_permission_and_a_known_list(http):
 
 async def test_system_views_are_in_meta_and_fit_their_list(http):
     m = (await http.get("/api/v1/orders/meta", headers=AS_ANN)).json()
-    assert [v["key"] for v in m["views"]] == ["open", "all", "on_hold", "needs_review", "payment_hold", "pending", "manual_drafts", "backordered", "delivery", "archive_suppressed",
-                                              "refunded", "partially_refunded", "historical"]
+    assert [v["key"] for v in m["views"]] == ["open", "open_shopify", "open_retailers", "pending", "on_hold", "needs_review", "payment_hold",
+                                              "archive_suppressed", "manual_drafts", "delivery", "backordered", "refunded",
+                                              "partially_refunded", "all", "historical"]
     review = next(v for v in m["views"] if v["key"] == "needs_review")
     assert review["name"] == "Needs review" and review["state"]["filters"] == [
         {"field": "on_hold_reason", "op": "eq", "value": "Needs Review"}]
