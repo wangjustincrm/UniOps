@@ -81,7 +81,7 @@ describe('Cancel order and Release hold', () => {
 
 describe('a test-run refusal', () => {
   it('ends the dialog and goes to the status row, not the dialog', async () => {
-    cancelOrder.mockRejectedValueOnce({ body: { error: { code: 'order.shadow', message: 'dev2 is in a test run: Zoho handles this order, so nothing was sent or changed.' } } })
+    cancelOrder.mockRejectedValueOnce({ body: { error: { code: 'order.shadow', message: 'Zoho handles this order, so nothing was sent or changed.' } } })
     const qc = new QueryClient()
     render(<QueryClientProvider client={qc}><ToastProvider><PermissionProvider can={() => true}>
       <OrderHoldActions o={{ ...base, cancellable: true }} /></PermissionProvider></ToastProvider></QueryClientProvider>)
