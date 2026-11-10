@@ -306,41 +306,86 @@ async def first_status(db: AsyncSession):
     )).scalars().first()
 
 
-def state_after_reply(outcome: str | None, capa_status: str | None) -> str | None:
-    """Where a reply leaves a recommendation. Review, round 11; HSE may yet say
-    otherwise. Accepted with its action closed is done; declined or deferred
-    stays where it is (None); anything else is being worked on. Migration 0086
-    applies the same rule to replies made before this existed."""
-    if outcome in ("declined", "deferred"):
-        return None
-    return "completed" if outcome == "accepted" and capa_status == "closed" else "in_progress"
+# ★ Round 12: HSE's JHSC workflow, which replaces round 11's rule.
+#   1-2 recommended and assigned            → Being reviewed   (new_request)
+#   3-4 the person it was sent to opens it  → Under Review     (maintenance_review)
+#   5-6 "what will be done" is submitted    → Work in progress (in_progress)
+#   7-10 its corrective action is done and verified by the supervisor
+#                                           → Awaiting HSE verification (hse_verification)
+#   11  HSE verifies it in the JHSC register → Completed        (completed)
+# Each step moves it only from the states before it, so a state somebody set
+# by hand further on is not pulled back. A reply that declines or defers
+# leaves it where it is.
+BEING_REVIEWED, UNDER_REVIEW, IN_PROGRESS = "new_request", "maintenance_review", "in_progress"
+HSE_VERIFICATION, COMPLETED = "hse_verification", "completed"
 
 
-async def follow_reply(db: AsyncSession, rec: JhscRecommendation, *, moved_from: tuple[str, ...]):
-    """Moves the state on, unless a person has already put it somewhere else."""
-    from app.models.action import Action
+async def _move(db: AsyncSession, rec: JhscRecommendation, code: str, *,
+                only_from: tuple[str, ...]) -> bool:
     from app.models.vocabulary import VocabularyItem
     if rec.status_item_id is not None:
         current = await db.get(VocabularyItem, rec.status_item_id)
-        if current is not None and current.code not in moved_from:
-            return
-    capa = await db.get(Action, rec.action_id) if rec.action_id else None
-    code = state_after_reply(rec.outcome, capa.status if capa else None)
-    if code is None:
-        return
+        if current is not None and current.code not in only_from:
+            return False
     item = (await db.execute(select(VocabularyItem).where(
         VocabularyItem.vocabulary_code == STATUS_VOCABULARY, VocabularyItem.code == code,
         VocabularyItem.is_active.is_(True)))).scalars().first()
-    if item is not None:
-        rec.status_item_id, rec.status_label = item.id, item.label
+    if item is None:
+        return False
+    rec.status_item_id, rec.status_label = item.id, item.label
+    return True
+
+
+async def opened(db: AsyncSession, rec: JhscRecommendation, *, user_id: uuid.UUID) -> None:
+    """Step 4: the first time somebody it was sent to opens it."""
+    if rec.reviewed_at is not None:
+        return
+    if not any(str(p.get("id")) == str(user_id) for p in (rec.sent_to or [])):
+        return
+    rec.reviewed_at = datetime.now(timezone.utc)
+    rec.reviewed_by_name = await _name(db, user_id)
+    await _move(db, rec, UNDER_REVIEW, only_from=(BEING_REVIEWED,))
+    await db.flush()
+
+
+async def follow_reply(db: AsyncSession, rec: JhscRecommendation) -> None:
+    """Step 6: the reply, with what will be done about it."""
+    if rec.outcome in ("declined", "deferred"):
+        return
+    await _move(db, rec, IN_PROGRESS, only_from=(BEING_REVIEWED, UNDER_REVIEW))
 
 
 async def action_closed(db: AsyncSession, action_id: uuid.UUID) -> None:
-    """A recommendation's corrective action has been verified."""
+    """Step 10: its corrective action has been verified — HSE's turn."""
     rec = (await db.execute(select(JhscRecommendation).where(
         JhscRecommendation.action_id == action_id))).scalars().first()
     if rec is not None:
-        await follow_reply(db, rec, moved_from=("new_request", "in_progress"))
+        await _move(db, rec, HSE_VERIFICATION,
+                    only_from=(BEING_REVIEWED, UNDER_REVIEW, IN_PROGRESS))
+
+
+async def hse_verify(db: AsyncSession, rec: JhscRecommendation, *, user_id: uuid.UUID):
+    """Step 11: "HSE role verifies the recommendations using the JHSC registry"."""
+    from app.models.action import Action
+    from app.services import capa_review
+    if rec.responded_at is None:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "It has not been answered yet; there is nothing to verify")
+    capa = await db.get(Action, rec.action_id) if rec.action_id else None
+    if capa is not None and capa.status not in ("closed", "cancelled"):
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            f"Its corrective action {capa.action_no} is still {capa.status}")
+    rec.hse_verified_at = datetime.now(timezone.utc)
+    rec.hse_verified_by_name = await _name(db, user_id)
+    from app.models.vocabulary import VocabularyItem
+    done = (await db.execute(select(VocabularyItem).where(
+        VocabularyItem.vocabulary_code == STATUS_VOCABULARY, VocabularyItem.code == COMPLETED,
+        VocabularyItem.is_active.is_(True)))).scalars().first()
+    if done is not None:
+        rec.status_item_id, rec.status_label = done.id, done.label
+    await capa_review.close_for(db, task_service.DOC_JHSC, rec.id, user_id)
+    await db.flush()
+    return rec
 
 
 async def set_status(db: AsyncSession, rec: JhscRecommendation, item_id: uuid.UUID):
@@ -422,7 +467,7 @@ async def respond(
     rec.responded_by = user_id
     rec.responded_by_name = await _name(db, user_id)
     rec.action_id = action_id
-    await follow_reply(db, rec, moved_from=("new_request",))
+    await follow_reply(db, rec)
     await db.flush()
 
     deadline = await deadline_service.ensure_jhsc_reply_deadline(

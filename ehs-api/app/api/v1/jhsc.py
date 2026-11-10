@@ -305,6 +305,12 @@ class RecommendationOut(BaseModel):
     responded_by_name: str | None
     action_id: uuid.UUID | None
     created_at: datetime
+    # Round 12, the JHSC workflow: first opened by whoever it was sent to, and
+    # verified by HSE in the register.
+    reviewed_at: datetime | None = None
+    reviewed_by_name: str | None = None
+    hse_verified_at: datetime | None = None
+    hse_verified_by_name: str | None = None
     # Round 9: when the reply is due, so the list can say which were answered
     # on time and which late.
     reply_due_at: datetime | None = None
@@ -633,6 +639,7 @@ class RecommendationDetailOut(RecommendationOut):
     may_manage: bool = False
     # Round 10: HSE, and whoever it was sent to, move it along the list.
     may_set_status: bool = False
+    may_hse_verify: bool = False
     action: ActionBrief | None = None
 
 
@@ -678,6 +685,10 @@ async def _detail(db, rec, user: dict) -> RecommendationDetailOut:
         "may_answer": rec.responded_at is None and (manage or _was_sent_to(rec, _user_id(user))),
         "may_manage": manage,
         "may_set_status": manage or _was_sent_to(rec, _user_id(user)),
+        # Step 11: answered, its action done, not yet verified — and the caller HSE.
+        "may_hse_verify": (rec.responded_at is not None and rec.hse_verified_at is None
+                           and (action is None or action.status in ("closed", "cancelled"))
+                           and await _can(db, user, "ehs.incident.close")),
         "action": ActionBrief.model_validate(action) if action else None,
     })
     return out
@@ -689,7 +700,66 @@ async def get_recommendation(rec_id: uuid.UUID, db: SessionDep, user: CurrentUse
     if not (_was_sent_to(rec, _user_id(user)) or await _can(db, user, "ehs.jhsc.read")):
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             "This recommendation was not sent to you")
+    # Round 12, step 4: "When worker opens the request to read what is
+    # required, the status should automatically be changed to Under Review."
+    await crud.opened(db, rec, user_id=_user_id(user))
     return await _detail(db, rec, user)
+
+
+@router.post("/recommendations/{rec_id}/verify", response_model=RecommendationDetailOut)
+async def hse_verify_recommendation(rec_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+    """Round 12, step 11: "HSE role verifies the recommendations using the JHSC
+    registry." Held to the key only HSE holds (ehs.incident.close)."""
+    if not await _can(db, user, "ehs.incident.close"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "HSE verifies a recommendation")
+    rec = await crud.get_recommendation(db, rec_id)
+    await crud.hse_verify(db, rec, user_id=_user_id(user))
+    return await _detail(db, rec, user)
+
+
+class RecHistoryEntry(BaseModel):
+    at: datetime
+    what: str
+    by: str | None = None
+    text: str | None = None
+
+
+@router.get("/recommendations/{rec_id}/history", response_model=list[RecHistoryEntry])
+async def recommendation_history(rec_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+    """Round 12: "the history the recommendation has gone through should be
+    listed for audit and tracking purposes. when it was created, the reply,
+    the capa creation through to completion steps, and when it was completed."
+    The recommendation's own steps; its corrective action's steps are
+    /actions/history, shown beside it."""
+    rec = await crud.get_recommendation(db, rec_id)
+    if not (_was_sent_to(rec, _user_id(user)) or await _can(db, user, "ehs.jhsc.read")):
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "This recommendation was not sent to you")
+    from app.models.action import Action
+    out = [RecHistoryEntry(at=rec.created_at, what="Recommended", by=rec.raised_by_name,
+                           text=rec.location_path)]
+    if rec.sent_at:
+        out.append(RecHistoryEntry(
+            at=rec.sent_at, what="Assigned", by=rec.sent_by_name,
+            text="To " + (", ".join(p.get("name") or "?" for p in rec.sent_to or []) or "nobody")))
+    if rec.reviewed_at:
+        out.append(RecHistoryEntry(at=rec.reviewed_at, what="Opened — under review",
+                                   by=rec.reviewed_by_name))
+    if rec.responded_at:
+        out.append(RecHistoryEntry(at=rec.responded_at, what=f"Replied ({rec.outcome})",
+                                   by=rec.responded_by_name, text=rec.response))
+    action = await db.get(Action, rec.action_id) if rec.action_id else None
+    if action is not None:
+        out.append(RecHistoryEntry(at=action.created_at, what=f"Corrective action {action.action_no} raised",
+                                   by=None, text=f"For {action.owner_name}"))
+        if action.closed_at:
+            out.append(RecHistoryEntry(at=action.closed_at,
+                                       what=f"Corrective action {action.action_no} verified and closed"))
+    if rec.hse_verified_at:
+        out.append(RecHistoryEntry(at=rec.hse_verified_at, what="Verified by HSE — completed",
+                                   by=rec.hse_verified_by_name))
+    out.sort(key=lambda e: e.at)
+    return out
 
 
 @router.post("/recommendations/{rec_id}/answer", response_model=RecommendationDetailOut)

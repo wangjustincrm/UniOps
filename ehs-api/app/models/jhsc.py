@@ -171,6 +171,14 @@ class JhscRecommendation(UUIDPrimaryKey, TimestampMixin, Base):
     # response that does not say what was decided is not a response.
     outcome: Mapped[str | None] = mapped_column(String(12), nullable=True)
 
+    # Round 12 (HSE's JHSC workflow): when the person it was sent to first
+    # opened it — "the status should automatically be changed to Under
+    # Review" — and when HSE verified it in the JHSC register, the last step.
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reviewed_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    hse_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    hse_verified_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     # Set when the reply commits to doing something; the corrective action is
     # how "we will fix it" stops being a sentence in a minute book.
     action_id: Mapped[uuid.UUID | None] = mapped_column(

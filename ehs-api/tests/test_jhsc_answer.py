@@ -218,6 +218,7 @@ async def states(db_session):
     for sort, (code, label) in enumerate([("new_request", "New request"),
                                           ("maintenance_review", "Under review by maintenance"),
                                           ("in_progress", "Work in progress"),
+                                          ("hse_verification", "Awaiting HSE verification"),
                                           ("completed", "Completed")], start=1):
         item = VocabularyItem(id=uuid.uuid4(), vocabulary_code="jhsc_rec_status", code=f"{code}-{uuid.uuid4().hex[:4]}",
                               label=label, sort_order=sort, is_active=True, attrs={}, path=label)
@@ -304,7 +305,8 @@ async def test_a_new_recommendation_starts_at_new_request_wherever_it_sorts(
 
 
 def _codes(states):
-    for item, code in zip(states, ("new_request", "maintenance_review", "in_progress", "completed")):
+    for item, code in zip(states, ("new_request", "maintenance_review", "in_progress",
+                                   "hse_verification", "completed")):
         item.code = code
 
 
@@ -332,7 +334,13 @@ async def test_the_state_follows_the_reply_to_completed(hse_manager, asked, stat
     verified = await hse.post(f"/api/v1/actions/{action_id}/verify",
                               json={"is_effective": True, "notes": "Guard fitted and checked."})
     assert verified.status_code == 200, verified.text
-    assert await _state(hse, rec["id"]) == "Completed"
+    # ★ Round 12: the supervisor's verification hands it to HSE (step 10) …
+    assert await _state(hse, rec["id"]) == "Awaiting HSE verification"
+    assert (await client.post(f"/api/v1/jhsc/recommendations/{rec['id']}/verify")).status_code == 403
+    # … and HSE verifying it in the register completes it (step 11).
+    done = await hse.post(f"/api/v1/jhsc/recommendations/{rec['id']}/verify")
+    assert done.status_code == 200, done.text
+    assert done.json()["status_label"] == "Completed" and done.json()["hse_verified_by_name"]
 
 
 async def test_declined_stays_where_it_is(hse_manager, asked, states, db_session):
@@ -353,11 +361,17 @@ async def test_a_reply_does_not_undo_a_state_a_person_chose(hse_manager, asked, 
     _, hse = hse_manager
     person, client = asked
     _, rec = await _sent(hse, [person])
+    from app.models.vocabulary import VocabularyItem
+    parts = VocabularyItem(id=uuid.uuid4(), vocabulary_code="jhsc_rec_status",
+                           code=f"parts-{uuid.uuid4().hex[:4]}", label="Waiting on Parts",
+                           sort_order=9, is_active=True, attrs={}, path="Waiting on Parts")
+    db_session.add(parts)
+    await db_session.flush()
     chosen = await hse.put(f"/api/v1/jhsc/recommendations/{rec['id']}/status",
-                           json={"item_id": str(states[1].id)})
+                           json={"item_id": str(parts.id)})
     assert chosen.status_code == 200, chosen.text
     await client.post(f"/api/v1/jhsc/recommendations/{rec['id']}/answer", json=_answer(person))
-    assert await _state(hse, rec["id"]) == "Under review by maintenance"
+    assert await _state(hse, rec["id"]) == "Waiting on Parts"
 
 
 async def test_the_backfill_moves_only_what_0085_wrote(hse_manager, asked, states, db_session):
@@ -371,7 +385,7 @@ async def test_the_backfill_moves_only_what_0085_wrote(hse_manager, asked, state
     from app.models.jhsc import JhscRecommendation
 
     _codes(states)
-    done = states[3]
+    done = states[-1]  # completed
     _, hse = hse_manager
     person, _ = asked
     made = []
@@ -412,3 +426,26 @@ async def test_the_backfill_moves_only_what_0085_wrote(hse_manager, asked, state
     assert declined.status_label == "New request"
     assert with_closed.status_label == "Completed", "accepted with its action closed is done"
     assert chosen.status_label == "Completed", "a state a person chose stays"
+
+
+
+async def test_opening_it_puts_it_under_review(hse_manager, asked, worker, states, db_session):
+    """★ Round 12, step 4: "When worker opens the request to read what is
+    required, the status should automatically be changed to Under Review."
+    Only somebody it was sent to; HSE reading it does not count."""
+    _codes(states)
+    await db_session.flush()
+    _, hse = hse_manager
+    person, client = asked
+    _, rec = await _sent(hse, [person])
+    assert await _state(hse, rec["id"]) == "New request", "HSE opening it is not the review"
+    seen = (await client.get(f"/api/v1/jhsc/recommendations/{rec['id']}")).json()
+    assert seen["status_label"] == "Under review by maintenance"
+    assert seen["reviewed_by_name"] == "Asked Person"
+    await client.post(f"/api/v1/jhsc/recommendations/{rec['id']}/answer", json=_answer(person))
+    assert await _state(hse, rec["id"]) == "Work in progress", "step 6"
+    history = (await hse.get(f"/api/v1/jhsc/recommendations/{rec['id']}/history")).json()
+    whats = [h["what"] for h in history]
+    assert whats[0] == "Recommended" and "Opened — under review" in whats
+    assert any(w.startswith("Replied") for w in whats)
+    assert any(w.startswith("Corrective action") and w.endswith("raised") for w in whats)

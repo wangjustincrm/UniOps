@@ -43,6 +43,9 @@ interface Detail extends Recommendation {
   may_answer: boolean
   may_manage: boolean
   may_set_status: boolean
+  may_hse_verify?: boolean
+  hse_verified_at?: string | null
+  hse_verified_by_name?: string | null
   action: {
     id: string; action_no: string; title: string; description: string | null
     owner_name: string | null; due_date: string; priority: string; status: string
@@ -109,6 +112,14 @@ export default function JhscRecommendationPage() {
 
       {r.may_answer && <AnswerForm recId={r.id} />}
       {r.responded_at && <Answered rec={r} />}
+      {r.may_hse_verify && <HseVerify recId={r.id} />}
+      {r.hse_verified_at && (
+        <p className="mt-4 rounded-lg bg-success-50 px-3 py-2 text-sm text-success-800">
+          Verified by HSE{r.hse_verified_by_name ? ` (${r.hse_verified_by_name})` : ''} on{' '}
+          {formatDateTime(r.hse_verified_at)}.
+        </p>
+      )}
+      <RecHistory recId={r.id} />
 
       {/* The correspondence about it — including who was told it was
           answered. Behind the committee's read key, like the meeting's. */}
@@ -249,5 +260,60 @@ function Answered({ rec }: { rec: Detail }) {
       )}
       {rec.action && <ActionHistory actionIds={[rec.action.id]} />}
     </Card>
+  )
+}
+
+
+/** Round 12, step 11: "HSE role verifies the recommendations using the JHSC
+ *  registry." Offered once it is answered and its corrective action is done. */
+function HseVerify({ recId }: { recId: string }) {
+  const queryClient = useQueryClient()
+  const verify = useMutation({
+    mutationFn: () => api.post(`/api/v1/jhsc/recommendations/${recId}/verify`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jhsc-recommendation', recId] })
+      queryClient.invalidateQueries({ queryKey: ['jhsc-recommendations'] })
+      queryClient.invalidateQueries({ queryKey: ['jhsc-rec-history', recId] })
+    },
+  })
+  return (
+    <Card className="mt-4">
+      <SectionTitle className="mb-1">HSE verification</SectionTitle>
+      <p className="mb-2 text-xs text-neutral-600">
+        The reply is in and its corrective action is verified. Verifying here completes the
+        recommendation.
+      </p>
+      <ErrorNote error={verify.error} />
+      <button type="button" className={primaryButton} disabled={verify.isPending}
+              onClick={() => { if (!verify.isPending) verify.mutate() }}>
+        {verify.isPending ? 'Verifying…' : 'Verify and complete'}
+      </button>
+    </Card>
+  )
+}
+
+/** Round 12: "when reviewing the recommendation, the history the
+ *  recommendation has gone through should be listed for audit and tracking
+ *  purposes." Its own steps here; the corrective action's under the reply. */
+function RecHistory({ recId }: { recId: string }) {
+  const history = useQuery({
+    queryKey: ['jhsc-rec-history', recId],
+    queryFn: () => api.get<{ at: string; what: string; by: string | null; text: string | null }[]>(
+      `/api/v1/jhsc/recommendations/${recId}/history`),
+  })
+  if (!history.data?.length) return null
+  return (
+    <section className="mt-4">
+      <SectionTitle className="mb-2">History</SectionTitle>
+      <ol className="flex flex-col gap-1.5 border-l-2 border-neutral-200 pl-3">
+        {history.data.map((h, i) => (
+          <li key={i} className="text-xs">
+            <span className="font-medium text-neutral-800">{h.what}</span>
+            <span className="text-neutral-500">{' · '}{formatDateTime(h.at)}{h.by ? ` · ${h.by}` : ''}</span>
+            {h.text && <p className="mt-0.5 whitespace-pre-wrap text-neutral-700">{h.text}</p>}
+          </li>
+        ))}
+      </ol>
+    </section>
   )
 }
