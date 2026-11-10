@@ -252,7 +252,7 @@ entities:
       paid_amount: {kind: money, label: "Paid so far"}
       currency: {kind: text, label: "Currency"}
       invoice_date: {kind: date, label: "Invoice date"}
-      due_date: {kind: date, label: "Due date"}
+      due_date: {kind: date, scheduled: true, label: "Due date"}
       # draft outnumbers posted here (1,388 to 1,380). A draft payable is not
       # yet a liability in the books.
       status:

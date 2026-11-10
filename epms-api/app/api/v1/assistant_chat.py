@@ -17,6 +17,7 @@ in a finance system, and this is the cheapest possible form of showing the work.
 """
 import json
 import logging
+import re
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -43,6 +44,7 @@ from app.services import budget_variance
 from app.services import report_lineage
 from app.services import workflow_view
 from app.services import controlled_query as cq
+from app.services import period_words, query_conditions
 from app.services import caller_view
 from app.services import page_document
 from app.services import document_chain
@@ -230,7 +232,19 @@ async def _finish(out: dict, message: str) -> dict:
     if isinstance(out.get("answer"), str):
         # Whatever wrote the reply, NC leaves as NC (ISS-0051).
         out["answer"] = reply_language.keep_system_names(out["answer"])
+        out["answer"] = one_code_for_yuan(out["answer"])
     return out
+
+
+_RMB = re.compile(r"(?<![A-Za-z])RMB(?![A-Za-z])")
+
+
+def one_code_for_yuan(text: str) -> str:
+    """The yuan written CNY everywhere (ISS-0035: "RMB" for invoices, "CNY"
+    for POs in the same conversation). Invoices store the colloquial RMB code,
+    POs, PAs and PRs the ISO code CNY; both mean the same currency, and the
+    reply now names it one way. The stored codes are not changed."""
+    return _RMB.sub("CNY", text)
 
 
 async def _chat(body: ChatRequest, db, user: dict, token: str,
@@ -277,6 +291,9 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
     except assistant_llm.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     await assistant_llm.record_usage(db, actor, "plan", planned.get("usage") or {})
+
+    if (earlier := _conditions_of_the_last_answer(body.message, exchanges)) is not None:
+        return earlier
 
     if planned["kind"] == "split":
         return await _answer_parts(body, db, user, token, planned, part)
@@ -338,7 +355,7 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
         # question about how the system behaves gets the rules first (ISS-0022).
         return await _refusal(db, token, body, planned, actor)
 
-    query = planned["query"]
+    query = _period_from_the_words(planned["query"], body.message, exchanges)
     try:
         result = await _execute_in_schema(db, query, scope, schema)
     except cq.QueryTimedOut:
@@ -355,7 +372,13 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
             raise HTTPException(status_code=503, detail=str(exc2))
         if planned["kind"] == "cannot":
             return await _refusal(db, token, body, planned, actor)
-        query = planned["query"]
+        if planned["kind"] != "query":
+            # A retry that picked another route is not a query to run.
+            return {"_fixed_text": True, "answer": "I could not build a valid query for that. "
+                    "Try naming the document type or the field explicitly.",
+                    "kind": "cannot_answer", "reason": "invalid_plan",
+                    "query": None, "sources": None}
+        query = _period_from_the_words(planned["query"], body.message, exchanges)
         try:
             result = await _execute_in_schema(db, query, scope, schema)
         except cq.QueryTimedOut:
@@ -377,6 +400,7 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
             "kind": "denied", "query": query, "sources": None,
         }
 
+    _say_the_period(result, query)
     try:
         told = await assistant_llm.narrate(body.message, query, result)
     except assistant_llm.LlmUnavailable as exc:
@@ -396,6 +420,55 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
             "total_rows": result.get("total_rows"),
         },
     }
+
+
+def _period_from_the_words(query: dict, message: str, exchanges: list[ChatTurn]) -> dict:
+    """The planned query, its period set from the calendar words of the
+    message in code (services/period_words; ISS-0020, ISS-0035, ISS-0048)."""
+    entity = REGISTRY.get(str(query.get("entity") or ""))
+    if entity is None:
+        return query
+    carried = None
+    for turn in reversed(exchanges):
+        if turn.role == "assistant" and isinstance(turn.query, dict):
+            carried = (turn.query.get("period") or {}).get("calendar")
+            break
+    fixed, changed = period_words.enforce(query, message, entity, local_today(),
+                                          carried=carried)
+    if changed:
+        log.info("assistant | period set from the question | %s", "; ".join(changed))
+    return fixed
+
+
+def _conditions_of_the_last_answer(message: str, exchanges: list[ChatTurn]) -> dict | None:
+    """"这个结果用的到期日范围和发票状态条件是什么？" — read from the query the
+    previous answer ran, in code (ISS-0035: it was planned again and the
+    previous answer repeated). None when the message is not that question or
+    the previous answer ran no query."""
+    if not query_conditions.asks_for_conditions(message):
+        return None
+    last = next((t for t in reversed(exchanges) if t.role == "assistant"), None)
+    if last is None or not isinstance(last.query, dict):
+        return None
+    said = query_conditions.describe(last.query, local_today())
+    if said is None:
+        return None
+    english, chinese = said
+    if reply_language.detect(message) == "Chinese (Simplified)":
+        return {"answer": chinese, "kind": "conditions", "query": None, "sources": None}
+    return {"_fixed_text": True, "answer": english, "kind": "conditions",
+            "query": None, "sources": None}
+
+
+def _say_the_period(result: dict, query: dict) -> None:
+    """Put the dates the query covered under the reply, in code (ISS-0020 #1):
+    added with the listing notes, so the narrator is told not to repeat it."""
+    entity = REGISTRY.get(str(query.get("entity") or ""))
+    said = period_words.stated(result.get("resolved_period"), entity,
+                               (result.get("previous_year") or {}).get("resolved_period"))
+    if said:
+        result["said_with_this_list"] = [*(result.get("said_with_this_list") or []),
+                                         ("period_used", *said)]
 
 
 def _without_internal_notes(text: str, result: dict) -> str:
@@ -881,6 +954,10 @@ async def _answer_receiving_report(db, scope, body, planned, actor) -> dict:
         return {"_fixed_text": True,
                 "answer": "You do not have permission to view goods receipts.",
                 "kind": "denied", "query": None, "sources": None}
+    words = period_words.calendar_words(body.message)
+    if len(words) == 1 and not period_words.is_rolling(body.message):
+        # The message's own calendar word, whatever the planner chose (ISS-0020).
+        planned = {**planned, "calendar": words[0]}
     if planned.get("calendar"):
         frm, to = cq.calendar_range(planned["calendar"])
     else:
@@ -899,7 +976,11 @@ async def _answer_receiving_report(db, scope, body, planned, actor) -> dict:
     except assistant_llm.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
-    return {"answer": told["text"], "kind": "receiving_report", "query": None,
+    said = period_words.stated(result["period"])
+    text = await _with_listing_notes(
+        told["text"], {"said_with_this_list": [("period_used", *said)] if said else []},
+        body.message)
+    return {"answer": text, "kind": "receiving_report", "query": None,
             "receiving_report": result,
             "sources": {"entity": "Receiving Report", "row_count": total, "complete": True}}
 

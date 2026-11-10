@@ -81,10 +81,10 @@ entities:
       cost_center_name: {kind: text, label: "Cost centre", enumerate: true}
       budget_code: {kind: text, label: "Budget account code"}
       project_code: {kind: text, label: "Project code"}
-      required_by: {kind: date, label: "Date the requester needs it by"}
+      required_by: {kind: date, scheduled: true, label: "Date the requester needs it by"}
       # Added 2026-10-18 (ISS-0004): shown on the PR page, asked about, and not
       # reachable — "服务完成日期是哪天？负责人是谁？" had no field to read.
-      service_completion_date: {kind: date, label: "Service/Project expected completion date (service and project PRs)"}
+      service_completion_date: {kind: date, scheduled: true, label: "Service/Project expected completion date (service and project PRs)"}
       service_owner_name:
         kind: text
         label: "Service/Project Owner — who confirms the work is done. For a
@@ -548,7 +548,7 @@ entities:
       total_amount: {kind: money, label: "Total including tax"}
       currency: {kind: text, label: "Currency", enumerate: true}
       invoice_date: {kind: date, label: "Invoice date"}
-      due_date: {kind: date, label: "Payment due date"}
+      due_date: {kind: date, scheduled: true, label: "Payment due date"}
       # Added 2026-10-21 (ISS-0013): the Invoices page's Overdue filter.
       overdue:
         kind: bool
@@ -1021,7 +1021,7 @@ entities:
           milestone: "Milestone of a milestone agreement"
       sequence: {kind: int, label: "Position in the schedule (1 = first)"}
       period_label: {kind: text, label: "The period, as YYYY-MM (e.g. 2026-10)"}
-      expected_date: {kind: date, label: "Date the period's invoice is expected"}
+      expected_date: {kind: date, scheduled: true, label: "Date the period's invoice is expected"}
       expected_amount: {kind: money, label: "Amount expected for the period"}
       status:
         kind: enum
