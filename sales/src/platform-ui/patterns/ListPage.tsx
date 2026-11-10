@@ -54,6 +54,10 @@ export interface ListPageProps<T extends { id: number }> {
   rowActions?: (row: T) => ReactNode
   /** Filters the page sets itself (a record's own list): kept, not removable; no views. */
   fixed?: Filter[]
+  /** Whether a record asked for from elsewhere (openRecord, a Task Inbox link) opens here. Default:
+   *  only a list without `fixed` filters, the resource's own page; one inside another page (e.g. the
+   *  orders waiting for delivery) shares the resource and must not take the order page's requests. */
+  takesOpenRequests?: boolean
   emptyTitle?: string
   searchable?: boolean
   errorMessages?: Record<string, string>
@@ -141,8 +145,9 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   // A record asked for from elsewhere (a Task Inbox link): fetched by its id
   // when the client can, then opened like a clicked row.
   const asked = useOpenRequest(resource.basePath)
+  const takes = props.takesOpenRequests ?? fixed.length === 0
   useEffect(() => {
-    if (asked === undefined || !renderDetail) return
+    if (asked === undefined || !renderDetail || !takes) return
     const req = takeOpenRequest(resource.basePath)
     if (req === undefined) return
     const stub = { id: req.id } as T
@@ -152,7 +157,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
       setOpenRaw(row)
     }
     ;(resource.get ? resource.get(req.id) : Promise.resolve(stub)).then(show, () => show(stub))
-  }, [asked, renderDetail, resource])
+  }, [asked, renderDetail, resource, takes])
   const setOpen = (row: T | null) => setOpenRaw(row)
   // The open record as the list now has it: an action, a re-check or another
   // user may have changed it since it was clicked.

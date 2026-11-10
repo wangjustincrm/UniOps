@@ -1,8 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
 import {
   Button, DetailList, LocalTable, SchemaForm, Section, formatDateTime, queryKeys,
-  requestView, useCan, useNotices, type ColumnDef, columnsOf
+  useOpenView, useCan, useNotices, type ColumnDef, columnsOf
  } from '@/platform-ui'
 import { runsClient, type RunRead } from '@/features/operations/operationsApi'
 import { connectionsClient, type ConnectionRead } from './connectionsApi'
@@ -32,7 +31,7 @@ const scheduleValues = (c: ConnectionRead) => {
 }
 
 export function ConnectionSchedule({ connection: c }: { connection: ConnectionRead }) {
-  const navigate = useNavigate()
+  const openView = useOpenView()
   const qc = useQueryClient()
   const { notify } = useNotices()
   const canEdit = useCan('sales.config')
@@ -64,8 +63,7 @@ export function ConnectionSchedule({ connection: c }: { connection: ConnectionRe
         emptyTitle="No run yet" />
       <span>
         <Button size="sm" variant="secondary" onClick={() => {
-          requestView('runs', { name: c.name, state: { filters: [{ field: 'scope', op: 'eq', value: scope }] } })
-          navigate('/runs')
+          openView('/runs', 'runs', { name: c.name, state: { filters: [{ field: 'scope', op: 'eq', value: scope }] } })
         }}>All runs of {c.name}</Button>
       </span>
     </Section>

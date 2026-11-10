@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
 import {
-  ActionButton, AddressView, Autocomplete, Callout, DetailList, ErrorMessage, Hint, LocalTable, Section, Skeleton, formatDate, queryKeys, requestOpen,
+  ActionButton, AddressView, Autocomplete, Callout, DetailList, ErrorMessage, Hint, LocalTable, Section, Skeleton, formatDate, queryKeys, useOpenRecord,
   useNotices, type ColumnDef, columnsOf
  } from '@/platform-ui'
 import { documentsClient } from '@/features/operations/operationsApi'
@@ -30,7 +29,7 @@ const columns: ColumnDef<Line, unknown>[] = [
 
 function One({ p }: { p: OrderFrom945Plan }) {
   const qc = useQueryClient()
-  const navigate = useNavigate()
+  const openRecord = useOpenRecord()
   const notices = useNotices()
   const [partner, setPartner] = useState<string | null>(p.partner_code)
   const m = useMutation({
@@ -40,8 +39,7 @@ function One({ p }: { p: OrderFrom945Plan }) {
       await qc.invalidateQueries({ queryKey: queryKeys.list(documentsClient) })
       await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
       await qc.invalidateQueries({ queryKey: ['shipments-without-order', p.document_id] })
-      requestOpen('/orders', o.id)
-      navigate('/orders')
+      openRecord('/orders', o.id)
     },
   })
   const joins = p.order_id != null

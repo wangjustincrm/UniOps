@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   ActionButton, Badge, Button, DateTimeCell, LocalTable, NoticeScope, RowActions, Section, StatusCell, businessErrorOf,
-  requestOpen, useNotices, type ColumnDef, Hint,
+  useOpenRecord, useNotices, type ColumnDef, Hint,
 } from '@/platform-ui'
 import { RefreshCw } from 'lucide-react'
 import { runConnectionNow } from '@/features/configuration/connections/connectionsApi'
@@ -21,6 +21,7 @@ export function SchedulerSection({ health }: { health: HealthRead }) {
 function Scheduler({ health: h }: { health: HealthRead }) {
   const qc = useQueryClient()
   const navigate = useNavigate()
+  const openRecord = useOpenRecord()
   const { notify } = useNotices()
   const follower = useRunFollower()
   const state = !h.scheduler_enabled ? 'unavailable' : h.scheduler_paused ? 'off' : 'on'
@@ -38,7 +39,7 @@ function Scheduler({ health: h }: { health: HealthRead }) {
   }
   const columns: ColumnDef<JobRead, unknown>[] = [
     { accessorKey: 'label', header: 'Job', cell: ({ row: { original: j } }) => j.connection_id === null ? j.label : (
-      <Button size="sm" variant="ghost" onClick={() => { requestOpen('/config/connections', j.connection_id!); navigate('/config/connections') }}>
+      <Button size="sm" variant="ghost" onClick={() => { openRecord('/config/connections', j.connection_id!) }}>
         {j.label}
       </Button>
     ) },

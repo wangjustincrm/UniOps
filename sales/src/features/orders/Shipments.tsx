@@ -1,7 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
 import {
-  ActionButton, AddressView, Badge, Button, DateCell, DateTimeCell, Tooltip, LocalTable, StatusCell, TrackingLink, queryKeys, requestOpen,
+  ActionButton, AddressView, Badge, Button, DateCell, DateTimeCell, Tooltip, LocalTable, StatusCell, TrackingLink, queryKeys, useOpenRecord,
   type ColumnDef, Hint, columnsOf
  } from '@/platform-ui'
 import { LineNo } from './LineNo'
@@ -118,7 +117,7 @@ export function Shipments({ shipments, orderId, lineNumbers = new Map(), lines =
   /** The order's line numbers as shown (`lineNumbers` in ordersApi); none: the line_no as is. */
   lineNumbers?: Map<number, number>
 }) {
-  const navigate = useNavigate()
+  const openRecord = useOpenRecord()
   if (shipments.length === 0) return null
   return (
     <section aria-label="Shipments" className="flex flex-col gap-3">
@@ -157,7 +156,7 @@ export function Shipments({ shipments, orderId, lineNumbers = new Map(), lines =
             <Pair label="Received">{s.received_at ? <DateTimeCell value={s.received_at} /> : '—'}</Pair>
             <Pair label="Source file">
               <Button size="sm" variant="ghost" className="h-auto max-w-full px-0 text-left text-primary-700 underline-offset-2 hover:underline"
-                onClick={() => { requestOpen('/documents', s.document_id); navigate('/documents') }}>
+                onClick={() => { openRecord('/documents', s.document_id) }}>
                 <span className="break-all">{s.document_name ?? `Document #${s.document_id}`}</span>
               </Button>
             </Pair>

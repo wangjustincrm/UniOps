@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { RouterOpenRecord } from '@/app/RouterOpenRecord'
 import { PermissionProvider, ToastProvider } from '@/platform-ui'
 import { takeOpenRequest, takeViewRequest } from '@/platform-ui/resource/viewRequests'
 import type { DashboardRead, HealthRead } from './healthApi'
@@ -57,9 +58,9 @@ function Where() { return <p>at {useLocation().pathname}</p> }
 function renderAt(path: string, el: React.ReactNode, keys = ['sales.read', 'sales.config']) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={qc}><ToastProvider><PermissionProvider can={(k) => keys.includes(k)}>
-    <MemoryRouter initialEntries={[path]}><Routes>
+    <MemoryRouter initialEntries={[path]}><RouterOpenRecord><Routes>
       <Route path={path} element={el} /><Route path="*" element={<Where />} />
-    </Routes></MemoryRouter>
+    </Routes></RouterOpenRecord></MemoryRouter>
   </PermissionProvider></ToastProvider></QueryClientProvider>)
 }
 

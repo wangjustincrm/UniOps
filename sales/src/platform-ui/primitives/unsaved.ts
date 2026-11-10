@@ -19,6 +19,9 @@ export function useUnsavedScope(parent?: UnsavedScope): UnsavedScope {
   return scope
 }
 
+/** The scope a component is in (what leaving from here would drop). */
+export const useCurrentUnsavedScope = (): UnsavedScope => useContext(Scope)
+
 /** The forms below report to `scope`. */
 export function UnsavedBoundary({ scope, children }: { scope: UnsavedScope; children?: ReactNode }) {
   return createElement(Scope.Provider, { value: scope }, children)

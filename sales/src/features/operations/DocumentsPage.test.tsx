@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { RouterOpenRecord } from '@/app/RouterOpenRecord'
 import { PermissionProvider, ToastProvider } from '@/platform-ui'
 import type { DocumentRead } from './operationsApi'
 
@@ -25,10 +26,10 @@ const { default: DocumentsPage } = await import('./DocumentsPage')
 function renderPage() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(<QueryClientProvider client={qc}><ToastProvider><PermissionProvider can={() => true}>
-    <MemoryRouter initialEntries={['/documents']}><Routes>
+    <MemoryRouter initialEntries={['/documents']}><RouterOpenRecord><Routes>
       <Route path="/documents" element={<DocumentsPage />} />
       <Route path="/orders" element={<p>Orders page</p>} />
-    </Routes></MemoryRouter>
+    </Routes></RouterOpenRecord></MemoryRouter>
   </PermissionProvider></ToastProvider></QueryClientProvider>)
 }
 

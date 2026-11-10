@@ -48,10 +48,11 @@ export function columnsOf<T>() {
     /** Records the row belongs to, as links: the first few, "+N more" for the rest; with none, why. */
     refs: (id: string, header: string, opts: {
       refs: (row: T) => RecordRef[]; onOpen: (ref: RecordRef, row: T) => void; total?: (row: T) => number
-      empty?: (row: T) => string | null | undefined; max?: number; noun?: string
+      empty?: (row: T) => string | null | undefined; max?: number; noun?: string | ((row: T) => string)
     }): ColumnDef<T, unknown> => ({
       id, header, enableSorting: false, cell: ({ row }) => (
         <RefsCell refs={opts.refs(row.original)} total={opts.total?.(row.original)} onOpen={(ref) => opts.onOpen(ref, row.original)}
-          empty={opts.empty?.(row.original)} max={opts.max} noun={opts.noun} />) }),
+          empty={opts.empty?.(row.original)} max={opts.max}
+          noun={typeof opts.noun === 'function' ? opts.noun(row.original) : opts.noun} />) }),
   }
 }

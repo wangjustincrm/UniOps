@@ -15,6 +15,7 @@ import { usePermissions, MODULE_PERMS } from '@/hooks/usePermissions'
 import { PermissionProvider, ViewsProvider, createViewsClient } from '@/platform-ui'
 import { ViewRedirect } from '@/app/ViewRedirect'
 import { OLD_ADDRESSES, inboxKey } from '@/app/oldAddresses'
+import { RouterOpenRecord } from '@/app/RouterOpenRecord'
 import { InboxRedirect } from '@/app/InboxRedirect'
 
 // Every list's saved views (design §13.19) go through this one client.
@@ -365,6 +366,7 @@ export default function AppLayout() {
     return (
       <PermissionProvider can={perms.can}>
       <ViewsProvider client={views}>
+      <RouterOpenRecord>
       <div className="h-screen overflow-y-auto bg-[#FAFBFC]">
         <div className="mx-auto max-w-[1440px] p-4 md:p-6">
           <Routes>
@@ -374,6 +376,7 @@ export default function AppLayout() {
           </Routes>
         </div>
       </div>
+      </RouterOpenRecord>
       </ViewsProvider>
       </PermissionProvider>
     )
@@ -382,6 +385,7 @@ export default function AppLayout() {
   return (
     <PermissionProvider can={perms.can}>
     <ViewsProvider client={views}>
+      <RouterOpenRecord>
     <TabStoreProvider options={{ initialTabs: [{
       key: visibleNav[0].href, title: visibleNav[0].label, kind: 'page', path: visibleNav[0].href, pinned: true, closable: false,
     }], userId: user?.id }}>
@@ -413,7 +417,8 @@ export default function AppLayout() {
         </div>
       </div>
     </TabStoreProvider>
-    </ViewsProvider>
+    </RouterOpenRecord>
+      </ViewsProvider>
     </PermissionProvider>
   )
 }

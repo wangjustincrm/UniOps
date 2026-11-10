@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   ActionButton, ConfirmAction, DetailList, ListPage, LocalTable, RecordSheet, RefsCell, Section, StatusCell, formatDateTime, queryKeys,
-  requestOpen, type ColumnDef, type RecordRef, Muted, columnsOf,
+  useOpenRecord, type ColumnDef, type RecordRef, Muted, columnsOf,
 } from '@/platform-ui'
 import { OrderFrom945 } from '@/features/orders/OrderFrom945'
 import { documentsClient, downloadOriginal, ignoreDocument, readAgain, sendAgain, type DocumentRead } from './operationsApi'
@@ -12,13 +11,13 @@ const colDocumentRead = columnsOf<DocumentRead>()
 
 const status = (d: DocumentRead) => d.processing_status ?? d.file_status
 
-/** Opening an order or a transfer from a document: its list, its sheet. */
+/** Opening an order or a transfer from a document: its list, its sheet (the document's closes). */
 function useOpenRef() {
-  const navigate = useNavigate()
+  const openRecord = useOpenRecord()
   return useMemo(() => ({
-    order: (r: RecordRef) => { requestOpen('/orders', r.id); navigate('/orders') },
-    transfer: (r: RecordRef) => { requestOpen('/transfers', r.id); navigate('/transfers') },
-  }), [navigate])
+    order: (r: RecordRef) => { openRecord('/orders', r.id) },
+    transfer: (r: RecordRef) => { openRecord('/transfers', r.id) },
+  }), [openRecord])
 }
 
 /** Orders first, then a transfer; none: why. */
@@ -32,7 +31,7 @@ function useColumns(): ColumnDef<DocumentRead, unknown>[] {
     colDocumentRead.text('kind', 'Kind'),
     { id: 'status', header: 'Status', cell: ({ row }) => <StatusCell value={status(row.original)} /> },
     colDocumentRead.refs('orders', 'Orders', {
-      refs: belongsTo, total: (d) => (d.orders_total || d.transfers.length), noun: 'order',
+      refs: belongsTo, total: (d) => (d.orders_total || d.transfers.length), noun: (d) => (d.orders_total || !d.transfers.length ? 'order' : 'transfer'),
       onOpen: (r, d) => (d.orders_total ? open.order(r) : open.transfer(r)), empty: (d) => d.no_order_reason }),
     colDocumentRead.text('size', 'Bytes'),
     { accessorKey: 'error', header: 'Note', cell: ({ row }) => <Muted className="line-clamp-1">{row.original.error ?? ''}</Muted> },

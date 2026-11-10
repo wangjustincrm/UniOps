@@ -3,13 +3,13 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   ActionButton, Badge, Button, DetailList, ErrorMessage, ErrorView, LocalTable, PageHeader, Section, Skeleton, StatCard, formatDateTime,
-  requestOpen, type ColumnDef,
+  useOpenRecord, type ColumnDef,
   useRefresh, columnsOf
  } from '@/platform-ui'
 import { testConnection, type ConnectionTest } from '@/features/configuration/connections/connectionsApi'
 import { fetchHealth, type CheckRead, type GateEventRead, type HealthRead } from './healthApi'
 import { HealthBadge } from './HealthBadge'
-import { openList } from './openList'
+import { useOpenList } from './openList'
 import { SchedulerSection } from './SchedulerSection'
 
 const colCheckRead = columnsOf<CheckRead>()
@@ -48,6 +48,8 @@ function TestConnection({ id }: { id: number }) {
  *  the worst decides), the count cards, the switches, and the go-live gate. */
 export default function HealthPage() {
   const navigate = useNavigate()
+  const openRecord = useOpenRecord()
+  const openList = useOpenList()
   const q = useQuery({ queryKey: ['sales', 'health'], queryFn: fetchHealth, refetchInterval: 60_000 })
   const refresh = useRefresh(q, { queryKey: ['sales', 'health'], compare: () => ({ text: null }) })
   if (q.isLoading) return <Skeleton className="h-60 w-full" />
@@ -56,8 +58,8 @@ export default function HealthPage() {
   const byKey = Object.fromEntries(h.checks.map((c) => [c.key, c]))
   const open = (c: CheckRead) => {
     if (!c.link) return
-    if (c.key.startsWith('connection:')) requestOpen('/config/connections', Number(c.key.split(':')[1]))
-    navigate(openList(c.link, c.label))
+    if (c.key.startsWith('connection:')) openRecord('/config/connections', Number(c.key.split(':')[1]))
+    else openList(c.link, c.label)
   }
   const columns: ColumnDef<CheckRead, unknown>[] = [
     { accessorKey: 'result', header: 'Result', cell: ({ row }) => <HealthBadge result={row.original.result} /> },

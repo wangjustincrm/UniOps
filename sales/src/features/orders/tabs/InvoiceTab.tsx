@@ -1,7 +1,6 @@
-import { useNavigate } from 'react-router-dom'
 import { Download } from 'lucide-react'
 import {
-  Button, DetailList, ErrorMessage, Section, StatusCell, formatDate, formatDateTime, formatMoney, requestOpen, useNotices,
+  Button, DetailList, ErrorMessage, Section, StatusCell, formatDate, formatDateTime, formatMoney, useOpenRecord, useNotices,
 } from '@/platform-ui'
 import { downloadDocument } from '@/features/operations/operationsApi'
 import { downloadInvoicePdf, type OrderDetail } from '../ordersApi'
@@ -9,7 +8,7 @@ import { useOrderInvoice } from '../useOrderInvoice'
 
 /** The order's invoice: status, number, method, total, the file it was sent as; opened on Invoices. */
 export function InvoiceTab({ o }: { o: OrderDetail }) {
-  const navigate = useNavigate()
+  const openRecord = useOpenRecord()
   const notices = useNotices()
   const q = useOrderInvoice(o)
   const inv = q.data?.items[0]
@@ -25,7 +24,7 @@ export function InvoiceTab({ o }: { o: OrderDetail }) {
       ]} />
       {inv && (
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" variant="secondary" onClick={() => { requestOpen('/invoices', inv.id); navigate('/invoices') }}>Open invoice {inv.invoice_number}</Button>
+          <Button size="sm" variant="secondary" onClick={() => { openRecord('/invoices', inv.id) }}>Open invoice {inv.invoice_number}</Button>
           <Button size="sm" variant="secondary" onClick={() => { downloadInvoicePdf(inv.id, inv.invoice_number).catch((e: unknown) =>
             notices.notify({ tone: 'error', text: `Download failed: ${e instanceof Error ? e.message : String(e)}` })) }}>
             <Download className="mr-1 h-3.5 w-3.5" />Invoice PDF

@@ -98,6 +98,12 @@ const NO_TOAST_IMPORT = {
   name: '@/platform-ui', importNames: ['useToast'],
   message: 'Say it with useNotices (the status row) from @/platform-ui, not a toast.',
 }
+// Going to another record or list (2026-11-10): useOpenRecord / useOpenView / useGoTo close the sheet
+// they are called from and ask about unsaved input; requestOpen + navigate by hand did neither.
+const NO_RAW_OPEN_IMPORT = {
+  name: '@/platform-ui', importNames: ['requestOpen', 'requestView'],
+  message: 'Use useOpenRecord / useOpenView / useGoTo from @/platform-ui (they close this sheet and ask about unsaved input).',
+}
 const NO_RAW_SHEET_IMPORT = {
   name: '@/platform-ui', importNames: ['Sheet'],
   message: 'A record detail is a RecordSheet (a form: FormSheet) from @/platform-ui, not a raw Sheet.',
@@ -161,7 +167,7 @@ export default defineConfig([
     ignores: ['src/platform-ui/**', ...SHELL_LAYER],
     rules: { 'no-restricted-imports': ['error', {
       patterns: [SHELL, { group: ['@/platform-ui/primitives/toastContext'], message: NO_TOAST_IMPORT.message }],
-      paths: [NO_RAW_SHEET_IMPORT, NO_TOAST_IMPORT],
+      paths: [NO_RAW_SHEET_IMPORT, NO_TOAST_IMPORT, NO_RAW_OPEN_IMPORT],
     }] },
   },
   // One block per file group for no-restricted-syntax (a later block would

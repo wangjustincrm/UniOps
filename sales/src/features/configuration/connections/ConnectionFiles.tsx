@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
 import {
-  Button, ErrorView, LocalTable, StatusCell, queryKeys, requestView, type ColumnDef, columnsOf
+  Button, ErrorView, LocalTable, StatusCell, queryKeys, useOpenView, type ColumnDef, columnsOf
  } from '@/platform-ui'
 import { documentsClient, type DocumentRead } from '@/features/operations/operationsApi'
 import type { ConnectionRead } from './connectionsApi'
@@ -18,7 +17,7 @@ const columns: ColumnDef<DocumentRead, unknown>[] = [
 
 /** The last files this connection received or sent; all of them on the Files page. */
 export function ConnectionFiles({ connection: c }: { connection: ConnectionRead }) {
-  const navigate = useNavigate()
+  const openView = useOpenView()
   const filters = [{ field: 'connection_id', op: 'eq' as const, value: String(c.id) }]
   const q = useQuery({
     queryKey: [...queryKeys.list(documentsClient), 'connection', c.id],
@@ -31,8 +30,7 @@ export function ConnectionFiles({ connection: c }: { connection: ConnectionRead 
         emptyTitle={q.isLoading ? 'Loading…' : 'No file yet'} />
       <span>
         <Button size="sm" variant="secondary" onClick={() => {
-          requestView('documents', { name: c.name, state: { filters } })
-          navigate('/documents')
+          openView('/documents', 'documents', { name: c.name, state: { filters } })
         }}>All files of {c.name}{q.data ? ` (${q.data.total})` : ''}</Button>
       </span>
     </div>

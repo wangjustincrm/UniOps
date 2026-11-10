@@ -2,13 +2,13 @@ import { useQuery } from '@tanstack/react-query'
 import { NEEDS_REVIEW } from '@/app/oldAddresses'
 import { useNavigate } from 'react-router-dom'
 import {
-  Button, ErrorView, LocalTable, PageHeader, Section, Skeleton, StatCard, requestView, type ColumnDef,
+  Button, ErrorView, LocalTable, PageHeader, Section, Skeleton, StatCard, useOpenView, type ColumnDef,
   useRefresh, Hint, Muted, columnsOf
  } from '@/platform-ui'
 import { fetchEvents } from '@/features/configuration/notifications/notificationsApi'
 import { fetchDashboard, fetchHealth, type DashboardRead } from './healthApi'
 import { HealthBadge } from './HealthBadge'
-import { openList } from './openList'
+import { useOpenList } from './openList'
 
 const colRunRow = columnsOf<RunRow>()
 
@@ -33,6 +33,8 @@ export function HomeDashboard() {
   const label = (type: string) => events.data?.find((e) => `sales_${e.key}` === type)?.label
     ?? (type === 'sales_test' ? 'Test notification' : type)
   const go = (page: string) => navigate(page)
+  const openList = useOpenList()
+  const openView = useOpenView()
 
   if (dash.isLoading) return <Skeleton className="h-60 w-full" />
   if (dash.error || !dash.data) return <ErrorView error={dash.error} onRetry={() => { void refresh.refresh() }} />
@@ -44,7 +46,7 @@ export function HomeDashboard() {
       <section aria-label="Orders" className="grid grid-cols-2 gap-3 md:grid-cols-5">
         {d.cards.map((c) => (
           <StatCard key={c.key} label={c.label} count={c.count} tone={c.key === 'failed_files' && c.count ? 'danger' : 'neutral'}
-            onOpen={() => go(openList(c.link, c.label))}>
+            onOpen={() => openList(c.link, c.label)}>
             {c.parts.length > 0 && (
               <Hint>{c.parts.map((p) => `${p.label} ${p.count}`).join(' · ')}</Hint>
             )}
@@ -54,7 +56,7 @@ export function HomeDashboard() {
       <Section title="Needs a person" plain level={2}>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <StatCard label="Orders in review" count={d.needs_review} tone={d.needs_review ? 'warning' : 'neutral'}
-            onOpen={() => { requestView('orders', NEEDS_REVIEW); go('/orders') }} />
+            onOpen={() => { openView('/orders', 'orders', NEEDS_REVIEW) }} />
           <StatCard label="Waiting for delivery confirmation" count={d.waiting_delivery} onOpen={() => go('/deliveries')} />
           {d.open_tasks.map((t) => (
             <StatCard key={t.type} label={label(t.type)} count={t.count} tone="warning">
