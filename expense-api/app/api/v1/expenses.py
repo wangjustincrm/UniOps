@@ -750,10 +750,27 @@ async def _shared_approval_events(db, claim_id: uuid.UUID) -> list[ApprovalEvent
 
 class ClaimPermissions(BaseModel):
     is_owner: bool
-    can_edit: bool
+    can_edit: bool         # may save changes (PATCH) — see can_edit_claim
+    can_submit: bool = False   # may submit — see can_submit_claim
     can_approve: bool      # may approve / return / reject the current pending step
     can_pay: bool          # may record payment (status = approved)
     can_delete: bool = False   # may hard-delete (unapproved Travel Applications only)
+
+
+def can_edit_claim(claim, user_id: uuid.UUID, role: str) -> bool:
+    """Who update_expense lets save changes (OA.md §7.3 Save / Edit): the
+    claimant, whoever filed a TRV on their behalf, and a System Admin or
+    Finance Manager by PRIMARY role. The detail page used to offer Edit to the
+    first two only, so an admin could edit by URL but saw no button (ISS-0221)."""
+    return (claim.employee_id == user_id or expense_crud.is_preparer(claim, user_id)
+            or role in ("system_admin", "finance_manager"))
+
+
+def can_submit_claim(claim, user_id: uuid.UUID, role: str) -> bool:
+    """Who expense_action lets submit (OA.md §7.3 Submit): the claimant or
+    the claim's creator, and a System Admin by PRIMARY role. Not the Finance
+    Manager — they may edit someone else's claim but not send it."""
+    return user_id in (claim.employee_id, claim.created_by) or role == "system_admin"
 
 
 @router.get("/{claim_id}/permissions", response_model=ClaimPermissions)
@@ -784,7 +801,8 @@ async def get_claim_permissions(claim_id: uuid.UUID, db: SessionDep, user: Curre
 
     return ClaimPermissions(
         is_owner=is_owner,
-        can_edit=is_owner or expense_crud.is_preparer(claim, user_id),
+        can_edit=can_edit_claim(claim, user_id, role),
+        can_submit=can_submit_claim(claim, user_id, role),
         can_approve=can_approve,
         can_pay=can_pay,
         can_delete=can_delete_claim(claim, user_id, role),
@@ -995,8 +1013,7 @@ async def update_expense(
     if not claim:
         raise HTTPException(status_code=404, detail="Expense claim not found")
     user_id = uuid.UUID(user["sub"])
-    if (claim.employee_id != user_id and not expense_crud.is_preparer(claim, user_id)
-            and user.get("role") not in ("system_admin", "finance_manager")):
+    if not can_edit_claim(claim, user_id, user.get("role", "")):
         raise HTTPException(status_code=403, detail="Cannot edit another employee's claim")
     if (claim.claim_type == "TRV" and body.travel_application_id
             and body.travel_application_id != claim.travel_application_id):
@@ -1109,8 +1126,8 @@ async def expense_action(
     # (only draft/returned are editable) and has to get an approver to send it
     # back. `employee_id` is OA's owner of record; created_by is checked too so
     # an on-behalf-of draft stays submittable by whoever raised it.
-    if action == "submit" and user.get("role") != "system_admin":
-        if user_id not in (claim.employee_id, claim.created_by):
+    if action == "submit":
+        if not can_submit_claim(claim, user_id, user.get("role", "")):
             raise HTTPException(
                 status_code=403,
                 detail="Only the claimant can submit this expense claim",

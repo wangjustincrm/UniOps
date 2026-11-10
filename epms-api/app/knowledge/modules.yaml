@@ -161,7 +161,8 @@ modules:
         before that stand and are not asked for again. Until then the claim's
         Approval Status marks the step that returned it as Returned, with who
         returned it, when and their comment, and the Approval Timeline names
-        that step.
+        that step. On someone else's draft or returned claim a System Admin
+        has Edit and Submit too; a Finance Manager has Edit only.
       - >-
         A Travel Expense claim is always for a traveller listed on an approved
         Travel Application, and is paid to that traveller. Travellers file

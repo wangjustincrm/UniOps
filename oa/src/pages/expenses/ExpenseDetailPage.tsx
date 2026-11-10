@@ -428,7 +428,7 @@ export default function ExpenseDetailPage() {
 
   // Server-computed permissions — approval roles (Finance BP, etc.) are assignments,
   // not JWT roles, so authorization is resolved server-side via tasks + role_management.
-  const { data: perms } = useQuery<{ is_owner: boolean; can_edit: boolean; can_approve: boolean; can_pay: boolean; can_delete: boolean }>({
+  const { data: perms } = useQuery<{ is_owner: boolean; can_edit: boolean; can_submit: boolean; can_approve: boolean; can_pay: boolean; can_delete: boolean }>({
     queryKey: ['expense-permissions', id],
     queryFn: () => api.get(`/api/v1/expenses/${id}/permissions`),
   })
@@ -504,8 +504,10 @@ export default function ExpenseDetailPage() {
   const missingAttachment = requiresAttachment && isEditable(claim.status) && attachments.length === 0
 
   // Permissions resolved server-side (see the /permissions query above).
-  // The claimant, or whoever filed the claim on their behalf.
+  // Edit and Submit are separate answers (OA.md §7.3): a Finance Manager may
+  // edit someone else's claim but not submit it; a System Admin may do both.
   const canEdit = perms?.can_edit ?? false
+  const canSubmit = perms?.can_submit ?? false
   const canApprove = perms?.can_approve ?? false
   const canPay = perms?.can_pay ?? false
   // False server-side for EXP/MIL/TRV, so this shared component needs no
@@ -550,7 +552,7 @@ export default function ExpenseDetailPage() {
                 claim `returned` (approval-api accepts submit from draft or
                 returned), and with only Edit here a returned claim could be
                 changed but never sent back into approval. */}
-            {isEditable(claim.status) && canEdit && (
+            {isEditable(claim.status) && canSubmit && (
               <button
                 onClick={() => setActiveAction(ACTION.SUBMIT)}
                 disabled={missingAttachment}
