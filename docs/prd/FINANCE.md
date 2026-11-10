@@ -1,9 +1,13 @@
 # Finance — Product Requirements Document
 
-**Version:** 2.23
-**Date:** 2026-11-09
+**Version:** 2.24
+**Date:** 2026-11-10
 **Status:** Current. Describes the system as built on the main line, under the 2026-09-20 positioning decision.
 **Scope:** The UniOps Finance module: Finance web app and finance service. Covers the NC65 data mirror, the checks and reports built on it, AP handoff to NC, payments, remittance, vendor credits, bank reconciliation and the remaining finance-held records.
+
+**What changed in version 2.24** (2026-11-10)
+
+- JV sync: an income-expense code added to the budget account catalog after its vouchers were imported is now attached to those lines on the next sync run. Before, the lines stayed unresolved: JV Validation kept reporting "income-expense code not in the budget catalog" and the amount stayed off the Budget Dashboard (FIN-SYNC-13, FIN-VAL-04).
 
 **What changed in version 2.23** (2026-11-09)
 
@@ -276,6 +280,7 @@ A failed permission load shows "Couldn't load your Finance permissions" with a r
 | FIN-SYNC-09 | Auxiliary dimensions are resolved per line: department, cost centre, income-expense item, partner (supplier ∪ customer), material, project, employee and bank account. A missing auxiliary raises an error. It never silently empties the dimension. |
 | FIN-SYNC-10 | Cost-centre resolution: on the five budget categories (5101, 5301, 6601, 6602, 6603) the cost centre is resolved **account-aware** through the cost-centre map. All other accounts use the curated NC-code map: the NC code decides when present, otherwise the department. **A synthesised cost centre is a derived value, not an NC fact.** Manufacturing accounts (5xxx) carry NC's real cost centre on 100% of lines. Period-expense accounts (66xx) carry none, so their cost centre is always derived. |
 | FIN-SYNC-11 | After each run, JV dimension validation runs and refreshes one standing task (§7). |
+| FIN-SYNC-13 | The income-expense item is resolved by its exact code against the budget account catalog when the line is imported. On every run, lines imported earlier whose code had no budget account at the time are re-checked. If the catalog now has a budget account with that code, it is attached to the line. This step runs before the validation in FIN-SYNC-11, so adding the code to the catalog clears the finding on the next run, with no full reload. |
 | FIN-SYNC-12 | **Tie-out of the voucher mirror against NC (counts and totals per period and account): Not implemented.** See FIN-OI-01. |
 
 ### 4.2 Chart of accounts and auxiliary sync
@@ -363,6 +368,7 @@ A failed permission load shows "Couldn't load your Finance permissions" with a r
 | FIN-VAL-01 | Finds posted NC voucher lines that cannot reach a budget cell. Such lines are not wrong-looking anywhere; they are silently missing from Budget vs Actual. Rules, in order of cost: no cost-centre mapping for this account × department (needs a decision); NC cost-centre code not in the mapping; income-expense code not in the budget catalog; no income-expense item; financial-expense account with no budget account; account category and cost centre disagree; department and cost centre disagree; cost centre differs from what the current map resolves to. |
 | FIN-VAL-02 | The page lists findings by rule with drill-down to lines. Payroll, Depreciation and Shut-down loss are excluded by policy and labelled as such, not reported as defects. |
 | FIN-VAL-03 | The same rule set raises **one standing task** ("JV VALIDATION", type *resolve_jv_validation*, to System Admin) after every voucher sync. The task covers the current and previous fiscal year, is refreshed with counts on each run, and closes itself when the range is clean. |
+| FIN-VAL-04 | **Fixing "income-expense code not in the budget catalog":** add the code to the Account Catalog exactly as NC prints it, including any `CRM` prefix. The finding clears after the next voucher sync (FIN-SYNC-13). The page reflects the database as of the last sync. It does not re-resolve lines when it is opened. |
 
 ---
 
