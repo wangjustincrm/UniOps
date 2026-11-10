@@ -135,6 +135,11 @@ modules:
       - >-
         A general expense claim has up to 20 lines; the server refuses more,
         on create and on edit. Travel expense claims have no line limit.
+        Every general expense line needs a description, a budget account and
+        a net amount, and every travel expense line a budget account; if one
+        is missing the claim is not saved and the form names the line and the
+        field (e.g. "Line 2: select a Budget Account"). A line left completely
+        empty is simply not saved.
       - >-
         A receipt scanned on a claim line (Scan) is kept as that line's receipt
         and attached to the claim automatically when it is saved — it does not

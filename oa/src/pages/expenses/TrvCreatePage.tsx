@@ -10,6 +10,7 @@ import { api, mdmApi } from '@/lib/api'
 import { ReceiptScanButton } from '@/components/ReceiptScanButton'
 import { AccountPicker, useBudgetAccounts, type BudgetAccount } from '@/components/BudgetAccountPicker'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
+import { isBlankLine, lineMessage, missingFields, type LineField } from '@/lib/lineValidation'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -97,6 +98,10 @@ const COUNTRIES: { code: string; name: string }[] = [
 
 const today = todayLocal
 
+// Required on every TRV line the form checks itself (the date-range rules are
+// checked separately in handleSubmit). Same shared check as General Expense.
+const REQUIRED: LineField[] = ['budget_account_id']
+
 // Inclusive day count between two YYYY-MM-DD strings. Parsed as UTC parts,
 // never through new Date('YYYY-MM-DD') + local getters (off by one west of UTC).
 function daysInRange(from: string, to: string): number {
@@ -138,7 +143,7 @@ function OverLimitBadge({ amount, limit }: { amount: number; limit: number }) {
 
 function CategorySection({
   category, label, lines, policy, abroad, taxCodes, rateOf, tripFrom, tripTo, accounts,
-  onAdd, onRemove, onUpdate,
+  onAdd, onRemove, onUpdate, missingOf,
 }: {
   category: string; label: string
   lines: TrvLineItem[]
@@ -151,6 +156,7 @@ function CategorySection({
   onAdd: () => void
   onRemove: (n: number) => void
   onUpdate: (n: number, patch: Partial<TrvLineItem>) => void
+  missingOf: (li: TrvLineItem) => LineField[]   // fields to outline in red
 }) {
   const [open, setOpen] = useState(true)
   const mealKey = TRV_CATEGORIES.find(c => c.key === category)?.mealKey as keyof Policy | null
@@ -388,6 +394,7 @@ function CategorySection({
                       })}
                       accounts={accounts}
                       className="text-sm"
+                      invalid={missingOf(li).includes('budget_account_id')}
                     />
                   </div>
                 </div>
@@ -492,6 +499,8 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
   const currency = 'CAD'
   const [lines, setLines] = useState<TrvLineItem[]>([])
   const [error, setError] = useState('')
+  // Set by a save refused for missing line fields (see lib/lineValidation).
+  const [showLineErrors, setShowLineErrors] = useState(false)
   const [travelApplicationId, setTravelApplicationId] = useState('')
   const [claimantId, setClaimantId] = useState('')
 
@@ -623,11 +632,29 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
     return (parseFloat(l.net_amount) || 0) > (policy[mealKey] as number)
   })
 
-  // Per-row receipts are uploaded by useSaveClaim once the claim has an id.
-  // Claim-level storage; the filename is prefixed with the category so the line
-  // association is readable.
+  // Blank lines (nothing entered, no receipt) are left out of the save.
+  const keptLines = lines.filter(l => !isBlankLine(l))
+  // "Meals — Lunch, line 1" — the line's place within its category section.
+  const whereOf = (l: TrvLineItem) => {
+    const cat = TRV_CATEGORIES.find(c => c.key === l.category)
+    const k = linesByCategory(l.category).findIndex(x => x.line_number === l.line_number) + 1
+    return `${cat?.label ?? l.category}, line ${k}`
+  }
+  const missingOf = (l: TrvLineItem): LineField[] =>
+    showLineErrors && !isBlankLine(l) ? missingFields(l, REQUIRED) : []
+  // In page order: category sections, then lines within each.
+  const lineIssues = showLineErrors
+    ? TRV_CATEGORIES.flatMap(c => linesByCategory(c.key).flatMap(l => {
+        const missing = missingOf(l)
+        return missing.length ? [lineMessage(whereOf(l), missing)] : []
+      }))
+    : []
+
+  // Per-row receipts are uploaded by useSaveClaim once the claim has an id —
+  // only those of the lines actually saved. Claim-level storage; the filename
+  // is prefixed with the category so the line association is readable.
   const save = useSaveClaim(editClaimId, (id) => replaceTab(`/expenses/${id}`), {
-    receipts: () => lines.flatMap((l) =>
+    receipts: () => keptLines.flatMap((l) =>
       l._file ? [{ file: l._file, name: `[${l.category}] ${l._file.name}` }] : []),
   })
 
@@ -645,12 +672,15 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
     if (!editClaimId && !claimantId) { setError('Select the traveler this claim is for'); return }
     if (!destination.trim()) { setError('Travel destination is required'); return }
     if (!purpose.trim()) { setError('Travel purpose is required'); return }
-    if (lines.length === 0) { setError('Add at least one expense line'); return }
-    if (lines.some(l => !l.budget_account_id)) { setError('All lines must have a budget account'); return }
-    for (const l of lines) {
+    if (keptLines.length === 0) { setError('Add at least one expense line'); return }
+    if (keptLines.some(l => missingFields(l, REQUIRED).length)) {
+      // Named per line in the list above the Save button; fields outlined.
+      setShowLineErrors(true); setError(''); return
+    }
+    for (const l of keptLines) {
       if (l.mode !== 'range') continue
       const cat = TRV_CATEGORIES.find(c => c.key === l.category)
-      const name = `${cat?.label ?? l.category} line`
+      const name = whereOf(l)
       const span = daysInRange(l.period_from, l.period_to)
       if (!l.period_from || !l.period_to || span < 1) { setError(`${name}: enter a valid date range`); return }
       if ((fromDate && l.period_from < fromDate) || (toDate && l.period_to > toDate)) {
@@ -684,7 +714,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
       travel_to_date: toDate,
       travel_destination: destination,
       travel_country: country,
-      line_items: lines.map((l, i) => ({
+      line_items: keptLines.map((l, i) => ({
         line_number: i + 1,
         expense_date: l.expense_date,
         description: `[${l.category}] ${l.description}`.trim(),
@@ -844,6 +874,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
           onAdd={() => addLine(key)}
           onRemove={removeLine}
           onUpdate={updateLine}
+          missingOf={missingOf}
         />
       ))}
 
@@ -870,6 +901,17 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
         </div>
       </div>
 
+      {lineIssues.length > 0 && (
+        <div role="alert" className="flex items-start gap-2 rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">Complete these lines before saving:</p>
+            <ul className="mt-1 list-disc pl-5">
+              {lineIssues.map(m => <li key={m}>{m}</li>)}
+            </ul>
+          </div>
+        </div>
+      )}
       {error && <ErrorBanner message={error} />}
 
       <Button type="submit" size="sm" disabled={mutation.isPending} className="self-start">

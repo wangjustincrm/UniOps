@@ -68,13 +68,15 @@ interface L1Group {
 }
 
 export function AccountPicker({
-  value, onChange, accounts, className,
+  value, onChange, accounts, className, invalid,
 }: {
   value: string
   onChange: (acc: BudgetAccount) => void
   accounts: BudgetAccount[]
   // Trigger sizing — EXP's compact table cell uses the default; TRV's line cards pass text-sm.
   className?: string
+  // Outline the trigger in red: the last save found this line without an account.
+  invalid?: boolean
 }) {
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
@@ -196,6 +198,7 @@ export function AccountPicker({
         className={cn(
           'w-full rounded border bg-white px-2 py-1.5 text-left text-xs truncate',
           selected ? 'border-neutral-200 text-neutral-800' : 'border-neutral-200 text-neutral-400',
+          invalid && 'border-danger-400 bg-danger-50/40',
           className,
         )}
       >
