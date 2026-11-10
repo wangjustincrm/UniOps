@@ -18,6 +18,8 @@ import {
 import { formatDateTime } from '@/lib/formatDate'
 import { Countdown } from '@/components/Countdown'
 import { ActionHistory } from '@/components/ActionHistory'
+import { PhotoCapture } from '@/components/PhotoCapture'
+import type { CompressedImage } from '@/lib/imageCompress'
 import { ChangeHistory } from '@/components/ChangeHistory'
 import { InjuryBadge, MolBadge, StatusBadge } from '@/components/StatusBadge'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -874,6 +876,7 @@ function EditReport({ incident, isHse, onDone, onCancel }: {
     batch_code: incident.batch_code ?? '',
   }
   const [form, setForm] = useState(initial)
+  const [newPhotos, setNewPhotos] = useState<CompressedImage[]>([])
   const set = (k: keyof typeof initial, v: string) => setForm((f) => ({ ...f, [k]: v }))
 
   // ★ Round-6 review: legal clocks counted from when it happened. Only HSE
@@ -892,7 +895,7 @@ function EditReport({ incident, isHse, onDone, onCancel }: {
   const needsRecountOk = clocks.length > 0 && isHse && timeChanged
 
   const save = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const body: Record<string, unknown> = {}
       for (const k of ['title', 'description', 'equipment_involved', 'witnesses_note',
                        'immediate_action_taken', 'location_id', 'equipment_id', 'batch_code'] as const) {
@@ -901,7 +904,13 @@ function EditReport({ incident, isHse, onDone, onCancel }: {
       if (form.date !== initial.date || form.time !== initial.time) {
         body.occurred_at = new Date(`${form.date}T${form.time || '00:00'}`).toISOString()
       }
-      return api.patch(`/api/v1/incidents/${incident.id}`, body)
+      if (Object.keys(body).length) await api.patch(`/api/v1/incidents/${incident.id}`, body)
+      for (const photo of newPhotos) {
+        const blob = await (await fetch(photo.dataUrl)).blob()
+        const upload = new FormData()
+        upload.append('file', blob, photo.name)
+        await api.upload(`/api/v1/incidents/${incident.id}/attachments`, upload)
+      }
     },
     onSuccess: onDone,
   })
@@ -910,17 +919,26 @@ function EditReport({ incident, isHse, onDone, onCancel }: {
   const box = 'min-h-[40px] w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:border-primary-400 focus:outline-none'
   return (
     <div className="mt-3 grid gap-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3 sm:grid-cols-2">
-      <label className="sm:col-span-2 text-xs font-medium text-neutral-700">Title
-        <input className={box} value={form.title} onChange={(e) => set('title', e.target.value)} />
+      {/* ★ Round 12, INC-17: "the fields on incident forms does not match the
+          fields on the same incident form when it is reopened." The same
+          questions, in the same words and order, as the report. */}
+      <label className="sm:col-span-2 text-xs font-medium text-neutral-700">What happened?
+        <input className={box} value={form.title} onChange={(e) => set('title', e.target.value)}
+               placeholder="A short description" />
       </label>
-      <label className="text-xs font-medium text-neutral-700">Date
-        <input type="date" className={box} value={form.date} disabled={timeLocked}
-               onChange={(e) => set('date', e.target.value)} />
-      </label>
-      <label className="text-xs font-medium text-neutral-700">Time
-        <input type="time" className={box} value={form.time} disabled={timeLocked}
-               onChange={(e) => set('time', e.target.value)} />
-      </label>
+      <div className="grid grid-cols-2 gap-2 sm:col-span-2 sm:grid-cols-[11rem_8rem_minmax(0,1fr)]">
+        <label className="text-xs font-medium text-neutral-700">Date
+          <input type="date" className={box} value={form.date} disabled={timeLocked}
+                 onChange={(e) => set('date', e.target.value)} />
+        </label>
+        <label className="text-xs font-medium text-neutral-700">Time
+          <input type="time" className={box} value={form.time} disabled={timeLocked}
+                 onChange={(e) => set('time', e.target.value)} />
+        </label>
+        <label className="col-span-2 text-xs font-medium text-neutral-700 sm:col-span-1">Product batch code
+          <input className={box} value={form.batch_code} onChange={(e) => set('batch_code', e.target.value)} />
+        </label>
+      </div>
       {timeLocked && (
         <p className="sm:col-span-2 text-xs text-neutral-600">
           Only HSE can change when this happened: statutory deadlines are counted from it.
@@ -937,28 +955,40 @@ function EditReport({ incident, isHse, onDone, onCancel }: {
           </span>
         </label>
       )}
-      <label className="sm:col-span-2 text-xs font-medium text-neutral-700">Product batch code
-        <input className={box} value={form.batch_code} onChange={(e) => set('batch_code', e.target.value)} />
-      </label>
-      <div className="sm:col-span-2 text-xs font-medium text-neutral-700">Where
+      <div className="sm:col-span-2 text-xs font-medium text-neutral-700">Where did this happen?
         <LocationSelect value={form.location_id || null} onChange={(id) => set('location_id', id ?? '')} />
       </div>
-      <label className="sm:col-span-2 text-xs font-medium text-neutral-700">What happened
-        <textarea className={area} value={form.description} onChange={(e) => set('description', e.target.value)} />
-      </label>
-      <div className="sm:col-span-2 text-xs font-medium text-neutral-700">Equipment, from the register
+      <div className="sm:col-span-2 text-xs font-medium text-neutral-700">Which equipment was involved?
         <EquipmentSelect value={form.equipment_id || null} onChange={(id) => set('equipment_id', id ?? '')}
                          locationId={form.location_id || null} />
       </div>
-      <label className="text-xs font-medium text-neutral-700">Equipment involved, in words
-        <textarea className={area} value={form.equipment_involved} onChange={(e) => set('equipment_involved', e.target.value)} />
+      <label className="sm:col-span-2 text-xs font-medium text-neutral-700">What else should we know?
+        <textarea className={area} value={form.description} onChange={(e) => set('description', e.target.value)} />
       </label>
-      <label className="text-xs font-medium text-neutral-700">Witnesses
-        <textarea className={area} value={form.witnesses_note} onChange={(e) => set('witnesses_note', e.target.value)} />
-      </label>
-      <label className="sm:col-span-2 text-xs font-medium text-neutral-700">What was done straight away
-        <textarea className={area} value={form.immediate_action_taken} onChange={(e) => set('immediate_action_taken', e.target.value)} />
-      </label>
+      {/* The report no longer asks these; a record from before that answered
+          them keeps them, and they can still be corrected. */}
+      {initial.equipment_involved && (
+        <label className="text-xs font-medium text-neutral-700">Equipment involved, in words
+          <textarea className={area} value={form.equipment_involved} onChange={(e) => set('equipment_involved', e.target.value)} />
+        </label>
+      )}
+      {initial.witnesses_note && (
+        <label className="text-xs font-medium text-neutral-700">Witnesses
+          <textarea className={area} value={form.witnesses_note} onChange={(e) => set('witnesses_note', e.target.value)} />
+        </label>
+      )}
+      {initial.immediate_action_taken && (
+        <label className="sm:col-span-2 text-xs font-medium text-neutral-700">What was done straight away
+          <textarea className={area} value={form.immediate_action_taken} onChange={(e) => set('immediate_action_taken', e.target.value)} />
+        </label>
+      )}
+      <div className="sm:col-span-2 text-xs font-medium text-neutral-700">Photographs
+        <p className="mb-1 font-normal text-neutral-500">Added to those already on the report.</p>
+        <PhotoCapture photos={newPhotos} onChange={setNewPhotos} />
+      </div>
+      <p className="sm:col-span-2 text-xs text-neutral-500">
+        The part of the body, the kind of injury and the treatment are corrected on the investigation.
+      </p>
       <div className="sm:col-span-2">
         <ErrorNote error={save.error} />
         <p className="mb-2 text-xs text-neutral-500">
