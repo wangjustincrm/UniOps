@@ -54,7 +54,14 @@ async def authorize(uow: Any, key: str, *, system: bool = False) -> None:
     checker: PermissionChecker | None = getattr(uow, "permissions", None)
     if checker is None:
         raise RuntimeError("no permission checker is wired into the unit of work factory")
-    if not await checker(uow.session, actor, key):
+    granted: dict[str, bool] | None = getattr(uow, "granted", None)
+    if granted is None:
+        ok = await checker(uow.session, actor, key)
+    elif key in granted:
+        ok = granted[key]
+    else:
+        ok = granted[key] = await checker(uow.session, actor, key)
+    if not ok:
         raise PermissionDenied(key, actor)
 
 

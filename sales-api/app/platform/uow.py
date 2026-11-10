@@ -44,6 +44,8 @@ class SqlAlchemyUnitOfWork:
     ) -> None:
         self._session_factory = session_factory
         self.permissions = permissions
+        # Each permission asked once per unit of work (a request): the answer is the same for its life.
+        self.granted: dict[str, bool] = {}
         self.actor = actor
         self.handlers = handlers or HandlerRegistry()
         self.audit = audit
