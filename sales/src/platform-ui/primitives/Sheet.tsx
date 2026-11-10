@@ -1,4 +1,4 @@
-import { confirmDiscard } from './unsaved'
+import { UnsavedBoundary, confirmDiscard, useUnsavedScope, type UnsavedScope } from './unsaved'
 import * as RD from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import type { KeyboardEvent, ReactNode } from 'react'
@@ -8,6 +8,8 @@ import { SHEET_SIZES, type SheetSize } from './sheetSizes'
 export type { SheetSize } from './sheetSizes'
 
 export interface SheetProps {
+  /** The scope its forms report to (a RecordSheet nests its tab's inside); default: one of its own. */
+  unsaved?: UnsavedScope
   open: boolean
   onOpenChange: (open: boolean) => void
   title: string
@@ -41,9 +43,12 @@ export const SheetClose = ({ children, label = 'Close' }: { children?: ReactNode
 /** Side panel for forms and details; a Radix dialog anchored right, in a portal. */
 export function Sheet({
   open, onOpenChange, title, description, children, footer, className, size = 'md', header, bodyClassName, onKeyDown, statusBar,
+  unsaved: given,
 }: SheetProps) {
+  const own = useUnsavedScope()  // closing asks only about the forms in this sheet
+  const unsaved = given ?? own
   return (
-    <RD.Root open={open} onOpenChange={(next) => { if (next || confirmDiscard()) onOpenChange?.(next) }}>
+    <RD.Root open={open} onOpenChange={(next) => { if (next || confirmDiscard(unsaved)) onOpenChange?.(next) }}>
       <RD.Portal>
         <RD.Overlay className="fixed inset-0 z-50 bg-black/30" />
         <RD.Content
@@ -54,6 +59,7 @@ export function Sheet({
             className,
           )}
         >
+          <UnsavedBoundary scope={unsaved}>
           {header ?? (
             <div className="flex items-start justify-between gap-4 border-b border-neutral-100 px-6 py-4">
               <div>
@@ -67,6 +73,7 @@ export function Sheet({
           <div className={bodyClassName ?? 'flex-1 overflow-y-auto px-6 py-4'}>{children}</div>
           {statusBar}
           {footer && <div className="flex justify-end gap-2 border-t border-neutral-100 px-6 py-4">{footer}</div>}
+          </UnsavedBoundary>
         </RD.Content>
       </RD.Portal>
     </RD.Root>

@@ -1,4 +1,4 @@
-import { confirmDiscard } from './unsaved'
+import { UnsavedBoundary, confirmDiscard, useUnsavedScope } from './unsaved'
 import * as RD from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import type { ReactNode } from 'react'
@@ -16,8 +16,9 @@ export interface DialogProps {
 
 /** Centred modal. Rendered in a portal, so it is never clipped by a table or tab. */
 export function Dialog({ open, onOpenChange, title, description, children, footer, className }: DialogProps) {
+  const unsaved = useUnsavedScope()  // closing asks only about the forms in this dialog
   return (
-    <RD.Root open={open} onOpenChange={(next) => { if (next || confirmDiscard()) onOpenChange?.(next) }}>
+    <RD.Root open={open} onOpenChange={(next) => { if (next || confirmDiscard(unsaved)) onOpenChange?.(next) }}>
       <RD.Portal>
         <RD.Overlay className="fixed inset-0 z-50 bg-black/40" />
         <RD.Content
@@ -38,8 +39,10 @@ export function Dialog({ open, onOpenChange, title, description, children, foote
               <X className="h-4 w-4" />
             </RD.Close>
           </div>
-          {children}
-          {footer && <div className="mt-6 flex justify-end gap-2">{footer}</div>}
+          <UnsavedBoundary scope={unsaved}>
+            {children}
+            {footer && <div className="mt-6 flex justify-end gap-2">{footer}</div>}
+          </UnsavedBoundary>
         </RD.Content>
       </RD.Portal>
     </RD.Root>

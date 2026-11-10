@@ -7,6 +7,7 @@ import { Sheet, SheetClose, SheetTitle, type SheetSize } from '../primitives/She
 import { Button, Skeleton } from '../primitives/shell'
 import { EmptyState } from '../primitives/States'
 import { Tabs } from '../primitives/Tabs'
+import { UnsavedBoundary, confirmDiscard, useUnsavedScope } from '../primitives/unsaved'
 import { BusyBar } from '../primitives/BusyBar'
 import { useDelayed } from '../primitives/useDelayed'
 import { cn } from '../lib/cn'
@@ -145,6 +146,10 @@ export function RecordSheet(props: RecordSheetProps) {
   const close = () => (host ? host.close() : props.onOpenChange?.(false))
   const size: SheetSize = expanded ? 'full' : (props.size ?? host?.size ?? 'lg')
 
+  // Unsaved input (2026-11-10): the sheet's scope, and the open tab's inside it. Leaving the tab asks
+  // about the tab's forms only; closing the sheet (or prev / next in the list) about all of them.
+  const sheetScope = useUnsavedScope()
+  const tabScope = useUnsavedScope(sheetScope)
   const choose = (id: string) => (host?.onTabChange ? host.onTabChange(id) : setOwn(id))
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     // React bubbles through portals: a key in a dialog or menu opened from this sheet is not for the sheet.
@@ -214,11 +219,12 @@ export function RecordSheet(props: RecordSheetProps) {
           </div>
         )}
         {visible.length > 0 && (
-          <Tabs ariaLabel="Sections" value={tab} onValueChange={choose}
+          <Tabs ariaLabel="Sections" value={tab} onValueChange={choose} canLeave={() => confirmDiscard(tabScope)}
             listClassName="sticky top-0 z-10 -mx-4 bg-white px-4 sm:-mx-6 sm:px-6"
             items={visible.map((t) => ({
               value: t.id, label: t.label, count: t.count, attention: t.tone,
-              content: t.empty ? <EmptyState title={t.empty} className="p-6" /> : <TabBody render={t.render} />,
+              content: t.empty ? <EmptyState title={t.empty} className="p-6" />
+                : <UnsavedBoundary scope={tabScope}><TabBody render={t.render} /></UnsavedBoundary>,
             }))} />
         )}
         {props.footer}
@@ -227,7 +233,7 @@ export function RecordSheet(props: RecordSheetProps) {
   }
 
   return (
-    <Sheet open={open} onOpenChange={(o) => { if (!o) close() }} title={props.title || 'Record'} size={size}
+    <Sheet open={open} onOpenChange={(o) => { if (!o) close() }} title={props.title || 'Record'} size={size} unsaved={sheetScope}
       header={header} onKeyDown={onKeyDown} bodyClassName="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4 sm:px-6"
       statusBar={<TableStatusBar store={notices} className="shrink-0 px-4 sm:px-6" />}>
       <NoticesContext.Provider value={notices}>{body}</NoticesContext.Provider>

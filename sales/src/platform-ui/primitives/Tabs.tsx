@@ -1,5 +1,5 @@
 import * as RTabs from '@radix-ui/react-tabs'
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { cn } from '../lib/cn'
 
 export interface TabItem {
@@ -19,7 +19,7 @@ const DOT = { warning: 'bg-warning-500', danger: 'bg-danger-600' } as const
  *  the shell's tab host. Only the selected tab's content is rendered (lazy);
  *  ←/→, Home and End move between tabs (Radix). */
 export function Tabs({
-  items, value, defaultValue, onValueChange, className, listClassName, ariaLabel,
+  items, value, defaultValue, onValueChange, className, listClassName, ariaLabel, canLeave,
 }: {
   items: TabItem[]
   value?: string
@@ -29,12 +29,25 @@ export function Tabs({
   /** E.g. sticky under a sheet's header. */
   listClassName?: string
   ariaLabel?: string
+  /** Asked before the shown tab is left (e.g. unsaved input in it); false keeps it. Asked once per
+   *  click: Radix changes the tab on mouse-down and again on the focus that follows. */
+  canLeave?: () => boolean
 }) {
+  const asked = useRef<string | null>(null)
+  const change = (v: string) => {
+    if (canLeave && v !== value) {
+      if (asked.current === v) return
+      asked.current = v
+      setTimeout(() => { asked.current = null })
+      if (!canLeave()) return
+    }
+    onValueChange?.(v)
+  }
   return (
     <RTabs.Root
       value={value}
       defaultValue={defaultValue ?? items[0]?.value}
-      onValueChange={onValueChange}
+      onValueChange={change}
       className={className}
     >
       <RTabs.List aria-label={ariaLabel} className={cn('mb-4 flex gap-1 overflow-x-auto border-b border-neutral-200', listClassName)}>
