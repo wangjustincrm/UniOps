@@ -323,6 +323,9 @@ class IncidentTypeOption(BaseModel):
 
 async def _may_pick_type(db, user: dict, code: str | None) -> None:
     t = incident_type.BY_CODE.get(code) if code else None
+    if t is not None and t.custom and t not in incident_type.all_types():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"{t.label} has been retired; pick another type")
     if t and t.pick_permission and not await has_permission(
             db, _user_id(user), user.get("role", ""), t.pick_permission):
         raise HTTPException(status.HTTP_403_FORBIDDEN,
@@ -338,7 +341,7 @@ async def list_incident_types(db: SessionDep, user: CanReportIncident,
     Served rather than hardcoded in the frontend: the list changed once already
     (three options became twelve on 31 August) and a second copy would drift.
     """
-    types = incident_type.for_form(form_kind) if form_kind else list(incident_type.TYPES)
+    types = incident_type.for_form(form_kind) if form_kind else incident_type.all_types()
     allowed = {}
     for t in types:
         if t.pick_permission and t.pick_permission not in allowed:

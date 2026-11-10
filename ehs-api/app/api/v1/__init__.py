@@ -37,7 +37,20 @@ from app.api.v1.toolbox import router as toolbox_router
 from app.api.v1.workers import router as workers_router
 from app.api.v1.training import router as training_router
 
-api_router = APIRouter()
+from fastapi import Depends
+
+from app.core.deps import SessionDep
+from app.services import incident_type as _incident_type
+
+
+async def _incident_types(db: SessionDep) -> None:
+    """Round 12, GEN-01: HSE's own incident types, fresh for every request,
+    so an addition is seen by every worker process at once. One small read;
+    the same session the endpoint uses."""
+    await _incident_type.load(db)
+
+
+api_router = APIRouter(dependencies=[Depends(_incident_types)])
 api_router.include_router(health_router, tags=["health"])
 api_router.include_router(incidents_router, prefix="/incidents", tags=["incidents"])
 # Carries its own /incidents/{id}/attachments prefix.

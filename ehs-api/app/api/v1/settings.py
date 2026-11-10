@@ -483,3 +483,128 @@ async def remove_area_owner(owner_id: uuid.UUID, db: SessionDep, user: CanManage
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Not assigned")
     await db.delete(row)
+
+
+# ── Incident types (round 12, GEN-01 and Q10) ────────────────────────────────
+
+
+class IncidentTypeRow(BaseModel):
+    code: str
+    label: str
+    form_kind: str
+    category_id: uuid.UUID | None = None
+    category_label: str | None = None
+    # Only coordinators, supervisors and HSE may pick it.
+    restricted: bool = False
+    is_active: bool = True
+    # A built-in type: its legal meaning is fixed and it is not edited here.
+    builtin: bool = False
+    mol_reportable: bool = False
+    injury_class: str | None = None
+
+
+class IncidentTypeIn(BaseModel):
+    label: str = Field(min_length=2, max_length=200)
+    form_kind: str = Field(pattern="^(medical|equipment|near_miss)$")
+    category_id: uuid.UUID | None = None
+    restricted: bool = False
+
+
+class IncidentTypePatch(BaseModel):
+    label: str | None = Field(default=None, min_length=2, max_length=200)
+    form_kind: str | None = Field(default=None, pattern="^(medical|equipment|near_miss)$")
+    category_id: uuid.UUID | None = None
+    restricted: bool | None = None
+    is_active: bool | None = None
+
+
+_RESTRICTED = "ehs.incident.investigate"
+
+
+@router.get("/incident-types", response_model=list[IncidentTypeRow])
+async def list_incident_types(db: SessionDep, user: CanManageSettings):  # noqa: ARG001
+    """Every type: the built-in ones, fixed, and HSE's own."""
+    from app.services import incident_type as it
+    out = []
+    for t in it.all_types(include_retired=True):
+        out.append(IncidentTypeRow(
+            code=t.code, label=t.label, form_kind=t.form_kind,
+            category_id=t.category_id, category_label=t.category_label,
+            restricted=t.pick_permission is not None,
+            is_active=(not t.custom) or t in it.all_types(),
+            builtin=not t.custom, mol_reportable=t.mol_reportable,
+            injury_class=t.injury_class))
+        if not t.custom and t.category_code:
+            out[-1].category_label = (await db.execute(text(
+                "select label from ehs_vocabulary_items where vocabulary_code = 'incident_category'"
+                " and code = :c"), {"c": t.category_code})).scalar()
+    return out
+
+
+async def _category(db, category_id: uuid.UUID | None) -> str | None:
+    if category_id is None:
+        return None
+    label = (await db.execute(text(
+        "select label from ehs_vocabulary_items where id = :id"
+        " and vocabulary_code = 'incident_category'"), {"id": category_id})).scalar()
+    if label is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "That is not an incident category")
+    return label
+
+
+@router.post("/incident-types", response_model=IncidentTypeRow, status_code=status.HTTP_201_CREATED)
+async def add_incident_type(payload: IncidentTypeIn, db: SessionDep, user: CanManageSettings):  # noqa: ARG001
+    """Q10: "HSE can add new types and set the label, form, category and who
+    can pick them, but not the legal flags." There is nothing here to set
+    them with: a type added here never sets an injury class or tells the
+    Ministry."""
+    import re
+    from app.models.incident_type import CustomIncidentType
+    from app.services import incident_type as it
+    base = it.CUSTOM_PREFIX + (re.sub(r"[^a-z0-9]+", "_", payload.label.lower()).strip("_")[:45] or "type")
+    code, n = base, 2
+    while code in it.BY_CODE:
+        code, n = f"{base}_{n}", n + 1
+    row = CustomIncidentType(
+        id=uuid.uuid4(), code=code, label=payload.label.strip(), form_kind=payload.form_kind,
+        category_id=payload.category_id, category_label=await _category(db, payload.category_id),
+        pick_permission=_RESTRICTED if payload.restricted else None)
+    db.add(row)
+    await db.flush()
+    await it.load(db)
+    return IncidentTypeRow(code=row.code, label=row.label, form_kind=row.form_kind,
+                           category_id=row.category_id, category_label=row.category_label,
+                           restricted=payload.restricted)
+
+
+@router.patch("/incident-types/{code}", response_model=IncidentTypeRow)
+async def edit_incident_type(code: str, payload: IncidentTypePatch, db: SessionDep,
+                             user: CanManageSettings):  # noqa: ARG001
+    from app.models.incident_type import CustomIncidentType
+    from app.services import incident_type as it
+    if code in it.BUILTIN:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "A built-in type is fixed: what it means for the Ministry, WSIB "
+                            "and the injury rates is set in the system")
+    row = (await db.execute(select(CustomIncidentType).where(
+        CustomIncidentType.code == code))).scalar_one_or_none()
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such incident type")
+    fields = payload.model_dump(exclude_unset=True)
+    if "label" in fields:
+        row.label = fields["label"].strip()
+    if "form_kind" in fields:
+        row.form_kind = fields["form_kind"]
+    if "category_id" in fields:
+        row.category_id = fields["category_id"]
+        row.category_label = await _category(db, fields["category_id"])
+    if "restricted" in fields:
+        row.pick_permission = _RESTRICTED if fields["restricted"] else None
+    if "is_active" in fields:
+        row.is_active = bool(fields["is_active"])
+    await db.flush()
+    await it.load(db)
+    return IncidentTypeRow(code=row.code, label=row.label, form_kind=row.form_kind,
+                           category_id=row.category_id, category_label=row.category_label,
+                           restricted=row.pick_permission is not None, is_active=row.is_active)

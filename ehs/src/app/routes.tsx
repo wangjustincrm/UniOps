@@ -17,6 +17,7 @@ import IncidentDetailPage from '@/pages/IncidentDetailPage'
 import IncidentListPage from '@/pages/IncidentListPage'
 import DashboardPage from '@/pages/DashboardPage'
 import EquipmentPage from '@/pages/settings/EquipmentPage'
+import IncidentTypesPage from '@/pages/settings/IncidentTypesPage'
 import FormBuilderPage from '@/pages/settings/FormBuilderPage'
 import FormFillPage from '@/pages/FormFillPage'
 import FormTemplatesPage from '@/pages/settings/FormTemplatesPage'
@@ -272,6 +273,11 @@ export const ehsRoutes: RouteDef[] = [
     path: '/settings/equipment',
     element: <EquipmentPage />,
     tab: { title: 'Equipment', icon: 'Settings', keyStrategy: 'static' },
+  },
+  {
+    path: '/settings/incident-types',
+    element: <IncidentTypesPage />,
+    tab: { title: 'Incident types', icon: 'Settings', keyStrategy: 'static' },
   },
   {
     path: '/settings/hours',

@@ -61,6 +61,12 @@ class IncidentType:
     # whose holders may; None means everyone who can report. HSE named
     # "coord, supervisor, or HSE" — exactly the holders of the investigate key.
     pick_permission: str | None = None
+    # Round 12, GEN-01: a type HSE added in Settings rather than one of these.
+    # It sets its label, form, category and who may pick it — never the legal
+    # flags: it carries no injury class and is never Ministry-reportable.
+    custom: bool = False
+    category_id: object | None = None
+    category_label: str | None = None
 
 
 TYPES: tuple[IncidentType, ...] = (
@@ -125,9 +131,74 @@ TYPES: tuple[IncidentType, ...] = (
                  default_injury_class="medical_aid", injury_detail=True),
 )
 
-BY_CODE = {t.code: t for t in TYPES}
+BUILTIN = {t.code: t for t in TYPES}
+CUSTOM_PREFIX = "custom_"
+
+# ★ HSE's own types (Settings → Incident types), read from the database at the
+# start of every request by `load` — see app/api/v1/__init__.py — so every
+# worker sees an addition at once. Lookups stay synchronous because pydantic
+# validators and computed fields use them.
+_custom: dict[str, IncidentType] = {}
+_custom_order: list[str] = []
+_active: set[str] = set()
+
+
+class _ByCode(dict):
+    """The built-in types and HSE's, as one mapping."""
+
+    def get(self, key, default=None):  # type: ignore[override]
+        return BUILTIN.get(key) or _custom.get(key, default)
+
+    def __getitem__(self, key):
+        t = self.get(key)
+        if t is None:
+            raise KeyError(key)
+        return t
+
+    def __contains__(self, key):
+        return key in BUILTIN or key in _custom
+
+    def __iter__(self):
+        return iter([*BUILTIN, *_custom_order])
+
+    def __len__(self):
+        return len(BUILTIN) + len(_custom)
+
+
+BY_CODE = _ByCode()
+
+
+def all_types(*, include_retired: bool = False) -> list[IncidentType]:
+    return [*TYPES, *(_custom[c] for c in _custom_order if include_retired or c in _active)]
+
+
+async def load(db) -> None:
+    """Refresh HSE's types from the database. Retired ones stay resolvable —
+    a record that names one still reads — but are not offered."""
+    from sqlalchemy import select
+    from app.models.incident_type import CustomIncidentType
+    rows = (await db.execute(select(CustomIncidentType).order_by(
+        CustomIncidentType.sort_order, CustomIncidentType.label))).scalars().all()
+    fresh, order, active = {}, [], set()
+    for r in rows:
+        fresh[r.code] = IncidentType(
+            r.code, r.label, r.form_kind,
+            # The form asks how badly someone was hurt, as the built-in types
+            # on that form do; a near miss does not (Q4).
+            asks_injury_class=r.form_kind != "near_miss",
+            injury_detail=r.form_kind == "medical",
+            pick_permission=r.pick_permission, custom=True,
+            category_id=r.category_id, category_label=r.category_label)
+        order.append(r.code)
+        if r.is_active:
+            active.add(r.code)
+    _custom.clear()
+    _custom.update(fresh)
+    _custom_order[:] = order
+    _active.clear()
+    _active.update(active)
 
 
 def for_form(form_kind: str) -> list[IncidentType]:
     """The types offered on one of the three forms."""
-    return [t for t in TYPES if t.form_kind == form_kind]
+    return [t for t in all_types() if t.form_kind == form_kind]

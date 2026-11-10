@@ -190,7 +190,8 @@ DIMENSIONS: dict[str, Dimension] = {
     # writes it (crud/incident.py), so this reads it from there.
     "incident_type": Dimension(
         "incident_type", "Incident type", "(extra->>'incident_type')",
-        labels={t.code: _short(t.label) for t in incident_type.TYPES}),
+        # A live view: HSE's own types (GEN-01) are loaded per request.
+        labels=incident_type.BY_CODE),
     "form_kind": Dimension(
         "form_kind", "Form", "form_kind",
         labels={"medical": "Injury or illness", "equipment": "Equipment",
@@ -302,6 +303,8 @@ async def group_by(
     """
     rows = (await db.execute(text(sql), params)).all()
     labels = dim.labels or {}
+    if labels is incident_type.BY_CODE:
+        labels = {code: _short(incident_type.BY_CODE[code].label) for code in incident_type.BY_CODE}
     return [
         {"value": v,
          "label": labels.get(v) or lbl or (v if v is not None else "Not recorded"),

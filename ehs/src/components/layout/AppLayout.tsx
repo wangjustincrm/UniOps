@@ -168,6 +168,8 @@ const SETTINGS_NAV: NavItem[] = [
   { label: 'Lists',       href: '/settings/lists', icon: List,     permission: 'ehs.settings.manage' },
   { label: 'Plant Areas', href: '/settings/areas', icon: Map,      permission: 'ehs.settings.manage' },
   { label: 'Equipment',   href: '/settings/equipment', icon: Wrench, permission: 'ehs.settings.manage' },
+  // Round 12, GEN-01: HSE's own types; the built-in ones are fixed.
+  { label: 'Incident types', href: '/settings/incident-types', icon: List, permission: 'ehs.settings.manage' },
   // Under ehs.worker.write, not settings: a supervisor who maintains who does
   // which job is not the same person who edits vocabularies.
   { label: 'Positions',   href: '/settings/positions', icon: Users, permission: 'ehs.worker.read' },

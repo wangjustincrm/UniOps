@@ -131,6 +131,8 @@ async def create(
         if t.category_code:
             incident.category_id, incident.category_label = await _resolve_category(
                 db, t.category_code)
+        elif t.category_id:
+            incident.category_id, incident.category_label = t.category_id, t.category_label
         incident.extra = {**(incident.extra or {}), "incident_type": t.code}
     elif payload.injury_class:
         incident.injury_class = None if payload.injury_class == "none" else payload.injury_class
@@ -522,6 +524,10 @@ async def reclassify(db: AsyncSession, incident: Incident, code: str,
     if new.category_code:
         incident.category_id, incident.category_label = await _resolve_category(
             db, new.category_code)
+    elif new.category_id:
+        incident.category_id, incident.category_label = new.category_id, new.category_label
+    elif old is not None and old.category_id and incident.category_id == old.category_id:
+        incident.category_id, incident.category_label = None, None
     elif old is not None and old.category_code and incident.category_id is not None:
         # ★ Round 12, REP-01: the category the old type put there went with
         # it — a food-safety near miss changed to a plain one stayed in Food

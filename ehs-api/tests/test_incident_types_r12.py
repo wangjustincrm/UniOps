@@ -143,3 +143,46 @@ async def test_a_food_safety_investigation_is_signed_off_with_all_five_whys(hse_
     plain, inc = await investigate("near_miss", [])
     assert inc["needs_five_whys"] is False
     assert (await hse.post(f"/api/v1/incidents/{plain}/investigation/sign", json=sig)).status_code == 200
+
+
+async def test_hse_adds_a_type_without_its_legal_flags(hse_manager, worker, db_session):
+    """★ Round 12, GEN-01 and Q10."""
+    _, hse = hse_manager
+    _, w = worker
+    food = await _food(db_session)
+    tag = uuid.uuid4().hex[:5]
+    made = await hse.post("/api/v1/settings/incident-types", json={
+        "label": f"Allergen cross-contact {tag}", "form_kind": "near_miss",
+        "category_id": str(food), "restricted": False})
+    assert made.status_code == 201, made.text
+    code = made.json()["code"]
+    assert code.startswith("custom_")
+
+    offered = {t["code"]: t for t in (await w.get(
+        "/api/v1/incidents/types", params={"form_kind": "near_miss"})).json()}
+    assert code in offered and offered[code]["asks_injury_class"] is False
+
+    filed = await w.post("/api/v1/incidents", json=_near_miss(code))
+    assert filed.status_code == 201, filed.text
+    row = await db_session.get(Incident, uuid.UUID(filed.json()["id"]))
+    assert (row.category_id, row.mol_reportable, row.injury_class) == (food, False, None)
+    assert filed.json()["incident_type_label"] == f"Allergen cross-contact {tag}"
+
+    builtin = await hse.patch("/api/v1/settings/incident-types/fatality", json={"label": "Death"})
+    assert builtin.status_code == 409, "the built-in types are fixed"
+
+    restricted = await hse.patch(f"/api/v1/settings/incident-types/{code}", json={"restricted": True})
+    assert restricted.json()["restricted"] is True
+    assert (await w.post("/api/v1/incidents", json=_near_miss(code))).status_code == 403
+
+    retired = await hse.patch(f"/api/v1/settings/incident-types/{code}", json={"is_active": False})
+    assert retired.json()["is_active"] is False
+    assert code not in {t["code"] for t in (await hse.get("/api/v1/incidents/types")).json()}
+    assert (await hse.post("/api/v1/incidents", json=_near_miss(code))).status_code == 422
+    # The incident that named it still reads.
+    again = (await hse.get(f"/api/v1/incidents/{filed.json()['id']}")).json()
+    assert again["incident_type_label"] == f"Allergen cross-contact {tag}"
+
+    listed = {t["code"]: t for t in (await hse.get("/api/v1/settings/incident-types")).json()}
+    assert listed["fatality"]["builtin"] and listed["fatality"]["mol_reportable"]
+    assert not listed[code]["builtin"] and not listed[code]["is_active"]
