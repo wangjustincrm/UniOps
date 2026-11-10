@@ -233,3 +233,44 @@ async def test_import_matches_areas_on_their_path_and_adds_new_systems(hse_manag
     assert rows[f"Pump {tag}"].location_id is None, "an ambiguous name is reported, not guessed"
     assert rows[f"Scale {tag}"].location_id == only, "a name only one area has still matches"
     assert rows[f"Fan {tag}"].system_id == rows[f"Pump {tag}"].system_id is not None
+
+
+async def test_import_follows_a_merge_and_never_refills_a_retired_system(hse_manager, db_session):
+    """★ B2 review ①: after a merge, loading the old sheet again (148 spellings)
+    put machines back into the retired System, because the import matched names
+    on every System, retired or not."""
+    from app.models.change_log import ChangeLogEntry
+
+    _, client = hse_manager
+    tag = _tag()
+    old = await _system(db_session, f"Ctrl valve {tag}")
+    keep = await _system(db_session, f"Valve {tag}")
+    dropped = await _system(db_session, f"Gone {tag}")
+    dropped.is_active = False
+    m = await _machine(db_session, f"CV {tag}", system=old)
+    await db_session.commit()
+    mid, asset_no, old_id, keep_id = m.id, m.asset_no, old.id, keep.id
+
+    merged = await client.post(f"/api/v1/equipment/systems/{old_id}/merge",
+                               json={"into_id": str(keep_id)})
+    assert merged.status_code == 200, merged.text
+    db_session.expire_all()
+    logged = (await db_session.execute(select(ChangeLogEntry).where(
+        ChangeLogEntry.row_id == str(mid), ChangeLogEntry.field == "system_id"))).scalars().all()
+    assert logged, "★ review ③: the move is in the machine's change log"
+
+    csv = ("asset_no,name,system\n"
+           f"{asset_no},CV {tag},Ctrl valve {tag}\n"
+           f"N{tag},New {tag},Gone {tag}\n")
+    up = await client.post("/api/v1/equipment/import",
+                           files={"file": ("e.csv", csv.encode(), "text/csv")})
+    assert up.status_code == 200, up.text
+    body = up.json()
+    assert body["new_systems"] == [], "an old name is not a new System"
+    assert any(f"'Gone {tag}' has been retired" in p for p in body["problems"]), body["problems"]
+    db_session.expire_all()
+    moved = await db_session.get(Equipment, mid)
+    assert moved.system_id == keep_id, "the old name follows the merge"
+    new = (await db_session.execute(select(Equipment).where(
+        Equipment.name == f"New {tag}"))).scalar_one()
+    assert new.system_id is None, "a retired, unmerged System is reported, not used"

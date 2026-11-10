@@ -39,7 +39,10 @@ export function equipmentLabel(e: EquipmentItem): string {
 // ── Looking machines up by id ────────────────────────────────────────────────
 // A list of hazards names a machine on every row. One request per row would be
 // fifty requests; these are collected for a moment and asked for together.
-let waiting = new Map<string, ((e: EquipmentItem | null) => void)[]>()
+// ★ A failed request rejects: "not in the register" is an answer, and a
+// network blip given as that answer was kept for ten minutes (B2 review ②).
+type Waiter = { resolve: (e: EquipmentItem | null) => void; reject: (err: unknown) => void }
+let waiting = new Map<string, Waiter[]>()
 let timer: ReturnType<typeof setTimeout> | null = null
 
 function flush() {
@@ -54,15 +57,15 @@ function flush() {
     api.get<EquipmentItem[]>(`/api/v1/equipment/lookup?${qs}`)
       .then((rows) => {
         const found = new Map(rows.map((r) => [r.id, r]))
-        chunk.forEach((id) => batch.get(id)?.forEach((done) => done(found.get(id) ?? null)))
+        chunk.forEach((id) => batch.get(id)?.forEach((w) => w.resolve(found.get(id) ?? null)))
       })
-      .catch(() => chunk.forEach((id) => batch.get(id)?.forEach((done) => done(null))))
+      .catch((err) => chunk.forEach((id) => batch.get(id)?.forEach((w) => w.reject(err))))
   }
 }
 
 function lookUp(id: string): Promise<EquipmentItem | null> {
-  return new Promise((resolve) => {
-    waiting.set(id, [...(waiting.get(id) ?? []), resolve])
+  return new Promise((resolve, reject) => {
+    waiting.set(id, [...(waiting.get(id) ?? []), { resolve, reject }])
     if (!timer) timer = setTimeout(flush, 20)
   })
 }
@@ -81,6 +84,7 @@ export function useEquipmentName(id: string | null | undefined): string | null {
   const one = useEquipment(id)
   if (!id) return null
   if (one.isPending) return '…'
+  if (one.isError) return 'Equipment could not be loaded'
   if (!one.data) return 'Equipment not in the register'
   return equipmentLabel(one.data) + (one.data.is_active ? '' : ' (retired)')
 }
@@ -134,7 +138,10 @@ export default function EquipmentSelect({ value, onChange, locationId, id, ariaL
   const current = chosen.data
   const currentText = current
     ? equipmentLabel(current) + (current.is_active ? '' : ' (retired)')
-    : value ? (chosen.isPending ? 'Loading…' : 'Equipment not in the register') : ''
+    : value
+      ? chosen.isPending ? 'Loading…'
+        : chosen.isError ? 'Equipment could not be loaded' : 'Equipment not in the register'
+      : ''
   const items = page.data?.items ?? []
   const listId = `${id ?? 'equipment'}-list`
 

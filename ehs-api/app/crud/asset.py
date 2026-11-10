@@ -549,9 +549,13 @@ async def retire(db: AsyncSession, asset: SafetyAsset, *,
         return asset
     owed = list((await db.execute(select(AssetInspection).where(
         AssetInspection.asset_id == asset.id, AssetInspection.result == "due"))).scalars())
+    # ★ Not stamped with whoever retired it: the task history then read as if
+    # they had done the check (B2 review ④). Closed by the system, and says why.
+    note = f"Closed without a check: the item was retired on {plant_today():%Y-%m-%d}" + (
+        f" ({reason})" if reason else "") + "."
     for inspection in owed:
         await task_service.close_tasks_for(
-            db, doc_type=DOC_ASSET, doc_id=inspection.id, completed_by=user_id)
+            db, doc_type=DOC_ASSET, doc_id=inspection.id, completed_by=None, note=note)
         await db.delete(inspection)
     asset.status = "retired"
     asset.next_due_on = None

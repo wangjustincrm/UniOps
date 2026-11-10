@@ -190,6 +190,7 @@ async def close_tasks_for(
     assigned_user_id: uuid.UUID | None = None,
     completed_by: uuid.UUID | None = None,
     now: datetime | None = None,
+    note: str | None = None,
 ) -> int:
     """Close the open tasks for a document. Returns how many were closed.
 
@@ -207,6 +208,10 @@ async def close_tasks_for(
 
     `completed_by` is who is stamped on the rows, never a filter. Those are
     different questions and conflating them is what caused this.
+
+    `note` is added to the task's description when it was closed because the
+    work went away rather than being done, so the history does not read as if
+    someone did it.
     """
     stmt = select(Task).where(
         Task.document_type == doc_type,
@@ -223,6 +228,8 @@ async def close_tasks_for(
         task.is_completed = True
         task.completed_at = stamp
         task.completed_by = completed_by
+        if note:
+            task.description = f"{task.description}\n\n{note}" if task.description else note
     return len(tasks)
 
 

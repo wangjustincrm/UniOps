@@ -399,12 +399,18 @@ async def merge_system(system_id: uuid.UUID, payload: MergeIn, db: SessionDep,
     if not target.is_active:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             f"The System '{target.label}' has been retired")
-    moved = (await db.execute(
-        Equipment.__table__.update().where(Equipment.system_id == source.id)
-        .values(system_id=target.id, equipment_type=target.label[:100]))).rowcount
+    # ★ Through the ORM, not a Core update: each machine's change log and
+    # updated_at then say it was moved (B2 review ③). 2,518 rows is fine.
+    machines = list((await db.execute(
+        select(Equipment).where(Equipment.system_id == source.id))).scalars())
+    for machine in machines:
+        machine.system_id, machine.equipment_type = target.id, target.label[:100]
     source.is_active = False
+    # Remembered so a later import that still says the old name follows it
+    # here instead of putting machines back into a retired System (review ①).
+    source.attrs = {**(source.attrs or {}), "merged_into": str(target.id)}
     await db.flush()
-    return MergeOut(moved=moved or 0)
+    return MergeOut(moved=len(machines))
 
 
 @router.post("/import", response_model=ImportResult)
@@ -452,12 +458,38 @@ async def import_equipment(file: UploadFile, db: SessionDep, user: CanManageSett
         for did, name in (await db.execute(
             select(Department.id, Department.name))).all()
     }
-    systems = {
-        label.lower(): (sid, label)
-        for sid, label in (await db.execute(
-            select(VocabularyItem.id, VocabularyItem.label)
+    every_system = {
+        sid: (label, active, (attrs or {}).get("merged_into"))
+        for sid, label, active, attrs in (await db.execute(
+            select(VocabularyItem.id, VocabularyItem.label, VocabularyItem.is_active,
+                   VocabularyItem.attrs)
             .where(VocabularyItem.vocabulary_code == SYSTEMS))).all()
     }
+
+    def live(sid: uuid.UUID) -> uuid.UUID | None:
+        """The System a name now means: itself, or where it was merged to."""
+        seen: set[uuid.UUID] = set()
+        while sid not in seen:
+            seen.add(sid)
+            label, active, into = every_system[sid]
+            if active:
+                return sid
+            try:
+                sid = uuid.UUID(into) if into else None
+            except ValueError:
+                sid = None
+            if sid is None or sid not in every_system:
+                return None
+        return None
+
+    # ★ Active names win over a retired one spelt the same (B2 review ①).
+    systems: dict[str, tuple[uuid.UUID, str] | None] = {}
+    for sid, (label, active, _into) in sorted(every_system.items(), key=lambda kv: kv[1][1]):
+        target = live(sid)
+        if target is not None:
+            systems[label.lower()] = (target, every_system[target][0])
+        else:
+            systems.setdefault(label.lower(), None)
     new_systems: list[str] = []
 
     created = updated = skipped = 0
@@ -490,7 +522,11 @@ async def import_equipment(file: UploadFile, db: SessionDep, user: CanManageSett
         system = pick(csv_row, "system", "kind", "type", "equipment_type")
         if system:
             hit = systems.get(system.lower())
-            if hit is None:
+            if hit is None and system.lower() in systems:
+                # Retired without being merged anywhere: say so, change nothing.
+                problems.append(f"Row {i}: the System '{system}' has been retired; "
+                                f"the machine keeps the System it had")
+            elif hit is None:
                 item = VocabularyItem(
                     id=uuid.uuid4(), vocabulary_code=SYSTEMS, parent_id=None,
                     code=await _derive_code(db, SYSTEMS, system), label=system[:200],
@@ -499,7 +535,8 @@ async def import_equipment(file: UploadFile, db: SessionDep, user: CanManageSett
                 await db.flush()
                 hit = systems[system.lower()] = (item.id, item.label)
                 new_systems.append(item.label)
-            row.system_id, row.equipment_type = hit[0], hit[1][:100]
+            if hit is not None:
+                row.system_id, row.equipment_type = hit[0], hit[1][:100]
 
         area = pick(csv_row, "area", "location", "plant_area")
         if area:

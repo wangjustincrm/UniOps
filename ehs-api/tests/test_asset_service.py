@@ -165,6 +165,10 @@ async def test_retire_takes_it_off_its_cycle_and_delete_only_an_unused_item(hse_
     open_tasks = (await db_session.execute(select(Task).where(
         Task.document_id.in_(owed), Task.is_completed.is_(False)))).scalars().all()
     assert not open_tasks, "and so does its task"
+    closed = (await db_session.execute(select(Task).where(Task.document_id.in_(owed)))).scalars().all()
+    assert closed and all(t.completed_by is None for t in closed), \
+        "★ B2 review ④: not stamped as if whoever retired it did the check"
+    assert all("retired" in (t.description or "") for t in closed), "and it says why"
     history = (await client.get(f"/api/v1/safety-assets/{a['id']}/history")).json()
     assert history[0]["status"] == "retired" and history[0]["reason"] == "Replaced with a new unit"
 
