@@ -125,8 +125,10 @@ def test_the_import_marker_is_not_shown_as_a_comment():
             "[reconstructed] Auto-skipped (director not in legacy system)"),
         _ev(3, "approve", "Farshid Mohammadi", "procurement_manager", 2, "Looks fine"),
     ], [])
+    # A skipped step shows its reason, not "approve by" anyone (asst2, ISS-0070).
     assert [e["comment"] for e in got] == [
-        None, None, "Auto-skipped (director not in legacy system)", "Looks fine"]
+        None, None, "director not in legacy system", "Looks fine"]
+    assert got[2]["action"] == "skipped" and got[2]["actor_name"] is None
     assert [e["imported"] for e in got] == [True, True, True, False]
     assert not any("[reconstructed]" in (e["comment"] or "") for e in got)
 
