@@ -1015,6 +1015,21 @@ async def submission_start(db: AsyncSession, doc_type: str, ctx: "ActionContext"
     return await resume_step(db, doc_type, ctx.doc, status, workflow)
 
 
+MSG_NO_DEPT_MANAGER = (
+    "Cannot route approval: no active Department Manager is configured "
+    "for this document's department (the department named on the "
+    "agreement or the PR, falling back to the submitter's own). Assign "
+    "a Department Manager to that department (Admin → Departments / "
+    "Users) before this document can be submitted."
+)
+MSG_NO_DEPT_MANAGER_OA = (
+    "Cannot route approval: your department has no active Department Manager "
+    "(or you are not assigned to a department). Ask an administrator to assign "
+    "a Department Manager to your department, or you to a department "
+    "(Admin → Departments / Users), before this claim can be submitted."
+)
+
+
 async def resolve_step_assignment(
     db: AsyncSession,
     doc_type: str,
@@ -1059,13 +1074,10 @@ async def resolve_step_assignment(
             # the agreement's own (agreement, agreement-sourced PA), the one
             # selected on the PR, else the submitter's. Naming it "the
             # requester's" sent people to the wrong department's page.
-            raise ValueError(
-                "Cannot route approval: no active Department Manager is configured "
-                "for this document's department (the department named on the "
-                "agreement or the PR, falling back to the submitter's own). Assign "
-                "a Department Manager to that department (Admin → Departments / "
-                "Users) before this document can be submitted."
-            )
+            # An OA claim has no agreement or PR — it always routes by the
+            # claimant's own department, so say that (ISS-0202).
+            raise ValueError(MSG_NO_DEPT_MANAGER_OA if isinstance(doc, ExpenseClaim)
+                             else MSG_NO_DEPT_MANAGER)
     elif role == "gm_or_opm":
         # GM vs OPM is decided by the routing department (PR's selected
         # department, else the requester's own). BROADCAST (assigned_user_id=None)
