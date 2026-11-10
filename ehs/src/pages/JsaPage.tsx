@@ -9,7 +9,7 @@
  * finding is the one with a hazard and an empty control. Prose hides that; a
  * blank cell does not, and approving is refused while one exists.
  */
-import EquipmentSelect, { EquipmentName } from '@/components/EquipmentSelect'
+import EquipmentSelect, { EquipmentName, useEquipmentName } from '@/components/EquipmentSelect'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -30,12 +30,20 @@ import {
 import { anyFailed } from '@/lib/anyFailed'
 import { CONTROL_LEVELS, type Hazard } from '@/pages/HazardsPage'
 import { RatingBadge } from '@/components/RiskScoring'
+import { VocabularyMultiSelect, VocabularySelect } from '@/components/VocabularyPicker'
+import { PhotoCapture } from '@/components/PhotoCapture'
+import { RecordPhotos, uploadPhotos } from '@/components/RecordPhotos'
+import type { CompressedImage } from '@/lib/imageCompress'
+
+type Picked = { id: string; label: string }
 
 interface Jsa {
   id: string; jsa_no: string; title: string; job_description: string | null
   version: number; location_id: string | null; location_path: string | null
   equipment_id?: string | null
   department_name: string | null; required_ppe: string | null
+  /** Round 12, JSA-03 and JSA-01. */
+  ppe_items?: Picked[]; system_id?: string | null; system_label?: string | null
   status: string; approved_at: string | null; approved_by_name: string | null
   review_due_on: string | null; supersedes_id: string | null
   created_by_name: string | null; created_at: string
@@ -43,6 +51,33 @@ interface Jsa {
 interface Step {
   id?: string; seq?: number; step: string; hazards: string | null; controls: string | null
   control_level: string | null; hazard_id: string | null; residual_rating: string | null
+  /** Round 12, JSA-05 / Q12: picked per step. Saved; sent back as ids. */
+  hazard_items?: Picked[]; control_items?: Picked[]
+  hazard_ids?: string[]; control_ids?: string[]
+}
+
+/** What the step editor holds: the saved picks as ids. */
+function editable(s: Step): Step {
+  return {
+    ...s,
+    hazard_ids: s.hazard_ids ?? (s.hazard_items ?? []).map((x) => x.id),
+    control_ids: s.control_ids ?? (s.control_items ?? []).map((x) => x.id),
+  }
+}
+
+function stepBody(s: Step) {
+  return {
+    step: s.step.trim(), hazards: s.hazards || null, controls: s.controls || null,
+    control_level: s.control_level, hazard_id: s.hazard_id, residual_rating: s.residual_rating,
+    hazard_ids: s.hazard_ids ?? [], control_ids: s.control_ids ?? [],
+  }
+}
+
+/** ★ The approval gate, as the server applies it (crud/hazard.py activate). */
+function uncontrolled(s: Step): boolean {
+  const hazard = (s.hazards ?? '').trim() || (s.hazard_ids ?? []).length || s.hazard_id
+  const control = (s.controls ?? '').trim() || (s.control_ids ?? []).length
+  return Boolean(hazard) && !control
 }
 interface Signoff {
   id: string; version: number; user_id: string | null; person_name: string
@@ -51,7 +86,7 @@ interface Signoff {
 
 const EMPTY_STEP: Step = {
   step: '', hazards: null, controls: null, control_level: null,
-  hazard_id: null, residual_rating: null,
+  hazard_id: null, residual_rating: null, hazard_ids: [], control_ids: [],
 }
 
 // ── List ─────────────────────────────────────────────────────────────────────
@@ -73,7 +108,8 @@ export default function JsaPage() {
   })
   const list = useListView(jsas.data, (j) => [
     j.jsa_no, j.title, j.job_description, j.location_path, j.department_name,
-    j.required_ppe, j.status, j.created_by_name,
+    j.required_ppe, ...(j.ppe_items ?? []).map((p) => p.label), j.system_label,
+    j.status, j.created_by_name,
   ], { dateOf: (j) => j.created_at })
 
   return (
@@ -112,6 +148,7 @@ export default function JsaPage() {
                   <span className="block text-sm font-semibold text-neutral-900">{j.title}</span>
                   <span className="mt-0.5 block text-xs text-neutral-500">
                     {j.jsa_no} · version {j.version}
+                    {j.system_label && ` · ${j.system_label}`}
                     {j.location_path && ` · ${j.location_path}`}<EquipmentName id={j.equipment_id} />
                   </span>
                 </span>
@@ -150,13 +187,26 @@ function NewJsaForm({ onClose }: { onClose: () => void }) {
   const [description, setDescription] = useState('')
   const [locationId, setLocationId] = useState<string | null>(null)
   const [equipmentId, setEquipmentId] = useState<string | null>(null)
-  const [ppe, setPpe] = useState('')
+  const [systemId, setSystemId] = useState<string | null>(null)
+  const [ppeIds, setPpeIds] = useState<string[]>([])
+  // ★ Round 12, JSA-04: the steps on the same page, saved with it.
+  const [steps, setSteps] = useState<Step[]>([{ ...EMPTY_STEP }])
+  const [photos, setPhotos] = useState<CompressedImage[]>([])
+  // Remembered once made: a failed photo upload must not make a second JSA.
+  const [made, setMade] = useState<Jsa | null>(null)
 
   const create = useMutation({
-    mutationFn: () => api.post<Jsa>('/api/v1/jsa', {
-      title, job_description: description || null,
-      location_id: locationId, equipment_id: equipmentId, required_ppe: ppe || null,
-    }),
+    mutationFn: async () => {
+      const jsa = made ?? await api.post<Jsa>('/api/v1/jsa', {
+        title, job_description: description || null,
+        location_id: locationId, equipment_id: equipmentId,
+        system_id: systemId, ppe_ids: ppeIds,
+        steps: steps.filter((st) => st.step.trim()).map(stepBody),
+      })
+      setMade(jsa)
+      await uploadPhotos('jsa', jsa.id, photos)
+      return jsa
+    },
     onSuccess: (jsa) => {
       queryClient.invalidateQueries({ queryKey: ['jsa'] })
       onClose()
@@ -177,13 +227,21 @@ function NewJsaForm({ onClose }: { onClose: () => void }) {
         <Field label="Where">
           <LocationSelect value={locationId} onChange={setLocationId} />
         </Field>
+        {/* ★ Round 12, JSA-01/02: the System is saved and narrows the equipment. */}
+        <Field label="System">
+          <VocabularySelect vocabulary="equipment_system" value={systemId}
+                            onChange={(item) => { setSystemId(item?.id ?? null); setEquipmentId(null) }}
+                            placeholder="Any System" />
+        </Field>
         {/* Round 10: the equipment register, as on the incident forms. */}
         <Field label="Equipment">
-          <EquipmentSelect value={equipmentId} onChange={setEquipmentId} locationId={locationId} />
+          <EquipmentSelect value={equipmentId} onChange={setEquipmentId} locationId={locationId}
+                           systemId={systemId} />
         </Field>
+        {/* ★ Round 12, JSA-03: picked from HSE's PPE list. */}
         <Field label="PPE for the whole job">
-          <input className={inputClass} value={ppe} onChange={(e) => setPpe(e.target.value)}
-                 placeholder="Cut-resistant gloves, safety glasses" />
+          <VocabularyMultiSelect vocabulary="ppe" value={ppeIds} onChange={(ids) => setPpeIds(ids)}
+                                 placeholder="Search the PPE list…" />
         </Field>
         <div className="sm:col-span-2">
           <Field label="What the job involves">
@@ -192,16 +250,123 @@ function NewJsaForm({ onClose }: { onClose: () => void }) {
           </Field>
         </div>
       </div>
+      <div className="mt-4 border-t border-neutral-100 pt-3">
+        <SectionTitle className="mb-2">Steps</SectionTitle>
+        <StepList steps={steps} onChange={setSteps} />
+      </div>
+
+      <div className="mt-4 border-t border-neutral-100 pt-3">
+        <SectionTitle className="mb-1.5">Photographs</SectionTitle>
+        <PhotoCapture photos={photos} onChange={setPhotos} />
+      </div>
+
       <ErrorNote error={create.error} />
+      {made && create.isError && (
+        <p className="mt-2 text-xs text-neutral-600">
+          {made.jsa_no} was saved. Pressing Create again sends the photographs to it rather than
+          making a second one.
+        </p>
+      )}
       <div className="mt-3 flex justify-end gap-2">
         <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>
         <button type="button" className={primaryButton}
                 disabled={!title.trim() || create.isPending}
                 onClick={() => { if (!create.isPending) create.mutate() }}>
-          {create.isPending ? 'Creating…' : 'Create and add steps'}
+          {create.isPending ? 'Creating…' : 'Create'}
         </button>
       </div>
     </Card>
+  )
+}
+
+/** The step rows, used on the new form and on a draft. */
+function StepList({ steps, onChange }: { steps: Step[]; onChange: (next: Step[]) => void }) {
+  const hazards = useQuery({
+    queryKey: ['hazards', 'for-jsa'],
+    queryFn: () => api.get<Hazard[]>('/api/v1/hazards?status=open&status=controlled'),
+  })
+  const set = (index: number, patch: Partial<Step>) =>
+    onChange(steps.map((r, i) => i === index ? { ...r, ...patch } : r))
+  return (
+    <>
+      <ol className="flex flex-col gap-2">
+        {steps.map((s, i) => (
+          <li key={i}>
+            <Card>
+              <div className="flex items-start gap-2">
+                <span className="mt-2.5 font-mono text-xs text-neutral-400">{i + 1}</span>
+                <div className="grid min-w-0 flex-1 gap-2">
+                  <Field label="What is done">
+                    <input className={inputClass} value={s.step}
+                           onChange={(e) => set(i, { step: e.target.value })}
+                           placeholder="Stop the line and press the e-stop" />
+                  </Field>
+                  {/* ★ Round 12, JSA-05 / Q12: hazards and controls per step,
+                      from HSE's lists; the words stay for what the lists lack. */}
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Field label="What can go wrong">
+                      <VocabularyMultiSelect vocabulary="hazard" value={s.hazard_ids ?? []}
+                                             onChange={(ids) => set(i, { hazard_ids: ids })}
+                                             placeholder="Search the hazard list…" />
+                      <input className={`${inputClass} mt-1`} value={s.hazards ?? ''}
+                             aria-label={`Step ${i + 1}: what can go wrong, in words`}
+                             placeholder="Anything else, in words"
+                             onChange={(e) => set(i, { hazards: e.target.value })} />
+                    </Field>
+                    <Field label="What stops it">
+                      <VocabularyMultiSelect vocabulary="hazard_control" value={s.control_ids ?? []}
+                                             onChange={(ids) => set(i, { control_ids: ids })}
+                                             placeholder="Search the hazard controls…" />
+                      <input className={`${inputClass} mt-1`} value={s.controls ?? ''}
+                             aria-label={`Step ${i + 1}: what stops it, in words`}
+                             placeholder="Anything else, in words"
+                             onChange={(e) => set(i, { controls: e.target.value })} />
+                    </Field>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <Field label="Kind of control">
+                      <select className={inputClass} value={s.control_level ?? ''}
+                              onChange={(e) => set(i, { control_level: e.target.value || null })}>
+                        <option value="">Not stated</option>
+                        {CONTROL_LEVELS.map((c) => (
+                          <option key={c.key} value={c.key}>{c.label}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="From the hazard register"
+                           hint="Cite a standing hazard rather than restating it">
+                      <select className={inputClass} value={s.hazard_id ?? ''}
+                              onChange={(e) => set(i, { hazard_id: e.target.value || null })}>
+                        <option value="">Not linked</option>
+                        {hazards.data?.map((h) => (
+                          <option key={h.id} value={h.id}>{h.hazard_no} — {h.title}</option>
+                        ))}
+                      </select>
+                    </Field>
+                  </div>
+                  {uncontrolled(s) && (
+                    <p className="rounded-lg bg-warning-50 px-2.5 py-1.5 text-xs text-warning-700">
+                      This step names a hazard with nothing stopping it. It cannot be
+                      approved like this.
+                    </p>
+                  )}
+                </div>
+                <button type="button" aria-label={`Remove step ${i + 1}`}
+                        onClick={() => onChange(steps.filter((_, k) => k !== i))}
+                        className="mt-1.5 rounded p-1.5 text-neutral-400 hover:bg-danger-50 hover:text-danger-600">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            </Card>
+          </li>
+        ))}
+      </ol>
+      <button type="button" className={`${secondaryButton} mt-2`}
+              onClick={() => onChange([...steps, { ...EMPTY_STEP }])}>
+        <Plus className="h-4 w-4" aria-hidden />
+        Add a step
+      </button>
+    </>
   )
 }
 
@@ -232,6 +397,7 @@ export function JsaDetailPage() {
   })
 
   useTabTitle(ehsRoutes, jsa.data?.jsa_no)
+  const equipmentName = useEquipmentName(jsa.data?.equipment_id)
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['jsa'] })
@@ -274,7 +440,21 @@ export function JsaDetailPage() {
         <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
           <div>
             <dt className="text-xs text-neutral-500">PPE for the job</dt>
-            <dd className="text-sm text-neutral-900">{j.required_ppe ?? '—'}</dd>
+            <dd className="text-sm text-neutral-900">
+              {(j.ppe_items ?? []).map((p) => p.label).join(', ')}
+              {j.required_ppe && (
+                <span className="block text-neutral-700">{j.required_ppe}</span>
+              )}
+              {!(j.ppe_items ?? []).length && !j.required_ppe && '—'}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-neutral-500">System</dt>
+            <dd className="text-sm text-neutral-900">{j.system_label ?? '—'}</dd>
+          </div>
+          <div>
+            <dt className="text-xs text-neutral-500">Equipment</dt>
+            <dd className="text-sm text-neutral-900">{equipmentName ?? '—'}</dd>
           </div>
           <div>
             <dt className="text-xs text-neutral-500">Approved</dt>
@@ -299,6 +479,9 @@ export function JsaDetailPage() {
         <JsaControls jsa={j} onChanged={invalidate}
                      onNewVersion={(draft) => navigate(`/jsa/${draft.id}`)} />
       )}
+
+      {/* ★ Round 12, JSA-06. */}
+      <RecordPhotos type="jsa" ownerId={j.id} canAdd={mayWrite} />
 
       {/* ── Who has signed ───────────────────────────────────────────────── */}
       <div className="mt-6 flex flex-wrap items-baseline justify-between gap-2">
@@ -348,33 +531,22 @@ export function JsaDetailPage() {
 }
 
 function StepEditor(
-  { jsa, steps, editable, onSaved }:
+  { jsa, steps, editable: canEdit, onSaved }:
   { jsa: Jsa; steps: Step[]; editable: boolean; onSaved: () => void },
 ) {
-  const [draft, setDraft] = useState<Step[]>(steps)
+  const [draft, setDraft] = useState<Step[]>(steps.map(editable))
   const [dirty, setDirty] = useState(false)
 
-  useEffect(() => { setDraft(steps); setDirty(false) }, [steps])
-
-  const hazards = useQuery({
-    queryKey: ['hazards', 'for-jsa'],
-    queryFn: () => api.get<Hazard[]>('/api/v1/hazards?status=open&status=controlled'),
-    enabled: editable,
-  })
+  useEffect(() => { setDraft(steps.map(editable)); setDirty(false) }, [steps])
 
   const save = useMutation({
     mutationFn: () => api.put(`/api/v1/jsa/${jsa.id}/steps`, {
-      steps: draft.filter((s) => s.step.trim()),
+      steps: draft.filter((s) => s.step.trim()).map(stepBody),
     }),
     onSuccess: () => { setDirty(false); onSaved() },
   })
 
-  const set = (index: number, patch: Partial<Step>) => {
-    setDraft((rows) => rows.map((r, i) => i === index ? { ...r, ...patch } : r))
-    setDirty(true)
-  }
-
-  if (!editable) {
+  if (!canEdit) {
     return (
       <>
         <SectionTitle className="mb-2">Steps</SectionTitle>
@@ -382,32 +554,36 @@ function StepEditor(
           <Empty>No steps written.</Empty>
         ) : (
           <ol className="flex flex-col gap-2">
-            {steps.map((s, i) => (
-              <li key={s.id ?? i}>
-                <Card>
-                  <p className="text-sm font-medium text-neutral-900">
-                    <span className="mr-2 font-mono text-xs text-neutral-400">{i + 1}</span>
-                    {s.step}
-                  </p>
-                  {s.hazards && (
-                    <p className="mt-1 text-xs text-danger-700">
-                      <span className="font-semibold">Can go wrong:</span> {s.hazards}
+            {steps.map((s, i) => {
+              const hazards = [...(s.hazard_items ?? []).map((x) => x.label), s.hazards].filter(Boolean)
+              const controls = [...(s.control_items ?? []).map((x) => x.label), s.controls].filter(Boolean)
+              return (
+                <li key={s.id ?? i}>
+                  <Card>
+                    <p className="text-sm font-medium text-neutral-900">
+                      <span className="mr-2 font-mono text-xs text-neutral-400">{i + 1}</span>
+                      {s.step}
                     </p>
-                  )}
-                  {s.controls && (
-                    <p className="mt-0.5 text-xs text-neutral-700">
-                      <span className="font-semibold">Controlled by:</span> {s.controls}
-                      {s.control_level && ` (${
-                        CONTROL_LEVELS.find((c) => c.key === s.control_level)?.label
-                        ?? s.control_level})`}
-                    </p>
-                  )}
-                  {s.residual_rating && (
-                    <p className="mt-1"><RatingBadge rating={s.residual_rating} /></p>
-                  )}
-                </Card>
-              </li>
-            ))}
+                    {hazards.length > 0 && (
+                      <p className="mt-1 text-xs text-danger-700">
+                        <span className="font-semibold">Can go wrong:</span> {hazards.join('; ')}
+                      </p>
+                    )}
+                    {controls.length > 0 && (
+                      <p className="mt-0.5 text-xs text-neutral-700">
+                        <span className="font-semibold">Controlled by:</span> {controls.join('; ')}
+                        {s.control_level && ` (${
+                          CONTROL_LEVELS.find((c) => c.key === s.control_level)?.label
+                          ?? s.control_level})`}
+                      </p>
+                    )}
+                    {s.residual_rating && (
+                      <p className="mt-1"><RatingBadge rating={s.residual_rating} /></p>
+                    )}
+                  </Card>
+                </li>
+              )
+            })}
           </ol>
         )}
       </>
@@ -417,76 +593,8 @@ function StepEditor(
   return (
     <>
       <SectionTitle className="mb-2">Steps</SectionTitle>
-      <ol className="flex flex-col gap-2">
-        {draft.map((s, i) => (
-          <li key={i}>
-            <Card>
-              <div className="flex items-start gap-2">
-                <span className="mt-2.5 font-mono text-xs text-neutral-400">{i + 1}</span>
-                <div className="min-w-0 flex-1 grid gap-2">
-                  <Field label="What is done">
-                    <input className={inputClass} value={s.step}
-                           onChange={(e) => set(i, { step: e.target.value })}
-                           placeholder="Stop the line and press the e-stop" />
-                  </Field>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <Field label="What can go wrong">
-                      <input className={inputClass} value={s.hazards ?? ''}
-                             onChange={(e) => set(i, { hazards: e.target.value })} />
-                    </Field>
-                    <Field label="What stops it">
-                      <input className={inputClass} value={s.controls ?? ''}
-                             onChange={(e) => set(i, { controls: e.target.value })} />
-                    </Field>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <Field label="Kind of control">
-                      <select className={inputClass} value={s.control_level ?? ''}
-                              onChange={(e) => set(i, { control_level: e.target.value || null })}>
-                        <option value="">Not stated</option>
-                        {CONTROL_LEVELS.map((c) => (
-                          <option key={c.key} value={c.key}>{c.label}</option>
-                        ))}
-                      </select>
-                    </Field>
-                    <Field label="From the hazard register"
-                           hint="Cite a standing hazard rather than restating it">
-                      <select className={inputClass} value={s.hazard_id ?? ''}
-                              onChange={(e) => set(i, { hazard_id: e.target.value || null })}>
-                        <option value="">Not linked</option>
-                        {hazards.data?.map((h) => (
-                          <option key={h.id} value={h.id}>{h.hazard_no} — {h.title}</option>
-                        ))}
-                      </select>
-                    </Field>
-                  </div>
-                  {(s.hazards ?? '').trim() && !(s.controls ?? '').trim() && (
-                    <p className="rounded-lg bg-warning-50 px-2.5 py-1.5 text-xs text-warning-700">
-                      This step names a hazard with nothing stopping it. It cannot be
-                      approved like this.
-                    </p>
-                  )}
-                </div>
-                <button type="button" aria-label={`Remove step ${i + 1}`}
-                        onClick={() => {
-                          setDraft((rows) => rows.filter((_, k) => k !== i))
-                          setDirty(true)
-                        }}
-                        className="mt-1.5 rounded p-1.5 text-neutral-400 hover:bg-danger-50 hover:text-danger-600">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              </div>
-            </Card>
-          </li>
-        ))}
-      </ol>
-
-      <div className="mt-2 flex flex-wrap justify-between gap-2">
-        <button type="button" className={secondaryButton}
-                onClick={() => { setDraft((r) => [...r, { ...EMPTY_STEP }]); setDirty(true) }}>
-          <Plus className="h-4 w-4" aria-hidden />
-          Add a step
-        </button>
+      <StepList steps={draft} onChange={(next) => { setDraft(next); setDirty(true) }} />
+      <div className="mt-2 flex justify-end">
         <button type="button" className={primaryButton}
                 disabled={!dirty || save.isPending}
                 onClick={() => { if (!save.isPending) save.mutate() }}>

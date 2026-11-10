@@ -279,15 +279,6 @@ async def assess_hazard(
 
 # ── Job safety analysis ──────────────────────────────────────────────────────
 
-class JsaIn(BaseModel):
-    title: str = Field(min_length=1, max_length=250)
-    job_description: str | None = None
-    location_id: uuid.UUID | None = None
-    equipment_id: uuid.UUID | None = None
-    required_ppe: str | None = None
-    review_due_on: date | None = None
-
-
 class StepIn(BaseModel):
     step: str = Field(min_length=1)
     hazards: str | None = None
@@ -295,6 +286,28 @@ class StepIn(BaseModel):
     control_level: str | None = Field(default=None, pattern=_CONTROL_LEVELS)
     hazard_id: uuid.UUID | None = None
     residual_rating: str | None = Field(default=None, max_length=20)
+    # ★ Round 12, JSA-05 / Q12: picked from HSE's lists, one set per step.
+    hazard_ids: list[uuid.UUID] = Field(default_factory=list, max_length=30)
+    control_ids: list[uuid.UUID] = Field(default_factory=list, max_length=60)
+
+
+class JsaPatch(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=250)
+    job_description: str | None = None
+    location_id: uuid.UUID | None = None
+    equipment_id: uuid.UUID | None = None
+    required_ppe: str | None = None
+    review_due_on: date | None = None
+    # ★ Round 12, JSA-01 and JSA-03.
+    system_id: uuid.UUID | None = None
+    ppe_ids: list[uuid.UUID] | None = Field(default=None, max_length=40)
+
+
+class JsaIn(JsaPatch):
+    title: str = Field(min_length=1, max_length=250)
+    # ★ Round 12, JSA-04: the steps on the same page, saved with it, in one
+    # transaction. Approval still checks them.
+    steps: list[StepIn] = Field(default_factory=list, max_length=100)
 
 
 class StepsIn(BaseModel):
@@ -312,6 +325,8 @@ class StepOut(BaseModel):
     control_level: str | None
     hazard_id: uuid.UUID | None
     residual_rating: str | None
+    hazard_items: list = Field(default_factory=list)
+    control_items: list = Field(default_factory=list)
 
 
 class JsaOut(BaseModel):
@@ -327,6 +342,9 @@ class JsaOut(BaseModel):
     department_name: str | None
     equipment_id: uuid.UUID | None
     required_ppe: str | None
+    ppe_items: list = Field(default_factory=list)
+    system_id: uuid.UUID | None = None
+    system_label: str | None = None
     status: str
     approved_at: datetime | None
     approved_by_name: str | None
@@ -363,37 +381,53 @@ class SignoffOut(BaseModel):
     is_supervisor: bool
 
 
+async def _jsa_out(db, rows: list) -> list[JsaOut]:
+    """With each System's current name (JSA-01, as for a machine)."""
+    from app.models.vocabulary import VocabularyItem
+    from sqlalchemy import select
+    ids = {r.system_id for r in rows if r.system_id}
+    labels = dict((await db.execute(select(VocabularyItem.id, VocabularyItem.label)
+                                    .where(VocabularyItem.id.in_(ids)))).all()) if ids else {}
+    return [JsaOut.model_validate(r).model_copy(update={"system_label": labels.get(r.system_id)})
+            for r in rows]
+
+
 @router.get("/jsa", response_model=list[JsaOut])
 async def list_jsa(
     db: SessionDep, user: CanReportIncident,  # noqa: ARG001
     status_in: list[str] | None = Query(default=None, alias="status"),
 ):
-    return await crud.list_jsa(db, status_in=status_in)
+    return await _jsa_out(db, await crud.list_jsa(db, status_in=status_in))
 
 
 @router.post("/jsa", response_model=JsaOut, status_code=status.HTTP_201_CREATED)
 async def create_jsa(payload: JsaIn, db: SessionDep, user: CanWriteAction):
-    return await crud.create_jsa(db, payload.model_dump(), creator_id=_user_id(user))
+    fields = payload.model_dump(exclude={"steps"})
+    jsa = await crud.create_jsa(db, fields, creator_id=_user_id(user))
+    if payload.steps:
+        await crud.replace_steps(db, jsa, [s.model_dump() for s in payload.steps])
+    return (await _jsa_out(db, [jsa]))[0]
 
 
 @router.get("/jsa/{jsa_id}", response_model=JsaOut)
 async def get_jsa(jsa_id: uuid.UUID, db: SessionDep, user: CanReportIncident):  # noqa: ARG001
-    return await crud.get_jsa(db, jsa_id)
+    return (await _jsa_out(db, [await crud.get_jsa(db, jsa_id)]))[0]
 
 
 @router.patch("/jsa/{jsa_id}", response_model=JsaOut)
 async def update_jsa(
-    jsa_id: uuid.UUID, payload: JsaIn, db: SessionDep, user: CanWriteAction,  # noqa: ARG001
+    jsa_id: uuid.UUID, payload: JsaPatch, db: SessionDep, user: CanWriteAction,  # noqa: ARG001
 ):
     jsa = await crud.get_jsa(db, jsa_id)
     fields = payload.model_dump(exclude_unset=True)
     if "equipment_id" in fields:
         from app.services import equipment_ref
         await equipment_ref.check(db, fields["equipment_id"], jsa.equipment_id)
+    await crud.apply_jsa_lists(db, fields, current_system=jsa.system_id)
     for key, value in fields.items():
         setattr(jsa, key, value)
     await db.flush()
-    return jsa
+    return (await _jsa_out(db, [jsa]))[0]
 
 
 @router.get("/jsa/{jsa_id}/steps", response_model=list[StepOut])
@@ -415,7 +449,7 @@ async def put_steps(
 async def activate_jsa(jsa_id: uuid.UUID, db: SessionDep, user: CanWriteAction):
     """Approve it for use. Refused if a step names a hazard with no control."""
     jsa = await crud.get_jsa(db, jsa_id)
-    return await crud.activate(db, jsa, user_id=_user_id(user))
+    return (await _jsa_out(db, [await crud.activate(db, jsa, user_id=_user_id(user))]))[0]
 
 
 @router.post("/jsa/{jsa_id}/new-version", response_model=JsaOut,
@@ -423,7 +457,7 @@ async def activate_jsa(jsa_id: uuid.UUID, db: SessionDep, user: CanWriteAction):
 async def new_jsa_version(jsa_id: uuid.UUID, db: SessionDep, user: CanWriteAction):
     """A draft copy, steps included, that retires this one when approved."""
     jsa = await crud.get_jsa(db, jsa_id)
-    return await crud.new_jsa_version(db, jsa, creator_id=_user_id(user))
+    return (await _jsa_out(db, [await crud.new_jsa_version(db, jsa, creator_id=_user_id(user))]))[0]
 
 
 @router.get("/jsa/{jsa_id}/signoffs", response_model=list[SignoffOut])

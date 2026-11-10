@@ -267,8 +267,27 @@ async def get_jsa(db: AsyncSession, jsa_id: uuid.UUID) -> Jsa:
     return jsa
 
 
+async def apply_jsa_lists(db: AsyncSession, fields: dict, *,
+                          current_system: uuid.UUID | None = None) -> None:
+    """Round 12: PPE picked from the list, snapshotted; a System must be one
+    still offered, unless it is the one the JSA already had."""
+    ids = fields.pop("ppe_ids", None)
+    if ids is not None:
+        fields["ppe_items"] = await _picked(db, "ppe", ids)
+    if fields.get("system_id") and fields["system_id"] != current_system:
+        from app.models.vocabulary import VocabularyItem
+        item = await db.get(VocabularyItem, fields["system_id"])
+        if item is None or item.vocabulary_code != "equipment_system":
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No such System")
+        if not item.is_active:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                f"The System '{item.label}' has been retired; pick another")
+
+
 async def create_jsa(db: AsyncSession, payload: dict, *, creator_id: uuid.UUID) -> Jsa:
     from app.services import equipment_ref
+    payload = dict(payload)
+    await apply_jsa_lists(db, payload)
     await equipment_ref.check(db, payload.get("equipment_id"))
     path, dept_id, dept_name = await _place(db, payload.get("location_id"))
     jsa = Jsa(
@@ -280,6 +299,11 @@ async def create_jsa(db: AsyncSession, payload: dict, *, creator_id: uuid.UUID) 
         location_path=path, department_id=dept_id, department_name=dept_name,
         equipment_id=payload.get("equipment_id"),
         required_ppe=payload.get("required_ppe"),
+        # ★ Named here as well: this constructor copies fields one by one, and a
+        # column left out is accepted by the API and silently dropped
+        # (findings, round 5).
+        ppe_items=payload.get("ppe_items") or [],
+        system_id=payload.get("system_id"),
         review_due_on=payload.get("review_due_on"),
         created_by=creator_id,
         created_by_name=await _name(db, creator_id),
@@ -322,6 +346,8 @@ async def replace_steps(db: AsyncSession, jsa: Jsa, steps: list[dict]) -> list[J
             control_level=step.get("control_level"),
             hazard_id=step.get("hazard_id"),
             residual_rating=step.get("residual_rating"),
+            hazard_items=await _picked(db, "hazard", step.get("hazard_ids") or []),
+            control_items=await _picked(db, "hazard_control", step.get("control_ids") or []),
         )
         db.add(row)
         rows.append(row)
@@ -344,8 +370,13 @@ async def activate(db: AsyncSession, jsa: Jsa, *, user_id: uuid.UUID) -> Jsa:
             "Break the job into steps before approving it — an analysis with no "
             "steps is a title")
 
+    # ★ Round 12, JSA-05: a hazard is named in words, picked from the list or
+    # cited from the register, and a control in words or from the list.
+    # Checking only the words would approve a step with three hazards picked
+    # and nothing to stop them.
     uncontrolled = [s.seq for s in steps
-                    if (s.hazards or "").strip() and not (s.controls or "").strip()]
+                    if ((s.hazards or "").strip() or s.hazard_items or s.hazard_id)
+                    and not ((s.controls or "").strip() or s.control_items)]
     if uncontrolled:
         listed = ", ".join(str(n) for n in uncontrolled)
         raise HTTPException(
@@ -383,6 +414,7 @@ async def new_jsa_version(db: AsyncSession, jsa: Jsa, *, creator_id: uuid.UUID) 
         location_id=jsa.location_id, location_path=jsa.location_path,
         department_id=jsa.department_id, department_name=jsa.department_name,
         equipment_id=jsa.equipment_id, required_ppe=jsa.required_ppe,
+        ppe_items=list(jsa.ppe_items or []), system_id=jsa.system_id,
         review_due_on=jsa.review_due_on,
         supersedes_id=jsa.id,
         created_by=creator_id, created_by_name=await _name(db, creator_id),
@@ -396,6 +428,8 @@ async def new_jsa_version(db: AsyncSession, jsa: Jsa, *, creator_id: uuid.UUID) 
             hazards=step.hazards, controls=step.controls,
             control_level=step.control_level, hazard_id=step.hazard_id,
             residual_rating=step.residual_rating,
+            hazard_items=list(step.hazard_items or []),
+            control_items=list(step.control_items or []),
         ))
     await db.flush()
     return draft

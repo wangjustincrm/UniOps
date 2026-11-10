@@ -104,17 +104,40 @@ function lastPart(path: string | null): string | null {
   return path ? path.split('/').pop() ?? path : null
 }
 
-export default function EquipmentSelect({ value, onChange, locationId, id, ariaLabel = 'Equipment' }: {
+interface SystemCount { system_id: string | null; label: string | null; count: number; is_active: boolean }
+
+/** The Systems that have machines, for narrowing a pick. */
+function useSystems(enabled: boolean) {
+  return useQuery({
+    queryKey: ['equipment', 'summary'],
+    queryFn: () => api.get<{ systems: SystemCount[] }>('/api/v1/equipment/summary'),
+    enabled,
+    staleTime: 10 * 60_000,
+  })
+}
+
+export default function EquipmentSelect({
+  value, onChange, locationId, id, ariaLabel = 'Equipment', systemId,
+}: {
   value: string | null
   onChange: (id: string | null) => void
   /** The area the record is filed against. Narrows the choices to it. */
   locationId?: string | null
   id?: string
   ariaLabel?: string
+  /** ★ Round 12, JSA-01/02: a System the record itself saves (a JSA). Given,
+   *  it narrows the list and the picker's own System choice is not shown.
+   *  Not given (incidents, hazards, permits — D8), the picker offers a System
+   *  that only narrows the list and is not saved. */
+  systemId?: string | null
 }) {
   const [term, setTerm] = useState('')
   const [open, setOpen] = useState(false)
   const [everywhere, setEverywhere] = useState(false)
+  const [ownSystem, setOwnSystem] = useState('')
+  const fixedSystem = systemId !== undefined
+  const system = fixedSystem ? systemId ?? null : ownSystem || null
+  const systems = useSystems(!fixedSystem)
   const search = useDebounced(term.trim())
   const near = everywhere ? null : locationId ?? null
   // A new area is a new question: narrow again.
@@ -122,11 +145,12 @@ export default function EquipmentSelect({ value, onChange, locationId, id, ariaL
 
   const chosen = useEquipment(value)
   const page = useQuery({
-    queryKey: ['equipment', 'pick', search, near],
+    queryKey: ['equipment', 'pick', search, near, system],
     queryFn: () => {
       const qs = new URLSearchParams({ limit: String(SHOWN) })
       if (search) qs.set('search', search)
       if (near) qs.set('near_location_id', near)
+      if (system) qs.set('system_id', system)
       return api.get<EquipmentPage>(`/api/v1/equipment?${qs}`)
     },
     enabled: open,
@@ -149,6 +173,17 @@ export default function EquipmentSelect({ value, onChange, locationId, id, ariaL
     <div onBlur={(e) => {
       if (!e.currentTarget.contains(e.relatedTarget)) { setOpen(false); setTerm('') }
     }}>
+      {!fixedSystem && (systems.data?.systems ?? []).length > 0 && (
+        <select aria-label={`${ariaLabel}: narrow by System`} value={ownSystem}
+                onChange={(e) => { setOwnSystem(e.target.value); setOpen(true) }}
+                className="mb-1 min-h-[32px] w-full rounded-md border border-neutral-200 bg-neutral-50 px-2 text-xs text-neutral-700 focus:border-primary-400 focus:outline-none">
+          <option value="">Any System</option>
+          {systems.data!.systems
+            .filter((s) => s.system_id && s.is_active && s.count > 0)
+            .sort((a, b) => (a.label ?? '').localeCompare(b.label ?? ''))
+            .map((s) => <option key={s.system_id} value={s.system_id!}>{s.label} ({s.count})</option>)}
+        </select>
+      )}
       <div className="relative">
         <input
           id={id}

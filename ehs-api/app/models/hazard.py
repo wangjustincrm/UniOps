@@ -128,6 +128,13 @@ class Jsa(UUIDPrimaryKey, TimestampMixin, Base):
 
     # PPE required for the whole job, over and above anything a step names.
     required_ppe: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # ★ Round 12, JSA-03: picked from HSE's PPE list, [{id, label}]. The words
+    # above stay for the JSAs written before.
+    ppe_items: Mapped[list] = mapped_column(JSONB, nullable=False, default=list,
+                                            server_default="[]")
+    # ★ Round 12, JSA-01 / D8: the equipment System the job is on. Shown by the
+    # System's current name, as a machine's is.
+    system_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     # draft | active | retired
     status: Mapped[str] = mapped_column(String(10), nullable=False,
@@ -170,6 +177,13 @@ class JsaStep(UUIDPrimaryKey, Base):
     hazard_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ehs_hazards.id", ondelete="SET NULL"), nullable=True)
     residual_rating: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # ★ Round 12, JSA-05 / Q12 ("one per step"): the step's hazards and controls
+    # picked from HSE's lists, [{id, label}]. Approval counts these and the
+    # words alike.
+    hazard_items: Mapped[list] = mapped_column(JSONB, nullable=False, default=list,
+                                               server_default="[]")
+    control_items: Mapped[list] = mapped_column(JSONB, nullable=False, default=list,
+                                                server_default="[]")
 
 
 class JsaSignoff(UUIDPrimaryKey, Base):
