@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.models.action import Action
 from app.models.config import EhsConfig
 from app.models.dashboard_layout import DashboardLayout
+from app.models.hazard import Hazard
 from app.models.incident import Incident, IncidentPerson
 from app.models.risk import RiskAssessment
 from app.models.toolbox import TbtDelivery, ToolboxTalk
@@ -286,9 +287,18 @@ async def test_each_record_goes_to_the_right_column(test_engine, db_session, hse
     _incident(db_session, kind="near_miss", reporter=member.id, occurred=inside, status="draft")
     # ★ Anonymous: never in the reporter's supervisor's column.
     _incident(db_session, kind="near_miss", reporter=member.id, occurred=inside, anonymous=True)
+    # ★ Round 12: a hazard assessment is a hazard recorded, by its creator and
+    # the date it was saved — not a risk scoring, which no longer counts.
     db_session.add(RiskAssessment(
         id=uuid.uuid4(), likelihood_code="B", severity_level=2, rating="medium",
         assessed_by=member.id, assessed_at=inside))
+    for who in (member.id, boss.id):
+        db_session.add(Hazard(id=uuid.uuid4(), hazard_no=f"HZ-{uuid.uuid4().hex[:8]}",
+                              title="Pinch point", created_by=who, created_at=inside))
+    db_session.add(Hazard(id=uuid.uuid4(), hazard_no=f"HZ-{uuid.uuid4().hex[:8]}",
+                          title="Next month", created_by=member.id, created_at=outside))
+    # ★ The supervisor's own near miss goes in their own column.
+    _incident(db_session, kind="near_miss", reporter=boss.id, occurred=inside)
     talk = ToolboxTalk(id=uuid.uuid4(), talk_no=f"TBT-{uuid.uuid4().hex[:6]}",
                        title="Ladders", period_month=date(y, m, 1))
     db_session.add(talk)
@@ -308,7 +318,7 @@ async def test_each_record_goes_to_the_right_column(test_engine, db_session, hse
                          params={"month": month})).json()
     col = next(r for r in got["rows"] if r["supervisor_id"] == str(boss.id))
     assert (col["name"], col["near_miss"], col["hazard_assessment"], col["toolbox_talk"]) == (
-        "Sam Boss", 1, 1, 1)
+        "Sam Boss", 2, 2, 1)
     was = (before["unassigned"] or {}).get("near_miss", 0)
     assert got["unassigned"]["near_miss"] == was + 1, "the anonymous one, unassigned"
 

@@ -351,14 +351,19 @@ async def capa_by_month(db: AsyncSession, *, year: int) -> list[dict]:
 
 
 async def assessments_by_month(db: AsyncSession, *, year: int) -> list[dict]:
-    """Hazard (risk) assessments completed each month — the same records the
-    chart by supervisor counts as hazard assessments."""
+    """Hazard assessments recorded each month — the same records the chart by
+    supervisor counts.
+
+    ★ Round 12, Kirk: "use the create date for reporting and graph purposes."
+    A hazard assessment is a hazard recorded on the register, counted in the
+    month it was saved. Until round 12 this counted risk scorings, incidents'
+    included, by when they were scored."""
     start, end = _year_bounds(year)
     out = {m: {**r, "count": 0} for m, r in _months(year).items()}
     for m, n in (await db.execute(text("""
-        select to_char(timezone('America/Toronto', assessed_at), 'MM'), count(*)
-          from ehs_risk_assessments
-         where assessed_at >= :start and assessed_at < :end
+        select to_char(timezone('America/Toronto', created_at), 'MM'), count(*)
+          from ehs_hazards
+         where created_at >= :start and created_at < :end
       group by 1
     """), {"start": start, "end": end})).all():
         out[m]["count"] = n
@@ -376,9 +381,14 @@ async def supervisor_activity(db: AsyncSession, *, year: int, month: int) -> dic
 
     Whose column a record goes in:
 
-    * a near miss — the reporter's supervisor;
-    * a hazard assessment — the supervisor of whoever completed it;
-    * a toolbox talk — the supervisor who held it.
+    * a near miss — the reporter's supervisor, counted by when it was sent;
+    * a hazard assessment — a hazard recorded on the register, in the column of
+      the supervisor of whoever recorded it, counted by when it was saved;
+    * a toolbox talk — the supervisor who held it;
+    * ★ round 12 (the defaults Kirk accepted): a supervisor's own near misses
+      and hazards go in their own column, not their manager's. Ken recorded a
+      hazard in November and his column said 0: it was counted as a risk
+      scoring, in the column of whoever supervises Ken.
 
     ★ "Supervisor" is `users.supervisor_id` as it is *now*. Somebody who moves
     team takes their earlier months with them; the chart answers "how is each
@@ -398,21 +408,28 @@ async def supervisor_activity(db: AsyncSession, *, year: int, month: int) -> dic
             "supervisor_id": str(sup_id) if sup_id else None,
             "near_miss": 0, "hazard_assessment": 0, "toolbox_talk": 0})
 
-    for sup, n in (await db.execute(text("""
-        select case when i.is_anonymous then null else u.supervisor_id end, count(*)
+    from app.crud.toolbox import SUPERVISORY_ROLES
+    from app.services.notify import by_roles
+    params["sups"] = [u.id for u in await by_roles(db, SUPERVISORY_ROLES)]
+    whose = """case when u.id = any(cast(:sups as uuid[])) then u.id
+                     else u.supervisor_id end"""
+
+    for sup, n in (await db.execute(text(f"""
+        select case when i.is_anonymous then null else {whose} end, count(*)
           from ehs_incidents i
           left join users u on u.id = i.reported_by
          where i.form_kind = 'near_miss' and i.status <> 'draft'
-           and i.occurred_at >= :start and i.occurred_at < :end
+           and coalesce(i.submitted_at, i.created_at) >= :start
+           and coalesce(i.submitted_at, i.created_at) < :end
       group by 1
     """), params)).all():
         bucket(sup)["near_miss"] += n
 
-    for sup, n in (await db.execute(text("""
-        select u.supervisor_id, count(*)
-          from ehs_risk_assessments r
-          left join users u on u.id = r.assessed_by
-         where r.assessed_at >= :start and r.assessed_at < :end
+    for sup, n in (await db.execute(text(f"""
+        select {whose}, count(*)
+          from ehs_hazards h
+          left join users u on u.id = h.created_by
+         where h.created_at >= :start and h.created_at < :end
       group by 1
     """), params)).all():
         bucket(sup)["hazard_assessment"] += n
