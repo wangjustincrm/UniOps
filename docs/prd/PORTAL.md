@@ -1,9 +1,13 @@
 # UniOps Portal — Product Requirements Document
 
-**Version:** 2.7
-**Date:** 2026-11-06
+**Version:** 2.8
+**Date:** 2026-11-10
 **Status:** In Production
 **Scope:** Portal web app (sign-in, launcher, Task Inbox, platform administration) and the platform services it administers: identity service (sign-in, MFA, password policy, users, roles, access control), approval engine (workflows, routing, delegation, re-sync), task-notification outbox, master-data service (MDM), file service, Data Maintenance and the AI Assistant panel.
+
+**What changed in version 2.8** (2026-11-10)
+
+- Data Maintenance no longer deletes an executed Finance payment batch whose payments still stand; it says to reverse the batch in Finance first (§5.14, FINANCE.md FIN-PAY-06).
 
 **What changed in version 2.6** (2026-11-05)
 
@@ -577,7 +581,7 @@ Each record list sorts on the server by any of its columns (EPMS.md UI-SORT-004)
 | EPMS | PR, PO, GR, Invoice, PA, Purchase Agreement, Agreement Receipt, Task (delete only) |
 | OA | Expense Claim, Expense Invoice, Payment Application |
 | VMS | Visit, Visitor, Health Declaration (edit only) |
-| Finance | Payment Batch (delete only) |
+| Finance | Payment Batch (delete only; an executed batch whose payments still stand is refused until it is reversed in Finance, FINANCE.md FIN-PAY-06) |
 
 | FR ID | Requirement |
 |---|---|
