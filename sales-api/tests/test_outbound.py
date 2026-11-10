@@ -446,6 +446,23 @@ async def test_edi_settings_take_only_an_active_sftp_connection_and_need_config(
             await EdiSettingsService(u).update(EdiSettings(connection_id=edi.conn_id, ack_timeout_minutes=120))
 
 
+async def test_a_settings_save_writes_only_what_changes_and_answers_what_was_written(edi):  # SettingsGroup, 2026-11-10
+    from app.schemas.connections import EdiSettings
+    from app.services.connections import EdiSettingsService
+    audits = "SELECT count(*) FROM sales_audit WHERE entity = 'sales_settings'"
+    before = (await edi.env.q(audits))[0]["count"]
+    async with edi.env.factory(OP) as u:
+        same = await EdiSettingsService(u).get()
+        assert await EdiSettingsService(u).update(same) == same
+        await u.commit()
+    assert (await edi.env.q(audits))[0]["count"] == before  # nothing changed: no audit row
+    async with edi.env.factory(OP) as u:
+        out = await EdiSettingsService(u).update(same.model_copy(update={"internal_emails": ["ap@canadaroyalmilk.com"]}))
+        assert out.internal_emails == ["ap@canadaroyalmilk.com"] and out.ack_timeout_minutes == same.ack_timeout_minutes
+        await u.commit()
+    assert (await edi.env.q(audits))[0]["count"] == before + 1
+
+
 async def test_a_manual_order_with_its_ship_to_builds_a_valid_940(edi):
     from app.schemas.orders import AddressIn, ManualLineIn, ManualOrderIn
     from app.services.order_views import ManualOrderService

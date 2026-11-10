@@ -22,10 +22,11 @@ from app.platform.authorization import requires
 from app.platform.query import FilterRule, parse_bool
 from app.platform.repository import Repository
 from app.platform.services import CrudService
+from app.platform.settings_group import SettingsGroup
 from app.platform.views import Preset
 from app.schemas.connections import (
     ConnectionCreate, ConnectionRead, ConnectionTestRead, ConnectionUpdate, EdiSettings, FolderCheckRead, HostKeyRead,
-    SchedulerSettings, SchedulerUpdate, ShadowSetting,
+    SchedulerSettings, ShadowSetting,
 )
 from app.services.cycle import window_of
 from app.services.intake import ConnectionSnapshot
@@ -232,86 +233,63 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
         return await self._read_one(entity)
 
 
-class EdiSettingsService:
-    """The two P4 settings, and only those: the scheduler's settings are not
-    editable here (it stays off until the release says otherwise). Changes
-    are audited (sales_settings is Audited)."""
+class EdiSettingsService(SettingsGroup):
+    """The warehouse connection (940s / 943s and 997s), the 997 wait, the 810 connection and the
+    internal invoice recipients. Audited (sales_settings is Audited)."""
+    registry = SETTINGS
+    read_schema = EdiSettings
+    fields = {"connection_id": EDI_CONNECTION_ID, "ack_timeout_minutes": ACK_TIMEOUT_MINUTES,
+              "invoice_connection_id": INVOICE_CONNECTION_ID, "internal_emails": INVOICE_INTERNAL_EMAILS}
+    read_permission, write_permission = READ, CONFIG
+    reason = "EDI settings"
 
-    def __init__(self, uow) -> None:
-        self.uow = uow
-
-    @requires(READ)
-    async def get(self) -> EdiSettings:
-        s = self.uow.session
-        return EdiSettings(connection_id=await SETTINGS.get(s, EDI_CONNECTION_ID),
-                           ack_timeout_minutes=await SETTINGS.get(s, ACK_TIMEOUT_MINUTES),
-                           invoice_connection_id=await SETTINGS.get(s, INVOICE_CONNECTION_ID),
-                           internal_emails=await SETTINGS.get(s, INVOICE_INTERNAL_EMAILS))
-
-    @requires(CONFIG)
-    async def update(self, body: EdiSettings) -> EdiSettings:
-        s = self.uow.session
-        for field_, cid in (("connection_id", body.connection_id), ("invoice_connection_id", body.invoice_connection_id)):
+    async def check(self, changes: dict[str, Any]) -> None:
+        for field_ in ("connection_id", "invoice_connection_id"):
+            cid = changes.get(field_)
             if cid is not None:
-                conn = await s.get(Connection, cid)
+                conn = await self.uow.session.get(Connection, cid)
                 if conn is None or conn.kind != "SFTP" or not conn.active:
                     raise InvalidInput("edi.connection", "choose an active SFTP connection", {field_: cid})
-        self.uow.set_reason("EDI settings")
-        await SETTINGS.set(s, EDI_CONNECTION_ID, body.connection_id)
-        await SETTINGS.set(s, ACK_TIMEOUT_MINUTES, body.ack_timeout_minutes)
-        await SETTINGS.set(s, INVOICE_CONNECTION_ID, body.invoice_connection_id)
-        await SETTINGS.set(s, INVOICE_INTERNAL_EMAILS, body.internal_emails)
-        return body
 
 
-class ShadowSettingService:
+class ShadowSettingService(SettingsGroup):
     """The shadow-run switch (§5.4): sales.config to change; audited."""
+    registry = SETTINGS
+    read_schema = ShadowSetting
+    fields = {"shadow_mode": SHADOW_MODE}
+    read_permission, write_permission = READ, CONFIG
 
-    def __init__(self, uow) -> None:
-        self.uow = uow
-
-    @requires(READ)
-    async def get(self) -> ShadowSetting:
+    async def extra(self, values: dict[str, Any]) -> dict[str, Any]:
+        """While it is off: the open orders switching it on would mark."""
+        if values["shadow_mode"]:
+            return {}
         from app.services.shadow import count_open_orders  # shadow → outbound → … : imported when used
-        s = self.uow.session
-        on = await SETTINGS.get(s, SHADOW_MODE)
-        return ShadowSetting(shadow_mode=on, open_orders=None if on else await count_open_orders(s))
+        return {"open_orders": await count_open_orders(self.uow.session)}
 
-    @requires(CONFIG)
-    async def update(self, body: ShadowSetting) -> ShadowSetting:
-        """On: the switch and the open orders' flag in one unit (mark_open_orders).
-        Off: the switch only — an order flagged stays Zoho's."""
-        from app.services.shadow import mark_open_orders  # shadow → outbound → … : imported when used
-        self.uow.set_reason("shadow run on" if body.shadow_mode else "shadow run off")
-        await SETTINGS.set(self.uow.session, SHADOW_MODE, body.shadow_mode)
-        marked = await mark_open_orders(self.uow) if body.shadow_mode else 0
-        return ShadowSetting(shadow_mode=body.shadow_mode, marked_orders=marked)
+    def reason_for(self, changes: dict[str, Any]) -> str:
+        return "shadow run on" if changes["shadow_mode"] else "shadow run off"
+
+    async def after(self, changes: dict[str, Any]) -> dict[str, Any]:
+        """On: the open orders are flagged as Zoho's in the same unit. Off: an order flagged stays Zoho's."""
+        if not changes["shadow_mode"]:
+            return {"marked_orders": 0}
+        from app.services.shadow import mark_open_orders
+        return {"marked_orders": await mark_open_orders(self.uow)}
 
 
-class SchedulerSettingsService:
-    """Automatic runs and the system job's interval (Connections → the Automatic
-    runs card): sales.config to change; audited (sales_settings is Audited)."""
+class SchedulerSettingsService(SettingsGroup):
+    """Automatic runs and the system job's interval (Connections → the Automatic runs card):
+    sales.config to change; audited. Saving the minutes never turns automatic runs on again
+    (SchedulerUpdate: only what is sent changes)."""
+    registry = SETTINGS
+    read_schema = SchedulerSettings
+    fields = {"paused": SCHEDULER_PAUSED, "system_minutes": SYSTEM_MINUTES}
+    read_permission, write_permission = READ, CONFIG
 
-    def __init__(self, uow) -> None:
-        self.uow = uow
+    async def extra(self, values: dict[str, Any]) -> dict[str, Any]:
+        return {"enabled": bool(app_settings.SALES_SCHEDULER_ENABLED)}
 
-    @requires(READ)
-    async def get(self) -> SchedulerSettings:
-        s = self.uow.session
-        return SchedulerSettings(paused=await SETTINGS.get(s, SCHEDULER_PAUSED),
-                                 system_minutes=await SETTINGS.get(s, SYSTEM_MINUTES),
-                                 enabled=bool(app_settings.SALES_SCHEDULER_ENABLED))
-
-    @requires(CONFIG)
-    async def update(self, body: SchedulerUpdate) -> SchedulerSettings:
-        s = self.uow.session
-        self.uow.set_reason("scheduler settings" if body.paused is None
-                            else "automatic runs off" if body.paused else "automatic runs on")
-        now = await SchedulerSettingsService.get.__wrapped__(self)  # already authorised; read before the writes
-        if body.paused is not None:
-            await SETTINGS.set(s, SCHEDULER_PAUSED, body.paused)
-            now.paused = body.paused
-        if body.system_minutes is not None:
-            await SETTINGS.set(s, SYSTEM_MINUTES, body.system_minutes)
-            now.system_minutes = body.system_minutes
-        return now
+    def reason_for(self, changes: dict[str, Any]) -> str:
+        if "paused" not in changes:
+            return "scheduler settings"
+        return "automatic runs off" if changes["paused"] else "automatic runs on"
