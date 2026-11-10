@@ -1,4 +1,4 @@
-import { UnsavedBoundary, confirmDiscard, useUnsavedScope } from './unsaved'
+import { UnsavedBoundary, useUnsavedScope, whenDiscarded } from './unsaved'
 import * as RD from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import type { ReactNode } from 'react'
@@ -18,7 +18,7 @@ export interface DialogProps {
 export function Dialog({ open, onOpenChange, title, description, children, footer, className }: DialogProps) {
   const unsaved = useUnsavedScope()  // closing asks only about the forms in this dialog
   return (
-    <RD.Root open={open} onOpenChange={(next) => { if (next || confirmDiscard(unsaved)) onOpenChange?.(next) }}>
+    <RD.Root open={open} onOpenChange={(next) => { if (next) onOpenChange?.(true); else whenDiscarded(unsaved, () => onOpenChange?.(false)) }}>
       <RD.Portal>
         <RD.Overlay className="fixed inset-0 z-50 bg-black/40" />
         <RD.Content

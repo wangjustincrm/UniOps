@@ -1,4 +1,4 @@
-import { UnsavedBoundary, confirmDiscard, useUnsavedScope } from '../primitives/unsaved'
+import { UnsavedBoundary, useUnsavedScope, whenDiscarded } from '../primitives/unsaved'
 import { Fragment, useEffect, useState, type ReactNode } from 'react'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ColumnDef } from '../primitives/DataTable'
@@ -175,8 +175,8 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   const at = current ? rows.findIndex((r) => r.id === current.id) : -1
   const host: RecordSheetHost = {
     open: current !== null, close, tab, onTabChange: setTab, size: props.detailSize,
-    prev: at > 0 ? () => { if (confirmDiscard(detailScope)) setOpen(rows[at - 1]) } : undefined,
-    next: at >= 0 && at < rows.length - 1 ? () => { if (confirmDiscard(detailScope)) setOpen(rows[at + 1]) } : undefined,
+    prev: at > 0 ? () => whenDiscarded(detailScope, () => setOpen(rows[at - 1])) : undefined,
+    next: at >= 0 && at < rows.length - 1 ? () => whenDiscarded(detailScope, () => setOpen(rows[at + 1])) : undefined,
     position: at >= 0 ? `${(spec.page - 1) * spec.pageSize + at + 1} of ${list.data?.total ?? rows.length}` : undefined,
     refresh, auto, autoTick: refresh.tick,
   }

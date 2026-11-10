@@ -1,4 +1,4 @@
-import { UnsavedBoundary, confirmDiscard, useUnsavedScope, type UnsavedScope } from './unsaved'
+import { UnsavedBoundary, useUnsavedScope, whenDiscarded, type UnsavedScope } from './unsaved'
 import * as RD from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import type { KeyboardEvent, ReactNode } from 'react'
@@ -48,7 +48,7 @@ export function Sheet({
   const own = useUnsavedScope()  // closing asks only about the forms in this sheet
   const unsaved = given ?? own
   return (
-    <RD.Root open={open} onOpenChange={(next) => { if (next || confirmDiscard(unsaved)) onOpenChange?.(next) }}>
+    <RD.Root open={open} onOpenChange={(next) => { if (next) onOpenChange?.(true); else whenDiscarded(unsaved, () => onOpenChange?.(false)) }}>
       <RD.Portal>
         <RD.Overlay className="fixed inset-0 z-50 bg-black/30" />
         <RD.Content

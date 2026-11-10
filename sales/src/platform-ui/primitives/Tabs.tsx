@@ -19,7 +19,7 @@ const DOT = { warning: 'bg-warning-500', danger: 'bg-danger-600' } as const
  *  the shell's tab host. Only the selected tab's content is rendered (lazy);
  *  ←/→, Home and End move between tabs (Radix). */
 export function Tabs({
-  items, value, defaultValue, onValueChange, className, listClassName, ariaLabel, canLeave,
+  items, value, defaultValue, onValueChange, className, listClassName, ariaLabel, beforeLeave,
 }: {
   items: TabItem[]
   value?: string
@@ -29,17 +29,19 @@ export function Tabs({
   /** E.g. sticky under a sheet's header. */
   listClassName?: string
   ariaLabel?: string
-  /** Asked before the shown tab is left (e.g. unsaved input in it); false keeps it. Asked once per
-   *  click: Radix changes the tab on mouse-down and again on the focus that follows. */
-  canLeave?: () => boolean
+  /** Before the shown tab is left (e.g. unsaved input in it): call `leave` to go on, or don't to
+   *  stay (it may ask first). Once per click: Radix changes the tab on mouse-down and again on the
+   *  focus that follows. */
+  beforeLeave?: (leave: () => void) => void
 }) {
   const asked = useRef<string | null>(null)
   const change = (v: string) => {
-    if (canLeave && v !== value) {
+    if (beforeLeave && v !== value) {
       if (asked.current === v) return
       asked.current = v
       setTimeout(() => { asked.current = null })
-      if (!canLeave()) return
+      beforeLeave(() => onValueChange?.(v))
+      return
     }
     onValueChange?.(v)
   }

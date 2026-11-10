@@ -7,7 +7,7 @@ import { Sheet, SheetClose, SheetTitle, type SheetSize } from '../primitives/She
 import { Button, Skeleton } from '../primitives/shell'
 import { EmptyState } from '../primitives/States'
 import { Tabs } from '../primitives/Tabs'
-import { UnsavedBoundary, confirmDiscard, useUnsavedScope } from '../primitives/unsaved'
+import { UnsavedBoundary, useUnsavedScope, whenDiscarded } from '../primitives/unsaved'
 import { BusyBar } from '../primitives/BusyBar'
 import { useDelayed } from '../primitives/useDelayed'
 import { cn } from '../lib/cn'
@@ -232,7 +232,7 @@ export function RecordSheet(props: RecordSheetProps) {
           </div>
         )}
         {visible.length > 0 && (
-          <Tabs ariaLabel="Sections" value={tab} onValueChange={choose} canLeave={() => confirmDiscard(tabScope)}
+          <Tabs ariaLabel="Sections" value={tab} onValueChange={choose} beforeLeave={(leave) => whenDiscarded(tabScope, leave)}
             listClassName="sticky top-0 z-10 -mx-4 bg-white px-4 sm:-mx-6 sm:px-6"
             items={visible.map((t) => ({
               value: t.id, label: t.label, count: t.count, attention: t.tone,

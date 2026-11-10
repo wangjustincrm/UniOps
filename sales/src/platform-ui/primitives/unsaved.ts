@@ -1,4 +1,5 @@
 import { createContext, createElement, useContext, useEffect, useState, type ReactNode } from 'react'
+import { ask } from './ask'
 
 /** Forms with changes not saved yet, per place that can drop them (2026-11-10). A sheet, a dialog,
  *  a record sheet's tab and a list's open record each own a scope: leaving one asks only about the
@@ -40,10 +41,19 @@ export function useReportUnsaved(isDirty: boolean): void {
 }
 
 /** True when nothing inside `scope` is lost by leaving it: nothing unsaved, or the person agreed to
- *  drop it. Leaving then unmounts those forms, which removes them. Without a scope: the whole app. */
-export function confirmDiscard(scope: UnsavedScope = ROOT): boolean {
+ *  drop it (in the app's dialog). Leaving then unmounts those forms, which removes them. Without a
+ *  scope: the whole app. */
+export async function confirmDiscard(scope: UnsavedScope = ROOT): Promise<boolean> {
   if (scope.own.size === 0) return true
-  return window.confirm('You have changes that are not saved. Discard them?')
+  return ask({ title: 'Discard your changes?', description: 'You have changes that are not saved.',
+    confirmLabel: 'Discard', cancelLabel: 'Keep editing', destructive: true })
+}
+
+/** Runs `leave` once nothing inside `scope` would be lost: at once when nothing is unsaved (no
+ *  flicker, same tick), else after the person agrees. */
+export function whenDiscarded(scope: UnsavedScope, leave: () => void): void {
+  if (scope.own.size === 0) { leave(); return }
+  void confirmDiscard(scope).then((ok) => { if (ok) leave() })
 }
 
 /** Whether anything inside `scope` is unsaved (a test, or a "Saved" indicator). */

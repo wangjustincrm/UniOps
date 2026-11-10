@@ -5,26 +5,26 @@ import { confirmDiscard, useReportUnsaved } from './unsaved'
 describe('unsaved changes', () => {
   afterEach(() => vi.restoreAllMocks())
 
-  it('asks nothing when nothing is unsaved', () => {
+  it('asks nothing when nothing is unsaved', async () => {
     const ask = vi.spyOn(window, 'confirm')
-    expect(confirmDiscard()).toBe(true)
+    expect(await confirmDiscard()).toBe(true)
     expect(ask).not.toHaveBeenCalled()
   })
 
-  it('keeps the form when the person says no, drops it when they say yes', () => {
+  it('keeps the form when the person says no, drops it when they say yes', async () => {
     const { unmount } = renderHook(() => useReportUnsaved(true))
     vi.spyOn(window, 'confirm').mockReturnValueOnce(false)
-    expect(confirmDiscard()).toBe(false)
+    expect(await confirmDiscard()).toBe(false)
     vi.spyOn(window, 'confirm').mockReturnValueOnce(true)
-    expect(confirmDiscard()).toBe(true)
+    expect(await confirmDiscard()).toBe(true)
     unmount()
   })
 
-  it('a form that closes no longer counts', () => {
+  it('a form that closes no longer counts', async () => {
     const { unmount } = renderHook(() => useReportUnsaved(true))
     unmount()
     const ask = vi.spyOn(window, 'confirm')
-    expect(confirmDiscard()).toBe(true)
+    expect(await confirmDiscard()).toBe(true)
     expect(ask).not.toHaveBeenCalled()
   })
 })
@@ -49,6 +49,7 @@ describe('unsaved changes, per place (2026-11-10)', () => {
     render(<Dialog open onOpenChange={closed} title="Edit"><Dirty label="typed" /></Dialog>)
     vi.spyOn(window, 'confirm').mockReturnValueOnce(false)
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' })
+    await Promise.resolve()
     expect(closed).not.toHaveBeenCalled()
   })
 

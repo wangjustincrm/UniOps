@@ -1,5 +1,5 @@
 import { useCallback, useContext } from 'react'
-import { confirmDiscard, useCurrentUnsavedScope } from '../primitives/unsaved'
+import { useCurrentUnsavedScope, whenDiscarded } from '../primitives/unsaved'
 import { requestOpen, requestView, type ViewRequest } from '../resource/viewRequests'
 import { OpenRecordNavigate } from './openRecordContext'
 import { RecordSheetHostContext } from './recordSheetHost'
@@ -13,16 +13,16 @@ function useLeave() {
   const go = useContext(OpenRecordNavigate)
   const host = useContext(RecordSheetHostContext)
   const scope = useCurrentUnsavedScope()
-  return useCallback((to: string, ask: () => void): boolean => {
-    if (!confirmDiscard(scope)) return false
-    host?.close()
-    ask()
-    go?.(to)
-    return true
+  return useCallback((to: string, request: () => void): void => {
+    whenDiscarded(scope, () => {
+      host?.close()
+      request()
+      go?.(to)
+    })
   }, [go, host, scope])
 }
 
-/** `open('/orders', id, tab?)`: the record in its list's sheet. False when the person stayed. */
+/** `open('/orders', id, tab?)`: the record in its list's sheet. */
 export function useOpenRecord() {
   const leave = useLeave()
   return useCallback((page: string, id: number, tab?: string) => leave(page, () => requestOpen(page, id, tab)), [leave])
