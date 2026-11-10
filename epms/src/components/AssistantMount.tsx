@@ -94,7 +94,8 @@ async function exportQuery(
 
 /** What this person can actually be answered about, straight from the ontology. */
 async function describeScope(): Promise<string[]> {
-  const res = await api.get<{ entities: { label: string }[] }>('/assistant/schema')
+  // Only what the EPMS chat queries: Finance's AP copy is hidden here (ISS-0015).
+  const res = await api.get<{ entities: { label: string }[] }>('/assistant/schema?app=epms')
   // Labels read "Purchase Order (PO) — the order placed with a vendor"; the part
   // before the dash is the name, which is all that belongs in a one-line summary.
   return res.entities.map((e) => e.label.split('—')[0].trim())

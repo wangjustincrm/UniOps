@@ -1105,6 +1105,34 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
     return out
 
 
+async def near_document_numbers(db: AsyncSession, entity, scope: dict, field: str,
+                                typed: str) -> list[str]:
+    """Real numbers close to a typed one that matched nothing, visible to this
+    caller: those sharing all its digits in order, else those one typing slip
+    away (ISS-0024: "PR-20260928-0091" for PR-20260928-0001). Best effort."""
+    groups = doc_numbers.digit_groups(typed)
+    if not groups:
+        return []
+    try:
+        col, path = _resolve(entity, field)
+        base = select(col).select_from(entity.model).distinct()
+        base = await entity.apply_scope(base, scope, db)
+        base = await _apply_hops(db, base, list(path), scope)
+        async with db.begin_nested():
+            found = [r[0] for r in (await db.execute(base.where(
+                col.ilike("%" + "%".join(groups) + "%")).limit(_MAX_SUGGESTIONS))).all() if r[0]]
+            if not found:
+                # Every number sharing one digit group, then only those within
+                # one slip of what was typed.
+                pool = [r[0] for r in (await db.execute(base.where(sa.or_(*[
+                    col.ilike(f"%{g}%") for g in groups if len(g) >= 4])).limit(500))).all()
+                        if r[0]] if any(len(g) >= 4 for g in groups) else []
+                found = doc_numbers.closest(str(typed), pool)[:_MAX_SUGGESTIONS]
+    except Exception:  # noqa: BLE001 — a suggestion must never cost the answer
+        return []
+    return found
+
+
 # Long enough that a fragment is worth searching on. Two-letter words ("of",
 # "co") match most of the table and suggest nothing.
 _MIN_FRAGMENT = 4
@@ -1150,20 +1178,10 @@ async def _near_misses(db: AsyncSession, entity, scope: dict,
             # An exact document number that matched nothing: offer the numbers
             # that share its digits, in order, so "did you mean …" can be asked
             # instead of "not found" (ISS-0024).
-            groups = doc_numbers.digit_groups(clause.get("value") or "")
-            if groups:
-                try:
-                    col, path = _resolve(entity, clause["field"])
-                    stmt = select(col).select_from(entity.model).distinct()
-                    stmt = await entity.apply_scope(stmt, scope, db)
-                    stmt = await _apply_hops(db, stmt, list(path), scope)
-                    stmt = stmt.where(col.ilike("%" + "%".join(groups) + "%"))
-                    found = [r[0] for r in (await db.execute(
-                        stmt.limit(_MAX_SUGGESTIONS))).all() if r[0]]
-                except Exception:  # noqa: BLE001 — best effort, as below
-                    found = []
-                if found:
-                    suggestions[clause["field"]] = found
+            found = await near_document_numbers(db, entity, scope, clause["field"],
+                                                clause.get("value") or "")
+            if found:
+                suggestions[clause["field"]] = found
             continue
         if clause.get("op") != "like":
             continue

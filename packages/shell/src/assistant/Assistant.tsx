@@ -559,6 +559,12 @@ function Chain({ workflow }: { workflow: NonNullable<AssistantReply['workflow']>
             {/* A broadcast step has no named holder; it sits with the role. */}
             {current.approver_name ?? `whoever holds ${current.label}`}
             <span className="ml-1 text-neutral-500">({current.label})</span>
+            {current.since && (
+              <span className="ml-1 text-neutral-500">
+                · since {String(current.since).slice(0, 10)}
+                {current.days_waiting != null && ` (${current.days_waiting} d)`}
+              </span>
+            )}
           </p>
         </div>
       )}

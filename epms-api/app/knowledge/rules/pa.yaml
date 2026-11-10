@@ -71,11 +71,12 @@ rules:
       Partially Paid for a prepayment — for a prepayment's invoices Partially
       Paid is the correct status, not a missing payment. A PA in status
       Approved is fully approved and still waiting to be paid.
-    enforced_in: "finance-api app/crud/payment_execute.py (pa.status = processed, paid_at = payment date; invoices paid / partially_paid for a prepayment); epms-api app/models/invoice.py Invoice.pa_payment_shown (the same rule, for the Assistant)"
+    enforced_in: "finance-api app/crud/payment_execute.py (pa.status = processed, paid_at = payment date; invoices paid / partially_paid for a prepayment); epms-api app/models/invoice.py Invoice.pa_payment_shown (the same rule, for the Assistant), said with the count per PA kind under every answer that uses it (app/services/answer_facts.py _paid_pa_invoices)"
     provenance: pinned
     test:
       - "finance-api/tests/test_payment_execute.py::test_execute_pa_po_marks_invoices_paid"
       - "tests/test_assistant_iss_batch6.py::test_pa_payment_shown_is_the_rule_payment_writes"
+      - "tests/test_assistant_asst2_b.py::test_paid_pa_invoices_always_carry_the_partially_paid_rule"
   - id: prepayment_cap
     also_in: [vendor]
     asked_as:
@@ -95,10 +96,11 @@ rules:
       Prepayment Config. Whether a vendor can be prepaid is decided by these
       caps alone — never by the Prepaid flag on its past PRs or POs, which
       the payment application does not read.
-    enforced_in: "epms-api app/api/v1/pa.py _assert_prepayment_cap, on create_pa and when a draft's % is edited in update_pa (effective_cap = vendor.max_prepayment_pct else Prepayment Config; second check against the system cap; cumulative over the PO's live prepayments via prior_prepayment_pct)"
+    enforced_in: "epms-api app/api/v1/pa.py _assert_prepayment_cap, on create_pa and when a draft's % is edited in update_pa (effective_cap = vendor.max_prepayment_pct else Prepayment Config; second check against the system cap; cumulative over the PO's live prepayments via prior_prepayment_pct); the cap that applies to a vendor is said under a vendor answer by app/services/answer_facts.py _prepayment_cap (app/core/prepayment_cap.py effective_cap)"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_prepayment_cap_reads_the_vendor_then_the_system"
+      - "tests/test_assistant_asst2_b.py::test_a_vendor_with_no_cap_of_its_own_gets_the_system_cap"
   - id: vendor_credit_netting
     asked_as:
       - how are vendor credits used when we pay
@@ -287,14 +289,17 @@ rules:
       Finance → Payments, a payment batch or a selection of payments. An AP
       Clerk may send it as well as whoever paid. It is part of the payment
       process but is not sent automatically when paying, and a PA's approval
-      history says nothing about it. Whether it was sent (and when, or whether it failed)
-      is recorded on the Finance payment pages; EPMS and this assistant
-      cannot see that record.
-    enforced_in: "PRD EPMS REM-001; finance-api app/api/v1/remittance.py (send routes); app/crud/payment_execute.py sends none; app/models/remittance.py payment_remittance_notifications (not in the assistant's ontology)"
+      history says nothing about it. Whether it was sent (and when, or whether
+      it failed) is recorded on the Finance payment pages. Asked about one paid
+      PA, the assistant reads that send record and says whether, when and to
+      whom it was sent — for users with View Finance; others are told it needs
+      Finance access.
+    enforced_in: "finance-api app/api/v1/remittance.py (send routes; PRD EPMS REM-001); app/crud/payment_execute.py sends none; app/models/remittance.py payment_remittance_notifications (read for one PA by epms-api app/services/answer_facts.py payment_facts, View Finance only — not in the queryable ontology)"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_remittance_is_sent_by_hand_and_not_modelled"
       - "tests/test_assistant_asst2_c.py::test_the_flow_after_payment_is_the_remittance_advice"
+      - "tests/test_assistant_asst2_b.py::test_a_paid_pa_says_account_and_remittance_from_finance_records"
   - id: recording_a_manual_credit
     # Round 2 (ISS-0022 #3): refused once in three. Code answers it.
     said_when:

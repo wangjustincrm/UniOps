@@ -61,3 +61,25 @@ def find_all(text) -> list[tuple[str, str, int, int]]:
         prefix = m.lastgroup
         out.append((prefix, normalize(prefix, m.group(0)), m.start(), m.end()))
     return out
+
+
+def distance(a: str, b: str) -> int:
+    """Edit distance (insert, delete, substitute one character)."""
+    a, b = a.upper(), b.upper()
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, start=1):
+        cur = [i]
+        for j, cb in enumerate(b, start=1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def closest(typed: str, candidates, max_distance: int = 1) -> list[str]:
+    """The candidates within one typing slip of `typed` (one digit wrong,
+    missing or extra), nearest first. "PR-20260928-0091" for PR-20260928-0001
+    was answered "not found" with no suggestion (ISS-0024): it shares the date
+    but not the sequence, so a search on all its digit groups found nothing."""
+    typed = str(typed or "").strip()
+    scored = sorted({(distance(typed, c), c) for c in candidates if c})
+    return [c for d, c in scored if 0 < d <= max_distance]
