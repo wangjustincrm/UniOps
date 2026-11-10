@@ -82,6 +82,15 @@ def po_imported_fields(db) -> dict:
     return {"header_fields": _join(header), "line_fields": _join(line)}
 
 
+# ── Tasks ────────────────────────────────────────────────────────────────────
+
+def purchase_flow(db) -> dict:
+    from app.services.next_step import FLOW
+
+    return {"steps": "; ".join(f"{i}. {s.who_en}: {s.what_en}"
+                               for i, s in enumerate(FLOW, start=1))}
+
+
 # ── Goods receipts ───────────────────────────────────────────────────────────
 
 def gr_po_statuses(db) -> dict:

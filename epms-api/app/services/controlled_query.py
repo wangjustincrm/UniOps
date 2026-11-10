@@ -581,14 +581,43 @@ def _shift_years(day: date, years: int) -> date:
 
 
 def calendar_range(name: str, shift_years: int = 0,
-                   today: date | None = None) -> tuple[date, date]:
+                   today: date | None = None, whole: bool = False) -> tuple[date, date]:
     """(first day, last day) of a named calendar period, in plant-local dates.
 
     Weeks start on Monday. A current period ("this_month") runs to today, as
     the dashboard's "this month" does. shift_years moves the whole range, so
     this_quarter with -1 is the same quarter-to-date a year earlier.
+
+    `whole` runs a current period to its last day instead: for a date that can
+    lie ahead (a due date), "due this month" is the whole month. Cut at today,
+    "本月到期待付款的发票" left out INV-2026-0617, due 30/10, on 22/10 — and the
+    planner, left to it, wrote "due_date ≤ today" with no start at all and
+    counted every earlier month too (ISS-0035).
     """
     today = today or datetime.now(_PLANT_TZ).date()
+    frm, to = _calendar_range(name, today)
+    if whole and name.startswith("this_"):
+        to = _period_end(name, frm)
+    if shift_years:
+        frm, to = _shift_years(frm, shift_years), _shift_years(to, shift_years)
+    return frm, to
+
+
+def _period_end(name: str, first: date) -> date:
+    """The last day of the current period that starts on `first`."""
+    if name == "this_week":
+        return first + timedelta(days=6)
+    if name == "this_month":
+        months = 1
+    elif name == "this_quarter":
+        months = 3
+    else:  # this_year
+        return date(first.year, 12, 31)
+    month = first.month - 1 + months
+    return date(first.year + month // 12, month % 12 + 1, 1) - timedelta(days=1)
+
+
+def _calendar_range(name: str, today: date) -> tuple[date, date]:
     if name == "today":
         frm = to = today
     elif name == "yesterday":
@@ -621,23 +650,38 @@ def calendar_range(name: str, shift_years: int = 0,
     else:
         _reject(f"Unknown calendar period '{name}'. Use one of: "
                 f"{', '.join(CALENDAR_PERIODS)}")
-    if shift_years:
-        frm, to = _shift_years(frm, shift_years), _shift_years(to, shift_years)
     return frm, to
 
 
-def resolved_period(period: dict | None) -> dict | None:
+def _scheduled(entity: Entity | None, name: str | None) -> bool:
+    """Whether a period field holds a date that can lie ahead (ontology
+    `scheduled: true`): a due date, a needed-by date."""
+    if entity is None:
+        return False
+    f = _field_of(entity, name or entity.date_field)
+    return bool(f is not None and f.scheduled)
+
+
+def period_dates(period: dict, entity: Entity | None = None) -> tuple[date, date]:
+    """The dates a calendar period stands for on this entity's period field."""
+    return calendar_range(period["calendar"], int(period.get("shift_years") or 0),
+                          whole=_scheduled(entity, period.get("field")))
+
+
+def resolved_period(period: dict | None, entity: Entity | None = None) -> dict | None:
     """The plant-local dates a period covered, for the answer to state."""
     if not period:
         return None
     if period.get("calendar"):
-        frm, to = calendar_range(period["calendar"], int(period.get("shift_years") or 0))
+        frm, to = period_dates(period, entity)
         return {"from": frm.isoformat(), "to": to.isoformat(),
                 "calendar": period["calendar"],
+                **({"field": period["field"]} if period.get("field") else {}),
                 **({"shift_years": int(period["shift_years"])}
                    if period.get("shift_years") else {})}
     if period.get("from") or period.get("to"):
-        return {"from": period.get("from"), "to": period.get("to")}
+        return {"from": period.get("from"), "to": period.get("to"),
+                **({"field": period["field"]} if period.get("field") else {})}
     return None
 
 
@@ -656,7 +700,7 @@ def _apply_period(stmt, entity: Entity, period: dict | None, hops: list):
     hops.extend(path)
 
     if period.get("calendar"):
-        frm, to = calendar_range(period["calendar"], int(period.get("shift_years") or 0))
+        frm, to = period_dates(period, entity)
         period = {**period, "from": frm.isoformat(), "to": to.isoformat()}
     elif period.get("shift_years"):
         _reject("shift_years goes with calendar, e.g. {calendar: this_quarter, "
@@ -1044,7 +1088,7 @@ async def _execute(db: AsyncSession, request: dict, scope: dict,
         out["total_rows"] = total_rows
     if numbers_read_as:
         out["numbers_read_as"] = numbers_read_as
-    covered = resolved_period(request.get("period"))
+    covered = resolved_period(request.get("period"), entity)
     if covered:
         out["resolved_period"] = covered
     if totals is not None:

@@ -36,7 +36,7 @@ from app.services.controlled_query import _OPS_BY_KIND as cq_ops
 
 log = logging.getLogger(__name__)
 
-from app.services import guide_view, reply_language
+from app.services import guide_view, period_words, reply_language
 
 MODEL = "claude-haiku-4-5-20251001"
 _PLANT_TZ = ZoneInfo(PLANT_TIMEZONE)
@@ -443,9 +443,11 @@ results are the only facts you have.
   current figure, the same period last year, the change and the change in
   percent, all computed for you — report them, never recompute. The two
   periods are `resolved_period` and `previous_year.resolved_period`.
-- `resolved_period` is the dates the query covered. State them once, in the
-  reply's date format (DD/MM/YYYY), so the reader can see which period was
-  used — e.g. "this quarter (01/10/2026 – 20/10/2026)".
+- `resolved_period` is the dates the query covered. The system adds a line
+  naming them under your reply (it is in `added_below_your_reply`), so do not
+  list the dates again; if you mention the period at all, use exactly these
+  dates and their year — "去年同期（2024年7月至9月）" over a query of 2025 was a
+  reported bug.
 - If the results are empty, say so plainly — do not speculate about why.
 - Empty is "nothing matched this query", NOT "this never happened". When the
   query filtered on a name the person typed, say that no records matched that
@@ -1014,7 +1016,17 @@ def _client():
     return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
 
-def _today_note() -> str:
+def _days_note(message: str, today) -> str:
+    """The days written in the message, already read (period_words): the
+    same date on every page (ISS-0048: 10/11 was 2026 on one, 2025 on Portal)."""
+    days = period_words.explicit_days(message or "", today)
+    if not days:
+        return ""
+    return (" In this message " + ", ".join(
+        f"\"{text}\" is {day.isoformat()}" for text, day in days) + ".")
+
+
+def _today_note(message: str = "") -> str:
     """Tell the model what day it is.
 
     Without this it dates things from its own training data: asked for "the
@@ -1031,13 +1043,13 @@ def _today_note() -> str:
     now = datetime.now(_PLANT_TZ)
     return (
         f"\n\nToday is {now:%Y-%m-%d} ({now:%A}). Resolve every date against "
-        f"this, never against anything you remember. A month or day given "
-        f"without a year means the most recent one that has already started — "
-        f"normally {now.year}, or {now.year - 1} if {now.year} would put it in "
-        f"the future. A date written with slashes is day first, the way EPMS "
-        f"shows dates (DD/MM/YYYY): 10/11 is 10 November, never 11 October. "
-        f"When a slashed date could be read either way, say in the answer which "
-        f"date was used."
+        f"this, never against anything you remember. A month given without a "
+        f"year means the most recent one that has already started — normally "
+        f"{now.year}, or {now.year - 1} if {now.year} would put it in the "
+        f"future. A single DAY given without a year (10/11, 11月10日) is in "
+        f"{now.year}. A date written with slashes is day first, the way EPMS "
+        f"shows dates (DD/MM/YYYY): 10/11 is 10 November, never 11 October."
+        + _days_note(message, now.date())
     )
 
 
@@ -1241,6 +1253,9 @@ agreement with its invoices and payment applications.
 - `no_order_yet`: the requisition has no purchase order yet. `more_orders`:
   that many further orders are not shown.
 - Every amount with its currency. Do not add amounts up.
+- `next_step_added_below` is where it stands and who acts next, worked out by
+  the system and added under your reply. Do not restate it, and never say
+  that nothing more is needed or name a next step of your own.
 - Never invent a document, a status, a date or a step that is not in what you
   were given.
 """
@@ -1394,7 +1409,7 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
     """
     import anthropic
 
-    user_text = message + _today_note() + _context_note(context) + _language_note(message)
+    user_text = message + _today_note(message) + _context_note(context) + _language_note(message)
     if retry_error:
         user_text += (
             f"\n\nYour previous query was rejected: {retry_error}\n"
@@ -1507,6 +1522,11 @@ async def narrate(message: str, query: dict, result: dict) -> dict:
         payload["totals"] = result["totals"]
     if "assumption" in result:
         payload["assumption"] = result["assumption"]
+    # Told to the narrator by the prompt and never sent: no answer stated its
+    # dates, and the year-on-year figures were invisible to it (ISS-0020).
+    for key in ("resolved_period", "comparison", "previous_year"):
+        if result.get(key):
+            payload[key] = result[key]
     if result.get("said_with_this_list"):
         # Added under the reply in code (ISS-0008); the narrator only needs to
         # know not to say them twice.

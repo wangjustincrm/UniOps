@@ -17,6 +17,7 @@ in a finance system, and this is the cheapest possible form of showing the work.
 """
 import json
 import logging
+import re
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -43,6 +44,7 @@ from app.services import budget_variance
 from app.services import report_lineage
 from app.services import workflow_view
 from app.services import controlled_query as cq
+from app.services import next_step, period_words, query_conditions
 from app.services import caller_view
 from app.services import marked_view
 from app.services import page_document
@@ -231,7 +233,19 @@ async def _finish(out: dict, message: str) -> dict:
     if isinstance(out.get("answer"), str):
         # Whatever wrote the reply, NC leaves as NC (ISS-0051).
         out["answer"] = reply_language.keep_system_names(out["answer"])
+        out["answer"] = one_code_for_yuan(out["answer"])
     return out
+
+
+_RMB = re.compile(r"(?<![A-Za-z])RMB(?![A-Za-z])")
+
+
+def one_code_for_yuan(text: str) -> str:
+    """The yuan written CNY everywhere (ISS-0035: "RMB" for invoices, "CNY"
+    for POs in the same conversation). Invoices store the colloquial RMB code,
+    POs, PAs and PRs the ISO code CNY; both mean the same currency, and the
+    reply now names it one way. The stored codes are not changed."""
+    return _RMB.sub("CNY", text)
 
 
 async def _chat(body: ChatRequest, db, user: dict, token: str,
@@ -285,6 +299,22 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
             return await _answer_marked(db, body, actor)
         raise HTTPException(status_code=503, detail=str(exc))
     await assistant_llm.record_usage(db, actor, "plan", planned.get("usage") or {})
+
+    if (earlier := _conditions_of_the_last_answer(body.message, exchanges)) is not None:
+        return earlier
+
+    # Whatever the planner chose, "where is it / what's next / who does it" is
+    # answered in code (ISS-0030, ISS-0247, ISS-0248, ISS-0250): next_step.
+    page_doc = ((context.get("doc_type"), context["doc_number"])
+                if context.get("doc_number") and context.get("doc_type") in document_chain.SUPPORTED
+                else None)
+    routed = next_step.route(body.message, page_doc)
+    if routed and routed[0] == "chain":
+        doc_type, number = routed[1]
+        return await _answer_trace(db, scope, body, {"doc_type": doc_type, "doc_number": number},
+                                   context, actor)
+    if routed and routed[0] == "flow":
+        return _answer_flow(routed[1], body.message)
 
     if planned["kind"] == "split" and not part:
         return await _answer_parts(body, db, user, token, planned, part)
@@ -352,7 +382,7 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
         # question about how the system behaves gets the rules first (ISS-0022).
         return await _refusal(db, token, body, planned, actor)
 
-    query = planned["query"]
+    query = _period_from_the_words(planned["query"], body.message, exchanges)
     try:
         result = await _execute_in_schema(db, query, scope, schema)
     except cq.QueryTimedOut:
@@ -369,7 +399,13 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
             raise HTTPException(status_code=503, detail=str(exc2))
         if planned["kind"] == "cannot":
             return await _refusal(db, token, body, planned, actor)
-        query = planned["query"]
+        if planned["kind"] != "query":
+            # A retry that picked another route is not a query to run.
+            return {"_fixed_text": True, "answer": "I could not build a valid query for that. "
+                    "Try naming the document type or the field explicitly.",
+                    "kind": "cannot_answer", "reason": "invalid_plan",
+                    "query": None, "sources": None}
+        query = _period_from_the_words(planned["query"], body.message, exchanges)
         try:
             result = await _execute_in_schema(db, query, scope, schema)
         except cq.QueryTimedOut:
@@ -391,6 +427,7 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
             "kind": "denied", "query": query, "sources": None,
         }
 
+    _say_the_period(result, query)
     try:
         told = await assistant_llm.narrate(body.message, query, result)
     except assistant_llm.LlmUnavailable as exc:
@@ -410,6 +447,55 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
             "total_rows": result.get("total_rows"),
         },
     }
+
+
+def _period_from_the_words(query: dict, message: str, exchanges: list[ChatTurn]) -> dict:
+    """The planned query, its period set from the calendar words of the
+    message in code (services/period_words; ISS-0020, ISS-0035, ISS-0048)."""
+    entity = REGISTRY.get(str(query.get("entity") or ""))
+    if entity is None:
+        return query
+    carried = None
+    for turn in reversed(exchanges):
+        if turn.role == "assistant" and isinstance(turn.query, dict):
+            carried = (turn.query.get("period") or {}).get("calendar")
+            break
+    fixed, changed = period_words.enforce(query, message, entity, local_today(),
+                                          carried=carried)
+    if changed:
+        log.info("assistant | period set from the question | %s", "; ".join(changed))
+    return fixed
+
+
+def _conditions_of_the_last_answer(message: str, exchanges: list[ChatTurn]) -> dict | None:
+    """"这个结果用的到期日范围和发票状态条件是什么？" — read from the query the
+    previous answer ran, in code (ISS-0035: it was planned again and the
+    previous answer repeated). None when the message is not that question or
+    the previous answer ran no query."""
+    if not query_conditions.asks_for_conditions(message):
+        return None
+    last = next((t for t in reversed(exchanges) if t.role == "assistant"), None)
+    if last is None or not isinstance(last.query, dict):
+        return None
+    said = query_conditions.describe(last.query, local_today())
+    if said is None:
+        return None
+    english, chinese = said
+    if reply_language.detect(message) == "Chinese (Simplified)":
+        return {"answer": chinese, "kind": "conditions", "query": None, "sources": None}
+    return {"_fixed_text": True, "answer": english, "kind": "conditions",
+            "query": None, "sources": None}
+
+
+def _say_the_period(result: dict, query: dict) -> None:
+    """Put the dates the query covered under the reply, in code (ISS-0020 #1):
+    added with the listing notes, so the narrator is told not to repeat it."""
+    entity = REGISTRY.get(str(query.get("entity") or ""))
+    said = period_words.stated(result.get("resolved_period"), entity,
+                               (result.get("previous_year") or {}).get("resolved_period"))
+    if said:
+        result["said_with_this_list"] = [*(result.get("said_with_this_list") or []),
+                                         ("period_used", *said)]
 
 
 def _without_internal_notes(text: str, result: dict) -> str:
@@ -589,6 +675,15 @@ async def _answer_workflow_question(db, user, token, scope, body, planned) -> di
             "kind": "cannot_answer", "reason": "document_not_found",
             "query": None, "sources": None,
         }
+
+    if next_step.asks_next(body.message):
+        # "下一步该谁做什么" is not answered from one document's approval: an
+        # approved PR "needs no further action" while its PA waits to be paid
+        # (ISS-0030). The chain, with the next step worked out in code.
+        number = getattr(doc, "pa_number", None) or getattr(doc, "number")
+        context = body.context.model_dump(exclude_none=True) if body.context else {}
+        return await _answer_trace(db, scope, body,
+                                   {"doc_type": doc_type, "doc_number": number}, context, actor)
 
     view = await workflow_view.build(db, doc_type, doc, token)
     try:
@@ -901,6 +996,10 @@ async def _answer_receiving_report(db, scope, body, planned, actor) -> dict:
         return {"_fixed_text": True,
                 "answer": "You do not have permission to view goods receipts.",
                 "kind": "denied", "query": None, "sources": None}
+    words = period_words.calendar_words(body.message)
+    if len(words) == 1 and not period_words.is_rolling(body.message):
+        # The message's own calendar word, whatever the planner chose (ISS-0020).
+        planned = {**planned, "calendar": words[0]}
     if planned.get("calendar"):
         frm, to = cq.calendar_range(planned["calendar"])
     else:
@@ -919,7 +1018,11 @@ async def _answer_receiving_report(db, scope, body, planned, actor) -> dict:
     except assistant_llm.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
-    return {"answer": told["text"], "kind": "receiving_report", "query": None,
+    said = period_words.stated(result["period"])
+    text = await _with_listing_notes(
+        told["text"], {"said_with_this_list": [("period_used", *said)] if said else []},
+        body.message)
+    return {"answer": text, "kind": "receiving_report", "query": None,
             "receiving_report": result,
             "sources": {"entity": "Receiving Report", "row_count": total, "complete": True}}
 
@@ -1326,19 +1429,39 @@ async def _answer_trace(db, scope, body: ChatRequest, planned: dict, context: di
         return {"_fixed_text": True, "answer": f"I could not find {number}.",
                 "kind": "cannot_answer", "reason": "document_not_found",
                 "query": None, "sources": None}
+    # Where it stands and who acts next: from the chain and the open tasks on
+    # its documents, in code, added under the narration (ISS-0030).
+    tasks = await next_step.open_tasks(db, chain)
+    english, chinese = next_step.for_chain(chain, tasks)
     try:
-        told = await assistant_llm.narrate_chain(body.message, chain)
+        told = await assistant_llm.narrate_chain(
+            body.message, {**chain, "next_step_added_below": english})
     except assistant_llm.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     await assistant_llm.record_usage(db, actor, "narrate_chain", told.get("usage") or {})
     hidden = '"not_visible": true' in json.dumps(chain, default=str)
+    text = await _with_listing_notes(
+        told["text"], {"said_with_this_list": [("next_step", english, chinese)]}, body.message)
     return {
-        "answer": told["text"], "kind": "document_chain", "query": None,
-        "document_chain": chain,
+        "answer": text, "kind": "document_chain", "query": None,
+        "document_chain": chain, "next_tasks": tasks,
         "sources": {"document": chain["asked_about"]["number"],
                     "documents": document_chain.count_documents(chain),
                     "complete": not hidden},
     }
+
+
+def _answer_flow(step_key: str, message: str) -> dict:
+    """The purchase from the point the question names to the end, who does
+    each step — written in code from next_step.FLOW (ISS-0247, ISS-0248,
+    ISS-0250). No task table, no "still needs approval"."""
+    english, chinese = next_step.general_answer(step_key, message)
+    steps = [s.key for s in next_step.after(step_key)]
+    if reply_language.detect(message) == "Chinese (Simplified)":
+        return {"answer": chinese, "kind": "next_steps", "steps": steps,
+                "query": None, "sources": None}
+    return {"_fixed_text": True, "answer": english, "kind": "next_steps", "steps": steps,
+            "query": None, "sources": None}
 
 
 # ── One message, several questions (ISS-0037, ISS-0069) ──────────────────────
