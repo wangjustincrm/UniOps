@@ -272,9 +272,10 @@ entities:
       # ISS-0036 / ISS-0060.
       three_way_matched:
         kind: bool
-        label: "Whether the PO is three-way matched: a matched invoice and
-          something received against it — the test a payment application
-          needs (INV-3WM-006)"
+        label: "Whether the PO is three-way matched (INV-3WM-006): an invoice
+          matched to it (still Matched, or since Paid) and something received
+          against it. No quantity is compared — partly received or invoiced
+          less than the PO still counts"
       invoiced: {kind: bool, label: "Whether the PO has any invoice that is not cancelled"}
       has_pa:
         kind: bool
@@ -599,6 +600,11 @@ entities:
         kind: enum
         label: "Status of that payment application (processed = paid)"
         values: [draft, submitted, in_review, approved, rejected, returned, processed, paid]
+      pa_type:
+        kind: enum
+        label: "Kind of that payment application: regular, prepayment or
+          settlement. Paying a prepayment leaves its invoices Partially Paid"
+        values: [regular, prepayment, settlement]
       # Added 2026-10-21 (ISS-0059).
       pa_payment_shown:
         kind: bool
@@ -764,6 +770,18 @@ entities:
           is valid_from/valid_to (or days_until_expiry)"
         values: [draft, submitted, in_review, returned, rejected, active,
                  expired, closed, cancelled]
+        # The names the agreement pages show; "in_review" was copied into a
+        # reply as it is (ISS-0068).
+        value_labels:
+          draft: "Draft"
+          submitted: "Submitted"
+          in_review: "In Review"
+          returned: "Returned"
+          rejected: "Rejected"
+          active: "Active"
+          expired: "Expired"
+          closed: "Closed"
+          cancelled: "Cancelled"
       valid_from: {kind: date, label: "Valid from (first day of the agreement)"}
       valid_to: {kind: date, label: "Valid to (last day of the agreement)"}
       days_until_expiry:
@@ -819,9 +837,13 @@ entities:
         label: "Condition on arrival"
         values: [good, discrepancy, damaged]
       discrepancy_notes: {kind: text, label: "Notes on a damaged or short line"}
+      # ISS-0068: GR Detail's value is the sum of its lines' totals.
+      line_total: {kind: money, label: "Value of this line (the GR Detail page's line total)"}
+      sort_order: {kind: int, label: "Position of the line on the receipt"}
     metrics:
       count: {fn: count, field: "*", label: "Receipt lines"}
       qty: {fn: sum, field: qty_counted, label: "Quantity received"}
+      value: {fn: sum, field: line_total, label: "Value received", currency: receipt.currency}
     links:
       receipt:
         target: goods_receipt

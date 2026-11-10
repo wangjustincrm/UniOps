@@ -396,7 +396,10 @@ results are the only facts you have.
   never say the vendor received it. Say it is Issued and how and when it was
   placed, if those were returned.
 - `added_below_your_reply` holds sentences the system adds under your reply
-  (in the reply's language). Do not repeat or paraphrase them.
+  (in the reply's language). Do not repeat or paraphrase them, and never
+  contradict them: they are worked out by code from the records (a receipt's
+  lines, a PO compared with its invoices, a prepayment cap) and they are the
+  answer on those points. `from_code` holds the figures behind them.
 - An `assumption` means the query was narrowed on the reader's behalf because
   they did not say which one they meant. Say so in the reply, in one clause —
   they are looking at a subset and have no way to tell from the numbers alone.
@@ -1234,6 +1237,9 @@ agreement with its invoices and payment applications.
   received / invoiced"; never re-derive them from the lists.
 - `waiting_on` is the approval step, and the approver, a document still in
   approval is with.
+- Who requested the purchase is `purchase_request.requester` — the PR's
+  Requester field. Never take a name from a title, and never send the reader
+  to NC for a PR that is in what you were given.
 - A layer with `not_visible` is one this person may not see: say it cannot be
   shown to them, never that there are none. A count of 0 means none yet.
 - `listed` means only the first `listed` of `count` documents are given: give
@@ -1488,6 +1494,11 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             "usage": _usage(resp)}
 
 
+# Result keys _NARRATE_SYSTEM explains, passed through as they are.
+_NARRATED_KEYS = ("numbers_read_as", "near_misses", "comparison", "previous_year",
+                  "resolved_period", "totals_shown", "currency_split", "from_code")
+
+
 async def narrate(message: str, query: dict, result: dict) -> dict:
     """Write the reply from the rows. Returns {"text": ..., "usage": {...}}."""
     import anthropic
@@ -1518,6 +1529,13 @@ async def narrate(message: str, query: dict, result: dict) -> dict:
         payload["value_labels"] = result["value_labels"]
     if "value_notes" in result:
         payload["value_notes"] = result["value_notes"]
+    # Every key the rules above name. They were computed and then dropped here,
+    # so the narrator never saw the year-on-year change it was told to report
+    # ("cannot calculate the growth", ISS-0021 #5) or the near misses it was
+    # told to offer ("not found", ISS-0024).
+    for key in _NARRATED_KEYS:
+        if key in result:
+            payload[key] = result[key]
     payload.update(reply_language.instructions(message))
     try:
         resp = await _client().messages.create(
@@ -1875,12 +1893,14 @@ You are helping a colleague who may never have been trained on this system.
 - For a vendor summary (`kind` vendor_summary): one short section per kind of
   document in `sections` — counts and totals exactly as given, each amount
   with its currency, never added across currencies or across sections.
-  Totals leave out cancelled, rejected and draft documents (say so once);
+  Totals leave out cancelled, rejected and draft documents — the system says
+  which ones under your reply (`added_below_your_reply`; do not repeat it);
   `by_status` gives the counts of every status, cancelled included. A section
   with `not_visible` is one this person may not see: say it is not shown
   rather than "none". `candidates` means the name matched several vendors:
-  list them and ask which one. Do not add opinions such as "a stable
-  relationship" — report the figures.
+  list them and ask which one. Do not add opinions or judgements such as "a
+  stable relationship", "an active vendor" or "pays well" — report the
+  figures only.
 - For the Receiving Report (`kind` receiving_report): give lines, receipts,
   orders and the average lead time for `period` exactly as given, and say the
   report counts physical receipts only and leaves out NC-mirrored orders.

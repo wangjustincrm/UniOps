@@ -65,9 +65,10 @@ rules:
       milk orders (nc_milk), whose receipts are booked in NC.
     provenance: derived
     derive: gr_po_statuses
-    enforced_in: "epms-api app/api/v1/gr.py create_gr (PHYSICAL_GR_PO_STATUSES / SERVICE_GR_PO_STATUSES)"
+    enforced_in: "epms-api app/api/v1/gr.py create_gr (PHYSICAL_GR_PO_STATUSES / SERVICE_GR_PO_STATUSES); the same statuses bound \"past expected delivery, not received\" questions (app/services/answer_facts.py with_receivable_orders_only, ISS-0013)"
     test:
       - "tests/test_rule_registry.py::test_gr_statuses_are_the_routes"
+      - "tests/test_assistant_asst2_b.py::test_a_draft_po_is_not_late_for_delivery"
   - id: a_receipt_needs_a_received_line
     asked_as:
       - 收货单可以不填收货数量吗？

@@ -17,6 +17,7 @@ in a finance system, and this is the cheapest possible form of showing the work.
 """
 import json
 import logging
+import re
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -46,6 +47,7 @@ from app.services import controlled_query as cq
 from app.services import caller_view
 from app.services import page_document
 from app.services import document_chain
+from app.services import answer_facts
 
 log = logging.getLogger(__name__)
 
@@ -338,7 +340,8 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
         # question about how the system behaves gets the rules first (ISS-0022).
         return await _refusal(db, token, body, planned, actor)
 
-    query = planned["query"]
+    query = answer_facts.with_year_on_year(body.message, planned["query"])
+    query, receivable_only = answer_facts.with_receivable_orders_only(query)
     try:
         result = await _execute_in_schema(db, query, scope, schema)
     except cq.QueryTimedOut:
@@ -355,7 +358,8 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
             raise HTTPException(status_code=503, detail=str(exc2))
         if planned["kind"] == "cannot":
             return await _refusal(db, token, body, planned, actor)
-        query = planned["query"]
+        query = answer_facts.with_year_on_year(body.message, planned["query"])
+        query, receivable_only = answer_facts.with_receivable_orders_only(query)
         try:
             result = await _execute_in_schema(db, query, scope, schema)
         except cq.QueryTimedOut:
@@ -377,15 +381,38 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
             "kind": "denied", "query": query, "sources": None,
         }
 
+    # What the code looks up and works out for this answer, and the sentences
+    # it says under the reply (ISS-0016, 0031, 0036, 0043, 0059, 0066, 0068 ...).
+    if receivable_only:
+        answer_facts.say_receivable_only(result)
+    written = await answer_facts.supplement(db, scope, body.message, query, result)
+    if written:
+        chinese = reply_language.detect(body.message) == "Chinese (Simplified)"
+        answer = written.pop("answer_zh") if chinese else written.pop("answer")
+        written.pop("answer_zh", None)
+        if chinese:
+            written.pop("_fixed_text", None)
+        return {**written, "answer": answer, "query": query,
+                "sources": {"entity": result.get("entity"), "row_count": 0,
+                            "truncated": False, "total_rows": None}}
+    # Cut at the query limit, not at a top N the question asked for.
+    cut = bool(result.get("truncated") and result.get("total_rows")
+               and not (query.get("limit") and int(query["limit"]) < cq.MAX_ROWS_DETAIL))
+    if cut:
+        # Said under the reply once the reply is written (_listing_footer).
+        _say_listing_placeholder(result)
+
     try:
         told = await assistant_llm.narrate(body.message, query, result)
     except assistant_llm.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     await assistant_llm.record_usage(db, actor, "narrate", told.get("usage") or {})
 
+    text = _without_field_names(_without_internal_notes(told["text"], result), result)
+    if cut:
+        text = _listing_footer(text, result)
     return {
-        "answer": await _with_listing_notes(
-            _without_internal_notes(told["text"], result), result, body.message),
+        "answer": await _with_listing_notes(text, result, body.message),
         "kind": "answer",
         # The receipt: what ran, over how many rows, and whether the cap bit.
         "query": query,
@@ -416,6 +443,87 @@ def _without_internal_notes(text: str, result: dict) -> str:
             for bracketed in (f" ({note})", f"({note})", f"（{note}）"):
                 text = text.replace(bracketed, "")
             text = text.replace(note, pairs[note])
+    return text
+
+
+_LISTING_KEY = "list_cut"
+_LIST_SHOWN = 10
+
+
+def _say_listing_placeholder(result: dict) -> None:
+    """Tell the narrator the count sentence is written under its reply; the
+    sentence itself depends on what the reply lists (_listing_footer)."""
+    result.setdefault("said_with_this_list", []).append((
+        _LISTING_KEY,
+        f"There are {result['total_rows']} in total; the system says below how many are "
+        f"listed here and points to Export to Excel — do not state either count yourself.",
+        ""))
+
+
+def _row_key(result: dict) -> str | None:
+    """The column that names a row: its document number, else a name."""
+    entity = REGISTRY.get(result.get("entity") or "")
+    labels = result.get("labels") or []
+    for label in labels:
+        f = entity.fields.get(label) if entity else None
+        if f is not None and f.doc_number:
+            return label
+    for label in ("number", "internal_ref", "pa_number", "name", "code"):
+        if label in labels:
+            return label
+    return labels[0] if labels else None
+
+
+def _cell(result: dict, label: str, value) -> str:
+    coded = (result.get("value_labels") or {}).get(label) or {}
+    if str(value) in coded:
+        return coded[str(value)]
+    if isinstance(value, str) and len(value) >= 10 and value[4:5] == "-" and value[7:8] == "-":
+        return "/".join(reversed(value[:10].split("-")))
+    return str(value)
+
+
+def _listing_footer(text: str, result: dict) -> str:
+    """A list cut at the query limit: the real total, how many rows the reply
+    actually lists, and Export to Excel — stated in code. Told the same thing,
+    the narrator wrote "here are the first 100" over 0 and over 10 rows
+    (ISS-0013). When the reply lists none of them, the first ten are listed
+    here, from the rows."""
+    listed = [n for n in result.get("said_with_this_list") or [] if n[0] != _LISTING_KEY]
+    result["said_with_this_list"] = listed
+    rows = result.get("rows") or []
+    key = _row_key(result)
+    shown = sum(1 for r in rows if key and r.get(key) is not None
+                and str(r.get(key)) in text)
+    if shown == 0 and rows:
+        labels = result.get("labels") or []
+        text = text.rstrip() + "\n\n" + "\n".join(
+            f"{i}. " + " · ".join(_cell(result, k, r[k]) for k in labels if r.get(k) not in (None, ""))
+            for i, r in enumerate(rows[:_LIST_SHOWN], start=1))
+        shown = min(len(rows), _LIST_SHOWN)
+    total = result["total_rows"]
+    listed.append((_LISTING_KEY,
+                   f"There are {total} in total; {shown} are listed here — click Export to "
+                   f"Excel below for the full list.",
+                   f"一共 {total} 条，这里列出了 {shown} 条，完整列表请点击下方 Export to Excel 下载查看。"))
+    return text
+
+
+def _without_field_names(text: str, result: dict) -> str:
+    """A column's internal name copied into the reply ("placed_at and
+    expected_delivery", ISS-0013) becomes the field's name in words."""
+    entity = REGISTRY.get(result.get("entity") or "")
+    if entity is None:
+        return text
+    for label in sorted(result.get("labels") or [], key=len, reverse=True):
+        if "_" not in label or label not in text:
+            continue
+        f = entity.fields.get(label)
+        if f is None:
+            continue
+        words = re.split(r" \(| —|\. |: |, ", f.label, maxsplit=1)[0].strip().rstrip(".")
+        text = re.sub(rf"`?(?<![A-Za-z0-9_.]){re.escape(label)}(?![A-Za-z0-9_])`?",
+                      words, text)
     return text
 
 
@@ -510,7 +618,8 @@ async def _answer_gate_question(db, user, token, scope, body, planned) -> dict:
         if not asked and (rescued := await _rules_instead(db, token, body, actor)):
             return rescued
         return {
-            "_fixed_text": True, "answer": (f"I could not find {asked}." if asked else
+            "_fixed_text": True,
+            "answer": (await _not_found(db, scope, "pr", asked) if asked else
                        "Tell me which document you mean — a PR number works best."),
             "kind": "cannot_answer", "reason": "document_not_found",
             "query": None, "sources": None,
@@ -570,7 +679,8 @@ async def _answer_workflow_question(db, user, token, scope, body, planned) -> di
                 rescued := await _rules_instead(db, token, body, actor)):
             return rescued
         return {
-            "_fixed_text": True, "answer": (f"I could not find {asked}." if asked else
+            "_fixed_text": True,
+            "answer": (await _not_found(db, scope, doc_type, asked) if asked else
                        "Tell me which document you mean — its number works best."),
             "kind": "cannot_answer", "reason": "document_not_found",
             "query": None, "sources": None,
@@ -585,8 +695,18 @@ async def _answer_workflow_question(db, user, token, scope, body, planned) -> di
         db, _uuid.UUID(str(user.get("sub"))) if user.get("sub") else None,
         "narrate_workflow", told.get("usage") or {})
 
+    text = told["text"]
+    if doc_type == "pa" and answer_facts.asks("payment", body.message):
+        # When it was paid, from which account, and the remittance advice —
+        # from Finance's payment record, said by code (ISS-0043, ISS-0066).
+        facts = await answer_facts.payment_facts(db, scope, view["document_number"])
+        if facts:
+            en, zh = answer_facts.payment_sentences(
+                facts, remittance=answer_facts.asks("remittance", body.message))
+            text = await _with_listing_notes(
+                text, {"said_with_this_list": [("pa_payment", en, zh)]}, body.message)
     return {
-        "answer": told["text"],
+        "answer": text,
         "kind": "workflow",
         "query": None,
         "workflow": view,
@@ -598,6 +718,21 @@ async def _answer_workflow_question(db, user, token, scope, body, planned) -> di
             "complete": view["steps_available"],
         },
     }
+
+
+async def _not_found(db, scope, doc_type: str, asked: str) -> str:
+    """"I could not find X", with the real numbers one slip away — "did you
+    mean …" was promised and the workflow route never offered it (ISS-0024)."""
+    entity = {"pr": "purchase_request", "po": "purchase_order",
+              "pa": "payment_application"}.get(doc_type)
+    stored = workflow_view.doc_numbers.normalize(doc_type.upper(), asked)
+    near = []
+    if entity and entity in REGISTRY:
+        near = await cq.near_document_numbers(
+            db, REGISTRY[entity], scope, workflow_view.number_attr(doc_type), stored)
+    if near:
+        return f"I could not find {stored}. Did you mean {', '.join(near)}?"
+    return f"I could not find {stored}."
 
 
 async def _answer_whats_next(db, user, body, actor, me: dict | None = None) -> dict:
@@ -821,6 +956,51 @@ _VENDOR_SECTIONS = (
 )
 
 
+_KIND_NAMES = {"purchase_order": ("PO", "张 PO"), "purchase_agreement": ("agreement", "份协议"),
+               "invoice": ("invoice", "张发票"), "payment_application": ("PA", "张付款申请"),
+               "vendor_credit": ("credit", "笔贷项")}
+_STATUS_ZH = {"cancelled": "已取消", "rejected": "已驳回", "draft": "草稿"}
+
+
+async def _vendor_left_out(db, scope, vendor: str, shown: set) -> list[dict]:
+    """What each section's totals left out, counted per status — the totals
+    exclude cancelled, rejected and draft documents (amount_excludes), and the
+    answer never said so: 111 POs above a status list adding up to 113, and a
+    cancelled PA nowhere (ISS-0057)."""
+    out = []
+    for _section, entity, _parts in _VENDOR_SECTIONS:
+        excludes = REGISTRY[entity].amount_excludes
+        if entity not in shown or not excludes:
+            continue
+        field, values, _note = excludes
+        res = await cq.execute(db, {
+            "entity": entity, "metrics": ["count"], "group_by": [field],
+            "where": [{"field": "vendor_name", "op": "eq", "value": vendor},
+                      {"field": field, "op": "in", "value": list(values)}]}, scope)
+        for row in res.get("rows") or []:
+            if int(row.get("count") or 0):
+                out.append({"entity": entity, "status": row.get(field),
+                            "count": int(row["count"])})
+    return out
+
+
+def _vendor_left_out_note(left_out: list[dict] | None) -> list:
+    if left_out is None:
+        return []
+    if not left_out:
+        return [("vendor_totals_exclude",
+                 "No cancelled, rejected or draft documents were left out of these totals.",
+                 "这些合计没有排除任何已取消、已驳回或草稿单据。")]
+    en = ", ".join(f"{x['count']} {x['status']} {_KIND_NAMES[x['entity']][0]}"
+                   f"{'s' if x['count'] != 1 else ''}" for x in left_out)
+    zh = "、".join(f"{_STATUS_ZH.get(x['status'], x['status'])} {x['count']} "
+                  f"{_KIND_NAMES[x['entity']][1]}" for x in left_out)
+    return [("vendor_totals_exclude",
+             f"The totals above leave out cancelled, rejected and draft documents: {en} "
+             f"(they still appear in the counts per status).",
+             f"以上合计不含已取消、已驳回和草稿单据：{zh}（按状态的数量里仍会列出）。")]
+
+
 async def _answer_vendor_summary(db, scope, body, planned, actor, schema) -> dict:
     """Everything with one vendor, per kind of document (ISS-0057).
 
@@ -857,13 +1037,20 @@ async def _answer_vendor_summary(db, scope, body, planned, actor, schema) -> dic
                               **({"assumption": res["assumption"]} if res.get("assumption") else {})}
             sections[section] = out
         result["sections"] = sections
+        result["left_out_of_totals"] = await _vendor_left_out(db, scope, vendor, shown)
+    notes = _vendor_left_out_note(result.get("left_out_of_totals"))
     payload = {"question": body.message, "kind": "vendor_summary", **result}
+    if notes:
+        payload["added_below_your_reply"] = [notes[0][1]]
     try:
         told = await assistant_llm.narrate_guide(body.message, payload)
     except assistant_llm.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
-    return {"answer": told["text"], "kind": "vendor_summary", "query": None,
+    text = told["text"]
+    if notes:
+        text = await _with_listing_notes(text, {"said_with_this_list": notes}, body.message)
+    return {"answer": text, "kind": "vendor_summary", "query": None,
             "vendor_summary": result,
             "sources": {"entity": "vendor summary", "row_count": len(result.get("sections") or {}),
                         "complete": True}}
@@ -1286,8 +1473,16 @@ async def _answer_trace(db, scope, body: ChatRequest, planned: dict, context: di
         raise HTTPException(status_code=503, detail=str(exc))
     await assistant_llm.record_usage(db, actor, "narrate_chain", told.get("usage") or {})
     hidden = '"not_visible": true' in json.dumps(chain, default=str)
+    text = told["text"]
+    pr = chain.get("purchase_request") or {}
+    if answer_facts.asks("requester", body.message) and pr.get("requester"):
+        # Said from the PR's Requester field, whatever the narrator read
+        # (ISS-0015).
+        text = await _with_listing_notes(text, {"said_with_this_list": [(
+            "pr_requester", f"The requester on {pr['number']} is {pr['requester']}.",
+            f"{pr['number']} 的申请人（Requester）是 {pr['requester']}。")]}, body.message)
     return {
-        "answer": told["text"], "kind": "document_chain", "query": None,
+        "answer": text, "kind": "document_chain", "query": None,
         "document_chain": chain,
         "sources": {"document": chain["asked_about"]["number"],
                     "documents": document_chain.count_documents(chain),
