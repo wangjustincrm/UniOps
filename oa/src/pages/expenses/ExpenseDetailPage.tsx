@@ -458,6 +458,8 @@ export default function ExpenseDetailPage() {
   })
 
   // 'pay' is NOT a generic /action — it has its own endpoint with payment fields.
+  // A refusal is the server's sentence for the payer and is shown in the modal;
+  // it used to be swallowed, so Confirm Payment looked dead (ISS-0205).
   const payMutation = useMutation({
     mutationFn: (bankAccountId: string) => api.post(`/api/v1/expenses/${id}/pay`, { bank_account_id: bankAccountId }),
     onSuccess: () => { setActiveAction(null); invalidateAll() },
@@ -844,8 +846,9 @@ export default function ExpenseDetailPage() {
           currency={claim.currency}
           amount={Number(claim.total_amount)}
           busy={payMutation.isPending}
+          error={payMutation.isError ? (payMutation.error instanceof Error ? payMutation.error.message : 'Payment failed') : undefined}
           onConfirm={(bankAccountId) => payMutation.mutate(bankAccountId)}
-          onClose={() => setActiveAction(null)}
+          onClose={() => { payMutation.reset(); setActiveAction(null) }}
         />
       )}
 

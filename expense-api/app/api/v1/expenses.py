@@ -757,6 +757,22 @@ class ClaimPermissions(BaseModel):
     can_delete: bool = False   # may hard-delete (unapproved Travel Applications only)
 
 
+async def _self_payment_rule_enabled(db) -> bool:
+    """identity's sod_rules `self_payment`, read the way finance-api's
+    _sod_enabled reads it: no row → off. Same physical DB; no model here, so
+    raw SQL in a savepoint. If the table cannot be read at all, answer "on":
+    then the button is hidden from the claimant rather than shown for a
+    payment the executor may refuse."""
+    try:
+        async with db.begin_nested():
+            enabled = (await db.execute(sa.text(
+                "SELECT enabled FROM sod_rules WHERE rule_code = 'self_payment'"
+            ))).scalar_one_or_none()
+    except Exception:
+        return True
+    return bool(enabled)
+
+
 def can_edit_claim(claim, user_id: uuid.UUID, role: str) -> bool:
     """Who update_expense lets save changes (OA.md §7.3 Save / Edit): the
     claimant, whoever filed a TRV on their behalf, and a System Admin or
@@ -798,6 +814,12 @@ async def get_claim_permissions(claim_id: uuid.UUID, db: SessionDep, user: Curre
         # Mirrors finance-api's authoritative gate (_PAY_ROLES / _PAY_ROLES_ASSIGNED)
         # — NOT _CAN_PAY, which is a visibility set and still includes ap_clerk.
         can_pay = role in _PAY_PRIMARY or bool(codes & _PAY_ASSIGNED)
+        # PAY-003: the executor refuses a claimant paying their own claim
+        # while the self_payment SoD rule is on (finance-api
+        # _check_self_payment, against claim.employee_id). Without this the
+        # button showed and Confirm Payment was refused (ISS-0205).
+        if can_pay and is_owner and await _self_payment_rule_enabled(db):
+            can_pay = False
 
     return ClaimPermissions(
         is_owner=is_owner,

@@ -197,6 +197,12 @@ modules:
         first attempt failed) and replaces the old file rather than adding a
         second. A Travel Application has its own form, regenerated from the
         Travel Application card.
+      - >-
+        Nobody pays their own claim either, while the self-payment
+        segregation-of-duties rule is on (it is by default): a Payment Officer
+        or Finance Manager does not get Mark as Processed on a claim of their
+        own — someone else with payment authority pays it. If a payment is
+        refused, the reason is shown in the Mark as Processed dialog.
 
   - key: vms
     label: VMS — Visitor Management
