@@ -25,7 +25,8 @@ def email_list(v: Any) -> list[str]:
 
 
 def _addresses(v: list[str]) -> str | None:
-    bad = [x for x in v if "@" not in x or " " in x or x.startswith("@") or x.endswith("@")]
+    from app.integrations.email import plain_address
+    bad = [x for x in v if plain_address(x) != x]  # one plain mailbox each, as the internal-mail check reads it
     return f"not an email address: {', '.join(bad)}" if bad else (None if len(v) <= 20 else "at most 20 addresses")
 
 

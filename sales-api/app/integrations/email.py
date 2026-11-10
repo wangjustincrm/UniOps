@@ -12,8 +12,10 @@ failure after it took the message is AcceptedThenFailed (never resent).
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from email.utils import parseaddr
 from typing import Any, Protocol
 
 
@@ -46,12 +48,25 @@ def guarded(external_switch: str, internal_switch: str | None = None) -> dict[st
     return {"send_external": external_switch, "send_internal": internal_switch or external_switch}
 
 
-def domain(address: str) -> str:
-    return address.rpartition("@")[2].strip().lower().rstrip(">")
+_PLAIN = re.compile(r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$")
+
+
+def plain_address(text: str) -> str | None:
+    """The address in `text` ("Name <a@b.ca>" or "a@b.ca") when it is one plain mailbox: exactly one
+    "@", no quotes, comments or routes; else None. What the internal-mail check and the settings accept."""
+    _, addr = parseaddr(text or "")
+    addr = addr.strip()
+    return addr if addr and addr.count("@") == 1 and _PLAIN.match(addr) else None
+
+
+def domain(address: str) -> str | None:
+    addr = plain_address(address)
+    return addr.rpartition("@")[2].lower() if addr else None
 
 
 def is_internal(addresses, domains) -> bool:
-    """Every address is in one of the company's domains (and there is at least one)."""
+    """Every address is one plain mailbox in one of the company's domains (and there is at least one).
+    "x@evil.com#@company.com" and the like are not internal: they are not one plain mailbox."""
     addresses = [a for a in addresses if a]
     return bool(addresses) and bool(domains) and all(domain(a) in domains for a in addresses)
 
