@@ -1253,6 +1253,9 @@ agreement with its invoices and payment applications.
 - `no_order_yet`: the requisition has no purchase order yet. `more_orders`:
   that many further orders are not shown.
 - Every amount with its currency. Do not add amounts up.
+- `next_step_added_below` is where it stands and who acts next, worked out by
+  the system and added under your reply. Do not restate it, and never say
+  that nothing more is needed or name a next step of your own.
 - Never invent a document, a status, a date or a step that is not in what you
   were given.
 """

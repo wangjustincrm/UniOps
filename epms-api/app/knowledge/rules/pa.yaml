@@ -265,17 +265,21 @@ rules:
     asked_as:
       - PA 的汇款通知发给供应商了吗？
       - was the remittance advice sent
+      - 付款以后还有什么步骤？
     answer: >
-      The remittance advice is a separate email to the vendor that Finance
-      sends by hand after paying — from Finance → Payments or a payment
-      batch. It is not sent automatically, and a PA's approval history says
-      nothing about it. Whether it was sent (and when, or whether it failed)
+      After a PA is paid, the next step is the remittance advice: an email
+      to the vendor (one per payee) that Finance sends from the system —
+      Finance → Payments, a payment batch or a selection of payments. An AP
+      Clerk may send it as well as whoever paid. It is part of the payment
+      process but is not sent automatically when paying, and a PA's approval
+      history says nothing about it. Whether it was sent (and when, or whether it failed)
       is recorded on the Finance payment pages; EPMS and this assistant
       cannot see that record.
-    enforced_in: "finance-api app/api/v1/remittance.py (manual send routes); app/crud/payment_execute.py sends none; app/models/remittance.py payment_remittance_notifications (not in the assistant's ontology)"
+    enforced_in: "PRD EPMS REM-001; finance-api app/api/v1/remittance.py (send routes); app/crud/payment_execute.py sends none; app/models/remittance.py payment_remittance_notifications (not in the assistant's ontology)"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_remittance_is_sent_by_hand_and_not_modelled"
+      - "tests/test_assistant_asst2_c.py::test_the_flow_after_payment_is_the_remittance_advice"
   - id: recording_a_manual_credit
     asked_as:
       - 录入手工贷项需要什么？

@@ -44,7 +44,7 @@ from app.services import budget_variance
 from app.services import report_lineage
 from app.services import workflow_view
 from app.services import controlled_query as cq
-from app.services import period_words, query_conditions
+from app.services import next_step, period_words, query_conditions
 from app.services import caller_view
 from app.services import page_document
 from app.services import document_chain
@@ -294,6 +294,19 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
 
     if (earlier := _conditions_of_the_last_answer(body.message, exchanges)) is not None:
         return earlier
+
+    # Whatever the planner chose, "where is it / what's next / who does it" is
+    # answered in code (ISS-0030, ISS-0247, ISS-0248, ISS-0250): next_step.
+    page_doc = ((context.get("doc_type"), context["doc_number"])
+                if context.get("doc_number") and context.get("doc_type") in document_chain.SUPPORTED
+                else None)
+    routed = next_step.route(body.message, page_doc)
+    if routed and routed[0] == "chain":
+        doc_type, number = routed[1]
+        return await _answer_trace(db, scope, body, {"doc_type": doc_type, "doc_number": number},
+                                   context, actor)
+    if routed and routed[0] == "flow":
+        return _answer_flow(routed[1], body.message)
 
     if planned["kind"] == "split":
         return await _answer_parts(body, db, user, token, planned, part)
@@ -648,6 +661,15 @@ async def _answer_workflow_question(db, user, token, scope, body, planned) -> di
             "kind": "cannot_answer", "reason": "document_not_found",
             "query": None, "sources": None,
         }
+
+    if next_step.asks_next(body.message):
+        # "下一步该谁做什么" is not answered from one document's approval: an
+        # approved PR "needs no further action" while its PA waits to be paid
+        # (ISS-0030). The chain, with the next step worked out in code.
+        number = getattr(doc, "pa_number", None) or getattr(doc, "number")
+        context = body.context.model_dump(exclude_none=True) if body.context else {}
+        return await _answer_trace(db, scope, body,
+                                   {"doc_type": doc_type, "doc_number": number}, context, actor)
 
     view = await workflow_view.build(db, doc_type, doc, token)
     try:
@@ -1361,19 +1383,39 @@ async def _answer_trace(db, scope, body: ChatRequest, planned: dict, context: di
         return {"_fixed_text": True, "answer": f"I could not find {number}.",
                 "kind": "cannot_answer", "reason": "document_not_found",
                 "query": None, "sources": None}
+    # Where it stands and who acts next: from the chain and the open tasks on
+    # its documents, in code, added under the narration (ISS-0030).
+    tasks = await next_step.open_tasks(db, chain)
+    english, chinese = next_step.for_chain(chain, tasks)
     try:
-        told = await assistant_llm.narrate_chain(body.message, chain)
+        told = await assistant_llm.narrate_chain(
+            body.message, {**chain, "next_step_added_below": english})
     except assistant_llm.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     await assistant_llm.record_usage(db, actor, "narrate_chain", told.get("usage") or {})
     hidden = '"not_visible": true' in json.dumps(chain, default=str)
+    text = await _with_listing_notes(
+        told["text"], {"said_with_this_list": [("next_step", english, chinese)]}, body.message)
     return {
-        "answer": told["text"], "kind": "document_chain", "query": None,
-        "document_chain": chain,
+        "answer": text, "kind": "document_chain", "query": None,
+        "document_chain": chain, "next_tasks": tasks,
         "sources": {"document": chain["asked_about"]["number"],
                     "documents": document_chain.count_documents(chain),
                     "complete": not hidden},
     }
+
+
+def _answer_flow(step_key: str, message: str) -> dict:
+    """The purchase from the point the question names to the end, who does
+    each step — written in code from next_step.FLOW (ISS-0247, ISS-0248,
+    ISS-0250). No task table, no "still needs approval"."""
+    english, chinese = next_step.general_answer(step_key, message)
+    steps = [s.key for s in next_step.after(step_key)]
+    if reply_language.detect(message) == "Chinese (Simplified)":
+        return {"answer": chinese, "kind": "next_steps", "steps": steps,
+                "query": None, "sources": None}
+    return {"_fixed_text": True, "answer": english, "kind": "next_steps", "steps": steps,
+            "query": None, "sources": None}
 
 
 # ── One message, several questions (ISS-0037, ISS-0069) ──────────────────────

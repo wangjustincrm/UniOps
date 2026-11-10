@@ -15,8 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.delegation import local_today
 from app.core.ontology import REGISTRY
-from app.services import assistant_llm, controlled_query as cq, period_words
-from tests.test_assistant_iss_batch4 import _stub, _uid
+from app.services import assistant_llm, controlled_query as cq, next_step, period_words
+from tests.test_assistant_iss_batch4 import _seed_chain, _stub, _uid
 
 CHAT = "/api/v1/assistant/chat"
 EPMS_API = Path(__file__).resolve().parents[1]
@@ -283,3 +283,154 @@ async def test_the_day_is_the_same_from_portal_and_epms(admin_client, monkeypatc
         assert f"10/11/{local_today().year} – 10/11/{local_today().year}" in body["answer"], app
 
 
+# ── Next steps: the flow (ISS-0247, ISS-0248, ISS-0250) ──────────────────────
+
+def _defined(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def test_every_step_is_a_task_the_system_raises():
+    from app.crud.task import _TASK_DEDICATED_HANDLING, _TASK_NO_STATUS_INVARIANT, TASK_LIVENESS
+    from app.services.guide_view import TASK_TYPE_LABELS
+    known = set(TASK_LIVENESS) | set(_TASK_DEDICATED_HANDLING) | set(_TASK_NO_STATUS_INVARIANT)
+    for step in next_step.FLOW:
+        for task_type in step.task_types:
+            assert task_type in known and task_type in TASK_TYPE_LABELS, (step.key, task_type)
+    keys = [s.key for s in next_step.FLOW]
+    assert keys.index("create_pa") < keys.index("pa_approval") < keys.index("process_pa") \
+        < keys.index("remittance")
+    # Who gets them, as the code assigns them (PRD §3.7.1).
+    invoices = _defined(EPMS_API / "app/api/v1/invoices.py")
+    assert 'assigned_role, assigned_user_id = "erp_pa_officer", None' in invoices
+    assert 'assigned_role, assigned_user_id = "requester", pr.created_by' in invoices
+    engine = REPO / "approval-api/app/crud/engine.py"
+    if engine.exists():
+        src = _defined(engine)
+        pr_part = src[src.index("async def _post_approve_pr"):][:600]
+        pa_part = src[src.index("async def _post_approve_pa("):][:900]
+        assert 'type="create_po"' in pr_part and 'assigned_role="procurement_officer"' in pr_part
+        assert 'type="process_pa"' in pa_part and 'assigned_role="payment_officer"' in pa_part
+
+
+async def test_after_matching_the_requester_creates_the_pa(admin_client, monkeypatch):
+    """Twice: "the PA goes into approval", with no one creating it. The planner
+    here picks the PA approval chain; the answer is still the flow."""
+    calls = _stub(monkeypatch, plans=[{"kind": "process", "doc_type": "pa"}])
+    r = await admin_client.post(CHAT, json={"message": "发票已经匹配好了，下一步是什么？谁来做？"})
+    body = r.json()
+    assert body["kind"] == "next_steps" and not calls["guide"]
+    assert body["steps"][:2] == ["create_pa", "pa_approval"]
+    answer = body["answer"]
+    assert "PR 申请人" in answer and "ERP PA Officer" in answer
+    assert answer.index("建付款申请") < answer.index("审批付款申请")
+
+
+async def test_after_pr_approval_no_task_table_and_no_more_approval(admin_client, monkeypatch):
+    """One answer was a table of 379 tasks, another "your PR now needs these
+    approvals". The planner here reaches for the task list."""
+    _stub(monkeypatch, plans=[{"kind": "next"}])
+    r = await admin_client.post(CHAT, json={"message": "我的请购单批准了，接下来会发生什么？我还要做什么？"})
+    body = r.json()
+    assert body["kind"] == "next_steps" and "tasks" not in body
+    answer = body["answer"]
+    assert answer.startswith("PR 的审批已经结束，不需要再审批")
+    assert body["steps"][0] == "create_po" and "采购员" in answer
+    assert "货到之前，申请人不需要做什么" in answer
+    assert "（你）：收货" in answer and "（你）：建付款申请" in answer
+
+
+async def test_the_flow_after_payment_is_the_remittance_advice(admin_client, monkeypatch):
+    """Called "not part of the system", or nothing at all after payment."""
+    _stub(monkeypatch, plans=[{"kind": "rules", "areas": ["pa"]}])
+    r = await admin_client.post(CHAT, json={
+        "message": "付款申请已经批完了，什么时候付款？谁来付？付完以后还有什么步骤？"})
+    body = r.json()
+    assert body["steps"] == ["process_pa", "remittance"]
+    assert "Payment Officer" in body["answer"] and "在系统里给供应商发汇款通知邮件" in body["answer"]
+    assert "系统不设定付款日期" in body["answer"]
+    # English, the same steps.
+    _stub(monkeypatch, plans=[{"kind": "next"}])
+    r = await admin_client.post(CHAT, json={"message": "The invoice is matched. What happens next?"})
+    assert r.json()["steps"][0] == "create_pa"
+    # The rule card says the same: sent from the system, not "by hand".
+    from app.services import rule_registry
+    card = next(c for a, c in rule_registry.all_cards() if c["id"] == "remittance_advice")
+    assert "from the system" in card["answer"] and "by hand" not in card["answer"]
+
+
+def test_what_is_not_a_next_step_question_is_left_alone():
+    for message in ("我的请购单提交不了，下一步怎么办？", "PR-20261023-0002 是谁批的？",
+                    "PA 批准以后平均多久付款？", "这个月有多少张发票？"):
+        assert next_step.route(message, None) is None, message
+    assert next_step.route("这个月的进度怎么样？", ("pr", "PR-1")) is None
+    assert next_step.route("这张单下一步谁做？", ("po", "PO-1")) == ("chain", ("po", "PO-1"))
+
+
+# ── Next steps: one document (ISS-0030) ──────────────────────────────────────
+
+async def _add_task(test_engine, *, type_, doc_type, doc_id, number, role):
+    from app.models.task import Task
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        db.add(Task(type=type_, priority="normal", document_type=doc_type, document_id=doc_id,
+                    document_number=number, assigned_role=role, title="t"))
+        await db.commit()
+
+
+async def test_where_a_pr_stands_follows_the_chain_to_the_pa(test_engine, admin_client,
+                                                            monkeypatch):
+    """"PR-20261023-0002 现在到哪一步了？下一步该谁做什么？": "已获得所有必需批准，
+    无需进一步操作" — its PA was approved and waiting for the Payment Officer.
+    The planner here picks the PR's approval history, and the narrator says
+    nothing more is needed."""
+    uid = _uid(admin_client)
+    c = await _seed_chain(test_engine, uid)
+    await _add_task(test_engine, type_="process_pa", doc_type="pa", doc_id=c.pa.id,
+                    number=c.pa.pa_number, role="payment_officer")
+    calls = _stub(monkeypatch, plans=[{"kind": "workflow", "doc_type": "pr",
+                                       "doc_number": c.pr.number}],
+                  narration="该请购单已获得所有必需批准，无需进一步操作。")
+    r = await admin_client.post(CHAT, json={"message": f"{c.pr.number} 现在到哪一步了？下一步该谁做什么？"})
+    body = r.json()
+    assert body["kind"] == "document_chain" and not calls["workflow"]
+    answer = body["answer"]
+    assert (f"下一步：{c.pa.pa_number} 的「Process Payment Application」——由 Payment Officer"
+            in answer)
+    assert "汇款通知" in answer
+    assert calls["chain"][0]["chain"]["next_step_added_below"].startswith("Where it stands")
+    assert [t["type"] for t in body["next_tasks"]] == ["process_pa"]
+
+
+async def test_with_no_open_task_the_statuses_say_what_comes_next(test_engine, admin_client,
+                                                                  monkeypatch):
+    uid = _uid(admin_client)
+    c = await _seed_chain(test_engine, uid)
+    # The planner ran a status query on the PR.
+    _stub(monkeypatch, plans=[{"kind": "query", "query": {
+        "entity": "purchase_request", "select": ["status"],
+        "where": [{"field": "number", "op": "eq", "value": c.pr.number, "because": "x"}]}}])
+    r = await admin_client.post(CHAT, json={"message": f"{c.pr.number} 下一步该谁做什么？"})
+    answer = r.json()["answer"]
+    assert f"{c.pa.pa_number} 已批准。下一步：付款专员（Payment Officer" in answer
+    # The PO is partly received, so more receipts may follow.
+    assert f"{c.po.number} 只收了部分货" in answer
+    # In English.
+    _stub(monkeypatch, plans=[{"kind": "workflow", "doc_type": "pa", "doc_number": c.pa.pa_number}])
+    r = await admin_client.post(CHAT, json={"message": f"What is the next step for {c.pa.pa_number}?"})
+    assert f"{c.pa.pa_number} is approved. Next: the Payment Officer pool" in r.json()["answer"]
+
+
+async def test_a_new_pr_in_approval_is_with_its_approver(test_engine, admin_client, monkeypatch):
+    from app.models.pr import PurchaseRequest
+    uid = _uid(admin_client)
+    tag = uuid.uuid4().hex[:6]
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        pr = PurchaseRequest(number=f"PR-N{tag}", title="t", type=2, status="approved",
+                             amount=Decimal("1"), created_by=uid)
+        db.add(pr)
+        await db.commit()
+    _stub(monkeypatch, plans=[{"kind": "next"}])
+    r = await admin_client.post(CHAT, json={"message": f"PR-N{tag} 现在到哪一步了？"})
+    answer = r.json()["answer"]
+    assert f"PR-N{tag} 已批准，还没有采购订单。下一步：采购员（Procurement Officer）" in answer
