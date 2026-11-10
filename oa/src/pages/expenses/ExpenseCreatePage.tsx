@@ -251,20 +251,20 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-6 max-w-6xl">
-      {/* Page header */}
-      <div className="flex items-center justify-between">
+      {/* Page header — wraps on a phone instead of squeezing the buttons (ISS-0224) */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">
             {editing ? `Edit ${editing.claim_number}` : 'New General Expense Claim'}
           </h1>
           <p className="mt-0.5 text-sm text-neutral-500">Receipt-based employee reimbursement</p>
         </div>
-        <div className="flex gap-2">
-          <Button type="button" variant="secondary" size="sm"
+        <div className="flex shrink-0 gap-2">
+          <Button type="button" variant="secondary" size="sm" className="whitespace-nowrap"
                   onClick={() => replaceTab(editing ? `/expenses/${editing.id}` : '/expenses')}>
             Cancel
           </Button>
-          <Button type="submit" size="sm" disabled={createMutation.isPending}>
+          <Button type="submit" size="sm" disabled={createMutation.isPending} className="whitespace-nowrap">
             {createMutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Save as Draft'}
           </Button>
         </div>
@@ -273,7 +273,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
       {/* Form header */}
       <div className="rounded-xl border border-neutral-200 bg-white p-5">
         <h2 className="mb-4 text-sm font-semibold text-neutral-700">Claim Details</h2>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-neutral-600">Submission Date</label>
             <input
@@ -321,7 +321,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
 
       {/* Line items */}
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-        <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-neutral-100 px-5 py-3">
           <h2 className="text-sm font-semibold text-neutral-700">Line Items</h2>
           <span className="text-xs text-neutral-400">Default rate: {(hstRate * 100).toFixed(0)}% · per-line tax code overrides</span>
         </div>
