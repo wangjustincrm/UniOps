@@ -72,6 +72,13 @@ const RAW_SHEETS = [
 // A refresh the user sees goes through useRefresh (the user, 2026-11-03: one
 // reusable refresh — the busy time, what changed, the highlight): features
 // never call a query's refetch() themselves.
+// A table opens a row only for a click not meant for something in the cell (DataTable's
+// clickOpensRow), and a question is asked in the app's dialog (ask / ConfirmAction), 2026-11-10.
+const ROW_AND_PROMPT = [
+  { selector: "CallExpression[callee.property.name='stopPropagation']", message: 'A table never opens the row for a click on a button, link or popover in a cell (clickOpensRow): no stopPropagation needed.' },
+  { selector: "CallExpression[callee.object.name='window'][callee.property.name=/^(confirm|alert|prompt)$/]", message: 'Ask in the app dialog: ask() or ConfirmAction from @/platform-ui, not window.confirm / alert / prompt.' },
+  { selector: "CallExpression[callee.type='Identifier'][callee.name=/^(confirm|alert|prompt)$/]", message: 'Ask in the app dialog: ask() or ConfirmAction from @/platform-ui.' },
+]
 const DIRECT_REFETCH = [
   { selector: "CallExpression[callee.property.name='refetch']", message: 'Refresh through useRefresh (and RefreshControl) from @/platform-ui, not refetch().' },
 ]
@@ -179,17 +186,17 @@ export default defineConfig([
   },
   {
     files: ['src/pages/**/*.tsx'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...ROW_AND_PROMPT] },
   },
   {
     files: ['src/features/**/*.{ts,tsx}'],
     ignores: ['src/features/**/*.test.{ts,tsx}'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...LIST_CELLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...AD_HOC_MESSAGES, ...RAW_HEADINGS] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...LIST_CELLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...AD_HOC_MESSAGES, ...RAW_HEADINGS, ...ROW_AND_PROMPT] },
   },
   {
     // Health is a dashboard (no list or sheet scope): its own result text may still be read aloud.
     files: ['src/features/health/**/*.{ts,tsx}'],
     ignores: ['src/features/**/*.test.{ts,tsx}'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...LIST_CELLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...RAW_HEADINGS] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...LIST_CELLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...RAW_HEADINGS, ...ROW_AND_PROMPT] },
   },
 ])

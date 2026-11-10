@@ -113,25 +113,24 @@ const refButton = 'whitespace-nowrap rounded px-1 text-left text-primary-700 und
 
 /** Several records as links (user 2026-11-09): the first `max` in the cell, "+N more" opens all of them.
  *  `total` is how many there are in all when only the first ones came; with none, `empty` says why.
- *  A click opens the record and never the row. */
+ *  A click opens the record and never the row (DataTable's clickOpensRow). */
 export function RefsCell({ refs, total, onOpen, empty, max = 2, noun = 'record' }: {
   refs: RecordRef[]; total?: number; onOpen: (ref: RecordRef) => void; empty?: string | null; max?: number; noun?: string
 }) {
   const all = Math.max(total ?? 0, refs.length)
   if (all === 0) return <span className="text-xs text-neutral-500">{empty ?? '—'}</span>
-  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
   const link = (r: RecordRef) => (
-    <button key={r.id} type="button" className={refButton} onClick={(e) => { stop(e); onOpen(r) }}>{r.label}</button>
+    <button key={r.id} type="button" className={refButton} onClick={() => onOpen(r)}>{r.label}</button>
   )
   const rest = all - Math.min(max, refs.length)
   // e.g. "3 orders"; one: "1 order"
   return (
-    <span className="flex flex-wrap items-center gap-x-1" onClick={stop} onKeyDown={stop}>
+    <span className="flex flex-wrap items-center gap-x-1">
       {refs.slice(0, max).map(link)}
       {rest > 0 && (
         <Popover align="start" className="max-h-72 w-64 overflow-y-auto"
           trigger={<button type="button" className="whitespace-nowrap rounded bg-neutral-100 px-1.5 text-xs text-neutral-700 hover:bg-neutral-200"
-            aria-label={`${rest} more ${rest === 1 ? noun : `${noun}s`}`} onClick={stop}>+{rest} more</button>}>
+            aria-label={`${rest} more ${rest === 1 ? noun : `${noun}s`}`}>+{rest} more</button>}>
           <p className="mb-1 text-xs font-medium text-neutral-500">{all} {noun}s</p>
           <ul className="flex flex-col">{refs.map((r) => <li key={r.id}>{link(r)}</li>)}</ul>
           {all > refs.length && <p className="mt-1 text-xs text-neutral-500">and {all - refs.length} more: search by the {noun}.</p>}

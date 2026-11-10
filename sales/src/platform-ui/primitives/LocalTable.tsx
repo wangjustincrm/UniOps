@@ -1,6 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { DataTable, type ColumnDef, type RowAttrs, type SortValue } from './DataTable'
 import { ColumnChooser } from './ColumnChooser'
+import { columnId as idOf, startsHidden } from './columnMeta'
 
 export interface LocalTableProps<T> {
   columns: ColumnDef<T, unknown>[]
@@ -21,12 +22,12 @@ export interface LocalTableProps<T> {
   onRowClick?: (row: T) => void
   /** A row's detail under it (DataTable `expand`). */
   expand?: (row: T) => ReactNode | null
-  /** The eye in the header: these column ids start hidden and can be shown
-   *  (a wide panel stays readable on a laptop). The footer follows the columns. */
-  initiallyHidden?: string[]
+  /** The eye in the header: these column ids start hidden and can be shown (a wide panel stays
+   *  readable on a laptop), with the columns that start hidden themselves (`startHidden`). Give
+   *  the prop only for a choice that depends on the data. The footer follows the columns. */
+  defaultHidden?: string[]
 }
 
-const idOf = <T,>(c: ColumnDef<T, unknown>): string => c.id ?? (c as { accessorKey?: string }).accessorKey ?? ''
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
@@ -49,10 +50,12 @@ function compare(a: unknown, b: unknown): number {
  *  by default. Never fetches; for a server list use QueryTable / ListPage. */
 export function LocalTable<T>({
   columns, rows, rowKey, ariaLabel, sortable = [], initialSort, footer, density = 'compact', emptyTitle = 'Nothing here',
-  rowAttrs, onRowClick, expand, initiallyHidden, fetching,
+  rowAttrs, onRowClick, expand, defaultHidden, fetching,
 }: LocalTableProps<T>) {
   const [sort, setSort] = useState<SortValue | null>(initialSort ?? null)
-  const [hidden, setHidden] = useState<string[]>(initiallyHidden ?? [])
+  const initial = startsHidden(columns, defaultHidden)
+  const chooser = defaultHidden !== undefined || initial.length > 0
+  const [hidden, setHidden] = useState<string[]>(initial)
   const shown = columns.map((c, i) => ({ c, i })).filter(({ c }) => !hidden.includes(idOf(c)))
   const keyed = useMemo(() => rows.map((row, i) => ({ row, key: rowKey(row, i) })), [rows, rowKey])
   const sorted = useMemo(() => {
@@ -63,15 +66,15 @@ export function LocalTable<T>({
   const byRow = useMemo(() => new Map(sorted.map((x) => [x.row, x.key])), [sorted])
   return (
     <DataTable<T>
-      columns={initiallyHidden ? shown.map((x) => x.c) : columns}
+      columns={chooser ? shown.map((x) => x.c) : columns}
       rows={sorted.map((x) => x.row)}
       rowKey={(row) => byRow.get(row) ?? ''}
       ariaLabel={ariaLabel}
       fetching={fetching}
       density={density}
-      footer={footer && initiallyHidden ? shown.map((x) => footer[x.i]) : footer}
+      footer={footer && chooser ? shown.map((x) => footer[x.i]) : footer}
       expand={expand}
-      leadingHeader={initiallyHidden ? (
+      leadingHeader={chooser ? (
         <ColumnChooser columns={columns.map((c) => ({ id: idOf(c), label: typeof c.header === 'string' ? c.header : idOf(c) }))}
           hidden={hidden} onChange={setHidden} />
       ) : undefined}

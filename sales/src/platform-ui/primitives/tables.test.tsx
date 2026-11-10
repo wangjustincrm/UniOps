@@ -38,7 +38,7 @@ describe('LocalTable', () => {
   })
 
   it('starts with some columns hidden; the eye shows them, and the footer follows the columns', async () => {
-    render(<LocalTable<Row> ariaLabel="Lines" columns={columns} rows={rows} rowKey={(r) => r.id} initiallyHidden={['item']}
+    render(<LocalTable<Row> ariaLabel="Lines" columns={columns} rows={rows} rowKey={(r) => r.id} defaultHidden={['item']}
       footer={['Total', '44']} />)
     const t = screen.getByRole('table', { name: 'Lines' })
     expect(within(t).queryByText('CF0092')).toBeNull()
@@ -91,5 +91,31 @@ describe('EditableTable', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove line 1' }))
     expect(screen.getByRole('button', { name: 'Remove line 1' })).toBeDisabled()  // one row left
     expect(screen.getByLabelText('EA NEW')).toBeInTheDocument()
+  })
+})
+
+describe('columns and rows (2026-11-10)', () => {
+  it('a column can start hidden itself; the eye shows it', () => {
+    const cols: ColumnDef<Row, unknown>[] = [{ accessorKey: 'item', header: 'Item' }, { accessorKey: 'qty', header: 'EA', meta: { hidden: true } }]
+    render(<LocalTable<Row> ariaLabel="Lines" columns={cols} rows={rows} rowKey={(r) => r.id} />)
+    const t = screen.getByRole('table', { name: 'Lines' })
+    expect(within(t).queryByRole('columnheader', { name: /EA/ })).toBeNull()
+    expect(body(t)).toEqual(['CF0092', 'CF0010', 'CF0093'])
+  })
+
+  it('a click on a cell opens the row, a click on a button or link in it never does', () => {
+    const opened: number[] = []; const pressed: number[] = []
+    const cols: ColumnDef<Row, unknown>[] = [
+      { accessorKey: 'item', header: 'Item' },
+      { id: 'act', header: 'Act', cell: ({ row }) => <button type="button" onClick={() => pressed.push(row.original.id)}>do {row.original.id}</button> },
+      { id: 'link', header: 'Link', cell: () => <a href="#x">go</a> },
+    ]
+    render(<LocalTable<Row> ariaLabel="Lines" columns={cols} rows={rows} rowKey={(r) => r.id} onRowClick={(r) => opened.push(r.id)} />)
+    fireEvent.click(screen.getByText('do 2'))
+    fireEvent.click(screen.getAllByText('go')[0])
+    expect(opened).toEqual([])
+    expect(pressed).toEqual([2])
+    fireEvent.click(screen.getByText('CF0093'))
+    expect(opened).toEqual([3])
   })
 })

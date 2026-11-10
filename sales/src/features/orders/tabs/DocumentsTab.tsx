@@ -18,7 +18,7 @@ export function DocumentsTab({ o }: { o: OrderDetail }) {
     { accessorKey: 'kind', header: 'Kind', cell: ({ row: { original: d } }) => <span className="whitespace-nowrap">{d.kind}{d.direction === 'OUT' ? ' (sent)' : ''}</span> },
     colOrderDocument.file('remote_name', 'File', { label: (d) => `Download ${d.remote_name ?? d.kind}`,
       onDownload: (d) => { downloadDocument(d.id, d.remote_name ?? `document-${d.id}`).catch(failed) } }),
-    { accessorKey: 'st02', header: 'Control', cell: ({ row }) => row.original.st02 ?? '' },
+    { accessorKey: 'st02', header: 'Control', cell: ({ row }) => row.original.st02 ?? '', meta: { hidden: true } },
     { accessorKey: 'file_status', header: 'File status', cell: ({ row }) => (row.original.file_status ? <StatusCell value={row.original.file_status} /> : '') },
     { accessorKey: 'ack_status', header: '997', cell: ({ row: { original: d } }) => (
       d.direction !== 'OUT' ? '' : d.file_status === 'Sent' || d.ack_status !== 'Waiting' ? <StatusCell value={d.ack_status} /> : '—') },
@@ -49,7 +49,7 @@ export function DocumentsTab({ o }: { o: OrderDetail }) {
       </Section>
       <Section title="Files received and sent">
         {o.documents.length
-          ? <LocalTable<OrderDocument> ariaLabel="Documents" columns={columns} rows={o.documents} rowKey={(d) => d.id} initiallyHidden={['st02']} />
+          ? <LocalTable<OrderDocument> ariaLabel="Documents" columns={columns} rows={o.documents} rowKey={(d) => d.id} />
           : <p className="text-sm text-neutral-500">No file yet: entered by hand and not sent yet.</p>}
       </Section>
     </>

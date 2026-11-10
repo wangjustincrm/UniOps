@@ -1,4 +1,4 @@
-import { useState, type MouseEvent, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { IconButton } from '../primitives/IconButton'
 import { ConfirmAction } from './ConfirmAction'
 import { useCan } from './permissions'
@@ -28,8 +28,7 @@ function One({ a }: { a: RowAction }) {
   if (a.hidden || (a.permission && !can)) return null
   const pending = action.pending
   const run = () => action.run(a.onAction)
-  const click = (e: MouseEvent) => {
-    e.stopPropagation()  // an action never opens the row
+  const click = () => {
     const ask = typeof a.confirm === 'function' ? a.confirm() : a.confirm
     if (ask) setAsking(ask)
     else void run()
@@ -50,7 +49,7 @@ function One({ a }: { a: RowAction }) {
  *  runs, and never opening the row. */
 export function RowActions({ actions }: { actions: RowAction[] }) {
   return (
-    <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+    <div className="flex items-center gap-0.5">
       {actions.map((a) => <One key={a.key} a={a} />)}
     </div>
   )

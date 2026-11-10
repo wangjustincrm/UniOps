@@ -168,7 +168,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
   const allColumns: ColumnDef<T, unknown>[] = rowActions
     ? [...columns, {
         id: 'actions', header: 'Actions',
-        cell: ({ row }) => <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>{rowActions(row.original)}</div>,
+        cell: ({ row }) => <div className="flex gap-1">{rowActions(row.original)}</div>,
       }]
     : columns
   const close = () => setOpen(null)

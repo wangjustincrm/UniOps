@@ -11,6 +11,7 @@ import { useSynced } from './useSynced'
 import { groupKey } from './groupKey'
 import { TableCard } from './TableCard'
 import { useDelayed } from './useDelayed'
+import { clickOpensRow } from './rowClick'
 
 export type { ColumnDef } from '@tanstack/react-table'
 
@@ -273,7 +274,7 @@ export function DataTable<T>({
                       key={r.id}
                       {...rowData}
                       data-highlight={flash || undefined}
-                      onClick={onRowClick ? () => onRowClick(r.original) : undefined}
+                      onClick={onRowClick ? (e) => { if (clickOpensRow(e)) onRowClick(r.original) } : undefined}
                       tabIndex={onRowClick ? 0 : undefined}
                       onKeyDown={onRowClick ? (e) => {
                         if (e.target === e.currentTarget && e.key === 'Enter') { e.preventDefault(); onRowClick(r.original) }
@@ -285,7 +286,7 @@ export function DataTable<T>({
                         <td className="w-8 px-2">
                           {detail !== null && (
                             <button type="button" aria-expanded={isOpen} aria-label={isOpen ? 'Hide details' : 'Show details'}
-                              onClick={(e) => { e.stopPropagation(); toggleRow(r.id) }}
+                              onClick={() => toggleRow(r.id)}
                               className="rounded p-0.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-800">
                               {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                             </button>

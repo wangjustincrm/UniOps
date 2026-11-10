@@ -32,13 +32,13 @@ const rowColumns = (s: ShipmentRead, numbers: Map<number, number>, orderId: numb
   { id: 'line', header: 'Line', cell: ({ row: { original: r } }) => r.line_no != null
     ? <span className="whitespace-nowrap">#<LineNo lineNo={r.line_no} numbers={numbers} /> · {r.item_code ?? '?'}</span> : '—' },
   { accessorKey: 'item_code', header: 'Item code', cell: ({ row }) => row.original.item_code ?? '—' },
-  { accessorKey: 'upc', header: 'UPC', cell: ({ row }) => <span className="tabular-nums">{row.original.upc ?? '—'}</span> },
+  { accessorKey: 'upc', header: 'UPC', cell: ({ row }) => <span className="tabular-nums">{row.original.upc ?? '—'}</span>, meta: { hidden: true } },
   { accessorKey: 'description', header: 'Description', cell: ({ row }) => row.original.description ?? '—' },
   { accessorKey: 'qty_shipped_ea', header: 'Qty EA', cell: ({ row: { original: r } }) => (
     <span className="whitespace-nowrap tabular-nums">{r.qty_shipped_ea}{cases(r) && <Hint> ({cases(r)})</Hint>}</span>) },
   { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => row.original.lot ?? '—' },
   colRow.date('expiry', 'Expiry'),
-  { accessorKey: 'sscc', header: 'SSCC', cell: ({ row }) => <span className="tabular-nums">{row.original.sscc ?? '—'}</span> },
+  { accessorKey: 'sscc', header: 'SSCC', cell: ({ row }) => <span className="tabular-nums">{row.original.sscc ?? '—'}</span>, meta: { hidden: true } },
   { accessorKey: 'lx_number', header: 'LX no.', cell: ({ row }) => row.original.lx_number ?? row.original.lx_index },
   colRow.tracking('tracking', 'Tracking', { url: 'tracking_url' }),
   { id: 'match', header: 'Match', cell: ({ row }) => (
@@ -65,7 +65,7 @@ function LineItems({ s, numbers, orderId, lines }: { s: ShipmentRead; numbers: M
               Pallet LX {first.lx_number ?? lx}{first.sscc && <> · SSCC <span className="tabular-nums">{first.sscc}</span></>} · {ea} EA
             </h4>
             <LocalTable<ShipmentRowRead> ariaLabel={`Shipment ${s.id} pallet ${first.lx_number ?? lx} line items`} columns={columns} rows={rows}
-              rowKey={(r) => `${r.lx_index}-${r.w12_index}`} initiallyHidden={['upc', 'sscc']}
+              rowKey={(r) => `${r.lx_index}-${r.w12_index}`}
               rowAttrs={(r) => (r.needs_review ? { className: 'bg-danger-50' } : {})}
               footer={[null, null, null, 'Pallet subtotal', <span key="ea" className="tabular-nums">{ea}</span>, null, null, null, null, null, null]} />
           </section>

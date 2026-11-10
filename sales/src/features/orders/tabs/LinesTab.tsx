@@ -21,10 +21,10 @@ const sum = (lines: LineRead[], f: (ln: LineRead) => number | null | undefined) 
 // One row per line, ordered → shipped (945) → delivered → invoiced; its ▸ opens
 // the 945 rows packed for it. The less-used columns start hidden (the eye shows them).
 const lineColumns = (currency: string, numbers: Map<number, number>): ColumnDef<LineRead, unknown>[] => [
-  { accessorKey: 'line_no', header: '#', cell: ({ row }) => <LineNo lineNo={row.original.line_no} numbers={numbers} /> },
+  { accessorKey: 'line_no', header: '#', cell: ({ row }) => <LineNo lineNo={row.original.line_no} numbers={numbers} />, meta: { hidden: true } },
   { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => row.original.item_code ?? <span className="text-danger-600">unmatched</span> },
   { id: 'ordered', header: 'Ordered', cell: ({ row }) => `${Number(row.original.ordered_qty)} ${row.original.order_unit ?? '?'}` },
-  { accessorKey: 'order_unit', header: 'Unit', cell: ({ row }) => row.original.order_unit ?? '?' },
+  { accessorKey: 'order_unit', header: 'Unit', cell: ({ row }) => row.original.order_unit ?? '?', meta: { hidden: true } },
   { accessorKey: 'unit_price', header: 'Unit price (PO)', cell: ({ row }) => row.original.unit_price == null ? '—'
     : <MoneyCell amount={row.original.unit_price} currency={currency} /> },
   { id: 'amount', header: 'Amount', cell: ({ row }) => {
@@ -32,9 +32,9 @@ const lineColumns = (currency: string, numbers: Map<number, number>): ColumnDef<
     return a == null ? '—' : <MoneyCell amount={a.toFixed(2)} currency={currency} />
   } },
   { accessorKey: 'discount_amount', header: 'Discount', cell: ({ row }) => row.original.discount_amount == null ? '—'
-    : <MoneyCell amount={row.original.discount_amount} currency={currency} /> },
+    : <MoneyCell amount={row.original.discount_amount} currency={currency} />, meta: { hidden: true } },
   { accessorKey: 'tax_amount', header: 'Tax', cell: ({ row }) => row.original.tax_amount == null ? '—'
-    : <MoneyCell amount={row.original.tax_amount} currency={currency} /> },
+    : <MoneyCell amount={row.original.tax_amount} currency={currency} />, meta: { hidden: true } },
   { accessorKey: 'qty_ea', header: 'EA', cell: ({ row }) => ea(row.original.qty_ea) },
   { accessorKey: 'shipped_ea', header: 'Shipped EA', cell: ({ row: { original: ln } }) => ea(ln.shipped_ea ?? ln.shipped_shadow_ea) },
   { accessorKey: 'backordered_ea', header: 'Backordered EA', cell: ({ row: { original: ln } }) => {
@@ -58,7 +58,6 @@ const lineColumns = (currency: string, numbers: Map<number, number>): ColumnDef<
     <span className={row.original.problem && !row.original.removed ? 'text-danger-600' : ''}>{row.original.problem ?? ''}</span>
   ) },
 ]
-const HIDDEN_LINE_COLUMNS = ['line_no', 'order_unit', 'discount_amount', 'tax_amount']
 
 const packingColumns: ColumnDef<PackingRead, unknown>[] = [
   { accessorKey: 'sscc', header: 'Pallet (SSCC)', cell: ({ row }) => row.original.sscc ?? '—' },
@@ -87,7 +86,7 @@ function LifecycleTable({ o }: { o: OrderDetail }) {
   return (
     <LocalTable<LineRead> ariaLabel="Order lines" columns={lineColumns(o.currency, lineNumbers(o))} rows={o.lines} rowKey={(ln) => ln.id}
       rowAttrs={(ln) => (ln.removed ? { className: 'text-neutral-400', 'data-removed': true } : {})}
-      initiallyHidden={hasNotes ? HIDDEN_LINE_COLUMNS : [...HIDDEN_LINE_COLUMNS, 'problem']}
+      defaultHidden={hasNotes ? [] : ['problem']}
       expand={(ln) => (ln.packing?.length ? <Packing rows={ln.packing} /> : null)}
       footer={[null, 'Total', null, null, null, money(sum(o.lines, lineAmount)), null, null, sum(o.lines, (ln) => ln.qty_ea),
         sum(o.lines, (ln) => ln.shipped_ea),

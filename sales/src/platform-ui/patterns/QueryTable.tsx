@@ -10,6 +10,7 @@ import {
 import { viewStateOf, type Layout, type ViewState } from '../resource/viewState'
 import { errorText } from '../resource/businessError'
 import { ColumnChooser } from '../primitives/ColumnChooser'
+import { columnId, startsHidden } from '../primitives/columnMeta'
 import { ViewActions, ViewPicker } from './ViewPicker'
 import type { ViewPickerModel } from './views'
 import { ColumnMenu } from './ColumnMenu'
@@ -21,7 +22,7 @@ export interface QueryTableProps<T> {
   /** The table's accessible name. */
   ariaLabel?: string
   columns: ColumnDef<T, unknown>[]
-  /** Page columns shown only where a view names them (a channel's own columns), like the extra fields. */
+  /** Page columns shown only where a view names them, with those declared `startHidden`. Only for a choice that depends on the page (e.g. a channel's own columns). */
   defaultHidden?: string[]
   rows: T[]
   total: number
@@ -68,9 +69,6 @@ export interface QueryTableProps<T> {
   /** The list's saved views (useListView(...).picker): shown left of the toolbar. */
   picker?: ViewPickerModel
 }
-
-const columnId = <T,>(c: ColumnDef<T, unknown>): string =>
-  c.id ?? ((c as { accessorKey?: string }).accessorKey ?? '')
 
 const headerText = <T,>(c: ColumnDef<T, unknown>, field?: FieldMeta): string =>
   typeof c.header === 'string' ? c.header : field?.label ?? columnId(c)
@@ -126,7 +124,7 @@ function WithMeta<T>({ resource, ...props }: ViewProps<T> & { resource: NonNulla
 }
 
 function QueryTableView<T>({
-  columns, defaultHidden = [], spec, onSpecChange, meta, locked = [], sortable = [], total, groups, groupsTruncated, totals, searchable, error,
+  columns, defaultHidden, spec, onSpecChange, meta, locked = [], sortable = [], total, groups, groupsTruncated, totals, searchable, error,
   errorMessages, toolbar, onViewChange, layout: layoutProp, onLayoutChange, picker, suggest, ...view
 }: ViewProps<T> & { meta: ListMeta | undefined; suggest?: (field: string, query: string) => Promise<string[]> }) {
   const fields = useMemo(() => new Map((meta?.fields ?? []).map((f) => [f.name, f])), [meta])
@@ -155,7 +153,8 @@ function QueryTableView<T>({
   const order = layout.columns.length
     ? [...layout.columns.filter((id) => allIds.includes(id)), ...allIds.filter((id) => !layout.columns.includes(id))]
     : allIds
-  const shownByDefault = (id: string) => pageIds.has(id) && !defaultHidden.includes(id)
+  const startHidden = useMemo(() => new Set(startsHidden(columns, defaultHidden)), [columns, defaultHidden])
+  const shownByDefault = (id: string) => pageIds.has(id) && !startHidden.has(id)
   const isHidden = (id: string) =>
     layout.hidden.includes(id) || (!shownByDefault(id) && !(layout.columns.length > 0 && layout.columns.includes(id)))
   const hidden = order.filter(isHidden)

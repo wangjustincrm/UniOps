@@ -27,8 +27,7 @@ export function Recheck({ o, compact, bare, onResolved }: { o: OrderRead; compac
       onAction={() => m.mutateAsync()}>Re-check</ActionButton>
   )
   if (bare) return button
-  // In a row: clicking the button must not open the order.
-  if (compact) return <div onClick={(e) => e.stopPropagation()}>{button}</div>
+  if (compact) return button  // in a row: the table never opens the order for a click on a button
   return (
     <section aria-label="Resolve" className="flex flex-col gap-2 text-sm">
       <p className="text-neutral-600">Fix the cause in the Item Master (an item, a unit, a partner code, a DC route), then re-check.</p>
