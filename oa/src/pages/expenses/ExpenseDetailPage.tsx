@@ -695,19 +695,19 @@ export default function ExpenseDetailPage() {
                   <td className="px-4 py-2 text-xs text-neutral-800">
                     {li.description}
                     {li.period_from && (
-                      <div className="text-neutral-500">{li.period_days} days × {formatAmount(li.daily_rate ?? 0)}</div>
+                      <div className="text-neutral-500">{li.period_days} days × {formatAmount(li.daily_rate ?? 0, claim.currency)}</div>
                     )}
                     {claim.claim_type === 'TRV' && li.tax_code && (
                       <div className="text-neutral-500">Tax {li.tax_code}</div>
                     )}
                     {li.invoice_amount != null && (
-                      <div className="text-neutral-500">Invoice {formatAmount(li.invoice_amount)}</div>
+                      <div className="text-neutral-500">Invoice {formatAmount(li.invoice_amount, claim.currency)}</div>
                     )}
                   </td>
                   <td className="px-4 py-2 text-xs text-neutral-600">{li.budget_account_code} — {li.budget_account_name}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono">{formatAmount(li.total_amount)}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono text-neutral-500">{formatAmount(li.tax_amount)}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono font-medium text-primary-700">{formatAmount(li.net_amount)}</td>
+                  <td className="px-4 py-2 text-right text-xs font-mono">{formatAmount(li.total_amount, claim.currency)}</td>
+                  <td className="px-4 py-2 text-right text-xs font-mono text-neutral-500">{formatAmount(li.tax_amount, claim.currency)}</td>
+                  <td className="px-4 py-2 text-right text-xs font-mono font-medium text-primary-700">{formatAmount(li.net_amount, claim.currency)}</td>
                 </tr>
               ))}
             </tbody>
@@ -745,7 +745,7 @@ export default function ExpenseDetailPage() {
                   <td className="px-4 py-2 text-xs text-neutral-600">{ti.purpose}</td>
                   <td className="px-4 py-2 text-right text-xs font-mono">{Number(ti.distance_km).toFixed(1)}{ti.is_round_trip ? ' ×2' : ''}</td>
                   <td className="px-4 py-2 text-right text-xs font-mono text-neutral-500">${Number(ti.rate_per_km).toFixed(4)}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono font-medium text-primary-700">{formatAmount(ti.amount)}</td>
+                  <td className="px-4 py-2 text-right text-xs font-mono font-medium text-primary-700">{formatAmount(ti.amount, claim.currency)}</td>
                 </tr>
               ))}
             </tbody>
