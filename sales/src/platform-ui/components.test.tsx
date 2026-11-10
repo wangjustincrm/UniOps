@@ -135,6 +135,17 @@ describe('SchemaForm', () => {
     expect(screen.queryByText('ignored')).not.toBeInTheDocument()
   })
 
+  it('a numeric select takes and gives numbers (an id), null for none', async () => {  // 2026-11-10
+    const onSubmit = vi.fn()
+    const opts = [{ value: '7', label: 'Radiant' }, { value: '9', label: 'TrueCommerce' }]
+    render(<SchemaForm schema={z.object({ a: z.number().nullable(), b: z.number().nullable() })} defaultValues={{ a: 7, b: null }}
+      fields={[{ name: 'a', label: 'A', type: 'select', numeric: true, options: opts }, { name: 'b', label: 'B', type: 'select', numeric: true, options: opts }]}
+      onSubmit={onSubmit} />)
+    fireEvent.click(screen.getByText('Save'))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toEqual({ a: 7, b: null })
+  })
+
   it('read-only: every input disabled and no save (the editable form has one)', () => {
     const { unmount } = render(<SchemaForm schema={schema} fields={fields} defaultValues={{ code: 'A' }} readOnly onCancel={() => {}} onSubmit={vi.fn()} />)
     expect(screen.getByLabelText(/Code/)).toBeDisabled()

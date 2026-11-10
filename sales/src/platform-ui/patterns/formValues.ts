@@ -50,9 +50,16 @@ export function prepare(values: FieldValues, fields: FieldSpec[]): FieldValues {
     if (f.type === 'number' || f.type === 'presets') {
       out[f.name] = v === '' || v === null || v === undefined ? null : typeof v === 'string' ? Number(v) : v
     } else if (f.type === 'select' || f.type === 'segmented' || f.type === 'reference' || f.type === 'date') {
-      out[f.name] = v === '' || v === undefined ? null : v
+      out[f.name] = v === '' || v === undefined || v === null ? null : f.numeric && typeof v === 'string' ? Number(v) : v
     }
   }
+  return out
+}
+
+/** The starting values as the inputs hold them: blank for none, a numeric choice as its option's text. */
+export function toInputs(v: Record<string, unknown>, fields: FieldSpec[]): Record<string, unknown> {
+  const out = blankToEmpty(v)
+  for (const f of fields) if (f.numeric && typeof out[f.name] === 'number') out[f.name] = String(out[f.name])
   return out
 }
 

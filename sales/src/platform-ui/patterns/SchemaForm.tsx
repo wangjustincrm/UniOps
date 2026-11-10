@@ -14,7 +14,7 @@ import { Select } from '../primitives/Select'
 import { TagInput } from '../primitives/TagInput'
 import { Button, FormField, Input } from '../primitives/shell'
 import { ErrorMessage } from './ErrorMessage'
-import { applyServerError, blankToEmpty, emptyToNull, hiddenFields, notShown, prepare, withDefaultsWhenHidden } from './formValues'
+import { applyServerError, emptyToNull, hiddenFields, notShown, prepare, toInputs, withDefaultsWhenHidden } from './formValues'
 import { Section } from './Section'
 import { zodResolver } from './zodResolver'
 
@@ -53,6 +53,9 @@ export interface FieldSpec {
   showWhen?: (values: FieldValues) => boolean
   /** With `showWhen`: a value the server needs whether or not it is shown, sent at its starting value. */
   alwaysSent?: boolean
+  /** select / segmented: the value is a number (an id), null for none — the form takes and gives
+   *  numbers, so a page never converts to and from the option's text. */
+  numeric?: boolean
   /** type note: the line, from the current values. */
   note?: (values: FieldValues) => ReactNode
 }
@@ -89,17 +92,17 @@ export function SchemaForm({
 }: SchemaFormProps) {
   const resolver = useMemo<Resolver<FieldValues>>(() => {
     const inner = zodResolver(schema, (v) => hiddenFields(fields, v))
-    const start = blankToEmpty(defaultValues)
+    const start = toInputs(defaultValues, fields)
     return (values, ctx, opts) => inner(prepare(withDefaultsWhenHidden(values, fields, start), fields), ctx, opts)
   }, [schema, fields, defaultValues])
   const form = useForm<FieldValues>({
     resolver,
-    defaultValues: blankToEmpty(defaultValues),
+    defaultValues: toInputs(defaultValues, fields),
   })
   const [error, setError] = useState<unknown>(null)
   const { errors, isSubmitting, dirtyFields, isDirty } = form.formState
   useReportUnsaved(isDirty)
-  const edit = useEditVersion(version, isDirty, () => form.reset(blankToEmpty(defaultValues)))
+  const edit = useEditVersion(version, isDirty, () => form.reset(toInputs(defaultValues, fields)))
 
   const submit = form.handleSubmit(async (values) => {
     setError(null)
