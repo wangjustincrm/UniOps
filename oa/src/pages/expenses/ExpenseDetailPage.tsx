@@ -110,6 +110,9 @@ interface ApprovalStep {
   acted_at: string | null
   action: string | null
   comment: string | null
+  // Pending step: who its task waits on, "Name (delegated: Stand-in)" while
+  // they are covered (ABS-006); null for a role-pool task.
+  approver_name?: string | null
 }
 
 // ── Badges ────────────────────────────────────────────────────────────────────
@@ -375,7 +378,9 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
               )}
               {s.state === 'current' && (
                 <>
-                  <p className="mt-0.5 text-xs text-neutral-400">Awaiting this approver</p>
+                  <p className="mt-0.5 text-xs text-neutral-400">
+                    {s.approver_name ? `Awaiting ${s.approver_name}` : 'Awaiting this approver'}
+                  </p>
                   <button
                     type="button"
                     onClick={() => remindMutation.mutate()}

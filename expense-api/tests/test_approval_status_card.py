@@ -147,3 +147,51 @@ async def test_timeline_puts_submit_before_steps_skipped_in_the_same_transaction
     events = r.json()["approval_events"]
     assert [(e["action"], e["step_idx"]) for e in events] == [
         ("submit", 0), ("approve", 0), ("approve", 1)]
+
+
+async def _open_task(test_engine, cid, assigned_user_id, role="dept_manager"):
+    from app.models.task_mirror import TaskMirror
+    async with _factory(test_engine)() as s:
+        s.add(TaskMirror(id=uuid.uuid4(), document_id=cid, document_type=WF_KEY,
+                         type=f"approve_{WF_KEY}", assigned_user_id=assigned_user_id,
+                         assigned_role=role, is_completed=False, created_at=T0))
+        await s.commit()
+
+
+@pytest.mark.asyncio
+async def test_pending_step_names_the_delegate(test_engine, workflow):
+    """ISS-0222 (MIL-20261104-0001): TEST Dept Manager → TEST Payment Officer
+    delegation active today; the pending step says so (EPMS ABS-006)."""
+    from app.core.delegation import local_today
+    dm, po = uuid.uuid4(), uuid.uuid4()
+    await _add_user(test_engine, dm, "TEST Dept Manager")
+    await _add_user(test_engine, po, "TEST Payment Officer")
+    async with _factory(test_engine)() as s:
+        await s.execute(text(
+            "INSERT INTO approval_delegations (id, delegator_user_id, delegate_user_id,"
+            " start_date, end_date, created_by) VALUES (:i, :a, :b, :d, :d, :a)"),
+            {"i": uuid.uuid4(), "a": dm, "b": po, "d": local_today()})
+        await s.commit()
+    cid, owner = await _seed(test_engine, status="submitted", step_idx=0, events=[
+        ("submit", 0, uuid.uuid4(), None, T0)])
+    await _open_task(test_engine, cid, dm)
+    steps = await _status(cid, owner)
+    assert steps[0]["state"] == "current"
+    assert steps[0]["approver_name"] == "TEST Dept Manager (delegated: TEST Payment Officer)"
+    assert all(s["approver_name"] is None for s in steps[1:])
+
+
+@pytest.mark.asyncio
+async def test_pending_step_without_delegation_or_person(test_engine, workflow):
+    dm = uuid.uuid4()
+    await _add_user(test_engine, dm, "Plain Manager")
+    cid, owner = await _seed(test_engine, status="submitted", step_idx=0, events=[
+        ("submit", 0, uuid.uuid4(), None, T0)])
+    await _open_task(test_engine, cid, dm)
+    assert (await _status(cid, owner))[0]["approver_name"] == "Plain Manager"
+
+    # A role-pool task (no assigned person) names nobody.
+    cid2, owner2 = await _seed(test_engine, status="submitted", step_idx=0, events=[
+        ("submit", 0, uuid.uuid4(), None, T0)])
+    await _open_task(test_engine, cid2, None, role="finance_bp")
+    assert (await _status(cid2, owner2))[0]["approver_name"] is None

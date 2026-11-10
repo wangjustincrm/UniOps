@@ -183,7 +183,9 @@ modules:
         claim itself: Approval Status → Send reminder under the pending step
         emails whoever holds that step (their delegate if they are away) and
         says who it reached. It is refused, with the reason shown, when nobody
-        can be reached or a reminder for that step went out recently.
+        can be reached or a reminder for that step went out recently. The
+        pending step names the person it waits on, as "Name (delegated:
+        Stand-in)" while an approval delegation covers them.
       - >-
         When the last approver approves a claim (general expense, mileage,
         travel expense or a custom form), a PDF of the claim is added to its

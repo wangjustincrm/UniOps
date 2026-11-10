@@ -801,6 +801,10 @@ class ApprovalStepOut(BaseModel):
     acted_at: str | None = None      # ISO timestamp
     action: str | None = None        # approve | return | reject
     comment: str | None = None
+    # Pending step only: the person its open approve task is assigned to, as
+    # "Name (delegated: Stand-in)" while a delegation covers them (EPMS ABS-006,
+    # same wording as epms-api crud/current_step.py). None for a role-pool task.
+    approver_name: str | None = None
 
 
 @router.get("/{claim_id}/approval-status", response_model=list[ApprovalStepOut])
@@ -887,6 +891,10 @@ async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, user: Current
             else:
                 state = "waiting"
 
+        approver_name = None
+        if state == "current":
+            approver_name = await _pending_approver_label(db, claim.id)
+
         out.append(ApprovalStepOut(
             step_idx=i,
             role=step.get("role", ""),
@@ -897,8 +905,44 @@ async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, user: Current
             acted_at=(ev.created_at.isoformat() if ev else None),
             action=(ev.action if ev else None),
             comment=(ev.comment if ev else None),
+            approver_name=approver_name,
         ))
     return out
+
+
+async def _pending_approver_label(db, claim_id: uuid.UUID) -> str | None:
+    """Who the claim's open approve task waits on — "Name", or "Name
+    (delegated: Stand-in)" while an active delegation covers them, so a reader
+    can tell why someone else is expected to act (ABS-006, ISS-0222). Only a
+    task assigned to a person; a role-pool task names nobody."""
+    from sqlalchemy import bindparam, select as sa_select, text
+    from app.core.delegation import active_delegate_id
+    from app.models.task_mirror import TaskMirror
+
+    task = (await db.execute(
+        sa_select(TaskMirror).where(
+            TaskMirror.document_id == claim_id,
+            TaskMirror.is_completed.is_(False),
+            TaskMirror.type.like("approve_%"),
+            TaskMirror.assigned_user_id.is_not(None),
+        ).order_by(TaskMirror.created_at.asc(), TaskMirror.id.asc()).limit(1)
+    )).scalars().first()
+    if task is None:
+        return None
+    try:
+        async with db.begin_nested():
+            stand_in_id = await active_delegate_id(db, task.assigned_user_id)
+            ids = [i for i in (task.assigned_user_id, stand_in_id) if i]
+            q = text("SELECT id, full_name FROM users WHERE id IN :ids").bindparams(
+                bindparam("ids", expanding=True))
+            names = {r[0]: r[1] for r in (await db.execute(q, {"ids": ids})).all()}
+    except Exception:
+        return None
+    name = names.get(task.assigned_user_id)
+    stand_in = names.get(stand_in_id) if stand_in_id else None
+    if name and stand_in:
+        return f"{name} (delegated: {stand_in})"
+    return name
 
 
 class ReminderOut(BaseModel):
