@@ -12,9 +12,10 @@
  *
  * Supported: paragraphs and line breaks, # / ## / ### headings, "-" / "*" /
  * "1." lists, pipe tables (header + --- separator row), **bold**, *italic*,
- * `code`.
+ * `code`. Tables are drawn by AnswerTable (table.tsx).
  */
 import type { ReactNode } from 'react'
+import { AnswerTable } from './table'
 
 const TABLE_SEP = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/
 const BULLET = /^\s*[-*•]\s+(.*)$/
@@ -102,7 +103,11 @@ export function parseBlocks(text: string): Block[] {
   return blocks
 }
 
-export function Markdown({ text }: { text: string }) {
+export function Markdown({ text, resultRows }: {
+  text: string
+  /** How many rows the answer's whole result has, when known (see AnswerTable). */
+  resultRows?: number | null
+}) {
   const blocks = parseBlocks(text)
   return (
     <div className="space-y-2 break-words">
@@ -124,28 +129,8 @@ export function Markdown({ text }: { text: string }) {
               </ol>
             )
           case 'table':
-            return (
-              <div key={k} className="overflow-x-auto">
-                <table className="min-w-full border-collapse text-xs">
-                  <thead>
-                    <tr>{b.head.map((c, ci) => (
-                      <th key={ci} className="border-b border-neutral-300 px-2 py-1 text-left font-semibold">
-                        {renderInline(c, `${k}-h${ci}`)}
-                      </th>))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {b.rows.map((r, ri) => (
-                      <tr key={ri} className="border-b border-neutral-200 last:border-0">
-                        {b.head.map((_, ci) => (
-                          <td key={ci} className="px-2 py-1 align-top">{renderInline(r[ci] ?? '', `${k}-${ri}-${ci}`)}</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )
+            // Collapsible, sortable, filterable (ISS-0111).
+            return <AnswerTable key={k} head={b.head} rows={b.rows} resultRows={resultRows} keyBase={k} />
           default:
             return (
               <p key={k}>

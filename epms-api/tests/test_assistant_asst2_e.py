@@ -180,3 +180,4 @@ async def test_no_raw_task_type_reaches_the_reply(admin_client, monkeypatch):
 async def test_the_rule_cards_are_in_the_registry():
     assert "marked_questions_are_listed" in {
         r["id"] for r in rule_registry.static_rules("assistant")}
+    assert rule_registry.card("answer_tables_sort_and_fold")["provenance"] == "pinned"
