@@ -474,7 +474,6 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         return out
 
     @requires(READ)
-    @requires(READ)
     async def po_pdf(self, order_id: int) -> tuple[str, bytes]:
         o = await self.repo.get(order_id)
         return f"PO-{o.source_order_number or o.order_number}.pdf", await print_docs.po_pdf(self.uow.session, o)
@@ -485,6 +484,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         o = await self.repo.get(order_id)
         return f"Order-{o.ref or o.order_number}.zip", await print_docs.packet(self.uow.session, o)
 
+    @requires(READ)  # it carries the customer's name and address (found by the coverage test, 2026-11-10)
     async def packing_list(self, order_id: int, shipment_id: int) -> tuple[str, bytes]:
         """One shipment's packing list (PDF): pallets → items → lots → expiry →
         qty, with tracking, BOL and its 945. Any 945 kept — a shadow-run or

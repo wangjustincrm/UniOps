@@ -158,3 +158,9 @@ async def test_a_cancel_without_the_version_seen_is_refused(api):  # review 2026
     assert r.status_code == 422 and r.json()["error"]["code"] == "entity.version_required"
     r = await api.post(f"/api/v1/orders/manual/{o['id']}/cancel?version={o['version'] + 5}", headers=OPERATOR)
     assert r.status_code == 409 and r.json()["error"]["details"]["current_version"] == o["version"]
+
+
+async def test_print_documents_need_sales_read(api):  # packing_list had no check (coverage test, 2026-11-10)
+    for path in ("/api/v1/orders/1/po.pdf", "/api/v1/orders/1/packet.zip", "/api/v1/orders/1/shipments/1/packing-list.pdf"):
+        assert (await api.get(path, headers=NOBODY)).status_code == 403, path
+    assert (await api.get("/api/v1/orders/1/shipments/1/packing-list.pdf", headers=READER)).status_code == 404  # admitted: no such order
