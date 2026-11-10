@@ -19,6 +19,8 @@ interface ApprovalEvent {
   actor_name: string
   action: string
   comment: string | null
+  // Step the action was taken at (approval events only; null on the payment row).
+  step_idx?: number | null
   created_at: string
 }
 
@@ -90,6 +92,11 @@ interface ExpenseClaim {
   leave_from_date?: string | null
   leave_to_date?: string | null
   purpose?: string | null
+  // Custom-form claims: `notes` is the stored answers blob (the edit form reads
+  // it); these are its meaning, resolved server-side like the PDF (ISS-0195).
+  form_name?: string | null
+  form_fields?: { label: string; value: string }[] | null
+  user_notes?: string | null
 }
 
 interface Attachment {
@@ -108,6 +115,9 @@ interface ApprovalStep {
   acted_at: string | null
   action: string | null
   comment: string | null
+  // Pending step: who its task waits on, "Name (delegated: Stand-in)" while
+  // they are covered (ABS-006); null for a role-pool task.
+  approver_name?: string | null
 }
 
 // ── Badges ────────────────────────────────────────────────────────────────────
@@ -359,9 +369,23 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
                   by {s.actor_name}{s.acted_at ? ` · ${formatDate(s.acted_at)}` : ''}
                 </p>
               )}
+              {/* The step that sent the claim back (or rejected it): who, when
+                  and why, so the claimant sees where it stopped (ISS-0194). */}
+              {(s.state === 'returned' || s.state === 'rejected') && s.actor_name && (
+                <>
+                  <p className="mt-0.5 text-xs text-neutral-500">
+                    by {s.actor_name}{s.acted_at ? ` · ${formatDate(s.acted_at)}` : ''}
+                  </p>
+                  {s.comment && (
+                    <p className="mt-1 whitespace-pre-line rounded bg-neutral-50 px-2 py-1.5 text-xs text-neutral-700">{s.comment}</p>
+                  )}
+                </>
+              )}
               {s.state === 'current' && (
                 <>
-                  <p className="mt-0.5 text-xs text-neutral-400">Awaiting this approver</p>
+                  <p className="mt-0.5 text-xs text-neutral-400">
+                    {s.approver_name ? `Awaiting ${s.approver_name}` : 'Awaiting this approver'}
+                  </p>
                   <button
                     type="button"
                     onClick={() => remindMutation.mutate()}
@@ -377,7 +401,7 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
                   )}
                 </>
               )}
-              {/* Comments are shown once, in the Approval Timeline below. */}
+              {/* Approval comments are shown once, in the Approval Timeline below. */}
             </div>
             <span className="shrink-0 text-[10px] font-mono text-neutral-300">Step {s.step_idx + 1}</span>
           </li>
@@ -409,10 +433,21 @@ export default function ExpenseDetailPage() {
 
   // Server-computed permissions — approval roles (Finance BP, etc.) are assignments,
   // not JWT roles, so authorization is resolved server-side via tasks + role_management.
-  const { data: perms } = useQuery<{ is_owner: boolean; can_edit: boolean; can_approve: boolean; can_pay: boolean; can_delete: boolean }>({
+  const { data: perms } = useQuery<{ is_owner: boolean; can_edit: boolean; can_submit: boolean; can_approve: boolean; can_pay: boolean; can_delete: boolean }>({
     queryKey: ['expense-permissions', id],
     queryFn: () => api.get(`/api/v1/expenses/${id}/permissions`),
   })
+
+  // Same query (and cache) as ApprovalStatusCard — the timeline names the step
+  // a return / reject was taken at from these labels (ISS-0194).
+  const { data: approvalSteps = [] } = useQuery<ApprovalStep[]>({
+    queryKey: ['approval-status', id],
+    queryFn: () => api.get<ApprovalStep[]>(`/api/v1/expenses/${id}/approval-status`),
+  })
+  const stepLabel = (evt: ApprovalEvent) =>
+    (evt.action === ACTION.RETURN || evt.action === ACTION.REJECT) && evt.step_idx != null
+      ? approvalSteps.find((s) => s.step_idx === evt.step_idx)?.label ?? `Step ${evt.step_idx + 1}`
+      : null
 
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: ['expense', id] })
@@ -428,6 +463,8 @@ export default function ExpenseDetailPage() {
   })
 
   // 'pay' is NOT a generic /action — it has its own endpoint with payment fields.
+  // A refusal is the server's sentence for the payer and is shown in the modal;
+  // it used to be swallowed, so Confirm Payment looked dead (ISS-0205).
   const payMutation = useMutation({
     mutationFn: (bankAccountId: string) => api.post(`/api/v1/expenses/${id}/pay`, { bank_account_id: bankAccountId }),
     onSuccess: () => { setActiveAction(null); invalidateAll() },
@@ -462,8 +499,11 @@ export default function ExpenseDetailPage() {
   const TYPE_LABELS: Record<string, string> = {
     EXP: 'General Expense', MIL: 'Mileage Claim', TRV: 'Travel Expense', TRA: 'Travel Application',
   }
+  const isCfm = claim.claim_type.startsWith('CFM')
   const typeLabel = TYPE_LABELS[claim.claim_type]
-    ?? (claim.claim_type.startsWith('CFM') ? `Custom Form (${claim.claim_type.replace(/^CFM_?/, '')})` : claim.claim_type)
+    ?? (isCfm ? `Custom Form (${claim.claim_type.replace(/^CFM_?/, '')})` : claim.claim_type)
+  // A custom form's `notes` is its answers blob; the employee's remark is user_notes.
+  const notesText = isCfm ? claim.user_notes : claim.notes
 
   // EXP-007 / TRV-008: receipt-based claims require ≥1 attachment before submission.
   // A TRV made only of date-range lines is exempt (same rule as the server).
@@ -474,8 +514,10 @@ export default function ExpenseDetailPage() {
   const missingAttachment = requiresAttachment && isEditable(claim.status) && attachments.length === 0
 
   // Permissions resolved server-side (see the /permissions query above).
-  // The claimant, or whoever filed the claim on their behalf.
+  // Edit and Submit are separate answers (OA.md §7.3): a Finance Manager may
+  // edit someone else's claim but not submit it; a System Admin may do both.
   const canEdit = perms?.can_edit ?? false
+  const canSubmit = perms?.can_submit ?? false
   const canApprove = perms?.can_approve ?? false
   const canPay = perms?.can_pay ?? false
   // False server-side for EXP/MIL/TRV, so this shared component needs no
@@ -520,7 +562,7 @@ export default function ExpenseDetailPage() {
                 claim `returned` (approval-api accepts submit from draft or
                 returned), and with only Edit here a returned claim could be
                 changed but never sent back into approval. */}
-            {isEditable(claim.status) && canEdit && (
+            {isEditable(claim.status) && canSubmit && (
               <button
                 onClick={() => setActiveAction(ACTION.SUBMIT)}
                 disabled={missingAttachment}
@@ -610,12 +652,14 @@ export default function ExpenseDetailPage() {
             <p className="mt-0.5 text-sm font-mono font-medium text-neutral-800">{Number(claim.total_km).toFixed(1)} km</p>
           </div>
         )}
-        {claim.notes && (
+        {notesText && (
           <div className="col-span-2">
             <p className="text-xs font-medium text-neutral-500">Notes</p>
-            <p className="mt-0.5 text-sm text-neutral-700">{claim.notes}</p>
+            <p className="mt-0.5 whitespace-pre-line text-sm text-neutral-700">{notesText}</p>
           </div>
         )}
+        {/* A custom form carries no lines and no amount (CFM-002). */}
+        {!isCfm && (
         <div className="col-span-2 border-t border-neutral-100 pt-3 mt-1">
           <div className="flex justify-between text-sm">
             <span className="text-neutral-500">Subtotal (pre-tax)</span>
@@ -632,7 +676,25 @@ export default function ExpenseDetailPage() {
             <span className="font-mono text-primary-700">{formatAmount(claim.total_amount, claim.currency)}</span>
           </div>
         </div>
+        )}
       </div>
+
+      {/* Custom form answers, labelled as on the claim PDF (OA.md §6.2) */}
+      {isCfm && claim.form_fields && (
+        <div className="rounded-xl border border-neutral-200 bg-white p-5 flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-neutral-700">
+            Form Details{claim.form_name ? ` — ${claim.form_name}` : ''}
+          </h2>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+            {claim.form_fields.map((f, i) => (
+              <div key={i}>
+                <dt className="text-neutral-500">{f.label}</dt>
+                <dd className="whitespace-pre-line text-neutral-800">{f.value || '—'}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
 
       {/* Travel Application details (TRA — no money/line items, has its own PDF) */}
       {claim.claim_type === 'TRA' && (
@@ -787,7 +849,10 @@ export default function ExpenseDetailPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-x-2">
                       <span className="text-sm font-medium text-neutral-800">{evt.actor_name}</span>
-                      <span className="text-xs text-neutral-500">{ACTION_LABELS[evt.action] ?? evt.action}</span>
+                      <span className="text-xs text-neutral-500">
+                        {ACTION_LABELS[evt.action] ?? evt.action}
+                        {stepLabel(evt) && ` at ${stepLabel(evt)}`}
+                      </span>
                     </div>
                     <p className="text-xs text-neutral-400">{formatDate(evt.created_at)}</p>
                     {evt.comment && (
@@ -809,8 +874,9 @@ export default function ExpenseDetailPage() {
           currency={claim.currency}
           amount={Number(claim.total_amount)}
           busy={payMutation.isPending}
+          error={payMutation.isError ? (payMutation.error instanceof Error ? payMutation.error.message : 'Payment failed') : undefined}
           onConfirm={(bankAccountId) => payMutation.mutate(bankAccountId)}
-          onClose={() => setActiveAction(null)}
+          onClose={() => { payMutation.reset(); setActiveAction(null) }}
         />
       )}
 

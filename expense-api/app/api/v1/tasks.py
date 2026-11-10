@@ -165,6 +165,10 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
         )).scalars().unique().all()
     )
 
+    # A custom form keeps its answers as a JSON blob in `notes`, which made the
+    # card title raw JSON (ISS-0195). Its card is titled by the form's name.
+    cfm_names = await _cfm_form_names(db, exp_rows)
+
     seen_exp: set[uuid.UUID] = set()
     for claim in exp_rows:
         if claim.id in seen_exp:
@@ -188,7 +192,9 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
             doc_type=doc_type,
             doc_id=str(claim.id),
             doc_number=claim.claim_number,
-            title=claim.purpose or claim.notes or claim.claim_type,
+            title=(cfm_names.get(claim.claim_type.upper()) or claim.claim_number
+                   if ct.startswith("CFM")
+                   else claim.purpose or claim.notes or claim.claim_type),
             submitter_name=claim.employee_name,
             amount=float(claim.total_amount),
             currency=claim.currency,
@@ -213,3 +219,23 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
 
     tasks.sort(key=lambda t: t.created_at, reverse=True)
     return OaTaskListResponse(items=tasks, total=len(tasks))
+
+
+async def _cfm_form_names(db, claims) -> dict[str, str]:
+    """claim_type (CFM_<CODE>) → form name, for the custom-form claims given.
+    One query; the code is read off the claim type as claim_pdf.cfm_form does."""
+    from sqlalchemy import select
+    from app.models.custom_form import CustomFormDefinition
+
+    by_code = {}
+    for c in claims:
+        ct = c.claim_type.upper()
+        if ct.startswith("CFM"):
+            by_code[ct.split("_", 1)[1] if "_" in ct else ct[3:]] = ct
+    if not by_code:
+        return {}
+    rows = (await db.execute(
+        select(CustomFormDefinition.code, CustomFormDefinition.name)
+        .where(CustomFormDefinition.code.in_(list(by_code)))
+    )).all()
+    return {by_code[code]: name for code, name in rows if code in by_code}

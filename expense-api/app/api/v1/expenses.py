@@ -11,6 +11,7 @@ from app.core.deps import BearerTokenDep, CurrentUserDep, SessionDep
 from app.crud import expense as expense_crud
 from app.schemas.expense import (
     ApprovalEventResponse,
+    CfmFieldValue,
     ExpenseActionRequest,
     ExpenseClaimCreate,
     ExpenseClaimListItem,
@@ -675,6 +676,11 @@ async def get_expense(claim_id: uuid.UUID, db: SessionDep, user: CurrentUserDep)
         raise HTTPException(status_code=403, detail="Not authorized to view this expense claim")
     out = ExpenseClaimResponse.model_validate(claim)
     out.approval_events = await _claim_history(db, claim)
+    if claim.claim_type.upper().startswith("CFM"):
+        # The same reading the claim PDF prints under "Form Details".
+        out.form_name, fields = await claim_pdf.cfm_form(db, claim)
+        out.form_fields = [CfmFieldValue(label=k, value=v) for k, v in fields]
+        _, out.user_notes = claim_pdf.cfm_answers(claim.notes)
     return out
 
 
@@ -693,7 +699,18 @@ async def _claim_history(db, claim) -> list[ApprovalEventResponse]:
     """
     legacy = [ApprovalEventResponse.model_validate(e) for e in claim.approval_events]
     shared = await _shared_approval_events(db, claim.id)
-    return sorted(legacy + shared, key=lambda e: e.created_at)
+    return sorted(legacy + shared, key=_history_order)
+
+
+def _history_order(e) -> tuple:
+    """Oldest first; ties broken submit-first, then by step.
+
+    approval-api writes a submission and the steps it auto-skips in one
+    transaction, so they share now() to the microsecond — ordered by time
+    alone, a skipped step could read as approved before the claim was
+    submitted (ISS-0216).
+    """
+    return (e.created_at, e.action != "submit", e.step_idx or 0)
 
 
 # approval-api writes action="approve" rows no person decided — a skipped step
@@ -712,9 +729,9 @@ async def _shared_approval_events(db, claim_id: uuid.UUID) -> list[ApprovalEvent
     from sqlalchemy import bindparam, select as sa_select, text
     from app.models.approval_event_mirror import ApprovalEventMirror as AEM
 
-    events = list((await db.execute(
-        sa_select(AEM).where(AEM.document_id == claim_id).order_by(AEM.created_at.asc())
-    )).scalars().all())
+    events = sorted((await db.execute(
+        sa_select(AEM).where(AEM.document_id == claim_id)
+    )).scalars().all(), key=_history_order)
     names: dict = {}
     actor_ids = list({e.actor_id for e in events})
     if actor_ids:
@@ -739,10 +756,43 @@ async def _shared_approval_events(db, claim_id: uuid.UUID) -> list[ApprovalEvent
 
 class ClaimPermissions(BaseModel):
     is_owner: bool
-    can_edit: bool
+    can_edit: bool         # may save changes (PATCH) — see can_edit_claim
+    can_submit: bool = False   # may submit — see can_submit_claim
     can_approve: bool      # may approve / return / reject the current pending step
     can_pay: bool          # may record payment (status = approved)
     can_delete: bool = False   # may hard-delete (unapproved Travel Applications only)
+
+
+async def _self_payment_rule_enabled(db) -> bool:
+    """identity's sod_rules `self_payment`, read the way finance-api's
+    _sod_enabled reads it: no row → off. Same physical DB; no model here, so
+    raw SQL in a savepoint. If the table cannot be read at all, answer "on":
+    then the button is hidden from the claimant rather than shown for a
+    payment the executor may refuse."""
+    try:
+        async with db.begin_nested():
+            enabled = (await db.execute(sa.text(
+                "SELECT enabled FROM sod_rules WHERE rule_code = 'self_payment'"
+            ))).scalar_one_or_none()
+    except Exception:
+        return True
+    return bool(enabled)
+
+
+def can_edit_claim(claim, user_id: uuid.UUID, role: str) -> bool:
+    """Who update_expense lets save changes (OA.md §7.3 Save / Edit): the
+    claimant, whoever filed a TRV on their behalf, and a System Admin or
+    Finance Manager by PRIMARY role. The detail page used to offer Edit to the
+    first two only, so an admin could edit by URL but saw no button (ISS-0221)."""
+    return (claim.employee_id == user_id or expense_crud.is_preparer(claim, user_id)
+            or role in ("system_admin", "finance_manager"))
+
+
+def can_submit_claim(claim, user_id: uuid.UUID, role: str) -> bool:
+    """Who expense_action lets submit (OA.md §7.3 Submit): the claimant or
+    the claim's creator, and a System Admin by PRIMARY role. Not the Finance
+    Manager — they may edit someone else's claim but not send it."""
+    return user_id in (claim.employee_id, claim.created_by) or role == "system_admin"
 
 
 @router.get("/{claim_id}/permissions", response_model=ClaimPermissions)
@@ -770,10 +820,17 @@ async def get_claim_permissions(claim_id: uuid.UUID, db: SessionDep, user: Curre
         # Mirrors finance-api's authoritative gate (_PAY_ROLES / _PAY_ROLES_ASSIGNED)
         # — NOT _CAN_PAY, which is a visibility set and still includes ap_clerk.
         can_pay = role in _PAY_PRIMARY or bool(codes & _PAY_ASSIGNED)
+        # PAY-003: the executor refuses a claimant paying their own claim
+        # while the self_payment SoD rule is on (finance-api
+        # _check_self_payment, against claim.employee_id). Without this the
+        # button showed and Confirm Payment was refused (ISS-0205).
+        if can_pay and is_owner and await _self_payment_rule_enabled(db):
+            can_pay = False
 
     return ClaimPermissions(
         is_owner=is_owner,
-        can_edit=is_owner or expense_crud.is_preparer(claim, user_id),
+        can_edit=can_edit_claim(claim, user_id, role),
+        can_submit=can_submit_claim(claim, user_id, role),
         can_approve=can_approve,
         can_pay=can_pay,
         can_delete=can_delete_claim(claim, user_id, role),
@@ -790,6 +847,10 @@ class ApprovalStepOut(BaseModel):
     acted_at: str | None = None      # ISO timestamp
     action: str | None = None        # approve | return | reject
     comment: str | None = None
+    # Pending step only: the person its open approve task is assigned to, as
+    # "Name (delegated: Stand-in)" while a delegation covers them (EPMS ABS-006,
+    # same wording as epms-api crud/current_step.py). None for a role-pool task.
+    approver_name: str | None = None
 
 
 @router.get("/{claim_id}/approval-status", response_model=list[ApprovalStepOut])
@@ -818,6 +879,13 @@ async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, user: Current
     )).scalars().all())
     approve_by_step = {e.step_idx: e for e in events if e.action == "approve"}
     terminal = next((e for e in events if e.action == "reject"), None)
+    # approval-api resets approval_step_idx to 0 on return (the resubmission
+    # resumes from the return event's step), so for a returned claim the last
+    # return event — not the index — says which step sent it back. Reading the
+    # index marked step 1 "returned" (or "approved", hiding it) and left the
+    # step that actually returned it "waiting" (ISS-0194). Same reading as
+    # epms/src/lib/approvalTimeline.ts.
+    last_return = next((e for e in reversed(events) if e.action == "return"), None)
 
     # Resolve actor display names from the shared users table (best-effort).
     names: dict = {}
@@ -845,16 +913,17 @@ async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, user: Current
                 state = "approved"
             elif terminal is not None and i == terminal.step_idx:
                 state = "rejected"
+                ev, machine = terminal, False
             elif i < current:
                 state = "approved"
             else:
                 state = "waiting"
         elif status == "returned":
-            if ev:
-                state = "approved"
-            elif i == current:
+            returned_at = last_return.step_idx if last_return is not None else current
+            if i == returned_at:
                 state = "returned"
-            elif i < current:
+                ev, machine = last_return, False   # who returned it, when, why
+            elif ev or i < returned_at:
                 state = "approved"
             else:
                 state = "waiting"
@@ -868,6 +937,10 @@ async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, user: Current
             else:
                 state = "waiting"
 
+        approver_name = None
+        if state == "current":
+            approver_name = await _pending_approver_label(db, claim.id)
+
         out.append(ApprovalStepOut(
             step_idx=i,
             role=step.get("role", ""),
@@ -878,8 +951,44 @@ async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, user: Current
             acted_at=(ev.created_at.isoformat() if ev else None),
             action=(ev.action if ev else None),
             comment=(ev.comment if ev else None),
+            approver_name=approver_name,
         ))
     return out
+
+
+async def _pending_approver_label(db, claim_id: uuid.UUID) -> str | None:
+    """Who the claim's open approve task waits on — "Name", or "Name
+    (delegated: Stand-in)" while an active delegation covers them, so a reader
+    can tell why someone else is expected to act (ABS-006, ISS-0222). Only a
+    task assigned to a person; a role-pool task names nobody."""
+    from sqlalchemy import bindparam, select as sa_select, text
+    from app.core.delegation import active_delegate_id
+    from app.models.task_mirror import TaskMirror
+
+    task = (await db.execute(
+        sa_select(TaskMirror).where(
+            TaskMirror.document_id == claim_id,
+            TaskMirror.is_completed.is_(False),
+            TaskMirror.type.like("approve_%"),
+            TaskMirror.assigned_user_id.is_not(None),
+        ).order_by(TaskMirror.created_at.asc(), TaskMirror.id.asc()).limit(1)
+    )).scalars().first()
+    if task is None:
+        return None
+    try:
+        async with db.begin_nested():
+            stand_in_id = await active_delegate_id(db, task.assigned_user_id)
+            ids = [i for i in (task.assigned_user_id, stand_in_id) if i]
+            q = text("SELECT id, full_name FROM users WHERE id IN :ids").bindparams(
+                bindparam("ids", expanding=True))
+            names = {r[0]: r[1] for r in (await db.execute(q, {"ids": ids})).all()}
+    except Exception:
+        return None
+    name = names.get(task.assigned_user_id)
+    stand_in = names.get(stand_in_id) if stand_in_id else None
+    if name and stand_in:
+        return f"{name} (delegated: {stand_in})"
+    return name
 
 
 class ReminderOut(BaseModel):
@@ -932,8 +1041,7 @@ async def update_expense(
     if not claim:
         raise HTTPException(status_code=404, detail="Expense claim not found")
     user_id = uuid.UUID(user["sub"])
-    if (claim.employee_id != user_id and not expense_crud.is_preparer(claim, user_id)
-            and user.get("role") not in ("system_admin", "finance_manager")):
+    if not can_edit_claim(claim, user_id, user.get("role", "")):
         raise HTTPException(status_code=403, detail="Cannot edit another employee's claim")
     if (claim.claim_type == "TRV" and body.travel_application_id
             and body.travel_application_id != claim.travel_application_id):
@@ -1046,8 +1154,8 @@ async def expense_action(
     # (only draft/returned are editable) and has to get an approver to send it
     # back. `employee_id` is OA's owner of record; created_by is checked too so
     # an on-behalf-of draft stays submittable by whoever raised it.
-    if action == "submit" and user.get("role") != "system_admin":
-        if user_id not in (claim.employee_id, claim.created_by):
+    if action == "submit":
+        if not can_submit_claim(claim, user_id, user.get("role", "")):
             raise HTTPException(
                 status_code=403,
                 detail="Only the claimant can submit this expense claim",

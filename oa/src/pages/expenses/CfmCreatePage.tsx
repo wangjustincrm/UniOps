@@ -17,7 +17,10 @@ interface CfmField {
   field_type: 'text' | 'number' | 'date' | 'select' | 'textarea'
   required: boolean; options: string[]; placeholder: string | null
 }
-interface CustomForm { code: string; name: string; fields: CfmField[]; is_active: boolean }
+interface CustomForm {
+  code: string; name: string; description?: string | null; default_currency?: string
+  fields: CfmField[]; is_active: boolean
+}
 
 // ── Dynamic field renderer ────────────────────────────────────────────────────
 
@@ -118,6 +121,9 @@ export default function CfmCreatePage({ editClaimId }: EditableFormProps = {}) {
       claim_type: `CFM_${form.code}`,
       // Keep the date the claim was raised on when editing one.
       submission_date: editing?.submission_date ?? todayLocal(),
+      // A new claim takes the form's Default Currency (OA.md §6.1); an
+      // edited one keeps its own.
+      currency: editing?.currency ?? form.default_currency ?? 'CAD',
       notes: JSON.stringify({ ...fieldData, _user_notes: notes }),
       line_items: [],
     }, {
@@ -150,6 +156,9 @@ export default function CfmCreatePage({ editClaimId }: EditableFormProps = {}) {
           {editing ? `Edit ${editing.claim_number}` : form.name}
         </h1>
         <p className="mt-0.5 text-sm text-neutral-500 font-mono">CFM_{form.code}</p>
+        {form.description && (
+          <p className="mt-2 whitespace-pre-line text-sm text-neutral-600">{form.description}</p>
+        )}
       </div>
 
       <div className="rounded-xl border border-neutral-200 bg-white p-5 flex flex-col gap-4">
