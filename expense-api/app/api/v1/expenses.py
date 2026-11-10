@@ -528,7 +528,7 @@ async def create_expense(
             department_name=dept_name,
             prepared_by=user_id,
         )
-    except ValueError as exc:  # TRV line rules (_check_trv_lines)
+    except ValueError as exc:  # TRV line rules (_check_trv_lines), EXP line cap
         raise HTTPException(status_code=422, detail=str(exc))
     return ExpenseClaimResponse.model_validate(claim)
 

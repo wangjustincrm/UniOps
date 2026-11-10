@@ -133,6 +133,9 @@ modules:
         by a vendor, that is Procurement. If you paid and want it back, that
         is OA.
       - >-
+        A general expense claim has up to 20 lines; the server refuses more,
+        on create and on edit. Travel expense claims have no line limit.
+      - >-
         A receipt scanned on a claim line (Scan) is kept as that line's receipt
         and attached to the claim automatically when it is saved — it does not
         need uploading again. General and travel expense claims need at least

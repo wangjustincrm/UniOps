@@ -29,6 +29,19 @@ async def _next_number(db: AsyncSession, claim_type: str) -> str:
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
+# OA EXP-002: a general expense claim has up to 20 lines. The form stops at 20,
+# but the server took any number (ISS-0199). Only EXP: the PRD sets no line cap
+# for TRV, MIL uses trip_items, and custom-form claims carry no lines.
+MAX_EXP_LINES = 20
+
+
+def _check_exp_line_count(claim_type: str, line_items) -> None:
+    if claim_type == "EXP" and line_items is not None and len(line_items) > MAX_EXP_LINES:
+        raise ValueError(
+            f"A general expense claim can have at most {MAX_EXP_LINES} lines "
+            f"(this one has {len(line_items)}).")
+
+
 def _compute_totals_exp(line_items: list) -> tuple[Decimal, Decimal, Decimal]:
     total = sum(li.total_amount for li in line_items)
     tax = sum(li.tax_amount for li in line_items)
@@ -160,6 +173,7 @@ async def create_claim(
 ) -> ExpenseClaim:
     """`user_id` is the claimant. `prepared_by` is who filed it, when that is
     someone else (a TRV filed on a traveler's behalf)."""
+    _check_exp_line_count(data.claim_type, data.line_items)
     if data.claim_type == "TRV":
         await _check_trv_lines(db, data.travel_from_date, data.travel_to_date,
                                data.travel_country, data.currency, data.line_items)
@@ -254,6 +268,7 @@ async def update_claim(
 ) -> ExpenseClaim:
     if claim.status not in ("draft", "returned"):
         raise ValueError("Only draft or returned claims can be edited")
+    _check_exp_line_count(claim.claim_type, data.line_items)
 
     if claim.claim_type == "TRV":
         def eff(field):
