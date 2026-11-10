@@ -39,3 +39,47 @@ rules:
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_approval_buttons_follow_the_open_task"
+
+  # ── Round 2 (2026-11-10, ISS-0018). The one engine rule repeated here: asked
+  # about a PR, "退回后重新提交会从第一步重新审批吗？" was answered "yes, from
+  # the first step" twice (the same question about a PA was answered right).
+  # The PR area's recall rule ("starts again from the first step when it is
+  # resubmitted") was read as the answer. The code now writes this answer;
+  # it states approval-api's returned_document_resumes_at_the_returning_step
+  # and is pinned to the same engine tests, and to that rule's text.
+  - id: resubmitted_after_return
+    said_when:
+      - '(?:退回|被退|退还|打回|\breturned\b|sent\s+back).{0,40}(?:重新提交|再次提交|再提交|重提|重新送审|\bresubmit\w*|submit\w*\s+(?:it\s+)?again)'
+      - '(?:重新提交|再次提交|\bresubmit\w*).{0,40}(?:退回|被退|\breturned\b|sent\s+back)'
+    asked_as:
+      - 请购单被退回后重新提交，会从第一步重新审批吗？
+      - when a returned PR is resubmitted, does approval start again
+    answer: >
+      A returned document, once resubmitted, resumes at the step that returned
+      it — approvals already given stand and are not repeated. It starts again
+      from the first step only when the return cannot be traced (imported
+      data), when that step no longer exists in the chain, or, for a purchase
+      request, when the over-budget steps in front of the chain changed while
+      it was returned. A recalled document is a draft again and always starts
+      from the first step. The same for every document type.
+    says:
+      en: >
+        A returned document — a PR, PO, PA or agreement alike — resumes, when it
+        is resubmitted, at the step that returned it: it does not start again
+        from the first step, and the approvals already given stand and are not
+        repeated. It starts from the first step only when the return cannot be
+        traced (imported history), when that step no longer exists in the
+        chain, or, for a PR, when the over-budget steps in front of the chain
+        changed while it was returned. A document its requester recalled
+        (Recall to Edit) is a draft again and always starts from the first step.
+      zh: >
+        退回的单据（请购单、采购订单、付款申请、协议都一样）重新提交后，从退回它的那一步继续审批，
+        不会从第一步重来；之前已经批过的步骤保留，不用再批。只有这几种情况才从第一步开始：无法追溯是
+        哪一步退回的（导入的历史数据）、那一步已不在审批链里，或者（仅请购单）退回期间链路前面的超预算
+        步骤发生了变化。申请人自己撤回（Recall to Edit）的单据会回到草稿，再提交时总是从第一步开始。
+    enforced_in: "approval-api app/crud/engine.py (resubmit resumes at the returning step; rule text app/crud/engine_rules.py returned_document_resumes_at_the_returning_step); epms-api app/api/v1/assistant_chat.py _answer_pinned"
+    provenance: pinned
+    test:
+      - "approval-api/tests/test_engine_resume_after_return.py::test_resubmit_goes_back_to_the_step_that_returned_it"
+      - "approval-api/tests/test_engine_resume_after_return.py::test_recalled_document_starts_over"
+      - "tests/test_assistant_asst2_routes.py::test_the_resubmit_answer_is_the_engines_rule"

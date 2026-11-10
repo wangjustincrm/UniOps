@@ -111,8 +111,13 @@ async def service_gr_reminders(db) -> dict:
     else:
         state = ("switched on and live: owners and their managers are being "
                  "reminded")
+    # The same state for a reply the code writes in Chinese (rule `says`).
+    state_zh = ("已关闭（Portal → Admin → Notification Settings → Service Completion "
+                "Reminder），所以现在不会发出这类提醒" if not enabled else
+                "已开启但处于试运行：逾期清单只发给系统管理员，还不会提醒负责人或经理"
+                if dry_run else "已开启并正式运行：负责人和他们的经理会收到提醒")
     return {"reminder_days": reminder, "escalation_days": escalation, "state": state,
-            "time": (ns.get("followup_time") or "08:00")}
+            "state_zh": state_zh, "time": (ns.get("followup_time") or "08:00")}
 
 
 async def notification_switches(db) -> dict:
@@ -149,7 +154,11 @@ async def gr_ack_reminders(db) -> dict:
                  "only, and nobody is reminded yet")
     else:
         state = "switched on and live"
+    state_zh = ("已关闭，所以现在不会发出这类提醒" if not enabled else
+                "已开启但处于试运行：清单只发给系统管理员，还不会提醒任何人" if dry_run
+                else "已开启并正式运行")
     return {"reminder_days": int(sla.get("reminder_days", due._DEFAULT_REMINDER_DAYS)),
+            "state_zh": state_zh,
             "escalation_days": int(sla.get("manager_escalation_days",
                                            due._DEFAULT_MANAGER_ESCALATION_DAYS)),
             "state": state, "time": ns.get("followup_time") or "08:00"}
@@ -208,8 +217,10 @@ def reminder_rules(db) -> dict:
     from app.services.manual_reminder import APPROVAL_TASK_TYPES, COOLDOWN_HOURS
 
     words = {"pr": "purchase requests", "po": "purchase orders"}
+    words_zh = {"pr": "请购单（PR）", "po": "采购订单（PO）"}
     return {"hours": COOLDOWN_HOURS,
-            "documents": _join([words.get(k, k) for k in APPROVAL_TASK_TYPES])}
+            "documents": _join([words.get(k, k) for k in APPROVAL_TASK_TYPES]),
+            "documents_zh": "和".join(words_zh.get(k, k) for k in APPROVAL_TASK_TYPES)}
 
 
 def _policy_words(ns: dict, task_type: str) -> str:

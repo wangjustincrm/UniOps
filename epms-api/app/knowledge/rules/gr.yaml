@@ -160,6 +160,25 @@ rules:
       - "tests/test_gr_collect_due.py::test_inactive_while_collection_not_required"
       - "tests/test_rule_registry.py::test_new_pa_warns_of_uncollected_goods_with_the_servers_rule"
   - id: gr_acknowledgement_reminders
+    # Round 2 (ISS-0019): asked together with Teams and email approval, the GR
+    # part was "no information"; asked alone it was right. Code answers it.
+    said_when:
+      - '(?:GR|收货|goods\s*receipt|receipt).{0,20}(?:超时|逾期|过期|太久|没(?:有)?确认|未确认|\blate\b|overdue|not\s+(?:been\s+)?acknowledged).{0,20}(?:升级|提醒|通知|催|escalat|remind)'
+      - '(?:升级|escalat\w*).{0,20}(?:GR|收货|goods\s*receipt)'
+    says:
+      en: >
+        Physical goods receipts: a receipt still waiting for acknowledgement
+        more than {reminder_days} day(s) after it was recorded is reminded once
+        a day to the person who has to acknowledge it (the PR's owner); once
+        they have been reminded and it has waited {escalation_days} day(s), the
+        Department Manager of the requester's department gets one escalation
+        email, copied to the requester. The days come from EPMS → Admin → GR
+        Notification SLA. This reminder is currently {state}.
+      zh: >
+        实物收货单（GR）：登记后超过 {reminder_days} 天仍未确认的，每天提醒一次需要确认的人
+        （请购单的负责人）；已经提醒过、并且等满 {escalation_days} 天后，给申请人所在部门的
+        部门经理发一封升级邮件，抄送申请人。天数在 EPMS → Admin → GR Notification SLA 设置。
+        这个提醒目前{state_zh}。
     also_in: [notifications]
     asked_as:
       - GR 确认超时会升级给谁？
@@ -185,6 +204,27 @@ rules:
       - "tests/test_gr_ack_due.py::test_off_and_dry_run_remind_nobody"
       - "tests/test_rule_registry.py::test_gr_ack_reminder_facts_are_read_from_config"
   - id: service_completion_reminders
+    said_when:
+      - '(?:GR|收货|goods\s*receipt|receipt).{0,20}(?:超时|逾期|过期|太久|没(?:有)?确认|未确认|\blate\b|overdue|not\s+(?:been\s+)?acknowledged).{0,20}(?:升级|提醒|通知|催|escalat|remind)'
+      - '(?:升级|escalat\w*).{0,20}(?:GR|收货|goods\s*receipt)'
+      - '(?:服务|service).{0,20}(?:完成|completion).{0,20}(?:提醒|升级|超时|逾期|remind|escalat|overdue)'
+    says:
+      en: >
+        Service and project POs: once a day (at {time} UTC) the system looks
+        for orders whose PR's expected completion date is more than
+        {reminder_days} day(s) past with no receipt recorded; the PR's
+        Service/Project Owner (the requester when none is named) gets a Confirm
+        Goods Receipt task and a reminder email. When the completion date is
+        {escalation_days} or more days past and a reminder has already been
+        sent, one escalation email goes to the owner's Department Manager. The
+        day counts are set in Admin → Service GR SLA. This reminder is
+        currently {state}.
+      zh: >
+        服务类和项目类 PO：系统每天（UTC {time}）检查请购单上预计完成日期已过去超过
+        {reminder_days} 天、但还没有登记收货的订单；请购单的 Service/Project Owner（没指定时就是
+        申请人）会收到 Confirm Goods Receipt 任务和一封提醒邮件。完成日期过去 {escalation_days}
+        天或更久、并且已经提醒过的，给负责人的部门经理发一封升级邮件。天数在 Admin → Service GR
+        SLA 设置。这个提醒目前{state_zh}。
     also_in: [notifications]
     asked_as:
       - 服务完成日到了会提醒吗？

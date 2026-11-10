@@ -88,6 +88,28 @@ rules:
 
   # ── Added 2026-10-21 (issue review batch 3) ───────────────────────────────
   - id: who_can_edit_a_pr
+    # Round 2 (ISS-0050): "已经提交的请购单想修改怎么办？" twice added "the
+    # approver it is waiting on can edit it" — read off "the approver can
+    # return it, after which it can be edited". Code answers it.
+    said_when:
+      - '(?:谁|哪些人|什么人|什么角色|\bwho\b).{0,15}(?:编辑|修改|改|\bedit|\bchange).{0,12}(?:请购单|请购|\bPRs?\b)'
+      - '(?:已经?提交|提交了|提交后|提交以后|审批中|送审|\bsubmitted\b|in\s+review).{0,15}(?:请购单|请购|\bPRs?\b).{0,15}(?:修改|编辑|改|\bedit|\bchange)'
+      - '(?:请购单|请购|\bPRs?\b).{0,12}(?:已经?提交|提交了|提交后|审批中|\bsubmitted\b|in\s+review).{0,15}(?:修改|编辑|改|\bedit|\bchange)'
+      - '(?:\bedit|\bchange)\w*\s+(?:a\s+|my\s+|the\s+)?(?:submitted|in-review)\s+(?:PR|purchase\s+request)'
+    says:
+      en: >
+        Only the requester who raised the PR, or a System Admin, can edit it,
+        and only while it is draft or returned; approvers cannot edit it. A
+        submitted or in-review PR cannot be edited as it stands: the requester
+        can press Recall to Edit on the PR page, which takes it back to draft
+        (when it is submitted again, approval starts from the first step); or
+        the approver it is waiting on can return it to the requester, who then
+        edits and resubmits it.
+      zh: >
+        只有提交这张请购单的申请人或系统管理员可以编辑，而且只能在草稿（Draft）或已退回
+        （Returned）状态下编辑；审批人不能编辑。已提交或审批中的请购单不能直接修改：申请人可以在
+        请购单页面点 Recall to Edit 撤回，单据回到草稿后再修改（重新提交时从第一步开始审批）；
+        或者由当前审批人把它退回给申请人，申请人修改后重新提交。
     asked_as:
       - 谁可以编辑我的请购单？什么状态下可以编辑？
       - who can edit my PR and when
@@ -96,9 +118,11 @@ rules:
       Only the requester who raised a PR, or a System Admin, can edit it, and
       only while it is draft or returned. A submitted PR cannot be edited as
       it stands: while it is submitted or in review the requester can press
-      Recall to Edit on the PR page, which takes it back to draft (approval
-      then starts again from the first step when it is resubmitted); or the
-      approver can return it, after which it can be edited and resubmitted.
+      Recall to Edit on the PR page, which takes it back to draft (a recalled
+      PR starts again from the first step when it is resubmitted — unlike a
+      returned one, which resumes at the step that returned it); or the
+      approver it is waiting on can return it to the requester, who then
+      edits and resubmits it. Approvers cannot edit a PR.
     enforced_in: "epms-api app/api/v1/pr.py update_pr (status draft/returned; created_by or system_admin); approval-api engine recall (RECALLABLE_STATUSES)"
     provenance: pinned
     test:

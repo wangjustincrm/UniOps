@@ -277,6 +277,25 @@ rules:
     test:
       - "tests/test_rule_registry.py::test_remittance_is_sent_by_hand_and_not_modelled"
   - id: recording_a_manual_credit
+    # Round 2 (ISS-0022 #3): refused once in three. Code answers it.
+    said_when:
+      - '(?:手工|手动|人工|\bmanual(?:ly)?\b).{0,8}(?:贷项|贷记|\bcredit)'
+    says:
+      en: >
+        A manual vendor credit (recorded from the vendor's email rather than an
+        uploaded credit note) needs the vendor, the vendor's credit-note
+        reference number, the credit date, the amount (and tax, if any) and a
+        note explaining its basis; the server refuses a manual credit without
+        that note. The form also requires the vendor's email or document to be
+        attached, and a manual credit with no attachment cannot be approved
+        from its detail panel — both are rules of the screen, not checks the
+        server makes. The same credit-note number cannot be recorded twice for
+        one vendor (unless the earlier one was voided).
+      zh: >
+        手工贷项（根据供应商邮件录入，而不是上传贷项单）需要：供应商、供应商的贷项单参考号、
+        贷项日期、金额（有税的话加上税额），以及一段说明依据的备注——没有备注服务器会拒绝。
+        表单还要求附上供应商的邮件或文件，没有附件的手工贷项在详情面板里不能审批——这两条是
+        页面上的限制，不是服务器的校验。同一供应商的同一个贷项单号不能重复录入（之前那条已作废的除外）。
     asked_as:
       - 录入手工贷项需要什么？
       - what do I need to record a manual credit

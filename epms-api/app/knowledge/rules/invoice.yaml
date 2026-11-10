@@ -161,6 +161,23 @@ rules:
       - "tests/test_invoice_dedup.py::test_a_suffix_lets_a_reused_number_in"
       - "tests/test_invoice_dedup.py::test_the_index_refuses_a_second_row_written_directly"
   - id: invoice_due_date
+    # Round 2 (ISS-0034): asked with an invoice number the answer was "invoice
+    # date + 30 days". With a number, code_answers._due_date writes the
+    # invoice's two dates, this rule and that the case is not recorded; without
+    # one, this.
+    said_when:
+      - '(?:到期日|到期时间|到期日期|付款期限|\bdue\s*dates?\b).{0,25}(?:怎么|如何|怎样|按什么|根据什么|依据|规则|计算|算出|定的|得出|来的|\bhow\b|\brules?\b|calculat|determin|\bworked\s+out\b|come\s+from)'
+      - '(?:怎么|如何|怎样|按什么|\bhow\b).{0,15}(?:到期日|\bdue\s*dates?\b)'
+    says:
+      en: >
+        When an invoice is uploaded its due date is: the due date read off the
+        invoice itself, if it shows one; otherwise, when the invoice states NET n
+        terms, the invoice date + n days; and if the field is still empty at
+        upload, the invoice date + 30 days. The uploader can also type or change
+        it.
+      zh: >
+        上传发票时到期日这样确定：发票上写了到期日，就用发票上的；没写但写了 NET n 付款条款，
+        就是发票日期加 n 天；上传时这一栏还空着，就默认发票日期加 30 天。上传人也可以自己填写或修改。
     asked_as:
       - 发票的到期日是怎么算的？
       - how is an invoice's due date calculated
@@ -236,6 +253,22 @@ rules:
       - "tests/test_po_fee.py::test_an_other_fee_needs_a_note"
       - "tests/test_po_fee.py::test_freight_per_arrival_and_customs_per_line_complete_the_po"
   - id: unmatching_an_invoice
+    # Round 2 (ISS-0022 #1): with an invoice number (or on its page),
+    # code_answers._unmatch runs the Unmatch button's own checks on it.
+    said_when:
+      - '取消匹配|解除匹配|撤销匹配|撤回匹配|取消配对|\bun-?match'
+    says:
+      en: >
+        The rule: Unmatch is refused once the invoice has entered payment
+        (status Approved or Paid), and while any payment application that is
+        not cancelled still includes it — the message names that PA, which has
+        to be cancelled first. An invoice matched to an agreement cannot be
+        unmatched from a PO. A reason is required, and it is kept in the
+        invoice's History.
+      zh: >
+        规则：发票一旦进入付款（状态 Approved 或 Paid）就不能取消匹配；只要还有未取消的付款申请包含
+        这张发票，也不能取消匹配——提示里会写出是哪张付款申请，需要先取消它。匹配到协议的发票不能从 PO
+        上取消匹配。取消匹配必须填写原因，原因记入发票的 History。
     asked_as:
       - 这张发票能取消匹配吗？
       - can this invoice be unmatched

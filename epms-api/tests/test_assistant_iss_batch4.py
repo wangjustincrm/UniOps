@@ -244,9 +244,10 @@ def test_a_long_earlier_answer_is_quoted_in_part():
         "cut at a line break, not mid-row"
 
 
-def test_the_planner_is_offered_recall_conversation():
-    assert assistant_llm._RECALL_TOOL in assistant_llm._session_tools(None)
-    assert assistant_llm._SESSION_TOOL_KINDS["recall_conversation"] == "recall"
+def test_the_planner_is_not_offered_recall_conversation():
+    """Round 2: the code decides whether a question is about the conversation
+    (question_routes.recall_position); see test_assistant_asst2_routes."""
+    assert assistant_llm._RECALL_TOOL not in assistant_llm._session_tools(None)
 
 
 # ── ISS-0073: who is asking ──────────────────────────────────────────────────
@@ -285,7 +286,9 @@ async def test_who_am_i_names_the_person_and_every_role(test_engine, requester_c
     """Answered "the system cannot identify you", then roles guessed from tasks."""
     dept = await _make_me_a_director_and_finance_bp(test_engine, _uid(requester_client))
     try:
-        calls = _stub(monkeypatch, plans=[{"kind": "me"}, {"kind": "me"}])
+        # Each message is split at its question marks by code (round 2): one
+        # plan per part, and two parts with the same answer are one answer.
+        calls = _stub(monkeypatch, plans=[{"kind": "me"}] * 4)
         r = await requester_client.post(CHAT, json={"message": "who am I? what roles do I have?"})
         body = r.json()
         assert body["kind"] == "me"
@@ -653,7 +656,6 @@ def test_status_names_match_the_document_chain():
 
 # ── ISS-0037 / ISS-0069: one message, several questions ──────────────────────
 
-_FOUR = "PO 是什么状态，INV 金额多少，再帮我写一首诗，最后供应商联系人是谁"
 
 
 def _q(entity, field, value, select):
@@ -665,20 +667,22 @@ async def test_each_part_is_planned_and_answered_on_its_own(test_engine, admin_c
     """Only the PO was queried; the invoice amount was "not in the query
     result" although, asked alone, it is answered."""
     c = await _seed_chain(test_engine, _uid(admin_client))
-    parts = [f"{c.po.number} 是什么状态？", f"{c.inv.internal_ref} 金额多少？", "帮我写一首诗",
+    # Split by the code at the commas, each clause a question (round 2); the
+    # planner is asked once per part and never to split.
+    parts = [f"{c.po.number} 是什么状态", f"{c.inv.internal_ref} 金额多少", "帮我写一首诗",
              "供应商联系人是谁？"]
+    message = "，".join(parts)
     calls = _stub(monkeypatch, plans=[
-        {"kind": "split", "parts": parts},
         _q("purchase_order", "number", c.po.number, ["number", "status"]),
         _q("invoice", "internal_ref", c.inv.internal_ref, ["internal_ref", "total_amount"]),
         {"kind": "cannot", "reason": "not_a_data_question", "explanation": "写诗不在我能做的范围内。"},
     ])
-    r = await admin_client.post(CHAT, json={"message": _FOUR})
+    r = await admin_client.post(CHAT, json={"message": message})
     body = r.json()
     assert body["kind"] == "parts" and len(body["parts"]) == assistant_llm.MAX_PARTS == 3
     # Each part was planned as itself, knowing it is one of several.
-    assert [p["message"] for p in calls["plan"][1:]] == parts[:3]
-    assert calls["plan"][2]["context"]["question_part"] == {"index": 2, "of": 4, "whole": _FOUR}
+    assert [p["message"] for p in calls["plan"]] == parts[:3]
+    assert calls["plan"][1]["context"]["question_part"] == {"index": 2, "of": 4, "whole": message}
     # ...and narrated with its own question, so nothing reads as "missing".
     assert [n["message"] for n in calls["narrate"]] == parts[:2]
     assert calls["narrate"][1]["result"]["rows"][0]["internal_ref"] == c.inv.internal_ref
@@ -700,7 +704,6 @@ async def test_a_part_cannot_reach_what_the_person_cannot(
         test_engine, admin_client, requester_client, monkeypatch):
     c = await _seed_chain(test_engine, _uid(admin_client))   # someone else's
     calls = _stub(monkeypatch, plans=[
-        {"kind": "split", "parts": ["a?", "b?"]},
         _q("purchase_order", "number", c.po.number, ["number", "status"]),
         _q("invoice", "internal_ref", c.inv.internal_ref, ["internal_ref", "total_amount"]),
     ])
@@ -726,7 +729,8 @@ async def test_a_part_is_never_split_again_and_one_part_is_just_the_question(
     r = await admin_client.post(CHAT, json={"message": "only one?"})
     assert r.json()["kind"] == "cannot_answer" and r.json()["answer"] == "which one?"
     assert calls["plan"][1]["context"]["question_part"]["of"] == 1
-    r = await admin_client.post(CHAT, json={"message": "x? y?"})
+    # One the code does not split: the planner's split_question still works.
+    r = await admin_client.post(CHAT, json={"message": "x and also y"})
     assert [p["kind"] for p in r.json()["parts"]] == ["cannot_answer", "cannot_answer"]
     assert len(calls["plan"]) == 5, "no recursion"
 
