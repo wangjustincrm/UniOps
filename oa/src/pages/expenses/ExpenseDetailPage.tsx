@@ -140,6 +140,7 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
+  const [downloadError, setDownloadError] = useState('')
 
   const regenPdf = useMutation({
     mutationFn: () => api.post(`/api/v1/expenses/${claimId}/regenerate-pdf`, {}),
@@ -181,12 +182,19 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
   // carries no bearer token and (in prod) resolves against the OA origin, whose
   // nginx SPA-fallback returns index.html (the main page) instead of the file.
   // Mirrors InvoiceDetailPage / PaDetailPage.
+  // A failed download is said on the page, by file name; it used to reject
+  // silently and show only in the browser console (ISS-0218).
   const download = async (att: Attachment) => {
-    const blob = await api.getBlob(`/api/v1/expenses/${claimId}/attachments/${att.id}/file`)
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = att.file_name; a.click()
-    URL.revokeObjectURL(url)
+    setDownloadError('')
+    try {
+      const blob = await api.getBlob(`/api/v1/expenses/${claimId}/attachments/${att.id}/file`)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = att.file_name; a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setDownloadError(`Could not download "${att.file_name}"${err instanceof Error && err.message ? `: ${err.message}` : ''}`)
+    }
   }
 
   function formatSize(bytes: number) {
@@ -233,6 +241,11 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
       {uploadError && (
         <div className="mx-5 mt-3">
           <ErrorBanner message={uploadError} />
+        </div>
+      )}
+      {downloadError && (
+        <div className="mx-5 mt-3">
+          <ErrorBanner message={downloadError} />
         </div>
       )}
       {regenPdf.isError && (

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { ScanLine, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { api } from '@/lib/api'
+import { api, ApiError } from '@/lib/api'
 
 // Receipt OCR result — matches expense-api ocr_service.extract_receipt output.
 export interface ReceiptFields {
@@ -16,8 +16,10 @@ export interface ReceiptFields {
 /**
  * Per-line "Scan Receipt" control. Uploads an image/PDF to the server-side OCR
  * endpoint (POST /api/v1/ocr/receipt) and hands the extracted fields back to the
- * caller for pre-fill. Degrades gracefully — failures surface as a tooltip and
- * the user can still enter the line manually (OCR-006).
+ * caller for pre-fill. Degrades gracefully — the user can still enter the line
+ * manually (OCR-003). A failed or empty read is said in visible text next to the
+ * button: it used to live only in the button's tooltip, and a read that came
+ * back 200 with every field empty (a blank image) said nothing at all (ISS-0218).
  *
  * `onFile` receives the picked file itself, before the scan runs and whether or
  * not it succeeds, so the caller can keep it as the line's receipt attachment:
@@ -44,16 +46,24 @@ export function ReceiptScanButton({
       const form = new FormData()
       form.append('file', file)
       const r = await api.postForm<ReceiptFields>('/api/v1/ocr/receipt', form)
+      if (isEmptyRead(r)) {
+        // Nothing to pre-fill; leave the line as it is.
+        setErr('Nothing could be read from this file. Enter the line by hand; the file stays attached.')
+        return
+      }
       onScanned(r)
     } catch (ex) {
-      setErr(ex instanceof Error ? ex.message : 'Scan failed')
+      // OCR-003: an outage and an unreadable document read differently.
+      setErr(ex instanceof ApiError && ex.status === 503
+        ? 'Receipt reading is unavailable right now. Enter the line by hand.'
+        : ex instanceof Error ? ex.message : 'Scan failed')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <>
+    <span className={cn('inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5', className)}>
       <button
         type="button"
         disabled={loading}
@@ -65,7 +75,6 @@ export function ReceiptScanButton({
             ? 'border-danger-200 text-danger-500 hover:bg-danger-50'
             : 'border-neutral-200 text-neutral-500 hover:text-primary-700 hover:border-primary-300',
           loading && 'opacity-60',
-          className,
         )}
       >
         {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ScanLine className="h-3 w-3" />}
@@ -78,6 +87,16 @@ export function ReceiptScanButton({
         className="hidden"
         onChange={handle}
       />
-    </>
+      {err && !loading && (
+        <span role="alert" className="text-[10px] leading-tight text-danger-600">{err}</span>
+      )}
+    </span>
   )
+}
+
+/** True when the reader answered but found nothing usable on the page. */
+function isEmptyRead(r: ReceiptFields | null | undefined): boolean {
+  if (!r) return true
+  return r.total_amount == null && r.tax_amount == null
+    && !r.date && !(r.description ?? '').trim() && !(r.vendor_name ?? '').trim()
 }
