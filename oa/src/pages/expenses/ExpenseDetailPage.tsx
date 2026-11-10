@@ -19,6 +19,8 @@ interface ApprovalEvent {
   actor_name: string
   action: string
   comment: string | null
+  // Step the action was taken at (approval events only; null on the payment row).
+  step_idx?: number | null
   created_at: string
 }
 
@@ -359,6 +361,18 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
                   by {s.actor_name}{s.acted_at ? ` · ${formatDate(s.acted_at)}` : ''}
                 </p>
               )}
+              {/* The step that sent the claim back (or rejected it): who, when
+                  and why, so the claimant sees where it stopped (ISS-0194). */}
+              {(s.state === 'returned' || s.state === 'rejected') && s.actor_name && (
+                <>
+                  <p className="mt-0.5 text-xs text-neutral-500">
+                    by {s.actor_name}{s.acted_at ? ` · ${formatDate(s.acted_at)}` : ''}
+                  </p>
+                  {s.comment && (
+                    <p className="mt-1 whitespace-pre-line rounded bg-neutral-50 px-2 py-1.5 text-xs text-neutral-700">{s.comment}</p>
+                  )}
+                </>
+              )}
               {s.state === 'current' && (
                 <>
                   <p className="mt-0.5 text-xs text-neutral-400">Awaiting this approver</p>
@@ -377,7 +391,7 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
                   )}
                 </>
               )}
-              {/* Comments are shown once, in the Approval Timeline below. */}
+              {/* Approval comments are shown once, in the Approval Timeline below. */}
             </div>
             <span className="shrink-0 text-[10px] font-mono text-neutral-300">Step {s.step_idx + 1}</span>
           </li>
@@ -413,6 +427,17 @@ export default function ExpenseDetailPage() {
     queryKey: ['expense-permissions', id],
     queryFn: () => api.get(`/api/v1/expenses/${id}/permissions`),
   })
+
+  // Same query (and cache) as ApprovalStatusCard — the timeline names the step
+  // a return / reject was taken at from these labels (ISS-0194).
+  const { data: approvalSteps = [] } = useQuery<ApprovalStep[]>({
+    queryKey: ['approval-status', id],
+    queryFn: () => api.get<ApprovalStep[]>(`/api/v1/expenses/${id}/approval-status`),
+  })
+  const stepLabel = (evt: ApprovalEvent) =>
+    (evt.action === ACTION.RETURN || evt.action === ACTION.REJECT) && evt.step_idx != null
+      ? approvalSteps.find((s) => s.step_idx === evt.step_idx)?.label ?? `Step ${evt.step_idx + 1}`
+      : null
 
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: ['expense', id] })
@@ -787,7 +812,10 @@ export default function ExpenseDetailPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-x-2">
                       <span className="text-sm font-medium text-neutral-800">{evt.actor_name}</span>
-                      <span className="text-xs text-neutral-500">{ACTION_LABELS[evt.action] ?? evt.action}</span>
+                      <span className="text-xs text-neutral-500">
+                        {ACTION_LABELS[evt.action] ?? evt.action}
+                        {stepLabel(evt) && ` at ${stepLabel(evt)}`}
+                      </span>
                     </div>
                     <p className="text-xs text-neutral-400">{formatDate(evt.created_at)}</p>
                     {evt.comment && (

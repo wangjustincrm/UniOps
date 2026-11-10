@@ -158,7 +158,10 @@ modules:
         A claim an approver returns can be changed and sent back by the person
         who raised it: open the claim, Edit, Save Changes, then Submit. It goes
         straight back to the approver who returned it — the approvals given
-        before that stand and are not asked for again.
+        before that stand and are not asked for again. Until then the claim's
+        Approval Status marks the step that returned it as Returned, with who
+        returned it, when and their comment, and the Approval Timeline names
+        that step.
       - >-
         A Travel Expense claim is always for a traveller listed on an approved
         Travel Application, and is paid to that traveller. Travellers file

@@ -818,6 +818,13 @@ async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, user: Current
     )).scalars().all())
     approve_by_step = {e.step_idx: e for e in events if e.action == "approve"}
     terminal = next((e for e in events if e.action == "reject"), None)
+    # approval-api resets approval_step_idx to 0 on return (the resubmission
+    # resumes from the return event's step), so for a returned claim the last
+    # return event — not the index — says which step sent it back. Reading the
+    # index marked step 1 "returned" (or "approved", hiding it) and left the
+    # step that actually returned it "waiting" (ISS-0194). Same reading as
+    # epms/src/lib/approvalTimeline.ts.
+    last_return = next((e for e in reversed(events) if e.action == "return"), None)
 
     # Resolve actor display names from the shared users table (best-effort).
     names: dict = {}
@@ -845,16 +852,17 @@ async def get_approval_status(claim_id: uuid.UUID, db: SessionDep, user: Current
                 state = "approved"
             elif terminal is not None and i == terminal.step_idx:
                 state = "rejected"
+                ev, machine = terminal, False
             elif i < current:
                 state = "approved"
             else:
                 state = "waiting"
         elif status == "returned":
-            if ev:
-                state = "approved"
-            elif i == current:
+            returned_at = last_return.step_idx if last_return is not None else current
+            if i == returned_at:
                 state = "returned"
-            elif i < current:
+                ev, machine = last_return, False   # who returned it, when, why
+            elif ev or i < returned_at:
                 state = "approved"
             else:
                 state = "waiting"
