@@ -80,6 +80,12 @@ class RowPlan:
     order_line_id: int | None
 
 
+def shipment_content(ship_date, rows) -> tuple:
+    """What a 945 says shipped, to tell a resend from a second shipment: the date and every row's
+    item, EA, lot, expiry and parcel, in any order."""
+    return ship_date, sorted((str(i or ""), int(q or 0), str(lot or ""), str(exp or ""), str(t or "")) for i, q, lot, exp, t in rows)
+
+
 @dataclass
 class Plan:
     """What applying one 945 set does — computed, not yet written."""
@@ -88,6 +94,7 @@ class Plan:
     order_number: int | None = None
     match_note: str | None = None          # why no order (none / several / two letters)
     second_of: list[str] = field(default_factory=list)   # the earlier 945s' file names
+    repeat_of: str | None = None           # an earlier 945 of the order with the same content (a resend)
     rows: list[RowPlan] = field(default_factory=list)
     lines: dict[str, dict[str, Any]] = field(default_factory=dict)  # line id → {item, ordered, shipped}
     short: list[str] = field(default_factory=list)
@@ -98,7 +105,7 @@ class Plan:
 
     def summary(self) -> dict[str, Any]:
         return {"order_id": self.order_id, "order_number": self.order_number, "match": self.match_note,
-                "second_945_of": self.second_of, "status_to": self.status_to, "accepted_by_945": self.accept_940,
+                "second_945_of": self.second_of, "repeat_of": self.repeat_of, "status_to": self.status_to, "accepted_by_945": self.accept_940,
                 "short": self.short, "unmatched": self.unmatched, "checks": self.checks, "lines": self.lines}
 
 
@@ -108,6 +115,7 @@ class ShipmentReport:
     shipments: int = 0
     no_order: int = 0
     second: int = 0
+    repeats: int = 0  # the same shipment sent again: stored, nothing changed
     shadow: int = 0
     failed: int = 0
     detail: list[str] = field(default_factory=list)
@@ -230,9 +238,21 @@ class Shipments:
             return p
         order = orders[0]
         p.order_id, p.order_number = order.id, order.order_number
-        earlier = (await s.execute(select(Document.remote_name).join(Shipment, Shipment.document_id == Document.id).where(
-            Shipment.order_id == order.id, Shipment.applied.is_(True), Shipment.document_id != doc.id))).scalars().all()
+        earlier = (await s.execute(select(Document.remote_name, Shipment.id, Shipment.ship_date)
+                                   .join(Shipment, Shipment.document_id == Document.id).where(
+            Shipment.order_id == order.id, Shipment.applied.is_(True), Shipment.document_id != doc.id))).all()
+        mine = shipment_content(sh.ship_date, [(r.item_code, r.qty_shipped, r.lot, r.expiry, r.tracking) for r in sh.rows])
+        for name, sid, ship_date in earlier:
+            rows = (await s.execute(select(ShipmentRow.item_code, ShipmentRow.qty_shipped_ea, ShipmentRow.lot, ShipmentRow.expiry,
+                                           ShipmentRow.tracking).where(ShipmentRow.shipment_id == sid))).all()
+            if shipment_content(ship_date, [tuple(r) for r in rows]) == mine:
+                # The warehouse sent the same shipment again (2026-11-10: 55 of Zoho's archive, all
+                # identical): kept with the order, nothing changes, nobody is asked.
+                p.repeat_of = name or "?"
+                p.rows = [RowPlan(r.lx_index, r.w12_index, None) for r in sh.rows]
+                return p
         if earlier:
+            earlier = [n for n, _, _ in earlier]
             p.second_of = [n or "?" for n in earlier]
             p.status_to = F.ON_HOLD.value if FULFILLMENT.can(F(order.fulfillment_status), F.ON_HOLD) else None
             p.checks.append(_check("order state", "a second, different 945 for an order already shipped: not applied",
@@ -355,6 +375,13 @@ class Shipments:
             await attach(s, order, shipment)
             await oplog.write(s, "INFO", STEP, f"945 {doc.remote_name}: joined order {order.label}, made from a 945; not applied",
                               run_id=run_id, document_id=doc.id, order_id=order.id)
+            return shipment
+        if p.repeat_of:
+            shipment = await self._store(s, doc, set_index, sh, p, applied=False, shadow=False)
+            report.repeats += 1
+            await oplog.write(s, "INFO", STEP, f"945 {doc.remote_name}: the same shipment as {p.repeat_of} for order "
+                              f"{order.label}; stored with the order, nothing changed", run_id=run_id, document_id=doc.id,
+                              order_id=order.id)
             return shipment
         shipment = await self._store(s, doc, set_index, sh, p, applied=order is not None and not p.second_of, shadow=False)
         report.shipments += 1

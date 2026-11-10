@@ -227,6 +227,19 @@ async def test_ac73_a_second_different_945_is_stored_not_applied_and_holds_the_o
     assert "first.edi" in t and "second.edi" in t
 
 
+async def test_the_same_945_sent_again_is_kept_with_the_order_and_changes_nothing(p5):  # Zoho archive: 55 resends, 2026-11-10
+    o, _, _ = await shipped_order(p5, x945("9301", ["LX*1", "W12*CP*12*12*0*EA**VN*CF0092"]), "first.edi")
+    await store_945(p5, x945("9301", ["LX*1", "W12*CP*12*12*0*EA**VN*CF0092"], ctl="000000782"), "again.edi")
+    r = await p5.ships.process_945s()
+    assert (r.repeats, r.second) == (1, 0) and await status(p5.edi, o.id) == F.SHIPPED
+    assert [x["applied"] for x in await p5.q("SELECT applied FROM sales_shipments ORDER BY id")] == [True, False]
+    assert await tasks(p5, "second_945") == []
+    assert all("again.edi" not in t for t in await tasks(p5, "945_validation"))  # no check raised for the repeat
+    linked = await p5.q("SELECT d.remote_name FROM sales_document_links l JOIN sales_documents d ON d.id = l.document_id "
+                        "WHERE l.entity_type = 'order' AND l.entity_id = :o AND d.kind = '945_EDI' ORDER BY d.id", o=o.id)
+    assert [x["remote_name"] for x in linked] == ["first.edi", "again.edi"]
+
+
 # ── Shopify write-back (FR-OB-11 / 11a, AC-OB-39 / 72) ───────────────────────
 
 async def test_ac39_a_997_writes_nothing_the_945_fulfils_with_tracking_then_archives(p5):
