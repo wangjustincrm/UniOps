@@ -1,0 +1,22 @@
+area: assistant
+label: The Assistant panel
+covers: >
+  Marked questions, and the tables in the Assistant's answers.
+rules:
+  # ISS-0102: "which questions have I marked?" was answered with the task inbox.
+  - id: marked_questions_are_listed
+    asked_as:
+      - 你可以查询到我mark问题有哪些吗？
+      - which questions have I marked
+      - 我收藏了哪些问题？
+    answer: >
+      Asked which questions you have marked, the Assistant lists them from
+      your Marked list, newest first, exactly as you saved them. You can keep
+      up to 10. Click the star next to a question you asked to mark or unmark
+      it, and "Marked" at the top right of the panel to ask one again with one
+      click. Only your own marked questions are ever listed.
+    enforced_in: "epms-api app/services/marked_view.py asks_for_marked / my_marked; app/api/v1/assistant_chat.py _chat (overrides the planner unless it splits the message) → _answer_marked; app/models/assistant_saved_question.py MAX_SAVED_QUESTIONS; PRD EPMS AST-007"
+    provenance: pinned
+    test:
+      - "tests/test_assistant_asst2_e.py::test_marked_questions_are_listed_whatever_the_planner_picks"
+      - "tests/test_assistant_asst2_e.py::test_only_the_askers_own_marked_questions"

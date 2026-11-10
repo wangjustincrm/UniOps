@@ -68,6 +68,8 @@ export type AssistantKind =
   | 'recall'
   | 'me'
   | 'parts'
+  /** "Which questions have I marked?" — the Marked list, read by the server. */
+  | 'marked'
   | 'cannot_answer'
   | 'denied'
 
