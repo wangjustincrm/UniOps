@@ -118,7 +118,8 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
     """
     from sqlalchemy import or_, select
     from app.api.v1.expenses import (
-        _CAN_PAY, OA_CLAIM_DOC_TYPES, _user_role_codes, approvable_document_ids,
+        _CAN_PAY, OA_CLAIM_DOC_TYPES, _self_payment_rule_enabled, _user_role_codes,
+        approvable_document_ids,
     )
     from app.models.expense import ExpenseClaim as EC
 
@@ -126,6 +127,10 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
     user_id = uuid.UUID(user["sub"])
     roles = await _user_role_codes(db, user_id, role)      # primary ∪ additional
     can_pay = any(r in _CAN_PAY for r in roles)
+    # The payment executor refuses a payer's own claim while the self_payment
+    # SoD rule is on, so that claim is no "Record Payment" card for them
+    # (TASK-007: pay_expense only for users who can execute it; ISS-0205).
+    no_self_pay = can_pay and await _self_payment_rule_enabled(db)
 
     # One definition of "is this mine to approve", shared with my_actions and
     # the list endpoints — see approvable_document_ids. The inline copy that
@@ -165,13 +170,18 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
         )).scalars().unique().all()
     )
 
+    # A custom form keeps its answers as a JSON blob in `notes`, which made the
+    # card title raw JSON (ISS-0195). Its card is titled by the form's name.
+    cfm_names = await _cfm_form_names(db, exp_rows)
+
     seen_exp: set[uuid.UUID] = set()
     for claim in exp_rows:
         if claim.id in seen_exp:
             continue
         is_own = claim.employee_id == user_id or is_preparer(claim, user_id)
+        may_pay = can_pay and not (no_self_pay and claim.employee_id == user_id)
         tt = _exp_task_type(claim.status, is_own, claim.id in approvable_ids,
-                            can_pay, claim.claim_type)
+                            may_pay, claim.claim_type)
         if tt is None:
             continue
         seen_exp.add(claim.id)
@@ -188,7 +198,9 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
             doc_type=doc_type,
             doc_id=str(claim.id),
             doc_number=claim.claim_number,
-            title=claim.purpose or claim.notes or claim.claim_type,
+            title=(cfm_names.get(claim.claim_type.upper()) or claim.claim_number
+                   if ct.startswith("CFM")
+                   else claim.purpose or claim.notes or claim.claim_type),
             submitter_name=claim.employee_name,
             amount=float(claim.total_amount),
             currency=claim.currency,
@@ -213,3 +225,23 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
 
     tasks.sort(key=lambda t: t.created_at, reverse=True)
     return OaTaskListResponse(items=tasks, total=len(tasks))
+
+
+async def _cfm_form_names(db, claims) -> dict[str, str]:
+    """claim_type (CFM_<CODE>) → form name, for the custom-form claims given.
+    One query; the code is read off the claim type as claim_pdf.cfm_form does."""
+    from sqlalchemy import select
+    from app.models.custom_form import CustomFormDefinition
+
+    by_code = {}
+    for c in claims:
+        ct = c.claim_type.upper()
+        if ct.startswith("CFM"):
+            by_code[ct.split("_", 1)[1] if "_" in ct else ct[3:]] = ct
+    if not by_code:
+        return {}
+    rows = (await db.execute(
+        select(CustomFormDefinition.code, CustomFormDefinition.name)
+        .where(CustomFormDefinition.code.in_(list(by_code)))
+    )).all()
+    return {by_code[code]: name for code, name in rows if code in by_code}

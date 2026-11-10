@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { CreditCard, CheckCircle2, X } from 'lucide-react'
 import { formatAmount } from '@/lib/utils'
 import { financeApi } from '@/lib/api'
+import { ErrorBanner } from '@/components/ui/ErrorBanner'
 
 interface FundingAccount {
   id: string; name: string; bank_name: string; kind: string
@@ -11,9 +12,11 @@ interface FundingAccount {
 }
 
 export default function ProcessPaymentModal({
-  docNumber, currency, amount, busy, onConfirm, onClose,
+  docNumber, currency, amount, busy, error, onConfirm, onClose,
 }: {
   docNumber: string; currency: string; amount: number; busy: boolean
+  // The server's refusal (e.g. paying your own claim, PAY-003), shown verbatim.
+  error?: string
   onConfirm: (bankAccountId: string) => void; onClose: () => void
 }) {
   const [bankId, setBankId] = useState('')
@@ -54,6 +57,7 @@ export default function ProcessPaymentModal({
               <p className="text-xs text-warning-600">No active {currency} accounts. Add one under Finance → Bank &amp; Cards.</p>
             )}
           </div>
+          {error && <ErrorBanner message={error} />}
           <div className="flex justify-end gap-2">
             <button onClick={onClose} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50">Cancel</button>
             <button disabled={!bankId || busy} onClick={() => onConfirm(bankId)}

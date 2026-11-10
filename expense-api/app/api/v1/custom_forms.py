@@ -24,7 +24,16 @@ async def list_custom_forms(
 ):
     if user.get("role") not in _ADMIN_ROLES:
         active_only = True
-    return await cf_crud.list_forms(db, active_only=active_only)
+    from app.api.v1.expenses import _action_key, _get_workflow_defs
+
+    wf = await _get_workflow_defs(db)
+    out = []
+    for form in await cf_crud.list_forms(db, active_only=active_only):
+        r = CustomFormResponse.model_validate(form)
+        key = _action_key(f"CFM_{form.code}")
+        r.effective_workflow_key = key if wf.get(key) else "cfm"
+        out.append(r)
+    return out
 
 
 @router.post("", response_model=CustomFormResponse, status_code=201)

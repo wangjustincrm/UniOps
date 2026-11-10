@@ -186,6 +186,13 @@ class ExpenseAttachment(UUIDPrimaryKey, Base):
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # The claim line the file was scanned / attached on (ATT-OA-005). No FK on
+    # purpose: update_claim deletes and re-inserts lines, re-using their ids, and
+    # an ON DELETE action would clear the link mid-save. NULL = not tied to a line.
+    line_item_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    # "scan" (picked with Scan on a line — a rescan replaces it) or "manual".
+    # NULL on rows from before this column = unknown, treated as manual.
+    source: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
     claim: Mapped["ExpenseClaim"] = relationship("ExpenseClaim", back_populates="attachments")
 
