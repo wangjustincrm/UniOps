@@ -84,13 +84,21 @@ async def _distinct_values(db, entity, field_name: str, scope: dict) -> list[str
 
 
 @router.get("/schema")
-async def assistant_schema(db: SessionDep, user: CurrentUserPayload):
-    """Describe the queryable entities this caller may actually reach."""
+async def assistant_schema(db: SessionDep, user: CurrentUserPayload,
+                           app: str | None = None):
+    """Describe the queryable entities this caller may actually reach.
+
+    `app` leaves out what that app's assistant does not use (hidden_in_apps),
+    so the panel's opening line lists what the chat in that app really
+    queries: EPMS still offered "Finance's AP ledger copy of EPMS invoices"
+    after the chat stopped seeing it (ISS-0015)."""
     scope = await build_scope(db, user)
     perms = scope.get("perms", {})
     entities = []
     for entity in REGISTRY.values():
         if not may_view(entity, perms):
+            continue
+        if app and app in entity.hidden_in_apps:
             continue
         entities.append({
             "name": entity.name,

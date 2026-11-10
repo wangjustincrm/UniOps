@@ -168,8 +168,12 @@ def _layer(rows: list | None, render) -> dict:
     return out
 
 
-def _pr(pr) -> dict:
+def _pr(pr, requester: str | None = None) -> dict:
+    # The PR's Requester field, as its page shows it: asked who requested the
+    # purchase behind INV-2026-0631, the reply took a name out of the PR's
+    # title once and sent the reader to NC the next time (ISS-0015).
     return {"number": pr.number, "status": pr.status, "title": pr.title,
+            "requester": requester,
             "amount": _money(pr.amount), "currency": pr.currency,
             "submitted_at": _date(pr.submitted_at), "waiting_on": _step(pr)}
 
@@ -341,13 +345,17 @@ async def build(db, scope: dict, doc_type: str, number: str) -> dict:
         if pr_ids:
             prs = await _visible(db, scope, "pr", PurchaseRequest.id.in_(pr_ids))
             pr = prs[0] if prs else None
+    requester = None
     if pr is not None:
         await _waiting_on(db, "pr", [pr])
+        from app.models.user import User
+        requester = (await db.execute(select(User.full_name).where(
+            User.id == pr.created_by))).scalar_one_or_none()
 
     out = {
         "found": True,
         "asked_about": {"doc_type": doc_type, "number": getattr(doc, _MODEL[doc_type][1])},
-        "purchase_request": _pr(pr) if pr is not None else None,
+        "purchase_request": _pr(pr, requester) if pr is not None else None,
         "orders": branches,
         "agreements": [await _agreement_branch(db, scope, a) for a in agreement_ids],
     }
