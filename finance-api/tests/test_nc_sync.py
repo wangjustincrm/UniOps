@@ -815,3 +815,29 @@ async def test_checker_names_follow_nc_after_import(db_session):
     nc_sync.start_run("incremental", uuid.uuid4(), pg_dsn=_TEST_DSN,
                       fetch=lambda wm: replace(base, names={"NCPK1": ("XIN", None)}))
     assert names() == ("XIN", None)
+
+
+async def test_incremental_run_attaches_income_expense_item_added_after_import(db_session):
+    """A voucher imported while its NC income-expense code had no budget
+    account keeps a NULL item forever unless a later run re-resolves it: the
+    voucher itself is skipped by every incremental run. Production: CRM09999
+    added 4.5h after JV-202610-0692 was imported, flagged on JV Validation
+    and missing from the Budget Dashboard until fixed by hand (2026-11-10)."""
+    from app.services import nc_sync
+
+    nc_sync.start_run("incremental", uuid.uuid4(),
+                      fetch=lambda wm: _mini_extract(), pg_dsn=_TEST_DSN)
+    assert _pg("select count(*) from journal_voucher_lines "
+               "where income_expense_item_id is not null")[0][0] == 0
+
+    ba_uuid = uuid.uuid4()
+    _pg("insert into budget_accounts (id, code, name, is_active, created_at, updated_at) "
+        "values (%s, 'CRM004', 'CRM004 Test', true, now(), now())", (ba_uuid,))
+    run2 = nc_sync.start_run("incremental", uuid.uuid4(),
+                             fetch=lambda wm: _mini_extract(), pg_dsn=_TEST_DSN)
+    assert _pg("select status, vouchers_inserted from nc_sync_runs where id = %s",
+               (run2,))[0] == ("success", 0)          # voucher was skipped, not re-imported
+    assert _pg("select income_expense_item_id from journal_voucher_lines "
+               "where income_expense_item_id is not null") == [(ba_uuid,)]
+    assert _pg("select value_id from jv_line_dimensions "
+               "where dim_code = 'income_expense_item'") == [(ba_uuid,)]
