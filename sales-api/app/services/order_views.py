@@ -42,7 +42,7 @@ from app.domain.status import Invoice as Inv
 from app.models.config import Connection, DcRouting, Item, ItemUnit, Partner
 from app.models.documents import Document, DocumentLink
 from app.models.invoices import Invoice, InvoiceLine
-from app.models.orders import Order, OrderLine
+from app.models.orders import WITH_FACTS, Order, OrderLine
 from app.models.payments import (
     OrderPayment,
     OrderRefund,
@@ -116,6 +116,10 @@ ORDER_STATE_SQL = case(
 
 class OrderRepository(Repository[Order]):
     model = Order
+
+    def base_query(self):
+        """An order as the Orders pages show it: with its facts (models/orders.py order_fact)."""
+        return super().base_query().options(WITH_FACTS)
     search_fields = ("source_reference", "source_order_number", "source_order_id", "partner_name_sql", "review_reason", "tags")
     search_numbers = ("order_number",)  # the Internal no., matched exactly
     client_columns = ("status_detail", "shopify", "ship_to_place")  # OrdersPage's own cells

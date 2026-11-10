@@ -20,7 +20,7 @@ from sqlalchemy import (
     UniqueConstraint, case, false, func, select, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, column_property, mapped_column
+from sqlalchemy.orm import Mapped, column_property, mapped_column, undefer_group
 
 from app.db.base import Base
 from app.domain.orders import HOLD_REASONS, LINE_STATUSES, SOURCE_TYPES
@@ -149,13 +149,25 @@ class Order(Audited, Versioned, Base):
 FULFILLMENT.bind(Order)
 INVOICE.bind(Order)
 
+def order_fact(expr):
+    """A fact of the order computed in SQL (`*_sql`, 2026-11-10): loaded only by the reads that show
+    an order (OrderRepository undefers the "facts" group). A job reading orders pays none of the
+    subqueries; Order.fact() on a row read without them gives the default, so only the order's
+    own reads (order_views) use them."""
+    return column_property(expr, deferred=True, group="facts")
+
+
+# The loader option that reads an order with its facts (OrderRepository, a test).
+WITH_FACTS = undefer_group("facts")
+
+
 # The partner's name on the order's row (lists sort, filter, group and search by it).
-Order.partner_name_sql = column_property(
+Order.partner_name_sql = order_fact(
     select(Partner.name).where(Partner.code == Order.partner_code).correlate_except(Partner).scalar_subquery())
 
 # What the Status and its Detail read of the partner (app/domain/order_status.py).
 def _partner_value(column):
-    return column_property(select(column).where(Partner.code == Order.partner_code).correlate_except(Partner).scalar_subquery())
+    return order_fact(select(column).where(Partner.code == Order.partner_code).correlate_except(Partner).scalar_subquery())
 
 
 Order.partner_invoice_method_sql = _partner_value(Partner.invoice_method)
@@ -163,7 +175,7 @@ Order.partner_sending_mode_sql = _partner_value(Partner.sending_mode)
 Order.partner_settlement_mode_sql = _partner_value(Partner.settlement_mode)
 Order.partner_delay_minutes_sql = _partner_value(Partner.delay_minutes)
 # No carrier tells us a delivery date: it is due on the requested date (dc routing: do-not-deliver-after).
-Order.delivery_due_sql = column_property(case(
+Order.delivery_due_sql = order_fact(case(
     (select(Partner.dc_routing_required).where(Partner.code == Order.partner_code).correlate_except(Partner).scalar_subquery(),
      Order.do_not_deliver_after), else_=Order.requested_delivery_date))
 
@@ -201,14 +213,14 @@ class OrderLine(Audited, Base):
 # The order's amount: the source's total (Shopify: current_total_price, after
 # refunds), else its lines at the PO price (850 and manual orders carry no
 # total) — what the Total column shows and the list sums.
-Order.total_amount_sql = column_property(func.coalesce(Order.total, select(
+Order.total_amount_sql = order_fact(func.coalesce(Order.total, select(
     func.round(func.sum(OrderLine.ordered_qty * OrderLine.unit_price), 2)).where(
     OrderLine.order_id == Order.id, OrderLine.removed.is_(False)).correlate_except(OrderLine).scalar_subquery()))
 
 
 # The order's backordered EA: the sum over its lines with an applied 945 (NULL
 # before any) — the list's Backordered column and view.
-Order.backordered_ea_sql = column_property(select(
+Order.backordered_ea_sql = order_fact(select(
     func.sum(func.greatest(OrderLine.qty_ea - OrderLine.shipped_ea, 0))).where(
     OrderLine.order_id == Order.id, OrderLine.removed.is_(False), OrderLine.shipped_ea.is_not(None),
     OrderLine.qty_ea.is_not(None)).correlate_except(OrderLine).scalar_subquery())

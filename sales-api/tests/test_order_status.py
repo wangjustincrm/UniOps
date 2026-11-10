@@ -16,7 +16,7 @@ from app.domain.order_status import (
 from app.domain.status import Fulfillment as F
 from app.domain.status import Invoice as Inv
 from app.models.documents import Document
-from app.models.orders import Order, OrderLine
+from app.models.orders import WITH_FACTS, Order, OrderLine
 from app.models.shipments import Shipment, ShipmentRow
 from app.platform.actors import SYSTEM_ACTOR
 from app.services.health import DASHBOARD_CARDS
@@ -212,7 +212,7 @@ async def test_the_sql_gives_what_the_function_gives_for_every_combination(env):
                 s.add(OrderLine(order_id=o.id, line_no=1, source={}, ordered_qty=5, qty_ea=5, shipped_ea=3))
         await u.commit()
     async with env.factory(SYSTEM_ACTOR) as u:
-        rows = (await u.session.execute(sa.select(Order, ORDER_STATUS_SQL, ON_HOLD_REASON_SQL))).all()
+        rows = (await u.session.execute(sa.select(Order, ORDER_STATUS_SQL, ON_HOLD_REASON_SQL).options(WITH_FACTS))).all()
     assert len(rows) == i
     for o, status, reason in rows:
         d = display(status_facts(o))
@@ -266,7 +266,7 @@ async def test_the_short_shipped_mark_counts_the_shadow_945_only_when_its_rows_a
             ids[n] = o.id
         await u.commit()
     async with env.factory(SYSTEM_ACTOR) as u:
-        got = {n: display(status_facts((await u.session.execute(sa.select(Order).where(Order.id == i))).scalar_one())).short_shipped
+        got = {n: display(status_facts((await u.session.execute(sa.select(Order).options(WITH_FACTS).where(Order.id == i))).scalar_one())).short_shipped
                for n, i in ids.items()}
     assert got == {1: True, 2: False, 3: False}  # short; shipped in full; an unlinked 945 says nothing
 

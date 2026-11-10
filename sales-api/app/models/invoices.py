@@ -16,7 +16,7 @@ from sqlalchemy.orm import Mapped, column_property, mapped_column
 
 from app.db.base import Base
 from app.models.config import Partner, one_of
-from app.models.orders import Order
+from app.models.orders import Order, order_fact
 from app.platform.entities import Audited, CreationAudited, Versioned
 
 RETURN_KINDS = ("Cancelled after shipment", "Returned")
@@ -106,5 +106,5 @@ class OrderReturn(CreationAudited, Base):
 
 
 # The Detail of an order whose invoice failed (app/domain/order_status.py).
-Order.invoice_error_sql = column_property(
+Order.invoice_error_sql = order_fact(
     select(Invoice.error).where(Invoice.order_id == Order.id).correlate_except(Invoice).scalar_subquery())

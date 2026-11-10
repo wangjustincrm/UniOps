@@ -22,7 +22,7 @@ from sqlalchemy.orm import Mapped, aliased, column_property, mapped_column
 from app.db.base import Base
 from app.models.config import Item, one_of
 from app.models.documents import Document, DocumentLink
-from app.models.orders import Order, OrderLine
+from app.models.orders import Order, OrderLine, order_fact
 from app.platform.entities import Audited, Versioned
 
 SHOPIFY_STATUSES = ("Not needed", "Pending", "Done", "Failed", "Suppressed")
@@ -95,23 +95,23 @@ Document.order_refs = column_property(
 
 # What the Order status reads of the order's 945s and 940 (app/domain/order_status.py).
 def _any_shipment(*where):
-    return column_property(exists().where(Shipment.order_id == Order.id, *where).correlate_except(Shipment))
+    return order_fact(exists().where(Shipment.order_id == Order.id, *where).correlate_except(Shipment))
 
 
 Order.has_945_sql = _any_shipment()
-Order.last_ship_date_sql = column_property(
+Order.last_ship_date_sql = order_fact(
     select(func.max(Shipment.ship_date)).where(Shipment.order_id == Order.id).correlate_except(Shipment).scalar_subquery())
 Order.shopify_failed_sql = _any_shipment(Shipment.shopify_status.in_(("Failed", "Suppressed")))
 Order.shopify_pending_sql = _any_shipment(Shipment.shopify_status == "Pending")
-Order.shopify_error_sql = column_property(
+Order.shopify_error_sql = order_fact(
     select(Shipment.shopify_error).where(Shipment.order_id == Order.id, Shipment.shopify_error.is_not(None))
     .order_by(Shipment.id.desc()).limit(1).correlate_except(Shipment).scalar_subquery())
 _order_940 = (DocumentLink.entity_type == "order", DocumentLink.entity_id == Order.id, Document.kind == "940_EDI",
               Document.direction == "OUT")
-Order.file_note_sql = column_property(  # the latest 940's rejection (the 997's codes) or failure
+Order.file_note_sql = order_fact(  # the latest 940's rejection (the 997's codes) or failure
     select(func.coalesce(Document.ack_detail, Document.error)).join(DocumentLink, DocumentLink.document_id == Document.id)
     .where(*_order_940).order_by(Document.id.desc()).limit(1).correlate_except(Document, DocumentLink).scalar_subquery())
-Order.sent_940_at_sql = column_property(
+Order.sent_940_at_sql = order_fact(
     select(func.max(Document.sent_at)).join(DocumentLink, DocumentLink.document_id == Document.id).where(
         *_order_940).correlate_except(Document, DocumentLink).scalar_subquery())
 
@@ -133,12 +133,12 @@ _shadow_linked = exists().where(ShipmentRow.shipment_id == Shipment.id, Shipment
 # per item (on its first line), NULL before a linked 945.
 _item_ea = (select(func.sum(_item_line.qty_ea)).where(_item_line.order_id == Order.id, _item_line.item_code == OrderLine.item_code,
                                                       _item_line.removed.is_(False)).correlate(Order, OrderLine).scalar_subquery())
-Order.shadow_backordered_sql = column_property(case((_shadow_linked, select(func.coalesce(func.sum(
+Order.shadow_backordered_sql = order_fact(case((_shadow_linked, select(func.coalesce(func.sum(
     func.greatest(_item_ea - _shadow_ea, 0)), 0)).select_from(OrderLine).join(Item, Item.item_code == OrderLine.item_code).where(
     OrderLine.order_id == Order.id, OrderLine.removed.is_(False), Item.warehouse_held.is_(True),
     ~exists().where(_earlier.order_id == Order.id, _earlier.item_code == OrderLine.item_code, _earlier.removed.is_(False),
                     _earlier.id < OrderLine.id).correlate(Order, OrderLine)).correlate(Order).scalar_subquery()), else_=None))
-Order.shadow_short_sql = column_property(and_(
+Order.shadow_short_sql = order_fact(and_(
     _shadow_linked,
     select(OrderLine.item_code).join(Item, Item.item_code == OrderLine.item_code)
     .where(OrderLine.order_id == Order.id, OrderLine.removed.is_(False), Item.warehouse_held.is_(True))
