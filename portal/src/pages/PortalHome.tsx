@@ -664,7 +664,8 @@ export default function PortalHome() {
       icon: <CreditCard className="h-5 w-5 text-amber-500" />,
       iconBg: 'bg-amber-50',
       label: 'OA',
-      description: 'Reimbursements, vendor payments, mileage claims',
+      // Vendor payments left OA (PRD OA §15) — expenses, mileage and travel only.
+      description: 'Expense reimbursements, mileage and travel',
       href: oaHref,
       healthy: oaHealth.data?.ok,
       loading: oaHealth.isLoading,
