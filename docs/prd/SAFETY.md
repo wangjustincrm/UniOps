@@ -1,12 +1,15 @@
 # Safety (EHS) — Product Requirements Document
 
-**Version**: 0.16
+**Version**: 0.17
 **Date**: 2026-11-09
 **Status**: In Development (branch, not deployed)
 **Scope**: A workplace health and safety module for the Kingston plant (Ontario OHSA / WSIB), replacing SiteDocs. It covers incidents and statutory clocks, corrective actions, inspections and forms, training, JHSC, chemicals/WHMIS, permits, equipment, documents, and dashboards.
 **Source**: Consolidated from the Safety Module PRD series in `/srv/uniops/`. The baseline is the full requirement list in v0.2 (`Safety-Module-PRD-EN-v0.2.docx`, 28 Aug 2026). Changes come from v0.3 and the HSE reply to it (`Safety-Module-PRD-EN-v0.3_Reply.docx`, 31 Aug), and from v0.4 and the HSE reply to it (`Safety-Module-PRD-EN-v0.4_Reply.docx`, 1 Sep). v0.3 and v0.4 were delta documents, so they do not restate the full list.
 
-**What changed in this version (0.15 → 0.16)**
+**What changed in this version (0.16 → 0.17)**
+- §1.6 "Round 12, third batch": incidents, investigations, corrective actions and JHSC on HSE's answers Q4–Q8 and Q10 and their JHSC workflow — the food-safety near miss, no injury question on a near miss, no signature on the report, investigations outstanding until signed off, product batch code, the 5 Whys, reassigning and verifying held to supervisors and HSE, HSE's review once a record's actions close, action history on the record, the eleven-step JHSC workflow, the report edited in the report's own words, and incident types HSE add.
+
+**What changed in version 0.16 (0.15 → 0.16)**
 - §1.6 "Round 12, second batch": the equipment register — every machine, a box per System, the System as a list HSE keep and merge, retire and delete, a template and an upload matched on the area's path; equipment pickers search as you type and offer the machines in the record's area; safety equipment can be retired and deleted.
 - §2.11 E56 restated.
 
@@ -278,6 +281,25 @@ UAT 12 closed at 13 passed and 1 failed. HSE answered every question; this batch
 - Given the area the record is filed against, the picker offers that area's machines and everything beneath it, plus the 15 with no area (INC-10, INC-11). An area with none of its own — 46 of the 68 — offers the nearest area above it that has some, and says which. Show all areas is the way out when a machine was moved and the register not told.
 - A record names its machine by looking it up, retired or not; a list of records looks its machines up together. Previously a machine outside the first 500 read "Equipment not in the register".
 - Not done: whether the 208 machines whose System is "Archive" should start retired was asked and not answered; they are in service until HSE retires them or merges the System.
+
+Round 12, third batch (built)
+
+On HSE's answers Q4–Q8 and Q10, and their JHSC workflow.
+
+- Near Miss — Food Safety is a type on the near-miss form, in the Food Safety category, offered only to coordinators, supervisors and HSE (the holders of ehs.incident.investigate). It counts with the near misses wherever they are counted, and under Food Safety on Reports (migration 0089 adds the category where it was missing). The near-miss form opens on Near miss (INC-07).
+- A near miss does not ask how badly anybody was hurt and stores no injury (Q4: "If a worker is injured it is no longer a near miss"). This reverses round 4 for near misses only. A near-miss investigation does not ask what PPE could have prevented it; an older answer is kept.
+- Changing an incident's type removes the category the old type set; a category chosen by hand stays (REP-01).
+- The report has no signature (Q6). The investigation is complete when it is signed off, and outstanding until then: the register's box "Investigations not signed off" counts open incidents whose investigation is owed (every injury and equipment incident) or begun and not signed, and opens exactly those (TC-05). The status Under investigation is written by nothing, so its box always read 0.
+- Product batch code: one field on the incident (migration 0090), beside the date and time on the report and under who investigated on the investigation (INC-04, D3).
+- The 5 Whys on the investigation (Q8, INC-15/16, migration 0091): up to five answers. An incident in Food Safety, or a food-safety near miss, is signed off only with all five; elsewhere they are optional.
+- Only supervisors and HSE reassign a corrective action (Q7): the open task moves with it and the change — from whom, to whom, why — goes into its history. Verifying is held to ehs.action.verify alone; the owner verifying their own (round 2) is gone, and JHSC members no longer hold the key (identity 0027). No named verifier.
+- When the last open corrective action raised from a record is verified, HSE get a task in My Actions to review the record (Q5): incident, form, hazard, drill, permit, safety equipment or JHSC recommendation. It opens the record; Reviewed ends it, and so does closing an incident.
+- A record shows the history of each corrective action raised from it — raised, progress, reassigned, done, verified — on incidents, forms and JHSC recommendations (JHSC-01). A JHSC recommendation also shows what the action says to do (TC-05), and opens from its text in bold, with a green Open button, on both lists (JHSC-02).
+- Failing a safety equipment check opens the corrective action form the incidents use, filled in from the item and the notes; nothing is raised while the item has one open (TC-19, D16).
+- JHSC recommendations follow HSE's workflow (migration 0092): Being reviewed when recorded; Under Review the first time somebody it was sent to opens it; Work in progress once the reply with what will be done is in; Awaiting HSE verification when its corrective action is verified; Completed when HSE verify it on the recommendation. Each step moves it only from the states before it, so a state set by hand further on stays; a reply that declines or defers leaves it where it is. The recommendation lists its history. This replaces round 11's rule.
+- Editing a report asks what the report asked, in the same words and order; the three fields the report no longer asks show only on records that have them; photos can be added (INC-17).
+- Settings → Incident types (GEN-01, Q10, migration 0093): the thirteen built-in types are listed and fixed; HSE add their own with a name, the form that offers it, a category and who may pick it, and retire them. An added type sets no injury class and never tells the Ministry. Retired types still read on the incidents that name them.
+- Waiting on HSE: TC-08, whether supervisors may see Section B on the report.
 ## 2. Functional Requirements — 57 Items
 
 Priority: **P0** legally required or the loop breaks without it · **P1** needed day to day · **P2** strengthens the system · **P3** needed for COR. **Phase** is as stated in v0.2–v0.4; "—" means the source did not assign one.
@@ -459,6 +481,7 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | 0.14 | 2026-10-29 | Round 10 fourth batch built: the dashboard, phone install (§1.6); Reports rates corrected; SF-15 narrowed. |
 | 0.15 | 2026-11-06 | Round 11 first batch: UAT 11 faults and renames (§1.6); `origin/main` merged in with Staff (§9). |
 | 0.16 | 2026-11-09 | Round 12 second batch: the equipment register and pickers; retiring safety equipment (§1.6, E56). |
+| 0.17 | 2026-11-09 | Round 12 third batch: incidents, investigations, corrective actions, JHSC workflow, incident types (§1.6). |
 
 ---
 
