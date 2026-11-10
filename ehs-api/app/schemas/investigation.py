@@ -23,6 +23,7 @@ class InvestigationIn(BaseModel):
     ppe_that_could_prevent: list[uuid.UUID] = Field(default_factory=list)
     sequence_of_events: str | None = None
     root_cause_narrative: str | None = None
+    five_whys: list[str] = Field(default_factory=list, max_length=5)
 
 
 class InvestigationSignIn(BaseModel):
@@ -94,6 +95,7 @@ class InvestigationOut(BaseModel):
     ppe_that_could_prevent: list[uuid.UUID]
     sequence_of_events: str | None
     root_cause_narrative: str | None
+    five_whys: list[str] = []
     completed_at: datetime | None
     signed_by_name: str | None
 

@@ -263,6 +263,8 @@ class IncidentOut(BaseModel):
     description: str | None
     equipment_involved: str | None
     batch_code: str | None = None
+    # Round 12, Q8: whether the investigation must use the 5 Whys.
+    needs_five_whys: bool = False
     equipment_id: uuid.UUID | None = None
     witnesses_note: str | None
     immediate_action_taken: str | None

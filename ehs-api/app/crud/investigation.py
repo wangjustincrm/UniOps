@@ -68,8 +68,29 @@ async def upsert_investigation(
     inv.ppe_that_could_prevent = [str(i) for i in payload.ppe_that_could_prevent]
     inv.sequence_of_events = payload.sequence_of_events
     inv.root_cause_narrative = payload.root_cause_narrative
+    whys = [(w or "").strip() for w in payload.five_whys][:5]
+    while whys and not whys[-1]:
+        whys.pop()
+    inv.five_whys = whys
     await db.flush()
     return inv
+
+
+FIVE_WHYS = 5
+
+
+async def needs_five_whys(db: AsyncSession, incident: Incident) -> bool:
+    """Round 12, Q8: a food-safety incident is investigated by the 5 Whys —
+    the food-safety near miss, or anything in the Food Safety category."""
+    if (incident.extra or {}).get("incident_type") == "near_miss_food_safety":
+        return True
+    if incident.category_id is None:
+        return False
+    from sqlalchemy import text
+    code = (await db.execute(text(
+        "select code from ehs_vocabulary_items where id = :id"),
+        {"id": incident.category_id})).scalar()
+    return code == "FOOD"
 
 
 async def sign_investigation(
@@ -84,6 +105,13 @@ async def sign_investigation(
     if inv is None:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             "There is no investigation to sign yet")
+    if await needs_five_whys(db, incident):
+        answered = [w for w in (inv.five_whys or []) if (w or "").strip()]
+        if len(answered) < FIVE_WHYS:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"A food safety investigation is signed off once all five whys are "
+                f"answered; {len(answered)} of {FIVE_WHYS} are.")
     inv.signature = signature
     inv.signed_by = user_id
     inv.signed_by_name = await _name(db, user_id)

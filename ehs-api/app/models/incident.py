@@ -204,6 +204,12 @@ class IncidentInvestigation(UUIDPrimaryKey, TimestampMixin, Base):
     )
     sequence_of_events: Mapped[str | None] = mapped_column(Text, nullable=True)
     root_cause_narrative: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Round 12, INC-15/16 and Q8: "the 5 why technique … any items categorized
+    # as food safety would require it." Up to five answers, in order: why it
+    # happened, why that happened, and so on to the root cause.
+    five_whys: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]",
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     signed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True,

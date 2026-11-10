@@ -39,6 +39,7 @@ interface Investigation {
   ppe_that_could_prevent: string[]
   sequence_of_events: string | null
   root_cause_narrative: string | null
+  five_whys?: string[]
   completed_at: string | null
   signed_by_name: string | null
 }
@@ -104,6 +105,7 @@ export default function InvestigationPage() {
     queryFn: () => api.get<{
       incident_no: string; title: string; form_kind: string
       batch_code?: string | null
+      needs_five_whys?: boolean
       persons: {
         id: string; role: string; person_name: string
         body_part_id: string | null; body_part_label: string | null
@@ -137,6 +139,7 @@ export default function InvestigationPage() {
   const [ppe, setPpe] = useState<string[]>([])
   const [sequence, setSequence] = useState('')
   const [narrative, setNarrative] = useState('')
+  const [whys, setWhys] = useState<string[]>(['', '', '', '', ''])
   const [causes, setCauses] = useState<Cause[]>([])
   const [signature, setSignature] = useState<string | null>(null)
   const [med, setMed] = useState<Partial<Medical>>({ timeline: [] })
@@ -190,6 +193,7 @@ export default function InvestigationPage() {
       setPpe(inv.ppe_that_could_prevent ?? [])
       setSequence(inv.sequence_of_events ?? '')
       setNarrative(inv.root_cause_narrative ?? '')
+      setWhys([0, 1, 2, 3, 4].map((i) => inv.five_whys?.[i] ?? ''))
     } else if (me) {
       // ★ Round 7: "when clicking on the start the investigation button, the
       // lead investigator should default to who ever is logged in." Only when
@@ -213,6 +217,8 @@ export default function InvestigationPage() {
   // Round 12, INC-04: the incident's batch code, edited here as well.
   const [batchCode, setBatchCode] = useState<string | null>(null)
   const batchShown = batchCode ?? incident.data?.batch_code ?? ''
+  const needsWhys = Boolean(incident.data?.needs_five_whys)
+  const whysMissing = needsWhys ? whys.filter((w) => !w.trim()).length : 0
 
   const save = useMutation({
     mutationFn: async (opts: { sign: boolean }) => {
@@ -226,6 +232,7 @@ export default function InvestigationPage() {
         ppe_that_could_prevent: ppe,
         sequence_of_events: sequence || null,
         root_cause_narrative: narrative || null,
+        five_whys: whys,
       })
       await api.put(`/api/v1/incidents/${id}/causes`, {
         // ★ Through the shared serialiser, which now also carries the priority
@@ -374,6 +381,29 @@ export default function InvestigationPage() {
         </Field>
       </Section>
 
+      {/* ★ Round 12, INC-15/16 and Q8: "the 5 why technique … any items
+          categorized as food safety would require it." */}
+      <Section title="5 Whys">
+        <p className="mb-2 text-xs text-neutral-600">
+          Ask why it happened, then why that happened, and keep going until you reach the cause
+          that, fixed, stops it happening again.{' '}
+          {needsWhys
+            ? <b className="text-neutral-800">Required for food safety: all five are answered before it is signed off.</b>
+            : 'Optional here; required for food safety.'}
+        </p>
+        <ol className="flex flex-col gap-2">
+          {whys.map((w, i) => (
+            <li key={i}>
+              <label className="text-xs font-medium text-neutral-700">
+                Why {i + 1}{i === 0 ? ' — why did it happen?' : ` — why did that happen?`}
+                <input className={`${inputClass} mt-1`} value={w}
+                       onChange={(e) => setWhys((all) => all.map((x, j) => (j === i ? e.target.value : x)))} />
+              </label>
+            </li>
+          ))}
+        </ol>
+      </Section>
+
       <Section title="Immediate causes">
         {causeRows('immediate', 'immediate_cause',
                    'The conditions present at the time — what you could see.')}
@@ -449,6 +479,11 @@ export default function InvestigationPage() {
                       label="Sign to complete the investigation" />
       </Section>
 
+      {whysMissing > 0 && (
+        <p className="mt-2 text-xs text-warning-800">
+          {whysMissing} of the five whys still to answer before this can be signed off.
+        </p>
+      )}
       {error && (
         <p className="mb-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>
       )}
@@ -477,7 +512,7 @@ export default function InvestigationPage() {
         </button>
         <button
           type="button"
-          disabled={save.isPending || !signature || unfinishedAction(causes)}
+          disabled={save.isPending || !signature || unfinishedAction(causes) || whysMissing > 0}
           onClick={() => { setError(null); save.mutate({ sign: true }) }}
           className="min-h-[44px] flex-[1.4] rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white disabled:opacity-50"
         >

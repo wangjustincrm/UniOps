@@ -153,6 +153,7 @@ async def _to_out(db, incident, user: dict) -> IncidentOut:
         e for e in await crud.load_events(db, incident.id)
     ]
     out = IncidentOut.model_validate(out.model_dump())
+    out.needs_five_whys = await inv_crud.needs_five_whys(db, incident)
     if incident.is_anonymous:
         if await sees_anonymous_reporters(db, user):
             # HSE: who it was, by name, for the private conversation.

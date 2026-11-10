@@ -113,3 +113,33 @@ async def test_an_investigation_is_outstanding_until_it_is_signed_off(hse_manage
 
     edited = await hse.patch(f"/api/v1/incidents/{iid}", json={"batch_code": "LOT-2611-B"})
     assert edited.status_code == 200 and edited.json()["batch_code"] == "LOT-2611-B"
+
+
+async def test_a_food_safety_investigation_is_signed_off_with_all_five_whys(hse_manager, db_session):
+    """★ Round 12, Q8. Other incidents may use them; none must."""
+    _, hse = hse_manager
+    await _food(db_session)
+    sig = {"signature": "data:image/png;base64,iVBORw0KGgo="}
+
+    async def investigate(code, whys):
+        made = await hse.post("/api/v1/incidents", json=_near_miss(code))
+        iid = made.json()["id"]
+        await hse.post(f"/api/v1/incidents/{iid}/submit")
+        put = await hse.put(f"/api/v1/incidents/{iid}/investigation", json={
+            "investigator_id": None, "five_whys": whys})
+        assert put.status_code == 200, put.text
+        return iid, (await hse.get(f"/api/v1/incidents/{iid}")).json()
+
+    iid, inc = await investigate("near_miss_food_safety", ["Lid off", "Rushed", "", "", ""])
+    assert inc["needs_five_whys"] is True
+    refused = await hse.post(f"/api/v1/incidents/{iid}/investigation/sign", json=sig)
+    assert refused.status_code == 422 and "2 of 5" in refused.text, refused.text
+    await hse.put(f"/api/v1/incidents/{iid}/investigation", json={
+        "investigator_id": None, "five_whys": ["a", "b", "c", "d", "e"]})
+    assert (await hse.post(f"/api/v1/incidents/{iid}/investigation/sign", json=sig)).status_code == 200
+    got = (await hse.get(f"/api/v1/incidents/{iid}/investigation")).json()
+    assert got["five_whys"] == ["a", "b", "c", "d", "e"]
+
+    plain, inc = await investigate("near_miss", [])
+    assert inc["needs_five_whys"] is False
+    assert (await hse.post(f"/api/v1/incidents/{plain}/investigation/sign", json=sig)).status_code == 200
