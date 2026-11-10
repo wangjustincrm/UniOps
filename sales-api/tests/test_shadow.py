@@ -179,7 +179,8 @@ async def test_an_expected_difference_holds_while_the_differences_stay_the_same(
         order.ship_to = {**order.ship_to, "city": "Laval"}
         await u.commit()
     await run(edi, tmp_path).run()
-    assert [(x["status"], x["differences"]) for x in await matches(edi)] == [("Differs", 2)]
+    # W01 and the city twice: a Shopify bill-to is the ship-to (user 2026-11-10)
+    assert [(x["status"], x["differences"]) for x in await matches(edi)] == [("Differs", 3)]
     async with edi.env.factory(OP) as u:
         summary = await ShadowMatchService(u).summary()
     assert summary["Differs"] == 1 and summary["Expected difference"] == 0

@@ -709,7 +709,7 @@ This appendix records the message formats the Zoho application produces and read
 | Segment | Shopify order | Retailer order |
 | --- | --- | --- |
 | W05 | `W05*N*<Shopify order number>` | `W05*N*<9-digit internal number>*<retailer PO>` |
-| N1 | FR = CANADA ROYAL MILK ULC / CRM; WH = RADIANT COLERAINE WAREHOUSE / CLN02; ST and BT from the order, `*94*<Shopify customer id>` on both; `PER*CN*<ship-to name>*EM*<email>*TE*<phone>` between ST and BT (the order's phone, else the ship-to's) | same, `*94*<850 code>` on ST and BT, without PER; a bill-to with no address carries the ship-to's |
+| N1 | FR = CANADA ROYAL MILK ULC / CRM; WH = RADIANT COLERAINE WAREHOUSE / CLN02; ST from the order; BT from the order for a retailer, and for Shopify the ship-to again (user 2026-11-10: nobody is billed, the customer paid in Shopify; the order keeps its billing address), `*94*<Shopify customer id>` on both; `PER*CN*<ship-to name>*EM*<email>*TE*<phone>` between ST and BT (the order's phone, else the ship-to's) | same, `*94*<850 code>` on ST and BT, without PER; a bill-to with no address carries the ship-to's |
 | N9 | `8X*BC`, `E1*<source reference, e.g. SHP-9275>` | `8X*BB`, `E1*CRM-940_<9-digit number>_<partner name without spaces>_<PO>`, `LB*<label code>`, `LO*<DC number>` (sent even when empty), `MR*0020` (Walmart order type 0020 only), `DP*<department>` (sent even when empty) |
 | G62 | 01 = requested delivery date, 10 = today | also 38 = today, 79 = requested delivery date |
 | W66 | `W66*PP*U***GND*****PRLA` or `EXP` when the shipping method contains "express" (Purolator) | `W66*PP*LT********WIFS` |

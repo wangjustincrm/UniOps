@@ -227,7 +227,9 @@ class Outbound940:
             label_code=partner.label_code,
             dc_number=dc, order_type=order.order_type, department=order.department,
             requested_delivery=order.requested_delivery_date, ship_to=Address.of(order.ship_to),
-            bill_to=Address.of(order.bill_to), contact=order.contact or {},
+            # Shopify (user 2026-11-10): the customer paid in Shopify and nobody is billed, so the 940's
+            # bill-to is the ship-to. The order keeps Shopify's billing address.
+            bill_to=Address.of(order.ship_to if order.source_type == "SHOPIFY" else order.bill_to), contact=order.contact or {},
             express="express" in (order.shipping_method or "").lower(), lines=tuple(out))
 
     async def generate(self, uow, order: Order, partner: Partner, *, reason: str) -> Document:

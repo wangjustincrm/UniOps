@@ -466,3 +466,23 @@ async def test_a_manual_order_with_its_ship_to_builds_a_valid_940(edi):
     segs = segments(content)
     assert ["N1", "ST", "Staff shop"] == [s for s in segs if s[0] == "N1" and s[1] == "ST"][0][:3]
     assert ["N4", "Kingston", "ON", "K7P 0E9"] == [s for s in segs if s[0] == "N4"][0][:4]
+
+
+async def test_a_shopify_940_bills_the_ship_to_whatever_the_billing_address(edi):  # user 2026-11-10
+    from tests.test_orders import shopify_order
+    o = shopify_order(1, 9301)
+    o["billing_address"] = {"name": "Someone Else", "address1": "9 Other St", "city": "Laval", "province_code": "QC",
+                            "country_code": "CA", "zip": "H7N 1A1"}
+    edi.env.shop.orders = [o]
+    await edi.env.pull()
+    order, _ = await edi.env.order(1)
+    assert order.bill_to["name"] == "Someone Else"  # the order keeps Shopify's billing address
+    edi.clock.now = AFTER_DELAY
+    await edi.out.queue_due()
+    await edi.worker.run_once()
+    [(_, content)] = edi.store.files.items()
+    segs = segments(content)
+    i = next(n for n, s in enumerate(segs) if s[:2] == ["N1", "BT"])
+    j = next(n for n, s in enumerate(segs) if s[:2] == ["N1", "ST"])
+    assert segs[i][2:] == segs[j][2:] and segs[i + 1] == segs[j + 1] and segs[i + 2] == segs[j + 2]
+    assert not any("Someone Else" in "*".join(s) or "Laval" in "*".join(s) for s in segs)
