@@ -9,10 +9,14 @@ import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { api, mdmApi } from '@/lib/api'
 import { ReceiptScanButton, type ReceiptFields } from '@/components/ReceiptScanButton'
 import { AccountPicker, useBudgetAccounts, type BudgetAccount } from '@/components/BudgetAccountPicker'
+import { INVALID_FIELD, isBlankLine, lineMessage, missingFields, type LineField } from '@/lib/lineValidation'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface LineItem {
+  // Saved line's id when editing; sent back so the line keeps it and the
+  // receipt scanned on it can be found by a rescan (ATT-OA-005).
+  id?: string
   line_number: number
   expense_date: string
   description: string
@@ -80,6 +84,9 @@ function emptyLine(n: number): LineItem {
   }
 }
 
+// EXP-003 / OA §2.2: every line needs a description, an L2 budget account and a net amount.
+const REQUIRED: LineField[] = ['description', 'budget_account_id', 'net_amount']
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {}) {
@@ -114,6 +121,10 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
   const [currency, setCurrency] = useState('CAD')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<LineItem[]>([emptyLine(1)])
+  // Set by a save refused for missing line fields; from then on the red
+  // outlines and messages follow the form as the user fills it in.
+  const [showLineErrors, setShowLineErrors] = useState(false)
+  const [formError, setFormError] = useState('')
 
   // Fill the form from the claim being edited. Keyed on the claim id, not on
   // the object: react-query hands back a new object on every refetch, and
@@ -126,6 +137,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
     setLines(
       editing.line_items.length
         ? editing.line_items.map((li, i) => ({
+            id: li.id,
             line_number: i + 1,
             expense_date: li.expense_date,
             description: li.description,
@@ -208,17 +220,42 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
     return acc && acc.available - (accountDeltas[acc.id] ?? 0) < 0
   })
 
+  // Blank lines are left out of the save; every other line is saved or the
+  // save is refused — never dropped (ISS-0193).
+  const keptLines = lines.filter((l) => !isBlankLine(l))
+  const lineMissing = (l: LineItem): LineField[] =>
+    showLineErrors && !isBlankLine(l) ? missingFields(l, REQUIRED) : []
+  const lineIssues = showLineErrors
+    ? lines.flatMap((l, idx) => {
+        const missing = missingFields(l, REQUIRED)
+        return !isBlankLine(l) && missing.length ? [lineMessage(`Line ${idx + 1}`, missing)] : []
+      })
+    : []
+
+  // Receipts only of the lines actually saved, each tied to its saved line
+  // (line_number = position among them, as in the payload). Every receipt on
+  // this form is a Scan, so a rescan replaces the line's earlier scan.
   const createMutation = useSaveClaim(editClaimId, (id) => replaceTab(`/expenses/${id}`), {
-    receipts: () => lines.flatMap((l) => (l._file ? [{ file: l._file }] : [])),
+    receipts: () => keptLines.flatMap((l, i) =>
+      l._file ? [{ file: l._file, lineNumber: i + 1, source: 'scan' as const }] : []),
   })
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    const validLines = lines.filter((l) => l.description && l.budget_account_id && l.net_amount)
-    if (validLines.length === 0) return alert('Add at least one line item')
+    setFormError('')
+    if (keptLines.length === 0) {
+      setShowLineErrors(false)
+      setFormError('Add at least one line item')
+      return
+    }
+    if (keptLines.some((l) => missingFields(l, REQUIRED).length)) {
+      setShowLineErrors(true)
+      return
+    }
 
-    const payload = validLines.map((l) => ({
-      line_number: l.line_number,
+    const payload = keptLines.map((l, i) => ({
+      id: l.id ?? null,
+      line_number: i + 1,
       expense_date: l.expense_date,
       description: l.description,
       budget_account_id: l.budget_account_id,
@@ -251,20 +288,20 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-6 max-w-6xl">
-      {/* Page header */}
-      <div className="flex items-center justify-between">
+      {/* Page header — wraps on a phone instead of squeezing the buttons (ISS-0224) */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">
             {editing ? `Edit ${editing.claim_number}` : 'New General Expense Claim'}
           </h1>
           <p className="mt-0.5 text-sm text-neutral-500">Receipt-based employee reimbursement</p>
         </div>
-        <div className="flex gap-2">
-          <Button type="button" variant="secondary" size="sm"
+        <div className="flex shrink-0 gap-2">
+          <Button type="button" variant="secondary" size="sm" className="whitespace-nowrap"
                   onClick={() => replaceTab(editing ? `/expenses/${editing.id}` : '/expenses')}>
             Cancel
           </Button>
-          <Button type="submit" size="sm" disabled={createMutation.isPending}>
+          <Button type="submit" size="sm" disabled={createMutation.isPending} className="whitespace-nowrap">
             {createMutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Save as Draft'}
           </Button>
         </div>
@@ -273,7 +310,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
       {/* Form header */}
       <div className="rounded-xl border border-neutral-200 bg-white p-5">
         <h2 className="mb-4 text-sm font-semibold text-neutral-700">Claim Details</h2>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-neutral-600">Submission Date</label>
             <input
@@ -321,7 +358,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
 
       {/* Line items */}
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-        <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-neutral-100 px-5 py-3">
           <h2 className="text-sm font-semibold text-neutral-700">Line Items</h2>
           <span className="text-xs text-neutral-400">Default rate: {(hstRate * 100).toFixed(0)}% · per-line tax code overrides</span>
         </div>
@@ -343,6 +380,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
             </thead>
             <tbody>
               {lines.map((line, idx) => {
+                const missing = lineMissing(line)
                 const acc = accounts.find((a) => a.id === line.budget_account_id)
                 const isOverBudget = acc ? acc.available < (parseFloat(line.net_amount) || 0) : false
                 return (
@@ -369,7 +407,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
                           value={line.description}
                           onChange={(e) => updateLine(idx, { description: e.target.value })}
                           placeholder="What was purchased"
-                          className={cn('w-full rounded border px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-300' : 'border-neutral-200')}
+                          className={cn('w-full rounded border px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-300' : 'border-neutral-200', missing.includes('description') && INVALID_FIELD)}
                         />
                         <ReceiptScanButton
                           className="self-start"
@@ -400,6 +438,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
                         value={line.budget_account_id}
                         onChange={(acc) => handleAccountSelect(idx, acc)}
                         accounts={accounts}
+                        invalid={missing.includes('budget_account_id')}
                       />
                     </td>
                     <td className="px-3 py-2">
@@ -410,7 +449,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
                         value={line.net_amount}
                         onChange={(e) => handleNetChange(idx, e.target.value)}
                         placeholder="0.00"
-                        className={cn('w-full rounded border px-2 py-1.5 text-xs text-right font-mono focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-300' : 'border-neutral-200')}
+                        className={cn('w-full rounded border px-2 py-1.5 text-xs text-right font-mono focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-300' : 'border-neutral-200', missing.includes('net_amount') && INVALID_FIELD)}
                       />
                     </td>
                     <td className="px-3 py-2">
@@ -488,6 +527,20 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
           </div>
         )}
       </div>
+
+      {/* Missing line fields — one message per line, live until fixed */}
+      {lineIssues.length > 0 && (
+        <div role="alert" className="flex items-start gap-2 rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">Complete these lines before saving:</p>
+            <ul className="mt-1 list-disc pl-5">
+              {lineIssues.map((m) => <li key={m}>{m}</li>)}
+            </ul>
+          </div>
+        </div>
+      )}
+      {formError && <ErrorBanner message={formError} />}
 
       {/* Error */}
       {createMutation.isError && (

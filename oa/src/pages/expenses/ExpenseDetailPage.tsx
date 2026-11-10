@@ -150,6 +150,7 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
+  const [downloadError, setDownloadError] = useState('')
 
   const regenPdf = useMutation({
     mutationFn: () => api.post(`/api/v1/expenses/${claimId}/regenerate-pdf`, {}),
@@ -191,12 +192,19 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
   // carries no bearer token and (in prod) resolves against the OA origin, whose
   // nginx SPA-fallback returns index.html (the main page) instead of the file.
   // Mirrors InvoiceDetailPage / PaDetailPage.
+  // A failed download is said on the page, by file name; it used to reject
+  // silently and show only in the browser console (ISS-0218).
   const download = async (att: Attachment) => {
-    const blob = await api.getBlob(`/api/v1/expenses/${claimId}/attachments/${att.id}/file`)
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = att.file_name; a.click()
-    URL.revokeObjectURL(url)
+    setDownloadError('')
+    try {
+      const blob = await api.getBlob(`/api/v1/expenses/${claimId}/attachments/${att.id}/file`)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = att.file_name; a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setDownloadError(`Could not download "${att.file_name}"${err instanceof Error && err.message ? `: ${err.message}` : ''}`)
+    }
   }
 
   function formatSize(bytes: number) {
@@ -243,6 +251,11 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
       {uploadError && (
         <div className="mx-5 mt-3">
           <ErrorBanner message={uploadError} />
+        </div>
+      )}
+      {downloadError && (
+        <div className="mx-5 mt-3">
+          <ErrorBanner message={downloadError} />
         </div>
       )}
       {regenPdf.isError && (
@@ -757,19 +770,19 @@ export default function ExpenseDetailPage() {
                   <td className="px-4 py-2 text-xs text-neutral-800">
                     {li.description}
                     {li.period_from && (
-                      <div className="text-neutral-500">{li.period_days} days × {formatAmount(li.daily_rate ?? 0)}</div>
+                      <div className="text-neutral-500">{li.period_days} days × {formatAmount(li.daily_rate ?? 0, claim.currency)}</div>
                     )}
                     {claim.claim_type === 'TRV' && li.tax_code && (
                       <div className="text-neutral-500">Tax {li.tax_code}</div>
                     )}
                     {li.invoice_amount != null && (
-                      <div className="text-neutral-500">Invoice {formatAmount(li.invoice_amount)}</div>
+                      <div className="text-neutral-500">Invoice {formatAmount(li.invoice_amount, claim.currency)}</div>
                     )}
                   </td>
                   <td className="px-4 py-2 text-xs text-neutral-600">{li.budget_account_code} — {li.budget_account_name}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono">{formatAmount(li.total_amount)}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono text-neutral-500">{formatAmount(li.tax_amount)}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono font-medium text-primary-700">{formatAmount(li.net_amount)}</td>
+                  <td className="px-4 py-2 text-right text-xs font-mono">{formatAmount(li.total_amount, claim.currency)}</td>
+                  <td className="px-4 py-2 text-right text-xs font-mono text-neutral-500">{formatAmount(li.tax_amount, claim.currency)}</td>
+                  <td className="px-4 py-2 text-right text-xs font-mono font-medium text-primary-700">{formatAmount(li.net_amount, claim.currency)}</td>
                 </tr>
               ))}
             </tbody>
@@ -807,7 +820,7 @@ export default function ExpenseDetailPage() {
                   <td className="px-4 py-2 text-xs text-neutral-600">{ti.purpose}</td>
                   <td className="px-4 py-2 text-right text-xs font-mono">{Number(ti.distance_km).toFixed(1)}{ti.is_round_trip ? ' ×2' : ''}</td>
                   <td className="px-4 py-2 text-right text-xs font-mono text-neutral-500">${Number(ti.rate_per_km).toFixed(4)}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono font-medium text-primary-700">{formatAmount(ti.amount)}</td>
+                  <td className="px-4 py-2 text-right text-xs font-mono font-medium text-primary-700">{formatAmount(ti.amount, claim.currency)}</td>
                 </tr>
               ))}
             </tbody>

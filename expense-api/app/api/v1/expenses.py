@@ -529,7 +529,7 @@ async def create_expense(
             department_name=dept_name,
             prepared_by=user_id,
         )
-    except ValueError as exc:  # TRV line rules (_check_trv_lines)
+    except ValueError as exc:  # TRV line rules (_check_trv_lines), EXP line cap
         raise HTTPException(status_code=422, detail=str(exc))
     return ExpenseClaimResponse.model_validate(claim)
 
@@ -1036,6 +1036,7 @@ async def update_expense(
     body: ExpenseClaimUpdate,
     db: SessionDep,
     user: CurrentUserDep,
+    token: BearerTokenDep,
 ):
     claim = await expense_crud.get_by_id(db, claim_id)
     if not claim:
@@ -1046,10 +1047,27 @@ async def update_expense(
     if (claim.claim_type == "TRV" and body.travel_application_id
             and body.travel_application_id != claim.travel_application_id):
         await _require_trv_application(db, body.travel_application_id, claim.employee_id)
+    old_line_ids = {li.id for li in claim.line_items}
     try:
         await expense_crud.update_claim(db, claim, body)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+    # A receipt scanned on a line that this edit removed belongs to no saved
+    # line any more; it goes with the line (ATT-OA-005, ISS-0197). Files
+    # attached by hand stay. Best-effort on the file server, like delete above.
+    # Only for whoever may delete the claim's attachments anyway (the rule in
+    # expense_attachments.delete_claim_attachment, unchanged).
+    removed = (expense_crud.lines_removed_by(body, old_line_ids, claim)
+               if expense_crud.may_delete_attachments(claim, user_id, user.get("role", ""))
+               else set())
+    for att in await expense_crud.scans_of_lines(db, claim.id, removed):
+        if att.file_id:
+            try:
+                await delete_from_file_server(uuid.UUID(att.file_id), token)
+            except Exception:
+                logger.warning("file-api delete failed for %s; continuing", att.file_id)
+        await db.delete(att)
+    await db.flush()
     await db.refresh(claim, ["line_items", "trip_items", "attachments", "approval_events"])
     return ExpenseClaimResponse.model_validate(claim)
 

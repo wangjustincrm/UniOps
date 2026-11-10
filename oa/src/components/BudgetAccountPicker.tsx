@@ -68,13 +68,15 @@ interface L1Group {
 }
 
 export function AccountPicker({
-  value, onChange, accounts, className,
+  value, onChange, accounts, className, invalid,
 }: {
   value: string
   onChange: (acc: BudgetAccount) => void
   accounts: BudgetAccount[]
   // Trigger sizing — EXP's compact table cell uses the default; TRV's line cards pass text-sm.
   className?: string
+  // Outline the trigger in red: the last save found this line without an account.
+  invalid?: boolean
 }) {
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
@@ -140,6 +142,52 @@ export function AccountPicker({
   const filteredAccts = (activeGroup?.accounts ?? []).filter((a) =>
     `${a.code} ${a.name}`.toLowerCase().includes(q)
   )
+  // Searching at the category level also finds accounts directly, so the user
+  // need not know which category holds e.g. "Training" (ISS-0200). One click on
+  // a hit selects it, the same as picking it inside its category.
+  const matchedAccts = !activeGroup && q
+    ? accounts
+        .filter((a) => `${a.code} ${a.name}`.toLowerCase().includes(q))
+        .sort((x, y) => x.l1_code.localeCompare(y.l1_code) || x.code.localeCompare(y.code))
+    : []
+
+  const l1Label = (code: string, name: string) => (name && name !== code ? `${code} ${name}` : code)
+
+  // An L2 account row: available balance and % used (OA §2.2). `withL1` prefixes
+  // the category for search hits listed outside their category.
+  const accountRow = (a: BudgetAccount, withL1: boolean) => {
+    const pct = a.annual_budget > 0
+      ? Math.min(100, Math.round(((a.committed + a.actual_spent) / a.annual_budget) * 100))
+      : 0
+    const isLow = a.available < 0
+    return (
+      <button
+        key={a.id}
+        type="button"
+        onClick={() => { onChange(a); close() }}
+        className="flex w-full flex-col px-3 py-2 text-left hover:bg-neutral-50 border-b border-neutral-50"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-medium text-neutral-800">
+            {withL1 && <span className="text-neutral-500">{l1Label(a.l1_code, a.l1_name)} › </span>}
+            {a.code} — {a.name}
+          </span>
+          <span className={cn('shrink-0 text-xs font-mono', isLow ? 'text-danger-600' : 'text-neutral-500')}>
+            {formatAmount(a.available)}
+          </span>
+        </div>
+        <div className="mt-1 h-1 w-full rounded-full bg-neutral-100">
+          <div
+            className={cn('h-1 rounded-full', pct >= 90 ? 'bg-danger-400' : pct >= 70 ? 'bg-warning-400' : 'bg-primary-400')}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <p className="mt-0.5 text-[10px] text-neutral-400">
+          Budget: {formatAmount(a.annual_budget)} · Used: {pct}%
+        </p>
+      </button>
+    )
+  }
 
   return (
     <div className="relative">
@@ -150,6 +198,7 @@ export function AccountPicker({
         className={cn(
           'w-full rounded border bg-white px-2 py-1.5 text-left text-xs truncate',
           selected ? 'border-neutral-200 text-neutral-800' : 'border-neutral-200 text-neutral-400',
+          invalid && 'border-danger-400 bg-danger-50/40',
           className,
         )}
       >
@@ -178,7 +227,7 @@ export function AccountPicker({
                 autoFocus
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder={activeGroup ? 'Search accounts…' : 'Search categories…'}
+                placeholder={activeGroup ? 'Search accounts…' : 'Search categories or accounts…'}
                 className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
               />
             </div>
@@ -201,41 +250,21 @@ export function AccountPicker({
                   </span>
                 </button>
               ))}
-              {!activeGroup && filteredL1.length === 0 && (
-                <p className="py-4 text-center text-xs text-neutral-400">No categories found</p>
+              {/* Search hits among all L2 accounts, shown with their category */}
+              {matchedAccts.length > 0 && (
+                <p className="bg-neutral-50 px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-neutral-400">
+                  Accounts
+                </p>
+              )}
+              {matchedAccts.map((a) => accountRow(a, true))}
+              {!activeGroup && filteredL1.length === 0 && matchedAccts.length === 0 && (
+                <p className="py-4 text-center text-xs text-neutral-400">
+                  {q ? 'No categories or accounts found' : 'No categories found'}
+                </p>
               )}
 
               {/* Level 2: accounts within the chosen L1 */}
-              {activeGroup && filteredAccts.map((a) => {
-                const pct = a.annual_budget > 0
-                  ? Math.min(100, Math.round(((a.committed + a.actual_spent) / a.annual_budget) * 100))
-                  : 0
-                const isLow = a.available < 0
-                return (
-                  <button
-                    key={a.id}
-                    type="button"
-                    onClick={() => { onChange(a); close() }}
-                    className="flex w-full flex-col px-3 py-2 text-left hover:bg-neutral-50 border-b border-neutral-50"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-neutral-800">{a.code} — {a.name}</span>
-                      <span className={cn('text-xs font-mono', isLow ? 'text-danger-600' : 'text-neutral-500')}>
-                        {formatAmount(a.available)}
-                      </span>
-                    </div>
-                    <div className="mt-1 h-1 w-full rounded-full bg-neutral-100">
-                      <div
-                        className={cn('h-1 rounded-full', pct >= 90 ? 'bg-danger-400' : pct >= 70 ? 'bg-warning-400' : 'bg-primary-400')}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                    <p className="mt-0.5 text-[10px] text-neutral-400">
-                      Budget: {formatAmount(a.annual_budget)} · Used: {pct}%
-                    </p>
-                  </button>
-                )
-              })}
+              {activeGroup && filteredAccts.map((a) => accountRow(a, false))}
               {activeGroup && filteredAccts.length === 0 && (
                 <p className="py-4 text-center text-xs text-neutral-400">No accounts found</p>
               )}
