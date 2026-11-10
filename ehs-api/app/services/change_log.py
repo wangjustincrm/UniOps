@@ -33,7 +33,9 @@ from app.core.actor import current_actor
 from app.models.change_log import ChangeLogEntry
 
 # Not logged: written by every save and saying nothing about what changed.
-_HOUSEKEEPING = {"created_at", "updated_at"}
+# ★ revised_at / revised_by_name (hazards, round 12) are stamped *because* a
+# field changed; logging them too would add two rows to every edit.
+_HOUSEKEEPING = {"created_at", "updated_at", "revised_at", "revised_by_name"}
 
 # Logged as "changed", never by value: too large to read, or meaningless out of
 # context. A storage key tells an auditor nothing a filename does not.
