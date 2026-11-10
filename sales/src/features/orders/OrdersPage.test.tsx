@@ -40,12 +40,12 @@ const meta: ListMeta = {
   ],
 }
 
-const api = vi.hoisted(() => ({ resolve: vi.fn(), fetchOrder: vi.fn(), list: vi.fn(), send: vi.fn(), eligible: vi.fn(),
+const api = vi.hoisted(() => ({ resolve: vi.fn(), fetchOrder: vi.fn(), list: vi.fn(), send: vi.fn(),
   preview: vi.fn(), create: vi.fn(), submit: vi.fn(), update: vi.fn(), prices: vi.fn() }))
 vi.mock('./ordersApi', async (orig) => {
   const real = await orig<typeof import('./ordersApi')>()
   return { ...real, ordersClient: { ...real.ordersClient, list: api.list, meta: async () => meta },
-    fetchOrder: api.fetchOrder, resolveReview: api.resolve, send940: api.send, fetchEligibility: api.eligible,
+    fetchOrder: api.fetchOrder, resolveReview: api.resolve, send940: api.send,
     previewManual: api.preview, createManual: api.create, submitManual: api.submit, updateManual: api.update,
     setInvoicePrices: api.prices }
 })
@@ -194,7 +194,7 @@ describe('Orders: 940s (P4)', () => {
     remote_name: `940-SHOP-${st02}.edi`, created_at: order.created_at, file_status, ack_status, st02, sent_at: '2026-10-30T14:00:00Z',
     error: null, ack_detail: null })
   beforeEach(() => {
-    api.send.mockReset(); api.eligible.mockReset()
+    api.send.mockReset()
     api.list.mockReset(); api.list.mockImplementation(async () => ({ items: [pending, sentOrder], total: 2 }))
   })
 
@@ -243,15 +243,6 @@ describe('Orders: 940s (P4)', () => {
     const dialog = await screen.findByRole('dialog')
     fireEvent.click(await within(dialog).findByText('Send 940 now'))
     await waitFor(() => expect(noticeIn(dialog)).toHaveTextContent(/failed its checks and was not sent.*ship_to.zip is empty/))
-  })
-
-  it('Next 940s lists what the next cycle would send, writing nothing', async () => {
-    api.eligible.mockResolvedValue([{ order_id: 5, order_number: 105, source_reference: 'SHOP-9303', partner_code: 'SHOP', source_order_number: '9303' }])
-    renderAs(['sales.read'])
-    fireEvent.click(await screen.findByRole('button', { name: 'Next 940s' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Next 940s' })
-    expect(await within(dialog).findByText('Order SHOP-9303 · internal no. 105 · SHOP')).toBeInTheDocument()
-    expect(api.send).not.toHaveBeenCalled()
   })
 })
 

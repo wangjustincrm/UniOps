@@ -4,7 +4,6 @@ import { OrderStatusBadge, ShopifyCell, StatusDetail } from './OrderStatusCells'
 import { ReturnAfterShipment } from '@/features/invoices/ReturnAfterShipment'
 import { SubmitDraft } from './DraftActions'
 import { ManualOrderForm } from './ManualOrderForm'
-import { NextSends } from './NextSends'
 import { Recheck } from './Recheck'
 import { ordersClient, type OrderRead } from './ordersApi'
 import { PartnerCell } from '@/features/common/PartnerCell'
@@ -85,7 +84,7 @@ const isDraft = (o: OrderRead) => o.source_type === 'MANUAL' && o.fulfillment_st
  *  drafts (the old Manual orders page, 2026-11-02); New manual order opens the
  *  standard sheet. */
 export default function OrdersPage() {
-  return <OrderList title="Orders" description="Orders from the Shopify store, retailer 850s and manual entry. Choose a view (e.g. Needs review, Manual drafts), or search, sort and group the list yourself." emptyTitle="No orders here" toolbar={<NextSends />}
+  return <OrderList title="Orders" description="Orders from the Shopify store, retailer 850s and manual entry. Choose a view (e.g. Needs review, Manual drafts), or search, sort and group the list yourself." emptyTitle="No orders here"
     create={{ label: 'New manual order', permission: 'sales.order.operate', className: 'max-w-3xl',
       render: (done, cancel) => <ManualOrderForm onSaved={done} onCancel={cancel} /> }}
     detailActions={(o) => <ReturnAfterShipment o={o} />} />

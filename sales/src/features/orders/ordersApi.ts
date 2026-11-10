@@ -316,10 +316,6 @@ export const cancelManual = (id: number, version: number) => api.post<OrderRead>
 
 export interface Send940Result { order: OrderRead; document_id: number; file_status: string; control: string; errors: string[] }
 export const send940 = (id: number, replace = false) => api.post<Send940Result>(`/orders/${id}/send-940${replace ? '?replace=true' : ''}`)
-export interface EligibleOrder {
-  order_id: number; order_number: number; source_reference: string | null; partner_code: string; source_order_number: string | null
-}
-export const fetchEligibility = () => api.get<EligibleOrder[]>('/orders/eligibility-preview')
 /** One shipment's packing list (PDF): pallets → items → lots → expiry → qty, tracking and BOL. */
 export const downloadPoPdf = (o: Pick<OrderRead, 'id' | 'source_order_number' | 'order_number'>) =>
   api.download(`/orders/${o.id}/po.pdf`, `PO-${o.source_order_number ?? o.order_number}.pdf`)
