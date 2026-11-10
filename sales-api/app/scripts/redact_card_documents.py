@@ -14,11 +14,8 @@ Idempotent: a redacted document is no longer found.
 """
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
-import logging
-import sys
 from collections import Counter
 from typing import Any
 
@@ -27,6 +24,7 @@ import sqlalchemy as sa
 from app.integrations.shopify import CARD_KEYS, is_card_key, page_bytes, strip_card_data
 from app.models.documents import Document
 from app.platform.actors import SYSTEM_ACTOR
+from app.scripts.base import ScriptArgs, quiet_sql, script_main  # noqa: F401 — quiet_sql: tests import it here
 from app.services import oplog
 
 STEP = "redaction"
@@ -104,24 +102,12 @@ async def run(uow_factory, *, apply: bool) -> dict[str, Any]:
     return {"apply": apply, "found": len(docs), "by_status": dict(Counter(d["status"] for d in docs)), "documents": docs}
 
 
-def quiet_sql() -> None:
-    """The engine echoes statements when DEBUG is on, parameters included: never here."""
-    from app.db.session import engine
-    engine.sync_engine.echo = False
-    engine.sync_engine.hide_parameters = True  # nor in an error's text
-    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
-
-
-def main() -> int:
-    quiet_sql()
+async def _main(args: ScriptArgs) -> dict[str, Any]:
     from app.core.deps import uow_factory
-    try:
-        print(json.dumps(asyncio.run(run(uow_factory, apply="--apply" in sys.argv))))
-    except Exception as e:  # noqa: BLE001 — its text could carry a value
-        print(json.dumps({"error": type(e).__name__}))
-        return 1
-    return 0
+    out = await run(uow_factory, apply=args.apply)
+    out.pop("apply")
+    return out
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    script_main(_main)

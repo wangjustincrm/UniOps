@@ -10,10 +10,6 @@ no file. Idempotent.
 """
 from __future__ import annotations
 
-import asyncio
-import json
-import sys
-
 from sqlalchemy import select
 
 from app.core.deps import uow_factory
@@ -22,7 +18,7 @@ from app.domain.status import Fulfillment as F
 from app.models.orders import Order
 from app.models.shipments import Shipment
 from app.platform.actors import SYSTEM_ACTOR
-from app.scripts.redact_card_documents import quiet_sql
+from app.scripts.base import script_main
 from app.services import oplog
 from app.services.problems import SETTLED_BY_SHIPMENT, task_service
 
@@ -56,5 +52,4 @@ async def main(apply: bool) -> dict:
 
 
 if __name__ == "__main__":
-    quiet_sql()
-    print(json.dumps({"apply": "--apply" in sys.argv, **asyncio.run(main("--apply" in sys.argv))}))
+    script_main(lambda a: main(a.apply))

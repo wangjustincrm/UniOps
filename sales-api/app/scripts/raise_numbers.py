@@ -13,14 +13,12 @@ raised, never lowered (a number already given out is never given again). Prints 
 """
 from __future__ import annotations
 
-import asyncio
-import json
-import sys
 from typing import Any
 
 import sqlalchemy as sa
 
 from app.platform.actors import SYSTEM_ACTOR
+from app.scripts.base import ScriptArgs, script_main
 from app.services import oplog
 
 STEP = "cutover"
@@ -54,20 +52,10 @@ async def run(uow_factory, wanted: dict[str, int], *, apply: bool) -> dict[str, 
 
 
 def _args(argv: list[str]) -> tuple[dict[str, int], bool]:
-    wanted, i = {}, 0
-    while i < len(argv):
-        a = argv[i]
-        if a.startswith("--") and a[2:] in SEQUENCES:
-            wanted[a[2:]] = int(argv[i + 1])
-            i += 2
-            continue
-        i += 1
-    return wanted, "--apply" in argv
+    a = ScriptArgs(tuple(argv), takes_values=tuple(SEQUENCES))
+    return {k: int(v) for k in SEQUENCES if (v := a.value(k)) is not None}, a.apply
 
 
 if __name__ == "__main__":
     from app.core.deps import uow_factory
-    from app.scripts.redact_card_documents import quiet_sql
-    quiet_sql()
-    wanted, apply = _args(sys.argv[1:])
-    print(json.dumps(asyncio.run(run(uow_factory, wanted, apply=apply))))
+    script_main(lambda a: run(uow_factory, _args(list(a.argv))[0], apply=a.apply), takes_values=tuple(SEQUENCES))

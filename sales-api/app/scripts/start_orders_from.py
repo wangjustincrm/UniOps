@@ -15,9 +15,6 @@ legitimate way to lose either in production. Prints counts only.
 """
 from __future__ import annotations
 
-import asyncio
-import json
-import sys
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -114,7 +111,5 @@ async def run(uow_factory, start: date, *, apply: bool) -> dict[str, Any]:
 
 if __name__ == "__main__":
     from app.core.deps import uow_factory
-    from app.scripts.redact_card_documents import quiet_sql
-    quiet_sql()
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    print(json.dumps(asyncio.run(run(uow_factory, date.fromisoformat(args[0]), apply="--apply" in sys.argv))))
+    from app.scripts.base import script_main
+    script_main(lambda a: run(uow_factory, date.fromisoformat(a.positional[0]), apply=a.apply))

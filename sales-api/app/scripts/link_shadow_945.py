@@ -12,13 +12,9 @@ The mapping rule (FR-OB-25a) on rows already linked; order numbers and quantitie
 """
 from __future__ import annotations
 
-import asyncio
-import json
-import sys
-
 from app.core.deps import uow_factory
 from app.platform.actors import SYSTEM_ACTOR
-from app.scripts.redact_card_documents import quiet_sql
+from app.scripts.base import script_main
 from app.services.shipments import Shipments
 
 
@@ -32,5 +28,4 @@ async def main(apply: bool, relink: bool = False) -> dict:
 
 
 if __name__ == "__main__":
-    quiet_sql()
-    print(json.dumps({"apply": "--apply" in sys.argv, **asyncio.run(main("--apply" in sys.argv, "--relink" in sys.argv))}))
+    script_main(lambda a: main(a.apply, a.flag("relink")))

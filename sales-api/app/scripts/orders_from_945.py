@@ -9,16 +9,13 @@ Prints counts and order numbers only: no names, no addresses.
 """
 from __future__ import annotations
 
-import asyncio
-import json
-import sys
 from collections.abc import Callable
 from typing import Any
 
 from app.core.deps import uow_factory
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.errors import BusinessError
-from app.scripts.redact_card_documents import quiet_sql
+from app.scripts.base import script_main
 from app.services.order_from_945 import OrderFrom945
 
 UNNAMED_PARTNER = "Manual"
@@ -58,5 +55,4 @@ async def run(factory: Callable[..., Any], *, apply: bool) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    quiet_sql()
-    print(json.dumps(asyncio.run(run(uow_factory, apply="--apply" in sys.argv))))
+    script_main(lambda a: run(uow_factory, apply=a.apply))
