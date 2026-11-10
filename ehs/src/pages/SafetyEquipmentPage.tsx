@@ -21,6 +21,8 @@ import QrPanel from '@/components/QrPanel'
 import { formatDate, formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { LocationSelect } from '@/components/LocationSelect'
+import { ActionFields, actionIsComplete, inDays, type ActionDraft } from '@/components/ActionFields'
+import { useEhsAuth } from '@/store/auth'
 import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
 import {
   Card, dangerButton, Empty, ErrorNote, Field, PageHeader, Tabs, inputClass,
@@ -207,11 +209,13 @@ function RecordDialog(
 ) {
   const queryClient = useQueryClient()
   const [notes, setNotes] = useState('')
+  const failure = useFailureAction(asset)
 
   const record = useMutation({
     mutationFn: (result: 'passed' | 'failed') =>
       api.post(`/api/v1/safety-assets/inspections/${inspection.id}/record`,
-               { result, notes: notes || null }),
+               { result, notes: notes || null,
+                 action: result === 'failed' ? failure.payload() : null }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['asset-inspections'] })
       queryClient.invalidateQueries({ queryKey: ['safety-assets'] })
@@ -253,12 +257,17 @@ function RecordDialog(
           </button>
           <button type="button"
                   className={`${primaryButton} flex-1 !bg-danger-600 hover:!bg-danger-700`}
-                  disabled={record.isPending || !notes.trim()}
-                  onClick={() => { if (!record.isPending) record.mutate('failed') }}>
+                  disabled={record.isPending || !notes.trim() || (failure.open && !failure.ready)}
+                  onClick={() => {
+                    if (record.isPending) return
+                    if (!failure.open) failure.start(notes)
+                    else record.mutate('failed')
+                  }}>
             <AlertTriangle className="h-4 w-4" aria-hidden />
-            Failed
+            {failure.open ? 'Record the failure and raise this action' : 'Failed'}
           </button>
         </div>
+        {failure.panel}
         <p className="mt-2 text-xs text-neutral-500">
           Recording a failure takes this item out of service until somebody puts
           it back.
@@ -834,10 +843,12 @@ function AssetForm({ existing, onClose }: { existing?: Asset; onClose: () => voi
 function AdHocCheck({ asset, onClose }: { asset: Asset; onClose: () => void }) {
   const queryClient = useQueryClient()
   const [notes, setNotes] = useState('')
+  const failure = useFailureAction(asset)
   const record = useMutation({
     mutationFn: (result: 'passed' | 'failed') =>
       api.post(`/api/v1/safety-assets/${asset.id}/inspections`,
-               { result, notes: notes || null }),
+               { result, notes: notes || null,
+                 action: result === 'failed' ? failure.payload() : null }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['safety-assets'] })
       queryClient.invalidateQueries({ queryKey: ['asset-inspections'] })
@@ -862,12 +873,18 @@ function AdHocCheck({ asset, onClose }: { asset: Asset; onClose: () => void }) {
           Failing it takes the item out of service and raises a corrective
           action, which is the point of saying so.
         </p>
+        {failure.panel}
         <ErrorNote error={record.error} />
         <div className="mt-3 flex flex-wrap justify-end gap-2">
           <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>
-          <button type="button" className={dangerButton} disabled={record.isPending}
-                  onClick={() => { if (!record.isPending) record.mutate('failed') }}>
-            Failed
+          <button type="button" className={dangerButton}
+                  disabled={record.isPending || (failure.open && !failure.ready)}
+                  onClick={() => {
+                    if (record.isPending) return
+                    if (!failure.open) failure.start(notes)
+                    else record.mutate('failed')
+                  }}>
+            {failure.open ? 'Record the failure and raise this action' : 'Failed'}
           </button>
           <button type="button" className={primaryButton} disabled={record.isPending}
                   onClick={() => { if (!record.isPending) record.mutate('passed') }}>
@@ -877,4 +894,43 @@ function AdHocCheck({ asset, onClose }: { asset: Asset; onClose: () => void }) {
       </div>
     </div>
   )
+}
+
+
+/**
+ * ★ Round 12, TC-19 and D16: "the CAPA on failing safety equipment should be
+ * the same as on the incident forms." Pressing Failed opens the corrective
+ * action form, filled in from the item and the notes; pressing it again records
+ * the failure and raises that action. The server raises none if the item has
+ * one open already.
+ */
+function useFailureAction(asset: Asset | undefined) {
+  const me = useEhsAuth((st) => st.user)
+  const [draft, setDraft] = useState<ActionDraft | null>(null)
+  const start = (notes: string) => setDraft({
+    title: `Repair or replace ${asset?.name ?? 'the item'} — failed its check`,
+    description: [asset?.asset_no, asset?.name, asset?.location_path ? `at ${asset.location_path}` : null]
+      .filter(Boolean).join(' ') + ` failed its check${notes.trim() ? `: ${notes.trim()}` : '.'}`
+      + ' It is out of service until this is verified.',
+    ownerId: me?.id ?? null, ownerName: me?.full_name ?? '',
+    dueDate: inDays(7), priority: 'high', controlId: null, controlCode: null,
+  })
+  const payload = () => {
+    if (!draft) return null
+    return {
+      title: draft.title.trim(), description: draft.description.trim() || null,
+      owner_id: draft.ownerId, due_date: draft.dueDate, priority: draft.priority,
+      hierarchy_of_control: draft.controlCode,
+    }
+  }
+  const panel = draft && (
+    <div className="mt-3 rounded-lg border border-danger-200 bg-danger-50/40 p-3">
+      <p className="mb-2 text-xs font-semibold text-neutral-800">The corrective action this raises</p>
+      <ActionFields value={draft} onChange={setDraft} />
+      <p className="mt-2 text-xs text-neutral-500">
+        If this item already has a corrective action open, no second one is raised.
+      </p>
+    </div>
+  )
+  return { open: draft !== null, ready: draft !== null && actionIsComplete(draft), start, payload, panel }
 }

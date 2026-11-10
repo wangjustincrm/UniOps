@@ -95,12 +95,26 @@ class InspectionOut(BaseModel):
     completed_at: datetime | None
 
 
+class RepairActionIn(BaseModel):
+    """Round 12, TC-19 and D16: the corrective action a failed check raises,
+    filled in on the same form the incidents use, rather than written by the
+    server with a default owner and no type of control."""
+
+    title: str = Field(min_length=1, max_length=255)
+    description: str | None = None
+    owner_id: uuid.UUID
+    due_date: date
+    priority: str = Field(default="high", pattern="^(low|normal|high)$")
+    hierarchy_of_control: str | None = Field(default=None, max_length=30)
+
+
 class RecordIn(BaseModel):
     result: str = Field(pattern="^(passed|failed)$")
     notes: str | None = None
     performed_on: date | None = None
     # When the check was answered with a checklist rather than a pass/fail.
     submission_id: uuid.UUID | None = None
+    action: RepairActionIn | None = None
 
 
 class CoverageRow(BaseModel):
@@ -281,7 +295,8 @@ async def record_check_now(
     asset = await crud.get_asset(db, asset_id)
     return await crud.record_ad_hoc(
         db, asset, result=payload.result, notes=payload.notes,
-        user_id=_user_id(user), performed_on=payload.performed_on)
+        user_id=_user_id(user), performed_on=payload.performed_on,
+        action_draft=payload.action.model_dump() if payload.action else None)
 
 
 @router.post("/inspections/{inspection_id}/record", response_model=InspectionOut)
@@ -293,4 +308,5 @@ async def record_inspection(
     return await crud.record_inspection(
         db, inspection, result=payload.result, notes=payload.notes,
         submission_id=payload.submission_id, user_id=_user_id(user),
-        performed_on=payload.performed_on)
+        performed_on=payload.performed_on,
+        action_draft=payload.action.model_dump() if payload.action else None)

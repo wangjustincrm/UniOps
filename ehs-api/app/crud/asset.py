@@ -262,6 +262,7 @@ async def chase_overdue(db: AsyncSession, *, today: date | None = None) -> list[
 async def record_inspection(
     db: AsyncSession, inspection: AssetInspection, *, result: str, notes: str | None,
     submission_id: uuid.UUID | None, user_id: uuid.UUID, performed_on: date | None = None,
+    action_draft: dict | None = None,
 ) -> AssetInspection:
     """Record the outcome. A failure takes the asset out of service."""
     if inspection.result in ("passed", "failed"):
@@ -295,7 +296,8 @@ async def record_inspection(
         # recorded without a checklist raised none. One is raised here, unless
         # the item already has one open.
         if submission_id is None:
-            await _raise_repair_action(db, asset, inspection, user_id=user_id, notes=notes)
+            await _raise_repair_action(db, asset, inspection, user_id=user_id, notes=notes,
+                                       draft=action_draft)
 
     await task_service.close_tasks_for(
         db, doc_type=DOC_ASSET, doc_id=inspection.id, completed_by=user_id)
@@ -367,7 +369,7 @@ async def inspection_form_for(
 async def record_ad_hoc(
     db: AsyncSession, asset: SafetyAsset, *, result: str, notes: str | None,
     user_id: uuid.UUID, performed_on: date | None = None,
-    submission_id: uuid.UUID | None = None,
+    submission_id: uuid.UUID | None = None, action_draft: dict | None = None,
 ) -> AssetInspection:
     """A check somebody did, whether or not one was due.
 
@@ -423,7 +425,8 @@ async def record_ad_hoc(
 
     await record_inspection(
         db, inspection, result=result, notes=notes,
-        submission_id=submission_id, user_id=user_id, performed_on=when)
+        submission_id=submission_id, user_id=user_id, performed_on=when,
+        action_draft=action_draft)
 
     # Checking early moves the cycle rather than leaving a second check owed
     # next week for something just looked at.
@@ -449,13 +452,27 @@ async def status_event(db: AsyncSession, asset: SafetyAsset, new_status: str, *,
 
 
 async def _raise_repair_action(db: AsyncSession, asset: SafetyAsset, inspection,
-                               *, user_id: uuid.UUID, notes: str | None) -> None:
+                               *, user_id: uuid.UUID, notes: str | None,
+                               draft: dict | None = None) -> None:
+    """The action a failed check raises. ★ Round 12, TC-19: as the person
+    recording it filled it in, when they did (the same form as incidents);
+    otherwise the default below. Never a second one while one is open."""
     from app.crud.action import OPEN_STATUSES, create as create_action
     from app.models.action import Action
     from app.schemas.action import ActionCreate
     already = (await db.execute(select(Action.id).where(
         Action.asset_id == asset.id, Action.status.in_(OPEN_STATUSES)).limit(1))).first()
     if already:
+        return
+    if draft:
+        action = await create_action(db, ActionCreate(
+            source_type="asset", source_id=asset.id, title=draft["title"],
+            description=draft.get("description"), owner_id=draft["owner_id"],
+            due_date=draft["due_date"], priority=draft.get("priority") or "high",
+            hierarchy_of_control=draft.get("hierarchy_of_control")),
+            source_ref=asset.asset_no)
+        action.asset_id = asset.id
+        await db.flush()
         return
     action = await create_action(db, ActionCreate(
         source_type="asset", source_id=asset.id,

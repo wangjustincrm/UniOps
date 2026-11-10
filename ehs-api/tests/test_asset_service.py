@@ -175,3 +175,19 @@ async def test_retire_takes_it_off_its_cycle_and_delete_only_an_unused_item(hse_
     fresh = await _asset(client, f"Typo {uuid.uuid4().hex[:5]}")
     assert (await client.delete(f"/api/v1/safety-assets/{fresh['id']}")).status_code == 204
     assert (await client.get(f"/api/v1/safety-assets/{fresh['id']}")).status_code == 404
+
+
+async def test_a_failed_check_raises_the_action_as_filled_in(hse_manager, db_session):
+    """★ Round 12, TC-19: the corrective action form, not the server's default."""
+    from datetime import timedelta
+    hse_user, client = hse_manager
+    a = await _asset(client, f"Shower {uuid.uuid4().hex[:5]}")
+    due = (plant_today() + timedelta(days=3)).isoformat()
+    got = await client.post(f"/api/v1/safety-assets/{a['id']}/inspections", json={
+        "result": "failed", "notes": "No flow",
+        "action": {"title": "Replace the shower head", "owner_id": str(hse_user.id),
+                   "due_date": due, "priority": "normal", "hierarchy_of_control": "engineering"}})
+    assert got.status_code == 201, got.text
+    [action] = await _actions_for(db_session, a["id"])
+    assert (action.title, action.priority, action.hierarchy_of_control, str(action.due_date)) == (
+        "Replace the shower head", "normal", "engineering", due)
