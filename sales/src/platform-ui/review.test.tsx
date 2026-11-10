@@ -44,11 +44,11 @@ describe('SchemaForm (review)', () => {
     render(<SchemaForm schema={schema} fields={fields} defaultValues={{ qty: 3, kind: null }} onSubmit={onSubmit} />)
     fireEvent.change(screen.getByLabelText('Qty'), { target: { value: '' } })
     fireEvent.click(screen.getByText('Save'))
-    await waitFor(() => expect(onSubmit).toHaveBeenLastCalledWith({ qty: null, kind: null }))
+    await waitFor(() => expect(onSubmit).toHaveBeenLastCalledWith({ qty: null, kind: null }, { version: undefined }))
     fireEvent.change(screen.getByLabelText('Qty'), { target: { value: '12' } })
     await chooseOption(screen.getByLabelText('Kind'), 'B')
     fireEvent.click(screen.getByText('Save'))
-    await waitFor(() => expect(onSubmit).toHaveBeenLastCalledWith({ qty: 12, kind: 'B' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenLastCalledWith({ qty: 12, kind: 'B' }, { version: undefined }))
   })
 })
 

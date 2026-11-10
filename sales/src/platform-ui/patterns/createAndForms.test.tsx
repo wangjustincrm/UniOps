@@ -89,7 +89,7 @@ describe('MasterDetailForm', () => {
     fireEvent.click(save)
     fireEvent.click(save)  // a second click while the first is pending
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1))
-    expect(onSubmit).toHaveBeenCalledWith({ name: 'Mine' }, [{ item: 'CF0092', qty: '6' }])
+    expect(onSubmit).toHaveBeenCalledWith({ name: 'Mine' }, [{ item: 'CF0092', qty: '6' }], { version: undefined })
     release()
   })
 

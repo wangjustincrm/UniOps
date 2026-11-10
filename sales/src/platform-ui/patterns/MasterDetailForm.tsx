@@ -1,4 +1,6 @@
 import { useReportUnsaved } from '../primitives/unsaved'
+import { ChangedElsewhere } from './ChangedElsewhere'
+import { useEditVersion } from './editVersion'
 import { useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useForm, useWatch, type FieldValues, type Resolver } from 'react-hook-form'
 import type { z } from 'zod'
@@ -44,10 +46,12 @@ export interface MasterDetailFormProps<L> {
   onChange?: (state: MasterDetailState<L>) => void
   /** Why the form may not be submitted yet (e.g. "preview the EA first"), or null. */
   blocked?: (state: MasterDetailState<L>) => string | null
-  onSubmit: (values: Record<string, unknown>, lines: L[]) => unknown | Promise<unknown>
+  onSubmit: (values: Record<string, unknown>, lines: L[], edit: { version: number | undefined }) => unknown | Promise<unknown>
+  /** A versioned record's version, as SchemaForm's (useEditVersion). */
+  version?: number
   submitLabel?: string
   /** A second way to submit the same form (e.g. "Confirm and send"). */
-  alsoSubmit?: { label: string; onSubmit: (values: Record<string, unknown>, lines: L[]) => unknown | Promise<unknown> }
+  alsoSubmit?: { label: string; onSubmit: (values: Record<string, unknown>, lines: L[], edit: { version: number | undefined }) => unknown | Promise<unknown> }
   onCancel?: () => void
   errorMessages?: Record<string, string>
   readOnly?: boolean
@@ -63,7 +67,7 @@ export interface MasterDetailFormProps<L> {
  *  Always rendered in a Sheet or a Dialog — a page never carries a form. */
 export function MasterDetailForm<L>({
   schema, fields, defaultValues, lines: spec, preview, onChange, blocked, onSubmit, submitLabel = 'Save', alsoSubmit, onCancel,
-  errorMessages, readOnly, addresses = [],
+  errorMessages, readOnly, addresses = [], version,
 }: MasterDetailFormProps<L>) {
   // Server errors name nested address fields too (e.g. ship_to.zip).
   const known: FieldSpec[] = [...fields, ...addresses.flatMap((a) => ADDRESS_FIELDS.map((f) => ({ name: `${a.name}.${f}`, label: f })))]
@@ -74,8 +78,12 @@ export function MasterDetailForm<L>({
   }, [schema, fields, defaultValues])
   const form = useForm<FieldValues>({ resolver, defaultValues: blankToEmpty(defaultValues) })
   const [lines, setLines] = useState<L[]>(spec.initial)
-  const [startLines] = useState(lines)
-  useReportUnsaved(form.formState.isDirty || lines !== startLines)
+  const [startLines, setStartLines] = useState(lines)
+  const dirty = form.formState.isDirty || lines !== startLines
+  useReportUnsaved(dirty)
+  const edit = useEditVersion(version, dirty, () => {
+    form.reset(blankToEmpty(defaultValues)); setLines(spec.initial); setStartLines(spec.initial)
+  })
   const [error, setError] = useState<unknown>(null)
   const inFlight = useRef(false)
   const values = useWatch({ control: form.control }) as FieldValues
@@ -98,7 +106,7 @@ export function MasterDetailForm<L>({
     inFlight.current = true
     setError(null)
     try {
-      await handler(Object.fromEntries(Object.entries(v).map(([k, x]) => [k, emptyToNull(x)])), lines)
+      await handler(Object.fromEntries(Object.entries(v).map(([k, x]) => [k, emptyToNull(x)])), lines, { version: edit.seen })
     } catch (e) {
       if (!applyServerError(form, known, e, errorMessages)) setError(e)
     } finally {
@@ -110,6 +118,7 @@ export function MasterDetailForm<L>({
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-4"
       onChange={() => onChange?.({ values: form.getValues(), lines: latestLines.current })}>
+      {edit.changedElsewhere && <ChangedElsewhere onReload={edit.takeTheirs} />}
       <SchemaFields form={form} fields={fields} readOnly={readOnly} idPrefix="md" />
       {addresses.map((a) => <AddressFields key={a.name} form={form} name={a.name} legend={a.legend} readOnly={readOnly}
         phoneRequired={a.phoneRequired} />)}

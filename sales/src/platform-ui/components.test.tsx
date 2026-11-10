@@ -152,14 +152,14 @@ describe('SchemaForm', () => {
     render(<SchemaForm schema={schema} fields={fields} defaultValues={{ code: 'A', email: 'a@x.com' }} changesOnly onSubmit={onSubmit} />)
     fireEvent.change(screen.getByLabelText(/Email/), { target: { value: '' } })
     fireEvent.click(screen.getByText('Save'))
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith({ email: null }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith({ email: null }, { version: undefined }))
   })
 
   it('submitting nothing changed sends an empty object', async () => {
     const onSubmit = vi.fn()
     render(<SchemaForm schema={schema} fields={fields} defaultValues={{ code: 'A', email: null }} changesOnly onSubmit={onSubmit} />)
     fireEvent.click(screen.getByText('Save'))
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith({}))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith({}, { version: undefined }))
   })
 
   it('shows schema errors and server errors on the field they name', async () => {

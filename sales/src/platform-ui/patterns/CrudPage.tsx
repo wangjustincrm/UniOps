@@ -113,7 +113,7 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
       detailSize={props.detailSize ?? 'md'}
       renderDetail={(row, close) => (
         <RecordForm row={row} close={close} canWrite={canWrite} props={props}
-          save={(values) => update.mutateAsync({ id: row.id, data: values as Partial<TUpdate>, version: row.version })}
+          save={(values, version) => update.mutateAsync({ id: row.id, data: values as Partial<TUpdate>, version })}
           deactivate={() => deactivate.mutateAsync(row.id)} />
       )}
       toolbar={({ spec }) => (
@@ -197,7 +197,8 @@ function RecordForm<T extends Row, TCreate, TUpdate>({ row, close, canWrite, pro
   close: () => void
   canWrite: boolean
   props: CrudPageProps<T, TCreate, TUpdate>
-  save: (values: Record<string, unknown>) => Promise<unknown>
+  /** With the version the edit started from (useEditVersion), never the row's latest. */
+  save: (values: Record<string, unknown>, version: number | undefined) => Promise<unknown>
   deactivate: () => Promise<unknown>
 }) {
   const [confirm, setConfirm] = useState(false)
@@ -206,7 +207,8 @@ function RecordForm<T extends Row, TCreate, TUpdate>({ row, close, canWrite, pro
   const details: RecordTab = {
     id: 'details', label: 'Details', render: () => (
       <SchemaForm
-        key={`${row.id}:${row.version ?? ''}`}
+        key={row.id}
+        version={row.version ?? undefined}
         schema={props.updateSchema}
         fields={fields}
         defaultValues={props.toFormValues(row)}
@@ -215,8 +217,8 @@ function RecordForm<T extends Row, TCreate, TUpdate>({ row, close, canWrite, pro
         errorMessages={props.errorMessages}
         fieldLabels={props.fieldLabels}
         onCancel={close}
-        onSubmit={async (values) => {
-          await save(values)
+        onSubmit={async (values, edit) => {
+          await save(values, edit.version)
           close()
         }}
       />

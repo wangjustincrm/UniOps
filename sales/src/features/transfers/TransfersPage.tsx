@@ -85,10 +85,11 @@ function TransferForm({ t, onSaved, onCancel }: { t?: TransferDetail; onSaved: (
       submitLabel={t ? 'Save changes' : 'Save draft'}
       errorMessages={errorMessages}
       onCancel={onCancel}
-      onSubmit={async (v, lines) => {
+      version={t?.version}
+      onSubmit={async (v, lines, edit) => {
         const body = { from_warehouse_id: Number(v.from_warehouse_id), to_warehouse_id: Number(v.to_warehouse_id),
           notes: (v.notes as string) ?? null, lines: lines.map((l) => ({ item_code: l.item_code, qty_ea: Number(l.qty_ea) })) }
-        onSaved(t ? await updateTransfer(t.id, t.version, body) : await createTransfer(body))
+        onSaved(t ? await updateTransfer(t.id, edit.version ?? t.version, body) : await createTransfer(body))
       }}
     />
   )
@@ -113,7 +114,7 @@ function Detail({ row }: { row: TransferRead }) {
   const discrepant = !!t?.receipts.some((r) => r.discrepancies && r.discrepancies.length > 0)
   const tabs: RecordTab[] = !t ? [] : editing ? [{
     id: 'edit', label: 'Edit draft', render: () => (
-      <TransferForm key={t.version} t={t} onCancel={() => setEditing(false)} onSaved={async (d) => { setEditing(false); await done(d) }} />),
+      <TransferForm t={t} onCancel={() => setEditing(false)} onSaved={async (d) => { setEditing(false); await done(d) }} />),
   }] : [
     { id: 'overview', label: 'Overview', tone: t.error ? 'danger' : undefined, render: () => (
       <Section title="Transfer">

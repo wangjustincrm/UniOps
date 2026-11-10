@@ -1,4 +1,6 @@
 import { useReportUnsaved } from '../primitives/unsaved'
+import { ChangedElsewhere } from './ChangedElsewhere'
+import { useEditVersion } from './editVersion'
 import { useMemo, useState, type ReactNode } from 'react'
 import { Controller, useForm, useWatch, type FieldValues, type Resolver, type UseFormReturn } from 'react-hook-form'
 import type { z } from 'zod'
@@ -62,7 +64,10 @@ export interface SchemaFormProps {
   /** With `changesOnly`, `values` holds only the fields the user changed, so
    *  an update never touches the rest; a cleared optional field is sent as
    *  null (which clears it on the server). */
-  onSubmit: (values: Record<string, unknown>) => unknown | Promise<unknown>
+  onSubmit: (values: Record<string, unknown>, edit: { version: number | undefined }) => unknown | Promise<unknown>
+  /** A versioned record's version: kept from when the edit started and handed to onSubmit; a newer
+   *  one arriving is taken when nothing is typed, else said (useEditVersion). */
+  version?: number
   changesOnly?: boolean
   submitLabel?: string
   onCancel?: () => void
@@ -80,7 +85,7 @@ export interface SchemaFormProps {
  *  number is null, never 0; a blank optional select is accepted) and a number
  *  input's text becomes a number. */
 export function SchemaForm({
-  schema, fields, defaultValues, onSubmit, changesOnly, submitLabel = 'Save', onCancel, errorMessages, fieldLabels, readOnly,
+  schema, fields, defaultValues, onSubmit, changesOnly, submitLabel = 'Save', onCancel, errorMessages, fieldLabels, readOnly, version,
 }: SchemaFormProps) {
   const resolver = useMemo<Resolver<FieldValues>>(() => {
     const inner = zodResolver(schema, (v) => hiddenFields(fields, v))
@@ -94,6 +99,7 @@ export function SchemaForm({
   const [error, setError] = useState<unknown>(null)
   const { errors, isSubmitting, dirtyFields, isDirty } = form.formState
   useReportUnsaved(isDirty)
+  const edit = useEditVersion(version, isDirty, () => form.reset(blankToEmpty(defaultValues)))
 
   const submit = form.handleSubmit(async (values) => {
     setError(null)
@@ -102,7 +108,7 @@ export function SchemaForm({
       ? Object.fromEntries(Object.keys(dirtyFields).filter((k) => !off.includes(k)).map((k) => [k, emptyToNull(values[k])]))
       : Object.fromEntries(Object.entries(values).map(([k, v]) => [k, emptyToNull(v)]))
     try {
-      await onSubmit(out)
+      await onSubmit(out, { version: edit.seen })
     } catch (e) {
       // A refusal names its field (details.field), or several
       // (details.errors: [{field, message}] for a request the server's
@@ -114,6 +120,7 @@ export function SchemaForm({
 
   return (
     <form onSubmit={submit} noValidate className="flex flex-col gap-4">
+      {edit.changedElsewhere && <ChangedElsewhere onReload={edit.takeTheirs} />}
       <SchemaFields form={form} fields={fields} readOnly={readOnly} />
       {typeof errors.root?.message === 'string' && (
         <p role="alert" className="text-sm text-danger-600">{errors.root.message}</p>

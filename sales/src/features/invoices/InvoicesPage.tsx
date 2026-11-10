@@ -104,7 +104,8 @@ function InvoiceForm({ inv, onSaved, onCancel }: { inv: InvoiceDetail; onSaved: 
       blocked={({ values, lines }) => (lines.some((l) => differs(l.unit_price, l.was)) && String(values.reason ?? '').trim().length < 3
         ? 'An invoice price changed: give the reason for the price change.' : null)}
       submitLabel="Save changes" errorMessages={errorMessages} onCancel={onCancel}
-      onSubmit={async (v, lines) => onSaved(await editInvoice(inv.id, inv.version, {
+      version={inv.version}
+      onSubmit={async (v, lines, edit) => onSaved(await editInvoice(inv.id, edit.version ?? inv.version, {
         invoice_date: String(v.invoice_date), delivery_number: (v.delivery_number as string | null) ?? null,
         reason: (v.reason as string | null) ?? null,
         lines: lines.map((l) => ({ id: l.id, qty: Number(l.qty), unit_price: l.unit_price })) }))}

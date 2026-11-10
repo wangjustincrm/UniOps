@@ -33,7 +33,7 @@ describe('SchemaForm controls', () => {
     fireEvent.change(screen.getByLabelText('Qty'), { target: { value: '2.5' } })
     fireEvent.click(screen.getByText('Save'))
     await waitFor(() => expect(onSubmit).toHaveBeenLastCalledWith({
-      active: true, kind: 'B', due: '2026-11-01', item: 'CF0092', notes: 'two\nlines', qty: 2.5 }))
+      active: true, kind: 'B', due: '2026-11-01', item: 'CF0092', notes: 'two\nlines', qty: 2.5 }, { version: undefined }))
   })
 
   it('a blank select, date and reference submit null; read-only disables every control', async () => {
@@ -45,7 +45,7 @@ describe('SchemaForm controls', () => {
     await chooseOption(screen.getByRole('combobox', { name: 'Kind' }), '—')
     fireEvent.change(screen.getByLabelText('Due'), { target: { value: '' } })
     fireEvent.click(screen.getByText('Save'))
-    await waitFor(() => expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ kind: null, due: null, item: 'CF0092' })))
+    await waitFor(() => expect(onSubmit).toHaveBeenLastCalledWith(expect.objectContaining({ kind: null, due: null, item: 'CF0092' }), { version: undefined }))
     unmount()
     render(<SchemaForm schema={schema} fields={fields} onSubmit={onSubmit} readOnly
       defaultValues={{ active: true, kind: 'A', due: null, item: null, notes: null, qty: null }} />)
