@@ -4,7 +4,6 @@ path and needs sales.file.retry."""
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any
 
 from sqlalchemy import func, select, union_all
 
@@ -29,7 +28,7 @@ from app.models.transfers import Receipt, Transfer
 from app.platform.authorization import authorize, requires
 from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError, NotFound
-from app.platform.query import FilterRule, Page
+from app.platform.query import FilterRule
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
@@ -102,22 +101,9 @@ class DocumentService(ReadOnlyService[Document, DocumentRead]):
     read_schema = DocumentRead
     read_permission = READ
 
-    async def get(self, id: int) -> DocumentRead:
-        await self._authorize(self.read_permission)
-        return (await self._with_refs([await self.repo.get(id)]))[0]
-
-    async def list(self, spec) -> Page[DocumentRead]:
-        await self._authorize(self.read_permission)
-        page = await self.repo.list(spec)
-        return Page[Any](items=await self._with_refs(page.items), total=page.total, groups=page.groups,
-                         groups_truncated=page.groups_truncated, totals=page.totals)
-
-    async def _with_refs(self, docs) -> list[DocumentRead]:
+    async def enrich(self, rows: list[DocumentRead], docs) -> None:
         """Each row's orders (the first MAX_REFS and the count) and transfers, two queries for the page."""
-        rows = [self.to_read(d) for d in docs]
         ids = [r.id for r in rows]
-        if not ids:
-            return rows
         s = self.uow.session
         ranked = (select(DocumentLink.document_id, Order.id, Order.source_reference, Order.order_number,
                          func.row_number().over(partition_by=DocumentLink.document_id, order_by=Order.id).label("n"),
@@ -140,7 +126,6 @@ class DocumentService(ReadOnlyService[Document, DocumentRead]):
         for r in rows:
             r.orders, r.orders_total, r.transfers = orders.get(r.id, []), totals.get(r.id, 0), transfers.get(r.id, [])
             r.no_order_reason = None if (r.orders or r.transfers) else no_order_reason(by_id[r.id])
-        return rows
 
     @requires(READ)
     async def raw(self, id: int) -> tuple[str, bytes]:

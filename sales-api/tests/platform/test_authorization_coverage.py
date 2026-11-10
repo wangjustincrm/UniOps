@@ -12,7 +12,8 @@ import re
 import app.services as services
 
 # CrudService / ReadOnlyService hooks: the base's checked create / update / list call them.
-HOOKS = {"before_update", "validate_create", "apply_changes"}
+# enrich: fills rows already read by an authorised get / list / detail (ReadOnlyService._read_all).
+HOOKS = {"before_update", "validate_create", "apply_changes", "enrich"}
 
 # Engines: they take the unit of work as a parameter and are reached only through the scheduler
 # (cycle), the outbox, or a facade that checks first (InvoiceService, TransferService, OrderService,

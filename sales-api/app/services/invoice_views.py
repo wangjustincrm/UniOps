@@ -76,25 +76,20 @@ class InvoiceService(ReadOnlyService[Invoice, InvoiceRead]):
         order = await self.uow.session.get(Order, inv.order_id)
         return f"{inv.invoice_number}.pdf", await print_docs.invoice_pdf(self.uow.session, inv, order)
 
-    async def _with_order(self, items: list[InvoiceRead]) -> list[InvoiceRead]:
+    async def enrich(self, items: list[InvoiceRead], entities) -> None:
+        """The order's number, partner, PO and invoice status."""
         ids = {i.order_id for i in items}
         orders = {o.id: o for o in (await self.uow.session.execute(select(Order).where(Order.id.in_(ids)))).scalars()} if ids else {}
         for i in items:
             o = orders.get(i.order_id)
             if o is not None:
                 i.order_number, i.partner_code, i.po, i.status = o.order_number, o.partner_code, o.source_order_number, o.invoice_status
-        return items
-
-    async def list(self, spec):
-        page = await super().list(spec)
-        await self._with_order(page.items)
-        return page
 
     @requires(READ)
     async def detail(self, id: int) -> InvoiceDetail:
         s = self.uow.session
         inv = await self.repo.get(id)
-        [base] = await self._with_order([self.to_read(inv)])
+        base = await self._read_one(inv)
         lines = (await s.execute(select(InvoiceLine).where(InvoiceLine.invoice_id == id).order_by(InvoiceLine.line_no))).scalars()
         confirmed = (await s.execute(select(DeliveryConfirmation.confirmed_date).where(
             DeliveryConfirmation.order_id == inv.order_id))).scalar_one_or_none()

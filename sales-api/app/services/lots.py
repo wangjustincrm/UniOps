@@ -55,14 +55,12 @@ class LotService(ReadOnlyService[LotRow, LotRead]):
     read_schema = LotRead
     read_permission = READ
 
-    async def list(self, spec: QuerySpec):
-        """The rows, each with its parcel's tracking link when its carrier has a template."""
-        page = await super().list(spec)
-        carriers = await carriers_by_scac(self.uow.session, {r.carrier for r in page.items})
-        for r in page.items:
+    async def enrich(self, rows: list[LotRead], entities) -> None:
+        """Each row's parcel tracking link, when its carrier has a template."""
+        carriers = await carriers_by_scac(self.uow.session, {r.carrier for r in rows})
+        for r in rows:
             c = carriers.get((r.carrier or "").strip().upper())
             r.tracking_url = tracking_url(c.tracking_url if c else None, r.tracking)
-        return page
 
     @requires(READ)
     async def export_csv(self, spec: QuerySpec) -> bytes:

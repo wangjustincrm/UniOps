@@ -68,14 +68,29 @@ class ReadOnlyService(Generic[T, R]):
     def to_read(self, entity: T) -> R:
         return self.read_schema.model_validate(entity, from_attributes=True)
 
+    async def enrich(self, rows: list[R], entities: list[T]) -> None:
+        """Fills what one row cannot know alone (names of other records, a delivery
+        status, a link), for the whole page at once: a few queries, never one per
+        row. `rows[i]` is `entities[i]` read. Every read goes through it (get, list,
+        a detail built on _read_all), so a list and its record never differ."""
+
+    async def _read_all(self, entities: list[T]) -> list[R]:
+        rows = [self.to_read(e) for e in entities]
+        if rows:
+            await self.enrich(rows, entities)
+        return rows
+
+    async def _read_one(self, entity: T) -> R:
+        return (await self._read_all([entity]))[0]
+
     async def get(self, id: int) -> R:
         await self._authorize(self.read_permission)
-        return self.to_read(await self.repo.get(id))
+        return await self._read_one(await self.repo.get(id))
 
     async def list(self, spec: QuerySpec) -> Page[R]:
         await self._authorize(self.read_permission)
         page = await self.repo.list(spec)
-        return Page[Any](items=[self.to_read(e) for e in page.items], total=page.total,
+        return Page[Any](items=await self._read_all(list(page.items)), total=page.total,
                          groups=page.groups, groups_truncated=page.groups_truncated, totals=page.totals)
 
     async def suggest(self, field: str, text: str = "") -> list[str]:
@@ -190,7 +205,7 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
                 await self.repo.add(entity)
         except IntegrityError as e:
             raise self._unique_refusal(e) or e
-        return self.to_read(entity)
+        return await self._read_one(entity)
 
     async def update(self, id: int, data: U, version: int | None = None) -> R:
         await self._authorize(self.write_permission)
@@ -206,7 +221,7 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
             await self.uow.session.flush()
         except StaleDataError as e:
             raise BusinessError("entity.stale", "this record was changed by someone else; reload it") from e
-        return self.to_read(entity)
+        return await self._read_one(entity)
 
     async def deactivate(self, id: int) -> R:
         await self._authorize(self.write_permission)
@@ -216,7 +231,7 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
             raise TypeError(f"{type(entity).__name__} is not Deactivatable")
         entity.active = False
         await self.uow.session.flush()
-        return self.to_read(entity)
+        return await self._read_one(entity)
 
     # ── CSV ──────────────────────────────────────────────────────────────────
     async def export_csv(self, spec: QuerySpec) -> bytes:

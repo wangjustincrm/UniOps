@@ -295,15 +295,14 @@ class NotificationService(ReadOnlyService[NotificationRecord, NotificationRead])
                                                .where(OutboxRecord.id.in_(ids)))).all()
         return {r.id: (r.status, r.last_error) for r in rows}
 
-    async def list(self, spec):  # type: ignore[override]
-        page = await super().list(spec)
-        delivery = await self._delivery([i.outbox_id for i in page.items if i.outbox_id])
-        for i in page.items:
+    async def enrich(self, rows: list[NotificationRead], entities) -> None:
+        """An email's delivery: its outbox row."""
+        delivery = await self._delivery([i.outbox_id for i in rows if i.outbox_id])
+        for i in rows:
             if i.outbox_id in delivery:
                 i.delivery, i.delivery_error = delivery[i.outbox_id]
             elif i.channel == "TASK":
                 i.delivery = "Task written"
-        return page
 
     def to_read(self, entity: NotificationRecord) -> NotificationRead:
         ev = BY_KEY.get(entity.event_type)

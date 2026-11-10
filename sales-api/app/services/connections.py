@@ -9,7 +9,6 @@ from typing import Any, ClassVar
 
 from app.core.config import settings as app_settings
 from app.domain.schedule import is_overdue
-from app.platform.query import QuerySpec
 
 from app.domain.config import AFTER_READ, CONNECTION_KINDS, CONNECTION_MODES
 from app.domain.connections import check_connection
@@ -106,16 +105,14 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
     def scheduler_enabled(self) -> bool:
         return bool(getattr(self.settings, "SALES_SCHEDULER_ENABLED", False))
 
-    async def list(self, spec: QuerySpec):
+    async def enrich(self, rows: list[ConnectionRead], entities) -> None:
         """Each row says whether its next run is overdue: only when the scheduler
         runs and is not paused as a whole (Health, Scheduler)."""
-        page = await super().list(spec)
         if self.scheduler_enabled() and not await SETTINGS.get(self.uow.session, SCHEDULER_PAUSED):
             now = self.clock()
-            for c in page.items:
+            for c in rows:
                 c.overdue = is_overdue(now, next_run_at=c.next_run_at, minutes=c.schedule_minutes, active=c.active,
                                        paused=c.schedule_paused, window=window_of(c))
-        return page
 
     def to_read(self, entity: Connection) -> ConnectionRead:
         out = super().to_read(entity)
@@ -183,7 +180,7 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
         self.uow.set_reason("reset cursor")
         entity.cursor_updated_at = cursor
         await self.uow.session.flush()
-        return self.to_read(entity)
+        return await self._read_one(entity)
 
     @requires(CONFIG)
     async def test(self, id: int, sftp, shopify=None) -> ConnectionTestRead:
@@ -232,7 +229,7 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
         entity.auth_failed_reason = None
         await self.uow.session.flush()
         await tasks.resolve_problem(self.uow.session, SFTP_AUTH_FAILED, entity.id, by=self.uow.actor.user_id)
-        return self.to_read(entity)
+        return await self._read_one(entity)
 
 
 class EdiSettingsService:

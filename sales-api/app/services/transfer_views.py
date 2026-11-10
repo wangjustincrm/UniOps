@@ -47,23 +47,18 @@ class TransferService(ReadOnlyService[Transfer, TransferRead]):
         t = await self.repo.get(transfer_id)
         return f"TO-{t.transfer_number}.pdf", await print_docs.transfer_pdf(self.uow.session, t)
 
-    async def _named(self, items: list[TransferRead]) -> list[TransferRead]:
+    async def enrich(self, items: list[TransferRead], entities) -> None:
+        """The warehouses' codes."""
         ids = {i.from_warehouse_id for i in items} | {i.to_warehouse_id for i in items}
         codes = dict((await self.uow.session.execute(select(Warehouse.id, Warehouse.code).where(Warehouse.id.in_(ids)))).all()) if ids else {}
         for i in items:
             i.from_warehouse, i.to_warehouse = codes.get(i.from_warehouse_id), codes.get(i.to_warehouse_id)
-        return items
-
-    async def list(self, spec):
-        page = await super().list(spec)
-        await self._named(page.items)
-        return page
 
     @requires(READ)
     async def detail(self, id: int) -> TransferDetail:
         s = self.uow.session
         t = await self.repo.get(id)
-        [base] = await self._named([self.to_read(t)])
+        base = await self._read_one(t)
         lines = (await s.execute(select(TransferLine).where(TransferLine.transfer_id == id).order_by(TransferLine.line_no))).scalars()
         receipts = list((await s.execute(select(Receipt).where(Receipt.transfer_id == id).order_by(Receipt.id))).scalars())
         rows = list((await s.execute(select(ReceiptRow).where(ReceiptRow.receipt_id.in_([r.id for r in receipts]))

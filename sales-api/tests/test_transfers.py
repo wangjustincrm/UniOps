@@ -18,6 +18,7 @@ from app.platform.actors import SYSTEM_ACTOR
 from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError
 from app.platform.outbox import Outbox, OutboxWorker
+from app.platform.query import QuerySpec
 from app.schemas.transfers import TransferIn
 from app.services.settings import SETTINGS, SHADOW_MODE
 from app.services.transfer_views import TransferService
@@ -286,3 +287,13 @@ async def test_a_943_without_a_997_in_time_times_out_once_and_raises_a_task(p7):
     [t] = await tasks(p7, "943_timeout")
     assert x.transfer_number in t
     assert (await p7.tr.timeouts()).timeouts == 0                 # once
+
+
+async def test_get_and_list_name_the_warehouses_through_enrich(p7):  # 2026-11-10: get used to skip them
+    t = p7
+    x = await create(t)
+    async with t.factory(OP) as u:
+        one = await TransferService(u).get(x.id)
+        page = await TransferService(u).list(QuerySpec())
+    assert (one.from_warehouse, one.to_warehouse) == ("KGN", "CLN02")
+    assert [(r.from_warehouse, r.to_warehouse) for r in page.items] == [("KGN", "CLN02")]
