@@ -11,6 +11,7 @@ from app.core.deps import BearerTokenDep, CurrentUserDep, SessionDep
 from app.crud import expense as expense_crud
 from app.schemas.expense import (
     ApprovalEventResponse,
+    CfmFieldValue,
     ExpenseActionRequest,
     ExpenseClaimCreate,
     ExpenseClaimListItem,
@@ -675,6 +676,11 @@ async def get_expense(claim_id: uuid.UUID, db: SessionDep, user: CurrentUserDep)
         raise HTTPException(status_code=403, detail="Not authorized to view this expense claim")
     out = ExpenseClaimResponse.model_validate(claim)
     out.approval_events = await _claim_history(db, claim)
+    if claim.claim_type.upper().startswith("CFM"):
+        # The same reading the claim PDF prints under "Form Details".
+        out.form_name, fields = await claim_pdf.cfm_form(db, claim)
+        out.form_fields = [CfmFieldValue(label=k, value=v) for k, v in fields]
+        _, out.user_notes = claim_pdf.cfm_answers(claim.notes)
     return out
 
 

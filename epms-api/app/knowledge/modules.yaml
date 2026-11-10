@@ -198,6 +198,10 @@ modules:
         second. A Travel Application has its own form, regenerated from the
         Travel Application card.
       - >-
+        A custom-form claim shows its answers under Form Details on the claim
+        page (each field by its label, as on its PDF) and the employee's own
+        notes under Notes. It carries no amount, so the page shows no total.
+      - >-
         Nobody pays their own claim either, while the self-payment
         segregation-of-duties rule is on (it is by default): a Payment Officer
         or Finance Manager does not get Mark as Processed on a claim of their

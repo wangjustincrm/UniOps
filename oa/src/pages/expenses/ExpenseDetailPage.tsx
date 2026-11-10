@@ -92,6 +92,11 @@ interface ExpenseClaim {
   leave_from_date?: string | null
   leave_to_date?: string | null
   purpose?: string | null
+  // Custom-form claims: `notes` is the stored answers blob (the edit form reads
+  // it); these are its meaning, resolved server-side like the PDF (ISS-0195).
+  form_name?: string | null
+  form_fields?: { label: string; value: string }[] | null
+  user_notes?: string | null
 }
 
 interface Attachment {
@@ -494,8 +499,11 @@ export default function ExpenseDetailPage() {
   const TYPE_LABELS: Record<string, string> = {
     EXP: 'General Expense', MIL: 'Mileage Claim', TRV: 'Travel Expense', TRA: 'Travel Application',
   }
+  const isCfm = claim.claim_type.startsWith('CFM')
   const typeLabel = TYPE_LABELS[claim.claim_type]
-    ?? (claim.claim_type.startsWith('CFM') ? `Custom Form (${claim.claim_type.replace(/^CFM_?/, '')})` : claim.claim_type)
+    ?? (isCfm ? `Custom Form (${claim.claim_type.replace(/^CFM_?/, '')})` : claim.claim_type)
+  // A custom form's `notes` is its answers blob; the employee's remark is user_notes.
+  const notesText = isCfm ? claim.user_notes : claim.notes
 
   // EXP-007 / TRV-008: receipt-based claims require ≥1 attachment before submission.
   // A TRV made only of date-range lines is exempt (same rule as the server).
@@ -644,12 +652,14 @@ export default function ExpenseDetailPage() {
             <p className="mt-0.5 text-sm font-mono font-medium text-neutral-800">{Number(claim.total_km).toFixed(1)} km</p>
           </div>
         )}
-        {claim.notes && (
+        {notesText && (
           <div className="col-span-2">
             <p className="text-xs font-medium text-neutral-500">Notes</p>
-            <p className="mt-0.5 text-sm text-neutral-700">{claim.notes}</p>
+            <p className="mt-0.5 whitespace-pre-line text-sm text-neutral-700">{notesText}</p>
           </div>
         )}
+        {/* A custom form carries no lines and no amount (CFM-002). */}
+        {!isCfm && (
         <div className="col-span-2 border-t border-neutral-100 pt-3 mt-1">
           <div className="flex justify-between text-sm">
             <span className="text-neutral-500">Subtotal (pre-tax)</span>
@@ -666,7 +676,25 @@ export default function ExpenseDetailPage() {
             <span className="font-mono text-primary-700">{formatAmount(claim.total_amount, claim.currency)}</span>
           </div>
         </div>
+        )}
       </div>
+
+      {/* Custom form answers, labelled as on the claim PDF (OA.md §6.2) */}
+      {isCfm && claim.form_fields && (
+        <div className="rounded-xl border border-neutral-200 bg-white p-5 flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-neutral-700">
+            Form Details{claim.form_name ? ` — ${claim.form_name}` : ''}
+          </h2>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+            {claim.form_fields.map((f, i) => (
+              <div key={i}>
+                <dt className="text-neutral-500">{f.label}</dt>
+                <dd className="whitespace-pre-line text-neutral-800">{f.value || '—'}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
 
       {/* Travel Application details (TRA — no money/line items, has its own PDF) */}
       {claim.claim_type === 'TRA' && (
