@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import case, or_, select, text
+from sqlalchemy import and_, case, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -92,6 +92,7 @@ async def create(
         category_id=payload.category_id,
         description=payload.description,
         equipment_involved=payload.equipment_involved,
+        batch_code=(payload.batch_code or "").strip() or None,
         equipment_id=payload.equipment_id,
         witnesses_note=payload.witnesses_note,
         immediate_action_taken=payload.immediate_action_taken,
@@ -211,8 +212,11 @@ async def list_(
     has_root_causes: bool = False,
     has_actions: bool = False,
     actions_state: str | None = None,
+    investigation_outstanding_only: bool = False,
 ) -> list[Incident]:
     stmt = select(Incident)
+    if investigation_outstanding_only:
+        stmt = stmt.where(investigation_outstanding())
     if reported_by:
         stmt = stmt.where(Incident.reported_by == reported_by)
     # ★ Round 8, TC-08: the register's figures open the incidents behind them.
@@ -357,6 +361,24 @@ def needs_hse_review(incident: Incident) -> bool:
     if incident.form_kind == "equipment":
         return True
     return bool(incident.injury_class or incident.mol_reportable)
+
+
+def investigation_outstanding():
+    """Round 12, Q6 and TC-05: "An investigation is outstanding until it is
+    signed off." Counted on incidents still open whose investigation is owed —
+    every injury and equipment incident, as `needs_hse_review` has it — or has
+    been started, and that no signed investigation closes. One clause, for the
+    register's box and the list it opens, so the two cannot disagree.
+    """
+    from sqlalchemy import exists
+    from app.models.incident import IncidentInvestigation as Inv
+    started = exists().where(Inv.incident_id == Incident.id)
+    signed = exists().where(Inv.incident_id == Incident.id, Inv.completed_at.is_not(None))
+    return and_(
+        Incident.status.not_in(("draft", "closed")),
+        ~signed,
+        or_(Incident.form_kind == "equipment", Incident.injury_class.is_not(None),
+            Incident.mol_reportable.is_(True), started))
 
 
 CLOCK_NAMES = {"mol_48h": "the MOL 48-hour report", "wsib_form7": "the WSIB Form 7"}

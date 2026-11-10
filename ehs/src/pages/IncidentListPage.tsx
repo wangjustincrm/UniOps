@@ -29,6 +29,8 @@ const DRILL_KEYS = [
   'department_id', 'no_department', 'body_part_label', 'location_id',
   // Round 8, TC-08: the register's own figures open the incidents behind them.
   'status', 'has_root_causes', 'has_actions', 'actions_state',
+  // Round 12, TC-05: investigations not signed off.
+  'investigation_outstanding',
 ] as const
 
 export default function IncidentListPage() {
@@ -197,6 +199,7 @@ export default function IncidentListPage() {
 
 interface Summary {
   open: number; under_investigation: number; closed: number
+  investigations_outstanding?: number
   root_causes: number; corrective_actions: number
   actions_completed?: number; actions_outstanding?: number
 }
@@ -235,7 +238,11 @@ function RegisterFigures() {
     statuses.map((st) => `status=${st}`).join('&') + extra
   const tiles: [string, number | undefined, string][] = [
     ['Open incidents', d?.open, q(['submitted', 'under_investigation', 'pending_closure'])],
-    ['Under investigation', d?.under_investigation, q(['under_investigation'])],
+    // ★ Round 12, TC-05 and Q6: "An investigation is outstanding until it is
+    // signed off." The status Under investigation is written by nothing on
+    // the way in, so that box always read 0.
+    ['Investigations not signed off', d?.investigations_outstanding,
+     q(['submitted', 'under_investigation', 'pending_closure'], '&investigation_outstanding=true')],
     ['Closed incidents', d?.closed, q(['closed'])],
     ['Root causes identified', d?.root_causes, q(SENT, '&has_root_causes=true')],
     // ★ Round 10, TC-10: "a capa counter tracking all the capa created,

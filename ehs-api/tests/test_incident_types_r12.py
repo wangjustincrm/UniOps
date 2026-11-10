@@ -72,3 +72,44 @@ async def test_a_near_miss_never_records_an_injury(hse_manager, db_session):
     assert made.status_code == 201, made.text
     row = await db_session.get(Incident, uuid.UUID(made.json()["id"]))
     assert row.injury_class is None
+
+
+async def test_an_investigation_is_outstanding_until_it_is_signed_off(hse_manager):
+    """★ Round 12, Q6 and TC-05: the register's box and the list it opens."""
+    _, hse = hse_manager
+
+    async def summary():
+        return (await hse.get("/api/v1/incidents/summary")).json()["investigations_outstanding"]
+
+    async def listed(iid):
+        rows = (await hse.get("/api/v1/incidents", params={
+            "investigation_outstanding": "true", "limit": 200})).json()
+        return iid in {r["id"] for r in rows}
+
+    before = await summary()
+    made = await hse.post("/api/v1/incidents", json={
+        "form_kind": "equipment", "title": "Guard missing on the capper",
+        "occurred_at": datetime.now(timezone.utc).isoformat(),
+        "incident_type": "property_damage", "batch_code": " LOT-2611-A "})
+    assert made.status_code == 201, made.text
+    iid = made.json()["id"]
+    assert made.json()["batch_code"] == "LOT-2611-A"
+    assert await summary() == before, "a draft is not counted"
+    await hse.post(f"/api/v1/incidents/{iid}/submit")
+    assert await summary() == before + 1, "an equipment incident owes an investigation"
+    assert await listed(iid)
+
+    saved = await hse.put(f"/api/v1/incidents/{iid}/investigation", json={
+        "investigator_id": None, "supporting_investigator_ids": [], "identified_hazard_ids": [],
+        "ppe_that_could_prevent": [], "sequence_of_events": "Guard left off after cleaning",
+        "root_cause_narrative": None})
+    assert saved.status_code == 200, saved.text
+    assert await summary() == before + 1, "saved but not signed is still outstanding"
+    signed = await hse.post(f"/api/v1/incidents/{iid}/investigation/sign",
+                            json={"signature": "data:image/png;base64,iVBORw0KGgo="})
+    assert signed.status_code == 200, signed.text
+    assert await summary() == before
+    assert not await listed(iid)
+
+    edited = await hse.patch(f"/api/v1/incidents/{iid}", json={"batch_code": "LOT-2611-B"})
+    assert edited.status_code == 200 and edited.json()["batch_code"] == "LOT-2611-B"

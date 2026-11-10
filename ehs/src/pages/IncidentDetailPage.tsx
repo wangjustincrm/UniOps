@@ -42,6 +42,7 @@ interface Incident {
   occurred_at: string | null; employer_aware_at: string | null; location_path: string | null
   injury_class: string | null; mol_reportable: boolean; mol_reportable_reason: string | null
   description: string | null; equipment_involved: string | null
+  batch_code?: string | null
   equipment_id?: string | null
   witnesses_note: string | null; immediate_action_taken: string | null
   reported_by_name: string | null; reported_to_name: string | null; is_anonymous: boolean
@@ -341,6 +342,7 @@ export default function IncidentDetailPage() {
                 else should we know" as not displayed, when it was, under a
                 heading nobody had typed anything under. */}
             <Row label="What else should we know" value={inc.description} block />
+            <Row label="Product batch code" value={inc.batch_code} />
             <Row label="Equipment" value={equipmentName} />
             <Row label="Equipment, as described" value={inc.equipment_involved} />
             <Row label="Witnesses" value={inc.witnesses_note} block />
@@ -866,6 +868,7 @@ function EditReport({ incident, isHse, onDone, onCancel }: {
     equipment_involved: incident.equipment_involved ?? '',
     witnesses_note: incident.witnesses_note ?? '',
     immediate_action_taken: incident.immediate_action_taken ?? '',
+    batch_code: incident.batch_code ?? '',
   }
   const [form, setForm] = useState(initial)
   const set = (k: keyof typeof initial, v: string) => setForm((f) => ({ ...f, [k]: v }))
@@ -889,7 +892,7 @@ function EditReport({ incident, isHse, onDone, onCancel }: {
     mutationFn: () => {
       const body: Record<string, unknown> = {}
       for (const k of ['title', 'description', 'equipment_involved', 'witnesses_note',
-                       'immediate_action_taken', 'location_id', 'equipment_id'] as const) {
+                       'immediate_action_taken', 'location_id', 'equipment_id', 'batch_code'] as const) {
         if (form[k] !== initial[k]) body[k] = form[k] === '' ? null : form[k]
       }
       if (form.date !== initial.date || form.time !== initial.time) {
@@ -931,6 +934,9 @@ function EditReport({ incident, isHse, onDone, onCancel }: {
           </span>
         </label>
       )}
+      <label className="sm:col-span-2 text-xs font-medium text-neutral-700">Product batch code
+        <input className={box} value={form.batch_code} onChange={(e) => set('batch_code', e.target.value)} />
+      </label>
       <div className="sm:col-span-2 text-xs font-medium text-neutral-700">Where
         <LocationSelect value={form.location_id || null} onChange={(id) => set('location_id', id ?? '')} />
       </div>

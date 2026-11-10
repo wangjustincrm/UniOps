@@ -222,6 +222,8 @@ async def list_incidents(
     actions_state: str | None = Query(
         default=None, pattern="^(completed|outstanding)$",
         description="Round 10: only those with a corrective action completed, or one outstanding"),
+    investigation_outstanding: bool = Query(
+        default=False, description="Round 12: only those whose investigation is not signed off"),
 ):
     # Without ehs.incident.read the register is not browsable, but a person's
     # own reports are: the list narrows rather than refusing outright.
@@ -237,6 +239,7 @@ async def list_incidents(
         reported_by=_user_id(user) if mine_only else None, order=order,
         has_root_causes=has_root_causes, has_actions=has_actions,
         actions_state=actions_state,
+        investigation_outstanding_only=investigation_outstanding,
     )
     return [IncidentListItem.model_validate(r) for r in rows]
 
@@ -244,6 +247,9 @@ async def list_incidents(
 class RegisterSummary(BaseModel):
     open: int
     under_investigation: int
+    # Round 12, TC-05/Q6: open incidents whose investigation is owed or begun
+    # and not signed off. See crud.investigation_outstanding.
+    investigations_outstanding: int = 0
     closed: int
     root_causes: int
     corrective_actions: int
@@ -287,7 +293,11 @@ async def register_summary(db: SessionDep, user: CanReportIncident):
     action_states = dict((await db.execute(
         select(Action.status, func.count()).where(Action.source_id.in_(seen))
         .group_by(Action.status))).all())
+    outstanding = (await db.execute(
+        select(func.count()).select_from(Incident)
+        .where(Incident.id.in_(seen), crud.investigation_outstanding()))).scalar() or 0
     return RegisterSummary(
+        investigations_outstanding=outstanding,
         open=sum(n for st, n in by_status.items() if st != "closed"),
         under_investigation=by_status.get("under_investigation", 0),
         closed=by_status.get("closed", 0),

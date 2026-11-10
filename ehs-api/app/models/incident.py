@@ -84,6 +84,9 @@ class Incident(UUIDPrimaryKey, EhsCommonDims, TimestampMixin, Base):
     # ── Narrative ───────────────────────────────────────────────────────────
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     equipment_involved: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Round 12, INC-04/D3: the product batch code, beside the date on the report
+    # and under who investigated on the investigation — one value, two places.
+    batch_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # From the equipment register (round 10); the text above is for anything
     # the register does not list.
     equipment_id: Mapped[uuid.UUID | None] = mapped_column(

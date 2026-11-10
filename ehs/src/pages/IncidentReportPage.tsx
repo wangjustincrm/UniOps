@@ -23,9 +23,7 @@ import type { CompressedImage } from '@/lib/imageCompress'
 import { LocationSelect } from '@/components/LocationSelect'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { PhotoCapture } from '@/components/PhotoCapture'
-import { SignaturePad } from '@/components/SignaturePad'
 import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
-import { useMyProfile } from '@/hooks/useMyProfile'
 import { usePermissions } from '@/hooks/usePermissions'
 import {
   EMPTY_INJURY_DETAIL, hasInjuryDetail, InjuryDetailFields, type InjuryDetail,
@@ -110,6 +108,7 @@ interface FormState {
   injury: InjuryDetail
   anonymous: boolean
   signature: string | null
+  batchCode: string
 }
 
 /**
@@ -131,7 +130,7 @@ const emptyForm = (): FormState => ({
   injuryClass: '', description: '',
   injured: EMPTY_PERSON, firstAider: EMPTY_PERSON, bodyPart: null, natureOfInjury: null,
   treatment: '', sentOffsite: false, followUp: '',
-  talkedToOperator: '', whyNot: '', anonymous: false, signature: null,
+  talkedToOperator: '', whyNot: '', anonymous: false, signature: null, batchCode: '',
   injury: { ...EMPTY_INJURY_DETAIL },
 })
 
@@ -141,7 +140,6 @@ const DRAFT_ID = 'current'
 export default function IncidentReportPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const profile = useMyProfile()
   const [form, setForm] = useState<FormState>(emptyForm)
   const [photos, setPhotos] = useState<CompressedImage[]>([])
   const [restored, setRestored] = useState(false)
@@ -241,7 +239,8 @@ export default function IncidentReportPage() {
         equipment_id: form.equipmentId ?? null,
         description: form.description || null,
         is_anonymous: form.anonymous,
-        signature: form.signature,
+        signature: null,
+        batch_code: form.batchCode.trim() || null,
         incident_type: form.incidentType || null,
         // 'none' is this screen's way of saying nobody was hurt, which the
         // record holds as no injury class at all.
@@ -455,7 +454,10 @@ export default function IncidentReportPage() {
         />
       </Field>
 
-      <div className="grid grid-cols-2 gap-2">
+      {/* Round 12 (defaults box): "make the date and time fields smaller and
+          fit in the batch code text field on the same line." On a phone the
+          batch code takes its own line under them. */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-[11rem_8rem_minmax(0,1fr)]">
         <Field label="Date" required>
           <input type="date" className={inputClass} value={form.date}
                  max={todayForInput()}
@@ -465,6 +467,13 @@ export default function IncidentReportPage() {
           <input type="time" className={inputClass} value={form.time}
                  onChange={(e) => set('time', e.target.value)} />
         </Field>
+        <div className="col-span-2 sm:col-span-1">
+          <Field label="Product batch code">
+            <input className={inputClass} value={form.batchCode}
+                   onChange={(e) => set('batchCode', e.target.value)}
+                   placeholder="If a product was involved" />
+          </Field>
+        </div>
       </div>
       {inTheFuture && (
         <p className="rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-800">
@@ -694,13 +703,8 @@ export default function IncidentReportPage() {
         <PhotoCapture photos={photos} onChange={setPhotos} />
       </Field>
 
-      <Field label="Sign">
-        <SignaturePad
-          value={form.signature}
-          onChange={(v) => set('signature', v)}
-          savedSignature={profile.data?.signature_image ?? null}
-        />
-      </Field>
+      {/* Round 12, INC-14 and Q6: "remove the signature from the incident
+          report". The investigation's sign-off is what completes the record. */}
 
       <label className="mt-2 flex min-h-[44px] items-center gap-2.5 text-sm text-neutral-700">
         <input type="checkbox" className="h-4 w-4" checked={form.anonymous}

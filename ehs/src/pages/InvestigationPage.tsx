@@ -103,6 +103,7 @@ export default function InvestigationPage() {
     queryKey: ['incident', id],
     queryFn: () => api.get<{
       incident_no: string; title: string; form_kind: string
+      batch_code?: string | null
       persons: {
         id: string; role: string; person_name: string
         body_part_id: string | null; body_part_label: string | null
@@ -209,8 +210,15 @@ export default function InvestigationPage() {
   // section then simply is not there.
   const showMedical = wantsMedical && medical.isSuccess
 
+  // Round 12, INC-04: the incident's batch code, edited here as well.
+  const [batchCode, setBatchCode] = useState<string | null>(null)
+  const batchShown = batchCode ?? incident.data?.batch_code ?? ''
+
   const save = useMutation({
     mutationFn: async (opts: { sign: boolean }) => {
+      if (batchCode !== null && batchCode.trim() !== (incident.data?.batch_code ?? '')) {
+        await api.patch(`/api/v1/incidents/${id}`, { batch_code: batchCode.trim() || null })
+      }
       await api.put(`/api/v1/incidents/${id}/investigation`, {
         investigator_id: lead.userId,
         supporting_investigator_ids: [],
@@ -321,16 +329,25 @@ export default function InvestigationPage() {
         <p className="mt-0.5 text-sm text-neutral-600">{incident.data?.title}</p>
       </header>
 
-      {existing.data?.completed_at && (
+      {existing.data?.completed_at ? (
         <p className="mb-4 rounded-lg bg-primary-50 px-3 py-2 text-xs text-primary-800">
-          Signed by {existing.data.signed_by_name ?? 'the investigator'}. Saving again replaces
+          Signed off by {existing.data.signed_by_name ?? 'the investigator'}. Saving again replaces
           the findings and requires a new signature.
+        </p>
+      ) : (
+        // Round 12, Q6: "An investigation is outstanding until it is signed off."
+        <p className="mb-4 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-800">
+          Outstanding until it is signed off. Save keeps your work; Save and sign completes it.
         </p>
       )}
 
       <Section title="Who investigated">
         <Field label="Lead investigator">
           <PersonPicker value={lead} onChange={setLead} />
+        </Field>
+        <Field label="Product batch code" help="The same field as on the report.">
+          <input className={inputClass} value={batchShown}
+                 onChange={(e) => setBatchCode(e.target.value)} />
         </Field>
       </Section>
 

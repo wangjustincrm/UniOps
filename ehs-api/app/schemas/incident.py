@@ -53,6 +53,7 @@ class IncidentCreate(BaseModel):
     equipment_id: uuid.UUID | None = None
     witnesses_note: str | None = None
     immediate_action_taken: str | None = None
+    batch_code: str | None = Field(default=None, max_length=100)
     reported_to_id: uuid.UUID | None = None
     is_anonymous: bool = False
     # One of the twelve options on HSE's form. The server fans it out into
@@ -126,6 +127,7 @@ class IncidentEdit(BaseModel):
     equipment_id: uuid.UUID | None = None
     witnesses_note: str | None = None
     immediate_action_taken: str | None = None
+    batch_code: str | None = Field(default=None, max_length=100)
 
 
 class IncidentClassify(BaseModel):
@@ -260,6 +262,7 @@ class IncidentOut(BaseModel):
     anonymous_reporter_name: str | None = None
     description: str | None
     equipment_involved: str | None
+    batch_code: str | None = None
     equipment_id: uuid.UUID | None = None
     witnesses_note: str | None
     immediate_action_taken: str | None
