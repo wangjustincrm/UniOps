@@ -365,7 +365,10 @@ def test_the_travel_application_picker_offers_approved_ones_the_user_is_on():
 
 def test_a_returned_claim_offers_edit_and_submit():
     page = _src("oa/src/pages/expenses/ExpenseDetailPage.tsx")
-    assert page.count("isEditable(claim.status) && canEdit && (") >= 2
+    # Edit and Submit are gated separately since ISS-0221; both on an editable
+    # (draft or returned) claim.
+    assert "isEditable(claim.status) && canEdit && (" in page
+    assert "isEditable(claim.status) && canSubmit && (" in page
     status = _src("oa/src/lib/status.ts")
     assert "STATUS.RETURNED" in status.split("EDITABLE_STATUSES", 1)[1].split("\n", 1)[0]
 
