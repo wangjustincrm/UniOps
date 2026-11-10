@@ -158,7 +158,7 @@ def split(message: str) -> list[str]:
 _FOLLOW_ON = re.compile(
     r"^(?:每次|每一次|现在|那|那么|还|它|它们|这|这些|这个|这张|这笔|谁来|谁做|谁付|由谁|下一步|"
     r"然后|接下来|之后|以后|付完|做完|批完|收完|我还|我要|我需要|还要|还能|还需要|多少|几次|"
-    r"then\b|and\b|who does\b|who pays\b|what about\b|how much\b|how many\b|is it\b|"
+    r"who does\b|who pays\b|what about\b|how much\b|how many\b|is it\b|"
     r"does it\b|can it\b|after that\b|next\b)", re.I)
 
 
