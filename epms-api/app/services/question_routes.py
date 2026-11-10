@@ -148,7 +148,28 @@ def split(message: str) -> list[str]:
                     for item in _each(clause):
                         out.extend(_by_document(item))
     out = [p for p in (_clean(p) for p in out) if _WORDY.search(p)]
-    return out or [text]
+    return _joined_follow_ons(out) or [text]
+
+
+# A question that only goes on with the one before it: "PO-… 收过几次货？每次收了多少？",
+# "…下一步是什么？谁来做？", "…审批流程是怎样的？现在还能建吗？". Answered alone it has
+# no subject, so it stays with the question it continues (round 2 merge: the
+# question-mark split had cut these in two).
+_FOLLOW_ON = re.compile(
+    r"^(?:每次|每一次|现在|那|那么|还|它|它们|这|这些|这个|这张|这笔|谁来|谁做|谁付|由谁|下一步|"
+    r"然后|接下来|之后|以后|付完|做完|批完|收完|我还|我要|我需要|还要|还能|还需要|多少|几次|"
+    r"then\b|and\b|who does\b|who pays\b|what about\b|how much\b|how many\b|is it\b|"
+    r"does it\b|can it\b|after that\b|next\b)", re.I)
+
+
+def _joined_follow_ons(parts: list[str]) -> list[str]:
+    out: list[str] = []
+    for part in parts:
+        if out and _FOLLOW_ON.match(part.strip()):
+            out[-1] = out[-1].rstrip("？?") + "？" + part
+        else:
+            out.append(part)
+    return out
 
 
 # ── A question about the conversation itself ─────────────────────────────────
