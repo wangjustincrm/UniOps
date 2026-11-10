@@ -208,7 +208,7 @@ async def create_claim(
 
     if data.claim_type == "EXP":
         for li_data in data.line_items:
-            db.add(ExpenseLineItem(claim_id=claim.id, **li_data.model_dump()))
+            db.add(ExpenseLineItem(claim_id=claim.id, **li_data.model_dump(exclude={"id"})))
         await db.flush()
         await db.refresh(claim, ["line_items"])
         t, tx, net = _compute_totals_exp(claim.line_items)
@@ -228,7 +228,7 @@ async def create_claim(
     elif data.claim_type == "TRV":
         # TRV uses line_items (same as EXP) + meal limit check
         for li_data in data.line_items:
-            db.add(ExpenseLineItem(claim_id=claim.id, **li_data.model_dump()))
+            db.add(ExpenseLineItem(claim_id=claim.id, **li_data.model_dump(exclude={"id"})))
         await db.flush()
         await db.refresh(claim, ["line_items"])
         t, tx, net = _compute_totals_exp(claim.line_items)
@@ -238,7 +238,7 @@ async def create_claim(
     elif data.claim_type.startswith("CFM"):
         # CFM stores line_items as generic entries; no special totals logic
         for li_data in data.line_items:
-            db.add(ExpenseLineItem(claim_id=claim.id, **li_data.model_dump()))
+            db.add(ExpenseLineItem(claim_id=claim.id, **li_data.model_dump(exclude={"id"})))
         await db.flush()
         await db.refresh(claim, ["line_items"])
         if claim.line_items:
@@ -259,6 +259,41 @@ async def create_claim(
     await db.flush()
     await db.refresh(claim, ["line_items", "trip_items", "attachments", "approval_events", "travelers"])
     return claim
+
+
+def may_delete_attachments(claim: ExpenseClaim, caller: uuid.UUID, role: str) -> bool:
+    """Who may delete a claim's attachments: the claimant, whoever filed it for
+    them, or System Admin (ATT-OA-002). The draft/returned status rule is
+    checked separately."""
+    return claim.employee_id == caller or is_preparer(claim, caller) or role == "system_admin"
+
+
+def lines_removed_by(data: ExpenseClaimUpdate, old_ids: set[uuid.UUID],
+                     claim: ExpenseClaim) -> set[uuid.UUID]:
+    """Ids of the claim's lines that an edit took away.
+
+    Only answered for a client that sends line ids back (an `id` key on its
+    lines, even null — today's OA forms). One that does not would make every
+    line look removed and new, so for it, and for an edit that did not touch
+    the lines, nothing counts as removed.
+    """
+    if data.line_items is None or not any("id" in li.model_fields_set for li in data.line_items):
+        return set()
+    return old_ids - {li.id for li in claim.line_items}
+
+
+async def scans_of_lines(db: AsyncSession, claim_id: uuid.UUID,
+                         line_ids: set[uuid.UUID]) -> list[ExpenseAttachment]:
+    """Receipts scanned on the given lines (source = scan). Manually attached
+    files and pre-existing rows (source NULL) are never in this list."""
+    if not line_ids:
+        return []
+    res = await db.execute(select(ExpenseAttachment).where(
+        ExpenseAttachment.claim_id == claim_id,
+        ExpenseAttachment.source == "scan",
+        ExpenseAttachment.line_item_id.in_(line_ids),
+    ))
+    return list(res.scalars())
 
 
 async def update_claim(
@@ -318,11 +353,21 @@ async def update_claim(
         claim.total_km = None
 
     if data.line_items is not None and not is_mil:
+        # Lines are replaced wholesale, but a line the client sends back with its
+        # saved id keeps that id, so what hangs off it — the receipt scanned on
+        # it (ATT-OA-005, ISS-0197) — still finds it. An id that is not one of
+        # this claim's lines, or is sent twice, gets a fresh one.
+        old_ids = {li.id for li in claim.line_items}
         for existing in list(claim.line_items):
             await db.delete(existing)
         await db.flush()
+        reused: set[uuid.UUID] = set()
         for li_data in data.line_items:
-            db.add(ExpenseLineItem(claim_id=claim.id, **li_data.model_dump()))
+            row = ExpenseLineItem(claim_id=claim.id, **li_data.model_dump(exclude={"id"}))
+            if li_data.id in old_ids and li_data.id not in reused:
+                row.id = li_data.id
+                reused.add(li_data.id)
+            db.add(row)
         await db.flush()
         await db.refresh(claim, ["line_items"])
         t, tx, net = _compute_totals_exp(claim.line_items)

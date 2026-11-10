@@ -15,6 +15,10 @@ _TOTALS_TOLERANCE = Decimal("0.01")
 # ── Line item (EXP) ───────────────────────────────────────────────────────────
 
 class LineItemCreate(BaseModel):
+    # Edit only: the id of the saved line this one is, so the line keeps its id
+    # (and its scanned receipt) across the delete-and-reinsert in update_claim.
+    # Ignored on create and when it is not one of the claim's lines.
+    id: Optional[uuid.UUID] = None
     line_number: int
     expense_date: date
     description: str
@@ -158,6 +162,8 @@ class AttachmentResponse(BaseModel):
     file_size_bytes: int
     mime_type: Optional[str]
     uploaded_at: datetime
+    line_item_id: Optional[uuid.UUID] = None
+    source: Optional[str] = None
 
 
 # ── Approval event ────────────────────────────────────────────────────────────

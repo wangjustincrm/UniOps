@@ -36,6 +36,7 @@ interface EligibleApp {
 }
 
 interface TrvLineItem {
+  id?: string             // saved line's id when editing; sent back so the line keeps it (ATT-OA-005)
   line_number: number
   expense_date: string
   category: string        // Transportation | Hotel | Meals-Breakfast | Meals-Lunch | Meals-Dinner | Incidental
@@ -529,6 +530,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
       const m = /^\[([^\]]+)\]\s*(.*)$/.exec(li.description)
       const known = m && TRV_CATEGORIES.some(c => c.key === m[1])
       return {
+        id: li.id,
         line_number: i + 1,
         expense_date: li.expense_date,
         category: known ? m![1] : 'Other',
@@ -654,8 +656,13 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
   // only those of the lines actually saved. Claim-level storage; the filename
   // is prefixed with the category so the line association is readable.
   const save = useSaveClaim(editClaimId, (id) => replaceTab(`/expenses/${id}`), {
-    receipts: () => keptLines.flatMap((l) =>
-      l._file ? [{ file: l._file, name: `[${l.category}] ${l._file.name}` }] : []),
+    // Each is tied to its saved line; a Scan replaces that line's earlier scan,
+    // a file attached by hand never replaces anything.
+    receipts: () => keptLines.flatMap((l, i) =>
+      l._file ? [{
+        file: l._file, name: `[${l.category}] ${l._file.name}`,
+        lineNumber: i + 1, source: l._fileScanned ? 'scan' as const : 'manual' as const,
+      }] : []),
   })
 
   const mutation = useMutation({
@@ -715,6 +722,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
       travel_destination: destination,
       travel_country: country,
       line_items: keptLines.map((l, i) => ({
+        id: l.id ?? null,
         line_number: i + 1,
         expense_date: l.expense_date,
         description: `[${l.category}] ${l.description}`.trim(),

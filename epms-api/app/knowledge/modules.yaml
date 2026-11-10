@@ -143,7 +143,13 @@ modules:
       - >-
         A receipt scanned on a claim line (Scan) is kept as that line's receipt
         and attached to the claim automatically when it is saved — it does not
-        need uploading again. General and travel expense claims need at least
+        need uploading again. Scanning again on the same line, also on a later
+        edit, replaces the file scanned there before, so the receipt is not
+        attached twice; a file attached by hand is never replaced. Removing a
+        line on edit also removes the receipt scanned on it. A receipt saved
+        before claims recorded which line it belongs to is left as it is — an
+        extra copy of it can be deleted by hand in Attachments.
+        General and travel expense claims need at least
         one attachment before they can be submitted — except a travel expense
         claim whose lines are all date-range lines, which may go without one.
         The comment typed when submitting appears in the claim's Approval

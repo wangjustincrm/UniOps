@@ -14,6 +14,9 @@ import { INVALID_FIELD, isBlankLine, lineMessage, missingFields, type LineField 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface LineItem {
+  // Saved line's id when editing; sent back so the line keeps it and the
+  // receipt scanned on it can be found by a rescan (ATT-OA-005).
+  id?: string
   line_number: number
   expense_date: string
   description: string
@@ -134,6 +137,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
     setLines(
       editing.line_items.length
         ? editing.line_items.map((li, i) => ({
+            id: li.id,
             line_number: i + 1,
             expense_date: li.expense_date,
             description: li.description,
@@ -228,9 +232,12 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
       })
     : []
 
-  // Receipts only of the lines actually saved.
+  // Receipts only of the lines actually saved, each tied to its saved line
+  // (line_number = position among them, as in the payload). Every receipt on
+  // this form is a Scan, so a rescan replaces the line's earlier scan.
   const createMutation = useSaveClaim(editClaimId, (id) => replaceTab(`/expenses/${id}`), {
-    receipts: () => keptLines.flatMap((l) => (l._file ? [{ file: l._file }] : [])),
+    receipts: () => keptLines.flatMap((l, i) =>
+      l._file ? [{ file: l._file, lineNumber: i + 1, source: 'scan' as const }] : []),
   })
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -247,6 +254,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
     }
 
     const payload = keptLines.map((l, i) => ({
+      id: l.id ?? null,
       line_number: i + 1,
       expense_date: l.expense_date,
       description: l.description,
