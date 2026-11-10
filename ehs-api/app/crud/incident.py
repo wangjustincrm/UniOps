@@ -681,6 +681,9 @@ async def close(db: AsyncSession, incident: Incident) -> Incident:
             "close the incident.")
     incident.status = "closed"
     incident.closed_at = datetime.now(timezone.utc)
+    # Round 12, Q5: closing it is HSE's review of it.
+    from app.services import capa_review, tasks as task_service
+    await capa_review.close_for(db, task_service.DOC_INCIDENT, incident.id, None)
     await db.flush()
     return incident
 

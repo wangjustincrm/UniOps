@@ -279,6 +279,10 @@ async def verify(
         await back_in_service_if_done(db, action, user_id=user_id)
         from app.crud.jhsc import action_closed
         await action_closed(db, action.id)
+        # Round 12, Q5: the last one closed on its record asks HSE to review it.
+        await db.flush()
+        from app.services import capa_review
+        await capa_review.after_action_closed(db, action)
     else:
         action.status = "in_progress"
         await task_service.close_tasks_for(

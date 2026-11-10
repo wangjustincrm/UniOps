@@ -63,6 +63,13 @@ TASK_COURSE_ATTEND = "ehs_course_attend"
 TASK_JHSC_REPLY = "ehs_jhsc_reply"
 TASK_READ_SIGN = "ehs_read_sign"
 TASK_ASSET_INSPECT = "ehs_asset_inspect"
+# Round 12, Q5: "when all capa's are verified and closed on all forms that have
+# a capa, put a task on the HSE role 'my actions' to review the form."
+TASK_REVIEW_CAPAS = "ehs_review_capas"
+# The records that task opens which no other task did.
+DOC_SUBMISSION = "ehs_sub"
+DOC_HAZARD = "ehs_haz"
+DOC_DRILL = "ehs_drill"
 
 
 # The role to label a task with when it is pinned to one person and the role is
@@ -108,6 +115,11 @@ DOC_PATHS: dict[str, str] = {
     # current sheet because superseding a revision satisfies the old
     # sheet's clock, so an outstanding review is always on the current one.
     "ehs_sds": "/chemicals?sheet={id}",
+    # Round 12, Q5. A hazard and a drill have a register, not a page; it is
+    # opened narrowed to the one, by its number.
+    DOC_SUBMISSION: "/forms/submissions/{id}",
+    DOC_HAZARD: "/hazards?q={ref}",
+    DOC_DRILL: "/emergency?q={ref}",
 }
 
 
@@ -127,8 +139,10 @@ TASK_PATHS: dict[str, str] = {
 
 def path_for(task) -> str:
     """Where a task opens in Safety, or "" when nowhere better than My Actions."""
+    from urllib.parse import quote
     template = TASK_PATHS.get(task.type) or DOC_PATHS.get(task.document_type)
-    return template.format(id=task.document_id) if template else ""
+    return (template.format(id=task.document_id, ref=quote(task.document_number or ""))
+            if template else "")
 
 
 async def open_task(

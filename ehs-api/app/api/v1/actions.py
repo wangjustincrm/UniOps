@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, false, not_, or_, select
 
 from app.core.deps import SessionDep
@@ -178,12 +178,10 @@ async def actions_to_verify(db: SessionDep, user: CanReadAction):
     me = _user_id(user)
     may_verify_any = await has_permission(
         db, me, user.get("role", ""), "ehs.action.verify")
-    rows = await crud.list_(
-        db,
-        owner_id=None if may_verify_any else me,
-        statuses=["pending_verification"],
-        limit=200,
-    )
+    # Round 12, Q7: only supervisors and HSE verify, so nobody else has any.
+    if not may_verify_any:
+        return []
+    rows = await crud.list_(db, statuses=["pending_verification"], limit=200)
     return [ActionOut.model_validate(r) for r in rows]
 
 
@@ -344,6 +342,144 @@ async def where_a_task_opens(task_id: uuid.UUID, db: SessionDep, user: CanReport
     return TaskPathOut(path=task_service.path_for(task) or "/actions/mine")
 
 
+class HistoryEntry(BaseModel):
+    at: datetime
+    what: str          # raised | update | reassigned | verified | not_effective
+    by: str | None
+    text: str | None
+    new_status: str | None = None
+
+
+class ActionHistory(BaseModel):
+    id: uuid.UUID
+    action_no: str
+    title: str
+    status: str
+    owner_name: str | None
+    entries: list[HistoryEntry]
+
+
+@router.get("/history", response_model=list[ActionHistory])
+async def history_for_source(
+    db: SessionDep, user: CanReadAction,  # noqa: ARG001
+    source_type: str | None = None, source_id: uuid.UUID | None = None,
+    action_id: list[uuid.UUID] = Query(default=[]),
+):
+    """Every corrective action raised from a record, with everything that
+    happened to each — raised, progress, reassigned, verified.
+
+    ★ Round 12, JHSC-01: "the history that the capa has gone through needs to
+    be recorded on the history of the record (form) that created it."
+    Round 4 had left it on the action; HSE want it on the record too.
+    By source, or by id for a JHSC recommendation, whose actions' source is
+    the meeting.
+    """
+    from app.models.action import ActionUpdate, ActionVerification
+    if action_id:
+        q = select(Action).where(Action.id.in_(action_id))
+    elif source_type and source_id:
+        q = select(Action).where(Action.source_type == source_type, Action.source_id == source_id)
+    else:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Name the record, or the actions")
+    actions = list((await db.execute(q.order_by(Action.created_at))).scalars())
+    if not actions:
+        return []
+    ids = [a.id for a in actions]
+    updates = (await db.execute(select(ActionUpdate).where(
+        ActionUpdate.action_id.in_(ids)).order_by(ActionUpdate.created_at))).scalars().all()
+    checks = (await db.execute(select(ActionVerification).where(
+        ActionVerification.action_id.in_(ids)))).scalars().all()
+    out = []
+    for a in actions:
+        entries = [HistoryEntry(at=a.created_at, what="raised", by=None,
+                                text=f"Raised for {a.owner_name or 'nobody yet'}, due "
+                                     f"{a.due_date:%-d %b %Y}")]
+        for u in updates:
+            if u.action_id == a.id:
+                entries.append(HistoryEntry(
+                    at=u.created_at, by=u.author_name, text=u.body, new_status=u.new_status,
+                    what="reassigned" if u.body.startswith(REASSIGNED) else "update"))
+        for v in checks:
+            if v.action_id == a.id:
+                entries.append(HistoryEntry(
+                    at=v.verified_at, by=v.verified_by_name, text=v.evidence,
+                    what="verified" if v.is_effective else "not_effective"))
+        entries.sort(key=lambda e: e.at)
+        out.append(ActionHistory(id=a.id, action_no=a.action_no, title=a.title,
+                                 status=a.status, owner_name=a.owner_name, entries=entries))
+    return out
+
+
+REASSIGNED = "Reassigned from "
+
+
+class ReassignIn(BaseModel):
+    owner_id: uuid.UUID
+    reason: str = Field(min_length=3, max_length=500)
+
+
+@router.post("/{action_id}/reassign", response_model=ActionDetail)
+async def reassign_action(action_id: uuid.UUID, payload: ReassignIn, db: SessionDep,
+                          user: CanWriteAction):
+    """Give the work to somebody else.
+
+    ★ Round 12, INC-02/03 and Q7: "only the supervisor or HSE role can
+    reassign CAPA's." Held to ehs.action.write — HSE, the coordinator and
+    area supervisors. The open "do this" task moves with it; the change, from
+    whom to whom and why, goes into the action's history (and so onto the
+    record it was raised from).
+    """
+    from app.models.mirrors import User
+    action = await crud.get(db, action_id)
+    if action.status in ("closed", "cancelled"):
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            f"Action {action.action_no} is {action.status}")
+    to = await db.get(User, payload.owner_id)
+    if to is None or not to.is_active:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Pick somebody still here")
+    if to.id == action.owner_id:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"{to.full_name} already has it")
+    me = _user_id(user)
+    before = action.owner_name or "nobody"
+    now = datetime.now(timezone.utc)
+    for t in (await db.execute(select(Task).where(
+            Task.document_type == task_service.DOC_ACTION, Task.document_id == action.id,
+            Task.type == task_service.TASK_DO_ACTION, Task.is_completed.is_(False)))).scalars().all():
+        t.is_completed, t.completed_at, t.completed_by = True, now, me
+        await task_service.open_task(
+            db, task_type=t.type, doc_type=t.document_type, doc_id=t.document_id,
+            doc_number=t.document_number, title=t.title, assigned_role=t.assigned_role,
+            assigned_user_id=to.id, description=t.description, priority=t.priority)
+    action.owner_id, action.owner_name = to.id, to.full_name
+    from app.models.action import ActionUpdate
+    db.add(ActionUpdate(
+        id=uuid.uuid4(), action_id=action.id, author_id=me,
+        author_name=(await db.execute(select(User.full_name).where(User.id == me))).scalar(),
+        body=f"{REASSIGNED}{before} to {to.full_name}: {payload.reason.strip()}",
+        file_ids=[], new_status=None))
+    await db.flush()
+    return await _detail(db, action)
+
+
+@router.post("/tasks/{task_id}/reviewed", status_code=status.HTTP_204_NO_CONTENT)
+async def mark_reviewed(task_id: uuid.UUID, db: SessionDep, user: CanReadAction):
+    """Round 12, Q5: HSE has reviewed the record whose actions all closed."""
+    from fastapi import Response
+    task = await db.get(Task, task_id)
+    if task is None or task.type != task_service.TASK_REVIEW_CAPAS:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No such review")
+    roles = await notify.roles_held_by(db, _user_id(user), user.get("role", ""))
+    if task.assigned_role not in roles and task.assigned_user_id != _user_id(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "This review is HSE's")
+    if not task.is_completed:
+        task.is_completed, task.completed_at = True, datetime.now(timezone.utc)
+        task.completed_by = _user_id(user)
+        await db.flush()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/{action_id}", response_model=ActionDetail)
 async def get_action(action_id: uuid.UUID, db: SessionDep, user: CanReadAction):
     action = await crud.get(db, action_id)
@@ -396,12 +532,12 @@ async def verify_action(
     """
     action = await crud.get(db, action_id)
     me = _user_id(user)
-    may_verify_any = await has_permission(
-        db, me, user.get("role", ""), "ehs.action.verify")
-    if not may_verify_any and action.owner_id != me:
+    # ★ Round 12, Q7: "verification of CAPA's can only be completed by
+    # supervisors or HSE." The owner verifying their own (round 2) is gone.
+    if not await has_permission(db, me, user.get("role", ""), "ehs.action.verify"):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
-            "You can only verify a corrective action assigned to you")
+            "A corrective action is verified by a supervisor or HSE")
     await crud.verify(db, action, payload, user_id=me,
                       now=datetime.now(timezone.utc))
     return await _detail(db, action)
