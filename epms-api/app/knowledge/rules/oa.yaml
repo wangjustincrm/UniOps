@@ -1,0 +1,702 @@
+area: oa
+label: OA — expense claims, mileage and travel
+covers: >
+  Expense claims (General Expense, Mileage, Travel Expense, custom forms) and
+  Travel Applications in OA: what each needs, receipts and attachments,
+  currency, meal limits, budget warnings, editing, returning, deleting,
+  approving, reminders, who sees a claim, payment.
+
+# ISS-0213. These cards are what the Assistant says to an OA question, in OA
+# or in the Portal. app/services/oa_guide.py routes an OA question here in
+# code, before the planner, and picks the card(s) that answer it by `match`
+# (regular expressions, case-insensitive). A picked card is the reply, written
+# by code: the model neither chooses nor words it, so it cannot turn into a
+# PR / PO / PA answer or into "expense claims are not part of EPMS".
+#
+# `title` names the card when no card matched and the reply lists what can be
+# answered. `fallback` is said instead of a derived card whose settings could
+# not be read (never a remembered number).
+#
+# Every card is held to the code that does it by tests/test_oa_rules.py, which
+# reads expense-api, approval-api and the OA pages (skipped when those trees
+# are not mounted).
+rules:
+  - id: oa_mileage_needs_no_receipt
+    title: Receipts on a Mileage Claim
+    asked_as:
+      - Do I need a receipt for a mileage claim?
+      - 报里程需要收据吗？
+    match:
+      - '(mileage|里程|\bmil\b).*(receipt|attach|invoice|收据|附件|发票|票据)'
+      - '(receipt|attach|收据|附件|发票|票据).*(mileage|里程|\bmil\b)'
+    answer: >
+      No. A Mileage Claim needs no receipt or attachment to be submitted: the
+      trip log (date, from, to, purpose, one-way distance, round trip) is the
+      claim, and each trip's amount is the distance × the policy rate per km,
+      doubled for a round trip. Only General Expense and Travel Expense claims
+      need an attachment before Submit.
+    provenance: pinned
+    enforced_in: "expense-api app/api/v1/expenses.py expense_action (attachment gate for EXP / TRV only); app/crud/expense.py _compute_totals_mil; PRD OA MIL-007, ATT-OA-004"
+    test:
+      - "tests/test_oa_rules.py::test_only_general_and_travel_expense_need_an_attachment"
+
+  - id: oa_travel_expense_needs_an_approved_travel_application
+    title: Travel Expense needs an approved Travel Application
+    asked_as:
+      - Can I claim travel expenses without a Travel Application?
+      - 没有出差申请能报差旅费吗？
+      - I paid in USD on a trip. How do I claim?
+    match:
+      - 'without (an? )?(approved )?(travel application|tra\b)'
+      - 'no (approved )?(travel application|tra\b)'
+      - '(need|require|must).*(travel application|\btra\b)'
+      - '(travel application|\btra\b).*(need|require|must|first|before)'
+      - '没有.*出差申请|无出差申请|出差申请.*(必须|需要|先)|(必须|需要|先).*出差申请'
+      - '\b(on|during|for) (a|my|the|this) (business )?trip\b'
+    answer: >
+      No. A Travel Expense claim must be raised against a Travel Application
+      that is approved and lists the claimant as a traveller — the server
+      refuses one with no Travel Application, with one that is not approved,
+      or with one that does not list the claimant, and checks again if the
+      Travel Application is changed when the claim is edited. The Travel
+      Application is not only for tracking: get it approved first, then raise
+      the Travel Expense claim against it.
+    provenance: pinned
+    enforced_in: "expense-api app/api/v1/expenses.py _require_trv_application (create_expense, update_expense); PRD OA TRV-GATE-001, TRV-GATE-003"
+    test:
+      - "tests/test_oa_rules.py::test_a_travel_expense_needs_an_approved_travel_application_listing_the_claimant"
+
+  - id: oa_travel_application_picker
+    title: Which Travel Applications a Travel Expense can use
+    asked_as:
+      - Why can't I see my Travel Application when I create a Travel Expense?
+      - 建差旅报销时为什么看不到我的出差申请？
+    match:
+      - "(can'?t|cannot|don'?t|do not|not)( i| we)? (see|find).*(travel application|\\btra\\b)"
+      - '(travel application|\btra\b).*(not|n''t) (show|appear|listed|there|in the list)'
+      - '(看不到|找不到|没有显示).*出差申请|出差申请.*(看不到|找不到|不显示)'
+    answer: >
+      The Travel Application picker on a new Travel Expense claim offers only
+      Travel Applications that are approved and on which you are a listed
+      traveller or the applicant. One still in draft, submitted or in review,
+      one that was returned or rejected, and one that does not list you are
+      not offered. Choosing one fills in the destination, dates and purpose.
+      When none qualifies the form says a Travel Application has to be
+      approved first.
+    provenance: pinned
+    enforced_in: "expense-api app/crud/expense.py list_eligible_travel_apps (GET /travel-applications/eligible); oa/src/pages/expenses/TrvCreatePage.tsx; PRD OA TRV-GATE-002"
+    test:
+      - "tests/test_oa_rules.py::test_the_travel_application_picker_offers_approved_ones_the_user_is_on"
+
+  - id: oa_one_travel_application_several_claims
+    title: One Travel Application, several claims
+    asked_as:
+      - Can I use one Travel Application for several claims?
+      - 一张出差申请能报多张单吗？
+    match:
+      - '(one|same|single) (travel application|\btra\b).*(several|multiple|more than one|many|two|other)'
+      - '(several|multiple|many|two|more than one) (travel expense )?claims.*(one|same|single) (travel application|\btra\b)'
+      - '(一张|同一张|同一个).*出差申请.*(多|几)'
+    answer: >
+      Yes. One approved Travel Application can support several Travel Expense
+      claims. Each claim is for one traveller listed on it and is paid to that
+      traveller.
+    provenance: pinned
+    enforced_in: "expense-api app/api/v1/expenses.py _require_trv_application (no limit on claims per Travel Application); PRD OA §3"
+    test:
+      - "tests/test_oa_rules.py::test_a_travel_expense_needs_an_approved_travel_application_listing_the_claimant"
+
+  - id: oa_travelling_together
+    title: Colleagues travelling together
+    asked_as:
+      - Several colleagues are travelling together. Who claims?
+      - 同事一起出差谁来报销？
+    match:
+      - '(colleague|together|group|several (people|of us)|team|travell?ers).*(travel|trip|claim)'
+      - '(travel|trip).*(together|colleague|with others)'
+      - '一起出差|同事.*(出差|报销)|谁来报'
+      - 'claim for (a|another|someone|my)'
+    answer: >
+      Put everyone on one Travel Application: its Travellers list names each
+      member of staff (external companions go in Remarks). Once it is
+      approved, each traveller's costs go on a Travel Expense claim of their
+      own, paid to that traveller. The traveller files it, or the person who
+      applied files it for them by choosing the traveller under Claim for;
+      both can then see, edit and submit it. A listed traveller can file only
+      for themselves.
+    provenance: pinned
+    enforced_in: "expense-api app/api/v1/expenses.py create_expense (claim_for / _require_trv_application), _can_view_claim (is_preparer); PRD OA TRV-GATE-004, §3.1"
+    test:
+      - "tests/test_oa_rules.py::test_a_travel_expense_needs_an_approved_travel_application_listing_the_claimant"
+
+  - id: oa_returned_claim
+    title: A returned claim
+    asked_as:
+      - My claim was returned. What should I do?
+      - 我的报销单被退回了怎么办？
+    match:
+      - '\breturned\b'
+      - 'sent (it )?back'
+      - '被退回|退回了|退回来'
+    answer: >
+      Open the claim (the OA Task Inbox lists it as Revise Expense), press
+      Edit, change what the approver asked for — their comment is on the
+      Approval Timeline — press Save Changes, then Submit. Saving alone leaves
+      it Returned. Once resubmitted, approval resumes at the step that
+      returned it: the approvals given before that stand and are not asked for
+      again.
+    provenance: pinned
+    enforced_in: "oa/src/pages/expenses/ExpenseDetailPage.tsx (Edit and Submit on a returned claim); approval-api engine resume at the returning step; PRD OA WF-RET-001…003"
+    test:
+      - "tests/test_oa_rules.py::test_a_returned_claim_offers_edit_and_submit"
+
+  - id: oa_return_versus_reject
+    title: Return or Reject
+    asked_as:
+      - What is the difference between Return and Reject?
+      - 退回和拒绝有什么区别？
+    match:
+      - 'return.*reject|reject.*return'
+      - '退回.*拒绝|拒绝.*退回'
+    answer: >
+      Return sends the claim back to the claimant to change and submit again;
+      approval then resumes at the step that returned it. Reject ends it: the
+      claim becomes Rejected, which is final — it cannot be edited or
+      submitted again.
+    provenance: pinned
+    enforced_in: "approval-api app/crud/engine.py (return → returned, reject → rejected; valid_submit draft / returned only); PRD OA §7.2"
+    test:
+      - "tests/test_oa_rules.py::test_a_rejected_claim_cannot_be_edited_or_submitted"
+
+  - id: oa_rejected_claim
+    title: A rejected claim
+    asked_as:
+      - My claim was rejected. What now?
+      - 报销单被拒绝了怎么办？
+    match:
+      - '\brejected\b'
+      - '被拒|拒绝了'
+    answer: >
+      A rejected claim is final: it has no Edit or Submit and cannot be
+      reopened. The approver's reason is on its Approval Timeline. If the
+      expense should still be claimed, raise a new claim for it.
+    provenance: pinned
+    enforced_in: "approval-api app/crud/engine.py _expense_meta (valid_submit draft / returned); expense-api app/crud/expense.py update_claim (draft / returned only); PRD OA §7.2"
+    test:
+      - "tests/test_oa_rules.py::test_a_rejected_claim_cannot_be_edited_or_submitted"
+
+  - id: oa_only_travel_applications_are_deleted
+    title: Deleting a claim
+    asked_as:
+      - Can I delete a draft expense claim?
+      - 能删除报销草稿吗？
+    match:
+      - '\b(delete|discard|cancel)\b'
+      - 'remove (my |a |the |this )?(draft|claim)'
+      - '删除|删掉|作废|取消'
+    answer: >
+      Only a Travel Application can be deleted — by its applicant or a System
+      Admin, while it is draft, returned, submitted or in review, from the
+      Travel Applications list or its page; an approved one cannot be.
+      General Expense, Mileage, Travel Expense and custom-form claims cannot
+      be deleted, and OA has no Cancel button for them: a draft you no longer
+      need simply stays in your list as Draft.
+    provenance: pinned
+    enforced_in: "expense-api app/api/v1/expenses.py can_delete_claim / delete_travel_application (TRA only, _DELETABLE_STATUSES); oa/src/pages (no cancel action); PRD OA TRA-005, TRA-006, OI-08"
+    test:
+      - "tests/test_oa_rules.py::test_only_an_unapproved_travel_application_can_be_deleted"
+      - "tests/test_oa_rules.py::test_oa_pages_offer_no_recall_or_cancel"
+
+  - id: oa_meal_limits
+    title: Meals over the limit
+    asked_as:
+      - What happens if my meal is over the limit?
+      - 餐费超标怎么办？
+    match:
+      - '\b(meals?|breakfast|lunch|dinner|incidentals?|per[ -]?diem)\b'
+      - 'over (the )?limit'
+      - '餐|超标|限额'
+    answer: >
+      Meal limits apply to Travel Expense claims, per line: breakfast
+      {breakfast}, lunch {lunch}, dinner {dinner} and incidentals {incidental}
+      CAD (Expense Config). A single-day line above its limit is not refused:
+      it shows Over limit and the claim is flagged Over Budget, and it still
+      goes through its normal approval chain — no extra approval step is added
+      today, although the form says Finance Manager approval will be
+      required. On a date-range line the daily rate may not exceed the limit:
+      saving is refused. General Expense claims have no meal limits.
+    fallback: >
+      Meal limits apply to Travel Expense claims, per line, as set in Expense
+      Config (the current figures could not be read just now). A single-day
+      line above its limit is not refused: it shows Over limit and the claim
+      is flagged Over Budget, and it still goes through its normal approval
+      chain — no extra approval step is added today. On a date-range line the
+      daily rate may not exceed the limit: saving is refused. General Expense
+      claims have no meal limits.
+    provenance: derived
+    derive: oa_policy
+    enforced_in: "expense-api app/crud/expense.py _trv_over_meal_limit (flag), _check_trv_lines (date-range cap), _meal_limits (expense_policy_config); approval-api engine adds over-budget steps to PRs only; PRD OA §4.3, §4.4, OI-01"
+    test:
+      - "tests/test_oa_rules.py::test_meal_limits_flag_single_day_lines_and_refuse_date_range_lines"
+      - "tests/test_oa_rules.py::test_oa_policy_is_read_from_the_policy_row"
+
+  - id: oa_submit_needs_an_attachment
+    title: Why Submit is grey
+    asked_as:
+      - Why is the Submit button grey?
+      - 为什么 Submit 按钮是灰的？
+    match:
+      - '\b(grey|gray|greyed|grayed|disabled)\b'
+      - "(can'?t|cannot) (click|press|use) (the )?submit"
+      - '灰|按不了|点不了|点不动'
+    answer: >
+      On a General Expense or Travel Expense claim, Submit stays disabled until
+      the claim has at least one attachment — the page says "At least one
+      receipt attachment is required before this claim can be submitted".
+      Attach the receipt (a receipt picked with Scan on a line is attached
+      when the claim is saved), then Submit. A Travel Expense claim whose
+      lines are all date-range lines, a Mileage Claim, a Travel Application
+      and a custom form need no attachment.
+    provenance: pinned
+    enforced_in: "oa/src/pages/expenses/ExpenseDetailPage.tsx missingAttachment (Submit disabled); expense-api app/api/v1/expenses.py expense_action (409 without an attachment); PRD OA §7.3, ATT-OA-004"
+    test:
+      - "tests/test_oa_rules.py::test_only_general_and_travel_expense_need_an_attachment"
+
+  - id: oa_who_pays_a_claim
+    title: Who pays a claim
+    asked_as:
+      - Who can pay a claim?
+      - 谁能付报销款？
+    match:
+      - 'who (can |will |does )?(pay|process)'
+      - '(pay|paying|pays) (the |my |a |this )?(claim|expense|reimbursement)'
+      - 'mark as processed'
+      - '谁(来|能|可以)?(付|支付|打款)'
+    answer: >
+      An approved claim (not a Travel Application) is paid by a Payment
+      Officer, Finance Manager or Finance BP — as their main or an additional
+      role — or a System Admin, with Mark as Processed on the claim (choosing
+      the bank account or card it is paid from), or from Finance payment
+      batches. An AP Clerk can see approved claims but cannot pay them.
+      Payment Applications belong to Procurement and play no part in paying a
+      claim.
+    provenance: pinned
+    enforced_in: "expense-api app/api/v1/expenses.py _PAY_PRIMARY / _PAY_ASSIGNED (get_claim_permissions can_pay), record_payment; PRD OA §7.3, PAY-002"
+    test:
+      - "tests/test_oa_rules.py::test_who_may_pay_a_claim"
+
+  - id: oa_when_am_i_paid
+    title: When a claim is paid
+    asked_as:
+      - When will I get paid? How do I know?
+      - 什么时候能收到报销款？
+    match:
+      - 'when .*(get|be|am|is) (paid|reimbursed)'
+      - '(paid|reimbursed) yet'
+      - 'how .*know.*paid'
+      - '收到钱|到账|什么时候.*(付|报销|打款)'
+    answer: >
+      After the last approval the claim is Approved and a Process
+      Reimbursement task goes to the Finance BP pool. When Finance pays it the
+      claim's status becomes Paid and the payment appears on its Approval
+      Timeline — the Paid tab of the Expense Claims list shows it too. The
+      system sets no payment date in advance.
+    provenance: pinned
+    enforced_in: "approval-api app/crud/engine.py _post_approve_exp (Process Reimbursement task); expense-api record_payment → finance-api payment executor (status paid); PRD OA PAY-001, PAY-003, §7.2"
+    test:
+      - "tests/test_oa_rules.py::test_approval_raises_the_reimbursement_task_and_payment_marks_paid"
+
+  - id: oa_send_reminder
+    title: Send reminder
+    asked_as:
+      - How do I send a reminder to my approver?
+      - 怎么催报销审批？
+    match:
+      - '\b(remind|reminder|chase|nudge)\b'
+      - '催'
+    answer: >
+      On a submitted or in-review claim, Approval Status shows Send reminder
+      under the pending step. It emails whoever holds that step — their
+      delegate if they are away — whatever the email setting for that task,
+      and says who it reached. Anyone who can open the claim may use it. It is
+      refused, with the reason shown, when the claim is not waiting for
+      approval, nobody can be reached, or a reminder for that step went out in
+      the last {hours} hours.
+    fallback: >
+      On a submitted or in-review claim, Approval Status shows Send reminder
+      under the pending step. It emails whoever holds that step — their
+      delegate if they are away — and says who it reached. It is refused,
+      with the reason shown, when the claim is not waiting for approval,
+      nobody can be reached, or a reminder for that step went out recently.
+    provenance: derived
+    derive: oa_reminder
+    enforced_in: "expense-api POST /expenses/{id}/remind → epms-api app/api/v1/expense_reminders.py → app/services/manual_reminder.py remind_document (COOLDOWN_HOURS); oa/src/pages/expenses/ExpenseDetailPage.tsx; PRD OA WF-REM-001, WF-REM-002"
+    test:
+      - "tests/test_oa_rules.py::test_oa_reminder_uses_the_shared_cooldown"
+
+  - id: oa_how_to_submit_general_expense
+    title: Submitting a General Expense claim
+    asked_as:
+      - How do I submit a General Expense claim?
+      - 怎么提交一般报销？
+    match:
+      - 'how (do|can|to|should) .*(submit|create|raise|file|make|start) .*(general expense|expense claim|a claim|claim)'
+      - '(submit|create|raise|file) (a |an |my )?general expense'
+      - '怎么.*(提交|报销|填)'
+    answer: >
+      In OA go to Expense Claims → New Claim → General Expense. Fill in the
+      submission date, the currency (CAD or USD) and the purpose; add up to
+      20 lines, each with date, description, budget account, net amount and tax
+      code (the total is net + tax); attach the receipts (Scan on a line reads
+      a receipt and attaches it when you save). Save, then Submit — the
+      comment you type appears on the Approval Timeline, and the claim goes to
+      its approval chain.
+    provenance: pinned
+    enforced_in: "oa/src/pages/expenses/ExpenseCreatePage.tsx (CAD / USD, up to 20 lines); expense-api app/schemas/expense.py (Total = Net + Tax), expense_action attachment gate; PRD OA §2"
+    test:
+      - "tests/test_oa_rules.py::test_general_expense_currency_lines_and_totals"
+
+  - id: oa_over_budget_is_a_warning
+    title: Claims over budget
+    asked_as:
+      - Can I submit a claim if it is over the budget?
+      - 超预算能提交报销吗？
+    match:
+      - 'budget'
+      - '预算'
+    answer: >
+      Yes. On a General Expense claim the budget-account picker shows each
+      account's available balance, and a banner warns when this claim would
+      take an account below zero — a warning only: Submit is not blocked, no
+      extra approval step is added, and nothing is reserved against the budget
+      when the claim is submitted or approved. Travel Expense and Mileage
+      pickers show account names only. The over-budget modes of purchase
+      requests do not apply to claims.
+    provenance: pinned
+    enforced_in: "oa/src/pages/expenses/ExpenseCreatePage.tsx (banner only); approval-api app/crud/engine.py (over-budget steps for doc_type pr only); PRD OA §2.2, BUD-OA-002, BUD-OA-003, OI-01"
+    test:
+      - "tests/test_oa_rules.py::test_over_budget_steps_are_for_purchase_requests_only"
+
+  - id: oa_currency
+    title: Currency of a claim
+    asked_as:
+      - Can I claim in USD?
+      - 报销能用美元吗？
+    match:
+      - '\b(usd|us dollars?|currency|currencies|foreign|cad|exchange rate)\b'
+      - '美元|币种|外币|汇率|加元'
+    answer: >
+      A General Expense claim can be in CAD or USD — you choose the currency
+      on the claim. A Travel Expense claim is in CAD only: convert
+      foreign-currency receipts (USD paid on a trip, for example) to CAD
+      yourself before entering them — the system holds no exchange rate and
+      refuses any other currency. A Mileage Claim is in CAD.
+    provenance: pinned
+    enforced_in: "oa/src/pages/expenses/ExpenseCreatePage.tsx (CAD / USD), TrvCreatePage.tsx and MilCreatePage.tsx (CAD); expense-api app/crud/expense.py _check_trv_lines (CAD only); PRD OA §2.1, TRV-006"
+    test:
+      - "tests/test_oa_rules.py::test_general_expense_currency_lines_and_totals"
+
+  - id: oa_claimant_never_approves
+    title: Approving your own claim
+    asked_as:
+      - Can I approve my own claim?
+      - 我是部门经理，提交的差旅报销要自己批吗？
+    match:
+      - 'approve (my|his|her|their|your)? ?own'
+      - 'own (claim|travel application|expense)'
+      - '(also|am|is) (the )?(first )?approver'
+      - '(i am|i''m|as) (a |the )?(department manager|dept manager|manager|gm|general manager|finance bp|finance manager|director)'
+      - '批自己|自己.*(审批|批)|(我是|作为).*(经理|审批人|GM)'
+    answer: >
+      No — nobody approves their own claim or Travel Application, a System
+      Admin included: OA never offers Approve, Return or Reject to the
+      claimant. When the claimant is the only one who holds a step — a
+      Department Manager's own claim at the Department Manager step, for
+      example — that step is skipped and the claim goes straight on to the
+      next step; Approval Status shows it approved with no name and the
+      timeline shows "System". This applies when the claim is submitted,
+      resubmitted, or reaches that step later. A step that someone else also
+      holds stays with them. If every step would be the claimant's, Submit is
+      refused and an administrator has to change the approval workflow.
+    provenance: pinned
+    enforced_in: "approval-api app/crud/engine.py _claimant_step_skip, submission_landing, MSG_CLAIMANT_HOLDS_EVERY_STEP, CLAIMANT_SKIP_REASON (also on advance); expense-api get_claim_permissions (can_approve false for the owner); PRD OA §7.1 WF-SELF-001…003, §7.3"
+    test:
+      - "tests/test_oa_rules.py::test_the_claimant_never_approves_and_their_only_step_is_skipped"
+      - "approval-api/tests/test_engine_claimant_skip.py::test_dept_manager_own_tra_goes_to_finance_manager"
+      - "approval-api/tests/test_engine_claimant_skip.py::test_later_step_held_by_claimant_is_skipped_after_approval"
+      - "approval-api/tests/test_engine_claimant_skip.py::test_step_with_another_holder_is_not_skipped"
+      - "approval-api/tests/test_engine_claimant_skip.py::test_claimant_holding_every_step_is_refused"
+
+  - id: oa_same_approver_next_step
+    title: One approver on two steps
+    asked_as:
+      - A Department Manager who is also the GM — do they approve both steps?
+      - 部门经理同时是 GM，要批两次吗？
+    match:
+      - 'both (steps|roles)|two steps|twice|same (person|approver)'
+      - '(also|is) (the )?(gm|general manager|finance manager|finance bp|director)'
+      - '两步|两次|同一个人|同时是'
+    answer: >
+      When an approver approves a step and also holds the next step, the next
+      step is approved automatically and recorded as "Auto-approved (same
+      approver holds both roles)" — a Department Manager who is also the GM
+      approves once. Steps that do not apply to the claim, such as a Director
+      step in a department without a Director, are skipped. So not every step
+      always runs.
+    provenance: pinned
+    enforced_in: "approval-api app/crud/engine.py execute_action approve (same-approver auto-skip, _step_skip); PRD OA §7.1, EPMS §3.3.5"
+    test:
+      - "tests/test_oa_rules.py::test_the_same_approver_is_auto_approved_on_the_next_step"
+      - "approval-api/tests/test_engine_same_approver_skip.py::test_second_step_auto_skips_for_non_first_post_holder"
+
+  - id: oa_no_recall
+    title: Taking back a submitted claim
+    asked_as:
+      - Can I take back a claim I have submitted?
+      - 提交后能撤回吗？
+      - Can the applicant recall a Travel Application?
+    match:
+      - '\b(recall|withdraw|undo|unsubmit)\b'
+      - 'take (it |my claim |the claim )?back|pull (it )?back'
+      - '撤回|收回|撤销'
+    answer: >
+      No. OA has no Recall or Cancel button: once a claim or Travel
+      Application is submitted, its claimant cannot take it back. The
+      approver it is waiting on can Return it, which sends it back to you to
+      Edit and Submit again; approval then resumes at that step. A Travel
+      Application that is not yet approved can instead be deleted by its
+      applicant.
+    provenance: pinned
+    enforced_in: "oa/src/pages (no recall or cancel action; only the retired Direct PA had one); approval-api supports recall but OA does not offer it; PRD OA §7.3, OI-08"
+    test:
+      - "tests/test_oa_rules.py::test_oa_pages_offer_no_recall_or_cancel"
+
+  - id: oa_edit_only_draft_or_returned
+    title: Editing after Submit
+    asked_as:
+      - Can I edit my claim after submitting it?
+      - 提交后还能修改吗？
+    match:
+      - '(edit|change|modify|correct|update|fix)\b.*(after|once) .*(submit|approv)'
+      - 'submitted.*(edit|change|modify|correct)'
+      - '提交(后|之后|了).*(改|修改|编辑)|(改|修改|编辑).*已提交'
+    answer: >
+      Only a draft or returned claim can be edited. Once submitted it is locked
+      until the approver it is waiting on returns it — Edit then appears for
+      you again; after approval it cannot be changed at all.
+    provenance: pinned
+    enforced_in: "expense-api app/crud/expense.py update_claim ('Only draft or returned claims can be edited'); PRD OA §7.3"
+    test:
+      - "tests/test_oa_rules.py::test_a_rejected_claim_cannot_be_edited_or_submitted"
+
+  - id: oa_attachments_only_while_editable
+    title: Adding a receipt after Submit
+    asked_as:
+      - I forgot a receipt after submitting. What can I do?
+      - 提交后忘了放收据怎么办？
+    match:
+      - 'forg[oe]t.*(receipt|attach|file|invoice)'
+      - '(add|attach|upload).*(receipt|attachment|file|invoice).*(after|submitted|later|missing)'
+      - '忘.*(收据|附件|发票|票据)|(补|追加|再加|后加).*(收据|附件|发票|票据)'
+    answer: >
+      Attachments can be added or removed only while the claim is Draft or
+      Returned; on a submitted claim the upload is refused. Ask the approver
+      it is waiting on to Return it, add the receipt, and Submit again —
+      approval resumes at the step that returned it.
+    provenance: pinned
+    enforced_in: "expense-api app/api/v1/expense_attachments.py upload_claim_attachment / delete (draft / returned only); PRD OA ATT-OA-002"
+    test:
+      - "tests/test_oa_rules.py::test_attachments_only_while_draft_or_returned_and_up_to_25_mb"
+
+  - id: oa_negative_lines
+    title: Refunds and negative amounts
+    asked_as:
+      - Can I claim a refund or a negative amount?
+      - 能报退款或负数吗？
+    match:
+      - '\b(negative|refunds?|minus|credit)\b'
+      - '退款|负数|负的|冲减'
+    answer: >
+      Yes. A claim line may be negative — a refund, for example; the server
+      checks only that each line's Total equals Net + Tax (within 0.01), and
+      the claim's totals are the sums of its lines. A date-range line's daily
+      rate on a Travel Expense claim cannot be negative.
+    provenance: pinned
+    enforced_in: "expense-api app/schemas/expense.py LineItemCreate (no non-negative check; daily rate ≥ 0; Total = Net + Tax); PRD OA §2.2"
+    test:
+      - "tests/test_oa_rules.py::test_general_expense_currency_lines_and_totals"
+
+  - id: oa_approval_status
+    title: Who a claim is waiting on
+    asked_as:
+      - Who is approving my claim now?
+      - 现在谁在审批我的报销单？
+    match:
+      - 'who (is|''s) (approving|reviewing|holding)'
+      - 'waiting (on|for)|stuck|pending (with|on)|where is my|status of my|which step'
+      - '谁在审批|卡在|到哪(一步|了)|审批到'
+    answer: >
+      Open the claim in OA. Its Approval Status (right-hand column) lists each
+      step of its chain with its state — Approved, Pending, Waiting, Returned
+      or Rejected — and who approved it and when; the Pending step is the one
+      it is waiting on, and Send reminder under it chases that person. The
+      Approval Timeline below shows every event with its comment. Your claims
+      in approval are under My Submissions in the OA Task Inbox.
+    provenance: pinned
+    enforced_in: "expense-api app/api/v1/expenses.py get_approval_status; oa/src/pages/expenses/ExpenseDetailPage.tsx; PRD OA §7.6, §10.2"
+    test:
+      - "tests/test_oa_rules.py::test_approval_status_lists_each_step"
+
+  - id: oa_who_sees_a_claim
+    title: Who can see a claim
+    asked_as:
+      - Who can see my claim?
+      - 谁能看到我的报销单？
+    match:
+      - 'who (can|could|will) (see|view|read|open)'
+      - '\b(visible|visibility)\b'
+      - '谁(能|可以)?看'
+    answer: >
+      You see every claim you raised, in any status. An approver sees a claim
+      while it is waiting for them, and afterwards every claim they have
+      approved, returned or rejected. Finance BP, Finance Manager, AP Clerk,
+      Payment Officer and System Admin see approved claims so they can be
+      paid. A Travel Application is also seen, read-only, by every traveller
+      listed on it once it is submitted; a Travel Expense claim filed for a
+      traveller is seen by whoever filed it. Nobody else sees it.
+    provenance: pinned
+    enforced_in: "expense-api app/api/v1/expenses.py list_expenses conditions, _can_view_claim, holds_payment_role; PRD OA §1.4"
+    test:
+      - "tests/test_oa_rules.py::test_who_sees_a_claim_is_the_list_rule"
+
+  - id: oa_task_emails
+    title: Emails for OA tasks
+    asked_as:
+      - I did not get an e-mail for my approval task.
+      - 为什么没收到报销审批的邮件？
+    match:
+      - '\b(e-?mails?|notifications?|notified)\b'
+      - '邮件|通知'
+    answer: >
+      Whether a new OA task emails the person who holds it is set per kind of
+      task by an admin in Portal → Admin → Notification Settings → Task
+      Notifications; OA claim tasks send nothing until an admin turns them on.
+      Right now approving a General Expense sends {approve_exp}, a Mileage
+      Claim {approve_mil}, a Travel Expense {approve_trv} and a Travel
+      Application {approve_tra}. Each person's own choice in My Profile also
+      applies. The task is in the OA Task Inbox, and on Portal home, either
+      way.
+    fallback: >
+      Whether a new OA task emails the person who holds it is set per kind of
+      task by an admin in Portal → Admin → Notification Settings → Task
+      Notifications; OA claim tasks send nothing until an admin turns them on
+      (the current settings could not be read just now). The task is in the
+      OA Task Inbox, and on Portal home, either way.
+    provenance: derived
+    derive: oa_email_policy
+    enforced_in: "epms-api app/services/task_notify_policy.py effective_policy / DEFAULT_IMMEDIATE (no OA type on by default); PRD OA NTF-OA-001"
+    test:
+      - "tests/test_oa_rules.py::test_oa_task_emails_follow_the_policy"
+
+  - id: oa_on_a_phone
+    title: OA on a phone
+    asked_as:
+      - Can I use OA on my phone?
+      - 手机上能用 OA 吗？
+    match:
+      - '\b(phone|mobile|tablet|iphone|android|cellphone)\b'
+      - '手机|平板'
+    answer: >
+      OA is a web page, not an app to install: open it in the phone's browser
+      and sign in through the Portal. On a narrow screen the sidebar is hidden
+      and opens from the menu button in the header.
+    provenance: pinned
+    enforced_in: "oa/src/components/layout/AppLayout.tsx (mobileOpen, header menu button); PRD OA OA-SH-002, §18 (no native app)"
+    test:
+      - "tests/test_oa_rules.py::test_oa_is_a_responsive_web_app"
+
+  - id: oa_scan_is_a_prefill
+    title: Scan filled the wrong amount
+    asked_as:
+      - Scan filled in the wrong amount. What do I do?
+      - 扫描识别的金额不对怎么办？
+    match:
+      - '\b(scan|scanned|ocr|reading)\b.*\b(wrong|incorrect|mistake|error|bad)\b'
+      - '\b(wrong|incorrect)\b.*\b(scan|scanned|ocr)\b'
+      - '(识别|扫描).*(错|不对)'
+    answer: >
+      Scan only fills in the line for you; nothing is kept until you save.
+      Correct the amount (and the tax) on the line by hand before saving. On a
+      date-range Travel Expense line Scan fills the description and invoice
+      amount, not the line amount. The scanned file stays attached as that
+      line's receipt; scanning again replaces it.
+    provenance: pinned
+    enforced_in: "oa/src/components/ReceiptScanButton.tsx (pre-fills the editable line); expense-api app/api/v1/ocr.py; PRD OA EXP-008, OCR-002, ATT-OA-005"
+    test:
+      - "tests/test_oa_rules.py::test_scan_accepts_images_and_pdf_up_to_25_mb"
+
+  - id: oa_attachment_files
+    title: Attachment file types and size
+    asked_as:
+      - Which file types can I upload, and how big?
+      - 上传文件有什么类型和大小限制？
+    match:
+      - 'file (types?|size|formats?)|size limit|how (big|large)|which files|max(imum)? size'
+      - '\b(pdf|jpe?g|png|heic|mb)\b'
+      - '文件(类型|大小|格式)|多大|格式'
+    answer: >
+      Any type of file can be attached to a claim, up to 25 MB per file. Scan
+      (reading a receipt) takes JPEG, PNG, WebP, GIF or PDF, up to 25 MB.
+    provenance: pinned
+    enforced_in: "expense-api app/api/v1/expense_attachments.py MAX_FILE_BYTES (no type check); app/api/v1/ocr.py SUPPORTED_MIME, MAX_FILE_BYTES; PRD OA ATT-OA-001, OCR-001"
+    test:
+      - "tests/test_oa_rules.py::test_attachments_only_while_draft_or_returned_and_up_to_25_mb"
+      - "tests/test_oa_rules.py::test_scan_accepts_images_and_pdf_up_to_25_mb"
+
+  - id: oa_general_versus_travel_expense
+    title: General Expense or Travel Expense
+    asked_as:
+      - What is the difference between General Expense and Travel Expense?
+      - 一般报销和差旅报销有什么区别？
+    match:
+      - 'general expense.*travel expense|travel expense.*general expense'
+      - '一般报销.*差旅|差旅.*一般报销'
+    answer: >
+      A General Expense claim is for any business expense with receipts: CAD
+      or USD, up to 20 lines, each with a budget account (the picker shows its
+      available balance) and a tax code. A Travel Expense claim is for the
+      costs of a trip: it must be raised against an approved Travel
+      Application listing the traveller, is in CAD only, has lines by category
+      (transportation, hotel, meals with per-line limits, incidentals, other),
+      can claim a date range at a daily rate, and its tax depends on the trip's
+      country. Driving your own car is neither: it is a Mileage Claim.
+    provenance: pinned
+    enforced_in: "oa/src/pages/expenses/ExpenseCreatePage.tsx, TrvCreatePage.tsx; expense-api app/crud/expense.py _check_trv_lines, _require_trv_application; PRD OA §2, §4"
+    test:
+      - "tests/test_oa_rules.py::test_general_expense_currency_lines_and_totals"
+      - "tests/test_oa_rules.py::test_a_travel_expense_needs_an_approved_travel_application_listing_the_claimant"
+
+  - id: oa_mileage_is_its_own_claim
+    title: Mileage is a claim of its own
+    asked_as:
+      - Does mileage go on the same claim as my travel expenses?
+      - 里程能和差旅放在同一张单吗？
+    match:
+      - '(mileage|里程|\bkm\b|kilomet).*(same|travel expense|trip|together|一起|同一|差旅)'
+      - '(travel expense|trip|差旅).*(mileage|里程)'
+      - '\b(mileage|kilometres?|kilometers?)\b.*\b(rate|how much|per km)\b'
+    answer: >
+      Mileage is a claim of its own — a Mileage Claim — never a line on a
+      Travel Expense or General Expense claim. Each trip's amount is its
+      one-way distance × {rate} CAD per km, doubled for a round trip; a
+      warning appears above {max_km} km on one claim, but it is not blocked.
+    fallback: >
+      Mileage is a claim of its own — a Mileage Claim — never a line on a
+      Travel Expense or General Expense claim. Each trip's amount is its
+      one-way distance × the policy rate per km (Expense Config; it could not
+      be read just now), doubled for a round trip.
+    provenance: derived
+    derive: oa_policy
+    enforced_in: "expense-api app/crud/expense.py _compute_totals_mil (MIL only); expense_policy_config mileage_rate_per_km, max_km_per_claim; oa/src/pages/expenses/MilCreatePage.tsx; PRD OA §5, MIL-006"
+    test:
+      - "tests/test_oa_rules.py::test_oa_policy_is_read_from_the_policy_row"
