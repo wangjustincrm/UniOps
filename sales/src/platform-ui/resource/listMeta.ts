@@ -37,6 +37,20 @@ export interface ListMeta {
   searchable: boolean
   default_sort: string[]
   views?: SystemView[]
+  /** Columns only the page has (the server's views may name them beside the fields). */
+  client_columns?: string[]
+}
+
+/** What a page and its server disagree on about column ids (2026-11-10): the system views' ids that
+ *  are neither a field nor a page column, and declared client columns the page lacks. Empty: agreed. */
+export function columnMismatch(meta: ListMeta, pageIds: string[]): string[] {
+  const page = new Set(pageIds)
+  const fields = new Set(meta.fields.map((f) => f.name))
+  const named = new Set((meta.views ?? []).flatMap((v) => [...(v.state.columns ?? []), ...(v.state.hidden ?? [])]))
+  return [
+    ...[...named].filter((id) => !page.has(id) && !fields.has(id)).map((id) => `a system view names "${id}", which the page does not have`),
+    ...(meta.client_columns ?? []).filter((id) => !page.has(id)).map((id) => `the server expects the page column "${id}"`),
+  ]
 }
 
 /** The list's metadata; fetched once per resource (it changes with a release). */

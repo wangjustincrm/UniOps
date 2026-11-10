@@ -92,6 +92,7 @@ class ReadOnlyService(Generic[T, R]):
         repo = self.repo_cls
         return {"version": self.META_VERSION, "fields": repo.field_meta(self.read_schema),
                 "searchable": bool(repo.search_fields), "default_sort": list(repo.default_sort),
+                "client_columns": list(repo.client_columns),
                 "views": [p.as_dict() for p in repo.presets]}
 
 

@@ -150,3 +150,15 @@ async def test_system_views_are_in_meta_and_fit_their_list(http):
         assert repo.presets, resource
         for p in repo.presets:
             check_state(p.as_dict()["state"], repo)
+        # and every column a system view names exists (a typo used to do nothing, 2026-11-10)
+        assert repo.unknown_view_columns(svc.read_schema) == [], resource
+
+
+def test_a_typo_in_a_system_view_column_is_caught():  # 'payment' for 'shopify_financial_status', 2026-11-10
+    from app.platform.views import Preset
+    from app.services.order_views import OrderRepository
+    from app.schemas.orders import OrderRead
+
+    class Typo(OrderRepository):
+        presets = (Preset("x", "X", {"columns": ["source_reference", "payment", "status_detail"], "hidden": ["shopify"]}),)
+    assert Typo.unknown_view_columns(OrderRead) == ["payment"]

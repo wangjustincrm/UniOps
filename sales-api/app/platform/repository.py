@@ -46,6 +46,9 @@ def _like_escape(s: str) -> str:
 class Repository(Generic[T]):
     model: ClassVar[type]
     search_fields: ClassVar[tuple[str, ...]] = ()
+    # Columns only the page has (computed in the client, e.g. a Detail or a Ship to cell): the system
+    # views may name them beside the fields. Anything else a view names is a typo (2026-11-10).
+    client_columns: ClassVar[tuple[str, ...]] = ()
     # Integer columns a search of digits only matches exactly (an internal number).
     search_numbers: ClassVar[tuple[str, ...]] = ()
     sortable: ClassVar[Mapping[str, Any]] = {}
@@ -251,6 +254,13 @@ class Repository(Generic[T]):
         if rule.ops is not None:  # a narrower set declared on purpose
             return tuple(sorted("between" if o == "range" else o for o in rule.ops))
         return OPS_BY_KIND[cls.field_kind(name)]
+
+    @classmethod
+    def unknown_view_columns(cls, read_schema: type[BaseModel] | None = None) -> list[str]:
+        """Column ids the system views name that are neither a field nor a declared client column."""
+        known = {f["name"] for f in cls.field_meta(read_schema)} | set(cls.client_columns) | set(cls.meta_hidden)
+        named = {c for p in cls.presets for c in [*p.state.get("columns", []), *p.state.get("hidden", [])]}
+        return sorted(named - known)
 
     @classmethod
     def field_meta(cls, read_schema: type[BaseModel] | None = None) -> list[dict[str, Any]]:

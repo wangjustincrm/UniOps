@@ -118,6 +118,7 @@ class OrderRepository(Repository[Order]):
     model = Order
     search_fields = ("source_reference", "source_order_number", "source_order_id", "partner_name_sql", "review_reason", "tags")
     search_numbers = ("order_number",)  # the Internal no., matched exactly
+    client_columns = ("status_detail", "shopify", "ship_to_place")  # OrdersPage's own cells
     list_fields = ("order_number", "partner_code", "connection_id", "source_type", "source_order_id",
                    "source_order_number", "source_reference", "order_type", "department", "order_date",
                    "requested_delivery_date", "do_not_deliver_after", "cancel_date", "currency", "subtotal", "tax",

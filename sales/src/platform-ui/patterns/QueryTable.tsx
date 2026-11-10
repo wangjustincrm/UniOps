@@ -1,9 +1,9 @@
 import { BooleanCell, DateCell, NumberCell, StackedDateTimeCell } from '../primitives/cells'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { DataTable, type ColumnDef, type Grouping } from '../primitives/DataTable'
 import { groupKey } from '../primitives/groupKey'
 import { formatMoney } from '../primitives/format'
-import { useListMeta, type FieldMeta, type ListMeta } from '../resource/listMeta'
+import { columnMismatch, useListMeta, type FieldMeta, type ListMeta } from '../resource/listMeta'
 import {
   MAX_GROUP_KEYS, clampPageSize, groupBy, sortBy, type Filter, type GroupCount, type ListTotal, type QuerySpec,
 } from '../resource/querySpec'
@@ -136,6 +136,12 @@ function QueryTableView<T>({
 
   // The page's columns, then every other field /meta describes (hidden at first).
   const pageIds = useMemo(() => new Set(columns.map(columnId)), [columns])
+  // In development: say when the page and its server's views disagree on a column id (a typo there
+  // used to do nothing at all). Tests assert columnMismatch directly.
+  useEffect(() => {
+    if (!import.meta.env.DEV || !meta) return
+    for (const m of columnMismatch(meta, [...pageIds])) console.warn(`[QueryTable ${view.ariaLabel ?? ''}] ${m}`)
+  }, [meta, pageIds])  // eslint-disable-line react-hooks/exhaustive-deps
   const allColumns = useMemo<ColumnDef<T, unknown>[]>(() => [
     ...columns,
     ...(meta?.fields ?? []).filter((f) => !pageIds.has(f.name)).map((f): ColumnDef<T, unknown> => ({

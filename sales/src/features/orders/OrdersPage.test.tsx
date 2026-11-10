@@ -35,8 +35,11 @@ const meta: ListMeta = {
     { name: 'order_number', label: 'Order', type: 'number', enum_values: [], filterable: true, sortable: true, groupable: false, operators: ['eq'] },
     { name: 'fulfillment_status', label: 'Status', type: 'enum', enum_values: ['Review', 'Pending'], filterable: true, sortable: true, groupable: true, operators: ['eq', 'in'] },
   ],
+  // As sales-api OrderRepository.client_columns: the cells only this page has.
+  client_columns: ['status_detail', 'shopify', 'ship_to_place'],
   views: [
     { key: 'all', name: 'All', state: { version: 1, hidden: ['review_reason'] } },
+    { key: 'cols', name: 'Cols', state: { version: 1, columns: ['source_reference', 'status_detail', 'shopify', 'ship_to_place'] } },
     { key: 'needs_review', name: 'Needs review', state: { version: 1, filters: [{ field: 'fulfillment_status', op: 'eq', value: 'Review' }] } },
   ],
 }
@@ -244,6 +247,18 @@ describe('Orders: 940s (P4)', () => {
     const dialog = await screen.findByRole('dialog')
     fireEvent.click(await within(dialog).findByText('Send 940 now'))
     await waitFor(() => expect(noticeIn(dialog)).toHaveTextContent(/failed its checks and was not sent.*ship_to.zip is empty/))
+  })
+})
+
+describe('Orders: column ids agree with the server (2026-11-10)', () => {
+  it('the page has every column the server expects and every id its views name', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    api.list.mockResolvedValue({ items: [], total: 0 })
+    renderAs(['sales.read'])
+    await screen.findByRole('heading', { name: 'Orders' })
+    await waitFor(() => expect(api.list).toHaveBeenCalled())
+    expect(warn.mock.calls.filter((c) => String(c[0]).startsWith('[QueryTable'))).toEqual([])
+    warn.mockRestore()
   })
 })
 
