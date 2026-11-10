@@ -327,3 +327,41 @@ def test_the_mode_change_card_is_given_with_the_over_budget_rules():
     assert "over_budget_mode_change_in_flight" in ids
     assert "over_budget_mode_change_in_flight" in {
         r["id"] for r in rule_registry.static_rules("budget")}
+
+
+# ── ISS-0032: the totals of a cut list, labelled by code ─────────────────────
+
+async def test_top_n_totals_are_both_said_and_labelled(test_engine, admin_client, monkeypatch):
+    from tests.test_assistant_iss_batch2 import _two_currency_pos
+
+    tag = await _two_currency_pos(test_engine, admin_client)
+    query = {"entity": "purchase_order", "group_by": ["vendor_name"], "metrics": ["amount"],
+             "where": [{"field": "number", "op": "like", "value": f"PO-CUR-{tag}"}],
+             "order_by": {"field": "amount", "desc": True}, "limit": 2}
+    # The narrator writes a "total" of its own after the list.
+    seen = _stub(monkeypatch, plan={"kind": "query", "query": query},
+                 narration="前 2 名：Big CAD 500.00，Small CAD 100.00。")
+    body = (await admin_client.post(CHAT, json={"message": "今年采购金额前 2 的供应商是哪些？"})).json()
+    result = seen["narrate"][0]
+    assert "totals" not in result and "totals_shown" not in result, \
+        "the narrator gets no total it could mislabel"
+    answer = body["answer"]
+    assert "以上 2 行合计：CAD 600.00" in answer
+    assert "查询匹配到的全部结果合计（不只是以上 2 行）：CAD 600.00；USD 50.00" in answer
+
+
+async def test_a_ranking_across_currencies_says_no_rate_is_applied(test_engine, admin_client, monkeypatch):
+    from tests.test_assistant_iss_batch2 import _two_currency_pos
+
+    tag = await _two_currency_pos(test_engine, admin_client)
+    query = {"entity": "purchase_order", "group_by": ["vendor_name"], "metrics": ["amount"],
+             "where": [{"field": "number", "op": "like", "value": f"PO-CUR-{tag}"}],
+             "order_by": {"field": "amount", "desc": True}, "limit": 10}
+    _stub(monkeypatch, plan={"kind": "query", "query": query}, narration="三行。")
+    body = (await admin_client.post(CHAT, json={"message": "采购金额最多的供应商排名"})).json()
+    assert "没有做汇率换算" in body["answer"]
+    # One currency, no note.
+    query["where"].append({"field": "currency", "op": "eq", "value": "CAD"})
+    _stub(monkeypatch, plan={"kind": "query", "query": query}, narration="两行。")
+    body = (await admin_client.post(CHAT, json={"message": "采购金额最多的供应商排名"})).json()
+    assert "汇率" not in body["answer"]

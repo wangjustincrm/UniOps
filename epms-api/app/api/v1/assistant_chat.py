@@ -416,6 +416,7 @@ async def _route(body: ChatRequest, db, user: dict, token: str,
             "kind": "denied", "query": query, "sources": None,
         }
 
+    result = _with_totals_notes(result, query)
     try:
         told = await assistant_llm.narrate(body.message, query, result)
     except assistant_llm.LlmUnavailable as exc:
@@ -435,6 +436,68 @@ async def _route(body: ChatRequest, db, user: dict, token: str,
             "total_rows": result.get("total_rows"),
         },
     }
+
+
+def _amount(value) -> str:
+    try:
+        return f"{float(value):,.2f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _figures(totals, currency_key: str | None) -> tuple[str, str]:
+    """`totals` / `totals_shown` as (English, Chinese) text, per currency."""
+    entries = totals if isinstance(totals, list) else [totals or {}]
+    en, zh = [], []
+    for entry in entries:
+        cur = entry.get(currency_key) if currency_key else None
+        for k, v in entry.items():
+            if k == currency_key or v is None:
+                continue
+            if k == "count":
+                en.append(f"{v} records" + (f" ({cur})" if cur else ""))
+                zh.append(f"{v} 笔" + (f"（{cur}）" if cur else ""))
+            else:
+                figure = f"{cur} {_amount(v)}" if cur else f"{k} {_amount(v)}"
+                en.append(figure)
+                zh.append(figure)
+    return "; ".join(en), "；".join(zh)
+
+
+def _with_totals_notes(result: dict, query: dict | None) -> dict:
+    """The totals of a list cut to its first rows, written by code (ISS-0032).
+
+    `totals` is every group the query matched, `totals_shown` the groups
+    listed. Only `totals` used to reach the narrator, and after the top-10
+    list it wrote the all-vendor figure as "采购总额", one run in two, with
+    nothing to say it was not the ten's. Both are now said under the reply,
+    each labelled; the narrator gets neither, so it cannot mislabel one.
+
+    And a ranking over amounts in several currencies orders them by their
+    face value — 536,139 USD above 402,955 CAD — which is said too, since no
+    rate is applied anywhere in the assistant.
+    """
+    notes = list(result.get("said_with_this_list") or [])
+    cur = result.get("currency_split")
+    if result.get("totals_shown") is not None and result.get("totals") is not None:
+        n = result.get("row_count")
+        shown_en, shown_zh = _figures(result["totals_shown"], cur)
+        all_en, all_zh = _figures(result["totals"], cur)
+        notes.append(("listed_totals",
+                      f"Total of the {n} rows listed: {shown_en}. Total of everything "
+                      f"the question matched (not only these {n}): {all_en}.",
+                      f"以上 {n} 行合计：{shown_zh}。查询匹配到的全部结果合计（不只是以上 {n} 行）：{all_zh}。"))
+        result = {k: v for k, v in result.items() if k not in ("totals", "totals_shown")}
+    if (cur and (query or {}).get("order_by")
+            and len({r.get(cur) for r in result.get("rows") or [] if isinstance(r, dict)}) > 1):
+        notes.append(("ranked_across_currencies",
+                      "The ranking orders amounts by their face value in their own "
+                      "currencies; no exchange rate is applied, so amounts in different "
+                      "currencies are not comparable with each other.",
+                      "注意：排名按各自币种的原币金额排序，没有做汇率换算，不同币种的金额之间不能直接比较。"))
+    if notes:
+        result = {**result, "said_with_this_list": notes}
+    return result
 
 
 def _without_internal_notes(text: str, result: dict) -> str:
