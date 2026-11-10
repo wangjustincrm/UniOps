@@ -18,7 +18,7 @@ const ship = (id: number, applied: boolean, qty: number, lot: string) => ({
   id, document_id: id, applied, shadow: false, ship_date: '2026-11-02', tracking: ['T1'],
   rows: [{ item_code: 'CF0092', qty_shipped_ea: qty, lot }],
 }) as unknown as ShipmentRead
-const base = { id: 3, order_number: 3, source_reference: 'SHP-3', on_hold_reason: null, shipments: [], cancellable: false, hold_exits: [] } as unknown as OrderDetail
+const base = { id: 3, version: 7, order_number: 3, source_reference: 'SHP-3', on_hold_reason: null, shipments: [], cancellable: false, hold_exits: [] } as unknown as OrderDetail
 
 function show(o: OrderDetail, keys = ['sales.order.operate']) {
   const qc = new QueryClient()
@@ -49,7 +49,7 @@ describe('Cancel order and Release hold', () => {
     const dialog = await reason('agreed')
     expect(dialog).toHaveTextContent('nothing is written to Shopify, the warehouse or any partner')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel order' }))
-    await waitFor(() => expect(cancelOrder).toHaveBeenCalledWith(3, 'agreed'))
+    await waitFor(() => expect(cancelOrder).toHaveBeenCalledWith(3, 7, 'agreed'))
   })
 
   it('Cancelled at Source: the exits the server gives, with a reason', async () => {
@@ -61,7 +61,7 @@ describe('Cancel order and Release hold', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Mark as shipped' }))
     const dialog = await reason('the warehouse confirmed it left')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Mark as shipped' }))
-    await waitFor(() => expect(releaseHold).toHaveBeenCalledWith(3, 'Shipped', 'the warehouse confirmed it left'))
+    await waitFor(() => expect(releaseHold).toHaveBeenCalledWith(3, 7, 'Shipped', 'the warehouse confirmed it left'))
   })
 
   it('945 Conflict: the two side by side, then keep the applied one or cancel', async () => {

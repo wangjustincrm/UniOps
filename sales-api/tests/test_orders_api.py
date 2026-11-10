@@ -76,6 +76,10 @@ async def test_manual_order_preview_create_submit(api):
     assert (o["fulfillment_status"], o["order_state"]) == ("Draft", "Draft")
     r = await api.post(f"/api/v1/orders/manual/{o['id']}/submit?version={o['version']}", headers=OPERATOR)
     assert r.status_code == 200 and r.json()["fulfillment_status"] == "Pending"
+    # the answer is the order as stored (review 2026-11-10): its partner and total, not the flushed row's gaps
+    listed = (await api.get(f"/api/v1/orders/{o['id']}", headers=READER)).json()
+    assert r.json()["partner_name"] and r.json()["partner_name"] == listed["partner_name"]
+    assert (r.json()["order_status"], r.json()["total_amount"]) == (listed["order_status"], listed["total_amount"])
     r = await api.post(f"/api/v1/orders/manual/{o['id']}/submit?version={r.json()['version']}", headers=OPERATOR)
     assert r.status_code == 409 and r.json()["error"]["code"] == "order.not_draft"
     trail = (await api.get(f"/api/v1/orders/{o['id']}", headers=READER)).json()["timeline"]
@@ -143,3 +147,14 @@ async def test_the_open_view_over_http_filter_sort_and_count(api):
     body = r.json()
     assert body["total"] == 2 and [o["order_status_label"] for o in body["items"]] == ["To Fulfill", "On Hold: Needs Review"]
 
+
+
+async def test_a_cancel_without_the_version_seen_is_refused(api):  # review 2026-11-10
+    body = {"partner_code": "MAN", "customer_reference": "phone-v",
+            "ship_to": {"name": "A B", "phone": "514-555-0100", "address1": "1 rue", "city": "Montréal", "province": "QC", "zip": "h2x1y4"},
+            "lines": [{"item_code": "CF0092", "quantity": 2, "unit": "case"}]}
+    o = (await api.post("/api/v1/orders/manual", json=body, headers=OPERATOR)).json()
+    r = await api.post(f"/api/v1/orders/manual/{o['id']}/cancel", headers=OPERATOR)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "entity.version_required"
+    r = await api.post(f"/api/v1/orders/manual/{o['id']}/cancel?version={o['version'] + 5}", headers=OPERATOR)
+    assert r.status_code == 409 and r.json()["error"]["details"]["current_version"] == o["version"]

@@ -28,7 +28,7 @@ from app.domain.edi940 import build_940
 from app.domain.intake import classify
 from app.domain.order_rules import facts_of, qualifies
 from app.domain.orders import FROM_945
-from app.domain.shadow import compare, ignore_rules, reference_940
+from app.domain.shadow import STATUSES, compare, ignore_rules, reference_940
 from app.domain.status import Ack
 from app.domain.status import Fulfillment as F
 from app.domain.x12 import X12Error
@@ -38,6 +38,7 @@ from app.models.orders import Order
 from app.models.shadow import ShadowMatch
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.authorization import requires
+from app.platform.commands import check_version
 from app.platform.errors import BusinessError
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
@@ -46,7 +47,6 @@ from app.platform.views import Preset
 from app.schemas.shadow import ShadowCompare, ShadowMatchRead
 from app.services import oplog
 from app.services.outbound import LIVE_940_FILE, TORONTO
-from app.domain.shadow import STATUSES
 
 logger = logging.getLogger(__name__)
 
@@ -462,8 +462,7 @@ class ShadowMatchService(ReadOnlyService[ShadowMatch, ShadowMatchRead]):
         """The differences are known and accepted — while they stay the same
         (a later run that finds other differences sets it back to Differs)."""
         m = await self.repo.get(id, for_update=True)
-        if version is not None and m.version != version:
-            raise BusinessError("entity.stale", "someone else changed this comparison", status_code=409)
+        check_version(m, version, "this comparison")
         if m.status != "Differs":
             raise BusinessError("shadow.not_differs", f"only a comparison that differs can be marked (it is {m.status})")
         self.uow.set_reason(f"expected difference: {reason}")

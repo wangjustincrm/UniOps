@@ -12,40 +12,84 @@ from sqlalchemy import and_, case, or_, select
 from app.domain.address import address_flags
 from app.domain.carriers import tracking_url
 from app.domain.lifecycle import backordered, line_state, spread
-from app.domain.order_rules import ON_HOLD_FULFILLMENT, can_cancel, hold_exits, send_940_action, order_state, payment_satisfied, to_ea
+from app.domain.order_rules import (
+    ON_HOLD_FULFILLMENT,
+    can_cancel,
+    hold_exits,
+    order_state,
+    payment_satisfied,
+    send_940_action,
+    to_ea,
+)
 from app.domain.order_status import (
-    HOLD_REASONS as ON_HOLD_REASONS, NOT_OPEN_STATUSES, ORDER_STATUSES, DetailFacts, StatusFacts, detail_kind, display, send_time, status_detail,
+    HOLD_REASONS as ON_HOLD_REASONS,
+)
+from app.domain.order_status import (
+    NOT_OPEN_STATUSES,
+    ORDER_STATUSES,
+    DetailFacts,
+    StatusFacts,
+    detail_kind,
+    display,
+    send_time,
+    status_detail,
 )
 from app.domain.orders import HOLD_REASONS, ORDER_STATES, SOURCE_TYPES
 from app.domain.row_matching import identifiers, line_identifiers
-from app.domain.status import FULFILLMENT, Fulfillment as F
+from app.domain.status import FULFILLMENT
+from app.domain.status import Fulfillment as F
 from app.domain.status import Invoice as Inv
 from app.models.config import Connection, DcRouting, Item, ItemUnit, Partner
 from app.models.documents import Document, DocumentLink
 from app.models.invoices import Invoice, InvoiceLine
-from app.models.payments import OrderPayment, OrderRefund, OrderRefundAdjustment, OrderRefundLine
-from app.models.shipments import Shipment, ShipmentRow
 from app.models.orders import Order, OrderLine
+from app.models.payments import (
+    OrderPayment,
+    OrderRefund,
+    OrderRefundAdjustment,
+    OrderRefundLine,
+)
 from app.models.records import AuditRecord
+from app.models.shipments import Shipment, ShipmentRow
 from app.platform.authorization import requires
+from app.platform.commands import check_version
 from app.platform.errors import BusinessError, InvalidInput, NotFound
 from app.platform.query import FilterRule
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.schemas.orders import (
-    InvoicePricesIn, LinePreview, LineRead, ManualLineIn, ManualOrderIn, OrderDetail, OrderDocumentRead, OrderRead, PackingRead,
-    PaymentRead, RefundAdjustmentRead, RefundLineRead, RefundRead, ReviewResult, ShipmentRead, ShipmentRowRead,
-    TimelineEntry, TrackingLinkRead,
+    InvoicePricesIn,
+    LinePreview,
+    LineRead,
+    ManualLineIn,
+    ManualOrderIn,
+    OrderDetail,
+    OrderDocumentRead,
+    OrderRead,
+    PackingRead,
+    PaymentRead,
+    RefundAdjustmentRead,
+    RefundLineRead,
+    RefundRead,
+    ReviewResult,
+    ShipmentRead,
+    ShipmentRowRead,
+    TimelineEntry,
+    TrackingLinkRead,
 )
-from app.services import print_docs
-from app.services import oplog
+from app.services import oplog, print_docs
 from app.services.carriers import carriers_by_scac
 from app.services.intake import ConnectionSnapshot
 from app.services.invoice_pdf import PackingList, PackRow, render_packing
 from app.services.invoice_pdf import Party as PdfParty
 from app.services.invoicing import SELLER
-from app.services.order_status_sql import BACKORDERED_SQL, ON_HOLD_REASON_SQL, ORDER_STATUS_SQL, TO_CONFIRM_SQL
+from app.services.order_status_sql import (
+    BACKORDERED_SQL,
+    ON_HOLD_REASON_SQL,
+    ORDER_STATUS_SQL,
+    TO_CONFIRM_SQL,
+)
 from app.services.orders import BarcodeLookup, OrderSync, order_ref
 from app.services.settings import SETTINGS, SHADOW_MODE
 
@@ -297,7 +341,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
                                 {"status": o.fulfillment_status})
         self.uow.set_reason("re-check review")
         remaining = await OrderSync(self.uow, tasks).recheck(o, barcodes)
-        return ReviewResult(order=self.to_read(o), remaining=remaining)
+        return ReviewResult(order=self.to_read(await self.repo.get(id)), remaining=remaining)  # read again: facts expire on flush
 
 
     @requires(OPERATE)
@@ -573,9 +617,7 @@ class ManualOrderService:
         if o.fulfillment_status != F.DRAFT:
             raise BusinessError("order.not_draft", "only a Draft can be changed or submitted",
                                 {"status": o.fulfillment_status})
-        if version is not None and o.version != version:
-            raise BusinessError("entity.stale", "this order was changed by someone else; reload it",
-                                {"current_version": o.version, "sent_version": version})
+        check_version(o, version, "this order")
         return o
 
     @requires(OPERATE)

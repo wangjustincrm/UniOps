@@ -33,7 +33,15 @@ from sqlalchemy import func, select, text
 from app.domain.edi943 import Line943, Party943, Transfer943, build_943
 from app.domain.edi944 import LineIn, allocate, parse_944
 from app.domain.shadow import TEST_RUN_TRANSFER_REFUSAL
-from app.domain.status import ACK, INBOUND_FILE, OUTBOUND_FILE, TRANSFER, Ack, InboundFile, OutboundFile
+from app.domain.status import (
+    ACK,
+    INBOUND_FILE,
+    OUTBOUND_FILE,
+    TRANSFER,
+    Ack,
+    InboundFile,
+    OutboundFile,
+)
 from app.domain.status import Transfer as T
 from app.domain.x12 import X12Error
 from app.models.config import Connection, Item, Warehouse
@@ -41,6 +49,7 @@ from app.models.documents import Document, DocumentLink
 from app.models.records import OutboxRecord
 from app.models.transfers import Receipt, ReceiptRow, Transfer, TransferLine
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.commands import VersionArg, load_for_command
 from app.platform.errors import BusinessError
 from app.platform.outbox import ONCE, Outbox, OutboxKind
 from app.platform.pipeline import isolated
@@ -48,10 +57,23 @@ from app.services import oplog
 from app.services.intake import ConnectionSnapshot
 from app.services.outbound import TORONTO
 from app.services.problems import (
-    EDI_943_REJECTED, EDI_943_TIMEOUT, EDI_944_NO_TRANSFER, ORDER_FILE_UNREADABLE, PARTIAL_RECEIPT, SECOND_944,
-    TRANSFER_DISCREPANCY, TRANSFER_FAILED, problem, send_refused,
+    EDI_943_REJECTED,
+    EDI_943_TIMEOUT,
+    EDI_944_NO_TRANSFER,
+    ORDER_FILE_UNREADABLE,
+    PARTIAL_RECEIPT,
+    SECOND_944,
+    TRANSFER_DISCREPANCY,
+    TRANSFER_FAILED,
+    problem,
+    send_refused,
 )
-from app.services.settings import ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, SETTINGS, SHADOW_MODE
+from app.services.settings import (
+    ACK_TIMEOUT_MINUTES,
+    EDI_CONNECTION_ID,
+    SETTINGS,
+    SHADOW_MODE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -145,13 +167,8 @@ class Transfers:
         if any(int(ln["qty_ea"]) <= 0 for ln in lines):
             raise BusinessError("transfer.quantity", "each line needs a quantity of at least 1 EA")
 
-    async def _get(self, s, id: int, version: int | None = None) -> Transfer:
-        t = await s.get(Transfer, id, with_for_update=True)
-        if t is None:
-            raise BusinessError("transfer.not_found", "no such transfer", status_code=404)
-        if version is not None and t.version != version:
-            raise BusinessError("entity.stale", "someone else changed this transfer", status_code=409)
-        return t
+    async def _get(self, s, id: int, version: VersionArg) -> Transfer:
+        return await load_for_command(s, Transfer, id, version=version, what="this transfer")
 
     async def ready(self, uow, id: int, version: int | None) -> Transfer:
         t = await self._get(uow.session, id, version)

@@ -8,16 +8,26 @@ from typing import Any
 
 from sqlalchemy import func, select, union_all
 
-from app.domain.documents import DIRECTIONS, KINDS, LOG_LEVELS, ORIGINS, RUN_STATUSES, RUN_TRIGGERS, SYSTEMS
-from app.domain.status import Ack, InboundFile, OutboundFile
+from app.domain.documents import (
+    DIRECTIONS,
+    KINDS,
+    LOG_LEVELS,
+    ORIGINS,
+    RUN_STATUSES,
+    RUN_TRIGGERS,
+    SYSTEMS,
+)
 from app.domain.intake import classify
-from app.domain.status import INBOUND_FILE
+from app.domain.status import INBOUND_FILE, Ack, InboundFile, OutboundFile
 from app.models.documents import Document, DocumentLink, LogEntry, Run
 from app.models.invoices import Invoice
 from app.models.orders import Order
+from app.models.shipments import (
+    Shipment,  # noqa: F401 — maps Document.shipments_without_order
+)
 from app.models.transfers import Receipt, Transfer
 from app.platform.authorization import authorize, requires
-from app.models.shipments import Shipment  # noqa: F401 — maps Document.shipments_without_order
+from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError, NotFound
 from app.platform.query import FilterRule, Page
 from app.platform.repository import Repository
@@ -279,7 +289,7 @@ class DocumentActions:
             return f"940 {new.st02} queued for the order"
         if doc.kind == "943_EDI":
             await authorize(self.uow, "sales.transfer.manage")
-            await rt.transfers.resend(self.uow, int((doc.body_json or {})["transfer_id"]), None)
+            await rt.transfers.resend(self.uow, int((doc.body_json or {})["transfer_id"]), ANY_VERSION)  # what is there now
             return "943 queued for the transfer"
         inv = (await self.s.execute(select(Invoice).where(Invoice.document_id == doc.id))).scalar_one_or_none()
         if inv is not None:

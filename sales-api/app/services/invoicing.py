@@ -32,9 +32,17 @@ from typing import Any, Callable
 
 from sqlalchemy import select
 
-from app.domain.invoicing import CASE_UNIT, Header810, Item810, LineIn, amount, build_810, build_lines
+from app.domain.invoicing import (
+    CASE_UNIT,
+    Header810,
+    Item810,
+    LineIn,
+    amount,
+    build_810,
+    build_lines,
+)
 from app.domain.shadow import TEST_RUN_REFUSAL
-from app.domain.status import INVOICE
+from app.domain.status import INVOICE, OUTBOUND_FILE, OutboundFile
 from app.domain.status import Fulfillment as F
 from app.domain.status import Invoice as Inv
 from app.integrations.email import ExternalEmail
@@ -45,15 +53,26 @@ from app.models.orders import Order, OrderLine
 from app.models.records import OutboxRecord
 from app.models.shipments import Shipment, ShipmentRow
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.commands import load_for_command
 from app.platform.errors import BusinessError
 from app.platform.outbox import ONCE, Outbox, OutboxKind
 from app.platform.pipeline import isolated
-from app.services import oplog
+from app.services import oplog, print_docs
 from app.services.intake import ConnectionSnapshot
-from app.services import print_docs
 from app.services.outbound import TORONTO
-from app.services.problems import INVOICE_FAILED, INVOICE_HOLD, ORDER_RETURN, problem, send_refused
-from app.services.settings import INVOICE_CONNECTION_ID, INVOICE_INTERNAL_EMAILS, SETTINGS, SHADOW_MODE
+from app.services.problems import (
+    INVOICE_FAILED,
+    INVOICE_HOLD,
+    ORDER_RETURN,
+    problem,
+    send_refused,
+)
+from app.services.settings import (
+    INVOICE_CONNECTION_ID,
+    INVOICE_INTERNAL_EMAILS,
+    SETTINGS,
+    SHADOW_MODE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -241,11 +260,7 @@ class Invoicing:
         is audited; a changed unit price needs a reason (user 2026-11-03), which
         the audit row carries, and each line's old and new price is logged."""
         s = uow.session
-        inv = await s.get(Invoice, invoice_id, with_for_update=True)
-        if inv is None:
-            raise BusinessError("invoice.not_found", "no such invoice", status_code=404)
-        if version is not None and inv.version != version:
-            raise BusinessError("entity.stale", "someone else changed this invoice", status_code=409)
+        inv = await load_for_command(s, Invoice, invoice_id, version=version, what="this invoice")
         order = await s.get(Order, inv.order_id, with_for_update=True)
         if Inv(order.invoice_status) not in EDITABLE:
             raise BusinessError("invoice.not_editable", f"the invoice is {order.invoice_status}")
@@ -388,7 +403,7 @@ class Invoicing:
                 data = await self._810(s, inv, order, lines)
                 name = (f"810-{partner.abbrev}-{order.order_number}-{order.source_order_number or ''}-"
                         f"{self.clock().astimezone(TORONTO):%Y%m%d_%H%M%S}.json")
-                await self._document(s, inv, order, data, name, system="TRUECOMMERCE", kind="810_JSON", conn_id=conn.id)
+                await self._document(uow, inv, order, data, name, system="TRUECOMMERCE", kind="810_JSON", conn_id=conn.id)
                 await uow.commit()
                 folder = snap.test_outbound_folder if snap.mode == "TEST" else snap.outbound_folder
                 if not folder:
@@ -399,7 +414,7 @@ class Invoicing:
                 if not partner.invoice_email:
                     raise RuntimeError(f"partner {partner.code} has no invoice email address")
                 msg, pdf = await self._email(s, inv, order, partner, lines)
-                await self._document(s, inv, order, pdf, msg.subject, system="EMAIL", kind="INVOICE_EMAIL", conn_id=None)
+                await self._document(uow, inv, order, pdf, msg.subject, system="EMAIL", kind="INVOICE_EMAIL", conn_id=None)
                 await uow.commit()
                 await self.email.send_external(msg)  # guarded: SALES_EXTERNAL_EMAIL_ENABLED
                 return
@@ -429,18 +444,29 @@ class Invoicing:
         return build_810(Header810(order.partner_code, order.order_number, order.source_order_number, inv.invoice_date,
                                    order.order_date, st, order.bill_to or st), out)
 
-    async def _document(self, s, inv: Invoice, order: Order, data: bytes, name: str, *, system: str, kind: str,
+    async def _document(self, uow, inv: Invoice, order: Order, data: bytes, name: str, *, system: str, kind: str,
                         conn_id: int | None) -> Document:
+        s = uow.session
         sha = hashlib.sha256(data).hexdigest()
         doc = (await s.execute(select(Document).where(Document.sha256 == sha, Document.content.is_not(None)))).scalar_one_or_none()
         if doc is None:  # an identical resend keeps the document it already has
             doc = Document(direction="OUT", origin="UNIOPS", system=system, kind=kind, remote_name=name[:500], size=len(data),
-                           sha256=sha, content=data, partner_code=order.partner_code, connection_id=conn_id)
+                           sha256=sha, content=data, partner_code=order.partner_code, connection_id=conn_id,
+                           file_status=OutboundFile.READY_TO_SEND.value)
             s.add(doc)
             await s.flush()
             s.add(DocumentLink(document_id=doc.id, entity_type="order", entity_id=order.id))
+        # The file says what became of it, as a 940 does (review 2026-11-10): Sending now, then Sent,
+        # Failed or Suppressed. A resend of a file already Sent keeps Sent (the invoice counts the sends).
+        if doc.file_status in (OutboundFile.READY_TO_SEND.value, OutboundFile.SUPPRESSED.value):
+            OUTBOUND_FILE.transition(doc, OutboundFile.SENDING, actor=uow.actor, events=uow.events, reason=f"sending invoice {inv.invoice_number}")
         inv.document_id = doc.id
         return doc
+
+    async def _file_outcome(self, uow, inv: Invoice, to: OutboundFile, reason: str) -> None:
+        doc = await uow.session.get(Document, inv.document_id, with_for_update=True) if inv.document_id else None
+        if doc is not None and doc.file_status == OutboundFile.SENDING.value:
+            OUTBOUND_FILE.transition(doc, to, actor=uow.actor, events=uow.events, reason=reason[:200])
 
     async def _email(self, s, inv: Invoice, order: Order, partner: Partner, lines: list[InvoiceLine]):
         """The partner's invoice email (its cc from the partner); the company's copy goes on its own."""
@@ -473,6 +499,7 @@ class Invoicing:
 
     async def _done(self, row, exc, uow) -> None:
         inv, order = await self._pair(row, uow)
+        await self._file_outcome(uow, inv, OutboundFile.SENT, f"invoice {inv.method} sent")
         if order.invoice_status == Inv.QUEUED.value:
             INVOICE.transition(order, Inv.SENT, actor=uow.actor, events=uow.events, reason=f"invoice {inv.method} sent")
         inv.sent_at, inv.send_count, inv.error = self.clock(), inv.send_count + 1, None  # the invoice row is the send record
@@ -511,6 +538,7 @@ class Invoicing:
 
     async def _failed(self, row, exc, uow) -> None:
         inv, order = await self._pair(row, uow)
+        await self._file_outcome(uow, inv, OutboundFile.FAILED, str(exc))
         inv.error = str(exc)[:2000]
         if order.invoice_status == Inv.QUEUED.value:
             INVOICE.transition(order, Inv.FAILED, actor=uow.actor, events=uow.events, reason=str(exc)[:200])
@@ -521,6 +549,7 @@ class Invoicing:
 
     async def _suppressed(self, row, exc, uow) -> None:
         inv, order = await self._pair(row, uow)
+        await self._file_outcome(uow, inv, OutboundFile.SUPPRESSED, f"refused by the guard: {exc}")
         inv.error = f"not sent: {exc}"[:2000]
         if order.invoice_status == Inv.QUEUED.value:
             INVOICE.transition(order, Inv.FAILED, actor=uow.actor, events=uow.events, reason="refused by the outbound guard")

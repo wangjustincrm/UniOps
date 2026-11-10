@@ -2,13 +2,18 @@
 recorded, a failed record is seen, invoice quantities are on the record."""
 from datetime import date
 
-
 from app.models.records import OutboxRecord
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.commands import ANY_VERSION
 from app.platform.outbox import AcceptedThenFailed, Outbox, OutboxKind, OutboxWorker
-from app.services.invoice_views import InvoiceService
 from app.schemas.invoices import InvoiceEdit
-from tests.test_invoicing import confirm, p4_edi, p6, shipped_850  # noqa: F401 — fixtures
+from app.services.invoice_views import InvoiceService
+from tests.test_invoicing import (  # noqa: F401 — fixtures
+    confirm,
+    p4_edi,
+    p6,
+    shipped_850,
+)
 from tests.test_orders import OP, env  # noqa: F401 — a fixture
 
 
@@ -71,7 +76,7 @@ async def test_an_invoice_quantity_change_is_on_the_record(p6):  # noqa: F811
     inv = await confirm(p6, o.id, when=date(2026, 11, 5))
     [line] = await p6.q("SELECT id FROM sales_invoice_lines")
     async with p6.factory(OP) as u:
-        await p6.inv.edit(u, inv.id, version=None, invoice_date=None, lines=[{"id": line["id"], "qty": 9}], reason="short count")
+        await p6.inv.edit(u, inv.id, version=ANY_VERSION, invoice_date=None, lines=[{"id": line["id"], "qty": 9}], reason="short count")
         await u.commit()
     [log] = await p6.q("SELECT message FROM sales_log WHERE message LIKE '%quantity%'")
     assert "quantity 10 → 9" in log["message"]

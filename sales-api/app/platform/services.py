@@ -30,6 +30,7 @@ from sqlalchemy.orm.exc import StaleDataError
 from app.platform.actors import Actor
 from app.platform.audit import jsonable
 from app.platform.authorization import authorize
+from app.platform.commands import check_version
 from app.platform.entities import Deactivatable, Versioned
 from app.platform.errors import BusinessError, InvalidInput
 from app.platform.query import Page, QuerySpec
@@ -195,13 +196,7 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
         self._reason("update")
         entity = await self.repo.get(id, for_update=True)
         if isinstance(entity, Versioned):
-            if version is None:
-                raise InvalidInput("entity.version_required", "send the version you edited")
-            if entity.version != version:
-                raise BusinessError(
-                    "entity.stale", "this record was changed by someone else; reload it",
-                    {"current_version": entity.version, "sent_version": version},
-                )
+            check_version(entity, version)
         # exclude_unset: a field sent as null is cleared, an absent field is untouched.
         changes = data.model_dump(exclude_unset=True)
         await self.before_update(entity, changes)

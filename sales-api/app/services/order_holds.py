@@ -19,19 +19,34 @@ from sqlalchemy import func, select
 from app.domain.order_rules import can_cancel, hold_exits
 from app.domain.row_matching import identifiers, line_identifiers
 from app.domain.shadow import TEST_RUN_REFUSAL
-from app.domain.status import FULFILLMENT, INVOICE, OUTBOUND_FILE, Fulfillment as F, Invoice as Inv, OutboundFile
+from app.domain.status import FULFILLMENT, INVOICE, OUTBOUND_FILE, OutboundFile
+from app.domain.status import Fulfillment as F
+from app.domain.status import Invoice as Inv
 from app.models.config import Item
 from app.models.documents import Document, DocumentLink
 from app.models.invoices import OrderReturn
 from app.models.orders import Order, OrderLine
 from app.models.shipments import Shipment, ShipmentRow
 from app.platform.authorization import requires
+from app.platform.commands import (
+    ANY_VERSION,
+    VersionArg,
+    check_version,
+    load_for_command,
+)
 from app.platform.errors import BusinessError
 from app.services import oplog
 from app.services.invoicing import rows_to_review
 from app.services.problems import (
-    CANCELLED_AFTER_940, EDI_940_FAILED, EDI_940_REJECTED, EDI_940_TIMEOUT, EDI_945_LINE_UNMATCHED, INVOICE_HOLD, ORDER_ARCHIVED,
-    ORDER_REVIEW, SECOND_945,
+    CANCELLED_AFTER_940,
+    EDI_940_FAILED,
+    EDI_940_REJECTED,
+    EDI_940_TIMEOUT,
+    EDI_945_LINE_UNMATCHED,
+    INVOICE_HOLD,
+    ORDER_ARCHIVED,
+    ORDER_REVIEW,
+    SECOND_945,
 )
 from app.services.shipments import CLOSE, FULFILL, OUTBOX
 
@@ -45,15 +60,11 @@ class OrderActions:
     def __init__(self, uow, tasks) -> None:
         self.uow, self.s, self.tasks = uow, uow.session, tasks
 
-    async def _order(self, id: int, version: int | None = None) -> Order:
-        o = await self.s.get(Order, id, with_for_update=True)
-        if o is None:
-            raise BusinessError("entity.not_found", f"order {id} not found", status_code=404)
+    async def _order(self, id: int, version: VersionArg) -> Order:
+        o = await load_for_command(self.s, Order, id, version=ANY_VERSION, what="this order")
         if o.shadow:
             raise BusinessError("order.shadow", TEST_RUN_REFUSAL)
-        if version is not None and o.version != version:
-            raise BusinessError("entity.stale", "this order was changed by someone else; reload it",
-                                {"current_version": o.version, "sent_version": version})
+        check_version(o, version, "this order")
         return o
 
     async def _resolve(self, order: Order) -> None:
@@ -75,7 +86,7 @@ class OrderActions:
         await oplog.write(self.s, "INFO", STEP, f"order {o.label} cancelled: {reason}", order_id=o.id)
 
     @requires(OPERATE)
-    async def cancel(self, id: int, reason: str, version: int | None = None) -> Order:
+    async def cancel(self, id: int, reason: str, version: VersionArg = ANY_VERSION) -> Order:
         o = await self._order(id, version)
         if not can_cancel(o.fulfillment_status):
             raise BusinessError("order.not_cancellable", f"an order in {o.fulfillment_status} cannot be cancelled here"
@@ -91,7 +102,7 @@ class OrderActions:
                                           .order_by(Shipment.id).with_for_update())).scalars())
 
     @requires(OPERATE)
-    async def release_hold(self, id: int, to: str, reason: str, version: int | None = None) -> Order:
+    async def release_hold(self, id: int, to: str, reason: str, version: VersionArg = ANY_VERSION) -> Order:
         o = await self._order(id, version)
         applied = await self._applied(o.id)
         exits = hold_exits(o.fulfillment_status, o.fulfillment_status_before_hold,
@@ -119,7 +130,7 @@ class OrderActions:
         sh = await self.s.get(Shipment, shipment_id, with_for_update=True)
         if row is None or sh is None or row.shipment_id != sh.id or sh.order_id is None:
             raise BusinessError("entity.not_found", "no such 945 row", status_code=404)
-        o = await self._order(sh.order_id)
+        o = await self._order(sh.order_id, ANY_VERSION)  # the row's decision acts on the order as it is
         if not row.needs_review:
             raise BusinessError("shipment.row_resolved", "this 945 row needs no decision")
         why = (reason or "").strip()

@@ -285,6 +285,7 @@ async def test_an_810_is_put_through_the_guard_and_a_resend_keeps_one_document(p
     [inv] = await p6.q("SELECT send_count FROM sales_invoices")
     assert inv["send_count"] == 2 and await inv_status(p6, o.id) == "Sent"
     assert await p6.q("SELECT count(*) n FROM sales_documents WHERE kind = '810_JSON'") == [{"n": 1}]
+    assert await p6.q("SELECT file_status FROM sales_documents WHERE kind = '810_JSON'") == [{"file_status": "Sent"}]
 
 
 async def test_a_line_not_shipped_stays_on_the_810_with_zero_as_zoho_sends_it(p6):
@@ -347,6 +348,8 @@ async def test_with_the_email_switch_off_the_invoice_is_not_sent_and_the_would_h
     await send(p6, out.id)
     assert (await p6.worker.run_once()).suppressed == 1 and p6.mail.sent == []
     assert await inv_status(p6, o.id) == "Failed" and await tasks(p6, "invoice_failed") == []
+    # the file says it never left (review 2026-11-10), as a refused 940 does
+    assert await p6.q("SELECT file_status FROM sales_documents WHERE kind = 'INVOICE_EMAIL'") == [{"file_status": "Suppressed"}]
     r = p6.refused[-1].context
     assert r["recipients"] == ["ap@sobeys.example", "ar@crm.example"] and r["subject"].startswith("Order Documents |")
     assert r["body_sha256"] and "body" not in r

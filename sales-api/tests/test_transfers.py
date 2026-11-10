@@ -15,6 +15,7 @@ from app.models.config import Item, Warehouse
 from app.models.documents import Document
 from app.models.records import OutboxRecord
 from app.platform.actors import SYSTEM_ACTOR
+from app.platform.commands import ANY_VERSION
 from app.platform.errors import BusinessError
 from app.platform.outbox import Outbox, OutboxWorker
 from app.schemas.transfers import TransferIn
@@ -79,7 +80,7 @@ async def tasks(t, type_):
 
 async def sent_transfer(t, lines=(("CF0092", 8400), ("CF0093", 7200))):
     x = await create(t, lines)
-    await act(t, "ready", x.id, None)
+    await act(t, "ready", x.id, ANY_VERSION)
     await t.tr.queue_ready()
     await t.worker.run_once()
     return x
@@ -107,7 +108,7 @@ async def test_ac64_draft_then_ready_then_the_943(p7):
     x = await create(p7)
     assert x.transfer_number == "00104" and x.status == "Draft"
     assert (await p7.tr.queue_ready()).generated == 0 and p7.store.files == {}
-    await act(p7, "ready", x.id, None)
+    await act(p7, "ready", x.id, ANY_VERSION)
     r = await p7.tr.queue_ready()
     assert r.generated == 1 and await status(p7, x.id) == "943 Generated"
     assert (await p7.worker.run_once()).done == 1 and await status(p7, x.id) == "Waiting for 997"
@@ -122,14 +123,14 @@ async def test_a_943_that_fails_its_checks_is_failed_with_a_task_and_resent_with
         (await u.session.execute(sa.select(Item).where(Item.item_code == "CF0093"))).scalar_one().gross_weight_lb_per_ea = None
         await u.commit()
     x = await create(p7)
-    await act(p7, "ready", x.id, None)
+    await act(p7, "ready", x.id, ANY_VERSION)
     assert (await p7.tr.queue_ready()).invalid == 1 and await status(p7, x.id) == "Failed"
     [t] = await tasks(p7, "transfer_failed")
     assert "CF0093 has no gross weight" in t
     async with p7.factory(SYSTEM_ACTOR) as u:
         (await u.session.execute(sa.select(Item).where(Item.item_code == "CF0093"))).scalar_one().gross_weight_lb_per_ea = Decimal("2.2")
         await u.commit()
-    await act(p7, "resend", x.id, None)
+    await act(p7, "resend", x.id, ANY_VERSION)
     assert await status(p7, x.id) == "943 Generated"
     ctls = [r["st02"] for r in await p7.q("SELECT st02 FROM sales_documents WHERE kind = '943_EDI' ORDER BY id")]
     assert len(set(ctls)) == 2
@@ -219,20 +220,20 @@ async def test_a_944_for_no_transfer_is_stored_with_a_task(p7):
 
 async def test_ac69_cancel_before_the_943_is_sent_or_after_a_rejection_only(p7):
     draft = await create(p7)
-    assert (await act(p7, "cancel", draft.id, None, "not needed")).status == "Cancelled"
+    assert (await act(p7, "cancel", draft.id, ANY_VERSION, "not needed")).status == "Cancelled"
     queued = await create(p7)
-    await act(p7, "ready", queued.id, None)
+    await act(p7, "ready", queued.id, ANY_VERSION)
     await p7.tr.queue_ready()                                   # 943 Generated, row queued, not put
-    assert (await act(p7, "cancel", queued.id, None, "wrong lines")).status == "Cancelled"
+    assert (await act(p7, "cancel", queued.id, ANY_VERSION, "wrong lines")).status == "Cancelled"
     assert (await p7.worker.run_once()).done == 0 and p7.store.files == {}
     sent = await sent_transfer(p7)
     with pytest.raises(BusinessError) as e:
-        await act(p7, "cancel", sent.id, None, "too late")
+        await act(p7, "cancel", sent.id, ANY_VERSION, "too late")
     assert e.value.code == "transfer.not_cancellable"
     [d] = await p7.q("SELECT st02 FROM sales_documents WHERE kind = '943_EDI' AND file_status = 'Sent'")
     await store(p7, "997_EDI", ack997(d["st02"], accept=False, reasons="4"), "997-r.edi")
     await p7.edi.out.process_997s()
-    assert (await act(p7, "cancel", sent.id, None, "rejected; not resending")).status == "Cancelled"
+    assert (await act(p7, "cancel", sent.id, ANY_VERSION, "rejected; not resending")).status == "Cancelled"
 
 
 async def test_changes_need_the_transfer_permission(p7):
@@ -249,7 +250,7 @@ async def test_changes_need_the_transfer_permission(p7):
 
 async def test_shadow_no_943_is_sent_and_a_944_is_compared_never_applied(p7, tmp_path):
     x = await create(p7)
-    await act(p7, "ready", x.id, None)
+    await act(p7, "ready", x.id, ANY_VERSION)
     await p7.tr.queue_ready()                                  # queued before the switch-on
     async with p7.factory(SYSTEM_ACTOR) as u:
         await SETTINGS.set(u.session, SHADOW_MODE, True)
@@ -257,7 +258,7 @@ async def test_shadow_no_943_is_sent_and_a_944_is_compared_never_applied(p7, tmp
     assert (await p7.worker.run_once()).cancelled == 1 and p7.store.calls == []  # zero puts, writes ON and LIVE
     assert await status(p7, x.id) == "Failed" and await tasks(p7, "transfer_failed") == []
     y = await create(p7, (("CF0092", 600),))
-    await act(p7, "ready", y.id, None)
+    await act(p7, "ready", y.id, ANY_VERSION)
     assert (await p7.tr.queue_ready()).skipped == "shadow run: no 943 is generated"
     from app.services.shadow import ShadowRun
     (tmp_path / "z943.edi").write_bytes(ZOHO_943)             # Zoho's 943 for 00104

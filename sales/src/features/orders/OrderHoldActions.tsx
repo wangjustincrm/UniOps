@@ -11,6 +11,7 @@ const errorMessages: Record<string, string> = {
   'order.not_cancellable': 'This order cannot be cancelled now: reload it.',
   'order.sending': 'Its 940 is being sent right now: try again in a moment.',
   'order.hold_exit': 'That choice is no longer open for this order: reload it.',
+  'entity.stale': 'Someone else changed this order meanwhile: it is reloaded, check it and decide again.',
   'auth.forbidden': 'You do not have permission to do this.',
 }
 
@@ -40,11 +41,11 @@ export function OrderHoldActions({ o }: { o: OrderDetail }) {
   const [sheet, setSheet] = useState(false)
   const [choice, setChoice] = useState<string | null>(null)
   const name = o.source_reference ?? o.order_number
-  const cancel = useMutation({ mutationFn: (why: string) => cancelOrder(o.id, why), onSuccess: async () => {
+  const cancel = useMutation({ mutationFn: (why: string) => cancelOrder(o.id, o.version, why), onSuccess: async () => {
     notices.notify({ key: `cancel:${o.id}`, tone: 'success', text: `Order ${name} cancelled.` })
     await refresh()
   } })
-  const release = useMutation({ mutationFn: ({ to, why }: { to: string; why: string }) => releaseHold(o.id, to, why), onSuccess: async (_, v) => {
+  const release = useMutation({ mutationFn: ({ to, why }: { to: string; why: string }) => releaseHold(o.id, o.version, to, why), onSuccess: async (_, v) => {
     notices.notify({ key: `release:${o.id}`, tone: 'success', text: `Order ${name}: hold released to ${v.to}.` })
     setSheet(false)
     await refresh()

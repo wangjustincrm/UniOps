@@ -75,14 +75,14 @@ async def shipments_without_order(u: UoW, document_id: int | None = None):
 async def create_order_from_945(u: UoW, shipment_id: int, body: OrderFrom945In):
     o = await OrderFrom945(u).create(shipment_id, body.partner_code)
     await u.commit()
-    return OrderService(u).to_read(o)
+    return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
 
 
 @router.post("/shipments/{shipment_id}/rows/{row_id}/resolve", response_model=OrderRead)
 async def resolve_945_row(u: UoW, rt: Rt, shipment_id: int, row_id: int, body: ResolveRowIn):
     o = await OrderActions(u, rt.tasks).resolve_row(shipment_id, row_id, body.order_line_id, body.reason)
     await u.commit()
-    return OrderService(u).to_read(o)
+    return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
 
 
 @router.get("/meta")
@@ -99,28 +99,28 @@ async def manual_preview(u: UoW, lines: list[ManualLineIn]):
 async def manual_create(u: UoW, data: ManualOrderIn):
     o = await ManualOrderService(u).create(data)
     await u.commit()
-    return OrderService(u).to_read(o)
+    return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
 
 
 @router.put("/manual/{id}", response_model=OrderRead)
 async def manual_update(u: UoW, id: int, data: ManualOrderIn, version: Version = None):
     o = await ManualOrderService(u).update(id, data, version)
     await u.commit()
-    return OrderService(u).to_read(o)
+    return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
 
 
 @router.post("/manual/{id}/submit", response_model=OrderRead)
 async def manual_submit(u: UoW, id: int, version: Version = None):
     o = await ManualOrderService(u).submit(id, version)
     await u.commit()
-    return OrderService(u).to_read(o)
+    return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
 
 
 @router.post("/manual/{id}/cancel", response_model=OrderRead)
 async def manual_cancel(u: UoW, id: int, version: Version = None):
     o = await ManualOrderService(u).cancel(id, version)
     await u.commit()
-    return OrderService(u).to_read(o)
+    return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
 
 
 @router.get("/{id}", response_model=OrderDetail)
@@ -146,11 +146,11 @@ async def resolve_review(u: UoW, rt: Rt, id: int):
 async def cancel_order(u: UoW, rt: Rt, id: int, body: CancelOrderIn, version: Version = None):
     o = await OrderActions(u, rt.tasks).cancel(id, body.reason, version)
     await u.commit()
-    return OrderService(u).to_read(o)
+    return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
 
 
 @router.post("/{id}/release-hold", response_model=OrderRead)
 async def release_hold(u: UoW, rt: Rt, id: int, body: ReleaseHoldIn, version: Version = None):
     o = await OrderActions(u, rt.tasks).release_hold(id, body.to, body.reason, version)
     await u.commit()
-    return OrderService(u).to_read(o)
+    return await OrderService(u).get(o.id)  # read again: a flush expires the row's *_sql facts
