@@ -30,6 +30,7 @@ from sqlalchemy import select
 
 from app.api.v1.assistant_preflight import preflight as run_preflight
 from app.api.v1.assistant_query import assistant_schema
+from app.core import doc_numbers
 from app.core.access_scope import build_scope, is_pr_visible
 from app.core.delegation import local_today
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
@@ -49,6 +50,7 @@ from app.services import caller_view
 from app.services import marked_view
 from app.services import page_document
 from app.services import document_chain
+from app.services import code_answers, question_routes
 
 log = logging.getLogger(__name__)
 
@@ -286,6 +288,52 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
         # One question of several in the message (ISS-0037, ISS-0069).
         context["question_part"] = part
 
+    # ── Decided by code, before the planner is asked (round 2, 2026-11-10) ──
+    # The planner was trusted to call recall_conversation and split_question;
+    # on production it split no message Cassie tried and took a follow-up for
+    # a question about the conversation. See services/question_routes.
+    if part is None:
+        position = question_routes.recall_position(body.message)
+        if position is not None:
+            # Only explicit wording reaches the conversation (ISS-0067).
+            return _answer_recall(body, {"position": position}, exchanges)
+        parts = question_routes.split(body.message)
+        if len(parts) >= 2:
+            # ISS-0037, ISS-0069, ISS-0019, ISS-0050. The planner's own
+            # split_question stays for what these rules do not catch.
+            return await _answer_parts(body, db, user, token, {"parts": parts}, None)
+    # One named document, answered from its data (ISS-0022, ISS-0034).
+    if (written := await code_answers.answer(db, scope, body.message, context)) is not None:
+        return written
+    # A rule question the model kept answering differently, or against the
+    # rule: the rule card's own answer, written by code (rule_registry.say).
+    pinned = rule_registry.pinned_for(body.message)
+    if pinned and not doc_numbers.find_all(body.message):
+        if (said := await _answer_pinned(db, body.message, pinned)) is not None:
+            return said
+    out = await _planned(body, db, user, token, part, schema, context, scope, actor,
+                         history, me, exchanges)
+    if pinned and isinstance(out.get("answer"), str):
+        # A document is named as well: its own answer, under the rule's.
+        lead, _ = await rule_registry.say(pinned, code_answers.lang_of(body.message), db)
+        if lead:
+            out = {**out, "answer": lead + "\n\n" + out["answer"]}
+    return out
+
+
+async def _answer_pinned(db, message: str, rule_ids: list[str]) -> dict | None:
+    lang = code_answers.lang_of(message)
+    text, unavailable = await rule_registry.say(rule_ids, lang, db)
+    if not text:
+        return None
+    return code_answers.reply(text, lang, pinned_rules=[
+        r for r in rule_ids if r not in unavailable])
+
+
+async def _planned(body: ChatRequest, db, user: dict, token: str, part: dict | None,
+                   schema: list[dict], context: dict, scope: dict, actor, history: list,
+                   me: dict | None, exchanges: list[ChatTurn]) -> dict:
+    """The planner's route, and the answer along it."""
     # "Which questions have I marked?" is recognised here, not left to the
     # planner, which answered it with the task inbox three times (ISS-0102).
     # The planner still runs first so a message that also asks something else
@@ -299,6 +347,23 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
             return await _answer_marked(db, body, actor)
         raise HTTPException(status_code=503, detail=str(exc))
     await assistant_llm.record_usage(db, actor, "plan", planned.get("usage") or {})
+
+    if planned["kind"] == "recall":
+        # The conversation is reached only through the code's own reading of
+        # the question (above); the planner is no longer offered the tool. A
+        # follow-up about the previous answer's data was answered "your first
+        # question was…" (ISS-0067). Ask once more, as a question about the data.
+        try:
+            planned = await assistant_llm.plan(
+                schema, body.message, context, history=history, retry_error=(
+                    "recall_conversation is not available: this message is not a "
+                    "question about the conversation itself. It asks about the "
+                    "data or the earlier answer — plan it as such."))
+        except assistant_llm.LlmUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+        if planned["kind"] == "recall":
+            planned = {"kind": "cannot", "reason": "too_ambiguous",
+                       "explanation": "I could not tell what this asks about."}
 
     if (earlier := _conditions_of_the_last_answer(body.message, exchanges)) is not None:
         return earlier
@@ -324,9 +389,6 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
 
     if planned["kind"] == "split":
         return await _answer_parts(body, db, user, token, planned, part)
-
-    if planned["kind"] == "recall":
-        return _answer_recall(body, planned, exchanges)
 
     if planned["kind"] == "me":
         return _answer_who_am_i(me)
@@ -428,15 +490,26 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
         }
 
     _say_the_period(result, query)
+    # A document the question names that this query did not return, though it
+    # exists: a payments query for an unpaid PA, a PA number looked up among
+    # PRs. Its empty result read as "未找到付款申请" (ISS-0056, ISS-0069).
+    elsewhere = await code_answers.found_elsewhere(db, scope, body.message, query, result)
+    if elsewhere:
+        result = {**result, "documents_found_elsewhere": elsewhere}
     try:
         told = await assistant_llm.narrate(body.message, query, result)
     except assistant_llm.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     await assistant_llm.record_usage(db, actor, "narrate", told.get("usage") or {})
 
+    text = await _with_listing_notes(
+        _without_internal_notes(told["text"], result), result, body.message)
+    if elsewhere:
+        # Said by code, whatever the narrator made of it.
+        text = text.rstrip() + "\n\n" + code_answers.found_elsewhere_text(
+            elsewhere, code_answers.lang_of(body.message))
     return {
-        "answer": await _with_listing_notes(
-            _without_internal_notes(told["text"], result), result, body.message),
+        "answer": text,
         "kind": "answer",
         # The receipt: what ran, over how many rows, and whether the cap bit.
         "query": query,
@@ -1497,6 +1570,9 @@ async def _answer_parts(body: ChatRequest, db, user: dict, token: str, planned: 
 
     answered, rest = parts[:assistant_llm.MAX_PARTS], parts[assistant_llm.MAX_PARTS:]
     replies = []
+    said: dict[str, int] = {}     # rule written by code -> the part that said it
+    first_out, repeats = None, 0
+    seen: list[str | None] = []
     for i, question in enumerate(answered, start=1):
         one = ChatRequest(message=question[:2000], context=body.context, history=body.history)
         try:
@@ -1507,8 +1583,33 @@ async def _answer_parts(body: ChatRequest, db, user: dict, token: str, planned: 
             out = {"_fixed_text": True, "kind": "cannot_answer", "reason": "unavailable",
                    "answer": f"This part could not be answered just now ({exc.detail}).",
                    "query": None, "sources": None}
+        # A part answered exactly as an earlier one — "我是谁？我有哪些角色？",
+        # "我能连续催审批人两次吗？PA 能催办吗？" (one rule answers both) — points
+        # back to it instead of repeating it.
+        pinned = out.get("pinned_rules") or []
+        # Only a reply the code wrote is compared: two model narrations can
+        # read alike and still answer different questions.
+        written = out.get("_fixed_text") or pinned or out.get("kind") in ("me", "recall")
+        raw = out.get("answer") if written and isinstance(out.get("answer"), str) else None
+        earlier = next((j for j, prev in enumerate(seen, start=1) if raw and prev == raw), None)
+        if earlier is None and pinned and all(r in said for r in pinned):
+            earlier = said[pinned[0]]
+        seen.append(raw)
+        for r in pinned:
+            said.setdefault(r, i)
+        if i == 1:
+            first_out = out
+        if earlier is not None:
+            repeats += 1
+            out = code_answers.reply(
+                f"见第 {earlier} 部分的回答。" if code_answers.lang_of(question) == "zh"
+                else f"See the answer to part {earlier}.",
+                code_answers.lang_of(question), pinned_rules=pinned)
         replies.append({"question": question, **await _finish(out, question)})
 
+    if not rest and repeats == len(answered) - 1 and first_out is not None:
+        # Every part had the first part's answer: the message asked one thing.
+        return first_out
     sections = [f"**{i}. {r['question']}**\n\n{r.get('answer') or ''}"
                 for i, r in enumerate(replies, start=1)]
     if rest:

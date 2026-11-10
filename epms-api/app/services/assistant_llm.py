@@ -488,6 +488,11 @@ results are the only facts you have.
   and can be asked on its own. Never say it does not exist, is not available,
   or that you have no data or no access for it: it simply was not queried
   (ISS-0037, ISS-0069).
+- `documents_found_elsewhere` are documents the question names that this
+  query did not return, though they exist — a payment application with no
+  payment yet, a document of another kind. Never say they cannot be found or
+  do not exist; a sentence stating each one's status is added below your
+  reply, so do not repeat it (ISS-0056, ISS-0069).
 """
 
 _QUERY_TOOL = {
@@ -1099,10 +1104,10 @@ _SESSION_KEYS = ("conversation", "caller", "question_part")
 # Appended to _PLAN_SYSTEM: rules about the conversation itself.
 _PLAN_SESSION_RULES = """\
 - A question about the CONVERSATION itself — what my first / previous / third
-  question was, what you answered then — is recall_conversation. Never answer
-  it from the turns you were shown: a long conversation is cut to its last few
-  exchanges, and the earliest turn you can see is not its first question. One
-  such answer named the 18th question of 20 as the first.
+  question was — is answered before you are asked, from the whole
+  conversation. Everything that reaches you is about the data: a follow-up
+  such as "上面这些是按什么日期算的？" or "这里的'上周'是哪几天？" asks about the
+  previous answer's data or wording — plan it as that, from the turns shown.
 - A reference to something said EARLIER — "刚才那张单呢？", "that one", "the
   previous document", "上一张" — needs an earlier turn that names it. When the
   conversation note says nothing came before this message, and the page being
@@ -1309,7 +1314,10 @@ _SESSION_TOOL_KINDS = {
 def _session_tools(context: dict | None) -> list[dict]:
     """The planner tools this section adds. A part of a split message is
     planned on its own and is never split again."""
-    tools = [_TRACE_TOOL, _RECALL_TOOL, _WHO_AM_I_TOOL]
+    # recall_conversation is not offered: whether a question is about the
+    # conversation is decided in code (question_routes.recall_position) — the
+    # planner took a follow-up about an answer's data for one (ISS-0067).
+    tools = [_TRACE_TOOL, _WHO_AM_I_TOOL]
     if not (context or {}).get("question_part"):
         tools.append(_SPLIT_TOOL)
     return tools
@@ -1538,6 +1546,9 @@ async def narrate(message: str, query: dict, result: dict) -> dict:
         payload["value_labels"] = result["value_labels"]
     if "value_notes" in result:
         payload["value_notes"] = result["value_notes"]
+    if result.get("documents_found_elsewhere"):
+        # A sentence naming them is added under the reply in code.
+        payload["documents_found_elsewhere"] = result["documents_found_elsewhere"]
     payload.update(reply_language.instructions(message))
     try:
         resp = await _client().messages.create(
