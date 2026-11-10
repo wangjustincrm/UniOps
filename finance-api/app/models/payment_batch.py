@@ -17,6 +17,8 @@ from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
 DRAFT = "draft"
 EXECUTED = "executed"
 CANCELLED = "cancelled"
+# Executed, then undone because the money never went out (payment_reverse.py).
+REVERSED = "reversed"
 
 
 class PaymentBatch(UUIDPrimaryKey, TimestampMixin, Base):
@@ -48,6 +50,6 @@ class PaymentBatchLine(UUIDPrimaryKey, TimestampMixin, Base):
     # The invoices of a PA this line pays; NULL = the whole document.
     # none_as_null: without it None is stored as JSON null, not SQL NULL.
     invoice_ids: Mapped[list | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
-    status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending")  # pending|paid|failed
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending")  # pending|paid|failed|reversed
     payment_record_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)

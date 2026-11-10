@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin import service
-from app.admin.registry import REGISTRY
+from app.admin.registry import REGISTRY, DeleteBlocked
 from app.core.deps import get_token_payload
 from app.db.base import get_db
 
@@ -97,6 +97,9 @@ async def delete_record(entity: str, record_id: uuid.UUID, db: SessionDep, user:
         summary = await service.delete_record(db, entity, record_id, actor_id=actor_id, actor_email=email)
         await db.commit()
         return {"preview": False, "cascade": summary}
+    except DeleteBlocked as e:
+        await db.rollback()
+        raise HTTPException(409, str(e))
     except ValueError as e:
         await db.rollback()
         raise HTTPException(404, str(e))
@@ -109,6 +112,9 @@ async def bulk_delete(entity: str, db: SessionDep, user: AdminUser, body: BulkDe
         summary = await service.bulk_delete(db, entity, body.ids, actor_id=actor_id, actor_email=email)
         await db.commit()
         return {"deleted": len(body.ids), "cascade": summary}
+    except DeleteBlocked as e:
+        await db.rollback()
+        raise HTTPException(409, str(e))
     except ValueError as e:
         await db.rollback()
         raise HTTPException(400, str(e))

@@ -17,6 +17,7 @@ from app.db.base import get_db
 from app.crud import payment as payment_crud
 from app.crud import payment_batch as batch_crud
 from app.crud import payment_execute
+from app.crud import payment_reverse
 from app.crud.payment_execute import PaymentPermissionError
 from app.crud.remittance import applied_credit_notes_by_payment
 from app.models.bank import BankAccount
@@ -324,6 +325,10 @@ class ExecuteBatchRequest(BaseModel):
     credit_ids_by_doc: dict[uuid.UUID, list[uuid.UUID]] | None = None
 
 
+class ReverseBatchRequest(BaseModel):
+    reason: str
+
+
 @router.get("/can-pay")
 async def can_pay(user: CurrentUser, db: AsyncSession = Depends(get_db)):
     """Whether the current user may execute payments — primary (JWT) role in
@@ -484,6 +489,29 @@ async def execute_batch(batch_id: uuid.UUID, token: BearerToken, user: CurrentUs
         "failed": sum(1 for l in lines if l.status == "failed"),
         "lines": await _lines_out(db, lines),
     }
+
+
+@router.post("/batches/{batch_id}/reverse", response_model=BatchOut)
+async def reverse_batch(batch_id: uuid.UUID, body: ReverseBatchRequest, user: CurrentUser,
+                        db: AsyncSession = Depends(get_db)):
+    """Undo an executed batch whose money never went out (payment_reverse.py):
+    every paid line's payment is cancelled and its PA is payable again. All or
+    nothing — one line that cannot be reversed refuses the whole batch."""
+    batch = (await db.execute(
+        select(PaymentBatch).where(PaymentBatch.id == batch_id).with_for_update()
+    )).scalar_one_or_none()
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    try:
+        await payment_reverse.reverse_batch(db, batch, user, body.reason)
+        await db.commit()
+    except PaymentPermissionError as e:
+        await db.rollback()
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=str(e))
+    return batch
 
 
 # defined last so /due, /batches, /batches/{id} are matched before the catch-all
