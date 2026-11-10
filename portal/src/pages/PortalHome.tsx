@@ -101,6 +101,28 @@ function useOaTasks() {
   })
 }
 
+// OA rows that reach the inbox only through the EPMS feed carry no claim
+// status; INB-002 groups OA rows by status, so ask OA for it (ISS-0220).
+function useOaClaimStatuses(epmsItems: EpmsTask[] | undefined) {
+  const ids = useMemo(
+    () => [...new Set((epmsItems ?? [])
+      .filter((t) => oaPathFor(t.document_type))
+      .map((t) => t.document_id))].sort(),
+    [epmsItems],
+  )
+  return useQuery<Record<string, string>>({
+    queryKey: ['portal-oa-claim-statuses', ids],
+    queryFn: async () => {
+      const rows = await oaApi.post<{ id: string; status: string }[]>(
+        '/api/v1/expenses/statuses', { ids })
+      return Object.fromEntries(rows.map((r) => [r.id, r.status]))
+    },
+    enabled: ids.length > 0,
+    staleTime: 60_000,
+    retry: 1,
+  })
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function buildSession(auth: ReturnType<typeof useAuthStore.getState>): string {
@@ -533,6 +555,7 @@ export default function PortalHome() {
   const oaHealth   = useHealthCheck(OA_API,   '/health',        'oa')
   const epmsTasks  = useEpmsTasks()
   const oaTasks    = useOaTasks()
+  const oaStatuses = useOaClaimStatuses(epmsTasks.data?.items)
 
   const epmsHref = session ? `${EPMS_URL}/dashboard#__session=${session}` : EPMS_URL
   const oaHref   = session ? `${OA_URL}/pa#__session=${session}`           : OA_URL
@@ -635,11 +658,18 @@ export default function PortalHome() {
         groupKey = t.document_type
         groupLabel = VMS_DOC_LABELS[t.document_type] ?? humanize(t.document_type)
       } else if (module === 'EXPENSE') {
-        // OA-owned, surfaced via approval-api with no claim status: bucket by
-        // engine task type under its full name (INB-002 wants claim status —
-        // the rows OA's own feed returns above are grouped that way).
-        groupKey = t.type
-        groupLabel = oaTaskLabel(t.type, t.document_type)
+        // OA-owned, surfaced via approval-api: INB-002 groups OA rows by claim
+        // status, read from OA (useOaClaimStatuses). A status outside the three
+        // INB-002 groups (e.g. returned → a Revise task), or one not loaded yet,
+        // falls back to the engine task type under its full name.
+        const st = oaStatuses.data?.[t.document_id]
+        if (st && ['submitted', 'in_review', 'approved'].includes(st)) {
+          groupKey = st
+          groupLabel = STATUS_LABEL[st]
+        } else {
+          groupKey = t.type
+          groupLabel = oaTaskLabel(t.type, t.document_type)
+        }
       } else {
         // EPMS-owned: bucket by engine task type.
         groupKey = t.type
@@ -672,7 +702,7 @@ export default function PortalHome() {
         return true
       })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-  }, [epmsTasks.data, oaTasks.data, session])
+  }, [epmsTasks.data, oaTasks.data, oaStatuses.data, session])
 
   const taskCount = allTasks.length
   const firstName = auth.user?.full_name?.split(' ')[0] ?? 'there'

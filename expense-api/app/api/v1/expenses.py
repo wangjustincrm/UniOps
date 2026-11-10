@@ -596,6 +596,37 @@ async def my_actions(db: SessionDep, user: CurrentUserDep):
     )
 
 
+
+class ClaimStatusQuery(BaseModel):
+    ids: list[uuid.UUID]
+
+
+class ClaimStatusOut(BaseModel):
+    id: uuid.UUID
+    status: str
+
+
+@router.post("/statuses", response_model=list[ClaimStatusOut])
+async def claim_statuses(body: ClaimStatusQuery, db: SessionDep, user: CurrentUserDep):
+    """Current status of the given claims, for the Portal Task Inbox.
+
+    PORTAL.md INB-002 groups OA rows by claim status. Rows that reach the
+    Portal only through the shared task feed (e.g. a System Admin's, who is not
+    an approver and so gets nothing from my-actions) carry no status; Portal
+    asks here. Read gate is the claim's own (_can_view_claim): ids the caller
+    may not read are simply left out. At most 200 ids (the inbox page size)."""
+    from sqlalchemy import select
+    from app.models.expense import ExpenseClaim as EC
+
+    ids = list(dict.fromkeys(body.ids))[:200]
+    if not ids:
+        return []
+    user_id = uuid.UUID(user["sub"])
+    role = user.get("role", "")
+    claims = (await db.execute(select(EC).where(EC.id.in_(ids)))).scalars().all()
+    return [ClaimStatusOut(id=c.id, status=c.status) for c in claims
+            if await _can_view_claim(db, c, user_id, role)]
+
 async def _require_trv_application(db, tra_id: uuid.UUID, claimant_id: uuid.UUID):
     """The approved TRA a TRV rests on, with the claimant on its roster. A TRV
     pays its claimant, so being the TRA's applicant is not enough."""
