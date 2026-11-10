@@ -917,9 +917,13 @@ class TestWhichTypesAskHowBadlySomebodyWasHurt:
         types = {t["code"]: t for t in (await client.get("/api/v1/incidents/types")).json()}
 
         assert types["fatality"]["asks_injury_class"] is False
+        # ★ Round 12, Q4: near misses are not asked either — "if a worker is
+        # injured it is no longer a near miss".
+        assert types["near_miss"]["asks_injury_class"] is False
+        assert types["near_miss_food_safety"]["asks_injury_class"] is False
 
         for code in ("report_only", "first_aid", "medical_aid", "lost_time",
-                     "near_miss", "property_damage", "occupational_illness",
+                     "property_damage", "occupational_illness",
                      "environmental", "security", "drug_alcohol", "unconscious"):
             assert types[code]["asks_injury_class"] is True, code
 
@@ -1132,12 +1136,13 @@ class TestTheInjuryPickerOpensOnTheRightAnswer:
         assert types["fatality"]["default_injury_class"] is None
 
     async def test_the_types_that_ask_without_a_default_still_ask(self, hse_manager):
-        """A near miss or a damaged machine usually hurt nobody, but either can
-        turn out to have — so the question is asked with nothing pre-chosen."""
+        """A damaged machine usually hurt nobody, but can turn out to have — so
+        the question is asked with nothing pre-chosen. (A near miss is no longer
+        asked: round 12, Q4.)"""
         _, client = hse_manager
         types = {t["code"]: t for t in
                  (await client.get("/api/v1/incidents/types")).json()}
-        for code in ("near_miss", "property_damage", "environmental"):
+        for code in ("property_damage", "environmental"):
             assert types[code]["asks_injury_class"] is True
             assert types[code]["default_injury_class"] is None
 

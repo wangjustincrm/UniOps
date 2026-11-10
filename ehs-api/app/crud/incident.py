@@ -121,7 +121,8 @@ async def create(
         # ★ Three outcomes, not two: a class the reporter chose, an explicit
         # "nobody was hurt", and no answer at all — which falls back to what the
         # type implies.
-        if payload.injury_class == "none":
+        if payload.injury_class == "none" or t.form_kind == "near_miss":
+            # Round 12, Q4: a near miss hurt nobody, whatever was sent.
             incident.injury_class = None
         else:
             incident.injury_class = payload.injury_class or t.injury_class
@@ -493,12 +494,19 @@ async def reclassify(db: AsyncSession, incident: Incident, code: str,
         chosen = new.default_injury_class
     # "none" is how the picker says no injury; it is stored as no class, as
     # `create` does — stored literally it counted as an injury.
-    incident.injury_class = None if chosen == "none" else chosen
+    incident.injury_class = None if chosen == "none" or new.form_kind == "near_miss" else chosen
     # A Ministry flag HSE set by classifying, with its reason, stays theirs.
     incident.mol_reportable = new.mol_reportable or bool(incident.mol_reportable_reason)
     if new.category_code:
         incident.category_id, incident.category_label = await _resolve_category(
             db, new.category_code)
+    elif old is not None and old.category_code and incident.category_id is not None:
+        # ★ Round 12, REP-01: the category the old type put there went with
+        # it — a food-safety near miss changed to a plain one stayed in Food
+        # Safety on every report. A category somebody chose by hand stays.
+        old_id, _ = await _resolve_category(db, old.category_code)
+        if incident.category_id == old_id:
+            incident.category_id, incident.category_label = None, None
     withdraw_review(incident)
     await db.flush()
 

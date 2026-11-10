@@ -57,6 +57,10 @@ class IncidentType:
     # first aider still remembers it. Occupational illness is in because it is
     # an injury for WSIB's purposes even though it carries no severity here.
     injury_detail: bool = False
+    # Round 12, INC-01: a type only some people may pick. The permission
+    # whose holders may; None means everyone who can report. HSE named
+    # "coord, supervisor, or HSE" — exactly the holders of the investigate key.
+    pick_permission: str | None = None
 
 
 TYPES: tuple[IncidentType, ...] = (
@@ -71,8 +75,18 @@ TYPES: tuple[IncidentType, ...] = (
     # machine normally reads — the question is offered because either can turn
     # out to have hurt somebody, and until now those types carried no severity at
     # all and were invisible to every injury figure.
+    #
+    # ★ Round 12, Q4 reverses that for near misses: "a near miss by definition
+    # is a process to identify things that could have injured someone but did
+    # not. If a worker is injured it is no longer a near miss, its an injury
+    # and will be documented as such." Not asked, and stored as no injury.
     IncidentType("near_miss", "Near Miss — no injury but has the potential to cause one",
-                 "near_miss", asks_injury_class=True),
+                 "near_miss"),
+    # Round 12, INC-01 and REP-01: a food-safety near miss, in the Food Safety
+    # category, offered only to coordinators, supervisors and HSE. Counted with
+    # the near misses wherever they are counted — they count the form.
+    IncidentType("near_miss_food_safety", "Near Miss — Food Safety", "near_miss",
+                 category_code="FOOD", pick_permission="ehs.incident.investigate"),
     # ★ These three *are* the severity, so the picker opens on the matching
     # answer rather than being hidden. Round 5 asked for it to be shown: the
     # dashboard counts this field, and a figure driven by something the form

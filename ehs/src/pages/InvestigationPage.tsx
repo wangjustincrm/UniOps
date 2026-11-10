@@ -340,10 +340,14 @@ export default function InvestigationPage() {
           <VocabularyMultiSelect vocabulary="hazard" value={hazards} onChange={setHazards}
                                  placeholder="Search hazards…" />
         </Field>
-        <Field label="PPE that could have prevented this">
-          <VocabularyMultiSelect vocabulary="ppe" value={ppe} onChange={setPpe}
-                                 placeholder="Search PPE…" />
-        </Field>
+        {/* Round 12, INC-05: not on a near miss — nobody was hurt. What an
+            older near miss recorded is kept and still saved. */}
+        {incident.data?.form_kind !== 'near_miss' && (
+          <Field label="PPE that could have prevented this">
+            <VocabularyMultiSelect vocabulary="ppe" value={ppe} onChange={setPpe}
+                                   placeholder="Search PPE…" />
+          </Field>
+        )}
         <Field
           label="What happened"
           help="Before, during and after — including equipment, materials and environmental conditions."

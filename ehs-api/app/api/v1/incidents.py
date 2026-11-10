@@ -181,6 +181,7 @@ async def _to_out(db, incident, user: dict) -> IncidentOut:
 
 @router.post("", response_model=IncidentOut, status_code=status.HTTP_201_CREATED)
 async def create_incident(payload: IncidentCreate, db: SessionDep, user: CanReportIncident):
+    await _may_pick_type(db, user, payload.incident_type)
     incident = await crud.create(db, payload, reporter_id=_user_id(user))
     # ★ Not told yet: this is a draft. The notice goes on submit — see below.
     return await _to_out(db, incident, user)
@@ -309,14 +310,30 @@ class IncidentTypeOption(BaseModel):
     default_injury_class: str | None = None
 
 
+async def _may_pick_type(db, user: dict, code: str | None) -> None:
+    t = incident_type.BY_CODE.get(code) if code else None
+    if t and t.pick_permission and not await has_permission(
+            db, _user_id(user), user.get("role", ""), t.pick_permission):
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            f"{t.label} is chosen by a coordinator, supervisor or HSE")
+
+
 @router.get("/types", response_model=list[IncidentTypeOption])
-async def list_incident_types(form_kind: str | None = None):
-    """The incident types HSE's form offers, optionally for one form.
+async def list_incident_types(db: SessionDep, user: CanReportIncident,
+                              form_kind: str | None = None):
+    """The incident types HSE's form offers, optionally for one form — those
+    this person may pick.
 
     Served rather than hardcoded in the frontend: the list changed once already
     (three options became twelve on 31 August) and a second copy would drift.
     """
     types = incident_type.for_form(form_kind) if form_kind else list(incident_type.TYPES)
+    allowed = {}
+    for t in types:
+        if t.pick_permission and t.pick_permission not in allowed:
+            allowed[t.pick_permission] = await has_permission(
+                db, _user_id(user), user.get("role", ""), t.pick_permission)
+    types = [t for t in types if not t.pick_permission or allowed[t.pick_permission]]
     return [IncidentTypeOption(code=t.code, label=t.label, form_kind=t.form_kind,
                                asks_injury_class=t.asks_injury_class,
                                default_injury_class=t.default_injury_class,

@@ -188,6 +188,15 @@ export default function IncidentReportPage() {
       `/api/v1/incidents/types?form_kind=${form.kind}`),
     enabled: Boolean(form.kind),
   })
+  // ★ Round 12, INC-07: "when the type of incident is a near miss … under
+  // 'what kind of incident was this', automatically enter 'near miss'". Only
+  // while nothing is chosen, so a coordinator's Food Safety pick is kept.
+  useEffect(() => {
+    if (form.kind === 'near_miss' && !form.incidentType
+        && incidentTypes?.some((t) => t.code === 'near_miss')) {
+      setForm((f) => (f.incidentType ? f : { ...f, incidentType: 'near_miss', injuryClass: '' }))
+    }
+  }, [form.kind, form.incidentType, incidentTypes])
 
 
   // HSE's own wording for the lost-time test, shown beside the choice it
