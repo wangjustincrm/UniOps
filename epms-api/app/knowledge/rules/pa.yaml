@@ -28,19 +28,34 @@ rules:
     provenance: pinned
     test:
       - "tests/test_assistant_iss_round2.py::test_numbers_have_the_formats_the_guide_states"
-  - id: direct_pa_retired
+  # ISS-0065 point 8: this card used to say Direct PAs were discontinued.
+  # Only OA's PA-DIR is (OA.md §15); the Direct PA moved to EPMS (EPMS.md
+  # §3.22, v2.33) and production creates them.
+  - id: direct_pa
     asked_as:
       - what is a direct payment application
       - can I raise a direct PA
       - 直接付款申请怎么走
+      - 直接付款申请现在还能建吗
     answer: >
-      Direct Payment Applications (OA's PA-DIR, a payment with no purchase
-      order) have been discontinued and can no longer be created; the system
-      refuses a new one and says to raise the payment against a purchase order
-      instead. Ones that already exist can still be opened, approved and paid.
-    enforced_in: "expense-api app/api/v1/pa.py DIRECT_PA_RETIRED (create returns 410 Gone)"
-    provenance: pinned
+      Yes, in EPMS. An invoice with no purchase order and no agreement behind
+      it is paid by a Direct PA: on the invoice, Match → Direct PA (whoever may
+      match the invoice); then Payment Applications → Create Direct PA (for
+      holders of Create / Edit PAs) takes one or more such invoices of the
+      same vendor and currency, falling due within {window} days of each
+      other, and it cannot be submitted without the department, cost center,
+      budget account and a reason. It is approved on the "PA (Direct)"
+      workflow (Portal → Admin → Approval Workflows) and paid like any other
+      PA. OA's own Direct Payment Application (PA-DIR) is retired: OA refuses
+      a new one, and its old ones can still be opened, approved and paid.
+    provenance: derived
+    derive: pa_invoice_window
+    enforced_in: "epms-api app/api/v1/pa.py create_direct_pa (POST /pa/direct, epms.pa.write) -> app/crud/pa.py create_direct (one vendor, one currency, due window) and the submit gate; app/api/v1/invoices.py Match → Direct PA; approval-api pa_dir chain; expense-api app/api/v1/pa.py DIRECT_PA_RETIRED (OA create returns 410 Gone)"
     test:
+      - "tests/test_direct_pa.py::test_create_direct_pa_from_two_invoices"
+      - "tests/test_direct_pa.py::test_create_direct_pa_refusals"
+      - "tests/test_direct_pa.py::test_invoices_due_far_apart_need_separate_direct_pas"
+      - "tests/test_direct_pa.py::test_submit_gate_needs_every_dimension"
       - "expense-api/tests/test_direct_pa_retired.py::test_creating_a_direct_pa_is_gone"
       - "expense-api/tests/test_direct_pa_retired.py::test_an_existing_direct_pa_can_still_be_acted_on"
   - id: paid_pa_is_processed
@@ -296,3 +311,90 @@ rules:
       - "finance-api/tests/test_vendor_credit.py::test_post_manual_credit_requires_notes"
       - "finance-api/tests/test_vendor_credit.py::test_manual_credit_collides_with_an_uploaded_one_of_the_same_number"
       - "tests/test_rule_registry.py::test_a_manual_credit_needs_its_email_on_screen"
+
+# The conclusion a question must get, placed by code (app/services/rule_verdicts.py).
+verdicts:
+  # ISS-0249: one answer opened "可以" and then said invoices of different
+  # vendors cannot go on one PA.
+  - id: one_pa_one_vendor
+    rule: what_can_go_on_one_pa
+    asks:
+      - [不同供应商, 不同的供应商, 多个供应商, 几个供应商, 几家供应商, 多家供应商, 两个供应商,
+         两家供应商, 不同厂商, 不一样的供应商, different vendors, different vendor,
+         different suppliers, several vendors, multiple vendors, two vendors, more than one vendor]
+      - [付款申请, pa, payment application, 一起付, 一起支付]
+    says:
+      en: >
+        No. One payment application pays one vendor: all the POs on a PO-route
+        PA must be with the same vendor and in the same currency, and so must
+        the invoices on a Direct PA. Invoices from different vendors go on
+        separate payment applications.
+      zh: >
+        不能。一张付款申请只付一个供应商：PO 路线的付款申请上所有 PO 必须是同一供应商、
+        同一币种，Direct PA 上的发票也必须是同一供应商、同一币种。不同供应商的发票要分别建付款申请。
+    test:
+      - "tests/test_pa_multi_po.py::test_mixed_vendors_refused"
+      - "tests/test_pa_multi_po.py::test_mixed_currencies_refused"
+      - "tests/test_direct_pa.py::test_create_direct_pa_refusals"
+  # ISS-0040 point 2: "为什么这几张发票不能放在同一张 PA 里？" was answered,
+  # twice, only with "give me the invoice numbers". The common reasons come
+  # first, then the offer to look. (The receipt-evidence wording is left to
+  # what_can_go_on_one_pa and waits on the administrators.)
+  - id: why_invoices_cannot_share_a_pa
+    rule: what_can_go_on_one_pa
+    derive: pa_invoice_window
+    asks:
+      - [为什么, 为何, 怎么, 什么原因, 原因, why, what stops, reason]
+      - [发票, invoice, invoices]
+      - [同一张, 同一个, 一张, 一起, 放在一起, 放进, 放到, same, one, together]
+      - [付款申请, pa, payment application]
+    says:
+      en: >
+        The usual reasons invoices cannot go on one payment application:
+        (1) they belong to POs of different vendors or currencies;
+        (2) an invoice is not on one of the PA's POs;
+        (3) their due dates are more than {window} days apart (PO-route and
+        Direct PAs; agreement PAs have no such window);
+        (4) a PO has no three-way matched invoice and no authorised receipt
+        override;
+        (5) an invoice is already on another payment application that is not
+        cancelled or rejected — the form does not offer it and the server
+        refuses it.
+        Give me the invoice or PO numbers and I will check which of these
+        applies.
+      zh: >
+        发票不能放进同一张付款申请，常见原因有这几种：
+        ① 发票所属的 PO 供应商或币种不同；
+        ② 有发票不属于这张付款申请所选的 PO；
+        ③ 发票的到期日相差超过 {window} 天（PO 路线和 Direct PA 都有这个限制，协议付款申请没有）；
+        ④ 有 PO 还没有三单匹配的发票，也没有获授权的收货覆盖（override）；
+        ⑤ 发票已经在另一张未取消、未拒绝的付款申请上——表单不会列出它，服务器也会拒绝。
+        把发票号或 PO 号发给我，我可以帮你查具体是哪一条。
+    test:
+      - "tests/test_pa_multi_po.py::test_mixed_vendors_refused"
+      - "tests/test_pa_multi_po.py::test_invoice_from_an_unlisted_po_refused"
+      - "tests/test_pa_multi_po.py::test_receipt_gate_checks_every_po"
+      - "tests/test_rule_registry.py::test_pa_window_is_the_routes"
+      - "tests/test_rule_registry.py::test_one_invoice_one_pa_is_refused_by_the_server"
+  # ISS-0065 point 8: "直接付款申请…现在还能建吗？" was answered "can be
+  # created in draft" while the card said discontinued. The planner keeps the
+  # route (the approval chain comes from the process route); the conclusion
+  # is put in front of whatever it answers.
+  - id: direct_pa_can_be_created
+    rule: direct_pa
+    route: keep
+    asks:
+      - [直接付款, 直接支付申请, direct pa, direct payment, pa-dir, pa dir]
+      - [还能, 能建, 能不能, 可以建, 还可以, 能否, 可否, 是否可以, 是否还, 还有吗, 停用, 取消了吗,
+         can i, can we, can it, still, create, raise, retired, discontinued, available]
+    says:
+      en: >
+        Yes — in EPMS: Match → Direct PA on the invoice, then Payment
+        Applications → Create Direct PA. Only OA's old Direct Payment
+        Application (PA-DIR) is retired.
+      zh: >
+        可以，在 EPMS 里建：先在发票上点 Match → Direct PA，再到 Payment Applications →
+        Create Direct PA 建单。停用的只是 OA 里原来的直接付款申请（PA-DIR）。
+    test:
+      - "tests/test_direct_pa.py::test_create_direct_pa_from_two_invoices"
+      - "expense-api/tests/test_direct_pa_retired.py::test_creating_a_direct_pa_is_gone"

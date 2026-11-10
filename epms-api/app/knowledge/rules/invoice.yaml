@@ -336,3 +336,30 @@ rules:
       - "tests/test_procurement_batch1.py::test_pa_whose_invoice_was_deleted_cannot_be_submitted"
       - "tests/test_procurement_batch1.py::test_float_noise_in_a_resent_line_total_is_not_a_change"
       - "tests/test_procurement_batch1.py::test_form_recomputing_an_ocr_line_keeps_the_stored_total"
+
+# The conclusion a question must get, placed by code (app/services/rule_verdicts.py).
+verdicts:
+  # ISS-0249: "货还没收到，发票可以先匹配吗？" opened "不可以" twice, over a body
+  # that said it can.
+  - id: invoice_can_be_matched_before_receipt
+    rule: matching_compares_amounts_not_received_quantity
+    asks:
+      - [货还没收到, 还没收到货, 货没收到, 没收到货, 还没收货, 没有收货, 未收货, 收货前, 收货之前,
+         货还没到, 货没到, 还没到货, 没到货, 没有收到, 还没有收到, 收货单还没, 没有收货单,
+         before the goods, before receiving, before receipt, before it is received,
+         not received, nothing received, without a receipt, without a goods receipt,
+         no goods receipt, not yet received, not been received]
+      - [匹配, 三单匹配, match, matched, matching]
+    unless: [付款申请, 付款, payment application, pa, pay, 哪些, 哪几, 多少, 几张, 列出, 列一下, which, list, how many, show me]
+    says:
+      en: >
+        Yes. Matching compares amounts only — what the invoice bills against
+        each PO line's value — never received quantities, so an invoice can
+        be Matched before anything has been received. The receipt is checked
+        later, when a payment application is created.
+      zh: >
+        可以。匹配只比较金额（发票对每个 PO 行开的金额和该行金额比），不比较收货数量，
+        所以货还没收到，发票也可以匹配成 Matched；收货是在之后建付款申请（PA）时才检查。
+    test:
+      - "tests/test_assistant_iss_round2.py::test_invoice_matches_with_nothing_received"
+      - "tests/test_assistant_asst2_d.py::test_a_verdict_opens_the_reply_whatever_the_narrator_writes"

@@ -37,7 +37,7 @@ from app.models.pr import PurchaseRequest
 from app.services import assistant_llm
 from app.services import reply_language
 from app.services import doc_type_guide, guide_view, plan_view
-from app.services import po_action_check, rule_registry
+from app.services import po_action_check, rule_registry, rule_verdicts
 from app.services import producible_view
 from app.services import budget_variance
 from app.services import report_lineage
@@ -230,11 +230,50 @@ async def _finish(out: dict, message: str) -> dict:
     if isinstance(out.get("answer"), str):
         # Whatever wrote the reply, NC leaves as NC (ISS-0051).
         out["answer"] = reply_language.keep_system_names(out["answer"])
+    if verdict := out.pop("_verdict", None):
+        out["answer"] = rule_verdicts.place(
+            out.get("answer") or "", await _in_language(verdict["en"], verdict["zh"], message),
+            verdict["place"])
+        out["verdict"] = verdict["id"]
     return out
+
+
+async def _in_language(english: str, chinese: str, message: str) -> str:
+    """A sentence written in code, in the language of `message`: English and
+    Chinese are written; any other language is rendered from the English,
+    which stays if that fails."""
+    language = reply_language.detect(message)
+    if language == "Chinese (Simplified)":
+        return chinese
+    if language in (None, "English"):
+        return english
+    try:
+        return (await assistant_llm.render_fixed_reply(
+            english, message, language))["text"] or english
+    except assistant_llm.LlmUnavailable:
+        return english
 
 
 async def _chat(body: ChatRequest, db, user: dict, token: str,
                 part: dict | None = None) -> dict:
+    """Answer one question. A question with a verdict (services/rule_verdicts)
+    gets that conclusion placed by code, whatever the model writes; one whose
+    verdict says route `rules` is answered from that area's rules without
+    asking the planner where to send it (ISS-0249 and the issues under it)."""
+    verdict = rule_verdicts.match(body.message)
+    said = await rule_verdicts.sentences(verdict, db) if verdict else None
+    if verdict and verdict.route == "rules":
+        actor = _uuid.UUID(str(user.get("sub"))) if user.get("sub") else None
+        out = await _answer_rules(db, token, body, [verdict.area], actor, conclusion=said)
+    else:
+        out = await _route(body, db, user, token, part)
+    if said and out.get("kind") != "parts":
+        out["_verdict"] = said
+    return out
+
+
+async def _route(body: ChatRequest, db, user: dict, token: str,
+                 part: dict | None = None) -> dict:
     schema = (await assistant_schema(db, user))["entities"]
     # Entities this app's assistant does not use (ISS-0015: Finance's AP copy
     # of the invoices is kept out of EPMS).
@@ -1059,15 +1098,24 @@ async def _answer_process(db, user, token, body, planned, actor) -> dict:
 # the planner's "not a data question", a document type outside a tool's
 # list, "which document do you mean" with none named — come here first.
 
-async def _answer_rules(db, token, body, areas: list[str], actor) -> dict:
+async def _answer_rules(db, token, body, areas: list[str], actor,
+                        conclusion: dict | None = None) -> dict:
     rules = await rule_registry.build(areas, db, token)
     if not rules["areas"]:
         return _no_rule_reply()
     payload = {"question": body.message, "kind": "rules", **rules}
+    if conclusion:
+        # Placed by the chat layer whatever the narrator writes (rule_verdicts);
+        # told here only so it is not said twice.
+        payload[("placed_before_your_reply" if conclusion["place"] == "first"
+                 else "added_below_your_reply")] = conclusion["en"]
     try:
         told = await assistant_llm.narrate_guide(body.message, payload)
     except assistant_llm.LlmUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        if not conclusion:
+            raise HTTPException(status_code=503, detail=str(exc))
+        # The verdict alone is a correct answer.
+        told = {"text": "", "usage": {}}
     await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
     return {
         "answer": told["text"], "kind": "rules", "query": None,

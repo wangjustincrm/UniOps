@@ -23,11 +23,10 @@ from app.services import approval_client, doc_type_guide
 # here is all it takes for the Assistant to explain it (the planner's tool enum
 # and the "I can describe…" reply both read this).
 #
-# Not "pa_dir": OA's Direct Payment Application is retired (expense-api
-# api/v1/pa.py DIRECT_PA_RETIRED refuses creation), though approval-api still
-# serves its chain for the PAs that already exist. Listing it here had the
-# Assistant describe how to get one approved (ISS-0065); pa_types.yaml rule
-# direct_pa_retired answers the question instead.
+# "pa_dir" is the Direct PA's chain. It was left out while OA's Direct
+# Payment Application (PA-DIR) was thought to be the only one (ISS-0065); the
+# Direct PA moved to EPMS (PRD EPMS §3.22) and walks this same "PA (Direct)"
+# workflow, so its approval is described like any other.
 PROCESS_LABELS = {
     "pr": "Purchase Request",
     "po": "Purchase Order",
@@ -35,6 +34,7 @@ PROCESS_LABELS = {
     "agr": "Purchase Agreement",
     "pa": "Payment Application",
     "pa_frt": "Freight Payment Application",
+    "pa_dir": "Direct Payment Application",
     "exp": "Expense Claim",
     "mil": "Mileage Claim",
     "trv": "Travel Expense",

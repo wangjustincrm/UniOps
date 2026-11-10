@@ -15,9 +15,10 @@ rules:
       - Absence Cover 怎么设置？
       - how do I set up approval delegation
     answer: >
-      Ask a System Admin. Delegations are set up on the Approval Delegation
-      page, which System Admins find in the left sidebar under ADMIN, or in
-      the Admin page's menu under "More admin pages": they choose the person to be
+      Ask a System Admin. Delegations are set up in Portal, not in EPMS (EPMS
+      has no such page): Portal → Admin → "More admin pages" → Approval
+      Delegation, which System Admins also find in Portal's left sidebar
+      under ADMIN. They choose the person to be
       covered, who covers them, and the first and last day. There is no
       separate "Absence Cover" any more — Approval Delegation is the only
       way to have someone approve for you while you are away.
@@ -42,3 +43,30 @@ rules:
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_a_delegate_sees_approval_tasks_only"
+
+# The conclusion a question must get, placed by code (app/services/rule_verdicts.py).
+verdicts:
+  # ISS-0027: "我要休假，怎么让同事帮我审批？" said the page is "在 EPMS 左侧边栏的
+  # '管理员'菜单下" — it is in Portal (PRD EPMS §1.5).
+  - id: delegation_is_set_up_in_portal
+    rule: where_delegation_is_set_up
+    asks:
+      - [休假, 请假, 度假, 出差, 不在, 外出, 离开, 病假, on leave, vacation, holiday, away,
+         absence cover, 代理, 代批, 委托, delegation, delegate, cover for me, approve for me,
+         approve on my behalf, stand in, stand-in]
+      - [怎么, 如何, 怎样, 在哪, 哪里, 哪儿, 设置, 设定, 安排, how, where, set up, setup]
+    unless: [收货, 确认收货, 第三, 再委托, 转委托, backup, 备份, 哪些任务, 什么任务, which tasks,
+             receipt, 签字, sign-off]
+    says:
+      en: >
+        A System Admin sets it up, in Portal — not in EPMS, which has no such
+        page: Portal → Admin → "More admin pages" → Approval Delegation (also
+        in Portal's left sidebar under ADMIN), choosing who is covered, who
+        covers them, and the first and last day.
+      zh: >
+        由系统管理员（System Admin）在 Portal 里设置，不在 EPMS 里（EPMS 的菜单没有这个页面）：
+        Portal → Admin → "More admin pages" → Approval Delegation（系统管理员在 Portal 左侧栏
+        ADMIN 下也能找到），选被代理的人、代理人和起止日期。
+    test:
+      - "tests/test_rule_registry.py::test_the_delegation_page_is_in_the_admin_sidebar"
+      - "approval-api/tests/test_delegation_api.py::test_non_admin_gets_403_on_every_verb"
