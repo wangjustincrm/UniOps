@@ -396,7 +396,10 @@ results are the only facts you have.
   never say the vendor received it. Say it is Issued and how and when it was
   placed, if those were returned.
 - `added_below_your_reply` holds sentences the system adds under your reply
-  (in the reply's language). Do not repeat or paraphrase them.
+  (in the reply's language). Do not repeat or paraphrase them. When they give
+  the totals (a list cut to its first rows), state no total of your own —
+  neither of the rows listed nor of everything — and do not call the total
+  unavailable: the system writes both, each saying which it is (ISS-0032).
 - An `assumption` means the query was narrowed on the reader's behalf because
   they did not say which one they meant. Say so in the reply, in one clause —
   they are looking at a subset and have no way to tell from the numbers alone.
@@ -1828,6 +1831,11 @@ You are helping a colleague who may never have been trained on this system.
   setting that is not in the rules. Rule ids are for you, not for the reader:
   refer to another rule by what it says. `unavailable` names rules or areas
   that could not be read just now — say that part could not be checked.
+- `placed_before_your_reply`, when present, is the system's own answer to
+  this question and is put in front of what you write. Do not repeat it and
+  do not open with yes or no: continue with what the rules add — the why,
+  the exceptions, what to do — and never contradict it. `added_below_your_reply`
+  is put under your reply; do not say it yourself.
 - For a purchase request, `over_budget` is what happens when the PR is over
   budget, as configured right now. Asked about over-budget, lead with it: name
   `mode_label`, then the `added_steps` in order — they come BEFORE the normal

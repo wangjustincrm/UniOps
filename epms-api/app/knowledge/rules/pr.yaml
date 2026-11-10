@@ -85,6 +85,56 @@ rules:
     provenance: pinned
     test:
       - "tests/test_assistant_iss_batch1.py::test_budget_unreachable_is_treated_as_within_budget"
+  # ISS-0025: "超预算模式改了以后，审批中的请购单会受影响吗？" was answered
+  # "不会" twice. PRD OBG-010: in-flight PRs only ever get lighter.
+  - id: over_budget_mode_change_in_flight
+    also_in: [budget]
+    topic: over_budget
+    asked_as:
+      - 超预算模式改了以后，审批中的请购单会受影响吗？
+      - 改成 Allow 以后审批中的请购单还要走超预算审批步骤吗？
+      - does changing the over-budget mode affect PRs already in approval
+    answer: >
+      Yes, but only ever to make it lighter. The mode is recorded on a PR when
+      it is submitted. Changed later in Budget Config: a looser mode (to
+      Allow, or Finance Manager + GM/OPM to Finance Manager only) skips the
+      over-budget steps an in-flight PR has not yet passed — saving Budget
+      Config re-aligns every such PR at once, the step is recorded as
+      Auto-skipped and the PR moves on to its next approver; a stricter mode
+      never adds steps to a PR already submitted; Hard block does not cancel
+      over-budget steps already waiting (those PRs keep their approvals), it
+      only refuses new submissions and resubmissions. PRs submitted after the
+      change get the new mode in full.
+    enforced_in: "approval-api app/crud/engine.py _ob_step_waived (looser mode waives pending ob steps; hard_block never), ob_mode_applied frozen at submit; epms-api app/api/v1/config.py _resync_over_budget (every Budget Config save) -> approval_client.resync_over_budget"
+    provenance: pinned
+    test:
+      - "approval-api/tests/test_over_budget_mode_frozen.py::test_loosening_to_allow_moves_the_fm_task_on"
+      - "approval-api/tests/test_over_budget_mode_frozen.py::test_tightening_never_adds_steps_to_a_submitted_pr"
+      - "approval-api/tests/test_over_budget_mode_frozen.py::test_hard_block_does_not_waive_in_flight_steps"
+      - "approval-api/tests/test_over_budget_mode_frozen.py::test_fm_gm_opm_to_fm_only_waives_the_pending_gm_step_on_approve"
+  # ISS-0029 point 3 / ISS-0055 point 2: the Owner was left out of "what must
+  # a project PR have", called optional, and "your department only".
+  - id: service_project_owner
+    also_in: [gr]
+    asked_as:
+      - Service/Project Owner 可以不填吗？可以选其他部门的人吗？
+      - 项目类请购单提交前必须填哪些内容？
+      - is the service owner required
+    answer: >
+      Service (type 4) and Project-Related (type 6) PRs carry a
+      Service/Project Owner, the person who confirms the work was done. It is
+      required on the PR form and can never be empty: it defaults to the
+      requester, and when nobody else is chosen the requester is the owner.
+      Any active user may be chosen, from any department — the picker
+      searches everyone, and the server refuses only an unknown or inactive
+      user. The owner gets the receipt confirmation tasks and reminders; the
+      requester can still confirm too. Other types have no owner.
+    enforced_in: "epms/src/pages/pr/PrCreatePage.tsx (Service/Project Owner, required *, defaults to you, userService.directory with no department filter); epms-api app/api/v1/pr.py _check_owner (active user only); app/crud/pr_owner.py (owner_id honoured for types 4/6, NULL = the requester); app/api/v1/gr.py create_gr (owner OR requester)"
+    provenance: pinned
+    test:
+      - "tests/test_assistant_asst2_d.py::test_the_owner_is_any_active_user_and_never_empty"
+      - "tests/test_gr_create_authz.py::test_pr_owner_can_create_service_gr_without_warehouse_permission"
+      - "tests/test_gr_create_authz.py::test_naming_an_owner_does_not_strip_the_requester"
 
   # ── Added 2026-10-21 (issue review batch 3) ───────────────────────────────
   - id: who_can_edit_a_pr
@@ -320,3 +370,99 @@ rules:
     test:
       - "tests/test_rule_registry.py::test_currency_lists_follow_currency_settings"
       - "epms/src/lib/currencies.test.ts"
+
+# The conclusion a question must get, placed by code (app/services/rule_verdicts.py).
+verdicts:
+  # ISS-0025 retest (23/10, twice): "超预算模式改了以后，已经提交、正在审批中的
+  # 请购单会受影响吗？" → "不会".
+  - id: mode_change_reaches_in_flight_prs
+    rule: over_budget_mode_change_in_flight
+    asks:
+      - [超预算模式, 超预算审批模式, 超预算的模式, 超预算的审批模式, 预算模式, over-budget mode,
+         over budget mode, over-budget approval mode, budget config]
+      - [改, 变, 换, 切换, 调整, 修改, change, changed, changing, switch, switched]
+      - [审批中, 在审批, 正在审批, 已提交, 已经提交, 提交了, 进行中, 在途, in flight, in-flight,
+         in approval, already submitted, submitted, pending, in review]
+    unless: [还要走, 还需要走, 还要经过, 还用走, 还会走, still go through, still need the]
+    says:
+      en: >
+        Yes, but only ever to make it lighter. A looser mode skips the
+        over-budget steps an in-flight PR has not yet passed (they are recorded
+        as Auto-skipped and the PR moves on to its next approver); a stricter
+        mode never adds steps to a PR already submitted; Hard block does not
+        cancel steps already waiting and only refuses new submissions and
+        resubmissions.
+      zh: >
+        会，但只会变轻。改成更宽松的模式（例如改成 Allow，或从 Finance Manager + GM/OPM 改成
+        Finance Manager only）后，审批中的请购单还没走到的超预算审批步骤会被自动跳过（记为
+        Auto-skipped），单子转到下一个审批人；改成更严格的模式，不会给已经提交的请购单加步骤；
+        改成 Hard block 也不会取消已经在等待的超预算步骤，只拒绝新的提交和重新提交。
+    test:
+      - "approval-api/tests/test_over_budget_mode_frozen.py::test_loosening_to_allow_moves_the_fm_task_on"
+      - "approval-api/tests/test_over_budget_mode_frozen.py::test_tightening_never_adds_steps_to_a_submitted_pr"
+      - "approval-api/tests/test_over_budget_mode_frozen.py::test_hard_block_does_not_waive_in_flight_steps"
+  # ISS-0025 follow-up: "改成 Allow 以后…还要走超预算审批步骤吗？" first said
+  # no, then that in-flight PRs keep the current chain.
+  - id: allow_mode_skips_pending_over_budget_steps
+    rule: over_budget_mode_change_in_flight
+    asks:
+      - [allow, 允许, 宽松, 放宽, looser, fm_only, finance manager only]
+      - [改, 变, 换, 切换, 调整, 修改, change, changed, changing, switch, switched, set to]
+      - [还要走, 还需要走, 还要经过, 还用走, 还会走, 还要, still go through, still need, still have to]
+      - [超预算, over-budget, over budget, finance manager, 财务经理]
+    says:
+      en: >
+        No. A PR in approval that has not yet passed an over-budget step the
+        new mode no longer requires skips it: the step is recorded as
+        Auto-skipped and the PR moves on to its next approver. Approvals
+        already given stand, and PRs submitted afterwards get the new mode in
+        full.
+      zh: >
+        不用。审批中的请购单，只要还没走到新模式不再要求的超预算审批步骤，这一步就会被自动跳过
+        （记为 Auto-skipped），单子转到下一个审批人；已经给出的审批不变。之后新提交的请购单按新模式走。
+    test:
+      - "approval-api/tests/test_over_budget_mode_frozen.py::test_loosening_to_allow_moves_the_fm_task_on"
+      - "approval-api/tests/test_over_budget_mode_frozen.py::test_fm_gm_opm_to_fm_only_waives_the_pending_gm_step_on_approve"
+  # ISS-0055 point 2: "Service/Project Owner 可以不填吗？可以选其他部门的人吗？"
+  # → "不是必填" / "只能选本部门" / "没有相关规则".
+  - id: owner_is_required_and_anyone
+    rule: service_project_owner
+    asks:
+      - [service/project owner, service owner, project owner, owner, 负责人, 服务负责人, 项目负责人]
+      - [不填, 必填, 留空, 空着, 不选, 可以空, 为空, required, optional, mandatory, empty, blank,
+         其他部门, 别的部门, 外部门, 跨部门, other department, another department, other departments,
+         选谁, 谁都, 任何人, anyone]
+    unless: [协议, agreement]
+    says:
+      en: >
+        For Service (type 4) and Project-Related (type 6) PRs the
+        Service/Project Owner is required and can never be empty: it defaults
+        to the requester, and any active user may be chosen instead,
+        including someone from another department.
+      zh: >
+        服务类（类型 4）和项目类（类型 6）请购单的 Service/Project Owner 是必填的，不能为空：默认是申请人本人，
+        也可以改选任何在职用户，包括其他部门的人。
+    test:
+      - "tests/test_assistant_asst2_d.py::test_the_owner_is_any_active_user_and_never_empty"
+  # ISS-0029 point 3 (three times): "项目类请购单提交前必须填哪些内容？" never
+  # named the Owner. The document guide answers the rest; this is added under it.
+  - id: service_and_project_prs_name_an_owner
+    rule: service_project_owner
+    route: keep
+    place: last
+    asks:
+      - [项目类, 项目相关, 服务类, 服务型, 类型 4, 类型 6, 类型四, 类型六, project pr, project-related,
+         service pr, project request, service request, type 4, type 6]
+      - [必须填, 必填, 要填, 需要填, 填哪些, 填什么, 必须有, 要求, required, must fill, mandatory,
+         need to fill, fill in, before submit, 提交前]
+    unless: [owner, 负责人]
+    says:
+      en: >
+        Service (type 4) and Project-Related (type 6) PRs also need a
+        Service/Project Owner — it defaults to you, can be changed to any
+        active user, and can never be left empty.
+      zh: >
+        另外，服务类（类型 4）和项目类（类型 6）请购单还必须有 Service/Project Owner：默认是你本人，
+        可以改成任何在职用户，不能留空。
+    test:
+      - "tests/test_assistant_asst2_d.py::test_the_owner_is_any_active_user_and_never_empty"

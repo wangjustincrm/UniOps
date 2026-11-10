@@ -673,8 +673,12 @@ def test_gr_statuses_are_the_routes():
     src = inspect.getsource(gr_api.create_gr)
     assert "SERVICE_GR_PO_STATUSES" in src and "PHYSICAL_GR_PO_STATUSES" in src
     words = rule_facts.gr_po_statuses(None)
-    assert words == {"physical": "issued and partially_received",
-                     "service": "approved, issued and partially_received"}
+    # Alternatives, never "and" — read as "已发出且部分收货" (ISS-0017).
+    assert words["physical"] == "issued or partially_received"
+    assert words["service"] == "approved, issued or partially_received"
+    assert words["physical_names"] == "Issued or Partial Receipt"
+    assert words["physical_names_zh"] == "Issued 或 Partial Receipt"
+    assert words["service_names_zh"] == "Approved、Issued 或 Partial Receipt"
 
 
 def test_gr_cancel_button_follows_the_server():

@@ -39,7 +39,7 @@ from app.models.pr import PurchaseRequest
 from app.services import assistant_llm
 from app.services import reply_language
 from app.services import doc_type_guide, guide_view, plan_view
-from app.services import po_action_check, rule_registry
+from app.services import po_action_check, rule_registry, rule_verdicts
 from app.services import producible_view
 from app.services import budget_variance
 from app.services import report_lineage
@@ -237,6 +237,11 @@ async def _finish(out: dict, message: str) -> dict:
         # Whatever wrote the reply, NC leaves as NC (ISS-0051).
         out["answer"] = reply_language.keep_system_names(out["answer"])
         out["answer"] = one_code_for_yuan(out["answer"])
+    if verdict := out.pop("_verdict", None):
+        out["answer"] = rule_verdicts.place(
+            out.get("answer") or "", await _in_language(verdict["en"], verdict["zh"], message),
+            verdict["place"])
+        out["verdict"] = verdict["id"]
     return out
 
 
@@ -251,14 +256,51 @@ def one_code_for_yuan(text: str) -> str:
     return _RMB.sub("CNY", text)
 
 
+
+
+async def _in_language(english: str, chinese: str, message: str) -> str:
+    """A sentence written in code, in the language of `message`: English and
+    Chinese are written; any other language is rendered from the English,
+    which stays if that fails."""
+    language = reply_language.detect(message)
+    if language == "Chinese (Simplified)":
+        return chinese
+    if language in (None, "English"):
+        return english
+    try:
+        return (await assistant_llm.render_fixed_reply(
+            english, message, language))["text"] or english
+    except assistant_llm.LlmUnavailable:
+        return english
+
+
 async def _chat(body: ChatRequest, db, user: dict, token: str,
                 part: dict | None = None) -> dict:
+    """Answer one question. A question with a verdict (services/rule_verdicts)
+    gets that conclusion placed by code, whatever the model writes; one whose
+    verdict says route `rules` is answered from that area's rules without
+    asking the planner where to send it (ISS-0249 and the issues under it)."""
     app = body.context.app if body.context else None
     # An OA question is answered from OA's rules, decided here and not by the
     # planner — which answered them from the PR / PA rules or refused them as
     # "not EPMS" (ISS-0213). Before the schema: OA needs no EPMS access.
     if oa_guide.is_oa_question(body.message, app):
         return await _answer_oa(db, token, body, user)
+    verdict = rule_verdicts.match(body.message)
+    said = await rule_verdicts.sentences(verdict, db) if verdict else None
+    if verdict and verdict.route == "rules":
+        actor = _uuid.UUID(str(user.get("sub"))) if user.get("sub") else None
+        out = await _answer_rules(db, token, body, [verdict.area], actor, conclusion=said)
+    else:
+        out = await _route(body, db, user, token, part)
+    if said and out.get("kind") != "parts":
+        out["_verdict"] = said
+    return out
+
+
+async def _route(body: ChatRequest, db, user: dict, token: str,
+                 part: dict | None = None) -> dict:
+    app = body.context.app if body.context else None
     schema = (await assistant_schema(db, user))["entities"]
     # Entities this app's assistant does not use (ISS-0015: Finance's AP copy
     # of the invoices is kept out of EPMS).
@@ -502,6 +544,7 @@ async def _planned(body: ChatRequest, db, user: dict, token: str, part: dict | N
     elsewhere = await code_answers.found_elsewhere(db, scope, body.message, query, result)
     if elsewhere:
         result = {**result, "documents_found_elsewhere": elsewhere}
+    result = _with_totals_notes(result, query)
     try:
         told = await assistant_llm.narrate(body.message, query, result)
     except assistant_llm.LlmUnavailable as exc:
@@ -575,6 +618,68 @@ def _say_the_period(result: dict, query: dict) -> None:
     if said:
         result["said_with_this_list"] = [*(result.get("said_with_this_list") or []),
                                          ("period_used", *said)]
+
+
+def _amount(value) -> str:
+    try:
+        return f"{float(value):,.2f}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _figures(totals, currency_key: str | None) -> tuple[str, str]:
+    """`totals` / `totals_shown` as (English, Chinese) text, per currency."""
+    entries = totals if isinstance(totals, list) else [totals or {}]
+    en, zh = [], []
+    for entry in entries:
+        cur = entry.get(currency_key) if currency_key else None
+        for k, v in entry.items():
+            if k == currency_key or v is None:
+                continue
+            if k == "count":
+                en.append(f"{v} records" + (f" ({cur})" if cur else ""))
+                zh.append(f"{v} 笔" + (f"（{cur}）" if cur else ""))
+            else:
+                figure = f"{cur} {_amount(v)}" if cur else f"{k} {_amount(v)}"
+                en.append(figure)
+                zh.append(figure)
+    return "; ".join(en), "；".join(zh)
+
+
+def _with_totals_notes(result: dict, query: dict | None) -> dict:
+    """The totals of a list cut to its first rows, written by code (ISS-0032).
+
+    `totals` is every group the query matched, `totals_shown` the groups
+    listed. Only `totals` used to reach the narrator, and after the top-10
+    list it wrote the all-vendor figure as "采购总额", one run in two, with
+    nothing to say it was not the ten's. Both are now said under the reply,
+    each labelled; the narrator gets neither, so it cannot mislabel one.
+
+    And a ranking over amounts in several currencies orders them by their
+    face value — 536,139 USD above 402,955 CAD — which is said too, since no
+    rate is applied anywhere in the assistant.
+    """
+    notes = list(result.get("said_with_this_list") or [])
+    cur = result.get("currency_split")
+    if result.get("totals_shown") is not None and result.get("totals") is not None:
+        n = result.get("row_count")
+        shown_en, shown_zh = _figures(result["totals_shown"], cur)
+        all_en, all_zh = _figures(result["totals"], cur)
+        notes.append(("listed_totals",
+                      f"Total of the {n} rows listed: {shown_en}. Total of everything "
+                      f"the question matched (not only these {n}): {all_en}.",
+                      f"以上 {n} 行合计：{shown_zh}。查询匹配到的全部结果合计（不只是以上 {n} 行）：{all_zh}。"))
+        result = {k: v for k, v in result.items() if k not in ("totals", "totals_shown")}
+    if (cur and (query or {}).get("order_by")
+            and len({r.get(cur) for r in result.get("rows") or [] if isinstance(r, dict)}) > 1):
+        notes.append(("ranked_across_currencies",
+                      "The ranking orders amounts by their face value in their own "
+                      "currencies; no exchange rate is applied, so amounts in different "
+                      "currencies are not comparable with each other.",
+                      "注意：排名按各自币种的原币金额排序，没有做汇率换算，不同币种的金额之间不能直接比较。"))
+    if notes:
+        result = {**result, "said_with_this_list": notes}
+    return result
 
 
 def _without_internal_notes(text: str, result: dict) -> str:
@@ -1264,7 +1369,8 @@ async def _answer_process(db, user, token, body, planned, actor) -> dict:
 # the planner's "not a data question", a document type outside a tool's
 # list, "which document do you mean" with none named — come here first.
 
-async def _answer_rules(db, token, body, areas: list[str], actor) -> dict:
+async def _answer_rules(db, token, body, areas: list[str], actor,
+                        conclusion: dict | None = None) -> dict:
     if oa_guide.AREA in areas:
         # The OA rules are said by code (ISS-0213).
         return await _answer_oa(db, token, body, None)
@@ -1272,10 +1378,18 @@ async def _answer_rules(db, token, body, areas: list[str], actor) -> dict:
     if not rules["areas"]:
         return _no_rule_reply()
     payload = {"question": body.message, "kind": "rules", **rules}
+    if conclusion:
+        # Placed by the chat layer whatever the narrator writes (rule_verdicts);
+        # told here only so it is not said twice.
+        payload[("placed_before_your_reply" if conclusion["place"] == "first"
+                 else "added_below_your_reply")] = conclusion["en"]
     try:
         told = await assistant_llm.narrate_guide(body.message, payload)
     except assistant_llm.LlmUnavailable as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        if not conclusion:
+            raise HTTPException(status_code=503, detail=str(exc))
+        # The verdict alone is a correct answer.
+        told = {"text": "", "usage": {}}
     await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
     return {
         "answer": told["text"], "kind": "rules", "query": None,

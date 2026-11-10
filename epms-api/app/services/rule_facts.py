@@ -93,11 +93,39 @@ def purchase_flow(db) -> dict:
 
 # ── Goods receipts ───────────────────────────────────────────────────────────
 
-def gr_po_statuses(db) -> dict:
-    from app.api.v1.gr import PHYSICAL_GR_PO_STATUSES, SERVICE_GR_PO_STATUSES
+def _either(words: list[str], word: str = "or") -> str:
+    words = list(words)
+    if len(words) <= 1:
+        return "".join(words)
+    return ", ".join(words[:-1]) + f" {word} " + words[-1]
 
-    return {"physical": _join(list(PHYSICAL_GR_PO_STATUSES)),
-            "service": _join(list(SERVICE_GR_PO_STATUSES))}
+
+def gr_po_statuses(db) -> dict:
+    """The statuses are alternatives — "issued and partially_received" was
+    read as both at once, "已发出且部分收货" (ISS-0017). Page names from the
+    ontology, the ones the PO list shows."""
+    from app.api.v1.gr import PHYSICAL_GR_PO_STATUSES, SERVICE_GR_PO_STATUSES
+    from app.core.ontology import REGISTRY
+
+    labels = dict(REGISTRY["purchase_order"].fields["status"].value_labels)
+    physical = [labels.get(s, s) for s in PHYSICAL_GR_PO_STATUSES]
+    service = [labels.get(s, s) for s in SERVICE_GR_PO_STATUSES]
+    return {"physical": _either(list(PHYSICAL_GR_PO_STATUSES)),
+            "service": _either(list(SERVICE_GR_PO_STATUSES)),
+            "physical_names": _either(physical), "service_names": _either(service),
+            "physical_names_zh": "、".join(physical[:-1]) + " 或 " + physical[-1]
+                                 if len(physical) > 1 else "".join(physical),
+            "service_names_zh": "、".join(service[:-1]) + " 或 " + service[-1]
+                                if len(service) > 1 else "".join(service)}
+
+
+def gr_steps(db) -> dict:
+    """The requester's two tasks on a physical receipt, by the Task Inbox's
+    own names (ISS-0029)."""
+    from app.services.guide_view import TASK_TYPE_LABELS
+
+    return {"ack_task": TASK_TYPE_LABELS["acknowledge_gr"],
+            "collect_task": TASK_TYPE_LABELS["collect_goods"]}
 
 
 async def service_gr_reminders(db) -> dict:
