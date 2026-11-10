@@ -15,6 +15,7 @@ from app.api.v1.documents import router as documents_router
 from app.api.v1.change_log import router as change_log_router
 from app.api.v1.drills import router as drills_router
 from app.api.v1.drill_attachments import router as drill_attachments_router
+from app.api.v1.record_attachments import router as record_attachments_router
 from app.api.v1.equipment import router as equipment_router
 from app.api.v1.forms import router as forms_router
 from app.api.v1.hazards import router as hazards_router
@@ -102,6 +103,7 @@ api_router.include_router(change_log_router, tags=["audit"])
 api_router.include_router(drills_router, tags=["emergency"])
 # After drills, so /drills/{id} is matched by the router that owns it first.
 api_router.include_router(drill_attachments_router, tags=["emergency"])
+api_router.include_router(record_attachments_router, tags=["attachments"])
 # The whole module, counted. Reachable by the built-in auditor role.
 api_router.include_router(audit_router, tags=["audit"])
 api_router.include_router(qr_router, tags=["qr"])

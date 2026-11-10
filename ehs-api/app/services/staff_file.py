@@ -109,11 +109,11 @@ CATEGORIES: tuple[Category, ...] = (
         "/forms/submissions/{link_id}"),
     Category(
         "hazard", "Hazard assessments", "ehs.action.read",
-        """SELECT h.id, h.identified_on AS at, h.hazard_no AS ref, h.title, h.id AS link_id,
+        """SELECT h.id, h.created_at AS at, h.hazard_no AS ref, h.title, h.id AS link_id,
                   'Hazard assessment' AS kind
              FROM ehs_hazards h
             WHERE h.status <> 'draft' AND (h.created_by = :uid OR h.owner_id = :uid)""",
-        "/hazards?q={ref}"),
+        "/hazards/{link_id}"),
     Category(
         "jsa", "Job analyses signed", "ehs.incident.report",
         """SELECT o.id, o.signed_at AS at, j.jsa_no AS ref, j.title, j.id AS link_id,

@@ -139,13 +139,13 @@ ENTITIES: tuple[Entity, ...] = (
     # injuries to staff" — incidents grouped by equipment, narrowed to an
     # injury class, opening the incidents behind each bar. The other records
     # that name equipment are here so the same question can be asked of them.
-    # A hazard has no page of its own; ?q= lands on its row in the register.
-    Entity("hazard", "Hazards", "ehs_hazards", "identified_on",
+    # ★ Round 12, Kirk: "use the create date for reporting and graph purposes."
+    Entity("hazard", "Hazards", "ehs_hazards", "created_at",
            ("equipment", "location", "department", "status", "month"),
            # ★ Review (uniops-8b): drafts are not counted or listed, as for
            # incidents — somebody's unsent record is theirs.
            where=("status <> 'draft'",),
-           ref="t.hazard_no", title="t.title", path="/hazards?q={ref}",
+           ref="t.hazard_no", title="t.title", path="/hazards/{id}",
            records_permission="ehs.action.read"),
     Entity("jsa", "Job safety analyses", "ehs_jsa", "created_at",
            ("equipment", "location", "department", "status", "month"),

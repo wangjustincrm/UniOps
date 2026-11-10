@@ -20,7 +20,7 @@ import uuid
 from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.hazard import Hazard, Jsa, JsaSignoff, JsaStep
@@ -67,13 +67,15 @@ async def _place(db: AsyncSession, location_id: uuid.UUID | None) -> tuple:
 async def list_hazards(
     db: AsyncSession, *, status_in: list[str] | None = None,
     location_id: uuid.UUID | None = None, rating: str | None = None,
-    limit: int = 300,
+    order: str = "newest", assessed_only: bool = False, limit: int = 300,
 ) -> list[Hazard]:
-    """Ranked by risk, worst first, then by age.
+    """Newest first, or worst first (round 12, HAZ-07).
 
-    Ordered in Python rather than SQL: the ratings are words, and their order
-    is the matrix's, not the alphabet's — "Acceptable" sorting before
-    "Critical" would put the register exactly the wrong way up.
+    ★ Ordered in SQL, before the limit. The rank used to be applied in Python
+    to the first 300 rows in no particular order, so past 300 hazards the
+    "worst first" list could leave out the worst. The rank is the matrix's
+    order, not the alphabet's — "Acceptable" before "Critical" would put the
+    register exactly the wrong way up.
     """
     stmt = select(Hazard)
     if status_in:
@@ -82,9 +84,33 @@ async def list_hazards(
         stmt = stmt.where(Hazard.location_id == location_id)
     if rating:
         stmt = stmt.where(Hazard.current_rating == rating)
-    rows = list((await db.execute(stmt.limit(limit))).scalars())
-    rows.sort(key=lambda h: (rating_rank(h.current_rating), h.created_at))
-    return rows
+    if assessed_only:
+        stmt = stmt.where(Hazard.risk_assessment_id.is_not(None))
+    if order == "risk":
+        rank = case(RATING_ORDER, value=func.lower(func.trim(Hazard.current_rating)),
+                    else_=UNRANKED)
+        stmt = stmt.order_by(rank, Hazard.created_at.desc(), Hazard.hazard_no.desc())
+    else:
+        stmt = stmt.order_by(Hazard.created_at.desc(), Hazard.hazard_no.desc())
+    return list((await db.execute(stmt.limit(limit))).scalars())
+
+
+async def _picked(db: AsyncSession, vocabulary: str, ids: list[uuid.UUID]) -> list[dict]:
+    """[{id, label}] for entries picked from one of HSE's lists, as named now."""
+    from app.api.v1.risk import _snapshot
+    return await _snapshot(db, vocabulary, ids)
+
+
+async def _apply_lists(db: AsyncSession, fields: dict) -> None:
+    """Round 12, HAZ-11: the kinds and controls picked, snapshotted. The first
+    kind is also the hazard's single kind, for everything that reads one."""
+    ids = fields.pop("hazard_type_ids", None)
+    if ids is not None:
+        fields["hazard_types"] = await _picked(db, "hazard", ids)
+        fields["hazard_type_id"] = ids[0] if ids else None
+    controls = fields.pop("hazard_control_ids", None)
+    if controls is not None:
+        fields["hazard_controls"] = await _picked(db, "hazard_control", controls)
 
 
 async def get_hazard(db: AsyncSession, hazard_id: uuid.UUID) -> Hazard:
@@ -95,6 +121,8 @@ async def get_hazard(db: AsyncSession, hazard_id: uuid.UUID) -> Hazard:
 
 
 async def create_hazard(db: AsyncSession, payload: dict, *, creator_id: uuid.UUID) -> Hazard:
+    payload = dict(payload)
+    await _apply_lists(db, payload)
     path, dept_id, dept_name = await _place(db, payload.get("location_id"))
     owner_id = payload.get("owner_id") or creator_id
     from app.services import equipment_ref
@@ -117,6 +145,10 @@ async def create_hazard(db: AsyncSession, payload: dict, *, creator_id: uuid.UUI
         findings=payload.get("findings"),
         hazard_type_id=payload.get("hazard_type_id"),
         hazard_type_label=type_label,
+        hazard_types=payload.get("hazard_types") or (
+            [{"id": str(payload["hazard_type_id"]), "label": type_label or ""}]
+            if payload.get("hazard_type_id") else []),
+        hazard_controls=payload.get("hazard_controls") or [],
         location_id=payload.get("location_id"),
         location_path=path, department_id=dept_id, department_name=dept_name,
         equipment_id=payload.get("equipment_id"),
@@ -138,7 +170,10 @@ async def create_hazard(db: AsyncSession, payload: dict, *, creator_id: uuid.UUI
     return hazard
 
 
-async def update_hazard(db: AsyncSession, hazard: Hazard, fields: dict) -> Hazard:
+async def update_hazard(db: AsyncSession, hazard: Hazard, fields: dict, *,
+                        editor_id: uuid.UUID | None = None) -> Hazard:
+    fields = dict(fields)
+    await _apply_lists(db, fields)
     if "location_id" in fields:
         (hazard.location_path, hazard.department_id,
          hazard.department_name) = await _place(db, fields["location_id"])
@@ -158,14 +193,27 @@ async def update_hazard(db: AsyncSession, hazard: Hazard, fields: dict) -> Hazar
         # uniops-8b): the edit form sends the id on every save, and an old
         # hazard edited for its description must not take today's wording.
         fields.pop("hazard_type_label", None)
+    if "hazard_type_id" in fields and "hazard_types" not in fields:
+        # An old client sending one kind: the list follows it.
+        fields["hazard_types"] = ([{"id": str(fields["hazard_type_id"]),
+                                    "label": fields.get("hazard_type_label")
+                                    or hazard.hazard_type_label or ""}]
+                                  if fields["hazard_type_id"] else [])
+    changed = False
     for key, value in fields.items():
+        if getattr(hazard, key) != value:
+            changed = True
         setattr(hazard, key, value)
+    if changed:
+        # Kirk, round 12: "if the form is revised … last revised on".
+        hazard.revised_at = datetime.now(timezone.utc)
+        hazard.revised_by_name = await _name(db, editor_id)
     await db.flush()
     return hazard
 
 
 async def attach_assessment(
-    db: AsyncSession, hazard: Hazard, assessment: RiskAssessment
+    db: AsyncSession, hazard: Hazard, assessment: RiskAssessment, *, eliminated: bool = False,
 ) -> Hazard:
     """Make an assessment the hazard's current one.
 
@@ -177,8 +225,13 @@ async def attach_assessment(
     hazard.risk_assessment_id = assessment.id
     hazard.current_rating = assessment.rating
     hazard.residual_rating = assessment.residual_rating
-    if assessment.controls and not hazard.existing_controls:
-        hazard.existing_controls = assessment.controls
+    # ★ Round 12, HAZ-02: an assessment's `controls` is now what remains after
+    # the controls, so it is no longer copied in as the controls in place.
+    # The controls picked are, when the hazard has none of its own yet.
+    if assessment.hazard_controls and not hazard.hazard_controls:
+        hazard.hazard_controls = assessment.hazard_controls
+    if eliminated:
+        hazard.status = "eliminated"
     await db.flush()
     return hazard
 

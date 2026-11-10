@@ -42,12 +42,22 @@ const inputClass =
   'min-h-[44px] w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm ' +
   'focus:border-primary-400 focus:outline-none'
 
+/** A hazard on the register, scored on this same form (round 12, HAZ-02). */
+export interface HazardBeingScored {
+  id: string; hazard_no: string; title: string; kinds: string[]
+}
+
 export function RiskAssessmentDialog({
-  sourceType, sourceId, onClose,
+  sourceType, sourceId, onClose, hazard,
 }: {
   sourceType: string
   sourceId: string
   onClose: () => void
+  /** ★ Round 12, HAZ-02: a register hazard is scored on the incident's form.
+   *  It is the hazard, so nothing is picked from the list, and however many
+   *  kinds it is it gets one score (Q11). It can be marked eliminated here
+   *  (HAZ-12). */
+  hazard?: HazardBeingScored
 }) {
   // ★ Round 8, question 5 — the form as HSE confirmed it, top to bottom:
   // Existing Hazard from the hazard list; Judged on (HSE's list, with
@@ -66,6 +76,7 @@ export function RiskAssessmentDialog({
   const [residualLikelihood, setResidualLikelihood] = useState<string | null>(null)
   const [residualSeverity, setResidualSeverity] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [eliminated, setEliminated] = useState(false)
 
   const matrix = useQuery({
     queryKey: ['risk-matrix'],
@@ -79,11 +90,20 @@ export function RiskAssessmentDialog({
     ? matrix.data?.likelihood.find((x) => x.code === l)?.ratings[String(sv)] : undefined
   const before = ratingOf(likelihood, severity)
   const after = ratingOf(residualLikelihood, residualSeverity)
-  const complete = Boolean(hazardId && judged && likelihood && severity !== null
+  const complete = Boolean((hazard || hazardId) && judged && likelihood && severity !== null
     && residualLikelihood && residualSeverity !== null)
 
   const save = useMutation({
-    mutationFn: () => api.post('/api/v1/risk/assessments', {
+    mutationFn: () => hazard ? api.post(`/api/v1/hazards/${hazard.id}/assess`, {
+      consequence_type: consequence,
+      likelihood_code: likelihood, severity_level: severity,
+      hierarchy_control_ids: hierarchy,
+      hazard_control_ids: hazardControls,
+      controls: remaining.trim() || null,
+      residual_likelihood_code: residualLikelihood,
+      residual_severity_level: residualSeverity,
+      eliminated,
+    }) : api.post('/api/v1/risk/assessments', {
       source_type: sourceType, source_id: sourceId,
       hazard_item_id: hazardId,
       consequence_type: consequence,
@@ -96,6 +116,11 @@ export function RiskAssessmentDialog({
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['risk-assessments', sourceId] })
+      if (hazard) {
+        queryClient.invalidateQueries({ queryKey: ['hazards'] })
+        queryClient.invalidateQueries({ queryKey: ['hazard'] })
+        queryClient.invalidateQueries({ queryKey: ['hazard-summary'] })
+      }
       onClose()
     },
     onError: (e: unknown) => setError(e instanceof ApiError ? e.message : String(e)),
@@ -114,12 +139,27 @@ export function RiskAssessmentDialog({
         </div>
         {matrix.isError && <p className="mb-2 text-sm text-danger-700">The risk matrix could not be loaded.</p>}
 
-        <span className={label.replace('mt-4', 'mt-0')}>Existing Hazard</span>
-        <VocabularySelect vocabulary="hazard" value={hazardId}
-                          onChange={(item) => setHazardId(item?.id ?? null)}
-                          placeholder="Pick from the hazard list" />
+        {hazard ? (
+          <div className="rounded-lg bg-neutral-50 px-3 py-2 text-sm">
+            <p className="font-medium text-neutral-900">{hazard.title}</p>
+            <p className="text-xs text-neutral-500">
+              {hazard.hazard_no}{hazard.kinds.length > 0 && ` · ${hazard.kinds.join(', ')}`}
+            </p>
+            {hazard.kinds.length > 1 && (
+              <p className="mt-1 text-xs text-neutral-600">One score for the hazard as a whole.</p>
+            )}
+          </div>
+        ) : (
+          <>
+            <span className={label.replace('mt-4', 'mt-0')}>Existing Hazard</span>
+            <VocabularySelect vocabulary="hazard" value={hazardId}
+                              onChange={(item) => setHazardId(item?.id ?? null)}
+                              placeholder="Pick from the hazard list" />
+          </>
+        )}
 
-        <span className={label}>Judged on</span>
+        {/* Round 12, HAZ-08: in bold. */}
+        <span className={label.replace('font-medium', 'font-semibold')}>Judged on</span>
         <select className={inputClass} aria-label="Judged on" value={consequence ?? ''}
                 onChange={(e) => { setConsequence(e.target.value || null); setSeverity(null); setResidualSeverity(null) }}>
           <option value="">Choose…</option>
@@ -149,11 +189,18 @@ export function RiskAssessmentDialog({
                  onLikelihood={setResidualLikelihood} onSeverity={setResidualSeverity} rating={after}
                  ratingLabel="Final assessment" final />
 
+        {hazard && (
+          <label className="mt-4 flex min-h-[44px] items-center gap-2 rounded-lg border border-neutral-200 px-3 text-sm text-neutral-800">
+            <input type="checkbox" checked={eliminated} onChange={(e) => setEliminated(e.target.checked)} />
+            The hazard has been eliminated
+          </label>
+        )}
+
         {error && <p className="mt-3 rounded-lg bg-danger-50 px-3 py-2 text-sm text-danger-700">{error}</p>}
         {!complete && (
           <p className="mt-3 text-xs text-neutral-500">
-            The hazard, what it is judged on, and how likely and how bad both before and after
-            controls are needed to save.
+            {hazard ? 'What it is judged on' : 'The hazard, what it is judged on'}, and how likely
+            and how bad both before and after controls are needed to save.
           </p>
         )}
 

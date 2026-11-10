@@ -14,8 +14,9 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
+from uniops_authz import has_permission
 
 from app.api.v1.incidents import _user_id
 from app.core.deps import SessionDep
@@ -45,6 +46,10 @@ class HazardIn(BaseModel):
     findings: str | None = None
     hazard_type_id: uuid.UUID | None = None
     hazard_type_label: str | None = Field(default=None, max_length=200)
+    # ★ Round 12, HAZ-11: several kinds and several controls from HSE's lists.
+    # When sent, the first kind becomes `hazard_type_id` too.
+    hazard_type_ids: list[uuid.UUID] | None = Field(default=None, max_length=30)
+    hazard_control_ids: list[uuid.UUID] | None = Field(default=None, max_length=60)
     location_id: uuid.UUID | None = None
     equipment_id: uuid.UUID | None = None
     existing_controls: str | None = None
@@ -81,6 +86,8 @@ class HazardOut(BaseModel):
     # only the label meant editing a hazard silently cleared its kind.
     hazard_type_id: uuid.UUID | None
     hazard_type_label: str | None
+    hazard_types: list = Field(default_factory=list)
+    hazard_controls: list = Field(default_factory=list)
     location_id: uuid.UUID | None
     location_path: str | None
     department_name: str | None
@@ -96,6 +103,9 @@ class HazardOut(BaseModel):
     review_due_on: date | None
     status: str
     created_at: datetime
+    # Kirk, round 12: "last revised on" — an edit, not an assessment.
+    revised_at: datetime | None = None
+    revised_by_name: str | None = None
 
 
 class RatingCount(BaseModel):
@@ -103,16 +113,33 @@ class RatingCount(BaseModel):
     count: int
 
 
+async def _writes_hazards(db, user: dict) -> bool:
+    return await has_permission(db, _user_id(user), user.get("role", ""), "ehs.action.write")
+
+
+async def _readable(db, user: dict, hazard_id: uuid.UUID):
+    """★ Round 12, Q11: someone who cannot write hazards sees one once it has
+    been assessed ("complete once it has at least one assessment"). Before
+    that it is somebody's draft, and 404 rather than 403 says nothing of it."""
+    hazard = await crud.get_hazard(db, hazard_id)
+    if hazard.risk_assessment_id is None and not await _writes_hazards(db, user):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Hazard not found")
+    return hazard
+
+
 @router.get("/hazards", response_model=list[HazardOut])
 async def list_hazards(
-    db: SessionDep, user: CanReadAction,  # noqa: ARG001
+    db: SessionDep, user: CanReadAction,
     status_in: list[str] | None = Query(default=None, alias="status"),
     location_id: uuid.UUID | None = None,
     rating: str | None = None,
+    order: str = Query(default="newest", pattern="^(newest|risk)$"),
 ):
-    """Ranked worst first — the register's only real use is as that list."""
+    """★ Round 12, HAZ-07: newest first by default, worst first on request.
+    Round 3 had it ranked by risk only."""
     return await crud.list_hazards(
-        db, status_in=status_in, location_id=location_id, rating=rating)
+        db, status_in=status_in, location_id=location_id, rating=rating, order=order,
+        assessed_only=not await _writes_hazards(db, user))
 
 
 class HazardCauseOut(BaseModel):
@@ -142,8 +169,8 @@ class HazardCauseTree(BaseModel):
 
 
 @router.get("/hazards/{hazard_id}/causes", response_model=HazardCauseTree)
-async def hazard_causes(hazard_id: uuid.UUID, db: SessionDep, user: CanReadAction):  # noqa: ARG001
-    hazard = await crud.get_hazard(db, hazard_id)
+async def hazard_causes(hazard_id: uuid.UUID, db: SessionDep, user: CanReadAction):
+    hazard = await _readable(db, user, hazard_id)
     rows = await cause_crud.list_for(db, hazard_id=hazard.id)
     grouped = await cause_crud.actions_by_cause(
         db, source_type="hazard", source_id=hazard.id)
@@ -191,16 +218,17 @@ async def create_hazard(payload: HazardIn, db: SessionDep, user: CanWriteAction)
 
 
 @router.get("/hazards/{hazard_id}", response_model=HazardOut)
-async def get_hazard(hazard_id: uuid.UUID, db: SessionDep, user: CanReadAction):  # noqa: ARG001
-    return await crud.get_hazard(db, hazard_id)
+async def get_hazard(hazard_id: uuid.UUID, db: SessionDep, user: CanReadAction):
+    return await _readable(db, user, hazard_id)
 
 
 @router.patch("/hazards/{hazard_id}", response_model=HazardOut)
 async def update_hazard(
-    hazard_id: uuid.UUID, payload: HazardPatch, db: SessionDep, user: CanWriteAction,  # noqa: ARG001
+    hazard_id: uuid.UUID, payload: HazardPatch, db: SessionDep, user: CanWriteAction,
 ):
     hazard = await crud.get_hazard(db, hazard_id)
-    return await crud.update_hazard(db, hazard, payload.model_dump(exclude_unset=True))
+    return await crud.update_hazard(db, hazard, payload.model_dump(exclude_unset=True),
+                                    editor_id=_user_id(user))
 
 
 class AssessIn(BaseModel):
@@ -209,6 +237,10 @@ class AssessIn(BaseModel):
     The rating is not accepted from the client — it is computed from the grid,
     which is the company's own document. What is chosen is the likelihood, the
     severity, and which consequence the severity was judged on.
+
+    ★ Round 12, HAZ-02: the incident's form. `controls` is what remains once
+    the controls are in, and the controls are picked from the two lists. One
+    score for the hazard however many kinds it is (Q11).
     """
 
     consequence_type: str = Field(default="people")
@@ -217,6 +249,11 @@ class AssessIn(BaseModel):
     controls: str | None = None
     residual_likelihood_code: str | None = Field(default=None, max_length=4)
     residual_severity_level: int | None = Field(default=None, ge=0, le=5)
+    hierarchy_control_ids: list[uuid.UUID] = Field(default_factory=list, max_length=10)
+    hazard_control_ids: list[uuid.UUID] = Field(default_factory=list, max_length=60)
+    # ★ HAZ-12: the server always took status=eliminated and no screen sent it,
+    # so the dashboard's Eliminated was 0 for ever. Asked at assessment.
+    eliminated: bool = False
 
 
 @router.post("/hazards/{hazard_id}/assess", response_model=HazardOut)
@@ -227,16 +264,17 @@ async def assess_hazard(
     from app.api.v1.risk import AssessmentIn, create_assessment
 
     hazard = await crud.get_hazard(db, hazard_id)
+    fields = payload.model_dump(exclude={"eliminated"})
     assessment = await create_assessment(
         AssessmentIn(
             source_type="hazard", source_id=hazard.id,
             hazard_id=hazard.hazard_type_id, hazard_label=hazard.title,
             description=hazard.description,
-            **payload.model_dump(),
+            **fields,
         ),
         db, user,
     )
-    return await crud.attach_assessment(db, hazard, assessment)
+    return await crud.attach_assessment(db, hazard, assessment, eliminated=payload.eliminated)
 
 
 # ── Job safety analysis ──────────────────────────────────────────────────────

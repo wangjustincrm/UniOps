@@ -375,7 +375,7 @@ class TestByEquipment:
             "filter": [f"location:{area}", f"equipment:{press.id}", "injury_class:lost_time"]})).json()
         assert listed["total"] == 1 and listed["rows"][0]["path"].startswith("/incidents/")
 
-    async def test_a_hazard_opens_on_its_row(self, hse_manager, db_session):
+    async def test_a_hazard_opens_on_its_own_page(self, hse_manager, db_session):
         from app.models.hazard import Hazard
         _, client = hse_manager
         area = _area()
@@ -385,7 +385,8 @@ class TestByEquipment:
         await db_session.flush()
         listed = (await client.get("/api/v1/reports/records", params={
             "entity": "hazard", "filter": f"location:{area}"})).json()
-        assert listed["rows"][0]["path"] == f"/hazards?q={h.hazard_no}"
+        # ★ Round 12, HAZ-04: a hazard has its own page now.
+        assert listed["rows"][0]["path"] == f"/hazards/{h.id}"
 
     async def test_a_draft_permit_is_not_counted_until_sent(self, hse_manager, db_session):
         """★ Review (uniops-8b): as for incidents, a draft is somebody's unsent

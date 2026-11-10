@@ -34,6 +34,8 @@ export interface Assessment {
   likelihood_code: string; likelihood_label: string | null
   severity_level: number; severity_label: string | null
   rating: string; controls: string | null
+  /** Round 12, HAZ-02: what the hazard register's old form called Controls. */
+  controls_in_place?: string | null
   hazard_label: string | null
   residual_likelihood_code: string | null; residual_severity_level: number | null
   residual_rating: string | null
@@ -115,7 +117,7 @@ export function RiskScoringHistory({
           <span className="flex flex-wrap items-center gap-2">
             <RatingBadge rating={a.rating} />
             <span className="text-neutral-500">
-              judged on <span className="capitalize">{a.consequence_type.replace('_', ' ')}</span>
+              judged on <span className="font-semibold capitalize text-neutral-800">{a.consequence_type.replace('_', ' ')}</span>
             </span>
             <span className="text-neutral-400">·</span>
             <span className="text-neutral-600">
@@ -139,8 +141,11 @@ export function RiskScoringHistory({
               {a.residual_severity_level !== null && `/${a.residual_severity_level})`}
             </span>
           )}
+          {a.controls_in_place && (
+            <span className="mt-0.5 block text-neutral-600">Controls in place: {a.controls_in_place}</span>
+          )}
           {a.controls && (
-            <span className="mt-0.5 block text-neutral-600">Controls: {a.controls}</span>
+            <span className="mt-0.5 block text-neutral-600">Remaining: {a.controls}</span>
           )}
         </li>
       ))}
@@ -188,12 +193,14 @@ function AssessmentTable({ rows }: { rows: Assessment[] }) {
                 <td className={td}>{a.by_anonymous_reporter ? 'The reporter (anonymous)' : a.assessed_by_name ?? 'Unknown'}</td>
                 <td className={`${td} whitespace-nowrap`}>{formatDateTime(a.assessed_at)}</td>
                 <td className={td}>{a.hazard_label ?? '—'}</td>
-                <td className={td}>{judgedOn(a.consequence_type)}</td>
+                {/* Round 12, HAZ-08: Judged on in bold. */}
+                <td className={`${td} font-semibold`}>{judgedOn(a.consequence_type)}</td>
                 <td className={td}>{a.likelihood_code}{a.likelihood_label && ` — ${a.likelihood_label}`}</td>
                 <td className={td}>{a.severity_level}{a.severity_label && ` — ${a.severity_label}`}</td>
                 <td className={td}><RatingBadge rating={a.rating} /></td>
                 <td className={td}>
                   {controls.length ? controls.map((c) => c.label).join('; ') : '—'}
+                  {a.controls_in_place && <span className="mt-1 block text-neutral-600">In place: {a.controls_in_place}</span>}
                   {a.controls && <span className="mt-1 block text-neutral-500">Remaining: {a.controls}</span>}
                 </td>
                 <td className={td}>{a.residual_likelihood_code ?? '—'}</td>

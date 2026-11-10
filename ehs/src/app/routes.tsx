@@ -12,6 +12,7 @@ import DocumentDetailPage from '@/pages/DocumentDetailPage'
 import DocumentsPage from '@/pages/DocumentsPage'
 import EmergencyPage from '@/pages/EmergencyPage'
 import HazardsPage from '@/pages/HazardsPage'
+import HazardDetailPage from '@/pages/HazardDetailPage'
 import HoursWorkedPage from '@/pages/settings/HoursWorkedPage'
 import IncidentDetailPage from '@/pages/IncidentDetailPage'
 import IncidentListPage from '@/pages/IncidentListPage'
@@ -165,6 +166,12 @@ export const ehsRoutes: RouteDef[] = [
     path: '/hazards',
     element: <HazardsPage />,
     tab: { title: 'Hazards', icon: 'ShieldAlert', keyStrategy: 'static' },
+  },
+  {
+    // Round 12, HAZ-04: one hazard, every field, read-only.
+    path: '/hazards/:id',
+    element: <HazardDetailPage />,
+    tab: { title: 'Hazard', icon: 'ShieldAlert', keyStrategy: 'param', paramName: 'id' },
   },
   {
     path: '/jsa',

@@ -120,7 +120,7 @@ async def collect(db: AsyncSession, leaver: uuid.UUID) -> dict[str, list[Item]]:
             select(TbtDelivery, ToolboxTalk).join(ToolboxTalk, ToolboxTalk.id == TbtDelivery.talk_id)
             .where(TbtDelivery.supervisor_id == leaver,
                    TbtDelivery.status == "pending"))).all()]
-    out["hazard"] = [Item(h.id, h.hazard_no, h.title, f"/hazards?q={h.hazard_no}", h)
+    out["hazard"] = [Item(h.id, h.hazard_no, h.title, f"/hazards/{h.id}", h)
                      for h in (await db.execute(select(Hazard).where(
                          Hazard.owner_id == leaver, Hazard.status == "open"))).scalars()]
     out["document"] = [Item(d.id, d.doc_no, d.title, f"/documents/{d.id}", d)

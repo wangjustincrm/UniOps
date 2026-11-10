@@ -24,7 +24,7 @@ from datetime import date, datetime
 from sqlalchemy import (
     Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
@@ -96,6 +96,17 @@ class Hazard(UUIDPrimaryKey, TimestampMixin, Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True, index=True)
     created_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # ★ Round 12, HAZ-11: several kinds and several controls, from HSE's lists.
+    # Snapshots [{id, label}], as on a risk assessment. `hazard_type_id` stays
+    # the first kind, for what reads one; `existing_controls` keeps the words.
+    hazard_types: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]")
+    hazard_controls: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]")
+    # Kirk, round 12: "last revised on". An edit, not an assessment.
+    revised_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revised_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 class Jsa(UUIDPrimaryKey, TimestampMixin, Base):

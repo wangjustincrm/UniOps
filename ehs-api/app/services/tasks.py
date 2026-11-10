@@ -118,7 +118,7 @@ DOC_PATHS: dict[str, str] = {
     # Round 12, Q5. A hazard and a drill have a register, not a page; it is
     # opened narrowed to the one, by its number.
     DOC_SUBMISSION: "/forms/submissions/{id}",
-    DOC_HAZARD: "/hazards?q={ref}",
+    DOC_HAZARD: "/hazards/{id}",
     DOC_DRILL: "/emergency?q={ref}",
 }
 

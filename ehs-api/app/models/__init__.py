@@ -50,3 +50,4 @@ from app.models.worker import (  # noqa: F401
 from app.models.news import NewsItem  # noqa: F401,E402
 from app.models.reassignment import Reassignment  # noqa: F401,E402
 from app.models.incident_type import CustomIncidentType  # noqa: F401,E402
+from app.models.record_attachment import RecordAttachment  # noqa: F401,E402

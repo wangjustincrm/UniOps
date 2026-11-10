@@ -95,6 +95,8 @@ class AssessmentOut(BaseModel):
     severity_label: str | None
     rating: str
     controls: str | None
+    # Round 12, HAZ-02: what an old hazard assessment called "Controls".
+    controls_in_place: str | None = None
     residual_likelihood_code: str | None
     residual_severity_level: int | None
     residual_rating: str | None

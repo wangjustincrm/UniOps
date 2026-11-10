@@ -12,8 +12,8 @@
  * drift from it within a month.
  */
 import EquipmentSelect, { EquipmentName } from '@/components/EquipmentSelect'
-import { useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ShieldAlert, Plus, X } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -21,11 +21,16 @@ import {
   CausesEditor, causesPayload, spendActionDrafts, unfinishedAction, type CauseDraft, type SavedAction,
 } from '@/components/CausesEditor'
 import { Pagination, SearchBox, useListView, DateRangeFilter } from '@/components/ListView'
-import { formatDate } from '@/lib/formatDate'
+import { formatDate, formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
+import { useMyProfile } from '@/hooks/useMyProfile'
+import { PhotoCapture } from '@/components/PhotoCapture'
+import { RecordPhotos, uploadPhotos } from '@/components/RecordPhotos'
+import { RiskAssessmentDialog } from '@/components/RiskAssessmentDialog'
+import type { CompressedImage } from '@/lib/imageCompress'
 import { LocationSelect } from '@/components/LocationSelect'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
-import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
+import { VocabularyMultiSelect } from '@/components/VocabularyPicker'
 import { RatingBadge, RiskScoringHistory } from '@/components/RiskScoring'
 import {
   Card, Empty, ErrorNote, Field, inputClass, LoadFailedNote, PageHeader, primaryButton, secondaryButton, SectionTitle,
@@ -44,17 +49,19 @@ export interface Hazard {
   owner_id: string | null; owner_name: string | null
   identified_on: string | null; review_due_on: string | null
   status: string; created_at: string
+  created_by_name?: string | null
+  /** Round 12, HAZ-11: several kinds and controls, as named when picked. */
+  hazard_types?: { id: string; label: string }[]
+  hazard_controls?: { id: string; label: string }[]
+  /** Kirk, round 12: "last revised on". An edit, not an assessment. */
+  revised_at?: string | null; revised_by_name?: string | null
 }
 interface RatingCount { rating: string; count: number }
-interface Likelihood { code: string; label: string; qualitative: string | null; frequency: string | null }
-interface Severity {
-  level: number; people: string | null; downtime: string | null
-  reputation: string | null; environmental: string | null; asset_damage: string | null
-}
-interface Consequence { code: string; label: string; severity: Record<string, string> }
-interface Matrix {
-  likelihood: Likelihood[]; severity: Severity[]; consequence_types: string[]
-  consequences?: Consequence[]
+
+/** The kinds a hazard is, old single-kind hazards included. */
+export function hazardKinds(h: Hazard): string[] {
+  if (h.hazard_types?.length) return h.hazard_types.map((k) => k.label)
+  return h.hazard_type_label ? [h.hazard_type_label] : []
 }
 
 export const CONTROL_LEVELS = [
@@ -78,28 +85,39 @@ export default function HazardsPage() {
   const [scoringFor, setScoringFor] = useState<string | null>(null)
   const [assessing, setAssessing] = useState<Hazard | null>(null)
   const [showEliminated, setShowEliminated] = useState(false)
+  // ★ Round 12, HAZ-07: newest first, worst first on request. Round 3 had
+  // "ranked, not listed"; Kirk reversed it.
+  const [order, setOrder] = useState<'newest' | 'risk'>('newest')
 
-  const query = showEliminated ? '' : '?status=open&status=controlled'
+  const qs = new URLSearchParams({ order })
+  if (!showEliminated) { qs.append('status', 'open'); qs.append('status', 'controlled') }
   // `list_hazards` caps at 300 with no parameter to raise it.
   const HAZARD_LIMIT = 300
 
   const hazards = useQuery({
-    queryKey: ['hazards', showEliminated],
-    queryFn: () => api.get<Hazard[]>(`/api/v1/hazards${query}`),
+    queryKey: ['hazards', showEliminated, order],
+    queryFn: () => api.get<Hazard[]>(`/api/v1/hazards?${qs}`),
   })
   const summary = useQuery({
     queryKey: ['hazard-summary'],
     queryFn: () => api.get<RatingCount[]>('/api/v1/hazards/summary'),
   })
-  const [search] = useSearchParams()
+  const [search, setSearch] = useSearchParams()
   const list = useListView(hazards.data, (h) => [
     h.hazard_no, h.title, h.description, h.location_path, h.owner_name,
-    h.hazard_type_label, h.current_rating, h.status,
-    // ★ `?q=` lets an action that was raised from a hazard land on that one
-    // row. There is no page for a single hazard, and a link to the register
-    // alone would drop somebody into a hundred rows with no sign of which one
-    // they were sent for.
-  ], { dateOf: (h) => h.identified_on, query: search.get('q') ?? '' })
+    ...hazardKinds(h), h.current_rating, h.status, h.created_by_name,
+    // `?q=` still lands an old link on its row; links now go to /hazards/:id.
+  ], { dateOf: (h) => h.created_at, query: search.get('q') ?? '' })
+  // "Edit" on the hazard's own page comes back here with ?edit=<id>.
+  const editId = search.get('edit')
+  useEffect(() => {
+    if (!editId || !hazards.data) return
+    const found = hazards.data.find((h) => h.id === editId)
+    if (found) setEditing(found)
+    const next = new URLSearchParams(search)
+    next.delete('edit')
+    setSearch(next, { replace: true })
+  }, [editId, hazards.data, search, setSearch])
 
   return (
     <div className="p-4">
@@ -137,11 +155,22 @@ export default function HazardsPage() {
         <HazardForm key={editing.id} existing={editing} onClose={() => setEditing(null)} />
       )}
 
-      <label className="mb-3 flex items-center gap-2 text-xs text-neutral-600">
-        <input type="checkbox" checked={showEliminated}
-               onChange={(e) => setShowEliminated(e.target.checked)} />
-        Include hazards that have been eliminated
-      </label>
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div role="group" aria-label="Order" className="inline-flex overflow-hidden rounded-lg border border-neutral-300">
+          {([['newest', 'Newest first'], ['risk', 'Highest risk first']] as const).map(([key, text]) => (
+            <button key={key} type="button" aria-pressed={order === key} onClick={() => setOrder(key)}
+                    className={`min-h-[36px] px-3 text-xs font-medium ${order === key
+                      ? 'bg-primary-600 text-white' : 'bg-white text-neutral-700'}`}>
+              {text}
+            </button>
+          ))}
+        </div>
+        <label className="flex items-center gap-2 text-xs text-neutral-600">
+          <input type="checkbox" checked={showEliminated}
+                 onChange={(e) => setShowEliminated(e.target.checked)} />
+          Include hazards that have been eliminated
+        </label>
+      </div>
 
       <SearchBox value={list.query} onChange={list.setQuery}
                  placeholder="Search by number, what it is, area, owner or rating">
@@ -162,20 +191,38 @@ export default function HazardsPage() {
                 <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5">
                   <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-neutral-400" aria-hidden />
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-neutral-900">
+                    <Link to={`/hazards/${h.id}`}
+                          className="block text-sm font-semibold text-neutral-900 hover:text-primary-700 hover:underline">
                       {h.title}
-                    </span>
+                    </Link>
                     <span className="mt-0.5 block text-xs text-neutral-500">
                       {h.hazard_no}
+                      {h.department_name && ` · ${h.department_name}`}
                       {h.location_path && ` · ${h.location_path}`}<EquipmentName id={h.equipment_id} />
                       {h.owner_name && ` · owned by ${h.owner_name}`}
                     </span>
+                    {/* Kirk, round 12: the date and time it was saved, just under
+                        the number, department and owner. */}
+                    <span className="mt-0.5 block text-xs text-neutral-500">
+                      Recorded {formatDateTime(h.created_at)}
+                      {h.created_by_name && ` by ${h.created_by_name}`}
+                      {h.revised_at && ` · last revised on ${formatDate(h.revised_at)}`}
+                    </span>
+                    {hazardKinds(h).length > 0 && (
+                      <span className="mt-1 flex flex-wrap gap-1">
+                        {hazardKinds(h).map((k) => (
+                          <span key={k} className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-700">{k}</span>
+                        ))}
+                      </span>
+                    )}
                     {h.description && (
                       <span className="mt-1 block text-sm text-neutral-700">{h.description}</span>
                     )}
-                    {h.existing_controls && (
+                    {(h.existing_controls || (h.hazard_controls ?? []).length > 0) && (
                       <span className="mt-1 block text-xs text-neutral-600">
-                        <span className="font-medium">Controls:</span> {h.existing_controls}
+                        <span className="font-medium">Controls:</span>{' '}
+                        {[...(h.hazard_controls ?? []).map((c) => c.label), h.existing_controls]
+                          .filter(Boolean).join('; ')}
                         {h.control_level && ` (${
                           CONTROL_LEVELS.find((c) => c.key === h.control_level)?.label
                           ?? h.control_level})`}
@@ -223,7 +270,7 @@ export default function HazardsPage() {
                   </span>
                 </div>
                 {scoringFor === h.id && (
-                  <RiskScoringHistory sourceType="hazard" sourceId={h.id}
+                  <RiskScoringHistory sourceType="hazard" sourceId={h.id} showHazard
                     emptyNote="This hazard has not been scored against the matrix yet." />
                 )}
               </Card>
@@ -238,7 +285,11 @@ export default function HazardsPage() {
                   loaded={(hazards.data ?? []).length} />
 
       {assessing && (
-        <AssessDialog hazard={assessing} onClose={() => setAssessing(null)} />
+        // ★ Round 12, HAZ-02: the incident's form, in hazard mode.
+        <RiskAssessmentDialog sourceType="hazard" sourceId={assessing.id}
+          onClose={() => setAssessing(null)}
+          hazard={{ id: assessing.id, hazard_no: assessing.hazard_no, title: assessing.title,
+                    kinds: hazardKinds(assessing) }} />
       )}
     </div>
   )
@@ -260,10 +311,14 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
   const editing = Boolean(existing)
   const [title, setTitle] = useState(existing?.title ?? '')
   const [description, setDescription] = useState(existing?.description ?? '')
-  const [type, setType] = useState<VocabItem | null>(
-    existing?.hazard_type_id
-      ? { id: existing.hazard_type_id, label: existing.hazard_type_label ?? '' } as VocabItem
-      : null)
+  // ★ Round 12, HAZ-11: several kinds and controls, from HSE's lists.
+  const [kindIds, setKindIds] = useState<string[]>(
+    existing?.hazard_types?.length ? existing.hazard_types.map((k) => k.id)
+      : existing?.hazard_type_id ? [existing.hazard_type_id] : [])
+  const [controlIds, setControlIds] = useState<string[]>(
+    (existing?.hazard_controls ?? []).map((c) => c.id))
+  const [newPhotos, setNewPhotos] = useState<CompressedImage[]>([])
+  const me = useMyProfile()
   const [locationId, setLocationId] = useState<string | null>(existing?.location_id ?? null)
   const [equipmentId, setEquipmentId] = useState<string | null>(existing?.equipment_id ?? null)
   const [controls, setControls] = useState(existing?.existing_controls ?? '')
@@ -271,6 +326,14 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
   const [owner, setOwner] = useState<PersonValue>(existing?.owner_id
     ? { ...EMPTY_PERSON, userId: existing.owner_id, name: existing.owner_name ?? '' }
     : EMPTY_PERSON)
+  // ★ Round 12, HAZ-01: "Owner — Defaults to you" said so and showed nothing
+  // (the server filled it in on save). It now shows you, and stays editable.
+  const [ownerTouched, setOwnerTouched] = useState(false)
+  useEffect(() => {
+    if (!existing && !ownerTouched && !owner.userId && me.data) {
+      setOwner({ ...EMPTY_PERSON, userId: me.data.id, name: me.data.full_name })
+    }
+  }, [existing, ownerTouched, owner.userId, me.data])
   const [reviewOn, setReviewOn] = useState(existing?.review_due_on ?? '')
   const [findings, setFindings] = useState(existing?.findings ?? '')
   const [causes, setCauses] = useState<CauseDraft[]>([])
@@ -299,7 +362,8 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
   const body = () => ({
     title, description: description || null,
     findings: findings || null,
-    hazard_type_id: type?.id ?? null, hazard_type_label: type?.label ?? null,
+    hazard_type_ids: kindIds,
+    hazard_control_ids: controlIds,
     location_id: locationId,
     equipment_id: equipmentId,
     existing_controls: controls || null,
@@ -323,6 +387,7 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
         id = made.id
         setCreatedId(made.id)
       }
+      await uploadPhotos('hazard', id, newPhotos)
       // ★ Never while an existing hazard's causes are unknown. Replacing is
       // what this endpoint does, so sending the empty set the editor shows
       // before they have loaded — or after the request for them failed — would
@@ -346,9 +411,17 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
   return (
     <Card className="mb-4">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-neutral-900">
-          {editing ? `Correct ${existing!.hazard_no}` : 'Record a hazard'}
-        </h2>
+        <div>
+          <h2 className="text-sm font-semibold text-neutral-900">
+            {editing ? `Correct ${existing!.hazard_no}` : 'Record a hazard'}
+          </h2>
+          {/* ★ Round 12, HAZ-01: who is recording it, shown and not editable. */}
+          <p className="text-xs text-neutral-500">
+            {editing
+              ? `Recorded ${formatDateTime(existing!.created_at)}${existing!.created_by_name ? ` by ${existing!.created_by_name}` : ''}`
+              : `Recorded by ${me.data?.full_name ?? 'you'}`}
+          </p>
+        </div>
         <button type="button" onClick={onClose} aria-label="Close"
                 className="rounded p-1 text-neutral-400 hover:bg-neutral-50">
           <X className="h-4 w-4" />
@@ -361,8 +434,9 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
                    placeholder="Pinch point at the case sealer infeed" />
           </Field>
         </div>
-        <Field label="Kind">
-          <VocabularySelect vocabulary="hazard" value={type?.id ?? null} onChange={setType} />
+        <Field label="Kind" hint="Pick every kind that applies">
+          <VocabularyMultiSelect vocabulary="hazard" value={kindIds} onChange={(ids) => setKindIds(ids)}
+                                 placeholder="Search the hazard list…" />
         </Field>
         <Field label="Where">
           <LocationSelect value={locationId} onChange={setLocationId} />
@@ -389,7 +463,14 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
           </Field>
         </div>
         <div className="sm:col-span-2">
-          <Field label="Controls already in place">
+          <Field label="Controls in place" hint="Pick from the list; add anything it does not have below">
+            <VocabularyMultiSelect vocabulary="hazard_control" value={controlIds}
+                                   onChange={(ids) => setControlIds(ids)}
+                                   placeholder="Search the hazard controls…" />
+          </Field>
+        </div>
+        <div className="sm:col-span-2">
+          <Field label="Other controls, in words">
             <textarea className={`${inputClass} min-h-[60px] py-2`} value={controls}
                       onChange={(e) => setControls(e.target.value)} />
           </Field>
@@ -402,7 +483,8 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
           </select>
         </Field>
         <Field label="Owner" hint="Defaults to you">
-          <PersonPicker value={owner} onChange={setOwner} allowExternal={false} />
+          <PersonPicker value={owner} onChange={(v) => { setOwnerTouched(true); setOwner(v) }}
+                        allowExternal={false} />
         </Field>
         <Field label="Review due">
           <input type="date" className={inputClass} value={reviewOn}
@@ -440,6 +522,15 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
         )}
       </div>
 
+      {editing ? (
+        <RecordPhotos type="hazard" ownerId={existing!.id} canAdd />
+      ) : (
+        <div className="mt-4 border-t border-neutral-100 pt-3">
+          <SectionTitle className="mb-1.5">Photographs</SectionTitle>
+          <PhotoCapture photos={newPhotos} onChange={setNewPhotos} />
+        </div>
+      )}
+
       <ErrorNote error={create.error} />
       {createdId && create.isError && (
         <p className="mt-2 text-xs text-neutral-600">
@@ -459,149 +550,5 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
         </button>
       </div>
     </Card>
-  )
-}
-
-/**
- * Scoring a hazard against HSE's matrix.
- *
- * Both halves are asked in one place — the risk as it stands, and the risk
- * once the controls are in. Assessing without the second is the common way a
- * register ends up full of critical hazards that were in fact dealt with.
- */
-function AssessDialog({ hazard, onClose }: { hazard: Hazard; onClose: () => void }) {
-  const queryClient = useQueryClient()
-  const [chosen, setChosen] = useState<string | null>(null)
-  const [likelihood, setLikelihood] = useState('')
-  const [severity, setSeverity] = useState('')
-  const [controls, setControls] = useState(hazard.existing_controls ?? '')
-  const [residualLikelihood, setResidualLikelihood] = useState('')
-  const [residualSeverity, setResidualSeverity] = useState('')
-
-  const matrix = useQuery({
-    queryKey: ['risk-matrix'],
-    queryFn: () => api.get<Matrix>('/api/v1/risk/matrix'),
-    staleTime: 30 * 60_000,
-  })
-  // ★ Review (uniops-8b): "Judged on" and the wording of each level come from
-  // the list HSE keeps (Settings → Lists → Judged on), as in the incident's
-  // risk assessment and on the server — this dialog read the old severity
-  // table, so the two drifted once HSE edited the list, and retiring People
-  // left its default refused. An entry with no wording cannot be scored.
-  const consequences = (matrix.data?.consequences ?? [])
-    .filter((c) => Object.keys(c.severity).length > 0)
-  const consequence = chosen ?? consequences.find((c) => c.code === 'people')?.code
-    ?? consequences[0]?.code ?? ''
-  const judged = consequences.find((c) => c.code === consequence) ?? null
-  const levels = Object.keys(judged?.severity ?? {}).map(Number).sort((a, b) => b - a)
-
-  const assess = useMutation({
-    mutationFn: () => api.post(`/api/v1/hazards/${hazard.id}/assess`, {
-      consequence_type: consequence,
-      likelihood_code: likelihood,
-      severity_level: Number(severity),
-      controls: controls || null,
-      residual_likelihood_code: residualLikelihood || null,
-      residual_severity_level: residualSeverity === '' ? null : Number(residualSeverity),
-    }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['hazards'] })
-      queryClient.invalidateQueries({ queryKey: ['hazard-summary'] })
-      onClose()
-    },
-  })
-
-
-  return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center overflow-y-auto bg-black/40 p-4 sm:items-center">
-      <div role="dialog" aria-modal="true" aria-label="Assess the risk"
-           className="w-full max-w-lg rounded-xl bg-white p-4 shadow-xl">
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-neutral-900">{hazard.title}</h2>
-            <p className="text-xs text-neutral-500">{hazard.hazard_no}</p>
-          </div>
-          <button type="button" onClick={onClose} aria-label="Close"
-                  className="rounded p-1 text-neutral-400 hover:bg-neutral-50">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <Field label="Judged on"
-               hint="The matrix scores severity differently for each of these, so it has to be said which">
-          <select className={inputClass} value={consequence}
-                  onChange={(e) => { setChosen(e.target.value); setSeverity(''); setResidualSeverity('') }}>
-            {consequences.map((c) => <option key={c.code} value={c.code}>{c.label}</option>)}
-          </select>
-        </Field>
-
-        <SectionTitle className="mb-1 mt-3">As it stands</SectionTitle>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="How likely">
-            <select className={inputClass} value={likelihood}
-                    onChange={(e) => setLikelihood(e.target.value)}>
-              <option value="">Select…</option>
-              {matrix.data?.likelihood.map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.code} — {l.label}{l.frequency ? ` (${l.frequency})` : ''}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="How bad">
-            <select className={inputClass} value={severity}
-                    onChange={(e) => setSeverity(e.target.value)}>
-              <option value="">Select…</option>
-              {levels.map((lv) => (
-                <option key={lv} value={lv}>{lv} — {judged?.severity[String(lv)]}</option>
-              ))}
-            </select>
-          </Field>
-        </div>
-
-        <div className="mt-3">
-          <Field label="Controls">
-            <textarea className={`${inputClass} min-h-[60px] py-2`} value={controls}
-                      onChange={(e) => setControls(e.target.value)} />
-          </Field>
-        </div>
-
-        <SectionTitle className="mb-1 mt-3">Once those controls are in</SectionTitle>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="How likely then">
-            <select className={inputClass} value={residualLikelihood}
-                    onChange={(e) => setResidualLikelihood(e.target.value)}>
-              <option value="">Not assessed</option>
-              {matrix.data?.likelihood.map((l) => (
-                <option key={l.code} value={l.code}>{l.code} — {l.label}</option>
-              ))}
-            </select>
-          </Field>
-          <Field label="How bad then">
-            <select className={inputClass} value={residualSeverity}
-                    onChange={(e) => setResidualSeverity(e.target.value)}>
-              <option value="">Not assessed</option>
-              {levels.map((lv) => (
-                <option key={lv} value={lv}>{lv} — {judged?.severity[String(lv)]}</option>
-              ))}
-            </select>
-          </Field>
-        </div>
-
-        <ErrorNote error={assess.error} />
-
-        <div className="mt-4 flex justify-end gap-2">
-          <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>
-          <button type="button" className={primaryButton}
-                  disabled={!likelihood || severity === '' || assess.isPending}
-                  onClick={() => { if (!assess.isPending) assess.mutate() }}>
-            {assess.isPending ? 'Scoring…' : 'Score it'}
-          </button>
-        </div>
-        <p className="mt-2 text-right text-xs text-neutral-500">
-          The rating comes from the matrix, not from this form.
-        </p>
-      </div>
-    </div>
   )
 }

@@ -60,6 +60,10 @@ class RiskAssessment(UUIDPrimaryKey, TimestampMixin, Base):
     residual_rating: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # "Hazard after controls are implemented" on the round-8 form.
     controls: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # ★ Round 12, HAZ-02: what the hazard register's own form wrote in
+    # `controls` before hazards were scored on the incident's form — the
+    # controls in place, not what remains. Moved here by 0094.
+    controls_in_place: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Round 8: the hazard list entry, and the controls picked — snapshots
     # [{id, label}], so renaming a list entry does not rewrite an assessment.
     hazard_item_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)

@@ -24,9 +24,10 @@ export function sourceLink(
     case 'jhsc': return `/jhsc/meetings/${sourceId}`
     // Round 10: a safety equipment check recorded without a checklist.
     case 'asset': return `/equipment?asset=${sourceId}`
-    // These two have a register but no page of their own. The reference is
-    // what the register searches by, so it arrives filtered to the one row.
-    case 'hazard': return sourceRef ? `/hazards?q=${encodeURIComponent(sourceRef)}` : null
+    // Round 12, HAZ-04: a hazard has its own page now.
+    case 'hazard': return `/hazards/${sourceId}`
+    // A drill has a register but no page of its own. The reference is what the
+    // register searches by, so it arrives filtered to the one row.
     case 'drill': return sourceRef ? `/emergency?q=${encodeURIComponent(sourceRef)}` : null
     default: return null
   }
