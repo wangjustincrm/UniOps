@@ -222,7 +222,8 @@ modules:
         Nobody pays their own claim either, while the self-payment
         segregation-of-duties rule is on (it is by default): a Payment Officer
         or Finance Manager does not get Mark as Processed on a claim of their
-        own — someone else with payment authority pays it. If a payment is
+        own, and their own approved claim is not a Record Payment card in their
+        Task Inbox — someone else with payment authority pays it. If a payment is
         refused, the reason is shown in the Mark as Processed dialog.
 
   - key: vms

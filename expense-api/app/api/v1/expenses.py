@@ -576,7 +576,12 @@ async def my_actions(db: SessionDep, user: CurrentUserDep):
     # TRA excluded — an approved Travel Application has total_amount 0 and never
     # enters the payment path, so it must not surface as a pay-action inbox item.
     if await holds_payment_role(db, user_id, role):
-        conditions.append((EC.status == "approved") & (EC.claim_type != "TRA"))
+        pay_cond = (EC.status == "approved") & (EC.claim_type != "TRA")
+        # Not the payer's own claim while the self_payment SoD rule is on: the
+        # executor refuses it, so it is not work for them (TASK-007, ISS-0205).
+        if await _self_payment_rule_enabled(db):
+            pay_cond = pay_cond & (EC.employee_id != user_id)
+        conditions.append(pay_cond)
 
     if not conditions:
         return ExpenseClaimListResponse(items=[], total=0)

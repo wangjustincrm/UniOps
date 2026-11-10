@@ -118,7 +118,8 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
     """
     from sqlalchemy import or_, select
     from app.api.v1.expenses import (
-        _CAN_PAY, OA_CLAIM_DOC_TYPES, _user_role_codes, approvable_document_ids,
+        _CAN_PAY, OA_CLAIM_DOC_TYPES, _self_payment_rule_enabled, _user_role_codes,
+        approvable_document_ids,
     )
     from app.models.expense import ExpenseClaim as EC
 
@@ -126,6 +127,10 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
     user_id = uuid.UUID(user["sub"])
     roles = await _user_role_codes(db, user_id, role)      # primary ∪ additional
     can_pay = any(r in _CAN_PAY for r in roles)
+    # The payment executor refuses a payer's own claim while the self_payment
+    # SoD rule is on, so that claim is no "Record Payment" card for them
+    # (TASK-007: pay_expense only for users who can execute it; ISS-0205).
+    no_self_pay = can_pay and await _self_payment_rule_enabled(db)
 
     # One definition of "is this mine to approve", shared with my_actions and
     # the list endpoints — see approvable_document_ids. The inline copy that
@@ -174,8 +179,9 @@ async def list_tasks(db: SessionDep, user: CurrentUserDep):
         if claim.id in seen_exp:
             continue
         is_own = claim.employee_id == user_id or is_preparer(claim, user_id)
+        may_pay = can_pay and not (no_self_pay and claim.employee_id == user_id)
         tt = _exp_task_type(claim.status, is_own, claim.id in approvable_ids,
-                            can_pay, claim.claim_type)
+                            may_pay, claim.claim_type)
         if tt is None:
             continue
         seen_exp.add(claim.id)

@@ -131,3 +131,23 @@ async def test_self_payment_rule_does_not_touch_other_payers(db_session):
         assert resp.json()["can_pay"] is True
     finally:
         await _set_self_payment_rule(db_session, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rule, expected", [(True, False), (False, True)])
+async def test_own_claim_offers_no_record_payment_task(db_session, rule, expected):
+    """TASK-007: a pay_expense card only for users who can execute it. While
+    self_payment is on, the payer's own approved claim is not a Record Payment
+    card in the OA Task Inbox, nor a pay item in my-actions (Portal home)."""
+    claim = await _make_approved_exp(db_session)
+    await _set_self_payment_rule(db_session, rule)
+    try:
+        async with _client_for("payment_officer", str(claim.employee_id)) as po:
+            tasks = (await po.get("/api/v1/tasks")).json()
+            mine = (await po.get("/api/v1/expenses/my-actions")).json()
+        pay_cards = [t for t in tasks["items"]
+                     if t["doc_id"] == str(claim.id) and t["task_type"] == "pay_expense"]
+        assert bool(pay_cards) is expected
+        assert any(i["id"] == str(claim.id) for i in mine["items"]) is expected
+    finally:
+        await _set_self_payment_rule(db_session, None)
