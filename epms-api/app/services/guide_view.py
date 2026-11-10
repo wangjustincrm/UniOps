@@ -12,6 +12,7 @@ any document. The PRDs describing these flows are two to four months behind
 production; a workflow generated from the live config cannot drift, because it
 IS what runs.
 """
+import re
 import uuid
 
 from app.crud import task as task_crud
@@ -89,6 +90,35 @@ TASK_TYPE_LABELS: dict[str, str] = {
     "resolve_ap_duplicate_invoice": "Resolve Duplicate NC Invoices",
 }
 
+def task_type_label(task_type: str) -> str:
+    """The Task Inbox's header for a task type, and a readable name for a type
+    it has none for — never the raw key. Other modules' types (OA's
+    approve_exp, approve_trv, ...) are not in TASK_TYPE_LABELS and came out as
+    "approve_exp" in the reply (ISS-0102); no EPMS page shows them, so there
+    is no header to match. Derived: "<verb>_<process>"
+    is the verb and the process's own label, else the words of the key."""
+    if task_type in TASK_TYPE_LABELS:
+        return TASK_TYPE_LABELS[task_type]
+    verb, _, rest = (task_type or "").partition("_")
+    if rest in PROCESS_LABELS:
+        return f"{verb.capitalize()} {PROCESS_LABELS[rest]}"
+    return " ".join(w.capitalize() for w in (task_type or "").split("_") if w) or "Task"
+
+
+def with_task_labels(text: str, task_types) -> str:
+    """Every raw task-type key in a reply replaced by its label (ISS-0102).
+    The narrator is given the labels, but is also given each task's `type`;
+    this holds whichever it prints."""
+    if not text:
+        return text
+    for key in sorted({k for k in task_types if k and "_" in k}, key=len, reverse=True):
+        text = re.sub(rf"(?<![A-Za-z0-9_`]){re.escape(key)}(?![A-Za-z0-9_])",
+                      task_type_label(key), text)
+        # `approve_exp` in backticks too.
+        text = text.replace(f"`{key}`", task_type_label(key))
+    return text
+
+
 # The only document types the EPMS Task Inbox lists. /tasks is shared by every
 # module and only Portal's inbox aggregates them all; the EPMS inbox shows EPMS
 # work (PRD EPMS §3.7.1) — an allow-list copied from epms/src/lib/taskTypes.ts
@@ -135,12 +165,17 @@ def split_epms_inbox(tasks: list[dict]) -> tuple[list[dict], list[dict]]:
     return inbox, elsewhere
 
 
-def _groups(tasks: list[dict]) -> list[dict]:
+def _groups(tasks: list[dict], label=None) -> list[dict]:
+    """Counts per type. Labelled as the EPMS Task Inbox labels its headers —
+    the key itself for a type it has no label for, so the reply matches the
+    page — unless `label` says otherwise (other modules' tasks, which no EPMS
+    page shows)."""
+    label = label or (lambda k: TASK_TYPE_LABELS.get(k, k))
     by_type: dict[str, int] = {}
     for t in tasks:
         by_type[t["type"]] = by_type.get(t["type"], 0) + 1
     return sorted(
-        ({"type": k, "label": TASK_TYPE_LABELS.get(k, k), "count": n}
+        ({"type": k, "label": label(k), "count": n}
          for k, n in by_type.items()),
         key=lambda g: (-g["count"], g["label"]))
 
@@ -200,7 +235,7 @@ def task_summary(tasks: list[dict], elsewhere: list[dict] | None = None) -> dict
         "not_in_this_inbox": [
             {**g, "module": owning_module(next(
                 t["document_type"] for t in elsewhere if t["type"] == g["type"]))}
-            for g in _groups(elsewhere or [])],
+            for g in _groups(elsewhere or [], label=task_type_label)],
         "examples_left_out": len(tasks) - len(examples),
         # Overdue, urgent, closing a task — the registry's tasks rules.
         "rules": _task_rules(),

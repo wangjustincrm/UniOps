@@ -44,6 +44,7 @@ from app.services import report_lineage
 from app.services import workflow_view
 from app.services import controlled_query as cq
 from app.services import caller_view
+from app.services import marked_view
 from app.services import page_document
 from app.services import document_chain
 
@@ -271,12 +272,25 @@ async def _chat(body: ChatRequest, db, user: dict, token: str,
         # One question of several in the message (ISS-0037, ISS-0069).
         context["question_part"] = part
 
+    # "Which questions have I marked?" is recognised here, not left to the
+    # planner, which answered it with the task inbox three times (ISS-0102).
+    # The planner still runs first so a message that also asks something else
+    # can be split; every other tool it picks is overridden.
+    asks_marked = marked_view.asks_for_marked(body.message)
     try:
         planned = await assistant_llm.plan(schema, body.message, context,
                                            history=history)
     except assistant_llm.LlmUnavailable as exc:
+        if asks_marked:
+            return await _answer_marked(db, body, actor)
         raise HTTPException(status_code=503, detail=str(exc))
     await assistant_llm.record_usage(db, actor, "plan", planned.get("usage") or {})
+
+    if planned["kind"] == "split" and not part:
+        return await _answer_parts(body, db, user, token, planned, part)
+
+    if asks_marked:
+        return await _answer_marked(db, body, actor)
 
     if planned["kind"] == "split":
         return await _answer_parts(body, db, user, token, planned, part)
@@ -622,8 +636,14 @@ async def _answer_whats_next(db, user, body, actor, me: dict | None = None) -> d
         raise HTTPException(status_code=503, detail=str(exc))
     await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
 
+    # No raw type key (approve_exp) reaches the person, whatever the narrator
+    # printed (ISS-0102): the inbox's own types become its headers, other
+    # modules' a readable name. An EPMS type the inbox has no header for is
+    # shown by the page as its key, and stays so.
+    known = {t["type"] for t in elsewhere} | set(guide_view.TASK_TYPE_LABELS)
     return {
-        "answer": told["text"], "kind": "tasks", "query": None,
+        "answer": guide_view.with_task_labels(told["text"], known),
+        "kind": "tasks", "query": None,
         "tasks": tasks,
         "sources": {"open_tasks": len(tasks)},
     }
@@ -1175,6 +1195,32 @@ async def _answer_dashboard(db, user, body, actor, token: str | None = None) -> 
     return {"answer": told["text"], "kind": "dashboard", "query": None,
             "dashboard": result,
             "sources": {"entity": "dashboard", "row_count": len(result["kpis"]),
+                        "complete": True}}
+
+
+async def _answer_marked(db, body: ChatRequest, actor) -> dict:
+    """The asker's marked questions, read from the Marked list (ISS-0102).
+
+    Not `_fixed_text`: the questions are quoted in the words they were saved
+    in, so only the sentences around them are ever rendered into another
+    language."""
+    questions = await marked_view.my_marked(db, actor) if actor else []
+    language = reply_language.detect(body.message)
+    # Same reading as _finish: an unrecognised language is English only when
+    # the question is plain ASCII.
+    said = (None if language is None and not body.message.isascii()
+            else marked_view.sentences(language))
+    if said is None:
+        said = {}
+        for key, text in marked_view.sentences("English").items():
+            try:
+                said[key] = (await assistant_llm.render_fixed_reply(
+                    text, body.message, language))["text"] or text
+            except assistant_llm.LlmUnavailable:
+                said[key] = text
+    return {"answer": marked_view.as_text(questions, said), "kind": "marked",
+            "marked": questions, "query": None,
+            "sources": {"entity": "Marked list", "row_count": len(questions),
                         "complete": True}}
 
 

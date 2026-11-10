@@ -98,7 +98,7 @@ def test_rule_ids_are_unique_and_areas_match_their_files():
         assert area.label and area.covers, key
     assert {"pr", "po", "gr", "pa", "invoice", "agreement", "approval_engine",
             "delegation", "budget", "nc_sync", "notifications", "tasks",
-            "dashboard", "reports", "vendor", "account"} == set(rule_registry.area_keys())
+            "dashboard", "reports", "vendor", "account", "assistant"} == set(rule_registry.area_keys())
 
 
 async def test_derived_rules_fill_every_placeholder():
