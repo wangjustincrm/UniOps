@@ -14,6 +14,10 @@ interface CfmField {
   required: boolean
   options: string[]
   placeholder: string | null
+  // Client-only: the Options box as typed. Splitting it on every keystroke
+  // dropped the empty line Enter had just made, so options ran together
+  // (ISS-0198); it becomes `options` when the forms are saved.
+  options_text?: string
 }
 
 interface CustomForm {
@@ -34,6 +38,12 @@ const FIELD_TYPES = [
 
 function emptyField(): CfmField {
   return { name: '', label: '', field_type: 'text', required: false, options: [], placeholder: null }
+}
+
+// One option per non-blank line of the Options box, trimmed.
+function toSavedField({ options_text, ...f }: CfmField): CfmField {
+  if (options_text === undefined) return f
+  return { ...f, options: options_text.split('\n').map((o) => o.trim()).filter(Boolean) }
 }
 
 function emptyForm(): CustomForm {
@@ -95,8 +105,8 @@ function FieldEditor({ field, onChange, onRemove }: {
             <div className="col-span-2">
               <label className="text-[10px] font-medium text-neutral-500">Options (one per line)</label>
               <textarea rows={3}
-                value={field.options.join('\n')}
-                onChange={e => onChange({ ...field, options: e.target.value.split('\n').filter(Boolean) })}
+                value={field.options_text ?? field.options.join('\n')}
+                onChange={e => onChange({ ...field, options_text: e.target.value })}
                 className="mt-0.5 w-full rounded border border-neutral-200 px-2 py-1 text-xs focus:outline-none resize-none" />
             </div>
           )}
@@ -216,7 +226,7 @@ export default function CfmAdminPage() {
       const currentCodes = new Set(forms.map((f) => f.code))
       for (const f of forms) {
         if (!f.code || !f.name) continue
-        const body = { name: f.name, fields: f.fields, is_active: f.is_active }
+        const body = { name: f.name, fields: f.fields.map(toSavedField), is_active: f.is_active }
         if (originalCodes.has(f.code)) {
           await api.patch(`/api/v1/expenses/custom-forms/${f.code}`, body)
         } else {
