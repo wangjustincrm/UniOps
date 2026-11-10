@@ -20,6 +20,7 @@
  */
 import EquipmentSelect, { EquipmentName } from '@/components/EquipmentSelect'
 import { useState } from 'react'
+import { useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, Check, ClipboardCheck, Gauge, Plus, ShieldCheck, X,
@@ -34,6 +35,10 @@ import { useEhsAuth } from '@/store/auth'
 import { LocationSelect } from '@/components/LocationSelect'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { SignaturePad } from '@/components/SignaturePad'
+import { VocabularyMultiSelect } from '@/components/VocabularyPicker'
+import { PhotoCapture } from '@/components/PhotoCapture'
+import { RecordPhotos, uploadPhotos } from '@/components/RecordPhotos'
+import type { CompressedImage } from '@/lib/imageCompress'
 import {
   Card, Empty, ErrorNote, Field, inputClass, LoadFailedNote, PageHeader, primaryButton,
   secondaryButton, SectionTitle, Tabs,
@@ -58,6 +63,9 @@ interface Permit {
   suspended_reason: string | null
   closed_at: string | null; closed_by_name: string | null; closeout_note: string | null
   qr_token: string | null
+  /** Round 12, PMT-01: picked from HSE's lists. */
+  hazard_items?: { id: string; label: string }[]
+  control_items?: { id: string; label: string }[]
   status: string
   blockers: string[]
 }
@@ -99,7 +107,11 @@ export default function PermitsPage() {
   const mayIssue = can('ehs.permit.issue')
   const [tab, setTab] = useState<TabKey>('live')
   const [creating, setCreating] = useState(false)
-  const [open, setOpen] = useState<string | null>(null)
+  // ★ /permits/:id (task links, CAPA sources, the QR board) lands with that
+  // permit open, on the tab it sits in. It used to land on the list, closed.
+  const { id: linked } = useParams()
+  const [open, setOpen] = useState<string | null>(linked ?? null)
+  const [landed, setLanded] = useState(false)
 
   // `list_permits` caps at 200 with no parameter to raise it.
   //
@@ -123,6 +135,16 @@ export default function PermitsPage() {
   const history = rows.filter(
     (p) => p.status === 'closed' || p.status === 'expired' || p.status === 'cancelled')
   const expiredOpen = rows.filter((p) => p.status === 'expired' && !p.closed_at)
+
+  if (linked && !landed && permits.data) {
+    setLanded(true)
+    const p = permits.data.find((x) => x.id === linked)
+    if (p) {
+      setOpen(p.id)
+      setTab(p.status === 'draft' ? 'preparing'
+        : p.status === 'issued' || p.status === 'suspended' ? 'live' : 'history')
+    }
+  }
 
   const shown = tab === 'live' ? live : tab === 'preparing' ? preparing : history
   // Searched within the tab rather than across all of them: somebody on
@@ -286,6 +308,7 @@ function PermitDetail({ permit, mayIssue }: { permit: Permit; mayIssue: boolean 
   // review by uniops-55.
   const me = useEhsAuth((st) => st.user?.id) ?? null
   const mayChange = editable && (permit.requested_by === me || mayIssue)
+  const mayRequest = usePermissions().can('ehs.permit.request')
 
   return (
     <div className="border-t border-neutral-100 p-3.5">
@@ -317,6 +340,8 @@ function PermitDetail({ permit, mayIssue }: { permit: Permit; mayIssue: boolean 
       )}
 
       {mayChange && <PermitTimes key={permit.id} permit={permit} onSaved={invalidate} />}
+
+      <PermitHazards key={`hz-${permit.id}`} permit={permit} editable={mayChange} onSaved={invalidate} />
 
       {type && (
         <PrecautionList permit={permit} type={type} editable={mayChange}
@@ -388,6 +413,70 @@ function PermitDetail({ permit, mayIssue }: { permit: Permit; mayIssue: boolean 
 
       {closing && (
         <CloseDialog permit={permit} onClose={() => setClosing(false)} onDone={invalidate} />
+      )}
+
+      {/* ★ Round 12, HAZ-03 ("pictures on all forms"): permits this round. */}
+      <div data-print="hide">
+        <RecordPhotos type="permit" ownerId={permit.id} canAdd={mayRequest} />
+      </div>
+    </div>
+  )
+}
+
+/**
+ * ★ Round 12, PMT-01: the hazards of the work and the controls for them,
+ * picked from HSE's lists. Shown on the permit and so on its printout;
+ * changed while it can be (draft or suspended).
+ */
+function PermitHazards({ permit, editable, onSaved }: {
+  permit: Permit; editable: boolean; onSaved: () => void
+}) {
+  const [hazardIds, setHazardIds] = useState((permit.hazard_items ?? []).map((h) => h.id))
+  const [controlIds, setControlIds] = useState((permit.control_items ?? []).map((c) => c.id))
+  const [dirty, setDirty] = useState(false)
+  const save = useMutation({
+    mutationFn: () => api.patch(`/api/v1/permits/${permit.id}`, {
+      hazard_ids: hazardIds, control_ids: controlIds,
+    }),
+    onSuccess: () => { setDirty(false); onSaved() },
+  })
+  const hazards = (permit.hazard_items ?? []).map((h) => h.label)
+  const controls = (permit.control_items ?? []).map((c) => c.label)
+  if (!editable) {
+    if (!hazards.length && !controls.length) return null
+    return (
+      <dl className="mb-4 grid gap-2 text-sm sm:grid-cols-2">
+        <div>
+          <dt className="text-xs font-medium text-neutral-500">Hazards</dt>
+          <dd className="text-neutral-900">{hazards.join(', ') || '—'}</dd>
+        </div>
+        <div>
+          <dt className="text-xs font-medium text-neutral-500">Controls</dt>
+          <dd className="text-neutral-900">{controls.join(', ') || '—'}</dd>
+        </div>
+      </dl>
+    )
+  }
+  return (
+    <div className="mb-4 grid gap-2 sm:grid-cols-2">
+      <Field label="Hazards">
+        <VocabularyMultiSelect vocabulary="hazard" value={hazardIds}
+                               onChange={(ids) => { setHazardIds(ids); setDirty(true) }}
+                               placeholder="Search the hazard list…" />
+      </Field>
+      <Field label="Controls">
+        <VocabularyMultiSelect vocabulary="hazard_control" value={controlIds}
+                               onChange={(ids) => { setControlIds(ids); setDirty(true) }}
+                               placeholder="Search the hazard controls…" />
+      </Field>
+      {dirty && (
+        <div className="flex items-center justify-end gap-2 sm:col-span-2" data-print="hide">
+          <ErrorNote error={save.error} />
+          <button type="button" className={primaryButton} disabled={save.isPending}
+                  onClick={() => { if (!save.isPending) save.mutate() }}>
+            {save.isPending ? 'Saving…' : 'Save hazards and controls'}
+          </button>
+        </div>
       )}
     </div>
   )
@@ -798,6 +887,10 @@ function NewPermitForm({ onClose }: { onClose: () => void }) {
   const [locationId, setLocationId] = useState<string | null>(null)
   const [equipmentId, setEquipmentId] = useState<string | null>(null)
   const [contractor, setContractor] = useState('')
+  const [hazardIds, setHazardIds] = useState<string[]>([])
+  const [controlIds, setControlIds] = useState<string[]>([])
+  const [photos, setPhotos] = useState<CompressedImage[]>([])
+  const [madeId, setMadeId] = useState<string | null>(null)
   const [from, setFrom] = useState(() => new Date().toISOString().slice(0, 16))
   const [to, setTo] = useState('')
 
@@ -808,15 +901,22 @@ function NewPermitForm({ onClose }: { onClose: () => void }) {
   const type = types.data?.find((t) => t.id === typeId)
 
   const create = useMutation({
-    mutationFn: () => api.post('/api/v1/permits', {
-      type_id: typeId,
-      work_description: description,
-      location_id: locationId,
-      equipment_id: equipmentId,
-      contractor_company: contractor || null,
-      valid_from: from ? new Date(from).toISOString() : null,
-      valid_to: to ? new Date(to).toISOString() : null,
-    }),
+    mutationFn: async () => {
+      // Remembered once made: a failed photo upload must not raise it twice.
+      const id = madeId ?? (await api.post<Permit>('/api/v1/permits', {
+        type_id: typeId,
+        work_description: description,
+        location_id: locationId,
+        equipment_id: equipmentId,
+        contractor_company: contractor || null,
+        valid_from: from ? new Date(from).toISOString() : null,
+        valid_to: to ? new Date(to).toISOString() : null,
+        hazard_ids: hazardIds,
+        control_ids: controlIds,
+      })).id
+      setMadeId(id)
+      await uploadPhotos('permit', id, photos)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['permits'] })
       onClose()
@@ -869,6 +969,22 @@ function NewPermitForm({ onClose }: { onClose: () => void }) {
           <input className={inputClass} value={contractor}
                  onChange={(e) => setContractor(e.target.value)} />
         </Field>
+        {/* ★ Round 12, PMT-01. */}
+        <Field label="Hazards">
+          <VocabularyMultiSelect vocabulary="hazard" value={hazardIds}
+                                 onChange={(ids) => setHazardIds(ids)}
+                                 placeholder="Search the hazard list…" />
+        </Field>
+        <Field label="Controls">
+          <VocabularyMultiSelect vocabulary="hazard_control" value={controlIds}
+                                 onChange={(ids) => setControlIds(ids)}
+                                 placeholder="Search the hazard controls…" />
+        </Field>
+      </div>
+
+      <div className="mt-3">
+        <SectionTitle className="mb-1.5">Photographs</SectionTitle>
+        <PhotoCapture photos={photos} onChange={setPhotos} />
       </div>
 
       {type && (

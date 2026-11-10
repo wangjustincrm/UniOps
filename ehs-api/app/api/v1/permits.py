@@ -53,6 +53,9 @@ class PermitIn(BaseModel):
     contractor_company: str | None = Field(default=None, max_length=200)
     valid_from: datetime | None = None
     valid_to: datetime | None = None
+    # ★ Round 12, PMT-01.
+    hazard_ids: list[uuid.UUID] = Field(default_factory=list, max_length=30)
+    control_ids: list[uuid.UUID] = Field(default_factory=list, max_length=60)
 
 
 class PermitPatch(BaseModel):
@@ -65,6 +68,8 @@ class PermitPatch(BaseModel):
     valid_to: datetime | None = None
     # {precaution_key: true}
     precautions_confirmed: dict | None = None
+    hazard_ids: list[uuid.UUID] | None = Field(default=None, max_length=30)
+    control_ids: list[uuid.UUID] | None = Field(default=None, max_length=60)
 
 
 class GasReadingIn(BaseModel):
@@ -155,6 +160,8 @@ class PermitOut(BaseModel):
     closed_by_name: str | None
     closeout_note: str | None
     qr_token: str | None
+    hazard_items: list = Field(default_factory=list)
+    control_items: list = Field(default_factory=list)
 
     # What it actually is now, versus what the row last said. The stored value
     # is deliberately not exposed — nobody should be reading it.

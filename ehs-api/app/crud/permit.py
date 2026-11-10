@@ -113,7 +113,19 @@ async def by_qr_token(db: AsyncSession, token: str) -> Permit | None:
         select(Permit).where(Permit.qr_token == token))).scalar_one_or_none()
 
 
+async def _lists(db: AsyncSession, fields: dict) -> None:
+    """Round 12, PMT-01: the picks, snapshotted."""
+    from app.api.v1.risk import _snapshot
+    for ids_key, out_key, vocabulary in (("hazard_ids", "hazard_items", "hazard"),
+                                         ("control_ids", "control_items", "hazard_control")):
+        ids = fields.pop(ids_key, None)
+        if ids is not None:
+            fields[out_key] = await _snapshot(db, vocabulary, ids)
+
+
 async def create_permit(db: AsyncSession, payload: dict, *, requester_id: uuid.UUID) -> Permit:
+    payload = dict(payload)
+    await _lists(db, payload)
     permit_type = await get_type(db, payload["type_id"])
     path, dept_id, dept_name = await _place(db, payload.get("location_id"))
     from app.services import equipment_ref
@@ -134,6 +146,10 @@ async def create_permit(db: AsyncSession, payload: dict, *, requester_id: uuid.U
         requested_by_name=await _name(db, requester_id),
         valid_from=payload.get("valid_from"),
         valid_to=payload.get("valid_to"),
+        # ★ Named explicitly: this constructor copies fields one by one, and a
+        # column left out is silently dropped on create (findings, round 5).
+        hazard_items=payload.get("hazard_items") or [],
+        control_items=payload.get("control_items") or [],
         qr_token=_new_qr_token(),
     )
     db.add(permit)
@@ -147,6 +163,8 @@ async def update_permit(db: AsyncSession, permit: Permit, fields: dict) -> Permi
             status.HTTP_409_CONFLICT,
             f"{permit.permit_no} is {effective(permit)} and cannot be edited. "
             "Close it and raise a new one.")
+    fields = dict(fields)
+    await _lists(db, fields)
     if "location_id" in fields:
         (permit.location_path, permit.department_id,
          permit.department_name) = await _place(db, fields["location_id"])

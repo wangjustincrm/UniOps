@@ -113,6 +113,12 @@ class Permit(UUIDPrimaryKey, TimestampMixin, Base):
     closeout_note: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     qr_token: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    # ★ Round 12, PMT-01: the hazards of the work and the controls for them,
+    # picked from HSE's lists, [{id, label}].
+    hazard_items: Mapped[list] = mapped_column(JSONB, nullable=False, default=list,
+                                               server_default="[]")
+    control_items: Mapped[list] = mapped_column(JSONB, nullable=False, default=list,
+                                                server_default="[]")
 
 
 class PermitGasReading(UUIDPrimaryKey, Base):
