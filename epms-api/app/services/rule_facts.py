@@ -281,3 +281,48 @@ def report_types(db) -> dict:
     paths = [r.path for r in router.routes]
     names = [REPORT_WORDS[p] for p in paths]
     return {"count": len(names), "reports": _join(names)}
+
+
+# ── OA (ISS-0213) ────────────────────────────────────────────────────────────
+
+def _money(value) -> str:
+    from decimal import Decimal
+
+    return f"{Decimal(str(value)).quantize(Decimal('0.01')):f}"
+
+
+async def oa_policy(db) -> dict:
+    """OA's Expense Config row (expense-api's expense_policy_config, the row
+    _meal_limits and the mileage form read). Read as SQL: epms-api cannot
+    import expense-api's models. No row, or no table, is an error — the card
+    is then said without figures rather than with remembered ones."""
+    from sqlalchemy import text
+
+    row = (await db.execute(text(
+        "SELECT row_to_json(p) FROM expense_policy_config p LIMIT 1"))).scalar_one_or_none()
+    if row is None:
+        raise LookupError("no expense policy row")
+    row = row if isinstance(row, dict) else vars(row)
+    return {
+        "breakfast": _money(row["meal_breakfast_limit"]),
+        "lunch": _money(row["meal_lunch_limit"]),
+        "dinner": _money(row["meal_dinner_limit"]),
+        "incidental": _money(row["meal_incidental_limit"]),
+        "rate": _money(row["mileage_rate_per_km"]),
+        "max_km": f"{int(row['max_km_per_claim']):,}",
+    }
+
+
+def oa_reminder(db) -> dict:
+    from app.services.manual_reminder import COOLDOWN_HOURS
+
+    return {"hours": COOLDOWN_HOURS}
+
+
+async def oa_email_policy(db) -> dict:
+    """approve_<claim type> is the task type approval-api files for each OA
+    approval step (manual_reminder.expense_approval_task_types)."""
+    cfg = await _config(db)
+    ns = (cfg.notification_settings if cfg else None) or {}
+    return {f"approve_{t}": _policy_words(ns, f"approve_{t}")
+            for t in ("exp", "mil", "trv", "tra")}

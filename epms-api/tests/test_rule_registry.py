@@ -98,12 +98,16 @@ def test_rule_ids_are_unique_and_areas_match_their_files():
         assert area.label and area.covers, key
     assert {"pr", "po", "gr", "pa", "invoice", "agreement", "approval_engine",
             "delegation", "budget", "nc_sync", "notifications", "tasks",
-            "dashboard", "reports", "vendor", "account", "assistant"} == set(rule_registry.area_keys())
+            "dashboard", "reports", "vendor", "account", "assistant", "oa"} == set(rule_registry.area_keys())
 
 
 async def test_derived_rules_fill_every_placeholder():
     cfg = SimpleNamespace(nc_purchase_sync_interval_minutes=None, service_gr_sla={},
-                          notification_settings={}, invoice_match_tolerance_pct=Decimal("5.00"))
+                          notification_settings={}, invoice_match_tolerance_pct=Decimal("5.00"),
+                          # OA's Expense Config row, read by rule_facts.oa_policy (ISS-0213).
+                          meal_breakfast_limit=10, meal_lunch_limit=20, meal_dinner_limit=35,
+                          meal_incidental_limit=Decimal("17.30"), mileage_rate_per_km=Decimal("0.55"),
+                          max_km_per_claim=5000)
     rules = [r for _, c in rule_registry.all_cards() if c["provenance"] == "derived"
              for r in [{"id": c["id"], "answer": " ".join(c["answer"].split())}]]
     filled, missing = await rule_registry.resolve(rules, _FakeDb(cfg))

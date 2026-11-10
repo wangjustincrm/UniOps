@@ -51,6 +51,7 @@ from app.services import marked_view
 from app.services import page_document
 from app.services import document_chain
 from app.services import code_answers, question_routes
+from app.services import oa_guide
 
 log = logging.getLogger(__name__)
 
@@ -252,10 +253,15 @@ def one_code_for_yuan(text: str) -> str:
 
 async def _chat(body: ChatRequest, db, user: dict, token: str,
                 part: dict | None = None) -> dict:
+    app = body.context.app if body.context else None
+    # An OA question is answered from OA's rules, decided here and not by the
+    # planner — which answered them from the PR / PA rules or refused them as
+    # "not EPMS" (ISS-0213). Before the schema: OA needs no EPMS access.
+    if oa_guide.is_oa_question(body.message, app):
+        return await _answer_oa(db, token, body, user)
     schema = (await assistant_schema(db, user))["entities"]
     # Entities this app's assistant does not use (ISS-0015: Finance's AP copy
     # of the invoices is kept out of EPMS).
-    app = body.context.app if body.context else None
     if app:
         schema = [e for e in schema if app not in REGISTRY[e["name"]].hidden_in_apps]
     if not schema:
@@ -1211,6 +1217,9 @@ async def _answer_report_lineage(db, scope, token, body, planned, actor) -> dict
 async def _answer_process(db, user, token, body, planned, actor) -> dict:
     """How a kind of document flows, read from the engine's configuration."""
     doc_type = (planned.get("doc_type") or "").lower()
+    if doc_type in oa_guide.PROCESSES:
+        # OA chains carry OA's approval facts, not EPMS's (ISS-0213).
+        return await _answer_oa_chains(db, token, body, [doc_type])
     if (doc_type not in guide_view.SUPPORTED_PROCESSES
             and doc_type in doc_type_guide.SUPPORTED):
         # A goods receipt or an invoice has no approval chain, but asked "how
@@ -1256,6 +1265,9 @@ async def _answer_process(db, user, token, body, planned, actor) -> dict:
 # list, "which document do you mean" with none named — come here first.
 
 async def _answer_rules(db, token, body, areas: list[str], actor) -> dict:
+    if oa_guide.AREA in areas:
+        # The OA rules are said by code (ISS-0213).
+        return await _answer_oa(db, token, body, None)
     rules = await rule_registry.build(areas, db, token)
     if not rules["areas"]:
         return _no_rule_reply()
@@ -1281,6 +1293,70 @@ async def _rules_instead(db, token, body, actor) -> dict | None:
     if not picked["areas"]:
         return None
     return await _answer_rules(db, token, body, picked["areas"], actor)
+
+
+# ── OA (ISS-0213) ────────────────────────────────────────────────────────────
+#
+# services/oa_guide.py decides that a question is about OA and which OA rule
+# answers it; the reply is written here from the rule cards. The model is used
+# only for an OA question no card answers, and what it says then is guarded.
+
+async def _answer_oa(db, token, body, user) -> dict:
+    message = body.message
+    nums = oa_guide.numbers(message)
+    said: list[str] = []
+    if nums:
+        said.append(oa_guide.not_readable(nums))
+    chains = oa_guide.process_types(message)
+    ids = oa_guide.pick(message)
+    if chains:
+        chain = await _answer_oa_chains(db, token, body, chains, extra=ids)
+        if said:
+            chain["answer"] = "\n\n".join(said + [chain["answer"]])
+        return chain
+    picked = await oa_guide.cards(db, ids[:oa_guide.MAX_CARDS])
+    said += [c["answer"] for c in picked]
+    if said:
+        return {"_fixed_text": True, "answer": "\n\n".join(said),
+                "kind": "rules", "query": None,
+                "rules": {"areas": [{"area": oa_guide.AREA, "rules": picked}]},
+                "sources": {"rules": len(picked), "areas": ["OA"], "oa_rules": ids,
+                            "complete": True}}
+    # No card answers it: the narrator, over the OA cards only, guarded.
+    rules = await rule_registry.build([oa_guide.AREA], db, token)
+    payload = {"question": message, "kind": "rules", **rules}
+    try:
+        told = await assistant_llm.narrate_guide(message, payload)
+    except assistant_llm.LlmUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    actor = _uuid.UUID(str(user.get("sub"))) if user and user.get("sub") else None
+    await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
+    text = oa_guide.guarded(told["text"])
+    return {"answer": text, "_fixed_text": text != told["text"],
+            "kind": "rules", "query": None, "rules": rules,
+            "sources": {"rules": sum(len(a["rules"]) for a in rules["areas"]),
+                        "areas": ["OA"], "complete": not rules["unavailable"]}}
+
+
+async def _answer_oa_chains(db, token, body, doc_types: list[str],
+                            extra: list[str] = ()) -> dict:
+    """OA approval chains, written by code: the engine's steps, then OA's
+    approval facts — the claimant never approves and their only step is
+    skipped (OA.md §7.1, WF-SELF-001), one approver on two steps approves
+    once, OA has no Recall. The engine's general rules are not given here:
+    "a requester who is also the first approver must still approve" and
+    "the submitter can recall" are EPMS's, and were said of OA (ISS-0213)."""
+    processes = [await guide_view.process_steps(dt, token) for dt in doc_types]
+    facts = list(oa_guide.CHAIN_FACTS) + [i for i in extra if i not in oa_guide.CHAIN_FACTS]
+    picked = await oa_guide.cards(db, facts[:len(oa_guide.CHAIN_FACTS) + 2])
+    answer = "\n\n".join([oa_guide.chain_text(p) for p in processes]
+                           + [c["answer"] for c in picked])
+    return {"_fixed_text": True, "answer": answer, "kind": "process", "query": None,
+            "process": processes[0] if len(processes) == 1 else processes,
+            "sources": {"process": ", ".join(p["label"] for p in processes),
+                        "steps": sum(len(p["steps"]) for p in processes),
+                        "complete": all(p["steps_available"] for p in processes),
+                        "oa_rules": [c["id"] for c in picked]}}
 
 
 def _no_rule_reply() -> dict:
