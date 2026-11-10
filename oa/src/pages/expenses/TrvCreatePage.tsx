@@ -184,7 +184,7 @@ function CategorySection({
         </span>
         {limit && (
           <span className="text-xs font-normal text-neutral-400">
-            Limit ${limit.toFixed(2)}/day
+            Limit ${limit.toFixed(2)} {category === 'Incidental' ? 'per line' : 'per meal'}
           </span>
         )}
       </button>

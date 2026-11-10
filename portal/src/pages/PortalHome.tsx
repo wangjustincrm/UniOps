@@ -159,6 +159,26 @@ const CLAIM_TYPE_LABEL: Record<string, string> = {
   TRA: 'Travel Application',
 }
 
+// OA tasks that reach the inbox only through the EPMS feed (approval-api writes
+// approve_<code> / revise_<code> / process_expense into the shared tasks
+// table). OA's own feed (my-actions) lists only what the caller can act on, so
+// e.g. a System Administrator — who sees every task in the EPMS feed — gets
+// these rows without a claim status to group by. Name them in full rather
+// than humanize()'s "Approve Tra" (ISS-0220).
+const OA_DOC_LABEL: Record<string, string> = {
+  exp: 'General Expense', mil: 'Mileage', trv: 'Travel Expense',
+  tra: 'Travel Application', cfm: 'Custom Form',
+}
+
+function oaTaskLabel(type: string, docType: string): string {
+  const dt = docType.toLowerCase()
+  const doc = OA_DOC_LABEL[dt] ?? (dt.startsWith('cfm') ? OA_DOC_LABEL.cfm : null)
+  if (type === 'process_expense') return 'Record Expense Payment'
+  if (doc && type.startsWith('approve_')) return `Approve ${doc}`
+  if (doc && type.startsWith('revise_')) return `Revise ${doc}`
+  return humanize(type)
+}
+
 const STATUS_LABEL: Record<string, string> = {
   submitted: 'Pending Dept. Approval',
   in_review: 'Pending Finance Review',
@@ -304,6 +324,9 @@ const GROUP_ORDER = [
   'revise_pr', 'revise_po', 'revise_pa', 'revise_budget_plan',
   // Expense (OA my-actions statuses)
   'submitted', 'in_review', 'approved',
+  // Expense rows only the EPMS feed carried (see oaTaskLabel)
+  'approve_tra', 'approve_trv', 'approve_exp', 'approve_mil',
+  'revise_tra', 'revise_trv', 'revise_exp', 'revise_mil', 'process_expense',
   // VMS
   'vms_visit', 'vms_train', 'vms_ppe',
 ]
@@ -611,8 +634,14 @@ export default function PortalHome() {
       if (module === 'VMS') {
         groupKey = t.document_type
         groupLabel = VMS_DOC_LABELS[t.document_type] ?? humanize(t.document_type)
+      } else if (module === 'EXPENSE') {
+        // OA-owned, surfaced via approval-api with no claim status: bucket by
+        // engine task type under its full name (INB-002 wants claim status —
+        // the rows OA's own feed returns above are grouped that way).
+        groupKey = t.type
+        groupLabel = oaTaskLabel(t.type, t.document_type)
       } else {
-        // EPMS-owned, or OA-owned surfaced via approval-api: bucket by engine task type.
+        // EPMS-owned: bucket by engine task type.
         groupKey = t.type
         groupLabel = EPMS_TYPE_LABELS[t.type] ?? humanize(t.type)
       }
@@ -664,7 +693,8 @@ export default function PortalHome() {
       icon: <CreditCard className="h-5 w-5 text-amber-500" />,
       iconBg: 'bg-amber-50',
       label: 'OA',
-      description: 'Reimbursements, vendor payments, mileage claims',
+      // Vendor payments left OA (PRD OA §15) — expenses, mileage and travel only.
+      description: 'Expense reimbursements, mileage and travel',
       href: oaHref,
       healthy: oaHealth.data?.ok,
       loading: oaHealth.isLoading,

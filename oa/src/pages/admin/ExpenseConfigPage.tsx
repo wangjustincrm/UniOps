@@ -128,7 +128,7 @@ export default function ExpenseConfigPage() {
         <Field label="Rate per km (CAD)" hint="CRA prescribed rate; applied to all mileage claims">
           <NumberInput value={milRate} onChange={setMilRate} step="0.001" />
         </Field>
-        <Field label="Max km per claim" hint="Claims exceeding this are blocked at creation">
+        <Field label="Max km per claim" hint="Claims exceeding this show a warning; they are not blocked">
           <NumberInput value={maxKm} onChange={setMaxKm} step="1" min="1" />
         </Field>
       </section>
@@ -136,10 +136,10 @@ export default function ExpenseConfigPage() {
       {/* Travel meal limits */}
       <section className="flex flex-col gap-4">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-500 border-b border-neutral-100 pb-2">
-          Travel Meal Limits per Day (TRV) — CAD
+          Travel Meal Limits per Meal (TRV) — CAD
         </h2>
         <p className="text-xs text-neutral-400">
-          Meal rows exceeding these limits trigger Finance Manager approval. Limits are per-meal, not per-day total.
+          Meal rows exceeding these limits trigger Finance Manager approval. Each limit applies per line (one meal), not to a day's total; a date-range line is checked on its daily rate.
         </p>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Breakfast">
