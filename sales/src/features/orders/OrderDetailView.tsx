@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ActionButton, Badge, ConfirmAction, Hint, RecordSheet, RecordSheetHostContext, formatDate, formatMoney,
   queryKeys, type RecordFact, type RecordTab,
-  compareRecord, useNotices, useRefresh,
+  compareRecord, useRefresh,
 } from '@/platform-ui'
 import { SOURCE_LABEL, downloadPacket, downloadPoPdf, fetchOrder, ordersClient, type OrderRead } from './ordersApi'
 import { OrderHoldActions } from './OrderHoldActions'
@@ -115,8 +115,6 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
     </>
   ) : undefined
 
-  const notices = useNotices()
-  const failed = (e: unknown) => notices.notify({ tone: 'error', text: `Download failed: ${e instanceof Error ? e.message : String(e)}` })
   return (
     <>
       <RecordSheet
@@ -134,8 +132,8 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
         refresh={sheetRefresh}
         facts={facts} actions={actions} tabs={tabs}
         more={[
-          { label: 'Purchase order (PDF)', onSelect: () => { downloadPoPdf(live).catch(failed) } },
-          { label: 'Audit packet: every file and PDF (zip)', onSelect: () => { downloadPacket(live).catch(failed) } },
+          { label: 'Purchase order (PDF)', onSelect: () => downloadPoPdf(live), failPrefix: 'Download failed' },
+          { label: 'Audit packet: every file and PDF (zip)', onSelect: () => downloadPacket(live), failPrefix: 'Download failed' },
         ]}
       />
       {d && (

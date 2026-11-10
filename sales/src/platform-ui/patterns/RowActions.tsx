@@ -2,8 +2,9 @@ import { useState, type MouseEvent, type ReactNode } from 'react'
 import { IconButton } from '../primitives/IconButton'
 import { ConfirmAction } from './ConfirmAction'
 import { useCan } from './permissions'
+import { useAction, type ActionOptions } from './useAction'
 
-export interface RowAction {
+export interface RowAction extends Pick<ActionOptions, 'done' | 'errorMessages'> {
   key: string
   /** The tooltip and the accessible name. */
   label: string
@@ -22,25 +23,23 @@ export interface ConfirmSpec { title: string; description?: string; confirmLabel
 
 function One({ a }: { a: RowAction }) {
   const can = useCan(a.permission)
-  const [pending, setPending] = useState(false)
+  const action = useAction({ done: a.done, errorMessages: a.errorMessages })
   const [asking, setAsking] = useState<ConfirmSpec | null>(null)
   if (a.hidden || (a.permission && !can)) return null
-  const run = async () => {
-    setPending(true)
-    try { await a.onAction() } finally { setPending(false) }
-  }
+  const pending = action.pending
+  const run = () => action.run(a.onAction)
   const click = (e: MouseEvent) => {
     e.stopPropagation()  // an action never opens the row
     const ask = typeof a.confirm === 'function' ? a.confirm() : a.confirm
     if (ask) setAsking(ask)
-    else void run().catch(() => {})
+    else void run()
   }
   return (
     <>
       <IconButton label={a.label} icon={a.icon} onClick={click} disabled={a.disabled} pending={pending} />
       {asking && (
         <ConfirmAction open onOpenChange={(o) => { if (!o) setAsking(null) }} title={asking.title} description={asking.description}
-          confirmLabel={asking.confirmLabel ?? a.label} onConfirm={run} />
+          confirmLabel={asking.confirmLabel ?? a.label} onConfirm={a.onAction} />
       )}
     </>
   )

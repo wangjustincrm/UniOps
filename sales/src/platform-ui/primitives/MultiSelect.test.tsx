@@ -150,4 +150,21 @@ describe('suggestions from other records', () => {
     fireEvent.change(input(), { target: { value: 'x' } })
     expect(onDraft).toHaveBeenCalledWith('x')
   })
+
+  it('TagInput: pasted text with commas adds each value, and what follows the last comma stays typed', () => {
+    const seen: string[][] = []
+    function Tags() {
+      const [values, setValues] = useState<string[]>(['a@x.com'])
+      const [draft, setDraft] = useState('')
+      return <TagInput label="To" values={values} onChange={(v) => { seen.push(v); setValues(v) }} draft={draft} onDraftChange={setDraft} />
+    }
+    render(<Tags />)
+    const input = screen.getByRole('textbox', { name: 'To' })
+    fireEvent.change(input, { target: { value: 'b@y.com, c@z.com,' } })
+    expect(seen.at(-1)).toEqual(['a@x.com', 'b@y.com', 'c@z.com'])
+    expect(input).toHaveValue('')
+    fireEvent.change(input, { target: { value: 'd@w.com, e@' } })
+    expect(seen.at(-1)).toEqual(['a@x.com', 'b@y.com', 'c@z.com', 'd@w.com'])
+    expect(input).toHaveValue('e@')
+  })
 })

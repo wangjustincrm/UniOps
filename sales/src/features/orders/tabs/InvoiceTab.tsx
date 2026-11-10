@@ -1,6 +1,5 @@
-import { Download } from 'lucide-react'
 import {
-  Button, DetailList, ErrorMessage, Section, StatusCell, formatDate, formatDateTime, formatMoney, useOpenRecord, useNotices,
+  Button, DetailList, DownloadButton, ErrorMessage, formatDate, formatDateTime, formatMoney, Section, StatusCell, useOpenRecord,
 } from '@/platform-ui'
 import { downloadDocument } from '@/features/operations/operationsApi'
 import { downloadInvoicePdf, type OrderDetail } from '../ordersApi'
@@ -9,7 +8,6 @@ import { useOrderInvoice } from '../useOrderInvoice'
 /** The order's invoice: status, number, method, total, the file it was sent as; opened on Invoices. */
 export function InvoiceTab({ o }: { o: OrderDetail }) {
   const openRecord = useOpenRecord()
-  const notices = useNotices()
   const q = useOrderInvoice(o)
   const inv = q.data?.items[0]
   return (
@@ -25,15 +23,11 @@ export function InvoiceTab({ o }: { o: OrderDetail }) {
       {inv && (
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="secondary" onClick={() => { openRecord('/invoices', inv.id) }}>Open invoice {inv.invoice_number}</Button>
-          <Button size="sm" variant="secondary" onClick={() => { downloadInvoicePdf(inv.id, inv.invoice_number).catch((e: unknown) =>
-            notices.notify({ tone: 'error', text: `Download failed: ${e instanceof Error ? e.message : String(e)}` })) }}>
-            <Download className="mr-1 h-3.5 w-3.5" />Invoice PDF
-          </Button>
+          <DownloadButton onAction={() => downloadInvoicePdf(inv.id, inv.invoice_number)}>Invoice PDF</DownloadButton>
           {inv.document_id != null && (
-            <Button size="sm" variant="secondary" onClick={() => { downloadDocument(inv.document_id!, `${inv.invoice_number}-${inv.method}`).catch((e: unknown) =>
-              notices.notify({ tone: 'error', text: `Download failed: ${e instanceof Error ? e.message : String(e)}` })) }}>
-              <Download className="mr-1 h-3.5 w-3.5" />The file sent ({inv.method === '810_JSON' ? '810' : inv.method})
-            </Button>
+            <DownloadButton onAction={() => downloadDocument(inv.document_id!, `${inv.invoice_number}-${inv.method}`)}>
+              The file sent ({inv.method === '810_JSON' ? '810' : inv.method})
+            </DownloadButton>
           )}
         </div>
       )}

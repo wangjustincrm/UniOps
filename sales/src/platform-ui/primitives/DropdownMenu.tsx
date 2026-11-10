@@ -5,7 +5,8 @@ import { cn } from '../lib/cn'
 export interface MenuItem {
   label: string
   icon?: ReactNode
-  onSelect: () => void
+  /** A promise is fine: whoever renders the menu may run it as an action (RecordSheet does). */
+  onSelect: () => void | Promise<unknown>
   disabled?: boolean
   /** A line above this item. */
   separated?: boolean

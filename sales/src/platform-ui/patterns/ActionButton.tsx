@@ -1,8 +1,6 @@
-import { useRef, useState } from 'react'
 import { Button, type ButtonProps } from '../primitives/shell'
 import { useCan } from './permissions'
-import { useNotices } from './notices'
-import { errorText } from '../resource/businessError'
+import { useAction } from './useAction'
 
 export interface ActionButtonProps extends Omit<ButtonProps, 'onClick'> {
   /** The permission key that allows this action; checked through PermissionProvider. */
@@ -15,6 +13,8 @@ export interface ActionButtonProps extends Omit<ButtonProps, 'onClick'> {
   done?: string | ((result: unknown) => string | null)
   /** Business error codes → words, for a failure said in the status row. */
   errorMessages?: Record<string, string>
+  /** Before the error text (e.g. "Download failed"). */
+  failPrefix?: string
 }
 
 /** A button that cannot fire twice: disabled while its action is pending, and
@@ -23,31 +23,11 @@ export interface ActionButtonProps extends Omit<ButtonProps, 'onClick'> {
  *  given, so it never submits a surrounding form. Inside a list or a sheet, a
  *  failure (and with `done`, a success) is said in its status row (useNotices). */
 export function ActionButton({
-  permission, whenDenied = 'hide', onAction, pendingLabel, disabled, children, done, errorMessages, ...rest
+  permission, whenDenied = 'hide', onAction, pendingLabel, disabled, children, done, errorMessages, failPrefix, ...rest
 }: ActionButtonProps) {
   const allowed = useCan(permission)
-  const notices = useNotices()
-  const [pending, setPending] = useState(false)
-  const inFlight = useRef(false)
+  const { run, pending } = useAction({ done, errorMessages, failPrefix })
   if (!allowed && whenDenied === 'hide') return null
-
-  const run = async () => {
-    if (inFlight.current) return
-    inFlight.current = true
-    setPending(true)
-    try {
-      const result = await onAction()
-      const said = typeof done === 'function' ? done(result) : done
-      if (said) notices.notify({ tone: 'success', text: said })
-    } catch (e) {
-      // In a list or a sheet the failure is said in its status row; elsewhere it goes on as before.
-      if (!notices.inScope) throw e
-      notices.notify({ tone: 'error', text: errorText(e, errorMessages) })
-    } finally {
-      inFlight.current = false
-      setPending(false)
-    }
-  }
 
   return (
     <Button
@@ -56,7 +36,7 @@ export function ActionButton({
       disabled={disabled || pending || !allowed}
       aria-busy={pending || undefined}
       title={!allowed ? "You don't have permission for this action" : rest.title}
-      onClick={run}
+      onClick={() => { void run(onAction) }}
     >
       {pending && pendingLabel ? pendingLabel : children}
     </Button>

@@ -1,4 +1,4 @@
-import { ActionButton, LocalTable, Section, StatusCell, columnsOf, useNotices, type ColumnDef } from '@/platform-ui'
+import { DownloadButton, LocalTable, Section, StatusCell, columnsOf, useNotices, type ColumnDef } from '@/platform-ui'
 import { downloadDocument } from '@/features/operations/operationsApi'
 import { useOrderInvoice } from '../useOrderInvoice'
 import { downloadInvoicePdf, downloadPacket, downloadPackingList, downloadPoPdf, type OrderDetail, type OrderDocument } from '../ordersApi'
@@ -30,18 +30,18 @@ export function DocumentsTab({ o }: { o: OrderDetail }) {
     <>
       <Section title="Printable">
         <div className="flex flex-wrap gap-2">
-          <ActionButton size="sm" variant="secondary" onAction={() => downloadPoPdf(o)}>Purchase order (PDF)</ActionButton>
+          <DownloadButton onAction={() => downloadPoPdf(o)}>Purchase order (PDF)</DownloadButton>
           {shipped.map((s) => (
-            <ActionButton key={s.id} size="sm" variant="secondary" onAction={() => downloadPackingList(o.id, s.id)}>
+            <DownloadButton key={s.id} onAction={() => downloadPackingList(o.id, s.id)}>
               Packing list{shipped.length > 1 ? ` ${s.ship_date ?? s.id}` : ''} (PDF)
-            </ActionButton>
+            </DownloadButton>
           ))}
           {inv && (
-            <ActionButton size="sm" variant="secondary" onAction={() => downloadInvoicePdf(inv.id, inv.invoice_number)}>
+            <DownloadButton onAction={() => downloadInvoicePdf(inv.id, inv.invoice_number)}>
               Invoice {inv.invoice_number} (PDF)
-            </ActionButton>
+            </DownloadButton>
           )}
-          <ActionButton size="sm" variant="secondary" onAction={() => downloadPacket(o)}>Everything (zip)</ActionButton>
+          <DownloadButton onAction={() => downloadPacket(o)}>Everything (zip)</DownloadButton>
         </div>
         <p className="mt-1 text-xs text-neutral-500">
           {shipped.length ? '' : 'The packing list comes with the 945. '}{inv ? '' : 'The invoice comes at delivery confirmation.'}

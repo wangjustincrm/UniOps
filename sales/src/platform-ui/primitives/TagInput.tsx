@@ -18,9 +18,13 @@ export interface TagInputProps {
  *  Backspace in an empty box removes the last one. */
 export function TagInput({ values, onChange, draft, onDraftChange, label, type = 'text', autoFocus }: TagInputProps) {
   const [focused, setFocused] = useState(false)
-  const add = () => {
-    const v = draft.trim()
-    if (v && !values.includes(v)) onChange([...values, v])
+  // What is added is passed in: a value pasted with commas ("a@x.com, b@y.com,") is added at once,
+  // never through a draft that is still the previous render's.
+  const add = (text: string = draft) => {
+    const parts = text.split(',').map((x) => x.trim()).filter(Boolean)
+    const next = [...values]
+    for (const p of parts) if (!next.includes(p)) next.push(p)
+    if (next.length !== values.length) onChange(next)
     onDraftChange('')
   }
   return (
@@ -40,9 +44,10 @@ export function TagInput({ values, onChange, draft, onDraftChange, label, type =
         onBlur={() => setFocused(false)}
         onChange={(e) => {
           const v = e.target.value
-          if (type === 'text' && v.endsWith(',')) {
-            onDraftChange(v.slice(0, -1))
-            setTimeout(add)
+          if (type === 'text' && v.includes(',')) {
+            const last = v.lastIndexOf(',')
+            add(v.slice(0, last))           // everything before the last comma is added now
+            onDraftChange(v.slice(last + 1).trimStart())  // what follows it stays typed
           } else onDraftChange(v)
         }}
         onKeyDown={(e) => {

@@ -18,6 +18,7 @@ import { NoticesContext, createNoticeStore } from './notices'
 import type { RefreshState } from './useRefresh'
 import { PermissionContext } from './permissions'
 import { RecordSheetHostContext, type RecordSheetSize } from './recordSheetHost'
+import { useAction } from './useAction'
 
 export { RecordSheetHostContext } from './recordSheetHost'
 export type { RecordSheetHost, RecordSheetSize } from './recordSheetHost'
@@ -49,6 +50,21 @@ export interface RecordTab {
 export interface RecordMenuItem extends MenuItem {
   /** Shown only with this permission. */
   permission?: string
+  /** Its onSelect runs as an action (useAction): a failure, and with `done` a success, is said in this
+   *  sheet's status row; `failPrefix` before the error (e.g. "Download failed"). */
+  done?: string
+  failPrefix?: string
+}
+
+/** The sheet's More menu: each item runs as an action inside the sheet's status row. */
+function MoreMenu({ items }: { items: RecordMenuItem[] }) {
+  const action = useAction()
+  const run = (m: RecordMenuItem) => () => { void action.run(m.onSelect, { done: m.done, failPrefix: m.failPrefix }) }
+  return (
+    <DropdownMenu label="More actions" align="end" items={items.map((m) => ({ ...m, onSelect: run(m) }))}
+      trigger={<Button variant="secondary" size="sm" aria-label="More actions" aria-busy={action.pending || undefined}>
+        <MoreHorizontal className="mr-1 h-4 w-4" />More</Button>} />
+  )
 }
 
 export interface RecordSheetProps {
@@ -212,10 +228,7 @@ export function RecordSheet(props: RecordSheetProps) {
         {(props.actions || more.length > 0) && (
           <div role="toolbar" aria-label="Actions" className="flex flex-wrap items-center gap-2">
             {props.actions}
-            {more.length > 0 && (
-              <DropdownMenu label="More actions" align="end" items={more}
-                trigger={<Button variant="secondary" size="sm" aria-label="More actions"><MoreHorizontal className="mr-1 h-4 w-4" />More</Button>} />
-            )}
+            {more.length > 0 && <MoreMenu items={more} />}
           </div>
         )}
         {visible.length > 0 && (
