@@ -507,7 +507,13 @@ function RecommendationsTab({ mayManage, highlight }: {
                       className="font-mono text-xs text-primary-700 hover:underline">
                 {meetingNo(r.meeting_id)} #{r.seq}
               </button>
-              <span className="min-w-0 flex-1 text-sm text-neutral-900">{r.recommendation}{r.location_path && (
+              <span className="min-w-0 flex-1 text-sm text-neutral-900">
+                {/* Round 12, JHSC-02: "make the recommendation bolded and
+                    clickable" — the small # was the only way in. */}
+                <button type="button" onClick={() => navigate(`/jhsc/recommendations/${r.id}`)}
+                        className="text-left font-semibold text-neutral-900 hover:text-primary-700 hover:underline">
+                  {r.recommendation}
+                </button>{r.location_path && (
                 <span className="block text-xs text-neutral-500">
                   Where: {r.location_path.split('/').join(' › ')}
                 </span>
@@ -519,7 +525,7 @@ function RecommendationsTab({ mayManage, highlight }: {
               )}
               <ReplyBadge rec={r} />
               <button type="button" onClick={() => navigate(`/jhsc/recommendations/${r.id}`)}
-                      className="text-xs font-medium text-primary-700 hover:underline">
+                      className="rounded-md bg-success-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-success-700">
                 Open
               </button>
             </div>

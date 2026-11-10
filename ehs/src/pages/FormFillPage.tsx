@@ -21,6 +21,7 @@ import { api, ApiError } from '@/lib/api'
 import { ehsRoutes } from '@/app/routes'
 import { FormRenderer, looksLikeFailure, type FormValues, type Question } from '@/components/FormRenderer'
 import { LinkedActions } from '@/components/LinkedActions'
+import { ActionHistory } from '@/components/ActionHistory'
 import { useMyProfile } from '@/hooks/useMyProfile'
 import { useEhsAuth } from '@/store/auth'
 import { todayForInput } from '@/lib/formatDate'
@@ -305,6 +306,9 @@ export default function FormFillPage() {
             sourceType="inspection" sourceId={id ?? ''}
             title="Raised by the failed checks"
             emptyNote="The failed checks raised nothing — tell us, because they should have." />
+        )}
+        {done && sub.failed_count > 0 && (
+          <ActionHistory sourceType="inspection" sourceId={id} />
         )}
       </header>
 

@@ -17,6 +17,7 @@ import {
 } from '@/components/ui'
 import { formatDateTime } from '@/lib/formatDate'
 import { Countdown } from '@/components/Countdown'
+import { ActionHistory } from '@/components/ActionHistory'
 import { ChangeHistory } from '@/components/ChangeHistory'
 import { InjuryBadge, MolBadge, StatusBadge } from '@/components/StatusBadge'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -759,6 +760,8 @@ export default function IncidentDetailPage() {
           {/* Everything the system said about this incident, and to whom.
               Sits with the statutory panel rather than in the narrative: it
               answers "were they told", which is the same kind of question. */}
+          <ActionHistory sourceType="incident" sourceId={id} />
+
           <CommunicationLog docType="ehs_inc" docId={id} />
 
           {/* Every field ever changed on this incident. Beside the

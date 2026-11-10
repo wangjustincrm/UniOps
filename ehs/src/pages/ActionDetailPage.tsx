@@ -21,6 +21,7 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { sourceLink, SOURCE_NOUN } from '@/lib/sourceLink'
 import { ChangeHistory } from '@/components/ChangeHistory'
 import { usePermissions } from '@/hooks/usePermissions'
+import { EMPTY_PERSON, PersonPicker, type PersonValue } from '@/components/PersonPicker'
 
 interface Update {
   id: string; author_name: string | null; body: string
@@ -264,7 +265,64 @@ export default function ActionDetailPage() {
         </>
       )}
 
+      {/* Round 12, INC-02/03 and Q7: "only the supervisor or HSE role can
+          reassign CAPA's." */}
+      {can('ehs.action.write') && a.status !== 'closed' && a.status !== 'cancelled' && (
+        <Reassign actionId={id} current={a.owner_name} onDone={invalidate} />
+      )}
+
       <ChangeHistory table="ehs_actions" rowId={id} />
 </div>
+  )
+}
+
+
+function Reassign({ actionId, current, onDone }: {
+  actionId: string; current: string | null; onDone: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [person, setPerson] = useState<PersonValue>(EMPTY_PERSON)
+  const [reason, setReason] = useState('')
+  const move = useMutation({
+    mutationFn: () => api.post(`/api/v1/actions/${actionId}/reassign`,
+                               { owner_id: person.userId, reason: reason.trim() }),
+    onSuccess: () => { setOpen(false); setPerson(EMPTY_PERSON); setReason(''); onDone() },
+  })
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+              className="mt-5 min-h-[40px] text-sm font-medium text-primary-700 hover:underline">
+        Reassign{current ? ` — now ${current}` : ''}
+      </button>
+    )
+  }
+  const ready = Boolean(person.userId) && reason.trim().length >= 3
+  return (
+    <section className="mt-5 rounded-lg border border-neutral-200 bg-white p-3">
+      <SectionTitle className="mb-2">Reassign</SectionTitle>
+      <p className="mb-2 text-xs text-neutral-500">
+        The work and its task move to the person you choose. Who had it, who has it now and
+        why go into its history, and onto the record it was raised from.
+      </p>
+      <div className="flex flex-col gap-2">
+        <PersonPicker value={person} onChange={setPerson} allowExternal={false}
+                      placeholder="Search for the person who will do it" />
+        <input className="min-h-[44px] rounded-lg border border-neutral-300 px-3 text-sm"
+               value={reason} onChange={(e) => setReason(e.target.value)}
+               placeholder="Why it is moving" aria-label="Why it is moving" />
+      </div>
+      {move.isError && (
+        <p className="mt-1.5 text-xs text-danger-700">{(move.error as ApiError).message}</p>
+      )}
+      <div className="mt-2 flex justify-end gap-2">
+        <button type="button" onClick={() => setOpen(false)}
+                className="min-h-[40px] rounded-lg border border-neutral-300 px-3 text-sm">Cancel</button>
+        <button type="button" disabled={!ready || move.isPending}
+                onClick={() => { if (ready && !move.isPending) move.mutate() }}
+                className="min-h-[40px] rounded-lg bg-primary-600 px-3 text-sm font-semibold text-white disabled:opacity-50">
+          {move.isPending ? 'Moving…' : 'Reassign'}
+        </button>
+      </div>
+    </section>
   )
 }

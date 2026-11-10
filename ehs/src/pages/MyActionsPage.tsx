@@ -8,7 +8,7 @@ import { NewsDesk, NewsList } from '@/components/News'
 import { usePermissions } from '@/hooks/usePermissions'
 import TabLink from '@/components/TabLink'
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, ClipboardList } from 'lucide-react'
 import { api } from '@/lib/api'
 import { daysOverdue, formatDate } from '@/lib/formatDate'
@@ -334,6 +334,7 @@ export default function MyActionsPage() {
                   <p className="mt-1 text-xs text-neutral-600">{t.description}</p>
                 )}
               </div>
+              {t.type === 'ehs_review_capas' && <ReviewedButton taskId={t.id} />}
             </div>
           </TabLink>
         ))}
@@ -460,5 +461,23 @@ function OutOfServiceBox() {
         ))}
       </ul>
     </div>
+  )
+}
+
+
+/** Round 12, Q5: HSE has looked at the record whose corrective actions all
+ *  closed. Inside the card, which opens the record; this only ticks it off. */
+function ReviewedButton({ taskId }: { taskId: string }) {
+  const queryClient = useQueryClient()
+  const done = useMutation({
+    mutationFn: () => api.post(`/api/v1/actions/tasks/${taskId}/reviewed`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['actions', 'mine', 'tasks'] }),
+  })
+  return (
+    <button type="button" disabled={done.isPending}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (!done.isPending) done.mutate() }}
+            className="shrink-0 rounded-md border border-success-300 bg-success-50 px-2.5 py-1.5 text-xs font-semibold text-success-700 hover:bg-success-100 disabled:opacity-50">
+      {done.isPending ? 'Saving…' : 'Reviewed'}
+    </button>
   )
 }

@@ -33,6 +33,7 @@ import {
   ActionFields, actionIsComplete, emptyActionDraft, type ActionDraft,
 } from '@/components/ActionFields'
 import { CommunicationLog } from '@/components/CommunicationLog'
+import { ActionHistory } from '@/components/ActionHistory'
 import { VocabularySelect } from '@/components/VocabularyPicker'
 import { ReplyBadge, type Recommendation } from '@/pages/JhscPage'
 
@@ -237,11 +238,16 @@ function Answered({ rec }: { rec: Detail }) {
             {rec.action.action_no}
           </Link>{' '}
           {rec.action.title}
+          {/* Round 12, TC-05: what the action says to do, not only its name. */}
+          {rec.action.description && (
+            <p className="mt-1 whitespace-pre-wrap text-xs text-neutral-700">{rec.action.description}</p>
+          )}
           <span className="block text-xs text-neutral-500">
             {rec.action.owner_name ?? '—'} · due {formatDate(rec.action.due_date)} · {rec.action.priority} priority · {rec.action.status}
           </span>
         </div>
       )}
+      {rec.action && <ActionHistory actionIds={[rec.action.id]} />}
     </Card>
   )
 }
