@@ -201,6 +201,9 @@ modules:
         A custom-form claim shows its answers under Form Details on the claim
         page (each field by its label, as on its PDF) and the employee's own
         notes under Notes. It carries no amount, so the page shows no total.
+        A form's Description (set in OA → Admin → Custom Forms) is shown above
+        it when an employee fills it in, and a new claim takes the form's
+        Default Currency.
       - >-
         Nobody pays their own claim either, while the self-payment
         segregation-of-duties rule is on (it is by default): a Payment Officer

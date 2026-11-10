@@ -24,9 +24,17 @@ interface CustomForm {
   id?: string
   code: string
   name: string
+  // Shown to employees on the form (OA.md §6.1).
+  description?: string | null
+  default_currency: string
+  // Read-only: the chain the form actually uses — cfm_<code> if configured
+  // in Portal → Approval Workflows, else cfm. Absent until the form is saved.
+  effective_workflow_key?: string | null
   fields: CfmField[]
   is_active: boolean
 }
+
+const CURRENCIES = ['CAD', 'USD']
 
 const FIELD_TYPES = [
   { value: 'text', label: 'Text' },
@@ -47,7 +55,7 @@ function toSavedField({ options_text, ...f }: CfmField): CfmField {
 }
 
 function emptyForm(): CustomForm {
-  return { code: '', name: '', fields: [], is_active: true }
+  return { code: '', name: '', description: '', default_currency: 'CAD', fields: [], is_active: true }
 }
 
 // ── Field editor ──────────────────────────────────────────────────────────────
@@ -177,6 +185,34 @@ function FormEditor({ form, onChange, onRemove }: {
                 </p>
               )}
             </div>
+            <div className="col-span-2">
+              <label className="mb-1 block text-xs font-medium text-neutral-600">
+                Description <span className="text-neutral-400 font-normal">(shown to employees)</span>
+              </label>
+              <textarea rows={2} value={form.description ?? ''}
+                onChange={e => onChange({ ...form, description: e.target.value })}
+                className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400 resize-none" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-neutral-600">Default Currency</label>
+              <select value={form.default_currency}
+                onChange={e => onChange({ ...form, default_currency: e.target.value })}
+                className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
+                {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-neutral-600">Workflow</label>
+              <p className="py-2 text-sm text-neutral-700">
+                {form.effective_workflow_key
+                  ? <span className="font-mono">{form.effective_workflow_key}</span>
+                  : <span className="text-neutral-400">Set when saved</span>}
+              </p>
+              <p className="text-[11px] text-neutral-400">
+                Uses <span className="font-mono">cfm_{form.code ? form.code.toLowerCase() : '<code>'}</span> if
+                configured in Portal → Approval Workflows, otherwise the default <span className="font-mono">cfm</span>.
+              </p>
+            </div>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -226,7 +262,10 @@ export default function CfmAdminPage() {
       const currentCodes = new Set(forms.map((f) => f.code))
       for (const f of forms) {
         if (!f.code || !f.name) continue
-        const body = { name: f.name, fields: f.fields.map(toSavedField), is_active: f.is_active }
+        const body = {
+          name: f.name, description: f.description ?? '', default_currency: f.default_currency,
+          fields: f.fields.map(toSavedField), is_active: f.is_active,
+        }
         if (originalCodes.has(f.code)) {
           await api.patch(`/api/v1/expenses/custom-forms/${f.code}`, body)
         } else {
@@ -243,6 +282,8 @@ export default function CfmAdminPage() {
       qc.invalidateQueries({ queryKey: ['custom-forms-admin'] })
       qc.invalidateQueries({ queryKey: ['custom-forms-active'] })
       setOriginalCodes(new Set(forms.map((f) => f.code)))
+      // Re-seed from the refetch so a new form shows its effective workflow.
+      setInitialised(false)
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
     },
