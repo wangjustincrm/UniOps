@@ -125,3 +125,25 @@ async def test_unapproved_first_step_is_not_marked_returned(test_engine, workflo
     # The latest return (step 2, GM) wins; step 1 is approved, not "returned".
     assert [s["state"] for s in steps] == ["approved", "returned", "waiting", "waiting"]
     assert steps[1]["comment"] == "again"
+
+
+@pytest.mark.asyncio
+async def test_timeline_puts_submit_before_steps_skipped_in_the_same_transaction(
+        test_engine, workflow):
+    """ISS-0216 (TRA-20261104-0001): approval-api writes the submission and the
+    auto-skipped Department Manager step in one transaction — same now(), to
+    the microsecond. The timeline must still read Submitted first. The rows
+    are inserted skip-first so that time alone would put the skip on top."""
+    owner_actor = uuid.uuid4()
+    cid, owner = await _seed(test_engine, status="in_review", step_idx=2, events=[
+        ("approve", 1, owner_actor, "Auto-approved (same approver holds both roles)", T0),
+        ("approve", 0, owner_actor,
+         "Auto-skipped (claimant holds this step — cannot approve own claim)", T0),
+        ("submit", 0, owner_actor, "trip to plant", T0),
+    ])
+    async with _client(_make_token("requester", str(owner))) as c:
+        r = await c.get(f"/api/v1/expenses/{cid}")
+    assert r.status_code == 200, r.text
+    events = r.json()["approval_events"]
+    assert [(e["action"], e["step_idx"]) for e in events] == [
+        ("submit", 0), ("approve", 0), ("approve", 1)]

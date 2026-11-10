@@ -693,7 +693,18 @@ async def _claim_history(db, claim) -> list[ApprovalEventResponse]:
     """
     legacy = [ApprovalEventResponse.model_validate(e) for e in claim.approval_events]
     shared = await _shared_approval_events(db, claim.id)
-    return sorted(legacy + shared, key=lambda e: e.created_at)
+    return sorted(legacy + shared, key=_history_order)
+
+
+def _history_order(e) -> tuple:
+    """Oldest first; ties broken submit-first, then by step.
+
+    approval-api writes a submission and the steps it auto-skips in one
+    transaction, so they share now() to the microsecond — ordered by time
+    alone, a skipped step could read as approved before the claim was
+    submitted (ISS-0216).
+    """
+    return (e.created_at, e.action != "submit", e.step_idx or 0)
 
 
 # approval-api writes action="approve" rows no person decided — a skipped step
@@ -712,9 +723,9 @@ async def _shared_approval_events(db, claim_id: uuid.UUID) -> list[ApprovalEvent
     from sqlalchemy import bindparam, select as sa_select, text
     from app.models.approval_event_mirror import ApprovalEventMirror as AEM
 
-    events = list((await db.execute(
-        sa_select(AEM).where(AEM.document_id == claim_id).order_by(AEM.created_at.asc())
-    )).scalars().all())
+    events = sorted((await db.execute(
+        sa_select(AEM).where(AEM.document_id == claim_id)
+    )).scalars().all(), key=_history_order)
     names: dict = {}
     actor_ids = list({e.actor_id for e in events})
     if actor_ids:
