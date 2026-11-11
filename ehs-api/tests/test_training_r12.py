@@ -217,3 +217,33 @@ async def test_my_records_sort_by_the_column_asked_for(worker, trained):
     assert desc[-1]["expires_on"] is None
     assert desc[0]["expires_on"] > desc[1]["expires_on"]
     assert (await client.get("/api/v1/training/records/mine?sort=user_id")).status_code == 422
+
+
+async def test_my_external_certificate_opens_for_me_and_not_for_others(
+        worker, hse_manager, trained, test_engine, db_session, monkeypatch):
+    """Review C1: the provider's certificate is the worker's to open too."""
+    from fastapi import Response
+
+    from app.api.v1 import training as training_api
+    from app.models.training import TrainingRecord
+    from sqlalchemy import select
+    from tests.conftest import authed_client, make_token
+
+    async def fake_download(file_id, token):  # noqa: ARG001
+        return Response(content=b"%PDF-1.4 ticket", media_type="application/pdf")
+    monkeypatch.setattr(training_api, "proxy_download", fake_download)
+
+    me, client = worker
+    rec = (await db_session.execute(select(TrainingRecord).where(
+        TrainingRecord.user_id == me.id, TrainingRecord.delivery == "external"))).scalar_one()
+    rec.certificate_file_id = uuid.uuid4()
+    await db_session.commit()
+
+    mine = await client.get(f"/api/v1/training/records/{rec.id}/certificate")
+    assert mine.status_code == 200, mine.text
+    other = await make_user(test_engine)
+    async with authed_client(make_token(other.id, other.role), db_session) as theirs:
+        assert (await theirs.get(
+            f"/api/v1/training/records/{rec.id}/certificate")).status_code == 403
+    _, hse = hse_manager
+    assert (await hse.get(f"/api/v1/training/records/{rec.id}/certificate")).status_code == 200

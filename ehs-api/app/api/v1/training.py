@@ -601,9 +601,18 @@ async def attach_certificate(
 
 @router.get("/records/{record_id}/certificate")
 async def download_certificate(
-    record_id: uuid.UUID, db: SessionDep, user: CanReadTraining, token: BearerToken,  # noqa: ARG001
+    record_id: uuid.UUID, db: SessionDep, user: CanReportIncident, token: BearerToken,
 ):
+    """The certificate a provider gave, attached to the record.
+
+    ★ Review of round 12 (C1): the person it belongs to may open it, as they
+    may the one this plant issues — My training's Open was a 403 for every
+    worker, who holds no register permission."""
     record = await crud.get_training_record(db, record_id)
+    me = _user_id(user)
+    if record.user_id != me and not await has_permission(
+            db, me, user.get("role", ""), "ehs.training.read"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "You can only open your own certificate")
     if record.certificate_file_id is None:
         raise HTTPException(404, "No certificate is attached to this record")
     return await proxy_download(record.certificate_file_id, token)
