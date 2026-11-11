@@ -1,9 +1,15 @@
 # VMS (Visitor Management System) — Product Requirements Document
 
-**Version**: V2.15
+**Version**: V2.16
 **Date**: 2026-11-11
 **Status**: As-built. Describes the system on the main line as of 2026-10-16. Everything marked **Implemented** is in production; wanted-but-not-built items are marked **Not implemented** and collected in §13 Open Items.
 **Scope**: Visitor appointments, approval, health and safety checks, badge printing (= check-in), QR check-out, overdue alerts and the compliance audit trail for Canada Royal Milk ULC's plant and offices.
+
+**What changed in V2.16** (2026-11-11)
+
+- **Plant time is the company setting.** "Plant time" throughout this document means the time zone set in Portal → Admin → Company Settings → **Time Zone** (default America/Toronto), no longer a fixed America/Toronto. It decides "today", the day-before reminder, the No Show day, after-hours, the times in emails and the CFIA Visit Log, and a change takes effect within about a minute without a restart.
+- **Emails show dates and times as YYYY-MMM-DD** (`2026-NOV-11`, `2026-NOV-11 14:30 EST`). The training, PPE and PPE-prep emails used to print the planned arrival as a raw UTC timestamp; they now show plant time like the others. Task descriptions ("visit on …") use the same date form.
+- The audit-log export file name carries the plant date and time, not the server's.
 
 **What changed in V2.15** (2026-11-11)
 
@@ -374,7 +380,7 @@ When the visitor leaves, the Host scans the badge QR code — with a USB scanner
 | 4 | Escalation | On site, planned departure + 4 h passed → email the Host's Department Manager | once per visit |
 | 5 | Task housekeeping | Close "Check out visitor" tasks once the visit is no longer on site, and "Prepare PPE" tasks once it is no longer Pending / Confirmed | every run |
 
-A send is recorded only when it was attempted, so a mail outage retries on the next run. Times in emails are in plant time (e.g. "2026-10-01 14:30 EDT"). System Admin can trigger a run from the API; a manual run shares the same guard and is refused while another run is in progress.
+A send is recorded only when it was attempted, so a mail outage retries on the next run. Times in emails are in plant time with the zone abbreviation, dates as YYYY-MMM-DD (e.g. "2026-NOV-11 14:30 EST"). System Admin can trigger a run from the API; a manual run shares the same guard and is refused while another run is in progress.
 
 #### 2.4.4 Batch Check-Out
 
@@ -837,8 +843,8 @@ Targets below are product targets; they have not been re-measured in this revisi
 
 | Setting | Value |
 |---|---|
-| Time zone | America/Toronto — used for "today", reminders, email times and after-hours |
-| Date format | On screen YYYY-MMM-DD, e.g. 2026-NOV-11 (EPMS.md UI-DATE-002); CSV exports YYYY-MM-DD |
+| Time zone | The plant time zone: Portal → Admin → Company Settings → Time Zone (default America/Toronto) — used for "today", reminders, No Show, email times, after-hours and the CFIA Visit Log |
+| Date format | On screen and in emails YYYY-MMM-DD, e.g. 2026-NOV-11 (EPMS.md UI-DATE-002); CSV exports YYYY-MM-DD (CFIA Visit Log times ISO with the plant offset) |
 | Time format | 24-hour |
 | Paper | Letter |
 
@@ -1073,3 +1079,5 @@ The September 2026 code audit (V2.7) listed defects D-00 to D-22. All except two
 | V2.12 | 20 Oct 2026 | Rescheduling a No Show visit in Data Maintenance undoes the No Show and reopens a pending approval |
 | V2.13 | 20 Oct 2026 | No Show marked after the planned arrival day ends (plant time) instead of 2 hours after arrival; OI-35 closed |
 | V2.14 | 21 Oct 2026 | Configurable access zones (VMS Admin → Zones) with GMP-grade flag and zone managers; approval only for zones with managers; Zone Manager step (any one manager decides) replaces the single Quality Manager; new zone-change rule for Confirmed visits; migration 20261021_0015 seeds the six former areas without managers; OI-06 superseded |
+| V2.15 | 11 Nov 2026 | Dates on screen read YYYY-MMM-DD (UI-DATE-002) |
+| V2.16 | 11 Nov 2026 | Plant time follows Company Settings → Time Zone; emails show YYYY-MMM-DD and plant time (training / PPE emails no longer print UTC) |

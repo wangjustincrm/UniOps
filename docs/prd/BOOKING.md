@@ -1,9 +1,15 @@
 # Booking (Meeting Rooms) — Product Requirements Document
 
-**Version:** 1.2
-**Date:** 2026-10-19
+**Version:** 1.3
+**Date:** 2026-11-11
 **Status:** In Production (first released 2026-07-09; single-occurrence cancellation and later shell changes are on main)
 **Scope:** Company-internal web module for finding, booking, changing and cancelling meeting rooms, with email notification and Outlook-compatible calendar invitations sent over SMTP.
+
+### What changed in version 1.3 (2026-11-11)
+
+- **The company time zone is a setting:** Portal → Admin → Company Settings → **Time Zone** (default America/Toronto), no longer fixed to America/Toronto. Room hours, the 15-minute grid, the day views, "today", recurring dates, email times, the calendar invitation's time zone and the CSV export all follow it; a change takes effect within about a minute without a restart.
+- **Email times read YYYY-MMM-DD** (EPMS.md UI-DATE-002): subject `… <room> 2026-NOV-11 14:30`, body time range `2026-NOV-11 14:30 — 15:30 EST` (the zone abbreviation replaces the zone name; a booking that ends on another day shows the end date too).
+- Alternative-slot suggestions use the company day's real length on daylight-saving change days (23 or 25 hours).
 
 ### What changed in version 1.2 (2026-10-19)
 
@@ -120,7 +126,7 @@ Booking uses the shared UniOps Access Control Matrix, administered in **Portal �
 - Attendees are chosen from the UniOps user directory (active users with an email address).
 - **Booking is automatic:** if the room is free for the chosen time, the booking is confirmed immediately. There is no approval step.
 - Staff use Outlook Classic Desktop on an IMAP mail server. The module sends standard meeting-invitation emails (iCalendar / iTIP / iMIP over SMTP); it never writes into mailboxes or calendars directly.
-- All times are shown, entered and validated in the company time zone, **America/Toronto**, regardless of the browser's own time zone.
+- All times are shown, entered and validated in the company time zone (Portal → Admin → Company Settings → **Time Zone**, default America/Toronto), regardless of the browser's own time zone.
 - The web module is the only booking channel.
 
 ---
@@ -209,7 +215,7 @@ Status is computed each time it is read (no background job). Order of precedence
 | ID | Requirement | Status |
 |---|---|---|
 | BK-SUM-01 | *Meeting Summary* shows one day for **all** rooms on an Outlook-style day grid: one column per room (sorted by floor then name), rows for time, confirmed meetings drawn as blocks with title and organiser. | Built |
-| BK-SUM-02 | Previous / next day and *Today* buttons; the day is a calendar day in America/Toronto, correct on daylight-saving change days. | Built |
+| BK-SUM-02 | Previous / next day and *Today* buttons; the day is a calendar day in the company time zone, correct on daylight-saving change days. | Built |
 | BK-SUM-03 | Disabled rooms are omitted; rooms under maintenance are shown greyed out. Clicking a room header opens its detail page. | Built |
 
 ### 7.5 Booking Creation
@@ -272,7 +278,7 @@ Status is computed each time it is read (no background job). Order of precedence
 |---|---|---|
 | BK-NOTIF-01 | Notifications are sent on: booking created, booking updated (single or series), booking cancelled, single occurrence cancelled; and a **sync alert** to administrators when a delivery finally fails (§7.11). | Built (see D-01) |
 | BK-NOTIF-02 | Recipients: the organiser, every attendee, and — when *Notify room admins* is on — the room-admin email addresses configured in Settings. Users without an email address are skipped and noted on the notification record. | Built |
-| BK-NOTIF-03 | Content: subject `[Booking] Created / Updated / Cancelled: <title> — <room> <date time>`; plain-text body with the action, title, time range and time zone, room and location, organiser, attendee list and booking reference; plus the calendar invitation (§7.10). | Built |
+| BK-NOTIF-03 | Content: subject `[Booking] Created / Updated / Cancelled: <title> — <room> <date time>` (date time as `2026-NOV-11 14:30`, company time zone); plain-text body with the action, title, time range (YYYY-MMM-DD HH:MM, company time zone, with its abbreviation), room and location, organiser, attendee list and booking reference; plus the calendar invitation (§7.10). | Built |
 | BK-NOTIF-04 | One email per event: a series is announced by a single email. Recipients are fixed when the notification is created; retries and resends use the same list. | Built |
 | BK-NOTIF-05 | Cancellation emails go to the people on the booking at the time of cancellation. | Built |
 | BK-NOTIF-06 | **Sending account:** the module's own SMTP settings (Settings → Email); if no host is set there, the shared company SMTP settings are used. If neither has a host the module runs in **log-only mode**: notifications are recorded as sent with the note "SMTP not configured". | Built |
@@ -289,7 +295,7 @@ Because the mail server is not Exchange, the module cannot write to calendars on
 | BK-CAL-02 | Standards: iCalendar (RFC 5545), iTIP (RFC 5546), iMIP (RFC 6047). Create and update use `METHOD:REQUEST`; cancellation uses `METHOD:CANCEL` with status *cancelled*. | Built |
 | BK-CAL-03 | The event carries: stable UID, sequence number, start/end in the company time zone, title, description, location (room name with floor and area), organiser, and every attendee as a required participant with a reply requested. | Built |
 | BK-CAL-04 | **Stable identity:** a single booking has its own UID; a series shares one UID. Every update or cancellation reuses the UID with a higher sequence number so Outlook updates the existing entry instead of creating a duplicate. | Built |
-| BK-CAL-05 | **Time zone:** for Eastern Time the time-zone block is built with yearly rules (2nd Sunday in March / 1st Sunday in November), because Outlook Classic ignores the date-list form and would show summer meetings one hour late. | Built |
+| BK-CAL-05 | **Time zone:** the invitation's time zone is the company time zone setting, and its time-zone block carries the same name as the event times. For Eastern Time the block is built with yearly rules (2nd Sunday in March / 1st Sunday in November), because Outlook Classic ignores the date-list form and would show summer meetings one hour late. Any other zone uses the date-list form, which Outlook Classic may show one hour off during daylight saving. | Built |
 | BK-CAL-06 | **Series:** the series invitation includes the recurrence rule (daily/weekly, interval, exact count) and lists individually cancelled future dates as exceptions so Outlook does not recreate them. | Built |
 | BK-CAL-07 | **Single-occurrence cancellation:** a `CANCEL` that names the occurrence (recurrence ID) and **omits the recurrence rule**, so Outlook removes only that instance (sending both would clear the whole series). | Built |
 | BK-CAL-08 | **Organiser mode** (Settings): *System mailbox* (default — the invitation organiser is the module's sending address) or *Meeting organiser* (organiser is the booking user; the email is sent "on behalf of" them, which the mail gateway must permit). | Built |
@@ -353,7 +359,7 @@ Because the mail server is not Exchange, the module cannot write to calendars on
 | Calendar identity | Stable UID + increasing sequence for every update and cancellation |
 | Invitation email | Readable text **and** standard calendar content |
 | Attendee replies | Not read back |
-| Time zone | America/Toronto for display, entry, validation, emails and export |
+| Time zone | Company time zone (Company Settings → Time Zone, default America/Toronto) for display, entry, validation, emails, invitations and export |
 | Logs | Booking audit log, notification log (each message, its status and error) |
 
 ---
