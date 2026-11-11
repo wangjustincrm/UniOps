@@ -236,6 +236,7 @@ class DashboardSettingsOut(BaseModel):
     metrics: list[MetricOut]
     charts: list[ChartOut]
     regions: list[RegionOut]
+    due_bands: dict[str, int]
 
 
 class DashboardSettingsIn(BaseModel):
@@ -243,6 +244,7 @@ class DashboardSettingsIn(BaseModel):
 
     thresholds: dict[str, dict] | None = None
     chart_styles: dict[str, str] | None = None
+    due_bands: dict | None = None
 
 
 def _settings_out(config: EhsConfig | None) -> DashboardSettingsOut:
@@ -254,6 +256,7 @@ def _settings_out(config: EhsConfig | None) -> DashboardSettingsOut:
         charts=[ChartOut(key=k, label=label, styles=list(styles))
                 for k, (label, styles) in ds.CHARTS.items()],
         regions=[RegionOut(key=k, label=label) for k, label in body_map.REGIONS],
+        due_bands=ds.due_bands(config.due_bands if config else None),
     )
 
 
@@ -273,6 +276,8 @@ async def put_settings(payload: DashboardSettingsIn, db: SessionDep, user: CanMa
         config.dashboard_thresholds = ds.clean_thresholds(payload.thresholds)
     if payload.chart_styles is not None:
         config.dashboard_chart_styles = ds.clean_chart_styles(payload.chart_styles)
+    if payload.due_bands is not None:
+        config.due_bands = ds.clean_due_bands(payload.due_bands)
     await db.flush()
     return _settings_out(config)
 

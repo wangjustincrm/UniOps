@@ -27,7 +27,33 @@ function NewChip() {
   )
 }
 
+interface DueBands { green: number; yellow: number; red: number }
+
+/** ★ Round 12, ACT-05 / D12: green within 10 days, yellow within 5, red within
+ *  2 — HSE's numbers, under Settings → Dashboard. The nearest band wins. */
+function dueBand(daysLeft: number, bands: DueBands | undefined) {
+  if (!bands) return null
+  if (daysLeft <= bands.red) return 'red' as const
+  if (daysLeft <= bands.yellow) return 'yellow' as const
+  if (daysLeft <= bands.green) return 'green' as const
+  return null
+}
+const BAND_CLS = {
+  red: 'bg-danger-50 text-danger-700 ring-1 ring-danger-200',
+  yellow: 'bg-warning-50 text-warning-800 ring-1 ring-warning-200',
+  green: 'bg-success-50 text-success-700 ring-1 ring-success-200',
+}
+
+function useDueBands() {
+  return useQuery({
+    queryKey: ['actions', 'due-bands'],
+    queryFn: () => api.get<DueBands>('/api/v1/actions/due-bands'),
+    staleTime: 300_000,
+  }).data
+}
+
 function Lateness({ dueDate }: { dueDate: string }) {
+  const bands = useDueBands()
   const late = daysOverdue(dueDate)
   if (late === null) return null
   if (late > 0) {
@@ -38,16 +64,19 @@ function Lateness({ dueDate }: { dueDate: string }) {
       </span>
     )
   }
+  const band = dueBand(-late, bands)
   if (late === 0) {
     return (
-      <span className="rounded-md bg-warning-50 px-2.5 py-1 text-xs font-medium text-warning-700">
+      <span className={`rounded-md px-2.5 py-1 text-xs font-medium ${band ? BAND_CLS[band] : 'bg-warning-50 text-warning-700'}`}>
         Due today
       </span>
     )
   }
+  // Colour is never the only signal: the number of days is in the words.
   return (
-    <span className="rounded-md bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-600 tabular-nums">
+    <span className={`rounded-md px-2.5 py-1 text-xs font-medium tabular-nums ${band ? BAND_CLS[band] : 'bg-neutral-100 text-neutral-600'}`}>
       Due {formatDate(dueDate)}
+      {band && <span className="font-normal"> · in {-late}d</span>}
     </span>
   )
 }

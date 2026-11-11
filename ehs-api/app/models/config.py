@@ -114,6 +114,12 @@ class EhsConfig(TimestampMixin, Base):
     dashboard_chart_styles: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}",
     )
+    # Round 12, ACT-05 / D12: how a due date on My Actions is coloured —
+    # green within `green` days, yellow within `yellow`, red within `red`.
+    due_bands: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=lambda: {"green": 10, "yellow": 5, "red": 2},
+        server_default='{"green": 10, "yellow": 5, "red": 2}',
+    )
 
 
 class Holiday(Base):

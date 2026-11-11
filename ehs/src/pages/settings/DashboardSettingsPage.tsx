@@ -22,7 +22,15 @@ interface Settings {
   chart_styles: Record<string, string>
   metrics: { key: string; label: string; higher_is_better: boolean }[]
   charts: { key: string; label: string; styles: string[] }[]
+  due_bands: Bands
 }
+
+type Bands = { green: number; yellow: number; red: number }
+const BANDS: { key: keyof Bands; dot: string; word: string }[] = [
+  { key: 'green', dot: 'bg-success-500', word: 'Green' },
+  { key: 'yellow', dot: 'bg-warning-500', word: 'Yellow' },
+  { key: 'red', dot: 'bg-danger-500', word: 'Red' },
+]
 
 const STYLE_NAMES: Record<string, string> = { bar: 'Bars', circle: 'Circle', body: 'Body picture' }
 type Pair = { good: string; bad: string }
@@ -41,6 +49,7 @@ export default function DashboardSettingsPage() {
   })
   const [pairs, setPairs] = useState<Record<string, Pair>>({})
   const [styles, setStyles] = useState<Record<string, string>>({})
+  const [bands, setBands] = useState<Record<keyof Bands, string>>({ green: '', yellow: '', red: '' })
   useEffect(() => {
     if (!data) return
     setPairs(Object.fromEntries(data.metrics.map((m) => {
@@ -48,6 +57,8 @@ export default function DashboardSettingsPage() {
       return [m.key, { good: p ? String(p.good) : '', bad: p ? String(p.bad) : '' }]
     })))
     setStyles(data.chart_styles)
+    setBands({ green: String(data.due_bands.green), yellow: String(data.due_bands.yellow),
+               red: String(data.due_bands.red) })
   }, [data])
 
   const save = useMutation({
@@ -58,8 +69,12 @@ export default function DashboardSettingsPage() {
         good: asNumber(p.good), bad: asNumber(p.bad),
       }])),
       chart_styles: styles,
+      due_bands: Object.fromEntries(Object.entries(bands).map(([k, v]) => [k, asNumber(v)])),
     }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['dashboard'] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      void queryClient.invalidateQueries({ queryKey: ['actions', 'due-bands'] })
+    },
   })
   const problems = save.error instanceof ApiError
     ? ((save.error.body as { detail?: { problems?: string[] } })?.detail?.problems ?? null) : null
@@ -111,6 +126,27 @@ export default function DashboardSettingsPage() {
             )
           })}
         </ul>
+      </section>
+
+      {/* ★ Round 12, ACT-05: the due dates under Coming up on My Actions. */}
+      <section className="mb-4 rounded-xl border border-neutral-200 bg-white p-4">
+        <h2 className="text-sm font-semibold text-neutral-900">Due dates on My Actions</h2>
+        <p className="mb-3 text-xs text-neutral-500">
+          A due date is coloured by how close it is: the nearest band wins, so within the red number
+          it is red. Further off than the green number it has no colour.
+        </p>
+        <div className="flex flex-wrap gap-x-5 gap-y-2">
+          {BANDS.map((b) => (
+            <label key={b.key} className="flex items-center gap-1.5 text-xs text-neutral-700">
+              <span className={`h-2.5 w-2.5 rounded-full ${b.dot}`} aria-hidden />
+              {b.word} within
+              <input className={num} inputMode="numeric" value={bands[b.key]}
+                     aria-label={`${b.word} within how many days`}
+                     onChange={(e) => setBands({ ...bands, [b.key]: e.target.value.replace(/[^0-9]/g, '') })} />
+              days
+            </label>
+          ))}
+        </div>
       </section>
 
       <section className="mb-4 rounded-xl border border-neutral-200 bg-white p-4">

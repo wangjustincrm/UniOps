@@ -127,3 +127,39 @@ def chart_styles(stored: dict) -> dict[str, str]:
     stored = stored if isinstance(stored, dict) else {}
     return {chart: (stored.get(chart) if stored.get(chart) in styles else styles[0])
             for chart, (_label, styles) in CHARTS.items()}
+
+
+# ── Due dates on My Actions (round 12, ACT-05) ──────────────────────────────
+
+DUE_BANDS_DEFAULT = {"green": 10, "yellow": 5, "red": 2}
+
+
+def due_bands(raw: dict | None) -> dict:
+    """The numbers in force: HSE's, or Kirk's 10, 5 and 2."""
+    out = dict(DUE_BANDS_DEFAULT)
+    if isinstance(raw, dict):
+        out.update({k: raw[k] for k in DUE_BANDS_DEFAULT if isinstance(raw.get(k), int)})
+    return out
+
+
+def clean_due_bands(raw: dict) -> dict:
+    """Whole days, each band inside the one before it, or 422 naming why.
+
+    ★ Not `tone()`: that is two numbers with strict ends, for a figure that is
+    good or bad. A due date has three bands that nest — inside 2 days is
+    inside 5 as well — and the nearest one wins (D12: "red wins inside 2
+    days"). Due today counts as inside every band.
+    """
+    problems: list[str] = []
+    out: dict[str, int] = {}
+    for key in ("green", "yellow", "red"):
+        v = raw.get(key) if isinstance(raw, dict) else None
+        if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v <= 365:
+            problems.append(f"{key.capitalize()}: a whole number of days from 0 to 365")
+        else:
+            out[key] = v
+    if not problems and not out["red"] < out["yellow"] < out["green"]:
+        problems.append("Red must be fewer days than yellow, and yellow fewer than green")
+    if problems:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, {"problems": problems})
+    return out

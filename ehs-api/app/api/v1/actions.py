@@ -166,6 +166,25 @@ async def my_actions(
     return [ActionOut.model_validate(r) for r in rows]
 
 
+class DueBandsOut(BaseModel):
+    green: int
+    yellow: int
+    red: int
+
+
+@router.get("/due-bands", response_model=DueBandsOut)
+async def due_bands(db: SessionDep, user: CanReportIncident):  # noqa: ARG001
+    """Round 12, ACT-05: how My Actions colours a due date.
+
+    ★ Here and not under /dashboard/settings: that needs ehs.incident.read,
+    which a worker does not hold, and My Actions is a worker's page.
+    """
+    from app.models.config import EhsConfig
+    from app.services import dashboard_settings as ds
+    config = await db.get(EhsConfig, 1)
+    return DueBandsOut(**ds.due_bands(config.due_bands if config else None))
+
+
 @router.get("/mine/to-verify", response_model=list[ActionOut])
 async def actions_to_verify(db: SessionDep, user: CanReadAction):
     """Waiting on this caller to confirm the control works.
