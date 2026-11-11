@@ -14,6 +14,7 @@ from reportlab import rl_config
 from sqlalchemy import select, text
 
 import app.db.base as db_module
+from app.core.plant_time import set_plant_tz
 from app.models.approval_event_mirror import ApprovalEventMirror as AEM
 from app.models.company_config_mirror import EpmsCompanyConfig
 from app.models.expense import ExpenseClaim, ExpenseLineItem, ExpenseTripItem
@@ -25,6 +26,12 @@ from tests.conftest import _client, _make_token
 @pytest.fixture
 def uncompressed(monkeypatch):
     monkeypatch.setattr(rl_config, "pageCompression", 0)
+
+
+@pytest.fixture(autouse=True)
+def toronto():
+    """Pin the plant zone (Company Settings) for the printed times below."""
+    set_plant_tz("America/Toronto")
 
 
 _TJ = re.compile(rb"\(((?:\\.|[^\\)])*)\) Tj")
@@ -64,7 +71,7 @@ def _exp(**kw) -> ExpenseClaim:
 # ── Renderer ──────────────────────────────────────────────────────────────────
 
 def test_pdf_carries_the_approval_record(uncompressed):
-    at = datetime(2026, 10, 2, 14, 5, tzinfo=timezone.utc)
+    at = datetime(2026, 10, 2, 14, 5, tzinfo=timezone.utc)   # 10:05 EDT at the plant
     data = build_claim_pdf(_exp(), [
         {"step": "Submitted", "name": "Jane Doe", "at": at, "comment": "for the audit"},
         {"step": "Department Head", "name": "Mark Boss", "at": at, "comment": "OK"},
@@ -72,10 +79,27 @@ def test_pdf_carries_the_approval_record(uncompressed):
     ], company_name="Canada Royal Milk")
     assert data[:4] == b"%PDF"
     txt = _text(data)
-    for s in ("Approval Record", "Department Head", "Mark Boss", "2026-10-02 14:05 UTC",
+    for s in ("Approval Record", "Department Head", "Mark Boss", "2026-OCT-02 10:05",
               "for the audit", "Finance BP", "Canada Royal Milk", "General Expense Claim",
-              "EXP-X-0001", "CRM00901"):
+              "EXP-X-0001", "CRM00901", "2026-OCT-01", "2026-SEP-30"):
         assert s in txt, s
+    assert "UTC" not in txt
+    assert "2026-10-02" not in txt and "2026-OCT-02 14:05" not in txt
+    # "Generated <plant date-time>" footer, no zone label.
+    assert re.search(r"Generated \d{4}-[A-Z]{3}-\d{2} \d{2}:\d{2}", txt), txt
+
+
+def test_printed_dates_are_the_plants_not_utc():
+    from app.services.pdf_claim import _d, _dt
+    # 21:30 EDT on Oct 1 is already Oct 2 in UTC — the plant's date is printed.
+    evening = datetime(2026, 10, 2, 1, 30, tzinfo=timezone.utc)
+    assert _d(evening) == "2026-OCT-01"
+    assert _dt(evening) == "2026-OCT-01 21:30"
+    # Winter (EST, UTC-5): 19:15 on Jan 31 is Feb 1 00:15 UTC.
+    assert _dt(datetime(2027, 2, 1, 0, 15, tzinfo=timezone.utc)) == "2027-JAN-31 19:15"
+    # A calendar date is printed as is.
+    assert _d(date(2026, 11, 11)) == "2026-NOV-11"
+    assert _d(None) == "" and _dt(None) == ""
 
 
 def test_ampersand_in_user_text_survives(uncompressed):
@@ -212,6 +236,7 @@ async def test_engine_skip_is_not_printed_as_the_claimants_signature(db_session,
     sigs = {a["step_idx"]: a for a in await claim_pdf._tra_approvals(db_session, claim)}
     assert sigs[0]["actor_name"] == "Skipped" and sigs[0]["acted_date"] is None
     assert sigs[1]["actor_name"] == "Mark Boss"
+    assert sigs[1]["acted_date"] == "2026-OCT-01"   # 12:05 UTC = 08:05 EDT
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────

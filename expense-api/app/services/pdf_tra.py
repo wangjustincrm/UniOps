@@ -10,6 +10,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle)
 
+from app.core.plant_time import fmt_date
+
 _CJK = "STSong-Light"
 try:
     pdfmetrics.registerFont(UnicodeCIDFont(_CJK))
@@ -45,16 +47,16 @@ def build_travel_application_pdf(claim, approvals: list[dict] | None = None) -> 
     travelers = ", ".join(t.user_name for t in (claim.travelers or []))
     dates = ""
     if claim.travel_from_date and claim.travel_to_date:
-        dates = f"{claim.travel_from_date.isoformat()} → {claim.travel_to_date.isoformat()}"
+        dates = f"{fmt_date(claim.travel_from_date)} → {fmt_date(claim.travel_to_date)}"
     leave = ""
     if claim.leave_from_date and claim.leave_to_date:
-        leave = f"{claim.leave_from_date.isoformat()} → {claim.leave_to_date.isoformat()}"
+        leave = f"{fmt_date(claim.leave_from_date)} → {fmt_date(claim.leave_to_date)}"
     chosen = set(claim.transport_modes or [])
     transport = "  ".join(f"[{'X' if k in chosen else ' '}] {lbl}" for k, lbl in _MODES)
 
     info = Table([
         _row("Department", claim.department_name),
-        _row("Time of Application", claim.submission_date.isoformat() if claim.submission_date else ""),
+        _row("Time of Application", fmt_date(claim.submission_date) if claim.submission_date else ""),
         _row("Staff", travelers),
         _row("Number of Persons", str(len(claim.travelers or []))),
         _row("Location", claim.travel_destination),
