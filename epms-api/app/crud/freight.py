@@ -19,7 +19,8 @@ from app.crud import invoice_dedup
 from app.models.cost_center import CostCenter
 from app.models.department import Department
 from app.models.freight import (
-    FREIGHT_BUDGET_CODE, FreightCarrier, FreightInvoiceLine, FreightShipment, PaCostAllocation,
+    FREIGHT_BUDGET_CODE, FreightCarrier, FreightInvoiceLine, FreightShipment,
+    FreightShipmentAttachment, PaCostAllocation,
 )
 from app.models.invoice import Invoice
 from app.models.pa import PaLineItem, PaymentApplication
@@ -280,6 +281,11 @@ async def shipment_dicts(db: AsyncSession, rows: list[FreightShipment]) -> list[
         .order_by(Invoice.invoice_date)
     )).all():
         billed[sid] = (inv_id, ref, amt)
+    att_counts = dict((await db.execute(
+        select(FreightShipmentAttachment.shipment_id, func.count())
+        .where(FreightShipmentAttachment.shipment_id.in_([r.id for r in rows]))
+        .group_by(FreightShipmentAttachment.shipment_id)
+    )).all())
     out = []
     for r in rows:
         code, name, dept = labels.get(r.cost_center_id, (None, None, None))
@@ -291,8 +297,53 @@ async def shipment_dicts(db: AsyncSession, rows: list[FreightShipment]) -> list[
             "invoice_id": inv[0] if inv else None,
             "invoice_number": inv[1] if inv else None,
             "billed_amount": inv[2] if inv else None,
+            "attachment_count": att_counts.get(r.id, 0),
         })
     return out
+
+
+# ── Shipment attachments ──────────────────────────────────────────────────────
+
+def _check_attachable(s: FreightShipment) -> None:
+    # Pending and billed shipments keep collecting paperwork (a proof of
+    # delivery can arrive after the invoice); a voided one is closed.
+    if s.status == "void":
+        raise FreightError(409, "A voided shipment's attachments cannot be changed")
+
+
+async def list_shipment_attachments(db: AsyncSession, shipment_id: uuid.UUID
+                                    ) -> list[FreightShipmentAttachment]:
+    # The scanned label first, then the rest in upload order.
+    return list((await db.execute(
+        select(FreightShipmentAttachment)
+        .where(FreightShipmentAttachment.shipment_id == shipment_id)
+        .order_by((FreightShipmentAttachment.kind != "waybill"),
+                  FreightShipmentAttachment.created_at)
+    )).scalars().all())
+
+
+async def get_shipment_attachment(db: AsyncSession, shipment_id: uuid.UUID,
+                                  att_id: uuid.UUID) -> FreightShipmentAttachment:
+    att = await db.get(FreightShipmentAttachment, att_id)
+    if att is None or att.shipment_id != shipment_id:
+        raise FreightError(404, "Attachment not found")
+    return att
+
+
+async def add_shipment_attachment(db: AsyncSession, s: FreightShipment, *, kind: str,
+                                  filename: str, content_type: str, file_size: int,
+                                  storage_key: uuid.UUID, user_id: uuid.UUID
+                                  ) -> FreightShipmentAttachment:
+    _check_attachable(s)
+    name = (await db.execute(select(User.full_name).where(User.id == user_id))).scalar_one_or_none()
+    att = FreightShipmentAttachment(
+        shipment_id=s.id, kind=kind, filename=filename, content_type=content_type,
+        file_size=file_size, storage_key=storage_key,
+        uploaded_by=user_id, uploaded_by_name=name)
+    db.add(att)
+    await db.flush()
+    await db.refresh(att)
+    return att
 
 
 # ── Default cost centre (D11) ─────────────────────────────────────────────────
