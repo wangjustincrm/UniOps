@@ -1,5 +1,5 @@
 import { BooleanCell, DateCell, NumberCell, StackedDateTimeCell } from '../primitives/cells'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { DataTable, type ColumnDef, type Grouping } from '../primitives/DataTable'
 import { groupKey } from '../primitives/groupKey'
 import { formatMoney } from '../primitives/format'
@@ -164,7 +164,12 @@ function QueryTableView<T>({
     else setOwnLayout(next)
     onViewChange?.(viewStateOf(spec, next))
   }
+  // The spec as last asked for: two changes in one event (the pager sends the page size, then page 1)
+  // build on each other, not both on the spec of this render — else the second undoes the first.
+  const latest = useRef(spec)
+  useEffect(() => { latest.current = spec }, [spec])
   const change = (next: QuerySpec) => {
+    latest.current = next
     onSpecChange(next)
     onViewChange?.(viewStateOf(next, layout))
   }
@@ -299,8 +304,8 @@ function QueryTableView<T>({
           page: spec.page,
           pageSize: clampPageSize(spec.pageSize),
           total,
-          onPageChange: (page) => onSpecChange({ ...spec, page }),
-          onPageSizeChange: (size) => change({ ...spec, page: 1, pageSize: clampPageSize(size) }),
+          onPageChange: (page) => change({ ...latest.current, page }),
+          onPageSizeChange: (size) => change({ ...latest.current, page: 1, pageSize: clampPageSize(size) }),
         }}
       />
     </>

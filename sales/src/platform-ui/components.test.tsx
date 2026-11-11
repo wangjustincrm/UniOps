@@ -137,7 +137,7 @@ describe('SchemaForm', () => {
 
   it('a numeric select takes and gives numbers (an id), null for none', async () => {  // 2026-11-10
     const onSubmit = vi.fn()
-    const opts = [{ value: '7', label: 'Radiant' }, { value: '9', label: 'TrueCommerce' }]
+    const opts = [{ value: '7', label: 'North' }, { value: '9', label: 'South' }]
     render(<SchemaForm schema={z.object({ a: z.number().nullable(), b: z.number().nullable() })} defaultValues={{ a: 7, b: null }}
       fields={[{ name: 'a', label: 'A', type: 'select', numeric: true, options: opts }, { name: 'b', label: 'B', type: 'select', numeric: true, options: opts }]}
       onSubmit={onSubmit} />)
