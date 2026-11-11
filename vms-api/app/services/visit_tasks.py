@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import fmt_date
 from app.models.task_mirror import Task
 from app.models.visit import Visit, VisitStatus
 from app.models.visitor import Visitor
@@ -116,7 +117,7 @@ async def open_ppe_prep_task(
         title=f"Prepare PPE — {_visitor_label(visitor)}",
         description=(
             f"PPE was requested for {_visitor_label(visitor)}'s visit on "
-            f"{visit.visit_date.isoformat()}. Please pre-stage the gear before "
+            f"{fmt_date(visit.visit_date)}. Please pre-stage the gear before "
             f"their planned arrival."
         ),
     )

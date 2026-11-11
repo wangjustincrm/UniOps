@@ -26,13 +26,11 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
-from app.core.plant_time import plant_tz
+from app.core.plant_time import plant_day_start, plant_today
 from app.crud import audit as audit_crud
 from app.models.audit_log import AuditLog
 from app.models.task_mirror import Task
@@ -65,8 +63,7 @@ def no_show_cutoff(now: datetime) -> datetime:
     2026-10-20). A visit becomes No Show once its planned arrival's plant day
     is over — late arrivals the same day are not no-shows, and a visit entered
     after its arrival time on the same day is not marked minutes later."""
-    local = now.astimezone(plant_tz())
-    return local.replace(hour=0, minute=0, second=0, microsecond=0)
+    return plant_day_start(plant_today(now))
 
 
 async def _visitor_and_host(
@@ -225,12 +222,8 @@ async def undo_no_show(
 # ── VMS-PR-012: day-before reminder ─────────────────────────────────────────-
 
 def _reminder_target_date(now: datetime):
-    """Calendar date of 'tomorrow' in the plant's local timezone."""
-    try:
-        local = ZoneInfo(settings.REPORT_TIMEZONE)
-    except Exception:  # noqa: BLE001 — bad tz config degrades to UTC
-        local = timezone.utc
-    return (now.astimezone(local) + timedelta(days=1)).date()
+    """Calendar date of 'tomorrow' in the plant's time zone."""
+    return plant_today(now) + timedelta(days=1)
 
 
 async def send_day_before_reminders(

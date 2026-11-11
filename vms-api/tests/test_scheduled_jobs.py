@@ -7,14 +7,13 @@ assert the idempotency-flag behavior without an SMTP server.
 """
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import app.db.session as session_module
-from app.core.config import settings
+from app.core.plant_time import plant_today
 from app.models.visit import AccessArea, Visit, VisitPurpose, VisitStatus
 from app.models.visitor import Visitor, VisitorType
 from app.services import notifications as notifications_svc
@@ -132,7 +131,7 @@ async def test_no_show_skips_checked_in_and_recent(test_engine):
 # ── VMS-PR-012: day-before reminder ─────────────────────────────────────────-
 
 def _tomorrow_local(now: datetime) -> date:
-    return (now.astimezone(ZoneInfo(settings.REPORT_TIMEZONE)) + timedelta(days=1)).date()
+    return plant_today(now) + timedelta(days=1)
 
 
 async def test_day_before_reminder_sets_flag_once(test_engine, captured_emails):
@@ -168,7 +167,7 @@ async def test_day_before_reminder_skips_non_tomorrow(test_engine, captured_emai
     # Visit is today, not tomorrow → no reminder.
     visit = await _mk_visit(
         test_engine, host=host, visitor=visitor, status=VisitStatus.confirmed,
-        visit_date=now.astimezone(ZoneInfo(settings.REPORT_TIMEZONE)).date(),
+        visit_date=plant_today(now),
         planned_arrival=now + timedelta(hours=2),
     )
     async with _factory(test_engine)() as db:
@@ -349,3 +348,18 @@ async def test_run_all_returns_summary(test_engine, captured_emails):
     # settled_tasks:每趟顺带收口 check_out_visitor / prepare_ppe 任务
     assert set(summary) == {"no_shows", "reminders", "overdue_reminders",
                             "escalations", "settled_tasks"}
+
+
+def test_reminder_target_is_plant_tomorrow_in_the_evening():
+    # 2026-11-11 23:30 UTC = 18:30 EST on the 11th → tomorrow is the 12th;
+    # 2026-11-12 01:30 UTC = 20:30 EST on the 11th → still the 12th (the
+    # UTC date already says the 12th, which made "tomorrow" the 13th).
+    assert jobs._reminder_target_date(datetime(2026, 11, 11, 23, 30, tzinfo=UTC)) == date(2026, 11, 12)
+    assert jobs._reminder_target_date(datetime(2026, 11, 12, 1, 30, tzinfo=UTC)) == date(2026, 11, 12)
+
+
+def test_no_show_cutoff_is_plant_midnight_across_dst():
+    # 2026-11-01 is fall-back day in Toronto: midnight is still EDT (04:00 UTC).
+    assert jobs.no_show_cutoff(datetime(2026, 11, 1, 20, 0, tzinfo=UTC)) == datetime(2026, 11, 1, 4, 0, tzinfo=UTC)
+    # The next day's midnight is EST (05:00 UTC).
+    assert jobs.no_show_cutoff(datetime(2026, 11, 3, 1, 0, tzinfo=UTC)) == datetime(2026, 11, 2, 5, 0, tzinfo=UTC)

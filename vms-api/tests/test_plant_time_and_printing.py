@@ -7,7 +7,8 @@ from datetime import date, datetime, timezone
 from sqlalchemy import text
 
 import app.db.session as session_module
-from app.core.plant_time import fmt_local, plant_today
+from app.core.plant_time import plant_today
+from app.services import notifications as notifications_svc
 from app.services.scheduler import _ADVISORY_LOCK_KEY
 from tests.conftest import authed_client, make_token, make_user
 from tests.test_reports import _make_visitor
@@ -20,9 +21,28 @@ def test_plant_today_rolls_over_at_local_midnight_not_utc():
 
 
 def test_email_times_are_local():
-    assert fmt_local(datetime(2026, 10, 1, 0, 30, tzinfo=timezone.utc)) == "2026-09-30 20:30 EDT"
-    assert fmt_local(datetime(2026, 1, 15, 14, 0, tzinfo=timezone.utc)) == "2026-01-15 09:00 EST"
-    assert fmt_local(None) == "—"
+    fmt = notifications_svc._fmt_dt
+    assert fmt(datetime(2026, 10, 1, 0, 30, tzinfo=timezone.utc)) == "2026-SEP-30 20:30 EDT"
+    assert fmt(datetime(2026, 1, 15, 14, 0, tzinfo=timezone.utc)) == "2026-JAN-15 09:00 EST"
+    assert fmt(date(2026, 11, 11)) == "2026-NOV-11"
+    assert fmt(None) == "—"
+
+
+def test_registration_emails_show_plant_time_not_utc():
+    """Training / PPE / PPE-prep mails printed planned_arrival as raw UTC
+    isoformat ('2026-11-12T01:30:00+00:00'); now plant time, UI-DATE-002."""
+    from types import SimpleNamespace
+    visit = SimpleNamespace(
+        id=uuid.uuid4(), visit_date=date(2026, 11, 11),
+        planned_arrival=datetime(2026, 11, 12, 1, 30, tzinfo=timezone.utc),  # 20:30 EST on the 11th
+        access_area="laboratory", access_areas=None,
+    )
+    visitor = SimpleNamespace(first_name="Ada", last_name="Lovelace", company_name="AE Co.")
+    for build in (notifications_svc._format_training_email, notifications_svc._format_ppe_email):
+        _subject, body = build(visit, visitor, None)
+        assert "Visit date:     2026-NOV-11" in body
+        assert "2026-NOV-11 20:30 EST" in body
+        assert "+00:00" not in body
 
 
 async def test_any_user_prints_with_the_admin_badge_config(requester, admin):

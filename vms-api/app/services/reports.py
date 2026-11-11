@@ -18,12 +18,11 @@ import io
 import uuid
 from collections.abc import AsyncIterator
 from datetime import date, datetime, timezone
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
+from app.core.plant_time import plant_tz, plant_tz_name
 from app.models.department_mirror import Department
 from app.models.user_mirror import User
 from app.models.visit import HealthDeclStatus, Visit, VisitStatus
@@ -42,14 +41,9 @@ def _csv_row(values: list) -> str:
     return buf.getvalue()
 
 
-# Local timezone for the human-facing export. Stored timestamps are UTC; the
-# CFIA log renders them in the plant's local time (settings.REPORT_TIMEZONE).
-# Fall back to UTC rather than crash the API if the zone can't be resolved
-# (bad config / missing tz database).
-try:
-    _LOCAL_TZ: ZoneInfo | timezone = ZoneInfo(settings.REPORT_TIMEZONE)
-except Exception:  # noqa: BLE001 — any zoneinfo failure degrades to UTC
-    _LOCAL_TZ = timezone.utc
+# Stored timestamps are UTC; the CFIA log renders them in the plant's time
+# zone (Company Settings → Time Zone), read at call time so a change applies
+# without a restart. The cell stays ISO-8601 with its offset (export format).
 
 
 def _fmt_dt(value: datetime | None) -> str:
@@ -58,7 +52,7 @@ def _fmt_dt(value: datetime | None) -> str:
         return ""
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(_LOCAL_TZ).replace(microsecond=0).isoformat()
+    return value.astimezone(plant_tz()).replace(microsecond=0).isoformat()
 
 
 def _on_site_minutes(arrival: datetime | None, departure: datetime | None) -> str:
@@ -257,8 +251,8 @@ async def stream_gmp_area_summary(
 
         after_hours = (await db.execute(
             base.with_only_columns(func.count(Visit.id)).where(
-                (func.extract("hour", func.timezone(settings.REPORT_TIMEZONE, Visit.planned_arrival)) < _BUSINESS_HOUR_START)
-                | (func.extract("hour", func.timezone(settings.REPORT_TIMEZONE, Visit.planned_arrival)) >= _BUSINESS_HOUR_END)
+                (func.extract("hour", func.timezone(plant_tz_name(), Visit.planned_arrival)) < _BUSINESS_HOUR_START)
+                | (func.extract("hour", func.timezone(plant_tz_name(), Visit.planned_arrival)) >= _BUSINESS_HOUR_END)
             )
         )).scalar_one()
 
@@ -350,8 +344,8 @@ async def compliance_metrics(
                     VisitStatus.checked_out,
                 ]
             ),
-            (func.extract("hour", func.timezone(settings.REPORT_TIMEZONE, Visit.planned_arrival)) < _BUSINESS_HOUR_START)
-            | (func.extract("hour", func.timezone(settings.REPORT_TIMEZONE, Visit.planned_arrival)) >= _BUSINESS_HOUR_END),
+            (func.extract("hour", func.timezone(plant_tz_name(), Visit.planned_arrival)) < _BUSINESS_HOUR_START)
+            | (func.extract("hour", func.timezone(plant_tz_name(), Visit.planned_arrival)) >= _BUSINESS_HOUR_END),
         )
     )).scalar_one()
 

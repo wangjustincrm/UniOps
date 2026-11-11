@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 
 from app.core.deps import SessionDep, require_roles
+from app.core.plant_time import plant_now
 from app.crud import audit_query as audit_crud
 from app.schemas.audit_log import AuditLogListResponse, AuditLogResponse
 
@@ -120,7 +121,7 @@ async def export_audit_logs(
             yield buf.getvalue()
             buf.seek(0); buf.truncate(0)
 
-    filename = f"vms-audit-log-{datetime.now().strftime('%Y%m%d-%H%M%S')}.csv"
+    filename = f"vms-audit-log-{plant_now().strftime('%Y%m%d-%H%M%S')}.csv"
     return StreamingResponse(
         _rows(),
         media_type="text/csv",
