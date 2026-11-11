@@ -336,11 +336,52 @@ async def test_the_state_follows_the_reply_to_completed(hse_manager, asked, stat
     assert verified.status_code == 200, verified.text
     # ★ Round 12: the supervisor's verification hands it to HSE (step 10) …
     assert await _state(hse, rec["id"]) == "Awaiting HSE verification"
+    from sqlalchemy import select as _select
+    from app.models.mirrors import Task
+    db_session.expire_all()
+    review = (await db_session.execute(_select(Task).where(
+        Task.type == "ehs_review_capas", Task.document_id == uuid.UUID(rec["id"])))).scalar_one()
+    review_id = review.id
+    ticked = await hse.post(f"/api/v1/actions/tasks/{review_id}/reviewed")
+    assert ticked.status_code == 409, \
+        "★ review L3: ticked off in My Actions, it was left awaiting HSE with no reminder"
     assert (await client.post(f"/api/v1/jhsc/recommendations/{rec['id']}/verify")).status_code == 403
     # … and HSE verifying it in the register completes it (step 11).
     done = await hse.post(f"/api/v1/jhsc/recommendations/{rec['id']}/verify")
     assert done.status_code == 200, done.text
     assert done.json()["status_label"] == "Completed" and done.json()["hse_verified_by_name"]
+    db_session.expire_all()
+    assert (await db_session.get(Task, review_id)).is_completed, "verifying it is the review"
+    again = await hse.post(f"/api/v1/jhsc/recommendations/{rec['id']}/verify")
+    assert again.status_code == 409, "★ review L4: a second call overwrote who verified it"
+    got = (await hse.get(f"/api/v1/jhsc/recommendations/{rec['id']}")).json()
+    assert got["may_hse_verify"] is False
+
+
+async def test_completed_before_step_11_is_not_offered_again(hse_manager, asked, states, db_session):
+    """★ Review L4: recommendations already at Completed when 0092 added HSE's
+    verification had no verifier, and the card came back on them."""
+    _codes(states)
+    await db_session.flush()
+    _, hse = hse_manager
+    person, client = asked
+    _, rec = await _sent(hse, [person])
+    await client.post(f"/api/v1/jhsc/recommendations/{rec['id']}/answer", json=_answer(person))
+    from app.models.jhsc import JhscRecommendation
+    from app.models.action import Action
+    row = await db_session.get(JhscRecommendation, uuid.UUID(rec["id"]))
+    if row.action_id:
+        (await db_session.get(Action, row.action_id)).status = "closed"
+    from app.models.vocabulary import VocabularyItem
+    from sqlalchemy import select as _select
+    item = (await db_session.execute(_select(VocabularyItem).where(
+        VocabularyItem.vocabulary_code == "jhsc_rec_status",
+        VocabularyItem.code == "completed"))).scalars().first()
+    row.status_item_id, row.status_label = item.id, item.label
+    await db_session.commit()
+    got = (await hse.get(f"/api/v1/jhsc/recommendations/{rec['id']}")).json()
+    assert got["may_hse_verify"] is False
+    assert (await hse.post(f"/api/v1/jhsc/recommendations/{rec['id']}/verify")).status_code == 409
 
 
 async def test_declined_stays_where_it_is(hse_manager, asked, states, db_session):

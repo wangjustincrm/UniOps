@@ -364,10 +364,26 @@ async def action_closed(db: AsyncSession, action_id: uuid.UUID) -> None:
                     only_from=(BEING_REVIEWED, UNDER_REVIEW, IN_PROGRESS))
 
 
+async def is_completed(db: AsyncSession, rec: JhscRecommendation) -> bool:
+    """Whether it already stands at Completed — verified by HSE, or completed
+    before step 11 existed (0092), which left no verifier to show."""
+    if rec.hse_verified_at is not None:
+        return True
+    if rec.status_item_id is None:
+        return False
+    from app.models.vocabulary import VocabularyItem
+    item = await db.get(VocabularyItem, rec.status_item_id)
+    return item is not None and item.code == COMPLETED
+
+
 async def hse_verify(db: AsyncSession, rec: JhscRecommendation, *, user_id: uuid.UUID):
     """Step 11: "HSE role verifies the recommendations using the JHSC registry"."""
     from app.models.action import Action
     from app.services import capa_review
+    if await is_completed(db, rec):
+        # ★ Review L4: a second call overwrote who verified it and when; and a
+        # recommendation completed before step 11 was offered it again.
+        raise HTTPException(status.HTTP_409_CONFLICT, "It is already completed")
     if rec.responded_at is None:
         raise HTTPException(status.HTTP_409_CONFLICT,
                             "It has not been answered yet; there is nothing to verify")

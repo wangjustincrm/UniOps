@@ -686,8 +686,9 @@ async def _detail(db, rec, user: dict) -> RecommendationDetailOut:
         "may_manage": manage,
         "may_set_status": manage or _was_sent_to(rec, _user_id(user)),
         # Step 11: answered, its action done, not yet verified — and the caller HSE.
-        "may_hse_verify": (rec.responded_at is not None and rec.hse_verified_at is None
+        "may_hse_verify": (rec.responded_at is not None
                            and (action is None or action.status in ("closed", "cancelled"))
+                           and not await crud.is_completed(db, rec)
                            and await _can(db, user, "ehs.incident.close")),
         "action": ActionBrief.model_validate(action) if action else None,
     })
