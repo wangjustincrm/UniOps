@@ -554,7 +554,7 @@ async def close_incident(incident_id: uuid.UUID, db: SessionDep, user: CanCloseI
     """Close an incident. Refused where HSE has not reviewed one that needs it."""
     incident = await crud.get(db, incident_id)
     was = incident.status
-    await crud.close(db, incident)
+    await crud.close(db, incident, _user_id(user))
     # Closing an already-closed incident is a no-op, and says nothing twice.
     if was != incident.status:
         await crud.record_event(db, incident, "closed", by_id=_user_id(user))

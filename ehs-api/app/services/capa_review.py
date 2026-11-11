@@ -110,6 +110,21 @@ async def after_action_closed(db: AsyncSession, action: Action) -> Task | None:
                     "closed. Open it and review it.")
 
 
+async def after_action_raised(db: AsyncSession, action: Action) -> None:
+    """★ Review L3: a review asked for while nothing was open is withdrawn when
+    another action is raised on the record — its title said every action was
+    closed. It is asked for again when that one closes."""
+    src = await _source(db, action)
+    if src is None:
+        return
+    await task_service.close_tasks_for(
+        db, doc_type=src.doc_type, doc_id=src.doc_id, task_type=task_service.TASK_REVIEW_CAPAS,
+        completed_by=None,
+        note=f"Withdrawn: {action.action_no} was raised on it. The review is asked for again "
+             "when that is closed.")
+    await db.flush()
+
+
 async def close_for(db: AsyncSession, doc_type: str, doc_id: uuid.UUID,
                     user_id: uuid.UUID | None) -> None:
     await task_service.close_tasks_for(

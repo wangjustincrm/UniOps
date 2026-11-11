@@ -661,7 +661,8 @@ async def open_actions_on(db: AsyncSession, incident_id: uuid.UUID) -> list[str]
         .order_by(Action.action_no))).scalars())
 
 
-async def close(db: AsyncSession, incident: Incident) -> Incident:
+async def close(db: AsyncSession, incident: Incident,
+                user_id: uuid.UUID | None = None) -> Incident:
     """Close an incident, refusing where HSE has not reviewed it."""
     if incident.status == "closed":
         return incident
@@ -701,7 +702,8 @@ async def close(db: AsyncSession, incident: Incident) -> Incident:
     incident.closed_at = datetime.now(timezone.utc)
     # Round 12, Q5: closing it is HSE's review of it.
     from app.services import capa_review, tasks as task_service
-    await capa_review.close_for(db, task_service.DOC_INCIDENT, incident.id, None)
+    # ★ Review L3: by whoever closed it — this is a person's review.
+    await capa_review.close_for(db, task_service.DOC_INCIDENT, incident.id, user_id)
     await db.flush()
     return incident
 

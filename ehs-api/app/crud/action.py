@@ -128,6 +128,8 @@ async def create(
     )
     await db.flush()
     await _tell_the_owner_on_its_incident(db, action)
+    from app.services import capa_review
+    await capa_review.after_action_raised(db, action)
     return action
 
 

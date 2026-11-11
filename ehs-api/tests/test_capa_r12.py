@@ -137,3 +137,32 @@ async def test_the_history_follows_who_may_see_the_action(hse_manager, worker,
         assert [h["id"] for h in got] == [a1], "★ the reporter sees their own report's actions"
         assert (await r.get("/api/v1/actions/history", params=by_source)).json() == [], \
             "but not another report's"
+
+
+async def test_a_review_is_withdrawn_when_another_action_is_raised(hse_manager, worker, db_session):
+    """★ Review L3: the review said "every corrective action is closed" and
+    stayed after a new one was raised; and closing the incident closed it as
+    nobody."""
+    _, hse = hse_manager
+    owner, w = worker
+    iid = await _incident(hse)
+    await _finish(w, hse, await _action(hse, owner.id, iid, "Fix the light"))
+    first = await _reviews(db_session, iid)
+    assert [t.is_completed for t in first] == [False]
+    late = await _action(hse, owner.id, iid, "Fix the other light")
+    withdrawn = await _reviews(db_session, iid)
+    assert all(t.is_completed for t in withdrawn), "★ withdrawn while one is open"
+    assert "Withdrawn" in withdrawn[0].description
+    await _finish(w, hse, late)
+    again = [t for t in await _reviews(db_session, iid) if not t.is_completed]
+    assert len(again) == 1, "asked for again when that one closes"
+    again_id = again[0].id
+
+    from app.crud import incident as incident_crud
+    from app.models.incident import Incident
+    row = await db_session.get(Incident, uuid.UUID(iid))
+    await incident_crud.close(db_session, row, owner.id)
+    await db_session.commit()
+    db_session.expire_all()
+    t = await db_session.get(Task, again_id)
+    assert t.is_completed and t.completed_by == owner.id, "★ closed by a person, not nobody"

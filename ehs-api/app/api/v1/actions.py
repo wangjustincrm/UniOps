@@ -517,6 +517,12 @@ async def mark_reviewed(task_id: uuid.UUID, db: SessionDep, user: CanReadAction)
     roles = await notify.roles_held_by(db, _user_id(user), user.get("role", ""))
     if task.assigned_role not in roles and task.assigned_user_id != _user_id(user):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This review is HSE's")
+    if task.document_type == task_service.DOC_JHSC:
+        # ★ Review L3: ticking it off here left the recommendation awaiting
+        # HSE's verification, with nothing left to say so. Verifying it is the
+        # review, and closes this.
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Open the recommendation and verify it; that closes this review")
     if not task.is_completed:
         task.is_completed, task.completed_at = True, datetime.now(timezone.utc)
         task.completed_by = _user_id(user)

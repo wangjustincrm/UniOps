@@ -334,7 +334,10 @@ export default function MyActionsPage() {
                   <p className="mt-1 text-xs text-neutral-600">{t.description}</p>
                 )}
               </div>
-              {t.type === 'ehs_review_capas' && <ReviewedButton taskId={t.id} />}
+              {/* A JHSC recommendation is reviewed by verifying it on its page:
+                  ticking it off here left it awaiting HSE (review L3). */}
+              {t.type === 'ehs_review_capas' && t.document_type !== 'ehs_jhsc'
+                && <ReviewedButton taskId={t.id} />}
             </div>
           </TabLink>
         ))}
