@@ -108,6 +108,26 @@ rules:
       - how are vendor credits used when we pay
       - how much is actually paid on a PA after credits
       - 贷项在付款时怎么抵扣
+    # Round 2 follow-up 11-11 (ISS-0056): said by code under "PA-… 扣掉贷项后实际付多少？"
+    # (app/services/fact_replies.py _pa_credits), so it is written in both
+    # languages here.
+    says:
+      en: >
+        Vendor credits are not entered on the payment application; they are
+        netted when the payment is executed. At that moment every Available
+        credit of the same vendor and the same currency is applied
+        automatically, oldest credit date first, until the payment amount is
+        covered; the person paying can untick credits in the payment dialog,
+        which shows Gross, Vendor credits applied and Net. A credit that is
+        used up becomes Exhausted; one partly used keeps the rest for the next
+        payment. Credits still pending review, void, or in another currency
+        are never applied.
+      zh: >
+        贷项不录在付款申请（PA）上，而是在执行付款时抵扣：那一刻，同一供应商、同一币种的所有
+        可用（Available）贷项按贷项日期从早到晚自动抵扣，直到抵满付款金额为止；付款人可以在付款
+        对话框里取消勾选某些贷项，对话框显示 Gross（总额）、Vendor credits applied（抵扣的贷项）
+        和 Net（实付）。用完的贷项变为 Exhausted，部分使用的保留余额下次再扣。待审核、已作废或
+        其他币种的贷项永远不会被抵扣。
     answer: >
       Vendor credits are not entered on the payment application; they are
       netted when the payment is executed. At that moment every Available
@@ -119,11 +139,12 @@ rules:
       still pending review, void, or in another currency are never applied.
       The PA keeps its gross amount; the net paid and the credits applied are
       on the payment record, and the remittance advice lists each credit note.
-    enforced_in: "finance-api app/crud/vendor_credit.py select_credits_for_payment (AVAILABLE, same vendor and currency, ORDER BY credit_date, created_at); app/crud/payment_execute.py (net = base - credit_applied on the PaymentRecord); pinned by finance-api tests/test_vendor_credit_netting.py"
+    enforced_in: "finance-api app/crud/vendor_credit.py select_credits_for_payment (AVAILABLE, same vendor and currency, ORDER BY credit_date, created_at); app/crud/payment_execute.py (net = base - credit_applied on the PaymentRecord); pinned by finance-api tests/test_vendor_credit_netting.py. Said with the vendor's available credits for an unpaid PA by epms-api app/services/fact_replies.py _pa_credits"
     provenance: pinned
     test:
       - "finance-api/tests/test_vendor_credit_netting.py::test_fifo_takes_oldest_first_and_stops_at_base"
       - "finance-api/tests/test_vendor_credit_netting.py::test_payment_is_reduced_by_available_credit"
+      - "tests/test_assistant_asst2_h.py::test_an_unpaid_pa_after_credits_says_netted_at_payment_and_lists_them"
 
   # ── Added 2026-10-21 (issue review batch 3) ───────────────────────────────
   - id: what_can_go_on_one_pa
