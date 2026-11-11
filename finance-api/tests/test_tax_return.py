@@ -9,6 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from jose import jwt
 from sqlalchemy import select
 
+from app.core.plant_time import plant_now, plant_today
 from app.core.config import settings
 from app.db.base import get_db
 from app.main import app
@@ -107,7 +108,7 @@ async def test_claim_payment_splits_sales_tax_by_code(client, db_session):
     # emit_event stamps fiscal_period from now(), not payment_date, so pay
     # "today" and query the current period — a fixed date only passes in the
     # month it was written (same rollover family as test_gl/test_ar).
-    today = date.today()
+    today = plant_today()
     r = await client.post("/finance/v1/payments/execute", headers=_h("payment_officer"),
                           json={"doc_kind": "expense_claim", "doc_id": str(claim.id),
                                 "payment_date": today.isoformat()})

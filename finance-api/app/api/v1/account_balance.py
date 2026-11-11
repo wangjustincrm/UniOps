@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.budget_scope import resolve_budget_scope, scoped_cc_ids
+from app.core.plant_time import plant_today
 from app.core.deps import CurrentUser
 from app.core.list_sort import SortDir, order_sql
 from app.crud import account_balance as crud
@@ -149,7 +150,7 @@ async def budget_actual_rollup(_: CurrentUser, db: AsyncSession = Depends(get_db
 
     from app.crud import budget_rollup
     if month_to is None:
-        today = date.today()
+        today = plant_today()
         month_to = today.month if fiscal_year == today.year else 12
     if month_from > month_to:
         raise HTTPException(status_code=422, detail="month_from is after month_to")
@@ -181,7 +182,7 @@ async def budget_actual_rollup_export(
     if group_by not in ("centre", "department"):
         raise HTTPException(status_code=422, detail=f"unknown group_by {group_by!r}")
     if month_to is None:
-        today = date.today()
+        today = plant_today()
         month_to = today.month if fiscal_year == today.year else 12
     if month_from > month_to:
         raise HTTPException(status_code=422, detail="month_from is after month_to")
@@ -228,7 +229,7 @@ async def budget_actual_breakdown(_: CurrentUser, db: AsyncSession = Depends(get
         raise HTTPException(status_code=422,
                             detail=f"scope_key is required for scope_kind={scope_kind}")
     if month_to is None:
-        today = date.today()
+        today = plant_today()
         month_to = today.month if fiscal_year == today.year else 12
     if month_from > month_to:
         raise HTTPException(status_code=422, detail="month_from is after month_to")
@@ -262,7 +263,7 @@ async def budget_actual_unallocated_lines(
     if bucket not in allowed:
         raise HTTPException(status_code=422, detail=f"unknown bucket {bucket!r}")
     if month_to is None:
-        today = date.today()
+        today = plant_today()
         month_to = today.month if fiscal_year == today.year else 12
     if month_from > month_to:
         raise HTTPException(status_code=422, detail="month_from is after month_to")

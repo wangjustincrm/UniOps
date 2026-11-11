@@ -11,6 +11,7 @@ from decimal import Decimal
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import to_plant
 from app.models.posting import PostingEvent, PostingLine, PostingLineDimension
 
 _ZERO = Decimal("0")
@@ -46,7 +47,9 @@ async def emit_event(
             source_doc_number=source_doc_number,
             event_type=event_type,
             occurred_at=occurred,
-            fiscal_period=occurred.astimezone(timezone.utc).strftime("%Y-%m"),
+            # The plant's month (Company Settings → Time Zone), not UTC: a Toronto
+            # posting at 21:00 on the last day of the month belongs to that month.
+            fiscal_period=to_plant(occurred).strftime("%Y-%m"),
             status="pending",
         )
         .on_conflict_do_nothing(

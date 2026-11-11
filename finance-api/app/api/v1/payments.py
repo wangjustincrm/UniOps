@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.plant_time import plant_today
 from app.core.deps import BearerToken, CurrentUser
 from app.core.list_sort import SortDir, order_by
 from app.core.read_authz import authorize_finance_read
@@ -427,7 +428,7 @@ async def create_batch(body: CreateBatchRequest, user: CurrentUser,
         batch = await batch_crud.create_batch(
             db, docs=[(d.doc_kind, d.doc_id, d.invoice_ids) for d in body.docs],
             payment_method=body.payment_method,
-            batch_date=body.batch_date or date.today(),
+            batch_date=body.batch_date or plant_today(),
             created_by=uuid.UUID(user["sub"]),
         )
         await db.commit()

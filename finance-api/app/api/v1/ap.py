@@ -47,10 +47,10 @@ async def open_items(
 ):
     """A2: unpaid open AP invoices, ordered by due date (FIN-AP-006).
     Reads finance-owned ap_invoices (posted / partially_paid)."""
-    from datetime import date as _date
+    from app.core.plant_time import plant_today
 
     rows = await ap_invoice_crud.open_items(db, vendor_id=vendor_id, limit=limit)
-    today = _date.today()
+    today = plant_today()
     return [
         OpenItem(
             invoice_id=r.id, internal_ref=r.ap_invoice_number,

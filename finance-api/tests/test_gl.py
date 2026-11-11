@@ -12,11 +12,12 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from jose import jwt
 
+from app.core.plant_time import plant_now, plant_today
 from app.core.config import settings
 from app.db.base import get_db
 from app.main import app
 
-NOW = datetime.now(timezone.utc)
+NOW = plant_now()   # emit_event stamps the PLANT month
 PERIOD = NOW.strftime("%Y-%m")          # current month — where emits land
 YEAR = NOW.year
 

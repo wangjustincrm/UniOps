@@ -10,6 +10,7 @@ from httpx import ASGITransport, AsyncClient
 from jose import jwt
 from sqlalchemy.exc import IntegrityError
 
+from app.core.plant_time import plant_now, plant_today
 from app.core.config import settings
 from app.db.base import get_db
 from app.main import app
@@ -342,7 +343,7 @@ async def test_create_allocates_sequential_numbers(db_session):
     b = await crud.create(db_session, payload=_create_payload(vendor_id=vid, vendor_credit_number="CN-2"),
                           uploaded_by=uuid.uuid4(), uploaded_by_name="AP")
     await db_session.commit()
-    prefix = f"VC-{date.today():%Y%m%d}-"
+    prefix = f"VC-{plant_today():%Y%m%d}-"
     assert a.credit_number == f"{prefix}0001"
     assert b.credit_number == f"{prefix}0002"
 

@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.coa import _require_manage
+from app.core.plant_time import plant_today
 from app.core.deps import CurrentUser
 from app.core.read_authz import authorize_finance_read
 from app.db.base import get_db
@@ -103,7 +104,7 @@ class FetchIn(BaseModel):
 @router.post("/fetch")
 async def fetch(body: FetchIn, user: CurrentUser, db: AsyncSession = Depends(get_db)):
     await authorize_finance_read(db, user)
-    date_to = body.date_to or datetime.now(timezone.utc).date()
+    date_to = body.date_to or plant_today()
     if date_to < body.date_from:
         raise HTTPException(status_code=422, detail="date_to is before date_from")
     if (date_to - body.date_from) > timedelta(days=MAX_FETCH_DAYS):

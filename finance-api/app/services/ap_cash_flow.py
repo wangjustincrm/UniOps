@@ -82,6 +82,7 @@ from datetime import date
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_today, plant_tz_name
 from app.crud.payment_execute import NON_PAYABLE_CLAIM_TYPES
 from app.services.nc_ap_bill_invoices import invoices, lines_agg
 
@@ -146,7 +147,11 @@ INV_KEY_NC = "nullif(replace(l.invoice_no_norm, '-', ''), '')"
 INV_KEY_EPMS = (r"nullif(replace(upper(regexp_replace("
                 r"coalesce(i.vendor_invoice_number, ''), '\s', '', 'g')), '-', ''), '')")
 
-_DAYS_SQL = "(t.due_date - current_date)"
+# "Today" and an approval's day are the plant's (Company Settings → Time
+# Zone), passed in as binds by _p(): SQL current_date and timestamptz::date are
+# the session's zone, UTC, which turns over to tomorrow at 19:00/20:00 Toronto.
+_TODAY_SQL = "cast(:plant_today as date)"
+_DAYS_SQL = f"(t.due_date - {_TODAY_SQL})"
 _BUCKET_CASE = ("case when t.due_date is null then '" + UNDATED + "' " + " ".join(
     f"when {pred.format(d=_DAYS_SQL)} then '{key}'"
     for key, _, pred in BUCKETS if pred) + f" else '{BUCKETS[-1][0]}' end")
@@ -283,12 +288,12 @@ docs as (
     select 'bill' as doc_kind, t.* from termed t
     union all
     select '{PA_PREPAYMENT}', p.pa_number,
-           null, p.currency, coalesce(p.approved_at, p.created_at)::date,
-           coalesce(p.approved_at, p.created_at)::date,
+           null, p.currency, (timezone(:plant_tz, coalesce(p.approved_at, p.created_at)))::date,
+           (timezone(:plant_tz, coalesce(p.approved_at, p.created_at)))::date,
            v.erp_id, p.vendor_name, null, p.po_number,
            json_build_array(json_build_object('purchase_order', p.po_number)),
            null, p.payment_amount, null, p.pa_number,
-           '{PA_PREPAYMENT}', 0, coalesce(p.approved_at, p.created_at)::date,
+           '{PA_PREPAYMENT}', 0, (timezone(:plant_tz, coalesce(p.approved_at, p.created_at)))::date,
            '{DUE_FROM_APPROVAL}', false
       from payment_applications p
       left join vendors v on v.id = p.vendor_id
@@ -297,11 +302,11 @@ docs as (
        and p.pa_number not in (select pa_number from line_pa)
     union all
     select 'claim', c.claim_number,
-           null, c.currency, coalesce(c.approved_at, c.created_at)::date,
-           coalesce(c.approved_at, c.created_at)::date,
+           null, c.currency, (timezone(:plant_tz, coalesce(c.approved_at, c.created_at)))::date,
+           (timezone(:plant_tz, coalesce(c.approved_at, c.created_at)))::date,
            null, c.employee_name, null, null,
            null, null, c.total_amount, null, c.claim_number,
-           'on approval', 0, coalesce(c.approved_at, c.created_at)::date,
+           'on approval', 0, (timezone(:plant_tz, coalesce(c.approved_at, c.created_at)))::date,
            '{DUE_FROM_APPROVAL}', false
       from expense_claims c
      where c.status = '{CLAIM_APPROVED}' and c.claim_type not in ({_NON_PAYABLE_SQL})
@@ -309,10 +314,15 @@ docs as (
 bucketed as (
     select t.*,
            {_BUCKET_CASE} as bucket,
-           case when t.due_date is not null then t.due_date - current_date end as days_to_due
+           case when t.due_date is not null then t.due_date - {_TODAY_SQL} end as days_to_due
       from docs t
 )
 """
+
+
+def _p(params: dict) -> dict:
+    """Every query on _BASE carries the plant's today and zone."""
+    return {**params, "plant_today": plant_today(), "plant_tz": plant_tz_name()}
 
 
 async def summary(db: AsyncSession, currency: str | None = None) -> dict:
@@ -331,7 +341,7 @@ async def summary(db: AsyncSession, currency: str | None = None) -> dict:
                count(*) filter (where no_vendor_record) as bills_without_vendor
           from bucketed {clause}
          group by currency, bucket
-    """), params)).mappings().all()
+    """), _p(params))).mappings().all()
 
     by_ccy: dict[str, dict] = {}
     for r in rows:
@@ -368,7 +378,7 @@ async def summary(db: AsyncSession, currency: str | None = None) -> dict:
             "undated_bills": undated["bills"],
             "forward": f"{forward:.2f}",
         })
-    return {"currencies": out, "as_of": date.today().isoformat()}
+    return {"currencies": out, "as_of": plant_today().isoformat()}
 
 
 # Click-to-sort whitelist for items(): key -> SQL over the `bucketed` CTE.
@@ -427,10 +437,10 @@ async def items(db: AsyncSession, currency: str, bucket: str | None = None,
          -- by, and biggest-first is the useful order for them.
          order by {order or "due_date nulls last, open_bal desc, doc_key"}
          limit :limit offset :offset
-    """), params)).mappings().all()
+    """), _p(params))).mappings().all()
     total = (await db.execute(text(
         _BASE + f" select count(*), coalesce(sum(open_bal), 0) from bucketed {clause}"),
-        params)).one()
+        _p(params))).one()
     return {
         "total": int(total[0]),
         "amount": str(total[1]),
@@ -493,7 +503,7 @@ async def missing_terms(db: AsyncSession, currency: str | None = None) -> dict:
           from bucketed {clause}
          group by supplier_code, currency
          order by sum(open_bal) desc
-    """), params)).mappings().all()
+    """), _p(params))).mappings().all()
 
     # The date carrying the most undated money, and how much of it.
     #
@@ -509,7 +519,7 @@ async def missing_terms(db: AsyncSession, currency: str | None = None) -> dict:
         select bill_date, count(*) as bills, coalesce(sum(open_bal), 0) as amount
           from bucketed {clause} and bill_date is not null
          group by bill_date order by sum(open_bal) desc limit 1
-    """), params)).mappings().first()
+    """), _p(params))).mappings().first()
 
     return {"total": len(rows),
             "largest_single_date": {

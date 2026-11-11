@@ -36,6 +36,7 @@ import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import fmt_datetime
 from app.crud import payment_execute
 from app.models.ap_invoice import ApInvoice
 from app.models.bank import BankTransaction
@@ -201,7 +202,9 @@ async def reverse_payment_record(db: AsyncSession, record: PaymentRecord, *,
     if ev is not None:
         await db.delete(ev)  # posting_lines / dimensions: ON DELETE CASCADE
 
-    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    # Read by people in the payment's notes: plant time, UI-DATE-002, with the
+    # zone abbreviation because the note outlives any change to the setting.
+    stamp = fmt_datetime(datetime.now(timezone.utc), with_zone=True)
     record.status = CANCELLED
     record.notes = "\n".join(filter(None, [record.notes, f"Reversed {stamp} by {actor_name}: {reason}"]))
     await db.flush()

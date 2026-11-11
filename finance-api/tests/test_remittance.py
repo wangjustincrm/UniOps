@@ -12,6 +12,7 @@ from httpx import ASGITransport, AsyncClient
 from jose import jwt
 from sqlalchemy import select
 
+from app.core.plant_time import plant_now, plant_today
 from app.core.config import settings
 from app.crud import remittance as rem
 from app.db.base import get_db
@@ -557,7 +558,7 @@ def test_vendor_template_shows_invoice_no_and_hides_pa_no():
     assert "VINV-1" in html
     assert "PA-0001" not in html          # internal document number, not the vendor's concern
     assert "100.00" in html
-    assert "2026-07-22" in html
+    assert "2026-JUL-22" in html
     assert "Remittance Advice" in subject
 
 
@@ -1945,9 +1946,9 @@ def test_render_override_replaces_the_date_on_every_line():
     g = _two_line_group()          # recorded 2026-07-22 and 2026-07-23
     _, html = tpl.render(g, company_name="C", reference="R", payment_method="eft",
                          payment_date=date(2026, 7, 20))
-    assert html.count("2026-07-20") == 2      # both lines, not just the first
-    assert "2026-07-22" not in html
-    assert "2026-07-23" not in html
+    assert html.count("2026-JUL-20") == 2      # both lines, not just the first
+    assert "2026-JUL-22" not in html
+    assert "2026-JUL-23" not in html
 
 
 def test_render_without_override_keeps_each_line_its_recorded_date():
@@ -1955,7 +1956,7 @@ def test_render_without_override_keeps_each_line_its_recorded_date():
     byte-for-byte the one AP has always sent, per-line dates and all."""
     g = _two_line_group()
     _, html = tpl.render(g, company_name="C", reference="R", payment_method="eft")
-    assert "2026-07-22" in html and "2026-07-23" in html
+    assert "2026-JUL-22" in html and "2026-JUL-23" in html
 
 
 def test_render_override_does_not_mutate_the_group_lines():
@@ -1976,7 +1977,7 @@ async def test_send_groups_puts_the_override_in_the_email_body(db_session):
             reference="R", payment_method="bank_transfer", company_name="C",
             sender=_sender(), actor_id=uuid.uuid4(), payment_date=date(2026, 7, 20))
     html = m.await_args.args[2]
-    assert "2026-07-20" in html and "2026-07-22" not in html
+    assert "2026-JUL-20" in html and "2026-JUL-22" not in html
 
 
 async def test_send_endpoint_applies_the_operator_payment_date(client, db_session):
@@ -1995,7 +1996,7 @@ async def test_send_endpoint_applies_the_operator_payment_date(client, db_sessio
                               json={"recipients": None, "payment_date": "2026-07-20"},
                               headers=_h())
     assert r.status_code == 200 and r.json()["sent"] == 1
-    assert "2026-07-20" in m.await_args.args[2]
+    assert "2026-JUL-20" in m.await_args.args[2]
 
     # The GL's own record of when the payment happened is untouched — this
     # field changes what the payee is told, never what finance has booked.
@@ -2020,7 +2021,7 @@ async def test_send_endpoint_without_a_payment_date_uses_the_recorded_one(client
         r = await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
                               json={"recipients": None}, headers=_h())
     assert r.status_code == 200 and r.json()["sent"] == 1
-    assert "2026-07-22" in m.await_args.args[2]
+    assert "2026-JUL-22" in m.await_args.args[2]
 
 
 async def test_send_endpoint_refuses_a_future_payment_date_and_sends_nothing(client, db_session):
@@ -2038,7 +2039,7 @@ async def test_send_endpoint_refuses_a_future_payment_date_and_sends_nothing(cli
     db_session.add(rec)
     await db_session.flush()
 
-    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    tomorrow = (plant_today() + timedelta(days=1)).isoformat()
     with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m:
         r = await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
                               json={"recipients": None, "payment_date": tomorrow},
@@ -2051,7 +2052,7 @@ async def test_send_endpoint_refuses_a_future_payment_date_and_sends_nothing(cli
     with patch("app.crud.remittance_send.send_email", new=AsyncMock()) as m:
         ok = await client.post(f"/finance/v1/payments/{rec.id}/remittance/send",
                                json={"recipients": None,
-                                     "payment_date": date.today().isoformat()},
+                                     "payment_date": plant_today().isoformat()},
                                headers=_h())
     assert ok.status_code == 200 and ok.json()["sent"] == 1
 
@@ -2075,7 +2076,7 @@ async def test_selection_send_applies_the_operator_payment_date(client, db_sessi
                                     "payment_date": "2026-07-20"},
                               headers=_h())
     assert r.status_code == 200 and r.json()["sent"] == 1
-    assert "2026-07-20" in m.await_args.args[2]
+    assert "2026-JUL-20" in m.await_args.args[2]
 
 
 # ── Confirmation preview: render exactly what send would send, send nothing ─
@@ -2112,7 +2113,7 @@ async def test_render_endpoint_returns_the_email_and_sends_nothing(client, db_se
     assert email["cc"] == "apbox@crm.test"
     assert email["from"] == "ap@crm.test"
     assert "VINV-RD1" in email["subject"]
-    assert "VINV-RD1" in email["html"] and "2026-07-20" in email["html"]
+    assert "VINV-RD1" in email["html"] and "2026-JUL-20" in email["html"]
 
     assert m.await_count == 0          # nothing left the building
     rows = (await db_session.execute(select(RemittanceNotification))).scalars().all()
@@ -2177,7 +2178,7 @@ async def test_render_applies_the_same_gates_as_send(client, db_session):
     url = f"/finance/v1/payments/{rec.id}/remittance/render"
     denied = await client.post(url, json={"recipients": None}, headers=_h("requester"))
     assert denied.status_code == 403
-    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    tomorrow = (plant_today() + timedelta(days=1)).isoformat()
     future = await client.post(url, json={"recipients": None, "payment_date": tomorrow},
                                headers=_h())
     assert future.status_code == 400

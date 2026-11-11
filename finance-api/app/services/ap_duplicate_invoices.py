@@ -59,6 +59,7 @@ from decimal import Decimal
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.list_sort import SortDir, sort_rows
+from app.core.plant_time import plant_today
 from app.models.nc_ap import DUP_REVIEW_REASONS
 
 EXACT = "exact"
@@ -202,7 +203,7 @@ def _order(entries):
 def detect(entries: list[Entry], *, today: date | None = None,
            pending_days: int = PENDING_DAYS) -> list[Finding]:
     """Every finding in `entries`. Pure: no I/O, no clock unless `today` is omitted."""
-    today = today or date.today()
+    today = today or plant_today()
     pending_since = today - timedelta(days=pending_days)
 
     groups: dict[tuple[str, str], list[Entry]] = defaultdict(list)
@@ -344,7 +345,7 @@ def _since(today: date) -> date:
 
 def findings_sync(cur, *, today: date | None = None) -> list[Finding]:
     """For the AP sync worker, over its own psycopg2 cursor."""
-    today = today or date.today()
+    today = today or plant_today()
     cur.execute(_ENTRIES_SQL, {"since": _since(today)})
     found = detect([_entry(r) for r in cur.fetchall()], today=today)
     cur.execute(_REVIEWS_SQL)
@@ -357,7 +358,7 @@ def _to_sa(sql: str) -> str:
 
 
 async def findings(db: AsyncSession, *, today: date | None = None) -> list[Finding]:
-    today = today or date.today()
+    today = today or plant_today()
     rows = (await db.execute(text(_to_sa(_ENTRIES_SQL)), {"since": _since(today)})).all()
     found = detect([_entry(r) for r in rows], today=today)
     reviews = (await db.execute(text(_REVIEWS_SQL))).all()

@@ -23,6 +23,7 @@ from datetime import date
 
 from psycopg2.extras import register_uuid
 
+from app.core.plant_time import plant_today
 from app.services import jv_validation as val
 
 # uuid.UUID -> Postgres uuid. nc_sync registers this too, but this module is
@@ -118,7 +119,7 @@ def raise_or_clear(cur, run_id, *, today: date | None = None) -> str:
     commit. Reporting is allowed to fail; the sync is not."""
     cur.execute("savepoint _jv_validation")
     try:
-        period_from, period_to = scope_periods(today or date.today())
+        period_from, period_to = scope_periods(today or plant_today())
         found = {r: v for r, v in val.summary_sync(cur, period_from, period_to).items()
                  if v["lines"]}
         existing = _open_task(cur)

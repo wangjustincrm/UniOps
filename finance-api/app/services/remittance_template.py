@@ -17,6 +17,7 @@ import re
 from datetime import date
 from html import escape
 
+from app.core.plant_time import fmt_date
 from app.crud.remittance import PayeeGroup
 from app.models.remittance import KIND_VENDOR
 
@@ -149,7 +150,7 @@ def render(group: PayeeGroup, *, company_name: str, reference: str,
         "<tr>"
         f"<td style='{_CELL}'>"
         f"{escape(l.vendor_ref if is_vendor else l.doc_number)}</td>"
-        f"<td style='{_CELL}'>{payment_date or l.payment_date}</td>"
+        f"<td style='{_CELL}'>{fmt_date(payment_date or l.payment_date)}</td>"
         + _amount_cell(l) +
         "</tr>"
         for l in group.lines

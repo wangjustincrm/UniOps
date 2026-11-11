@@ -11,6 +11,7 @@ from decimal import Decimal
 from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import to_plant
 from app.models.journal_voucher import DRAFT, JournalVoucher, JournalVoucherLine, JvLineDimension
 from app.models.posting import PostingEvent, PostingLine, PostingLineDimension
 
@@ -78,11 +79,15 @@ async def generate_from_event(db: AsyncSession, event_id: uuid.UUID,
         .order_by(PostingLine.line_no)
     )).scalars().all()
 
+    # Date and period at the plant (Company Settings → Time Zone), the same
+    # day emit_event() took the period from — occurred_at itself is UTC.
+    local = to_plant(ev.occurred_at)
+    period = ev.fiscal_period or local.strftime("%Y-%m")
     jv = JournalVoucher(
-        jv_number=await next_jv_number(db, ev.fiscal_period or ev.occurred_at.strftime("%Y-%m")),
+        jv_number=await next_jv_number(db, period),
         voucher_word="JV",
-        voucher_date=ev.occurred_at.date(),
-        fiscal_period=ev.fiscal_period or ev.occurred_at.strftime("%Y-%m"),
+        voucher_date=local.date(),
+        fiscal_period=period,
         summary=build_summary(ev.source_doc_type, ev.event_type, ev.source_doc_number,
                               next((p.partner_name for p in plines if p.partner_name), None)),
         status=DRAFT,

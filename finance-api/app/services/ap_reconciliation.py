@@ -33,6 +33,8 @@ from datetime import date
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_today
+
 # Category keys — stable, used by the API and the UI.
 IN_NC_OPEN = "in_nc_open"                  # NC has it, still unpaid there →真欠
 IN_NC_SETTLED = "in_nc_settled"            # NC has it and settled it
@@ -334,9 +336,11 @@ async def date_anomalies(db: AsyncSession, f: ReconFilters) -> dict:
                 else 'invoice_in_future' end as reason
       from ap_invoices i
      where {where}
-       and (i.due_date < i.invoice_date or i.invoice_date > current_date)
+       and (i.due_date < i.invoice_date or i.invoice_date > cast(:plant_today as date))
      order by i.total_amount desc nulls last
     """
+    # "In the future" = after today at the plant, not SQL current_date (UTC).
+    params = {**params, "plant_today": plant_today()}
     rows = (await db.execute(text(sql), params)).mappings().all()
     return {"total": len(rows), "items": [{
         "id": str(r["id"]),
