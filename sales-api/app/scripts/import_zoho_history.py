@@ -240,7 +240,8 @@ class History:
         self.now = t.astimezone(timezone.utc)
 
     async def store(self, s, path: Path | None, *, kind: str, system: str, direction: str, at: datetime,
-                    data: bytes | None = None, origin: str = "PARTNER", **values: Any) -> Document:
+                    data: bytes | None = None, origin: str = "PARTNER", created_by_name: str = "Zoho history",
+                    **values: Any) -> Document:
         data = data if data is not None else path.read_bytes()
         sha = hashlib.sha256(data).hexdigest()
         if sha in self.stored:
@@ -256,7 +257,7 @@ class History:
             return found
         doc = Document(direction=direction, origin=origin, system=system, kind=kind, remote_name=(path.name if path else kind)[:500],
                        size=len(data), sha256=sha, content=data, created_at=at.astimezone(timezone.utc),
-                       created_by_name="Zoho history", **values)
+                       created_by_name=created_by_name, **values)
         s.add(doc)
         await s.flush()
         self.stored[sha] = doc.id
