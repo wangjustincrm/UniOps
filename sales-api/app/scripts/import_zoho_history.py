@@ -44,11 +44,14 @@ from app.domain.edi940 import build_940
 from app.domain.intake import classify
 from app.domain.shadow import compare
 from app.domain.sources import from_shopify
-from app.domain.status import FULFILLMENT, INVOICE, Ack, OutboundFile
+from app.domain.status import FULFILLMENT, INVOICE, TRANSFER, Ack, OutboundFile
+from app.domain.status import Transfer as T
+from app.domain.x12 import segments
 from app.domain.status import Fulfillment as F
 from app.domain.status import Invoice as Inv
 from app.integrations.shopify import ORDER_FIELDS, page_bytes, slim_customer, strip_card_data
-from app.models.config import Connection, Partner
+from app.models.config import Connection, Partner, Warehouse
+from app.models.transfers import Transfer
 from app.models.documents import Document, DocumentLink
 from app.models.invoices import InvoiceLine
 from app.models.orders import Order
@@ -62,7 +65,9 @@ from app.services.invoicing import Invoicing
 from app.services.orders import OrderSync
 from app.services.outbound import TORONTO, Outbound940
 from app.services.settings import SCHEDULER_PAUSED, SETTINGS, SHADOW_MODE
+from app.models.shipments import Shipment
 from app.services.shipments import Shipments
+from app.services.transfers import Transfers
 
 STEP = "zoho history"
 ZOHO = "ZOHO_MIGRATION"
@@ -227,6 +232,8 @@ class History:
         self.ships = Shipments(uow_factory=uow_factory, tasks=self.problems, shopify=None, outbound=self.outbound, clock=clock)
         self.invoicing = Invoicing(uow_factory=uow_factory, tasks=self.problems, sftp=None, email=None, clock=clock)
         self.intake = EdiIntake(uow_factory=uow_factory, tasks=self.problems, clock=clock)
+        self.transfers_ = Transfers(uow_factory=uow_factory, tasks=self.problems, sftp=None, clock=clock)
+        self.outbound.transfers = self.transfers_   # a 943's 997 goes to its transfer
         self.stored: dict[str, int] = {}   # sha256 → document id (a Shopify page holds many orders)
 
     def at(self, t: datetime) -> None:
@@ -241,7 +248,7 @@ class History:
         found = (await s.execute(select(Document).where(Document.sha256 == sha, Document.content.is_not(None)))).scalar_one_or_none()
         if found is not None:
             self.stored[sha] = found.id
-            if direction == "IN" and values.get("processing_status") == "Pending" and found.processing_status != "Pending":
+            if direction == "IN" and values.get("processing_status") == "Pending" and (found.shadow or found.processing_status == "Skipped"):
                 # Sales received this very file before (it ran beside Zoho, in the shadow run): read it
                 # again for this order, and apply it this time — it is the file of an order Sales now holds.
                 found.processing_status, found.error, found.shadow = "Pending", None, False
@@ -457,6 +464,193 @@ class History:
         return out
 
 
+    # ── the rest of the export ───────────────────────────────────────────────
+    async def zoho_transfers(self) -> collections.Counter:
+        """Each 943 Zoho sent: a transfer with Zoho's number and lines, its 943 sent by Zoho, then its
+        997s and 944 read as Sales reads them (the stock it put at the warehouse)."""
+        n: collections.Counter = collections.Counter()
+        radiant = self.root / "Radiant"
+        for f in sorted(radiant.glob("CRM-943*")):
+            data = f.read_bytes()
+            seg = segments(data)
+            number = next(x for x in seg if x[0] == "W06")[2].strip()
+            lines = [{"item_code": x[5], "qty_ea": int(float(x[1]))} for x in seg if x[0] == "W04"]
+            t_at = envelope_time(data) or file_time(f.name)
+            self.at(t_at)
+            async with self.uow_factory(SYSTEM_ACTOR) as u:
+                s = u.session
+                if (await s.execute(select(Transfer.id).where(Transfer.transfer_number == number))).first() is not None:
+                    n["transfer already here"] += 1
+                    continue
+                roles = {w.role: w.id for w in (await s.execute(select(Warehouse))).scalars()}
+                t = Transfer(transfer_number=number, from_warehouse_id=roles["TRANSFER_SOURCE"], to_warehouse_id=roles["WAREHOUSE"],
+                             status=T.DRAFT.value, notes="Zoho history", version=1)
+                s.add(t)
+                await s.flush()
+                self.transfers_._lines(s, t, lines)
+                for to in (T.READY_TO_SEND, T.GENERATED_943, T.WAITING_FOR_997):
+                    TRANSFER.transition(t, to, actor=u.actor, events=u.events, reason="943 sent by Zoho (history)")
+                k = classify(data)
+                doc = await self.store(s, f, kind="943_EDI", system="RADIANT", direction="OUT", at=t_at, data=data, origin=ZOHO,
+                                       file_status=OutboundFile.SENT.value, ack_status=Ack.WAITING.value,
+                                       sent_at=t_at.astimezone(timezone.utc), isa13=k.isa13, gs06=k.gs06, st02=k.st02,
+                                       connection_id=await self.conn(s, "SFTP"), body_json={"transfer_id": t.id, "reason": "sent by Zoho (history)"})
+                s.add(DocumentLink(document_id=doc.id, entity_type="transfer", entity_id=t.id))
+                t.document_id = doc.id
+                await u.commit()
+            n["transfers"] += 1
+            related = [x for x in sorted(radiant.glob(f"997-*-{int(number)}-*"))] + [x for x in sorted(radiant.glob(f"944-*-{number}*"))]
+            for g in related:
+                await self.read_file(g)
+        return n
+
+    async def read_file(self, f: Path) -> str:
+        """A Radiant file as Sales reads it, at its time: stored, then the step for its kind."""
+        data = f.read_bytes()
+        kind = {"997": "997_EDI", "945": "945_EDI", "944": "944_EDI"}.get(f.name[:3])
+        if kind is None:
+            return "not a Radiant file Sales reads"
+        t_at = file_time(f.name) or envelope_time(data) or self.now.astimezone(TOR)
+        self.at(t_at)
+        async with self.uow_factory(SYSTEM_ACTOR) as u:
+            doc = await self.store(u.session, f, kind=kind, system="RADIANT", direction="IN", at=t_at, data=data,
+                                   processing_status="Pending", connection_id=await self.conn(u.session, "SFTP"))
+            status = doc.processing_status
+            await u.commit()
+        if status != "Pending":
+            return "already read"
+        if kind == "997_EDI":
+            await self.outbound.process_997s()
+        elif kind == "945_EDI":
+            await self.ships.process_945s()
+        else:
+            await self.transfers_.process_944s()
+        async with self.uow_factory(SYSTEM_ACTOR) as u:
+            await self.cancel_writes(u.session)
+            await u.commit()
+        return "read"
+
+    async def loose_files(self) -> collections.Counter:
+        """The 997s, 945s and 944s of no order made from a Zoho 940: read as they came (a 945 of an
+        order Sales does not hold is kept as such, as it would be live)."""
+        n: collections.Counter = collections.Counter()
+        files = [f for pat in ("997-*", "945-*", "944-*") for f in (self.root / "Radiant").glob(pat)]
+        for f in sorted(files, key=lambda x: (file_time(x.name) or datetime.min.replace(tzinfo=TOR), x.name)):
+            n[f"{f.name[:3]} {await self.read_file(f)}"] += 1
+        return n
+
+    async def settle_finished(self) -> int:
+        """A finished order put On Hold while its history was read (a second, different 945 — two
+        parts of one shipment —, or cancelled in Shopify after it shipped): Zoho completed it, so it
+        stays Shipped; what came is kept with it."""
+        moved = 0
+        async with self.uow_factory(SYSTEM_ACTOR) as u:
+            s = u.session
+            held = list((await s.execute(select(Order).where(Order.historical.is_(True), Order.fulfillment_status == F.ON_HOLD.value)
+                                         .with_for_update())).scalars())
+            for o in held:
+                if (await s.execute(select(Shipment.id).where(Shipment.order_id == o.id, Shipment.applied.is_(True)))).first():
+                    FULFILLMENT.transition(o, F.SHIPPED, actor=u.actor, events=u.events,
+                                           reason="completed by Zoho (history): the later file is kept with the order")
+                    moved += 1
+            done = list((await s.execute(select(Order).where(
+                Order.historical.is_(False), Order.fulfillment_status == F.SHIPPED.value,
+                Order.invoice_status.in_((Inv.SENT.value, Inv.NOT_REQUIRED.value)),
+                Order.id.in_(select(DocumentLink.entity_id).join(Document, Document.id == DocumentLink.document_id).where(
+                    DocumentLink.entity_type == "order", Document.kind == "940_EDI", Document.origin == ZOHO)))).scalars()))
+            for o in done:  # finished by a 945 read after its order (a file of no 940 chain)
+                o.historical = True
+            await u.commit()
+        return moved + len(done)
+
+    async def shopify_pages(self) -> collections.Counter:
+        """Every Shopify page Zoho kept, stored and linked to its orders; each order then takes its last
+        state in them (payments, refunds, cancellation, archive). An order Zoho never sent a 940 for is
+        made too; it is historical when finished or below the store's cut-off (FR-OB-17)."""
+        n: collections.Counter = collections.Counter()
+        pages = sorted((self.root / "Shopify").glob("*.json"), key=lambda x: (file_time(x.name) or datetime.min.replace(tzinfo=TOR), x.name))
+        latest: dict[str, tuple[dict[str, Any], datetime]] = {}
+        first_seen: dict[str, datetime] = {}
+        doc_orders: dict[int, set[str]] = collections.defaultdict(set)
+        async with self.uow_factory(SYSTEM_ACTOR) as u:
+            s = u.session
+            conn = (await s.execute(select(Connection).where(Connection.kind == "SHOPIFY"))).scalars().first()
+            conn_id, partner_code, cutoff = conn.id, conn.partner_code, conn.order_number_cutoff
+            abbrev = (await s.execute(select(Partner.abbrev).where(Partner.code == partner_code))).scalar_one()
+            for pf in pages:
+                try:
+                    page = strip_card_data(read_json(pf))
+                except ValueError:
+                    n["page not readable"] += 1
+                    continue
+                at = file_time(pf.name) or self.now.astimezone(TOR)
+                doc = await self.store(s, pf, kind="SHOPIFY_ORDER_JSON", system="SHOPIFY", direction="IN", at=at,
+                                       data=page_bytes(page), processing_status="Processed", connection_id=conn_id)
+                n["pages"] += 1
+                for o in page.get("orders") or []:
+                    sid = str(o.get("id") or "")
+                    if not sid:
+                        continue
+                    doc_orders[doc.id].add(sid)
+                    first_seen.setdefault(sid, at)
+                    if sid not in latest or (o.get("updated_at") or "") >= (latest[sid][0].get("updated_at") or ""):
+                        latest[sid] = (o, at)
+            await u.commit()
+        for sid, (o, at) in latest.items():
+            self.at(at)
+            async with self.uow_factory(SYSTEM_ACTOR) as u:
+                s = u.session
+                before = (await s.execute(select(Order).where(Order.partner_code == partner_code, Order.source_order_id == sid))).scalar_one_or_none()
+                was = (before.fulfillment_status, before.invoice_status) if before else None
+                was_historical = before.historical if before else None
+                newer = before is not None and before.source_updated_at is not None and o.get("updated_at") and \
+                    before.source_updated_at >= datetime.fromisoformat(o["updated_at"])
+                if newer:  # Sales read this order from Shopify itself after Zoho's page: its own is newer
+                    n["kept, Sales has it newer"] += 1
+                    continue
+                try:
+                    src = from_shopify(slim_customer({k: v for k, v in o.items() if k in ORDER_FIELDS}), partner_code=partner_code,
+                                       partner_abbrev=abbrev, cutoff=cutoff)
+                except Exception:  # noqa: BLE001 — a page entry Sales cannot read is counted, never stops the rest
+                    n["order not readable"] += 1
+                    continue
+                order = await OrderSync(u, self.problems).upsert(src, connection_id=conn_id, received_at=first_seen[sid],
+                                                                 barcodes=NoBarcodes())
+                if was is not None:
+                    order.historical = was_historical  # an order of Zoho's 940s keeps its own (never the store's cut-off)
+                if was is None:
+                    if (order.shopify_fulfillment_status or "") == "fulfilled" and FULFILLMENT.can(F(order.fulfillment_status), F.SHIPPED):
+                        # Shipped before Zoho (or without a 940 Zoho kept): Shopify says so.
+                        FULFILLMENT.transition(order, F.SHIPPED, actor=u.actor, events=u.events,
+                                               reason="fulfilled in Shopify before Sales (history)")
+                        n["made, shipped in Shopify before Zoho"] += 1
+                    finished = order.fulfillment_status in (F.SHIPPED.value, F.CANCELLED.value, F.ARCHIVE_SUPPRESSED.value,
+                                                            F.PAYMENT_HOLD.value) \
+                        or (order.shopify_financial_status or "") in ("refunded", "voided")
+                    if finished or order.historical:
+                        order.historical = True
+                        n["made, historical (no Zoho 940)"] += 1
+                    else:
+                        n[f"made, open (no Zoho 940): {order.fulfillment_status}"] += 1
+                elif was != (order.fulfillment_status, order.invoice_status):
+                    n[f"changed: {was[0]} -> {order.fulfillment_status}"] += 1
+                else:
+                    n["updated, status unchanged"] += 1
+                await u.commit()
+        async with self.uow_factory(SYSTEM_ACTOR) as u:
+            s = u.session
+            ids = {sid: oid for oid, sid in (await s.execute(select(Order.id, Order.source_order_id).where(
+                Order.partner_code == partner_code))).all()}
+            for doc_id, sids in doc_orders.items():
+                doc = await s.get(Document, doc_id)
+                for sid in sids:
+                    if sid in ids:
+                        await self.link(s, doc, ids[sid])
+            await self.cancel_writes(s)
+            await u.commit()
+        return n
+
+
 # ── the run ──────────────────────────────────────────────────────────────────
 
 async def refuse_unless_quiet(uow_factory) -> None:
@@ -467,14 +661,17 @@ async def refuse_unless_quiet(uow_factory) -> None:
             raise SystemExit("automatic runs are on: turn them off first (nothing else may act while this runs)")
 
 
-async def run(uow_factory, root: Path, *, apply: bool, limit: int | None = None) -> dict[str, Any]:
+async def run(uow_factory, root: Path, *, apply: bool, limit: int | None = None, orders: bool = True,
+              rest: bool = True) -> dict[str, Any]:
+    """`orders`: the orders of Zoho's 940s; `rest`: then the transfers, the files of no such order and
+    every Shopify page. Either can run alone (the rest after the orders were imported)."""
     await refuse_unless_quiet(uow_factory)
     chains, notes = index(root)
     if limit:
         chains = chains[:limit]
     h = History(uow_factory, root)
     results: list[Outcome] = []
-    for c in chains:
+    for c in (chains if orders else []):
         try:
             results.append(await h.one(c))
         except Exception as e:  # noqa: BLE001 — one order never stops the others; its text could carry a value
@@ -487,6 +684,9 @@ async def run(uow_factory, root: Path, *, apply: bool, limit: int | None = None)
         "810": dict(collections.Counter((r.compare_810 or "none").split(":")[0] for r in results)),
         "would_be_tasks": dict(h.problems.raised),
         "problems": dict(collections.Counter(p for r in results for p in r.problems)),
+        "rest": ({"transfers": dict(await h.zoho_transfers()), "files": dict(await h.loose_files()),
+                  "shopify": dict(await h.shopify_pages()), "kept_shipped": await h.settle_finished(),
+                  "would_be_tasks_after": dict(h.problems.raised)} if rest else None),
         "orders_detail": [vars(r) for r in results if r.result != "imported" or r.problems or (r.compare_940 or "same") != "same"
                           or (r.compare_810 or "same") != "same" or "(open)" in (r.status or "")],
     }
@@ -503,7 +703,8 @@ async def _main(args: ScriptArgs) -> dict[str, Any]:
     root = Path(args.positional[0])
     limit = int(args.value("limit")) if args.value("limit") else None
     if args.apply:
-        return await run(uow_factory, root, apply=True, limit=limit)
+        return await run(uow_factory, root, apply=True, limit=limit, orders=not args.flag("rest-only"),
+                         rest=not args.flag("orders-only"))
     chains, notes = index(root)
     return {"orders": len(chains), "export_notes": dict(notes),
             "by_partner": dict(collections.Counter(c.part for c in chains)),
