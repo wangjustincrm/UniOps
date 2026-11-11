@@ -52,7 +52,13 @@ interface Config {
   incident_status_notify: Record<string, string[]>
   incident_notify_include: Record<string, Include>
   jhsc_answered_notify?: JhscAnswered
+  action_assigned_notify?: ActionAssigned
 }
+
+/** Round 12, WHO-01 / TC-13: who is told a corrective action was given to
+ *  somebody. Its owner always; these on top. */
+interface ActionAssigned { people: string[]; previous_owner: boolean; reporter: boolean; supervisor: boolean }
+const ACTION_ASSIGNED_DEFAULT: ActionAssigned = { people: [], previous_owner: true, reporter: false, supervisor: false }
 
 /** Round 9: who is told a JHSC recommendation was answered. */
 interface JhscAnswered { people: string[]; sender: boolean }
@@ -87,6 +93,7 @@ export default function NotifyGroupsPage() {
   const [onStatus, setOnStatus] = useState<Record<string, string[]> | null>(null)
   const [include, setInclude] = useState<Record<string, Include>>({})
   const [jhsc, setJhsc] = useState<JhscAnswered>({ people: [], sender: true })
+  const [assigned, setAssigned] = useState<ActionAssigned>(ACTION_ASSIGNED_DEFAULT)
 
   const config = useQuery({
     queryKey: ['settings', 'config'],
@@ -124,6 +131,7 @@ export default function NotifyGroupsPage() {
       setOnStatus(config.data.incident_status_notify ?? {})
       setInclude(config.data.incident_notify_include ?? {})
       setJhsc(config.data.jhsc_answered_notify ?? { people: [], sender: true })
+      setAssigned(config.data.action_assigned_notify ?? ACTION_ASSIGNED_DEFAULT)
     }
   }, [config.data, groups])
 
@@ -133,6 +141,7 @@ export default function NotifyGroupsPage() {
       incident_status_notify: onStatus ?? {},
       incident_notify_include: include,
       jhsc_answered_notify: jhsc,
+      action_assigned_notify: assigned,
     }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', 'config'] }),
   })
@@ -234,6 +243,25 @@ export default function NotifyGroupsPage() {
                            onChange: (v) => setJhsc({ ...jhsc, sender: v }) }]}
                 empty="Nobody named — only the box ticked below is told."
                 onChange={(ids) => setJhsc({ ...jhsc, people: ids })} />
+
+      {/* ★ Round 12, WHO-01: "include all CAPA's that are assigned and email the
+          person the CAPA is assigned to. include options to include the
+          person who reported it and/or the CAPA owner's supervisor". */}
+      <SectionTitle className="mb-1 mt-6">Corrective actions</SectionTitle>
+      <ListCard label="Corrective action given to somebody"
+                hint="When a corrective action is raised, reassigned, or handed over from somebody who left. Its owner is always told. Filed on the incident it was raised on, or on the action."
+                ids={assigned.people} nameOf={nameOf}
+                checks={[
+                  { label: 'The previous owner, when it is reassigned', checked: assigned.previous_owner,
+                    onChange: (v) => setAssigned({ ...assigned, previous_owner: v }) },
+                  { label: 'The person who reported it (never on an anonymous report); otherwise whoever raised the action',
+                    checked: assigned.reporter,
+                    onChange: (v) => setAssigned({ ...assigned, reporter: v }) },
+                  { label: "The owner's supervisor", checked: assigned.supervisor,
+                    onChange: (v) => setAssigned({ ...assigned, supervisor: v }) },
+                ]}
+                empty="Nobody else named — the owner and the boxes ticked below are told."
+                onChange={(ids) => setAssigned({ ...assigned, people: ids })} />
 
       <ErrorNote error={save.error} />
       <div className="mt-3 flex items-center justify-end gap-3">

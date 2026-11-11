@@ -83,9 +83,9 @@ async def _refuse_on_a_closed_incident(db, payload: ActionCreate) -> None:
 
 
 @router.post("", response_model=ActionDetail, status_code=status.HTTP_201_CREATED)
-async def create_action(payload: ActionCreate, db: SessionDep, user: CanWriteAction):  # noqa: ARG001
+async def create_action(payload: ActionCreate, db: SessionDep, user: CanWriteAction):
     await _refuse_on_a_closed_incident(db, payload)
-    action = await crud.create(db, payload)
+    action = await crud.create(db, payload, raised_by=_user_id(user))
     return await _detail(db, action)
 
 
@@ -520,6 +520,7 @@ async def reassign_action(action_id: uuid.UUID, payload: ReassignIn, db: Session
                             f"{to.full_name} already has it")
     me = _user_id(user)
     before = action.owner_name or "nobody"
+    before_id = action.owner_id
     now = datetime.now(timezone.utc)
     for t in (await db.execute(select(Task).where(
             Task.document_type == task_service.DOC_ACTION, Task.document_id == action.id,
@@ -531,12 +532,17 @@ async def reassign_action(action_id: uuid.UUID, payload: ReassignIn, db: Session
             assigned_user_id=to.id, description=t.description, priority=t.priority)
     action.owner_id, action.owner_name = to.id, to.full_name
     from app.models.action import ActionUpdate
+    me_name = (await db.execute(select(User.full_name).where(User.id == me))).scalar()
     db.add(ActionUpdate(
         id=uuid.uuid4(), action_id=action.id, author_id=me,
-        author_name=(await db.execute(select(User.full_name).where(User.id == me))).scalar(),
+        author_name=me_name,
         body=f"{REASSIGNED}{before} to {to.full_name}: {payload.reason.strip()}",
         file_ids=[], new_status=None))
     await db.flush()
+    # ★ Round 12, WHO-01 / D13: a reassignment told nobody. The new owner and
+    # the previous one are, and whoever else Who is told names.
+    await notify.action_assigned(db, action, previous_owner_id=before_id,
+                                 reason=payload.reason.strip(), by_name=me_name)
     return await _detail(db, action)
 
 

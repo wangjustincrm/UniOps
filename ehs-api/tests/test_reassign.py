@@ -58,11 +58,20 @@ async def test_preview_then_hand_over_with_the_tasks(test_engine, db_session, hs
     assert row.owner_id == heir.id and row.owner_name == "Hal Heir"
     [task] = await _open_tasks(db_session, a["id"])
     assert task.assigned_user_id == heir.id and task.type == task_service.TASK_DO_ACTION
-    # One email to the heir, naming the leaver and the reason.
+    # ★ Round 12, TC-13: an action is told through Who is told, one email
+    # each, filed on the action, naming the leaver and the reason — not in
+    # the handover's summary email, which would tell the heir twice.
     sent = list((await db_session.execute(select(Communication).where(
-        Communication.template_key == "reassigned",
+        Communication.template_key == "action_reassigned",
         Communication.to_addrs.contains([heir.email])))).scalars())
     assert len(sent) == 1 and "Lee Leaver" in sent[0].body_text and "Lee left on Friday" in sent[0].body_text
+    assert sent[0].doc_id == uuid.UUID(a["id"])
+    assert not list((await db_session.execute(select(Communication).where(
+        Communication.template_key == "reassigned",
+        Communication.to_addrs.contains([heir.email])))).scalars())
+    history = (await hse.get(f"/api/v1/actions/{a['id']}")).json()
+    assert any("Lee Leaver to Hal Heir: Lee left on Friday" in (u.get("body") or "")
+               for u in history["updates"]), "★ the handover is on the action's own history"
     # Nothing is left with the leaver.
     assert not (await hse.get(f"/api/v1/reassign/{leaver.id}")).json()["groups"]
 

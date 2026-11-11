@@ -793,7 +793,7 @@ async def answer_recommendation(
         description=payload.description, owner_id=payload.owner_id,
         due_date=payload.due_date, priority=payload.priority,
         hierarchy_of_control=payload.hierarchy_of_control),
-        source_ref=f"{meeting.meeting_no} #{rec.seq}")
+        source_ref=f"{meeting.meeting_no} #{rec.seq}", raised_by=uid)
     response = payload.title + (f"\n\n{payload.description}" if payload.description else "")
     rec = await crud.respond(db, rec, response=response, outcome="accepted",
                              user_id=uid, action_id=action.id)

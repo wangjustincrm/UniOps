@@ -344,40 +344,86 @@ async def statutory_escalated(db: AsyncSession, deadline, *, overdue: bool) -> N
 
 # ── Corrective actions ───────────────────────────────────────────────────────
 
-async def action_owner_told(db: AsyncSession, action, incident, cause_label: str | None) -> None:
-    """Tell the owner of a corrective action raised on an incident, and file
-    it with the incident.
+async def action_assigned(
+    db: AsyncSession, action, *, previous_owner_id: uuid.UUID | None = None,
+    reason: str | None = None, by_name: str | None = None,
+) -> None:
+    """★ Round 12, WHO-01 / TC-13 / D13: whenever a corrective action is given
+    to somebody — raised, reassigned, or handed over from somebody who left —
+    its owner is emailed, and Settings → Who is told → Corrective actions adds
+    the rest: people named there, the previous owner, the person who reported
+    it and the owner's supervisor.
 
-    ★ Round 7, TC-09: "when a root cause is added and/or a capa is added to an
-    incident, log the communication to the capa task owner in the notification
-    sent log on the incident main form." Filed against the incident so it is
-    listed under the incident's "Notifications sent". Sent when the action is
-    raised, which is when it gets its owner — it is never re-sent on a save.
+    Until now only an action on an incident was emailed (round 7, TC-09), and
+    a reassignment told nobody. An action on an incident is still filed on the
+    incident, so it is listed under its Notifications sent; any other is filed
+    on the action itself.
 
-    ★ Nothing about who reported it: on an anonymous report the owner must not
-    learn the reporter from this (uniops-55). The text names the incident, the
-    place, the cause and the action; mail.queue escapes all of it.
+    ★ "Reported it" is the incident's reporter, never for an anonymous report:
+    putting them on the mail, or naming them in it, undoes the anonymity they
+    asked for. On anything else it is whoever raised the action (D13).
     """
-    people = await mail.recipients(db, [action.owner_id])
+    from app.models.incident import Cause, Incident
+
+    cfg = await _config(db)
+    rule = (cfg.action_assigned_notify if cfg else None) or {}
+    owner = await db.get(User, action.owner_id) if action.owner_id else None
+    if owner is None:
+        return
+
+    cause = await db.get(Cause, action.cause_id) if action.cause_id else None
+    # Found by its id, directly or through the cause — not by the source_type
+    # sent (round 7): an id that is not an incident's finds nothing.
+    incident_id = cause.incident_id if cause and cause.incident_id else action.source_id
+    incident = await db.get(Incident, incident_id) if incident_id else None
+
+    ids: list[uuid.UUID] = [owner.id]
+    ids += [uuid.UUID(str(i)) for i in rule.get("people") or []]
+    if previous_owner_id and rule.get("previous_owner", True):
+        ids.append(previous_owner_id)
+    if rule.get("supervisor") and owner.supervisor_id:
+        ids.append(owner.supervisor_id)
+    if rule.get("reporter"):
+        if incident is not None:
+            if not incident.is_anonymous and incident.reported_by:
+                ids.append(incident.reported_by)
+        elif action.raised_by:
+            ids.append(action.raised_by)
+    people = await mail.recipients(db, list(dict.fromkeys(ids)))
     if not people:
         return
+
+    moved = previous_owner_id is not None
+    previous = await db.get(User, previous_owner_id) if moved else None
     lines = [
-        f"You own corrective action {action.action_no}: {action.title}.",
-        f"Due {action.due_date.strftime('%-d %B %Y')}.",
+        (f"Corrective action {action.action_no} has been given to {owner.full_name}"
+         + (f" (it was {previous.full_name}'s)" if previous else "") + "."
+         if moved else f"Corrective action {action.action_no} is owned by {owner.full_name}."),
         "",
-        f"It was raised on {incident.incident_no}"
-        + (f" at {incident.location_path}" if incident.location_path else "") + ".",
+        action.title,
+        f"Due {action.due_date.strftime('%-d %B %Y')}.",
     ]
-    if cause_label:
-        lines += [f"It addresses the cause: {cause_label}."]
+    where = incident.incident_no if incident is not None else action.source_ref
+    if where:
+        lines.append(f"It was raised on {where}"
+                     + (f" at {incident.location_path}" if incident is not None
+                        and incident.location_path else "") + ".")
+    if cause is not None:
+        lines.append(f"It addresses the cause: {cause.label}.")
+    if moved:
+        lines += ["", f"Reassigned by {by_name or 'Safety'}" + (f": {reason}" if reason else ".")]
+
+    on_incident = incident is not None
     await mail.queue(
         db,
         to=[u.email for u in people],
-        subject=f"Corrective action {action.action_no} on {incident.incident_no}",
+        subject=(f"Corrective action {action.action_no} reassigned to {owner.full_name}" if moved
+                 else f"Corrective action {action.action_no}"
+                 + (f" on {incident.incident_no}" if on_incident else f": {action.title}")),
         body="\n".join(lines),
-        doc_type=task_service.DOC_INCIDENT,
-        doc_id=incident.id,
-        template_key="action_owner_told",
+        doc_type=task_service.DOC_INCIDENT if on_incident else task_service.DOC_ACTION,
+        doc_id=incident.id if on_incident else action.id,
+        template_key="action_reassigned" if moved else "action_owner_told",
         link=mail.module_link(f"/actions/{action.id}"),
         link_label="Open the corrective action",
     )

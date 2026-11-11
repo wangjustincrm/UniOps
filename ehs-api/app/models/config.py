@@ -85,6 +85,14 @@ class EhsConfig(TimestampMixin, Base):
     # root cause corrective action form is completed." {"people": [user_id],
     # "sender": bool} — the people named, and whether whoever sent the
     # recommendation is told too (on unless HSE turns it off).
+    # Round 12, WHO-01 / TC-13 / D13: who is told when a corrective action is
+    # given to somebody — raised, reassigned or handed over from a leaver. The
+    # owner always; these on top.
+    action_assigned_notify: Mapped[dict] = mapped_column(
+        JSONB, nullable=False,
+        default=lambda: {"people": [], "previous_owner": True, "reporter": False, "supervisor": False},
+        server_default='{"people": [], "previous_owner": true, "reporter": false, "supervisor": false}',
+    )
     jhsc_answered_notify: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=lambda: {"people": [], "sender": True},
         server_default='{"people": [], "sender": true}',

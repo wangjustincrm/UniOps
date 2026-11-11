@@ -130,6 +130,9 @@ async def carry_out(user_id: uuid.UUID, payload: PlanIn, db: SessionDep, user: C
                     doc_type="ehs_jhsc", doc_id=it.id, template_key="jhsc_reassigned",
                     link=mail.module_link(it.path), link_label="Open the recommendation")
             continue
+        if key == "action":
+            # Told one by one through Who is told (round 12, WHO-01 / TC-13).
+            continue
         by_person.setdefault(v["to_email"], []).append(v)
     for email, groups in by_person.items():
         lines = [f"{leaver.full_name}'s work has been reallocated, and HSE ({me.full_name if me else 'Safety'}) "

@@ -54,6 +54,11 @@ class Action(UUIDPrimaryKey, EhsCommonDims, TimestampMixin, Base):
     # Document number of the source, copied in so the list can show where an
     # action came from without joining across six possible tables.
     source_ref: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    # Round 12, WHO-01 / D13: who raised it — the "reporter" of a CAPA that is
+    # not on an incident. Null on actions raised before this was kept.
+    raised_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    raised_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # The specific root cause this action addresses, when it came from an
     # investigation. Null for actions raised from anything else.

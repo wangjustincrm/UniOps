@@ -219,6 +219,39 @@ async def _move_tasks(db, doc_type: str, doc_ids: list[uuid.UUID], leaver: uuid.
     return moved
 
 
+async def _write_history(db: AsyncSession, key: str, obj, leaver: User, to: User, *,
+                         actor: uuid.UUID, actor_name: str | None, reason: str,
+                         now: datetime) -> None:
+    """★ Round 12, TC-13: the handover is written on each record moved.
+
+    It was kept only on the handover itself (Settings → Reassign), so a record
+    opened later said who has it and not how or why it got there. A corrective
+    action gets a line in its own history, as a reassignment by hand does —
+    which is also what the record it was raised on shows. Everything else gets
+    a line in its change history beside the owner change the trail already
+    records, with the reason, which that change alone does not carry.
+    """
+    from app.api.v1.actions import REASSIGNED
+    from app.models.action import ActionUpdate
+    from app.models.change_log import ChangeLogEntry
+    from app.services.change_log import _row_ref
+
+    if key == "action":
+        db.add(ActionUpdate(
+            id=uuid.uuid4(), action_id=obj.id, author_id=actor, author_name=actor_name,
+            body=f"{REASSIGNED}{leaver.full_name} to {to.full_name}: {reason}",
+            file_ids=[], new_status=None))
+        return
+    row_id = getattr(obj, "id", None)
+    if row_id is None:
+        return
+    db.add(ChangeLogEntry(
+        id=uuid.uuid4(), table_name=obj.__tablename__, row_id=str(row_id),
+        row_ref=_row_ref(obj), action="update", field="handed over",
+        old_value=leaver.full_name, new_value=f"{to.full_name} — {reason}"[:500],
+        changed_by=actor, changed_by_name=actor_name, changed_at=now))
+
+
 async def carry_out(db: AsyncSession, leaver: User, plan: dict[str, uuid.UUID | None],
                     *, actor: uuid.UUID, actor_name: str | None, reason: str) -> dict:
     """Check everything, then write everything, in the caller's transaction."""
@@ -268,12 +301,22 @@ async def carry_out(db: AsyncSession, leaver: User, plan: dict[str, uuid.UUID | 
                     await db.delete(o)
                 else:
                     o.user_id, o.user_name = to.id, to.full_name
+            if o not in db.deleted:
+                await _write_history(db, key, o, leaver, to, actor=actor,
+                                     actor_name=actor_name, reason=reason, now=now)
             if kind.doc_type:
                 await _move_tasks(db, kind.doc_type, await _task_docs(db, key, it),
                                   leaver.id, to, actor, now)
         moved[key] = {"label": kind.label, "to_id": to.id, "to_name": to.full_name,
                       "to_email": to.email, "items": items}
         await db.flush()
+        if key == "action":
+            # ★ WHO-01 / TC-13: each through Who is told, as a reassignment by
+            # hand is — the new owner, and the rest the rule names.
+            from app.services import notify
+            for it in items:
+                await notify.action_assigned(db, it.obj, previous_owner_id=leaver.id,
+                                             reason=reason, by_name=actor_name)
 
     # ★ Round 11 review: this page also serves somebody still here, such as a
     # supervisor handing work to a crew member. They keep their own tasks and

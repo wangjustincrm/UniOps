@@ -85,6 +85,8 @@ class ConfigOut(BaseModel):
     incident_status_notify: dict = Field(default_factory=dict)
     incident_notify_include: dict = Field(default_factory=dict)
     jhsc_answered_notify: dict = Field(default_factory=lambda: {"people": [], "sender": True})
+    action_assigned_notify: dict = Field(default_factory=lambda: {
+        "people": [], "previous_owner": True, "reporter": False, "supervisor": False})
     email_templates: dict
     lost_time_rules: dict
     # Null until somebody picks one — every meeting before that used the
@@ -109,6 +111,7 @@ class ConfigUpdate(BaseModel):
     incident_status_notify: dict | None = None
     incident_notify_include: dict | None = None
     jhsc_answered_notify: dict | None = None
+    action_assigned_notify: dict | None = None
     email_templates: dict | None = None
     lost_time_rules: dict | None = None
     # The form the JHSC minutes are written on. Empty string clears it back to
@@ -152,6 +155,25 @@ class ConfigUpdate(BaseModel):
             raise ValueError("people must be a list")
         return {"people": [str(uuid.UUID(str(i))) for i in dict.fromkeys(people)],
                 "sender": bool(v.get("sender", True))}
+
+    @field_validator("action_assigned_notify")
+    @classmethod
+    def _people_and_three_boxes(cls, v):
+        """Round 12, WHO-01: real user ids and the three boxes, nothing else —
+        a misspelt box would be saved, shown as ticked and never read."""
+        if v is None:
+            return v
+        boxes = {"previous_owner", "reporter", "supervisor"}
+        if not isinstance(v, dict) or set(v) - boxes - {"people"}:
+            raise ValueError("The corrective action list takes people, previous_owner, "
+                             "reporter and supervisor, nothing else")
+        people = v.get("people") or []
+        if not isinstance(people, list):
+            raise ValueError("people must be a list")
+        return {"people": [str(uuid.UUID(str(i))) for i in dict.fromkeys(people)],
+                "previous_owner": bool(v.get("previous_owner", True)),
+                "reporter": bool(v.get("reporter", False)),
+                "supervisor": bool(v.get("supervisor", False))}
 
     @field_validator("incident_notify_include")
     @classmethod
