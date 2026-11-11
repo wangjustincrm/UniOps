@@ -25,16 +25,31 @@ export function formatAmount(amount: number | string, currency = 'CAD'): string 
 // showing them in the reader's own zone is correct.
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
-function toLocalDate(value: Date | string): Date {
+export function toLocalDate(value: Date | string): Date {
   if (typeof value !== 'string') return value
   if (!DATE_ONLY.test(value)) return new Date(value)
   const [y, m, d] = value.split('-').map(Number)
   return new Date(y, m - 1, d)
 }
 
+// Company-wide display format (user decision 2026-11-11): every date shown in
+// the UI reads YYYY-MMM-DD with an upper-case English month, e.g. 2026-NOV-11,
+// and a date-time adds a 24-hour clock: 2026-NOV-11 14:30. Mixed formats
+// (11/11/2026 vs Nov 11, 2026) were being misread as day/month swaps.
+// Date inputs keep ISO (the browser owns them) and so do exported files.
+const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
 export function formatDate(date: string | Date | null | undefined): string {
   if (!date) return '—'
   const d = toLocalDate(date)
   if (isNaN(d.getTime())) return '—'
-  return d.toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' })
+  return `${d.getFullYear()}-${MONTHS[d.getMonth()]}-${pad2(d.getDate())}`
+}
+
+export function formatDateTime(date: string | Date | null | undefined): string {
+  if (!date) return '—'
+  const d = toLocalDate(date)
+  if (isNaN(d.getTime())) return '—'
+  return `${formatDate(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
 }
