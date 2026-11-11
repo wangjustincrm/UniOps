@@ -12,6 +12,7 @@ from app.models.mirrors import ExpenseClaim, ExpenseInvoice, Invoice
 from app.models.pa import PaymentApplication
 from app.models.payment_batch import CANCELLED, DRAFT, EXECUTED, PaymentBatch, PaymentBatchLine
 from app.schemas.payment_execute import PaymentExecuteRequest
+from app.services import nc_invoice_paid
 
 
 async def _next_batch_number(db: AsyncSession) -> str:
@@ -204,12 +205,24 @@ async def list_due(db: AsyncSession, currency: str | None = None) -> list[dict]:
         db, [r.id for r in pas] + [c.id for c in claims], pas)
     paid = await payment_execute.pa_split_payments(db, [r.id for r in pas])
     refs = await epms_invoice_refs(db, pas, paid, inv_drafts)
+    # What NC's books say about each invoice (nc_invoice_paid): a PA NC has
+    # already paid but nobody closed is still pickable here — the column is
+    # there so it is not paid twice.
+    nc = await nc_invoice_paid.invoice_status(
+        db, [inv["id"] for ref in refs.values() for inv in ref["invoices"]])
+    for ref in refs.values():
+        for inv in ref["invoices"]:
+            inv["nc"] = nc[inv["id"]]
+        states = [inv["nc"]["status"] for inv in ref["invoices"]]
+        ref["nc_paid"] = nc_invoice_paid.rollup(states)
+        ref["nc_paid_count"] = sum(s in nc_invoice_paid.SETTLED for s in states)
     rows = [
         {"doc_kind": "pa_dir" if r.is_direct else "pa",
          "doc_id": str(r.id), "doc_number": r.pa_number,
          "payee": r.vendor_name, "vendor_inv_no": inv_no.get(r.id, ""),
          "invoices": refs[r.id]["invoices"], "due_date": refs[r.id]["due_date"],
          "splittable": refs[r.id]["splittable"],
+         "nc_paid": refs[r.id]["nc_paid"], "nc_paid_count": refs[r.id]["nc_paid_count"],
          # What is still owed; the PA's own total differs once part of it is paid.
          "amount": str(r.payment_amount - paid.get(r.id, (None, Decimal("0")))[1]),
          "payment_amount": str(r.payment_amount), "currency": r.currency,
@@ -225,6 +238,7 @@ async def list_due(db: AsyncSession, currency: str | None = None) -> list[dict]:
         {"doc_kind": "expense_claim", "doc_id": str(c.id), "doc_number": c.claim_number,
          "payee": c.employee_name, "vendor_inv_no": "",
          "invoices": [], "due_date": None, "splittable": False,
+         "nc_paid": None, "nc_paid_count": 0,
          "amount": str(c.total_amount), "payment_amount": str(c.total_amount),
          "currency": c.currency,
          "claim_type": c.claim_type,

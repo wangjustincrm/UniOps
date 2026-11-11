@@ -54,12 +54,25 @@ interface Due {
   // Draft batches that already hold it (ISS-0163). A draft reserves nothing,
   // so it stays selectable — but only one execution can pay it.
   in_draft_batches?: string[]
+  // What NC's books say about its invoices (finance-api
+  // services/nc_invoice_paid): null when there are no EPMS invoices to look up.
+  nc_paid?: NcStatus | null; nc_paid_count?: number
 }
 
 interface DueInvoice {
   id: string; number: string; amount: string; due_date: string | null
   paid: boolean; in_draft_batches: string[]
+  nc?: NcInvoice
 }
+
+// paid = NC balance 0 with an NC payment; closed = balance 0 without one
+// (offset / write-off); partial = some of it paid; open = on NC's books, unpaid.
+type NcStatus = 'paid' | 'closed' | 'partial' | 'open' | 'not_in_nc'
+interface NcInvoice {
+  status: NcStatus; bill_no: string | null; payment_no: string | null
+  paid_on: string | null; open_balance: string | null
+}
+const NC_RANK: Record<NcStatus, number> = { paid: 0, closed: 1, partial: 2, open: 3, not_in_nc: 4 }
 
 export const DUE_CURRENCIES = ['CAD', 'USD', 'CNY', 'EUR']
 
@@ -202,6 +215,7 @@ export default function PaymentBatchPage() {
     invoice: (d) => d.invoices?.[0]?.number || d.vendor_inv_no,
     due: (d) => d.due_date,                      // YYYY-MM-DD sorts as text
     type: (d) => dueTypeLabel(d),
+    nc: (d) => (d.nc_paid ? NC_RANK[d.nc_paid] : null),
     amount: (d) => Number(d.amount),
   })
 
@@ -394,13 +408,14 @@ export default function PaymentBatchPage() {
                 <SortTh label="Payee" sortKey="payee" sort={sort} onSort={onSort} className="px-3 py-2" />
                 <SortTh label="Invoice No" sortKey="invoice" sort={sort} onSort={onSort} className="px-3 py-2 w-44" />
                 <SortTh label="Due Date" sortKey="due" sort={sort} onSort={onSort} className="px-3 py-2 w-28" />
+                <SortTh label="NC Paid" sortKey="nc" sort={sort} onSort={onSort} className="px-3 py-2 w-40" />
                 <SortTh label="Type" sortKey="type" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
                 <SortTh label="Amount" sortKey="amount" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-40" />
               </tr>
             </thead>
             <tbody>
               {due.length === 0 && (
-                <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">
+                <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">
                   {term ? `Nothing matches "${search.trim()}".`
                     : dueType === 'claim'
                     ? `No approved ${currency} expense claims awaiting payment.`
@@ -456,6 +471,7 @@ export default function PaymentBatchPage() {
                   <td className={cn('px-3 py-2 text-xs', d.due_date && d.due_date < today ? 'font-medium text-red-600' : 'text-neutral-600')}>
                     {d.due_date ? toLocalDate(d.due_date).toLocaleDateString() : <span className="text-neutral-300">—</span>}
                   </td>
+                  <td className="px-3 py-2 text-xs"><NcPaidCell d={d} /></td>
                   <td className="px-3 py-2 text-xs text-neutral-500">{dueTypeLabel(d)}</td>
                   <td className="px-3 py-2 text-right font-mono">
                     {fmtMoney(d.amount, d.currency)}
@@ -483,6 +499,7 @@ export default function PaymentBatchPage() {
                     <td className={cn('px-3 py-1.5', !inv.paid && inv.due_date && inv.due_date < today ? 'font-medium text-red-600' : 'text-neutral-500')}>
                       {inv.due_date ? toLocalDate(inv.due_date).toLocaleDateString() : <span className="text-neutral-300">—</span>}
                     </td>
+                    <td className="px-3 py-1.5"><NcInvoiceBadge nc={inv.nc} /></td>
                     <td className="px-3 py-1.5 text-neutral-500">{inv.paid ? <StatusPill status="paid" /> : 'Invoice'}</td>
                     <td className="px-3 py-1.5 text-right font-mono text-neutral-600">{fmtMoney(inv.amount, d.currency)}</td>
                   </tr>
@@ -934,5 +951,70 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
       scope={{ kind: 'batch', id: batchId }}
     />
     </>
+  )
+}
+
+// ── NC Paid ──────────────────────────────────────────────────────────────
+// Finance pays in NC and closes the UniOps PA by hand, so an approved PA here
+// can already be paid in NC (PA-20260817-0009 sat six weeks like that). The
+// column says what NC's books show, so it is not paid a second time.
+const NC_LABEL: Record<NcStatus, string> = {
+  paid: 'Paid', closed: 'Closed', partial: 'Part paid', open: 'Unpaid', not_in_nc: 'Not in NC',
+}
+const NC_CLS: Record<NcStatus, string> = {
+  paid: 'bg-green-100 text-green-800', closed: 'bg-teal-50 text-teal-800',
+  partial: 'bg-amber-100 text-amber-800', open: 'text-neutral-500', not_in_nc: 'text-neutral-400',
+}
+const ncTitle = (nc: NcInvoice): string => {
+  if (nc.status === 'not_in_nc') return 'No approved NC AP bill carries this invoice number for this vendor'
+  const parts = [`NC bill ${nc.bill_no}`]
+  if (nc.payment_no) parts.push(`NC payment ${nc.payment_no}${nc.paid_on ? ` on ${nc.paid_on}` : ''}`)
+  if (nc.status === 'closed') parts.push('balance cleared without an NC payment (offset or write-off)')
+  if (nc.status === 'partial' || nc.status === 'open') parts.push(`open balance ${fmtMoney(nc.open_balance ?? "0")}`)
+  if (nc.status === 'paid' || nc.status === 'closed') parts.push('do not pay again — close the PA')
+  return parts.join(' · ')
+}
+
+function NcPill({ status, label, title }: { status: NcStatus; label?: string; title?: string }) {
+  const pill = status === 'paid' || status === 'closed' || status === 'partial'
+  return (
+    <span title={title} className={cn(pill && 'rounded-full px-2 py-0.5 font-medium', NC_CLS[status])}>
+      {label ?? NC_LABEL[status]}
+    </span>
+  )
+}
+
+function NcInvoiceBadge({ nc }: { nc?: NcInvoice }) {
+  if (!nc) return <span className="text-neutral-300">—</span>
+  return (
+    <div>
+      <NcPill status={nc.status} title={ncTitle(nc)} />
+      {nc.payment_no && (nc.status === 'paid' || nc.status === 'partial') && (
+        <div className="mt-0.5 font-mono text-[10px] text-neutral-500">
+          {nc.payment_no}{nc.paid_on && ` · ${toLocalDate(nc.paid_on).toLocaleDateString()}`}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function NcPaidCell({ d }: { d: Due }) {
+  const invs = (d.invoices ?? []).filter((i) => i.nc)
+  if (!d.nc_paid || invs.length === 0) return <span className="text-neutral-300">—</span>
+  // A splittable PA shows each invoice's NC state on its own row below.
+  if (invs.length === 1 && !d.splittable) return <NcInvoiceBadge nc={invs[0].nc} />
+  const title = invs.map((i) => `${i.number || 'Invoice'}: ${NC_LABEL[i.nc!.status]} — ${ncTitle(i.nc!)}`).join('\n')
+  const label = d.nc_paid === 'partial' ? `${d.nc_paid_count} of ${invs.length} paid`
+    : `${NC_LABEL[d.nc_paid]}${d.nc_paid === 'paid' || d.nc_paid === 'closed' ? ` (${invs.length})` : ''}`
+  const pays = [...new Set(invs.map((i) => i.nc!.payment_no).filter(Boolean))]
+  return (
+    <div>
+      <NcPill status={d.nc_paid} label={label} title={title} />
+      {pays.length > 0 && d.nc_paid !== 'open' && (
+        <div className="mt-0.5 font-mono text-[10px] text-neutral-500" title={pays.join(', ')}>
+          {pays.length === 1 ? pays[0] : `${pays.length} NC payments`}
+        </div>
+      )}
+    </div>
   )
 }
