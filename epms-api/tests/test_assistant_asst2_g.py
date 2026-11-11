@@ -74,7 +74,10 @@ async def test_issued_is_said_first_and_sent_to_the_vendor_is_taken_out(
                                    "because": "po"}]},
           narration="Yes, it has been sent to the vendor. The vendor has received it.")
     answer = (await _ask(admin_client, f"Has {po.number} been sent to the vendor?"))["answer"]
-    assert answer.startswith(f"{po.number}: status issued means the order was placed (in NC)")
+    # Since the merge with ISS-0045 (fact_replies._placement) the English wording
+    # is answered whole from the PO's placing record; either way the reply opens
+    # with how it was placed and never says the vendor got it.
+    assert answer.startswith(po.number) and "NC" in answer.split(".")[0]
     assert "has been sent to the vendor" not in answer and "has received" not in answer
 
 
