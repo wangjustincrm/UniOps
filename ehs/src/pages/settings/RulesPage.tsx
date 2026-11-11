@@ -21,6 +21,7 @@ interface Config {
   certificate_body: string | null
   certificate_signatory: string | null
   lost_time_rules: { guidance?: string } | null
+  communication_retention_days: number
 }
 
 interface Template { id: string; code: string; name: string; category: string }
@@ -69,6 +70,21 @@ export default function RulesPage() {
           <input type="number" min={1} max={365} className={num}
                  value={form.capa_escalate_manager_days}
                  onChange={(e) => setForm({ ...form, capa_escalate_manager_days: +e.target.value })} />
+        </Row>
+      </section>
+
+      {/* ★ Round 12, Q16: "How long should emails be kept?" — 21 days, here. */}
+      <section className="mb-4 rounded-xl border border-neutral-200 bg-white p-4">
+        <h2 className="text-sm font-semibold text-neutral-900">Emails</h2>
+        <p className="mb-3 text-xs text-neutral-500">
+          Emails can carry injury details and what somebody wrote in feedback. After this many days
+          what an email said is removed; who it went to, about which record and when is kept for good,
+          under Settings → Communications and on the record.
+        </p>
+        <Row label="Keep what an email said for this many days (0 keeps it for good)">
+          <input type="number" min={0} max={3650} className={num}
+                 value={form.communication_retention_days}
+                 onChange={(e) => setForm({ ...form, communication_retention_days: +e.target.value })} />
         </Row>
       </section>
 

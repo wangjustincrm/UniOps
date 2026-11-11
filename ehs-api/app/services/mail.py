@@ -163,12 +163,50 @@ async def queue(
     to = [a for a in dict.fromkeys(a.strip() for a in to if a and a.strip())]
     if not to:
         return None
+    return await _file(db, to=to, cc=cc, subject=subject, body=body,
+                       body_html=render(body, title=subject, link=link, link_label=link_label),
+                       doc_type=doc_type, doc_id=doc_id, template_key=template_key,
+                       link=link, link_label=link_label)
+
+
+# ★ Round 12, COM-03: the record's own number, so the log can be searched on
+# it. One query per kind of record; a kind not here is filed without one.
+DOC_NUMBER_SQL: dict[str, str] = {
+    "ehs_inc": "select incident_no from ehs_incidents where id = :id",
+    "ehs_act": "select action_no from ehs_actions where id = :id",
+    "ehs_doc": "select doc_no from ehs_documents where id = :id",
+    "ehs_crs": "select delivery_no from ehs_course_deliveries where id = :id",
+    "ehs_tbt": ("select t.talk_no from ehs_tbt_deliveries d join ehs_toolbox_talks t "
+                "on t.id = d.talk_id where d.id = :id"),
+    "ehs_jhsc": ("select coalesce((select meeting_no from ehs_jhsc_meetings where id = :id),"
+                 " (select m.meeting_no || ' #' || r.seq from ehs_jhsc_recommendations r"
+                 "  join ehs_jhsc_meetings m on m.id = r.meeting_id where r.id = :id))"),
+    "ehs_haz": "select hazard_no from ehs_hazards where id = :id",
+    "ehs_ptw": "select permit_no from ehs_permits where id = :id",
+    "ehs_sub": "select submission_no from ehs_form_submissions where id = :id",
+}
+
+
+async def _people_and_number(db: AsyncSession, to: list[str], doc_type, doc_id):
+    from sqlalchemy import func, text
+    ids = [str(i) for i in (await db.execute(select(User.id).where(
+        func.lower(User.email).in_([a.lower() for a in to])))).scalars()]
+    number = None
+    sql = DOC_NUMBER_SQL.get(doc_type or "")
+    if sql and doc_id:
+        number = (await db.execute(text(sql), {"id": doc_id})).scalar()
+    return ids, (str(number)[:60] if number else None)
+
+
+async def _file(db: AsyncSession, *, to: list[str], cc: list[str] | None, subject: str,
+                body: str, body_html: str, doc_type, doc_id, template_key,
+                link: str | None, link_label: str | None,
+                resend_of: uuid.UUID | None = None,
+                resent_by_name: str | None = None) -> Communication:
+    """Write the archive row and hold its send until the caller commits."""
+    to_user_ids, doc_number = await _people_and_number(db, to, doc_type, doc_id)
 
     from_addr = _smtp(await _config(db))["from_addr"] or ""
-    # Not named `html`: that is the module this file now escapes with, and a
-    # local of the same name here would shadow it for anything added below.
-    body_html = render(body, title=subject, link=link, link_label=link_label)
-
     record = Communication(
         id=uuid.uuid4(),
         doc_type=doc_type, doc_id=doc_id,
@@ -180,6 +218,9 @@ async def queue(
         # be matched back to this row when the inbound channel is built.
         message_id=make_msgid(domain="safety.uniops"),
         template_key=template_key,
+        to_user_ids=to_user_ids, doc_number=doc_number,
+        link=link[:500] if link else None, link_label=link_label,
+        resend_of=resend_of, resent_by_name=resent_by_name,
     )
     db.add(record)
     await db.flush()
@@ -246,6 +287,8 @@ async def deliver(communication_id: uuid.UUID) -> bool:
             # fact worth keeping, and it is the one asked about afterwards.
             logger.warning("Safety mail not sent (%s): no SMTP host configured",
                            record.subject)
+            record.error = "No mail server is set up (Admin → Company Settings)"
+            await db.commit()
             return False
 
         msg = MIMEMultipart("alternative")
@@ -275,13 +318,16 @@ async def deliver(communication_id: uuid.UUID) -> bool:
                 use_tls=implicit,
                 start_tls=bool(smtp["use_tls"]) and not implicit,
             )
-        except Exception:
+        except Exception as exc:
             logger.exception("Safety mail failed: %s -> %s",
                              record.subject, record.to_addrs)
+            # COM-01: the reason, on the row, for the log to show.
+            record.error = (f"{type(exc).__name__}: {exc}")[:500]
             await db.commit()
             return False
 
         record.sent_at = datetime.now(timezone.utc)
+        record.error = None
         await db.commit()
         return True
 
@@ -296,3 +342,45 @@ async def history(
                Communication.is_auto_reply.is_(False))
         .order_by(Communication.created_at)
     )).scalars())
+
+
+async def remind(db: AsyncSession, original: Communication, *, to: list[str],
+                 by_name: str | None) -> Communication:
+    """★ Round 12, COM-03: send a message again, as a reminder, to the people
+    HSE picked from those it went to (Q16).
+
+    A new row pointing at the first: what was sent stays what was sent, and
+    "at most once" still holds for each row. Filed against the same record, so
+    it is listed with the record's notifications. The words are the first
+    message's, escaped again by `render`; nothing new is typed into it.
+    """
+    from app.services.day_range import ONTARIO
+    when = (original.sent_at or original.created_at).astimezone(ONTARIO)
+    body = (f"A reminder of a message first sent on {when:%-d %B %Y}.\n\n"
+            + (original.body_text or ""))
+    subject = f"Reminder: {original.subject or ''}"[:500]
+    return await _file(
+        db, to=to, cc=None, subject=subject, body=body,
+        body_html=render(body, title=subject, link=original.link,
+                         link_label=original.link_label or "Open it in Safety"),
+        doc_type=original.doc_type, doc_id=original.doc_id,
+        template_key=original.template_key, link=original.link,
+        link_label=original.link_label, resend_of=original.id, resent_by_name=by_name)
+
+
+async def purge_bodies(db: AsyncSession, *, now: datetime, days: int) -> int:
+    """★ Round 12, Q16: an email's words are kept for HSE's retention period
+    (Rules; 21 days unless changed), because they can carry injury details
+    and what somebody wrote in feedback. Who was told, about which record,
+    when and whether it left are kept — that is the audit trail.
+    0 keeps the words for good."""
+    from datetime import timedelta
+
+    from sqlalchemy import update
+    if days <= 0:
+        return 0
+    return (await db.execute(
+        update(Communication)
+        .where(Communication.created_at < now - timedelta(days=days),
+               Communication.body_purged_at.is_(None))
+        .values(body_text=None, body_html=None, body_purged_at=now))).rowcount or 0

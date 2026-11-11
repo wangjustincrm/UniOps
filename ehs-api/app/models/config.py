@@ -122,6 +122,10 @@ class EhsConfig(TimestampMixin, Base):
     dashboard_chart_styles: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}",
     )
+    # Round 12, Q16: how long an email's words are kept. 0 keeps them for good.
+    communication_retention_days: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=21, server_default="21",
+    )
     # Round 12, ACT-05 / D12: how a due date on My Actions is coloured —
     # green within `green` days, yellow within `yellow`, red within `red`.
     due_bands: Mapped[dict] = mapped_column(

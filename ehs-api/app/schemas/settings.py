@@ -87,6 +87,7 @@ class ConfigOut(BaseModel):
     jhsc_answered_notify: dict = Field(default_factory=lambda: {"people": [], "sender": True})
     action_assigned_notify: dict = Field(default_factory=lambda: {
         "people": [], "previous_owner": True, "reporter": False, "supervisor": False})
+    communication_retention_days: int = 21
     email_templates: dict
     lost_time_rules: dict
     # Null until somebody picks one — every meeting before that used the
@@ -112,6 +113,8 @@ class ConfigUpdate(BaseModel):
     incident_notify_include: dict | None = None
     jhsc_answered_notify: dict | None = None
     action_assigned_notify: dict | None = None
+    # Round 12, Q16. 0 keeps the words for good; ten years at most.
+    communication_retention_days: int | None = Field(default=None, ge=0, le=3650)
     email_templates: dict | None = None
     lost_time_rules: dict | None = None
     # The form the JHSC minutes are written on. Empty string clears it back to

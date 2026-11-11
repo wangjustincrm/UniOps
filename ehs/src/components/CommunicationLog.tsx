@@ -24,6 +24,8 @@ interface Communication {
   to_addrs: string[]; cc_addrs: string[]
   subject: string | null; body_text: string | null
   template_key: string | null; sent_at: string | null; created_at: string
+  /** Round 12, COM-03 / Q16. */
+  resend_of?: string | null; resent_by_name?: string | null; body_purged_at?: string | null
 }
 
 export function CommunicationLog({ docType, docId }: { docType: string; docId: string }) {
@@ -69,7 +71,14 @@ export function CommunicationLog({ docType, docId }: { docType: string; docId: s
                   : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning-600"
                                    aria-hidden />}
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm text-neutral-900">{c.subject}</span>
+                  <span className="block text-sm text-neutral-900">
+                    {c.subject}
+                    {c.resend_of && (
+                      <span className="ml-2 rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-semibold text-primary-700">
+                        Reminder{c.resent_by_name ? ` sent by ${c.resent_by_name}` : ''}
+                      </span>
+                    )}
+                  </span>
                   <span className="mt-0.5 block text-xs text-neutral-500">
                     {c.to_addrs.length === 1
                       ? c.to_addrs[0]
@@ -87,9 +96,14 @@ export function CommunicationLog({ docType, docId }: { docType: string; docId: s
               {expanded === c.id && (
                 <div className="mt-2 border-t border-neutral-100 pt-2">
                   <p className="text-xs text-neutral-500">To: {c.to_addrs.join(', ')}</p>
-                  <p className="mt-1.5 whitespace-pre-wrap text-sm text-neutral-700">
-                    {c.body_text}
-                  </p>
+                  {c.body_purged_at
+                    ? <p className="mt-1.5 text-xs italic text-neutral-500">
+                        What it said was removed on {formatDateTime(c.body_purged_at)}, after the
+                        retention period HSE set.
+                      </p>
+                    : <p className="mt-1.5 whitespace-pre-wrap text-sm text-neutral-700">
+                        {c.body_text}
+                      </p>}
                 </div>
               )}
             </div>

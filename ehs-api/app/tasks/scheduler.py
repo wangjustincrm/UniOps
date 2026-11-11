@@ -68,6 +68,7 @@ class SweepResult:
     checks_missed: int = 0
     courses_reminded: int = 0
     expiry_notices: int = 0
+    email_bodies_purged: int = 0
     skipped_reason: str | None = None
 
     def __str__(self) -> str:
@@ -258,6 +259,9 @@ async def run_tick(now: datetime | None = None) -> SweepResult:
         # Round 8: HSE's certificate expiry rules. Certificates are dated in
         # plant time, so "today" is Ontario's, not UTC's (which turns at 8 pm).
         notices = await expiry_notice.send_due(db, today=now.astimezone(ONTARIO).date())
+        # Round 12, Q16: an email's words go after HSE's retention period.
+        from app.services import mail
+        purged = await mail.purge_bodies(db, now=now, days=config.communication_retention_days)
 
         result = SweepResult(
             statutory_escalated=await sweep_statutory(db, now),
@@ -270,6 +274,7 @@ async def run_tick(now: datetime | None = None) -> SweepResult:
             courses_reminded=len(reminded),
             permits_expired=len(expired),
             expiry_notices=notices,
+            email_bodies_purged=purged,
         )
         await db.commit()
         return result
