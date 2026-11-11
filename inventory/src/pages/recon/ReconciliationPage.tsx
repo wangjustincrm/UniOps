@@ -11,7 +11,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { Download, Loader2, Search, X } from 'lucide-react'
 import { SortTh, nextSort, type Sort } from '@uniops/shell'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { formatMoney, formatQty } from '@/lib/number'
 import { previousMonthEnd, todayToronto } from '@/lib/time'
 import { MATERIAL_CLASSES } from '@/pages/nc/ncApi'
@@ -301,7 +301,7 @@ export default function ReconciliationPage() {
       {data && (
         <div className="flex flex-col gap-1.5">
           <p className="text-xs text-neutral-500">
-            As of {data.date} · NC clock {data.nc_time_zone} · tolerance qty {data.tolerance.qty} / amount {data.tolerance.amount}
+            As of {formatDate(data.date)} · NC clock {data.nc_time_zone} · tolerance qty {data.tolerance.qty} / amount {data.tolerance.amount}
             {!data.include_unposted && ' · posted GL vouchers only'}
           </p>
           <WmsHistoryNote info={data.wms_history} warn={!data.wms_live} />

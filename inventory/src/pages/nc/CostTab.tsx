@@ -5,7 +5,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Badge, SortTh, sortParams, useSort } from '@uniops/shell'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { formatMoney, formatQty, formatUnitPrice, isNegative } from '@/lib/number'
 import { ncApi, type CostRow, type CostSort } from './ncApi'
 import { EmptyRow, ErrorBox, LoadingRows, MaterialCell, Pager, Uom, thCls } from './NcUi'
@@ -94,7 +94,7 @@ function Lines({ code, date }: { code: string; date: string }) {
                   <tr key={i} className={cn('border-t border-neutral-100', l.uncosted && 'bg-danger-50/50')}>
                     <td className="px-3 py-1.5 font-mono">{l.period ?? '—'}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap" title={l.biz_date ?? undefined}>
-                      {l.biz_date ? l.biz_date.slice(0, 10) : '—'}
+                      {l.biz_date ? formatDate(l.biz_date.slice(0, 10)) : '—'}
                     </td>
                     <td className="px-3 py-1.5">{l.direction === 'in' ? 'In' : 'Out'}</td>
                     <td className={numCls}>{formatQty(l.qty)}</td>

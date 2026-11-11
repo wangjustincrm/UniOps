@@ -8,6 +8,7 @@
 import { api } from '@/lib/api'
 import { formatQty, isNegative, isZero } from '@/lib/number'
 import { qs } from '@/pages/nc/ncApi'
+import { formatDate } from '@/lib/utils'
 
 export type TraceKind = 'pair' | 'nc_only' | 'wms_only'
 
@@ -170,6 +171,18 @@ export function formatTraceTime(t: string | null | undefined, dateOnly = false):
   if (!t) return '—'
   if (dateOnly || t.length <= 10) return t.slice(0, 10)
   return t.slice(0, 16)
+}
+
+/** On-screen form of a trace time, in the company-wide format:
+ *  "2025-03-01 14:05:00.123" → "2025-MAR-01 14:05"; a date-only string →
+ *  "2025-MAR-01". The date part goes through formatDate as a bare date and
+ *  the clock is sliced, so the naive Toronto wall-clock is never re-zoned.
+ *  (formatTraceTime above stays ISO-ish: it feeds the Excel export.) */
+export function formatTraceTimeDisplay(t: string | null | undefined, dateOnly = false): string {
+  if (!t) return '—'
+  const day = formatDate(t.slice(0, 10))
+  if (dateOnly || t.length <= 10) return day
+  return `${day} ${t.slice(11, 16)}`
 }
 
 export function matchLabel(r: Pick<TraceRow, 'kind' | 'tier' | 'key'>): string {

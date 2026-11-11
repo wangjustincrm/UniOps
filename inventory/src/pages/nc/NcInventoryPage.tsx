@@ -10,7 +10,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, BookOpen, Coins, Package, Search, X } from 'lucide-react'
 import { Badge } from '@uniops/shell'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { formatDateTimeToronto, relativeAge, todayToronto } from '@/lib/time'
 import { MATERIAL_CLASSES, ncApi, type NcMeta } from './ncApi'
 import { ErrorBox } from './NcUi'
@@ -60,7 +60,7 @@ function MetaStrip({ date }: { date: string }) {
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-neutral-500">
         <span>
-          As of {m.date} (Toronto) · NC clock cutoff {m.nc_cutoff} ({m.nc_time_zone})
+          As of {formatDate(m.date)} (Toronto) · NC clock cutoff {formatDate(m.nc_cutoff.slice(0, 10))} {m.nc_cutoff.slice(11, 16)} ({m.nc_time_zone})
         </span>
         <IaBadge ia={m.ia} />
         <span title={m.sync.last_success_at ? formatDateTimeToronto(m.sync.last_success_at) : undefined}>

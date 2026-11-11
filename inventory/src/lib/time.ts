@@ -4,19 +4,27 @@
 // and new Date() would read them as UTC midnight (one day early at UTC-4).
 // Show those as the string itself.
 
+import { formatDateTime } from './utils'
+
 export const LOCAL_TIME_ZONE = 'America/Toronto'
 
-/** "Oct 14, 2026, 17:05 EDT" on Toronto's clock; "—" for null/invalid. */
+/** "2026-OCT-14 17:05" (company-wide format, see lib/utils) on Toronto's
+ *  clock; "—" for null/invalid. The Toronto wall-clock fields are read with
+ *  Intl and handed to formatDateTime as a local Date, so the zone stays the
+ *  plant's while the format stays the shared one. */
 export function formatDateTimeToronto(iso: string | null | undefined): string {
   if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleString('en-CA', {
+  const parts: Record<string, number> = {}
+  for (const p of new Intl.DateTimeFormat('en-CA', {
     timeZone: LOCAL_TIME_ZONE,
-    year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-    timeZoneName: 'short',
-  })
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(d)) {
+    if (p.type !== 'literal') parts[p.type] = Number(p.value)
+  }
+  return formatDateTime(new Date(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute))
 }
 
 /** "just now" / "6 min ago" / "3 h ago" / "2 days ago" (same scale as MRP's

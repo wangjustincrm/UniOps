@@ -2,14 +2,16 @@
 // their WMS-vs-NC difference is explained as "NC no longer tracks batches"
 // and they are never expanded by batch.
 //
-// since_date is a plain date. It is shown and submitted as the "YYYY-MM-DD"
-// string, never passed through new Date() (which reads it as UTC midnight and
-// shows the previous day at UTC-4).
+// since_date is a plain date. It is submitted as the "YYYY-MM-DD" string and
+// shown through formatDate (which reads a bare date as a local date), never
+// passed through new Date() (which reads it as UTC midnight and shows the
+// previous day at UTC-4).
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label, SortTh, useSortableRows } from '@uniops/shell'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { formatDate } from '@/lib/utils'
 import type { useToasts } from '@/hooks/useToasts'
 import { settingsApi, type NoBatchMaterial } from './settingsApi'
 
@@ -163,7 +165,7 @@ export function NoBatchMaterialsCard({ canAdmin, toasts }: {
                 {rows.map((m) => (
                   <tr key={m.material_code} className="border-b border-neutral-100 last:border-0">
                     <td className="px-3 py-2 font-mono text-xs">{m.material_code}</td>
-                    <td className="px-3 py-2 tabular-nums">{m.since_date}</td>
+                    <td className="px-3 py-2 tabular-nums">{formatDate(m.since_date)}</td>
                     <td className="px-3 py-2 text-neutral-600">{m.note || '—'}</td>
                     {canAdmin && (
                       <td className="px-3 py-2">
@@ -201,7 +203,7 @@ export function NoBatchMaterialsCard({ canAdmin, toasts }: {
           onConfirm={() => { if (!del.isPending) del.mutate(deleting.material_code) }}
         >
           <p>
-            Remove <span className="font-mono">{deleting.material_code}</span> (since {deleting.since_date}) from the list?
+            Remove <span className="font-mono">{deleting.material_code}</span> (since {formatDate(deleting.since_date)}) from the list?
           </p>
           <p className="text-neutral-500">
             Its WMS-vs-NC difference will no longer be explained as "NC does not track batches".
