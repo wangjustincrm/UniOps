@@ -241,6 +241,11 @@ class History:
         found = (await s.execute(select(Document).where(Document.sha256 == sha, Document.content.is_not(None)))).scalar_one_or_none()
         if found is not None:
             self.stored[sha] = found.id
+            if direction == "IN" and values.get("processing_status") == "Pending" and found.processing_status != "Pending":
+                # Sales received this very file before (it ran beside Zoho, in the shadow run): read it
+                # again for this order, and apply it this time — it is the file of an order Sales now holds.
+                found.processing_status, found.error, found.shadow = "Pending", None, False
+                await s.flush()
             return found
         doc = Document(direction=direction, origin=origin, system=system, kind=kind, remote_name=(path.name if path else kind)[:500],
                        size=len(data), sha256=sha, content=data, created_at=at.astimezone(timezone.utc),
@@ -421,6 +426,17 @@ class History:
             out.status = f"{o.fulfillment_status} / {o.invoice_status}" + (" (historical)" if o.historical else " (open)")
             await self.cancel_writes(s)
             await u.commit()
+
+    async def resume(self, c: Chain, order_id: int) -> Outcome:
+        """An order already made and sent whose 997s and 945s were not applied: the rest of its history."""
+        out = Outcome(c.label, c.zoho_number)
+        self.problems.current = c.label
+        shipped = await self.acks_and_shipments(c)
+        if c.retail and c.f945:
+            await self.invoice(c, order_id, shipped, out)
+        await self.finish(order_id, out)
+        out.problems += self.problems.by_order.pop(c.label, [])
+        return out
 
     async def one(self, c: Chain) -> Outcome:
         out = Outcome(c.label, c.zoho_number)
