@@ -226,12 +226,16 @@ async def test_the_register_pages_searches_and_sorts_on_the_server(hse_manager, 
     assert page["total"] == 6 and len(page["items"]) == 2
     assert page["items"][0]["id"] == ids[4], "newest first by default"
     worst = (await hse.get("/api/v1/hazards/register",
-                           params={"search": tag, "sort": "risk"})).json()["items"]
-    assert worst[0]["id"] == str(old.id), "★ worst first, even when old"
+                           params={"search": tag, "sort": "risk", "dir": "desc"})).json()["items"]
+    assert worst[0]["id"] == str(old.id), "★ descending is worst first, even when old"
     assert worst[-1]["current_rating"] is None, "unscored last"
-    back = (await hse.get("/api/v1/hazards/register",
-                          params={"search": tag, "sort": "risk", "dir": "desc"})).json()["items"]
-    assert back[-1]["current_rating"] is None, "unscored last both ways"
+    mild = (await hse.get("/api/v1/hazards/register",
+                          params={"search": tag, "sort": "risk"})).json()["items"]
+    assert mild[0]["id"] != str(old.id) and mild[-1]["current_rating"] is None, \
+        "ascending is mildest first, unscored still last"
+    assert (await hse.get("/api/v1/hazards/register",
+                          params={"search": f"{tag}%"})).json()["total"] == 0, \
+        "★ a typed % is a character, not a wildcard"
     recent = (await hse.get("/api/v1/hazards/register", params={
         "search": tag, "recorded_from": (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()
     })).json()

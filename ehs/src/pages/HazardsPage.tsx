@@ -103,10 +103,15 @@ export default function HazardsPage() {
   // the latest 300, searched and paged in the browser, so past 300 a hazard
   // could not be found. The server pages, searches, filters by date and sorts
   // every column. Newest first until a column is chosen (HAZ-07); one click on
-  // Risk is "highest risk first".
+  // Risk is "highest risk first" (descending severity).
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
-  const [sort, onSort] = useSort<SortKey>(null, () => setPage(1))
+  const [sort, sortBy, setSort] = useSort<SortKey>(null, () => setPage(1))
+  // ★ Re-review N4: Risk opens worst first, with the arrow saying so.
+  const onSort = (key: SortKey) => {
+    if (key === 'risk' && sort?.key !== 'risk') { setSort({ key, dir: 'desc' }); setPage(1) }
+    else sortBy(key)
+  }
   const [params] = useSearchParams()
   // `?q=` still lands an old link on its row; links now go to /hazards/:id.
   const [query, setQuery] = useState(params.get('q') ?? '')
@@ -478,6 +483,7 @@ export function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: 
         </div>
         <Field label="Kind" hint="Pick every kind that applies">
           <VocabularyMultiSelect vocabulary="hazard" value={kindIds} onChange={(ids) => setKindIds(ids)}
+                                 known={existing?.hazard_types}
                                  placeholder="Search the hazard list…" />
         </Field>
         <Field label="Where">
@@ -508,6 +514,7 @@ export function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: 
           <Field label="Controls in place" hint="Pick from the list; add anything it does not have below">
             <VocabularyMultiSelect vocabulary="hazard_control" value={controlIds}
                                    onChange={(ids) => setControlIds(ids)}
+                                   known={existing?.hazard_controls}
                                    placeholder="Search the hazard controls…" />
           </Field>
         </div>
