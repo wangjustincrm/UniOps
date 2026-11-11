@@ -1,5 +1,17 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
+import {
+  currentMonthISO, displayTimeZone, formatDate, formatDateTime, formatTime, isoDateInZone,
+  setDisplayTimeZone, timeZoneAbbrev, toLocalDate, todayISO, zonedParts,
+} from '@uniops/shell'
+
+// Dates and times have ONE implementation, in @uniops/shell (lib/date.ts):
+// display format YYYY-MMM-DD / YYYY-MMM-DD HH:mm (UI-DATE-002), instants on
+// the plant's time zone from Company Settings, bare dates never shifted.
+export {
+  currentMonthISO, displayTimeZone, formatDate, formatDateTime, formatTime, isoDateInZone,
+  setDisplayTimeZone, timeZoneAbbrev, toLocalDate, todayISO, zonedParts,
+}
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -13,47 +25,6 @@ export function formatAmount(amount: number | string, currency = 'CAD'): string 
   }).format(n)
 }
 
-// A date-only string ("2026-07-30") carries no time zone. `new Date()` parses it
-// as UTC midnight, and rendering that with a local formatter anywhere west of
-// Greenwich shows the PREVIOUS day — this company is UTC-4/-5, so every
-// date-only field in the app displayed one day early. Reported against an
-// agreement's payment schedule (expected 2026-07-30, shown as 29/07/2026), but
-// it applied to invoice dates, due dates, validity windows and everything else
-// stored as a plain date.
-//
-// Strings that carry a time are left alone: those are real instants, and
-// showing them in the reader's own zone is correct.
-const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
-
-export function toLocalDate(value: Date | string): Date {
-  if (typeof value !== 'string') return value
-  if (!DATE_ONLY.test(value)) return new Date(value)
-  const [y, m, d] = value.split('-').map(Number)
-  return new Date(y, m - 1, d)
-}
-
-// Company-wide display format (user decision 2026-11-11): every date shown in
-// the UI reads YYYY-MMM-DD with an upper-case English month, e.g. 2026-NOV-11,
-// and a date-time adds a 24-hour clock: 2026-NOV-11 14:30. Mixed formats
-// (11/11/2026 vs Nov 11, 2026) were being misread as day/month swaps.
-// Date inputs keep ISO (the browser owns them) and so do exported files.
-const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
-const pad2 = (n: number) => String(n).padStart(2, '0')
-
-export function formatDate(date: string | Date | null | undefined): string {
-  if (!date) return '—'
-  const d = toLocalDate(date)
-  if (isNaN(d.getTime())) return '—'
-  return `${d.getFullYear()}-${MONTHS[d.getMonth()]}-${pad2(d.getDate())}`
-}
-
-export function formatDateTime(date: string | Date | null | undefined): string {
-  if (!date) return '—'
-  const d = toLocalDate(date)
-  if (isNaN(d.getTime())) return '—'
-  return `${formatDate(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
-}
-
 // The same UTC/local trap as above, on the writing side rather than the reading
 // side. Every create form seeded its date field with
 // `new Date().toISOString().slice(0, 10)`, which is the UTC date — so from
@@ -61,14 +32,12 @@ export function formatDateTime(date: string | Date | null | undefined): string {
 // went to the approver, to the accounting period, and to the age of the
 // document, all one day out, for the last four hours of every working day.
 export function todayLocal(): string {
-  const d = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  return todayISO()   // the plant's date (company time zone), not the browser's
 }
 
 // Calendar year at the reader's desk. `getUTCFullYear()` rolls over at 20:00 on
 // 31 December here, which pointed the budget-account lookup at the next fiscal
 // year while people were still booking against this one.
 export function currentYearLocal(): number {
-  return new Date().getFullYear()
+  return Number(todayISO().slice(0, 4))
 }
