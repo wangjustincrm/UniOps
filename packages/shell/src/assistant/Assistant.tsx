@@ -28,6 +28,7 @@ import {
   AlertTriangle, Check, ChevronDown, Download, Loader2, MessageSquare, Send, Star, X,
 } from 'lucide-react'
 import { cn } from '../lib/cn'
+import { formatDate } from '../lib/date'
 import { buildHistory } from './history'
 import { Markdown } from './markdown'
 import type {
@@ -562,7 +563,7 @@ function Chain({ workflow }: { workflow: NonNullable<AssistantReply['workflow']>
                 <span className="font-medium">{e.action ?? '—'}</span>
                 {e.actor_name && <span> by {e.actor_name}</span>}
                 {e.actor_role && <span className="text-neutral-500"> ({e.actor_role})</span>}
-                {e.at && <span className="text-neutral-500"> · {String(e.at).slice(0, 10)}</span>}
+                {e.at && <span className="text-neutral-500"> · {formatDate(String(e.at))}</span>}
                 {e.imported && <span className="text-neutral-400"> · imported from PMS</span>}
                 {e.comment && (
                   <span className="block pl-3 text-neutral-500">“{e.comment}”</span>
