@@ -228,7 +228,7 @@ async def trace_material(
         "no_batch_since": t["no_batch_since"].isoformat() if t["no_batch_since"] else None,
         "date": d.isoformat(), "start": t["start"].isoformat(), "nc_time_zone": t["nc_time_zone"],
         "wms_history": recon_svc.wms_history_info(t["start"]),
-        "scope_note": "NC movements in WMS-managed warehouses only; NC times shown in Toronto time.",
+        "scope_note": "NC movements in WMS-managed warehouses only; NC times shown in plant local time.",
         "opening": {"nc": _s(t["nc_opening"]), "wms": "0"},
         "closing": {"nc": _s(nc_end), "wms": _s(wms_end), "diff": _s(nc_end - wms_end)},
         "counts": {

@@ -13,8 +13,8 @@ NC data dictionary open can follow along. Two kinds of derived column exist:
 * `*_time` — NC stores business dates as 'YYYY-MM-DD HH:MI:SS' strings in the
   NC application server's wall clock (China time, design D14). They are parsed
   to a naive `timestamp` holding that same wall-clock value; conversion to
-  Toronto happens at query time, because the zone is a setting the user can
-  flip (Settings → NC time zone).
+  the plant's zone happens at query time, because both zones are settings the
+  user can change (Settings → NC time zone; Company Settings → Time Zone).
 * NC's CHAR(n) padding and the '~' it uses for "empty" are normalised to NULL
   on the way in (services/nc_sync/transform.py), so `IS NULL` means empty.
 """
