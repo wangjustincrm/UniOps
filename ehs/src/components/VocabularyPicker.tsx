@@ -151,9 +151,13 @@ function Missing({ vocabulary, error }: { vocabulary: string; error: unknown }) 
 }
 
 export function VocabularyMultiSelect({
-  vocabulary, value, onChange, placeholder = 'Search…', emptyHint,
+  vocabulary, value, onChange, placeholder = 'Search…', emptyHint, known,
 }: {
   vocabulary: string
+  /** What the record saved for each pick. ★ Re-review N6: an entry since
+   *  deleted from the list read "An entry no longer on the list" while the
+   *  record still has its name. */
+  known?: { id: string; label: string }[]
   value: string[]
   /** The ids, and the chosen items themselves with `label` set to the trail —
    *  this module stores a label snapshot beside every vocabulary reference, so
@@ -211,7 +215,7 @@ export function VocabularyMultiSelect({
                         onClick={() => emit(value.filter((v) => v !== id))}
                         className={`flex min-h-[32px] items-center gap-1.5 rounded-full px-2.5 text-xs font-medium ${
                           why ? 'bg-neutral-100 text-neutral-600' : 'bg-primary-50 text-primary-700'}`}>
-                  {c ? trailOf(c) : 'An entry no longer on the list'}
+                  {c ? trailOf(c) : (known?.find((k) => k.id === id)?.label ?? 'An entry no longer on the list')}
                   {why && <span className="font-normal">({why})</span>}
                   <X className="h-3 w-3" aria-hidden />
                   <span className="sr-only">Remove</span>

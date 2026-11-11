@@ -328,6 +328,7 @@ function JsaDetailsForm({ jsa, onClose }: { jsa: Jsa; onClose: () => void }) {
         </Field>
         <Field label="PPE for the whole job">
           <VocabularyMultiSelect vocabulary="ppe" value={ppeIds} onChange={(ids) => setPpeIds(ids)}
+                                 known={jsa.ppe_items}
                                  placeholder="Search the PPE list…" />
           {jsa.required_ppe && (
             <p className="mt-1 text-xs text-neutral-500">Typed before: {jsa.required_ppe}</p>
@@ -380,6 +381,7 @@ function StepList({ steps, onChange }: { steps: Step[]; onChange: (next: Step[])
                   <div className="grid gap-2 sm:grid-cols-2">
                     <Field label="What can go wrong">
                       <VocabularyMultiSelect vocabulary="hazard" value={s.hazard_ids ?? []}
+                                             known={s.hazard_items}
                                              onChange={(ids) => set(i, { hazard_ids: ids })}
                                              placeholder="Search the hazard list…" />
                       <input className={`${inputClass} mt-1`} value={s.hazards ?? ''}
@@ -389,6 +391,7 @@ function StepList({ steps, onChange }: { steps: Step[]; onChange: (next: Step[])
                     </Field>
                     <Field label="What stops it">
                       <VocabularyMultiSelect vocabulary="hazard_control" value={s.control_ids ?? []}
+                                             known={s.control_items}
                                              onChange={(ids) => set(i, { control_ids: ids })}
                                              placeholder="Search the hazard controls…" />
                       <input className={`${inputClass} mt-1`} value={s.controls ?? ''}

@@ -47,13 +47,20 @@ export default function IncidentTypesPage() {
   const FORM_ORDER: Record<string, number> = { medical: 1, equipment: 2, near_miss: 3 }
   const { rows: sorted, sort, onSort } = useSortableRows(rows, {
     label: (r) => r.label, form: (r) => FORM_ORDER[r.form_kind] ?? 9,
-    category: (r) => r.category_label, restricted: (r) => r.restricted,
-    mol: (r) => r.mol_reportable, status: (r) => !r.is_active,
+    // By the words shown (re-review N6).
+    category: (r) => r.category_label,
+    restricted: (r) => (r.restricted ? 'Coordinators, supervisors and HSE' : 'Everyone'),
+    mol: (r) => (r.mol_reportable ? 'Tell the Ministry' : null),
+    status: (r) => (r.is_active ? 'In use' : 'Retired'),
   })
   const ordered = sort ? sorted
     : [...rows].sort((a, b) => (FORM_ORDER[a.form_kind] ?? 9) - (FORM_ORDER[b.form_kind] ?? 9))
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+  // A new order starts at the first page.
+  const sortKey = sort ? `${sort.key}:${sort.dir}` : ''
+  const [lastSort, setLastSort] = useState(sortKey)
+  if (sortKey !== lastSort) { setLastSort(sortKey); setPage(1) }
   const shown = ordered.slice((page - 1) * pageSize, page * pageSize)
   return (
     <div className="p-4">

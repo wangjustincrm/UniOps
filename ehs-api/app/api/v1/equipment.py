@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import and_, func, or_, select, text
+from sqlalchemy import and_, case, func, or_, select, text
 
 from app.api.v1.incidents import _user_id
 from app.core.deps import SessionDep
@@ -171,7 +171,8 @@ EQUIPMENT_SORTABLE = {
         VocabularyItem.id == Equipment.system_id).correlate(Equipment).scalar_subquery(),
     "area": lower_text(Equipment.location_path),
     "department": lower_text(Equipment.department_name),
-    "status": Equipment.is_active,
+    # By the words shown, In service before Retired (re-review N6).
+    "status": case((Equipment.is_active.is_(True), "In service"), else_="Retired"),
 }
 
 

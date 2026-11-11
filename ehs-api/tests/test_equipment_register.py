@@ -301,3 +301,8 @@ async def test_the_register_sorts_on_the_server_with_blanks_last(hse_manager, db
     assert names(await client.get("/api/v1/equipment", params={
         "search": tag, "sort": "name", "dir": "desc"})) == ["Valve", "Mixer", "Auger"]
     assert (await client.get("/api/v1/equipment", params={"sort": "drop table"})).status_code == 422
+    await _machine(db_session, f"Zeta {tag}", active=False)
+    await db_session.commit()
+    by_status = await client.get("/api/v1/equipment", params={
+        "search": tag, "state": "all", "sort": "status"})
+    assert names(by_status)[-1] == "Zeta", "★ by the words shown: In service before Retired"

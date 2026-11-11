@@ -526,11 +526,13 @@ function PermitHazards({ permit, editable, onSaved }: {
     <div className="mb-4 grid gap-2 sm:grid-cols-2">
       <Field label="Hazards">
         <VocabularyMultiSelect vocabulary="hazard" value={hazardIds}
+                               known={permit.hazard_items}
                                onChange={(ids) => { setHazardIds(ids); setDirty(true) }}
                                placeholder="Search the hazard list…" />
       </Field>
       <Field label="Controls">
         <VocabularyMultiSelect vocabulary="hazard_control" value={controlIds}
+                               known={permit.control_items}
                                onChange={(ids) => { setControlIds(ids); setDirty(true) }}
                                placeholder="Search the hazard controls…" />
       </Field>
