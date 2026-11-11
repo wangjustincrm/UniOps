@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -9,8 +10,9 @@ from app.api.v1.delegations import router as delegations_router
 from app.api.v1.health import router as health_router
 from app.api.v1.routing import router as routing_router
 from app.core.config import settings
+from app.core.plant_time import plant_tz_refresh_loop, refresh_plant_tz
 from app.crud.engine import _WORKFLOW_DEFAULTS
-from app.db.base import AsyncSessionLocal
+from app.db.base import AsyncSessionLocal, engine
 from app.models.config import CompanyConfig
 
 
@@ -39,8 +41,12 @@ async def seed_default_workflows() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Plant time zone (Company Settings): read now, then keep it fresh.
+    await refresh_plant_tz(engine)
+    plant_tz_task = asyncio.create_task(plant_tz_refresh_loop(engine))
     await seed_default_workflows()
     yield
+    plant_tz_task.cancel()
 
 
 app = FastAPI(
