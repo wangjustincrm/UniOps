@@ -314,7 +314,7 @@ export default function IncidentDetailPage() {
           </button>
         </div>
         {editing && <EditReport incident={inc} isHse={canClose} onDone={() => { setEditing(false); touched() }}
-                                onCancel={() => setEditing(false)} />}
+                                onCancel={() => { setEditing(false); touched() }} />}
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
           <InjuryBadge injuryClass={inc.injury_class} />
           <MolBadge reportable={inc.mol_reportable} />
@@ -894,25 +894,27 @@ function EditReport({ incident, isHse, onDone, onCancel }: {
   const [recountOk, setRecountOk] = useState(false)
   const needsRecountOk = clocks.length > 0 && isHse && timeChanged
 
-  const sent = useRef<{ body: string | null; photos: WeakSet<object> }>(
-    { body: null, photos: new WeakSet() })
+  // ★ Re-review N5: what the server holds now. After the edit went through
+  // and a photo failed, the next save diffs against this, not the report as
+  // first opened — so putting a field back is sent, not swallowed.
+  const sent = useRef<{ base: typeof initial; photos: WeakSet<object> }>(
+    { base: initial, photos: new WeakSet() })
   const save = useMutation({
     mutationFn: async () => {
       const body: Record<string, unknown> = {}
       for (const k of ['title', 'description', 'equipment_involved', 'witnesses_note',
                        'immediate_action_taken', 'location_id', 'equipment_id', 'batch_code'] as const) {
-        if (form[k] !== initial[k]) body[k] = form[k] === '' ? null : form[k]
+        if (form[k] !== sent.current.base[k]) body[k] = form[k] === '' ? null : form[k]
       }
-      if (form.date !== initial.date || form.time !== initial.time) {
+      if (form.date !== sent.current.base.date || form.time !== sent.current.base.time) {
         body.occurred_at = new Date(`${form.date}T${form.time || '00:00'}`).toISOString()
       }
       // ★ B3/B4 review L5: a retry after the second photo failed sent the
       // first again, and the same edit again — which withdrew HSE's review a
       // second time. What has gone through is remembered and not resent.
-      const sentKey = JSON.stringify(body)
-      if (Object.keys(body).length && sent.current.body !== sentKey) {
+      if (Object.keys(body).length) {
         await api.patch(`/api/v1/incidents/${incident.id}`, body)
-        sent.current.body = sentKey
+        sent.current.base = { ...form }
       }
       for (const photo of newPhotos) {
         if (sent.current.photos.has(photo)) continue
