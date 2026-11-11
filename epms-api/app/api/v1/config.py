@@ -10,6 +10,7 @@ from sqlalchemy import text
 from uniops_authz import effective_permissions, role_matrix, user_role_codes
 
 from app.core.config import settings
+from app.core.plant_time import set_plant_tz
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_permission
 from app.crud import config as config_crud
 from app.crud import po_fee as po_fee_crud
@@ -34,6 +35,9 @@ class PublicBrandingResponse(BaseModel):
     tagline: str
     logo_data_url: str | None
     module: str | None = None
+    # The plant's IANA zone: every web app formats times in it (UI-DATE-002),
+    # so a reader in another zone still sees plant time.
+    timezone: str = "America/Toronto"
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -99,6 +103,7 @@ async def get_public_branding(db: SessionDep, module: str | None = None):
         tagline=tagline,
         logo_data_url=cfg.logo_data_url,
         module=module,
+        timezone=cfg.timezone,
     )
 
 
@@ -170,6 +175,9 @@ async def update_config(body: ConfigUpdate, db: SessionDep, user: AdminDep, toke
         body.incoterms_terms = new_terms
     await config_crud.update(db, cfg, body, uuid.UUID(user["sub"]))
     await db.commit()
+    if body.timezone is not None:
+        # This process at once; the other services pick it up within a minute.
+        set_plant_tz(body.timezone)
     resp = await _full_response(db, user)
     if body.budget_admin_config is not None:
         resp.over_budget_resync = await _resync_over_budget(token)
