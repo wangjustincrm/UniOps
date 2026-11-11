@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useRef } from 'react'
 import { ArrowLeft, CheckCircle, XCircle, RotateCcw, Banknote, AlertTriangle, Paperclip, Upload, Download, Trash2, Circle, Clock, FileText } from 'lucide-react'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
-import { api } from '@/lib/api'
+import { api, ApiError } from '@/lib/api'
 import { STATUS, ACTION, isEditable, isInApproval } from '@/lib/status'
 import ProcessPaymentModal from '@/components/ProcessPaymentModal'
 import { StatusBadge } from '@/components/ui/badge'
@@ -140,6 +140,30 @@ const ACTION_LABELS: Record<string, string> = {
 
 // ── Attachments card ──────────────────────────────────────────────────────────
 
+/**
+ * What an employee is told when an attachment will not download (0218).
+ * "File server error 410" meant nothing to them; say what happened and what
+ * to do. expense-api answers 404 when the file server has no such file and
+ * 502 "File server error <code>" for anything else the file server said —
+ * a 404 or 410 (deleted) there is still a missing file.
+ */
+function downloadFailureMessage(fileName: string, err: unknown): string {
+  const status = err instanceof ApiError ? err.status : undefined
+  const text = err instanceof Error ? err.message : ''
+  const upstream = Number(/File server error (\d{3})/.exec(text)?.[1]) || undefined
+  if (status === 404 || status === 410 || upstream === 404 || upstream === 410) {
+    return `Could not download "${fileName}". The file could not be found on the file server — please upload it again or contact IT.`
+  }
+  if ((status === undefined && err instanceof TypeError)  // fetch itself failed: offline, server down
+      || status === 502 || status === 503 || status === 504) {
+    return `Could not download "${fileName}". The file server is not available right now — please try again in a few minutes, or contact IT if it keeps happening.`
+  }
+  if (status === 403) {
+    return `Could not download "${fileName}". You do not have access to this file.`
+  }
+  return `Could not download "${fileName}". Please try again, or contact IT if it keeps happening.`
+}
+
 function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
   claimId: string; canUpload: boolean
   // Approved / paid claims: the PDF with the approval record is filed here at
@@ -151,6 +175,9 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [downloadError, setDownloadError] = useState('')
+  // The server's own words (e.g. "File server error 410"), kept for IT on the
+  // banner's tooltip rather than shown to the employee.
+  const [downloadErrorDetail, setDownloadErrorDetail] = useState('')
 
   const regenPdf = useMutation({
     mutationFn: () => api.post(`/api/v1/expenses/${claimId}/regenerate-pdf`, {}),
@@ -196,6 +223,7 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
   // silently and show only in the browser console (ISS-0218).
   const download = async (att: Attachment) => {
     setDownloadError('')
+    setDownloadErrorDetail('')
     try {
       const blob = await api.getBlob(`/api/v1/expenses/${claimId}/attachments/${att.id}/file`)
       const url = URL.createObjectURL(blob)
@@ -203,7 +231,8 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
       a.href = url; a.download = att.file_name; a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
-      setDownloadError(`Could not download "${att.file_name}"${err instanceof Error && err.message ? `: ${err.message}` : ''}`)
+      setDownloadError(downloadFailureMessage(att.file_name, err))
+      setDownloadErrorDetail(err instanceof Error ? err.message : String(err))
     }
   }
 
@@ -254,7 +283,7 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
         </div>
       )}
       {downloadError && (
-        <div className="mx-5 mt-3">
+        <div className="mx-5 mt-3" title={downloadErrorDetail || undefined}>
           <ErrorBanner message={downloadError} />
         </div>
       )}
