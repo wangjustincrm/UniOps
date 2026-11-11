@@ -15,7 +15,7 @@ import { AlertTriangle, CalendarClock, Download, Loader2, RefreshCw } from 'luci
 import { Badge, Button, SortTh, useSortableRows } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { saveBlob } from '@/pages/forecast/forecastApi'
-import { cn, formatDate, formatDateTime } from '@/lib/utils'
+import { cn, formatDate, formatDateTime, todayISO, toLocalDate } from '@/lib/utils'
 import { ToastStack } from '@/components/Toast'
 import { useToasts } from '@/hooks/useToasts'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -33,7 +33,9 @@ function errMsg(err: unknown, fallback: string): string {
 function daysAgo(isoDate: string): string {
   const then = new Date(`${isoDate}T00:00:00`)
   if (Number.isNaN(then.getTime())) return ''
-  const days = Math.round((Date.now() - then.getTime()) / 86400000)
+  // Calendar days to the plant's today (company time zone), not elapsed time
+  // from the browser's clock.
+  const days = Math.round((toLocalDate(todayISO()).getTime() - then.getTime()) / 86400000)
   if (days <= 0) return ''
   return ` (${days} day${days === 1 ? '' : 's'} ago)`
 }

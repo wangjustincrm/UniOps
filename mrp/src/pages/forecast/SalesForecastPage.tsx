@@ -42,6 +42,7 @@ import { CellHistoryPopover } from './CellHistoryPopover'
 import { AddIntentProductModal } from './AddIntentProductModal'
 import { BindIntentModal } from './BindIntentModal'
 import { bomStatusApi } from './bomStatusApi'
+import { currentMonthISO } from '@/lib/utils'
 
 const AUTOSAVE_DEBOUNCE_MS = 1200
 const OUTLOOK_HORIZON_MONTHS = 18
@@ -78,10 +79,9 @@ function formatTonnes(kg: number): string {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(kg / 1000)
 }
 
-/** 'YYYY-MM' for the current month, in the browser's local time — no date lib. */
+/** 'YYYY-MM' for the plant's current month (company time zone). */
 function currentMonthStr(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  return currentMonthISO()
 }
 
 /** Add (or subtract, via a negative delta) whole months to a 'YYYY-MM' string. */
