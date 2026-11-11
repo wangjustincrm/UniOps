@@ -142,8 +142,9 @@ async def test_a_receipt_answer_always_carries_its_lines(test_engine, admin_clie
                  narration="结果中未包含每次收货的数量明细。")
     body = await _ask(admin_client, f"{d['po']} 收过几次货？每次收了多少？")
     answer = body["answer"]
-    assert answer.startswith("结果中未包含")
-    assert f"{d['gr']}（{d['po']}）收货 3 行，金额 CAD 6,349.71" in answer
+    # The lines open the reply and the narrator's "not included" is gone (asst2/g).
+    assert answer.startswith(f"{d['gr']}（{d['po']}）收货 3 行，金额 CAD 6,349.71")
+    assert "结果中未包含" not in answer
     for part in ("SHAFT SEAL FPM — 3 pcs", "SHAFT SEAL FEP — 3 pcs", "SHAFT SEAL EPDM — 6 pcs"):
         assert part in answer
     assert "Transport" not in answer

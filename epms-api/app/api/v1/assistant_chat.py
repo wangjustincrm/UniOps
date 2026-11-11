@@ -241,7 +241,7 @@ async def _finish(out: dict, message: str) -> dict:
     if verdict := out.pop("_verdict", None):
         out["answer"] = rule_verdicts.place(
             out.get("answer") or "", await _in_language(verdict["en"], verdict["zh"], message),
-            verdict["place"])
+            verdict["place"], verdict.get("drops") or ())
         out["verdict"] = verdict["id"]
     return out
 
@@ -820,6 +820,9 @@ async def _with_listing_notes(text: str, result: dict, message: str) -> str:
     English and Chinese are written in the ontology; any other language is
     rendered from the English, which stays if that fails."""
     notes = result.get("said_with_this_list") or []
+    # What the code worked out overrules the narrator: the sentences that say
+    # the opposite go, and those facts open the reply (answer_facts.settle).
+    text, first = answer_facts.settle(text, result)
     if not notes:
         return text
     language = reply_language.detect(message)
@@ -835,7 +838,9 @@ async def _with_listing_notes(text: str, result: dict, message: str) -> str:
                     english, message, language))["text"] or english)
             except assistant_llm.LlmUnavailable:
                 said.append(english)
-    return "\n\n".join([text.rstrip(), *said])
+    before = [x for n, x in zip(notes, said) if n[0] in first]
+    after = [x for n, x in zip(notes, said) if n[0] not in first]
+    return "\n\n".join(p for p in [*before, (text or "").strip(), *after] if p)
 
 
 async def _with_document_number(db, scope, context: dict | None) -> dict | None:
@@ -990,15 +995,17 @@ async def _answer_workflow_question(db, user, token, scope, body, planned) -> di
         "narrate_workflow", told.get("usage") or {})
 
     text = told["text"]
+    said: dict = {}
     if doc_type == "pa" and answer_facts.asks("payment", body.message):
         # When it was paid, from which account, and the remittance advice —
         # from Finance's payment record, said by code (ISS-0043, ISS-0066).
-        facts = await answer_facts.payment_facts(db, scope, view["document_number"])
-        if facts:
-            en, zh = answer_facts.payment_sentences(
-                facts, remittance=answer_facts.asks("remittance", body.message))
-            text = await _with_listing_notes(
-                text, {"said_with_this_list": [("pa_payment", en, zh)]}, body.message)
+        await answer_facts.say_payment(db, scope, [view["document_number"]], body.message, said)
+    if doc_type == "po" and answer_facts.asks("sent", body.message):
+        # "Has it been sent to the vendor?" answered from the approval
+        # history is still not "the vendor has it" (ISS-0013 ①).
+        await answer_facts.say_how_placed(db, scope, [view["document_number"]], said)
+    if said:
+        text = await _with_listing_notes(text, said, body.message)
     return {
         "answer": text,
         "kind": "workflow",
@@ -1347,7 +1354,8 @@ async def _answer_vendor_summary(db, scope, body, planned, actor, schema) -> dic
     except assistant_llm.LlmUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     await assistant_llm.record_usage(db, actor, "narrate_guide", told.get("usage") or {})
-    text = told["text"]
+    # Figures, not opinions: "合作稳定" / "付款情况良好" are taken out by code (ISS-0057).
+    text = answer_facts.without_opinions(told["text"])
     if notes:
         text = await _with_listing_notes(text, {"said_with_this_list": notes}, body.message)
     return {"answer": text, "kind": "vendor_summary", "query": None,

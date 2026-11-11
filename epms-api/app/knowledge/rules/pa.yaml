@@ -71,12 +71,13 @@ rules:
       Partially Paid for a prepayment — for a prepayment's invoices Partially
       Paid is the correct status, not a missing payment. A PA in status
       Approved is fully approved and still waiting to be paid.
-    enforced_in: "finance-api app/crud/payment_execute.py (pa.status = processed, paid_at = payment date; invoices paid / partially_paid for a prepayment); epms-api app/models/invoice.py Invoice.pa_payment_shown (the same rule, for the Assistant), said with the count per PA kind under every answer that uses it (app/services/answer_facts.py _paid_pa_invoices)"
+    enforced_in: "finance-api app/crud/payment_execute.py (pa.status = processed, paid_at = payment date; invoices paid / partially_paid for a prepayment); epms-api app/models/invoice.py Invoice.pa_payment_shown (the same rule, for the Assistant), said with the count per PA kind under every answer that uses it (app/services/answer_facts.py _paid_pa_invoices, counted over the invoices the query matched; with none on a prepayment PA, a narrator sentence blaming Partially Paid is taken out)"
     provenance: pinned
     test:
       - "finance-api/tests/test_payment_execute.py::test_execute_pa_po_marks_invoices_paid"
       - "tests/test_assistant_iss_batch6.py::test_pa_payment_shown_is_the_rule_payment_writes"
       - "tests/test_assistant_asst2_b.py::test_paid_pa_invoices_always_carry_the_partially_paid_rule"
+      - "tests/test_assistant_asst2_g.py::test_partially_paid_is_not_blamed_when_none_is_a_prepayment"
   - id: prepayment_cap
     also_in: [vendor]
     asked_as:
@@ -96,11 +97,12 @@ rules:
       Prepayment Config. Whether a vendor can be prepaid is decided by these
       caps alone — never by the Prepaid flag on its past PRs or POs, which
       the payment application does not read.
-    enforced_in: "epms-api app/api/v1/pa.py _assert_prepayment_cap, on create_pa and when a draft's % is edited in update_pa (effective_cap = vendor.max_prepayment_pct else Prepayment Config; second check against the system cap; cumulative over the PO's live prepayments via prior_prepayment_pct); the cap that applies to a vendor is said under a vendor answer by app/services/answer_facts.py _prepayment_cap (app/core/prepayment_cap.py effective_cap)"
+    enforced_in: "epms-api app/api/v1/pa.py _assert_prepayment_cap, on create_pa and when a draft's % is edited in update_pa (effective_cap = vendor.max_prepayment_pct else Prepayment Config; second check against the system cap; cumulative over the PO's live prepayments via prior_prepayment_pct); the cap that applies to a vendor is said under a vendor answer by app/services/answer_facts.py _prepayment_cap (app/core/prepayment_cap.py effective_cap), first, with \"cannot be prepaid / no policy / must be set first\" taken out when the cap is above 0; the rule question with no vendor gets the verdict no_vendor_cap_takes_the_system_cap (rule_facts.prepayment_system_cap)"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_prepayment_cap_reads_the_vendor_then_the_system"
       - "tests/test_assistant_asst2_b.py::test_a_vendor_with_no_cap_of_its_own_gets_the_system_cap"
+      - "tests/test_assistant_asst2_g.py::test_a_vendor_answer_loses_no_policy_and_must_set_first"
   - id: vendor_credit_netting
     asked_as:
       - how are vendor credits used when we pay
@@ -294,12 +296,14 @@ rules:
       PA, the assistant reads that send record and says whether, when and to
       whom it was sent — for users with View Finance; others are told it needs
       Finance access.
-    enforced_in: "finance-api app/api/v1/remittance.py (send routes; PRD EPMS REM-001); app/crud/payment_execute.py sends none; app/models/remittance.py payment_remittance_notifications (read for one PA by epms-api app/services/answer_facts.py payment_facts, View Finance only — not in the queryable ontology)"
+    enforced_in: "finance-api app/api/v1/remittance.py (send routes; PRD EPMS REM-001); app/crud/payment_execute.py sends none; app/models/remittance.py payment_remittance_notifications (read for one PA by epms-api app/services/answer_facts.py payment_facts, View Finance only — not in the queryable ontology; answer_facts.say_payment puts it first and takes out a narrator's \"sent\" with no send record, or \"not sent\" over one)"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_remittance_is_sent_by_hand_and_not_modelled"
       - "tests/test_assistant_asst2_c.py::test_the_flow_after_payment_is_the_remittance_advice"
       - "tests/test_assistant_asst2_b.py::test_a_paid_pa_says_account_and_remittance_from_finance_records"
+      - "tests/test_assistant_asst2_g.py::test_remittance_is_not_said_sent_without_a_send_record"
+      - "tests/test_assistant_asst2_g.py::test_no_account_goes_when_the_payment_record_names_one"
   - id: recording_a_manual_credit
     # Round 2 (ISS-0022 #3): refused once in three. Code answers it.
     said_when:
@@ -426,3 +430,27 @@ verdicts:
     test:
       - "tests/test_direct_pa.py::test_create_direct_pa_from_two_invoices"
       - "expense-api/tests/test_direct_pa_retired.py::test_creating_a_direct_pa_is_gone"
+  # ISS-0066: "没有设置 Max Prepayment % 的供应商，能不能建预付款 PA？" opened
+  # "不能", then said the Prepayment Config cap applies, and ended "需要先在供应商
+  # 记录上设置". The conclusion follows the system cap, and the sentences that
+  # say the opposite are taken out (derive returns them with the value).
+  - id: no_vendor_cap_takes_the_system_cap
+    rule: prepayment_cap
+    derive: prepayment_system_cap
+    asks:
+      - [max prepayment, 预付上限, 预付比例, 预付款比例, 最大预付, 预付百分比, 预付款百分比,
+         prepayment cap, prepayment percentage, prepayment %]
+      - [没有设置, 没设置, 没设, 未设置, 不设置, 没有填, 没填, 未填, 为空, 是空的, 空着,
+         not set, no max, without, has no, have no, empty, blank, unset]
+      - [预付款 pa, 预付 pa, 建预付, 预付, 预付款, prepayment pa, prepay, prepaid, prepayment]
+    unless: [在哪, 哪里设置, 怎么设置, 如何设置, where do, how do i set, how to set]
+    says:
+      en: >
+        {yes_en} A vendor with no Max Prepayment % of its own takes the system
+        cap in Admin Panel → Prepayment Config, currently {pct}% — {then_en}
+      zh: >
+        {yes_zh}供应商没有设置自己的 Max Prepayment % 时，适用 Admin Panel → Prepayment
+        Config 的系统上限，目前为 {pct}%，{then_zh}
+    test:
+      - "tests/test_rule_registry.py::test_prepayment_cap_reads_the_vendor_then_the_system"
+      - "tests/test_assistant_asst2_g.py::test_a_vendor_without_a_cap_can_be_prepaid_up_to_the_system_cap"
