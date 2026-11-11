@@ -95,22 +95,26 @@ async def list_hazards(
     return list((await db.execute(stmt.limit(limit))).scalars())
 
 
-async def _picked(db: AsyncSession, vocabulary: str, ids: list[uuid.UUID]) -> list[dict]:
-    """[{id, label}] for entries picked from one of HSE's lists, as named now."""
+async def _picked(db: AsyncSession, vocabulary: str, ids: list[uuid.UUID],
+                  kept: list[dict] | None = None) -> list[dict]:
+    """[{id, label}] for entries picked from one of HSE's lists: as named now if
+    new to the record, as recorded if it already had them."""
     from app.api.v1.risk import _snapshot
-    return await _snapshot(db, vocabulary, ids)
+    return await _snapshot(db, vocabulary, ids, kept)
 
 
-async def _apply_lists(db: AsyncSession, fields: dict) -> None:
+async def _apply_lists(db: AsyncSession, fields: dict, hazard: Hazard | None = None) -> None:
     """Round 12, HAZ-11: the kinds and controls picked, snapshotted. The first
     kind is also the hazard's single kind, for everything that reads one."""
     ids = fields.pop("hazard_type_ids", None)
     if ids is not None:
-        fields["hazard_types"] = await _picked(db, "hazard", ids)
+        fields["hazard_types"] = await _picked(db, "hazard", ids,
+                                               hazard.hazard_types if hazard else None)
         fields["hazard_type_id"] = ids[0] if ids else None
     controls = fields.pop("hazard_control_ids", None)
     if controls is not None:
-        fields["hazard_controls"] = await _picked(db, "hazard_control", controls)
+        fields["hazard_controls"] = await _picked(db, "hazard_control", controls,
+                                                  hazard.hazard_controls if hazard else None)
 
 
 async def get_hazard(db: AsyncSession, hazard_id: uuid.UUID) -> Hazard:
@@ -173,7 +177,7 @@ async def create_hazard(db: AsyncSession, payload: dict, *, creator_id: uuid.UUI
 async def update_hazard(db: AsyncSession, hazard: Hazard, fields: dict, *,
                         editor_id: uuid.UUID | None = None) -> Hazard:
     fields = dict(fields)
-    await _apply_lists(db, fields)
+    await _apply_lists(db, fields, hazard)
     if "location_id" in fields:
         (hazard.location_path, hazard.department_id,
          hazard.department_name) = await _place(db, fields["location_id"])
@@ -268,12 +272,13 @@ async def get_jsa(db: AsyncSession, jsa_id: uuid.UUID) -> Jsa:
 
 
 async def apply_jsa_lists(db: AsyncSession, fields: dict, *,
-                          current_system: uuid.UUID | None = None) -> None:
+                          current_system: uuid.UUID | None = None,
+                          current_ppe: list[dict] | None = None) -> None:
     """Round 12: PPE picked from the list, snapshotted; a System must be one
     still offered, unless it is the one the JSA already had."""
     ids = fields.pop("ppe_ids", None)
     if ids is not None:
-        fields["ppe_items"] = await _picked(db, "ppe", ids)
+        fields["ppe_items"] = await _picked(db, "ppe", ids, current_ppe)
     if fields.get("system_id") and fields["system_id"] != current_system:
         from app.models.vocabulary import VocabularyItem
         item = await db.get(VocabularyItem, fields["system_id"])
@@ -332,7 +337,12 @@ async def replace_steps(db: AsyncSession, jsa: Jsa, steps: list[dict]) -> list[J
             f"{jsa.jsa_no} is {jsa.status}. Create a new version rather than editing "
             "one people have already signed.")
 
+    # Picks the analysis already had keep their wording (B3/B4 review M2).
+    had_hazards: list[dict] = []
+    had_controls: list[dict] = []
     for existing in await steps_for(db, jsa.id):
+        had_hazards += existing.hazard_items or []
+        had_controls += existing.control_items or []
         await db.delete(existing)
     await db.flush()
 
@@ -346,8 +356,9 @@ async def replace_steps(db: AsyncSession, jsa: Jsa, steps: list[dict]) -> list[J
             control_level=step.get("control_level"),
             hazard_id=step.get("hazard_id"),
             residual_rating=step.get("residual_rating"),
-            hazard_items=await _picked(db, "hazard", step.get("hazard_ids") or []),
-            control_items=await _picked(db, "hazard_control", step.get("control_ids") or []),
+            hazard_items=await _picked(db, "hazard", step.get("hazard_ids") or [], had_hazards),
+            control_items=await _picked(db, "hazard_control", step.get("control_ids") or [],
+                                        had_controls),
         )
         db.add(row)
         rows.append(row)

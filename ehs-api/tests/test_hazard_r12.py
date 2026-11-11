@@ -172,3 +172,33 @@ async def test_photographs_on_a_hazard_follow_the_hazard(hse_manager, worker, li
     assert (await hse.get(f"/api/v1/records/memo/{h['id']}/attachments")).status_code == 404
     assert (await hse.get(f"/api/v1/records/jsa/{h['id']}/attachments")).status_code == 404, \
         "the id has to be a JSA's"
+
+
+async def test_saving_unchanged_keeps_the_recorded_wording_and_is_no_revision(
+        hse_manager, lists, db_session):
+    """★ B3/B4 review M2: the edit form sends the picks on every save, and they
+    were re-read from today's list — so after HSE renamed an entry, opening an
+    old hazard and pressing Save renamed its kinds, stamped "last revised" and
+    wrote a change. An entry the hazard already had keeps its wording; a new
+    one takes the list's."""
+    _, hse = hse_manager
+    body = {"title": "Bottle conveyor",
+            "hazard_type_ids": [str(lists["pinch"].id)],
+            "hazard_control_ids": [str(lists["guard"].id)]}
+    h = (await hse.post("/api/v1/hazards", json=body)).json()
+    old_kind, old_control = lists["pinch"].label, lists["guard"].label
+    lists["pinch"].label = f"Nip point {uuid.uuid4().hex[:4]}"
+    lists["guard"].label = f"Interlocked guard {uuid.uuid4().hex[:4]}"
+    await db_session.commit()
+
+    same = await hse.patch(f"/api/v1/hazards/{h['id']}", json=body)
+    assert same.status_code == 200, same.text
+    assert [k["label"] for k in same.json()["hazard_types"]] == [old_kind]
+    assert [c["label"] for c in same.json()["hazard_controls"]] == [old_control]
+    assert same.json()["revised_at"] is None, "★ nothing changed, so not revised"
+
+    more = await hse.patch(f"/api/v1/hazards/{h['id']}", json={
+        **body, "hazard_type_ids": [str(lists["pinch"].id), str(lists["noise"].id)]})
+    assert [k["label"] for k in more.json()["hazard_types"]] == [old_kind, lists["noise"].label], \
+        "the one it had keeps its wording; the new one takes the list's"
+    assert more.json()["revised_at"] is not None

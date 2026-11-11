@@ -423,7 +423,8 @@ async def update_jsa(
     if "equipment_id" in fields:
         from app.services import equipment_ref
         await equipment_ref.check(db, fields["equipment_id"], jsa.equipment_id)
-    await crud.apply_jsa_lists(db, fields, current_system=jsa.system_id)
+    await crud.apply_jsa_lists(db, fields, current_system=jsa.system_id,
+                               current_ppe=jsa.ppe_items)
     for key, value in fields.items():
         setattr(jsa, key, value)
     await db.flush()

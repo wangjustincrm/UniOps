@@ -138,19 +138,32 @@ async def _consequences(db) -> list[ConsequenceOut]:
             for c in CONSEQUENCE_TYPES]
 
 
-async def _snapshot(db, vocabulary: str, ids: list[uuid.UUID]) -> list[dict]:
-    """Entries from a list, as {id, label}, refusing any not on it."""
+async def _snapshot(db, vocabulary: str, ids: list[uuid.UUID],
+                    kept: list[dict] | None = None) -> list[dict]:
+    """Entries from a list, as {id, label}, refusing any not on it.
+
+    `kept` is what the record already holds. ★ An entry it already had keeps
+    the wording it was recorded with (B3/B4 review M2): an edit form sends the
+    picks back on every save, and re-reading them would rename an old record's
+    entries to today's wording and count that as a revision. Only entries new
+    to the record are looked up — and an entry since removed from the list
+    stays on the record that had it.
+    """
     from app.models.vocabulary import VocabularyItem
     if not ids:
         return []
+    had = {str(k.get("id")): k.get("label") for k in (kept or [])}
+    new = [i for i in ids if str(i) not in had]
     rows = {r.id: r for r in (await db.execute(select(VocabularyItem).where(
-        VocabularyItem.vocabulary_code == vocabulary, VocabularyItem.id.in_(ids)))).scalars()}
-    missing = [i for i in ids if i not in rows]
+        VocabularyItem.vocabulary_code == vocabulary, VocabularyItem.id.in_(new)))).scalars()} \
+        if new else {}
+    missing = [i for i in new if i not in rows]
     if missing:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             f"Not on the {vocabulary.replace('_', ' ')} list: {missing[0]}")
     from app.crud.vocabulary import label_for
-    return [{"id": str(i), "label": await label_for(db, vocabulary, i)} for i in dict.fromkeys(ids)]
+    return [{"id": str(i), "label": had[str(i)] if str(i) in had
+             else await label_for(db, vocabulary, i)} for i in dict.fromkeys(ids)]
 
 
 @router.get("/matrix", response_model=MatrixOut)

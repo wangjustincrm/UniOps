@@ -113,14 +113,16 @@ async def by_qr_token(db: AsyncSession, token: str) -> Permit | None:
         select(Permit).where(Permit.qr_token == token))).scalar_one_or_none()
 
 
-async def _lists(db: AsyncSession, fields: dict) -> None:
-    """Round 12, PMT-01: the picks, snapshotted."""
+async def _lists(db: AsyncSession, fields: dict, permit: Permit | None = None) -> None:
+    """Round 12, PMT-01: the picks, snapshotted; those the permit already had
+    keep their wording (B3/B4 review M2)."""
     from app.api.v1.risk import _snapshot
     for ids_key, out_key, vocabulary in (("hazard_ids", "hazard_items", "hazard"),
                                          ("control_ids", "control_items", "hazard_control")):
         ids = fields.pop(ids_key, None)
         if ids is not None:
-            fields[out_key] = await _snapshot(db, vocabulary, ids)
+            fields[out_key] = await _snapshot(db, vocabulary, ids,
+                                              getattr(permit, out_key) if permit else None)
 
 
 async def create_permit(db: AsyncSession, payload: dict, *, requester_id: uuid.UUID) -> Permit:
@@ -164,7 +166,7 @@ async def update_permit(db: AsyncSession, permit: Permit, fields: dict) -> Permi
             f"{permit.permit_no} is {effective(permit)} and cannot be edited. "
             "Close it and raise a new one.")
     fields = dict(fields)
-    await _lists(db, fields)
+    await _lists(db, fields, permit)
     if "location_id" in fields:
         (permit.location_path, permit.department_id,
          permit.department_name) = await _place(db, fields["location_id"])
