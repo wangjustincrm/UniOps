@@ -61,8 +61,12 @@ def test_setting_another_zone_moves_everything():
 
 
 def test_invalid_zone_is_refused_and_current_kept():
-    assert not pt.set_plant_tz("UTC-5")
-    assert not pt.set_plant_tz("")
+    # Offsets and legacy aliases are not zone names: no DST, or a reversed
+    # sign (Etc/GMT+5 is UTC-5).
+    for bad in ("UTC-5", "", "Etc/GMT+5", "EST", "EST5EDT", "UTC", "Not/AZone"):
+        assert not pt.set_plant_tz(bad), bad
+    assert "America/Toronto" in pt.timezone_choices()
+    assert not any(z.startswith("Etc/") for z in pt.timezone_choices())
     assert pt.plant_tz_name() == "America/Toronto"
 
 
@@ -86,8 +90,9 @@ async def test_timezone_setting_round_trips_and_reaches_branding(admin_client, c
 
 @pytest.mark.asyncio
 async def test_offset_instead_of_zone_name_is_rejected(admin_client):
-    r = await admin_client.patch(CONFIG_URL, json={"timezone": "UTC-5"})
-    assert r.status_code == 422
+    for bad in ("UTC-5", "Etc/GMT+5", "EST"):
+        r = await admin_client.patch(CONFIG_URL, json={"timezone": bad})
+        assert r.status_code == 422, bad
     r = await admin_client.get(CONFIG_URL)
     assert r.json()["timezone"] == "America/Toronto"
 

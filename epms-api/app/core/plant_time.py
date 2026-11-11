@@ -29,7 +29,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import date, datetime, time, timedelta, timezone, tzinfo
-from zoneinfo import ZoneInfo
+from functools import lru_cache
+from zoneinfo import ZoneInfo, available_timezones
 
 from sqlalchemy import text
 
@@ -43,18 +44,30 @@ _MONTHS = ("JAN", "FEB", "MAR", "APR", "MAY", "JUN",
 
 _tz_name: str = DEFAULT_TIMEZONE
 _tz: tzinfo = ZoneInfo(DEFAULT_TIMEZONE)
+_failed_reads = 0
+_WARN_AFTER = 5   # consecutive failed reads (5 minutes) before it is a warning
 
 
 # ── The setting ─────────────────────────────────────────────────────────────
 
+@lru_cache(maxsize=1)
+def _region_zones() -> frozenset[str]:
+    # "Area/City" names only. Etc/GMT+5 is a fixed offset (and its sign is the
+    # reverse of what it looks like); EST, EST5EDT, UTC and friends are legacy
+    # aliases. Neither is what a plant setting should be.
+    return frozenset(
+        z for z in available_timezones()
+        if "/" in z and not z.startswith(("Etc/", "SystemV/", "posix/", "right/"))
+    )
+
+
 def is_valid_timezone(name: str | None) -> bool:
-    if not name:
-        return False
-    try:
-        ZoneInfo(name)
-        return True
-    except Exception:  # noqa: BLE001 — ZoneInfoNotFoundError, ValueError, …
-        return False
+    return bool(name) and name in _region_zones()
+
+
+def timezone_choices() -> list[str]:
+    """Sorted list for the settings drop-down."""
+    return sorted(_region_zones())
 
 
 def set_plant_tz(name: str | None) -> bool:
@@ -77,15 +90,22 @@ def plant_tz() -> tzinfo:
 
 async def refresh_plant_tz(engine) -> None:
     """Read company_config.timezone. Never raises: a failed read keeps the
-    zone already in use (the column may not exist until epms-api migrates)."""
+    zone already in use (the column may not exist until epms-api migrates).
+    A read that keeps failing is logged as a warning: otherwise the service
+    would quietly stay on the default and ignore the setting."""
+    global _failed_reads
     try:
         async with engine.connect() as conn:
             name = (await conn.execute(
                 text("SELECT timezone FROM company_config LIMIT 1")
             )).scalar_one_or_none()
     except Exception as exc:  # noqa: BLE001
-        log.debug("plant timezone not read (%s); keeping %s", exc, _tz_name)
+        _failed_reads += 1
+        level = logging.WARNING if _failed_reads >= _WARN_AFTER else logging.DEBUG
+        log.log(level, "plant timezone not read %d time(s) running (%s); keeping %s",
+                _failed_reads, exc, _tz_name)
         return
+    _failed_reads = 0
     if name and name != _tz_name and not set_plant_tz(name):
         log.warning("company_config.timezone %r is not a valid zone; keeping %s", name, _tz_name)
 
