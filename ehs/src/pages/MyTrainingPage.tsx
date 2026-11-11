@@ -13,12 +13,17 @@
  * different screen for a different job, and the permission that guards it is
  * the reason this page is needed.
  */
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { CalendarDays, ChevronRight, GraduationCap } from 'lucide-react'
+import { Award, CalendarDays, ChevronRight, GraduationCap, Printer, Sheet } from 'lucide-react'
+import { Pagination, SortTh, sortParams, useSort } from '@uniops/shell'
 import { api, useFileOpener } from '@/lib/api'
 import MaterialsList from '@/components/MaterialsList'
-import { Card, Empty, LoadFailedNote, PageHeader, SectionTitle } from '@/components/ui'
+import { DateRangeFilter, useDateFilter } from '@/components/ListView'
+import {
+  Card, Empty, LoadFailedNote, PageHeader, secondaryButton, SectionTitle, Tabs,
+} from '@/components/ui'
 import { formatDate } from '@/lib/formatDate'
 import { daysOverdue } from '@/lib/formatDate'
 
@@ -37,7 +42,14 @@ interface RunningSession {
   start_time: string | null; status: string; enrolled: number
 }
 
+const TABS = [
+  { key: 'mine', label: 'My training' },
+  { key: 'records', label: 'Records' },
+] as const
+type TabKey = (typeof TABS)[number]['key']
+
 export default function MyTrainingPage() {
+  const [tab, setTab] = useState<TabKey>('mine')
   // ★ Round 6, TC-16: whoever HSE names to run a session is usually an ordinary
   // employee, and the only list of sessions was the Training screen, which they
   // cannot open. Their own sessions are listed here instead, where they already
@@ -60,6 +72,11 @@ export default function MyTrainingPage() {
         title="My training"
         subtitle="What you have completed, and the certificate for each."
       />
+      {/* ★ Round 12, TRN-02: "provide a Records tab with similar functionality
+          as the records tab that the HSE role has" — search, print, export to
+          Excel, and every certificate at once — for your own records only. */}
+      <Tabs tabs={TABS} active={tab} onChange={setTab} />
+      {tab === 'records' ? <MyRecordsTab /> : <>
 
       {running.isError && <LoadFailedNote what="The sessions you run" />}
       {(running.data ?? []).length > 0 && (
@@ -158,6 +175,158 @@ export default function MyTrainingPage() {
           )
         })}
       </ul>
+      </>}
     </div>
+  )
+}
+
+interface MyRecord extends Record_ { provider: string | null }
+type SortKey = 'course_label' | 'completed_on' | 'expires_on' | 'delivery'
+const TH = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500'
+
+function MyRecordsTab() {
+  const [search, setSearch] = useState('')
+  const [type, setType] = useState<'' | 'internal' | 'external'>('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
+  const [sort, onSort] = useSort<SortKey>(null, () => setPage(1))
+  const dateFilter = useDateFilter(() => setPage(1))
+  const { from, to } = dateFilter.range
+
+  // One query string for the list, the print, the spreadsheet and the
+  // certificates, so the four cannot disagree about what was asked for.
+  const filters = new URLSearchParams()
+  if (search.trim()) filters.set('search', search.trim())
+  if (from) filters.set('completed_from', from)
+  if (to) filters.set('completed_to', to)
+  if (type) filters.set('delivery', type)
+  const qs = filters.toString()
+
+  const records = useQuery({
+    queryKey: ['my-training', 'records', qs, sort],
+    queryFn: () => {
+      const all = new URLSearchParams(filters)
+      Object.entries(sortParams(sort)).forEach(([k, v]) => all.set(k, String(v)))
+      return api.get<MyRecord[]>(`/api/v1/training/records/mine?${all}`)
+    },
+    placeholderData: (prev) => prev,
+  })
+  const rows = records.data ?? []
+  const shown = rows.slice((page - 1) * pageSize, page * pageSize)
+  const printer = useFileOpener()
+  const exporter = useFileOpener()
+  const certs = useFileOpener()
+  const opener = useFileOpener()
+  const error = printer.error || exporter.error || certs.error || opener.error
+  const ours = rows.filter((r) => r.delivery !== 'external').length
+
+  return (
+    <>
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <input className="h-10 min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 text-sm"
+               value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+               placeholder="Search by course" aria-label="Search my training records" />
+        <select className="h-10 rounded-lg border border-neutral-200 px-2 text-sm" value={type}
+                onChange={(e) => { setType(e.target.value as typeof type); setPage(1) }}
+                aria-label="Type">
+          <option value="">Any type</option>
+          <option value="internal">Taken here</option>
+          <option value="external">Taken elsewhere</option>
+        </select>
+        <DateRangeFilter {...dateFilter} />
+      </div>
+
+      <div className="mb-3 flex flex-wrap justify-end gap-2">
+        <button type="button" className={secondaryButton} disabled={printer.busy}
+                onClick={() => printer.open(`/api/v1/training/records/mine/print${qs ? `?${qs}` : ''}`,
+                                            'my-training-records.pdf')}>
+          <Printer className="h-4 w-4" aria-hidden />
+          {printer.busy ? 'Preparing…' : 'Print this list'}
+        </button>
+        <button type="button" className={secondaryButton} disabled={exporter.busy}
+                onClick={() => exporter.open(`/api/v1/training/records/mine/export${qs ? `?${qs}` : ''}`,
+                                             'my-training-records.xlsx')}>
+          <Sheet className="h-4 w-4" aria-hidden />
+          {exporter.busy ? 'Preparing…' : 'Export to Excel'}
+        </button>
+        <button type="button" className={secondaryButton} disabled={certs.busy || rows.length === 0}
+                onClick={() => certs.open(`/api/v1/training/records/mine/certificates${qs ? `?${qs}` : ''}`,
+                                          'my-certificates.pdf')}>
+          <Award className="h-4 w-4" aria-hidden />
+          {certs.busy ? 'Preparing…' : `Print all certificates${ours ? ` (${ours})` : ''}`}
+        </button>
+      </div>
+      <p className="mb-2 text-xs text-neutral-500">
+        Certificates for training taken here print one to a page; training
+        taken elsewhere is listed at the end, since its certificate is the
+        provider&rsquo;s.
+      </p>
+      {error && (
+        <p className="mb-3 rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">{error}</p>
+      )}
+      {records.isError && <LoadFailedNote what="Your training records" />}
+
+      <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+        <div className="max-h-[calc(100vh-18rem)] overflow-auto">
+          <table className="w-full min-w-[640px] text-sm">
+            <thead className="sticky top-0 z-10 bg-neutral-50 shadow-[0_1px_0_#e5e5e5]">
+              <tr>
+                <SortTh label="Course" sortKey="course_label" sort={sort} onSort={onSort} className={TH} />
+                <SortTh label="Completed" sortKey="completed_on" sort={sort} onSort={onSort} className={TH} />
+                <SortTh label="Expires" sortKey="expires_on" sort={sort} onSort={onSort} className={TH} />
+                <SortTh label="Type" sortKey="delivery" sort={sort} onSort={onSort} className={TH} />
+                <th className={TH}>Certificate</th>
+              </tr>
+            </thead>
+            <tbody>
+              {records.isPending && (
+                <tr><td colSpan={5} className="p-6 text-center text-sm text-neutral-500">Loading…</td></tr>
+              )}
+              {records.data && rows.length === 0 && (
+                <tr><td colSpan={5} className="p-8 text-center text-sm text-neutral-500">
+                  {qs ? 'Nothing matches.' : 'Nothing is on your training record yet.'}
+                </td></tr>
+              )}
+              {shown.map((r) => {
+                const lapsed = r.expires_on ? (daysOverdue(r.expires_on) ?? 0) > 0 : false
+                return (
+                  <tr key={r.id} className="border-t border-neutral-100">
+                    <td className="px-3 py-2 font-medium text-neutral-900">{r.course_label}</td>
+                    <td className="px-3 py-2 tabular-nums">{formatDate(r.completed_on)}</td>
+                    <td className={`px-3 py-2 tabular-nums ${lapsed ? 'font-semibold text-danger-700' : ''}`}>
+                      {r.expires_on ? `${formatDate(r.expires_on)}${lapsed ? ' · expired' : ''}` : 'Does not expire'}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-neutral-600">
+                      {r.delivery === 'external' ? `Elsewhere${r.provider ? ` · ${r.provider}` : ''}` : 'Here'}
+                    </td>
+                    <td className="px-3 py-2">
+                      {r.delivery === 'external' ? (
+                        r.certificate_file_id ? (
+                          <button type="button" disabled={opener.busy}
+                                  onClick={() => opener.open(`/api/v1/training/records/${r.id}/certificate`,
+                                                             `certificate-${r.course_label}.pdf`)}
+                                  className="text-xs font-semibold text-primary-700 hover:underline disabled:opacity-40">
+                            Open
+                          </button>
+                        ) : <span className="text-xs text-neutral-400">On the My training tab</span>
+                      ) : (
+                        <button type="button" disabled={opener.busy}
+                                onClick={() => opener.open(`/api/v1/training/records/${r.id}/certificate/issued`,
+                                                           `certificate-${r.course_label}.pdf`)}
+                                className="text-xs font-semibold text-primary-700 hover:underline disabled:opacity-40">
+                          Print
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        <Pagination page={page} pageSize={pageSize} total={rows.length} onPageChange={setPage}
+                    onPageSizeChange={(n) => { setPageSize(n); setPage(1) }} />
+      </div>
+    </>
   )
 }

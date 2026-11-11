@@ -59,7 +59,8 @@ LOGO_MAX_W = 70 * mm
 LOGO_MAX_H = 20 * mm
 
 
-def render(
+def _draw(
+    c,
     *,
     person_name: str,
     course_name: str,
@@ -73,11 +74,9 @@ def render(
     signatory: str | None = None,
     plant_name: str = "Canada Royal Milk",
     logo_data_url: str | None = None,
-) -> bytes:
-    """One certificate, landscape A4."""
-    buffer = io.BytesIO()
+) -> None:
+    """One certificate on the canvas's current page, landscape A4."""
     width, height = landscape(A4)
-    c = pdfcanvas.Canvas(buffer, pagesize=landscape(A4))
 
     # A border, inset, so a printer's unprintable margin does not clip it.
     c.setStrokeColor(RULE)
@@ -141,5 +140,60 @@ def render(
 
     c.setFillColor(black)
     c.showPage()
+
+
+def render(**fields) -> bytes:
+    """One certificate, landscape A4."""
+    return render_many([fields])
+
+
+# ★ Round 12, TRN-03: "I want a way to print all the certificates for all
+# workers who have first aid training that is not expired." More than this is
+# a print run nobody means to start from a search box.
+MAX_BATCH = 200
+
+
+def render_many(certificates: list[dict], *, elsewhere: list[dict] | None = None,
+                **shared) -> bytes:
+    """Many certificates, one per page, in one PDF (round 12, TRN-02/03).
+
+    `shared` holds what every page has in common (heading, wording, signatory,
+    logo); each item holds the person and course. `elsewhere` lists training
+    taken outside: its certificate is the provider's, so it is named on a
+    closing page rather than reissued here or merged in (D10).
+    """
+    buffer = io.BytesIO()
+    c = pdfcanvas.Canvas(buffer, pagesize=landscape(A4))
+    for item in certificates:
+        _draw(c, **{**shared, **item})
+    if elsewhere:
+        _elsewhere_page(c, elsewhere)
+    if not certificates and not elsewhere:
+        c.showPage()
     c.save()
     return buffer.getvalue()
+
+
+def _elsewhere_page(c, rows: list[dict]) -> None:
+    width, height = landscape(A4)
+    y = height - 24 * mm
+    c.setFont("Helvetica-Bold", 13)
+    c.drawString(20 * mm, y, "Training taken elsewhere — certificates not included")
+    y -= 7 * mm
+    c.setFont("Helvetica", 9)
+    c.setFillColor(MUTED)
+    c.drawString(20 * mm, y, "The provider issues these. Attach or print the provider's "
+                             "certificate from the training record.")
+    c.setFillColor(black)
+    y -= 9 * mm
+    for row in rows:
+        if y < 20 * mm:
+            c.showPage()
+            y = height - 20 * mm
+        line = (f"{row['person_name']} — {row['course_name']} — completed "
+                f"{row['completed_on']:%d %b %Y}"
+                + (f" — {row['provider']}" if row.get("provider") else ""))
+        c.setFont(pdf_fonts.font_for(line), 9)
+        c.drawString(20 * mm, y, line[:150])
+        y -= 5.5 * mm
+    c.showPage()

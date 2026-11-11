@@ -22,7 +22,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.course import CourseDelivery, CourseEnrolment
@@ -71,8 +71,21 @@ async def list_deliveries(
     attendee_id: uuid.UUID | None = None,
     status_in: list[str] | None = None,
     limit: int = 100,
+    search: str | None = None,
+    date_from=None,
+    date_to=None,
 ) -> list[CourseDelivery]:
     stmt = select(CourseDelivery)
+    # ★ Round 12, TRN-04: "allow items to be searched by title, date or
+    # number" — in SQL, so a session older than the 100 most recent is found.
+    if search and search.strip():
+        like = f"%{search.strip()}%"
+        stmt = stmt.where(or_(CourseDelivery.delivery_no.ilike(like),
+                              CourseDelivery.title.ilike(like)))
+    if date_from:
+        stmt = stmt.where(CourseDelivery.session_date >= date_from)
+    if date_to:
+        stmt = stmt.where(CourseDelivery.session_date <= date_to)
     if course_id:
         stmt = stmt.where(CourseDelivery.course_id == course_id)
     if coordinator_id:

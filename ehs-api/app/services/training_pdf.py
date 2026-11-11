@@ -210,6 +210,7 @@ def render(
 def describe(
     *, search: str | None, completed_from: date | None, completed_to: date | None,
     person: str | None, course: str | None, expiry: str | None = None,
+    delivery: str | None = None,
 ) -> list[str]:
     """The filter, in the words the screen uses for it.
 
@@ -233,11 +234,15 @@ def describe(
     if expiry:
         out.append(EXPIRY_WORDS[expiry]
                    + " — each person's latest record of a course, people still here")
+    if delivery:
+        out.append("Taken here" if delivery == "internal" else "Taken elsewhere")
     return out
 
 
 # Round 9: the compliance screen's figures, as a filter in words.
 EXPIRY_WORDS = {
+    # Round 12, TRN-03.
+    "valid": "Not expired",
     "expired": "Expired",
     "30d": "Expiring within 30 days",
     "6m": "Expiring within 6 months",

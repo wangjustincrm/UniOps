@@ -39,6 +39,9 @@ from app.schemas.training import (
 )
 from app.services.day_range import plant_today
 
+EXPIRY_PATTERN = "^(expired|30d|6m|1y|valid)$"
+DELIVERY_PATTERN = "^(internal|external)$"
+
 COURSE_MATERIAL_TYPES = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
 
 router = APIRouter()
@@ -239,7 +242,16 @@ async def _with_who_ran_them(db, records) -> list[TrainingRecordOut]:
 
 
 @router.get("/records/mine", response_model=list[TrainingRecordOut])
-async def my_records(db: SessionDep, user: CanReportIncident):
+async def my_records(
+    db: SessionDep, user: CanReportIncident,
+    search: str | None = Query(default=None, max_length=100, description="Course name"),
+    completed_from: date | None = None,
+    completed_to: date | None = None,
+    order: str = Query(default="date", pattern="^(date|topic)$"),
+    delivery: str | None = Query(default=None, pattern=DELIVERY_PATTERN),
+    sort: str | None = Query(default=None, pattern="^(course_label|completed_on|expires_on|delivery)$"),
+    dir: str = Query(default="asc", pattern="^(asc|desc)$"),
+):
     """What this person has been trained on.
 
     ★ Its own endpoint, gated on being an employee. Reading the register is a
@@ -247,9 +259,172 @@ async def my_records(db: SessionDep, user: CanReportIncident):
     worker holds none of the training permissions — so without this the
     certificate the module issues them would exist and be unreachable, which is
     where this module keeps ending up.
+
+    ★ Round 12, TRN-02: "provide a search option, date, type or training topic"
+    — narrowed the same way the register is, and only ever to this person.
     """
-    return await _with_who_ran_them(db, await crud.list_training(
-        db, user_id=_user_id(user), order="date"))
+    rows = await crud.list_training(
+        db, user_id=_user_id(user), search=search, completed_from=completed_from,
+        completed_to=completed_to, order=order, delivery=delivery)
+    if sort:
+        # One person's records — a handful — sorted here by the column asked
+        # for, blanks last whichever way (the list rule: the server sorts).
+        present = [r for r in rows if getattr(r, sort) is not None]
+        blank = [r for r in rows if getattr(r, sort) is None]
+        present.sort(key=lambda r: (str(getattr(r, sort)).lower() if sort in (
+            "course_label", "delivery") else getattr(r, sort), r.completed_on),
+            reverse=dir == "desc")
+        rows = present + blank
+    return await _with_who_ran_them(db, rows)
+
+
+@router.get("/records/mine/print")
+async def print_my_records(
+    db: SessionDep, user: CanReportIncident,
+    search: str | None = Query(default=None, max_length=100),
+    completed_from: date | None = None,
+    completed_to: date | None = None,
+    order: str = Query(default="date", pattern="^(date|topic)$"),
+    delivery: str | None = Query(default=None, pattern=DELIVERY_PATTERN),
+):
+    """★ Round 12, TRN-02: my own records, printed — the register's page,
+    narrowed to me whatever is asked."""
+    rows, described, by = await _register_for_export(
+        db, user, user_id=_user_id(user), course_id=None, search=search,
+        completed_from=completed_from, completed_to=completed_to, order=order,
+        delivery=delivery)
+    return await _print_response(db, rows, described, by)
+
+
+@router.get("/records/mine/export")
+async def export_my_records(
+    db: SessionDep, user: CanReportIncident,
+    search: str | None = Query(default=None, max_length=100),
+    completed_from: date | None = None,
+    completed_to: date | None = None,
+    order: str = Query(default="date", pattern="^(date|topic)$"),
+    delivery: str | None = Query(default=None, pattern=DELIVERY_PATTERN),
+):
+    """★ Round 12, TRN-02: my own records as a spreadsheet."""
+    rows, described, by = await _register_for_export(
+        db, user, user_id=_user_id(user), course_id=None, search=search,
+        completed_from=completed_from, completed_to=completed_to, order=order,
+        delivery=delivery)
+    return _xlsx_response(rows, described, by, name="my-training-records")
+
+
+@router.get("/records/mine/certificates")
+async def my_certificates(
+    db: SessionDep, user: CanReportIncident,
+    search: str | None = Query(default=None, max_length=100),
+    completed_from: date | None = None,
+    completed_to: date | None = None,
+    delivery: str | None = Query(default=None, pattern=DELIVERY_PATTERN),
+):
+    """★ Round 12, TRN-02: "a way to print a single or all certificates" —
+    every certificate among my records as shown, one per page."""
+    rows = await crud.list_training(
+        db, user_id=_user_id(user), search=search, completed_from=completed_from,
+        completed_to=completed_to, order="date", delivery=delivery)
+    return await _certificates_response(db, rows, name="my-certificates")
+
+
+@router.get("/records/certificates")
+async def register_certificates(
+    db: SessionDep,
+    user: CanReadTraining,  # noqa: ARG001
+    user_id: uuid.UUID | None = None,
+    course_id: uuid.UUID | None = None,
+    search: str | None = Query(default=None, description="Person or course name"),
+    completed_from: date | None = None,
+    completed_to: date | None = None,
+    order: str = Query(default="person", pattern="^(date|person|topic)$"),
+    expiry: str | None = Query(default=None, pattern=EXPIRY_PATTERN),
+    delivery: str | None = Query(default=None, pattern=DELIVERY_PATTERN),
+):
+    """★ Round 12, TRN-03: "on the training records registry, create a way to
+    print a worker or workers certificates based on the search criteria. For
+    example … all the certificates for all workers who have first aid training
+    that is not expired." The register's own parameters, so what prints is
+    what the list shows; capped, and refused above the cap with how many
+    matched, rather than quietly cut short."""
+    rows = await crud.list_training(
+        db, user_id=user_id, course_id=course_id, search=search,
+        completed_from=completed_from, completed_to=completed_to, order=order,
+        expiry=expiry, delivery=delivery)
+    return await _certificates_response(db, rows, name="training-certificates")
+
+
+async def _certificate_shared(db) -> dict:
+    """What every certificate page has in common: the wording from Settings
+    and the logo from Admin → Company Settings (round 9)."""
+    config = (await db.execute(select(EhsConfig).where(EhsConfig.id == 1))).scalar_one_or_none()
+    return {
+        "heading": config.certificate_heading if config else None,
+        "body": config.certificate_body if config else None,
+        "signatory": config.certificate_signatory if config else None,
+        "logo_data_url": (await db.execute(
+            select(CompanyConfig.logo_data_url).limit(1))).scalar_one_or_none(),
+    }
+
+
+def _certificate_item(record) -> dict:
+    return {
+        "person_name": record.user_name,
+        "course_name": record.course_label,
+        "course_code": None,
+        "completed_on": record.completed_on,
+        "expires_on": record.expires_on,
+        "record_no": str(record.id)[:8].upper(),
+        "verify_url": None,
+    }
+
+
+async def _certificates_response(db, rows, *, name: str) -> Response:
+    ours = [r for r in rows if r.delivery != "external"]
+    theirs = [r for r in rows if r.delivery == "external"]
+    if not ours and not theirs:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            "No training records match, so there are no certificates to print.")
+    if len(ours) > certificate_pdf.MAX_BATCH:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"{len(ours)} certificates match; up to {certificate_pdf.MAX_BATCH} print at "
+            "once. Narrow the search — by course, by dates or to records not expired.")
+    pdf = certificate_pdf.render_many(
+        [_certificate_item(r) for r in ours],
+        elsewhere=[{"person_name": r.user_name, "course_name": r.course_label,
+                    "completed_on": r.completed_on, "provider": r.provider} for r in theirs],
+        **await _certificate_shared(db))
+    return Response(
+        content=pdf, media_type="application/pdf",
+        headers={"Content-Disposition": content_disposition(name),
+                 "X-Certificates": str(len(ours)),
+                 "X-Taken-Elsewhere": str(len(theirs))})
+
+
+async def _print_response(db, rows, described, by) -> Response:
+    pdf = training_pdf.render(
+        # Dates as text for the page; the spreadsheet keeps them as dates so the
+        # column sorts.
+        rows=[{**r,
+               "completed_on": r["completed_on"].isoformat() if r["completed_on"] else None,
+               "expires_on": (r["expires_on"].isoformat() if r["expires_on"]
+                              else "Does not expire")}
+              for r in rows],
+        filters=described, printed_by=by,
+        logo_data_url=await branding.logo_data_url(db))
+    return Response(
+        content=pdf, media_type="application/pdf",
+        headers={"Content-Disposition": content_disposition("training-records")})
+
+
+def _xlsx_response(rows, described, by, *, name: str = "training-records") -> Response:
+    book = training_xlsx.render(rows=rows, filters=described, printed_by=by)
+    return Response(
+        content=book,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": content_disposition(name, extension="xlsx")})
 
 
 @router.get("/records", response_model=list[TrainingRecordOut])
@@ -263,15 +438,18 @@ async def list_records(
     completed_to: date | None = None,
     order: str = Query(default="date", pattern="^(date|person|topic)$"),
     expiry: str | None = Query(
-        default=None, pattern="^(expired|30d|6m|1y)$",
-        description="Round 9: only records expired, or expiring within 30 days, 6 months or a year"),
+        default=None, pattern=EXPIRY_PATTERN,
+        description="Round 9: only records expired, or expiring within 30 days, 6 months or a year; "
+                    "round 12: 'valid' — each person's latest, not expired"),
+    delivery: str | None = Query(default=None, pattern=DELIVERY_PATTERN,
+                                 description="Round 12, D10: internal or external"),
 ):
     """The register. "Who has done this course", "what has this person done"
     and "what happened in March" are three questions of the same list."""
     return await _with_who_ran_them(db, await crud.list_training(
         db, user_id=user_id, course_id=course_id, search=search,
         completed_from=completed_from, completed_to=completed_to, order=order,
-        expiry=expiry))
+        expiry=expiry, delivery=delivery))
 
 
 class ExpirySummaryOut(BaseModel):
@@ -292,7 +470,7 @@ async def expiry_summary(db: SessionDep, user: CanReadTraining):  # noqa: ARG001
 
 async def _register_for_export(
     db, user, *, user_id, course_id, search, completed_from, completed_to, order,
-    expiry=None,
+    expiry=None, delivery=None,
 ) -> tuple[list[dict], list[str], str | None]:
     """The rows, the filter in words, and who asked for them.
 
@@ -303,7 +481,7 @@ async def _register_for_export(
     rows = await crud.list_training(
         db, user_id=user_id, course_id=course_id, search=search,
         completed_from=completed_from, completed_to=completed_to, order=order,
-        expiry=expiry)
+        expiry=expiry, delivery=delivery)
     ran = await crud.who_ran_them(db, rows)
 
     # ★ The names from their own tables, not off the first row: filtered to one
@@ -328,7 +506,7 @@ async def _register_for_export(
     } for r in rows]
     described = training_pdf.describe(
         search=search, completed_from=completed_from, completed_to=completed_to,
-        person=person, course=course, expiry=expiry)
+        person=person, course=course, expiry=expiry, delivery=delivery)
     return out, described, await _resolve_name(db, _user_id(user))
 
 
@@ -343,8 +521,11 @@ async def export_records(
     completed_to: date | None = None,
     order: str = Query(default="date", pattern="^(date|person|topic)$"),
     expiry: str | None = Query(
-        default=None, pattern="^(expired|30d|6m|1y)$",
-        description="Round 9: only records expired, or expiring within 30 days, 6 months or a year"),
+        default=None, pattern=EXPIRY_PATTERN,
+        description="Round 9: only records expired, or expiring within 30 days, 6 months or a year; "
+                    "round 12: 'valid' — each person's latest, not expired"),
+    delivery: str | None = Query(default=None, pattern=DELIVERY_PATTERN,
+                                 description="Round 12, D10: internal or external"),
 ):
     """The same register as a spreadsheet. Round 5, TC-08.
 
@@ -354,13 +535,8 @@ async def export_records(
     rows, described, by = await _register_for_export(
         db, user, user_id=user_id, course_id=course_id, search=search,
         completed_from=completed_from, completed_to=completed_to, order=order,
-        expiry=expiry)
-    book = training_xlsx.render(rows=rows, filters=described, printed_by=by)
-    return Response(
-        content=book,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": content_disposition(
-            "training-records", extension="xlsx")})
+        expiry=expiry, delivery=delivery)
+    return _xlsx_response(rows, described, by)
 
 
 @router.get("/records/print")
@@ -374,8 +550,11 @@ async def print_records(
     completed_to: date | None = None,
     order: str = Query(default="date", pattern="^(date|person|topic)$"),
     expiry: str | None = Query(
-        default=None, pattern="^(expired|30d|6m|1y)$",
-        description="Round 9: only records expired, or expiring within 30 days, 6 months or a year"),
+        default=None, pattern=EXPIRY_PATTERN,
+        description="Round 9: only records expired, or expiring within 30 days, 6 months or a year; "
+                    "round 12: 'valid' — each person's latest, not expired"),
+    delivery: str | None = Query(default=None, pattern=DELIVERY_PATTERN,
+                                 description="Round 12, D10: internal or external"),
 ):
     """The same list, as a page somebody can hand over.
 
@@ -391,20 +570,8 @@ async def print_records(
     rows, described, by = await _register_for_export(
         db, user, user_id=user_id, course_id=course_id, search=search,
         completed_from=completed_from, completed_to=completed_to, order=order,
-        expiry=expiry)
-    pdf = training_pdf.render(
-        # Dates as text for the page; the spreadsheet keeps them as dates so the
-        # column sorts.
-        rows=[{**r,
-               "completed_on": r["completed_on"].isoformat() if r["completed_on"] else None,
-               "expires_on": (r["expires_on"].isoformat() if r["expires_on"]
-                              else "Does not expire")}
-              for r in rows],
-        filters=described, printed_by=by,
-        logo_data_url=await branding.logo_data_url(db))
-    return Response(
-        content=pdf, media_type="application/pdf",
-        headers={"Content-Disposition": content_disposition("training-records")})
+        expiry=expiry, delivery=delivery)
+    return await _print_response(db, rows, described, by)
 
 
 @router.post("/records/{record_id}/certificate", response_model=TrainingRecordOut)
@@ -476,22 +643,7 @@ async def issued_certificate(
             "This course was taken elsewhere, so the certificate is theirs to "
             "issue. Attach the one they gave you instead.")
 
-    config = (await db.execute(select(EhsConfig).where(EhsConfig.id == 1))).scalar_one_or_none()
-    pdf = certificate_pdf.render(
-        person_name=record.user_name,
-        course_name=record.course_label,
-        course_code=None,
-        completed_on=record.completed_on,
-        expires_on=record.expires_on,
-        record_no=str(record.id)[:8].upper(),
-        verify_url=None,
-        heading=config.certificate_heading if config else None,
-        body=config.certificate_body if config else None,
-        signatory=config.certificate_signatory if config else None,
-        # Round 9: the logo from Admin → Company Settings.
-        logo_data_url=(await db.execute(
-            select(CompanyConfig.logo_data_url).limit(1))).scalar_one_or_none(),
-    )
+    pdf = certificate_pdf.render(**_certificate_item(record), **await _certificate_shared(db))
     # ★ Through the helper: HTTP headers are latin-1, so a name that needed the
     # CJK font cannot go in one — the download 500s for exactly the people this
     # work was about.

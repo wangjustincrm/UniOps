@@ -210,6 +210,10 @@ async def list_sessions(
     mine: bool = Query(default=False, description="Sessions I have been asked to run"),
     attending: bool = Query(default=False, description="Sessions I am booked on"),
     status_in: list[str] | None = Query(default=None, alias="status"),
+    search: str | None = Query(default=None, max_length=100,
+                               description="Round 12, TRN-04: session number or title"),
+    date_from: date | None = None,
+    date_to: date | None = None,
 ):
     """Sessions. Everybody may list their own; the whole list needs training-read.
 
@@ -231,7 +235,7 @@ async def list_sessions(
         db, course_id=course_id,
         coordinator_id=uid if mine else None,
         attendee_id=uid if attending else None,
-        status_in=status_in))
+        status_in=status_in, search=search, date_from=date_from, date_to=date_to))
 
 
 @router.post("", response_model=DeliveryOut, status_code=status.HTTP_201_CREATED)

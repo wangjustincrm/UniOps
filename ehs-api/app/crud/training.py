@@ -83,6 +83,18 @@ async def create_course(db: AsyncSession, payload) -> Course:
 
 
 async def update_course(db: AsyncSession, course: Course, fields: dict) -> Course:
+    """★ Round 12, TRN-08 / Q14: "certificates should stay once issued. a new
+    valid for period should only affect new course sessions." A record keeps
+    the course name and expiry it was made with (course_label, expires_on), so
+    neither a rename nor a new period reaches anything already recorded."""
+    if fields.get("name"):
+        fields["name"] = fields["name"].strip()
+        same = (await db.execute(select(Course).where(
+            func.lower(Course.name) == fields["name"].lower(),
+            Course.id != course.id))).scalars().first()
+        if same is not None:
+            raise HTTPException(status.HTTP_409_CONFLICT,
+                                f"A course called {same.name} already exists")
     for key, value in fields.items():
         setattr(course, key, value)
     await db.flush()
@@ -191,6 +203,7 @@ async def list_training(
     order: str = "date",
     expiry: str | None = None,
     today: date | None = None,
+    delivery: str | None = None,
 ) -> list[TrainingRecord]:
     """The register, narrowed and ordered the way somebody is reading it.
 
@@ -214,8 +227,18 @@ async def list_training(
         stmt = stmt.where(TrainingRecord.completed_on >= completed_from)
     if completed_to:
         stmt = stmt.where(TrainingRecord.completed_on <= completed_to)
-    if expiry:
+    if expiry == "valid":
+        # ★ Round 12, TRN-03: "… first aid training that is not expired." The
+        # latest record of each course per person still here, and in date —
+        # including those that never expire.
+        stmt = stmt.where(or_(TrainingRecord.expires_on.is_(None),
+                              TrainingRecord.expires_on >= (today or plant_today())),
+                          *current_record_conditions())
+    elif expiry:
         stmt = stmt.where(*_in_window(expiry, today or plant_today()))
+    if delivery:
+        # Round 12, D10: "Type" on My Training is internal or external.
+        stmt = stmt.where(TrainingRecord.delivery == delivery)
 
     # Grouping on a list this size is ordering: the rows sit under the heading
     # the reader is scanning for, without a second shape to build and test.

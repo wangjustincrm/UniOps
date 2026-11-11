@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { CalendarDays, Plus, Printer, Sheet, Upload, X, Paperclip } from 'lucide-react'
+import { Award, CalendarDays, Pencil, Plus, Printer, Sheet, Upload, X, Paperclip } from 'lucide-react'
 import MaterialsList from '@/components/MaterialsList'
 import { api, apiBlob, useFileOpener } from '@/lib/api'
 import { Pagination, useListView, DateRangeFilter, useDateFilter } from '@/components/ListView'
@@ -101,8 +101,10 @@ export default function TrainingPage() {
  * the records that make up that value." Each window includes the shorter ones;
  * the server counts what its own list returns for the same window.
  */
-type ExpiryWindow = 'expired' | '30d' | '6m' | '1y'
+type ExpiryWindow = 'expired' | '30d' | '6m' | '1y' | 'valid'
 const EXPIRY_LABELS: Record<ExpiryWindow, string> = {
+  // Round 12, TRN-03: "… first aid training that is not expired."
+  valid: 'Not expired',
   expired: 'Expired',
   '30d': 'Expiring within 30 days',
   '6m': 'Expiring within 6 months',
@@ -148,9 +150,21 @@ function SessionsTab({ mayWrite }: { mayWrite: boolean }) {
   // sessions are what accumulate, and they are the half that would drop off.
   const SESSION_LIMIT = 100
 
+  // ★ Round 12, TRN-04: "the same search options as on the training
+  // compliance page … by title, date or number" — sent to the server, so a
+  // session older than the most recent hundred is still found.
+  const [search, setSearch] = useState('')
+  const dateFilter = useDateFilter()
+  const { from, to } = dateFilter.range
+  const qs = new URLSearchParams()
+  if (search.trim()) qs.set('search', search.trim())
+  if (from) qs.set('date_from', from)
+  if (to) qs.set('date_to', to)
+
   const sessions = useQuery({
-    queryKey: ['course-sessions'],
-    queryFn: () => api.get<Session[]>('/api/v1/course-sessions'),
+    queryKey: ['course-sessions', qs.toString()],
+    queryFn: () => api.get<Session[]>(`/api/v1/course-sessions${qs.toString() ? `?${qs}` : ''}`),
+    placeholderData: (prev) => prev,
   })
 
   const upcoming = (sessions.data ?? []).filter((s) => s.status === 'scheduled')
@@ -170,7 +184,17 @@ function SessionsTab({ mayWrite }: { mayWrite: boolean }) {
 
       {creating && <NewSessionForm onClose={() => setCreating(false)} />}
 
-      {sessions.data?.length === 0 && !creating && (
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <input className="h-10 min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 text-sm"
+               value={search} onChange={(e) => setSearch(e.target.value)}
+               placeholder="Search by session number or title" aria-label="Search course sessions" />
+        <DateRangeFilter {...dateFilter} />
+      </div>
+
+      {sessions.data?.length === 0 && !creating && qs.toString() !== '' && (
+        <Empty>No session matches.</Empty>
+      )}
+      {sessions.data?.length === 0 && !creating && qs.toString() === '' && (
         <Empty>
           No course sessions yet. Scheduling one is how a course gets a date, a
           room, and a register of who attended.
@@ -386,17 +410,25 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed, expiry, onClearExpiry
   // the page would otherwise have been sent.
   const dateFilter = useDateFilter()
   const { from, to } = dateFilter.range
+  // ★ Round 12, TRN-03: status and type are filters of their own here, so a
+  // search like "first aid, not expired" can be put together on this tab — and
+  // then printed as certificates. A figure opened from Compliance still sets
+  // the status; choosing another one here replaces it.
+  const [status, setStatus] = useState<ExpiryWindow | ''>('')
+  const [type, setType] = useState<'' | 'internal' | 'external'>('')
+  const window_ = expiry ?? (status || null)
 
   const query = [
     search.trim() ? `search=${encodeURIComponent(search.trim())}` : '',
     order !== 'date' ? `order=${order}` : '',
     from ? `completed_from=${from}` : '',
     to ? `completed_to=${to}` : '',
-    expiry ? `expiry=${expiry}` : '',
+    window_ ? `expiry=${window_}` : '',
+    type ? `delivery=${type}` : '',
   ].filter(Boolean).join('&')
 
   const records = useQuery({
-    queryKey: ['training-records', search.trim(), order, from, to, expiry ?? ''],
+    queryKey: ['training-records', search.trim(), order, from, to, window_ ?? '', type],
     queryFn: () => api.get<Record_[]>(
       `/api/v1/training/records${query ? `?${query}` : ''}`),
   })
@@ -413,6 +445,7 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed, expiry, onClearExpiry
   // the pop-up-blocked fallback every other download here goes through.
   const printer = useFileOpener()
   const exporter = useFileOpener()
+  const certificates = useFileOpener()
 
   return (
     <>
@@ -442,6 +475,17 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed, expiry, onClearExpiry
           <Sheet className="h-4 w-4" aria-hidden />
           {exporter.busy ? 'Preparing…' : 'Export to Excel'}
         </button>
+        {/* ★ Round 12, TRN-03: "create a way to print a worker or workers
+            certificates based on the search criteria." The same query again;
+            those taken elsewhere are listed at the end, not reissued. */}
+        <button type="button" className={secondaryButton}
+                disabled={certificates.busy || records.data?.length === 0}
+                onClick={() => certificates.open(
+                  `/api/v1/training/records/certificates${query ? `?${query}` : ''}`,
+                  'training-certificates.pdf')}>
+          <Award className="h-4 w-4" aria-hidden />
+          {certificates.busy ? 'Preparing…' : 'Print their certificates'}
+        </button>
         {mayWrite && (
           <button type="button" className={primaryButton} onClick={() => setAdding(true)}>
             <Upload className="h-4 w-4" aria-hidden />
@@ -449,9 +493,9 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed, expiry, onClearExpiry
           </button>
         )}
       </div>
-      {(printer.error || exporter.error) && (
+      {(printer.error || exporter.error || certificates.error) && (
         <p className="mb-3 rounded-lg bg-danger-50 px-3 py-2 text-xs text-danger-700">
-          {printer.error || exporter.error}
+          {printer.error || exporter.error || certificates.error}
         </p>
       )}
 
@@ -476,6 +520,24 @@ function RecordsTab({ mayWrite, openForCourse, onConsumed, expiry, onClearExpiry
           <option value="date">Newest first</option>
           <option value="person">By person</option>
           <option value="topic">By course</option>
+        </select>
+        <select className="h-10 rounded-lg border border-neutral-200 px-2 text-sm"
+                value={window_ ?? ''} aria-label="Status"
+                onChange={(e) => {
+                  if (expiry) onClearExpiry?.()
+                  setStatus(e.target.value as ExpiryWindow | '')
+                }}>
+          <option value="">Any status</option>
+          {(Object.keys(EXPIRY_LABELS) as ExpiryWindow[]).map((w) => (
+            <option key={w} value={w}>{EXPIRY_LABELS[w]}</option>
+          ))}
+        </select>
+        <select className="h-10 rounded-lg border border-neutral-200 px-2 text-sm"
+                value={type} aria-label="Type"
+                onChange={(e) => setType(e.target.value as typeof type)}>
+          <option value="">Any type</option>
+          <option value="internal">Taken here</option>
+          <option value="external">Taken elsewhere</option>
         </select>
         <DateRangeFilter {...dateFilter} />
       </div>
@@ -713,6 +775,10 @@ function NewRecordForm({ onClose, courseCode }: {
  */
 function CoursesTab({ mayWrite }: { mayWrite: boolean }) {
   const [adding, setAdding] = useState(false)
+  // ★ Round 12, TRN-04: courses are searched by name — round 8 took the
+  // number off them and they carry no date. TRN-08: and corrected in place.
+  const [search, setSearch] = useState('')
+  const [editing, setEditing] = useState<string | null>(null)
   const courses = useQuery({
     queryKey: ['training-courses'],
     queryFn: () => api.get<Course[]>('/api/v1/training/courses'),
@@ -737,9 +803,21 @@ function CoursesTab({ mayWrite }: { mayWrite: boolean }) {
       )}
       {adding && <NewCourseForm onClose={() => setAdding(false)} />}
 
+      <input className="mb-3 h-10 w-full rounded-lg border border-neutral-200 px-3 text-sm"
+             value={search} onChange={(e) => setSearch(e.target.value)}
+             placeholder="Search by course name" aria-label="Search courses" />
+
       <ul className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
-        {(courses.data ?? []).map((c) => {
+        {(courses.data ?? []).filter((c) =>
+          !search.trim() || c.name.toLowerCase().includes(search.trim().toLowerCase())).map((c) => {
           const quiz = quizFor(c.id)
+          if (editing === c.id) {
+            return (
+              <li key={c.id} className="border-b border-neutral-100 p-3.5 last:border-b-0">
+                <EditCourseForm course={c} hasQuiz={Boolean(quiz)} onClose={() => setEditing(null)} />
+              </li>
+            )
+          }
           return (
             <li key={c.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-neutral-100 p-3.5 last:border-b-0">
               <span className="min-w-0 flex-1">
@@ -763,6 +841,13 @@ function CoursesTab({ mayWrite }: { mayWrite: boolean }) {
 
               <CourseMaterial course={c} mayWrite={mayWrite} />
 
+              {mayWrite && (
+                <button type="button" onClick={() => setEditing(c.id)}
+                        className="flex min-h-[32px] items-center gap-1 rounded-md px-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900">
+                  <Pencil className="h-3.5 w-3.5" aria-hidden />
+                  Edit
+                </button>
+              )}
             </li>
           )
         })}
@@ -771,6 +856,65 @@ function CoursesTab({ mayWrite }: { mayWrite: boolean }) {
         Who has to take a course is set on the position, under Settings → Positions;
         the compliance report counts it against the people in those positions.
       </p>
+    </div>
+  )
+}
+
+/**
+ * ★ Round 12, TRN-08: "create a way to edit a course after its created to
+ * correct spelling mistakes and add quizzes or change the valid for date."
+ * Q14: "certificates should stay once issued. a new valid for period should
+ * only affect new course sessions." A record keeps the name and expiry it was
+ * made with, so neither change reaches anything already recorded — said on
+ * the form, because it is the first thing anybody correcting a name asks.
+ */
+function EditCourseForm({ course, hasQuiz, onClose }: {
+  course: Course; hasQuiz: boolean; onClose: () => void
+}) {
+  const queryClient = useQueryClient()
+  const [name, setName] = useState(course.name)
+  const [months, setMonths] = useState(course.validity_months ? String(course.validity_months) : '')
+  const save = useMutation({
+    mutationFn: () => api.patch(`/api/v1/training/courses/${course.id}`, {
+      name: name.trim(),
+      validity_months: months.trim() ? Number(months) : null,
+    }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['training-courses'] })
+      onClose()
+    },
+  })
+  const monthsOk = !months.trim() || (/^\d+$/.test(months.trim()) && Number(months) >= 1 && Number(months) <= 600)
+  const ready = name.trim().length > 0 && monthsOk
+  return (
+    <div>
+      <div className="grid gap-3 sm:grid-cols-[1fr_12rem]">
+        <Field label="Course name">
+          <input className={inputClass} value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <Field label="Valid for (months)" hint="Blank: does not expire">
+          <input className={inputClass} inputMode="numeric" value={months}
+                 onChange={(e) => setMonths(e.target.value)} />
+        </Field>
+      </div>
+      <p className="mt-2 text-xs text-neutral-500">
+        Certificates already issued keep the name and expiry they were issued
+        with. A new period applies to training recorded from now on.
+      </p>
+      <p className="mt-1 text-xs text-neutral-500">
+        {hasQuiz ? 'This course has a quiz. ' : 'No quiz yet. '}
+        <Link to="/quizzes" className="font-semibold text-primary-700 hover:underline">
+          {hasQuiz ? 'Change it under Quizzes' : 'Add one under Quizzes'}
+        </Link>
+      </p>
+      <ErrorNote error={save.error} />
+      <div className="mt-3 flex flex-wrap justify-end gap-2">
+        <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>
+        <button type="button" className={primaryButton} disabled={!ready || save.isPending}
+                onClick={() => { if (ready && !save.isPending) save.mutate() }}>
+          {save.isPending ? 'Saving…' : 'Save the course'}
+        </button>
+      </div>
     </div>
   )
 }
