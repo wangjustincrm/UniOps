@@ -13,9 +13,17 @@ Prepayment % "has no prepayment policy" (ISS-0021, ISS-0066)...
 So for each of those the code does the lookup and the sum, and returns the
 sentence that must be said. `supplement` runs after the planned query and
 before the narrator: it adds the facts for the narrator (`from_code`) and the
-sentences to `said_with_this_list`, which the chat layer writes under the
+sentences to `said_with_this_list`, which the chat layer writes with the
 reply (assistant_chat._with_listing_notes, the ISS-0008 mechanism) — so the
-statement stands even when the narrator leaves it out or says the opposite.
+statement stands even when the narrator leaves it out.
+
+Standing next to the narrator's sentence was not enough when that sentence
+said the opposite: "3-way match 结果：未匹配" above "三单匹配：已通过" (ISS-0036),
+"差异为 0.00" above "少 22.60" (ISS-0016), "结果中未包含收货数量" above the
+quantities (ISS-0031). So a fact also names, from its own value, the sentences
+that contradict it (`_overrule`), and `settle` takes those out of the reply
+and puts the fact first, as the conclusion. With the narrator saying the
+opposite on every point, the reply carries only what the code worked out.
 
 Every lookup goes through the caller's scope: either the controlled query
 (controlled_query.execute, both gates) or an explicit visibility check.
@@ -75,6 +83,108 @@ def _from_code(result: dict, key: str, facts) -> None:
     result.setdefault("from_code", {})[key] = facts
 
 
+# ── What the code worked out overrules what the narrator wrote ───────────────
+
+def _overrule(result: dict, key: str, patterns, *, first: bool = True,
+              opening: bool = False) -> None:
+    """The fact `key` is the conclusion: said before the reply (`first`), and
+    the narrator's sentences matching `patterns` — the ones that contradict
+    THIS value of the fact — taken out. `opening`: the question is a yes/no
+    the fact answers, so the narrator's own opening yes/no goes too."""
+    o = result.setdefault("overruled_by_code", {}).setdefault(
+        key, {"first": first, "opening": opening, "drop": []})
+    o["drop"].extend(p for p in patterns if p not in o["drop"])
+
+
+def settle(text: str, result: dict) -> tuple[str, set]:
+    """The narrator's reply with what the code contradicts taken out; and the
+    keys of the facts to put before it."""
+    from app.services import rule_verdicts
+
+    over = result.get("overruled_by_code") or {}
+    if any(o["opening"] for o in over.values()):
+        text = rule_verdicts.without_opening_verdict((text or "").strip())
+    text = rule_verdicts.without_sentences(text, [p for o in over.values() for p in o["drop"]])
+    text = _with_catalog_currency(text, result)
+    return text, {k for k, o in over.items() if o["first"]}
+
+
+# ISS-0057: the vendor summary is figures. "总体合作稳定，完成率很高" and "是一个
+# 活跃的供应商……付款情况良好" are opinions the narrator was told not to add and
+# added; the clauses that carry one are taken out by code.
+_OPINION = re.compile(
+    r"合作(关系)?\S{0,2}(稳定|良好|顺利|密切|愉快|健康|紧密)|(稳定|良好|长期|密切|健康)的合作"
+    r"|完成率\S{0,2}(很|较|非常|相当)?高|活跃的?(供应商|合作伙伴)|(较为|比较|非常|很)?活跃"
+    r"|(付款|交付|交货|履约|表现|合作|信用)(情况|记录|状况)?\S{0,2}(良好|很好|不错|优秀|稳定|正常|健康)"
+    r"|值得信赖|可靠的?(供应商|合作伙伴)|重要的?(供应商|合作伙伴)"
+    r"|\b(stable|strong|good|healthy|solid|reliable|long-standing|active|important|trusted)\s+"
+    r"(relationship|partner|partnership|vendor|supplier|business|history|record)"
+    r"|\bpays?\s+(well|on time|promptly|reliably)|\bpayments?\s+(are|is|have been)\s+(good|healthy|on time)"
+    r"|\bin good standing\b|\bperforming well\b|\bhigh completion rate\b|\b(very|quite) active\b",
+    re.I)
+_FILLER = re.compile(r"^\W*(总体|整体|总的|综合)(来看|来说|而言|上)?\W*$|^\W*(总之|另外|此外)\W*$"
+                     r"|^\W*(overall|in summary|in general|all in all|generally)\W*$", re.I)
+
+
+def without_opinions(text: str) -> str:
+    out = []
+    for line in (text or "").split("\n"):
+        # At a comma that ends a clause — not the one in 325,033.75.
+        clauses = [c for c in re.split(r"(?<=[，。！？!?；;])|(?<=[,.])(?=\s)", line) if c]
+        kept = [c for c in clauses if not _OPINION.search(c)]
+        if len(kept) == len(clauses):
+            out.append(line)
+            continue
+        kept = [c for c in kept if not _FILLER.match(c)]
+        rest = "".join(kept).rstrip(" ，,；;")
+        if kept and kept[0] is not clauses[0]:
+            rest = rest.lstrip()
+        if rest.strip(" \t-*•—:："):
+            out.append(rest if rest[-1] in "。！？!?.:：|" else rest + ("。" if not rest.isascii() else "."))
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
+# ISS-0044: the Parts Catalog keeps its prices in CAD (the page heads the
+# column "Unit Price (CAD)"; Part has no currency of its own). A catalog price
+# the narrator wrote as a bare number gets the currency.
+_CURRENCY_BEFORE = re.compile(r"(?:CAD|CA\$|C\$|USD|US\$|EUR|CNY|RMB|€|¥)\s*\$?\s*$", re.I)
+_CURRENCY_AFTER = re.compile(r"^\s*(?:CAD|USD|EUR|CNY|RMB|加元|加币|美元)", re.I)
+CATALOG_CURRENCY = "CAD"
+
+
+def _with_catalog_currency(text: str, result: dict) -> str:
+    prices = result.get("catalog_prices") or []
+    if not text or not prices:
+        return text
+    for price in sorted(set(prices), key=len, reverse=True):
+        d = Decimal(price)
+        spelled = {f"{d:,.2f}", f"{d:.2f}"}
+        for s in sorted(spelled, key=len, reverse=True):
+            rx = re.compile(r"(?<![\d.,])\$?" + re.escape(s) + r"(?![\d])")
+            pos, out = 0, []
+            for m in rx.finditer(text):
+                before, after = text[:m.start()], text[m.end():]
+                out.append(text[pos:m.start()])
+                if (_CURRENCY_BEFORE.search(before) or _CURRENCY_AFTER.match(after)
+                        or (m.group(0).startswith("$") and re.search(r"(?:CA|C|US|A)$", before))):
+                    out.append(m.group(0))
+                else:
+                    out.append(f"{CATALOG_CURRENCY} {s}")
+                pos = m.end()
+            out.append(text[pos:])
+            text = "".join(out)
+    return text
+
+
+def _catalog_prices(db, scope, message, query, result) -> None:
+    if result.get("entity") != "part":
+        return
+    prices = [str(r["unit_price"]) for r in result.get("rows") or []
+              if isinstance(r, dict) and r.get("unit_price") not in (None, "")]
+    if prices:
+        result["catalog_prices"] = prices
+
+
 async def _numbers(db, scope, query: dict, result: dict, fields: tuple[str, ...]) -> list[str]:
     """The document numbers this answer is about: named in an eq/in filter on
     one of `fields`, else read off the rows, else — the planner did not select
@@ -121,9 +231,14 @@ def _detail(result: dict) -> bool:
 
 async def _receipt_lines(db, scope, message, query, result) -> None:
     rows = result.get("rows") or []
+    if result.get("entity") not in ("goods_receipt", "gr_line"):
+        return      # only receipts have receipt numbers
     if not (_detail(result) and 0 < len(rows) <= _MAX_DOCS):
         return
-    numbers = await _numbers(db, scope, query, result, ("number",))
+    # A GR page's own lines (page_document points the planner at gr_line) are
+    # named by their receipt's number.
+    field = "receipt.number" if result.get("entity") == "gr_line" else "number"
+    numbers = await _numbers(db, scope, query, result, (field,))
     if not numbers or len(numbers) > _MAX_DOCS:
         return
     lines = await _rows(db, scope, {
@@ -153,6 +268,21 @@ async def _receipt_lines(db, scope, message, query, result) -> None:
                   f"{_money(value)}：" + "；".join(parts_en) + "。")
     if en:
         _say(result, "receipt_lines", " ".join(en), "".join(zh))
+        _overrule(result, "receipt_lines", _NO_QUANTITIES)
+
+
+# "结果中未包含每次收货的数量明细。如需了解具体收货数量，请查看收货单的详情" (ISS-0031),
+# "系统中没有返回收货数量的信息" (ISS-0068) — said over the lines code read.
+_NO_QUANTITIES = (
+    r"(没有|未|不|并未|无)(包含|显示|返回|提供|记录|列出|给出|含)\S{0,15}(数量|明细|收了多少)",
+    r"(数量|明细)\S{0,10}(不可用|不详|未知|没有(包含|显示|返回|提供|记录)?|未(包含|显示|返回|提供|记录))",
+    r"数量字段", r"(如需|如要|如果需要|若需|想)(了解|知道|查看)?\S{0,10}(数量|明细)",
+    r"请(到|在)?\S{0,4}(查看|打开)\S{0,25}(收货单|GR|详情)",
+    r"\b(does not|doesn't|do not|don't|did not|didn't|not)\s+(include|show|contain|return|provide|list"
+    r"|have|give)\w*\b[^.]{0,40}\bquantit",
+    r"\bno\s+(received\s+|receipt\s+)?quantit",
+    r"\bquantit(y|ies)\b[^.]{0,30}\b(not (included|shown|available|returned|provided|recorded)"
+    r"|unavailable|missing)\b")
 
 
 # ── ISS-0016 / ISS-0036: the PO against its invoices, and three-way match ────
@@ -189,6 +319,49 @@ async def _po_match(db, scope, message, query, result) -> None:
     _from_code(result, "po_vs_invoices", views)
     said = [po_match_view.sentences(v) for v in views]
     _say(result, "po_vs_invoices", " ".join(s[0] for s in said), "".join(s[1] for s in said))
+    drop: list[str] = []
+    if all(v["three_way_matched"] for v in views):
+        drop += _NOT_MATCHED
+    elif not any(v["three_way_matched"] for v in views):
+        drop += _MATCHED
+    if all(Decimal(v["difference_pre_tax"]) != 0 or v["lines_not_invoiced"] for v in views):
+        drop += _NO_DIFFERENCE
+    if all(v["invoices"] for v in views):
+        drop += _NO_INVOICE_DATA
+    _overrule(result, "po_vs_invoices", drop, opening=True)
+
+
+# Said over a PO that code found three-way matched (ISS-0036): "3-way match 结果：
+# 未匹配 (Not Matched)", "三方匹配…未成功…结果为否定", "未完成匹配（three_way_matched:
+# false）", "因为 PO 部分收货所以不通过".
+_NOT_MATCHED = [
+    r"(未|没有|不|尚未|无法|没能)(能)?(成功)?(完成)?(三单|三方|3-?way)?\s*匹配",
+    r"匹配[^。.!?\n]{0,8}(失败|未通过|不通过|没有通过|未成功|没有成功|未完成|为否|否定|不成功)",
+    r"(三单|三方|3-?way)[^。.!?\n]{0,12}(失败|未通过|不通过|没有通过|未成功|未完成|为否|否定)",
+    r"\bnot\s+(been\s+|yet\s+)?(three[- ]way\s+|3-?way\s+|fully\s+)?matched\b", r"\bunmatched\b",
+    r"three_way_matched\W{0,4}(false|否)",
+    r"\bmatch\w*\b[^.]{0,30}\b(failed|fails|negative|false|not passed|did not pass)\b",
+    r"结果\S{0,4}(为否|否定)",
+    # ... and the reason given for the failure that is not one.
+    r"^\W*(原因|理由|因为|由于|这是因为)[^。.!?]{0,40}(部分收货|差\S{0,3}\s*\d|差异|数量)",
+    r"^\W*(because|this is because|the reason)\b[^.]{0,60}\b(partially received|difference|gap|quantit)"]
+# ... and over one that is not.
+_MATCHED = [
+    r"(三单|三方|3-?way)\s*匹配\S{0,6}(已|成功|通过|完成)(?!.*(未|没|不))",
+    r"(已|成功)(经)?(完成|通过)?\S{0,2}(三单|三方|3-?way)\s*匹配",
+    r"\b(is|are|was|been|has been)\s+(fully\s+)?(three[- ]way|3-?way)\s+matched\b"]
+# Said over a PO with an uninvoiced line or a difference (ISS-0016): "差异为
+# 0.00…与采购订单完全匹配".
+_NO_DIFFERENCE = [
+    r"差异\S{0,4}?\s*(CAD|CA\$|\$)?\s*(?<![\d.,])0(\.00?)?(?![\d])",
+    r"完全(匹配|一致|相同|吻合)|没有(任何)?差异|无差异|零差异|差异为零|一模一样",
+    r"\bno (difference|variance|discrepancy)\b|\bexact(ly)?\s+match|\bfully matched\b"
+    r"|\bmatch(es)? exactly\b|\b(difference|variance)\s+(of|is)\s+(CAD\s*)?0(\.00?)?(?![\d])"]
+# Said over a PO whose invoices code found (ISS-0016 before: "没有发票数据").
+_NO_INVOICE_DATA = [
+    r"(没有|未|不)(包含|显示|返回|提供|查到|找到)?\S{0,8}发票(的)?(数据|信息|记录)",
+    r"(没有|未)(找到|查到)\S{0,6}发票(?!号)", r"\bno invoice (data|information|records?)\b",
+    r"(请|需要)(您)?提供\S{0,10}发票"]
 
 
 # ── ISS-0068: an agreement with no Not to Exceed has no ceiling ──────────────
@@ -412,6 +585,12 @@ async def _prepayment_cap(db, scope, message, query, result) -> None:
                       + ("，可以预付，最多到这个比例。" if cap > 0 else "，不能预付。"))
     _from_code(result, "prepayment_cap", {"system_cap_pct": str(system), "vendors": rows})
     _say(result, "prepayment_cap", " ".join(en), "".join(zh))
+    from app.services.rule_facts import _CAN_PREPAY, _CANNOT_PREPAY
+    caps = [effective_cap(r.get("max_prepayment_pct"), system)[0] for r in rows]
+    # "最大预付款百分比为空，这表示没有建立预付款政策" over a 100% system cap (ISS-0066).
+    drop = _CANNOT_PREPAY if all(c > 0 for c in caps) else (
+        _CAN_PREPAY if all(c == 0 for c in caps) else ())
+    _overrule(result, "prepayment_cap", drop, opening=True)
 
 
 # ── ISS-0059: invoices of paid PAs ───────────────────────────────────────────
@@ -422,14 +601,17 @@ async def _paid_pa_invoices(db, scope, message, query, result) -> None:
     used = {c.get("field") for c in query.get("where") or []} | set(query.get("select") or [])
     if "pa_payment_shown" not in used:
         return
-    where = [c for c in query.get("where") or [] if c.get("field") == "pa_payment_shown"]
-    if not where:
-        where = [{"field": "pa_payment_shown", "op": "eq", "value": False}]
+    # The invoices this query matched — its own filters (a vendor, a period
+    # ...), not every invoice in the system.
+    where = list(query.get("where") or [])
+    if not any(c.get("field") == "pa_payment_shown" for c in where):
+        where = [*where, {"field": "pa_payment_shown", "op": "eq", "value": False}]
     # Counted twice rather than grouped: pa_type is a correlated subquery,
     # which Postgres will not group by.
     async def count(extra):
         rows = await _rows(db, scope, {"entity": "invoice", "metrics": ["count"],
-                                       "where": [*where, *extra]})
+                                       "where": [*where, *extra],
+                                       **({"period": query["period"]} if query.get("period") else {})})
         return int((rows[0] if rows else {}).get("count") or 0)
     total = await count([])
     prepay = await count([{"field": "pa_type", "op": "eq", "value": "prepayment"}])
@@ -443,6 +625,12 @@ async def _paid_pa_invoices(db, scope, message, query, result) -> None:
          f"PA 付款后，其发票应变为 Paid（已付）；预付款 PA 的发票应为 Partially Paid（部分付款）"
          f"（PAY-005）。这里查到的发票中，{regular} 张在普通 PA 上（应为 Paid），{prepay} 张在预付款 "
          f"PA 上（应为 Partially Paid）。")
+    if prepay == 0:
+        # "没有将它们标记为部分已付，这可能是数据不一致" (ISS-0059): none is on a
+        # prepayment PA, so not one of them should be Partially Paid.
+        _overrule(result, "paid_pa_invoice_status", [
+            r"^(?=.*(部分已?付|部分付款|部分支付|partially[ _-]?paid))"
+            r"(?=.*(不一致|异常|没有|未|不是|inconsisten|\bnot\b|n't|mismatch|wrong))"], first=False)
 
 
 # ── ISS-0013 ①: Issued is not "the vendor has it" ────────────────────────────
@@ -455,6 +643,22 @@ async def _how_it_was_placed(db, scope, message, query, result) -> None:
     numbers = await _numbers(db, scope, query, result, ("number",))
     if not numbers or len(numbers) > _MAX_DOCS:
         return
+    await say_how_placed(db, scope, numbers, result)
+
+
+# "是的，已经发给供应商了" over a PO EPMS only records as Issued (ISS-0013 ①).
+_SENT_TO_VENDOR = (
+    r"(已经?|已)(经)?(发|发送|寄|送|传|邮寄|转)(给|到|至|达)(了)?\S{0,4}(供应商|厂商|厂家|对方|vendor|supplier)",
+    r"(供应商|厂商|厂家|对方)\S{0,4}(已经?|已)(经)?(收到|接收|确认|签收|拿到|收悉)",
+    r"(已经?|已)(经)?(送达|发出|寄出)", r"送达(了)?供应商",
+    r"\b(has|have|was|were|been)\s+(already\s+)?(sent|delivered|emailed|transmitted|issued|forwarded)"
+    r"\s+to\s+the\s+(vendor|supplier)",
+    r"\b(vendor|supplier)\s+(has\s+|have\s+)?(already\s+)?(received|got|acknowledged|confirmed)\b")
+
+
+async def say_how_placed(db, scope, numbers: list[str], result: dict) -> None:
+    """How each PO was placed, said first; a sentence saying the vendor has
+    it is taken out — EPMS records at most that an email was sent."""
     rows = await _rows(db, scope, {
         "entity": "purchase_order",
         "select": ["number", "status", "place_order_method", "place_order_email_to", "placed_at"],
@@ -487,6 +691,7 @@ async def _how_it_was_placed(db, scope, message, query, result) -> None:
             zh.append(f"{r['number']} 还没有向供应商下单。")
     if en:
         _say(result, "issued_is_not_received", " ".join(en), "".join(zh))
+        _overrule(result, "issued_is_not_received", _SENT_TO_VENDOR, opening=True)
 
 
 # ── ISS-0043 / ISS-0066: when a PA was paid, from which account, remittance ──
@@ -499,13 +704,59 @@ async def _pa_payment(db, scope, message, query, result) -> None:
     numbers = await _numbers(db, scope, query, result, ("pa_number",))
     if not numbers or len(numbers) > 3:
         return
+    await say_payment(db, scope, numbers, message, result)
+
+
+async def say_payment(db, scope, numbers: list[str], message: str, result: dict) -> None:
+    """When each PA was paid, from which account, and its remittance advice,
+    said first; the narrator's sentences that deny what was read go."""
     facts = [await payment_facts(db, scope, n) for n in numbers]
     facts = [f for f in facts if f]
     if not facts:
         return
     _from_code(result, "payment", facts)
-    said = [payment_sentences(f, remittance=asks("remittance", message)) for f in facts]
+    remittance = asks("remittance", message)
+    said = [payment_sentences(f, remittance=remittance) for f in facts]
     _say(result, "pa_payment", " ".join(s[0] for s in said), "".join(s[1] for s in said))
+    paid = [f for f in facts if f["status"] in ("processed", "paid")]
+    drop: list[str] = []
+    if len(paid) == len(facts):
+        drop += _NO_PAY_DATE
+        # The account was read, or code says it needs View Finance (ISS-0043:
+        # "数据中没有" three times).
+        if all(f.get("finance") == "needs_view_finance" or any(
+                p.get("bank_account.name") or p.get("bank_account.account_masked")
+                for p in f.get("payments") or []) for f in facts):
+            drop += _NO_ACCOUNT
+        if remittance and all(f.get("finance") != "needs_view_finance" for f in facts):
+            sent = [any(s["status"] == "sent" for s in f.get("remittance") or []) for f in facts]
+            # ISS-0066 ②: "是的，汇款通知已经发给供应商了" from the payment alone.
+            drop += _NO_REMITTANCE_SENT if all(sent) else (
+                _REMITTANCE_SENT if not any(sent) else [])
+        elif remittance:
+            drop += _REMITTANCE_SENT
+    elif not paid:
+        drop += _PAID
+    _overrule(result, "pa_payment", drop, opening=remittance)
+
+
+_NO_PAY_DATE = [
+    r"(没有|未|不)(包含|显示|提供|记录|返回)\S{0,8}(付款|支付)(时间|日期)",
+    r"(付款|支付)(时间|日期)\S{0,8}(不可用|不详|没有|未(包含|显示|提供|记录))",
+    r"没有找到\S{0,25}(付款|支付)", r"\b(no|not|n't)\b[^.]{0,30}\b(payment|paid) (date|time)\b"]
+_NO_ACCOUNT = [
+    r"(没有|未|不|无)(包含|显示|提供|记录|返回|列出)?\S{0,10}(账户|账号|银行)",
+    r"(账户|账号)\S{0,10}(不可用|无法|不详|不明|未知|没有|未(包含|显示|提供|记录))",
+    r"\b(no|not|n't)\b[^.]{0,40}\b(account|bank)\b",
+    r"\b(account|bank)\b[^.]{0,30}\b(not (available|included|shown|recorded|known)|unavailable|unknown)\b"]
+_REMITTANCE_SENT = [
+    r"汇款(通知|单)?\S{0,8}(已经?|已)(经)?(发|发送|寄|送)", r"(已经?|已)(经)?(发|发送)\S{0,6}汇款",
+    r"\bremittance\b[^.]{0,40}\b(has been|was|been|were)\s+(sent|emailed|delivered)\b",
+    r"\b(sent|emailed)\b[^.]{0,20}\bremittance\b"]
+_NO_REMITTANCE_SENT = [
+    r"汇款(通知|单)?\S{0,8}(没有|未|尚未|还没)(有)?(发|发送)", r"(没有|未|尚未)(发|发送)\S{0,6}汇款",
+    r"\bno remittance\b", r"\bremittance\b[^.]{0,40}\b(not|n't)\s+(been\s+)?(sent|emailed)\b"]
+_PAID = [r"(?<![未没])已经?(付款|支付|付清)", r"\b(was|has been|have been)\s+paid\b"]
 
 
 async def payment_facts(db, scope, pa_number: str) -> dict | None:
@@ -639,7 +890,7 @@ async def _invoice_requester(db, scope, message, query, result) -> None:
 
 _SUPPLEMENTS = (_receipt_lines, _po_match, _agreement_ceiling, _prepayment_cap,
                 _paid_pa_invoices, _how_it_was_placed, _pa_payment, _invoice_requester)
-_PLAIN = (_year_on_year, _did_you_mean)
+_PLAIN = (_year_on_year, _did_you_mean, _catalog_prices)
 
 
 async def supplement(db, scope: dict, message: str, query: dict, result: dict) -> dict | None:
@@ -661,4 +912,4 @@ async def supplement(db, scope: dict, message: str, query: dict, result: dict) -
 
 
 __all__ = ["supplement", "with_year_on_year", "payment_facts", "payment_sentences",
-           "asks", "doc_numbers"]
+           "say_payment", "say_how_placed", "settle", "without_opinions", "asks", "doc_numbers"]
