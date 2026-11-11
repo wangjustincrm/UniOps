@@ -128,14 +128,19 @@ function LinkedPermit({ id }: { id: string }) {
     </Link>
   )
   if (permit.isPending) return <div className="p-4 text-sm text-neutral-500">Loading…</div>
-  if (permit.isError || !permit.data) {
+  // ★ Re-review N2: only when there is nothing to show. A 30-second refresh
+  // that failed once kept the permit but swapped the page for an error,
+  // throwing away a gas reading or a signature half filled in.
+  if (!permit.data) {
     const st = permit.error instanceof ApiError ? permit.error.status : 0
     return (
       <div className="p-4">
         <PageHeader title="Work permit" />
         <Empty>
           {st === 404 ? 'This permit no longer exists.'
-            : st === 403 ? 'You can only open permits you raised.'
+            : st === 403 ? (can('ehs.permit.request')
+              ? 'You can only open permits you raised.'
+              : 'Your account cannot open work permits.')
               : 'The permit could not be loaded. Try again in a moment.'}
         </Empty>
         <div className="mt-3">{back}</div>
@@ -149,6 +154,11 @@ function LinkedPermit({ id }: { id: string }) {
                   subtitle={[p.location_path, p.work_description].filter(Boolean).join(' · ')}>
         {back}
       </PageHeader>
+      {permit.isError && (
+        <p className="mb-2 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-700">
+          The permit could not be refreshed; what is shown may be out of date.
+        </p>
+      )}
       <Card className={'!p-0 ' + (p.status === 'expired' && !p.closed_at
         ? '!border-danger-400' : p.status === 'suspended' ? '!border-warning-400' : '')}>
         <div className="flex items-start gap-3 p-3.5" data-print-row="" data-print-target="">
