@@ -8,7 +8,7 @@ import { formatDateTime } from './utils'
 
 export const LOCAL_TIME_ZONE = 'America/Toronto'
 
-/** "2026-OCT-14 17:05" (company-wide format, see lib/utils) on Toronto's
+/** "2026-OCT-14 17:05 EDT" (company-wide format, see lib/utils) on Toronto's
  *  clock; "—" for null/invalid. The Toronto wall-clock fields are read with
  *  Intl and handed to formatDateTime as a local Date, so the zone stays the
  *  plant's while the format stays the shared one. */
@@ -24,7 +24,12 @@ export function formatDateTimeToronto(iso: string | null | undefined): string {
   }).formatToParts(d)) {
     if (p.type !== 'literal') parts[p.type] = Number(p.value)
   }
-  return formatDateTime(new Date(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute))
+  // Keep the zone tag ("EDT"/"EST"): this module also shows NC-clock times,
+  // and an untagged Toronto time is easy to mistake for one of those.
+  const zone = new Intl.DateTimeFormat('en-US', { timeZone: LOCAL_TIME_ZONE, timeZoneName: 'short' })
+    .formatToParts(d).find((p) => p.type === 'timeZoneName')?.value
+  const local = formatDateTime(new Date(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute))
+  return zone ? `${local} ${zone}` : local
 }
 
 /** "just now" / "6 min ago" / "3 h ago" / "2 days ago" (same scale as MRP's
