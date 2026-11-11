@@ -31,12 +31,25 @@ KIND_FEEDBACK = "feedback"
 
 
 async def baseline(db: AsyncSession, user_id: uuid.UUID) -> SeenBaseline:
-    """This person's baseline, written the first time it is asked for."""
+    """This person's baseline, written the first time it is asked for.
+
+    ★ B5 review B4: when the flags went live — the first baseline anybody was
+    given — for everybody who was here then, so nobody's existing work floods
+    in as new; for somebody who joined since, when their account was made, so
+    the first work handed to a new starter before they ever opened Safety is
+    new to them.
+    """
     row = await db.get(SeenBaseline, user_id)
     if row is None:
+        from sqlalchemy import func
+
+        from app.models.mirrors import User
         now = datetime.now(timezone.utc)
+        live = (await db.execute(select(func.min(SeenBaseline.since)))).scalar()
+        joined = (await db.execute(select(User.created_at).where(User.id == user_id))).scalar()
+        since = joined if live is not None and joined is not None and live < joined < now else now
         await db.execute(insert(SeenBaseline).values(
-            user_id=user_id, since=now, news_seen_at=now).on_conflict_do_nothing())
+            user_id=user_id, since=since, news_seen_at=since).on_conflict_do_nothing())
         await db.flush()
         row = await db.get(SeenBaseline, user_id)
     return row
@@ -82,37 +95,92 @@ class Summary:
     # The corrective actions among those tasks — what the cards are keyed on.
     action_ids: list[uuid.UUID] = field(default_factory=list)
     news: int = 0
-    incidents: list[NewIncident] = field(default_factory=list)
+    incidents: int = 0
     feedback_answered: int = 0
 
     @property
     def my_actions(self) -> int:
         """The flag on My Actions: new work, new news and new incidents."""
-        return len(self.task_ids) + self.news + len(self.incidents)
+        return len(self.task_ids) + self.news + self.incidents
 
 
-async def incidents_to_flag(db: AsyncSession, user_id: uuid.UUID, roles: set[str],
-                            since: datetime) -> list[NewIncident]:
-    """INC-08 / D12: incidents sent since the baseline, near misses included,
-    for HSE (every one) and for whoever is down for the area it happened in.
-    Never one's own report."""
+# Click-to-sort keys for the new-incident list (the list standard).
+_INCIDENT_SORT = {
+    "incident_no": "i.incident_no",
+    "title": "lower(i.title)",
+    "submitted_at": "i.submitted_at",
+    "location": "lower(l.path)",
+}
+
+
+async def _incident_scope(db: AsyncSession, user: dict, user_id: uuid.UUID,
+                          since: datetime) -> tuple[str, dict] | None:
+    """INC-08 / D12: which incidents are new to this person, as SQL.
+
+    Sent since the baseline, near misses included, never one's own report, not
+    yet opened by them; every one for HSE, and for whoever is down for an area
+    the ones that happened in it.
+
+    ★ B5 review B1: an area owner can be anyone (round 4), and the flag names
+    an incident and links to it — so only somebody who may read the incident
+    register (ehs.incident.read) is flagged. Others would see titles the
+    register does not show them, and a link that answers 403.
+    ★ B6: the area is matched in the query, and the list is paged, so neither
+    the count nor somebody's own area's older incidents are cut off at a limit.
+    """
+    from uniops_authz import has_permission
+
+    roles = await notify.roles_held_by(db, user_id, user.get("role", ""))
     site_wide = bool(roles & area_scope.SITE_WIDE_ROLES)
-    areas = [] if site_wide else await area_scope.areas_for(db, user_id)
-    if not site_wide and not areas:
-        return []
+    if not site_wide:
+        if not await has_permission(db, user_id, user.get("role", ""), "ehs.incident.read"):
+            return None
+        areas = await area_scope.areas_for(db, user_id)
+        if not areas:
+            return None
+    where = (" from ehs_incidents i left join locations l on l.id = i.location_id"
+             " where i.submitted_at > :since and i.status <> 'draft'"
+             "   and (i.reported_by is null or i.reported_by <> :me)"
+             "   and not exists (select 1 from ehs_seen s where s.user_id = :me"
+             "                   and s.kind = 'incident' and s.item_id = i.id)")
+    params: dict = {"since": since, "me": user_id}
+    if not site_wide:
+        where += ("   and exists (select 1 from unnest(cast(:areas as text[])) a"
+                  "               where l.path = a or starts_with(l.path, a || '/'))")
+        params["areas"] = list(areas)
+    return where, params
+
+
+async def count_new_incidents(db: AsyncSession, user: dict, user_id: uuid.UUID,
+                              since: datetime) -> int:
+    scope = await _incident_scope(db, user, user_id, since)
+    if scope is None:
+        return 0
+    where, params = scope
+    return (await db.execute(text("select count(*)" + where), params)).scalar_one()  # noqa: S608
+
+
+async def new_incidents(db: AsyncSession, user: dict, user_id: uuid.UUID, *,
+                        sort: str | None, dir: str, offset: int, limit: int
+                        ) -> tuple[list[NewIncident], int]:
+    from fastapi import HTTPException
+
+    base = await baseline(db, user_id)
+    scope = await _incident_scope(db, user, user_id, base.since)
+    if scope is None:
+        return [], 0
+    where, params = scope
+    if sort is not None and sort not in _INCIDENT_SORT:
+        raise HTTPException(422, f"unknown sort column {sort!r}")
+    order = (f"{_INCIDENT_SORT[sort]} {'desc' if dir == 'desc' else 'asc'} nulls last, i.id"
+             if sort else "i.submitted_at desc, i.id")
+    total = (await db.execute(text("select count(*)" + where), params)).scalar_one()  # noqa: S608
     rows = (await db.execute(text(
         "select i.id, i.incident_no, i.title, i.form_kind, i.submitted_at, l.path"
-        "  from ehs_incidents i left join locations l on l.id = i.location_id"
-        " where i.submitted_at > :since and i.status <> 'draft'"
-        "   and (i.reported_by is null or i.reported_by <> :me)"
-        " order by i.submitted_at desc limit 500"),
-        {"since": since, "me": user_id})).all()
-    if not site_wide:
-        rows = [r for r in rows if area_scope.covers(areas, r[5])]
-    seen = await _marks(db, user_id, KIND_INCIDENT, [r[0] for r in rows])
+        + where + f" order by {order} offset :offset limit :limit"),  # noqa: S608 — whitelisted
+        {**params, "offset": offset, "limit": limit})).all()
     return [NewIncident(id=r[0], incident_no=r[1], title=r[2], form_kind=r[3],
-                        submitted_at=r[4], location_path=r[5])
-            for r in rows if r[0] not in seen]
+                        submitted_at=r[4], location_path=r[5]) for r in rows], total
 
 
 async def summary(db: AsyncSession, user: dict, user_id: uuid.UUID) -> Summary:
@@ -134,8 +202,7 @@ async def summary(db: AsyncSession, user: dict, user_id: uuid.UUID) -> Summary:
         NewsItem.archived_at.is_(None), NewsItem.posted_at > base.news_seen_at,
         (NewsItem.posted_by.is_(None)) | (NewsItem.posted_by != user_id)))).all())
 
-    roles = await notify.roles_held_by(db, user_id, user.get("role", ""))
-    out.incidents = await incidents_to_flag(db, user_id, roles, base.since)
+    out.incidents = await count_new_incidents(db, user, user_id, base.since)
 
     answered = (await db.execute(select(Feedback.id, Feedback.answered_at).where(
         Feedback.submitted_by == user_id, Feedback.answered_at.is_not(None),

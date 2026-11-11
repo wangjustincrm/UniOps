@@ -7,6 +7,7 @@
 import { NewsDesk, NewsList } from '@/components/News'
 import { usePermissions } from '@/hooks/usePermissions'
 import TabLink from '@/components/TabLink'
+import { Pagination, SortTh, sortParams, useSort } from '@uniops/shell'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, ClipboardList } from 'lucide-react'
@@ -202,7 +203,7 @@ export default function MyActionsPage() {
   const queryClient = useQueryClient()
   const newTasks = new Set(seen.data?.task_ids ?? [])
   const newActions = new Set(seen.data?.action_ids ?? [])
-  const newIncidents = seen.data?.incidents ?? []
+  const newIncidents = seen.data?.incidents ?? 0
   const opened = (taskId: string) => {
     if (!newTasks.has(taskId)) return
     void markTaskOpened(taskId).then(() => queryClient.invalidateQueries({ queryKey: SEEN_KEY }))
@@ -228,7 +229,7 @@ export default function MyActionsPage() {
   // somebody opens to find out what they have been asked to do.
   const partial = anyFailed(tasks, toVerify)
 
-  if (actions.length === 0 && other.length === 0 && verifying.length === 0 && newIncidents.length === 0) {
+  if (actions.length === 0 && other.length === 0 && verifying.length === 0 && newIncidents === 0) {
     if (partial) {
       return (
         <div className="p-4">
@@ -248,7 +249,7 @@ export default function MyActionsPage() {
       <div className="flex flex-col gap-2 p-4">
         {news}
         <MonthPanel query={month} />
-      <NewIncidents rows={newIncidents} />
+      <NewIncidents count={newIncidents} />
       <div className="flex flex-col items-center gap-2 p-10 text-center">
         <CheckCircle2 className="h-8 w-8 text-success-500" aria-hidden />
         <p className="text-sm font-medium text-neutral-700">Nothing is assigned to you.</p>
@@ -345,7 +346,7 @@ export default function MyActionsPage() {
         )}
       </section>
 
-      {only === null && <NewIncidents rows={newIncidents} />}
+      {only === null && <NewIncidents count={newIncidents} />}
 
       <Group title="Overdue" count={showing('Overdue') ? pick(overdue, newActions).length : 0} tone="bad">
         {pick(overdue, newActions).map((a) => <ActionCard key={a.id} action={a} isNew={newActions.has(a.id)} />)}
@@ -414,33 +415,69 @@ export default function MyActionsPage() {
   )
 }
 
+type IncidentSort = 'incident_no' | 'title' | 'submitted_at' | 'location'
+const ITH = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500'
+
 /**
  * INC-08 / D12: incidents sent since I last looked, for HSE and for whoever is
- * down for the area. Not a task — nothing here is mine to do until it is
- * classified — so it is a list that empties as each is opened.
+ * down for the area and may read the register. Not a task — nothing here is
+ * mine to do until it is classified — so it is a list that empties as each is
+ * opened. The list standard: paged and sorted on the server, header locked.
  */
-function NewIncidents({ rows }: { rows: NewIncident[] }) {
-  if (rows.length === 0) return null
+function NewIncidents({ count }: { count: number }) {
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+  const [sort, onSort] = useSort<IncidentSort>(null, () => setPage(1))
+  const list = useQuery({
+    queryKey: ['seen', 'incidents', page, pageSize, sort],
+    queryFn: () => api.get<{ items: NewIncident[]; total: number }>(
+      `/api/v1/seen/incidents?${new URLSearchParams({
+        page: String(page), page_size: String(pageSize), ...sortParams(sort) })}`),
+    enabled: count > 0,
+    placeholderData: (prev) => prev,
+  })
+  if (count === 0) return null
   return (
-    <section className="mb-1 rounded-xl border border-primary-200 bg-primary-50/40 p-3.5" aria-label="New incidents">
-      <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-neutral-900">
+    <section className="mb-1 overflow-hidden rounded-xl border border-primary-200 bg-white" aria-label="New incidents">
+      <p className="flex items-center gap-2 bg-primary-50/50 px-3.5 py-2.5 text-sm font-semibold text-neutral-900">
         New incidents
         <span className="rounded-full bg-primary-600 px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-white">
-          {rows.length}
+          {count}
         </span>
       </p>
-      <ul className="flex flex-col gap-1">
-        {rows.map((i) => (
-          <li key={i.id}>
-            <TabLink to={`/incidents/${i.id}`}
-                     className="flex items-baseline gap-2 rounded-lg px-1.5 py-1.5 text-sm hover:bg-white">
-              <span className="shrink-0 font-semibold tabular-nums text-neutral-800">{i.incident_no}</span>
-              <span className="min-w-0 flex-1 truncate text-neutral-700">{i.title}</span>
-              <span className="shrink-0 text-xs text-neutral-500">{formatDateTime(i.submitted_at)}</span>
-            </TabLink>
-          </li>
-        ))}
-      </ul>
+      {list.isError && <LoadFailedNote what="The new incidents" />}
+      <div className="max-h-[calc(100vh-15rem)] overflow-auto">
+        <table className="w-full min-w-[560px] text-sm">
+          <thead className="sticky top-0 z-10 bg-neutral-50 shadow-[0_1px_0_#e5e5e5]">
+            <tr>
+              <SortTh label="Incident" sortKey="incident_no" sort={sort} onSort={onSort} className={ITH} />
+              <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} className={ITH} />
+              <SortTh label="Area" sortKey="location" sort={sort} onSort={onSort} className={ITH} />
+              <SortTh label="Sent" sortKey="submitted_at" sort={sort} onSort={onSort} className={ITH} />
+            </tr>
+          </thead>
+          <tbody>
+            {list.data?.items.map((i) => (
+              <tr key={i.id} className="border-t border-neutral-100 hover:bg-neutral-50">
+                <td className="whitespace-nowrap px-3 py-2">
+                  <TabLink to={`/incidents/${i.id}`} className="font-semibold tabular-nums text-primary-700 hover:underline">
+                    {i.incident_no}
+                  </TabLink>
+                </td>
+                <td className="px-3 py-2 text-neutral-800">{i.title}</td>
+                <td className="px-3 py-2 text-xs text-neutral-600">
+                  {i.location_path ? i.location_path.split('/').join(' › ') : '—'}
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-xs tabular-nums text-neutral-600">
+                  {formatDateTime(i.submitted_at)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Pagination page={page} pageSize={pageSize} total={list.data?.total ?? count}
+                  onPageChange={setPage} onPageSizeChange={(n) => { setPageSize(n); setPage(1) }} />
     </section>
   )
 }

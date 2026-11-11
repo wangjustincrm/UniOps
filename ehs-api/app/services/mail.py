@@ -280,6 +280,10 @@ async def deliver(communication_id: uuid.UUID) -> bool:
         record = await db.get(Communication, communication_id)
         if record is None or record.sent_at is not None:
             return False
+        if record.body_purged_at is not None:
+            # ★ B5 review B3: its words are gone (Q16); sending it now would
+            # send an empty message under the original subject.
+            return False
 
         smtp = _smtp(await _config(db))
         if not smtp["host"]:

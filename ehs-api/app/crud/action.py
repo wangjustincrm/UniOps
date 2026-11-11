@@ -89,6 +89,12 @@ async def create(
     now = now or datetime.now(timezone.utc)
     source_ref = source_ref or await resolve_source_ref(
         db, payload.source_type, payload.source_id)
+    # ★ B5 review B2: whoever is making the request, where the caller did not
+    # say — causes raised on a hazard or an investigation, which pass no user.
+    # Empty for the scheduler, which raises on nobody's behalf.
+    if raised_by is None:
+        from app.core.actor import current_actor
+        raised_by = current_actor()[0]
     action = Action(
         id=uuid.uuid4(),
         action_no=await next_number(db, "action", now=now),

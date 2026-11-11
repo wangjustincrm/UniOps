@@ -371,7 +371,7 @@ async def submit(
                 due_date=due,
                 location_id=submission.location_id,
                 department_id=submission.department_id,
-            ), source_ref=submission.submission_no)
+            ), source_ref=submission.submission_no, raised_by=user_id)
             a.action_id = action.id
             # Round 10: a check of a safety equipment item — the action is
             # about that item, and verifying it (with the others) puts it back.

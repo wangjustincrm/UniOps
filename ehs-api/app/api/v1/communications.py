@@ -308,6 +308,10 @@ async def send_again(communication_id: uuid.UUID, db: SessionDep, user: CurrentU
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such outgoing message")
     if row.sent_at is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, "This message has already been sent")
+    if row.body_purged_at is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "Its words have been removed after the retention period, "
+                            "so it cannot be sent")
     if await mail.deliver(row.id):
         return SendAgainOut(sent=True, message="Sent.")
     return SendAgainOut(sent=False, message=(

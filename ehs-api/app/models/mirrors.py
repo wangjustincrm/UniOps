@@ -17,7 +17,7 @@ The schema is owned by epms-api.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,6 +39,10 @@ class User(Base):
     department_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     supervisor_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Read for the new-item baseline (round 12): somebody who joined after the
+    # flags went live sees their first work as new.
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, server_default=func.now())
 
 
 class Department(Base):

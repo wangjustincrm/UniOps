@@ -396,10 +396,14 @@ async def where_a_task_opens(task_id: uuid.UUID, db: SessionDep, user: CanReport
     task = await db.get(Task, task_id)
     if task is None or not (task.document_type or "").startswith("ehs_"):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such Safety task")
-    # Round 12, ACT-03: opened from the Portal's inbox counts as opened.
-    if task.assigned_user_id == _user_id(user):
-        from app.services import seen
-        await seen.mark(db, task.assigned_user_id, seen.KIND_TASK, [task.id])
+    # Round 12, ACT-03: opened from the Portal's inbox counts as opened —
+    # a task given to a role too (review B5), for whoever opened it, when it
+    # is one My Actions shows them.
+    from app.services import seen
+    me = _user_id(user)
+    if task.assigned_user_id == me or task.id in {
+            t.id for t in await assigned_task_rows(db, user, with_owned_actions=True)}:
+        await seen.mark(db, me, seen.KIND_TASK, [task.id])
     return TaskPathOut(path=task_service.path_for(task) or "/actions/mine")
 
 

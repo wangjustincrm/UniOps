@@ -147,3 +147,15 @@ async def test_the_words_go_after_the_retention_period_and_who_was_told_stays(
     assert (await hse.get("/api/v1/communications/log")).json()["retention_days"] == 30
     assert (await hse.put("/api/v1/settings/config",
                           json={"communication_retention_days": -1})).status_code == 422
+
+
+async def test_a_message_whose_words_are_gone_is_not_sent_again(
+        test_engine, db_session, hse_manager):
+    """★ B5 review B3: an unsent message past the retention period would have
+    gone out empty under its original subject."""
+    _, hse = hse_manager
+    _, _, row = await _mail_about_an_incident(test_engine, db_session, hse)
+    await db_session.execute(update(Communication).where(Communication.id == row.id).values(
+        body_text=None, body_html=None, body_purged_at=datetime.now(timezone.utc)))
+    await db_session.flush()
+    assert (await hse.post(f"/api/v1/communications/{row.id}/send-again")).status_code == 409

@@ -19,7 +19,8 @@ export interface SeenSummary {
   task_ids: string[]
   action_ids: string[]
   news: number
-  incidents: NewIncident[]
+  /** How many incidents are new to me; the list is /seen/incidents, paged. */
+  incidents: number
   feedback_answered: number
 }
 

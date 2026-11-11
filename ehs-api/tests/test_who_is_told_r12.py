@@ -146,3 +146,23 @@ async def test_the_rule_refuses_a_box_it_does_not_have(hse_manager):
     r = await hse.put("/api/v1/settings/config", json={"action_assigned_notify": {
         "people": [], "manager": True}})
     assert r.status_code == 422
+
+
+async def test_an_action_raised_on_a_hazards_cause_records_who_raised_it(
+        test_engine, db_session, hse_manager):
+    """★ B5 review B2: actions raised through a cause, a failed form or a
+    failed check had no raiser, so the reporter box added nobody."""
+    hse_user, hse = hse_manager
+    await _rule(hse, reporter=True)
+    owner = await make_user(test_engine, role="requester")
+    hazard = (await hse.post("/api/v1/hazards", json={"title": "Nip point"})).json()
+    saved = await hse.put(f"/api/v1/hazards/{hazard['id']}/causes", json={"causes": [{
+        "cause_type": "root", "label": "No guard",
+        "action": {"title": "Fit a guard", "owner_id": str(owner.id), "due_date": DUE}}]})
+    assert saved.status_code == 200, saved.text
+    from app.models.action import Action
+    action = (await db_session.execute(select(Action).where(
+        Action.title == "Fit a guard", Action.owner_id == owner.id))).scalar_one()
+    assert action.raised_by == hse_user.id
+    [m] = await _mail(db_session, "action_owner_told", action.id)
+    assert set(m.to_addrs) == {owner.email, hse_user.email}

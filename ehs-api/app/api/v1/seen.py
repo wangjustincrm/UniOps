@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -35,7 +35,8 @@ class SeenSummaryOut(BaseModel):
     task_ids: list[uuid.UUID]
     action_ids: list[uuid.UUID]
     news: int
-    incidents: list[NewIncidentOut]
+    # How many incidents are new to me; the list itself is /seen/incidents.
+    incidents: int
     feedback_answered: int
 
 
@@ -45,8 +46,28 @@ async def what_is_new(db: SessionDep, user: CanReportIncident):
     s = await seen.summary(db, user, me)
     return SeenSummaryOut(
         my_actions=s.my_actions, task_ids=s.task_ids, action_ids=s.action_ids, news=s.news,
-        incidents=[NewIncidentOut(**vars(i)) for i in s.incidents],
+        incidents=s.incidents,
         feedback_answered=s.feedback_answered)
+
+
+class NewIncidentPage(BaseModel):
+    items: list[NewIncidentOut]
+    total: int
+
+
+@router.get("/incidents", response_model=NewIncidentPage)
+async def new_incidents(
+    db: SessionDep, user: CanReportIncident,
+    sort: str | None = None,
+    dir: str = Query(default="desc", pattern="^(asc|desc)$"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+):
+    """INC-08: the incidents new to me, paged and sorted on the server."""
+    rows, total = await seen.new_incidents(
+        db, user, _user_id(user), sort=sort, dir=dir,
+        offset=(page - 1) * page_size, limit=page_size)
+    return NewIncidentPage(items=[NewIncidentOut(**vars(r)) for r in rows], total=total)
 
 
 class OpenedIn(BaseModel):

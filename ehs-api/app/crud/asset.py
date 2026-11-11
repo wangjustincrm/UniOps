@@ -470,7 +470,7 @@ async def _raise_repair_action(db: AsyncSession, asset: SafetyAsset, inspection,
             description=draft.get("description"), owner_id=draft["owner_id"],
             due_date=draft["due_date"], priority=draft.get("priority") or "high",
             hierarchy_of_control=draft.get("hierarchy_of_control")),
-            source_ref=asset.asset_no)
+            source_ref=asset.asset_no, raised_by=user_id)
         action.asset_id = asset.id
         await db.flush()
         return
@@ -485,7 +485,7 @@ async def _raise_repair_action(db: AsyncSession, asset: SafetyAsset, inspection,
         owner_id=asset.assigned_user_id or user_id,
         due_date=plant_today() + timedelta(days=7),
         priority="high"),
-        source_ref=asset.asset_no)
+        source_ref=asset.asset_no, raised_by=user_id)
     action.asset_id = asset.id
     await db.flush()
 
