@@ -267,3 +267,101 @@ async def completion(db: AsyncSession, talk_id: uuid.UUID) -> dict:
         "pending": counts.get("pending", 0),
         "percent": round(delivered * 100 / total) if total else 0,
     }
+
+
+# ── Round 12, TBT-01/02: HSE's monthly tracker, and chasing by hand ─────────
+
+def month_start(day: date) -> date:
+    return day.replace(day=1)
+
+
+def _tracker_people(month: date):
+    """One row per person a talk of that month was handed to. ★ Round 12, Q15:
+    "each person is the person the talk has been assigned to, not every
+    worker" — so it is derived from the deliveries, with nothing to keep."""
+    d, t = TbtDelivery, ToolboxTalk
+    delivered = func.count().filter(d.status == "delivered")
+    outstanding = func.count().filter(d.status == "pending")
+    return (
+        select(d.supervisor_id.label("person_id"),
+               func.max(d.supervisor_name).label("person_name"),
+               func.count().label("assigned"),
+               delivered.label("delivered"),
+               outstanding.label("outstanding"),
+               func.max(d.last_reminded_on).label("last_reminded_on"))
+        .join(t, t.id == d.talk_id)
+        .where(t.period_month == month)
+        .group_by(d.supervisor_id)
+    )
+
+
+async def tracker(db: AsyncSession, *, month: date, q: str | None, sort: str | None,
+                  dir: str, offset: int, limit: int) -> tuple[list[dict], int, dict]:
+    from app.crud._list_order import sort_clauses
+
+    base = _tracker_people(month_start(month)).subquery()
+    where = []
+    if q and q.strip():
+        where.append(base.c.person_name.ilike(f"%{q.strip()}%"))
+    total = (await db.execute(
+        select(func.count()).select_from(base).where(*where))).scalar() or 0
+    sums = (await db.execute(select(
+        func.coalesce(func.sum(base.c.assigned), 0),
+        func.coalesce(func.sum(base.c.delivered), 0),
+        func.coalesce(func.sum(base.c.outstanding), 0)).select_from(base))).one()
+    order = sort_clauses(sort, dir, {
+        "person_name": base.c.person_name,
+        "assigned": base.c.assigned,
+        "delivered": base.c.delivered,
+        "outstanding": base.c.outstanding,
+        "last_reminded_on": base.c.last_reminded_on,
+    }, [base.c.person_name, base.c.person_id]) or [
+        # Who still owes one first, then by name.
+        base.c.outstanding.desc(), base.c.person_name.asc().nulls_last(), base.c.person_id]
+    rows = (await db.execute(
+        select(base).where(*where).order_by(*order).offset(offset).limit(limit))).mappings().all()
+
+    people = [r["person_id"] for r in rows]
+    talks: dict = {p: [] for p in people}
+    if people:
+        detail = (await db.execute(
+            select(TbtDelivery, ToolboxTalk.talk_no, ToolboxTalk.title)
+            .join(ToolboxTalk, ToolboxTalk.id == TbtDelivery.talk_id)
+            # A month's handful of deliveries; grouped onto this page's people below.
+            .where(ToolboxTalk.period_month == month_start(month))
+            .order_by(ToolboxTalk.talk_no, TbtDelivery.created_at))).all()
+        for delivery, talk_no, title in detail:
+            if delivery.supervisor_id in talks:
+                talks[delivery.supervisor_id].append({
+                    "id": delivery.id, "talk_no": talk_no, "title": title,
+                    "department_name": delivery.department_name, "status": delivery.status,
+                    "held_at": delivery.held_at, "last_reminded_on": delivery.last_reminded_on,
+                })
+    items = [{**dict(r), "deliveries": talks.get(r["person_id"], [])} for r in rows]
+    return items, total, {"assigned": sums[0], "delivered": sums[1], "outstanding": sums[2]}
+
+
+async def remind(db: AsyncSession, delivery: TbtDelivery, *, today: date | None = None) -> bool:
+    """★ Round 12, TBT-02: "provide a way to resend them as a reminder that they
+    are outstanding." The same message as the fortnightly chase, sent now; the
+    fortnight then counts from today, so a talk chased by hand is not chased
+    again by the sweep the next morning."""
+    if delivery.status != "pending":
+        return False
+    delivery.last_reminded_on = today or plant_today()
+    talk = await db.get(ToolboxTalk, delivery.talk_id)
+    await notify.toolbox_talk_chase(
+        db, delivery, talk_title=talk.title if talk else "this month's toolbox talk")
+    await db.flush()
+    return True
+
+
+async def remind_all(db: AsyncSession, *, month: date) -> int:
+    pending = (await db.execute(
+        select(TbtDelivery).join(ToolboxTalk, ToolboxTalk.id == TbtDelivery.talk_id)
+        .where(ToolboxTalk.period_month == month_start(month),
+               TbtDelivery.status == "pending"))).scalars().all()
+    sent = 0
+    for delivery in pending:
+        sent += int(await remind(db, delivery))
+    return sent

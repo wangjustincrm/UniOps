@@ -24,6 +24,7 @@ import { formatDateTime } from '@/lib/formatDate'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { SignaturePad } from '@/components/SignaturePad'
 import { usePermissions } from '@/hooks/usePermissions'
+import ToolboxTracker from '@/components/ToolboxTracker'
 
 interface Talk {
   id: string; talk_no: string; title: string; topic: string | null
@@ -152,6 +153,9 @@ export default function ToolboxTalksPage() {
                       total={toDeliver.total} onPage={toDeliver.setPage} noun="to deliver" />
         </>
       )}
+
+      {/* ★ Round 12, TBT-01/02: HSE's month-by-month view, and the chase. */}
+      {isHse && <ToolboxTracker />}
 
       <SectionTitle className="mb-2">Topics</SectionTitle>
       <SearchBox value={topics.query} onChange={topics.setQuery}

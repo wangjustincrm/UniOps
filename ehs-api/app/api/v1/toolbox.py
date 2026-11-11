@@ -193,6 +193,81 @@ async def list_deliveries(
         status_in=status_in)
 
 
+# ── Round 12, TBT-01/02: the monthly tracker and chasing by hand ───────────
+
+class TrackerDelivery(BaseModel):
+    id: uuid.UUID
+    talk_no: str
+    title: str
+    department_name: str | None
+    status: str
+    held_at: datetime | None
+    last_reminded_on: date | None
+
+
+class TrackerRow(BaseModel):
+    person_id: uuid.UUID | None
+    person_name: str | None
+    assigned: int
+    delivered: int
+    outstanding: int
+    last_reminded_on: date | None
+    deliveries: list[TrackerDelivery]
+
+
+class TrackerPage(BaseModel):
+    month: date
+    items: list[TrackerRow]
+    total: int
+    # The whole month, not this page: what the header says.
+    assigned: int
+    delivered: int
+    outstanding: int
+
+
+@router.get("/tracker", response_model=TrackerPage)
+async def tracker(
+    db: SessionDep, user: CanManageSettings,  # noqa: ARG001
+    month: date = Query(description="Any day of the month; the month is what is used"),
+    q: str | None = Query(default=None, max_length=100, description="Person's name"),
+    sort: str | None = None,
+    dir: str = Query(default="asc", pattern="^(asc|desc)$"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=200),
+):
+    """★ Round 12, TBT-01: "track on a monthly basis the toolbox talks assigned
+    to each person and whether or not they have completed them." HSE's — the
+    same people who hand the talks out."""
+    items, total, sums = await crud.tracker(
+        db, month=month, q=q, sort=sort, dir=dir,
+        offset=(page - 1) * page_size, limit=page_size)
+    return TrackerPage(month=crud.month_start(month), items=items, total=total, **sums)
+
+
+class RemindedOut(BaseModel):
+    reminded: int
+
+
+@router.post("/deliveries/{delivery_id}/remind", response_model=RemindedOut)
+async def remind_one(delivery_id: uuid.UUID, db: SessionDep, user: CanManageSettings):  # noqa: ARG001
+    """★ Round 12, TBT-02: chase one outstanding talk now."""
+    delivery = await crud.get_delivery(db, delivery_id)
+    if not await crud.remind(db, delivery):
+        raise HTTPException(status.HTTP_409_CONFLICT,
+                            "This talk has been delivered; there is nothing to chase.")
+    return RemindedOut(reminded=1)
+
+
+@router.post("/remind-all", response_model=RemindedOut)
+async def remind_all(
+    db: SessionDep, user: CanManageSettings,  # noqa: ARG001
+    month: date = Query(description="Any day of the month whose outstanding talks to chase"),
+):
+    """★ Round 12, TBT-02: "remind everyone" — every talk of that month not yet
+    signed off."""
+    return RemindedOut(reminded=await crud.remind_all(db, month=month))
+
+
 @router.get("/deliveries/{delivery_id}/signatures", response_model=list[SignatureOut])
 async def list_signatures(delivery_id: uuid.UUID, db: SessionDep, user: CanReportIncident):  # noqa: ARG001
     await crud.get_delivery(db, delivery_id)
