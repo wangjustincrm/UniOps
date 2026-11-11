@@ -1,12 +1,15 @@
 # Safety (EHS) — Product Requirements Document
 
-**Version**: 0.18
+**Version**: 0.19
 **Date**: 2026-11-10
 **Status**: In Development (branch, not deployed)
 **Scope**: A workplace health and safety module for the Kingston plant (Ontario OHSA / WSIB), replacing SiteDocs. It covers incidents and statutory clocks, corrective actions, inspections and forms, training, JHSC, chemicals/WHMIS, permits, equipment, documents, and dashboards.
 **Source**: Consolidated from the Safety Module PRD series in `/srv/uniops/`. The baseline is the full requirement list in v0.2 (`Safety-Module-PRD-EN-v0.2.docx`, 28 Aug 2026). Changes come from v0.3 and the HSE reply to it (`Safety-Module-PRD-EN-v0.3_Reply.docx`, 31 Aug), and from v0.4 and the HSE reply to it (`Safety-Module-PRD-EN-v0.4_Reply.docx`, 1 Sep). v0.3 and v0.4 were delta documents, so they do not restate the full list.
 
-**What changed in this version (0.17 → 0.18)**
+**What changed in this version (0.18 → 0.19)**
+- §1.6 "Review of the third and fourth batches": permit photographs follow the permit; a record's action history follows who may see each action; saving unchanged keeps the wording of picks; links to a permit, a hazard's Edit and a draft JSA's details; incident type labels kept on the report; HSE's review tasks; JHSC verification once. The list standard applied to the equipment register, the hazard register and incident types.
+
+**What changed in version 0.18 (0.17 → 0.18)**
 - §1.6 "Round 12, fourth batch": hazards, job analyses and permits on HSE's answers Q11 and Q12 — a hazard's own page with every field, workers seeing a hazard once it is assessed, several kinds and controls, hazards scored on the incident's risk form, eliminated at assessment, newest first, the recorded date and time and "last revised on"; job analyses with a System, PPE from the list, steps on the create page and hazards and controls per step; permits with hazards and controls; photographs on all three. The chart by supervisor and hazard assessments by month now count hazards recorded, by their creator and create date. The review of the second batch, fixed.
 
 **What changed in version 0.17 (0.16 → 0.17)**
@@ -313,12 +316,24 @@ On HSE's answers Q11 ("one overall score works … complete once it has at least
 - The person recording a hazard is shown and cannot be changed; Owner is filled in with them and stays editable (HAZ-01, D5).
 - A hazard can be several kinds and have several controls, picked from the Hazard and Hazard Control lists (HAZ-11, migration 0094); the single kind each had is carried over. Controls in words and the kind of control stay.
 - A hazard is scored on the incident's risk form (HAZ-02/06): judged on (in bold, HAZ-08), how likely and how bad before and after, the hierarchy and hazard controls, and what remains. One score for the hazard however many kinds it is. "The hazard has been eliminated" can be ticked there (HAZ-12); until now nothing set Eliminated. Assessments made on the old form keep what they recorded as the controls in place, shown as such and not as what remains.
-- The register lists newest first, or highest risk first on request, sorted before the 300-row limit (HAZ-07; round 3 had risk only). Each row shows the date and time it was recorded under its number, department and owner, and when it was last revised. A revision is an edit that changes something, not an assessment. The create date is the one Reports, the staff file and the dashboard count by.
+- The register lists newest first, or highest risk first on request (HAZ-07; round 3 had risk only) — since the review below, by sorting the Risk column, the register being paged on the server. Each row shows the date and time it was recorded under its number, department and owner, and when it was last revised. A revision is an edit that changes something, not an assessment. The create date is the one Reports, the staff file and the dashboard count by.
 - A job analysis records its equipment System, which narrows its equipment picker and is shown by the System's current name (JSA-01/02, D8); on incidents, hazards and permits the equipment picker offers a System that only narrows the list. PPE is picked from the PPE list (JSA-03); PPE typed before stays, read-only. Steps are written on the create page and saved with it (JSA-04). Each step picks its hazards and controls from the lists, beside its own words (JSA-05, Q12); approval refuses a step with a hazard and no control however either was given (migration 0095). A new version copies all of it.
 - A permit names its hazards and controls from the lists (PMT-01, migration 0096); they are on the permit and its printout, and can be changed while it is a draft or suspended. A link to a permit opens it.
-- Photographs on hazards, job analyses and permits (HAZ-03, JSA-06, D6), on the create form and on the record. Seen by whoever may see the record; added by whoever may write it (a permit: anyone who may raise one); removed by whoever added it or may write the record.
+- Photographs on hazards, job analyses and permits (HAZ-03, JSA-06, D6), on the create form and on the record. Seen by whoever may see the record; added by whoever may write it (a permit: whoever raised it or issues permits); removed by whoever added it or may write the record. A permit's photographs are seen as the permit is, added until it is closed out and removed only while it is a draft or suspended.
 - The chart by supervisor counts hazards recorded, as above. Kirk's November count read 0 because it counted risk scorings in the column of the scorer's supervisor. Where supervisors come from is unchanged until the organisation chart in MDM is ready.
 - Review of the second batch (uniops-95): a merged System is remembered, so loading an old sheet follows the merge and does not put machines back into the retired System, and a retired System that was not merged is reported; the moves of a merge are in each machine's change history; an equipment name that fails to load says so instead of "not in the register"; retiring safety equipment closes its owed checks without stamping the person who retired it, and says why.
+
+Review of the third and fourth batches (uniops-95, built)
+
+- A permit's photographs follow the permit (H1): seen by whoever raised it or holds the register, added by whoever may edit it until it is closed out, removed only while a draft or suspended. They asked only for the key everyone holds.
+- A record's corrective-action history (M1) shows someone who cannot browse the register the actions they own, and every action of a record they may open themselves (their own report, an assessed hazard, a form they can see) — not everyone's.
+- Saving a record unchanged (M2) keeps the wording of the list entries it already had; only entries new to it take today's wording. A rename by HSE no longer renames old hazards, JSA steps or permits on their next save, or counts as a revision.
+- A link to a permit (M3) opens that permit, fetched by its id, in a tab of its own, and says so when it cannot be shown. A hazard (M4) is edited on its own page. A draft JSA's details, System and PPE can be corrected (M5); an approved one changes by a new version; an empty title is refused (L8).
+- The history of changes (L1) is offered to those who may read the audit trail (ehs.incident.read).
+- A report keeps the name of the incident type it was filed or reclassified as (L2); a type reports already use cannot move to another form; a retired type is not chosen anew (L7).
+- HSE's review of a record (L3) is withdrawn when another action is raised on it and asked for again when that closes; a JHSC recommendation's review is done by verifying it, not ticked off in My Actions; closing an incident closes its review in the closer's name. A JHSC recommendation is verified once, and one already Completed before step 11 is not offered it again (L4). Retrying an edited report does not resend what went through (L5).
+- Waiting on HSE: whether adding only the product batch code on the investigation should withdraw HSE's review, as any edit to the report does (L6).
+- The list standard (decided 10-29, applied to Safety 11-10): the equipment register and the hazard register are tables paged, searched and sorted on the server (every column; unknown keys refused; blanks last both ways), with the standard pager and a header locked while it scrolls; incident types are one sortable table. The hazard register is no longer the latest 300. Safety's other lists are not changed yet.
 ## 2. Functional Requirements — 57 Items
 
 Priority: **P0** legally required or the loop breaks without it · **P1** needed day to day · **P2** strengthens the system · **P3** needed for COR. **Phase** is as stated in v0.2–v0.4; "—" means the source did not assign one.
@@ -502,6 +517,7 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | 0.16 | 2026-11-09 | Round 12 second batch: the equipment register and pickers; retiring safety equipment (§1.6, E56). |
 | 0.17 | 2026-11-09 | Round 12 third batch: incidents, investigations, corrective actions, JHSC workflow, incident types (§1.6). |
 | 0.18 | 2026-11-10 | Round 12 fourth batch: hazards, job analyses, permits, photographs; the chart by supervisor (§1.6). |
+| 0.19 | 2026-11-10 | Review of the third and fourth batches; the list standard on three lists (§1.6). |
 
 ---
 
