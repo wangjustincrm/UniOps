@@ -237,15 +237,14 @@ export default function FormFillPage() {
   })
 
   // ★ Round 12, FRM-01: "create a process to delete a draft form." The
-  // autosave is stopped first, or a save still waiting would land on a form
-  // that is no longer there and report itself as a failure.
+  // waiting autosave is dropped once the draft is gone — only then (review
+  // C6): a refused delete leaves the form on screen, and what was typed must
+  // still be saved.
   const discard = useMutation({
-    mutationFn: () => {
+    mutationFn: () => api.del(`/api/v1/forms/submissions/${id}`),
+    onSuccess: () => {
       if (timer.current) clearTimeout(timer.current)
       pending.current = {}
-      return api.del(`/api/v1/forms/submissions/${id}`)
-    },
-    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['form-submissions'] })
       queryClient.invalidateQueries({ queryKey: ['form-runs'] })
       readersOfTheAnswers()
