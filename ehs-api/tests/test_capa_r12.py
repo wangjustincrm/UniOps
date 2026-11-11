@@ -100,3 +100,40 @@ async def test_hse_is_asked_to_review_once_the_last_action_closes(hse_manager, w
                              params={"source_type": "incident", "source_id": iid})).json()
     assert [h["status"] for h in history] == ["closed", "closed"]
     assert [e["what"] for e in history[0]["entries"]] == ["raised", "update", "verified"]
+
+
+async def test_the_history_follows_who_may_see_the_action(hse_manager, worker,
+                                                         test_engine, db_session):
+    """★ B3/B4 review M1: the history asked only for ehs.action.read, which every
+    worker holds, so anyone could read the progress notes, evidence and
+    reasons on any record's actions while the action itself answered 403."""
+    _, hse = hse_manager
+    owner, w = worker
+    other = await make_user(test_engine, role="requester", full_name="Someone Else")
+    iid = await _incident(hse)
+    mine = await _action(hse, owner.id, iid, "Sweep the walkway")
+    theirs = await _action(hse, other.id, iid, "Mark the walkway")
+
+    by_source = {"source_type": "incident", "source_id": iid}
+    seen = (await w.get("/api/v1/actions/history", params=by_source)).json()
+    assert [h["id"] for h in seen] == [mine], "★ their own, not the other owner's"
+    assert (await w.get("/api/v1/actions/history",
+                        params={"action_id": [theirs]})).json() == []
+    assert len((await hse.get("/api/v1/actions/history", params=by_source)).json()) == 2, \
+        "the register sees both"
+
+    # Whoever may open the record sees every action raised from it.
+    reporter = await make_user(test_engine, role="requester", full_name="The Reporter")
+    async with authed_client(make_token(reporter.id, reporter.role), db_session) as r:
+        made = await r.post("/api/v1/incidents", json={
+            "form_kind": "near_miss", "title": "Spill by the dock",
+            "occurred_at": datetime.now(timezone.utc).isoformat(),
+            "incident_type": "near_miss"})
+        rid = made.json()["id"]
+        await r.post(f"/api/v1/incidents/{rid}/submit")
+        a1 = await _action(hse, owner.id, rid, "Mop the dock")
+        got = (await r.get("/api/v1/actions/history",
+                           params={"source_type": "incident", "source_id": rid})).json()
+        assert [h["id"] for h in got] == [a1], "★ the reporter sees their own report's actions"
+        assert (await r.get("/api/v1/actions/history", params=by_source)).json() == [], \
+            "but not another report's"

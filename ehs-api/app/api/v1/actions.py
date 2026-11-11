@@ -361,7 +361,7 @@ class ActionHistory(BaseModel):
 
 @router.get("/history", response_model=list[ActionHistory])
 async def history_for_source(
-    db: SessionDep, user: CanReadAction,  # noqa: ARG001
+    db: SessionDep, user: CanReadAction,
     source_type: str | None = None, source_id: uuid.UUID | None = None,
     action_id: list[uuid.UUID] = Query(default=[]),
 ):
@@ -383,6 +383,25 @@ async def history_for_source(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "Name the record, or the actions")
     actions = list((await db.execute(q.order_by(Action.created_at))).scalars())
+    if actions and not await _may_browse(db, user):
+        # ★ B3/B4 review M1: the history carries progress notes, evidence and
+        # the reasons for reassigning, and asked only for ehs.action.read —
+        # which every worker holds — while the same action's own page answers
+        # 403. Now: the actions they own, plus every action of a record they
+        # may open themselves (their own report, an assessed hazard, a form).
+        me = _user_id(user)
+        readable: dict[tuple[str, uuid.UUID], bool] = {}
+        kept = []
+        for a in actions:
+            if a.owner_id == me:
+                kept.append(a)
+                continue
+            key = (a.source_type, a.source_id)
+            if key not in readable:
+                readable[key] = await _source_readable(db, user, *key)
+            if readable[key]:
+                kept.append(a)
+        actions = kept
     if not actions:
         return []
     ids = [a.id for a in actions]
@@ -409,6 +428,31 @@ async def history_for_source(
         out.append(ActionHistory(id=a.id, action_no=a.action_no, title=a.title,
                                  status=a.status, owner_name=a.owner_name, entries=entries))
     return out
+
+
+async def _source_readable(db, user: dict, source_type: str, source_id) -> bool:
+    """Whether someone who cannot browse the register may open this record —
+    the same answer the record's own page gives them."""
+    if source_id is None:
+        return False
+    if source_type == "incident":
+        from app.api.v1.incidents import _may_read
+        from app.models.incident import Incident
+        incident = await db.get(Incident, source_id)
+        return incident is not None and await _may_read(db, user, incident)
+    if source_type == "hazard":
+        from app.models.hazard import Hazard
+        hazard = await db.get(Hazard, source_id)
+        # A worker sees a hazard once it has been assessed (round 12, Q11).
+        return hazard is not None and hazard.risk_assessment_id is not None
+    if source_type == "inspection":
+        from app.api.v1.forms import _submission
+        try:
+            await _submission(db, user, source_id)
+        except HTTPException:
+            return False
+        return True
+    return False
 
 
 REASSIGNED = "Reassigned from "
