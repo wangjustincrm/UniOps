@@ -2082,8 +2082,8 @@ function NotificationSettingsSection() {
 
       {/* Follow-up time */}
       <section className="flex flex-col gap-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Daily Follow-up Time (UTC)</h3>
-        <p className="text-sm text-neutral-500">Time at which the daily pending-task reminder is dispatched.</p>
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Daily Follow-up Time</h3>
+        <p className="text-sm text-neutral-500">Time at which the daily pending-task reminder is dispatched, on plant time (Company Settings → Time Zone).</p>
         <input type="time" className={cn(inCls, 'w-36')}
           value={settings.followup_time ?? '08:00'}
           onChange={(e) => setSettings((p) => ({ ...p, followup_time: e.target.value }))} />

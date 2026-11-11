@@ -4,26 +4,23 @@ import type { EntitySchema } from '@/services/adminApi'
 import { adminApi } from '@/services/adminApi'
 import { useAdminList } from '@/hooks/useAdmin'
 import { BulkDeleteConfirm } from './BulkDeleteConfirm'
-import { formatDate } from '@/lib/utils'
+import { formatDate, formatDateTime } from '@/lib/utils'
 
 // Column headers were the raw field names ("VENDOR_NAME", ISS-0183).
 const columnLabel = (c: string) => c.replace(/_/g, ' ')
 
-// ISO dates / timestamps print as YYYY-MMM-DD [HH:MM] (company format 2026-11-11;
-// was DD/MM/YYYY under UI-DATE-001, ISS-0183).
-// Format only: a timestamp keeps the zone the API sent it in (UTC) and says
-// so — no conversion. Plain dates are not run through new Date() (no shift).
+// ISO dates / timestamps print as YYYY-MMM-DD [HH:MM] (UI-DATE-002; was
+// DD/MM/YYYY under UI-DATE-001, ISS-0183). Like every other screen, a
+// timestamp with a zone is shown on the plant clock (Company Settings time
+// zone, UI-DATE-003) — it used to stay in UTC with a "UTC" tag. Plain dates
+// and zone-less wall-clock values are printed as written.
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
 const ISO_TS = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:\d{2})?$/
 function cellText(v: unknown): string {
   const s = String(v ?? '')
   const d = ISO_DATE.exec(s)
   if (d) return formatDate(s)
-  const t = ISO_TS.exec(s)
-  if (t) {
-    const zone = !t[6] ? '' : t[6] === 'Z' || t[6] === '+00:00' ? ' UTC' : ` (UTC${t[6]})`
-    return `${formatDate(`${t[1]}-${t[2]}-${t[3]}`)} ${t[4]}:${t[5]}${zone}`
-  }
+  if (ISO_TS.test(s)) return formatDateTime(s)
   return s
 }
 

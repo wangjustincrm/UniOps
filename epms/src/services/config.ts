@@ -228,7 +228,7 @@ export interface CompanyConfig {
 export interface NotificationSettings {
   default_channel: 'email_only' | 'teams_only' | 'both' | 'none'
   teams_webhook_url: string | null
-  followup_time: string  // "HH:MM" UTC
+  followup_time: string  // "HH:MM" plant time (company time zone)
   system_url?: string
 }
 

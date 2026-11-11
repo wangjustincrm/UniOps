@@ -1194,7 +1194,7 @@ function NotificationSettings() {
         {mailboxError && <p className="mt-2 text-xs text-red-600">{mailboxError}</p>}
       </div>
 
-      <Field label="Daily Digest Time (UTC)" hint="When the once-a-day task digest goes out — see Task Notifications below for which tasks it covers. Changes take effect within 15 minutes — no restart needed.">
+      <Field label="Daily Digest Time" hint="Plant time (Company Settings → Time Zone). When the once-a-day task digest goes out — see Task Notifications below for which tasks it covers. Changes take effect within 15 minutes — no restart needed.">
         <Input type="time" value={followupVal} onChange={(e) => setFollowup(e.target.value)} />
       </Field>
 
