@@ -341,27 +341,38 @@ async def tracker(db: AsyncSession, *, month: date, q: str | None, sort: str | N
     return items, total, {"assigned": sums[0], "delivered": sums[1], "outstanding": sums[2]}
 
 
-async def remind(db: AsyncSession, delivery: TbtDelivery, *, today: date | None = None) -> bool:
+async def remind(db: AsyncSession, delivery: TbtDelivery, *, today: date | None = None) -> str:
     """★ Round 12, TBT-02: "provide a way to resend them as a reminder that they
     are outstanding." The same message as the fortnightly chase, sent now; the
     fortnight then counts from today, so a talk chased by hand is not chased
-    again by the sweep the next morning."""
+    again by the sweep the next morning.
+
+    Returns what happened: "sent"; "delivered" (nothing to chase); "today" —
+    already chased today, by hand or by the sweep, so a second press or a
+    second person does not send it again (review C4); "nobody" — no one with
+    an address to send it to, and then nothing is recorded as sent (C5)."""
+    today = today or plant_today()
     if delivery.status != "pending":
-        return False
-    delivery.last_reminded_on = today or plant_today()
+        return "delivered"
+    if delivery.last_reminded_on == today:
+        return "today"
     talk = await db.get(ToolboxTalk, delivery.talk_id)
-    await notify.toolbox_talk_chase(
-        db, delivery, talk_title=talk.title if talk else "this month's toolbox talk")
+    if not await notify.toolbox_talk_chase(
+            db, delivery, talk_title=talk.title if talk else "this month's toolbox talk"):
+        return "nobody"
+    delivery.last_reminded_on = today
     await db.flush()
-    return True
+    return "sent"
 
 
-async def remind_all(db: AsyncSession, *, month: date) -> int:
+async def remind_all(db: AsyncSession, *, month: date) -> dict:
     pending = (await db.execute(
         select(TbtDelivery).join(ToolboxTalk, ToolboxTalk.id == TbtDelivery.talk_id)
         .where(ToolboxTalk.period_month == month_start(month),
                TbtDelivery.status == "pending"))).scalars().all()
-    sent = 0
+    out = {"sent": 0, "today": 0, "nobody": 0}
     for delivery in pending:
-        sent += int(await remind(db, delivery))
-    return sent
+        what = await remind(db, delivery)
+        if what in out:
+            out[what] += 1
+    return out

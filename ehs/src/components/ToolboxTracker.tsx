@@ -32,6 +32,7 @@ interface TrackerPage {
   month: string; items: TrackerRow[]; total: number
   assigned: number; delivered: number; outstanding: number
 }
+interface Reminded { reminded: number; already_today: number; nobody_to_send_to: number }
 type SortKey = 'person_name' | 'assigned' | 'delivered' | 'outstanding' | 'last_reminded_on'
 
 const TH = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500'
@@ -65,17 +66,27 @@ export default function ToolboxTracker() {
     void queryClient.invalidateQueries({ queryKey: ['tbt-tracker'] })
   }
 
+  // ★ Review C4/C5: what was sent, what had already been chased today, and
+  // what had nobody to send to — three different things, said as such.
   const remindOne = useMutation({
     mutationFn: (deliveryId: string) =>
-      api.post<{ reminded: number }>(`/api/v1/toolbox-talks/deliveries/${deliveryId}/remind`, {}),
-    onSuccess: () => { setNote('Reminder sent.'); refresh() },
+      api.post<Reminded>(`/api/v1/toolbox-talks/deliveries/${deliveryId}/remind`, {}),
+    onSuccess: (r) => {
+      setNote(r.reminded ? 'Reminder sent.' : 'Already reminded today — not sent again.')
+      refresh()
+    },
   })
   const remindAll = useMutation({
-    mutationFn: () => api.post<{ reminded: number }>(
-      `/api/v1/toolbox-talks/remind-all?month=${day}`, {}),
+    mutationFn: () => api.post<Reminded>(`/api/v1/toolbox-talks/remind-all?month=${day}`, {}),
     onSuccess: (r) => {
-      setNote(r.reminded === 0 ? 'Nothing outstanding to chase.'
-        : `Reminder sent for ${r.reminded} talk${r.reminded === 1 ? '' : 's'}.`)
+      const parts = [
+        `Reminder sent for ${r.reminded} talk${r.reminded === 1 ? '' : 's'}`,
+        r.already_today ? `${r.already_today} already reminded today` : '',
+        r.nobody_to_send_to
+          ? `${r.nobody_to_send_to} with nobody to send to — hand those to somebody under Reallocate Items`
+          : '',
+      ].filter(Boolean)
+      setNote(parts.join(' · ') + '.')
       refresh()
     },
   })

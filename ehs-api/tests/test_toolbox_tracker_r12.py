@@ -120,3 +120,37 @@ async def test_remind_all_chases_only_that_months_outstanding(hse_manager, month
         select(TbtDelivery).join(ToolboxTalk, ToolboxTalk.id == TbtDelivery.talk_id)
         .where(ToolboxTalk.period_month == _month(-1)))).scalars().first()
     assert await _chases(db_session, last.id) == 0
+
+
+async def test_a_second_press_the_same_day_sends_nothing_more(hse_manager, month_of_talks, db_session):
+    """Review C4: two presses, or two people, are one reminder a day."""
+    _, client = hse_manager
+    month = _month().isoformat()
+    first = (await client.post(f"/api/v1/toolbox-talks/remind-all?month={month}")).json()
+    second = (await client.post(f"/api/v1/toolbox-talks/remind-all?month={month}")).json()
+    assert first["reminded"] == 1
+    assert second["reminded"] == 0 and second["already_today"] == 1
+    one = (await client.post(
+        f"/api/v1/toolbox-talks/deliveries/{month_of_talks['owed'].id}/remind")).json()
+    assert one["reminded"] == 0 and one["already_today"] == 1
+    assert await _chases(db_session, month_of_talks["owed"].id) == 1
+
+
+async def test_a_talk_with_nobody_to_send_to_is_not_reported_as_reminded(hse_manager, db_session):
+    """Review C5: no address, no reminder — and nothing says there was one."""
+    talk = ToolboxTalk(id=uuid.uuid4(), talk_no=f"TBT-{uuid.uuid4().hex[:5]}", title="Orphan",
+                       period_month=_month(), is_published=True)
+    db_session.add(talk)
+    await db_session.flush()
+    orphan = TbtDelivery(id=uuid.uuid4(), talk_id=talk.id, supervisor_id=None,
+                         supervisor_name=None, status="pending")
+    db_session.add(orphan)
+    await db_session.commit()
+
+    _, client = hse_manager
+    one = await client.post(f"/api/v1/toolbox-talks/deliveries/{orphan.id}/remind")
+    assert one.status_code == 422 and "Nobody" in one.json()["detail"]
+    got = (await client.post(f"/api/v1/toolbox-talks/remind-all?month={_month().isoformat()}")).json()
+    assert got["nobody_to_send_to"] == 1 and got["reminded"] == 0
+    await db_session.refresh(orphan)
+    assert orphan.last_reminded_on is None

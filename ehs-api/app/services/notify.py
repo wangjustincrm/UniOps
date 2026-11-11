@@ -496,11 +496,12 @@ async def inspection_due(
     )
 
 
-async def toolbox_talk_chase(db: AsyncSession, delivery, *, talk_title: str) -> None:
-    """The fortnightly nudge HSE asked for, until the talk is signed off."""
-    people = await mail.recipients(db, [delivery.supervisor_id])
+async def toolbox_talk_chase(db: AsyncSession, delivery, *, talk_title: str) -> bool:
+    """The fortnightly nudge HSE asked for, until the talk is signed off.
+    Whether there was anybody to send it to (review C5)."""
+    people = await mail.recipients(db, [delivery.supervisor_id] if delivery.supervisor_id else [])
     if not people:
-        return
+        return False
     await mail.queue(
         db,
         to=[u.email for u in people],
@@ -514,6 +515,7 @@ async def toolbox_talk_chase(db: AsyncSession, delivery, *, talk_title: str) -> 
         link=mail.module_link("/toolbox-talks"),
         link_label="Open toolbox talks",
     )
+    return True
 
 
 async def course_tomorrow(db: AsyncSession, delivery, attendee_ids: list[uuid.UUID]) -> None:

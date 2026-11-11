@@ -246,16 +246,25 @@ async def tracker(
 
 class RemindedOut(BaseModel):
     reminded: int
+    # Review C4/C5: not sent again because already chased today; not sent
+    # because nobody on it has an address.
+    already_today: int = 0
+    nobody_to_send_to: int = 0
 
 
 @router.post("/deliveries/{delivery_id}/remind", response_model=RemindedOut)
 async def remind_one(delivery_id: uuid.UUID, db: SessionDep, user: CanManageSettings):  # noqa: ARG001
     """★ Round 12, TBT-02: chase one outstanding talk now."""
     delivery = await crud.get_delivery(db, delivery_id)
-    if not await crud.remind(db, delivery):
+    what = await crud.remind(db, delivery)
+    if what == "delivered":
         raise HTTPException(status.HTTP_409_CONFLICT,
                             "This talk has been delivered; there is nothing to chase.")
-    return RemindedOut(reminded=1)
+    if what == "nobody":
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            "Nobody with an email address is on this talk, so no reminder "
+                            "was sent. Hand it to somebody under Reallocate Items.")
+    return RemindedOut(reminded=int(what == "sent"), already_today=int(what == "today"))
 
 
 @router.post("/remind-all", response_model=RemindedOut)
@@ -265,7 +274,9 @@ async def remind_all(
 ):
     """★ Round 12, TBT-02: "remind everyone" — every talk of that month not yet
     signed off."""
-    return RemindedOut(reminded=await crud.remind_all(db, month=month))
+    got = await crud.remind_all(db, month=month)
+    return RemindedOut(reminded=got["sent"], already_today=got["today"],
+                       nobody_to_send_to=got["nobody"])
 
 
 @router.get("/deliveries/{delivery_id}/signatures", response_model=list[SignatureOut])
