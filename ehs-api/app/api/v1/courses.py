@@ -14,7 +14,7 @@ from datetime import date, datetime, time
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api.v1.incidents import _user_id
 from app.core.deps import BearerToken, SessionDep
@@ -245,7 +245,7 @@ class SessionPage(BaseModel):
 
 _SESSION_SORT = {
     "delivery_no": CourseDelivery.delivery_no,
-    "title": CourseDelivery.title,
+    "title": func.lower(CourseDelivery.title),
     "session_date": CourseDelivery.session_date,
     "status": CourseDelivery.status,
 }
@@ -269,8 +269,11 @@ async def session_page(
     from app.crud._list_order import sort_clauses
     where = []
     if search and search.strip():
-        like = f"%{search.strip()}%"
-        where.append(or_(CourseDelivery.delivery_no.ilike(like), CourseDelivery.title.ilike(like)))
+        # A % or _ typed is looked for, not a wildcard.
+        term = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like = f"%{term}%"
+        where.append(or_(CourseDelivery.delivery_no.ilike(like, escape="\\"),
+                         CourseDelivery.title.ilike(like, escape="\\")))
     if date_from:
         where.append(CourseDelivery.session_date >= date_from)
     if date_to:

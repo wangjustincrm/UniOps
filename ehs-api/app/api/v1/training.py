@@ -96,7 +96,8 @@ async def course_page(
     from app.crud._list_order import sort_clauses
     where = [Course.is_active.is_(True)]
     if q and q.strip():
-        where.append(Course.name.ilike(f"%{q.strip()}%"))
+        term = q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        where.append(Course.name.ilike(f"%{term}%", escape="\\"))
     total = (await db.execute(select(func.count()).select_from(Course).where(*where))).scalar() or 0
     order = sort_clauses(sort, dir, {"name": func.lower(Course.name),
                                      "validity_months": Course.validity_months},

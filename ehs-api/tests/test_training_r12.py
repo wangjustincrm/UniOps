@@ -336,3 +336,15 @@ async def test_the_three_lists_are_paged_and_sorted_on_the_server(hse_manager, w
     assert page["total"] == 3 and [s["title"] for s in page["items"]] == ["Paged 0", "Paged 1"]
     assert (await hse.get("/api/v1/course-sessions/page?sort=notes")).status_code == 422
     assert (await client.get("/api/v1/course-sessions/page")).status_code == 403
+
+
+async def test_a_typed_wildcard_is_looked_for_and_titles_sort_regardless_of_case(hse_manager, trained):
+    _, hse = hse_manager
+    for title in ("beta drill", "Alpha drill", "Gamma drill"):
+        await hse.post("/api/v1/course-sessions", json={
+            "course_id": trained["first_aid"]["id"], "title": title,
+            "session_date": plant_today().isoformat()})
+    page = (await hse.get("/api/v1/course-sessions/page?search=drill&sort=title&dir=asc")).json()
+    assert [s["title"] for s in page["items"]] == ["Alpha drill", "beta drill", "Gamma drill"]
+    assert (await hse.get("/api/v1/course-sessions/page?search=%25")).json()["total"] == 0
+    assert (await hse.get("/api/v1/training/courses/page?q=_")).json()["total"] == 0
