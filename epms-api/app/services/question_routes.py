@@ -17,7 +17,8 @@ reliably:
 So both are decided here, from the text, by rules that can be read and
 tested: a message is split where it plainly asks several questions (question
 marks, semicolons, a numbered list, "A、B、C 分别是…", clauses that are each a
-question, two documents of different kinds), and a question is about the
+question, two documents of different kinds) — a question after a question
+mark only when it has a subject of its own (_stands_alone) — and a question is about the
 conversation only when it says so in so many words. The planner's
 split_question stays as a supplement for what these rules do not catch; it
 is no longer offered recall_conversation at all.
@@ -71,14 +72,30 @@ def _by_semicolon(segment: str) -> list[str]:
     return [segment]
 
 
+# "帮我查一下，PO-… 的状态是什么？" — asking for help is not a question of its own.
+_REQUEST_ONLY = re.compile(
+    r"^(?:请|麻烦你?|你)?\s*(?:帮我|给我|帮忙|帮我们)\s*(?:查|看|找|搜|核对|核|问|确认|检查|看看|查查)?"
+    r"\s*(?:一下|一查|下)?\s*$")
+
+
 def _by_clause(segment: str) -> list[str]:
     """"PO-079-2605-03 是什么状态，INV-2026-0123 金额多少，怎么催审批人，再帮我写一首
     诗" — split at the commas only when every clause is a question of its own;
     "NC 里刚批准的采购订单，多久能在 EPMS 里看到？" is one question."""
     clauses = [_clean(c) for c in re.split(r"[，,]", segment) if _clean(c)]
-    if len(clauses) >= 2 and all(_ASKS.search(c) for c in clauses):
-        return clauses
-    return [segment]
+    if len(clauses) < 2 or not all(_ASKS.search(c) and not _REQUEST_ONLY.match(c)
+                                   for c in clauses):
+        return [segment]
+    out: list[str] = []
+    for c in clauses:
+        # "PO-535-2609-02 的金额是多少，含税吗？" — "含税吗" goes on with the clause
+        # before it.
+        bare = re.sub(r"[吗呢？?\s]", "", c)
+        if out and len(bare) <= 3 and not _SUBJECT.search(c) and not doc_numbers.find_all(c):
+            out[-1] = f"{out[-1]}，{c}"
+        else:
+            out.append(c)
+    return out if len(out) >= 2 else [segment]
 
 
 def _each(segment: str) -> list[str]:
@@ -101,12 +118,17 @@ def _each(segment: str) -> list[str]:
     return [f"{item}{tail}" for item in items]
 
 
+# "PO-… 和 INV-… 的金额一致吗？" asks about the two together.
+_COMPARES = re.compile(r"一致|比较|比对|差异|差额|差多少|对比|相比|区别|不同|对得上|"
+                       r"\bmatch(?:es|ed)?\b|\bvs\.?|\bversus\b|\bcompare|\bdifference", re.I)
+
+
 def _by_document(segment: str) -> list[str]:
     """"PR-20261015-0006 和 PA-20260923-0017 现在是什么状态？" — one query reaches one
     kind of document, so documents of different kinds are asked one by one.
     The same kind stays together (one query with `in`)."""
     found = doc_numbers.find_all(segment)
-    if len({prefix for prefix, *_ in found}) < 2:
+    if len({prefix for prefix, *_ in found}) < 2 or _COMPARES.search(segment):
         return [segment]
     numbers = "|".join(re.escape(segment[s:e]) for _p, _n, s, e in found)
     run = re.search(rf"(?:{numbers})(?:{_JOIN}(?:{numbers}))+", segment, re.I)
@@ -133,6 +155,60 @@ def _numbered(text: str) -> list[str] | None:
     return [p for p in (_clean(head), *(_clean(i) for i in items)) if p]
 
 
+# What lets a question after a question mark stand on its own (round 2 fix,
+# 2026-11-11). Splitting at every question mark cut "PA-20261013-0003 什么时候
+# 付的？用的哪个账户？", "发票匹配的容差是多少？在哪里改？", "服务类 PO 谁来确认？怎么确认？"
+# in two — answers the tester had passed — and the second half, asked alone,
+# has no subject. So a later piece is a question of its own only when it says
+# what it is about: a document number, a date, a thing of its own ("有几个承
+# 运商？", "怎么回复邮件来审批？") that is not just "金额多少？" / "供应商是谁？", or
+# a rule the code answers by itself ("停用后还能下单吗？"). Everything else —
+# a short "…呢？", a statement ("我是申请人。"), "怎么确认？" — stays with the
+# question before it.
+_SUBJECT = re.compile(
+    r"请购单|请购|采购订单|订单|收货单|发票|付款申请|付款单|贷项|快递单|快递|承运商|供应商|"
+    r"角色|邮件|预算|审批人|报销|协议|合同|"
+    r"(?<![A-Za-z])(?:PRs?|POs?|PAs?|GRs?|INV|Teams)(?![A-Za-z])|"
+    r"\b(?:invoices?|vendors?|suppliers?|payments?|receipts?|budgets?|roles?|approvers?|"
+    r"emails?|claims?|trips?|agreements?|purchase (?:requests?|orders?)|"
+    r"payment applications?|goods receipts?|carriers?|shipments?)\b", re.I)
+_DATED = re.compile(
+    r"\d{1,2}\s*月\s*\d{1,2}\s*[日号]|\d{4}-\d{1,2}-\d{1,2}|上周|本周|这周|上个?月|本月|"
+    r"这个月|今年|去年|昨天|今天|前天|本季度?|上季度?|"
+    r"\b(?:last|this) (?:week|month|quarter|year)\b|\byesterday\b|\btoday\b", re.I)
+# In English "And …?" usually asks something new (f7459c50).
+_EN_NEW = re.compile(r"\s*(?:and|also|then)\b", re.I)
+# "金额多少？" "供应商是谁？" "发票有几张？" — one noun and a question word.
+_SHORT_ASK = re.compile(
+    r"^.{1,8}?\s*的?\s*(?:是|有)?\s*(?:多少钱|多少|是谁|谁|是什么|什么|哪(?:个|些|张|天|家|位)|"
+    r"几(?:个|张|天|笔|次)?|吗|可以吗|能吗|呢)$")
+
+
+def _stands_alone(piece: str) -> bool:
+    from app.services import rule_registry
+
+    body = piece.rstrip("？? ").strip()
+    if not piece.rstrip().endswith(("?", "？")) and not _asks(piece):
+        return False                                  # a statement: "我是申请人。"
+    if body.endswith("呢") and len(body) <= 12 and not doc_numbers.find_all(body):
+        return False                                  # "原材料类呢？"
+    if doc_numbers.find_all(piece) or _DATED.search(piece) or _EN_NEW.match(piece):
+        return True
+    if rule_registry.pinned_for(piece):
+        return True                                   # "停用后还能下单吗？"
+    return bool(_SUBJECT.search(piece)) and not _SHORT_ASK.match(body)
+
+
+def _with_follow_ons(pieces: list[str]) -> list[str]:
+    out: list[str] = []
+    for piece in pieces:
+        if out and not _stands_alone(piece):
+            out[-1] = out[-1] + (" " if out[-1].endswith("?") else "") + piece
+        else:
+            out.append(piece)
+    return out
+
+
 def split(message: str) -> list[str]:
     """The separate questions in `message`, in order — a list of one when it
     asks one thing."""
@@ -142,13 +218,15 @@ def split(message: str) -> list[str]:
     segments = _numbered(text) or [text]
     out: list[str] = []
     for segment in segments:
-        for asked in (_clean(p) for p in _ENDS.split(segment)):
+        asked_list = _with_follow_ons([_clean(p) for p in _ENDS.split(segment) if _clean(p)])
+        for asked in asked_list:
             for piece in (_by_semicolon(asked) if asked else []):
                 for clause in _by_clause(piece):
                     for item in _each(clause):
                         out.extend(_by_document(item))
     out = [p for p in (_clean(p) for p in out) if _WORDY.search(p)]
-    return _joined_follow_ons(out) or [text]
+    out = _joined_follow_ons(out)
+    return out if len(out) >= 2 else [text]
 
 
 # A question that only goes on with the one before it: "PO-… 收过几次货？每次收了多少？",
@@ -181,14 +259,16 @@ _EN_ORDINALS = {"first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
 
 # Each pattern names the position AND asks what it was: "这是我第一个问题，PO 状态
 #是什么" is not a question about the conversation, "我问的第一个问题是什么" is.
-_WHAT_ZH = r"\s*(?:是|叫)?\s*(?:什么|啥|哪(?:个|一个|句|条)?)"
+# …and the what-word ends it: "我第二个问题是哪张发票没付？" asks about invoices.
+_WHAT_ZH = (r"\s*(?:是|叫)?\s*(?:什么|啥|哪(?:个|一个|句|条)?)\s*(?:呢|啊|来着)?"
+            r"(?=\s*(?:[？?。.!！，,；;]|$))")
 _ANSWERED_ZH = r".{0,12}?(?:你|您)\s*(?:当时|那时|是)?\s*(?:怎么|如何)?\s*(?:回答|答)"
 _ZH_NTH = re.compile(
     r"第\s*([一二两三四五六七八九十\d]+)\s*个?\s*(?:问题|提问)(?=" + _WHAT_ZH + "|"
     + _ANSWERED_ZH + ")")
 _ZH_PREVIOUS = re.compile(
     r"(?:上一个|上个|前一个|刚才那个|刚才的|最后一个)\s*(?:问题|提问)(?=" + _WHAT_ZH + "|"
-    + _ANSWERED_ZH + ")|我\s*刚才\s*问(?:了|的)?\s*(?:什么|啥)")
+    + _ANSWERED_ZH + r")|我\s*刚才\s*问(?:了|的)?\s*(?:什么|啥)")
 _ZH_ABOUT_ME = re.compile(r"我|咱|你.{0,6}(?:回答|答)")
 _EN_ORD = (r"(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|"
            r"\d+(?:st|nd|rd|th))")
