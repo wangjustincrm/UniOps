@@ -44,7 +44,7 @@ export interface NcMeta {
   today: string
   is_today: boolean
   nc_time_zone: string
-  /** NC-clock end of the chosen Toronto day, "YYYY-MM-DD HH:MM:SS". */
+  /** NC-clock end of the chosen plant day, "YYYY-MM-DD HH:MM:SS". */
   nc_cutoff: string
   period: string
   month_end: boolean

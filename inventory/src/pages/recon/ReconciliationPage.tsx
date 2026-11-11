@@ -5,7 +5,7 @@
 // Every control lives in the URL so a view is linkable and the tab shell
 // restores it. Absent params mean the defaults (date = last month end,
 // status = Unexplained + Explained, unposted vouchers included). The date is
-// a plain "YYYY-MM-DD" on Toronto's clock, never passed through new Date().
+// a plain "YYYY-MM-DD" on the plant's clock, never passed through new Date().
 import { useEffect, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'

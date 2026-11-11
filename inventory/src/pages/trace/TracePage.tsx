@@ -6,7 +6,7 @@
 // Two routes share this file:
 //   /trace            — the entry form (material, optional batch, date)
 //   /trace/:material  — one tab per material; batch and date in the query.
-// Dates are plain "YYYY-MM-DD" strings on Toronto's clock, never parsed.
+// Dates are plain "YYYY-MM-DD" strings on the plant's clock, never parsed.
 import { WmsHistoryNote } from '@/components/WmsHistoryNote'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'

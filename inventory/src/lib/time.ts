@@ -1,34 +1,22 @@
-// Timestamps (real instants, ISO with offset) shown on Toronto's clock — the
-// plant's clock, whatever zone the reader's laptop is set to. Date-only
-// strings ("YYYY-MM-DD") must NOT come through here: they have no instant,
-// and new Date() would read them as UTC midnight (one day early at UTC-4).
-// Show those as the string itself.
+// Timestamps (real instants, ISO with offset) shown on the plant's clock —
+// the company time zone (Portal → Admin → Company Settings), whatever zone the
+// reader's laptop is set to. Date-only strings ("YYYY-MM-DD") must NOT come
+// through here: they have no instant, and new Date() would read them as UTC
+// midnight (one day early at UTC-4). Show those as the string itself.
 
-import { formatDateTime } from './utils'
+import { formatDateTime, timeZoneAbbrev, todayISO } from './utils'
 
-export const LOCAL_TIME_ZONE = 'America/Toronto'
-
-/** "2026-OCT-14 17:05 EDT" (company-wide format, see lib/utils) on Toronto's
- *  clock; "—" for null/invalid. The Toronto wall-clock fields are read with
- *  Intl and handed to formatDateTime as a local Date, so the zone stays the
- *  plant's while the format stays the shared one. */
+/** "2026-OCT-14 17:05 EDT" (company-wide format, see lib/utils) on the plant's
+ *  clock; "—" for null/invalid. (The name is historical — the zone is the
+ *  company setting, read at call time.) */
 export function formatDateTimeToronto(iso: string | null | undefined): string {
   if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
-  const parts: Record<string, number> = {}
-  for (const p of new Intl.DateTimeFormat('en-CA', {
-    timeZone: LOCAL_TIME_ZONE,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-  }).formatToParts(d)) {
-    if (p.type !== 'literal') parts[p.type] = Number(p.value)
-  }
   // Keep the zone tag ("EDT"/"EST"): this module also shows NC-clock times,
-  // and an untagged Toronto time is easy to mistake for one of those.
-  const zone = new Intl.DateTimeFormat('en-US', { timeZone: LOCAL_TIME_ZONE, timeZoneName: 'short' })
-    .formatToParts(d).find((p) => p.type === 'timeZoneName')?.value
-  const local = formatDateTime(new Date(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute))
+  // and an untagged plant time is easy to mistake for one of those.
+  const zone = timeZoneAbbrev(d)
+  const local = formatDateTime(d)
   return zone ? `${local} ${zone}` : local
 }
 
@@ -67,13 +55,10 @@ export function formatNumber(value: string | number | null | undefined, maxDigit
   return n.toLocaleString('en-US', { maximumFractionDigits: maxDigits })
 }
 
-/** Today's date on Toronto's clock as "YYYY-MM-DD" — built from the current
- *  instant, so no date-only string is parsed. */
-export function todayToronto(now: Date = new Date()): string {
-  // en-CA formats a date as YYYY-MM-DD.
-  return new Intl.DateTimeFormat('en-CA', {
-    timeZone: LOCAL_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(now)
+/** Today's date on the plant's clock (company time zone) as "YYYY-MM-DD".
+ *  (The name is historical.) */
+export function todayToronto(): string {
+  return todayISO()
 }
 
 /** Last day of the month before `today` ("YYYY-MM-DD" → "YYYY-MM-DD"),

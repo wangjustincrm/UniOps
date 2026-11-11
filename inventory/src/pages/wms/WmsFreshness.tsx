@@ -20,7 +20,7 @@ import { formatDateTimeToronto } from '@/lib/time'
 import { freshness, relativeAge, syncApi } from './syncApi'
 import type { useToasts } from '@/hooks/useToasts'
 
-/** The tooltip's absolute times, on Toronto's clock like the rest of this
+/** The tooltip's absolute times, on the plant's clock like the rest of this
  *  module. The strip itself says "6 min ago", which needs no timezone at all;
  *  this is what somebody checks when the relative age is not precise enough. */
 const formatDateTime = (iso: string) => formatDateTimeToronto(iso)
