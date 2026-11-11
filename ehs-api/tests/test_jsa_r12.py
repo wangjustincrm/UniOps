@@ -96,3 +96,19 @@ async def test_a_retired_system_and_a_wrong_list_are_refused(hse_manager, lists)
     jsa = (await hse.post("/api/v1/jsa", json={"title": "Fine"})).json()
     patched = await hse.patch(f"/api/v1/jsa/{jsa['id']}", json={"ppe_ids": [str(lists["plugs"].id)]})
     assert patched.status_code == 200 and patched.json()["ppe_items"][0]["label"] == lists["plugs"].label
+
+
+async def test_a_draft_is_corrected_and_an_approved_one_is_not(hse_manager, lists):
+    """★ B3/B4 review M5 and L8: the System and PPE could not be changed after
+    the JSA was made; a null title was a 500; and an approved JSA must change
+    by a new version."""
+    _, hse = hse_manager
+    jsa = (await hse.post("/api/v1/jsa", json={
+        "title": "Fill the hopper", "steps": [{"step": "Open the lid"}]})).json()
+    fixed = await hse.patch(f"/api/v1/jsa/{jsa['id']}", json={
+        "system_id": str(lists["filler"].id), "ppe_ids": [str(lists["plugs"].id)]})
+    assert fixed.status_code == 200, fixed.text
+    assert fixed.json()["system_label"] == lists["filler"].label
+    assert (await hse.patch(f"/api/v1/jsa/{jsa['id']}", json={"title": None})).status_code == 422
+    assert (await hse.post(f"/api/v1/jsa/{jsa['id']}/activate")).status_code == 200
+    assert (await hse.patch(f"/api/v1/jsa/{jsa['id']}", json={"ppe_ids": []})).status_code == 409

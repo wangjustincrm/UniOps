@@ -418,8 +418,22 @@ async def get_jsa(jsa_id: uuid.UUID, db: SessionDep, user: CanReportIncident):  
 async def update_jsa(
     jsa_id: uuid.UUID, payload: JsaPatch, db: SessionDep, user: CanWriteAction,  # noqa: ARG001
 ):
+    """Correct a draft. ★ Nothing on the page called this, so a System or PPE
+    picked wrongly, or missing from an analysis made before round 12, could not
+    be put right (B3/B4 review M5). Only a draft, as its steps: an approved
+    analysis changes by a new version, not under the crew who signed it."""
     jsa = await crud.get_jsa(db, jsa_id)
+    if jsa.status != "draft":
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{jsa.jsa_no} is {jsa.status}. Create a new version to change it.")
     fields = payload.model_dump(exclude_unset=True)
+    if "title" in fields and not (fields["title"] or "").strip():
+        # ★ L8: an explicit null reached a NOT NULL column as a 500.
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "The job needs a name")
+    if "location_id" in fields:
+        (jsa.location_path, jsa.department_id,
+         jsa.department_name) = await crud._place(db, fields["location_id"])
     if "equipment_id" in fields:
         from app.services import equipment_ref
         await equipment_ref.check(db, fields["equipment_id"], jsa.equipment_id)

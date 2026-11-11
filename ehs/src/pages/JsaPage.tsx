@@ -279,6 +279,80 @@ function NewJsaForm({ onClose }: { onClose: () => void }) {
   )
 }
 
+/** ★ B3/B4 review M5: a draft's details, System and PPE could not be changed
+ *  once it was made — nothing called the PATCH — so an analysis made before
+ *  round 12 could never be given a System or PPE from the list. */
+function JsaDetailsForm({ jsa, onClose }: { jsa: Jsa; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const [title, setTitle] = useState(jsa.title)
+  const [description, setDescription] = useState(jsa.job_description ?? '')
+  const [locationId, setLocationId] = useState<string | null>(jsa.location_id)
+  const [equipmentId, setEquipmentId] = useState<string | null>(jsa.equipment_id ?? null)
+  const [systemId, setSystemId] = useState<string | null>(jsa.system_id ?? null)
+  const [ppeIds, setPpeIds] = useState<string[]>((jsa.ppe_items ?? []).map((p) => p.id))
+  const save = useMutation({
+    mutationFn: () => api.patch<Jsa>(`/api/v1/jsa/${jsa.id}`, {
+      title, job_description: description || null, location_id: locationId,
+      equipment_id: equipmentId, system_id: systemId, ppe_ids: ppeIds,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jsa'] })
+      queryClient.invalidateQueries({ queryKey: ['change-log'] })
+      onClose()
+    },
+  })
+  return (
+    <Card className="mb-4">
+      <h2 className="mb-3 text-sm font-semibold text-neutral-900">Details of {jsa.jsa_no}</h2>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <Field label="The job">
+            <input className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)} />
+          </Field>
+        </div>
+        <Field label="Where">
+          <LocationSelect value={locationId} onChange={setLocationId} />
+        </Field>
+        <Field label="System">
+          <VocabularySelect vocabulary="equipment_system" value={systemId}
+                            onChange={(item) => {
+                              const next = item?.id ?? null
+                              if (next !== systemId) setEquipmentId(null)
+                              setSystemId(next)
+                            }}
+                            placeholder="Any System" />
+        </Field>
+        <Field label="Equipment">
+          <EquipmentSelect value={equipmentId} onChange={setEquipmentId} locationId={locationId}
+                           systemId={systemId} />
+        </Field>
+        <Field label="PPE for the whole job">
+          <VocabularyMultiSelect vocabulary="ppe" value={ppeIds} onChange={(ids) => setPpeIds(ids)}
+                                 placeholder="Search the PPE list…" />
+          {jsa.required_ppe && (
+            <p className="mt-1 text-xs text-neutral-500">Typed before: {jsa.required_ppe}</p>
+          )}
+        </Field>
+        <div className="sm:col-span-2">
+          <Field label="What the job involves">
+            <textarea className={`${inputClass} min-h-[70px] py-2`} value={description}
+                      onChange={(e) => setDescription(e.target.value)} />
+          </Field>
+        </div>
+      </div>
+      <ErrorNote error={save.error} />
+      <div className="mt-3 flex justify-end gap-2">
+        <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>
+        <button type="button" className={primaryButton}
+                disabled={!title.trim() || save.isPending}
+                onClick={() => { if (!save.isPending) save.mutate() }}>
+          {save.isPending ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </Card>
+  )
+}
+
 /** The step rows, used on the new form and on a draft. */
 function StepList({ steps, onChange }: { steps: Step[]; onChange: (next: Step[]) => void }) {
   const hazards = useQuery({
@@ -379,6 +453,7 @@ export function JsaDetailPage() {
   const { can } = usePermissions()
   const mayWrite = can('ehs.action.write')
   const [signing, setSigning] = useState(false)
+  const [editingDetails, setEditingDetails] = useState(false)
 
   const jsa = useQuery({
     queryKey: ['jsa', id],
@@ -430,10 +505,18 @@ export function JsaDetailPage() {
       <PageHeader title={j.title}
                   subtitle={`${j.jsa_no} · version ${j.version}`
                     + (j.location_path ? ` · ${j.location_path}` : '')}>
+        {isDraft && mayWrite && !editingDetails && (
+          <button type="button" className={secondaryButton} onClick={() => setEditingDetails(true)}>
+            Edit details
+          </button>
+        )}
         <StatusPill status={j.status} />
       </PageHeader>
 
-      <Card className="mb-4">
+      {editingDetails && (
+        <JsaDetailsForm jsa={j} onClose={() => setEditingDetails(false)} />
+      )}
+      <Card className={'mb-4' + (editingDetails ? ' hidden' : '')}>
         {j.job_description && (
           <p className="mb-2 text-sm text-neutral-700">{j.job_description}</p>
         )}
