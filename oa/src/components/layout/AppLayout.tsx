@@ -16,11 +16,12 @@ import { TabQueryScope, TabRefreshButton } from './TabQueryScope'
 
 const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'
 
-// Task Inbox, list and detail tabs re-read their data when the user comes back
-// to them and get a Refresh button beside the tab bar (as EPMS, UI-TAB-004).
-// Create / edit forms and the admin settings forms are left out on purpose —
-// see TabQueryScope.
-const REFRESHABLE_ROUTES = new Set(['/tasks', '/expenses', '/expenses/:id', '/travel', '/travel/:id'])
+// List and detail tabs re-read their data when the user comes back to them and
+// get a Refresh button beside the tab bar (as EPMS, UI-TAB-004). The Task Inbox
+// has its own Refresh button beside its title (as EPMS, DSH-021), so it is not
+// listed here. Create / edit forms and the admin settings forms are left out on
+// purpose — see TabQueryScope.
+const REFRESHABLE_ROUTES = new Set(['/expenses', '/expenses/:id', '/travel', '/travel/:id'])
 const tabRoutes = oaRoutes.map((r) => REFRESHABLE_ROUTES.has(r.path)
   ? { ...r, element: <TabQueryScope routes={oaRoutes}>{r.element}</TabQueryScope> }
   : r)
