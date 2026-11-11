@@ -4,7 +4,7 @@ import { Plus, AlertCircle } from 'lucide-react'
 import { Pagination, SortTh, useSort, sortParams } from '@uniops/shell'
 import { useVisits, type Visit } from '@/services/api'
 import { StatusBadge, AccessAreaBadge, OverdueBadge, isVisitOverdue } from '@/components/StatusBadge'
-import { formatDateTime, localToday } from '@/lib/utils'
+import { formatDate, formatDateTime, localToday } from '@/lib/utils'
 
 /** vms-api /visits ?sort= keys (app/crud/visit.py VISIT_SORTABLE). */
 export type VisitSortKey = 'visitor' | 'company' | 'planned_arrival' | 'access_area' | 'status'
@@ -29,7 +29,7 @@ export default function VisitListPage({ scope }: { scope: 'today' | 'all' }) {
 
   const title = scope === 'today' ? 'Today’s Visits' : 'All Visits'
   const subtitle = scope === 'today'
-    ? `${new Date().toLocaleDateString('en-CA', { weekday: 'long', month: 'short', day: 'numeric' })}`
+    ? `${new Date().toLocaleDateString('en-CA', { weekday: 'long' })}, ${formatDate(new Date())}`
     : `${data?.total ?? 0} total`
 
   return (

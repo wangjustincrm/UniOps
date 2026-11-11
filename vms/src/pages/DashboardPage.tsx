@@ -10,7 +10,7 @@ import {
   type Visit,
 } from '@/services/api'
 import { StatusBadge, AccessAreaBadge } from '@/components/StatusBadge'
-import { formatDateTime, localToday } from '@/lib/utils'
+import { formatDate, formatDateTime, localToday } from '@/lib/utils'
 import type { VisitSortKey } from './VisitListPage'
 
 export default function DashboardPage() {
@@ -44,9 +44,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">Dashboard</h1>
           <p className="mt-1 text-sm text-neutral-500">
-            {new Date().toLocaleDateString('en-CA', {
-              weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-            })}
+            {new Date().toLocaleDateString('en-CA', { weekday: 'long' })}, {formatDate(new Date())}
           </p>
         </div>
         <Link

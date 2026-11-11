@@ -65,5 +65,5 @@ export function timeAgo(iso: string | null | undefined): string {
   if (seconds < 3600)       return `${Math.round(seconds / 60)}m ago`
   if (seconds < 86400)      return `${Math.round(seconds / 3600)}h ago`
   if (seconds < 86400 * 7)  return `${Math.round(seconds / 86400)}d ago`
-  return new Date(iso).toLocaleDateString('en-CA')
+  return formatDate(iso)
 }
