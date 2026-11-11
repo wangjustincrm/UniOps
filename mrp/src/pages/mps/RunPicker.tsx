@@ -14,7 +14,7 @@ import { useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, ChevronDown, Lock } from 'lucide-react'
 import { Badge, Button } from '@uniops/shell'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import type { MpsRunSummary } from './mpsApi'
 
 function statusVariant(run: MpsRunSummary): 'success' | 'warning' | 'neutral' {
@@ -32,8 +32,8 @@ function statusLabel(run: MpsRunSummary): string {
 
 function formatStamp(iso: string | null): string {
   if (!iso) return ''
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString()
+  const s = formatDate(iso)
+  return s === '—' ? '' : s
 }
 
 export function RunPicker({

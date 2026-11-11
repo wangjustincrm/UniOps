@@ -11,6 +11,8 @@ import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, X as XIcon } from 'lucide-react'
 import { ApiError } from '@/lib/api'
+// changed_at is a full timestamp; shown as its date only ("2026-JUL-14: 50 -> 60").
+import { formatDate } from '@/lib/utils'
 import { seriesApi } from './seriesApi'
 
 function errMsg(err: unknown, fallback: string): string {
@@ -22,12 +24,6 @@ function formatQty(raw: string | null): string {
   if (raw === null) return '—'
   const n = Number(raw)
   return Number.isFinite(n) ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(n) : raw
-}
-
-/** changed_at is a full timestamp; the brief's example format is just the
- *  date ("2026-07-14: 50 -> 60") — trim rather than pulling in a date lib. */
-function formatDate(iso: string): string {
-  return iso.slice(0, 10)
 }
 
 export function CellHistoryPopover({

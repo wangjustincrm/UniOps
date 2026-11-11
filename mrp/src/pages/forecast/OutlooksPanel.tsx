@@ -18,6 +18,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClie
 import { AlertTriangle, ChevronLeft, ChevronRight, Eye, Search, Trash2, X } from 'lucide-react'
 import { Button, SortTh, sortParams, useSort } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
+import { formatDateTime } from '@/lib/utils'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { forecastApi, type ForecastVersion, type ListVersionsOptions } from './forecastApi'
 
@@ -36,21 +37,8 @@ export async function invalidateOutlookLists(queryClient: QueryClient): Promise<
   ])
 }
 
-/** The "Created" column — a full local date+time, since two outlooks frozen
- *  the same day (a redo, say) are otherwise indistinguishable. `created_at`
- *  is a real timestamp, so `new Date` is right here; the date-ONLY columns
- *  elsewhere in MRP must not go through it (see formatDate's UTC note). An
- *  unparseable value falls back to the raw string rather than rendering
- *  "Invalid Date". */
-function formatDateTime(iso: string): string {
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime())
-    ? iso
-    : d.toLocaleString('en-US', {
-        year: 'numeric', month: 'short', day: 'numeric',
-        hour: '2-digit', minute: '2-digit',
-      })
-}
+// The "Created" column is a full local date+time (formatDateTime), since two
+// outlooks frozen the same day (a redo, say) are otherwise indistinguishable.
 
 function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback

@@ -15,7 +15,7 @@ import { AlertTriangle, CalendarClock, Download, Loader2, RefreshCw } from 'luci
 import { Badge, Button, SortTh, useSortableRows } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
 import { saveBlob } from '@/pages/forecast/forecastApi'
-import { cn } from '@/lib/utils'
+import { cn, formatDate, formatDateTime } from '@/lib/utils'
 import { ToastStack } from '@/components/Toast'
 import { useToasts } from '@/hooks/useToasts'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -126,7 +126,7 @@ export default function PurchaseSuggestionsPage() {
           <h1 className="text-lg font-semibold text-neutral-900">Purchase Suggestions</h1>
           <p className="text-xs text-neutral-500">
             What to buy for the production plan currently in force, and when to order it.
-            {run && <> Calculated {new Date(run.created_at).toLocaleString()} · {run.run_no}</>}
+            {run && <> Calculated {formatDateTime(run.created_at)} · {run.run_no}</>}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -138,7 +138,7 @@ export default function PurchaseSuggestionsPage() {
             >
               {runs.map((r) => (
                 <option key={r.id} value={r.id}>
-                  {r.run_no} · {new Date(r.created_at).toLocaleDateString()}
+                  {r.run_no} · {formatDate(r.created_at)}
                 </option>
               ))}
             </select>
@@ -233,10 +233,10 @@ export default function PurchaseSuggestionsPage() {
                 line.order_date_passed && 'bg-danger-50/40')}>
                 <td className="px-3 py-2 font-mono text-xs"
                   title={line.order_date_passed
-                    ? `Overdue — this should have been ordered on ${line.order_date}`
+                    ? `Overdue — this should have been ordered on ${formatDate(line.order_date)}`
                       + `${daysAgo(line.order_date)}. Ordered now, it arrives after it is `
-                      + `needed in the week of ${line.need_week}.`
-                    : `Order by ${line.order_date} to have it for the week of ${line.need_week}.`}>
+                      + `needed in the week of ${formatDate(line.need_week)}.`
+                    : `Order by ${formatDate(line.order_date)} to have it for the week of ${formatDate(line.need_week)}.`}>
                   <span className="flex items-center gap-1">
                     {line.order_date_passed && (
                       // Not aria-hidden: for a screen reader this icon is the
@@ -244,7 +244,7 @@ export default function PurchaseSuggestionsPage() {
                       <CalendarClock aria-label="Overdue" role="img"
                         className="h-3 w-3 shrink-0 text-danger-600" />
                     )}
-                    {line.order_date}
+                    {formatDate(line.order_date)}
                   </span>
                 </td>
                 <td className="px-3 py-2 font-mono text-xs">{line.material_code}</td>
@@ -258,7 +258,7 @@ export default function PurchaseSuggestionsPage() {
                       className="ml-1 text-danger-600">?</span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-right font-mono text-xs text-neutral-500">{line.need_week}</td>
+                <td className="px-3 py-2 text-right font-mono text-xs text-neutral-500">{formatDate(line.need_week)}</td>
                 <td className="px-3 py-2 text-right font-mono text-neutral-600">{fmt(line.gross_qty)}</td>
                 <td className="px-3 py-2 text-right font-mono text-neutral-600">{fmt(line.available_qty)}</td>
                 <td className="px-3 py-2 text-right font-mono">{fmt(line.net_qty)}</td>
