@@ -83,6 +83,22 @@ class ShipmentResponse(BaseModel):
     invoice_id: uuid.UUID | None = None
     invoice_number: str | None = None
     billed_amount: Decimal | None = None
+    # Files kept on the shipment (scanned label + supporting documents).
+    attachment_count: int = 0
+
+
+class ShipmentAttachmentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    shipment_id: uuid.UUID
+    # waybill (the scanned shipping label) | other
+    kind: str
+    filename: str
+    content_type: str
+    file_size: int
+    uploaded_by_name: str | None
+    created_at: datetime
 
 
 class ShipmentListResponse(BaseModel):

@@ -12,7 +12,9 @@ from app.models.config import CompanyConfig  # noqa: F401
 from app.models.cost_center import CostCenter  # noqa: F401
 from app.models.department import Department  # noqa: F401
 from app.models.gr import GoodsReceipt, GrLineItem  # noqa: F401
-from app.models.freight import FreightCarrier, FreightInvoiceLine, FreightShipment, PaCostAllocation  # noqa: F401
+from app.models.freight import (  # noqa: F401
+    FreightCarrier, FreightInvoiceLine, FreightShipment, FreightShipmentAttachment, PaCostAllocation,
+)
 from app.models.invoice import Invoice  # noqa: F401
 from app.models.invoice_allocation import InvoicePoAllocation  # noqa: F401
 from app.models.invoice_fee_link import InvoiceFeeLink  # noqa: F401
