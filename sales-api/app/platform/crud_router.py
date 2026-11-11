@@ -3,7 +3,9 @@
     router = crud_router("/config/partners", PartnerService, uow=get_uow)
 
 list · meta · get · create · update (`?version=`) · deactivate · export.csv ·
-import.csv (`?dry_run=`). The router enforces no permission of its own: the
+import.csv (`?dry_run=`). Deactivate is mounted only for a Deactivatable model,
+and the CSV pair only for a service that declares its CSV columns and key: a
+route that can only fail is never offered. The router enforces no permission of its own: the
 service checks the keys it declares (app/platform/authorization.py), so the
 same rule holds for any other caller. `uow` is the business code's
 request-scoped unit of work (it authenticates the caller). Each write endpoint
@@ -17,6 +19,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile
 
+from app.platform.entities import Deactivatable
 from app.platform.query import Page, QuerySpec, query_spec
 from app.platform.services import MAX_IMPORT_BYTES, CrudService, ReadOnlyService
 
@@ -92,23 +95,8 @@ def crud_router(
     async def suggest(u: UoW, field: str, q: str = "") -> list[str]:
         return await service_cls(u).suggest(field, q[:100])
 
-    @r.get("/export.csv")
-    async def export(u: UoW, spec: Spec) -> Response:
-        data = await service_cls(u).export_csv(spec)
-        name = prefix.strip("/").replace("/", "-") or "export"
-        return Response(data, media_type="text/csv",
-                        headers={"Content-Disposition": f'attachment; filename="{name}.csv"'})
-
-    @r.post("/import.csv")
-    async def import_(u: UoW, file: Annotated[UploadFile, File()], dry_run: bool = True) -> dict:
-        # Read one byte past the limit: the service refuses an oversized file
-        # without the whole upload ever being held in memory.
-        report = await service_cls(u).import_csv(await file.read(MAX_IMPORT_BYTES + 1), dry_run=dry_run)
-        if report.ok and not dry_run:
-            await u.commit()
-        body = dataclasses.asdict(report)
-        body["counts"] = report.counts
-        return body
+    if service_cls.csv_columns and service_cls.csv_key:
+        _csv_routes(r, prefix, service_cls, UoW, Spec)
 
     @r.get("/{id}", response_model=Read)
     async def get(u: UoW, id: int):
@@ -126,10 +114,31 @@ def crud_router(
         await u.commit()
         return out
 
-    @r.post("/{id}/deactivate", response_model=Read)
-    async def deactivate(u: UoW, id: int):
-        out = await service_cls(u).deactivate(id)
-        await u.commit()
-        return out
+    if issubclass(service_cls.repo_cls.model, Deactivatable):
+        @r.post("/{id}/deactivate", response_model=Read)
+        async def deactivate(u: UoW, id: int):
+            out = await service_cls(u).deactivate(id)
+            await u.commit()
+            return out
 
     return r
+
+
+def _csv_routes(r: APIRouter, prefix: str, service_cls: type[CrudService], UoW: Any, Spec: Any) -> None:
+    @r.get("/export.csv")
+    async def export(u: UoW, spec: Spec) -> Response:
+        data = await service_cls(u).export_csv(spec)
+        name = prefix.strip("/").replace("/", "-") or "export"
+        return Response(data, media_type="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="{name}.csv"'})
+
+    @r.post("/import.csv")
+    async def import_(u: UoW, file: Annotated[UploadFile, File()], dry_run: bool = True) -> dict:
+        # Read one byte past the limit: the service refuses an oversized file
+        # without the whole upload ever being held in memory.
+        report = await service_cls(u).import_csv(await file.read(MAX_IMPORT_BYTES + 1), dry_run=dry_run)
+        if report.ok and not dry_run:
+            await u.commit()
+        body = dataclasses.asdict(report)
+        body["counts"] = report.counts
+        return body

@@ -235,7 +235,8 @@ function RecordForm<T extends Row, TCreate, TUpdate>({ row, close, canWrite, pro
         </>}
         facts={props.recordFacts?.(row)}
         actions={props.recordActions?.(row)}
-        more={canWrite && row.active !== false
+        // Only a record that has `active` can be deactivated: one without it (a buyer part number) offers no Deactivate.
+        more={canWrite && row.active === true
           ? [{ label: 'Deactivate', onSelect: () => setConfirm(true), opensDialog: true }] : undefined}
         tabs={props.detailTabs ? props.detailTabs(row, details) : [details]}
       />
