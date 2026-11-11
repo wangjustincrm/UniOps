@@ -194,6 +194,7 @@ export function AccountPicker({
       <button
         ref={triggerRef}
         type="button"
+        aria-invalid={invalid || undefined}
         onClick={() => (open ? close() : openPicker())}
         className={cn(
           'w-full rounded border bg-white px-2 py-1.5 text-left text-xs truncate',

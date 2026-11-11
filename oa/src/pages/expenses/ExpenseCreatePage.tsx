@@ -10,7 +10,7 @@ import { api, mdmApi } from '@/lib/api'
 import { ReceiptScanButton, type ReceiptFields } from '@/components/ReceiptScanButton'
 import { AccountPicker, useBudgetAccounts, type BudgetAccount } from '@/components/BudgetAccountPicker'
 import { CardField } from '@/components/LineCardField'
-import { INVALID_FIELD, isBlankLine, lineMessage, missingFields, type LineField } from '@/lib/lineValidation'
+import { INVALID_FIELD, isBlankLine, lineMessage, missingFields, useJumpToFirstInvalid, type LineField } from '@/lib/lineValidation'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -241,6 +241,8 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
       l._file ? [{ file: l._file, lineNumber: i + 1, source: 'scan' as const }] : []),
   })
 
+  const jumpToFirstInvalid = useJumpToFirstInvalid()
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setFormError('')
@@ -251,6 +253,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
     }
     if (keptLines.some((l) => missingFields(l, REQUIRED).length)) {
       setShowLineErrors(true)
+      jumpToFirstInvalid()
       return
     }
 
@@ -595,7 +598,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
 
       {/* Missing line fields — one message per line, live until fixed */}
       {lineIssues.length > 0 && (
-        <div role="alert" className="flex items-start gap-2 rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+        <div role="alert" data-line-issues className="flex items-start gap-2 rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <p className="font-medium">Complete these lines before saving:</p>

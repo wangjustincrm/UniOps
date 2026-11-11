@@ -10,7 +10,7 @@ import { api, mdmApi } from '@/lib/api'
 import { ReceiptScanButton } from '@/components/ReceiptScanButton'
 import { AccountPicker, useBudgetAccounts, type BudgetAccount } from '@/components/BudgetAccountPicker'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
-import { isBlankLine, lineMessage, missingFields, type LineField } from '@/lib/lineValidation'
+import { isBlankLine, lineMessage, missingFields, useJumpToFirstInvalid, type LineField } from '@/lib/lineValidation'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -160,6 +160,10 @@ function CategorySection({
   missingOf: (li: TrvLineItem) => LineField[]   // fields to outline in red
 }) {
   const [open, setOpen] = useState(true)
+  // A save refused for a missing field reopens the section holding it, so
+  // the page can scroll to the field (0193).
+  const hasMissing = lines.some(li => missingOf(li).length > 0)
+  useEffect(() => { if (hasMissing) setOpen(true) }, [hasMissing])
   const mealKey = TRV_CATEGORIES.find(c => c.key === category)?.mealKey as keyof Policy | null
   // Coerce at use-site: policy Decimals arrive as JSON strings, and the query-level
   // `select` is unreliable across the shared ['expense-policy'] cache key.
@@ -701,6 +705,8 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
       ? 'Failed to save changes' : 'Failed to create TRV claim')),
   })
 
+  const jumpToFirstInvalid = useJumpToFirstInvalid()
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!travelApplicationId) { setError('A Travel Application is required'); return }
@@ -710,7 +716,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
     if (keptLines.length === 0) { setError('Add at least one expense line'); return }
     if (keptLines.some(l => missingFields(l, REQUIRED).length)) {
       // Named per line in the list above the Save button; fields outlined.
-      setShowLineErrors(true); setError(''); return
+      setShowLineErrors(true); setError(''); jumpToFirstInvalid(); return
     }
     for (const l of keptLines) {
       if (l.mode !== 'range') continue
@@ -938,7 +944,7 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
       </div>
 
       {lineIssues.length > 0 && (
-        <div role="alert" className="flex items-start gap-2 rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+        <div role="alert" data-line-issues className="flex items-start gap-2 rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
             <p className="font-medium">Complete these lines before saving:</p>

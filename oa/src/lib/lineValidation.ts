@@ -10,6 +10,8 @@
 //   "Meals — Lunch, line 1: select a Budget Account"
 // and the page outlines the missing fields in red.
 
+import { useCallback, useEffect, useState } from 'react'
+
 export type LineField = 'description' | 'budget_account_id' | 'net_amount'
 
 export interface CheckedLine {
@@ -52,3 +54,36 @@ export function lineMessage(where: string, fields: LineField[]): string {
 
 /** Red outline for a field the last save attempt found missing. */
 export const INVALID_FIELD = 'border-danger-400 bg-danger-50/40'
+
+/**
+ * After a save refused for missing line fields, bring the first one into view
+ * and focus it. The list of what is missing sits under the lines, below the
+ * fold on a long claim or a phone, so on its own the refusal looked like a
+ * Save button that did nothing (0193). Fields mark themselves with
+ * aria-invalid="true"; only a rendered one counts, so the phone card is found
+ * rather than the hidden desktop table row (ISS-0255). With none rendered (a
+ * collapsed section), the message list is shown instead.
+ *
+ * Call the returned function on each refused save.
+ */
+export function useJumpToFirstInvalid(): () => void {
+  const [attempt, setAttempt] = useState(0)
+  useEffect(() => {
+    if (!attempt) return
+    // Two frames: the red outlines render first, and a collapsed TRV section
+    // opens itself in its own effect.
+    let inner = 0
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => {
+        const shown = (el: Element) => el.getClientRects().length > 0
+        const field = Array.from(document.querySelectorAll<HTMLElement>('[aria-invalid="true"]')).find(shown)
+        const target = field ?? Array.from(document.querySelectorAll<HTMLElement>('[data-line-issues]')).find(shown)
+        if (!target) return
+        target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        if (field) field.focus({ preventScroll: true })
+      })
+    })
+    return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner) }
+  }, [attempt])
+  return useCallback(() => setAttempt((n) => n + 1), [])
+}
