@@ -53,6 +53,7 @@ from app.services import document_chain
 from app.services import code_answers, question_routes
 from app.services import oa_guide
 from app.services import answer_facts
+from app.services import fact_replies
 
 log = logging.getLogger(__name__)
 
@@ -341,6 +342,12 @@ async def _route(body: ChatRequest, db, user: dict, token: str,
     # The planner was trusted to call recall_conversation and split_question;
     # on production it split no message Cassie tried and took a follow-up for
     # a question about the conversation. See services/question_routes.
+    # Replies the code writes whole: a PO's placement, a vendor's or a PA's
+    # credits, the carriers (ISS-0045, ISS-0021, ISS-0056). Before the split:
+    # "…发给了谁？什么时候发的？" are parts with no PO of their own.
+    if (written := await fact_replies.answer(db, scope, body.message, context, body.history,
+                                             whole=part is None)) is not None:
+        return written
     if part is None:
         position = question_routes.recall_position(body.message)
         if position is not None:
@@ -580,9 +587,14 @@ async def _planned(body: ChatRequest, db, user: dict, token: str, part: dict | N
     text = _without_field_names(_without_internal_notes(told["text"], result), result)
     if cut:
         text = _listing_footer(text, result)
+    else:
+        # As many rows listed as were found (ISS-0050).
+        text = fact_replies.complete_listing(text, query, result, body.message)
     text = await _with_listing_notes(text, result, body.message)
     if elsewhere:
-        # Said by code, whatever the narrator made of it.
+        # Said by code, whatever the narrator made of it — and its "未找到 …"
+        # about these documents taken out (ISS-0056).
+        text = fact_replies.without_not_found(text, elsewhere)
         text = text.rstrip() + "\n\n" + code_answers.found_elsewhere_text(
             elsewhere, code_answers.lang_of(body.message))
     return {

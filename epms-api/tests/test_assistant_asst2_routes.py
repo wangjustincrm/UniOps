@@ -381,7 +381,9 @@ async def test_a_pa_looked_up_in_the_wrong_place_is_not_called_missing(
                    "because": "asked"}]}}])
     body = (await admin_client.post(CHAT, json={
         "message": f"{s.pa.pa_number} 现在是什么状态"})).json()
-    assert body["answer"].startswith("未找到这份付款申请。")
+    # The narrator's "not found" of a PA that exists is taken out (asst2/h:
+    # no reply carries both the wrong sentence and the right one).
+    assert "未找到这份付款申请" not in body["answer"]
     assert f"{s.pa.pa_number} 是存在的：付款申请，状态 Approved，已批准、尚未付款，金额 18.14" \
         in body["answer"]
     # A number asked about at its own home that finds nothing stays unanswered
