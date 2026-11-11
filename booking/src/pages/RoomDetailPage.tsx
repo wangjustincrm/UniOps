@@ -11,7 +11,7 @@ import {
   Tv, Presentation, PenLine, Video, Phone,
   type LucideIcon,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { useRoomDetail } from '@/services/api'
 import type { EquipmentOption, RoomStatus } from '@/lib/types'
 import { EQUIPMENT_LABELS } from '@/lib/types'
@@ -242,9 +242,7 @@ export default function RoomDetailPage() {
           {/* Day timeline for selected day */}
           <div className="mt-3">
             <p className="mb-2 text-xs font-medium text-neutral-500">
-              {new Date(`${selectedDay}T12:00:00`).toLocaleDateString('en-CA', {
-                weekday: 'long', month: 'long', day: 'numeric',
-              })}
+              {new Date(`${selectedDay}T12:00:00`).toLocaleDateString('en-CA', { weekday: 'long' })}, {formatDate(selectedDay)}
             </p>
             <DayTimeline
               openStart={room.open_time_start}

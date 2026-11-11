@@ -24,7 +24,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { ArrowLeft, CheckCircle2, AlertCircle, Loader2, Info } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { ApiError } from '@/lib/api'
 import {
   useBooking,
@@ -110,7 +110,7 @@ function OccurrenceConflictList({ items }: { items: OccurrenceConflict[] }) {
       <ul className="space-y-2">
         {items.map((oc) => (
           <li key={oc.date} className="text-sm text-red-600">
-            <span className="font-medium">{oc.date}:</span>{' '}
+            <span className="font-medium">{formatDate(oc.date)}:</span>{' '}
             {oc.conflicts.map((c) => c.title).join(', ')}
           </li>
         ))}

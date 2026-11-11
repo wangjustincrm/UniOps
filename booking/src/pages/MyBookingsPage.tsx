@@ -24,19 +24,11 @@ import {
   X as XIcon,
 } from 'lucide-react'
 import { Pagination, SortTh, useSort, sortParams, type Sort } from '@uniops/shell'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { useMyBookingsPaged, useCancelBooking } from '@/services/api'
 import type { BookingOut } from '@/lib/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-CA', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
 
 function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-CA', {
@@ -183,7 +175,7 @@ function BookingRow({ booking, showActions, onEdit, onCancel }: RowProps) {
       <td className="px-4 py-3 text-sm text-neutral-600 whitespace-nowrap">
         <div className="flex items-center gap-1">
           <CalendarDays className="h-3.5 w-3.5 text-neutral-400 shrink-0" />
-          <span>{fmtDate(booking.starts_at)}</span>
+          <span>{formatDate(booking.starts_at)}</span>
         </div>
         <div className="text-xs text-neutral-400 mt-0.5 ml-5">
           {fmtTime(booking.starts_at)}–{fmtTime(booking.ends_at)}

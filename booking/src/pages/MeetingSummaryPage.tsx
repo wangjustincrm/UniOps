@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { useDaySummary } from '@/services/api'
 import type { DaySummaryRoom, DaySummaryBooking } from '@/lib/types'
 
@@ -20,7 +20,7 @@ function addDays(iso: string, n: number): string {
 
 function formatWeekday(iso: string): string {
   const d = new Date(`${iso}T00:00:00`)
-  return d.toLocaleDateString('en-CA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+  return `${d.toLocaleDateString('en-CA', { weekday: 'long' })}, ${formatDate(iso)}`
 }
 
 // ── Time helpers ──────────────────────────────────────────────────────────────

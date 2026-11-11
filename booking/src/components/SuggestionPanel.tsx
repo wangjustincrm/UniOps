@@ -8,7 +8,7 @@
  */
 import { Clock, MapPin, Users, Video, CheckCircle2, AlertTriangle } from 'lucide-react'
 import type { BookingSlimOut, SuggestOut, RoomWithStatusOut } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import { cn, formatDate, formatDateTime } from '@/lib/utils'
 import { ROOM_STATUS_STYLE, ROOM_STATUS_LABEL } from '@/lib/roomStatus'
 
 interface Props {
@@ -23,13 +23,6 @@ function formatSlot(starts: string, ends: string): string {
   const fmt = (iso: string) =>
     new Date(iso).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false })
   return `${fmt(starts)}–${fmt(ends)}`
-}
-
-function formatDateTime(iso: string): string {
-  const d = new Date(iso)
-  const date = d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
-  const time = d.toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false })
-  return `${date} ${time}`
 }
 
 export function SuggestionPanel({ conflicts, occurrenceConflicts, suggestions, onPickSlot, onPickRoom }: Props) {
@@ -77,7 +70,7 @@ export function SuggestionPanel({ conflicts, occurrenceConflicts, suggestions, o
           <ul className="space-y-2">
             {occurrenceConflicts.map((oc) => (
               <li key={oc.date} className="text-xs text-amber-700">
-                <p className="font-medium mb-0.5">{oc.date}</p>
+                <p className="font-medium mb-0.5">{formatDate(oc.date)}</p>
                 <ul className="ml-3 space-y-0.5">
                   {oc.conflicts.map((c) => (
                     <li key={c.id} className="flex items-start gap-1.5">

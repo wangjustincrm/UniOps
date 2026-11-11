@@ -18,7 +18,7 @@ import {
   Repeat,
 } from 'lucide-react'
 import { SortTh, useSort, sortParams } from '@uniops/shell'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import {
   useAdminRoomList,
   useAdminBookings,
@@ -28,10 +28,6 @@ import {
 import type { BookingAdminOut, AdminBookingFilters } from '@/lib/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })
-}
 
 function fmtTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false })
@@ -370,7 +366,7 @@ export default function AllBookingsPage() {
                         </td>
                         <td className={cn(tdCls, 'text-neutral-600')}>{b.organizer_name}</td>
                         <td className={cn(tdCls, 'whitespace-nowrap')}>
-                          <div className="text-neutral-600">{fmtDate(b.starts_at)}</div>
+                          <div className="text-neutral-600">{formatDate(b.starts_at)}</div>
                           <div className="text-xs text-neutral-400">{fmtTime(b.starts_at)}–{fmtTime(b.ends_at)}</div>
                         </td>
                         <td className={tdCls}>
