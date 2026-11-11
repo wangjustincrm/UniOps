@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, false, not_, or_, select
+from sqlalchemy import and_, false, not_, or_, select, true
 
 from app.core.deps import SessionDep
 from uniops_authz import has_permission
@@ -242,7 +242,26 @@ async def unattributed(db: SessionDep, user: CanReadAction):
 
 @router.get("/mine/tasks", response_model=list[AssignedTaskOut])
 async def my_tasks(db: SessionDep, user: CanReportIncident):
-    """Everything else assigned to me by this module.
+    """Everything else assigned to me by this module."""
+    out = []
+    for t in await assigned_task_rows(db, user):
+        out.append(AssignedTaskOut(
+            id=t.id, type=t.type, title=t.title, description=t.description,
+            priority=t.priority, document_type=t.document_type,
+            document_id=t.document_id, document_number=t.document_number,
+            created_at=t.created_at,
+            path=task_service.path_for(t),
+        ))
+    return out
+
+
+async def assigned_task_rows(db, user, *, with_owned_actions: bool = False) -> list[Task]:
+    """The open tasks My Actions shows this person under "Other work".
+
+    ★ Round 12, ACT-02/03: also what the "new" count counts, so the count and
+    the page cannot disagree. `with_owned_actions` adds the "do this" task on
+    each of their own corrective actions — listed above as the action itself,
+    and new to them when it was raised or handed to them.
 
     "My Actions" listed corrective actions only, and every other thing the
     module hands somebody — a toolbox talk to deliver, an inspection due, a
@@ -297,6 +316,7 @@ async def my_tasks(db: SessionDep, user: CanReportIncident):
                      Task.assigned_role.in_(query_roles) if query_roles else false())),
             Task.is_completed.is_(False),
             Task.document_type.like("ehs%"),
+            true() if with_owned_actions else
             not_(and_(Task.document_type == task_service.DOC_ACTION,
                       Task.document_id.in_(owned) if owned else false())),
         ).order_by(Task.created_at.desc())
@@ -309,17 +329,7 @@ async def my_tasks(db: SessionDep, user: CanReportIncident):
     # than being shown to every supervisor or to no one.
     rows, _unattributed = await area_scope.split_by_area(
         db, list(rows), user_id=mine, roles=roles)
-
-    out = []
-    for t in rows:
-        out.append(AssignedTaskOut(
-            id=t.id, type=t.type, title=t.title, description=t.description,
-            priority=t.priority, document_type=t.document_type,
-            document_id=t.document_id, document_number=t.document_number,
-            created_at=t.created_at,
-            path=task_service.path_for(t),
-        ))
-    return out
+    return rows
 
 
 class TaskPathOut(BaseModel):
@@ -327,7 +337,7 @@ class TaskPathOut(BaseModel):
 
 
 @router.get("/tasks/{task_id}/open", response_model=TaskPathOut)
-async def where_a_task_opens(task_id: uuid.UUID, db: SessionDep, user: CanReportIncident):  # noqa: ARG001
+async def where_a_task_opens(task_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
     """Where a Safety task opens, for the Portal's inbox.
 
     ★ Round 7, TC-03: the Portal kept its own short list of where Safety
@@ -339,6 +349,10 @@ async def where_a_task_opens(task_id: uuid.UUID, db: SessionDep, user: CanReport
     task = await db.get(Task, task_id)
     if task is None or not (task.document_type or "").startswith("ehs_"):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such Safety task")
+    # Round 12, ACT-03: opened from the Portal's inbox counts as opened.
+    if task.assigned_user_id == _user_id(user):
+        from app.services import seen
+        await seen.mark(db, task.assigned_user_id, seen.KIND_TASK, [task.id])
     return TaskPathOut(path=task_service.path_for(task) or "/actions/mine")
 
 

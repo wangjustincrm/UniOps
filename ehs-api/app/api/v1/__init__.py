@@ -111,6 +111,8 @@ api_router.include_router(communications_router, tags=["communications"])
 api_router.include_router(toolbox_router, tags=["toolbox"])
 api_router.include_router(feedback_router, tags=["feedback"])
 api_router.include_router(news_router, tags=["news"])
+from app.api.v1.seen import router as seen_router  # noqa: E402
+api_router.include_router(seen_router, tags=["seen"])
 api_router.include_router(staff_file_router, tags=["staff-file"])
 api_router.include_router(reassign_router, tags=["reassign"])
 api_router.include_router(forms_router, tags=["forms"])

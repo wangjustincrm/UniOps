@@ -20,6 +20,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { MessageSquare } from 'lucide-react'
 import { api } from '@/lib/api'
 import { usePermissions } from '@/hooks/usePermissions'
+import { useMarkRead } from '@/hooks/useSeen'
 import { formatDateTime } from '@/lib/formatDate'
 import {
   Card, Empty, ErrorNote, Field, inputClass, LoadFailedNote, PageHeader,
@@ -53,6 +54,8 @@ type TabKey = (typeof TABS)[number]['key']
 
 export default function FeedbackPage() {
   const { can } = usePermissions()
+  // Round 12, ACT-04: the answers to my own comments are in front of me now.
+  useMarkRead('feedback', true)
   const mayTriage = can('ehs.settings.manage')
   const [tab, setTab] = useState<TabKey>('say')
 

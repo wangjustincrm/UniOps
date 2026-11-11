@@ -1,3 +1,4 @@
+import { useMarkOpened, useSeen } from '@/hooks/useSeen'
 import { useEffect, useRef, useState } from 'react'
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { TabBar, TabHost, TabRouterSync, TabStoreProvider } from '@uniops/shell'
@@ -55,10 +56,10 @@ interface NavItem {
    * placed on the word feedback reference item as a flag that there are new
    * messages, like notifications on a phone app."
    *
-   * Only one entry uses it today, so it names the thing to count rather than
-   * being a generic hook with one caller.
+   * Round 12, ACT-01/02/03 and INC-08: My Actions carries one too — new work,
+   * new news and, for HSE and area supervisors, new incidents (useSeen).
    */
-  badge?: 'feedback-unread'
+  badge?: 'feedback-unread' | 'my-actions-new'
 }
 
 /**
@@ -91,7 +92,7 @@ const NAV: NavGroup[] = [
     items: [
       { label: 'Dashboard',          href: '/dashboard',     icon: BarChart3,       permission: 'ehs.incident.read' },
       { label: 'Report an Incident', href: '/report',        icon: TriangleAlert },
-      { label: 'My Actions',         href: '/actions/mine',  icon: ClipboardCheck },
+      { label: 'My Actions',         href: '/actions/mine',  icon: ClipboardCheck, badge: 'my-actions-new' },
       // No permission: filling in an inspection is the same kind of act as
       // filing a report.
       { label: 'Forms',              href: '/forms',         icon: ClipboardList },
@@ -220,7 +221,12 @@ function Sidebar({
     refetchInterval: 120_000,
     staleTime: 60_000,
   })
-  const unreadFeedback = feedbackCount.data?.count ?? 0
+  // ★ Round 12, ACT-04: everybody else's flag on Feedback is an answer to a
+  // comment of their own; HSE's is still the comments nobody has looked at.
+  const seen = useSeen()
+  useMarkOpened(location.pathname)
+  const unreadFeedback = (feedbackCount.data?.count ?? 0) + (seen.data?.feedback_answered ?? 0)
+  const newOnMyActions = seen.data?.my_actions ?? 0
 
   const brandName = branding?.name || 'UniOps'
   const brandTagline = branding?.tagline || 'Safety'
@@ -263,7 +269,8 @@ function Sidebar({
     ))
 
   const renderLink = ({ label, href, icon: Icon, badge }: NavItem) => {
-    const count = badge === 'feedback-unread' ? unreadFeedback : 0
+    const count = badge === 'feedback-unread' ? unreadFeedback
+      : badge === 'my-actions-new' ? newOnMyActions : 0
     return (
       <NavLink
         key={href}
