@@ -417,10 +417,9 @@ async def set_status(db: AsyncSession, rec: JhscRecommendation, item_id: uuid.UU
         if not may_verify:
             raise HTTPException(status.HTTP_403_FORBIDDEN,
                                 "Completed is HSE's verification; HSE sets it")
-        from app.services import capa_review
-        rec.hse_verified_at = datetime.now(timezone.utc)
-        rec.hse_verified_by_name = await _name(db, user_id)
-        await capa_review.close_for(db, task_service.DOC_JHSC, rec.id, user_id)
+        # ★ Re-review N7: the same rules as the Verify button — answered, its
+        # corrective action closed — not a way round them.
+        return await hse_verify(db, rec, user_id=user_id)
     rec.status_item_id, rec.status_label = item.id, item.label
     await db.flush()
     return rec

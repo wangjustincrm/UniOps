@@ -416,6 +416,19 @@ async def test_completed_is_picked_only_by_whoever_verifies(hse_manager, asked, 
     task_id = task.id
     await db_session.commit()
     assert (await hse.get(f"/api/v1/jhsc/recommendations/{rec['id']}")).json()["may_complete"]
+    early = await hse.put(url, json={"item_id": str(codes["completed"])})
+    assert early.status_code == 409, \
+        "★ re-review N7: not answered yet, so not verified — as the Verify button says"
+
+    answered = await client.post(f"/api/v1/jhsc/recommendations/{rec['id']}/answer",
+                                 json=_answer(person))
+    assert answered.status_code == 200, answered.text
+    from app.models.action import Action
+    action_id = uuid.UUID(answered.json()["action"]["id"])
+    still_open = await hse.put(url, json={"item_id": str(codes["completed"])})
+    assert still_open.status_code == 409, "its corrective action is still open"
+    (await db_session.get(Action, action_id)).status = "closed"
+    await db_session.commit()
     done = await hse.put(url, json={"item_id": str(codes["completed"])})
     assert done.status_code == 200, done.text
     assert done.json()["hse_verified_by_name"], "HSE picking Completed is verifying it"
