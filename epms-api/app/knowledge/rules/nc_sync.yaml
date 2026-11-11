@@ -112,7 +112,11 @@ verdicts:
     asks:
       - [milk / nc, milk/nc, nc_milk, nc milk, milk, 奶单, 奶类订单, nc pending, nc_pending, nc pending approval]
       - [意思, 是什么, 什么状态, 代表, 表示, 指什么, 含义, mean, means, meaning, what is, what's, stand for]
-    unless: [价格, 单价, price, 成本, cost, 多少, how much, how many, mrp, 库存, stock]
+    unless: [价格, 单价, price, 成本, cost, 多少, how much, how many, mrp, 库存, stock,
+             # "milk 订单是什么状态的有几张", "What is the status of milk orders this week?"
+             # ask for data (round 2 fix, 2026-11-11).
+             几张, 几个, 几笔, 有几, 哪些, 哪几, 本周, 这周, 上周, 本月, status of, this week, last week,
+             which, list]
     says:
       en: >
         Milk / NC (nc_milk) is a milk order mirrored from NC — raw milk and

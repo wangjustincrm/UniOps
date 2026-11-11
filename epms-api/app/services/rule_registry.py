@@ -25,6 +25,8 @@ app/knowledge/rules/, each rule a card saying:
                the questions on which a model-written answer kept coming out
                differently or opposite to the rule (round 2 of the review,
                2026-11-10: ISS-0018, ISS-0019, ISS-0050, ISS-0069, ISS-0022).
+               A question asking for data (a list, a count, a period, who
+               did it) is never answered this way (_ASKS_FOR_DATA).
   says         {en, zh}: that answer; a derived card fills its {placeholders}
                like `answer` (a `_zh` value for the Chinese text when the fact
                is words)
@@ -214,10 +216,24 @@ def _said_when() -> tuple[tuple[re.Pattern, str], ...]:
     return tuple(out)
 
 
+# A question that asks for data — a list, a count, a period, who did it — is
+# not answered with a rule card, whatever rule words it has: "上周有哪些发票被
+# 取消匹配了？", "上个月录了多少笔手工贷项？", "谁改了我的请购单？" (round 2 fix,
+# 2026-11-11). "收货超时几天会升级？" and "能连续催两次吗？" still ask the rule.
+_ASKS_FOR_DATA = re.compile(
+    r"哪些|哪几(?:张|笔|个|份|条|家)|多少(?:张|笔|个|份|条|家|单)|几(?:张|笔|份|条|家|单)|"
+    r"列出|列一下|上周|本周|这周|上个?月|本月|这个月|今天|昨天|"
+    r"谁(?:改|修改|编辑|动)了|"
+    r"\bhow many\b|\bwhich\b|\blist\b|\bshow me\b|\blast (?:week|month)\b|"
+    r"\bwho (?:changed|edited)\b", re.I)
+
+
 def pinned_for(message: str) -> list[str]:
     """The ids of the cards whose `said_when` the question matches, in the
-    registry's order, each once."""
+    registry's order, each once — none for a question asking for data."""
     text = " ".join((message or "").split())
+    if _ASKS_FOR_DATA.search(text):
+        return []
     return list(dict.fromkeys(rid for pattern, rid in _said_when() if pattern.search(text)))
 
 

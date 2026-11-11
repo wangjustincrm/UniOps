@@ -351,6 +351,8 @@ verdicts:
          两家供应商, 不同厂商, 不一样的供应商, different vendors, different vendor,
          different suppliers, several vendors, multiple vendors, two vendors, more than one vendor]
       - [付款申请, pa, payment application, 一起付, 一起支付]
+    # "不同供应商的 PA 分别由谁审批？" asks who approves (round 2 fix, 2026-11-11).
+    unless: [谁, who, 审批人, approver]
     says:
       en: >
         No. One payment application pays one vendor: all the POs on a PO-route
@@ -376,6 +378,10 @@ verdicts:
       - [发票, invoice, invoices]
       - [同一张, 同一个, 一张, 一起, 放在一起, 放进, 放到, same, one, together]
       - [付款申请, pa, payment application]
+      # Asks why they cannot: "怎么把一张发票加到 PA 里？" asks how to add one
+      # (round 2 fix, 2026-11-11).
+      - [不能, 不可以, 不行, 无法, 放不进, 加不进, 选不到, 看不到, 不让, 不允许, 不了, cannot, can't, can not,
+         won't, not allowed, unable, stops, refused, rejected]
     says:
       en: >
         The usual reasons invoices cannot go on one payment application:

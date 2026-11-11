@@ -55,6 +55,10 @@ verdicts:
          absence cover, 代理, 代批, 委托, delegation, delegate, cover for me, approve for me,
          approve on my behalf, stand in, stand-in]
       - [怎么, 如何, 怎样, 在哪, 哪里, 哪儿, 设置, 设定, 安排, how, where, set up, setup]
+      # About approving: "PO 不在列表里怎么办？", "为什么我的发票不在 PA 里，怎么加？"
+      # have "不在" and "怎么" and are not about delegation (round 2 fix, 2026-11-11).
+      - [审批, 批, 代理, 委托, absence cover, delegation, delegate, approve, approval, approver,
+         approvals, cover for me, stand in, stand-in]
     unless: [收货, 确认收货, 第三, 再委托, 转委托, backup, 备份, 哪些任务, 什么任务, which tasks,
              receipt, 签字, sign-off]
     says:
