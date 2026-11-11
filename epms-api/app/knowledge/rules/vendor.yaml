@@ -7,7 +7,9 @@ rules:
     # Round 2 (ISS-0050): "有哪些供应商已经停用？停用后还能下单吗？" — the list
     # was right, the rule part "not covered". Code answers the rule part.
     said_when:
-      - '(?:停用|失效|禁用|不活跃|\binactive\b|deactivated).{0,20}(?:下单|订购|订货|采购|选|用|\border|\bPRs?\b|\bPOs?\b|purchase|pick|select)'
+      # A modal ("还能…吗", "can … still") is required: "上个月停用了哪些供应商？采购金额多少？"
+      # and "已停用的供应商还有哪些 PO 没收货？" ask for data (round 2 fix, 2026-11-11).
+      - '(?:停用|失效|禁用|不活跃|\binactive\b|deactivated).{0,20}(?:能|可以|可否|\bcan\b|\bstill\b|\ballowed\b).{0,10}(?:下单|订购|订货|采购|选|用|\border|\bPRs?\b|\bPOs?\b|purchase|pick|select)'
       - '(?:下单|订购|\border\w*).{0,15}(?:停用|\binactive\b|deactivated)'
     says:
       en: >

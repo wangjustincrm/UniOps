@@ -17,22 +17,28 @@ from app.models.assistant_saved_question import (
     MAX_SAVED_QUESTIONS, AssistantSavedQuestion,
 )
 
-# The words for marking, in the forms people type them, and for "question".
-# Both must be there: "mark the PO as received" and "how do I mark a task as
-# done" are not about this list. Latin words are bounded by non-letters only,
-# so "我mark问题" (no spaces in Chinese) still reads as "mark".
-_MARK = re.compile(
-    r"收藏|标记|星标|加星|保存的|存下的"
-    r"|(?<![a-z])(?:mark|marked|bookmark|bookmarked|save|saved|star|starred)(?![a-z])",
-    re.I)
-_QUESTION = re.compile(r"问题|提问|(?<![a-z])questions?(?![a-z])", re.I)
 # "What's in my Marked list?" names the list rather than the questions.
 _THE_LIST = re.compile(r"(?<![a-z])marked\s*(?:list|\(\d+\))|收藏(?:夹|列表)", re.I)
+
+# Or the person's own questions, with a word for marking, in the forms people
+# type it, next to "question": "mark the PO as received", "发票被标记为有问题怎么办？"
+# and "How do I save a draft PR? I have a question." are not about this list
+# (the last two: round 2 fix, 2026-11-11). Latin words are bounded by
+# non-letters only, so "我mark问题" (no spaces in Chinese) still reads as "mark".
+_MINE = re.compile(r"我|(?<![a-z])(?:my|i|me)(?![a-z])", re.I)
+_MARKED_QUESTIONS = re.compile(
+    r"(?:收藏|标记|星标|加星|保存|存下|(?<![a-z])(?:mark|marked|bookmark|bookmarked|save|saved|"
+    r"star|starred))\s*(?:了|过|的|过的|了的)?\s*(?:哪些|哪几个|什么|几个|多少)?\s*(?:个)?\s*的?\s*"
+    r"(?:问题|提问|questions?(?![a-z]))"
+    r"|(?<![a-z])questions?\s+(?:that\s+)?(?:have\s+|did\s+)?i(?:'ve|\s+have)?\s+"
+    r"(?:marked|saved|starred|bookmarked)(?![a-z])",
+    re.I)
 
 
 def asks_for_marked(message: str) -> bool:
     text = message or ""
-    return bool(_THE_LIST.search(text) or (_MARK.search(text) and _QUESTION.search(text)))
+    return bool(_THE_LIST.search(text)
+                or (_MINE.search(text) and _MARKED_QUESTIONS.search(text)))
 
 
 async def my_marked(db, user_id) -> list[str]:

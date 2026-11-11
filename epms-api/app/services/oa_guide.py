@@ -67,6 +67,10 @@ _EPMS_WORDS = re.compile(
     r"采购|供应商|付款申请|发票|收货|协议",
     re.I)
 
+_DELEGATION_WORDS = re.compile(
+    r"帮我(?:审批|批)|替我(?:审批|批)|代(?:我)?(?:审批|批)|代理|委托|absence cover|delegat|"
+    r"cover for me|approve for me|approve on my behalf|stand[ -]in", re.I)
+
 _PROCESS_WORDS = re.compile(
     r"approval (chain|process|flow|route|routing|workflow|steps?)|"
     r"who (approves|has to approve|needs to approve|must approve)|"
@@ -118,6 +122,11 @@ def is_oa_question(message: str, app: str | None) -> bool:
     oa, epms = bool(_OA_WORDS.search(text)), bool(_EPMS_WORDS.search(text))
     if (app or "").lower() == "oa":
         return oa or not epms
+    # "我要出差，怎么让同事帮我审批？" asked on the Portal is about approval
+    # delegation (rule_verdicts delegation_is_set_up_in_portal), not a claim
+    # (round 2 fix, 2026-11-11).
+    if _DELEGATION_WORDS.search(text):
+        return False
     return oa and not epms
 
 

@@ -133,8 +133,12 @@ _ASKS_NEXT = ("下一步", "接下来", "然后呢", "还要做什么", "还需�
               "什么时候付款", "到哪一步", "哪一步了", "到哪了", "进度", "进展",
               r"\bnext step", r"\bwhat happens next\b", r"\bwhat happens after\b",
               r"\bwhat comes next\b", r"\bwhat'?s next\b", r"\bwhat do i (?:do|need to do)\b",
-              r"\bwho (?:does|will|pays|creates|has to)\b", r"\bwhere is .* (?:up to|now)\b",
-              r"\bwhat else\b")
+              # "who will" only with a step of the purchase, and no "what else": "Who
+              # will receive the goods for this PO?", "What else do I need to fill in
+              # for this PR?" ask something else (round 2 fix, 2026-11-11).
+              r"\bwho (?:does|pays|creates|has to)\b",
+              r"\bwho will (?:pay|do (?:it|this|that)|create the|handle it|take it from here)\b",
+              r"\bwhere is .* (?:up to|now)\b")
 # The point of the purchase a question starts from, earliest first.
 _STAGES: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     # (next step, document words, event words)

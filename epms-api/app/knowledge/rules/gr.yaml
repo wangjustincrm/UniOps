@@ -346,6 +346,9 @@ verdicts:
          all received, received in full]
       - [再建, 还能建, 还能再, 还可以, 新建, 再收, 再做, 补建, 再开, 能建, 可以建, create, another, again,
          new gr, still]
+      # It asks about a receipt ("全部收货" is in the first group): "全部收货的 PO 还可以
+      # 匹配发票吗？" / "… can I still create a PA?" do not (round 2 fix, 2026-11-11).
+      - [收货单, 收货记录, 再收, 补收, gr, grs, goods receipt, receipt, receive it, receive again]
     says:
       en: >
         No. A goods receipt can be created on a goods (physical) PO only while
@@ -368,7 +371,10 @@ verdicts:
          到货了, 货到以后, 货到后, 货物到了, 货来了, physical receipt, physical gr, goods receipt process,
          when the goods arrive, goods arrive, goods have arrived, how does a gr work, how does receiving work]
     unless: [服务, 项目, service, project, 取消, 撤销, cancel, 没有 pr, 没有请购单, 没有关联, 不关联, no pr,
-             without a pr, 编号, number, 损坏, damage, 提醒, remind, 催]
+             without a pr, 编号, number, 损坏, damage, 提醒, remind, 催,
+             # "货到了以后多久能付款？", "到货后发现数量不对怎么办？" (round 2 fix, 2026-11-11)
+             付款, 付钱, 发票, 付款申请, pa, 多久, 不对, 怎么办, pay, paid, payment, invoice,
+             how long, wrong]
     says:
       en: >
         Three steps, two of them the requester's: 1) the warehouse records the
@@ -390,7 +396,9 @@ verdicts:
       - [服务类, 服务型, 服务的, 服务, 项目类, 项目相关, 项目的, service, project]
       - [谁, 哪个人, 什么人, 由谁, who, whom]
       - [确认, 收货, 验收, confirm, confirms, confirmation, receipt, receive]
-    unless: [审批, 批准, approv, 没有 pr, 没有请购单, 没有关联, 不关联, no pr, without a pr, 提醒, remind]
+    unless: [审批, 批准, approv, 没有 pr, 没有请购单, 没有关联, 不关联, no pr, without a pr, 提醒, remind,
+             # "服务类 PO 收货后谁来付款？" (round 2 fix, 2026-11-11)
+             付款, 付钱, pay, paid, payment]
     says:
       en: >
         The Service/Project Owner named on the PR — the requester unless the PR

@@ -96,6 +96,11 @@ verdicts:
          first step's approver, approver of the first step, approver for the first step]
       - [提交, submit, submitted, submitting]
       - [自己, 本人, 我, myself, i, i'm, own]
+      # Asks whether they approve it ("审批人" alone is in the first group):
+      # "我是第一审批人，提交后会收到邮件吗？" does not (round 2 fix, 2026-11-11).
+      - [再批, 自己批, 要批, 还批, 需要批, 批吗, 批一次, 批这一步, 再审批, 自己审批, 还要审批, 需要审批,
+         要审批, 审批吗, 自动通过, 自动批, 跳过, approve, approves, approving, approval, auto-approve,
+         auto-approved, skip, skipped]
     says:
       en: >
         Yes. The same-approver skip does not happen at submission: a requester
