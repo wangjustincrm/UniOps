@@ -128,3 +128,12 @@ def test_a_character_without_an_ascii_equivalent_names_the_element_and_the_chara
     assert "N102" in str(e.value) and "U+738B" in str(e.value)
     with pytest.raises(x12.UnmappableCharacter):
         x12.Segment("N3", "Unit 4 ✓").render()
+
+
+def test_an_interchange_written_with_a_utf8_byte_order_mark_is_read():
+    from app.domain.x12 import segments, separators
+    isa = "ISA*00*          *00*          *ZZ*SENDER         *ZZ*RECEIVER       *260101*1200*U*00401*000000001*0*P*>~"
+    body = (isa + "GS*OW*S*R*20260101*1200*1*X*004010~ST*940*0001~SE*2*0001~GE*1*1~IEA*1*000000001~").encode()
+    with_bom = b"\xef\xbb\xbf" + body
+    assert separators(with_bom).segment == "~"
+    assert [s[0] for s in segments(with_bom)] == [s[0] for s in segments(body)] == ["ISA", "GS", "ST", "SE", "GE", "IEA"]

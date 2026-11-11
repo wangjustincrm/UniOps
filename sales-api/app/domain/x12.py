@@ -72,11 +72,19 @@ class Separators:
     sub_element: str
 
 
+def _text(data: bytes | str) -> str:
+    """The interchange as text. A UTF-8 byte order mark is dropped first (the old system wrote its 940s
+    with one): decoded as ASCII it would turn into three replacement characters and hide the ISA."""
+    if isinstance(data, bytes):
+        return data.removeprefix(b"\xef\xbb\xbf").decode("ascii", "replace")
+    return data
+
+
 def separators(data: bytes | str) -> Separators:
     """From the ISA: the element separator is the 4th character, the
     sub-element separator ISA16 (position 104) and the segment terminator the
     character after it (FR-OB-26: never hard-coded)."""
-    text = data.decode("ascii", "replace") if isinstance(data, bytes) else data
+    text = _text(data)
     text = text.lstrip("﻿ \r\n\t")
     if not text.startswith("ISA") or len(text) < 106:
         raise X12Error("not an X12 interchange (no ISA header)")
@@ -85,7 +93,7 @@ def separators(data: bytes | str) -> Separators:
 
 def segments(data: bytes | str) -> list[list[str]]:
     """Every segment as a list of elements (the segment id first)."""
-    text = data.decode("ascii", "replace") if isinstance(data, bytes) else data
+    text = _text(data)
     text = text.lstrip("﻿ \r\n\t")
     sep = separators(text)
     return [s.strip("\r\n ").split(sep.element) for s in text.split(sep.segment) if s.strip("\r\n ")]
