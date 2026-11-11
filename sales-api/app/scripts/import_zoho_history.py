@@ -579,7 +579,19 @@ class History:
         state in them (payments, refunds, cancellation, archive). An order Zoho never sent a 940 for is
         made too; it is historical when finished or below the store's cut-off (FR-OB-17)."""
         n: collections.Counter = collections.Counter()
-        pages = sorted((self.root / "Shopify").glob("*.json"), key=lambda x: (file_time(x.name) or datetime.min.replace(tzinfo=TOR), x.name))
+        files = sorted((self.root / "Shopify").glob("*.json"), key=lambda x: (file_time(x.name) or datetime.min.replace(tzinfo=TOR), x.name))
+
+        def pages():
+            for pf in files:
+                try:
+                    yield pf, strip_card_data(read_json(pf)), file_time(pf.name) or self.now.astimezone(TOR)
+                except ValueError:
+                    n["page not readable"] += 1
+        return await self.apply_shopify_pages(pages(), n)
+
+    async def apply_shopify_pages(self, pages, n: collections.Counter) -> collections.Counter:
+        """`pages`: (file path or None, page, the time it was read). Each page is stored; each order then
+        takes its last state in them (FR-OB-17 for the cut-off), as in shopify_pages."""
         latest: dict[str, tuple[dict[str, Any], datetime]] = {}
         first_seen: dict[str, datetime] = {}
         doc_orders: dict[int, set[str]] = collections.defaultdict(set)
@@ -588,13 +600,7 @@ class History:
             conn = (await s.execute(select(Connection).where(Connection.kind == "SHOPIFY"))).scalars().first()
             conn_id, partner_code, cutoff = conn.id, conn.partner_code, conn.order_number_cutoff
             abbrev = (await s.execute(select(Partner.abbrev).where(Partner.code == partner_code))).scalar_one()
-            for pf in pages:
-                try:
-                    page = strip_card_data(read_json(pf))
-                except ValueError:
-                    n["page not readable"] += 1
-                    continue
-                at = file_time(pf.name) or self.now.astimezone(TOR)
+            for pf, page, at in pages:
                 doc = await self.store(s, pf, kind="SHOPIFY_ORDER_JSON", system="SHOPIFY", direction="IN", at=at,
                                        data=page_bytes(page), processing_status="Processed", connection_id=conn_id)
                 n["pages"] += 1
@@ -629,6 +635,12 @@ class History:
                                                                  barcodes=NoBarcodes())
                 if was is not None:
                     order.historical = was_historical  # an order of Zoho's 940s keeps its own (never the store's cut-off)
+                    if was_historical and order.fulfillment_status == F.ON_HOLD.value and was[0] != F.ON_HOLD.value:
+                        # Cancelled in Shopify after it shipped, in Zoho's era: handled then. The order keeps its
+                        # status; the cancellation stays recorded on it (source_cancelled_at).
+                        FULFILLMENT.transition(order, F(was[0]), actor=u.actor, events=u.events,
+                                               reason="history: cancelled in Shopify after shipping, in Zoho's era; kept as it was")
+                        n["history: cancelled in Shopify after shipping, status kept"] += 1
                 if was is None:
                     if (order.shopify_fulfillment_status or "") == "fulfilled" and FULFILLMENT.can(F(order.fulfillment_status), F.SHIPPED):
                         # Shipped before Zoho (or without a 940 Zoho kept): Shopify says so.
