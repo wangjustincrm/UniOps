@@ -247,3 +247,60 @@ async def test_my_external_certificate_opens_for_me_and_not_for_others(
             f"/api/v1/training/records/{rec.id}/certificate")).status_code == 403
     _, hse = hse_manager
     assert (await hse.get(f"/api/v1/training/records/{rec.id}/certificate")).status_code == 200
+
+
+async def test_a_session_scheduled_before_a_course_change_keeps_its_period_and_takes_the_spelling(
+        hse_manager, test_engine, db_session):
+    """Review C2/C3 (Q14): "a new valid for period should only affect new
+    course sessions" — while a corrected name reaches the certificates of a
+    session not yet held."""
+    from app.models.training import TrainingRecord
+    from sqlalchemy import select
+    from app.services import validity
+
+    _, hse = hse_manager
+    course = await _course(hse, f"Fist aid {uuid.uuid4().hex[:4]}", 36)
+    when = plant_today() - timedelta(days=1)
+    booked = (await hse.post("/api/v1/course-sessions", json={
+        "course_id": course["id"], "session_date": when.isoformat()})).json()
+    held = (await hse.post("/api/v1/course-sessions", json={
+        "course_id": course["id"], "title": "Kept title", "session_date": when.isoformat()})).json()
+    attendee = await make_user(test_engine)
+    added = (await hse.post(f"/api/v1/course-sessions/{held['id']}/roster",
+                            json={"user_ids": [str(attendee.id)]})).json()
+    assert (await hse.post(f"/api/v1/course-sessions/{held['id']}/results", json={
+        "results": [{"enrolment_id": added[0]["id"], "result": "passed"}],
+        "complete": True})).status_code == 200
+
+    fixed = f"First aid {uuid.uuid4().hex[:4]}"
+    assert (await hse.patch(f"/api/v1/training/courses/{course['id']}",
+                            json={"name": fixed, "validity_months": 12})).status_code == 200
+
+    # The held session keeps what it said; the booked one takes the spelling.
+    assert (await hse.get(f"/api/v1/course-sessions/{held['id']}")).json()["title"] == "Kept title"
+    after = (await hse.get(f"/api/v1/course-sessions/{booked['id']}")).json()
+    assert after["title"] == fixed
+
+    learner = await make_user(test_engine)
+    enrol = (await hse.post(f"/api/v1/course-sessions/{booked['id']}/roster",
+                            json={"user_ids": [str(learner.id)]})).json()
+    assert (await hse.post(f"/api/v1/course-sessions/{booked['id']}/results", json={
+        "results": [{"enrolment_id": enrol[0]["id"], "result": "passed"}],
+        "complete": True})).status_code == 200
+    rec = (await db_session.execute(select(TrainingRecord).where(
+        TrainingRecord.user_id == learner.id))).scalar_one()
+    assert rec.course_label == fixed
+    # Scheduled under 36 months, so it expires by 36 — not the 12 set since.
+    assert rec.expires_on == validity.expires_on(when, 36)
+
+    # A session scheduled now takes the new period.
+    new = (await hse.post("/api/v1/course-sessions", json={
+        "course_id": course["id"], "session_date": when.isoformat()})).json()
+    other = await make_user(test_engine)
+    e2 = (await hse.post(f"/api/v1/course-sessions/{new['id']}/roster",
+                         json={"user_ids": [str(other.id)]})).json()
+    await hse.post(f"/api/v1/course-sessions/{new['id']}/results", json={
+        "results": [{"enrolment_id": e2[0]["id"], "result": "passed"}], "complete": True})
+    rec2 = (await db_session.execute(select(TrainingRecord).where(
+        TrainingRecord.user_id == other.id))).scalar_one()
+    assert rec2.expires_on == validity.expires_on(when, 12)

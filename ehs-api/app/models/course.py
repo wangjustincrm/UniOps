@@ -45,6 +45,11 @@ class CourseDelivery(UUIDPrimaryKey, TimestampMixin, Base):
     # Defaults to the course name; overridden when a session covers a variant
     # ("WHMIS — refresher", "Forklift — counterbalance only").
     title: Mapped[str] = mapped_column(String(200), nullable=False)
+    # ★ Round 12, Q14: "a new valid for period should only affect new course
+    # sessions." The course's period when this session was scheduled; the
+    # records it issues expire by it. NULL: does not expire (migration 0104
+    # filled every session already on file).
+    validity_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     session_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     # Separate columns because the sample forms ask them separately, and

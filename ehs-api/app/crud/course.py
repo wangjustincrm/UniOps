@@ -118,6 +118,7 @@ async def create_delivery(
         course_id=course.id,
         course_label=course.name,
         title=title or course.name,
+        validity_months=course.validity_months,
         session_date=session_date,
         start_time=start_time,
         end_time=end_time,
@@ -334,11 +335,13 @@ async def _issue_record(
     *, recorded_by: uuid.UUID, recorded_by_name: str | None,
 ) -> TrainingRecord:
     """The row that appears in this person's file and in the gap report."""
-    course = await db.get(Course, delivery.course_id) if delivery.course_id else None
     # Round 9: the course's own period, less a day, as for a record entered by
     # hand (services/validity.py). Editable afterwards when the certificate differs.
+    # ★ Round 12, Q14 (review C2): the period as it was when the session was
+    # scheduled — "a new valid for period should only affect new course
+    # sessions" — not the course's at the moment it is closed.
     from app.services import validity
-    expires_on = validity.expires_on(delivery.session_date, course.validity_months if course else None)
+    expires_on = validity.expires_on(delivery.session_date, delivery.validity_months)
 
     record = TrainingRecord(
         id=uuid.uuid4(),

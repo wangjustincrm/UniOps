@@ -95,8 +95,22 @@ async def update_course(db: AsyncSession, course: Course, fields: dict) -> Cours
         if same is not None:
             raise HTTPException(status.HTTP_409_CONFLICT,
                                 f"A course called {same.name} already exists")
+    was_called = course.name
     for key, value in fields.items():
         setattr(course, key, value)
+    if fields.get("name") and fields["name"] != was_called:
+        # ★ Review C3: a spelling corrected now reaches the sessions not yet
+        # held, whose certificates are still to be issued — and their title
+        # where it was the course name. Sessions held, and records issued,
+        # keep what they said (Q14).
+        from sqlalchemy import update
+        from app.models.course import CourseDelivery
+        pending = (CourseDelivery.course_id == course.id) & (CourseDelivery.status == "scheduled")
+        await db.execute(update(CourseDelivery).where(
+            pending, CourseDelivery.title == CourseDelivery.course_label
+        ).values(title=fields["name"]))
+        await db.execute(update(CourseDelivery).where(pending).values(
+            course_label=fields["name"]))
     await db.flush()
     return course
 
