@@ -17,6 +17,7 @@ from app.core.delegation import local_today
 from app.core.ontology import REGISTRY
 from app.services import assistant_llm, controlled_query as cq, next_step, period_words
 from tests.test_assistant_iss_batch4 import _seed_chain, _stub, _uid
+from app.core.plant_time import fmt_date
 
 CHAT = "/api/v1/assistant/chat"
 EPMS_API = Path(__file__).resolve().parents[1]
@@ -144,7 +145,7 @@ async def test_every_period_answer_ends_with_its_dates(admin_client, monkeypatch
     answer = r.json()["answer"]
     frm, to = cq.calendar_range("this_month")
     assert answer.startswith("本月共有 12 张采购订单。")
-    assert answer.rstrip().endswith(f"查询期间：{frm:%d/%m/%Y} – {to:%d/%m/%Y}。")
+    assert answer.rstrip().endswith(f"查询期间：{fmt_date(frm)} – {fmt_date(to)}。")
     # The narrator had the dates, and was told the line is added for it.
     sent = calls["narrate"][0]["result"]
     assert sent["resolved_period"]["from"] == frm.isoformat()
@@ -155,7 +156,7 @@ async def test_every_period_answer_ends_with_its_dates(admin_client, monkeypatch
         narration="12 orders.")
     r = await admin_client.post(CHAT, json={"message": "How many POs were placed last month?"})
     lf, lt = cq.calendar_range("last_month")
-    assert r.json()["answer"].endswith(f"Period used: {lf:%d/%m/%Y} – {lt:%d/%m/%Y}.")
+    assert r.json()["answer"].endswith(f"Period used: {fmt_date(lf)} – {fmt_date(lt)}.")
 
 
 def test_the_narrator_payload_carries_the_period():
@@ -228,7 +229,7 @@ async def test_the_conditions_of_the_previous_answer_are_read_back(admin_client,
     first, last = cq.calendar_range("this_month", whole=True)
     assert body["kind"] == "conditions" and not calls["narrate"]
     assert "Payment due date" in body["answer"]
-    assert f"{first:%d/%m/%Y} – {last:%d/%m/%Y}" in body["answer"]
+    assert f"{fmt_date(first)} – {fmt_date(last)}" in body["answer"]
     assert "不属于 Paid (paid), Cancelled (cancelled)" in body["answer"] or \
         "不属于 paid, cancelled" in body["answer"]
     # A follow-up that changes the conditions is a new query, not this.

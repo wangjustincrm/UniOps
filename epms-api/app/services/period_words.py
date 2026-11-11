@@ -251,8 +251,9 @@ def enforce(query: dict, message: str, entity: Entity, today: date,
 def _ddmmyyyy(iso: str | None) -> str:
     if not iso:
         return "…"
-    y, m, d = str(iso)[:10].split("-")
-    return f"{d}/{m}/{y}"
+    # Name kept for its callers; on-screen format (UI-DATE-002): 2026-NOV-11.
+    from app.core.display_dates import text_date
+    return text_date(str(iso)[:10]) or "…"
 
 
 def _field_label(entity: Entity | None, name: str | None) -> str | None:

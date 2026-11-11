@@ -64,8 +64,9 @@ def _value(f, value) -> str:
 def _ddmmyyyy(day: date | str | None) -> str:
     if not day:
         return "…"
-    y, m, d = str(day)[:10].split("-")
-    return f"{d}/{m}/{y}"
+    # Name kept for its callers; on-screen format (UI-DATE-002): 2026-NOV-11.
+    from app.core.display_dates import text_date
+    return text_date(str(day)[:10]) or "…"
 
 
 def describe(query: dict, today: date | None = None) -> tuple[str, str] | None:
