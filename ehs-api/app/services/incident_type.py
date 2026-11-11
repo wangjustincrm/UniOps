@@ -168,6 +168,12 @@ class _ByCode(dict):
 BY_CODE = _ByCode()
 
 
+def is_offered(code: str) -> bool:
+    """A built-in type, or one of HSE's not retired. A retired one still
+    reads on the records that name it, but is not chosen anew (review L7)."""
+    return code in BUILTIN or code in _active
+
+
 def all_types(*, include_retired: bool = False) -> list[IncidentType]:
     return [*TYPES, *(_custom[c] for c in _custom_order if include_retired or c in _active)]
 

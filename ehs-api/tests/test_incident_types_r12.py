@@ -186,3 +186,43 @@ async def test_hse_adds_a_type_without_its_legal_flags(hse_manager, worker, db_s
     listed = {t["code"]: t for t in (await hse.get("/api/v1/settings/incident-types")).json()}
     assert listed["fatality"]["builtin"] and listed["fatality"]["mol_reportable"]
     assert not listed[code]["builtin"] and not listed[code]["is_active"]
+
+
+async def test_a_rename_keeps_old_reports_and_a_used_type_keeps_its_form(hse_manager, db_session):
+    """★ B3/B4 review L2 and L7: HSE renaming their own type rewrote the kind on
+    every report that named it; a used type could be moved to another form;
+    and a report could be reclassified to a retired type."""
+    _, hse = hse_manager
+    food = await _food(db_session)
+    tag = uuid.uuid4().hex[:5]
+
+    async def add(label):
+        made = await hse.post("/api/v1/settings/incident-types", json={
+            "label": label, "form_kind": "near_miss", "category_id": str(food),
+            "restricted": False})
+        assert made.status_code == 201, made.text
+        return made.json()["code"]
+
+    code = await add(f"Glass near product {tag}")
+    old = (await hse.post("/api/v1/incidents", json=_near_miss(code))).json()
+    renamed = await hse.patch(f"/api/v1/settings/incident-types/{code}",
+                              json={"label": f"Glass or brittle plastic {tag}"})
+    assert renamed.status_code == 200
+    assert (await hse.get(f"/api/v1/incidents/{old['id']}")).json()["incident_type_label"] \
+        == f"Glass near product {tag}", "★ the old report keeps what it was filed as"
+    new = (await hse.post("/api/v1/incidents", json=_near_miss(code))).json()
+    assert new["incident_type_label"] == f"Glass or brittle plastic {tag}"
+
+    moved = await hse.patch(f"/api/v1/settings/incident-types/{code}", json={"form_kind": "medical"})
+    assert moved.status_code == 409, "★ reports already use it"
+    unused = await add(f"Unused {tag}")
+    assert (await hse.patch(f"/api/v1/settings/incident-types/{unused}",
+                            json={"form_kind": "medical"})).status_code == 200, \
+        "an unused type can still move"
+
+    spare = await add(f"Spare {tag}")
+    await hse.patch(f"/api/v1/settings/incident-types/{spare}", json={"is_active": False})
+    await hse.post(f"/api/v1/incidents/{new['id']}/submit")
+    refused = await hse.post(f"/api/v1/incidents/{new['id']}/reclassify",
+                             json={"incident_type": spare})
+    assert refused.status_code == 422 and "retired" in refused.text

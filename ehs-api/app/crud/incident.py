@@ -119,6 +119,9 @@ async def create(
         t = incident_type.BY_CODE.get(payload.incident_type)
         if t is None:
             raise ValueError(f"Unknown incident type '{payload.incident_type}'")
+        if not incident_type.is_offered(t.code):
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                                f"'{t.label}' has been retired; pick another kind")
         # ★ Three outcomes, not two: a class the reporter chose, an explicit
         # "nobody was hurt", and no answer at all — which falls back to what the
         # type implies.
@@ -133,7 +136,10 @@ async def create(
                 db, t.category_code)
         elif t.category_id:
             incident.category_id, incident.category_label = t.category_id, t.category_label
-        incident.extra = {**(incident.extra or {}), "incident_type": t.code}
+        # ★ The label as it reads now, kept on the record (review L2): HSE can
+        # rename their own types, and a rename must not rewrite old reports.
+        incident.extra = {**(incident.extra or {}), "incident_type": t.code,
+                          "incident_type_label": t.label}
     elif payload.injury_class:
         incident.injury_class = None if payload.injury_class == "none" else payload.injury_class
     # An anonymous report keeps the reporter id for administrative recovery but
@@ -500,8 +506,14 @@ async def reclassify(db: AsyncSession, incident: Incident, code: str,
     wanted = None if injury_class == "none" else injury_class
     if old_code == code and (injury_class is None or wanted == incident.injury_class):
         return incident
+    if old_code != code and not incident_type.is_offered(code):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            f"'{new.label}' has been retired; pick another kind")
 
-    incident.extra = {**(incident.extra or {}), "incident_type": new.code}
+    extra = {**(incident.extra or {}), "incident_type": new.code}
+    if old_code != code:
+        extra["incident_type_label"] = new.label
+    incident.extra = extra
     # ★ Review (uniops-8b): the dialog sends only the kind, so this used to
     # take the new kind's default every time — an occupational illness with
     # lost time became no class at all, WSIB's Form 7 stopped being owed and

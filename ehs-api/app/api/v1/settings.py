@@ -594,7 +594,17 @@ async def edit_incident_type(code: str, payload: IncidentTypePatch, db: SessionD
     fields = payload.model_dump(exclude_unset=True)
     if "label" in fields:
         row.label = fields["label"].strip()
-    if "form_kind" in fields:
+    if "form_kind" in fields and fields["form_kind"] != row.form_kind:
+        # ★ Review L2: a report is on the form it came in on. Moving a type that
+        # reports already use would leave them on one form and their kind on
+        # another, and the reclassify rule (same form only) would trap them.
+        from app.models.incident import Incident
+        used = (await db.execute(select(Incident.id).where(
+            Incident.extra["incident_type"].astext == code).limit(1))).first()
+        if used:
+            raise HTTPException(status.HTTP_409_CONFLICT,
+                                "Reports already use this type, so its form cannot change. "
+                                "Retire it and add a new one on the other form.")
         row.form_kind = fields["form_kind"]
     if "category_id" in fields:
         row.category_id = fields["category_id"]

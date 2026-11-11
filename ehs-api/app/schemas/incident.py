@@ -309,6 +309,10 @@ class IncidentOut(BaseModel):
         code = (self.extra or {}).get("incident_type")
         if not isinstance(code, str):
             return None
+        # ★ As recorded, when it was (B3/B4 review L2); before that, as named now.
+        kept = (self.extra or {}).get("incident_type_label")
+        if isinstance(kept, str) and kept:
+            return kept
         chosen = incident_type.BY_CODE.get(code)
         return chosen.label if chosen else None
 
