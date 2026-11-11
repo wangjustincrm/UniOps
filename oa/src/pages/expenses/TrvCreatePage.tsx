@@ -5,7 +5,7 @@ import { oaRoutes } from '@/app/routes'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { Plus, Trash2, AlertTriangle, ChevronDown, ChevronRight, ArrowLeft, Paperclip, Upload, X } from 'lucide-react'
 import { cn, formatAmount, todayLocal } from '@/lib/utils'
-import { useEditableClaim, useSaveClaim, type EditableFormProps } from '@/lib/editableClaim'
+import { useEditableClaim, useSaveClaim, type EditableClaim, type EditableFormProps } from '@/lib/editableClaim'
 import { api, mdmApi } from '@/lib/api'
 import { ReceiptScanButton } from '@/components/ReceiptScanButton'
 import { AccountPicker, useBudgetAccounts, type BudgetAccount } from '@/components/BudgetAccountPicker'
@@ -559,10 +559,36 @@ export default function TrvCreatePage({ editClaimId }: EditableFormProps = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing?.id])
 
-  const { data: eligibleApps = [] } = useQuery<EligibleApp[]>({
+  const { data: eligibleForMe = [], isFetched: eligibleFetched } = useQuery<EligibleApp[]>({
     queryKey: ['eligible-travel-apps'],
     queryFn: () => api.get<EligibleApp[]>('/api/v1/travel-applications/eligible'),
   })
+
+  // The eligible list is the caller's own TRAs. A System Admin or Finance
+  // Manager editing someone else's claim (§7.3) has none of them, so the
+  // claim's own TRA was missing, the required select stayed empty and the
+  // save could not go through (ISS-0254). Always offer the TRA the claim is
+  // linked to; the server re-checks eligibility only when it changes
+  // (TRV-GATE-003), so keeping it saves as before.
+  const linkedTraId = editing?.travel_application_id ?? ''
+  const linkedMissing = !!linkedTraId && eligibleFetched && !eligibleForMe.some(a => a.id === linkedTraId)
+  const { data: linkedTra } = useQuery<EditableClaim>({
+    queryKey: ['expense', linkedTraId],
+    queryFn: () => api.get<EditableClaim>(`/api/v1/expenses/${linkedTraId}`),
+    enabled: linkedMissing,
+    retry: false,
+  })
+  const eligibleApps: EligibleApp[] = linkedMissing
+    ? [{
+        id: linkedTraId,
+        claim_number: linkedTra?.claim_number ?? 'Current travel application',
+        travel_destination: linkedTra?.travel_destination,
+        travel_from_date: linkedTra?.travel_from_date,
+        travel_to_date: linkedTra?.travel_to_date,
+        purpose: linkedTra?.purpose,
+        claimants: [],
+      }, ...eligibleForMe]
+    : eligibleForMe
 
   const selectedApp = eligibleApps.find(a => a.id === travelApplicationId)
 

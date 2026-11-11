@@ -20,9 +20,9 @@ from app.main import create_app
 from app.models.expense import ExpenseClaim, ExpenseTraveler
 
 
-def _client_for(user_id: str) -> AsyncClient:
+def _client_for(user_id: str, role: str = "requester") -> AsyncClient:
     token = jwt.encode(
-        {"sub": user_id, "role": "requester", "type": "access", "exp": datetime.utcnow() + timedelta(hours=8)},
+        {"sub": user_id, "role": role, "type": "access", "exp": datetime.utcnow() + timedelta(hours=8)},
         settings.jwt_secret_key,
         algorithm=settings.jwt_algorithm,
     )
@@ -205,6 +205,28 @@ async def test_editing_cannot_move_a_trv_to_a_tra_its_claimant_is_not_on(
     r = await client.patch(f"/api/v1/expenses/{claim_id}",
                            json={"travel_application_id": str(other.id)})
     assert r.status_code == 200, r.text
+
+
+@pytest.mark.parametrize("role", ["system_admin", "finance_manager"])
+async def test_admin_editing_someone_elses_trv_keeps_its_tra_and_can_read_it(
+        client, db_session, current_user_id, role):
+    """ISS-0254: an admin is on none of the claimant's TRAs. The edit form now
+    offers the claim's own TRA (read through GET /expenses/{tra}); saving with
+    it unchanged must go through, and moving it to a TRA the claimant is not
+    on must still be refused (TRV-GATE-003)."""
+    claim_id, _ = await _filed_on_behalf(client, db_session, current_user_id)
+    tra_id = (await client.get(f"/api/v1/expenses/{claim_id}")).json()["travel_application_id"]
+    async with _client_for(str(uuid.uuid4()), role) as admin:
+        assert (await admin.get(f"/api/v1/expenses/{tra_id}")).status_code == 200
+        r = await admin.patch(f"/api/v1/expenses/{claim_id}",
+                              json={"travel_application_id": tra_id, "notes": "admin edit"})
+        assert r.status_code == 200, r.text
+        assert r.json()["travel_application_id"] == tra_id
+        other = await _make_approved_tra(db_session, traveler_id=uuid.uuid4())
+        await db_session.commit()
+        r = await admin.patch(f"/api/v1/expenses/{claim_id}",
+                              json={"travel_application_id": str(other.id)})
+        assert r.status_code == 403
 
 
 async def test_created_by_alone_grants_nothing_on_other_claim_types(client, db_session, current_user_id):

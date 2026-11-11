@@ -82,7 +82,10 @@ rules:
       one that was returned or rejected, and one that does not list you are
       not offered. Choosing one fills in the destination, dates and purpose.
       When none qualifies the form says a Travel Application has to be
-      approved first.
+      approved first. When a claim is edited, the picker always offers the
+      Travel Application the claim is already linked to — also to a System
+      Admin or Finance Manager editing someone else's claim — so it can be
+      saved without changing it; a different one has to qualify again.
     provenance: pinned
     enforced_in: "expense-api app/crud/expense.py list_eligible_travel_apps (GET /travel-applications/eligible); oa/src/pages/expenses/TrvCreatePage.tsx; PRD OA TRV-GATE-002"
     test:
