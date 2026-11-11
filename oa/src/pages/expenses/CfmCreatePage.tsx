@@ -71,12 +71,23 @@ export default function CfmCreatePage({ editClaimId }: EditableFormProps = {}) {
   // whatever the claim was raised against (claim_type is "CFM_<CODE>").
   const formCode = editing ? editing.claim_type.replace(/^CFM_/i, '') : routeFormCode
 
-  const { data: forms, isLoading } = useQuery<CustomForm[]>({
+  // A new claim may only use an active form (OA.md §6.1, CFM-005).
+  const { data: forms, isLoading: loadingForms } = useQuery<CustomForm[]>({
     queryKey: ['custom-forms-active'],
     queryFn: () => api.get<CustomForm[]>('/api/v1/expenses/custom-forms?active_only=true'),
+    enabled: !editClaimId,
   })
+  // A claim being edited uses the form it was raised on, even one deactivated
+  // since: a draft or returned claim stays editable and submittable (Q-05).
+  const { data: claimForm, isLoading: loadingClaimForm } = useQuery<CustomForm>({
+    queryKey: ['custom-form-for-claim', editClaimId],
+    queryFn: () => api.get<CustomForm>(`/api/v1/expenses/custom-forms/for-claim/${editClaimId}`),
+    enabled: !!editClaimId,
+    retry: false,
+  })
+  const isLoading = editClaimId ? loadingClaimForm : loadingForms
 
-  const form = forms?.find(
+  const form = editClaimId ? claimForm : forms?.find(
     f => f.code.toLowerCase() === formCode?.toLowerCase() && f.is_active
   )
 

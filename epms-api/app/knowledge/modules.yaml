@@ -217,7 +217,9 @@ modules:
         notes under Notes. It carries no amount, so the page shows no total.
         A form's Description (set in OA → Admin → Custom Forms) is shown above
         it when an employee fills it in, and a new claim takes the form's
-        Default Currency.
+        Default Currency. A form made inactive is no longer offered for new
+        claims, but draft and returned claims already raised on it can still
+        be edited and submitted.
       - >-
         Nobody pays their own claim either, while the self-payment
         segregation-of-duties rule is on (it is by default): a Payment Officer
