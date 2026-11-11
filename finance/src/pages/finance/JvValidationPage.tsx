@@ -22,7 +22,7 @@ import { Download, Loader2 } from 'lucide-react'
 import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { JvDetailModal } from './JvDetailModal'
 
@@ -78,7 +78,7 @@ function money(v: string) {
   const n = Number(v)
   return n ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'
 }
-function thisYear() { return new Date().getFullYear() }
+function thisYear() { return Number(todayISO().slice(0, 4)) }   // the plant's year
 
 function csvEscape(v: unknown) {
   const s = v === null || v === undefined ? '' : String(v)

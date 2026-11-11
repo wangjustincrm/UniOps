@@ -10,7 +10,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Loader2, Scale, X } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, currentMonthISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { AccountVouchersModal } from './AccountVouchersModal'
 import { JvDetailModal } from './JvDetailModal'
@@ -41,7 +41,7 @@ function money(v: string) {
   const n = Number(v)
   return n ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'
 }
-function thisMonth() { return new Date().toISOString().slice(0, 7) }
+function thisMonth() { return currentMonthISO() }   // the plant's month, not UTC
 
 interface Drill { accountCode: string; dimsValues?: string | null; title: string }
 

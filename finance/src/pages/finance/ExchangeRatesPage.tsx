@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, RefreshCw, Pencil, Trash2, X } from 'lucide-react'
 import { financeApi } from '@/lib/api'
-import { cn, formatDate, formatDateTime } from '@/lib/utils'
+import { cn, formatDate, formatDateTime, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
 /**
@@ -35,9 +35,9 @@ interface Status {
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const PAGE_SIZE = 100
 
+/** Today at the plant (company time zone), YYYY-MM-DD. */
 function todayLocal(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return todayISO()
 }
 function fmtTs(iso: string | null): string {
   return iso ? formatDateTime(iso) : '—'

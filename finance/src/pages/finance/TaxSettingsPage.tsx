@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Ban, X } from 'lucide-react'
 import { SortTh, useSortableRows } from '@uniops/shell'
 import { mdmApi } from '@/lib/api'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { useAuthStore } from '@/store/auth'
 
@@ -47,7 +47,7 @@ interface FormState {
 
 const emptyForm = (): FormState => ({
   code: '', name: '', tax_type: 'HST', province: '', ratePct: '',
-  recoverable: true, effective_from: new Date().toISOString().slice(0, 10),
+  recoverable: true, effective_from: todayISO(),
   effective_to: '', active: true,
 })
 

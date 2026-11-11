@@ -15,7 +15,7 @@ import { Download, Loader2, Search, X } from 'lucide-react'
 import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, financeDownload } from '@/lib/api'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, currentMonthISO, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { ListPager } from '@/components/ListPager'
 import { JvDetailModal } from './JvDetailModal'
@@ -49,7 +49,7 @@ function money(v: string) {
   const n = Number(v)
   return n ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''
 }
-function thisMonth() { return new Date().toISOString().slice(0, 7) }
+function thisMonth() { return currentMonthISO() }   // the plant's month, not UTC
 
 export default function JvLinesPage() {
   const { user } = useAuthStore()

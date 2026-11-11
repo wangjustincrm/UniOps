@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, currentMonthISO, formatDate, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
@@ -55,7 +55,7 @@ function money(v: string) {
 function drCol(signed: string) { return num(signed) > 0 ? money(signed) : '' }
 function crCol(signed: string) { return num(signed) < 0 ? money(String(-num(signed))) : '' }
 
-function thisMonth() { return new Date().toISOString().slice(0, 7) }
+function thisMonth() { return currentMonthISO() }   // the plant's month, not UTC
 
 export default function GeneralLedgerPage() {
   const { user } = useAuthStore()
@@ -386,7 +386,7 @@ interface OpenLine { account_code: string; side: 'debit' | 'credit'; amount: str
 function OpeningModal({ onClose, onSaved, onError }: {
   onClose: () => void; onSaved: () => void; onError: (m: string) => void
 }) {
-  const [asOf, setAsOf] = useState(new Date().toISOString().slice(0, 10))
+  const [asOf, setAsOf] = useState(todayISO())
   const [lines, setLines] = useState<OpenLine[]>([{ account_code: '', side: 'debit', amount: '' }])
   const [busy, setBusy] = useState(false)
 
@@ -477,7 +477,7 @@ function OpeningModal({ onClose, onSaved, onError }: {
 function CloseYearModal({ onClose, onDone, onError }: {
   onClose: () => void; onDone: (net: string) => void; onError: (m: string) => void
 }) {
-  const [year, setYear] = useState(new Date().getFullYear())
+  const [year, setYear] = useState(() => Number(todayISO().slice(0, 4)))
   const [busy, setBusy] = useState(false)
 
   const run = async () => {

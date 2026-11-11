@@ -24,7 +24,7 @@ import { CheckCircle2, Loader2, Play, Undo2, Wallet, X } from 'lucide-react'
 import { SortTh, sortParams, useOptionalTabStoreApi, useSort, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { ListPager } from '@/components/ListPager'
 import { RemittancePanel } from '@/components/remittance/RemittancePanel'
@@ -241,7 +241,7 @@ export default function PaymentBatchPage() {
       kind: 'iframe', src, icon: 'FileText', closable: true,
     })
   }
-  const today = new Date().toLocaleDateString('en-CA')  // local YYYY-MM-DD
+  const today = todayISO()  // the plant's YYYY-MM-DD (company time zone)
   // Batches are paged and sorted by the API (payments._BATCH_SORT); the due
   // list above stays whole per currency because batch selection needs it all.
   const [batchPage, setBatchPage] = useState(1)

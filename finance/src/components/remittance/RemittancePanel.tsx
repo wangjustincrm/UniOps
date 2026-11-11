@@ -20,7 +20,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Eye, Loader2, RefreshCw } from 'lucide-react'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, todayISO } from '@/lib/utils'
 import {
   fetchPreview, renderRemittance, scopeKey, sendRemittance,
   type PayeeGroup, type RemittanceScope, type RenderedEmail, type SendResult,
@@ -81,7 +81,7 @@ function payeeKey(kind: string, id: string): string {
 }
 
 /**
- * Today in the OPERATOR's timezone as `YYYY-MM-DD` — deliberately not
+ * Today at the plant (company time zone) as `YYYY-MM-DD` — deliberately not
  * `new Date().toISOString().slice(0, 10)`, which is today in UTC. The
  * company runs at UTC-4/-5, so from 8pm local onwards the UTC form is
  * already tomorrow, and the picker would open on a date the operator never
@@ -89,9 +89,7 @@ function payeeKey(kind: string, id: string): string {
  * `max` attribute below uses this and not the ISO form.
  */
 function todayLocal(): string {
-  const d = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  return todayISO()
 }
 
 function fmtMoney(v: string, ccy: string): string {

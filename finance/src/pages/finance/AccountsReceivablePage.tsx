@@ -18,7 +18,7 @@ import {
 import { SortTh, sortParams, useSort, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, mdmApi } from '@/lib/api'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { ListPager } from '@/components/ListPager'
 
@@ -282,8 +282,8 @@ function InvoiceModal({ onClose, onSaved, onError }: {
   onClose: () => void; onSaved: () => void; onError: (m: string) => void
 }) {
   const [customerId, setCustomerId] = useState('')
-  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10))
-  const [dueDate, setDueDate] = useState(new Date().toISOString().slice(0, 10))
+  const [invoiceDate, setInvoiceDate] = useState(todayISO())
+  const [dueDate, setDueDate] = useState(todayISO())
   const [currency, setCurrency] = useState('CAD')
   const [amount, setAmount] = useState('')
   const [description, setDescription] = useState('')
@@ -432,7 +432,7 @@ function ReceiptModal({ invoice, onClose, onSaved, onError }: {
 }) {
   const outstanding = (Number(invoice.total_amount) - Number(invoice.paid_amount)).toFixed(2)
   const [amount, setAmount] = useState(outstanding)
-  const [receiptDate, setReceiptDate] = useState(new Date().toISOString().slice(0, 10))
+  const [receiptDate, setReceiptDate] = useState(todayISO())
   const [method, setMethod] = useState('bank_transfer')
   const [bankAccountId, setBankAccountId] = useState('')
   const [reference, setReference] = useState('')

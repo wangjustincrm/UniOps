@@ -11,7 +11,7 @@ import { Check, ChevronLeft, ChevronRight, DatabaseZap, Loader2, Search, Send, S
 import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, currentMonthISO, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { JvDetailModal, JvStatusBadge, type JvHeader } from './JvDetailModal'
 import { NcSyncModal, type NcSyncStatus } from './NcSyncModal'
@@ -46,7 +46,7 @@ function money(v: string) {
   const n = Number(v)
   return n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
-function thisMonth() { return new Date().toISOString().slice(0, 7) }
+function thisMonth() { return currentMonthISO() }   // the plant's month, not UTC
 
 // NC's auxiliary names, keyed by the dim_code the sync writes. Anything not
 // listed shows its raw code rather than a guess.

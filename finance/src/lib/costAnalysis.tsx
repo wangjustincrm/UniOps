@@ -13,7 +13,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Loader2, RefreshCw } from 'lucide-react'
 import { financeApi } from '@/lib/api'
-import { cn, formatDateTime } from '@/lib/utils'
+import { cn, currentMonthISO, formatDateTime } from '@/lib/utils'
 
 export interface SyncRun {
   id: string; status: string; started_at: string | null; finished_at: string | null
@@ -52,10 +52,10 @@ export const RULE_HELP: Record<string, string> = {
   A8: 'The mirror does not agree with NC: a closed month that does not land on NC’s balance, or a sync that did not tie out.',
 }
 
-/** YYYY-MM of the local calendar month. Never via toISOString (UTC shifts the month). */
+/** YYYY-MM of the plant's calendar month (company time zone). Never via
+ *  toISOString (UTC shifts the month). */
 export function thisMonth(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  return currentMonthISO()
 }
 
 export function num(v: number | null | undefined, digits = 2): string {
