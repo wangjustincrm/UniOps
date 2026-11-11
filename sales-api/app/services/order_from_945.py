@@ -32,7 +32,7 @@ from app.domain.orders import FROM_945
 from app.domain.status import Fulfillment as F
 from app.domain.status import Invoice as Inv
 from app.models.config import Item, Partner
-from app.models.documents import Document, DocumentLink
+from app.models.documents import Document
 from app.models.orders import Order, OrderLine
 from app.models.shadow import ShadowMatch
 from app.models.shipments import Shipment, ShipmentRow
@@ -41,6 +41,7 @@ from app.platform.errors import BusinessError, InvalidInput
 from app.services import oplog
 from app.services.orders import Catalog, order_ref
 from app.services.settings import SETTINGS, SHADOW_MODE
+from app.services.doc_links import link
 
 READ = "sales.read"
 OPERATE = "sales.order.operate"
@@ -249,10 +250,7 @@ class OrderFrom945:
 
     async def _link(self, sh: Shipment, order: Order) -> None:
         sh.order_id = order.id
-        if (await self.s.execute(select(DocumentLink.id).where(
-                DocumentLink.document_id == sh.document_id, DocumentLink.entity_type == "order",
-                DocumentLink.entity_id == order.id))).first() is None:
-            self.s.add(DocumentLink(document_id=sh.document_id, entity_type="order", entity_id=order.id))
+        await link(self.s, sh.document_id, "order", order.id)
         await attach(self.s, order, sh)
         match = (await self.s.execute(select(ShadowMatch).where(ShadowMatch.document_id == sh.document_id)
                                       .with_for_update())).scalar_one_or_none()

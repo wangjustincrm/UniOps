@@ -37,11 +37,11 @@ from app.domain.status import FULFILLMENT, Fulfillment as F
 from app.domain.status import Invoice as Inv
 from app.integrations.shopify import readable
 from app.models.config import DcRouting, Item, ItemPartnerCode, Partner
-from app.models.documents import DocumentLink
 from app.models.orders import Order, OrderLine
 from app.services.outbound import changed_after_940
 from app.services.problems import CANCELLED_AFTER_940, ORDER_ARCHIVED, ORDER_REVIEW, problem
 from app.services.settings import SETTINGS, SHADOW_MODE
+from app.services.doc_links import link
 
 UPDATABLE = {F.REVIEW, F.PAYMENT_HOLD, F.PENDING, F.ARCHIVE_SUPPRESSED, F.DRAFT}
 # After a 940 the order is still updated, but what the 940 carried stays locked
@@ -227,11 +227,7 @@ def review_reasons(src: SourceOrder, partner: Partner | None, plans: list[LinePl
 
 async def link_document(session, document_id: int, order_id: int) -> None:
     """The document is one of the order's (its source page or file); once."""
-    exists = (await session.execute(select(DocumentLink.id).where(
-        DocumentLink.document_id == document_id, DocumentLink.entity_type == "order",
-        DocumentLink.entity_id == order_id))).scalar_one_or_none()
-    if exists is None:
-        session.add(DocumentLink(document_id=document_id, entity_type="order", entity_id=order_id))
+    await link(session, document_id, "order", order_id)
 
 class OrderSync:
     def __init__(self, uow, tasks) -> None:

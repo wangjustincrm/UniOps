@@ -43,7 +43,7 @@ from app.domain.status import Fulfillment as F
 from app.domain.x12 import X12Error
 from app.integrations.shopify import ShopifyForbidden, readable as shopify_readable
 from app.models.config import Connection, Item, Partner
-from app.models.documents import Document, DocumentLink
+from app.models.documents import Document
 from app.models.orders import Order, OrderLine
 from app.models.records import OutboxRecord
 from app.models.shipments import Shipment, ShipmentRow
@@ -52,6 +52,7 @@ from app.platform.errors import BusinessError
 from app.platform.outbox import ONCE, Outbox, OutboxKind
 from app.platform.pipeline import isolated
 from app.services import oplog
+from app.services.doc_links import link
 from app.services.intake import ConnectionSnapshot
 from app.services.order_from_945 import SYNTHETIC_PREFIX, attach, warehouse_number_is
 from app.services.outbound import TORONTO, latest_940
@@ -474,10 +475,8 @@ class Shipments:
                 # marked as the shadow run's, without applying anything (applied stays false).
                 order_line_id=rp.order_line_id if rp else None,
                 needs_review=bool(applied and rp is not None and rp.order_line_id is None)))
-        if p.order_id is not None and (await s.execute(select(DocumentLink.id).where(
-                DocumentLink.document_id == doc.id, DocumentLink.entity_type == "order",
-                DocumentLink.entity_id == p.order_id))).first() is None:
-            s.add(DocumentLink(document_id=doc.id, entity_type="order", entity_id=p.order_id))
+        if p.order_id is not None:
+            await link(s, doc.id, "order", p.order_id)
         await s.flush()
         return shipment
 

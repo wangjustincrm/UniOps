@@ -54,6 +54,7 @@ from app.services.problems import (
     CHANGED_AFTER_940, EDI_940_FAILED, EDI_940_REJECTED, EDI_940_TIMEOUT, EDI_997_UNMATCHED, problem, send_refused,
 )
 from app.services.settings import ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, SETTINGS, SHADOW_MODE
+from app.services.doc_links import link
 
 logger = logging.getLogger(__name__)
 TORONTO = ZoneInfo("America/Toronto")  # "today" on a 940 (product owner, 2026-10-30)
@@ -470,7 +471,7 @@ class Outbound940:
         order = (await s.execute(select(Order).join(DocumentLink, and_(
             DocumentLink.entity_id == Order.id, DocumentLink.entity_type == "order", DocumentLink.document_id == doc.id))
             .with_for_update())).scalar_one()
-        s.add(DocumentLink(document_id=ack_doc.id, entity_type="order", entity_id=order.id))
+        await link(s, ack_doc.id, "order", order.id)
         accepted = st.accepted if st is not None and st.code else g.accepted
         if doc.ack_status not in (Ack.WAITING, Ack.TIMEOUT):
             await oplog.write(s, "INFO", STEP, f"997 for a 940 already {doc.ack_status}: no change", document_id=doc.id)

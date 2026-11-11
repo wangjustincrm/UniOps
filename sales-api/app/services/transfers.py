@@ -68,6 +68,7 @@ from app.services.problems import (
     problem,
     send_refused,
 )
+from app.services.doc_links import link
 from app.services.settings import (
     ACK_TIMEOUT_MINUTES,
     EDI_CONNECTION_ID,
@@ -356,7 +357,7 @@ class Transfers:
         with that GS06, answered by AK9."""
         s = uow.session
         docs = list((await s.execute(select(Document).where(
-            Document.kind == "943_EDI", Document.direction == "OUT", Document.origin == "UNIOPS",
+            Document.kind == "943_EDI", Document.direction == "OUT", Document.origin.in_(("UNIOPS", "ZOHO_MIGRATION")),
             func.ltrim(Document.gs06, "0") == g.group_control.lstrip("0"),
             *([func.ltrim(Document.st02, "0") == st.control.lstrip("0")] if st is not None else [])).with_for_update())).scalars())
         if len(docs) != 1:
@@ -475,7 +476,7 @@ class Transfers:
             s.add(ReceiptRow(receipt_id=rec.id, position=i, lx_number=row.lx_number, item_code=row.item_code, upc=row.upc,
                              lot=row.lot, description=row.description, qty_ea=row.qty, transfer_line_no=line_no))
         if t is not None:
-            s.add(DocumentLink(document_id=doc.id, entity_type="transfer", entity_id=t.id))
+            await link(s, doc.id, "transfer", t.id)
         await s.flush()
         if shadow:
             doc.shadow = True

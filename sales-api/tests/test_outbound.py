@@ -503,3 +503,17 @@ async def test_a_shopify_940_bills_the_ship_to_whatever_the_billing_address(edi)
     j = next(n for n, s in enumerate(segs) if s[:2] == ["N1", "ST"])
     assert segs[i][2:] == segs[j][2:] and segs[i + 1] == segs[j + 1] and segs[i + 2] == segs[j + 2]
     assert not any("Someone Else" in "*".join(s) or "Laval" in "*".join(s) for s in segs)
+
+
+async def test_a_997_read_again_keeps_its_link_and_is_processed(edi):  # 2026-11-11: it stayed Pending, retried every cycle
+    o, d = await sent_order(edi)
+    await store_997(edi, ack997(d["st02"]))
+    await edi.out.process_997s()
+    async with edi.env.factory(SYSTEM_ACTOR) as u:  # a reparse: the same 997 read again
+        await u.session.execute(sa.text("UPDATE sales_documents SET processing_status = 'Pending' WHERE kind = '997_EDI'"))
+        await u.commit()
+    await edi.out.process_997s()
+    assert (await edi.env.q("SELECT processing_status FROM sales_documents WHERE kind = '997_EDI'"))[0]["processing_status"] == "Processed"
+    links = await edi.env.q("SELECT count(*) n FROM sales_document_links l JOIN sales_documents d ON d.id = l.document_id "
+                            "WHERE d.kind = '997_EDI' AND l.entity_id = :o", o=o.id)
+    assert links == [{"n": 1}]
