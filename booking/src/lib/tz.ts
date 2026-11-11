@@ -1,34 +1,40 @@
 /**
  * Timezone-aware date/time helpers for the booking app.
  *
- * All wall-clock display and input must operate in DISPLAY_TZ, not browser-local
+ * All wall-clock display and input must operate in the plant's time zone (the
+ * company setting, `displayTimeZone()` from @uniops/shell), not browser-local
  * time.  Any user whose browser is in a different timezone would otherwise see
  * shifted times and, worse, submit silently wrong UTC values.
+ *
+ * The zone is read at call time — never cache it in a module-level constant:
+ * main.tsx loads the company setting before the first render, but a constant
+ * evaluated at import time would still hold the fallback.
  */
-
-export const DISPLAY_TZ = 'America/Toronto'
+import { displayTimeZone, wallClockToISO } from '@/lib/utils'
 
 /**
- * Extract HH:MM from a UTC ISO string, expressed in DISPLAY_TZ wall-clock time.
+ * Extract HH:MM from a UTC ISO string, expressed in the plant's wall-clock time
+ * (or `tz` when given).
  * e.g. "2025-07-15T14:00:00.000Z" → "10:00" (Toronto EDT = UTC-4)
  */
-export function isoToHMInZone(iso: string, tz: string = DISPLAY_TZ): string {
+export function isoToHMInZone(iso: string, tz: string = displayTimeZone()): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     hour: '2-digit',
     minute: '2-digit',
-    hour12: false,
+    hourCycle: 'h23',
     timeZone: tz,
   }).formatToParts(new Date(iso))
   const h = parts.find((p) => p.type === 'hour')?.value ?? '00'
   const m = parts.find((p) => p.type === 'minute')?.value ?? '00'
-  return `${h}:${m}`
+  return `${h === '24' ? '00' : h}:${m}`
 }
 
 /**
- * Extract YYYY-MM-DD from a UTC ISO string, expressed in DISPLAY_TZ wall-clock date.
+ * Extract YYYY-MM-DD from a UTC ISO string, expressed in the plant's wall-clock
+ * date (or `tz` when given).
  * e.g. "2025-07-15T03:00:00.000Z" → "2025-07-14" if tz is UTC-5
  */
-export function isoToDateInZone(iso: string, tz: string = DISPLAY_TZ): string {
+export function isoToDateInZone(iso: string, tz: string = displayTimeZone()): string {
   const parts = new Intl.DateTimeFormat('en-CA', {
     year: 'numeric',
     month: '2-digit',
@@ -42,7 +48,8 @@ export function isoToDateInZone(iso: string, tz: string = DISPLAY_TZ): string {
 }
 
 /**
- * Convert a wall-clock date+time in the given timezone to a UTC ISO string.
+ * Convert a wall-clock date+time in the plant's time zone (or `tz` when given)
+ * to a UTC ISO string.
  *
  * The offset-probe technique:
  *   1. Assume the wall-clock time is in UTC (naively construct a Date).
@@ -50,41 +57,15 @@ export function isoToDateInZone(iso: string, tz: string = DISPLAY_TZ): string {
  *   3. Adjust by the difference between the apparent time and the input time.
  *   4. Re-check once (handles DST gaps where the first guess lands in the gap).
  *
- * This correctly handles DST transitions without requiring the Temporal API or
- * any third-party library.
+ * The difference is taken on the full date + time, not on the clock alone: on
+ * the clock alone an early-morning time ("02:00" Toronto, whose naive UTC
+ * reading is 22:00 the day before) came out a whole day early.
  *
  * Example: "2025-11-03" + "01:30" in "America/Toronto" (clocks fall back at 2AM)
  * → unambiguously resolves to the first 01:30 (EDT, UTC-4) = "2025-11-03T05:30:00Z"
  */
-export function zonedToISO(dateStr: string, timeStr: string, tz: string = DISPLAY_TZ): string {
-  // Step 1: naive UTC milliseconds (treat wall-clock as if it were UTC)
-  const naiveMs = Date.parse(`${dateStr}T${timeStr}:00Z`)
-
-  // Step 2: format that naive point back in the target tz
-  function apparentHM(ms: number): { h: number; m: number } {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-      timeZone: tz,
-    }).formatToParts(new Date(ms))
-    return {
-      h: parseInt(parts.find((p) => p.type === 'hour')?.value ?? '0', 10),
-      m: parseInt(parts.find((p) => p.type === 'minute')?.value ?? '0', 10),
-    }
-  }
-
-  const [inputH, inputM] = timeStr.split(':').map(Number)
-
-  const apparent1 = apparentHM(naiveMs)
-  const diffMinutes1 = (apparent1.h - inputH) * 60 + (apparent1.m - inputM)
-  const adjustedMs = naiveMs - diffMinutes1 * 60_000
-
-  // Step 3: verify the adjusted point lands at the expected wall-clock time
-  // (handles DST gap: if adjustedMs falls in a gap, Intl will snap forward)
-  const apparent2 = apparentHM(adjustedMs)
-  const diffMinutes2 = (apparent2.h - inputH) * 60 + (apparent2.m - inputM)
-  const finalMs = adjustedMs - diffMinutes2 * 60_000
-
-  return new Date(finalMs).toISOString()
+export function zonedToISO(dateStr: string, timeStr: string, tz: string = displayTimeZone()): string {
+  // Shared implementation (@uniops/shell wallClockToISO): date + time, so early
+  // morning does not slip a day; DST gaps re-checked once.
+  return wallClockToISO(dateStr, timeStr, tz)
 }

@@ -8,7 +8,7 @@
  */
 import { Clock, MapPin, Users, Video, CheckCircle2, AlertTriangle } from 'lucide-react'
 import type { BookingSlimOut, SuggestOut, RoomWithStatusOut } from '@/lib/types'
-import { cn, formatDate, formatDateTime } from '@/lib/utils'
+import { cn, formatDate, formatDateTime, formatTime } from '@/lib/utils'
 import { ROOM_STATUS_STYLE, ROOM_STATUS_LABEL } from '@/lib/roomStatus'
 
 interface Props {
@@ -20,9 +20,7 @@ interface Props {
 }
 
 function formatSlot(starts: string, ends: string): string {
-  const fmt = (iso: string) =>
-    new Date(iso).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false })
-  return `${fmt(starts)}–${fmt(ends)}`
+  return `${formatTime(starts)}–${formatTime(ends)}`
 }
 
 export function SuggestionPanel({ conflicts, occurrenceConflicts, suggestions, onPickSlot, onPickRoom }: Props) {
@@ -78,7 +76,7 @@ export function SuggestionPanel({ conflicts, occurrenceConflicts, suggestions, o
                       <span>
                         {c.title}
                         {' · '}
-                        {formatDateTime(c.starts_at)}–{new Date(c.ends_at).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                        {formatDateTime(c.starts_at)}–{formatTime(c.ends_at)}
                       </span>
                     </li>
                   ))}

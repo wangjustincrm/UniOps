@@ -18,7 +18,7 @@ import {
   Repeat,
 } from 'lucide-react'
 import { SortTh, useSort, sortParams } from '@uniops/shell'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, formatTime } from '@/lib/utils'
 import {
   useAdminRoomList,
   useAdminBookings,
@@ -30,7 +30,7 @@ import type { BookingAdminOut, AdminBookingFilters } from '@/lib/types'
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmtTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('en-CA', { hour: '2-digit', minute: '2-digit', hour12: false })
+  return formatTime(iso)
 }
 
 const STATUS_STYLE: Record<string, string> = {

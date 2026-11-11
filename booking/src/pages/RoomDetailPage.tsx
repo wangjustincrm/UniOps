@@ -11,7 +11,7 @@ import {
   Tv, Presentation, PenLine, Video, Phone,
   type LucideIcon,
 } from 'lucide-react'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, formatTime, todayISO } from '@/lib/utils'
 import { useRoomDetail } from '@/services/api'
 import type { EquipmentOption, RoomStatus } from '@/lib/types'
 import { EQUIPMENT_LABELS } from '@/lib/types'
@@ -50,7 +50,7 @@ export default function RoomDetailPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayISO()
   const [selectedDay, setSelectedDay] = useState<string>(today)
 
   const { data: room, isLoading, error } = useRoomDetail(id)
@@ -95,9 +95,7 @@ export default function RoomDetailPage() {
   const locationParts = [room.floor, room.area].filter(Boolean)
 
   const nextTime = room.next_meeting_at
-    ? new Date(room.next_meeting_at).toLocaleTimeString('en-CA', {
-        hour: '2-digit', minute: '2-digit', hour12: false,
-      })
+    ? formatTime(room.next_meeting_at)
     : null
 
   function handleBook() {

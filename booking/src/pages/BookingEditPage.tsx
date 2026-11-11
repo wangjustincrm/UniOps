@@ -24,7 +24,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { ArrowLeft, CheckCircle2, AlertCircle, Loader2, Info } from 'lucide-react'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, todayISO } from '@/lib/utils'
 import { ApiError } from '@/lib/api'
 import {
   useBooking,
@@ -38,7 +38,7 @@ import type { PrecheckOut } from '@/services/api'
 import { AttendeePicker } from '@/components/AttendeePicker'
 import { SuggestionPanel } from '@/components/SuggestionPanel'
 import { useBookingAuth } from '@/store/auth'
-import { isoToHMInZone, isoToDateInZone, zonedToISO, DISPLAY_TZ } from '@/lib/tz'
+import { isoToHMInZone, isoToDateInZone, zonedToISO } from '@/lib/tz'
 
 // ── Time helpers ──────────────────────────────────────────────────────────────
 
@@ -55,10 +55,10 @@ function buildTimeOptions(startHour: number, endHour: number): string[] {
 
 const TIME_OPTIONS = buildTimeOptions(6, 23)
 
-/** Shorthand wrappers using the app DISPLAY_TZ */
-const isoToHM = (iso: string) => isoToHMInZone(iso, DISPLAY_TZ)
-const isoToDate = (iso: string) => isoToDateInZone(iso, DISPLAY_TZ)
-const toISO = (date: string, time: string) => zonedToISO(date, time, DISPLAY_TZ)
+/** Shorthand wrappers in the plant time zone */
+const isoToHM = (iso: string) => isoToHMInZone(iso)
+const isoToDate = (iso: string) => isoToDateInZone(iso)
+const toISO = (date: string, time: string) => zonedToISO(date, time)
 
 // ── Form UI helpers (mirrors BookingCreatePage style) ─────────────────────────
 
@@ -406,7 +406,7 @@ export default function BookingEditPage() {
     )
   }
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayISO()
 
   return (
     <div className="h-full overflow-y-auto">

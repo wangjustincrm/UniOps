@@ -24,18 +24,14 @@ import {
   X as XIcon,
 } from 'lucide-react'
 import { Pagination, SortTh, useSort, sortParams, type Sort } from '@uniops/shell'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, formatTime } from '@/lib/utils'
 import { useMyBookingsPaged, useCancelBooking } from '@/services/api'
 import type { BookingOut } from '@/lib/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function fmtTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('en-CA', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
+  return formatTime(iso)
 }
 
 // ── Status badges ─────────────────────────────────────────────────────────────
