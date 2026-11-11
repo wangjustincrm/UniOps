@@ -5,6 +5,27 @@ covers: >
   reminder, why an approval email did not arrive, editing email templates.
 rules:
   - id: send_reminder
+    # Round 2 (ISS-0069): "怎么催审批人" in a four-part message was answered
+    # four ways — email/Teams, "a reminder function if there is one", the Task
+    # Inbox, and once right. Now the code answers it, every time.
+    said_when:
+      - '催(?:审批|审|办|批|促|一下|他|她)'
+      - '提醒(?:一下)?审批人'
+      - '\bsend\s+(?:a\s+)?reminder\b'
+      - '\b(?:remind|chase|nudge)(?:ing)?\s+(?:an?\s+|the\s+|my\s+)?approver'
+    says:
+      en: >
+        Use Send reminder: on {documents} waiting for approval, the Approval
+        Timeline on the document's page shows a Send reminder button under the
+        current step. It emails the current approver(s) at once — including
+        anyone covering for them — and can be pressed once every {hours} hours
+        per approval step; a second press inside that time is refused. Payment
+        applications have no Send reminder.
+      zh: >
+        用 Send reminder（发送提醒）：等待审批的{documents_zh}，在单据页面的审批时间线
+        （Approval Timeline）上、当前步骤下方有 Send reminder 按钮。点击后立即给当前审批人
+        （包括正在代理他们的人）发邮件；同一个审批步骤每 {hours} 小时只能催一次，时限内再点会被拒绝。
+        付款申请（PA）没有 Send reminder。
     asked_as:
       - 怎么催审批人？
       - 我能连续催审批人两次吗？PA 能催办吗？

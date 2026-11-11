@@ -28,19 +28,34 @@ rules:
     provenance: pinned
     test:
       - "tests/test_assistant_iss_round2.py::test_numbers_have_the_formats_the_guide_states"
-  - id: direct_pa_retired
+  # ISS-0065 point 8: this card used to say Direct PAs were discontinued.
+  # Only OA's PA-DIR is (OA.md §15); the Direct PA moved to EPMS (EPMS.md
+  # §3.22, v2.33) and production creates them.
+  - id: direct_pa
     asked_as:
       - what is a direct payment application
       - can I raise a direct PA
       - 直接付款申请怎么走
+      - 直接付款申请现在还能建吗
     answer: >
-      Direct Payment Applications (OA's PA-DIR, a payment with no purchase
-      order) have been discontinued and can no longer be created; the system
-      refuses a new one and says to raise the payment against a purchase order
-      instead. Ones that already exist can still be opened, approved and paid.
-    enforced_in: "expense-api app/api/v1/pa.py DIRECT_PA_RETIRED (create returns 410 Gone)"
-    provenance: pinned
+      Yes, in EPMS. An invoice with no purchase order and no agreement behind
+      it is paid by a Direct PA: on the invoice, Match → Direct PA (whoever may
+      match the invoice); then Payment Applications → Create Direct PA (for
+      holders of Create / Edit PAs) takes one or more such invoices of the
+      same vendor and currency, falling due within {window} days of each
+      other, and it cannot be submitted without the department, cost center,
+      budget account and a reason. It is approved on the "PA (Direct)"
+      workflow (Portal → Admin → Approval Workflows) and paid like any other
+      PA. OA's own Direct Payment Application (PA-DIR) is retired: OA refuses
+      a new one, and its old ones can still be opened, approved and paid.
+    provenance: derived
+    derive: pa_invoice_window
+    enforced_in: "epms-api app/api/v1/pa.py create_direct_pa (POST /pa/direct, epms.pa.write) -> app/crud/pa.py create_direct (one vendor, one currency, due window) and the submit gate; app/api/v1/invoices.py Match → Direct PA; approval-api pa_dir chain; expense-api app/api/v1/pa.py DIRECT_PA_RETIRED (OA create returns 410 Gone)"
     test:
+      - "tests/test_direct_pa.py::test_create_direct_pa_from_two_invoices"
+      - "tests/test_direct_pa.py::test_create_direct_pa_refusals"
+      - "tests/test_direct_pa.py::test_invoices_due_far_apart_need_separate_direct_pas"
+      - "tests/test_direct_pa.py::test_submit_gate_needs_every_dimension"
       - "expense-api/tests/test_direct_pa_retired.py::test_creating_a_direct_pa_is_gone"
       - "expense-api/tests/test_direct_pa_retired.py::test_an_existing_direct_pa_can_still_be_acted_on"
   - id: paid_pa_is_processed
@@ -56,11 +71,13 @@ rules:
       Partially Paid for a prepayment — for a prepayment's invoices Partially
       Paid is the correct status, not a missing payment. A PA in status
       Approved is fully approved and still waiting to be paid.
-    enforced_in: "finance-api app/crud/payment_execute.py (pa.status = processed, paid_at = payment date; invoices paid / partially_paid for a prepayment); epms-api app/models/invoice.py Invoice.pa_payment_shown (the same rule, for the Assistant)"
+    enforced_in: "finance-api app/crud/payment_execute.py (pa.status = processed, paid_at = payment date; invoices paid / partially_paid for a prepayment); epms-api app/models/invoice.py Invoice.pa_payment_shown (the same rule, for the Assistant), said with the count per PA kind under every answer that uses it (app/services/answer_facts.py _paid_pa_invoices, counted over the invoices the query matched; with none on a prepayment PA, a narrator sentence blaming Partially Paid is taken out)"
     provenance: pinned
     test:
       - "finance-api/tests/test_payment_execute.py::test_execute_pa_po_marks_invoices_paid"
       - "tests/test_assistant_iss_batch6.py::test_pa_payment_shown_is_the_rule_payment_writes"
+      - "tests/test_assistant_asst2_b.py::test_paid_pa_invoices_always_carry_the_partially_paid_rule"
+      - "tests/test_assistant_asst2_g.py::test_partially_paid_is_not_blamed_when_none_is_a_prepayment"
   - id: prepayment_cap
     also_in: [vendor]
     asked_as:
@@ -80,15 +97,37 @@ rules:
       Prepayment Config. Whether a vendor can be prepaid is decided by these
       caps alone — never by the Prepaid flag on its past PRs or POs, which
       the payment application does not read.
-    enforced_in: "epms-api app/api/v1/pa.py _assert_prepayment_cap, on create_pa and when a draft's % is edited in update_pa (effective_cap = vendor.max_prepayment_pct else Prepayment Config; second check against the system cap; cumulative over the PO's live prepayments via prior_prepayment_pct)"
+    enforced_in: "epms-api app/api/v1/pa.py _assert_prepayment_cap, on create_pa and when a draft's % is edited in update_pa (effective_cap = vendor.max_prepayment_pct else Prepayment Config; second check against the system cap; cumulative over the PO's live prepayments via prior_prepayment_pct); the cap that applies to a vendor is said under a vendor answer by app/services/answer_facts.py _prepayment_cap (app/core/prepayment_cap.py effective_cap), first, with \"cannot be prepaid / no policy / must be set first\" taken out when the cap is above 0; the rule question with no vendor gets the verdict no_vendor_cap_takes_the_system_cap (rule_facts.prepayment_system_cap)"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_prepayment_cap_reads_the_vendor_then_the_system"
+      - "tests/test_assistant_asst2_b.py::test_a_vendor_with_no_cap_of_its_own_gets_the_system_cap"
+      - "tests/test_assistant_asst2_g.py::test_a_vendor_answer_loses_no_policy_and_must_set_first"
   - id: vendor_credit_netting
     asked_as:
       - how are vendor credits used when we pay
       - how much is actually paid on a PA after credits
       - 贷项在付款时怎么抵扣
+    # Round 2 follow-up 11-11 (ISS-0056): said by code under "PA-… 扣掉贷项后实际付多少？"
+    # (app/services/fact_replies.py _pa_credits), so it is written in both
+    # languages here.
+    says:
+      en: >
+        Vendor credits are not entered on the payment application; they are
+        netted when the payment is executed. At that moment every Available
+        credit of the same vendor and the same currency is applied
+        automatically, oldest credit date first, until the payment amount is
+        covered; the person paying can untick credits in the payment dialog,
+        which shows Gross, Vendor credits applied and Net. A credit that is
+        used up becomes Exhausted; one partly used keeps the rest for the next
+        payment. Credits still pending review, void, or in another currency
+        are never applied.
+      zh: >
+        贷项不录在付款申请（PA）上，而是在执行付款时抵扣：那一刻，同一供应商、同一币种的所有
+        可用（Available）贷项按贷项日期从早到晚自动抵扣，直到抵满付款金额为止；付款人可以在付款
+        对话框里取消勾选某些贷项，对话框显示 Gross（总额）、Vendor credits applied（抵扣的贷项）
+        和 Net（实付）。用完的贷项变为 Exhausted，部分使用的保留余额下次再扣。待审核、已作废或
+        其他币种的贷项永远不会被抵扣。
     answer: >
       Vendor credits are not entered on the payment application; they are
       netted when the payment is executed. At that moment every Available
@@ -100,11 +139,12 @@ rules:
       still pending review, void, or in another currency are never applied.
       The PA keeps its gross amount; the net paid and the credits applied are
       on the payment record, and the remittance advice lists each credit note.
-    enforced_in: "finance-api app/crud/vendor_credit.py select_credits_for_payment (AVAILABLE, same vendor and currency, ORDER BY credit_date, created_at); app/crud/payment_execute.py (net = base - credit_applied on the PaymentRecord); pinned by finance-api tests/test_vendor_credit_netting.py"
+    enforced_in: "finance-api app/crud/vendor_credit.py select_credits_for_payment (AVAILABLE, same vendor and currency, ORDER BY credit_date, created_at); app/crud/payment_execute.py (net = base - credit_applied on the PaymentRecord); pinned by finance-api tests/test_vendor_credit_netting.py. Said with the vendor's available credits for an unpaid PA by epms-api app/services/fact_replies.py _pa_credits"
     provenance: pinned
     test:
       - "finance-api/tests/test_vendor_credit_netting.py::test_fifo_takes_oldest_first_and_stops_at_base"
       - "finance-api/tests/test_vendor_credit_netting.py::test_payment_is_reduced_by_available_credit"
+      - "tests/test_assistant_asst2_h.py::test_an_unpaid_pa_after_credits_says_netted_at_payment_and_lists_them"
 
   # ── Added 2026-10-21 (issue review batch 3) ───────────────────────────────
   - id: what_can_go_on_one_pa
@@ -265,18 +305,46 @@ rules:
     asked_as:
       - PA 的汇款通知发给供应商了吗？
       - was the remittance advice sent
+      - 付款以后还有什么步骤？
     answer: >
-      The remittance advice is a separate email to the vendor that Finance
-      sends by hand after paying — from Finance → Payments or a payment
-      batch. It is not sent automatically, and a PA's approval history says
-      nothing about it. Whether it was sent (and when, or whether it failed)
-      is recorded on the Finance payment pages; EPMS and this assistant
-      cannot see that record.
-    enforced_in: "finance-api app/api/v1/remittance.py (manual send routes); app/crud/payment_execute.py sends none; app/models/remittance.py payment_remittance_notifications (not in the assistant's ontology)"
+      After a PA is paid, the next step is the remittance advice: an email
+      to the vendor (one per payee) that Finance sends from the system —
+      Finance → Payments, a payment batch or a selection of payments. An AP
+      Clerk may send it as well as whoever paid. It is part of the payment
+      process but is not sent automatically when paying, and a PA's approval
+      history says nothing about it. Whether it was sent (and when, or whether
+      it failed) is recorded on the Finance payment pages. Asked about one paid
+      PA, the assistant reads that send record and says whether, when and to
+      whom it was sent — for users with View Finance; others are told it needs
+      Finance access.
+    enforced_in: "finance-api app/api/v1/remittance.py (send routes; PRD EPMS REM-001); app/crud/payment_execute.py sends none; app/models/remittance.py payment_remittance_notifications (read for one PA by epms-api app/services/answer_facts.py payment_facts, View Finance only — not in the queryable ontology; answer_facts.say_payment puts it first and takes out a narrator's \"sent\" with no send record, or \"not sent\" over one)"
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_remittance_is_sent_by_hand_and_not_modelled"
+      - "tests/test_assistant_asst2_c.py::test_the_flow_after_payment_is_the_remittance_advice"
+      - "tests/test_assistant_asst2_b.py::test_a_paid_pa_says_account_and_remittance_from_finance_records"
+      - "tests/test_assistant_asst2_g.py::test_remittance_is_not_said_sent_without_a_send_record"
+      - "tests/test_assistant_asst2_g.py::test_no_account_goes_when_the_payment_record_names_one"
   - id: recording_a_manual_credit
+    # Round 2 (ISS-0022 #3): refused once in three. Code answers it.
+    said_when:
+      - '(?:手工|手动|人工|\bmanual(?:ly)?\b).{0,8}(?:贷项|贷记|\bcredit)'
+    says:
+      en: >
+        A manual vendor credit (recorded from the vendor's email rather than an
+        uploaded credit note) needs the vendor, the vendor's credit-note
+        reference number, the credit date, the amount (and tax, if any) and a
+        note explaining its basis; the server refuses a manual credit without
+        that note. The form also requires the vendor's email or document to be
+        attached, and a manual credit with no attachment cannot be approved
+        from its detail panel — both are rules of the screen, not checks the
+        server makes. The same credit-note number cannot be recorded twice for
+        one vendor (unless the earlier one was voided).
+      zh: >
+        手工贷项（根据供应商邮件录入，而不是上传贷项单）需要：供应商、供应商的贷项单参考号、
+        贷项日期、金额（有税的话加上税额），以及一段说明依据的备注——没有备注服务器会拒绝。
+        表单还要求附上供应商的邮件或文件，没有附件的手工贷项在详情面板里不能审批——这两条是
+        页面上的限制，不是服务器的校验。同一供应商的同一个贷项单号不能重复录入（之前那条已作废的除外）。
     asked_as:
       - 录入手工贷项需要什么？
       - what do I need to record a manual credit
@@ -296,3 +364,120 @@ rules:
       - "finance-api/tests/test_vendor_credit.py::test_post_manual_credit_requires_notes"
       - "finance-api/tests/test_vendor_credit.py::test_manual_credit_collides_with_an_uploaded_one_of_the_same_number"
       - "tests/test_rule_registry.py::test_a_manual_credit_needs_its_email_on_screen"
+
+# The conclusion a question must get, placed by code (app/services/rule_verdicts.py).
+verdicts:
+  # ISS-0249: one answer opened "可以" and then said invoices of different
+  # vendors cannot go on one PA.
+  - id: one_pa_one_vendor
+    rule: what_can_go_on_one_pa
+    asks:
+      - [不同供应商, 不同的供应商, 多个供应商, 几个供应商, 几家供应商, 多家供应商, 两个供应商,
+         两家供应商, 不同厂商, 不一样的供应商, different vendors, different vendor,
+         different suppliers, several vendors, multiple vendors, two vendors, more than one vendor]
+      - [付款申请, pa, payment application, 一起付, 一起支付]
+    # "不同供应商的 PA 分别由谁审批？" asks who approves (round 2 fix, 2026-11-11).
+    unless: [谁, who, 审批人, approver]
+    says:
+      en: >
+        No. One payment application pays one vendor: all the POs on a PO-route
+        PA must be with the same vendor and in the same currency, and so must
+        the invoices on a Direct PA. Invoices from different vendors go on
+        separate payment applications.
+      zh: >
+        不能。一张付款申请只付一个供应商：PO 路线的付款申请上所有 PO 必须是同一供应商、
+        同一币种，Direct PA 上的发票也必须是同一供应商、同一币种。不同供应商的发票要分别建付款申请。
+    test:
+      - "tests/test_pa_multi_po.py::test_mixed_vendors_refused"
+      - "tests/test_pa_multi_po.py::test_mixed_currencies_refused"
+      - "tests/test_direct_pa.py::test_create_direct_pa_refusals"
+  # ISS-0040 point 2: "为什么这几张发票不能放在同一张 PA 里？" was answered,
+  # twice, only with "give me the invoice numbers". The common reasons come
+  # first, then the offer to look. (The receipt-evidence wording is left to
+  # what_can_go_on_one_pa and waits on the administrators.)
+  - id: why_invoices_cannot_share_a_pa
+    rule: what_can_go_on_one_pa
+    derive: pa_invoice_window
+    asks:
+      - [为什么, 为何, 怎么, 什么原因, 原因, why, what stops, reason]
+      - [发票, invoice, invoices]
+      - [同一张, 同一个, 一张, 一起, 放在一起, 放进, 放到, same, one, together]
+      - [付款申请, pa, payment application]
+      # Asks why they cannot: "怎么把一张发票加到 PA 里？" asks how to add one
+      # (round 2 fix, 2026-11-11).
+      - [不能, 不可以, 不行, 无法, 放不进, 加不进, 选不到, 看不到, 不让, 不允许, 不了, cannot, can't, can not,
+         won't, not allowed, unable, stops, refused, rejected]
+    says:
+      en: >
+        The usual reasons invoices cannot go on one payment application:
+        (1) they belong to POs of different vendors or currencies;
+        (2) an invoice is not on one of the PA's POs;
+        (3) their due dates are more than {window} days apart (PO-route and
+        Direct PAs; agreement PAs have no such window);
+        (4) a PO has no three-way matched invoice and no authorised receipt
+        override;
+        (5) an invoice is already on another payment application that is not
+        cancelled or rejected — the form does not offer it and the server
+        refuses it.
+        Give me the invoice or PO numbers and I will check which of these
+        applies.
+      zh: >
+        发票不能放进同一张付款申请，常见原因有这几种：
+        ① 发票所属的 PO 供应商或币种不同；
+        ② 有发票不属于这张付款申请所选的 PO；
+        ③ 发票的到期日相差超过 {window} 天（PO 路线和 Direct PA 都有这个限制，协议付款申请没有）；
+        ④ 有 PO 还没有三单匹配的发票，也没有获授权的收货覆盖（override）；
+        ⑤ 发票已经在另一张未取消、未拒绝的付款申请上——表单不会列出它，服务器也会拒绝。
+        把发票号或 PO 号发给我，我可以帮你查具体是哪一条。
+    test:
+      - "tests/test_pa_multi_po.py::test_mixed_vendors_refused"
+      - "tests/test_pa_multi_po.py::test_invoice_from_an_unlisted_po_refused"
+      - "tests/test_pa_multi_po.py::test_receipt_gate_checks_every_po"
+      - "tests/test_rule_registry.py::test_pa_window_is_the_routes"
+      - "tests/test_rule_registry.py::test_one_invoice_one_pa_is_refused_by_the_server"
+  # ISS-0065 point 8: "直接付款申请…现在还能建吗？" was answered "can be
+  # created in draft" while the card said discontinued. The planner keeps the
+  # route (the approval chain comes from the process route); the conclusion
+  # is put in front of whatever it answers.
+  - id: direct_pa_can_be_created
+    rule: direct_pa
+    route: keep
+    asks:
+      - [直接付款, 直接支付申请, direct pa, direct payment, pa-dir, pa dir]
+      - [还能, 能建, 能不能, 可以建, 还可以, 能否, 可否, 是否可以, 是否还, 还有吗, 停用, 取消了吗,
+         can i, can we, can it, still, create, raise, retired, discontinued, available]
+    says:
+      en: >
+        Yes — in EPMS: Match → Direct PA on the invoice, then Payment
+        Applications → Create Direct PA. Only OA's old Direct Payment
+        Application (PA-DIR) is retired.
+      zh: >
+        可以，在 EPMS 里建：先在发票上点 Match → Direct PA，再到 Payment Applications →
+        Create Direct PA 建单。停用的只是 OA 里原来的直接付款申请（PA-DIR）。
+    test:
+      - "tests/test_direct_pa.py::test_create_direct_pa_from_two_invoices"
+      - "expense-api/tests/test_direct_pa_retired.py::test_creating_a_direct_pa_is_gone"
+  # ISS-0066: "没有设置 Max Prepayment % 的供应商，能不能建预付款 PA？" opened
+  # "不能", then said the Prepayment Config cap applies, and ended "需要先在供应商
+  # 记录上设置". The conclusion follows the system cap, and the sentences that
+  # say the opposite are taken out (derive returns them with the value).
+  - id: no_vendor_cap_takes_the_system_cap
+    rule: prepayment_cap
+    derive: prepayment_system_cap
+    asks:
+      - [max prepayment, 预付上限, 预付比例, 预付款比例, 最大预付, 预付百分比, 预付款百分比,
+         prepayment cap, prepayment percentage, prepayment %]
+      - [没有设置, 没设置, 没设, 未设置, 不设置, 没有填, 没填, 未填, 为空, 是空的, 空着,
+         not set, no max, without, has no, have no, empty, blank, unset]
+      - [预付款 pa, 预付 pa, 建预付, 预付, 预付款, prepayment pa, prepay, prepaid, prepayment]
+    unless: [在哪, 哪里设置, 怎么设置, 如何设置, where do, how do i set, how to set]
+    says:
+      en: >
+        {yes_en} A vendor with no Max Prepayment % of its own takes the system
+        cap in Admin Panel → Prepayment Config, currently {pct}% — {then_en}
+      zh: >
+        {yes_zh}供应商没有设置自己的 Max Prepayment % 时，适用 Admin Panel → Prepayment
+        Config 的系统上限，目前为 {pct}%，{then_zh}
+    test:
+      - "tests/test_rule_registry.py::test_prepayment_cap_reads_the_vendor_then_the_system"
+      - "tests/test_assistant_asst2_g.py::test_a_vendor_without_a_cap_can_be_prepaid_up_to_the_system_cap"

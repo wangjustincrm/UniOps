@@ -95,10 +95,12 @@ values:
       - The expected completion date is what the system watches; once it
         passes, you are reminded to confirm the work was done.
       - >-
-        You also name a Service Owner — the person who will confirm the work was
-        delivered. It defaults to you, and you change it when someone else is
-        the one who will know it finished; the reminders and the receipt then go
-        to them instead.
+        You also name a Service/Project Owner — the person who will confirm the
+        work was delivered. It is required and can never be empty: it defaults
+        to you, and you change it (to any active user, from any department)
+        when someone else is the one who will know it finished; the reminders
+        and the receipt tasks then go to them, and you can still confirm it
+        yourself as well.
 
   - value: 5
     label: Fixed Asset
@@ -118,7 +120,8 @@ values:
     notes:
       - Same completion-date reminder as a service PR.
       - >-
-        Carries a Project Owner as well, the same way — whoever will confirm the
-        work is done, defaulting to you.
+        Carries a Service/Project Owner as well, the same way — required, never
+        empty, defaulting to you, any active user from any department; whoever
+        will confirm the work is done, and you can still confirm it too.
 
 # The rules people ask about live in rules/pr.yaml (app/services/rule_registry.py).

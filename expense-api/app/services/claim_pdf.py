@@ -103,9 +103,10 @@ async def _company_name(db) -> str | None:
     return getattr(cfg, "name", None) if cfg else None
 
 
-async def _cfm_form(db, claim: ExpenseClaim) -> tuple[str | None, list[tuple[str, str]]]:
+async def cfm_form(db, claim: ExpenseClaim) -> tuple[str | None, list[tuple[str, str]]]:
     """(form name, [(label, answer)]) for a custom-form claim, in field_schema
-    order. Answers whose field is gone from the schema are kept, under their key."""
+    order. Answers whose field is gone from the schema are kept, under their key.
+    Also what the claim detail shows as Form Details (expenses.get_expense)."""
     from app.crud.custom_form import get_by_code
 
     code = claim.claim_type.split("_", 1)[1] if "_" in claim.claim_type else claim.claim_type[3:]
@@ -137,7 +138,7 @@ async def render(db, claim: ExpenseClaim) -> bytes:
     company_name = await _company_name(db)
     form_name, cfm_fields = None, None
     if claim.claim_type.upper().startswith("CFM"):
-        form_name, cfm_fields = await _cfm_form(db, claim)
+        form_name, cfm_fields = await cfm_form(db, claim)
     tra_number = None
     if claim.claim_type == "TRV" and claim.travel_application_id:
         tra_number = (await db.execute(

@@ -164,8 +164,12 @@ def _layer(rows: list | None, render) -> dict:
     return out
 
 
-def _pr(pr) -> dict:
+def _pr(pr, requester: str | None = None) -> dict:
+    # The PR's Requester field, as its page shows it: asked who requested the
+    # purchase behind INV-2026-0631, the reply took a name out of the PR's
+    # title once and sent the reader to NC the next time (ISS-0015).
     return {"number": pr.number, "status": pr.status, "title": pr.title,
+            "requester": requester,
             "amount": _money(pr.amount), "currency": pr.currency,
             "submitted_at": _date(pr.submitted_at), "waiting_on": _step(pr)}
 
@@ -337,13 +341,17 @@ async def build(db, scope: dict, doc_type: str, number: str) -> dict:
         if pr_ids:
             prs = await _visible(db, scope, "pr", PurchaseRequest.id.in_(pr_ids))
             pr = prs[0] if prs else None
+    requester = None
     if pr is not None:
         await _waiting_on(db, "pr", [pr])
+        from app.models.user import User
+        requester = (await db.execute(select(User.full_name).where(
+            User.id == pr.created_by))).scalar_one_or_none()
 
     out = {
         "found": True,
         "asked_about": {"doc_type": doc_type, "number": getattr(doc, _MODEL[doc_type][1])},
-        "purchase_request": _pr(pr) if pr is not None else None,
+        "purchase_request": _pr(pr, requester) if pr is not None else None,
         "orders": branches,
         "agreements": [await _agreement_branch(db, scope, a) for a in agreement_ids],
     }
@@ -352,6 +360,33 @@ async def build(db, scope: dict, doc_type: str, number: str) -> dict:
     if doc_type == "pr" and not po_ids:
         out["no_order_yet"] = True
     return out
+
+
+PREFIX_TYPES = {prefix: doc_type for doc_type, prefix in _PREFIX.items()}
+
+
+async def find(db, scope: dict, doc_type: str, number: str):
+    """(document, None) or (None, "not_found" | "not_permitted") — one
+    document by its number, within its own entity's permission and scope."""
+    return await _find(db, scope, doc_type, number)
+
+
+async def summary(db, scope: dict, doc_type: str, number: str) -> dict | None:
+    """One document as the chain shows it — number, status, amount — or None
+    when it is not there or the caller may not see it."""
+    doc, _why = await _find(db, scope, doc_type, number)
+    if doc is None:
+        return None
+    render = {"pr": _pr, "po": lambda d: _po(d, None), "gr": _gr,
+              "invoice": lambda d: _invoice(d, []), "pa": lambda d: _pa(d, []),
+              "agreement": lambda d: {"number": d.number, "status": d.status,
+                                      "status_label": _label("agreement", d.status),
+                                      "vendor": d.vendor_name}}[doc_type]
+    out = render(doc)
+    out.pop("waiting_on", None)
+    out.pop("pays_invoices", None)
+    out.pop("on_payment_applications", None)
+    return {"doc_type": doc_type, **out}
 
 
 def count_documents(chain: dict) -> int:

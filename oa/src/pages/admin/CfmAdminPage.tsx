@@ -14,15 +14,27 @@ interface CfmField {
   required: boolean
   options: string[]
   placeholder: string | null
+  // Client-only: the Options box as typed. Splitting it on every keystroke
+  // dropped the empty line Enter had just made, so options ran together
+  // (ISS-0198); it becomes `options` when the forms are saved.
+  options_text?: string
 }
 
 interface CustomForm {
   id?: string
   code: string
   name: string
+  // Shown to employees on the form (OA.md §6.1).
+  description?: string | null
+  default_currency: string
+  // Read-only: the chain the form actually uses — cfm_<code> if configured
+  // in Portal → Approval Workflows, else cfm. Absent until the form is saved.
+  effective_workflow_key?: string | null
   fields: CfmField[]
   is_active: boolean
 }
+
+const CURRENCIES = ['CAD', 'USD']
 
 const FIELD_TYPES = [
   { value: 'text', label: 'Text' },
@@ -36,8 +48,14 @@ function emptyField(): CfmField {
   return { name: '', label: '', field_type: 'text', required: false, options: [], placeholder: null }
 }
 
+// One option per non-blank line of the Options box, trimmed.
+function toSavedField({ options_text, ...f }: CfmField): CfmField {
+  if (options_text === undefined) return f
+  return { ...f, options: options_text.split('\n').map((o) => o.trim()).filter(Boolean) }
+}
+
 function emptyForm(): CustomForm {
-  return { code: '', name: '', fields: [], is_active: true }
+  return { code: '', name: '', description: '', default_currency: 'CAD', fields: [], is_active: true }
 }
 
 // ── Field editor ──────────────────────────────────────────────────────────────
@@ -95,8 +113,8 @@ function FieldEditor({ field, onChange, onRemove }: {
             <div className="col-span-2">
               <label className="text-[10px] font-medium text-neutral-500">Options (one per line)</label>
               <textarea rows={3}
-                value={field.options.join('\n')}
-                onChange={e => onChange({ ...field, options: e.target.value.split('\n').filter(Boolean) })}
+                value={field.options_text ?? field.options.join('\n')}
+                onChange={e => onChange({ ...field, options_text: e.target.value })}
                 className="mt-0.5 w-full rounded border border-neutral-200 px-2 py-1 text-xs focus:outline-none resize-none" />
             </div>
           )}
@@ -167,6 +185,34 @@ function FormEditor({ form, onChange, onRemove }: {
                 </p>
               )}
             </div>
+            <div className="col-span-2">
+              <label className="mb-1 block text-xs font-medium text-neutral-600">
+                Description <span className="text-neutral-400 font-normal">(shown to employees)</span>
+              </label>
+              <textarea rows={2} value={form.description ?? ''}
+                onChange={e => onChange({ ...form, description: e.target.value })}
+                className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400 resize-none" />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-neutral-600">Default Currency</label>
+              <select value={form.default_currency}
+                onChange={e => onChange({ ...form, default_currency: e.target.value })}
+                className="w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
+                {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-neutral-600">Workflow</label>
+              <p className="py-2 text-sm text-neutral-700">
+                {form.effective_workflow_key
+                  ? <span className="font-mono">{form.effective_workflow_key}</span>
+                  : <span className="text-neutral-400">Set when saved</span>}
+              </p>
+              <p className="text-[11px] text-neutral-400">
+                Uses <span className="font-mono">cfm_{form.code ? form.code.toLowerCase() : '<code>'}</span> if
+                configured in Portal → Approval Workflows, otherwise the default <span className="font-mono">cfm</span>.
+              </p>
+            </div>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -216,7 +262,10 @@ export default function CfmAdminPage() {
       const currentCodes = new Set(forms.map((f) => f.code))
       for (const f of forms) {
         if (!f.code || !f.name) continue
-        const body = { name: f.name, fields: f.fields, is_active: f.is_active }
+        const body = {
+          name: f.name, description: f.description ?? '', default_currency: f.default_currency,
+          fields: f.fields.map(toSavedField), is_active: f.is_active,
+        }
         if (originalCodes.has(f.code)) {
           await api.patch(`/api/v1/expenses/custom-forms/${f.code}`, body)
         } else {
@@ -233,6 +282,8 @@ export default function CfmAdminPage() {
       qc.invalidateQueries({ queryKey: ['custom-forms-admin'] })
       qc.invalidateQueries({ queryKey: ['custom-forms-active'] })
       setOriginalCodes(new Set(forms.map((f) => f.code)))
+      // Re-seed from the refetch so a new form shows its effective workflow.
+      setInitialised(false)
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
     },

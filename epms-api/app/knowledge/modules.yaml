@@ -136,9 +136,23 @@ modules:
         by a vendor, that is Procurement. If you paid and want it back, that
         is OA.
       - >-
+        A general expense claim has up to 20 lines; the server refuses more,
+        on create and on edit. Travel expense claims have no line limit.
+        Every general expense line needs a description, a budget account and
+        a net amount, and every travel expense line a budget account; if one
+        is missing the claim is not saved and the form names the line and the
+        field (e.g. "Line 2: select a Budget Account"). A line left completely
+        empty is simply not saved.
+      - >-
         A receipt scanned on a claim line (Scan) is kept as that line's receipt
         and attached to the claim automatically when it is saved — it does not
-        need uploading again. General and travel expense claims need at least
+        need uploading again. Scanning again on the same line, also on a later
+        edit, replaces the file scanned there before, so the receipt is not
+        attached twice; a file attached by hand is never replaced. Removing a
+        line on edit also removes the receipt scanned on it. A receipt saved
+        before claims recorded which line it belongs to is left as it is — an
+        extra copy of it can be deleted by hand in Attachments.
+        General and travel expense claims need at least
         one attachment before they can be submitted — except a travel expense
         claim whose lines are all date-range lines, which may go without one.
         The comment typed when submitting appears in the claim's Approval
@@ -161,7 +175,11 @@ modules:
         A claim an approver returns can be changed and sent back by the person
         who raised it: open the claim, Edit, Save Changes, then Submit. It goes
         straight back to the approver who returned it — the approvals given
-        before that stand and are not asked for again.
+        before that stand and are not asked for again. Until then the claim's
+        Approval Status marks the step that returned it as Returned, with who
+        returned it, when and their comment, and the Approval Timeline names
+        that step. On someone else's draft or returned claim a System Admin
+        has Edit and Submit too; a Finance Manager has Edit only.
       - >-
         A Travel Expense claim is always for a traveller listed on an approved
         Travel Application, and is paid to that traveller. Travellers file
@@ -183,7 +201,9 @@ modules:
         claim itself: Approval Status → Send reminder under the pending step
         emails whoever holds that step (their delegate if they are away) and
         says who it reached. It is refused, with the reason shown, when nobody
-        can be reached or a reminder for that step went out recently.
+        can be reached or a reminder for that step went out recently. The
+        pending step names the person it waits on, as "Name (delegated:
+        Stand-in)" while an approval delegation covers them.
       - >-
         When the last approver approves a claim (general expense, mileage,
         travel expense or a custom form), a PDF of the claim is added to its
@@ -194,6 +214,22 @@ modules:
         first attempt failed) and replaces the old file rather than adding a
         second. A Travel Application has its own form, regenerated from the
         Travel Application card.
+      - >-
+        A custom-form claim shows its answers under Form Details on the claim
+        page (each field by its label, as on its PDF) and the employee's own
+        notes under Notes. It carries no amount, so the page shows no total.
+        A form's Description (set in OA → Admin → Custom Forms) is shown above
+        it when an employee fills it in, and a new claim takes the form's
+        Default Currency. A form made inactive is no longer offered for new
+        claims, but draft and returned claims already raised on it can still
+        be edited and submitted.
+      - >-
+        Nobody pays their own claim either, while the self-payment
+        segregation-of-duties rule is on (it is by default): a Payment Officer
+        or Finance Manager does not get Mark as Processed on a claim of their
+        own, and their own approved claim is not a Record Payment card in their
+        Task Inbox — someone else with payment authority pays it. If a payment is
+        refused, the reason is shown in the Mark as Processed dialog.
 
   - key: vms
     label: VMS — Visitor Management

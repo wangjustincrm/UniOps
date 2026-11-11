@@ -30,6 +30,12 @@ class CustomFormResponse(BaseModel):
     is_active: bool = True
     created_at: datetime
     updated_at: datetime
+    # The approval chain the form really uses (OA.md §6.1): cfm_<code> when a
+    # workflow by that key is configured in Portal → Approval Workflows,
+    # otherwise the default `cfm` — approval-api engine._get_workflow's
+    # fallback. Filled by the list endpoint; `workflow_key` above is stored
+    # but nothing routes on it.
+    effective_workflow_key: Optional[str] = None
 
 
 class CustomFormCreate(BaseModel):

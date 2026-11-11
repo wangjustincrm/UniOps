@@ -3,6 +3,29 @@ label: Reports
 covers: >
   Which reports exist, what the Receiving Report counts, and what a report's From / To dates include.
 rules:
+  # ISS-0020, ISS-0035, ISS-0048: calendar words are read in code.
+  - id: calendar_words_in_questions
+    asked_as:
+      - 你说的"本月"是从哪天到哪天？
+      - does this month mean the last 30 days
+      - 10/11 是 10 月 11 日还是 11 月 10 日？
+    answer: >
+      In a question to the Assistant, today, yesterday, this / last week,
+      month, quarter and year are calendar periods in plant time (Toronto):
+      weeks start on Monday, "this month" is the 1st to today and "this year"
+      is 1 January to today — except on a date that can lie ahead (a due date,
+      a needed-by date), where "this month" is the whole month. "The same
+      period last year" (去年同期) is that period one year earlier. Only "the
+      last 3 months", "past 30 days" and the like are rolling windows. A date
+      with slashes is day first, as EPMS shows dates (10/11 = 10 November),
+      and a day without a year is in the current year. Every answer over a
+      period ends with the dates it used.
+    enforced_in: "epms-api app/services/period_words.py enforce / explicit_days / stated, applied by app/api/v1/assistant_chat.py _period_from_the_words and _say_the_period; app/services/controlled_query.py calendar_range(whole=) for ontology fields marked scheduled"
+    provenance: pinned
+    test:
+      - "tests/test_assistant_asst2_c.py::test_this_month_is_the_calendar_month_whatever_the_planner_wrote"
+      - "tests/test_assistant_asst2_c.py::test_due_this_month_is_the_whole_month"
+      - "tests/test_assistant_asst2_c.py::test_every_period_answer_ends_with_its_dates"
   - id: report_types
     asked_as:
       - 系统有哪些报表？

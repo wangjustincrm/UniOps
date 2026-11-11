@@ -203,18 +203,42 @@ async def _document_vars(db: AsyncSession, task: Task) -> dict[str, Any]:
     return out
 
 
-def _build_email_html(body_text: str) -> str:
+# OA document types (approval-api _expense_meta: EXP / MIL / TRV / TRA / CFM and
+# custom forms as cfm_<code>; pa_dir = OA's retired Direct PA). Their task and
+# reminder emails go out through this same notifier, which used to brand every
+# one of them "EPMS" (ISS-0202).
+_OA_DOCUMENT_TYPES = frozenset({"exp", "mil", "trv", "tra", "cfm", "pa_dir"})
+
+
+def _email_brand(document_type: str | None) -> str:
+    """Module name shown in the email header and footer."""
+    dt = (document_type or "").lower()
+    return "OA" if dt in _OA_DOCUMENT_TYPES or dt.startswith("cfm_") else "EPMS"
+
+
+def _document_ref(document_type: str | None, document_number: str | None) -> str:
+    """"PR 123" — but just the number when it already starts with its type
+    ("EXP-20261103-0008", "PR-20261103-0001"), so subjects do not read
+    "EXP EXP-20261103-0008" (ISS-0202)."""
+    dt = (document_type or "").upper()
+    number = document_number or ""
+    if not dt or number.upper().startswith(f"{dt}-"):
+        return number
+    return f"{dt} {number}"
+
+
+def _build_email_html(body_text: str, brand: str = "EPMS") -> str:
     """Wrap plain-text/simple-HTML body in a basic styled container."""
     return f"""
     <div style="font-family:sans-serif;max-width:600px;margin:auto;color:#1a1a1a">
       <div style="background:#085E5E;padding:16px 24px;border-radius:8px 8px 0 0">
-        <span style="color:#fff;font-size:18px;font-weight:700">EPMS</span>
+        <span style="color:#fff;font-size:18px;font-weight:700">{brand}</span>
       </div>
       <div style="background:#f9fafb;padding:24px;border-radius:0 0 8px 8px">
         {body_text.replace(chr(10), "<br>")}
       </div>
       <p style="font-size:11px;color:#999;text-align:center;margin-top:16px">
-        This is an automated notification from EPMS.
+        This is an automated notification from {brand}.
       </p>
     </div>
     """
@@ -457,6 +481,7 @@ async def _dispatch(
         "company_name": cfg.name,
         "document_type": task.document_type.upper(),
         "document_number": task.document_number,
+        "document_ref": _document_ref(task.document_type, task.document_number),
         "link": link,
         "po_id": str(task.document_id) if task.document_type == "po" else "",
         # Convenience aliases so templates can use natural names
@@ -482,7 +507,8 @@ async def _dispatch(
             _render(tpl.get("subject", task.title), team_vars, escape=False)
             if tpl else task.title
         )
-        body_html = _build_email_html(_render_task_body(tpl, task, team_vars))
+        body_html = _build_email_html(_render_task_body(tpl, task, team_vars),
+                                     brand=_email_brand(task.document_type))
         await _send_with_retry(
             "email", task, None, tpl_key, db,
             send_fn=lambda: send_email(shared_mailbox, subject, body_html, **_smtp_kwargs(cfg)),
@@ -506,7 +532,8 @@ async def _dispatch(
             )
             # 与共享邮箱分支保持一致:无模板时也要渲染占位符,
             # 否则收件人会看到字面量 {recipient_name}。
-            body_html = _build_email_html(_render_task_body(tpl, task, user_vars))
+            body_html = _build_email_html(_render_task_body(tpl, task, user_vars),
+                                         brand=_email_brand(task.document_type))
             await _send_with_retry(
                 "email", task, user, tpl_key, db,
                 send_fn=lambda: send_email(user.email, subject, body_html, **_smtp_kwargs(cfg)),

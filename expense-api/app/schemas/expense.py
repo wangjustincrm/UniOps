@@ -15,6 +15,10 @@ _TOTALS_TOLERANCE = Decimal("0.01")
 # ── Line item (EXP) ───────────────────────────────────────────────────────────
 
 class LineItemCreate(BaseModel):
+    # Edit only: the id of the saved line this one is, so the line keeps its id
+    # (and its scanned receipt) across the delete-and-reinsert in update_claim.
+    # Ignored on create and when it is not one of the claim's lines.
+    id: Optional[uuid.UUID] = None
     line_number: int
     expense_date: date
     description: str
@@ -158,6 +162,16 @@ class AttachmentResponse(BaseModel):
     file_size_bytes: int
     mime_type: Optional[str]
     uploaded_at: datetime
+    line_item_id: Optional[uuid.UUID] = None
+    source: Optional[str] = None
+
+
+# ── Custom-form answer ────────────────────────────────────────────────────────
+
+class CfmFieldValue(BaseModel):
+    """One custom-form answer, labelled from the form's field_schema."""
+    label: str
+    value: str
 
 
 # ── Approval event ────────────────────────────────────────────────────────────
@@ -300,6 +314,13 @@ class ExpenseClaimResponse(BaseModel):
     travelers: list[TravelerResponse] = []
     attachments: list[AttachmentResponse] = []
     approval_events: list[ApprovalEventResponse] = []
+    # Custom-form claims only (detail endpoint). `notes` stays the stored JSON
+    # blob — the edit form unpacks it — and these are what it means: the form,
+    # each answer under its field label (as the PDF prints them), and the
+    # employee's own remark. Showing `notes` raw put JSON on the page (ISS-0195).
+    form_name: Optional[str] = None
+    form_fields: Optional[list[CfmFieldValue]] = None
+    user_notes: Optional[str] = None
 
 
 class ExpenseClaimListItem(BaseModel):

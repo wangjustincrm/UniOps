@@ -91,3 +91,63 @@ async def test_finance_manager_can_still_pay(db_session):
         resp = await fm.get(f"/api/v1/expenses/{claim.id}/permissions")
     assert resp.status_code == 200
     assert resp.json()["can_pay"] is True
+
+
+# ── ISS-0205: no Mark as Processed on your own claim (PAY-003) ────────────────
+
+async def _set_self_payment_rule(db_session, enabled: bool | None) -> None:
+    await db_session.execute(text("DELETE FROM sod_rules WHERE rule_code = 'self_payment'"))
+    if enabled is not None:
+        await db_session.execute(text(
+            "INSERT INTO sod_rules (rule_code, enabled) VALUES ('self_payment', :e)"),
+            {"e": enabled})
+    await db_session.commit()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rule, expected", [(True, False), (False, True), (None, True)])
+async def test_payment_officer_on_own_claim_follows_self_payment_rule(db_session, rule, expected):
+    """EXP-20261103-0019: TEST Payment Officer's own approved claim. While the
+    self_payment rule is on, finance-api refuses the payment, so the button
+    must not be offered; off (or absent, as finance-api reads it) → allowed."""
+    claim = await _make_approved_exp(db_session)
+    await _set_self_payment_rule(db_session, rule)
+    try:
+        async with _client_for("payment_officer", str(claim.employee_id)) as po:
+            resp = await po.get(f"/api/v1/expenses/{claim.id}/permissions")
+        assert resp.status_code == 200
+        assert resp.json()["can_pay"] is expected
+    finally:
+        await _set_self_payment_rule(db_session, None)
+
+
+@pytest.mark.asyncio
+async def test_self_payment_rule_does_not_touch_other_payers(db_session):
+    claim = await _make_approved_exp(db_session)
+    await _set_self_payment_rule(db_session, True)
+    try:
+        async with _client_for("payment_officer", str(uuid.uuid4())) as po:
+            resp = await po.get(f"/api/v1/expenses/{claim.id}/permissions")
+        assert resp.json()["can_pay"] is True
+    finally:
+        await _set_self_payment_rule(db_session, None)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rule, expected", [(True, False), (False, True)])
+async def test_own_claim_offers_no_record_payment_task(db_session, rule, expected):
+    """TASK-007: a pay_expense card only for users who can execute it. While
+    self_payment is on, the payer's own approved claim is not a Record Payment
+    card in the OA Task Inbox, nor a pay item in my-actions (Portal home)."""
+    claim = await _make_approved_exp(db_session)
+    await _set_self_payment_rule(db_session, rule)
+    try:
+        async with _client_for("payment_officer", str(claim.employee_id)) as po:
+            tasks = (await po.get("/api/v1/tasks")).json()
+            mine = (await po.get("/api/v1/expenses/my-actions")).json()
+        pay_cards = [t for t in tasks["items"]
+                     if t["doc_id"] == str(claim.id) and t["task_type"] == "pay_expense"]
+        assert bool(pay_cards) is expected
+        assert any(i["id"] == str(claim.id) for i in mine["items"]) is expected
+    finally:
+        await _set_self_payment_rule(db_session, None)

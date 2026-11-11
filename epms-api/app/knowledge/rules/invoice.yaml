@@ -31,9 +31,14 @@ rules:
       account invoice needs its agreement receipts attached, or to be settled
       explicitly without receipt evidence with a reason; a recurring
       agreement's invoice needs its billing period's service confirmed.
-    enforced_in: "epms-api app/crud/invoice.py match() (amount variance vs PoLineItem.line_total); app/api/v1/pa.py create_pa receipt gate (po_has_three_way_matched_invoice -> core/po_facts.three_way_matched + core/receipt_evidence; receipt_override + pa_override_receipt + reason) and _validate_agreement_pa_invoices; PRD EPMS INV-3WM-006, PA-013, AGR-061 (PRD names only a linked goods receipt — the code also accepts a received quantity on a PO line)"
+      Asked afterwards whether a PO is three-way matched, an invoice that was
+      matched and has since been paid still counts.
+    enforced_in: "epms-api app/crud/invoice.py match() (amount variance vs PoLineItem.line_total); app/api/v1/pa.py create_pa receipt gate (po_has_three_way_matched_invoice -> core/po_facts.three_way_matched + core/receipt_evidence; receipt_override + pa_override_receipt + reason) and _validate_agreement_pa_invoices; the Assistant's PurchaseOrder.three_way_matched and app/services/po_match_view.py (said under PO/invoice answers by answer_facts._po_match) use core/po_facts.three_way_match_passed (matched, paid or partially paid), placed first and the narrator's \"not matched\" / \"difference 0.00\" sentences taken out by answer_facts._overrule + settle; PRD EPMS INV-3WM-006, PA-013, AGR-061 (PRD names only a linked goods receipt — the code also accepts a received quantity on a PO line)"
     provenance: pinned
     test:
+      - "tests/test_assistant_asst2_b.py::test_a_paid_matched_received_po_is_three_way_matched"
+      - "tests/test_assistant_asst2_g.py::test_three_way_matched_is_the_conclusion_and_not_matched_goes"
+      - "tests/test_assistant_asst2_g.py::test_no_difference_goes_when_code_finds_one"
       - "tests/test_assistant_iss_round2.py::test_invoice_matches_with_nothing_received"
       - "tests/test_assistant_iss_batch6.py::test_pa_receipt_evidence_is_a_gr_or_a_received_quantity"
       - "tests/test_assistant_iss_batch6.py::test_pa_without_receipt_needs_the_override_and_a_reason"
@@ -161,6 +166,23 @@ rules:
       - "tests/test_invoice_dedup.py::test_a_suffix_lets_a_reused_number_in"
       - "tests/test_invoice_dedup.py::test_the_index_refuses_a_second_row_written_directly"
   - id: invoice_due_date
+    # Round 2 (ISS-0034): asked with an invoice number the answer was "invoice
+    # date + 30 days". With a number, code_answers._due_date writes the
+    # invoice's two dates, this rule and that the case is not recorded; without
+    # one, this.
+    said_when:
+      - '(?:到期日|到期时间|到期日期|付款期限|\bdue\s*dates?\b).{0,25}(?:怎么|如何|怎样|按什么|根据什么|依据|规则|计算|算出|定的|得出|来的|\bhow\b|\brules?\b|calculat|determin|\bworked\s+out\b|come\s+from)'
+      - '(?:怎么|如何|怎样|按什么|\bhow\b).{0,15}(?:到期日|\bdue\s*dates?\b)'
+    says:
+      en: >
+        When an invoice is uploaded its due date is: the due date read off the
+        invoice itself, if it shows one; otherwise, when the invoice states NET n
+        terms, the invoice date + n days; and if the field is still empty at
+        upload, the invoice date + 30 days. The uploader can also type or change
+        it.
+      zh: >
+        上传发票时到期日这样确定：发票上写了到期日，就用发票上的；没写但写了 NET n 付款条款，
+        就是发票日期加 n 天；上传时这一栏还空着，就默认发票日期加 30 天。上传人也可以自己填写或修改。
     asked_as:
       - 发票的到期日是怎么算的？
       - how is an invoice's due date calculated
@@ -236,6 +258,22 @@ rules:
       - "tests/test_po_fee.py::test_an_other_fee_needs_a_note"
       - "tests/test_po_fee.py::test_freight_per_arrival_and_customs_per_line_complete_the_po"
   - id: unmatching_an_invoice
+    # Round 2 (ISS-0022 #1): with an invoice number (or on its page),
+    # code_answers._unmatch runs the Unmatch button's own checks on it.
+    said_when:
+      - '取消匹配|解除匹配|撤销匹配|撤回匹配|取消配对|\bun-?match'
+    says:
+      en: >
+        The rule: Unmatch is refused once the invoice has entered payment
+        (status Approved or Paid), and while any payment application that is
+        not cancelled still includes it — the message names that PA, which has
+        to be cancelled first. An invoice matched to an agreement cannot be
+        unmatched from a PO. A reason is required, and it is kept in the
+        invoice's History.
+      zh: >
+        规则：发票一旦进入付款（状态 Approved 或 Paid）就不能取消匹配；只要还有未取消的付款申请包含
+        这张发票，也不能取消匹配——提示里会写出是哪张付款申请，需要先取消它。匹配到协议的发票不能从 PO
+        上取消匹配。取消匹配必须填写原因，原因记入发票的 History。
     asked_as:
       - 这张发票能取消匹配吗？
       - can this invoice be unmatched
@@ -336,3 +374,30 @@ rules:
       - "tests/test_procurement_batch1.py::test_pa_whose_invoice_was_deleted_cannot_be_submitted"
       - "tests/test_procurement_batch1.py::test_float_noise_in_a_resent_line_total_is_not_a_change"
       - "tests/test_procurement_batch1.py::test_form_recomputing_an_ocr_line_keeps_the_stored_total"
+
+# The conclusion a question must get, placed by code (app/services/rule_verdicts.py).
+verdicts:
+  # ISS-0249: "货还没收到，发票可以先匹配吗？" opened "不可以" twice, over a body
+  # that said it can.
+  - id: invoice_can_be_matched_before_receipt
+    rule: matching_compares_amounts_not_received_quantity
+    asks:
+      - [货还没收到, 还没收到货, 货没收到, 没收到货, 还没收货, 没有收货, 未收货, 收货前, 收货之前,
+         货还没到, 货没到, 还没到货, 没到货, 没有收到, 还没有收到, 收货单还没, 没有收货单,
+         before the goods, before receiving, before receipt, before it is received,
+         not received, nothing received, without a receipt, without a goods receipt,
+         no goods receipt, not yet received, not been received]
+      - [匹配, 三单匹配, match, matched, matching]
+    unless: [付款申请, 付款, payment application, pa, pay, 哪些, 哪几, 多少, 几张, 列出, 列一下, which, list, how many, show me]
+    says:
+      en: >
+        Yes. Matching compares amounts only — what the invoice bills against
+        each PO line's value — never received quantities, so an invoice can
+        be Matched before anything has been received. The receipt is checked
+        later, when a payment application is created.
+      zh: >
+        可以。匹配只比较金额（发票对每个 PO 行开的金额和该行金额比），不比较收货数量，
+        所以货还没收到，发票也可以匹配成 Matched；收货是在之后建付款申请（PA）时才检查。
+    test:
+      - "tests/test_assistant_iss_round2.py::test_invoice_matches_with_nothing_received"
+      - "tests/test_assistant_asst2_d.py::test_a_verdict_opens_the_reply_whatever_the_narrator_writes"

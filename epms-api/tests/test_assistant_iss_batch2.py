@@ -921,7 +921,7 @@ async def test_receiving_report_totals_come_from_the_report(test_engine, admin_c
 
     monkeypatch.setattr(assistant_llm, "plan", fake_plan)
     monkeypatch.setattr(assistant_llm, "narrate_guide", fake_guide)
-    r = await admin_client.post("/api/v1/assistant/chat", json={"message": "收货报表本月收了多少"})
+    r = await admin_client.post("/api/v1/assistant/chat", json={"message": "收货报表 2099 年 1 月收了多少"})
     assert r.status_code == 200, r.text
     assert (seen["lines"], seen["receipts"], seen["orders"], seen["avg_lead_days"]) == (2, 1, 1, 10)
 

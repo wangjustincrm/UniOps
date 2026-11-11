@@ -100,3 +100,37 @@ rules:
     enforced_in: "epms-api app/ontology/epms.yaml purchase_order.status value_labels; app/api/v1/gr.py GR statuses; app/api/v1/invoices.py _MATCHABLE_PO_STATUSES; app/services/po_action_check.py PA_PAGE_PO_STATUSES; epms/src/pages/po/PoDetailPage.tsx canCreatePa; epms/src/pages/invoices/InvoiceListPage.tsx MATCHABLE_PO_STATUSES; epms/src/pages/pa/PaCreatePage.tsx eligiblePos"
     test:
       - "tests/test_rule_registry.py::test_milk_orders_take_no_receipts_but_are_matched_and_paid"
+
+# The conclusion a question must get, placed by code (app/services/rule_verdicts.py).
+verdicts:
+  # ISS-0065 point 1: "Milk / NC 状态是什么意思？" — once "我没有关于'Milk / NC
+  # 状态'的具体定义". (Cassie's PRD quote "Not payable, receivable or
+  # invoice-matchable" is the nc_pending row of PRD EPMS §3.12.6 today; milk
+  # has been matchable and payable since v2.42 — what the code does.)
+  - id: what_milk_and_nc_pending_mean
+    rule: milk_and_nc_statuses
+    asks:
+      - [milk / nc, milk/nc, nc_milk, nc milk, milk, 奶单, 奶类订单, nc pending, nc_pending, nc pending approval]
+      - [意思, 是什么, 什么状态, 代表, 表示, 指什么, 含义, mean, means, meaning, what is, what's, stand for]
+    unless: [价格, 单价, price, 成本, cost, 多少, how much, how many, mrp, 库存, stock,
+             # "milk 订单是什么状态的有几张", "What is the status of milk orders this week?"
+             # ask for data (round 2 fix, 2026-11-11).
+             几张, 几个, 几笔, 有几, 哪些, 哪几, 本周, 这周, 上周, 本月, status of, this week, last week,
+             which, list]
+    says:
+      en: >
+        Milk / NC (nc_milk) is a milk order mirrored from NC — raw milk and
+        the other non-raw-material trade types. Its receipts are booked in NC
+        and mirrored here, so no goods receipt can be created for it in EPMS,
+        but its invoices are matched and it is paid in EPMS like any open NC
+        order. NC Pending Approval (nc_pending) is an NC order not yet
+        approved in NC: it cannot be received, matched or paid until NC
+        approves it.
+      zh: >
+        Milk / NC（nc_milk）是从 NC 镜像过来的奶类订单（原奶等非原料/包材的贸易类型）：收货在 NC 里做、
+        再镜像成 EPMS 的收货单，所以在 EPMS 里不能建收货单；但它的发票可以在 EPMS 匹配，也可以建付款申请付款，
+        和其他已开出的 NC 订单一样。NC Pending Approval（nc_pending）是还没在 NC 审批通过的订单：
+        在 NC 批准前不能收货、不能匹配发票、也不能付款。
+    test:
+      - "tests/test_rule_registry.py::test_milk_orders_take_no_receipts_but_are_matched_and_paid"
+      - "tests/test_assistant_asst2_d.py::test_nc_pending_is_not_received_matched_or_paid"

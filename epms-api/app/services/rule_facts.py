@@ -82,13 +82,50 @@ def po_imported_fields(db) -> dict:
     return {"header_fields": _join(header), "line_fields": _join(line)}
 
 
+# ── Tasks ────────────────────────────────────────────────────────────────────
+
+def purchase_flow(db) -> dict:
+    from app.services.next_step import FLOW
+
+    return {"steps": "; ".join(f"{i}. {s.who_en}: {s.what_en}"
+                               for i, s in enumerate(FLOW, start=1))}
+
+
 # ── Goods receipts ───────────────────────────────────────────────────────────
 
-def gr_po_statuses(db) -> dict:
-    from app.api.v1.gr import PHYSICAL_GR_PO_STATUSES, SERVICE_GR_PO_STATUSES
+def _either(words: list[str], word: str = "or") -> str:
+    words = list(words)
+    if len(words) <= 1:
+        return "".join(words)
+    return ", ".join(words[:-1]) + f" {word} " + words[-1]
 
-    return {"physical": _join(list(PHYSICAL_GR_PO_STATUSES)),
-            "service": _join(list(SERVICE_GR_PO_STATUSES))}
+
+def gr_po_statuses(db) -> dict:
+    """The statuses are alternatives — "issued and partially_received" was
+    read as both at once, "已发出且部分收货" (ISS-0017). Page names from the
+    ontology, the ones the PO list shows."""
+    from app.api.v1.gr import PHYSICAL_GR_PO_STATUSES, SERVICE_GR_PO_STATUSES
+    from app.core.ontology import REGISTRY
+
+    labels = dict(REGISTRY["purchase_order"].fields["status"].value_labels)
+    physical = [labels.get(s, s) for s in PHYSICAL_GR_PO_STATUSES]
+    service = [labels.get(s, s) for s in SERVICE_GR_PO_STATUSES]
+    return {"physical": _either(list(PHYSICAL_GR_PO_STATUSES)),
+            "service": _either(list(SERVICE_GR_PO_STATUSES)),
+            "physical_names": _either(physical), "service_names": _either(service),
+            "physical_names_zh": "、".join(physical[:-1]) + " 或 " + physical[-1]
+                                 if len(physical) > 1 else "".join(physical),
+            "service_names_zh": "、".join(service[:-1]) + " 或 " + service[-1]
+                                if len(service) > 1 else "".join(service)}
+
+
+def gr_steps(db) -> dict:
+    """The requester's two tasks on a physical receipt, by the Task Inbox's
+    own names (ISS-0029)."""
+    from app.services.guide_view import TASK_TYPE_LABELS
+
+    return {"ack_task": TASK_TYPE_LABELS["acknowledge_gr"],
+            "collect_task": TASK_TYPE_LABELS["collect_goods"]}
 
 
 async def service_gr_reminders(db) -> dict:
@@ -111,8 +148,13 @@ async def service_gr_reminders(db) -> dict:
     else:
         state = ("switched on and live: owners and their managers are being "
                  "reminded")
+    # The same state for a reply the code writes in Chinese (rule `says`).
+    state_zh = ("已关闭（Portal → Admin → Notification Settings → Service Completion "
+                "Reminder），所以现在不会发出这类提醒" if not enabled else
+                "已开启但处于试运行：逾期清单只发给系统管理员，还不会提醒负责人或经理"
+                if dry_run else "已开启并正式运行：负责人和他们的经理会收到提醒")
     return {"reminder_days": reminder, "escalation_days": escalation, "state": state,
-            "time": (ns.get("followup_time") or "08:00")}
+            "state_zh": state_zh, "time": (ns.get("followup_time") or "08:00")}
 
 
 async def notification_switches(db) -> dict:
@@ -149,7 +191,11 @@ async def gr_ack_reminders(db) -> dict:
                  "only, and nobody is reminded yet")
     else:
         state = "switched on and live"
+    state_zh = ("已关闭，所以现在不会发出这类提醒" if not enabled else
+                "已开启但处于试运行：清单只发给系统管理员，还不会提醒任何人" if dry_run
+                else "已开启并正式运行")
     return {"reminder_days": int(sla.get("reminder_days", due._DEFAULT_REMINDER_DAYS)),
+            "state_zh": state_zh,
             "escalation_days": int(sla.get("manager_escalation_days",
                                            due._DEFAULT_MANAGER_ESCALATION_DAYS)),
             "state": state, "time": ns.get("followup_time") or "08:00"}
@@ -195,6 +241,42 @@ def pa_invoice_window(db) -> dict:
     return {"window": PA_INVOICE_DUE_WINDOW_DAYS}
 
 
+# ISS-0066: "没有设置 Max Prepayment % 的供应商，能不能建预付款 PA？" opened
+# "不能", then said the Prepayment Config cap applies, then ended "需要先在供应商
+# 记录上设置". Whether it can depends on the system cap, so the conclusion and
+# the sentences that contradict it are both worked out from it.
+_CANNOT_PREPAY = (r"不(可以|能|支持|允许)\S{0,6}(预付|建)", r"无法\S{0,6}(预付|建)",
+                  r"(需要|必须|得|应该?)先?\S{0,12}(设置|设定|配置|填写?)",
+                  r"没有\S{0,6}预付(款)?(政策|策略|条款)",
+                  r"\b(cannot|can't|can not|not be able to|not allowed to)\b[^.]{0,30}\bprepa",
+                  r"\b(must|needs? to|has to|have to)\b[^.]{0,20}\bset\b",
+                  r"\bno prepayment (policy|terms)\b")
+_CAN_PREPAY = (r"(?<!不)(?<!不能)(可以|能够?)\S{0,6}(预付|建)", r"\bcan be (prepaid|created)\b")
+
+
+async def prepayment_system_cap(db) -> dict:
+    from decimal import Decimal
+
+    from app.schemas.config import PrepaymentConfig
+
+    if db is None:      # the registry check renders every verdict without a database
+        cfg = PrepaymentConfig()
+    else:
+        from app.api.v1.pa import _get_prepayment_config
+        cfg = await _get_prepayment_config(db)
+    pct = Decimal(str(cfg.max_prepayment_pct or 0)).normalize()
+    if pct > 0:
+        return {"pct": f"{pct:f}", "yes_en": "Yes.", "yes_zh": "能。",
+                "then_en": "so a prepayment PA can be created for it, up to that percentage.",
+                "then_zh": "所以可以给它建预付款 PA，最多预付到这个比例，不需要先在供应商上设置。",
+                "_drops": list(_CANNOT_PREPAY)}
+    return {"pct": "0", "yes_en": "No.", "yes_zh": "不能。",
+            "then_en": "and a cap of 0 means it cannot be prepaid until the vendor is given a "
+                       "Max Prepayment % of its own (or the system cap is raised).",
+            "then_zh": "上限为 0 表示不能预付，除非给该供应商设置自己的 Max Prepayment %（或提高系统上限）。",
+            "_drops": list(_CAN_PREPAY)}
+
+
 async def invoice_match_tolerance(db) -> dict:
     from app.crud.invoice import _match_tolerance_pct
 
@@ -208,8 +290,10 @@ def reminder_rules(db) -> dict:
     from app.services.manual_reminder import APPROVAL_TASK_TYPES, COOLDOWN_HOURS
 
     words = {"pr": "purchase requests", "po": "purchase orders"}
+    words_zh = {"pr": "请购单（PR）", "po": "采购订单（PO）"}
     return {"hours": COOLDOWN_HOURS,
-            "documents": _join([words.get(k, k) for k in APPROVAL_TASK_TYPES])}
+            "documents": _join([words.get(k, k) for k in APPROVAL_TASK_TYPES]),
+            "documents_zh": "和".join(words_zh.get(k, k) for k in APPROVAL_TASK_TYPES)}
 
 
 def _policy_words(ns: dict, task_type: str) -> str:
@@ -261,3 +345,48 @@ def report_types(db) -> dict:
     paths = [r.path for r in router.routes]
     names = [REPORT_WORDS[p] for p in paths]
     return {"count": len(names), "reports": _join(names)}
+
+
+# ── OA (ISS-0213) ────────────────────────────────────────────────────────────
+
+def _money(value) -> str:
+    from decimal import Decimal
+
+    return f"{Decimal(str(value)).quantize(Decimal('0.01')):f}"
+
+
+async def oa_policy(db) -> dict:
+    """OA's Expense Config row (expense-api's expense_policy_config, the row
+    _meal_limits and the mileage form read). Read as SQL: epms-api cannot
+    import expense-api's models. No row, or no table, is an error — the card
+    is then said without figures rather than with remembered ones."""
+    from sqlalchemy import text
+
+    row = (await db.execute(text(
+        "SELECT row_to_json(p) FROM expense_policy_config p LIMIT 1"))).scalar_one_or_none()
+    if row is None:
+        raise LookupError("no expense policy row")
+    row = row if isinstance(row, dict) else vars(row)
+    return {
+        "breakfast": _money(row["meal_breakfast_limit"]),
+        "lunch": _money(row["meal_lunch_limit"]),
+        "dinner": _money(row["meal_dinner_limit"]),
+        "incidental": _money(row["meal_incidental_limit"]),
+        "rate": _money(row["mileage_rate_per_km"]),
+        "max_km": f"{int(row['max_km_per_claim']):,}",
+    }
+
+
+def oa_reminder(db) -> dict:
+    from app.services.manual_reminder import COOLDOWN_HOURS
+
+    return {"hours": COOLDOWN_HOURS}
+
+
+async def oa_email_policy(db) -> dict:
+    """approve_<claim type> is the task type approval-api files for each OA
+    approval step (manual_reminder.expense_approval_task_types)."""
+    cfg = await _config(db)
+    ns = (cfg.notification_settings if cfg else None) or {}
+    return {f"approve_{t}": _policy_words(ns, f"approve_{t}")
+            for t in ("exp", "mil", "trv", "tra")}

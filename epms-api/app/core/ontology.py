@@ -658,6 +658,10 @@ class Field:
     # repeat is not enough, so the sentence is added in code (ISS-0008). The
     # rule id names the rule-registry card whose test pins the statement.
     when_listed: tuple[str, str, str] | None = None
+    # A date that can lie ahead — a due date, a needed-by date. "This month"
+    # on it is the whole calendar month, not the month to today (ISS-0035);
+    # see controlled_query.calendar_range(whole=...).
+    scheduled: bool = False
 
 
 @dataclass(frozen=True)
@@ -827,6 +831,8 @@ def _build_entity(name: str, spec: dict) -> Entity:
                      isinstance(raw_listed, dict)
                      and all(raw_listed.get(k) for k in ("rule", "note", "zh"))),
                  f"{where}.{fname}: when_listed needs rule, note and zh")
+        _require(not fspec.get("scheduled") or kind in (DATE, DATETIME),
+                 f"{where}.{fname}: scheduled is for a date field")
         doc_number = fspec.get("doc_number")
         _require(doc_number is None or doc_number in doc_numbers.PREFIXES,
                  f"{where}.{fname}: doc_number {doc_number!r} is not one of "
@@ -845,6 +851,7 @@ def _build_entity(name: str, spec: dict) -> Entity:
             doc_number=doc_number,
             when_listed=((raw_listed["rule"], " ".join(str(raw_listed["note"]).split()),
                           str(raw_listed["zh"]).strip()) if raw_listed else None),
+            scheduled=bool(fspec.get("scheduled")),
         )
     _require(bool(fields), f"{where}: needs at least one field")
 

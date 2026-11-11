@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState, useRef } from 'react'
 import { ArrowLeft, CheckCircle, XCircle, RotateCcw, Banknote, AlertTriangle, Paperclip, Upload, Download, Trash2, Circle, Clock, FileText } from 'lucide-react'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
-import { api } from '@/lib/api'
+import { api, ApiError } from '@/lib/api'
 import { STATUS, ACTION, isEditable, isInApproval } from '@/lib/status'
 import ProcessPaymentModal from '@/components/ProcessPaymentModal'
 import { StatusBadge } from '@/components/ui/badge'
@@ -19,6 +19,8 @@ interface ApprovalEvent {
   actor_name: string
   action: string
   comment: string | null
+  // Step the action was taken at (approval events only; null on the payment row).
+  step_idx?: number | null
   created_at: string
 }
 
@@ -90,6 +92,11 @@ interface ExpenseClaim {
   leave_from_date?: string | null
   leave_to_date?: string | null
   purpose?: string | null
+  // Custom-form claims: `notes` is the stored answers blob (the edit form reads
+  // it); these are its meaning, resolved server-side like the PDF (ISS-0195).
+  form_name?: string | null
+  form_fields?: { label: string; value: string }[] | null
+  user_notes?: string | null
 }
 
 interface Attachment {
@@ -108,6 +115,9 @@ interface ApprovalStep {
   acted_at: string | null
   action: string | null
   comment: string | null
+  // Pending step: who its task waits on, "Name (delegated: Stand-in)" while
+  // they are covered (ABS-006); null for a role-pool task.
+  approver_name?: string | null
 }
 
 // ── Badges ────────────────────────────────────────────────────────────────────
@@ -130,6 +140,30 @@ const ACTION_LABELS: Record<string, string> = {
 
 // ── Attachments card ──────────────────────────────────────────────────────────
 
+/**
+ * What an employee is told when an attachment will not download (0218).
+ * "File server error 410" meant nothing to them; say what happened and what
+ * to do. expense-api answers 404 when the file server has no such file and
+ * 502 "File server error <code>" for anything else the file server said —
+ * a 404 or 410 (deleted) there is still a missing file.
+ */
+function downloadFailureMessage(fileName: string, err: unknown): string {
+  const status = err instanceof ApiError ? err.status : undefined
+  const text = err instanceof Error ? err.message : ''
+  const upstream = Number(/File server error (\d{3})/.exec(text)?.[1]) || undefined
+  if (status === 404 || status === 410 || upstream === 404 || upstream === 410) {
+    return `Could not download "${fileName}". The file could not be found on the file server — please upload it again or contact IT.`
+  }
+  if ((status === undefined && err instanceof TypeError)  // fetch itself failed: offline, server down
+      || status === 502 || status === 503 || status === 504) {
+    return `Could not download "${fileName}". The file server is not available right now — please try again in a few minutes, or contact IT if it keeps happening.`
+  }
+  if (status === 403) {
+    return `Could not download "${fileName}". You do not have access to this file.`
+  }
+  return `Could not download "${fileName}". Please try again, or contact IT if it keeps happening.`
+}
+
 function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
   claimId: string; canUpload: boolean
   // Approved / paid claims: the PDF with the approval record is filed here at
@@ -140,6 +174,10 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
   const fileRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
+  const [downloadError, setDownloadError] = useState('')
+  // The server's own words (e.g. "File server error 410"), kept for IT on the
+  // banner's tooltip rather than shown to the employee.
+  const [downloadErrorDetail, setDownloadErrorDetail] = useState('')
 
   const regenPdf = useMutation({
     mutationFn: () => api.post(`/api/v1/expenses/${claimId}/regenerate-pdf`, {}),
@@ -181,12 +219,21 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
   // carries no bearer token and (in prod) resolves against the OA origin, whose
   // nginx SPA-fallback returns index.html (the main page) instead of the file.
   // Mirrors InvoiceDetailPage / PaDetailPage.
+  // A failed download is said on the page, by file name; it used to reject
+  // silently and show only in the browser console (ISS-0218).
   const download = async (att: Attachment) => {
-    const blob = await api.getBlob(`/api/v1/expenses/${claimId}/attachments/${att.id}/file`)
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url; a.download = att.file_name; a.click()
-    URL.revokeObjectURL(url)
+    setDownloadError('')
+    setDownloadErrorDetail('')
+    try {
+      const blob = await api.getBlob(`/api/v1/expenses/${claimId}/attachments/${att.id}/file`)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = att.file_name; a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setDownloadError(downloadFailureMessage(att.file_name, err))
+      setDownloadErrorDetail(err instanceof Error ? err.message : String(err))
+    }
   }
 
   function formatSize(bytes: number) {
@@ -233,6 +280,11 @@ function AttachmentsCard({ claimId, canUpload, canRegeneratePdf }: {
       {uploadError && (
         <div className="mx-5 mt-3">
           <ErrorBanner message={uploadError} />
+        </div>
+      )}
+      {downloadError && (
+        <div className="mx-5 mt-3" title={downloadErrorDetail || undefined}>
+          <ErrorBanner message={downloadError} />
         </div>
       )}
       {regenPdf.isError && (
@@ -359,9 +411,23 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
                   by {s.actor_name}{s.acted_at ? ` · ${formatDate(s.acted_at)}` : ''}
                 </p>
               )}
+              {/* The step that sent the claim back (or rejected it): who, when
+                  and why, so the claimant sees where it stopped (ISS-0194). */}
+              {(s.state === 'returned' || s.state === 'rejected') && s.actor_name && (
+                <>
+                  <p className="mt-0.5 text-xs text-neutral-500">
+                    by {s.actor_name}{s.acted_at ? ` · ${formatDate(s.acted_at)}` : ''}
+                  </p>
+                  {s.comment && (
+                    <p className="mt-1 whitespace-pre-line rounded bg-neutral-50 px-2 py-1.5 text-xs text-neutral-700">{s.comment}</p>
+                  )}
+                </>
+              )}
               {s.state === 'current' && (
                 <>
-                  <p className="mt-0.5 text-xs text-neutral-400">Awaiting this approver</p>
+                  <p className="mt-0.5 text-xs text-neutral-400">
+                    {s.approver_name ? `Awaiting ${s.approver_name}` : 'Awaiting this approver'}
+                  </p>
                   <button
                     type="button"
                     onClick={() => remindMutation.mutate()}
@@ -377,7 +443,7 @@ function ApprovalStatusCard({ claimId }: { claimId: string }) {
                   )}
                 </>
               )}
-              {/* Comments are shown once, in the Approval Timeline below. */}
+              {/* Approval comments are shown once, in the Approval Timeline below. */}
             </div>
             <span className="shrink-0 text-[10px] font-mono text-neutral-300">Step {s.step_idx + 1}</span>
           </li>
@@ -409,10 +475,21 @@ export default function ExpenseDetailPage() {
 
   // Server-computed permissions — approval roles (Finance BP, etc.) are assignments,
   // not JWT roles, so authorization is resolved server-side via tasks + role_management.
-  const { data: perms } = useQuery<{ is_owner: boolean; can_edit: boolean; can_approve: boolean; can_pay: boolean; can_delete: boolean }>({
+  const { data: perms } = useQuery<{ is_owner: boolean; can_edit: boolean; can_submit: boolean; can_approve: boolean; can_pay: boolean; can_delete: boolean }>({
     queryKey: ['expense-permissions', id],
     queryFn: () => api.get(`/api/v1/expenses/${id}/permissions`),
   })
+
+  // Same query (and cache) as ApprovalStatusCard — the timeline names the step
+  // a return / reject was taken at from these labels (ISS-0194).
+  const { data: approvalSteps = [] } = useQuery<ApprovalStep[]>({
+    queryKey: ['approval-status', id],
+    queryFn: () => api.get<ApprovalStep[]>(`/api/v1/expenses/${id}/approval-status`),
+  })
+  const stepLabel = (evt: ApprovalEvent) =>
+    (evt.action === ACTION.RETURN || evt.action === ACTION.REJECT) && evt.step_idx != null
+      ? approvalSteps.find((s) => s.step_idx === evt.step_idx)?.label ?? `Step ${evt.step_idx + 1}`
+      : null
 
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: ['expense', id] })
@@ -428,6 +505,8 @@ export default function ExpenseDetailPage() {
   })
 
   // 'pay' is NOT a generic /action — it has its own endpoint with payment fields.
+  // A refusal is the server's sentence for the payer and is shown in the modal;
+  // it used to be swallowed, so Confirm Payment looked dead (ISS-0205).
   const payMutation = useMutation({
     mutationFn: (bankAccountId: string) => api.post(`/api/v1/expenses/${id}/pay`, { bank_account_id: bankAccountId }),
     onSuccess: () => { setActiveAction(null); invalidateAll() },
@@ -462,8 +541,11 @@ export default function ExpenseDetailPage() {
   const TYPE_LABELS: Record<string, string> = {
     EXP: 'General Expense', MIL: 'Mileage Claim', TRV: 'Travel Expense', TRA: 'Travel Application',
   }
+  const isCfm = claim.claim_type.startsWith('CFM')
   const typeLabel = TYPE_LABELS[claim.claim_type]
-    ?? (claim.claim_type.startsWith('CFM') ? `Custom Form (${claim.claim_type.replace(/^CFM_?/, '')})` : claim.claim_type)
+    ?? (isCfm ? `Custom Form (${claim.claim_type.replace(/^CFM_?/, '')})` : claim.claim_type)
+  // A custom form's `notes` is its answers blob; the employee's remark is user_notes.
+  const notesText = isCfm ? claim.user_notes : claim.notes
 
   // EXP-007 / TRV-008: receipt-based claims require ≥1 attachment before submission.
   // A TRV made only of date-range lines is exempt (same rule as the server).
@@ -474,8 +556,10 @@ export default function ExpenseDetailPage() {
   const missingAttachment = requiresAttachment && isEditable(claim.status) && attachments.length === 0
 
   // Permissions resolved server-side (see the /permissions query above).
-  // The claimant, or whoever filed the claim on their behalf.
+  // Edit and Submit are separate answers (OA.md §7.3): a Finance Manager may
+  // edit someone else's claim but not submit it; a System Admin may do both.
   const canEdit = perms?.can_edit ?? false
+  const canSubmit = perms?.can_submit ?? false
   const canApprove = perms?.can_approve ?? false
   const canPay = perms?.can_pay ?? false
   // False server-side for EXP/MIL/TRV, so this shared component needs no
@@ -520,7 +604,7 @@ export default function ExpenseDetailPage() {
                 claim `returned` (approval-api accepts submit from draft or
                 returned), and with only Edit here a returned claim could be
                 changed but never sent back into approval. */}
-            {isEditable(claim.status) && canEdit && (
+            {isEditable(claim.status) && canSubmit && (
               <button
                 onClick={() => setActiveAction(ACTION.SUBMIT)}
                 disabled={missingAttachment}
@@ -610,12 +694,14 @@ export default function ExpenseDetailPage() {
             <p className="mt-0.5 text-sm font-mono font-medium text-neutral-800">{Number(claim.total_km).toFixed(1)} km</p>
           </div>
         )}
-        {claim.notes && (
+        {notesText && (
           <div className="col-span-2">
             <p className="text-xs font-medium text-neutral-500">Notes</p>
-            <p className="mt-0.5 text-sm text-neutral-700">{claim.notes}</p>
+            <p className="mt-0.5 whitespace-pre-line text-sm text-neutral-700">{notesText}</p>
           </div>
         )}
+        {/* A custom form carries no lines and no amount (CFM-002). */}
+        {!isCfm && (
         <div className="col-span-2 border-t border-neutral-100 pt-3 mt-1">
           <div className="flex justify-between text-sm">
             <span className="text-neutral-500">Subtotal (pre-tax)</span>
@@ -632,7 +718,25 @@ export default function ExpenseDetailPage() {
             <span className="font-mono text-primary-700">{formatAmount(claim.total_amount, claim.currency)}</span>
           </div>
         </div>
+        )}
       </div>
+
+      {/* Custom form answers, labelled as on the claim PDF (OA.md §6.2) */}
+      {isCfm && claim.form_fields && (
+        <div className="rounded-xl border border-neutral-200 bg-white p-5 flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-neutral-700">
+            Form Details{claim.form_name ? ` — ${claim.form_name}` : ''}
+          </h2>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm">
+            {claim.form_fields.map((f, i) => (
+              <div key={i}>
+                <dt className="text-neutral-500">{f.label}</dt>
+                <dd className="whitespace-pre-line text-neutral-800">{f.value || '—'}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
 
       {/* Travel Application details (TRA — no money/line items, has its own PDF) */}
       {claim.claim_type === 'TRA' && (
@@ -695,19 +799,19 @@ export default function ExpenseDetailPage() {
                   <td className="px-4 py-2 text-xs text-neutral-800">
                     {li.description}
                     {li.period_from && (
-                      <div className="text-neutral-500">{li.period_days} days × {formatAmount(li.daily_rate ?? 0)}</div>
+                      <div className="text-neutral-500">{li.period_days} days × {formatAmount(li.daily_rate ?? 0, claim.currency)}</div>
                     )}
                     {claim.claim_type === 'TRV' && li.tax_code && (
                       <div className="text-neutral-500">Tax {li.tax_code}</div>
                     )}
                     {li.invoice_amount != null && (
-                      <div className="text-neutral-500">Invoice {formatAmount(li.invoice_amount)}</div>
+                      <div className="text-neutral-500">Invoice {formatAmount(li.invoice_amount, claim.currency)}</div>
                     )}
                   </td>
                   <td className="px-4 py-2 text-xs text-neutral-600">{li.budget_account_code} — {li.budget_account_name}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono">{formatAmount(li.total_amount)}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono text-neutral-500">{formatAmount(li.tax_amount)}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono font-medium text-primary-700">{formatAmount(li.net_amount)}</td>
+                  <td className="px-4 py-2 text-right text-xs font-mono">{formatAmount(li.total_amount, claim.currency)}</td>
+                  <td className="px-4 py-2 text-right text-xs font-mono text-neutral-500">{formatAmount(li.tax_amount, claim.currency)}</td>
+                  <td className="px-4 py-2 text-right text-xs font-mono font-medium text-primary-700">{formatAmount(li.net_amount, claim.currency)}</td>
                 </tr>
               ))}
             </tbody>
@@ -745,7 +849,7 @@ export default function ExpenseDetailPage() {
                   <td className="px-4 py-2 text-xs text-neutral-600">{ti.purpose}</td>
                   <td className="px-4 py-2 text-right text-xs font-mono">{Number(ti.distance_km).toFixed(1)}{ti.is_round_trip ? ' ×2' : ''}</td>
                   <td className="px-4 py-2 text-right text-xs font-mono text-neutral-500">${Number(ti.rate_per_km).toFixed(4)}</td>
-                  <td className="px-4 py-2 text-right text-xs font-mono font-medium text-primary-700">{formatAmount(ti.amount)}</td>
+                  <td className="px-4 py-2 text-right text-xs font-mono font-medium text-primary-700">{formatAmount(ti.amount, claim.currency)}</td>
                 </tr>
               ))}
             </tbody>
@@ -787,7 +891,10 @@ export default function ExpenseDetailPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-x-2">
                       <span className="text-sm font-medium text-neutral-800">{evt.actor_name}</span>
-                      <span className="text-xs text-neutral-500">{ACTION_LABELS[evt.action] ?? evt.action}</span>
+                      <span className="text-xs text-neutral-500">
+                        {ACTION_LABELS[evt.action] ?? evt.action}
+                        {stepLabel(evt) && ` at ${stepLabel(evt)}`}
+                      </span>
                     </div>
                     <p className="text-xs text-neutral-400">{formatDate(evt.created_at)}</p>
                     {evt.comment && (
@@ -809,8 +916,9 @@ export default function ExpenseDetailPage() {
           currency={claim.currency}
           amount={Number(claim.total_amount)}
           busy={payMutation.isPending}
+          error={payMutation.isError ? (payMutation.error instanceof Error ? payMutation.error.message : 'Payment failed') : undefined}
           onConfirm={(bankAccountId) => payMutation.mutate(bankAccountId)}
-          onClose={() => setActiveAction(null)}
+          onClose={() => { payMutation.reset(); setActiveAction(null) }}
         />
       )}
 

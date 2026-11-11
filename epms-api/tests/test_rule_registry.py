@@ -98,12 +98,16 @@ def test_rule_ids_are_unique_and_areas_match_their_files():
         assert area.label and area.covers, key
     assert {"pr", "po", "gr", "pa", "invoice", "agreement", "approval_engine",
             "delegation", "budget", "nc_sync", "notifications", "tasks",
-            "dashboard", "reports", "vendor", "account"} == set(rule_registry.area_keys())
+            "dashboard", "reports", "vendor", "account", "assistant", "oa"} == set(rule_registry.area_keys())
 
 
 async def test_derived_rules_fill_every_placeholder():
     cfg = SimpleNamespace(nc_purchase_sync_interval_minutes=None, service_gr_sla={},
-                          notification_settings={}, invoice_match_tolerance_pct=Decimal("5.00"))
+                          notification_settings={}, invoice_match_tolerance_pct=Decimal("5.00"),
+                          # OA's Expense Config row, read by rule_facts.oa_policy (ISS-0213).
+                          meal_breakfast_limit=10, meal_lunch_limit=20, meal_dinner_limit=35,
+                          meal_incidental_limit=Decimal("17.30"), mileage_rate_per_km=Decimal("0.55"),
+                          max_km_per_claim=5000)
     rules = [r for _, c in rule_registry.all_cards() if c["provenance"] == "derived"
              for r in [{"id": c["id"], "answer": " ".join(c["answer"].split())}]]
     filled, missing = await rule_registry.resolve(rules, _FakeDb(cfg))
@@ -200,7 +204,9 @@ async def test_explain_rules_brings_the_engines_rules(admin_client, monkeypatch)
 
     monkeypatch.setattr(approval_client, "forward", fake_forward)
     seen = _stub_llm(monkeypatch, plan={"kind": "rules", "areas": ["approval_engine"]})
-    await admin_client.post(CHAT, json={"message": "请购单被退回后重新提交，会从第一步重新审批吗？"})
+    # (The resubmission question itself is answered by code now — see
+    # test_assistant_asst2_routes — so another engine question is asked here.)
+    await admin_client.post(CHAT, json={"message": "同一个人连续两步都是审批人会怎样？"})
     areas = seen["guide"][0]["areas"]
     ids = [x["id"] for x in areas[0]["rules"]]
     assert ids[0] == "returned_document_resumes_at_the_returning_step"
@@ -667,8 +673,12 @@ def test_gr_statuses_are_the_routes():
     src = inspect.getsource(gr_api.create_gr)
     assert "SERVICE_GR_PO_STATUSES" in src and "PHYSICAL_GR_PO_STATUSES" in src
     words = rule_facts.gr_po_statuses(None)
-    assert words == {"physical": "issued and partially_received",
-                     "service": "approved, issued and partially_received"}
+    # Alternatives, never "and" — read as "已发出且部分收货" (ISS-0017).
+    assert words["physical"] == "issued or partially_received"
+    assert words["service"] == "approved, issued or partially_received"
+    assert words["physical_names"] == "Issued or Partial Receipt"
+    assert words["physical_names_zh"] == "Issued 或 Partial Receipt"
+    assert words["service_names_zh"] == "Approved、Issued 或 Partial Receipt"
 
 
 def test_gr_cancel_button_follows_the_server():
@@ -1009,7 +1019,8 @@ def test_payment_applications_have_no_reminder():
     assert remind(pr_api.router) and remind(po_api.router) and not remind(pa_api.router)
     assert set(APPROVAL_TASK_TYPES) == {"pr", "po"}
     assert rule_facts.reminder_rules(None) == {"hours": COOLDOWN_HOURS,
-                                               "documents": "purchase requests and purchase orders"}
+                                               "documents": "purchase requests and purchase orders",
+                                               "documents_zh": "请购单（PR）和采购订单（PO）"}
 
 
 async def test_approval_email_policy_is_read_from_config():

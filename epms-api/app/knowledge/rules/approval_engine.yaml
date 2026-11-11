@@ -39,3 +39,79 @@ rules:
     provenance: pinned
     test:
       - "tests/test_rule_registry.py::test_approval_buttons_follow_the_open_task"
+
+  # ── Round 2 (2026-11-10, ISS-0018). The one engine rule repeated here: asked
+  # about a PR, "退回后重新提交会从第一步重新审批吗？" was answered "yes, from
+  # the first step" twice (the same question about a PA was answered right).
+  # The PR area's recall rule ("starts again from the first step when it is
+  # resubmitted") was read as the answer. The code now writes this answer;
+  # it states approval-api's returned_document_resumes_at_the_returning_step
+  # and is pinned to the same engine tests, and to that rule's text.
+  - id: resubmitted_after_return
+    said_when:
+      - '(?:退回|被退|退还|打回|\breturned\b|sent\s+back).{0,40}(?:重新提交|再次提交|再提交|重提|重新送审|\bresubmit\w*|submit\w*\s+(?:it\s+)?again)'
+      - '(?:重新提交|再次提交|\bresubmit\w*).{0,40}(?:退回|被退|\breturned\b|sent\s+back)'
+    asked_as:
+      - 请购单被退回后重新提交，会从第一步重新审批吗？
+      - when a returned PR is resubmitted, does approval start again
+    answer: >
+      A returned document, once resubmitted, resumes at the step that returned
+      it — approvals already given stand and are not repeated. It starts again
+      from the first step only when the return cannot be traced (imported
+      data), when that step no longer exists in the chain, or, for a purchase
+      request, when the over-budget steps in front of the chain changed while
+      it was returned. A recalled document is a draft again and always starts
+      from the first step. The same for every document type.
+    says:
+      en: >
+        A returned document — a PR, PO, PA or agreement alike — resumes, when it
+        is resubmitted, at the step that returned it: it does not start again
+        from the first step, and the approvals already given stand and are not
+        repeated. It starts from the first step only when the return cannot be
+        traced (imported history), when that step no longer exists in the
+        chain, or, for a PR, when the over-budget steps in front of the chain
+        changed while it was returned. A document its requester recalled
+        (Recall to Edit) is a draft again and always starts from the first step.
+      zh: >
+        退回的单据（请购单、采购订单、付款申请、协议都一样）重新提交后，从退回它的那一步继续审批，
+        不会从第一步重来；之前已经批过的步骤保留，不用再批。只有这几种情况才从第一步开始：无法追溯是
+        哪一步退回的（导入的历史数据）、那一步已不在审批链里，或者（仅请购单）退回期间链路前面的超预算
+        步骤发生了变化。申请人自己撤回（Recall to Edit）的单据会回到草稿，再提交时总是从第一步开始。
+    enforced_in: "approval-api app/crud/engine.py (resubmit resumes at the returning step; rule text app/crud/engine_rules.py returned_document_resumes_at_the_returning_step); epms-api app/api/v1/assistant_chat.py _answer_pinned"
+    provenance: pinned
+    test:
+      - "approval-api/tests/test_engine_resume_after_return.py::test_resubmit_goes_back_to_the_step_that_returned_it"
+      - "approval-api/tests/test_engine_resume_after_return.py::test_recalled_document_starts_over"
+      - "tests/test_assistant_asst2_routes.py::test_the_resubmit_answer_is_the_engines_rule"
+# The conclusion a question must get, placed by code (app/services/rule_verdicts.py).
+verdicts:
+  # ISS-0026 point 5: "我自己就是第一审批人，提交后还需要自己再批吗？" opened
+  # "不需要…系统会自动批准第一步" and then said the opposite, twice. The rule is
+  # the engine's (approval-api engine_rules.py same_approver_on_consecutive_steps).
+  - id: requester_who_is_first_approver_still_approves
+    rule: same_approver_on_consecutive_steps
+    asks:
+      - [第一审批人, 第一个审批人, 第一步审批人, 第一步的审批人, 第一级审批人, 第一步审批, 第一个审批步骤,
+         首个审批人, 第一位审批人, first approver, step-1 approver, step 1 approver,
+         first step's approver, approver of the first step, approver for the first step]
+      - [提交, submit, submitted, submitting]
+      - [自己, 本人, 我, myself, i, i'm, own]
+      # Asks whether they approve it ("审批人" alone is in the first group):
+      # "我是第一审批人，提交后会收到邮件吗？" does not (round 2 fix, 2026-11-11).
+      - [再批, 自己批, 要批, 还批, 需要批, 批吗, 批一次, 批这一步, 再审批, 自己审批, 还要审批, 需要审批,
+         要审批, 审批吗, 自动通过, 自动批, 跳过, approve, approves, approving, approval, auto-approve,
+         auto-approved, skip, skipped]
+    says:
+      en: >
+        Yes. The same-approver skip does not happen at submission: a requester
+        who is also the first approver must still approve that step after
+        submitting, from the Task Inbox or the document's page. Only after that,
+        if they also hold the next step in their own right, is that next step
+        approved automatically ("Auto-approved (same approver holds both roles)").
+      zh: >
+        需要。提交时不会做"同一审批人自动通过"：申请人自己就是第一步的审批人时，提交后仍要在
+        Task Inbox 或单据页面上自己批这一步。批完以后，如果他本人还持有下一步，下一步才会自动通过，
+        记为 "Auto-approved (same approver holds both roles)"。
+    test:
+      - "approval-api/tests/test_engine_rules.py::test_no_same_approver_skip_at_submission"
+      - "approval-api/tests/test_engine_same_approver_skip.py::test_second_step_auto_skips_for_non_first_post_holder"

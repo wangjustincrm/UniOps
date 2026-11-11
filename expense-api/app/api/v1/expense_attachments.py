@@ -1,13 +1,15 @@
 """Expense claim attachment endpoints — files stored on file-api (:8005)."""
+import logging
 import uuid
 from datetime import datetime
+from typing import Literal
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 
 from app.api.v1.expenses import _can_view_claim
-from app.crud.expense import is_preparer
+from app.crud.expense import may_delete_attachments, scans_of_lines
 from app.core.deps import BearerTokenDep, CurrentUserDep, SessionDep
 from app.crud.expense import get_by_id as get_claim
 from app.models.expense import ExpenseAttachment
@@ -16,6 +18,8 @@ from app.services.attachment_helper import (
 )
 
 router = APIRouter(prefix="/expenses/{claim_id}/attachments", tags=["expense-attachments"])
+
+logger = logging.getLogger(__name__)
 
 MAX_FILE_BYTES = 25 * 1024 * 1024  # 25 MB
 
@@ -29,6 +33,8 @@ class AttachmentOut(BaseModel):
     file_size_bytes: int
     mime_type: str | None
     uploaded_at: datetime
+    line_item_id: uuid.UUID | None = None
+    source: str | None = None
     download_url: str | None = None
 
 
@@ -37,7 +43,8 @@ def _out(att: ExpenseAttachment) -> AttachmentOut:
     return AttachmentOut(
         id=att.id, claim_id=att.claim_id, file_id=att.file_id,
         file_name=att.file_name, file_size_bytes=att.file_size_bytes,
-        mime_type=att.mime_type, uploaded_at=att.uploaded_at, download_url=dl,
+        mime_type=att.mime_type, uploaded_at=att.uploaded_at,
+        line_item_id=att.line_item_id, source=att.source, download_url=dl,
     )
 
 
@@ -63,13 +70,24 @@ async def upload_claim_attachment(
     user: CurrentUserDep,
     token: BearerTokenDep,
     file: UploadFile = File(...),
+    line_item_id: uuid.UUID | None = Form(None),
+    source: Literal["scan", "manual"] = Form("manual"),
 ):
-    """Upload a receipt / supporting document for an expense claim to file-api."""
+    """Upload a receipt / supporting document for an expense claim to file-api.
+
+    `line_item_id` ties the file to a claim line and `source` says how it was
+    picked. A file scanned on a line replaces the file scanned on that line
+    before (ATT-OA-005, ISS-0197) — never a manually attached one, and only
+    for someone allowed to delete the claim's attachments; anyone else's
+    upload is simply added.
+    """
     claim = await get_claim(db, claim_id)
     if not claim:
         raise HTTPException(status_code=404, detail="Expense claim not found")
     if claim.status not in ("draft", "returned"):
         raise HTTPException(status_code=409, detail="Cannot add attachments to a submitted claim")
+    if line_item_id is not None and line_item_id not in {li.id for li in claim.line_items}:
+        raise HTTPException(status_code=422, detail="line_item_id is not a line of this claim")
 
     data = await file.read()
     if len(data) > MAX_FILE_BYTES:
@@ -91,14 +109,30 @@ async def upload_claim_attachment(
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
 
+    # The earlier scan of this line goes only once the new file is stored, so a
+    # failed upload never leaves the line with no receipt.
+    replaced = []
+    if (source == "scan" and line_item_id is not None
+            and may_delete_attachments(claim, uuid.UUID(user["sub"]), user.get("role", ""))):
+        replaced = await scans_of_lines(db, claim_id, {line_item_id})
+
     att = ExpenseAttachment(
         claim_id=claim_id,
         file_id=str(storage_key),
         file_name=file.filename or "attachment",
         file_size_bytes=len(data),
         mime_type=file.content_type,
+        line_item_id=line_item_id,
+        source=source,
     )
     db.add(att)
+    for old in replaced:
+        if old.file_id:
+            try:
+                await delete_from_file_server(uuid.UUID(old.file_id), token)
+            except Exception:
+                logger.warning("file-api delete failed for %s; continuing", old.file_id)
+        await db.delete(old)
     await db.flush()
     return _out(att)
 
@@ -138,8 +172,7 @@ async def delete_claim_attachment(
         raise HTTPException(status_code=404, detail="Attachment not found")
     claim = await get_claim(db, claim_id)
     caller = uuid.UUID(user["sub"])
-    if (claim and claim.employee_id != caller and not is_preparer(claim, caller)
-            and user.get("role", "") != "system_admin"):
+    if claim and not may_delete_attachments(claim, caller, user.get("role", "")):
         raise HTTPException(status_code=403, detail="Only the owner can delete this attachment")
     if claim and claim.status not in ("draft", "returned"):
         raise HTTPException(status_code=409, detail="Cannot delete attachment from submitted claim")

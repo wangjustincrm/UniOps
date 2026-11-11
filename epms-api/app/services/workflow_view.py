@@ -19,12 +19,15 @@ The current step deliberately comes from `enrich_current_step` rather than from
 and that helper already resolves the assignee's name and any active stand-in.
 """
 import uuid
-from datetime import timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
 
 from app.core import doc_numbers
+from app.core.approval_event_kind import event_kind, skip_reason
+from app.core.delegation import local_today
+from app.core.plant_time import plant_tz
 from app.core.access_scope import is_pa_visible, is_po_visible, is_pr_visible
 from app.crud import pa as pa_crud
 from app.crud import po as po_crud
@@ -120,10 +123,28 @@ def _step_role_at(idx, when, approvals: list, steps: list[dict]) -> str | None:
     return None
 
 
+def local_time(value):
+    """A recorded moment as the pages show it: plant time, offset included.
+    Sent as UTC, an AP Review at 08:41 was reported as 12:41 and a PR
+    submitted at 15:16 as 19:16 (ISS-0043, ISS-0047)."""
+    if isinstance(value, datetime) and value.tzinfo is not None:
+        return value.astimezone(plant_tz()).isoformat(timespec="minutes")
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value
+
+
 def history_entries(events, steps: list[dict]) -> list[dict]:
     """The document's events as the assistant shows them (ISS-0070): the PMS
     import marker becomes `imported`, and a return or reject carries the role
-    of the step it was decided at."""
+    of the step it was decided at.
+
+    A step the engine skipped is `skipped`, with its reason and no actor: it
+    is written as an approve by whoever triggered the skip, and the HISTORY
+    block read "approve by Kris Enriquez (Finance Manager)" for the requester
+    (ISS-0070; PRD §3.3 — skipped steps show the reason, auto-skipped steps
+    are not approvers). Classified by app/core/approval_event_kind, as the
+    History tab is (ISS-0077)."""
     approvals = [(getattr(e, "step_idx", None), getattr(e, "created_at", None),
                   getattr(e, "actor_role", None))
                  for e in events if getattr(e, "action", None) == "approve"]
@@ -138,14 +159,22 @@ def history_entries(events, steps: list[dict]) -> list[dict]:
         if action in _STEP_DECISIONS:
             role = _step_role_at(getattr(e, "step_idx", None),
                                  getattr(e, "created_at", None), approvals, steps) or role
+        actor = getattr(e, "actor_name", None)
+        kind = event_kind(action, comment)
+        if kind == "skipped":
+            # The role recorded on a skip is the step's own.
+            action, actor, comment = "skipped", None, skip_reason(comment)
+        elif kind == "imported":
+            # Backfilled by the PMS import under its own account: not a person.
+            actor, imported = None, True
         out.append({
             "step_idx": getattr(e, "step_idx", None),
             "action": action,
-            "actor_name": getattr(e, "actor_name", None),
+            "actor_name": actor,
             "actor_role": role,
             "comment": comment,
             "imported": imported,
-            "at": getattr(e, "created_at", None),
+            "at": local_time(getattr(e, "created_at", None)),
         })
     return out
 
@@ -171,6 +200,14 @@ async def build(db, doc_type: str, doc, token: str) -> dict:
     # in review), which is exactly when "who is it with" has an answer.
     await enrich_current_step(db, doc_type, [doc], token)
     current = getattr(doc, "current_step", None)
+    if current:
+        # Days waiting, counted here on plant dates (PRD §3.2.3 shows them on
+        # the list); left to the model it was sometimes not given (ISS-0047).
+        since = current.get("since")
+        current = {**current, "since": local_time(since)}
+        if isinstance(since, datetime):
+            day = since.astimezone(plant_tz()).date() if since.tzinfo else since.date()
+            current["days_waiting"] = (local_today() - day).days
 
     out = {
         "doc_type": doc_type,
@@ -187,9 +224,19 @@ async def build(db, doc_type: str, doc, token: str) -> dict:
         # payment date is the date Finance entered: paid_at is that date at
         # midnight UTC (see PaymentApplication.paid_on).
         paid_at = getattr(doc, "paid_at", None)
+        paid_on = paid_at.astimezone(timezone.utc).date() if paid_at else None
         out["milestones"] = {
-            "submitted_at": getattr(doc, "submitted_at", None),
-            "approved_at": getattr(doc, "approved_at", None),
-            "paid_on": paid_at.astimezone(timezone.utc).date() if paid_at else None,
+            "submitted_at": local_time(getattr(doc, "submitted_at", None)),
+            "approved_at": local_time(getattr(doc, "approved_at", None)),
+            "paid_on": paid_on,
         }
+        if paid_on and getattr(doc, "status", None) in ("processed", "paid"):
+            # The step PA Detail's Approval Progress ends with (ISS-0043): a
+            # date, not a time — the payment date Finance entered.
+            history.append({"step_idx": None, "action": "payment processed",
+                            "actor_name": None, "actor_role": "Finance",
+                            "comment": None, "imported": False,
+                            "at": paid_on.isoformat()})
+    elif doc_type == "pr":
+        out["milestones"] = {"submitted_at": local_time(getattr(doc, "submitted_at", None))}
     return out
