@@ -83,6 +83,13 @@ describe('answer tables (ISS-0111)', () => {
     expect(sortKey('-3')).toBe(-3)
     expect(sortKey('—')).toBeNull()
     expect(sortKey('16/10/2026')).toBe('2026-10-16')
+    expect(sortKey('2026-NOV-11')).toBe('2026-11-11')
+    expect(sortKey('2026-NOV-11 14:30')).toBe('2026-11-11 14:30')
+    // Month names would sort APR < JAN < NOV as text; as dates, across months
+    // and mixed with slashed dates, they sort by the calendar.
+    const cells = ['2026-NOV-11', '05/01/2026', '2026-APR-01', '2025-DEC-31', '2026-JAN-05 09:00']
+    const sorted = [...cells].sort((a, b) => String(sortKey(a)).localeCompare(String(sortKey(b))))
+    expect(sorted).toEqual(['2025-DEC-31', '05/01/2026', '2026-JAN-05 09:00', '2026-APR-01', '2026-NOV-11'])
     expect(sortKey('PO-079-2605-03')).toBe('PO-079-2605-03')
     expect(splitTotal([['x'], ['合计']]).total).toEqual(['合计'])
     expect(splitTotal([['合计']]).total).toBeNull()

@@ -26,12 +26,20 @@ function plain(cell: string): string {
 const EMPTY = /^(|-|—|–|n\/a|none)$/i
 // 1,234.56 · $1,234.56 · 1,234.56 CAD · CAD 1,234.56 · -12 · 12.5% · (1,234.00)
 const NUMBER = /^(?:[A-Z]{3}\s*)?[$€£¥]?\s*(\(?)\s*([-−+]?)\s*(\d[\d,\s]*(?:\.\d+)?|\.\d+)\s*(\)?)\s*%?\s*(?:[A-Z]{3})?$/
+// The on-screen format (UI-DATE-002): 2026-NOV-11, optionally '14:30' after.
+const YMMMD = /^(\d{4})-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)-(\d{1,2})(.*)$/i
+const MONTH_NO: Record<string, string> = {
+  JAN: '01', FEB: '02', MAR: '03', APR: '04', MAY: '05', JUN: '06',
+  JUL: '07', AUG: '08', SEP: '09', OCT: '10', NOV: '11', DEC: '12',
+}
+// Day-first slashed dates: the model still writes them now and then.
 const DMY = /^(\d{1,2})\/(\d{1,2})\/(\d{4})(.*)$/
 
 /**
  * What a cell sorts by, for the shared list sort (ui/sortable): blank → null
- * (last either way), an amount → its value, a day-first date (dd/mm/yyyy, as
- * the pages show dates) → ISO text, anything else → its text.
+ * (last either way), an amount → its value, a date (YYYY-MMM-DD as the pages
+ * show dates, or a day-first dd/mm/yyyy) → ISO text, anything else → its text.
+ * Without the YYYY-MMM-DD case the month NAME sorted as text: APR < AUG < DEC.
  */
 export function sortKey(cell: string): SortValue {
   const s = plain(cell)
@@ -44,6 +52,8 @@ export function sortKey(cell: string): SortValue {
       return negative ? -n : n
     }
   }
+  const y = YMMMD.exec(s)
+  if (y) return `${y[1]}-${MONTH_NO[y[2].toUpperCase()]}-${y[3].padStart(2, '0')}${y[4]}`
   const d = DMY.exec(s)
   if (d) return `${d[3]}-${d[2].padStart(2, '0')}-${d[1].padStart(2, '0')}${d[4]}`
   return s
