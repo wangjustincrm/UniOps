@@ -4,8 +4,9 @@ Daily task digest — one email per person listing their open tasks.
 Covers the task types the admin set to "digest" in Portal → Admin →
 Notifications (services/task_notify_policy.py); "immediate" types are mailed by
 app/tasks/task_notifier.py the moment they are created and are not repeated
-here. Runs once a day at ``notification_settings.followup_time`` (UTC, default
-08:00) via an asyncio background loop started in app/main.py lifespan.
+here. Runs once a day at ``notification_settings.followup_time`` (plant time —
+the Company Settings zone, default 08:00) via an asyncio background loop
+started in app/main.py lifespan.
 
 Replaces the old per-task follow-up (one email per open task, every open task,
 behind ``daily_followup_enabled``): whether a type takes part is now that
@@ -17,10 +18,11 @@ import asyncio
 import html
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 
 from sqlalchemy import select
 
+from app.core.plant_time import fmt_date, plant_now, plant_tz, to_plant
 from app.crud.config import get_or_create as get_config
 from app.db import session as session_module
 from app.models.notification_log import NotificationLog
@@ -61,7 +63,7 @@ def _digest_html(inbox: _Inbox, now: datetime) -> str:
             f'<td {cell}>{badge}{html.escape(label_for(t.type))}</td>'
             f'<td {cell}><a href="{html.escape(link)}">{html.escape(t.document_number or "")}</a></td>'
             f'<td {cell}>{html.escape(t.title or "")}</td>'
-            f'<td {cell}>{t.created_at.date().isoformat() if t.created_at else ""}</td>'
+            f'<td {cell}>{fmt_date(t.created_at, empty="")}</td>'
             '</tr>'
         )
     head = 'style="padding:6px 8px"'
@@ -155,15 +157,25 @@ async def run_daily_digest() -> int:
     return sent
 
 
-def _seconds_until_next_run(hour: int = 8, minute: int = 0) -> float:
-    """Calculate seconds until the next occurrence of HH:MM local time."""
-    now = datetime.now(timezone.utc)
-    target = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    if target <= now:
-        # Already past today's run time — schedule for tomorrow
-        from datetime import timedelta
-        target += timedelta(days=1)
-    return (target - now).total_seconds()
+def _seconds_until_next_run(hour: int = 8, minute: int = 0,
+                            now: datetime | None = None) -> float:
+    """Seconds until the next HH:MM on the plant's wall clock (the Company
+    Settings zone). It used to take HH:MM as UTC, so the default 08:00 ran at
+    03:00/04:00 in Toronto. Shared by every daily job in app/tasks.
+
+    The difference is taken in UTC: two datetimes that share a tzinfo subtract
+    as wall-clock values, which would be an hour off across a DST change. A
+    time that does not exist on a spring-forward day (02:30) resolves to the
+    hour after the gap; one that occurs twice in the autumn runs the first time.
+    """
+    now_utc = (to_plant(now) if now is not None else plant_now()).astimezone(timezone.utc)
+    day = now_utc.astimezone(plant_tz()).date()
+    while True:
+        target = datetime.combine(day, time(hour, minute), tzinfo=plant_tz())
+        target_utc = target.astimezone(timezone.utc)
+        if target_utc > now_utc:
+            return (target_utc - now_utc).total_seconds()
+        day += timedelta(days=1)
 
 
 def _parse_followup_time(value) -> tuple[int, int]:
@@ -175,19 +187,19 @@ def _parse_followup_time(value) -> tuple[int, int]:
             return hour, minute
     except (ValueError, AttributeError):
         pass
-    logger.warning("Daily follow-up: invalid followup_time %r — falling back to 08:00Z", value)
+    logger.warning("Daily follow-up: invalid followup_time %r — falling back to 08:00", value)
     return 8, 0
 
 
 async def _load_schedule() -> tuple[int, int]:
-    """Read notification_settings.followup_time from company config → (hour, minute) UTC."""
+    """Read notification_settings.followup_time from company config → (hour, minute), plant time."""
     try:
         async with session_module.AsyncSessionLocal() as db:
             cfg = await get_config(db)
             raw = (cfg.notification_settings or {}).get("followup_time")
             await db.commit()
     except Exception as exc:  # noqa: BLE001 — a broken DB must not kill the loop
-        logger.error("Daily follow-up: failed to load schedule, using 08:00Z: %s", exc)
+        logger.error("Daily follow-up: failed to load schedule, using 08:00: %s", exc)
         return 8, 0
     return _parse_followup_time(raw) if raw is not None else (8, 0)
 
@@ -201,7 +213,7 @@ _RECHECK_SECONDS = 900
 async def daily_followup_loop() -> None:
     """
     Infinite asyncio loop that fires run_daily_digest() once per day at the
-    configured followup_time (UTC).
+    configured followup_time (plant time).
 
     Run as: asyncio.create_task(daily_followup_loop())
     """
@@ -211,6 +223,7 @@ async def daily_followup_loop() -> None:
         if wait > _RECHECK_SECONDS:
             await asyncio.sleep(_RECHECK_SECONDS)
             continue
-        logger.info("Daily follow-up: next run in %.0f seconds (at %02d:%02dZ)", wait, hour, minute)
+        logger.info("Daily follow-up: next run in %.0f seconds (at %02d:%02d %s)", wait, hour, minute,
+                    plant_now().tzname())
         await asyncio.sleep(wait)
         await run_daily_digest()

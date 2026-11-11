@@ -13,7 +13,7 @@ import type {
 } from '@/services/api'
 import { BADGE_CONFIG_DEFAULTS, useAreaRules } from '@/services/api'
 import { badgeAreaStyle } from '@/lib/visitOptions'
-import { formatDate } from '@/lib/utils'
+import { formatDate, formatTime } from '@/lib/utils'
 
 const PURPOSE_LABEL: Record<string, string> = {
   meeting: 'Meeting', maintenance: 'Maintenance', tour: 'Tour', audit: 'Audit',
@@ -31,8 +31,7 @@ function metaValue(
       return host?.full_name ?? null
     case 'valid_until':
       return visit.planned_departure
-        ? new Date(visit.planned_departure).toLocaleTimeString('en-CA',
-            { hour: '2-digit', minute: '2-digit', hour12: false })
+        ? formatTime(visit.planned_departure)
         : null
     case 'vehicle_plate':
       return visit.vehicle_plate || null

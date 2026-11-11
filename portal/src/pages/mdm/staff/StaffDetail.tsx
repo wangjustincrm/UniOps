@@ -140,7 +140,7 @@ export default function StaffDetail() {
             <Line label="Work email">{e.work_email}</Line>
             <Line label="Job title">{e.job_title}</Line>
             <Line label="ADP department">{e.adp_department}</Line>
-            <Line label="Left on">{e.left_on}</Line>
+            <Line label="Left on">{e.left_on && formatDate(e.left_on)}</Line>
             <div className="col-span-2">
               <dt className="text-xs text-neutral-500">UniOps department</dt>
               {editable ? (

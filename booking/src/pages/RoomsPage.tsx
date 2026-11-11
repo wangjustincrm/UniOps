@@ -5,12 +5,12 @@ import {
   Tv, Presentation, PenLine, Video, Phone,
   type LucideIcon,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatTime, todayISO } from '@/lib/utils'
 import { useRoomList, useRoomAvailability, type RoomListFilters } from '@/services/api'
 import type { RoomWithStatusOut, RoomStatusNow, EquipmentOption } from '@/lib/types'
 import { EQUIPMENT_OPTIONS, EQUIPMENT_LABELS, ROOM_TYPES, ROOM_TYPE_LABELS } from '@/lib/types'
 import { ROOM_STATUS_STYLE, ROOM_STATUS_LABEL } from '@/lib/roomStatus'
-import { zonedToISO, DISPLAY_TZ } from '@/lib/tz'
+import { zonedToISO } from '@/lib/tz'
 
 // ── Equipment icon map ────────────────────────────────────────────────────────
 
@@ -51,8 +51,8 @@ function buildTimeOptions(startHour: number, endHour: number): string[] {
 
 const TIME_OPTIONS = buildTimeOptions(6, 23)
 
-/** Combine a YYYY-MM-DD date string and HH:MM wall-clock time (in DISPLAY_TZ) into a UTC ISO string. */
-const toISO = (date: string, time: string) => zonedToISO(date, time, DISPLAY_TZ)
+/** Combine a YYYY-MM-DD date string and HH:MM wall-clock time (plant time zone) into a UTC ISO string. */
+const toISO = (date: string, time: string) => zonedToISO(date, time)
 
 // ── Skeleton loader ───────────────────────────────────────────────────────────
 
@@ -83,11 +83,7 @@ function RoomCard({
   const locationLine = locationParts.length > 0 ? locationParts.join(' · ') : null
 
   const nextTime = room.next_meeting_at
-    ? new Date(room.next_meeting_at).toLocaleTimeString('en-CA', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      })
+    ? formatTime(room.next_meeting_at)
     : null
 
   const isBookable = room.status === 'available'
@@ -166,7 +162,7 @@ function RoomCard({
 
 export default function RoomsPage() {
   const navigate = useNavigate()
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayISO()
 
   // Filter state
   const [date, setDate] = useState<string>(today)

@@ -8,7 +8,8 @@
  *   day        — "YYYY-MM-DD" string; used to detect today + filter bookings
  */
 import type { BookingSlimOut } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import { cn, formatTime, todayISO, zonedParts } from '@/lib/utils'
+import { zonedToISO } from '@/lib/tz'
 
 interface Props {
   openStart: string | null | undefined
@@ -23,10 +24,10 @@ function hmToMinutes(hm: string): number {
   return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10)
 }
 
-/** Format ISO datetime to "HH:MM" in local time. */
-function isoToHM(iso: string): string {
-  const d = new Date(iso)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+/** Minutes since midnight of an instant on the plant's clock. */
+function minutesInZone(d: Date): number {
+  const p = zonedParts(d)
+  return p.hour * 60 + p.minute
 }
 
 export function DayTimeline({ openStart, openEnd, bookings, day }: Props) {
@@ -35,23 +36,22 @@ export function DayTimeline({ openStart, openEnd, bookings, day }: Props) {
   const spanMin  = endMin - startMin
   if (spanMin <= 0) return null
 
-  // Filter bookings that overlap this day
-  const dayStart = new Date(`${day}T00:00:00`)
-  const dayEnd   = new Date(`${day}T23:59:59`)
+  // Filter bookings that overlap this day (the plant's day, not the browser's)
+  const dayStart = new Date(zonedToISO(day, '00:00'))
+  const dayEnd   = new Date(new Date(zonedToISO(day, '23:59')).getTime() + 59_000)
   const dayBookings = bookings.filter((b) => {
     const s = new Date(b.starts_at)
     const e = new Date(b.ends_at)
     return s < dayEnd && e > dayStart
   })
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayISO()
   const isToday = day === today
 
   // Current time marker position (only for today)
   let nowPct: number | null = null
   if (isToday) {
-    const now = new Date()
-    const nowMin = now.getHours() * 60 + now.getMinutes()
+    const nowMin = minutesInZone(new Date())
     const pct = ((nowMin - startMin) / spanMin) * 100
     if (pct >= 0 && pct <= 100) nowPct = pct
   }
@@ -95,8 +95,8 @@ export function DayTimeline({ openStart, openEnd, bookings, day }: Props) {
         {dayBookings.map((b) => {
           const bStart = new Date(b.starts_at)
           const bEnd   = new Date(b.ends_at)
-          const bStartMin = bStart.getHours() * 60 + bStart.getMinutes()
-          const bEndMin   = bEnd.getHours() * 60 + bEnd.getMinutes()
+          const bStartMin = minutesInZone(bStart)
+          const bEndMin   = minutesInZone(bEnd)
 
           // Clamp to open hours
           const clampedStart = Math.max(bStartMin, startMin)
@@ -106,7 +106,7 @@ export function DayTimeline({ openStart, openEnd, bookings, day }: Props) {
           const left  = ((clampedStart - startMin) / spanMin) * 100
           const width = ((clampedEnd - clampedStart) / spanMin) * 100
 
-          const tooltip = `${b.title}\n${isoToHM(b.starts_at)}–${isoToHM(b.ends_at)}\n${b.organizer_name}`
+          const tooltip = `${b.title}\n${formatTime(b.starts_at)}–${formatTime(b.ends_at)}\n${b.organizer_name}`
 
           return (
             <div

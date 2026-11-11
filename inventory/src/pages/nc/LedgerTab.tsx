@@ -6,7 +6,7 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Badge, SortTh, sortParams, useSort } from '@uniops/shell'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { formatMoney, formatQty, isNegative } from '@/lib/number'
 import { ncApi, type LedgerAccountRow, type LedgerRow, type LedgerSort } from './ncApi'
 import { EmptyRow, ErrorBox, LoadingRows, Pager, Uom, tableWrapCls, thCls } from './NcUi'
@@ -104,7 +104,7 @@ function VoucherLines({ row, date, includeUnposted }: { row: LedgerRow; date: st
                 <td className="px-3 py-1.5 font-mono">{l.year}-{l.period}</td>
                 <td className="px-3 py-1.5 font-mono">{l.voucher_num ?? '—'}</td>
                 <td className="px-3 py-1.5 whitespace-nowrap" title={l.prepared ?? undefined}>
-                  {l.prepared ? l.prepared.slice(0, 10) : '—'}
+                  {l.prepared ? formatDate(l.prepared.slice(0, 10)) : '—'}
                 </td>
                 <td className="px-3 py-1.5">
                   {l.posted

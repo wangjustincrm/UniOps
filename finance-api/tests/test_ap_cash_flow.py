@@ -15,6 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import psycopg2
 
+from app.core.plant_time import plant_now, plant_today
 from app.services import ap_cash_flow as svc
 
 _TEST_DSN = (f"host={os.getenv('TEST_PG_HOST', 'localhost')} "
@@ -52,7 +53,7 @@ def _pa(pa_number, vendor_id, invoice_numbers, *, status="approved", dates=None)
     ids = []
     for n in invoice_numbers:
         iid = uuid.uuid4()
-        inv_date, due = (dates or {}).get(n, (date.today(), date.today()))
+        inv_date, due = (dates or {}).get(n, (plant_today(), plant_today()))
         _exec("insert into invoices (id, internal_ref, vendor_invoice_number, vendor_id, "
               "vendor_name, amount, tax_amount, total_amount, currency, invoice_date, "
               "due_date, status, created_at, updated_at) values "
@@ -97,7 +98,7 @@ async def test_duplicate_vendor_records_do_not_repeat_a_bill(db_session):
     v5 = _vendor("0000005", "net30")                   # the control: one record
     _pa("PA-T-0004", v4, ["INV"])
     _pa("PA-T-0005", v5, ["INV"])
-    day = date.today() - timedelta(days=10)
+    day = plant_today() - timedelta(days=10)
     _bill("D2001", "5974.00", sc="0000004", day=day)
     _bill("D2002", "100.00", sc="0000005", day=day)
 
@@ -109,7 +110,7 @@ async def test_duplicate_vendor_records_do_not_repeat_a_bill(db_session):
     # The active record's terms win over the more recently edited inactive one.
     assert ecolab["payment_terms"] == "net30"
     # The due date is the EPMS invoice's (today, from _pa), not day + net30.
-    assert ecolab["due_date"] == date.today().isoformat()
+    assert ecolab["due_date"] == plant_today().isoformat()
 
     summary = await svc.summary(db_session, "CAD")
     cad = next(c for c in summary["currencies"] if c["currency"] == "CAD")
@@ -120,7 +121,7 @@ async def test_duplicate_vendor_records_do_not_repeat_a_bill(db_session):
 async def test_only_bills_on_an_approved_pa_count(db_session):
     _vendors_table()
     v = _vendor("0000007", "net30")
-    day = date.today() - timedelta(days=5)
+    day = plant_today() - timedelta(days=5)
     _bill("D3001", "100.00", sc="0000007", day=day, inv="A-1")    # approved PA
     _bill("D3002", "200.00", sc="0000007", day=day, inv="B-2")    # paid already
     _bill("D3003", "400.00", sc="0000007", day=day, inv="C-3")    # PA still in review
@@ -142,7 +143,7 @@ async def test_an_invoice_paid_out_of_a_part_paid_pa_leaves_cash_flow(db_session
     """A PA paid invoice by invoice stays approved until its last invoice."""
     _vendors_table()
     v = _vendor("0000008", "net30")
-    day = date.today() - timedelta(days=5)
+    day = plant_today() - timedelta(days=5)
     _bill("D3101", "100.00", sc="0000008", day=day, inv="P-1")
     _bill("D3102", "200.00", sc="0000008", day=day, inv="P-2")
     _pa("PA-T-0111", v, ["P-1", "P-2"])
@@ -155,9 +156,9 @@ async def test_an_invoice_paid_out_of_a_part_paid_pa_leaves_cash_flow(db_session
 async def test_reversal_pair_nets_out(db_session):
     _vendors_table()
     v = _vendor("0000963", "net30")
-    _bill("D4001", "2821.16", sc="0000963", day=date.today() - timedelta(days=60), inv="29363598")
-    _bill("D4002", "-2821.16", sc="0000963", day=date.today() - timedelta(days=20), inv="29363598")
-    _bill("D4003", "50.00", sc="0000963", day=date.today(), inv="X-9")
+    _bill("D4001", "2821.16", sc="0000963", day=plant_today() - timedelta(days=60), inv="29363598")
+    _bill("D4002", "-2821.16", sc="0000963", day=plant_today() - timedelta(days=20), inv="29363598")
+    _bill("D4003", "50.00", sc="0000963", day=plant_today(), inv="X-9")
     _pa("PA-T-0201", v, ["29363598", "X-9"])
 
     got = await svc.items(db_session, "CAD", limit=1000)
@@ -168,7 +169,7 @@ async def test_search_by_bill_invoice_supplier_or_pa(db_session):
     _vendors_table()
     v = _vendor("0000008", "net30")
     w = _vendor("0000009", "net30")
-    day = date.today()
+    day = plant_today()
     _bill("D5001", "10.00", sc="0000008", day=day, inv="INV-777")
     _bill("D5002", "20.00", sc="0000009", day=day, inv="Q_1")
     _pa("PA-T-0301", v, ["INV-777"])
@@ -212,7 +213,7 @@ def _at(day):
 async def test_approved_prepayment_counts_without_an_nc_bill(db_session):
     _vendors_table()
     v = _vendor("0000010", "net30")
-    approved = date.today() - timedelta(days=3)
+    approved = plant_today() - timedelta(days=3)
     _prepayment("PA-T-0401", v, "230.00", approved=_at(approved))
     _prepayment("PA-T-0402", v, "999.00", status="in_review")
     _prepayment("PA-T-0403", v, "999.00", status="processed", approved=_at(approved))
@@ -232,14 +233,14 @@ async def test_approved_prepayment_counts_without_an_nc_bill(db_session):
 async def test_prepayment_already_on_an_nc_line_is_not_counted_twice(db_session):
     _vendors_table()
     v = _vendor("0000011", "net30")
-    _bill("D6001", "500.00", sc="0000011", day=date.today(), inv="P-1")
+    _bill("D6001", "500.00", sc="0000011", day=plant_today(), inv="P-1")
     iid = uuid.uuid4()
     _exec("insert into invoices (id, internal_ref, vendor_invoice_number, vendor_id, "
           "vendor_name, amount, tax_amount, total_amount, currency, invoice_date, "
           "due_date, status, created_at, updated_at) values "
           "(%s,%s,'P-1',%s,'V',0,0,0,'CAD',current_date,current_date,'matched',now(),now())",
           (iid, f"INV-{iid.hex[:8]}", v))
-    _prepayment("PA-T-0411", v, "500.00", approved=_at(date.today()), invoice_ids=[str(iid)])
+    _prepayment("PA-T-0411", v, "500.00", approved=_at(plant_today()), invoice_ids=[str(iid)])
 
     got = await svc.items(db_session, "CAD", limit=1000)
     assert [r["doc_key"] for r in got["items"]] == ["D6001"]
@@ -248,7 +249,7 @@ async def test_prepayment_already_on_an_nc_line_is_not_counted_twice(db_session)
 
 async def test_approved_claim_counts_and_travel_application_does_not(db_session):
     _vendors_table()
-    approved = date.today() - timedelta(days=2)
+    approved = plant_today() - timedelta(days=2)
     _claim("EXP-T-0001", "130.00", approved=_at(approved))
     _claim("MIL-T-0001", "377.30", claim_type="MIL", approved=_at(approved))
     _claim("TRA-T-0001", "50.00", claim_type="TRA", approved=_at(approved))
@@ -269,7 +270,7 @@ async def test_all_three_kinds_add_up_and_stay_off_the_missing_terms_list(db_ses
     _vendors_table()
     v = _vendor("0000012", "net30")
     w = _vendor("0000013", None)                   # no term at all: undated
-    today = date.today()
+    today = plant_today()
     _bill("D7001", "100.00", sc="0000012", day=today, inv="M-1")
     _bill("D7002", "40.00", sc="0000013", day=today, inv="M-2")
     _pa("PA-T-0501", v, ["M-1"])
@@ -298,7 +299,7 @@ async def test_all_three_kinds_add_up_and_stay_off_the_missing_terms_list(db_ses
 async def test_search_and_sort_reach_prepayments_and_claims(db_session):
     _vendors_table()
     v = _vendor("0000014", "net30")
-    day = date.today()
+    day = plant_today()
     _bill("D8001", "10.00", sc="0000014", day=day, inv="S-1")
     _pa("PA-T-0601", v, ["S-1"])
     _prepayment("PA-T-0602", v, "20.00", approved=_at(day))
@@ -327,7 +328,7 @@ async def test_due_date_is_the_epms_invoices_not_nc_bill_date_plus_term(db_sessi
     was issued and when it is due; that decides the bucket."""
     _vendors_table()
     v = _vendor("0000020", "net30")
-    today = date.today()
+    today = plant_today()
     keyed = today - timedelta(days=2)             # NC: keyed two days ago
     issued = today - timedelta(days=50)           # EPMS: issued 50 days ago,
     due = today - timedelta(days=20)              # due net30 → 20 days late
@@ -350,7 +351,7 @@ async def test_due_date_is_the_epms_invoices_not_nc_bill_date_plus_term(db_sessi
 async def test_a_bill_whose_invoices_fall_due_apart_is_split(db_session):
     _vendors_table()
     v = _vendor("0000021", "net30")
-    today = date.today()
+    today = plant_today()
     soon, later = today + timedelta(days=3), today + timedelta(days=45)
     _bill("D9101", "100.00", sc="0000021", day=today, inv="F-1",
           more=[("F-2", "40.00"), ("F-3", "7.00")])
@@ -379,10 +380,10 @@ async def test_one_due_date_keeps_one_row_whatever_the_line_count(db_session):
     """The control for the split: invoices due the same day stay one row."""
     _vendors_table()
     v = _vendor("0000022", "net30")
-    due = date.today() + timedelta(days=10)
-    _bill("D9201", "10.00", sc="0000022", day=date.today(), inv="G-1", more=[("G-2", "5.00")])
-    _pa("PA-T-0901", v, ["G-1", "G-2"], dates={"G-1": (date.today(), due),
-                                               "G-2": (date.today(), due)})
+    due = plant_today() + timedelta(days=10)
+    _bill("D9201", "10.00", sc="0000022", day=plant_today(), inv="G-1", more=[("G-2", "5.00")])
+    _pa("PA-T-0901", v, ["G-1", "G-2"], dates={"G-1": (plant_today(), due),
+                                               "G-2": (plant_today(), due)})
 
     got = await svc.items(db_session, "CAD", limit=1000)
     assert [(r["doc_key"], r["open_bal"]) for r in got["items"]] == [("D9201", "15.00")]
@@ -391,7 +392,7 @@ async def test_one_due_date_keeps_one_row_whatever_the_line_count(db_session):
 async def test_prepayment_and_claim_are_dated_by_approval(db_session):
     _vendors_table()
     v = _vendor("0000023", "net30")
-    approved = date.today() - timedelta(days=4)
+    approved = plant_today() - timedelta(days=4)
     _prepayment("PA-T-1001", v, "9.00", approved=_at(approved))
     _claim("EXP-T-1001", "8.00", approved=_at(approved))
 

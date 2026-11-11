@@ -7,6 +7,7 @@ import type {
   CreateBudgetAccountBody, UpdateBudgetAccountBody,
   ApiActualsScope,
 } from '@/services/budget'
+import { todayISO } from '@/lib/utils'
 
 // ── Catalog ───────────────────────────────────────────────────────────────────
 
@@ -498,9 +499,12 @@ export function useBalance(params: {
 
 // ── Fiscal years ──────────────────────────────────────────────────────────────
 
-const currentYear = new Date().getUTCFullYear()
-/** Fallback if CompanyConfig.budget_admin_config.available_fiscal_years is unset. */
-const FALLBACK_YEAR_OPTIONS = [currentYear + 1, currentYear, currentYear - 1, currentYear - 2]
+/** Fallback if CompanyConfig.budget_admin_config.available_fiscal_years is unset.
+ *  Around the plant's current calendar year (company time zone). */
+function fallbackYearOptions(): number[] {
+  const currentYear = Number(todayISO().slice(0, 4))
+  return [currentYear + 1, currentYear, currentYear - 1, currentYear - 2]
+}
 
 /**
  * Fiscal years selectable in budget UIs (dashboard, plan list, …).
@@ -513,7 +517,7 @@ export function useAvailableFiscalYears(): number[] {
     // Configured order is ascending; the dropdown / filter prefers newest first.
     return [...stored].sort((a, b) => b - a)
   }
-  return FALLBACK_YEAR_OPTIONS
+  return fallbackYearOptions()
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────

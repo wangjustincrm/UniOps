@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Plane, Trash2 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { STATUS } from '@/lib/status'
 import { Pagination } from '@/components/ui/Pagination'
@@ -145,7 +145,7 @@ export default function TravelApplicationsListPage() {
                   <td className="px-4 py-3 text-neutral-700">{a.employee_name}</td>
                   <td className="px-4 py-3 text-neutral-500">{a.department_name}</td>
                   <td className="px-4 py-3 text-neutral-700">{a.travel_destination || '—'}</td>
-                  <td className="px-4 py-3 text-neutral-500">{a.submission_date}</td>
+                  <td className="px-4 py-3 text-neutral-500">{formatDate(a.submission_date)}</td>
                   <td className="px-4 py-3"><StatusBadge status={a.status} /></td>
                   <td className="px-4 py-3 text-right">
                     {a.can_delete && (

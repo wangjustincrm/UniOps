@@ -21,7 +21,10 @@ AMOUNT_TOLERANCE_KEY = "amount_tolerance"
 # hard-coded to China time (design D14). The switch exists for the day NC is
 # fixed, or for checking a suspicion — hence only these two choices.
 NC_TIME_ZONES = ("Asia/Shanghai", "America/Toronto")
-LOCAL_TIME_ZONE = "America/Toronto"
+# The plant's own zone ("the day" a user picks, what NC times are shown in) is
+# NOT a setting here: it is Company Settings → Time Zone, read through
+# app.core.plant_time.plant_tz(). NC_TIME_ZONES above is NC's clock and does
+# not follow it.
 
 DEFAULTS: dict[str, Any] = {
     NC_SYNC_INTERVAL_KEY: 60,

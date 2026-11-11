@@ -10,6 +10,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.coa import _require_manage
+from app.core.plant_time import plant_today
 from app.core.deps import CurrentUser
 from app.core.list_sort import SortDir, lower, order_by
 from app.crud import ar as ar_crud
@@ -227,7 +228,7 @@ async def open_items(_: CurrentUser, db: AsyncSession = Depends(get_db),
                      customer_id: uuid.UUID | None = Query(default=None),
                      limit: int = Query(default=200, le=1000)):
     rows = await ar_crud.open_items(db, customer_id=customer_id, limit=limit)
-    today = date.today()
+    today = plant_today()
     return [
         OpenItem(
             invoice_id=r.id, invoice_number=r.invoice_number, customer_id=r.customer_id,

@@ -6,7 +6,9 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_today
 from app.crud import payment_execute
+from app.crud._numbering import next_number
 from app.crud.payment_execute import PaymentPermissionError
 from app.models.mirrors import ExpenseClaim, ExpenseInvoice, Invoice
 from app.models.pa import PaymentApplication
@@ -17,13 +19,12 @@ from app.services import nc_invoice_paid
 
 async def _next_batch_number(db: AsyncSession) -> str:
     # BP = Batch Payment (do NOT use PR — that collides with Purchase Request)
-    today = date.today().strftime("%Y%m%d")
-    prefix = f"BP-{today}-"
-    n = (await db.execute(
-        select(func.count()).select_from(PaymentBatch)
-        .where(PaymentBatch.batch_number.like(f"{prefix}%"))
-    )).scalar_one()
-    return f"{prefix}{n + 1:04d}"
+    # Date = the plant's day (Company Settings → Time Zone). Max-tail+1 under a
+    # per-prefix lock (shared allocator), not count+1: a count reissues a taken
+    # number whenever the day's sequence has a gap, and two concurrent runs
+    # would read the same count.
+    today = plant_today().strftime("%Y%m%d")
+    return await next_number(db, PaymentBatch.batch_number, f"BP-{today}-", width=4)
 
 
 async def vendor_inv_no_map(db: AsyncSession,

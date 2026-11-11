@@ -9,6 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from jose import jwt
 from sqlalchemy import select
 
+from app.core.plant_time import plant_now, plant_today
 from app.core.config import settings
 from app.db.base import get_db
 from app.main import app
@@ -262,7 +263,7 @@ async def test_batch_isolates_line_failure(client, db_session):
     batch_id = r.json()["id"]
 
     # close the batch's period so execution fails for that line
-    db_session.add(FiscalPeriod(period=date.today().strftime("%Y-%m"), status="hard_closed"))
+    db_session.add(FiscalPeriod(period=plant_today().strftime("%Y-%m"), status="hard_closed"))
     await db_session.flush()
 
     r2 = await client.post(f"/finance/v1/payments/batches/{batch_id}/execute", headers=_h())

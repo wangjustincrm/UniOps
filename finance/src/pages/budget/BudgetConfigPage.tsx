@@ -10,7 +10,7 @@ import {
 import { SortTh, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { epmsApi, mdmApi, budgetApi, budgetUpload, EPMS_URL, encodeSession } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -29,7 +29,8 @@ interface CompanyConfigPartial {
 }
 
 
-const _currentYear = new Date().getUTCFullYear()
+// The plant's calendar year (company time zone) at module load.
+const _currentYear = Number(todayISO().slice(0, 4))
 const DEFAULT_AVAILABLE_FISCAL_YEARS: number[] = [
   _currentYear - 1, _currentYear, _currentYear + 1, _currentYear + 2,
 ]

@@ -4,6 +4,7 @@ Mirrors the budget-api / expense-api shape so tooling (check-health.sh,
 docker-compose healthcheck, Portal task inbox) treats booking-api like any
 other UniOps microservice.
 """
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -25,12 +26,23 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
         "Starting up %s v%s [%s]",
         settings.APP_NAME, settings.APP_VERSION, settings.ENVIRONMENT,
     )
+    # The plant's time zone (Company Settings → Time Zone) before anything
+    # reads the clock; re-read in the background so a change takes effect
+    # without a restart.
+    from app.core.plant_time import plant_tz_refresh_loop, refresh_plant_tz
+    await refresh_plant_tz(engine)
+    plant_tz_task = asyncio.create_task(plant_tz_refresh_loop(engine), name="plant-tz-refresh")
     # Task 10: notification retry scheduler
     from app.services import scheduler
     scheduler_task = scheduler.start(app)
     yield
     logger.info("Shutting down — closing engine")
     await scheduler.stop(scheduler_task)
+    plant_tz_task.cancel()
+    try:
+        await plant_tz_task
+    except asyncio.CancelledError:
+        pass
     await engine.dispose()
 
 

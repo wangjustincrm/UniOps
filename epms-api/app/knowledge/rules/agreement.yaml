@@ -7,7 +7,7 @@ rules:
     asked_as:
       - how are agreement numbers generated
     answer: >
-      AGR-YYYYMM-NNNN: the year and month it was created (UTC), then a 4-digit
+      AGR-YYYYMM-NNNN: the year and month it was created (plant time), then a 4-digit
       sequence that restarts each month.
     enforced_in: "epms-api app/crud/agreement.py _next_number"
     provenance: pinned

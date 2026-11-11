@@ -33,13 +33,10 @@ const REPORTS: ReportDef[] = [
   },
 ]
 
+/** The plant's month so far (company time zone): 1st of this month → today. */
 function defaultRange(): { from: string; to: string } {
-  const now = new Date()
-  const from = new Date(now.getFullYear(), now.getMonth(), 1)
-  return {
-    from: localToday(from),
-    to: localToday(now),
-  }
+  const to = localToday()
+  return { from: `${to.slice(0, 7)}-01`, to }
 }
 
 export default function ReportsPage() {

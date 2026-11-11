@@ -25,6 +25,7 @@ _ZERO = Decimal("0")
 # it; this guards the batch path, which reached the executor without that check.
 NON_PAYABLE_CLAIM_TYPES = ("TRA",)
 
+from app.core.plant_time import plant_today
 from app.models.coa import AccountMapping
 from app.models.fiscal_period import OPEN, FiscalPeriod
 from app.models.mirrors import (
@@ -536,7 +537,7 @@ async def execute(db: AsyncSession, req: PaymentExecuteRequest, user: dict,
     batch_id (A4): tags the payment_record when run as part of a payment batch."""
     await _check_can_pay(db, user)
     recorded_by = uuid.UUID(user["sub"])
-    pay_date = req.payment_date or date.today()
+    pay_date = req.payment_date or plant_today()
     await _check_period_open(db, pay_date)
 
     if req.doc_kind in ("pa", "pa_dir"):

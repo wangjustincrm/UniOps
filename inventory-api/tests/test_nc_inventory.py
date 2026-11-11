@@ -6,7 +6,7 @@ flows and ledger rows placed right at the edges of 2026-08-31 in Toronto.
 NC time zone is the default, Asia/Shanghai: Toronto (EDT, UTC−4) end of
 2026-08-31 = 2026-09-01 11:59:59 in NC's clock.
 """
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -15,6 +15,7 @@ from sqlalchemy import insert
 from app.models import (
     NcGlLine, NcIaLedger, NcIaPeriod, NcIcFlow, NcIcOnhand, NcMaterial, NcWarehouse,
 )
+from app.core.plant_time import plant_tz_name, set_plant_tz
 from app.services import asof
 
 D = Decimal
@@ -31,6 +32,34 @@ def test_cutoff_converts_toronto_end_of_day_to_nc_clock():
     t = asof.make_asof(date(2026, 8, 31), "America/Toronto")
     assert t.nc_cutoff == datetime(2026, 8, 31, 23, 59, 59)
 
+
+
+@pytest.fixture
+def plant_zone():
+    """Set the plant zone (Company Settings → Time Zone) for one test."""
+    before = plant_tz_name()
+    yield set_plant_tz
+    set_plant_tz(before)
+
+
+def test_cutoff_follows_the_plant_zone_setting(plant_zone):
+    """The end of D is the end of D at the PLANT, whatever the setting is:
+    Vancouver (PDT, UTC−7) 2026-08-31 23:59:59 = 2026-09-01 14:59:59 China."""
+    plant_zone("America/Vancouver")
+    a = asof.make_asof(date(2026, 8, 31), "Asia/Shanghai")
+    assert a.nc_cutoff == datetime(2026, 9, 1, 14, 59, 59)
+    plant_zone("America/Toronto")
+    assert asof.make_asof(date(2026, 8, 31), "Asia/Shanghai").nc_cutoff == datetime(2026, 9, 1, 11, 59, 59)
+
+
+def test_today_is_the_plant_day_in_the_evening_not_utc_tomorrow(plant_zone):
+    """20:30 EST on 2026-11-10 is 01:30 UTC on 2026-11-11. "Today" (the
+    default as-of date, and the latest date a user may pick) is the 10th."""
+    plant_zone("America/Toronto")
+    evening = datetime(2026, 11, 11, 1, 30, tzinfo=timezone.utc)
+    assert asof.today_local(evening) == date(2026, 11, 10)
+    plant_zone("Asia/Shanghai")
+    assert asof.today_local(evening) == date(2026, 11, 11)
 
 @pytest.fixture
 async def seeded(db_session):

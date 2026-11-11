@@ -13,6 +13,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_now
 from app.crud._list_order import lower_text, sort_clauses
 from app.crud._numbering import next_number
 from app.crud import invoice_dedup
@@ -363,7 +364,7 @@ async def default_cost_center(db: AsyncSession, department_id: uuid.UUID, balanc
         .order_by(CostCenter.code))).scalars().all())
     if not ccs:
         return {"cost_center_id": None, "reason": "none", "budgeted_cost_center_ids": []}
-    year = datetime.now(timezone.utc).year
+    year = plant_now().year
     budgeted: list[tuple[Decimal, uuid.UUID]] = []
     for cc in ccs:
         bal = await balance_fn(cc.id, year)
@@ -784,7 +785,7 @@ async def delete_invoice(db: AsyncSession, inv: Invoice) -> None:
 # ── Freight PA ────────────────────────────────────────────────────────────────
 
 async def _next_pa_number(db: AsyncSession) -> str:
-    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    today = plant_now().strftime("%Y%m%d")
     return await next_number(db, PaymentApplication.pa_number, f"PA-{today}-", width=4)
 
 

@@ -20,7 +20,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, model_validator
 from sqlalchemy import select
 
-from app.core.config import settings
+from app.core.plant_time import plant_tz
 from app.core.deps import SessionDep
 from app.core.permissions import CurrentUser
 from app.crud.config import get_or_create_config
@@ -112,8 +112,7 @@ async def precheck_booking(
     ]
 
     # ── Series expansion → per-occurrence conflicts ──────────────────────────
-    from zoneinfo import ZoneInfo
-    tz = ZoneInfo(settings.DISPLAY_TIMEZONE)
+    tz = plant_tz()
     occurrence_conflicts: list = []
 
     if body.series is not None:

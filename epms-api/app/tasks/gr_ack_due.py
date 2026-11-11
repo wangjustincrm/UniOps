@@ -28,11 +28,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_today
 from app.crud.config import get_or_create as get_config
 from app.db import session as session_module
 from app.models.gr import GoodsReceipt
@@ -72,10 +73,8 @@ class DueAck:
 
 
 def _received_on(gr: GoodsReceipt) -> date:
-    stamp = gr.received_at or gr.created_at
-    if stamp.tzinfo is None:
-        stamp = stamp.replace(tzinfo=timezone.utc)
-    return stamp.astimezone(timezone.utc).date()
+    """The plant's calendar day of the receipt (a naive stamp is UTC)."""
+    return plant_today(gr.received_at or gr.created_at)
 
 
 async def scan_unacknowledged(
@@ -84,7 +83,7 @@ async def scan_unacknowledged(
     """GRs in pending_ack with an open acknowledge_gr task held by a person,
     received more than ``reminder_days`` days ago (strictly: the day the
     threshold is reached is not chased yet, same as service_gr_due)."""
-    today = today or datetime.now(timezone.utc).date()
+    today = today or plant_today()
     rows = (await db.execute(
         select(GoodsReceipt, Task)
         .join(Task, (Task.document_id == GoodsReceipt.id) & (Task.document_type == "gr"))
@@ -232,6 +231,6 @@ async def gr_ack_due_loop() -> None:
         if wait > _RECHECK_SECONDS:
             await asyncio.sleep(_RECHECK_SECONDS)
             continue
-        logger.info("GR ack due: next run in %.0f seconds (at %02d:%02dZ)", wait, hour, minute)
+        logger.info("GR ack due: next run in %.0f seconds (at %02d:%02d plant time)", wait, hour, minute)
         await asyncio.sleep(wait)
         await run_gr_ack_due()

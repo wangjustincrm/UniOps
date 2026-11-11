@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_today
 from app.crud._numbering import next_number
 from app.models.mirrors import User
 from app.models.vendor_credit import (
@@ -92,13 +93,12 @@ async def create(db: AsyncSession, *, payload: VendorCreditCreate,
         raise DuplicateCredit(dup)
 
     now = datetime.now(timezone.utc)
-    # The number's date component is the LOCAL date, matching every other
-    # numbering helper in this service (app/crud/ap_invoice.py:23,
-    # app/crud/ar.py:32). The company is in Toronto (UTC-4/-5), so a UTC date
-    # here would stamp tomorrow's date on anything created after ~20:00 local.
-    # uploaded_at stays a UTC timestamp.
+    # The number's date component is the plant's date (Company Settings →
+    # Time Zone), like every other numbering helper in this service. The
+    # containers run UTC, so date.today() would stamp tomorrow's date on
+    # anything created after ~19:00/20:00 in Toronto. uploaded_at stays UTC.
     number = await next_number(
-        db, VendorCredit.credit_number, f"VC-{date.today():%Y%m%d}-", 4)
+        db, VendorCredit.credit_number, f"VC-{plant_today():%Y%m%d}-", 4)
 
     vc = VendorCredit(
         credit_number=number,

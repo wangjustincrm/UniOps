@@ -177,7 +177,7 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     # overdue — see crud.invoice.get_all for why both halves matter.
     @hybrid_property
     def overdue(self) -> bool:
-        from app.core.delegation import local_today
+        from app.core.plant_time import plant_today as local_today
         return bool(self.due_date and self.due_date < local_today()
                     and self.status != "paid")
 
@@ -185,7 +185,7 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     @classmethod
     def _overdue_expression(cls):
         from sqlalchemy import and_
-        from app.core.delegation import local_today
+        from app.core.plant_time import plant_today as local_today
         return and_(cls.due_date < local_today(), cls.status != "paid")
 
     # ── For the Assistant's ontology (ISS-0013) ───────────────────────────────

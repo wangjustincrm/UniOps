@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
-import { formatAmount, formatDate } from '@/lib/utils'
+import { displayTimeZone, formatAmount, formatDate } from '@/lib/utils'
 import { SortTh, useSortableRows } from '@uniops/shell'
 
 const INV_STATUS_STYLES: Record<string, string> = {
@@ -58,7 +58,7 @@ export default function ApClerkDashboard() {
         <StatCard
           title="Processed This Month"
           value={kpi('Processed This Month')?.value ?? '—'}
-          subtitle={now.toLocaleString('en-CA', { month: 'long', year: 'numeric' })}
+          subtitle={now.toLocaleString('en-CA', { month: 'long', year: 'numeric', timeZone: displayTimeZone() })}
         />
       </div>
 

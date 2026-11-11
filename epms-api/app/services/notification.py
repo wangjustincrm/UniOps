@@ -180,18 +180,15 @@ async def _document_vars(db: AsyncSession, task: Task) -> dict[str, Any]:
             elif dt == "gr":
                 # GR-N-001: PO number, delivery date, received items with
                 # quantity and condition; 3.9.2: storage location for collection.
-                from app.core.delegation import PLANT_TIMEZONE
+                from app.core.plant_time import fmt_date
                 from app.models.gr import GoodsReceipt
-                from zoneinfo import ZoneInfo
                 gr = (await db.execute(
                     select(GoodsReceipt).where(GoodsReceipt.id == task.document_id)
                 )).scalar_one_or_none()
                 if gr is not None:
                     out["po_number"] = gr.po_number
                     out["currency"] = gr.currency or "CAD"
-                    out["delivery_date"] = (
-                        gr.received_at.astimezone(ZoneInfo(PLANT_TIMEZONE)).date().isoformat()
-                        if gr.received_at else "—")
+                    out["delivery_date"] = fmt_date(gr.received_at)
                     # Same fallback the collect_goods task description uses.
                     out["storage_location"] = gr.storage_location or "Warehouse"
                     # Plain text, one line per item: values are escaped, and

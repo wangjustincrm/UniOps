@@ -25,12 +25,11 @@ answer exactly as a query would.
 """
 import uuid
 from datetime import timezone
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import or_, select
 
 from app.core import doc_numbers
-from app.core.delegation import PLANT_TIMEZONE
+from app.core.plant_time import plant_tz
 from app.core.ontology import REGISTRY, may_view
 from app.core.receipt_evidence import receipt_evidence
 from app.crud.current_step import enrich_current_step
@@ -115,16 +114,13 @@ def _label(doc_type: str, status: str | None) -> str | None:
     return STATUS_LABELS.get(doc_type, {}).get(status) or status.replace("_", " ").title()
 
 
-_PLANT_TZ = ZoneInfo(PLANT_TIMEZONE)
-
-
 def _date(value):
     """A day as the plant reads it: a timestamp in plant time (a GR received at
     22:00 in Toronto is that day, not the next UTC one), a date as it is."""
     if value is None:
         return None
     if hasattr(value, "astimezone"):
-        value = (value.astimezone(_PLANT_TZ) if value.tzinfo else value).date()
+        value = (value.astimezone(plant_tz()) if value.tzinfo else value).date()
     return value.isoformat()
 
 

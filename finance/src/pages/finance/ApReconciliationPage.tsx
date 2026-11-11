@@ -26,7 +26,7 @@ import { AlertTriangle, CalendarX2, CheckCircle2, Download, Loader2, Scale } fro
 import { SortTh, sortParams, useSort, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate, formatDateTime } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
 const linkBtn = 'text-xs font-medium text-[#085E5E] hover:underline'
@@ -173,7 +173,7 @@ function csvEscape(v: unknown) {
 }
 /** Date-only strings must not go through new Date() — in a UTC-behind zone that
  *  renders yesterday. These are already YYYY-MM-DD from the API. */
-function day(v: string | null) { return v ? v.slice(0, 10) : '—' }
+function day(v: string | null) { return v ? formatDate(v.slice(0, 10)) : '—' }
 function anomalyReason(reason: string) {
   return reason === 'due_before_invoice'
     ? 'Due date is before the invoice date'
@@ -294,7 +294,7 @@ export default function ApReconciliationPage() {
               : <CheckCircle2 className="h-4 w-4 shrink-0 text-[#085E5E]" />}
             {mirror.synced_at ? (
               <span>
-                NC mirror as of <strong>{mirror.synced_at.replace('T', ' ').slice(0, 16)}</strong>
+                NC mirror as of <strong>{formatDateTime(mirror.synced_at)}</strong>
                 {mirror.tie_out_ok === false
                   ? ' — it does NOT tie out against NC, so these figures may be incomplete.'
                   : ' — tied out against NC.'}

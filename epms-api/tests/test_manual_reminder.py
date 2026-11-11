@@ -214,8 +214,10 @@ async def test_second_reminder_inside_the_cooldown_is_refused(
     second = await requester_client.post(f"/api/v1/pr/{pr.id}/remind")
     assert second.status_code == 429, second.text
     assert "already sent" in second.json()["detail"]
-    # DD/MM/YYYY HH:MM, still UTC (ISS-0183 — format only, zone unchanged).
-    assert re.search(r"after \d{2}/\d{2}/\d{4} \d{2}:\d{2} UTC\.", second.json()["detail"]), second.json()
+    # YYYY-MMM-DD HH:MM on the plant's clock (UI-DATE-002), no "UTC".
+    detail = second.json()["detail"]
+    assert re.search(r"after \d{4}-[A-Z]{3}-\d{2} \d{2}:\d{2}\.", detail), detail
+    assert "UTC" not in detail
 
     await drain(5)
     assert _to(captured_emails).count(approver.email) == 1, \

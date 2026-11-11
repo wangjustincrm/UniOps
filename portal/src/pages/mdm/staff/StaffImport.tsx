@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Download, Upload } from 'lucide-react'
 import { mdmApi, mdmDownload, mdmUpload } from '@/lib/api'
-import { formatDate } from '@/lib/utils'
+import { formatDate, todayISO } from '@/lib/utils'
 import { INPUT, PRIMARY_BTN, SECONDARY_BTN, StaffShell, TD, TH } from './shared'
 
 interface Change { field: string; old: string | null; new: string | null }
@@ -30,9 +30,9 @@ const CONFLICT: Record<string, string> = {
   email_other_user: 'The email belongs to a user with a different number',
 }
 
+/** Today at the plant (company time zone), YYYY-MM-DD. */
 function today(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return todayISO()
 }
 
 function Group({ title, count, tone, children }: { title: string; count: number; tone?: string; children?: React.ReactNode }) {
@@ -180,7 +180,7 @@ export default function StaffImport() {
       {current ? (
         <section>
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <h2 className="text-sm font-semibold text-neutral-900">Preview: {current.file_name}, roster of {current.roster_date}</h2>
+            <h2 className="text-sm font-semibold text-neutral-900">Preview: {current.file_name}, roster of {formatDate(current.roster_date)}</h2>
             <span className="text-xs text-neutral-500">Nothing is saved until you apply.</span>
             <div className="ml-auto flex gap-2">
               <button className={SECONDARY_BTN} disabled={busy} onClick={() => run(async () => { await mdmApi.post(`/staff/imports/${current.id}/discard`) })}>Discard</button>
@@ -216,7 +216,7 @@ export default function StaffImport() {
       {shown && shown.status === 'applied' && (
         <section className="mt-4">
           <div className="mb-2 flex items-center gap-2">
-            <h2 className="text-sm font-semibold text-neutral-900">Result: roster of {shown.roster_date}</h2>
+            <h2 className="text-sm font-semibold text-neutral-900">Result: roster of {formatDate(shown.roster_date)}</h2>
             <Link to="/mdm/staff/nc-todo" className="text-sm font-medium text-[#085E5E] hover:underline">{shown.todos ?? 0} NC to-do(s) created</Link>
           </div>
           <Groups view={shown} />
@@ -236,7 +236,7 @@ export default function StaffImport() {
             <tbody>
               {history?.items.map((h) => (
                 <tr key={h.id} className="border-t border-neutral-100">
-                  <td className={TD}>{h.roster_date}</td>
+                  <td className={TD}>{formatDate(h.roster_date)}</td>
                   <td className={TD}>{formatDate(h.applied_at)}</td>
                   <td className={TD}>{h.file_name}</td>
                   <td className={TD}>{h.counts.new ?? 0}</td>

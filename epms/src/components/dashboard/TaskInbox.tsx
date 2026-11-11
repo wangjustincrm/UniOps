@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { AlertCircle, Clock, ArrowRight } from 'lucide-react'
-import { cn, formatCAD } from '@/lib/utils'
+import { cn, formatCAD, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { TASK_TYPE_LABELS } from '@/lib/taskTypes'
 import type { TaskType } from '@/lib/taskTypes'
@@ -47,7 +47,7 @@ function TaskCard({ task }: TaskCardProps) {
           {task.dueDate && (
             <div className="mt-1 flex items-center gap-1 text-xs text-neutral-400">
               <Clock className="h-3 w-3" />
-              Due {task.dueDate}
+              Due {formatDate(task.dueDate)}
             </div>
           )}
           {task.daysWaiting != null && (

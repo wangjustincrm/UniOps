@@ -15,6 +15,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from jose import jwt
 
+from app.core.plant_time import plant_now, plant_today
 from app.core.config import settings
 from app.db.base import get_db
 from app.main import app
@@ -59,7 +60,7 @@ async def client(db_session):
 
 
 def _bill(bill_no, *, status=(1, 1), day=None, lines=LINES):
-    day = day or date.today() - timedelta(days=5)
+    day = day or plant_today() - timedelta(days=5)
     bid = uuid.uuid4()
     when = datetime(day.year, day.month, day.day, 12, tzinfo=timezone.utc)
     total = sum(Decimal(m) for _, _, m, _, _, _ in lines)

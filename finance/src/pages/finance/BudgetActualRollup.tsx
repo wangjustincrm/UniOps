@@ -19,7 +19,7 @@ import { type ReactNode, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRight, Download, Loader2 } from 'lucide-react'
 import { financeApi, financeDownload } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, currentMonthISO } from '@/lib/utils'
 import { UnallocatedLinesModal } from './UnallocatedLinesModal'
 import { JvDetailModal } from './JvDetailModal'
 
@@ -93,8 +93,8 @@ export function BudgetActualRollup({ fiscalYear, onFiscalYearChange, window: win
   includeUnposted: boolean
   onIncludeUnpostedChange: (v: boolean) => void
 }) {
-  const thisYear = new Date().getFullYear()
-  const currentMonth = fiscalYear === thisYear ? new Date().getMonth() + 1 : 12
+  const [thisYear, thisMonthNo] = currentMonthISO().split('-').map(Number)   // the plant's month
+  const currentMonth = fiscalYear === thisYear ? thisMonthNo : 12
   const [preset, setPreset] = useState<Preset>('ytd')
   const [custom, setCustom] = useState<[number, number]>([1, currentMonth])
   const [tab, setTab] = useState<'centre' | 'department'>('centre')

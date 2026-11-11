@@ -23,8 +23,8 @@ rules:
       - why is my same-day report export empty
     answer: >
       Yes. In Reports → Report Centre, From and To are whole days at the plant
-      (Toronto time) and both are included: From 27/10 To 27/10 exports every
-      record created on 27/10. That is the same reading the Receiving Report
+      (the Company Settings time zone) and both are included: From 2026-OCT-27
+      To 2026-OCT-27 exports every record created on that day. That is the same reading the Receiving Report
       gives its Arrival From / To.
     enforced_in: "epms-api app/crud/reports.py _in_range (all five date-filtered exports); app/crud/gr_report.py receiving_rows"
     provenance: pinned

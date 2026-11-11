@@ -13,7 +13,7 @@ that service's two named exceptions onto HTTP.
   contract on `name`.
 
 - `PUT /series/cells` — the one write path. `current_month` is resolved
-  HERE, server-side, from `datetime.now(timezone.utc)`, and passed
+  HERE, server-side, from the plant clock (`plant_now()`), and passed
   explicitly into `upsert_cells` — never left to that function's own
   wall-clock default (Task 2 review flagged relying on the default as a
   footgun: a test or a future caller that forgets to pass `current_month`
@@ -45,7 +45,7 @@ Read endpoints are gated `mrp.report.view`, the write endpoints
 """
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 from typing import Annotated
 
@@ -57,6 +57,7 @@ from sqlalchemy import select
 from app.api.v1.forecast import ForecastVersionResponse
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, SessionDep
+from app.core.plant_time import plant_now
 from app.models.demand_series import MrpForecastChangeLog
 from app.services.demand_series import (
     CellChange,
@@ -206,7 +207,7 @@ async def get_series(
 async def put_series_cells(body: SeriesCellsUpsertRequest, db: SessionDep, payload: WriteDep, token: BearerToken):
     # Resolved here, not left to upsert_cells' own datetime.now() default —
     # see this module's docstring for why (Task 2 review carry-over).
-    current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+    current_month = plant_now().strftime("%Y-%m")
     changed_by = _sub_to_uuid(payload)
     # Once per request, not once per cell — see this module's docstring and
     # identity_client.resolve_current_user_name's docstring. Never raises:

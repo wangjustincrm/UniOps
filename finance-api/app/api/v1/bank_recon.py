@@ -15,6 +15,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import bank_authz
+from app.core.plant_time import plant_today
 from app.core.deps import BearerToken, CurrentUser
 from app.crud import bank_recon as crud
 from app.db.base import get_db
@@ -573,7 +574,8 @@ async def report(recon_id: uuid.UUID, user: CurrentUser,
     # is printed, whatever the ledger has done since.
     snapshot = rec.snapshot or await _snapshot(db, rec, acct, user.get("name") or "")
     await db.commit()
-    on = (rec.finalized_at.date() if rec.finalized_at else datetime.now(timezone.utc).date())
+    # The sign-off day at the plant (Company Settings → Time Zone), not UTC.
+    on = plant_today(rec.finalized_at) if rec.finalized_at else plant_today()
     by = snapshot.get("prepared_by") or user.get("name") or ""
     stamp = f"{acct.name}-{rec.period_end.isoformat()}".replace(" ", "_")
     if fmt == "xlsx":

@@ -102,9 +102,9 @@ class GoodsReceipt(UUIDPrimaryKey, TimestampMixin, Base):
     @classmethod
     def _days_since_received_expression(cls):
         # Plant-local dates on both sides; bound when the query is built.
-        from app.core.delegation import PLANT_TIMEZONE, local_today
-        return (cast(literal(local_today()), Date)
-                - cast(func.timezone(literal(PLANT_TIMEZONE), cls.received_at), Date))
+        from app.core.plant_time import plant_today, plant_tz_name
+        return (cast(literal(plant_today()), Date)
+                - cast(func.timezone(literal(plant_tz_name()), cls.received_at), Date))
 
 
 class GrLineItem(UUIDPrimaryKey, Base):

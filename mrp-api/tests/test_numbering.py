@@ -25,17 +25,31 @@ handled by the exact same function (see `app/api/v1/mps.py::_next_run_no`).
 """
 import asyncio
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.models.forecast import ForecastVersion
+from app.core.plant_time import plant_tz_name, set_plant_tz
 from app.services.numbering import next_timestamped_no
 
-# 2026-08-14 15:54:07 UTC -> MMDDHH = "081415" (month08/day14/hour15). Picked
+_TORONTO = ZoneInfo("America/Toronto")
+
+
+@pytest.fixture(autouse=True)
+def _plant_in_toronto():
+    """MMDDHH is read on the plant clock; pin it so these tests never
+    depend on whatever zone another test left set."""
+    before = plant_tz_name()
+    set_plant_tz("America/Toronto")
+    yield
+    set_plant_tz(before)
+
+# 2026-08-14 15:54:07 plant time -> MMDDHH = "081415" (month08/day14/hour15). Picked
 # arbitrarily; only the MM/DD/HH digits matter -- the minute/second are
 # deliberately non-round (54m07s) to prove they play no part in the number.
-_NOW = datetime(2026, 8, 14, 15, 54, 7, tzinfo=timezone.utc)
+_NOW = datetime(2026, 8, 14, 15, 54, 7, tzinfo=_TORONTO)
 
 
 async def _occupy(db_session, version_no: str) -> None:
@@ -185,7 +199,7 @@ async def test_concurrent_creates_for_the_same_prefix_serialize_and_get_distinct
     task-13-report.md for the real traceback this produced. Restored
     immediately after."""
     Session = async_sessionmaker(db_engine, expire_on_commit=False)
-    fixed = datetime(2026, 8, 20, 11, 30, 0, tzinfo=timezone.utc)  # MMDDHH = 082011
+    fixed = datetime(2026, 8, 20, 11, 30, 0, tzinfo=_TORONTO)  # MMDDHH = 082011
 
     results: dict[str, str] = {}
 
@@ -223,3 +237,62 @@ async def test_concurrent_creates_for_the_same_prefix_serialize_and_get_distinct
     assert results["a"] == "FCV-202608-082011"
     assert results["b"] == "FCV-202608-082011-2"
     assert results["a"] != results["b"]
+
+
+# ── Plant clock, not UTC ────────────────────────────────────────────────────
+
+@pytest.mark.anyio
+async def test_stamp_is_plant_time_in_the_evening_not_utc_tomorrow(db_session):
+    """20:30 in Toronto on Nov 10 is 01:30 UTC on Nov 11. The number must
+    say the plant's day and hour (111020), not UTC's (111101)."""
+    utc_instant = datetime(2026, 11, 11, 1, 30, tzinfo=timezone.utc)
+    no = await next_timestamped_no(
+        db_session, lock_key=301, column=ForecastVersion.version_no,
+        prefix="FCV-202611-", now=utc_instant,
+    )
+    assert no == "FCV-202611-111020"
+
+
+@pytest.mark.anyio
+async def test_stamp_follows_the_setting(db_session):
+    """Another plant zone -> another wall clock. 2026-11-11 01:30 UTC is
+    2026-11-10 19:30 in Regina (CST all year, no DST)."""
+    set_plant_tz("America/Regina")
+    no = await next_timestamped_no(
+        db_session, lock_key=302, column=ForecastVersion.version_no,
+        prefix="FCV-202611-", now=datetime(2026, 11, 11, 1, 30, tzinfo=timezone.utc),
+    )
+    assert no == "FCV-202611-111019"
+
+
+@pytest.mark.anyio
+async def test_base_already_taken_by_a_utc_era_number_gets_a_suffix(db_session):
+    """Numbers issued before the switch were UTC stamps. One of them can
+    equal a new plant-time base (UTC 15h on Aug 14 == Toronto 15h on Aug 14
+    in a later create); that is just an occupied base -> -2, never a
+    unique-constraint error."""
+    await _occupy(db_session, "FCV-202608-081415")   # issued under UTC
+    no = await next_timestamped_no(
+        db_session, lock_key=303, column=ForecastVersion.version_no,
+        prefix="FCV-202608-", now=_NOW,
+    )
+    assert no == "FCV-202608-081415-2"
+
+
+@pytest.mark.anyio
+async def test_repeated_hour_when_dst_ends_gets_a_suffix(db_session):
+    """2026-11-01 01:xx happens twice in Toronto (EDT then EST). Both
+    creates read MMDDHH=110101; the second must be suffixed, not collide."""
+    first_pass = datetime(2026, 11, 1, 5, 30, tzinfo=timezone.utc)    # 01:30 EDT
+    second_pass = datetime(2026, 11, 1, 6, 30, tzinfo=timezone.utc)   # 01:30 EST
+    first = await next_timestamped_no(
+        db_session, lock_key=304, column=ForecastVersion.version_no,
+        prefix="FCV-202611-", now=first_pass,
+    )
+    await _occupy(db_session, first)
+    second = await next_timestamped_no(
+        db_session, lock_key=304, column=ForecastVersion.version_no,
+        prefix="FCV-202611-", now=second_pass,
+    )
+    assert first == "FCV-202611-110101"
+    assert second == "FCV-202611-110101-2"

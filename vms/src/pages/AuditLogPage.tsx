@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { useAuditLogs, useAuditFacets, buildAuditCsvPath, type AuditLogFilters } from '@/services/api'
 import { formatDateTime, localToday } from '@/lib/utils'
+import { plantWallClockToISO } from '@/lib/plantTime'
 
 const ALLOWED_ROLES = new Set(['auditor', 'system_admin'])
 
@@ -161,10 +162,12 @@ export default function AuditLogPage() {
         <Field label="From (date)">
           <input
             type="date"
-            value={pending.from?.slice(0, 10) ?? ''}
+            value={pending.from ? localToday(new Date(pending.from)) : ''}
             onChange={(e) => setPending({
               ...pending,
-              from: e.target.value ? new Date(e.target.value).toISOString() : undefined,
+              // Start of that day on the plant's clock (was UTC midnight —
+              // 19:00/20:00 the evening before, here).
+              from: e.target.value ? plantWallClockToISO(e.target.value, '00:00') : undefined,
             })}
             className={inputCls}
           />
@@ -172,11 +175,11 @@ export default function AuditLogPage() {
         <Field label="To (date)">
           <input
             type="date"
-            value={pending.to?.slice(0, 10) ?? ''}
+            value={pending.to ? localToday(new Date(pending.to)) : ''}
             onChange={(e) => setPending({
               ...pending,
               to: e.target.value
-                ? new Date(`${e.target.value}T23:59:59`).toISOString()
+                ? new Date(Date.parse(plantWallClockToISO(e.target.value, '23:59')) + 59_000).toISOString()
                 : undefined,
             })}
             className={inputCls}

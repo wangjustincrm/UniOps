@@ -13,6 +13,7 @@ import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Loader2, Sparkles, X as XIcon } from 'lucide-react'
 import { ApiError } from '@/lib/api'
+import { formatDateTime } from '@/lib/utils'
 import { MatrixGrid, type GridRow as MatrixRow, type GridCol as MatrixCol } from '@/components/MatrixGrid'
 import { cellKey } from '@/components/matrixGrid/pasteLogic'
 import type { CellValueMap } from '@/components/matrixGrid/history'
@@ -82,7 +83,7 @@ export function OutlookViewerModal({
             </h2>
             <p className="text-xs text-neutral-500">
               Anchor {version.source_anchor_month ?? '—'} · {version.horizon_months}-month horizon
-              {version.confirmed_at && <> · frozen {new Date(version.confirmed_at).toLocaleString('en-US')}</>}
+              {version.confirmed_at && <> · frozen {formatDateTime(version.confirmed_at)}</>}
               {' '}— read-only snapshot.
             </p>
           </div>

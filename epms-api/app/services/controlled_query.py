@@ -22,20 +22,18 @@ import re
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import doc_numbers
-from app.core.delegation import PLANT_TIMEZONE
+from app.core.plant_time import plant_today, plant_tz, plant_tz_name
 from app.core.ontology import (
     BOOL, DATE, DATETIME, ENUM, INT, MONEY, REGISTRY, TEXT, Entity, get_entity,
     may_view,
 )
 
-_PLANT_TZ = ZoneInfo(PLANT_TIMEZONE)
 _BARE_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 # Row caps. A planner asking for "all of them" gets this many, and the response
@@ -208,8 +206,9 @@ def _group_expr(entity: Entity, name: str):
         # Literals, not bound parameters: the SELECT and the GROUP BY copies of
         # this expression must be textually identical for Postgres to accept
         # them as one, and two binds of the same value are not. Both values
-        # come from a fixed list (_GRAINS, PLANT_TIMEZONE), never from input.
-        local = (func.timezone(sa.literal_column(f"'{PLANT_TIMEZONE}'"), col)
+        # come from a fixed list (_GRAINS) or the validated IANA zone setting
+        # (plant_tz_name), never from input.
+        local = (func.timezone(sa.literal_column(f"'{plant_tz_name()}'"), col)
                  if kind == DATETIME else col)
         return sa.cast(func.date_trunc(sa.literal_column(f"'{grain}'"), local),
                        sa.Date), path
@@ -389,8 +388,9 @@ def _day_bounds(raw: Any) -> tuple[datetime, datetime] | None:
         day = date.fromisoformat(raw.strip())
     else:
         return None
-    return (datetime.combine(day, time.min, tzinfo=_PLANT_TZ),
-            datetime.combine(day + timedelta(days=1), time.min, tzinfo=_PLANT_TZ))
+    tz = plant_tz()
+    return (datetime.combine(day, time.min, tzinfo=tz),
+            datetime.combine(day + timedelta(days=1), time.min, tzinfo=tz))
 
 
 def _datetime_day_clause(col, op: str, value: Any):
@@ -588,7 +588,7 @@ def calendar_range(name: str, shift_years: int = 0,
     the dashboard's "this month" does. shift_years moves the whole range, so
     this_quarter with -1 is the same quarter-to-date a year earlier.
     """
-    today = today or datetime.now(_PLANT_TZ).date()
+    today = today or plant_today()
     if name == "today":
         frm = to = today
     elif name == "yesterday":
@@ -706,7 +706,7 @@ def _serialise(value: Any) -> Any:
     if isinstance(value, datetime) and value.tzinfo is not None:
         # In the plant's time, offset included. Sent as UTC, an invoice
         # uploaded at 17:39 was reported as uploaded at 21:39 (ISS-0053).
-        return value.astimezone(_PLANT_TZ).isoformat()
+        return value.astimezone(plant_tz()).isoformat()
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     if value is None or isinstance(value, (str, int, float, bool)):

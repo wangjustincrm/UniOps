@@ -8,6 +8,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_now
 from app.core.ontology import scope_gr
 from app.crud._list_order import lower_text, sort_clauses
 from app.crud._numbering import next_number
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 # ── Number generation ──────────────────────────────────────────────────────────
 
 async def _next_number(db: AsyncSession) -> str:
-    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    today = plant_now().strftime("%Y%m%d")
     prefix = f"GR-{today}-"
     return await next_number(db, GoodsReceipt.number, prefix, width=4)
 

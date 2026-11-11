@@ -7,6 +7,7 @@ from datetime import date
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 
+from app.core.plant_time import plant_today
 from app.core.deps import CurrentUserPayload, SessionDep
 from app.crud import reports as rep
 
@@ -40,7 +41,7 @@ async def export_pr(
         status=status, pr_type=pr_type,
         cost_center_id=str(cost_center_id) if cost_center_id else None,
     )
-    return _csv_response(csv, f"pr-report-{date.today()}.csv")
+    return _csv_response(csv, f"pr-report-{plant_today()}.csv")
 
 
 # ── PO ────────────────────────────────────────────────────────────────────────
@@ -62,7 +63,7 @@ async def export_po(
         status=status, po_type=po_type,
         vendor_id=str(vendor_id) if vendor_id else None,
     )
-    return _csv_response(csv, f"po-report-{date.today()}.csv")
+    return _csv_response(csv, f"po-report-{plant_today()}.csv")
 
 
 # ── GR ────────────────────────────────────────────────────────────────────────
@@ -82,7 +83,7 @@ async def export_gr(
         date_from=date_from, date_to=date_to,
         status=status, gr_type=gr_type,
     )
-    return _csv_response(csv, f"gr-report-{date.today()}.csv")
+    return _csv_response(csv, f"gr-report-{plant_today()}.csv")
 
 
 # ── Invoice ───────────────────────────────────────────────────────────────────
@@ -103,7 +104,7 @@ async def export_invoices(
         status=status,
         vendor_id=str(vendor_id) if vendor_id else None,
     )
-    return _csv_response(csv, f"invoice-report-{date.today()}.csv")
+    return _csv_response(csv, f"invoice-report-{plant_today()}.csv")
 
 
 # ── PA ────────────────────────────────────────────────────────────────────────
@@ -125,7 +126,7 @@ async def export_pa(
         status=status, pa_type=pa_type,
         vendor_id=str(vendor_id) if vendor_id else None,
     )
-    return _csv_response(csv, f"pa-report-{date.today()}.csv")
+    return _csv_response(csv, f"pa-report-{plant_today()}.csv")
 
 
 # ── Budget ────────────────────────────────────────────────────────────────────
@@ -134,7 +135,7 @@ async def export_pa(
 async def export_budget(db: SessionDep, _: CurrentUserPayload):
     """Export Budget accounts (all active L1/L2) as CSV."""
     csv = await rep.budget_report(db)
-    return _csv_response(csv, f"budget-report-{date.today()}.csv")
+    return _csv_response(csv, f"budget-report-{plant_today()}.csv")
 
 
 # ── Vendor ────────────────────────────────────────────────────────────────────
@@ -148,4 +149,4 @@ async def export_vendors(
 ):
     """Export Vendors as CSV."""
     csv = await rep.vendor_report(db, category=category, active_only=active_only)
-    return _csv_response(csv, f"vendor-report-{date.today()}.csv")
+    return _csv_response(csv, f"vendor-report-{plant_today()}.csv")

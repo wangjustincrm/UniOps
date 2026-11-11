@@ -215,6 +215,8 @@ def test_planner_is_told_dates_are_day_first_and_local():
 
     note = assistant_llm._today_note()
     assert "DD/MM/YYYY" in note and "10/11 is 10 November" in note
+    # Answers use the on-screen format (UI-DATE-002), not slashes.
+    assert "YYYY-MMM-DD" in note and "2026-NOV-10" in note
 
 
 def test_new_invoices_are_asked_about_by_upload_date():

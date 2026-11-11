@@ -7,7 +7,7 @@
  */
 import { useState } from 'react'
 import type { SeriesSpec } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import { cn, todayISO } from '@/lib/utils'
 
 interface Props {
   value: SeriesSpec | null
@@ -144,7 +144,7 @@ export function RecurrencePicker({ value, onChange }: Props) {
                 type="date"
                 value={until}
                 disabled={endMode !== 'until'}
-                min={new Date().toISOString().slice(0, 10)}
+                min={todayISO()}
                 onChange={(e) => setUntil(e.target.value)}
                 className={cn(inputCls, 'disabled:opacity-50')}
               />

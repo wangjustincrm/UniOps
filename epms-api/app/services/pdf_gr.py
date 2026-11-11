@@ -1,5 +1,4 @@
 """PDF generator for Goods Receipts using ReportLab."""
-from datetime import datetime, timezone
 from io import BytesIO
 
 from reportlab.lib import colors
@@ -15,6 +14,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from app.core.plant_time import fmt_date, fmt_datetime, plant_now
 from app.models.gr import GoodsReceipt
 from app.services.pdf_template import (
     build_logo, esc, footer_note_element, get_tmpl, header_note_element, qty_text,
@@ -102,8 +102,9 @@ def generate_gr_pdf(
     def _cell(lbl: str, val: str | None) -> list:
         return [Paragraph(lbl, lbl_style), Paragraph(esc(val) or "—", val_style)]
 
-    received_str = gr.received_at.strftime("%Y-%m-%d") if gr.received_at else "—"
-    acknowledged_str = gr.acknowledged_at.strftime("%Y-%m-%d") if gr.acknowledged_at else "—"
+    # The plant's day (UI-DATE-002), not the UTC one.
+    received_str = fmt_date(gr.received_at)
+    acknowledged_str = fmt_date(gr.acknowledged_at)
     gr_type_label = "Physical" if gr.gr_type == "physical" else "Service"
 
     # crud/gr.py passes names already resolved against the users table; falling
@@ -233,7 +234,7 @@ def generate_gr_pdf(
     elements.append(Spacer(1, 8 * mm))
     elements.append(HRFlowable(width="100%", thickness=0.5, color=_GRAY))
     elements.append(Paragraph(
-        f"Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} · Status: {esc(STATUS_LABELS.get(gr.status, gr.status or '—'))} · {gr.number}",
+        f"Generated {fmt_datetime(plant_now())} · Status: {esc(STATUS_LABELS.get(gr.status, gr.status or '—'))} · {gr.number}",
         footer_style,
     ))
     if tmpl.get("show_terms") and tmpl.get("terms_text"):

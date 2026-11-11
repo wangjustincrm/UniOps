@@ -10,7 +10,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw, Loader2, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react'
 import { Button } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTime } from '@/lib/utils'
 import { bomApi, NC_NOT_CONFIGURED_DETAIL, type BomSyncStats } from './bomApi'
 import type { useToasts } from '@/hooks/useToasts'
 
@@ -20,12 +20,6 @@ function errMsg(err: unknown, fallback: string): string {
 
 function hoursAgo(iso: string): number {
   return (Date.now() - new Date(iso).getTime()) / 3_600_000
-}
-
-function formatDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('en-CA', {
-    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-  })
 }
 
 export function SyncSection({ canSync, toasts }: { canSync: boolean; toasts: ReturnType<typeof useToasts> }) {

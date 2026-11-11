@@ -6,18 +6,18 @@ epms-api/app/core/delegation.py. expense-api never writes this table.
 WHY `today` IS A BIND PARAMETER, NOT `CURRENT_DATE`:
 the containers set no TZ, so a database-side date is the UTC date. Between
 20:00 and midnight in Toronto that is already tomorrow, which would expire a
-window four hours early on its last day. Passing the plant-local date in also
+window four hours early on its last day. "Today" is the plant's date in the
+zone set in Company Settings (app.core.plant_time). Passing the plant-local date in also
 lets tests assert the boundaries without touching a clock.
 """
 import uuid
-from datetime import date, datetime
-from zoneinfo import ZoneInfo
+from datetime import date
 
 import sqlalchemy as sa
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-PLANT_TIMEZONE = "America/Toronto"
+from app.core.plant_time import plant_today
 
 _ACTIVE = """
       revoked_at IS NULL
@@ -33,8 +33,9 @@ _PERSONAL_APPROVAL_ROLES = frozenset({"director", "supervisor"})
 
 
 def local_today() -> date:
-    """Today's calendar date at the plant, not in UTC."""
-    return datetime.now(ZoneInfo(PLANT_TIMEZONE)).date()
+    """Today's calendar date at the plant, not in UTC (kept as a name for the
+    callers; the zone is the Company Settings one)."""
+    return plant_today()
 
 
 async def active_delegator_ids(

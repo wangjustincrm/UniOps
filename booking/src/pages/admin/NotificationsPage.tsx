@@ -17,7 +17,7 @@ import {
   Info,
   RefreshCw,
 } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTime } from '@/lib/utils'
 import {
   useAdminNotifications,
   useAdminResendNotification,
@@ -25,16 +25,6 @@ import {
 import type { NotificationLogOut } from '@/lib/types'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function fmtDateTime(iso: string): string {
-  return new Date(iso).toLocaleString('en-CA', {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-}
 
 const STATUS_STYLE: Record<string, string> = {
   sent:     'bg-emerald-50 text-emerald-700 ring-emerald-200',
@@ -80,7 +70,7 @@ function NotifRow({ log, resendingId, onResend }: RowProps) {
 
   return (
     <tr className="border-b border-neutral-100 last:border-0 hover:bg-neutral-50 transition-colors">
-      <td className={cn(tdCls, 'text-neutral-500 whitespace-nowrap text-xs')}>{fmtDateTime(log.created_at)}</td>
+      <td className={cn(tdCls, 'text-neutral-500 whitespace-nowrap text-xs')}>{formatDateTime(log.created_at)}</td>
       <td className={cn(tdCls, 'text-neutral-700')}>{typeFmt}</td>
       <td className={cn(tdCls, 'text-neutral-600 max-w-[160px]')}>
         <span title={recipFull}>{recipDisp || '—'}</span>
@@ -91,7 +81,7 @@ function NotifRow({ log, resendingId, onResend }: RowProps) {
         {errorTrunc ? <span title={log.error ?? undefined}>{errorTrunc}</span> : '—'}
       </td>
       <td className={cn(tdCls, 'text-neutral-500 whitespace-nowrap text-xs')}>
-        {log.sent_at ? fmtDateTime(log.sent_at) : '—'}
+        {log.sent_at ? formatDateTime(log.sent_at) : '—'}
       </td>
       <td className={tdCls}>
         <button

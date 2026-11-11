@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_today
 from app.core.deps import CurrentUser
 from app.crud import payment_batch as batch_crud
 from app.crud import payment_execute
@@ -106,13 +107,13 @@ def _advice_date(value: date | None) -> date | None:
     so a future date is a typo, and one the payee would read as a promise.
 
     Backdating is the whole point and is deliberately unbounded — see
-    PAYMENT_DATE_FIELD. Comparing against the server's `date.today()` cannot
-    reject a legitimate "today" from a Toronto operator: the server runs UTC,
-    which is never BEHIND America/Toronto, so local-today is always <= UTC
-    today. (The frontend caps its picker at local today for the same reason
-    — RemittancePanel.tsx's `todayLocal`.)
+    PAYMENT_DATE_FIELD. "Future" means after today at the plant (Company
+    Settings → Time Zone). The server's own `date.today()` is UTC: that only
+    happened to be safe while the plant was west of UTC, and even then it let
+    tomorrow's date through every evening after 19:00/20:00 Toronto time; a
+    plant east of UTC would have had its real "today" refused every morning.
     """
-    if value is not None and value > date.today():
+    if value is not None and value > plant_today():
         raise HTTPException(status_code=400,
                              detail="Payment date cannot be in the future")
     return value

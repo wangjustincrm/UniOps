@@ -2,6 +2,7 @@
 // MRP's Inventory page). Quantities are formatted on the decimal digits via
 // lib/number.ts, never through a JS float.
 import { formatDecimal, isNegative, isZero } from '@/lib/number'
+import { formatDate } from '@/lib/utils'
 
 /** > 0 on the decimal digits (no float). */
 export function isPositiveQty(value: string | null | undefined): boolean {
@@ -25,16 +26,12 @@ export function qty(value: string | null | undefined): string {
 }
 
 /** ★ Date-ONLY values (expiry, arrival, inbound) must never go through
- *  `new Date(...)`: in this timezone that parses as UTC midnight and renders
- *  as the previous day — across a year boundary, the previous YEAR. These
- *  arrive as 'YYYY-MM-DD' and are formatted by slicing, never by parsing. */
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
+ *  `new Date(...)` as a full ISO string: in this timezone that parses as UTC
+ *  midnight and renders as the previous day — across a year boundary, the
+ *  previous YEAR. Only the 'YYYY-MM-DD' part is kept and handed to the shared
+ *  formatDate (which reads a bare date as a local date): "2026-NOV-11". */
 export function formatDateOnly(iso: string | null | undefined): string {
   if (!iso) return '—'
-  const [y, m, d] = iso.slice(0, 10).split('-')
-  const month = MONTHS[Number(m) - 1]
-  if (!month || !y || !d) return iso
-  return `${month} ${Number(d)}, ${y}`
+  const out = formatDate(iso.slice(0, 10))
+  return out === '—' ? iso : out
 }

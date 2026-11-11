@@ -34,7 +34,7 @@ import { useAuthStore } from '@/store/auth'
 import {
   financeApi, financeDownload, financeUpload, financeUploadMany,
 } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate, formatDateTime } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
@@ -201,8 +201,7 @@ function money(v: string | number | null | undefined): string {
 /** Dates arrive as plain YYYY-MM-DD. Never through `new Date()` — that reads
  *  them as UTC midnight and shows the previous day west of Greenwich. */
 function shortDate(iso: string): string {
-  const [, m, d] = iso.split('-')
-  return `${d}/${m}`
+  return formatDate(iso)
 }
 
 function Pill({ children, tone }: { children: React.ReactNode; tone?: string }) {
@@ -307,7 +306,7 @@ export default function BankReconciliationPage() {
       // because a group hangs off it — so the person has to hear about it.
       const stale = r.stale_matched ?? []
       if (stale.length) {
-        flash('err', `${head} ${stale.length} matched line(s) from the previous read are not on this statement any more — unmatch and review: ${stale.map((t) => `${t.date} ${money(t.amount)} ${t.description}`).join('; ')}`)
+        flash('err', `${head} ${stale.length} matched line(s) from the previous read are not on this statement any more — unmatch and review: ${stale.map((t) => `${formatDate(t.date)} ${money(t.amount)} ${t.description}`).join('; ')}`)
       } else if (!r.verified) {
         flash('err', `${head} It does NOT tie to its own printed totals, so it cannot be reconciled yet — ${r.verify_errors.join(' ')}`)
       } else {
@@ -559,7 +558,7 @@ export default function BankReconciliationPage() {
                           i % 2 && 'bg-neutral-50/40',
                           h.id === reconId && 'bg-[#E4EFEC]')}>
                       <td className="w-56 px-3 py-2 font-mono text-sm">
-                        {h.period_start} → {h.period_end}
+                        {formatDate(h.period_start)} → {formatDate(h.period_end)}
                       </td>
                       <td className="w-28 px-3 py-2">
                         {h.status === 'finalized'
@@ -574,7 +573,7 @@ export default function BankReconciliationPage() {
                       </td>
                       <td className="px-3 py-2 text-sm text-neutral-500">
                         {h.finalized_at
-                          ? `signed off ${h.finalized_at.slice(0, 10)}`
+                          ? `signed off ${formatDate(h.finalized_at)}`
                           : 'not signed off'}
                       </td>
                       <td className="w-32 px-3 py-2 text-right">
@@ -859,7 +858,7 @@ export default function BankReconciliationPage() {
                               <input type="checkbox" readOnly checked={pickedBook.has(c.jv_line_id)}
                                      className="h-3.5 w-3.5 accent-[#085E5E]" />
                             </td>
-                            <td className="w-14 px-2 py-1.5 font-mono text-xs text-neutral-500">
+                            <td className="w-24 whitespace-nowrap px-2 py-1.5 font-mono text-xs text-neutral-500">
                               {shortDate(c.voucher_date)}
                             </td>
                             <td className={cn('w-28 px-2 py-1.5 text-right font-mono tabular-nums',
@@ -924,7 +923,7 @@ export default function BankReconciliationPage() {
                             <div className="text-xs text-neutral-400">{d.detail}</div>
                           </td>
                           <td className="w-40 px-3 py-2 text-xs text-neutral-500">
-                            {d.imported_at ? d.imported_at.slice(0, 16).replace('T', ' ') : ''}
+                            {d.imported_at ? formatDateTime(d.imported_at) : ''}
                             {/* A superseded statement is kept on purpose — a re-import
                                 replaces what is reconciled against, not the record of
                                 what was once uploaded. */}
@@ -989,7 +988,7 @@ export default function BankReconciliationPage() {
                   <thead className="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500">
                     <tr>
                       <th className="w-10 px-2 py-2" />
-                      <th className="w-14 px-2 py-2">Date</th>
+                      <th className="w-24 px-2 py-2">Date</th>
                       {/* Amount in the same column position as the ledger side: the
                           two tables are read against each other, and an amount that
                           sits in a different place on each is work the reader has to
@@ -1025,7 +1024,7 @@ export default function BankReconciliationPage() {
                               : <input type="checkbox" readOnly checked={pickedBank.has(b.id)}
                                        className="h-3.5 w-3.5 accent-[#085E5E]" />}
                           </td>
-                          <td className="px-2 py-1.5 font-mono text-xs text-neutral-500">{shortDate(b.txn_date)}</td>
+                          <td className="whitespace-nowrap px-2 py-1.5 font-mono text-xs text-neutral-500">{shortDate(b.txn_date)}</td>
                           <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
                             Number(b.amount) < 0 ? 'text-red-600' : 'text-green-700')}>
                             {money(b.amount)}
@@ -1049,7 +1048,7 @@ export default function BankReconciliationPage() {
                   <thead className="bg-neutral-50 text-left text-[11px] uppercase tracking-wide text-neutral-500">
                     <tr>
                       <th className="w-10 px-2 py-2" />
-                      <th className="w-14 px-2 py-2">Date</th>
+                      <th className="w-24 px-2 py-2">Date</th>
                       {/* Amount before Summary: Summary is the only elastic column, so
                           it took every spare pixel and pushed Amount past the right
                           edge — the one number you scan a ledger for was behind a
@@ -1083,7 +1082,7 @@ export default function BankReconciliationPage() {
                               : <input type="checkbox" readOnly checked={pickedBook.has(b.jv_line_id)}
                                        className="h-3.5 w-3.5 accent-[#085E5E]" />}
                           </td>
-                          <td className="px-2 py-1.5 font-mono text-xs text-neutral-500">{shortDate(b.voucher_date)}</td>
+                          <td className="whitespace-nowrap px-2 py-1.5 font-mono text-xs text-neutral-500">{shortDate(b.voucher_date)}</td>
                           <td className={cn('px-2 py-1.5 text-right font-mono tabular-nums',
                             Number(b.amount) < 0 ? 'text-red-600' : 'text-green-700')}>
                             {money(b.amount)}
@@ -1125,7 +1124,7 @@ export default function BankReconciliationPage() {
                     {baseOnly.map((b) => (
                       <tr key={b.jv_line_id} className="border-t border-neutral-100 text-neutral-400">
                         <td className="px-2 py-1.5" />
-                        <td className="px-2 py-1.5 font-mono text-xs">{shortDate(b.voucher_date)}</td>
+                        <td className="whitespace-nowrap px-2 py-1.5 font-mono text-xs">{shortDate(b.voucher_date)}</td>
                         <td className="px-2 py-1.5 text-right font-mono text-xs tabular-nums">
                           <div>—</div>
                           <div className="text-[11px]">CAD {money(b.local_amount)}</div>

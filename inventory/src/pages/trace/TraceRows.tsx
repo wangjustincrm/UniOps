@@ -1,12 +1,12 @@
 // Trace page pieces: the category summary and the two-sided movement table.
 import { Fragment, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { addDecimal, formatQty, isNegative, isZero } from '@/lib/number'
 import { thCls } from '@/pages/nc/NcUi'
 import { lineDetail } from './exportTrace'
 import {
-  formatTraceTime, rowHidden, signedQty,
+  formatTraceTimeDisplay, rowHidden, signedQty,
   type TraceLine, type TraceResponse, type TraceRow, type TraceSummaryLine,
 } from './traceApi'
 import { ScrollTable, stickyHeadCls } from '@/components/ScrollTable'
@@ -40,7 +40,7 @@ export function SummaryTable({ t, showHidden }: { t: TraceResponse; showHidden: 
         </thead>
         <tbody>
           <tr className="border-t border-neutral-100 bg-neutral-50/60">
-            <td className="px-3 py-1.5 text-xs text-neutral-600">Opening (before {t.start})</td>
+            <td className="px-3 py-1.5 text-xs text-neutral-600">Opening (before {formatDate(t.start)})</td>
             <td className={cn('px-3 py-1.5', numCls, NC_CELL)}>{formatQty(t.opening.nc)}</td>
             <td className={cn('px-3 py-1.5', numCls, WMS_CELL)}>{formatQty(t.opening.wms)}</td>
             <td className={cn('px-3 py-1.5', numCls, diffTone(openingDiff(t)))}>{formatQty(openingDiff(t))}</td>
@@ -59,7 +59,7 @@ export function SummaryTable({ t, showHidden }: { t: TraceResponse; showHidden: 
             </tr>
           )}
           <tr className="border-t border-neutral-200 bg-neutral-50/60 font-medium">
-            <td className="px-3 py-1.5 text-xs text-neutral-700">Closing ({t.date})</td>
+            <td className="px-3 py-1.5 text-xs text-neutral-700">Closing ({formatDate(t.date)})</td>
             <td className={cn('px-3 py-1.5', numCls, NC_CELL)}>{formatQty(t.closing.nc)}</td>
             <td className={cn('px-3 py-1.5', numCls, WMS_CELL)}>{formatQty(t.closing.wms)}</td>
             <td className={cn('px-3 py-1.5', numCls, diffTone(t.closing.diff))}>{formatQty(t.closing.diff)}</td>
@@ -95,7 +95,7 @@ function SideHeader({ label, closing, date }: { label: string; closing: string; 
       <span className="flex flex-col items-end">
         <span>Balance</span>
         <span className={cn(numCls, 'text-sm font-semibold normal-case tracking-normal')}
-          title={`${label} balance at the end of ${date}`}>
+          title={`${label} balance at the end of ${formatDate(date)}`}>
           {formatQty(closing)}
         </span>
       </span>
@@ -137,7 +137,7 @@ function SideCell({ lines, total, kind }: { lines: TraceLine[]; total: string; k
           <span className="min-w-0 truncate font-mono text-xs" title={lineDetail(ln) || undefined}>
             {ln.doc ?? <span className="font-sans italic text-neutral-400">no document</span>}
             {kind === 'pair' && (
-              <span className="ml-1.5 font-sans text-[10px] text-neutral-400">{formatTraceTime(ln.time, ln.date_only)}</span>
+              <span className="ml-1.5 font-sans text-[10px] text-neutral-400">{formatTraceTimeDisplay(ln.time, ln.date_only)}</span>
             )}
             <LineBadges ln={ln} kind={kind} />
           </span>
@@ -163,11 +163,11 @@ function DetailList({ lines, side }: { lines: TraceLine[]; side: 'NC' | 'WMS' })
       {lines.map((ln) => (
         <li key={ln.id} className="text-xs text-neutral-600">
           <span className="font-mono text-neutral-800">{ln.doc ?? '(no document)'}</span>
-          <span className="ml-1.5 text-neutral-400">{formatTraceTime(ln.time, ln.date_only)}</span>
+          <span className="ml-1.5 text-neutral-400">{formatTraceTimeDisplay(ln.time, ln.date_only)}</span>
           <span className="ml-1.5 text-neutral-500">{ln.category_label}</span>
           <div className="text-neutral-500">{lineDetail(ln) || '—'}</div>
           {ln.side === 'nc' && ln.nc_time && (
-            <div className="text-[11px] text-neutral-400">NC business date {ln.nc_time.slice(0, 10)}</div>
+            <div className="text-[11px] text-neutral-400">NC business date {formatDate(ln.nc_time.slice(0, 10))}</div>
           )}
         </li>
       ))}
@@ -252,7 +252,7 @@ export function MovementsTable({ rows, indices, highlight, registerRow, closing,
                         {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                       </button>
                       <div className="flex min-w-[11rem] flex-col gap-0.5">
-                        <span className="font-mono text-[11px] text-neutral-600">{formatTraceTime(r.time, onlyDateNc)}</span>
+                        <span className="font-mono text-[11px] text-neutral-600">{formatTraceTimeDisplay(r.time, onlyDateNc)}</span>
                         <span className="text-xs">{(r.nc[0] ?? r.wms[0])?.category_label ?? r.category}</span>
                         <span className="flex flex-wrap items-center gap-1">
                           <MatchCell r={r} />

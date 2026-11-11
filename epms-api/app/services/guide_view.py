@@ -175,7 +175,7 @@ def task_summary(tasks: list[dict], elsewhere: list[dict] | None = None) -> dict
     # Overdue is counted from the tasks' due dates, never inferred from
     # "urgent": one urgent duplicate-invoice task was reported as "1 overdue,
     # 381 on time" when no task in EPMS carries a due date at all (ISS-0049).
-    from app.core.delegation import local_today
+    from app.core.plant_time import plant_today as local_today
     today = local_today()
     with_due = [t for t in tasks if t.get("due_date")]
     overdue = [t for t in with_due if _as_date(t["due_date"]) < today]

@@ -9,7 +9,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Loader2, RefreshCw, XCircle } from 'lucide-react'
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, SortTh, sortParams, useSort } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, displayTimeZone } from '@/lib/utils'
 import { formatDateTimeToronto, formatDuration, formatNumber, relativeAge } from '@/lib/time'
 import type { useToasts } from '@/hooks/useToasts'
 import { Pager } from '@/pages/nc/NcUi'
@@ -235,7 +235,7 @@ export function SyncStatusCard({ canAdmin, toasts, source = 'nc' }: {
         <div>
           <CardTitle>{cfg.title}</CardTitle>
           {cfg.description && <p className="mt-0.5 max-w-2xl text-xs text-neutral-600">{cfg.description}</p>}
-          <p className="mt-0.5 text-xs text-neutral-500">Times are shown on Toronto time.</p>
+          <p className="mt-0.5 text-xs text-neutral-500">Times are shown on plant time ({displayTimeZone()}).</p>
         </div>
         {canAdmin && (
           <Button

@@ -1,7 +1,6 @@
 """PDF generator for Purchase Orders using ReportLab."""
 import base64
 import logging
-from datetime import datetime, timezone
 from io import BytesIO
 from xml.sax.saxutils import escape
 
@@ -21,6 +20,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from app.core.plant_time import fmt_date, plant_now
 from app.models.po import PurchaseOrder
 from app.services.pdf_template import (
     build_logo, esc, footer_note_element, get_tmpl, header_note_element, qty_text,
@@ -111,7 +111,7 @@ def generate_po_pdf(
     story += [header, HRFlowable(width=W, color=_PRIMARY, thickness=1.5), Spacer(1, 4 * mm)]
 
     # ── Meta grid ─────────────────────────────────────────────────────────────
-    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    now_str = fmt_date(plant_now())   # the plant's date (UI-DATE-002)
 
     def _cell(label: str, value: str):
         return [Paragraph(label, lbl_style), Paragraph(esc(value) or "—", val_style)]
@@ -123,13 +123,13 @@ def generate_po_pdf(
     # precedence. This PDF goes to the vendor, so no internal provenance
     # marker is printed; only the resolved date is shown.
     if po.expected_delivery:
-        delivery_str = str(po.expected_delivery)
+        delivery_str = fmt_date(po.expected_delivery)
     else:
         line_dates = [
             item.planned_arrival_date for item in po.line_items
             if item.planned_arrival_date
         ]
-        delivery_str = str(min(line_dates)) if line_dates else "—"
+        delivery_str = fmt_date(min(line_dates)) if line_dates else "—"
 
     delivery_address = po.delivery_address or (
         default_delivery_address if po.source == "nc" and default_delivery_address else "—"

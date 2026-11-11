@@ -1,6 +1,5 @@
 """CRUD + approval workflow for expense claims (EXP / MIL)."""
 import uuid
-from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import func, or_, select
@@ -9,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 # NOTE: BudgetAccount mirror removed — expense-api no longer writes directly to
 # budget_accounts. Actual spend is now reported to budget-api via /book-expense.
+from app.core.plant_time import plant_today
 from app.crud._numbering import next_number
 from app.models.expense import (
     ExpenseApprovalEvent, ExpenseAttachment, ExpenseClaim,
@@ -23,7 +23,9 @@ from app.services import budget_client
 # ── Number generation ──────────────────────────────────────────────────────────
 
 async def _next_number(db: AsyncSession, claim_type: str) -> str:
-    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    # The plant's date, not UTC (an evening claim in Toronto is still today).
+    # next_number takes max tail + 1 per prefix, so the switch cannot collide.
+    today = plant_today().strftime("%Y%m%d")
     return await next_number(db, ExpenseClaim.claim_number, f"{claim_type}-{today}-", width=4)
 
 

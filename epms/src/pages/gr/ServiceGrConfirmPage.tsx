@@ -6,7 +6,7 @@ import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, CheckCircle2, AlertTriangle, Upload, X, FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn, formatAmount, formatDate, formatQty } from '@/lib/utils'
+import { cn, formatAmount, formatDate, formatQty, todayISO } from '@/lib/utils'
 import { useGr, useGrAction } from '@/hooks/useGrs'
 import { useAuthStore } from '@/stores/auth.store'
 import { isOverReceiptError } from '@/services/gr'
@@ -37,7 +37,7 @@ export default function ServiceGrConfirmPage() {
   const { user } = useAuthStore()
 
   const [completionDate, setCompletionDate] = useState(
-    new Date().toISOString().slice(0, 10)
+    todayISO()
   )
   const [qualityRating, setQualityRating] = useState<QualityRating>('satisfactory')
   const [acceptanceNotes, setAcceptanceNotes] = useState('')

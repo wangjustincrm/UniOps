@@ -135,18 +135,14 @@ async def test_freeze_outlook_two_freezes_in_the_same_hour_both_succeed(db_sessi
     e.g. the pre-fix `uuid4().hex[:6]` shape, or a naive `f"{prefix}{now}"`
     with no existing-rows check), the second `freeze_outlook` call here would
     raise `IntegrityError` instead of returning a second confirmed version."""
-    from datetime import datetime as real_datetime, timezone
+    from datetime import datetime as real_datetime
+    from zoneinfo import ZoneInfo
 
     from app.services import numbering
 
-    fixed = real_datetime(2026, 9, 3, 9, 15, 0, tzinfo=timezone.utc)
-
-    class _FrozenDateTime(real_datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return fixed
-
-    monkeypatch.setattr(numbering, "datetime", _FrozenDateTime)
+    # Plant clock (numbering reads MMDDHH in the plant zone): 09:15 at the plant.
+    fixed = real_datetime(2026, 9, 3, 9, 15, 0, tzinfo=ZoneInfo("America/Toronto"))
+    monkeypatch.setattr(numbering, "plant_now", lambda: fixed)
 
     v1 = await freeze_outlook(db_session, "2026-09", 1, created_by=None)
     v2 = await freeze_outlook(db_session, "2026-09", 1, created_by=None)

@@ -8,7 +8,7 @@ rules:
       - how are GR numbers generated
     answer: >
       GR-YYYYMMDD-NNNN: the date it was recorded, then a 4-digit sequence that
-      restarts each day. The date is the UTC date at creation, not the plant's: a document created after 20:00 Toronto time (19:00 in winter) carries the next day's date.
+      restarts each day. The date is the plant's date at creation (Portal → Admin → Company Settings → Time Zone), so a document created late in the evening carries that evening's date.
     enforced_in: "epms-api app/crud/gr.py _next_number"
     provenance: pinned
     test:
@@ -173,7 +173,7 @@ rules:
       requester's department gets one escalation email, copied to the
       requester. The days come from EPMS → Admin → GR Notification SLA;
       the reminder is {state} (Portal → Admin → Notification Settings → GR
-      Acknowledgement Reminder), running daily at {time} UTC. Collecting the
+      Acknowledgement Reminder), running daily at {time} plant time. Collecting the
       goods is not chased — the collection timers on Collection Config are not
       active. Service and project POs have their own reminder — see
       service_completion_reminders.
@@ -191,7 +191,7 @@ rules:
       - 服务类 PO 确认超时会升级给谁？
       - is there a reminder when the service completion date passes
     answer: >
-      Yes, for service and project POs. Once a day (at {time} UTC) the system
+      Yes, for service and project POs. Once a day (at {time} plant time) the system
       looks for orders whose PR's expected completion date is more than
       {reminder_days} day(s) past with no receipt recorded. For each, the
       PR's Service/Project Owner (the requester when none is named) gets a

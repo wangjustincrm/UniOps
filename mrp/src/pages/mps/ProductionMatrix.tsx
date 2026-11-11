@@ -58,7 +58,7 @@
 import { useMemo, useState } from 'react'
 import { Lock, AlertTriangle, Clock, ChevronDown, ChevronRight, Wrench } from 'lucide-react'
 import { Badge } from '@uniops/shell'
-import { cn } from '@/lib/utils'
+import { cn, todayISO, toLocalDate } from '@/lib/utils'
 import type { MaterialOption } from '@/lib/materials'
 import type { MpsLine, WeekGridEntry } from './mpsApi'
 import {
@@ -378,7 +378,7 @@ export function ProductionMatrix({
   // this component with `key={run.id}` on every run switch, so this
   // correctly re-seeds per run rather than carrying stale expand state
   // across runs).
-  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(() => defaultExpandedMonths(allMonthsOrdered))
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(() => defaultExpandedMonths(allMonthsOrdered, toLocalDate(todayISO())))
 
   function toggleMonth(month: string) {
     setExpandedMonths((prev) => {

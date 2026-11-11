@@ -13,7 +13,7 @@ import { useAuthStore } from '@/store/auth'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { adminPageLinks } from '@/components/layout/navConfig'
 import { epmsApi, epmsDownload, epmsUpload, mdmApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTime, setDisplayTimeZone } from '@/lib/utils'
 import { UnitsOfMeasure } from './UnitsOfMeasure'
 import { NcSyncSection } from './nc-sync/NcSyncSection'
 import { WmsSyncSection } from './WmsSyncSection'
@@ -36,6 +36,8 @@ interface CompanyConfig {
   tagline: string
   module_taglines: Record<string, string>
   delivery_address: string
+  timezone: string
+  timezone_choices?: string[]
   logo_data_url: string | null
   logo_file_name: string | null
   default_currency: string
@@ -205,10 +207,21 @@ const MODULE_TAGLINE_KEYS: { key: string; label: string }[] = [
   { key: 'booking', label: 'Booking' },
 ]
 
+function zoneLabel(tz: string): string {
+  try {
+    const off = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' })
+      .formatToParts(new Date()).find((p) => p.type === 'timeZoneName')?.value
+    return off ? `${tz} (${off} now)` : tz
+  } catch {
+    return tz
+  }
+}
+
 function CompanySettings() {
   const { data: cfg, isLoading } = useConfig()
   const save = useSaveConfig()
   const [form, setForm] = useState({ name: '', tagline: '', delivery_address: '' })
+  const [timeZone, setTimeZone] = useState<string | undefined>(undefined) // undefined = not touched
   const [logoDataUrl, setLogoDataUrl] = useState<string | null | undefined>(undefined) // undefined = not touched
   const [logoFileName, setLogoFileName] = useState<string | null | undefined>(undefined)
   // Per-module tagline overrides for epms/oa/vms (portal uses `tagline`).
@@ -229,6 +242,11 @@ function CompanySettings() {
   const currentFileName = logoFileName !== undefined ? logoFileName : cfg?.logo_file_name ?? null
 
   const currentModuleTaglines = moduleTaglines ?? cfg?.module_taglines ?? {}
+  const currentTimeZone = timeZone ?? cfg?.timezone ?? 'America/Toronto'
+  // The server's list (exactly what it accepts), not the browser's tz data.
+  const serverZones = cfg?.timezone_choices?.length ? cfg.timezone_choices : [currentTimeZone]
+  const zoneOptions = serverZones.includes(currentTimeZone) ? serverZones : [currentTimeZone, ...serverZones]
+  const zoneChanged = timeZone !== undefined && timeZone !== cfg?.timezone
 
   const taglineFor = (key: string): string =>
     key === 'portal' ? values.tagline : (currentModuleTaglines[key] ?? '')
@@ -256,13 +274,23 @@ function CompanySettings() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (zoneChanged && !window.confirm(
+      `Change the company time zone from ${cfg?.timezone} to ${timeZone}?\n\n`
+      + 'From now on every module uses it for "today", accounting periods, the dates in '
+      + 'new document numbers, times on screen, in PDFs and emails, and the hour daily '
+      + 'reminders run. Existing records are not changed.',
+    )) return
     try {
       const body: any = { name: values.name, tagline: values.tagline, delivery_address: values.delivery_address }
       if (moduleTaglines !== undefined) body.module_taglines = moduleTaglines
+      if (zoneChanged) body.timezone = timeZone
       if (logoDataUrl !== undefined) body.logo_data_url = logoDataUrl
       if (logoFileName !== undefined) body.logo_file_name = logoFileName
       await save.mutateAsync(body)
-      setToast({ ok: true, msg: 'Company settings saved.' })
+      if (zoneChanged) setDisplayTimeZone(timeZone)
+      setToast({ ok: true, msg: zoneChanged
+        ? `Company settings saved. Time zone is now ${timeZone}; other open pages use it after a reload.`
+        : 'Company settings saved.' })
     } catch (err: any) {
       setToast({ ok: false, msg: err.message })
     }
@@ -272,7 +300,7 @@ function CompanySettings() {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5 max-w-lg">
-      <SectionHeader title="Company Settings" description="Organization name, tagline, delivery address and logo used across all modules." />
+      <SectionHeader title="Company Settings" description="Organization name, tagline, delivery address, time zone and logo used across all modules." />
 
       {/* Logo */}
       <Field label="Company Logo" hint="PNG or JPG, recommended 200×60 px. Shown on login page and PDF documents.">
@@ -321,6 +349,13 @@ function CompanySettings() {
       </div>
       <Field label="Delivery Address" hint="Default delivery address on purchase orders.">
         <Textarea rows={3} value={values.delivery_address} onChange={f('delivery_address')} />
+      </Field>
+      <Field label="Time Zone"
+        hint="The plant's time zone. Every module uses it for times on screen, in PDFs and emails, for today's date, accounting periods, document-number dates and the hour daily reminders run. Daylight saving is applied automatically.">
+        <select value={currentTimeZone} onChange={(e) => setTimeZone(e.target.value)}
+          className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
+          {zoneOptions.map((z) => <option key={z} value={z}>{zoneLabel(z)}</option>)}
+        </select>
       </Field>
       <div className="flex items-center gap-3">
         <SaveButton loading={save.isPending} />
@@ -1159,7 +1194,7 @@ function NotificationSettings() {
         {mailboxError && <p className="mt-2 text-xs text-red-600">{mailboxError}</p>}
       </div>
 
-      <Field label="Daily Digest Time (UTC)" hint="When the once-a-day task digest goes out — see Task Notifications below for which tasks it covers. Changes take effect within 15 minutes — no restart needed.">
+      <Field label="Daily Digest Time" hint="Plant time (Company Settings → Time Zone). When the once-a-day task digest goes out — see Task Notifications below for which tasks it covers. Changes take effect within 15 minutes — no restart needed.">
         <Input type="time" value={followupVal} onChange={(e) => setFollowup(e.target.value)} />
       </Field>
 
@@ -1904,7 +1939,7 @@ function ErpSyncToolbar({ kind, onSearchChange, search, filters }: {
     <div className="mb-4 space-y-3">
       <div className="flex items-center gap-2 text-xs text-neutral-500">
         {s ? <>
-          Last synced: {s.last_synced_at ? new Date(s.last_synced_at).toLocaleString() : '—'}
+          Last synced: {s.last_synced_at ? formatDateTime(s.last_synced_at) : '—'}
           {' · '}<span className={cn(s.last_status === 'success' ? 'text-green-700' : s.last_status === 'failed' ? 'text-red-700' : '')}>{s.last_status || 'never'}</span>
           {' · '}{s.last_row_count} rows
         </> : 'Never synced'}
@@ -2004,7 +2039,7 @@ function ErpMaterialsTab() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-[11px] text-neutral-400">
-                    {m.erp_rowversion ? new Date(m.erp_rowversion).toLocaleString() : '—'}
+                    {m.erp_rowversion ? formatDateTime(m.erp_rowversion) : '—'}
                   </td>
                 </tr>
               ))}

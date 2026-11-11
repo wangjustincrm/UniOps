@@ -62,13 +62,14 @@ feedback_uniops_decimal_as_string in project memory).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal
 
 import sqlalchemy as sa
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_today
 from app.models.consignment import ConsignmentStock
 from app.models.sync_state import MrpSyncState
 from app.models.wms_inventory import WmsInventoryLot
@@ -221,7 +222,7 @@ async def get_opening_stock_breakdown(
     """The single entry point downstream code (the API layer, and later MPS)
     should call to get a material's opening stock + provenance. Never
     compute opening stock any other way — see module docstring."""
-    resolved_today = today if today is not None else datetime.now(timezone.utc).date()
+    resolved_today = today if today is not None else plant_today()
 
     wms_qty = await _wms_available_qty(db, material_code, resolved_today)
     consignment_qty, consignment_uom, consignment_count_date = await _consignment_latest_qty(

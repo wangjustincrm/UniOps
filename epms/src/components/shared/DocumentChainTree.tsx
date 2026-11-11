@@ -128,8 +128,8 @@ function receiptRowLabel(r: ApiReceipt): string {
   // "2026-08-04 · 0.00" would read as a zero-value receipt.
   if (r.receipt_ref) return r.receipt_ref
   return r.total_amount === null
-    ? r.receipt_date
-    : `${r.receipt_date} · ${Number(r.total_amount).toFixed(2)}`
+    ? formatDate(r.receipt_date)
+    : `${formatDate(r.receipt_date)} · ${Number(r.total_amount).toFixed(2)}`
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────

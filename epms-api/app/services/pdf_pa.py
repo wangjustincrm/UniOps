@@ -1,5 +1,4 @@
 """PDF generator for Payment Applications using ReportLab."""
-from datetime import datetime, timezone
 from io import BytesIO
 
 from reportlab.lib import colors
@@ -15,6 +14,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from app.core.plant_time import fmt_date, fmt_datetime, plant_now
 from app.models.pa import PaymentApplication
 from app.services.pdf_template import (
     approvals_element, build_logo, esc, footer_note_element, get_tmpl,
@@ -88,9 +88,9 @@ def generate_pa_pdf(
     def _cell(lbl: str, val: str | None) -> list:
         return [Paragraph(lbl, lbl_style), Paragraph(esc(val) or "—", val_style)]
 
-    # DD/MM/YYYY like every page of the app (UI-DATE-001, ISS-0183) — format only.
-    submitted_str = pa.submitted_at.strftime("%d/%m/%Y") if pa.submitted_at else "—"
-    approved_str = pa.approved_at.strftime("%d/%m/%Y") if pa.approved_at else "—"
+    # YYYY-MMM-DD like every page of the app (UI-DATE-002), the plant's day.
+    submitted_str = fmt_date(pa.submitted_at)
+    approved_str = fmt_date(pa.approved_at)
 
     # A PA may settle several POs. `po_numbers` is the transient list attached by
     # crud.pa.attach_po_links; the header snapshot is the fallback for a PA
@@ -252,7 +252,7 @@ def generate_pa_pdf(
         elements.append(Paragraph("Prepayment Details", sec_style))
         prep_data = [
             *_cell("Prepayment %", f"{pa.prepayment_pct}%"),
-            *_cell("Expected Settlement", pa.expected_settlement_date.strftime("%d/%m/%Y") if pa.expected_settlement_date else "—"),
+            *_cell("Expected Settlement", fmt_date(pa.expected_settlement_date)),
         ]
         prep_tbl = Table([prep_data], colWidths=[W * 0.12, W * 0.38, W * 0.12, W * 0.38])
         prep_tbl.setStyle(TableStyle([
@@ -271,7 +271,7 @@ def generate_pa_pdf(
     elements.append(Spacer(1, 8 * mm))
     elements.append(HRFlowable(width="100%", thickness=0.5, color=_GRAY))
     elements.append(Paragraph(
-        f"Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} · Status: Approved · {pa.pa_number}",
+        f"Generated {fmt_datetime(plant_now())} · Status: Approved · {pa.pa_number}",
         footer_style,
     ))
     if tmpl.get("show_terms") and tmpl.get("terms_text"):

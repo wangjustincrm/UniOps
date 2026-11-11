@@ -15,13 +15,12 @@ import io
 import uuid
 from datetime import date, datetime, timezone
 from typing import Literal
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, func, select
 
-from app.core.config import settings
+from app.core.plant_time import plant_tz
 from app.core.deps import SessionDep
 from app.core.list_sort import apply_sort, check_sort, label_case
 from app.core.permissions import AdminUser
@@ -32,7 +31,6 @@ from app.schemas.booking import AdminBookingListOut, BookingAdminOut
 
 router = APIRouter()
 
-TZ = ZoneInfo(settings.DISPLAY_TIMEZONE)
 
 # All Bookings page headers -> ORDER BY (the ?sort= whitelist). Each sorts by
 # what the cell shows: the room NAME, the organizer's NAME (not the FK), the
@@ -71,10 +69,10 @@ def _build_filter_clauses(
     if date_from is not None:
         # starts_at must be < date_to+1 day AND ends_at must be > date_from
         # (overlap condition: booking overlaps [date_from, date_to])
-        from_dt = datetime(date_from.year, date_from.month, date_from.day, 0, 0, tzinfo=TZ)
+        from_dt = datetime(date_from.year, date_from.month, date_from.day, 0, 0, tzinfo=plant_tz())
         clauses.append(Booking.ends_at > from_dt)
     if date_to is not None:
-        to_dt = datetime(date_to.year, date_to.month, date_to.day, 23, 59, 59, tzinfo=TZ)
+        to_dt = datetime(date_to.year, date_to.month, date_to.day, 23, 59, 59, tzinfo=plant_tz())
         clauses.append(Booking.starts_at <= to_dt)
     if booking_status is not None:
         clauses.append(Booking.status == booking_status)
@@ -197,7 +195,7 @@ async def admin_export_bookings(
         "sync_status", "created_at",
     ])
     for booking, room, organizer_name in rows:
-        # Render datetimes in DISPLAY_TIMEZONE (config contract: "exports render in
+        # Render datetimes in the plant's time zone (config contract: "exports render in
         # this zone") so exported times match what users see in the UI, not UTC.
         writer.writerow([
             str(booking.id),
@@ -205,12 +203,12 @@ async def admin_export_bookings(
             room.name,
             booking.title,
             organizer_name or "Unknown",
-            booking.starts_at.astimezone(TZ).isoformat(),
-            booking.ends_at.astimezone(TZ).isoformat(),
+            booking.starts_at.astimezone(plant_tz()).isoformat(),
+            booking.ends_at.astimezone(plant_tz()).isoformat(),
             booking.status,
             len(booking.attendee_ids or []),
             booking.sync_status,
-            booking.created_at.astimezone(TZ).isoformat(),
+            booking.created_at.astimezone(plant_tz()).isoformat(),
         ])
 
     csv_content = output.getvalue()

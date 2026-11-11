@@ -18,7 +18,7 @@ import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-quer
 import { AlertTriangle, Loader2, Save, CheckCircle2, HelpCircle } from 'lucide-react'
 import { Button, Input, FormField, Badge, Pagination, SortTh, sortParams, useSort, type Sort } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, todayISO, toLocalDate } from '@/lib/utils'
 import { ToastStack } from '@/components/Toast'
 import { useToasts } from '@/hooks/useToasts'
 import { MaterialPicker } from './MaterialPicker'
@@ -37,17 +37,16 @@ function formatQty(n: number): string {
   return new Intl.NumberFormat('en-US', { maximumFractionDigits: 3 }).format(n)
 }
 
+/** Today at the plant (company time zone), 'YYYY-MM-DD'. */
 function todayIso(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return todayISO()
 }
 
-/** Whole-day difference between an ISO 'YYYY-MM-DD' date and today, local time. */
+/** Whole-day difference between an ISO 'YYYY-MM-DD' date and the plant's today. */
 function daysSince(isoDate: string): number {
   const [y, m, d] = isoDate.split('-').map(Number)
   const then = new Date(y, (m ?? 1) - 1, d ?? 1)
-  const now = new Date()
-  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const startOfToday = toLocalDate(todayISO())
   return Math.round((startOfToday.getTime() - then.getTime()) / 86_400_000)
 }
 

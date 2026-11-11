@@ -22,6 +22,7 @@ import asyncio
 import logging
 import smtplib
 import uuid
+from datetime import datetime
 from email.message import EmailMessage
 from typing import Any
 
@@ -29,7 +30,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user_mirror import User
-from app.core.plant_time import fmt_local
+from app.core.plant_time import fmt_date, fmt_datetime
 from app.services import area_rules
 from app.models.visit import Visit
 from app.models.visitor import Visitor
@@ -153,8 +154,8 @@ def _format_training_email(visit: Visit, visitor: Visitor, host: User | None) ->
         f"briefing before the visitor can enter GMP / Laboratory zones.\n\n"
         f"Visitor:        {visitor.first_name} {visitor.last_name}\n"
         f"Company:        {visitor.company_name}\n"
-        f"Visit date:     {visit.visit_date.isoformat()}\n"
-        f"Planned arrival:{visit.planned_arrival.isoformat()}\n"
+        f"Visit date:     {fmt_date(visit.visit_date)}\n"
+        f"Planned arrival:{_fmt_dt(visit.planned_arrival)}\n"
         f"Access area:    {_area_text(visit)}\n"
         f"Host:           {host.full_name if host else '—'}\n"
         f"Visit ID:       {visit.id}\n\n"
@@ -172,8 +173,8 @@ def _format_ppe_email(visit: Visit, visitor: Visitor, host: User | None) -> tupl
         f"visitor enters production / laboratory areas.\n\n"
         f"Visitor:        {visitor.first_name} {visitor.last_name}\n"
         f"Company:        {visitor.company_name}\n"
-        f"Visit date:     {visit.visit_date.isoformat()}\n"
-        f"Planned arrival:{visit.planned_arrival.isoformat()}\n"
+        f"Visit date:     {fmt_date(visit.visit_date)}\n"
+        f"Planned arrival:{_fmt_dt(visit.planned_arrival)}\n"
         f"Access area:    {_area_text(visit)}\n"
         f"Host:           {host.full_name if host else '—'}\n"
         f"Visit ID:       {visit.id}\n\n"
@@ -262,12 +263,12 @@ async def _format_ppe_request_email(
     suffix = "" if visitor_count == 1 else f" (+{visitor_count - 1} more)"
     subject = (
         f"VMS — PPE prep needed for {visitor.first_name} {visitor.last_name}{suffix} "
-        f"({visit.visit_date.isoformat()})"
+        f"({fmt_date(visit.visit_date)})"
     )
     body = (
         f"A visit has been approved and the Host requested PPE staging.\n\n"
-        f"Visit date:     {visit.visit_date.isoformat()}\n"
-        f"Planned arrival:{visit.planned_arrival.isoformat()}\n"
+        f"Visit date:     {fmt_date(visit.visit_date)}\n"
+        f"Planned arrival:{_fmt_dt(visit.planned_arrival)}\n"
         f"Access area:    {_area_text(visit)}\n"
         f"Host:           {host.full_name if host else '—'}\n\n"
         f"PPE requested:\n"
@@ -332,7 +333,7 @@ def _format_host_approval_email(
             f"Your visit appointment has been approved.\n\n"
             f"Visitor:     {name}\n"
             f"Company:     {visitor.company_name}\n"
-            f"Visit date:  {visit.visit_date.isoformat()}\n"
+            f"Visit date:  {fmt_date(visit.visit_date)}\n"
             f"Access area: {_area_text(visit)}\n"
             f"Visit ID:    {visit.id}\n\n"
             f"You can now print the visitor badge when the guest arrives.\n"
@@ -343,7 +344,7 @@ def _format_host_approval_email(
             f"Your visit appointment has been rejected by an approver.\n\n"
             f"Visitor:     {name}\n"
             f"Company:     {visitor.company_name}\n"
-            f"Visit date:  {visit.visit_date.isoformat()}\n"
+            f"Visit date:  {fmt_date(visit.visit_date)}\n"
             f"Access area: {_area_text(visit)}\n"
             f"Visit ID:    {visit.id}\n\n"
             f"Please cancel the visit in VMS, or reschedule with a different access area.\n"
@@ -396,7 +397,7 @@ async def notify_host_visit_cancelled(
         f"A visit you were hosting has been cancelled by {cancelled_by}.\n\n"
         f"Visitor:     {name}\n"
         f"Company:     {visitor.company_name}\n"
-        f"Visit date:  {visit.visit_date.isoformat()}\n"
+        f"Visit date:  {fmt_date(visit.visit_date)}\n"
         f"Access area: {_area_text(visit)}\n"
         f"Visit ID:    {visit.id}\n"
     )
@@ -407,9 +408,13 @@ async def notify_host_visit_cancelled(
 # ── Scheduler emails (reminders / overdue alerts) ───────────────────────────-
 
 def _fmt_dt(value) -> str:
-    """Render a datetime/date for email bodies in the plant's local time
-    (was raw UTC isoformat — four or five hours off for the reader)."""
-    return fmt_local(value)
+    """A datetime/date for an email body: '2026-NOV-11 14:30 EST' in the
+    plant's time zone (Company Settings → Time Zone), '2026-NOV-11' for a
+    date, '—' for None. The zone abbreviation stays: the mail may be read
+    away from the plant."""
+    if isinstance(value, datetime):
+        return fmt_datetime(value, with_zone=True)
+    return fmt_date(value)
 
 
 async def notify_host_visit_reminder(

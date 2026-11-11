@@ -12,7 +12,7 @@ have already dealt with, which is the difference between a list they use
 and a list they re-read from the top every morning.
 """
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated
 
@@ -22,6 +22,7 @@ from sqlalchemy import select
 
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, SessionDep
+from app.core.plant_time import plant_today
 from app.models.mps import MrpMpsRun
 from app.models.purchase import MrpPurchaseLine, MrpPurchaseRun
 from app.services.numbering import next_timestamped_no
@@ -138,7 +139,7 @@ async def create_purchase_run(db: SessionDep, payload: WriteDep, token: BearerTo
                    "purchase suggestions",
         )
 
-    today = datetime.now(timezone.utc).date()
+    today = plant_today()
     suggestions, stats = await compute_suggestions(db, token, today=today)
 
     # Own advisory-lock key: the numbering helper serialises per (table,

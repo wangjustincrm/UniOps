@@ -21,22 +21,18 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
-from zoneinfo import ZoneInfo
-
-from sqlalchemy import Date, cast, func, or_, select
+from sqlalchemy import Date, String, bindparam, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.delegation import PLANT_TIMEZONE
+from app.core.plant_time import plant_day_start, to_plant, plant_tz_name
 from app.crud._list_order import lower_text, sort_clauses
 from app.models.approval import ApprovalEvent
 from app.models.gr import GoodsReceipt, GrLineItem
 from app.models.po import PoLineItem, PurchaseOrder
 from app.models.pr import PurchaseRequest
 from app.models.user import User
-
-_TZ = ZoneInfo(PLANT_TIMEZONE)
 
 # Anything past this many rows is a range the browser cannot usefully render
 # and a query nobody meant to run; the caller is told it was capped.
@@ -103,8 +99,12 @@ _ORDERED_AT = func.coalesce(
 
 
 def _local_day(column):
-    """A timestamptz as the plant's wall-clock date, in SQL."""
-    return cast(func.timezone(PLANT_TIMEZONE, column), Date)
+    """A timestamptz as the plant's wall-clock date, in SQL. The zone is a
+    bind whose value is read when the statement runs (callable_), so the
+    module-level expressions below follow a change to the Company Settings
+    zone without a restart."""
+    zone = bindparam(None, callable_=plant_tz_name, type_=String)
+    return cast(func.timezone(zone, column), Date)
 
 
 _MATERIAL_ID = func.coalesce(GrLineItem.material_id, PoLineItem.material_id)
@@ -134,11 +134,11 @@ SORT_TIEBREAK = (GrLineItem.id.asc(),)
 
 
 def _local_date(value: datetime | None) -> date | None:
-    return value.astimezone(_TZ).date() if value else None
+    return to_plant(value).date() if value else None
 
 
 def _day_start(day: date) -> datetime:
-    return datetime.combine(day, time.min, tzinfo=_TZ)
+    return plant_day_start(day)
 
 
 async def receiving_rows(

@@ -1,4 +1,5 @@
 """mrp-api FastAPI application factory."""
+import asyncio
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -24,9 +25,15 @@ async def lifespan(app: FastAPI):  # noqa: ARG001
     # module scope so importing `app.main` (tests, alembic env, one-off
     # containers) never pulls in the scheduler's dependency chain.
     from app.services.wms_sync import scheduler
+    # The plant's time zone (Company Settings): read once now, then kept
+    # fresh in the background so plant_today()/plant_now() stay cheap.
+    from app.core.plant_time import plant_tz_refresh_loop, refresh_plant_tz
+    await refresh_plant_tz(engine)
+    plant_tz_task = asyncio.create_task(plant_tz_refresh_loop(engine))
     wms_sync_task = scheduler.start()
     yield
     logger.info("Shutting down — closing engine")
+    plant_tz_task.cancel()
     await scheduler.stop(wms_sync_task)
     await engine.dispose()
 

@@ -13,7 +13,7 @@ without a month of its own, a `DDHHMM` number could be misread as a date
 inside the horizon month. `MMDDHH` fixes that by putting creation month
 where the horizon month can't be confused with it, at the cost of the
 minute: `MMDDHH` alone is not unique to the minute, or even close --
-two creates for the same prefix inside the same UTC **hour** collide on
+two creates for the same prefix inside the same plant-time **hour** collide on
 the column's unique constraint. That is no longer an edge case: an
 ordinary working session generating several runs inside one hour hits it
 routinely (observed: seven runs in about 35 minutes, all same-hour), not
@@ -58,11 +58,13 @@ how often the fallback fires, it doesn't remove the need for it. Kept to
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute
+
+from app.core.plant_time import plant_now, to_plant
 
 
 async def next_timestamped_no(
@@ -74,15 +76,17 @@ async def next_timestamped_no(
     now: datetime | None = None,
 ) -> str:
     """`{prefix}MMDDHH`, or `{prefix}MMDDHH-N` if that exact number is
-    already taken (same prefix, same UTC hour). `now` defaults to the
-    current UTC instant; overridable only for tests.
+    already taken (same prefix, same plant-time hour). `now` defaults to
+    the current instant; overridable only for tests (any aware datetime;
+    naive is taken as UTC).
 
-    UTC (not a business-local zone) to match every other timestamp already
-    written by this service (`ForecastVersion.confirmed_at`,
-    `TimestampMixin`'s `created_at`/`updated_at`, the retired
-    `_next_run_no`'s `today`) -- there is no local-timezone concept
-    anywhere else in mrp-api to be consistent with instead, and introducing
-    one just for this column would make it the odd one out.
+    MMDDHH is read on the PLANT's clock (Company Settings → Time Zone), not
+    UTC: the number is for people, and in Toronto a UTC stamp says
+    "tomorrow" from 19:00/20:00 on. Stored timestamps stay UTC. Switching
+    from the old UTC stamps cannot collide unnoticed: an old number that
+    happens to equal a new base is just an occupied base and gets `-N` like
+    any other same-hour create; the repeated hour when DST ends is handled
+    the same way.
 
     The lock is `(lock_key, hashtext(prefix))`, not `lock_key` alone --
     see module docstring for why: it scopes serialization to requests that
@@ -94,7 +98,7 @@ async def next_timestamped_no(
     runs, not a stale one captured before it started waiting.
     """
     await db.execute(select(func.pg_advisory_xact_lock(lock_key, func.hashtext(prefix))))
-    now = now or datetime.now(timezone.utc)
+    now = to_plant(now) if now is not None else plant_now()
     base = f"{prefix}{now:%m%d%H}"
 
     existing = (await db.execute(

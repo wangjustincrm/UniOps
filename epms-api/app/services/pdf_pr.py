@@ -1,5 +1,4 @@
 """PDF generator for Purchase Requests using ReportLab."""
-from datetime import datetime, timezone
 from io import BytesIO
 
 from reportlab.lib import colors
@@ -15,6 +14,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from app.core.plant_time import fmt_date, fmt_datetime, plant_now
 from app.models.pr import PurchaseRequest
 from app.schemas.gr import is_service
 from app.services.pdf_template import (
@@ -108,11 +108,11 @@ def generate_pr_pdf(
     def _cell(lbl: str, val: str | None) -> list:
         return [Paragraph(lbl, lbl_style), Paragraph(esc(val) or "—", val_style)]
 
-    # DD/MM/YYYY like every page of the app (UI-DATE-001, ISS-0183) — format only.
-    created_str = pr.created_at.strftime("%d/%m/%Y") if pr.created_at else "—"
-    required_str = pr.required_by.strftime("%d/%m/%Y") if pr.required_by else "—"
+    # YYYY-MMM-DD like every page of the app (UI-DATE-002), the plant's day.
+    created_str = fmt_date(pr.created_at)
+    required_str = fmt_date(pr.required_by)
     pr_type_str = PR_TYPES.get(pr.type, str(pr.type))
-    submitted_str = pr.submitted_at.strftime("%d/%m/%Y") if pr.submitted_at else "—"
+    submitted_str = fmt_date(pr.submitted_at)
     # "CRM00901 — Building Repairs & maintenance", the same code-and-name form
     # the PR Detail page shows. The name is resolved by the caller (budget-api
     # owns the catalog); when it can't be, the code alone still stands.
@@ -136,10 +136,7 @@ def generate_pr_pdf(
     # content as mini-XML, so an unescaped "&" in a name swallows the text after it.
     owner_row = []
     if is_service(pr.type):
-        completion_str = (
-            pr.service_completion_date.strftime("%d/%m/%Y")
-            if pr.service_completion_date else "—"
-        )
+        completion_str = fmt_date(pr.service_completion_date)
         owner_row = [[
             *_cell("Service Owner", owner_name),
             *_cell("Expected Completion", completion_str),
@@ -262,7 +259,7 @@ def generate_pr_pdf(
     elements.append(Spacer(1, 8 * mm))
     elements.append(HRFlowable(width="100%", thickness=0.5, color=_GRAY))
     elements.append(Paragraph(
-        f"Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')} · Status: Approved · {pr.number}",
+        f"Generated {fmt_datetime(plant_now())} · Status: Approved · {pr.number}",
         footer_style,
     ))
     elements.extend(footer_note_element(tmpl.get("footer_note", "")))

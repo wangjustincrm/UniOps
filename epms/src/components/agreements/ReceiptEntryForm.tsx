@@ -4,7 +4,7 @@ import { Upload, Loader2, Info, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
-import { cn, todayISODate } from '@/lib/utils'
+import { cn, formatDate, todayISODate } from '@/lib/utils'
 import { useUserDirectory } from '@/hooks/useUsers'
 import { useCreateReceipt, invalidateReceiptViews } from '@/hooks/useAgreementReceipts'
 import { agreementReceiptAttachmentService, receiptAttachmentsQueryKey } from '@/services/agreementReceiptAttachments'
@@ -344,8 +344,8 @@ export function ReceiptEntryForm({ agreementId, receiptType = 'counter_slip', on
         const receiptLabel = receipt.receipt_ref
           ? `receipt ${receipt.receipt_ref}`
           : receipt.total_amount === null
-            ? `the receipt dated ${receipt.receipt_date}`
-            : `the receipt dated ${receipt.receipt_date} for ${receipt.total_amount}`
+            ? `the receipt dated ${formatDate(receipt.receipt_date)}`
+            : `the receipt dated ${formatDate(receipt.receipt_date)} for ${receipt.total_amount}`
         try {
           await agreementReceiptService.update(agreementId, receipt.id, {
             missing_receipt_reason:

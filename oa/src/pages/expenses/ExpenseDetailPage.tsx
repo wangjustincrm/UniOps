@@ -651,12 +651,12 @@ export default function ExpenseDetailPage() {
               <dd>{(claim.travelers ?? []).length}</dd></div>
             <div><dt className="text-neutral-500">Destination</dt><dd>{claim.travel_destination || '—'}</dd></div>
             <div><dt className="text-neutral-500">Dates</dt>
-              <dd>{claim.travel_from_date} → {claim.travel_to_date}</dd></div>
+              <dd>{formatDate(claim.travel_from_date)} → {formatDate(claim.travel_to_date)}</dd></div>
             <div className="sm:col-span-2"><dt className="text-neutral-500">Reasons</dt><dd>{claim.purpose || '—'}</dd></div>
             <div className="sm:col-span-2"><dt className="text-neutral-500">Transportation & Accommodation</dt>
               <dd>{(claim.transport_modes ?? []).join(', ') || '—'}</dd></div>
             <div><dt className="text-neutral-500">Leave</dt>
-              <dd>{claim.leave_from_date ? `${claim.leave_from_date} → ${claim.leave_to_date}` : '—'}</dd></div>
+              <dd>{claim.leave_from_date ? `${formatDate(claim.leave_from_date)} → ${formatDate(claim.leave_to_date)}` : '—'}</dd></div>
             <div className="sm:col-span-2"><dt className="text-neutral-500">Remarks</dt><dd>{claim.notes || '—'}</dd></div>
           </dl>
         </div>

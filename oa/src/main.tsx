@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { useOaAuth } from './store/auth'
+import { loadDisplayTimeZone } from '@uniops/shell'
 
 // ── Portal session handoff ────────────────────────────────────────────────────
 // Mirror of the portal/finance encoder: base64 → UTF-8 bytes → string. atob()
@@ -53,8 +54,12 @@ function decodeUtf8Base64(b64: string): string {
   history.replaceState(null, '', window.location.pathname + window.location.search)
 })()
 
+// The plant's time zone (Portal → Admin → Company Settings) before the first
+// render, so every time on screen is plant time (UI-DATE-002). Never blocks
+// for long: on failure the zone last seen on this device is used.
+void loadDisplayTimeZone(`${(import.meta.env.VITE_EPMS_API_URL as string | undefined) || 'http://localhost:8000'}/api/v1/config/public/branding`).finally(() =>
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />
   </StrictMode>,
-)
+))

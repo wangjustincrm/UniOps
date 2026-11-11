@@ -14,7 +14,7 @@
 import { useState, useMemo, Fragment } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, TrendingUp, Building2, ChevronRight } from 'lucide-react'
-import { cn, formatAmount } from '@/lib/utils'
+import { cn, formatAmount, formatDate, todayISO } from '@/lib/utils'
 import { CompactAmount } from '@/components/ui/CompactAmount'
 import { Card, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -24,7 +24,8 @@ import { useCostCenters } from '@/hooks/useCostCenters'
 import type { ApiAccountSummary, ApiMonthlyAccountSummary } from '@/services/budget'
 import { downloadFinanceFile } from '@/lib/api'
 
-const currentYear = new Date().getUTCFullYear()
+/** The plant's calendar year (company time zone), read when used. */
+const currentYear = () => Number(todayISO().slice(0, 4))
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -57,7 +58,7 @@ export default function BudgetDashboard() {
     } as (typeof costCenters)[number])
   }, [scope, costCenters])
 
-  const [fiscalYear, setFiscalYear] = useState<number>(currentYear)
+  const [fiscalYear, setFiscalYear] = useState<number>(currentYear())
   const [ccId, setCcId] = useState<string>('all')
   const [highlightId, setHighlightId] = useState<string | null>(null)
   const [collapsedL1, setCollapsedL1] = useState<Set<string>>(new Set())
@@ -646,7 +647,7 @@ function VoucherRow({ account, fiscalYear, costCenterId, includeUnposted, partne
             <tbody>
               {rows.map((r, i) => (
                 <tr key={`${r.jv_id}-${i}`} className="border-t border-neutral-100">
-                  <td className="px-2 py-1 font-mono text-neutral-600">{r.voucher_date}</td>
+                  <td className="px-2 py-1 font-mono text-neutral-600">{formatDate(r.voucher_date)}</td>
                   <td className="px-2 py-1 font-mono">
                     {r.jv_number}
                     {r.posted === false && (

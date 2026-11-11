@@ -6,7 +6,7 @@
 // Two routes share this file:
 //   /trace            — the entry form (material, optional batch, date)
 //   /trace/:material  — one tab per material; batch and date in the query.
-// Dates are plain "YYYY-MM-DD" strings on Toronto's clock, never parsed.
+// Dates are plain "YYYY-MM-DD" strings on the plant's clock, never parsed.
 import { WmsHistoryNote } from '@/components/WmsHistoryNote'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
@@ -14,7 +14,7 @@ import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Download, Loader2, Route } from 'lucide-react'
 import { Badge, Skeleton } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { formatQty, isZero } from '@/lib/number'
 import { todayToronto } from '@/lib/time'
 import { ErrorBox } from '@/pages/nc/NcUi'
@@ -108,7 +108,7 @@ function Tile({ label, children, tone }: { label: string; children: React.ReactN
 }
 
 function noBatchNote(since: string): string {
-  return `NC stopped recording this material by batch on ${since} — material-level trace only.`
+  return `NC stopped recording this material by batch on ${formatDate(since)} — material-level trace only.`
 }
 
 function findRowIndex(t: TraceResponse, match: (ln: TraceLine, kind: string) => boolean): number {
@@ -223,7 +223,7 @@ function TraceView({ material }: { material: string }) {
           </h1>
           {t && (
             <p className="text-xs text-neutral-500">
-              From {t.start} (WMS history start) to {t.date}
+              From {formatDate(t.start)} (WMS history start) to {formatDate(t.date)}
               <span className="text-neutral-400"> · {t.scope_note} NC clock: {t.nc_time_zone}.</span>
             </p>
           )}
@@ -316,7 +316,7 @@ function TraceView({ material }: { material: string }) {
                 <span className="text-neutral-400">NC </span>{formatQty(t.opening.nc)}
                 <span className="text-neutral-400"> · WMS </span>{formatQty(t.opening.wms)}
               </Tile>
-              <Tile label={`Closing ${t.date}`} tone={isZero(t.closing.diff) ? undefined : 'bad'}>
+              <Tile label={`Closing ${formatDate(t.date)}`} tone={isZero(t.closing.diff) ? undefined : 'bad'}>
                 <span className="text-neutral-400">NC </span>{formatQty(t.closing.nc)}
                 <span className="text-neutral-400"> · WMS </span>{formatQty(t.closing.wms)}
                 <span className="text-neutral-400"> · diff </span>

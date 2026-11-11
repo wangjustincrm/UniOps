@@ -356,7 +356,8 @@ async def test_generate_two_runs_in_the_same_hour_both_succeed(client, db_sessio
     inline without `next_timestamped_no`'s collision check, the second
     POST here would 500 instead of 201ing with a distinct, `-2`-suffixed
     number."""
-    from datetime import datetime as real_datetime, timezone
+    from datetime import datetime as real_datetime
+    from zoneinfo import ZoneInfo
 
     from app.services import numbering
 
@@ -366,14 +367,9 @@ async def test_generate_two_runs_in_the_same_hour_both_succeed(client, db_sessio
     version, _months = await _confirmed_version(db_session)
     await _factory_rule(client, headers)
 
-    fixed = real_datetime(2026, 9, 3, 9, 15, 0, tzinfo=timezone.utc)
-
-    class _FrozenDateTime(real_datetime):
-        @classmethod
-        def now(cls, tz=None):
-            return fixed
-
-    monkeypatch.setattr(numbering, "datetime", _FrozenDateTime)
+    # Plant clock (numbering reads MMDDHH in the plant zone): 09:15 at the plant.
+    fixed = real_datetime(2026, 9, 3, 9, 15, 0, tzinfo=ZoneInfo("America/Toronto"))
+    monkeypatch.setattr(numbering, "plant_now", lambda: fixed)
 
     r1 = await client.post(
         "/api/v1/mps/runs",

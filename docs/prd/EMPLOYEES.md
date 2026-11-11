@@ -1,9 +1,13 @@
 # UniOps Staff (Employee Master) & ADP Roster Import — Product Requirements Document
 
-**Version:** 0.5
-**Date:** 2026-11-04
+**Version:** 0.6
+**Date:** 2026-11-11
 **Status:** In production; decisions recorded 2026-11-02
 **Scope:** A new employee master in UniOps, kept up to date from the ADP Workforce Now roster that HR exports every two weeks; creating UniOps user accounts from employee records; and a to-do list that keeps the NC65 HR person records in step with UniOps, checked automatically by reading NC.
+
+**What changed in v0.6** (2026-11-11)
+
+- "Today" is the plant's date in the Company Settings time zone, not the UTC date: the roster date's default on upload (§4) and the date in the Staff and NC To-do export file names (NFR-004).
 
 **What changed in v0.5** (2026-11-06)
 
@@ -136,7 +140,7 @@ The roster lists Active and Leave employees only. **People who have left do not 
 
 ### 4.2 Flow
 
-1. **Upload.** The user picks the file and enters the *roster date* (defaults to today).
+1. **Upload.** The user picks the file and enters the *roster date* (defaults to today, the plant's date in the Company Settings time zone).
 2. **Preview.** Nothing is written yet. UniOps shows what the import would do (IMP-004).
 3. **Apply.** The user confirms. The changes are written in one step, and the NC to-dos are generated.
 4. **Review leavers.** Employees missing from the roster are listed for a decision (IMP-009).
@@ -347,7 +351,7 @@ NC65's external exchange interface (XChange) has a person-record import. It was 
 | **NFR-001** | Preview of a 500-row roster returns within 10 seconds; apply within 30 seconds. |
 | **NFR-002** | The uploaded roster file is stored with its import record and can be read only by `employee.import` holders. It should be kept for 24 months, then deleted, and the import result rows stay. The deletion is not built yet. |
 | **NFR-003** | Every change to an employee is in its history (§3). Imports, Left/Reinstate, number corrections and manual to-do closes are also audit events with user and time. |
-| **NFR-004** | Lists and forms follow UniOps UI conventions: English-only UI, plant-local dates, standard sortable lists with locked headers, and no date-only values shifted by time zone. |
+| **NFR-004** | Lists and forms follow UniOps UI conventions: English-only UI, plant-local dates (Company Settings → Time Zone; exports keep ISO dates and name the file with the plant's date), standard sortable lists with locked headers, and no date-only values shifted by time zone. |
 
 ---
 

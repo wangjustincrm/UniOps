@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from sqlalchemy import func, select
 
+from app.core.plant_time import fmt_date
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.core.access_scope import (
@@ -354,8 +355,8 @@ async def _assert_invoice_due_dates_within_window(
             status_code=422,
             detail=(f"Invoices on one payment application must fall due within "
                     f"{PA_INVOICE_DUE_WINDOW_DAYS} days of each other. "
-                    f"{earliest.internal_ref} is due {earliest.due_date.isoformat()} and "
-                    f"{latest.internal_ref} is due {latest.due_date.isoformat()} "
+                    f"{earliest.internal_ref} is due {fmt_date(earliest.due_date)} and "
+                    f"{latest.internal_ref} is due {fmt_date(latest.due_date)} "
                     f"({span} days apart) — raise a separate payment for them."),
         )
 

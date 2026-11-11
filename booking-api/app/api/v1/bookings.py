@@ -24,7 +24,7 @@ from sqlalchemy import func, not_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
+from app.core.plant_time import plant_tz, plant_tz_name
 from app.core.deps import SessionDep
 from app.core.list_sort import apply_sort, check_sort
 from app.core.permissions import AdminUser, CurrentUser, is_booking_admin
@@ -264,7 +264,7 @@ async def create_booking(
     for room bookings. All occurrences share one transaction; any conflict or
     constraint violation causes a full rollback and 400 response.
     """
-    tz = ZoneInfo(settings.DISPLAY_TIMEZONE)
+    tz = plant_tz()
     organizer_id = uuid.UUID(current_user["sub"])
 
     # ── Step 1: Payload sanity ────────────────────────────────────────────────
@@ -689,11 +689,11 @@ async def get_my_bookings_paged(
 async def get_day_summary(
     db: SessionDep,
     current_user: CurrentUser,
-    date: str = Query(..., description="Calendar date in YYYY-MM-DD format (interpreted in DISPLAY_TIMEZONE)"),
+    date: str = Query(..., description="Calendar date in YYYY-MM-DD format (interpreted in the plant time zone)"),
 ):
     """Return all rooms and confirmed bookings for a single calendar day.
 
-    `date` is a local calendar day in settings.DISPLAY_TIMEZONE.
+    `date` is a local calendar day in the plant time zone (Company Settings).
     The query window is [date 00:00 local, next day 00:00 local) converted to UTC.
     Rooms with status 'disabled' are excluded; maintenance rooms are included
     (frontend renders them greyed out).
@@ -701,7 +701,7 @@ async def get_day_summary(
     """
     from datetime import date as date_type
 
-    tz = ZoneInfo(settings.DISPLAY_TIMEZONE)
+    tz = plant_tz()
 
     # Parse date string
     try:
@@ -756,7 +756,7 @@ async def get_day_summary(
         date=parsed_date.isoformat(),
         open_start=open_start,
         open_end=open_end,
-        timezone=settings.DISPLAY_TIMEZONE,
+        timezone=plant_tz_name(),
         rooms=[
             DaySummaryRoom(
                 id=r.id,
@@ -820,7 +820,7 @@ async def update_booking_series(
     NOTE: Outlook rewrites past occurrences too when a series UPDATE is received;
     the DB intentionally keeps historical rows unchanged — accepted tradeoff.
     """
-    tz = ZoneInfo(settings.DISPLAY_TIMEZONE)
+    tz = plant_tz()
     actor_id = uuid.UUID(current_user["sub"])
     is_admin = await is_booking_admin(current_user, db)
 
@@ -1178,7 +1178,7 @@ async def update_booking(
     - If room_id/starts_at/ends_at changed: re-validate + conflict-check excluding self.
     - On success: ical_sequence += 1, sync_status = "pending", audit "update", enqueue "updated".
     """
-    tz = ZoneInfo(settings.DISPLAY_TIMEZONE)
+    tz = plant_tz()
     actor_id = uuid.UUID(current_user["sub"])
     is_admin = await is_booking_admin(current_user, db)
 
@@ -1379,7 +1379,7 @@ async def cancel_booking(
     """
     actor_id = uuid.UUID(current_user["sub"])
     is_admin = await is_booking_admin(current_user, db)
-    tz = ZoneInfo(settings.DISPLAY_TIMEZONE)
+    tz = plant_tz()
 
     # Fetch the target booking
     result = await db.execute(select(Booking).where(Booking.id == booking_id))

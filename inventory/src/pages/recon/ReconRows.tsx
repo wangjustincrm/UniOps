@@ -2,7 +2,7 @@
 // source, batch groups), and the small GL tables under the main table.
 import { ChevronDown, ChevronRight, Route } from 'lucide-react'
 import { Badge } from '@uniops/shell'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { absExceeds, addDecimal, formatMoney, formatQty, isNegative, isZero } from '@/lib/number'
 import { MaterialCell, Uom, thCls } from '@/pages/nc/NcUi'
 import { TraceLink } from '@/pages/trace/TraceLink'
@@ -165,7 +165,7 @@ function Expansion({ r, showAmt, tolQty, date, onShowBatches }: {
         <h3 className="text-xs font-semibold text-neutral-700">Batches</h3>
         {!r.batch_expandable ? (
           <p className="text-xs text-neutral-500">
-            NC stopped tracking this material by batch{r.no_batch_since ? ` on ${r.no_batch_since}` : ''} — material level only.
+            NC stopped tracking this material by batch{r.no_batch_since ? ` on ${formatDate(r.no_batch_since)}` : ''} — material level only.
           </p>
         ) : r.batches === undefined ? (
           <button type="button" onClick={onShowBatches}
@@ -253,7 +253,7 @@ export function ReconRowView({ r, showAmt, tol, date, open, onToggle, onShowBatc
             </span>
             <span className="flex flex-wrap gap-1">
               {!r.in_nc && <Badge variant="warning" className="text-[10px]">Not in NC</Badge>}
-              {r.no_batch_since && <Badge variant="neutral" className="text-[10px]">NC stopped {r.no_batch_since}</Badge>}
+              {r.no_batch_since && <Badge variant="neutral" className="text-[10px]">NC stopped {formatDate(r.no_batch_since)}</Badge>}
               {r.unit_check === 'mismatch' && (
                 <span title="Information only — quantities are still compared as recorded"
                   className="inline-flex rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium text-neutral-500">

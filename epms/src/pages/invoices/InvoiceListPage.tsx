@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Pagination } from '@/components/ui/Pagination'
 import { AiBadge } from '@/components/ui/AiBadge'
-import { cn, formatAmount, formatDate } from '@/lib/utils'
+import { cn, formatAmount, formatDate, todayISO } from '@/lib/utils'
 import { dueInfo, type DueTone } from '@/lib/dueDate'
 import { computeSla, type InvoiceStatus } from '@/stores/invoice.store'
 import { useInvoices, useInvoiceStatusCounts, useCreateInvoice, useMatchInvoice, useDeleteInvoice, useMarkInvoiceDirect } from '@/hooks/useInvoices'
@@ -187,7 +187,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
   const { data: carriers = [] } = useFreightCarriers()
   const [vendorInvoiceNumber, setVendorInvoiceNumber] = useState('')
   const [poNumber, setPoNumber] = useState('')
-  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10))
+  const [invoiceDate, setInvoiceDate] = useState(todayISO())
   const [dueDate, setDueDate] = useState('')
   const [amount, setAmount] = useState('')
   const [docType, setDocType] = useState<'invoice' | 'credit_note'>('invoice')
@@ -249,7 +249,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
     setSelectedVendor(keepVendor)
     setVendorQuery(''); setVendorOpen(false)
     setVendorInvoiceNumber(''); setPoNumber('')
-    setInvoiceDate(new Date().toISOString().slice(0, 10)); setDueDate('')
+    setInvoiceDate(todayISO()); setDueDate('')
     setAmount(''); setTaxAmount(''); setNotes('')
     setSubmitted(false); setSubmitError(null); setCreatedInv(null)
     setParseError(null)
@@ -323,7 +323,7 @@ function UploadModal({ onClose, onUploaded, forDirectPa = false }: UploadModalPr
       if (fields.vendorInvoiceNumber) { setVendorInvoiceNumber(fields.vendorInvoiceNumber); filled.add('vendorInvoiceNumber') }
       if (fields.poNumber)            { setPoNumber(fields.poNumber);                        filled.add('poNumber') }
 
-      const resolvedInvoiceDate = fields.invoiceDate ?? new Date().toISOString().slice(0, 10)
+      const resolvedInvoiceDate = fields.invoiceDate ?? todayISO()
       if (fields.invoiceDate) { setInvoiceDate(fields.invoiceDate); filled.add('invoiceDate') }
 
       // Due date: explicit date takes priority; otherwise compute from NET XX terms.

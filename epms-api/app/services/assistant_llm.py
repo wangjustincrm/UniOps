@@ -26,12 +26,11 @@ exhaust the shared quota and take invoice OCR down with it.
 import json
 import re
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, timezone
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from app.core.config import settings
-from app.core.delegation import PLANT_TIMEZONE
+from app.core.plant_time import plant_now
 from app.services.controlled_query import _OPS_BY_KIND as cq_ops
 
 log = logging.getLogger(__name__)
@@ -39,7 +38,6 @@ log = logging.getLogger(__name__)
 from app.services import guide_view, reply_language
 
 MODEL = "claude-haiku-4-5-20251001"
-_PLANT_TZ = ZoneInfo(PLANT_TIMEZONE)
 
 # The plan call returns a small JSON object; 1024 is generous for it. Narration
 # is prose about at most a few hundred rows of summary.
@@ -444,8 +442,9 @@ results are the only facts you have.
   percent, all computed for you — report them, never recompute. The two
   periods are `resolved_period` and `previous_year.resolved_period`.
 - `resolved_period` is the dates the query covered. State them once, in the
-  reply's date format (DD/MM/YYYY), so the reader can see which period was
-  used — e.g. "this quarter (01/10/2026 – 20/10/2026)".
+  date format UniOps shows on every screen (YYYY-MMM-DD, upper-case English
+  month), so the reader can see which period was used — e.g. "this quarter
+  (2026-OCT-01 – 2026-OCT-20)".
 - If the results are empty, say so plainly — do not speculate about why.
 - Empty is "nothing matched this query", NOT "this never happened". When the
   query filtered on a name the person typed, say that no records matched that
@@ -1028,16 +1027,17 @@ def _today_note() -> str:
     The plant's date, not UTC's: after 20:00 in Toronto UTC is already
     tomorrow, and "today" pointed at a day that had not started (ISS-0048).
     """
-    now = datetime.now(_PLANT_TZ)
+    now = plant_now()
     return (
         f"\n\nToday is {now:%Y-%m-%d} ({now:%A}). Resolve every date against "
         f"this, never against anything you remember. A month or day given "
         f"without a year means the most recent one that has already started — "
         f"normally {now.year}, or {now.year - 1} if {now.year} would put it in "
-        f"the future. A date written with slashes is day first, the way EPMS "
-        f"shows dates (DD/MM/YYYY): 10/11 is 10 November, never 11 October. "
-        f"When a slashed date could be read either way, say in the answer which "
-        f"date was used."
+        f"the future. A date written with slashes is day first (DD/MM/YYYY): "
+        f"10/11 is 10 November, never 11 October. When a slashed date could be "
+        f"read either way, say in the answer which date was used. Write every "
+        f"date in the answer the way UniOps shows dates, YYYY-MMM-DD with an "
+        f"upper-case English month (2026-NOV-10), never with slashes."
     )
 
 

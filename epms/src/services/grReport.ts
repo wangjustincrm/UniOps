@@ -1,9 +1,9 @@
 import { api, downloadFile } from '@/lib/api'
+import { todayISO } from '@/lib/utils'
 
-/** Today as YYYY-MM-DD in the reader's own zone (not UTC). */
+/** Today at the plant as YYYY-MM-DD (company time zone — not UTC, not the browser's). */
 function localDay(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return todayISO()
 }
 
 /**

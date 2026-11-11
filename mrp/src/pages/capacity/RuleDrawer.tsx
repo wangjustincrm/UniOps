@@ -26,6 +26,7 @@ import { createPortal } from 'react-dom'
 import { AlertTriangle, Loader2, X as XIcon } from 'lucide-react'
 import { Button, Input, FormField } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
+import { formatDate, todayISO } from '@/lib/utils'
 import { MaterialPicker } from '@/pages/consignment/MaterialPicker'
 import {
   capacityApi,
@@ -58,9 +59,9 @@ function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
 }
 
+/** Today at the plant (company time zone), 'YYYY-MM-DD'. */
 function todayIso(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return todayISO()
 }
 
 function formatQty(n: number): string {
@@ -432,8 +433,8 @@ export function RuleDrawer({
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>
                   Overlaps an existing active rule for the same scope and constraint (
-                  {formatQty(Number(overlap.limit_value))}{overlap.uom ? ` ${overlap.uom}` : ''}, {overlap.effective_from}
-                  {' – '}{overlap.effective_to ?? 'open-ended'}). Both will be considered active over the overlapping period.
+                  {formatQty(Number(overlap.limit_value))}{overlap.uom ? ` ${overlap.uom}` : ''}, {formatDate(overlap.effective_from)}
+                  {' – '}{overlap.effective_to ? formatDate(overlap.effective_to) : 'open-ended'}). Both will be considered active over the overlapping period.
                 </span>
               </div>
             )}

@@ -78,6 +78,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_now
 from app.models.demand_series import MrpDemandSeries, MrpForecastChangeLog
 from app.models.forecast import ForecastLine, ForecastVersion
 from app.models.intent import MrpIntentProduct
@@ -225,7 +226,7 @@ async def upsert_cells(
     qty==0 deletes the sparse row). Commits internally — one transaction for
     the whole batch, whether it's one cell or a thousand.
 
-    `current_month` defaults to `datetime.now(timezone.utc)` formatted
+    `current_month` defaults to the plant's current month (`plant_now()`)
     'YYYY-MM' when omitted (real callers, e.g. Task 3's API endpoint); tests
     pass a fixed value so the past-month guard is deterministic.
 
@@ -238,7 +239,7 @@ async def upsert_cells(
     give (identity-api down, or a non-HTTP caller) simply logs no name,
     never breaks the write."""
     if current_month is None:
-        current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+        current_month = plant_now().strftime("%Y-%m")
 
     if not cells:
         return UpsertResult(upserted=0, changed=0)
@@ -372,7 +373,7 @@ async def freeze_outlook(
     )).all())
 
     # `FCV-{anchor_month, no dash}-{MMDDHH}` -- e.g. `FCV-202610-081417` for
-    # an outlook anchored at 2026-10, frozen 14 Aug 17:11 UTC. `YYYYMM` is
+    # an outlook anchored at 2026-10, frozen 14 Aug 17:11 plant time. `YYYYMM` is
     # the horizon's start month (no dash, so it can't be misread as a date
     # sitting inside the horizon month -- the ambiguity the owner flagged
     # in round one); `MMDDHH` is the creation month/day/hour, not a random
@@ -382,7 +383,7 @@ async def freeze_outlook(
     # anchor a calendar month or a year apart no longer collide just for
     # sharing a day-of-month/hour -- the month digit already tells them
     # apart. What DOES still collide, routinely rather than rarely, is two
-    # freezes of the same anchor inside the same UTC HOUR (minute is no
+    # freezes of the same anchor inside the same plant-time HOUR (minute is no
     # longer part of the number): those share the exact same base and the
     # later one gets a numerically-later `-N` suffix that reflects arrival
     # order within that hour, not elapsed time -- ordering is only

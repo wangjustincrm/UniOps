@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from sqlalchemy import String, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import fmt_date
 from app.crud._list_order import lower_text, sort_clauses
 from app.models.agreement import PurchaseAgreement
 from app.models.agreement_receipt import AgreementReceipt
@@ -416,7 +417,7 @@ async def claim(
         """
         if receipt.receipt_ref:
             return f"receipt {receipt.receipt_ref}"
-        return f"the {RECEIPT_TYPE_LABELS.get(receipt.receipt_type, 'receipt')} dated {receipt.receipt_date}"
+        return f"the {RECEIPT_TYPE_LABELS.get(receipt.receipt_type, 'receipt')} dated {fmt_date(receipt.receipt_date)}"
     for receipt_id in seen_ids:
         receipt = (await db.execute(
             select(AgreementReceipt).where(AgreementReceipt.id == receipt_id)
