@@ -303,8 +303,10 @@ function NewDocumentForm({ onClose }: { onClose: () => void }) {
         </div>
       </div>
       {/* ★ Above the names, which is where HSE asked for it. */}
-      <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
-        <p className="text-xs font-medium text-neutral-700">The document itself</p>
+      {/* ★ Round 12, DOC-02: boxed, titled Attachments, light blue — the
+          same box the document page shows at the top. */}
+      <div className="mt-3 rounded-lg border border-info-200 bg-info-50 p-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-info-800">Attachments</p>
         <p className="mt-0.5 max-w-[68ch] text-xs text-neutral-500">
           Attach it here. It cannot be published without something to read, so
           adding it now saves opening the record again — and nobody can be asked

@@ -82,20 +82,28 @@ export default function DocumentDetailPage() {
       <PageHeader
         title={d.title}
         subtitle={`${d.doc_no} · ${CATEGORY_LABELS[d.category] ?? d.category} · v${d.version}`}
-      >
-        {d.file_id && <DownloadButton doc={d} />}
-      </PageHeader>
+      />
 
-
-      {d.qr_token && (
-        <Card className="mb-4">
-          <QrPanel
-            token={d.qr_token}
-            caption="Scan to open this document"
-            sub={`${d.doc_no} · v${d.version}`}
-          />
-        </Card>
-      )}
+      {/* ★ Round 12, DOC-01/02: "place the attachment in the center of the top
+          section inline with the QR code … a box around the attachment titled
+          Attachments with a light blue background." It was a button in the
+          page header, which is where HSE could not see it. A document has one
+          file, so the box holds one. */}
+      <Card className="mb-4">
+        <div className="grid items-center gap-4 md:grid-cols-[1fr_minmax(16rem,auto)_1fr]">
+          <div className="min-w-0">
+            {d.qr_token && (
+              <QrPanel
+                token={d.qr_token}
+                caption="Scan to open this document"
+                sub={`${d.doc_no} · v${d.version}`}
+              />
+            )}
+          </div>
+          <AttachmentsBox doc={d} />
+          <div aria-hidden className="hidden md:block" />
+        </div>
+      </Card>
       <Card className="mb-4">
         {d.summary && <p className="mb-3 text-sm text-neutral-700">{d.summary}</p>}
         <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
@@ -184,6 +192,20 @@ function Detail({ label, children }: { label: string; children: React.ReactNode 
       <dt className="text-xs text-neutral-500">{label}</dt>
       <dd className="text-sm text-neutral-900">{children}</dd>
 </div>
+  )
+}
+
+function AttachmentsBox({ doc }: { doc: SafetyDoc }) {
+  return (
+    <section aria-label="Attachments"
+             className="rounded-lg border border-info-200 bg-info-50 px-3.5 py-3 text-center">
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-info-800">Attachments</h2>
+      <div className="mt-2 flex justify-center">
+        {doc.file_id
+          ? <DownloadButton doc={doc} />
+          : <p className="text-sm text-neutral-600">No file attached yet.</p>}
+      </div>
+    </section>
   )
 }
 
