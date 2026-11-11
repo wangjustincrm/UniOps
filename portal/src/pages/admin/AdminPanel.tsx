@@ -13,7 +13,7 @@ import { useAuthStore } from '@/store/auth'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { adminPageLinks } from '@/components/layout/navConfig'
 import { epmsApi, epmsDownload, epmsUpload, mdmApi } from '@/lib/api'
-import { cn, formatDateTime } from '@/lib/utils'
+import { cn, formatDateTime, setDisplayTimeZone } from '@/lib/utils'
 import { UnitsOfMeasure } from './UnitsOfMeasure'
 import { NcSyncSection } from './nc-sync/NcSyncSection'
 import { WmsSyncSection } from './WmsSyncSection'
@@ -36,6 +36,7 @@ interface CompanyConfig {
   tagline: string
   module_taglines: Record<string, string>
   delivery_address: string
+  timezone: string
   logo_data_url: string | null
   logo_file_name: string | null
   default_currency: string
@@ -205,10 +206,34 @@ const MODULE_TAGLINE_KEYS: { key: string; label: string }[] = [
   { key: 'booking', label: 'Booking' },
 ]
 
+// Area/City zone names (what the server accepts — no Etc/GMT±N offsets or
+// legacy aliases). Falls back to the plant's own zone on old browsers.
+const TIME_ZONES: string[] = (() => {
+  try {
+    const all = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] })
+      .supportedValuesOf?.('timeZone') ?? []
+    const zones = all.filter((z) => z.includes('/') && !z.startsWith('Etc/'))
+    return zones.length ? zones : ['America/Toronto']
+  } catch {
+    return ['America/Toronto']
+  }
+})()
+
+function zoneLabel(tz: string): string {
+  try {
+    const off = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' })
+      .formatToParts(new Date()).find((p) => p.type === 'timeZoneName')?.value
+    return off ? `${tz} (${off} now)` : tz
+  } catch {
+    return tz
+  }
+}
+
 function CompanySettings() {
   const { data: cfg, isLoading } = useConfig()
   const save = useSaveConfig()
   const [form, setForm] = useState({ name: '', tagline: '', delivery_address: '' })
+  const [timeZone, setTimeZone] = useState<string | undefined>(undefined) // undefined = not touched
   const [logoDataUrl, setLogoDataUrl] = useState<string | null | undefined>(undefined) // undefined = not touched
   const [logoFileName, setLogoFileName] = useState<string | null | undefined>(undefined)
   // Per-module tagline overrides for epms/oa/vms (portal uses `tagline`).
@@ -229,6 +254,8 @@ function CompanySettings() {
   const currentFileName = logoFileName !== undefined ? logoFileName : cfg?.logo_file_name ?? null
 
   const currentModuleTaglines = moduleTaglines ?? cfg?.module_taglines ?? {}
+  const currentTimeZone = timeZone ?? cfg?.timezone ?? 'America/Toronto'
+  const zoneOptions = TIME_ZONES.includes(currentTimeZone) ? TIME_ZONES : [currentTimeZone, ...TIME_ZONES]
 
   const taglineFor = (key: string): string =>
     key === 'portal' ? values.tagline : (currentModuleTaglines[key] ?? '')
@@ -259,10 +286,14 @@ function CompanySettings() {
     try {
       const body: any = { name: values.name, tagline: values.tagline, delivery_address: values.delivery_address }
       if (moduleTaglines !== undefined) body.module_taglines = moduleTaglines
+      if (timeZone !== undefined) body.timezone = timeZone
       if (logoDataUrl !== undefined) body.logo_data_url = logoDataUrl
       if (logoFileName !== undefined) body.logo_file_name = logoFileName
       await save.mutateAsync(body)
-      setToast({ ok: true, msg: 'Company settings saved.' })
+      if (timeZone !== undefined) setDisplayTimeZone(timeZone)
+      setToast({ ok: true, msg: timeZone !== undefined
+        ? 'Company settings saved. Other open pages use the new time zone after a reload.'
+        : 'Company settings saved.' })
     } catch (err: any) {
       setToast({ ok: false, msg: err.message })
     }
@@ -272,7 +303,7 @@ function CompanySettings() {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5 max-w-lg">
-      <SectionHeader title="Company Settings" description="Organization name, tagline, delivery address and logo used across all modules." />
+      <SectionHeader title="Company Settings" description="Organization name, tagline, delivery address, time zone and logo used across all modules." />
 
       {/* Logo */}
       <Field label="Company Logo" hint="PNG or JPG, recommended 200×60 px. Shown on login page and PDF documents.">
@@ -321,6 +352,13 @@ function CompanySettings() {
       </div>
       <Field label="Delivery Address" hint="Default delivery address on purchase orders.">
         <Textarea rows={3} value={values.delivery_address} onChange={f('delivery_address')} />
+      </Field>
+      <Field label="Time Zone"
+        hint="The plant's time zone. Every module uses it for times on screen, in PDFs and emails, for today's date, accounting periods, document-number dates and the hour daily reminders run. Daylight saving is applied automatically.">
+        <select value={currentTimeZone} onChange={(e) => setTimeZone(e.target.value)}
+          className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
+          {zoneOptions.map((z) => <option key={z} value={z}>{zoneLabel(z)}</option>)}
+        </select>
       </Field>
       <div className="flex items-center gap-3">
         <SaveButton loading={save.isPending} />
