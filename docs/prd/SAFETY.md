@@ -1,12 +1,15 @@
 # Safety (EHS) — Product Requirements Document
 
-**Version**: 0.19
-**Date**: 2026-11-10
+**Version**: 0.20
+**Date**: 2026-11-11
 **Status**: In Development (branch, not deployed)
 **Scope**: A workplace health and safety module for the Kingston plant (Ontario OHSA / WSIB), replacing SiteDocs. It covers incidents and statutory clocks, corrective actions, inspections and forms, training, JHSC, chemicals/WHMIS, permits, equipment, documents, and dashboards.
 **Source**: Consolidated from the Safety Module PRD series in `/srv/uniops/`. The baseline is the full requirement list in v0.2 (`Safety-Module-PRD-EN-v0.2.docx`, 28 Aug 2026). Changes come from v0.3 and the HSE reply to it (`Safety-Module-PRD-EN-v0.3_Reply.docx`, 31 Aug), and from v0.4 and the HSE reply to it (`Safety-Module-PRD-EN-v0.4_Reply.docx`, 1 Sep). v0.3 and v0.4 were delta documents, so they do not restate the full list.
 
-**What changed in this version (0.18 → 0.19)**
+**What changed in this version (0.19 → 0.20)**
+- §1.6 "Round 12, fifth batch": what is new to each person — flags on My Actions (new work, news, new incidents for HSE and the area's supervisors) and on Feedback (an answer to one's comment), a "New" tile and chips; due dates coloured green, yellow and red by HSE's numbers; every corrective action given to somebody emailed through Who is told, with the previous owner, the reporter and the owner's supervisor as options, and a handover written on each record; corrective actions on feedback, followed by whoever left it; Communications lists every email, searched and sent again as a reminder, with the words kept for HSE's retention days.
+
+**What changed in version 0.19 (0.18 → 0.19)**
 - §1.6 "Review of the third and fourth batches": permit photographs follow the permit; a record's action history follows who may see each action; saving unchanged keeps the wording of picks; links to a permit, a hazard's Edit and a draft JSA's details; incident type labels kept on the report; HSE's review tasks; JHSC verification once. The list standard applied to the equipment register, the hazard register and incident types.
 
 **What changed in version 0.18 (0.17 → 0.18)**
@@ -269,7 +272,7 @@ UAT 11 closed at 10 passed and 9 failed (ver 11.3). HSE's 91 further requests ar
 - The session form finds a course by typing, across the whole list. "Required by law" is gone from the screens; `is_statutory` stays.
 - Compliance says its courses come from the Positions register. HSE decided compliance stays driven by Positions, so there is no separate list of required courses.
 - Closing a form returns to the list of forms, not to "Which area?".
-- Renamed: Expiry notices → Training notifications, Reassign a leaver → Reallocate Items, Undelivered email → Communications. Paths and tables are unchanged. The Communications page still lists undelivered mail only.
+- Renamed: Expiry notices → Training notifications, Reassign a leaver → Reallocate Items, Undelivered email → Communications. Paths and tables are unchanged. The Communications page still lists undelivered mail only (until round 12, fifth batch: every email).
 - The Portal rule that a supervisor is in the same department stays (PORTAL.md USR-002). TC-10 failed because the test accounts had no department.
 
 Round 12, second batch (built)
@@ -334,6 +337,21 @@ Review of the third and fourth batches (uniops-95, built)
 - HSE's review of a record (L3) is withdrawn when another action is raised on it and asked for again when that closes; a JHSC recommendation's review is done by verifying it, not ticked off in My Actions; closing an incident closes its review in the closer's name. A JHSC recommendation is verified once, and one already Completed before step 11 is not offered it again (L4). Completed is HSE's verification, not a state anyone picks (re-review N1): only whoever may verify is offered it in the state list, and picking it verifies the recommendation and closes its review; those already Completed when step 11 arrived are marked so (migration 0097). Retrying an edited report does not resend what went through (L5).
 - Waiting on HSE: whether adding only the product batch code on the investigation should withdraw HSE's review, as any edit to the report does (L6).
 - The list standard (decided 10-29, applied to Safety 11-10): the equipment register and the hazard register are tables paged, searched and sorted on the server (every column; unknown keys refused; blanks last both ways), with the standard pager and a header locked while it scrolls; incident types are one sortable table. The hazard register is no longer the latest 300. Safety's other lists are not changed yet.
+Round 12, fifth batch (built)
+
+On HSE's answer Q16 ("21 days, in Rules; HSE only; resend to people HSE picks") and the defaults D12 and D13.
+
+- What is new is kept per person (migration 0098). Nothing older than a person's first visit after this is new, so the first day does not flag everything. Opening the record — from My Actions, an email, the Portal's inbox or anywhere — clears it; a task given to a role clears for that person only.
+- My Actions (ACT-01/02/03) carries a count in the menu: work newly given to me (a corrective action raised or handed to me, or any other task), news posted since I last opened My Actions, and, for HSE and whoever is down for the area, incidents sent since they last looked, near misses included and never one's own report (INC-08, D12). The incidents are listed at the top of My Actions and leave the list as each is opened; they are not tasks. A sixth tile, New, counts the new work and narrows the lists to it; each new card says New.
+- Feedback (ACT-04) carries HSE's count of comments not looked at, as before, and for everybody else a count of answers to their own comments since they last opened Feedback. A second answer is new again.
+- HSE may raise a corrective action on a comment (ACT-04, migration 0101); only HSE, and only on a comment that exists. The comment lists its actions, and whoever left it may open them to follow, not to work on.
+- A due date under My Actions is coloured by how close it is (ACT-05, D12): within 2 days red, within 5 yellow, within 10 green, further off no colour; the nearest band wins and the number of days is in the words. HSE sets the numbers under Settings → Dashboard (migration 0099); everyone can read them.
+- Every corrective action given to somebody is emailed (WHO-01, D13, migration 0100): when it is raised, from anything — until now only an incident's — when it is reassigned, and when it is handed over from somebody who left. The owner always; Settings → Who is told → Corrective actions names others and three boxes: the previous owner (on), the person who reported it (off) and the owner's supervisor (off). "Reported it" is the incident's reporter, never on an anonymous report; off an incident it is whoever raised the action, which is now recorded. Filed on the incident it was raised on, or on the action.
+- A handover from somebody who left is written on each record it moves (TC-13): a line in a corrective action's history, as a reassignment by hand is, and a "handed over" line with the reason in any other record's change history. Corrective actions are told one by one through Who is told; the rest of the handover is still one email to whoever receives it.
+- Communications lists every email Safety sent (COM-01, migration 0102), HSE only (Q16), newest first, paged and sorted on the server with the header locked. It is searched on the people it went to (as matched when it was filed), an address, the record's number and the subject, and narrowed to this week, this month or two dates, and to sent, not sent or reminders (COM-03). Why a message was not sent is kept. The list carries no words; a message's words are opened one at a time.
+- A message that went may be sent again as a reminder (COM-03, Q16): to people HSE picks from those it went to and nobody else, as a new message headed "Reminder" that points at the first and is filed on the same record, so it is listed with the record's notifications. What was sent is never changed. A message that never left can still be tried again once.
+- What an email said is kept for the number of days under Settings → Rules → Emails (Q16, default 21; 0 keeps it for good) and then removed by the scheduled sweep; who it went to, about which record, when and whether it left are kept, on the record and in Communications, and say that the words were removed. A message whose words are gone cannot be sent again.
+
 ## 2. Functional Requirements — 57 Items
 
 Priority: **P0** legally required or the loop breaks without it · **P1** needed day to day · **P2** strengthens the system · **P3** needed for COR. **Phase** is as stated in v0.2–v0.4; "—" means the source did not assign one.
@@ -518,6 +536,7 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | 0.17 | 2026-11-09 | Round 12 third batch: incidents, investigations, corrective actions, JHSC workflow, incident types (§1.6). |
 | 0.18 | 2026-11-10 | Round 12 fourth batch: hazards, job analyses, permits, photographs; the chart by supervisor (§1.6). |
 | 0.19 | 2026-11-10 | Review of the third and fourth batches; the list standard on three lists (§1.6). |
+| 0.20 | 2026-11-11 | Round 12 fifth batch: new-item flags, due-date colours, Who is told for corrective actions, handovers on each record, actions on feedback, the Communications log (§1.6). |
 
 ---
 
