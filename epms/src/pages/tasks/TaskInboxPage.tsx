@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, Clock, ArrowRight, Check, Inbox, RefreshCw, Search, ChevronDown, ChevronRight } from 'lucide-react'
-import { cn, formatCAD, formatDateTime } from '@/lib/utils'
+import { cn, formatCAD, formatDate, formatDateTime } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useTasks } from '@/hooks/useTasks'
@@ -187,7 +187,7 @@ function FullTaskCard({ task }: FullTaskCardProps) {
           {!isDone && task.due_date && (
             <div className="mt-1.5 flex items-center gap-1 text-xs text-neutral-400">
               <Clock className="h-3.5 w-3.5" />
-              Due {task.due_date}
+              Due {formatDate(task.due_date)}
             </div>
           )}
 

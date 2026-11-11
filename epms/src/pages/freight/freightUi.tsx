@@ -2,7 +2,7 @@
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import type { ApiCostCenter } from '@/services/cost_centers'
 import type { ApiDepartment } from '@/services/departments'
 import type { MatchStatus } from '@/services/freight'
@@ -76,7 +76,7 @@ export function MatchBadge({ status, previouslyBilledOn }: { status: MatchStatus
     case 'duplicate_billing':
       return (
         <Badge variant="danger">
-          {previouslyBilledOn ? `Billed before on ${previouslyBilledOn}` : 'Billed before'}
+          {previouslyBilledOn ? `Billed before on ${formatDate(previouslyBilledOn)}` : 'Billed before'}
         </Badge>
       )
     case 'unmatched':

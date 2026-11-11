@@ -14,7 +14,7 @@
 import { useState, useMemo, Fragment } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, TrendingUp, Building2, ChevronRight } from 'lucide-react'
-import { cn, formatAmount } from '@/lib/utils'
+import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { CompactAmount } from '@/components/ui/CompactAmount'
 import { Card, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -646,7 +646,7 @@ function VoucherRow({ account, fiscalYear, costCenterId, includeUnposted, partne
             <tbody>
               {rows.map((r, i) => (
                 <tr key={`${r.jv_id}-${i}`} className="border-t border-neutral-100">
-                  <td className="px-2 py-1 font-mono text-neutral-600">{r.voucher_date}</td>
+                  <td className="px-2 py-1 font-mono text-neutral-600">{formatDate(r.voucher_date)}</td>
                   <td className="px-2 py-1 font-mono">
                     {r.jv_number}
                     {r.posted === false && (
