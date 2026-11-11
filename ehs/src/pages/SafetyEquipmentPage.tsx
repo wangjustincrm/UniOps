@@ -285,6 +285,10 @@ function RegisterTab({
   onCheckConsumed?: () => void; onClearFocus?: () => void
 }) {
   const queryClient = useQueryClient()
+  const { can } = usePermissions()
+  // ★ Round 12, FRM-04 / D11: supervisors may put an item back in service —
+  // and only that (identity 0028, ehs.asset.return).
+  const mayReturn = mayManage || can('ehs.asset.return')
   const [codeFor, setCodeFor] = useState<string | null>(null)
   // "Record a check is not logged anywhere once complete." It was logged —
   // the row is written and the asset's last-checked date moves — but the only
@@ -461,7 +465,7 @@ function RegisterTab({
                       <span className="rounded-full bg-danger-50 px-2 py-0.5 text-[11px] font-semibold text-danger-700">
                         Out of service
                       </span>
-                      {mayManage && restoring?.id !== a.id && (
+                      {mayReturn && restoring?.id !== a.id && (
                         <button type="button" className={secondaryButton}
                                 onClick={() => setRestoring({ id: a.id, reason: '' })}>
                           Back in service

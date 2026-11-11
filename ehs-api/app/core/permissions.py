@@ -53,6 +53,9 @@ CanManageDocument = Annotated[dict, Depends(require_permission("ehs.document.man
 CanReadAsset = Annotated[dict, Depends(require_permission("ehs.asset.read"))]
 CanInspectAsset = Annotated[dict, Depends(require_permission("ehs.asset.inspect"))]
 CanManageAsset = Annotated[dict, Depends(require_permission("ehs.asset.manage"))]
+# Round 12, FRM-04 / D11: supervisors put an item back in service; the
+# register's other edits stay ehs.asset.manage (identity 0028).
+CanReturnAsset = Annotated[dict, Depends(require_permission("ehs.asset.return"))]
 
 # Work permits. Three keys because three different people are involved: the
 # person who needs the work done is not the person authorised to allow it, and

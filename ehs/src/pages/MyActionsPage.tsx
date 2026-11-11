@@ -565,6 +565,13 @@ interface OutOfService { id: string; asset_no: string; name: string; location_pa
 /** Round 10 (open box): "list the item as being out of service on the my
  *  actions for all staff to read … List the equipment name and location." */
 function OutOfServiceBox() {
+  // ★ Round 12, FRM-04: "the item can not be clicked on. allow the HSE and
+  // supervisor roles to click on the item … and be taken to the record so
+  // that they may put it back into service." Everyone still reads the list;
+  // the row opens the item for whoever can read the register.
+  const { can } = usePermissions()
+  const mayOpen = can('ehs.asset.read')
+  const mayReturn = can('ehs.asset.return') || can('ehs.asset.manage')
   const out = useQuery({
     queryKey: ['safety-assets', 'out-of-service'],
     queryFn: () => api.get<OutOfService[]>('/api/v1/safety-assets/out-of-service'),
@@ -586,18 +593,39 @@ function OutOfServiceBox() {
         <p className="text-xs text-neutral-500">All safety equipment is in service.</p>
       )}
       <ul className="flex flex-col gap-1.5">
-        {rows.map((r) => (
-          <li key={r.id} className="flex items-start gap-2 px-1.5 text-sm">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-danger-600" aria-hidden />
-            <span className="min-w-0">
-              <span className="block text-neutral-800">{r.name}</span>
-              <span className="block text-xs text-neutral-500">
-                {r.location_path ? r.location_path.split('/').join(' › ') : 'Area not recorded'}
-                {r.since && ` · since ${formatDate(r.since)}`}
+        {rows.map((r) => {
+          const body = (
+            <>
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-danger-600" aria-hidden />
+              <span className="min-w-0 flex-1">
+                <span className={`block ${mayOpen ? 'font-medium text-primary-700' : 'text-neutral-800'}`}>
+                  {r.name}
+                </span>
+                <span className="block text-xs text-neutral-500">
+                  {r.location_path ? r.location_path.split('/').join(' › ') : 'Area not recorded'}
+                  {r.since && ` · since ${formatDate(r.since)}`}
+                </span>
               </span>
-            </span>
-          </li>
-        ))}
+              {mayOpen && mayReturn && (
+                <span className="shrink-0 self-center text-[11px] font-semibold text-primary-700">
+                  Put back in service ›
+                </span>
+              )}
+            </>
+          )
+          return (
+            <li key={r.id}>
+              {mayOpen ? (
+                <TabLink to={`/equipment?asset=${r.id}`}
+                         className="flex items-start gap-2 rounded-lg px-1.5 py-1 text-sm hover:bg-primary-50/50">
+                  {body}
+                </TabLink>
+              ) : (
+                <div className="flex items-start gap-2 px-1.5 text-sm">{body}</div>
+              )}
+            </li>
+          )
+        })}
       </ul>
     </div>
   )

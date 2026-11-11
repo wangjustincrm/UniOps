@@ -70,6 +70,8 @@ EHS_KEYS = (
     "ehs.document.read", "ehs.document.manage",
     "ehs.jhsc.read", "ehs.jhsc.manage",
     "ehs.asset.read", "ehs.asset.inspect", "ehs.asset.manage",
+    # 0028 — putting an item back in service (round 12, FRM-04).
+    "ehs.asset.return",
     "ehs.permit.request", "ehs.permit.read", "ehs.permit.issue",
 )
 EHS_GRANTS = {
@@ -95,9 +97,10 @@ EHS_GRANTS = {
     "ehs.jhsc.manage": ["ehs_manager", "ehs_coordinator"],
     "ehs.document.manage": ["ehs_manager", "ehs_coordinator"],
     "ehs.asset.read": ["ehs_manager", "ehs_coordinator", "area_supervisor",
-                       "jhsc_member", "auditor"],
+                       "jhsc_member", "auditor", "supervisor"],  # supervisor: 0028
     "ehs.asset.inspect": ["ehs_manager", "ehs_coordinator", "area_supervisor", "first_aider"],
     "ehs.asset.manage": ["ehs_manager", "ehs_coordinator"],
+    "ehs.asset.return": ["ehs_manager", "ehs_coordinator", "area_supervisor", "supervisor"],
     # 0016 — work permits.
     "ehs.permit.read": ["ehs_manager", "ehs_coordinator", "area_supervisor",
                         "jhsc_member", "first_aider", "auditor"],

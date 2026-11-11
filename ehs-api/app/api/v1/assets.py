@@ -15,7 +15,9 @@ from sqlalchemy import select
 
 from app.api.v1.incidents import _user_id
 from app.core.deps import SessionDep
-from app.core.permissions import CanInspectAsset, CanManageAsset, CanReadAsset, CanReportIncident
+from app.core.permissions import (
+    CanInspectAsset, CanManageAsset, CanReadAsset, CanReportIncident, CanReturnAsset,
+)
 from app.crud import asset as crud
 
 router = APIRouter(prefix="/safety-assets")
@@ -216,10 +218,13 @@ class ReturnIn(BaseModel):
 
 @router.post("/{asset_id}/return-to-service", response_model=AssetOut)
 async def return_to_service(
-    asset_id: uuid.UUID, payload: ReturnIn, db: SessionDep, user: CanManageAsset,
+    asset_id: uuid.UUID, payload: ReturnIn, db: SessionDep, user: CanReturnAsset,
 ):
     """Put an item back by hand, saying why — recorded in its history beside the
-    ones put back when their corrective actions were verified (round 10)."""
+    ones put back when their corrective actions were verified (round 10).
+
+    ★ Round 12, FRM-04 / D11: a supervisor may, from My Actions — its own key,
+    ehs.asset.return, so this is all they can do to the register."""
     return await crud.return_to_service(db, await crud.get_asset(db, asset_id),
                                         user_id=_user_id(user), reason=payload.reason.strip())
 
