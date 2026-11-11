@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Download, Upload } from 'lucide-react'
 import { mdmApi, mdmDownload, mdmUpload } from '@/lib/api'
-import { formatDate } from '@/lib/utils'
+import { formatDate, todayISO } from '@/lib/utils'
 import { INPUT, PRIMARY_BTN, SECONDARY_BTN, StaffShell, TD, TH } from './shared'
 
 interface Change { field: string; old: string | null; new: string | null }
@@ -30,9 +30,9 @@ const CONFLICT: Record<string, string> = {
   email_other_user: 'The email belongs to a user with a different number',
 }
 
+/** Today at the plant (company time zone), YYYY-MM-DD. */
 function today(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return todayISO()
 }
 
 function Group({ title, count, tone, children }: { title: string; count: number; tone?: string; children?: React.ReactNode }) {
