@@ -26,7 +26,7 @@ import { RecordPhotos } from '@/components/RecordPhotos'
 import { RatingBadge, RiskScoringHistory } from '@/components/RiskScoring'
 import { RiskAssessmentDialog } from '@/components/RiskAssessmentDialog'
 import { Card, LoadFailedNote, LoadProblem, SectionTitle, primaryButton } from '@/components/ui'
-import { CONTROL_LEVELS, hazardKinds, type Hazard } from '@/pages/HazardsPage'
+import { CONTROL_LEVELS, HazardForm, hazardKinds, type Hazard } from '@/pages/HazardsPage'
 
 interface Cause { id: string; cause_type: string; label: string; note: string | null }
 interface CauseTree { immediate: Cause[]; root: Cause[] }
@@ -45,6 +45,7 @@ export default function HazardDetailPage() {
   const { can } = usePermissions()
   const mayWrite = can('ehs.action.write')
   const [assessing, setAssessing] = useState(false)
+  const [editing, setEditing] = useState(false)
   const hazard = useQuery({
     queryKey: ['hazard', id],
     queryFn: () => api.get<Hazard>(`/api/v1/hazards/${id}`),
@@ -98,10 +99,13 @@ export default function HazardDetailPage() {
       </div>
       {mayWrite && (
         <div className="mb-3 flex gap-2">
-          <Link to={`/hazards?edit=${h.id}`}
-                className="inline-flex min-h-[40px] items-center rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-700">
+          {/* ★ Edited here. It went back to the register with ?edit=, which
+              found the hazard in the list it had loaded — the latest 300 not
+              eliminated — and did nothing for any other (review M4). */}
+          <button type="button" onClick={() => setEditing(true)}
+                  className="inline-flex min-h-[40px] items-center rounded-lg border border-neutral-300 bg-white px-3 text-sm font-medium text-neutral-700">
             Edit
-          </Link>
+          </button>
           <button type="button" className={primaryButton} onClick={() => setAssessing(true)}>
             {h.current_rating ? 'Reassess' : 'Assess the risk'}
           </button>
@@ -176,6 +180,7 @@ export default function HazardDetailPage() {
         <ChangeHistory table="ehs_hazards" rowId={h.id} />
       </section>
 
+      {editing && <HazardForm key={h.id} existing={h} onClose={() => setEditing(false)} />}
       {assessing && (
         <RiskAssessmentDialog sourceType="hazard" sourceId={h.id} onClose={() => setAssessing(false)}
           hazard={{ id: h.id, hazard_no: h.hazard_no, title: h.title, kinds }} />

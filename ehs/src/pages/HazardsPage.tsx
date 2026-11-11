@@ -102,22 +102,12 @@ export default function HazardsPage() {
     queryKey: ['hazard-summary'],
     queryFn: () => api.get<RatingCount[]>('/api/v1/hazards/summary'),
   })
-  const [search, setSearch] = useSearchParams()
+  const [search] = useSearchParams()
   const list = useListView(hazards.data, (h) => [
     h.hazard_no, h.title, h.description, h.location_path, h.owner_name,
     ...hazardKinds(h), h.current_rating, h.status, h.created_by_name,
     // `?q=` still lands an old link on its row; links now go to /hazards/:id.
   ], { dateOf: (h) => h.created_at, query: search.get('q') ?? '' })
-  // "Edit" on the hazard's own page comes back here with ?edit=<id>.
-  const editId = search.get('edit')
-  useEffect(() => {
-    if (!editId || !hazards.data) return
-    const found = hazards.data.find((h) => h.id === editId)
-    if (found) setEditing(found)
-    const next = new URLSearchParams(search)
-    next.delete('edit')
-    setSearch(next, { replace: true })
-  }, [editId, hazards.data, search, setSearch])
 
   return (
     <div className="p-4">
@@ -306,7 +296,7 @@ export default function HazardsPage() {
  * reading as though it has two of them. One form, and `existing` decides
  * whether it records or corrects.
  */
-function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => void }) {
+export function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => void }) {
   const queryClient = useQueryClient()
   const editing = Boolean(existing)
   const [title, setTitle] = useState(existing?.title ?? '')
@@ -403,7 +393,9 @@ function HazardForm({ existing, onClose }: { existing?: Hazard; onClose: () => v
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['hazards'] })
       queryClient.invalidateQueries({ queryKey: ['hazard-summary'] })
-      queryClient.invalidateQueries({ queryKey: ['hazard', hazardId, 'causes'] })
+      // The hazard's own page, its causes and its change history.
+      queryClient.invalidateQueries({ queryKey: ['hazard', hazardId] })
+      queryClient.invalidateQueries({ queryKey: ['change-log'] })
       onClose()
     },
   })
