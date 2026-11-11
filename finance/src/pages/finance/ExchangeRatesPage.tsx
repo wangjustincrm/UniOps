@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Loader2, RefreshCw, Pencil, Trash2, X } from 'lucide-react'
 import { financeApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate, formatDateTime } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
 /**
@@ -40,7 +40,7 @@ function todayLocal(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 function fmtTs(iso: string | null): string {
-  return iso ? iso.replace('T', ' ').slice(0, 16) : '—'
+  return iso ? formatDateTime(iso) : '—'
 }
 
 export default function ExchangeRatesPage() {
@@ -96,7 +96,7 @@ export default function ExchangeRatesPage() {
     try {
       const r = await financeApi.post<RunOut>('/fx/fetch', { date_from: fetchFrom })
       setBanner(r.ok
-        ? { kind: 'ok', text: `Fetched from Bank of Canada: ${r.rows_upserted} rate(s) ${r.date_from} → ${r.date_to}.` }
+        ? { kind: 'ok', text: `Fetched from Bank of Canada: ${r.rows_upserted} rate(s) ${formatDate(r.date_from)} → ${formatDate(r.date_to)}.` }
         : { kind: 'err', text: `Fetch finished with problems: ${r.message ?? 'unknown'}` })
       refresh()
     } catch (e) {
@@ -109,7 +109,7 @@ export default function ExchangeRatesPage() {
     setSaving(true); setBanner(null)
     try {
       await financeApi.put('/fx/rates', edit)
-      setBanner({ kind: 'ok', text: `Saved ${edit.from_currency} ${edit.effective_date} = ${edit.rate} (manual).` })
+      setBanner({ kind: 'ok', text: `Saved ${edit.from_currency} ${formatDate(edit.effective_date)} = ${edit.rate} (manual).` })
       setEdit(null)
       refresh()
     } catch (e) {
@@ -118,7 +118,7 @@ export default function ExchangeRatesPage() {
   }
 
   const removeOverride = async (r: Rate) => {
-    if (!window.confirm(`Remove the manual ${r.from_currency} rate of ${r.effective_date}? The next fetch brings the Bank of Canada rate back.`)) return
+    if (!window.confirm(`Remove the manual ${r.from_currency} rate of ${formatDate(r.effective_date)}? The next fetch brings the Bank of Canada rate back.`)) return
     try {
       await financeApi.delete(`/fx/rates/${r.id}`)
       refresh()
@@ -149,7 +149,7 @@ export default function ExchangeRatesPage() {
             <div className="text-xs font-medium uppercase text-neutral-500">Latest rate per currency</div>
             <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
               {(status?.currencies ?? []).map((c) => (
-                <span key={c.currency} className="text-neutral-700"><b>{c.currency}</b> {c.latest_date}</span>
+                <span key={c.currency} className="text-neutral-700"><b>{c.currency}</b> {formatDate(c.latest_date)}</span>
               ))}
               {(status?.currencies ?? []).length === 0 && <span className="text-neutral-400">No rates yet</span>}
             </div>
@@ -166,7 +166,7 @@ export default function ExchangeRatesPage() {
             </div>
             <div className="mt-1 font-mono text-neutral-800">
               {probing ? '…' : probeHit?.rate
-                ? <>{probeHit.rate} <span className="text-xs text-neutral-500">({probeHit.effective_date}, {probeHit.source})</span></>
+                ? <>{probeHit.rate} <span className="text-xs text-neutral-500">({formatDate(probeHit.effective_date)}, {probeHit.source})</span></>
                 : <span className="text-red-600">No rate — Push to NC would refuse</span>}
             </div>
           </div>
@@ -252,7 +252,7 @@ export default function ExchangeRatesPage() {
               )}
               {!isFetching && rows.map((r, i) => (
                 <tr key={r.id} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
-                  <td className="px-3 py-2 font-mono text-xs">{r.effective_date}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{formatDate(r.effective_date)}</td>
                   <td className="px-3 py-2">{r.from_currency} → {r.to_currency}</td>
                   <td className="px-3 py-2 text-right font-mono">{Number(r.rate).toFixed(4)}</td>
                   <td className="px-3 py-2">

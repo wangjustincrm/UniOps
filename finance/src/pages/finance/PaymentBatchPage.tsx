@@ -24,7 +24,7 @@ import { CheckCircle2, Loader2, Play, Undo2, Wallet, X } from 'lucide-react'
 import { SortTh, sortParams, useOptionalTabStoreApi, useSort, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
-import { cn, toLocalDate } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { ListPager } from '@/components/ListPager'
 import { RemittancePanel } from '@/components/remittance/RemittancePanel'
@@ -447,7 +447,7 @@ export default function PaymentBatchPage() {
                     )}
                   </td>
                   <td className="px-3 py-2 text-xs text-neutral-600">
-                    {d.submitted_at ? new Date(d.submitted_at).toLocaleDateString() : <span className="text-neutral-300">—</span>}
+                    {d.submitted_at ? formatDate(d.submitted_at) : <span className="text-neutral-300">—</span>}
                   </td>
                   <td className="px-3 py-2">{d.payee}</td>
                   <td className="px-3 py-2 font-mono text-xs text-neutral-600">
@@ -469,7 +469,7 @@ export default function PaymentBatchPage() {
                     )}
                   </td>
                   <td className={cn('px-3 py-2 text-xs', d.due_date && d.due_date < today ? 'font-medium text-red-600' : 'text-neutral-600')}>
-                    {d.due_date ? toLocalDate(d.due_date).toLocaleDateString() : <span className="text-neutral-300">—</span>}
+                    {d.due_date ? formatDate(d.due_date) : <span className="text-neutral-300">—</span>}
                   </td>
                   <td className="px-3 py-2 text-xs"><NcPaidCell d={d} /></td>
                   <td className="px-3 py-2 text-xs text-neutral-500">{dueTypeLabel(d)}</td>
@@ -497,7 +497,7 @@ export default function PaymentBatchPage() {
                       </button>
                     </td>
                     <td className={cn('px-3 py-1.5', !inv.paid && inv.due_date && inv.due_date < today ? 'font-medium text-red-600' : 'text-neutral-500')}>
-                      {inv.due_date ? toLocalDate(inv.due_date).toLocaleDateString() : <span className="text-neutral-300">—</span>}
+                      {inv.due_date ? formatDate(inv.due_date) : <span className="text-neutral-300">—</span>}
                     </td>
                     <td className="px-3 py-1.5"><NcInvoiceBadge nc={inv.nc} /></td>
                     <td className="px-3 py-1.5 text-neutral-500">{inv.paid ? <StatusPill status="paid" /> : 'Invoice'}</td>
@@ -533,7 +533,7 @@ export default function PaymentBatchPage() {
               {batches.map((b, i) => (
                 <tr key={b.id} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
                   <td className="px-3 py-2 font-mono text-xs">{b.batch_number}</td>
-                  <td className="px-3 py-2 text-xs text-neutral-600">{b.batch_date}</td>
+                  <td className="px-3 py-2 text-xs text-neutral-600">{formatDate(b.batch_date)}</td>
                   <td className="px-3 py-2"><StatusPill status={b.status} /></td>
                   <td className="px-3 py-2 text-xs text-neutral-500">{b.payment_method}</td>
                   <td className="px-3 py-2 text-right font-mono">{fmtMoney(b.total, b.currency)}</td>
@@ -776,7 +776,7 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
           <>
             {batch && (
               <div className="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-neutral-600">
-                <span>Date: {batch.batch_date}</span>
+                <span>Date: {formatDate(batch.batch_date)}</span>
                 <span>Currency: {batch.currency}</span>
                 <span>Total: <span className="font-mono">{fmtMoney(batch.total, batch.currency)}</span></span>
                 <span>{lines.length} lines</span>
@@ -854,7 +854,7 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
                                       record here, vendor_credit_number to
                                       talk to the vendor about it. */}
                                   <span className="font-mono text-neutral-400">{c.vendor_credit_number}</span>
-                                  <span className="text-neutral-400">{c.credit_date}</span>
+                                  <span className="text-neutral-400">{formatDate(c.credit_date)}</span>
                                   {/* The recomputed take, never c.apply — a
                                       deselection reshuffles what every later
                                       credit contributes, so showing the
@@ -968,7 +968,7 @@ const NC_CLS: Record<NcStatus, string> = {
 const ncTitle = (nc: NcInvoice): string => {
   if (nc.status === 'not_in_nc') return 'No approved NC AP bill carries this invoice number for this vendor'
   const parts = [`NC bill ${nc.bill_no}`]
-  if (nc.payment_no) parts.push(`NC payment ${nc.payment_no}${nc.paid_on ? ` on ${nc.paid_on}` : ''}`)
+  if (nc.payment_no) parts.push(`NC payment ${nc.payment_no}${nc.paid_on ? ` on ${formatDate(nc.paid_on)}` : ''}`)
   if (nc.status === 'closed') parts.push('balance cleared without an NC payment (offset or write-off)')
   if (nc.status === 'partial' || nc.status === 'open') parts.push(`open balance ${fmtMoney(nc.open_balance ?? "0")}`)
   if (nc.status === 'paid' || nc.status === 'closed') parts.push('do not pay again — close the PA')
@@ -991,7 +991,7 @@ function NcInvoiceBadge({ nc }: { nc?: NcInvoice }) {
       <NcPill status={nc.status} title={ncTitle(nc)} />
       {nc.payment_no && (nc.status === 'paid' || nc.status === 'partial') && (
         <div className="mt-0.5 font-mono text-[10px] text-neutral-500">
-          {nc.payment_no}{nc.paid_on && ` · ${toLocalDate(nc.paid_on).toLocaleDateString()}`}
+          {nc.payment_no}{nc.paid_on && ` · ${formatDate(nc.paid_on)}`}
         </div>
       )}
     </div>

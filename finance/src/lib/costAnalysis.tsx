@@ -13,7 +13,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, ChevronRight, Loader2, RefreshCw } from 'lucide-react'
 import { financeApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTime } from '@/lib/utils'
 
 export interface SyncRun {
   id: string; status: string; started_at: string | null; finished_at: string | null
@@ -74,7 +74,7 @@ export function pct(v: number | null | undefined): string {
 export function when(v: string | null | undefined): string {
   if (!v) return '—'
   const d = new Date(v)
-  return Number.isNaN(d.getTime()) ? v : d.toLocaleString()
+  return Number.isNaN(d.getTime()) ? v : formatDateTime(d)
 }
 
 export function SeverityBadge({ severity }: { severity: string }) {

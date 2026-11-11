@@ -37,7 +37,7 @@ import { AlertTriangle, CheckCircle2, Download, HelpCircle, Loader2, Search } fr
 import { SortTh, sortParams, useSort, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate, formatDateTime } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { ListPager } from '@/components/ListPager'
 import { BillInvoices, billPurchaseOrders, invoicesCsv, type BillInvoice } from '@/components/ap/BillInvoices'
@@ -130,7 +130,7 @@ function csvEscape(v: unknown) {
 }
 /** Already YYYY-MM-DD from the API — a date-only string must never go through
  *  new Date(), which renders yesterday in a UTC-behind zone. */
-function day(v: string | null) { return v ? v.slice(0, 10) : '—' }
+function day(v: string | null) { return v ? formatDate(v.slice(0, 10)) : '—' }
 
 const cell = 'px-3 py-2 text-right font-mono tabular-nums'
 
@@ -266,7 +266,7 @@ export default function ApCashFlowPage() {
               payable was keyed, not when the invoice was issued. Approved <strong>prepayment PAs</strong> and{' '}
               <strong>expense claims</strong> have no NC bill: they are added at their own
               amount, due on the approval date. Mirror as of{' '}
-              <strong>{summary.mirror.synced_at?.replace('T', ' ').slice(0, 16) ?? 'never'}</strong>
+              <strong>{summary.mirror.synced_at ? formatDateTime(summary.mirror.synced_at) : 'never'}</strong>
               {summary.mirror.tie_out_ok === false && ' — it does NOT tie out against NC.'}
             </span>
           </div>
@@ -309,7 +309,7 @@ export default function ApCashFlowPage() {
 
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <span className="text-sm text-neutral-500">
-            {currency} · as of {summary?.as_of ?? '—'}
+            {currency} · as of {formatDate(summary?.as_of)}
           </span>
           {selected && (
             <button onClick={clearSelection}

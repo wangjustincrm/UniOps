@@ -22,7 +22,7 @@ import { Loader2, Upload, AlertTriangle } from 'lucide-react'
 import { SortTh, sortParams, useSort, useSortableRows, useTabStoreApi } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
@@ -120,7 +120,7 @@ function NcDocCell({ inv }: { inv: ApInvoice }) {
       {docs.map((d) => {
         const st = NC_STATE[d.state]
         const tip = [st.tip, d.pushed ? 'Created by Push to NC' : 'Entered in NC by hand',
-                     d.bill_date ? `Bill date ${d.bill_date.slice(0, 10)}` : null,
+                     d.bill_date ? `Bill date ${formatDate(d.bill_date.slice(0, 10))}` : null,
                      d.money ? `${fmtMoney(d.money, d.currency ?? undefined)}` : null].filter(Boolean).join(' · ')
         const hyphenTip = `Matched ignoring hyphens: NC has invoice no. ${d.nc_invoice_no ?? '?'}, `
           + `this AP has ${inv.vendor_invoice_number ?? '?'}. Check it is the same invoice.`
@@ -378,8 +378,8 @@ export default function AccountsPayablePage() {
                         <td className="px-3 py-2 text-xs uppercase text-neutral-500">{inv.source}</td>
                         <td className="px-3 py-2">{inv.vendor_name ?? '—'}</td>
                         <td className="px-3 py-2 text-xs text-neutral-600">{inv.vendor_invoice_number ?? '—'}</td>
-                        <td className="px-3 py-2 text-xs text-neutral-600">{inv.invoice_date}</td>
-                        <td className="px-3 py-2 text-xs text-neutral-600">{inv.due_date ?? '—'}</td>
+                        <td className="px-3 py-2 text-xs text-neutral-600">{formatDate(inv.invoice_date)}</td>
+                        <td className="px-3 py-2 text-xs text-neutral-600">{formatDate(inv.due_date)}</td>
                         <td className="px-3 py-2 text-right font-mono">{fmtMoney(inv.total_amount, inv.currency)}</td>
                         <td className="px-3 py-2 text-right font-mono">{open ? fmtMoney(String(outstanding)) : '—'}</td>
                         <td className="px-3 py-2 font-mono text-xs text-neutral-600">{inv.gl_code ?? ''}</td>

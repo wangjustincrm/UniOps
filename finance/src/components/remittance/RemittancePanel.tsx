@@ -20,7 +20,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronDown, ChevronRight, Eye, Loader2, RefreshCw } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import {
   fetchPreview, renderRemittance, scopeKey, sendRemittance,
   type PayeeGroup, type RemittanceScope, type RenderedEmail, type SendResult,
@@ -425,7 +425,7 @@ export function RemittancePanel({ scope, onSent }: {
                                         against the payment — those differ whenever the operator
                                         back-dates above, and this detail exists so AP is reading
                                         exactly what the payee will read. */}
-                                    <td className="py-1 pr-3 align-top text-neutral-500">{paymentDate || l.payment_date}</td>
+                                    <td className="py-1 pr-3 align-top text-neutral-500">{formatDate(paymentDate || l.payment_date)}</td>
                                     <td className="py-1 text-right align-top font-mono">
                                       {hasCredit ? (
                                         <div className="space-y-0.5">

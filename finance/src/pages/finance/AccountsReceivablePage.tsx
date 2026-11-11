@@ -18,7 +18,7 @@ import {
 import { SortTh, sortParams, useSort, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, mdmApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { ListPager } from '@/components/ListPager'
 
@@ -190,8 +190,8 @@ export default function AccountsReceivablePage() {
                       <tr key={inv.id} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
                         <td className="px-3 py-2 font-mono text-xs">{inv.invoice_number}</td>
                         <td className="px-3 py-2">{inv.customer_name}</td>
-                        <td className="px-3 py-2 text-xs text-neutral-600">{inv.invoice_date}</td>
-                        <td className="px-3 py-2 text-xs text-neutral-600">{inv.due_date}</td>
+                        <td className="px-3 py-2 text-xs text-neutral-600">{formatDate(inv.invoice_date)}</td>
+                        <td className="px-3 py-2 text-xs text-neutral-600">{formatDate(inv.due_date)}</td>
                         <td className="px-3 py-2 text-right font-mono">{fmtMoney(inv.total_amount, inv.currency)}</td>
                         <td className="px-3 py-2 text-right font-mono">{open ? fmtMoney(String(outstanding)) : '—'}</td>
                         <td className="px-3 py-2"><StatusPill status={inv.status} /></td>

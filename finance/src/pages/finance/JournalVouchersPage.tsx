@@ -11,7 +11,7 @@ import { Check, ChevronLeft, ChevronRight, DatabaseZap, Loader2, Search, Send, S
 import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { JvDetailModal, JvStatusBadge, type JvHeader } from './JvDetailModal'
 import { NcSyncModal, type NcSyncStatus } from './NcSyncModal'
@@ -407,7 +407,7 @@ export default function JournalVouchersPage() {
                         </td>
                       )}
                       <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{v.voucher_word} · {v.jv_number}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-neutral-600 whitespace-nowrap">{v.voucher_date}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-neutral-600 whitespace-nowrap">{formatDate(v.voucher_date)}</td>
                       {/* The only column allowed to wrap; break-words so a long
                           unbroken token cannot push the row wider than its share. */}
                       <td className="px-3 py-2 text-neutral-700 break-words">{v.summary || '—'}</td>

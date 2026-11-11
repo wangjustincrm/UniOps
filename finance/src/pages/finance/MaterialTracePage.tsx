@@ -17,7 +17,7 @@ import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { SortTh, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { AccessMessage, type Diagnosis, DiagnosisPanel, num, OpenPeriodBadge, qty, SyncBar, thisMonth } from '@/lib/costAnalysis'
 
@@ -490,7 +490,7 @@ export default function MaterialTracePage() {
                         <Fragment key={n}>
                           <tr className="border-t border-neutral-100">
                             <td className="px-2 py-1 font-mono">{l.period}</td>
-                            <td className="px-2 py-1 font-mono">{l.biz_date ?? '—'}</td>
+                            <td className="px-2 py-1 font-mono">{formatDate(l.biz_date)}</td>
                             <td className="px-2 py-1 font-mono">{l.bill_code}</td>
                             <td className="px-2 py-1">{l.category_label}{l.estimate && <span className="ml-1 text-amber-700">(provisional)</span>}</td>
                             <td className="px-2 py-1 text-neutral-500">{l.trantype}</td>

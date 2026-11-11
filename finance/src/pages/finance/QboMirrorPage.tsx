@@ -12,7 +12,7 @@ import { AlertTriangle, ChevronLeft, ChevronRight, Download, Loader2, Mail, Refr
 import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { qboApi, ENTITY_TABS, type QboBackfillResult, type QboDetail } from '@/services/qboApi'
 import { financeDownload } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate, formatDateTime } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
@@ -101,7 +101,7 @@ export default function QboMirrorPage() {
           {!running && status?.last_run && (
             <div className="text-sm text-neutral-600">
               Last sync: {status.last_run.mode} · {status.last_run.status}
-              {status.last_run.finished_at ? ` · ${new Date(status.last_run.finished_at).toLocaleString()}` : ''}
+              {status.last_run.finished_at ? ` · ${formatDateTime(status.last_run.finished_at)}` : ''}
               {status.last_run.error ? <span className="text-red-600"> · {status.last_run.error}</span> : null}
             </div>
           )}
@@ -151,7 +151,7 @@ function isDateCol(c: string): boolean {
  *  already-date strings; slicing avoids any timezone shift from re-parsing. */
 function fmtDate(v: unknown): string {
   if (v === null || v === undefined || v === '') return ''
-  return String(v).slice(0, 10)
+  return formatDate(String(v).slice(0, 10))
 }
 
 /** Render a cell value by column type: amount → 2dp, date/time → YYYY-MM-DD, else raw. */

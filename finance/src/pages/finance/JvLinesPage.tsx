@@ -15,7 +15,7 @@ import { Download, Loader2, Search, X } from 'lucide-react'
 import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, financeDownload } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { ListPager } from '@/components/ListPager'
 import { JvDetailModal } from './JvDetailModal'
@@ -221,7 +221,7 @@ export default function JvLinesPage() {
                     <tr key={`${l.jv_id}-${l.line_no}`} onClick={() => setDetailId(l.jv_id)}
                         title="Open the voucher"
                         className={cn('cursor-pointer border-t border-neutral-100 align-top hover:bg-primary-50/40', i % 2 && 'bg-neutral-50/40')}>
-                      <td className="px-3 py-2 font-mono text-xs text-neutral-600 whitespace-nowrap">{l.voucher_date}</td>
+                      <td className="px-3 py-2 font-mono text-xs text-neutral-600 whitespace-nowrap">{formatDate(l.voucher_date)}</td>
                       <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{l.jv_number}</td>
                       <td className="px-3 py-2 font-mono text-xs text-neutral-400">{l.line_no}</td>
                       <td className="px-3 py-2 whitespace-nowrap">

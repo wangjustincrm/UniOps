@@ -7,7 +7,7 @@ import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, DatabaseZap, Loader2, X } from 'lucide-react'
 import { financeApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTime } from '@/lib/utils'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
@@ -33,7 +33,7 @@ function RunSummary({ run, label }: { run: NcSyncRun; label: string }) {
     <div className="rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
       <span className="font-medium text-neutral-700">{label}:</span>{' '}
       {run.mode} · {run.status}
-      {run.started_at && ` · ${run.started_at.slice(0, 16).replace('T', ' ')}`}
+      {run.started_at && ` · ${formatDateTime(run.started_at)}`}
       {run.status !== 'running' && (
         <> · inserted {Number(run.vouchers_inserted).toLocaleString()} vouchers
           {run.vouchers_deleted > 0 && `, deleted ${Number(run.vouchers_deleted).toLocaleString()}`}

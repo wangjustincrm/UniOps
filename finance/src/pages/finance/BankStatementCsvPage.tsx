@@ -29,7 +29,7 @@ import {
 import { SortTh, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, financeUploadFields } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
@@ -301,7 +301,7 @@ export default function BankStatementCsvPage() {
                     const amt = Number(t.amount)
                     return (
                       <tr key={t.id} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
-                        <td className="px-3 py-2 font-mono text-xs text-neutral-600">{t.txn_date}</td>
+                        <td className="px-3 py-2 font-mono text-xs text-neutral-600">{formatDate(t.txn_date)}</td>
                         <td className="px-3 py-2">{t.description}</td>
                         <td className="px-3 py-2 text-xs text-neutral-500">{t.reference || '—'}</td>
                         <td className={cn('px-3 py-2 text-right font-mono', amt < 0 ? 'text-red-600' : 'text-green-700')}>
@@ -360,7 +360,7 @@ export default function BankStatementCsvPage() {
                     <tbody>
                       {unrecSort.rows.map((p) => (
                         <tr key={p.payment_record_id} className="border-t border-neutral-100">
-                          <td className="px-3 py-2 font-mono text-xs text-neutral-600">{p.payment_date}</td>
+                          <td className="px-3 py-2 font-mono text-xs text-neutral-600">{formatDate(p.payment_date)}</td>
                           <td className="px-3 py-2">{p.doc_number || p.payment_record_id.slice(0, 8)}</td>
                           <td className="px-3 py-2 text-right font-mono">{fmtMoney(p.amount, p.currency)}</td>
                         </tr>
@@ -619,7 +619,7 @@ function ManualMatchModal({ txn, candidates, onClose, onMatched, onError }: {
   return (
     <Modal title="Match statement line to a payment" onClose={onClose} wide>
       <div className="mb-3 rounded-md bg-neutral-50 px-3 py-2 text-sm">
-        <span className="font-mono text-xs text-neutral-500">{txn.txn_date}</span> · {txn.description} ·
+        <span className="font-mono text-xs text-neutral-500">{formatDate(txn.txn_date)}</span> · {txn.description} ·
         <span className="ml-1 font-mono text-red-600">{fmtMoney(txn.amount)} {txn.currency}</span>
       </div>
       {sorted.length === 0 ? (
@@ -634,7 +634,7 @@ function ManualMatchModal({ txn, candidates, onClose, onMatched, onError }: {
                 const exact = Math.abs(Number(c.amount) - target) < 0.005
                 return (
                   <tr key={c.payment_record_id} className="border-t border-neutral-100 first:border-t-0">
-                    <td className="px-3 py-2 font-mono text-xs text-neutral-500">{c.payment_date}</td>
+                    <td className="px-3 py-2 font-mono text-xs text-neutral-500">{formatDate(c.payment_date)}</td>
                     <td className="px-3 py-2">{c.doc_number || c.payment_record_id.slice(0, 8)}</td>
                     <td className="px-3 py-2 text-right font-mono">
                       {fmtMoney(c.amount, c.currency)}

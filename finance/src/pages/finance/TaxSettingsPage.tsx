@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Pencil, Ban, X } from 'lucide-react'
 import { SortTh, useSortableRows } from '@uniops/shell'
 import { mdmApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { useAuthStore } from '@/store/auth'
 
@@ -121,7 +121,7 @@ export default function TaxSettingsPage() {
   }
 
   const handleDeactivate = async (r: ApiTaxCode) => {
-    if (!confirm(`Deactivate tax code "${r.code}" (effective ${r.effective_from})? Existing documents keep their saved rate.`)) return
+    if (!confirm(`Deactivate tax code "${r.code}" (effective ${formatDate(r.effective_from)})? Existing documents keep their saved rate.`)) return
     try {
       await mdmApi.delete(`/tax/codes/${r.id}`)
       qc.invalidateQueries({ queryKey: ['portal-tax-codes'] })
@@ -175,7 +175,7 @@ export default function TaxSettingsPage() {
                   <td className="px-4 py-3 font-mono text-xs text-neutral-700">{pct(r.rate)}</td>
                   <td className="px-4 py-3 text-xs text-neutral-500">{r.recoverable ? 'Yes' : 'No'}</td>
                   <td className="px-4 py-3 text-xs text-neutral-500">
-                    {r.effective_from}{r.effective_to ? ` → ${r.effective_to}` : ''}
+                    {formatDate(r.effective_from)}{r.effective_to ? ` → ${formatDate(r.effective_to)}` : ''}
                   </td>
                   <td className="px-4 py-3">
                     <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', r.active ? 'bg-green-50 text-green-700' : 'bg-neutral-100 text-neutral-500')}>
