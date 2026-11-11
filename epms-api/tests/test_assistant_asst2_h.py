@@ -325,3 +325,14 @@ async def test_not_found_sentences_go_only_for_the_found_documents():
     assert fact_replies.without_not_found(en, pa) == "Ask Finance."
     # By its kind, with no number; a true "no payment record" stays.
     assert fact_replies.without_not_found("未找到这份付款申请。没有付款记录。", pa) == "没有付款记录。"
+
+
+async def test_placing_words_in_other_questions_do_not_take_the_open_po():
+    """Round 2 misroute check: on a PO page, questions that only share a word
+    with placing ("什么时候发", "Place Order") are not this PO's placing record."""
+    from app.services import fact_replies as f
+    for q in ["每日摘要邮件什么时候发？", "谁可以对 PO 执行 Place Order？",
+              "Who can place an order?", "怎么在线下单？"]:
+        assert f._RULE_ASKED.search(q) or not f._PLACED_HERE.search(q), q
+    for q in ["这张 PO 是邮件下单还是在线下单？", "发给了谁？", "Who was this order sent to?"]:
+        assert f._PLACED_HERE.search(q) and not f._RULE_ASKED.search(q), q

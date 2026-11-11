@@ -74,6 +74,14 @@ _PLACED = re.compile(
     r"发给了?谁|发给哪|发到哪|发送给|收件人|什么时候发|何时发|几时发|哪天发|发送时间|"
     r"\bplaced\b|\bplace(?:d)? (?:the )?order|\bby e-?mail\b|\bonline\b|\bsent\b|\brecipient\b",
     re.I)
+# A rule question that happens to use placing words (round 2 misroute check).
+_RULE_ASKED = re.compile(r"谁可以|谁能|能不能|可不可以|怎么|如何|\bwho can\b|\bcan i\b|\bhow (?:do|can|to)\b", re.I)
+# About this page's order itself, when only the page names the PO.
+_PLACED_HERE = re.compile(
+    r"(?:这张|这个|该|此|本)\s*(?:PO|单|订单|采购订单)|邮件下单|在线下单|网上下单|下单方式|谁下的单|"
+    r"发给了?谁|收件人|\bthis (?:po|order)\b", re.I)
+
+
 _CARRIERS = re.compile(
     r"^(?:系统里|系统中|现在|目前|一共|总共|freight\s*里)?\s*(?:有|共有)?\s*(?:几|多少|哪些|哪几)个?"
     r"(?:快递)?(?:承运商|快递公司)|^\s*(?:how many|which|what) (?:courier )?carriers\b",
@@ -157,7 +165,13 @@ async def _placement(db, scope, message, numbers, context) -> dict | None:
     pos = [n for p, n, *_ in numbers if p == "PO"]
     if len(numbers) != len(pos) or len(pos) > 1:
         return None
+    if _RULE_ASKED.search(message):
+        return None     # "谁可以执行 Place Order？" is a rule question, not this PO's record
     if not pos and (context or {}).get("doc_type") == "po" and (context or {}).get("doc_number"):
+        # Only the open page names the PO: the question must be about this
+        # order's placing ("每日摘要邮件什么时候发？" asked on a PO page is not).
+        if not _PLACED_HERE.search(message):
+            return None
         pos = [context["doc_number"]]
     if not pos:
         return None
