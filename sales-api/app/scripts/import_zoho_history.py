@@ -64,7 +64,7 @@ from app.services.edi_intake import EdiIntake
 from app.services.invoicing import Invoicing
 from app.services.orders import OrderSync
 from app.services.outbound import TORONTO, Outbound940
-from app.services.settings import SCHEDULER_PAUSED, SETTINGS, SHADOW_MODE
+from app.services.settings import EDI_CONNECTION_ID, INVOICE_CONNECTION_ID, SCHEDULER_PAUSED, SETTINGS, SHADOW_MODE
 from app.models.shipments import Shipment
 from app.services.shipments import Shipments
 from app.services.transfers import Transfers
@@ -282,7 +282,7 @@ class History:
                 return None
             async with self.uow_factory(SYSTEM_ACTOR) as u:
                 await self.store(u.session, c.f850, kind="850_JSON", system="TRUECOMMERCE", direction="IN", at=received,
-                                 processing_status="Pending", connection_id=await self.conn(u.session, "SFTP"))
+                                 processing_status="Pending", connection_id=await self.conn(u.session, "TRUECOMMERCE"))
                 await u.commit()
             await self.intake.run_pass()
             async with self.uow_factory(SYSTEM_ACTOR) as u:
@@ -309,8 +309,14 @@ class History:
             await u.commit()
             return order.id
 
-    async def conn(self, s, kind: str) -> int | None:
-        return (await s.execute(select(Connection.id).where(Connection.kind == kind).order_by(Connection.id))).scalars().first()
+    async def conn(self, s, system: str) -> int | None:
+        """The connection Sales itself reads that system's files on: a file stored on another (an
+        inactive test connection) is never picked up by the scheduled run of its connection."""
+        cid = await SETTINGS.get(s, EDI_CONNECTION_ID if system == "RADIANT" else INVOICE_CONNECTION_ID)
+        if cid is not None:
+            return cid
+        return (await s.execute(select(Connection.id).where(Connection.kind == "SFTP", Connection.active.is_(True))
+                                .order_by(Connection.id))).scalars().first()
 
     async def zoho_940(self, c: Chain, order_id: int, out: Outcome) -> bool:
         """Zoho's 940 as the order's 940, sent at its file's time; Sales' own build compared with it."""
@@ -333,7 +339,7 @@ class History:
             doc = await self.store(s, c.f940, kind="940_EDI", system="RADIANT", direction="OUT", at=c.sent_at, data=data,
                                    origin=ZOHO, file_status=OutboundFile.SENT.value, ack_status=Ack.WAITING.value,
                                    sent_at=c.sent_at.astimezone(timezone.utc), isa13=k.isa13, gs06=k.gs06, st02=k.st02,
-                                   partner_code=order.partner_code, connection_id=await self.conn(s, "SFTP"),
+                                   partner_code=order.partner_code, connection_id=await self.conn(s, "RADIANT"),
                                    body_json={"order_id": order.id, "lines": built.lines_sent, "locked": built.locked,
                                               "reason": "sent by Zoho (history)"})
             await self.link(s, doc, order.id)
@@ -362,7 +368,7 @@ class History:
             self.at(t)
             async with self.uow_factory(SYSTEM_ACTOR) as u:
                 await self.store(u.session, f, kind="997_EDI", system="RADIANT", direction="IN", at=t, data=data,
-                                 processing_status="Pending", connection_id=await self.conn(u.session, "SFTP"))
+                                 processing_status="Pending", connection_id=await self.conn(u.session, "RADIANT"))
                 await u.commit()
             await self.outbound.process_997s()
         for f in c.f945:
@@ -372,7 +378,7 @@ class History:
             last = t
             async with self.uow_factory(SYSTEM_ACTOR) as u:
                 await self.store(u.session, f, kind="945_EDI", system="RADIANT", direction="IN", at=t, data=data,
-                                 processing_status="Pending", connection_id=await self.conn(u.session, "SFTP"))
+                                 processing_status="Pending", connection_id=await self.conn(u.session, "RADIANT"))
                 await u.commit()
             await self.ships.process_945s()
             async with self.uow_factory(SYSTEM_ACTOR) as u:
@@ -494,7 +500,7 @@ class History:
                 doc = await self.store(s, f, kind="943_EDI", system="RADIANT", direction="OUT", at=t_at, data=data, origin=ZOHO,
                                        file_status=OutboundFile.SENT.value, ack_status=Ack.WAITING.value,
                                        sent_at=t_at.astimezone(timezone.utc), isa13=k.isa13, gs06=k.gs06, st02=k.st02,
-                                       connection_id=await self.conn(s, "SFTP"), body_json={"transfer_id": t.id, "reason": "sent by Zoho (history)"})
+                                       connection_id=await self.conn(s, "RADIANT"), body_json={"transfer_id": t.id, "reason": "sent by Zoho (history)"})
                 s.add(DocumentLink(document_id=doc.id, entity_type="transfer", entity_id=t.id))
                 t.document_id = doc.id
                 await u.commit()
@@ -514,7 +520,7 @@ class History:
         self.at(t_at)
         async with self.uow_factory(SYSTEM_ACTOR) as u:
             doc = await self.store(u.session, f, kind=kind, system="RADIANT", direction="IN", at=t_at, data=data,
-                                   processing_status="Pending", connection_id=await self.conn(u.session, "SFTP"))
+                                   processing_status="Pending", connection_id=await self.conn(u.session, "RADIANT"))
             status = doc.processing_status
             await u.commit()
         if status != "Pending":
