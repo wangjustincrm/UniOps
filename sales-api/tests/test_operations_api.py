@@ -92,6 +92,8 @@ async def test_connection_crud_rules_and_secret_presence(api):
     r = await api.post(C, json=conn_body(secret_name="lower-case"), headers=OP)
     assert r.status_code == 422 and r.json()["error"]["details"]["field"] == "secret_name"
     assert (await api.post(C, json=conn_body(), headers=READER)).status_code == 403
+    r = await api.post(C, json=conn_body(outbound_folder="/out/", test_outbound_folder="out"), headers=OP)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "connection.test_folder_is_real"
 
     c = await make_conn(api)
     assert c["secret_present"] is True and "pw" not in str(c)  # presence only, never the value

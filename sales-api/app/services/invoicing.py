@@ -32,6 +32,7 @@ from typing import Any, Callable
 
 from sqlalchemy import select
 
+from app.integrations.sftp import write_folder
 from app.domain.invoicing import (
     CASE_UNIT,
     Header810,
@@ -405,9 +406,7 @@ class Invoicing:
                         f"{self.clock().astimezone(TORONTO):%Y%m%d_%H%M%S}.json")
                 await self._document(uow, inv, order, data, name, system="TRUECOMMERCE", kind="810_JSON", conn_id=conn.id)
                 await uow.commit()
-                folder = snap.test_outbound_folder if snap.mode == "TEST" else snap.outbound_folder
-                if not folder:
-                    raise RuntimeError(f"connection {snap.name} has no {'test ' if snap.mode == 'TEST' else ''}outbound folder")
+                folder = write_folder(snap)
                 await self.sftp.put(snap, folder, name, data)  # guarded: switch + LIVE + write host
                 return
             if inv.method == "EMAIL":

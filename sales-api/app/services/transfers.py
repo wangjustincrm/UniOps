@@ -30,6 +30,7 @@ from typing import Any, Callable
 
 from sqlalchemy import func, select, text
 
+from app.integrations.sftp import write_folder
 from app.domain.edi943 import Line943, Party943, Transfer943, build_943
 from app.domain.edi944 import LineIn, allocate, parse_944
 from app.domain.shadow import TEST_RUN_TRANSFER_REFUSAL
@@ -322,9 +323,7 @@ class Transfers:
             content = (await uow.session.execute(select(Document.content).where(Document.id == doc.id))).scalar_one()
             conn = ConnectionSnapshot.of(await uow.session.get(Connection, doc.connection_id))
             name = doc.remote_name
-        folder = conn.test_outbound_folder if conn.mode == "TEST" else conn.outbound_folder
-        if not folder:
-            raise RuntimeError(f"connection {conn.name} has no {'test ' if conn.mode == 'TEST' else ''}outbound folder")
+        folder = write_folder(conn)
         await self.sftp.put(conn, folder, name, content)  # guarded: switch + LIVE + write host
 
     async def _done(self, row, exc, uow) -> None:

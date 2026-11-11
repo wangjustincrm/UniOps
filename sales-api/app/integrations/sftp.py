@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Protocol
 
+from app.platform.guard import Refused, Suppressed
+
 
 @dataclass(frozen=True)
 class RemoteFile:
@@ -122,6 +124,22 @@ def live_only(method: str, args: tuple, kwargs: dict) -> str | None:  # noqa: AR
 
 def _folder(path: Any) -> str:
     return "/" + str(path or "").strip().strip("/")
+
+
+def write_folder(conn: Any) -> str:
+    """The folder a send puts its file in: a TEST connection's test outbound folder, else its
+    outbound folder. A TEST connection with no test folder (the partner has none) sends
+    nothing: that is refused like a guard refusal (Suppressed, a person decides), not a failure."""
+    if getattr(conn, "mode", None) == "TEST":
+        folder = getattr(conn, "test_outbound_folder", None)
+        if not str(folder or "").strip("/ "):
+            raise Suppressed(Refused("sftp", "put", "test mode", f"connection {getattr(conn, 'name', '?')} has no test "
+                                     "outbound folder: nothing is sent in Test mode", {"connection": getattr(conn, "id", None)}))
+        return folder
+    folder = getattr(conn, "outbound_folder", None)
+    if not folder:
+        raise RuntimeError(f"connection {getattr(conn, 'name', '?')} has no outbound folder")
+    return folder
 
 
 def test_folder_put(method: str, args: tuple, kwargs: dict) -> bool:

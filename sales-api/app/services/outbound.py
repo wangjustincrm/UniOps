@@ -31,6 +31,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import and_, func, or_, select, text
 from sqlalchemy.sql.elements import ColumnElement
 
+from app.integrations.sftp import write_folder
 from app.domain.edi940 import Address, Line940, Order940, build_940
 from app.domain.edi997 import parse_997
 from app.domain.order_rules import facts_of, qualifies
@@ -150,9 +151,7 @@ class Outbound940:
             content = (await uow.session.execute(select(Document.content).where(Document.id == doc.id))).scalar_one()
             conn = ConnectionSnapshot.of(await uow.session.get(Connection, doc.connection_id))
             name = doc.remote_name
-        folder = conn.test_outbound_folder if conn.mode == "TEST" else conn.outbound_folder
-        if not folder:
-            raise RuntimeError(f"connection {conn.name} has no {'test ' if conn.mode == 'TEST' else ''}outbound folder")
+        folder = write_folder(conn)
         await self.sftp.put(conn, folder, name, content)  # guarded: switch + LIVE + write host
 
     async def _on_done(self, row, exc, uow) -> None:

@@ -9,7 +9,18 @@ from app.platform.errors import InvalidInput
 SFTP_REQUIRED = ("host", "username", "inbound_folder", "secret_name")
 
 
+def _same_folder(a: Any, b: Any) -> bool:
+    return "/" + str(a or "").strip().strip("/") == "/" + str(b or "").strip().strip("/")
+
+
 def check_connection(values: dict[str, Any]) -> None:
+    # A Test connection writes only into its test outbound folder: set to the real
+    # folder, a Test run would deliver to the partner (the write guard refuses it too).
+    if str(values.get("test_outbound_folder") or "").strip("/ ") and _same_folder(
+            values.get("test_outbound_folder"), values.get("outbound_folder")):
+        raise InvalidInput("connection.test_folder_is_real",
+                           "the test outbound folder must not be the real outbound folder: leave it empty when the "
+                           "partner has no test folder (nothing is then sent in Test mode)", {"field": "test_outbound_folder"})
     if values.get("kind") == "SFTP":
         for field in SFTP_REQUIRED:
             if not values.get(field):

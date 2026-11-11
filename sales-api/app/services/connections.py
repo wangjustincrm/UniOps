@@ -43,8 +43,8 @@ FILE_RETRY = "sales.file.retry"
 DEFAULT_MINUTES = {"SFTP": 5, "SHOPIFY": 10}  # a new connection's schedule (user 2026-11-02)
 
 
-_RULE_FIELDS = ("kind", "host", "username", "inbound_folder", "secret_name", "after_read", "processed_folder",
-                "host_key", "api_version", "partner_code")
+_RULE_FIELDS = ("kind", "host", "username", "inbound_folder", "outbound_folder", "test_outbound_folder", "secret_name",
+                "after_read", "processed_folder", "host_key", "api_version", "partner_code")
 _FOLDERS = ("inbound_folder", "outbound_folder", "processed_folder", "error_folder",
             "test_inbound_folder", "test_outbound_folder")
 # What the connection test lists: test_inbound_folder stays a stored column (and in the CSV), but nothing reads it.
