@@ -20,7 +20,7 @@ import uuid
 from datetime import date, datetime, timezone
 
 from fastapi import HTTPException, status
-from sqlalchemy import case, func, select
+from sqlalchemy import String, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.hazard import Hazard, Jsa, JsaSignoff, JsaStep
@@ -115,6 +115,69 @@ async def _apply_lists(db: AsyncSession, fields: dict, hazard: Hazard | None = N
     if controls is not None:
         fields["hazard_controls"] = await _picked(db, "hazard_control", controls,
                                                   hazard.hazard_controls if hazard else None)
+
+
+def _rank_expr():
+    """The matrix's order — Critical 1st — with an unscored hazard as no value,
+    so it sits last whichever way the column is sorted."""
+    rank = {k: v + 1 for k, v in RATING_ORDER.items()}
+    return case(rank, value=func.lower(func.trim(Hazard.current_rating)), else_=None)
+
+
+def _hazard_sortable():
+    from app.crud._list_order import lower_text
+    return {
+        "hazard_no": Hazard.hazard_no,
+        "title": lower_text(Hazard.title),
+        "area": lower_text(Hazard.location_path),
+        "owner": lower_text(Hazard.owner_name),
+        # Ascending is worst first: one click on Risk answers "highest risk
+        # first", which HAZ-07 asks for on request.
+        "risk": _rank_expr(),
+        "status": Hazard.status,
+        "recorded": Hazard.created_at,
+        "review_due": Hazard.review_due_on,
+    }
+
+
+async def hazard_register(
+    db: AsyncSession, *, search: str | None = None, status_in: list[str] | None = None,
+    recorded_from: date | None = None, recorded_to: date | None = None,
+    sort: str | None = None, dir: str = "asc", offset: int = 0, limit: int = 50,
+    assessed_only: bool = False,
+) -> tuple[list[Hazard], int]:
+    """★ The register as a paged list (the list standard, 11-10). It was the
+    latest 300 searched and paged in the browser: past 300 a hazard could not
+    be found at all, and the search and dates only saw what had arrived."""
+    from sqlalchemy import or_
+    from app.crud._list_order import sort_clauses
+    from app.services.day_range import day_bounds
+    conds = []
+    if status_in:
+        conds.append(Hazard.status.in_(status_in))
+    if assessed_only:
+        conds.append(Hazard.risk_assessment_id.is_not(None))
+    start, end = day_bounds(recorded_from, recorded_to)
+    if start is not None:
+        conds.append(Hazard.created_at >= start)
+    if end is not None:
+        conds.append(Hazard.created_at < end)
+    if search and search.strip():
+        like = f"%{search.strip()}%"
+        conds.append(or_(
+            Hazard.hazard_no.ilike(like), Hazard.title.ilike(like),
+            Hazard.description.ilike(like), Hazard.location_path.ilike(like),
+            Hazard.department_name.ilike(like), Hazard.owner_name.ilike(like),
+            Hazard.created_by_name.ilike(like), Hazard.current_rating.ilike(like),
+            Hazard.hazard_type_label.ilike(like),
+            func.cast(Hazard.hazard_types, String).ilike(like)))
+    base = select(Hazard).where(*conds)
+    total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar() or 0
+    ordering = sort_clauses(sort, dir, _hazard_sortable(),
+                            tiebreak=[Hazard.created_at.desc(), Hazard.hazard_no.desc()]) \
+        or [Hazard.created_at.desc(), Hazard.hazard_no.desc()]
+    rows = list((await db.execute(base.order_by(*ordering).offset(offset).limit(limit))).scalars())
+    return rows, total
 
 
 async def get_hazard(db: AsyncSession, hazard_id: uuid.UUID) -> Hazard:

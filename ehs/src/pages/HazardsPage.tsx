@@ -15,12 +15,13 @@ import EquipmentSelect, { EquipmentName } from '@/components/EquipmentSelect'
 import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ShieldAlert, Plus, X } from 'lucide-react'
+import { Plus, X } from 'lucide-react'
 import { api } from '@/lib/api'
 import {
   CausesEditor, causesPayload, spendActionDrafts, unfinishedAction, type CauseDraft, type SavedAction,
 } from '@/components/CausesEditor'
-import { Pagination, SearchBox, useListView, DateRangeFilter } from '@/components/ListView'
+import { SearchBox, DateRangeFilter, useDateFilter } from '@/components/ListView'
+import { Pagination, SortTh, sortParams, useSort } from '@uniops/shell'
 import { formatDate, formatDateTime } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useMyProfile } from '@/hooks/useMyProfile'
@@ -72,6 +73,18 @@ export const CONTROL_LEVELS = [
   { key: 'ppe', label: 'PPE' },
 ]
 
+type SortKey = 'hazard_no' | 'title' | 'area' | 'owner' | 'risk' | 'status' | 'recorded' | 'review_due'
+const TH = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500'
+
+function useDebounced<T>(value: T, ms = 300): T {
+  const [v, setV] = useState(value)
+  useEffect(() => {
+    const t = setTimeout(() => setV(value), ms)
+    return () => clearTimeout(t)
+  }, [value, ms])
+  return v
+}
+
 export default function HazardsPage() {
   const { can } = usePermissions()
   const mayWrite = can('ehs.action.write')
@@ -85,29 +98,42 @@ export default function HazardsPage() {
   const [scoringFor, setScoringFor] = useState<string | null>(null)
   const [assessing, setAssessing] = useState<Hazard | null>(null)
   const [showEliminated, setShowEliminated] = useState(false)
-  // ★ Round 12, HAZ-07: newest first, worst first on request. Round 3 had
-  // "ranked, not listed"; Kirk reversed it.
-  const [order, setOrder] = useState<'newest' | 'risk'>('newest')
 
-  const qs = new URLSearchParams({ order })
-  if (!showEliminated) { qs.append('status', 'open'); qs.append('status', 'controlled') }
-  // `list_hazards` caps at 300 with no parameter to raise it.
-  const HAZARD_LIMIT = 300
+  // ★ The list standard (10-29, extended to Safety 11-10): the register was
+  // the latest 300, searched and paged in the browser, so past 300 a hazard
+  // could not be found. The server pages, searches, filters by date and sorts
+  // every column. Newest first until a column is chosen (HAZ-07); one click on
+  // Risk is "highest risk first".
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [sort, onSort] = useSort<SortKey>(null, () => setPage(1))
+  const [params] = useSearchParams()
+  // `?q=` still lands an old link on its row; links now go to /hazards/:id.
+  const [query, setQuery] = useState(params.get('q') ?? '')
+  const search = useDebounced(query.trim())
+  const dateFilter = useDateFilter(() => setPage(1))
+  const { from, to } = dateFilter.range
 
   const hazards = useQuery({
-    queryKey: ['hazards', showEliminated, order],
-    queryFn: () => api.get<Hazard[]>(`/api/v1/hazards?${qs}`),
+    queryKey: ['hazards', 'register', showEliminated, search, from, to, sort, page, pageSize],
+    queryFn: () => {
+      const qs = new URLSearchParams({
+        limit: String(pageSize), offset: String((page - 1) * pageSize), ...sortParams(sort) })
+      if (!showEliminated) { qs.append('status', 'open'); qs.append('status', 'controlled') }
+      if (search) qs.set('search', search)
+      if (from) qs.set('recorded_from', from)
+      if (to) qs.set('recorded_to', to)
+      return api.get<{ items: Hazard[]; total: number }>(`/api/v1/hazards/register?${qs}`)
+    },
+    placeholderData: (prev) => prev,
   })
   const summary = useQuery({
     queryKey: ['hazard-summary'],
     queryFn: () => api.get<RatingCount[]>('/api/v1/hazards/summary'),
   })
-  const [search] = useSearchParams()
-  const list = useListView(hazards.data, (h) => [
-    h.hazard_no, h.title, h.description, h.location_path, h.owner_name,
-    ...hazardKinds(h), h.current_rating, h.status, h.created_by_name,
-    // `?q=` still lands an old link on its row; links now go to /hazards/:id.
-  ], { dateOf: (h) => h.created_at, query: search.get('q') ?? '' })
+  const rows = hazards.data?.items ?? []
+  const total = hazards.data?.total ?? 0
+  const narrowed = Boolean(search || from || to)
 
   return (
     <div className="p-4">
@@ -145,134 +171,62 @@ export default function HazardsPage() {
         <HazardForm key={editing.id} existing={editing} onClose={() => setEditing(null)} />
       )}
 
-      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div role="group" aria-label="Order" className="inline-flex overflow-hidden rounded-lg border border-neutral-300">
-          {([['newest', 'Newest first'], ['risk', 'Highest risk first']] as const).map(([key, text]) => (
-            <button key={key} type="button" aria-pressed={order === key} onClick={() => setOrder(key)}
-                    className={`min-h-[36px] px-3 text-xs font-medium ${order === key
-                      ? 'bg-primary-600 text-white' : 'bg-white text-neutral-700'}`}>
-              {text}
-            </button>
-          ))}
-        </div>
-        <label className="flex items-center gap-2 text-xs text-neutral-600">
-          <input type="checkbox" checked={showEliminated}
-                 onChange={(e) => setShowEliminated(e.target.checked)} />
-          Include hazards that have been eliminated
-        </label>
-      </div>
+      <label className="mb-3 flex items-center gap-2 text-xs text-neutral-600">
+        <input type="checkbox" checked={showEliminated}
+               onChange={(e) => { setShowEliminated(e.target.checked); setPage(1) }} />
+        Include hazards that have been eliminated
+      </label>
 
-      <SearchBox value={list.query} onChange={list.setQuery}
-                 placeholder="Search by number, what it is, area, owner or rating">
-        <DateRangeFilter {...list.dateFilter} />
+      <SearchBox value={query} onChange={(v) => { setQuery(v); setPage(1) }}
+                 placeholder="Search by number, what it is, kind, area, owner or rating">
+        <DateRangeFilter {...dateFilter} />
       </SearchBox>
 
-      {hazards.data?.length === 0 && !creating ? (
+      {hazards.isError && <ErrorNote error={hazards.error} />}
+      {hazards.data && total === 0 && !narrowed && !creating ? (
         <Empty>
           Nothing on the register. A hazard recorded here is a standing fact
           about the plant — it stays until it is designed out, and comes back
           round for review while it has not been.
         </Empty>
       ) : (
-        <ul className="flex flex-col gap-2">
-          {list.pageRows.map((h) => (
-            <li key={h.id}>
-              <Card>
-                <div className="flex flex-wrap items-start gap-x-3 gap-y-1.5">
-                  <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-neutral-400" aria-hidden />
-                  <span className="min-w-0 flex-1">
-                    <Link to={`/hazards/${h.id}`}
-                          className="block text-sm font-semibold text-neutral-900 hover:text-primary-700 hover:underline">
-                      {h.title}
-                    </Link>
-                    <span className="mt-0.5 block text-xs text-neutral-500">
-                      {h.hazard_no}
-                      {h.department_name && ` · ${h.department_name}`}
-                      {h.location_path && ` · ${h.location_path}`}<EquipmentName id={h.equipment_id} />
-                      {h.owner_name && ` · owned by ${h.owner_name}`}
-                    </span>
-                    {/* Kirk, round 12: the date and time it was saved, just under
-                        the number, department and owner. */}
-                    <span className="mt-0.5 block text-xs text-neutral-500">
-                      Recorded {formatDateTime(h.created_at)}
-                      {h.created_by_name && ` by ${h.created_by_name}`}
-                      {h.revised_at && ` · last revised on ${formatDate(h.revised_at)}`}
-                    </span>
-                    {hazardKinds(h).length > 0 && (
-                      <span className="mt-1 flex flex-wrap gap-1">
-                        {hazardKinds(h).map((k) => (
-                          <span key={k} className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-700">{k}</span>
-                        ))}
-                      </span>
-                    )}
-                    {h.description && (
-                      <span className="mt-1 block text-sm text-neutral-700">{h.description}</span>
-                    )}
-                    {(h.existing_controls || (h.hazard_controls ?? []).length > 0) && (
-                      <span className="mt-1 block text-xs text-neutral-600">
-                        <span className="font-medium">Controls:</span>{' '}
-                        {[...(h.hazard_controls ?? []).map((c) => c.label), h.existing_controls]
-                          .filter(Boolean).join('; ')}
-                        {h.control_level && ` (${
-                          CONTROL_LEVELS.find((c) => c.key === h.control_level)?.label
-                          ?? h.control_level})`}
-                      </span>
-                    )}
-                    {h.review_due_on && (
-                      <span className="mt-0.5 block text-xs text-neutral-500">
-                        Review due {formatDate(h.review_due_on)}
-                      </span>
-                    )}
-                  </span>
-
-                  <span className="flex shrink-0 flex-col items-end gap-1">
-                    <RatingBadge rating={h.current_rating} />
-                    {h.residual_rating && (
-                      <span className="text-[11px] text-neutral-500">
-                        after controls: <span className="capitalize">{h.residual_rating}</span>
-                      </span>
-                    )}
-                    {h.status !== 'open' && (
-                      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold capitalize text-neutral-600">
-                        {h.status}
-                      </span>
-                    )}
-                    {mayWrite && (
-                      <span className="flex items-center gap-2.5">
-                        <button
-                          type="button"
-                          onClick={() => setScoringFor(scoringFor === h.id ? null : h.id)}
-                          aria-expanded={scoringFor === h.id}
-                          className="text-xs font-semibold text-neutral-500 hover:text-neutral-900 hover:underline"
-                        >
-                          Scoring
-                        </button>
-                        <button type="button" onClick={() => setEditing(h)}
-                                className="text-xs font-semibold text-neutral-500 hover:text-neutral-900 hover:underline">
-                          Edit
-                        </button>
-                        <button type="button" onClick={() => setAssessing(h)}
-                                className="text-xs font-semibold text-primary-700 hover:underline">
-                          {h.current_rating ? 'Reassess' : 'Assess the risk'}
-                        </button>
-                      </span>
-                    )}
-                  </span>
-                </div>
-                {scoringFor === h.id && (
-                  <RiskScoringHistory sourceType="hazard" sourceId={h.id} showHazard
-                    emptyNote="This hazard has not been scored against the matrix yet." />
+        <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+          <div className="max-h-[calc(100vh-15rem)] overflow-auto">
+            <table className="w-full min-w-[900px] text-sm">
+              <thead className="sticky top-0 z-10 bg-neutral-50 shadow-[0_1px_0_#e5e5e5]">
+                <tr>
+                  <SortTh label="Number" sortKey="hazard_no" sort={sort} onSort={onSort} className={TH} />
+                  <SortTh label="Hazard" sortKey="title" sort={sort} onSort={onSort} className={TH} />
+                  <SortTh label="Area" sortKey="area" sort={sort} onSort={onSort} className={TH} />
+                  <SortTh label="Owner" sortKey="owner" sort={sort} onSort={onSort} className={TH} />
+                  <SortTh label="Risk" sortKey="risk" sort={sort} onSort={onSort} className={TH} />
+                  <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={TH} />
+                  <SortTh label="Recorded" sortKey="recorded" sort={sort} onSort={onSort} className={TH} />
+                  <SortTh label="Review due" sortKey="review_due" sort={sort} onSort={onSort} className={TH} />
+                  {mayWrite && <th className={TH}><span className="sr-only">Actions</span></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {hazards.data && rows.length === 0 && (
+                  <tr>
+                    <td colSpan={mayWrite ? 9 : 8} className="p-8 text-center text-sm text-neutral-500">
+                      {search ? `Nothing matches “${search}”.` : 'No hazard in this range.'}
+                    </td>
+                  </tr>
                 )}
-              </Card>
-            </li>
-          ))}
-        </ul>
+                {rows.map((h) => (
+                  <HazardRow key={h.id} h={h} mayWrite={mayWrite}
+                             scoring={scoringFor === h.id}
+                             onScoring={() => setScoringFor(scoringFor === h.id ? null : h.id)}
+                             onEdit={() => setEditing(h)} onAssess={() => setAssessing(h)} />
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage}
+                      onPageSizeChange={(n) => { setPageSize(n); setPage(1) }} />
+        </div>
       )}
-
-      <Pagination page={list.page} pageCount={list.pageCount} total={list.total}
-                  onPage={list.setPage} noun="hazards"
-                  capped={(hazards.data ?? []).length >= HAZARD_LIMIT}
-                  loaded={(hazards.data ?? []).length} />
 
       {assessing && (
         // ★ Round 12, HAZ-02: the incident's form, in hazard mode.
@@ -282,6 +236,102 @@ export default function HazardsPage() {
                     kinds: hazardKinds(assessing) }} />
       )}
     </div>
+  )
+}
+
+function HazardRow({ h, mayWrite, scoring, onScoring, onEdit, onAssess }: {
+  h: Hazard; mayWrite: boolean; scoring: boolean
+  onScoring: () => void; onEdit: () => void; onAssess: () => void
+}) {
+  const kinds = hazardKinds(h)
+  return (
+    <>
+      <tr className="border-t border-neutral-100 align-top">
+        <td className="px-3 py-2">
+          {/* Kirk, round 12: the date and time it was saved, just under the
+              number, department and owner. */}
+          <span className="block whitespace-nowrap font-mono text-xs text-neutral-700">{h.hazard_no}</span>
+          {h.department_name && <span className="block text-xs text-neutral-500">{h.department_name}</span>}
+          {h.owner_name && <span className="block text-xs text-neutral-500">{h.owner_name}</span>}
+          <span className="block whitespace-nowrap text-[11px] text-neutral-500">
+            {formatDateTime(h.created_at)}
+          </span>
+          {h.revised_at && (
+            <span className="block whitespace-nowrap text-[11px] text-neutral-500">
+              last revised on {formatDate(h.revised_at)}
+            </span>
+          )}
+        </td>
+        <td className="px-3 py-2">
+          <Link to={`/hazards/${h.id}`}
+                className="font-semibold text-neutral-900 hover:text-primary-700 hover:underline">
+            {h.title}
+          </Link>
+          {kinds.length > 0 && (
+            <span className="mt-1 flex flex-wrap gap-1">
+              {kinds.map((k) => (
+                <span key={k} className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] text-neutral-700">{k}</span>
+              ))}
+            </span>
+          )}
+          {(h.existing_controls || (h.hazard_controls ?? []).length > 0) && (
+            <span className="mt-1 block text-xs text-neutral-600">
+              <span className="font-medium">Controls:</span>{' '}
+              {[...(h.hazard_controls ?? []).map((c) => c.label), h.existing_controls]
+                .filter(Boolean).join('; ')}
+              {h.control_level && ` (${
+                CONTROL_LEVELS.find((c) => c.key === h.control_level)?.label ?? h.control_level})`}
+            </span>
+          )}
+        </td>
+        <td className="px-3 py-2 text-xs text-neutral-600">
+          {h.location_path ?? '—'}<EquipmentName id={h.equipment_id} />
+        </td>
+        <td className="px-3 py-2 text-xs text-neutral-700">{h.owner_name ?? '—'}</td>
+        <td className="px-3 py-2">
+          <RatingBadge rating={h.current_rating} />
+          {h.residual_rating && (
+            <span className="mt-0.5 block text-[11px] text-neutral-500">
+              after controls: <span className="capitalize">{h.residual_rating}</span>
+            </span>
+          )}
+        </td>
+        <td className="px-3 py-2 text-xs capitalize text-neutral-700">{h.status}</td>
+        <td className="whitespace-nowrap px-3 py-2 text-xs text-neutral-600">
+          {formatDate(h.created_at)}
+          {h.created_by_name && <span className="block text-neutral-500">by {h.created_by_name}</span>}
+        </td>
+        <td className="whitespace-nowrap px-3 py-2 text-xs text-neutral-600">
+          {h.review_due_on ? formatDate(h.review_due_on) : '—'}
+        </td>
+        {mayWrite && (
+          <td className="px-3 py-2">
+            <span className="flex flex-col items-end gap-1">
+              <button type="button" onClick={onScoring} aria-expanded={scoring}
+                      className="text-xs font-semibold text-neutral-500 hover:text-neutral-900 hover:underline">
+                Scoring
+              </button>
+              <button type="button" onClick={onEdit}
+                      className="text-xs font-semibold text-neutral-500 hover:text-neutral-900 hover:underline">
+                Edit
+              </button>
+              <button type="button" onClick={onAssess}
+                      className="whitespace-nowrap text-xs font-semibold text-primary-700 hover:underline">
+                {h.current_rating ? 'Reassess' : 'Assess the risk'}
+              </button>
+            </span>
+          </td>
+        )}
+      </tr>
+      {scoring && (
+        <tr>
+          <td colSpan={9} className="px-3 pb-3">
+            <RiskScoringHistory sourceType="hazard" sourceId={h.id} showHazard
+              emptyNote="This hazard has not been scored against the matrix yet." />
+          </td>
+        </tr>
+      )}
+    </>
   )
 }
 

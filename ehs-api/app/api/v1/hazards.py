@@ -207,6 +207,32 @@ async def replace_hazard_causes(
     return await hazard_causes(hazard_id, db, user)
 
 
+class HazardPage(BaseModel):
+    items: list[HazardOut]
+    total: int
+
+
+@router.get("/hazards/register", response_model=HazardPage)
+async def hazard_register(
+    db: SessionDep, user: CanReadAction,
+    search: str | None = Query(default=None, max_length=200),
+    status_in: list[str] | None = Query(default=None, alias="status"),
+    recorded_from: date | None = None, recorded_to: date | None = None,
+    sort: str | None = Query(default=None, description="A key of the register's columns; unknown -> 422"),
+    dir: str = Query(default="asc", pattern="^(asc|desc)$"),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=200),
+):
+    """The register, a page at a time, with the total. Newest first unless a
+    column is chosen (HAZ-07). Someone who cannot write hazards sees the
+    assessed ones (Q11), as everywhere else."""
+    rows, total = await crud.hazard_register(
+        db, search=search, status_in=status_in, recorded_from=recorded_from,
+        recorded_to=recorded_to, sort=sort, dir=dir, offset=offset, limit=limit,
+        assessed_only=not await _writes_hazards(db, user))
+    return HazardPage(items=[HazardOut.model_validate(r) for r in rows], total=total)
+
+
 @router.get("/hazards/summary", response_model=list[RatingCount])
 async def hazard_summary(db: SessionDep, user: CanReadAction):  # noqa: ARG001
     return await crud.hazard_summary(db)

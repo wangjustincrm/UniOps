@@ -202,3 +202,41 @@ async def test_saving_unchanged_keeps_the_recorded_wording_and_is_no_revision(
     assert [k["label"] for k in more.json()["hazard_types"]] == [old_kind, lists["noise"].label], \
         "the one it had keeps its wording; the new one takes the list's"
     assert more.json()["revised_at"] is not None
+
+
+async def test_the_register_pages_searches_and_sorts_on_the_server(hse_manager, worker, lists,
+                                                                   db_session):
+    """★ The list standard (11-10): the register was the latest 300, searched
+    and paged in the browser. A page now carries the total; search, dates and
+    sort are the server's; Risk ascending is worst first, unscored last."""
+    _, hse = hse_manager
+    _, w = worker
+    tag = uuid.uuid4().hex[:6]
+    ids = []
+    for i in range(5):
+        ids.append((await hse.post("/api/v1/hazards", json={"title": f"Reg {tag} {i}"})).json()["id"])
+    await _score(hse, ids[1])                                  # moderate-ish
+    old = Hazard(id=uuid.uuid4(), hazard_no=f"HAZ-OLD-{tag}", title=f"Reg {tag} old",
+                 status="open", current_rating="critical",
+                 created_at=datetime.now(timezone.utc) - timedelta(days=400))
+    db_session.add(old)
+    await db_session.commit()
+
+    page = (await hse.get("/api/v1/hazards/register", params={"search": tag, "limit": 2})).json()
+    assert page["total"] == 6 and len(page["items"]) == 2
+    assert page["items"][0]["id"] == ids[4], "newest first by default"
+    worst = (await hse.get("/api/v1/hazards/register",
+                           params={"search": tag, "sort": "risk"})).json()["items"]
+    assert worst[0]["id"] == str(old.id), "★ worst first, even when old"
+    assert worst[-1]["current_rating"] is None, "unscored last"
+    back = (await hse.get("/api/v1/hazards/register",
+                          params={"search": tag, "sort": "risk", "dir": "desc"})).json()["items"]
+    assert back[-1]["current_rating"] is None, "unscored last both ways"
+    recent = (await hse.get("/api/v1/hazards/register", params={
+        "search": tag, "recorded_from": (datetime.now(timezone.utc) - timedelta(days=30)).date().isoformat()
+    })).json()
+    assert recent["total"] == 5, "the date range is the server's"
+    assert (await hse.get("/api/v1/hazards/register", params={"sort": "x"})).status_code == 422
+
+    seen = (await w.get("/api/v1/hazards/register", params={"search": tag})).json()
+    assert {h["id"] for h in seen["items"]} == {ids[1]}, "a worker sees the assessed one only"
