@@ -640,6 +640,7 @@ class RecommendationDetailOut(RecommendationOut):
     # Round 10: HSE, and whoever it was sent to, move it along the list.
     may_set_status: bool = False
     may_hse_verify: bool = False
+    may_complete: bool = False
     action: ActionBrief | None = None
 
 
@@ -686,6 +687,8 @@ async def _detail(db, rec, user: dict) -> RecommendationDetailOut:
         "may_manage": manage,
         "may_set_status": manage or _was_sent_to(rec, _user_id(user)),
         # Step 11: answered, its action done, not yet verified — and the caller HSE.
+        # ★ Re-review N1: Completed is offered only to whoever may verify.
+        "may_complete": await _can(db, user, "ehs.incident.close"),
         "may_hse_verify": (rec.responded_at is not None
                            and (action is None or action.status in ("closed", "cancelled"))
                            and not await crud.is_completed(db, rec)
@@ -830,5 +833,6 @@ async def set_recommendation_status(
     if not (_was_sent_to(rec, _user_id(user)) or await _can(db, user, "ehs.jhsc.manage")):
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             "Only the people it was sent to, or HSE, can change its state")
-    await crud.set_status(db, rec, payload.item_id)
+    await crud.set_status(db, rec, payload.item_id, user_id=_user_id(user),
+                          may_verify=await _can(db, user, "ehs.incident.close"))
     return await _detail(db, rec, user)

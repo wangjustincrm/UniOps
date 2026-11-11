@@ -364,16 +364,13 @@ async def action_closed(db: AsyncSession, action_id: uuid.UUID) -> None:
                     only_from=(BEING_REVIEWED, UNDER_REVIEW, IN_PROGRESS))
 
 
-async def is_completed(db: AsyncSession, rec: JhscRecommendation) -> bool:
-    """Whether it already stands at Completed — verified by HSE, or completed
-    before step 11 existed (0092), which left no verifier to show."""
-    if rec.hse_verified_at is not None:
-        return True
-    if rec.status_item_id is None:
-        return False
-    from app.models.vocabulary import VocabularyItem
-    item = await db.get(VocabularyItem, rec.status_item_id)
-    return item is not None and item.code == COMPLETED
+async def is_completed(db: AsyncSession, rec: JhscRecommendation) -> bool:  # noqa: ARG001
+    """Verified by HSE, or already Completed when step 11 arrived (0097).
+
+    ★ Not the state (re-review N1): the people it was sent to may set the
+    state, and Completed picked by hand would have skipped HSE's verification
+    and left its review task open for good."""
+    return rec.hse_verified_at is not None or bool(rec.completed_before_verification)
 
 
 async def hse_verify(db: AsyncSession, rec: JhscRecommendation, *, user_id: uuid.UUID):
@@ -404,13 +401,26 @@ async def hse_verify(db: AsyncSession, rec: JhscRecommendation, *, user_id: uuid
     return rec
 
 
-async def set_status(db: AsyncSession, rec: JhscRecommendation, item_id: uuid.UUID):
-    """Round 10, TC-11: the recommendation's current state, from HSE's list."""
+async def set_status(db: AsyncSession, rec: JhscRecommendation, item_id: uuid.UUID, *,
+                     user_id: uuid.UUID | None = None, may_verify: bool = False):
+    """Round 10, TC-11: the recommendation's current state, from HSE's list.
+
+    ★ Re-review N1: Completed is HSE's verification (step 11). Only someone
+    who may verify picks it, and picking it is verifying it — stamped and its
+    review task closed — so the state and the verification cannot disagree."""
     from app.models.vocabulary import VocabularyItem
     item = await db.get(VocabularyItem, item_id)
     if item is None or item.vocabulary_code != STATUS_VOCABULARY or not item.is_active:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY,
                             "That is not a state on the JHSC recommendation status list")
+    if item.code == COMPLETED and not await is_completed(db, rec):
+        if not may_verify:
+            raise HTTPException(status.HTTP_403_FORBIDDEN,
+                                "Completed is HSE's verification; HSE sets it")
+        from app.services import capa_review
+        rec.hse_verified_at = datetime.now(timezone.utc)
+        rec.hse_verified_by_name = await _name(db, user_id)
+        await capa_review.close_for(db, task_service.DOC_JHSC, rec.id, user_id)
     rec.status_item_id, rec.status_label = item.id, item.label
     await db.flush()
     return rec

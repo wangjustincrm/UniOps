@@ -44,6 +44,7 @@ interface Detail extends Recommendation {
   may_manage: boolean
   may_set_status: boolean
   may_hse_verify?: boolean
+  may_complete?: boolean
   hse_verified_at?: string | null
   hse_verified_by_name?: string | null
   action: {
@@ -149,7 +150,8 @@ function StatusPicker({ rec }: { rec: Detail }) {
     <div className="max-w-xs">
       <VocabularySelect vocabulary="jhsc_rec_status" value={rec.status_item_id ?? null}
                         onChange={(item) => { if (item && !save.isPending) save.mutate(item.id) }}
-                        placeholder="Not set" currentLabel={rec.status_label} />
+                        placeholder="Not set" currentLabel={rec.status_label}
+                        hideCodes={rec.may_complete ? undefined : ['completed']} />
       <ErrorNote error={save.error} />
     </div>
   )

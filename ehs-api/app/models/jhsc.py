@@ -178,6 +178,9 @@ class JhscRecommendation(UUIDPrimaryKey, TimestampMixin, Base):
     reviewed_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     hse_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     hse_verified_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Completed before step 11 existed (0097): counts as done, with no verifier.
+    completed_before_verification: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false")
 
     # Set when the reply commits to doing something; the corrective action is
     # how "we will fix it" stops being a sentence in a minute book.

@@ -380,8 +380,47 @@ async def test_completed_before_step_11_is_not_offered_again(hse_manager, asked,
     row.status_item_id, row.status_label = item.id, item.label
     await db_session.commit()
     got = (await hse.get(f"/api/v1/jhsc/recommendations/{rec['id']}")).json()
+    assert got["may_hse_verify"] is True, \
+        "★ re-review N1: the state alone is not HSE's verification"
+    row.completed_before_verification = True     # what 0097 marks
+    await db_session.commit()
+    got = (await hse.get(f"/api/v1/jhsc/recommendations/{rec['id']}")).json()
     assert got["may_hse_verify"] is False
     assert (await hse.post(f"/api/v1/jhsc/recommendations/{rec['id']}/verify")).status_code == 409
+
+
+async def test_completed_is_picked_only_by_whoever_verifies(hse_manager, asked, states, db_session):
+    """★ Re-review N1: the person it was sent to could pick Completed in the
+    state list, skipping HSE's verification and leaving its review task open
+    for good. Only HSE picks it, and picking it is verifying it."""
+    _codes(states)
+    await db_session.flush()
+    codes = {i.code: i.id for i in states}
+    _, hse = hse_manager
+    person, client = asked
+    _, rec = await _sent(hse, [person])
+    url = f"/api/v1/jhsc/recommendations/{rec['id']}/status"
+    detail = (await client.get(f"/api/v1/jhsc/recommendations/{rec['id']}")).json()
+    assert detail["may_complete"] is False
+    assert (await client.put(url, json={"item_id": str(codes["in_progress"])})).status_code == 200, \
+        "the person it was sent to still sets the other states"
+    refused = await client.put(url, json={"item_id": str(codes["completed"])})
+    assert refused.status_code == 403
+
+    from sqlalchemy import select as _select
+    from app.models.mirrors import Task
+    from app.services import tasks as task_service
+    task = await task_service.open_task(
+        db_session, task_type="ehs_review_capas", doc_type="ehs_jhsc",
+        doc_id=uuid.UUID(rec["id"]), doc_number="X", title="Review", assigned_role="ehs_manager")
+    task_id = task.id
+    await db_session.commit()
+    assert (await hse.get(f"/api/v1/jhsc/recommendations/{rec['id']}")).json()["may_complete"]
+    done = await hse.put(url, json={"item_id": str(codes["completed"])})
+    assert done.status_code == 200, done.text
+    assert done.json()["hse_verified_by_name"], "HSE picking Completed is verifying it"
+    db_session.expire_all()
+    assert (await db_session.get(Task, task_id)).is_completed, "and closes its review"
 
 
 async def test_declined_stays_where_it_is(hse_manager, asked, states, db_session):

@@ -291,9 +291,11 @@ export function VocabularyMultiSelect({
  * so on until an entry with nothing under it. A flat list is a single select.
  */
 export function VocabularySelect({
-  vocabulary, value, onChange, placeholder = 'Select…', currentLabel,
+  vocabulary, value, onChange, placeholder = 'Select…', currentLabel, hideCodes,
 }: {
   vocabulary: string
+  /** Entries not to offer, by code (the saved value still shows). */
+  hideCodes?: string[]
   value: string | null
   /** The chosen item with `label` set to its trail, or null. */
   onChange: (item: VocabItem | null) => void
@@ -304,7 +306,12 @@ export function VocabularySelect({
   currentLabel?: string | null
 }) {
   const { data, isError, error } = useVocabulary(vocabulary)
-  const tree = useMemo(() => build(data ?? []), [data])
+  const hidden = (hideCodes ?? []).join('|')
+  const offered = useMemo(
+    () => (hidden ? (data ?? []).filter((it) => !hidden.split('|').includes(it.code) || it.id === value)
+      : data ?? []),
+    [data, value, hidden])
+  const tree = useMemo(() => build(offered), [offered])
   // Groups opened by hand; null until the person touches the field, so it
   // opens where the saved value sits.
   const [opened, setOpened] = useState<string[] | null>(null)
