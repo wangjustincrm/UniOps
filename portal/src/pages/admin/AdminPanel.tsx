@@ -37,6 +37,7 @@ interface CompanyConfig {
   module_taglines: Record<string, string>
   delivery_address: string
   timezone: string
+  timezone_choices?: string[]
   logo_data_url: string | null
   logo_file_name: string | null
   default_currency: string
@@ -206,19 +207,6 @@ const MODULE_TAGLINE_KEYS: { key: string; label: string }[] = [
   { key: 'booking', label: 'Booking' },
 ]
 
-// Area/City zone names (what the server accepts — no Etc/GMT±N offsets or
-// legacy aliases). Falls back to the plant's own zone on old browsers.
-const TIME_ZONES: string[] = (() => {
-  try {
-    const all = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] })
-      .supportedValuesOf?.('timeZone') ?? []
-    const zones = all.filter((z) => z.includes('/') && !z.startsWith('Etc/'))
-    return zones.length ? zones : ['America/Toronto']
-  } catch {
-    return ['America/Toronto']
-  }
-})()
-
 function zoneLabel(tz: string): string {
   try {
     const off = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' })
@@ -255,7 +243,10 @@ function CompanySettings() {
 
   const currentModuleTaglines = moduleTaglines ?? cfg?.module_taglines ?? {}
   const currentTimeZone = timeZone ?? cfg?.timezone ?? 'America/Toronto'
-  const zoneOptions = TIME_ZONES.includes(currentTimeZone) ? TIME_ZONES : [currentTimeZone, ...TIME_ZONES]
+  // The server's list (exactly what it accepts), not the browser's tz data.
+  const serverZones = cfg?.timezone_choices?.length ? cfg.timezone_choices : [currentTimeZone]
+  const zoneOptions = serverZones.includes(currentTimeZone) ? serverZones : [currentTimeZone, ...serverZones]
+  const zoneChanged = timeZone !== undefined && timeZone !== cfg?.timezone
 
   const taglineFor = (key: string): string =>
     key === 'portal' ? values.tagline : (currentModuleTaglines[key] ?? '')
@@ -283,16 +274,22 @@ function CompanySettings() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (zoneChanged && !window.confirm(
+      `Change the company time zone from ${cfg?.timezone} to ${timeZone}?\n\n`
+      + 'From now on every module uses it for "today", accounting periods, the dates in '
+      + 'new document numbers, times on screen, in PDFs and emails, and the hour daily '
+      + 'reminders run. Existing records are not changed.',
+    )) return
     try {
       const body: any = { name: values.name, tagline: values.tagline, delivery_address: values.delivery_address }
       if (moduleTaglines !== undefined) body.module_taglines = moduleTaglines
-      if (timeZone !== undefined) body.timezone = timeZone
+      if (zoneChanged) body.timezone = timeZone
       if (logoDataUrl !== undefined) body.logo_data_url = logoDataUrl
       if (logoFileName !== undefined) body.logo_file_name = logoFileName
       await save.mutateAsync(body)
-      if (timeZone !== undefined) setDisplayTimeZone(timeZone)
-      setToast({ ok: true, msg: timeZone !== undefined
-        ? 'Company settings saved. Other open pages use the new time zone after a reload.'
+      if (zoneChanged) setDisplayTimeZone(timeZone)
+      setToast({ ok: true, msg: zoneChanged
+        ? `Company settings saved. Time zone is now ${timeZone}; other open pages use it after a reload.`
         : 'Company settings saved.' })
     } catch (err: any) {
       setToast({ ok: false, msg: err.message })

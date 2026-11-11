@@ -75,6 +75,9 @@ async def test_timezone_setting_round_trips_and_reaches_branding(admin_client, c
     r = await admin_client.get(CONFIG_URL)
     assert r.status_code == 200
     assert r.json()["timezone"] == "America/Toronto"
+    choices = r.json()["timezone_choices"]
+    assert "America/Toronto" in choices and "America/Regina" in choices
+    assert not any(z.startswith("Etc/") or "/" not in z for z in choices)
 
     r = await admin_client.patch(CONFIG_URL, json={"timezone": "America/Regina"})
     assert r.status_code == 200, r.text

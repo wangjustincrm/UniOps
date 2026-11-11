@@ -10,7 +10,7 @@ from sqlalchemy import text
 from uniops_authz import effective_permissions, role_matrix, user_role_codes
 
 from app.core.config import settings
-from app.core.plant_time import set_plant_tz
+from app.core.plant_time import set_plant_tz, timezone_choices
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep, require_permission
 from app.crud import config as config_crud
 from app.crud import po_fee as po_fee_crud
@@ -79,6 +79,8 @@ async def _full_response(db, user_payload: dict) -> ConfigResponse:
     cfg = await config_crud.get_or_create(db)
     resp = ConfigResponse.model_validate(cfg)
     resp.incoterms_terms = po_fee_crud.effective_terms(cfg)
+    # The settings drop-down offers exactly what PATCH accepts (one source).
+    resp.timezone_choices = timezone_choices()
     return resp
 
 

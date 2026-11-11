@@ -237,6 +237,7 @@ class ConfigResponse(BaseModel):
     logo_file_name: str | None
     delivery_address: str
     timezone: str = "America/Toronto"
+    timezone_choices: list[str] = []
 
     default_currency: str
     enabled_currencies: list[str]
