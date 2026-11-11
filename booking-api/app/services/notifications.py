@@ -24,12 +24,11 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email import encoders
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
+from app.core.plant_time import fmt_datetime, to_plant
 from app.crud.config import get_or_create_config
 from app.models.booking import Booking
 from app.models.company_config_mirror import CompanyConfig
@@ -39,8 +38,6 @@ from app.models.user_mirror import User
 from app.services.ical import build_event_ics
 
 log = logging.getLogger(__name__)
-
-_TZ = ZoneInfo(settings.DISPLAY_TIMEZONE)
 
 # ── SMTP config ───────────────────────────────────────────────────────────────
 
@@ -90,6 +87,16 @@ async def _load_smtp_config(db: AsyncSession) -> dict[str, Any]:
 
 # ── Email builder ─────────────────────────────────────────────────────────────
 
+def _time_range(starts_at: datetime, ends_at: datetime) -> str:
+    """'2026-NOV-11 14:30 — 15:30 EST' in the plant's time zone (UI-DATE-002).
+    A booking that ends on another day shows the end date too."""
+    starts_local = to_plant(starts_at)
+    ends_local = to_plant(ends_at)
+    end = (f"{ends_local.hour:02d}:{ends_local.minute:02d}"
+           if ends_local.date() == starts_local.date() else fmt_datetime(ends_local))
+    return f"{fmt_datetime(starts_local)} — {end} {ends_local.tzname()}"
+
+
 def _build_plain_text(
     booking: Booking,
     room: MeetingRoom,
@@ -98,13 +105,7 @@ def _build_plain_text(
     notif_type: str,
 ) -> str:
     """Build the human-readable plain-text summary."""
-    tz = _TZ
-    starts_local = booking.starts_at.astimezone(tz)
-    ends_local = booking.ends_at.astimezone(tz)
-    time_range = (
-        f"{starts_local.strftime('%Y-%m-%d %H:%M')} — "
-        f"{ends_local.strftime('%H:%M')} ({settings.DISPLAY_TIMEZONE})"
-    )
+    time_range = _time_range(booking.starts_at, booking.ends_at)
     location_parts = [p for p in [room.building, room.floor, room.area] if p]
     location = f"{room.name} ({', '.join(location_parts)})" if location_parts else room.name
 
@@ -296,8 +297,6 @@ async def send_notification(db: AsyncSession, log_entry: NotificationLog) -> boo
         from_email = smtp_cfg.get("from_email") or organizer_email
 
         # Build subject
-        tz = _TZ
-        starts_local = booking.starts_at.astimezone(tz)
         type_label = {
             "created": "Created",
             "updated": "Updated",
@@ -306,7 +305,7 @@ async def send_notification(db: AsyncSession, log_entry: NotificationLog) -> boo
         }.get(log_entry.notif_type, log_entry.notif_type.title())
         subject = (
             f"[Booking] {type_label}: {booking.title} "
-            f"— {room.name} {starts_local.strftime('%Y-%m-%d %H:%M')}"
+            f"— {room.name} {fmt_datetime(booking.starts_at)}"
         )
 
         # iCAL method

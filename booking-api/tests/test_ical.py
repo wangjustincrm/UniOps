@@ -795,3 +795,33 @@ def test_exdates_suppressed_when_recurrence_id_suppresses_rrule():
         "EXDATE must be suppressed when RRULE is not emitted — it has nothing "
         "to subtract from"
     )
+
+
+class TestFollowsPlantTimeZoneSetting:
+    """The zone is the company setting (Company Settings → Time Zone), not a
+    hard-coded America/Toronto: DTSTART's TZID and the VTIMEZONE's TZID both
+    follow it, and stay identical."""
+
+    def setup_method(self):
+        from app.core import plant_time
+        self._prev = plant_time.plant_tz_name()
+        assert plant_time.set_plant_tz("America/Vancouver")
+
+    def teardown_method(self):
+        from app.core import plant_time
+        plant_time.set_plant_tz(self._prev)
+
+    def test_tzid_and_local_time_follow_setting(self):
+        import re
+        ics = build_event_ics(
+            booking=_make_booking(),  # 18:00 UTC = 11:00 PDT
+            room=_make_room(),
+            organizer_email="organizer@example.com",
+            attendee_emails=["alice@example.com"],
+            method="REQUEST",
+        ).decode()
+        unfolded = ics.replace("\r\n ", "").replace("\r\n\t", "")
+        assert "DTSTART;TZID=America/Vancouver:20260708T110000" in unfolded
+        block = re.search(r"BEGIN:VTIMEZONE\r?\n(.*?)END:VTIMEZONE", ics, re.DOTALL).group(1)
+        assert re.search(r"TZID:(.+)", block).group(1).strip() == "America/Vancouver"
+        assert "America/Toronto" not in unfolded

@@ -125,7 +125,7 @@ class SeriesUpdate(BaseModel):
     All fields optional — only provided fields are applied to future occurrences.
 
     start_time / end_time:
-        Local time-of-day strings "HH:MM" (DISPLAY_TIMEZONE).
+        Local time-of-day strings "HH:MM" (plant time zone).
         Applied to every future occurrence's own calendar date.
         Both must be provided together or both omitted (both-or-neither rule).
     """
@@ -200,6 +200,6 @@ class DaySummaryOut(BaseModel):
     date: str                       # "YYYY-MM-DD"
     open_start: str                 # "HH:MM"  from config defaults
     open_end: str                   # "HH:MM"
-    timezone: str                   # IANA name, e.g. "America/Toronto" (= DISPLAY_TIMEZONE)
+    timezone: str                   # IANA name, e.g. "America/Toronto" (= Company Settings → Time Zone)
     rooms: list[DaySummaryRoom]     # non-disabled rooms, sorted floor then name
     bookings: list[DaySummaryBookingOut]  # confirmed bookings in the day window
