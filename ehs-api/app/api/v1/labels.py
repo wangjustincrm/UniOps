@@ -247,11 +247,7 @@ async def label_pdf_download(
         # classification may have changed with it, and the label on the drum is
         # what somebody reads before opening it — printing the old one is a
         # WHMIS breach dressed up as a working feature.
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            "A newer safety data sheet has been filed since this label was "
-            "approved. Make a new label from the current sheet — the hazards "
-            "may have changed.")
+        raise HTTPException(status.HTTP_409_CONFLICT, await crud.why_superseded(db, label))
     # ★ Round 12, CHM-02: "allow the workplace label to be viewed before it is
     # approved." Seeing the layout is not printing it: a preview is stamped
     # DRAFT across every label on the sheet and is not counted, so the gate

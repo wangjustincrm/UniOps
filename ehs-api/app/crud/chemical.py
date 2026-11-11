@@ -149,15 +149,26 @@ async def _rename_labels(db: AsyncSession, chemical: Chemical, was_called: str) 
     labels = (await db.execute(
         select(ChemicalLabel).where(ChemicalLabel.chemical_id == chemical.id)
     )).scalars().all()
+    # ★ Review of round 12 (C9): one draft at a time. Where a new version is
+    # already being drafted, the label in force does not go back to draft
+    # beside it — it stops printing (superseded) and the draft carries the
+    # corrected name. And a label already printed is withdrawn too: it used to
+    # stay printable under the old name, the very thing this exists to stop.
+    drafting = any(label.status == "draft" for label in labels)
     for label in labels:
         if label.product_identifier != was_called:
             continue  # already says something else — a hand correction; leave it
+        if label.status in ("approved", "printed") and drafting:
+            # Kept as printed: it is the record of what went on the drums.
+            label.status = "superseded"
+            continue
         label.product_identifier = chemical.name
-        if label.status == "approved":
+        if label.status in ("approved", "printed"):
             label.status = "draft"
             label.approved_at = None
             label.approved_by = None
             label.approved_by_name = None
+            drafting = True
     await db.flush()
 
 

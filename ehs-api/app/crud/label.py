@@ -209,3 +209,19 @@ async def record_print(db: AsyncSession, label: ChemicalLabel) -> ChemicalLabel:
     label.last_printed_at = datetime.now(timezone.utc)
     await db.flush()
     return label
+
+
+async def why_superseded(db: AsyncSession, label: ChemicalLabel) -> str:
+    """★ Review of round 12 (C8): a label stops printing for one of three
+    reasons, and the refusal says which."""
+    others = [x for x in await list_labels(db, chemical_id=label.chemical_id) if x.id != label.id]
+    if any(x.status in ("approved", "printed") for x in others):
+        return ("A newer version of this label has been approved and replaces this "
+                "one. Print that one.")
+    chemical = await db.get(Chemical, label.chemical_id)
+    if chemical is not None and label.product_identifier not in (chemical.name, chemical.product_name):
+        return ("The product has been renamed since this label was approved. The "
+                "label with the new name is waiting to be approved.")
+    return ("A newer safety data sheet has been filed since this label was "
+            "approved. Make a new label from the current sheet — the hazards "
+            "may have changed.")

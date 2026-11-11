@@ -192,3 +192,50 @@ def test_every_label_size_still_holds_the_new_top_block():
             assert not s.always_prints, s.code
             continue
         assert pdf.startswith(b"%PDF") and used.code == s.code
+
+
+async def test_a_replaced_label_says_it_was_replaced_not_that_a_sheet_came(hse_manager, db_session):
+    """Review C8: the refusal names why the label stopped printing."""
+    _, client = hse_manager
+    chem = await _chemical(client)
+    old = await _approved(db_session, uuid.UUID(chem["id"]))
+    new = (await client.post(f"/api/v1/chemicals/{chem['id']}/labels")).json()
+    await client.patch(f"/api/v1/labels/{new['id']}", json={
+        "hazard_statements": [{"code": "H314", "text": "Causes severe skin burns."}]})
+    assert (await client.post(f"/api/v1/labels/{new['id']}/approve")).status_code == 200
+    refused = await client.get(f"/api/v1/labels/{old.id}/pdf")
+    assert refused.status_code == 409
+    assert "newer version of this label" in refused.json()["detail"]
+
+
+async def test_renaming_while_a_new_version_is_drafted_leaves_one_draft(hse_manager, db_session):
+    """Review C9: the approved label stops printing, the draft takes the name,
+    and there is still one draft; a printed label is withdrawn too."""
+    _, client = hse_manager
+    chem = await _chemical(client)
+    old = await _approved(db_session, uuid.UUID(chem["id"]))
+    old.status = "printed"
+    await db_session.commit()
+    draft = (await client.post(f"/api/v1/chemicals/{chem['id']}/labels")).json()
+
+    renamed = await client.patch(f"/api/v1/chemicals/{chem['id']}", json={"name": "Caustic soda 25%"})
+    assert renamed.status_code == 200, renamed.text
+    labels = (await client.get(f"/api/v1/labels?chemical_id={chem['id']}")).json()
+    by_id = {x["id"]: x for x in labels}
+    assert [x["status"] for x in labels].count("draft") == 1
+    assert by_id[str(old.id)]["status"] == "superseded"
+    assert by_id[draft["id"]]["product_identifier"] == "Caustic soda 25%"
+    refused = await client.get(f"/api/v1/labels/{old.id}/pdf")
+    assert refused.status_code == 409 and "renamed" in refused.json()["detail"]
+
+
+async def test_renaming_withdraws_a_printed_label_with_no_draft(hse_manager, db_session):
+    _, client = hse_manager
+    chem = await _chemical(client)
+    old = await _approved(db_session, uuid.UUID(chem["id"]))
+    old.status = "printed"
+    await db_session.commit()
+    await client.patch(f"/api/v1/chemicals/{chem['id']}", json={"name": "Caustic soda 25%"})
+    back = (await client.get(f"/api/v1/labels/{old.id}")).json()
+    assert back["status"] == "draft" and back["product_identifier"] == "Caustic soda 25%"
+    assert (await client.get(f"/api/v1/labels/{old.id}/pdf")).status_code == 409
