@@ -58,6 +58,7 @@ from sqlalchemy import Select, case, func, or_, select
 from app.core.authz import require_any_permission
 from app.core.deps import SessionDep
 from app.core.list_sort import SortDir, resolve, sort_rows
+from app.core.plant_time import plant_today
 from app.models.epms_mirror import MdmMaterial
 from app.models.status_mapping import MrpStatusMapping
 from app.models.wms_inventory import WmsInventoryLot
@@ -387,7 +388,7 @@ async def list_lots(
     page_size: int = Query(default=50, ge=1, le=500),
 ):
     """Browse and search inventory lots."""
-    today = date.today()
+    today = plant_today()
     filters = dict(
         material_code=material_code, mapped_status=mapped_status,
         warehouse_id=warehouse_id, erp_class_code=erp_class_code, search=search,
@@ -618,7 +619,7 @@ async def list_batches(
     if sort is None and descending:
         sort = "expiry_date"    # legacy: `descending` alone reversed the expiry default
     srt = resolve(sort, dir_, _BATCH_SORT_KEYS, "desc" if descending else "asc")
-    today = date.today()
+    today = plant_today()
     filters = dict(
         material_code=material_code, mapped_status=mapped_status,
         warehouse_id=warehouse_id, erp_class_code=erp_class_code, search=search,
@@ -791,7 +792,7 @@ async def batch_locations(
     the click is "where is most of it", and a code sort would put a 10 kg
     remnant above a full pallet.
     """
-    today = date.today()
+    today = plant_today()
     stmt = (
         select(WmsLotLocation, WmsInventoryLot)
         .join(
@@ -859,7 +860,7 @@ async def aging_summary(
     `today` is read once and passed into the bucketing, never called per row:
     two lots in one response must not land on opposite sides of midnight.
     """
-    today = date.today()
+    today = plant_today()
     stmt = _apply_lot_filters(
         _lots_joined_to_materials(),
         material_code=None, mapped_status=None, warehouse_id=warehouse_id,
@@ -929,7 +930,7 @@ async def material_stock(
     drop one of the two cases.
     """
     srt = resolve(sort, dir_, _MATERIAL_SORT)
-    today = date.today()
+    today = plant_today()
 
     stock_stmt = (
         select(

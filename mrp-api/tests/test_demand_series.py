@@ -271,6 +271,34 @@ async def test_current_month_defaults_when_omitted(db_session):
     assert (res.upserted, res.changed) == (1, 1)
 
 
+
+@pytest.mark.anyio
+async def test_current_month_default_is_the_plant_month_on_the_last_evening(db_session, monkeypatch):
+    """20:30 EDT on 2026-10-31 is 00:30 UTC on 2026-11-01. At the plant it is
+    still October, so October must still be editable -- a UTC "current
+    month" would already call it the past and lock the planner out for the
+    last four hours of the month."""
+    from datetime import datetime, timezone
+
+    from app.core.plant_time import set_plant_tz, plant_tz_name, to_plant
+    from app.services import demand_series as ds
+
+    before = plant_tz_name()
+    set_plant_tz("America/Toronto")
+    try:
+        evening = to_plant(datetime(2026, 11, 1, 0, 30, tzinfo=timezone.utc))
+        monkeypatch.setattr(ds, "plant_now", lambda: evening)
+        res = await upsert_cells(
+            db_session, [CellChange("S0093", "2026-10", Decimal("5"))], changed_by=None,
+        )
+        assert (res.upserted, res.changed) == (1, 1)
+        with pytest.raises(PastMonthError):
+            await upsert_cells(
+                db_session, [CellChange("S0093", "2026-09", Decimal("5"))], changed_by=None,
+            )
+    finally:
+        set_plant_tz(before)
+
 # ── read_series_grid ─────────────────────────────────────────────────────────
 
 

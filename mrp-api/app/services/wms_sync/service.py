@@ -35,6 +35,7 @@ from sqlalchemy import delete, func, insert, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_today
 from app.models.status_mapping import MrpStatusMapping
 from app.models.sync_state import MrpSyncState
 from app.models.wms_inventory import WmsInventoryLot
@@ -105,10 +106,11 @@ async def run_wms_sync(db: AsyncSession) -> dict:
         # no longer exists.
         raw_locations = await asyncio.to_thread(fetch_lot_locations)
         mapping = await _load_mapping(db)
-        # UTC, not container-local time — which lots flip to 'expired' must
-        # not depend on the host/container TZ (see transform_lot's expiry
-        # override, which compares expiry_date < today).
-        today = datetime.now(timezone.utc).date()
+        # The plant's date (Company Settings time zone), never container-local
+        # time: which lots flip to 'expired' (transform_lot compares
+        # expiry_date < today) must not depend on the host TZ, and the UTC
+        # date expired lots a day early from 19:00/20:00 in Toronto.
+        today = plant_today()
         batch_id = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
 
         rows = [transform_lot(raw, mapping, today) for raw in raw_rows]

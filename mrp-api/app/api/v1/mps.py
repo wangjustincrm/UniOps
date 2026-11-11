@@ -153,6 +153,7 @@ from app.api.v1.net_requirement import _generate_months, _load_forecast_by_mater
 from app.api.v1.params import DEFAULT_FROZEN_MONTHS, FROZEN_MONTHS_KEY, get_param
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, SessionDep
+from app.core.plant_time import plant_today, to_plant
 from app.models.demand import MrpDemand
 from app.models.forecast import ForecastLine, ForecastVersion
 from app.models.mps import MrpMpsLine, MrpMpsRun
@@ -530,7 +531,7 @@ def _frozen_until(run: MrpMpsRun) -> str | None:
     have already been bought."""
     if not run.frozen_months:
         return None
-    return _shift_month(run.created_at.strftime("%Y-%m"), run.frozen_months - 1)
+    return _shift_month(to_plant(run.created_at).strftime("%Y-%m"), run.frozen_months - 1)
 
 
 def _shift_month(month: str, delta: int) -> str:
@@ -662,7 +663,7 @@ async def _next_run_no(db: SessionDep, horizon_start_month: str) -> str:
     `freeze_outlook`'s `FCV-{anchor_month, no dash}-{MMDDHH}`
     (app/services/demand_series.py) so a run and the outlook it was
     generated from read the same way and line up visually. `MMDDHH` drops
-    the minute the previous `DDHHMM` shape had, so a same-UTC-hour
+    the minute the previous `DDHHMM` shape had, so a same-plant-hour
     collision for the same horizon month is now the routine case (an
     ordinary session generating several runs inside one hour hits it every
     time), not an edge case -- collision handling lives in
@@ -887,7 +888,7 @@ async def create_run(body: MpsRunCreate, db: SessionDep, payload: RunDep, token:
     # afterwards -- this request included -- goes through `run.week_calendar_mode`.
     mode = await _resolve_week_mode(db)
     start_dow = await _resolve_week_start_dow(db)
-    today = datetime.now(timezone.utc).date()
+    today = plant_today()
     current_week = week_start_of(today, mode, start_dow=start_dow)
 
     # ── Frozen zone ────────────────────────────────────────────────────
@@ -1230,7 +1231,7 @@ async def recalculate_run(run_id: uuid.UUID, db: SessionDep, payload: RunDep, to
     mode = run.week_calendar_mode
     start_dow = run.week_start_dow
     lead = run.production_lead_weeks
-    current_week = week_start_of(datetime.now(timezone.utc).date(), mode,
+    current_week = week_start_of(plant_today(), mode,
                                  start_dow=start_dow)
 
     existing_lines = await _load_lines(db, run.id)
@@ -1408,7 +1409,7 @@ async def update_line(
                 detail=f"{week.isoformat()} is not the start of a week under this run's "
                        f"'{mode}' calendar",
             )
-        current_week = week_start_of(datetime.now(timezone.utc).date(), mode,
+        current_week = week_start_of(plant_today(), mode,
                                      start_dow=start_dow)
         if week < current_week:
             # A past week is not a place production can happen, and the
