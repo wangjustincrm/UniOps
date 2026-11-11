@@ -12,7 +12,7 @@ from app.core.permissions import (
     CanManageSettings, CanReportIncident, CanReadTraining, CanWriteTraining,
 )
 from app.crud import training as crud
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from uniops_authz import has_permission
 from app.models.config import EhsConfig
@@ -75,6 +75,35 @@ async def list_courses(
 ):
     return [CourseOut.model_validate(c) for c in
             await crud.list_courses(db, statutory_only=statutory_only)]
+
+
+class CoursePage(BaseModel):
+    items: list[CourseOut]
+    total: int
+
+
+@router.get("/courses/page", response_model=CoursePage)
+async def course_page(
+    db: SessionDep, user: CanReadTraining,  # noqa: ARG001
+    q: str | None = Query(default=None, max_length=100, description="Course name"),
+    sort: str | None = Query(default=None, pattern="^(name|validity_months)$"),
+    dir: str = Query(default="asc", pattern="^(asc|desc)$"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=200),
+):
+    """★ Review of round 12 (C7): the Courses tab under the list standard —
+    searched by name (TRN-04), sorted and paged on the server."""
+    from app.crud._list_order import sort_clauses
+    where = [Course.is_active.is_(True)]
+    if q and q.strip():
+        where.append(Course.name.ilike(f"%{q.strip()}%"))
+    total = (await db.execute(select(func.count()).select_from(Course).where(*where))).scalar() or 0
+    order = sort_clauses(sort, dir, {"name": func.lower(Course.name),
+                                     "validity_months": Course.validity_months},
+                         [Course.id]) or [func.lower(Course.name), Course.id]
+    rows = (await db.execute(select(Course).where(*where).order_by(*order)
+                             .offset((page - 1) * page_size).limit(page_size))).scalars()
+    return CoursePage(items=[CourseOut.model_validate(c) for c in rows], total=total)
 
 
 @router.post("/courses", response_model=CourseOut, status_code=status.HTTP_201_CREATED)
@@ -266,16 +295,47 @@ async def my_records(
     rows = await crud.list_training(
         db, user_id=_user_id(user), search=search, completed_from=completed_from,
         completed_to=completed_to, order=order, delivery=delivery)
-    if sort:
-        # One person's records — a handful — sorted here by the column asked
-        # for, blanks last whichever way (the list rule: the server sorts).
-        present = [r for r in rows if getattr(r, sort) is not None]
-        blank = [r for r in rows if getattr(r, sort) is None]
-        present.sort(key=lambda r: (str(getattr(r, sort)).lower() if sort in (
-            "course_label", "delivery") else getattr(r, sort), r.completed_on),
-            reverse=dir == "desc")
-        rows = present + blank
-    return await _with_who_ran_them(db, rows)
+    return await _with_who_ran_them(db, _sorted_mine(rows, sort, dir))
+
+
+def _sorted_mine(rows, sort, dir):
+    """One person's records — a handful — sorted by the column asked for,
+    blanks last whichever way (the list rule: the server sorts)."""
+    if not sort:
+        return rows
+    present = [r for r in rows if getattr(r, sort) is not None]
+    blank = [r for r in rows if getattr(r, sort) is None]
+    present.sort(key=lambda r: (str(getattr(r, sort)).lower() if sort in (
+        "course_label", "delivery") else getattr(r, sort), r.completed_on),
+        reverse=dir == "desc")
+    return present + blank
+
+
+class MyRecordPage(BaseModel):
+    items: list[TrainingRecordOut]
+    total: int
+
+
+@router.get("/records/mine/page", response_model=MyRecordPage)
+async def my_records_page(
+    db: SessionDep, user: CanReportIncident,
+    search: str | None = Query(default=None, max_length=100),
+    completed_from: date | None = None,
+    completed_to: date | None = None,
+    delivery: str | None = Query(default=None, pattern=DELIVERY_PATTERN),
+    sort: str | None = Query(default=None, pattern="^(course_label|completed_on|expires_on|delivery)$"),
+    dir: str = Query(default="asc", pattern="^(asc|desc)$"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=200),
+):
+    """★ Review of round 12 (C7): My training's Records tab, paged on the
+    server like every list — only ever the caller's own."""
+    rows = _sorted_mine(await crud.list_training(
+        db, user_id=_user_id(user), search=search, completed_from=completed_from,
+        completed_to=completed_to, order="date", delivery=delivery), sort, dir)
+    start = (page - 1) * page_size
+    return MyRecordPage(items=await _with_who_ran_them(db, rows[start:start + page_size]),
+                        total=len(rows))
 
 
 @router.get("/records/mine/print")

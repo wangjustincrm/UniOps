@@ -18,9 +18,9 @@ from sqlalchemy import select
 
 from app.api.v1.incidents import _user_id
 from app.core.deps import BearerToken, SessionDep
-from app.core.permissions import CanReportIncident, CanWriteTraining
+from app.core.permissions import CanReadTraining, CanReportIncident, CanWriteTraining
 from app.crud import course as crud
-from app.models.course import CourseMaterial
+from app.models.course import CourseDelivery, CourseMaterial
 from app.models.quiz import QuizAttempt
 from app.services import materials
 from app.services.attachments import proxy_download
@@ -236,6 +236,52 @@ async def list_sessions(
         coordinator_id=uid if mine else None,
         attendee_id=uid if attending else None,
         status_in=status_in, search=search, date_from=date_from, date_to=date_to))
+
+
+class SessionPage(BaseModel):
+    items: list[DeliveryOut]
+    total: int
+
+
+_SESSION_SORT = {
+    "delivery_no": CourseDelivery.delivery_no,
+    "title": CourseDelivery.title,
+    "session_date": CourseDelivery.session_date,
+    "status": CourseDelivery.status,
+}
+
+
+@router.get("/page", response_model=SessionPage)
+async def session_page(
+    db: SessionDep, user: CanReadTraining,  # noqa: ARG001
+    search: str | None = Query(default=None, max_length=100),
+    date_from: date | None = None,
+    date_to: date | None = None,
+    sort: str | None = None,
+    dir: str = Query(default="desc", pattern="^(asc|desc)$"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=200),
+):
+    """★ Review of round 12 (C7): the sessions tab as the list standard has it —
+    searched (TRN-04), sorted and paged on the server, with no cap on how far
+    back it reaches."""
+    from sqlalchemy import func, or_
+    from app.crud._list_order import sort_clauses
+    where = []
+    if search and search.strip():
+        like = f"%{search.strip()}%"
+        where.append(or_(CourseDelivery.delivery_no.ilike(like), CourseDelivery.title.ilike(like)))
+    if date_from:
+        where.append(CourseDelivery.session_date >= date_from)
+    if date_to:
+        where.append(CourseDelivery.session_date <= date_to)
+    total = (await db.execute(
+        select(func.count()).select_from(CourseDelivery).where(*where))).scalar() or 0
+    order = sort_clauses(sort, dir, _SESSION_SORT, [CourseDelivery.id]) or [
+        CourseDelivery.session_date.desc(), CourseDelivery.id]
+    rows = list((await db.execute(select(CourseDelivery).where(*where).order_by(*order)
+                                  .offset((page - 1) * page_size).limit(page_size))).scalars())
+    return SessionPage(items=await _with_counts(db, rows), total=total)
 
 
 @router.post("", response_model=DeliveryOut, status_code=status.HTTP_201_CREATED)

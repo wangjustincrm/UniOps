@@ -202,23 +202,25 @@ function MyRecordsTab() {
   if (type) filters.set('delivery', type)
   const qs = filters.toString()
 
+  // ★ Review C7: paged and sorted on the server, as every list is.
   const records = useQuery({
-    queryKey: ['my-training', 'records', qs, sort],
+    queryKey: ['my-training', 'records', qs, sort, page, pageSize],
     queryFn: () => {
       const all = new URLSearchParams(filters)
       Object.entries(sortParams(sort)).forEach(([k, v]) => all.set(k, String(v)))
-      return api.get<MyRecord[]>(`/api/v1/training/records/mine?${all}`)
+      all.set('page', String(page))
+      all.set('page_size', String(pageSize))
+      return api.get<{ items: MyRecord[]; total: number }>(`/api/v1/training/records/mine/page?${all}`)
     },
     placeholderData: (prev) => prev,
   })
-  const rows = records.data ?? []
-  const shown = rows.slice((page - 1) * pageSize, page * pageSize)
+  const shown = records.data?.items ?? []
+  const total = records.data?.total ?? 0
   const printer = useFileOpener()
   const exporter = useFileOpener()
   const certs = useFileOpener()
   const opener = useFileOpener()
   const error = printer.error || exporter.error || certs.error || opener.error
-  const ours = rows.filter((r) => r.delivery !== 'external').length
 
   return (
     <>
@@ -249,11 +251,11 @@ function MyRecordsTab() {
           <Sheet className="h-4 w-4" aria-hidden />
           {exporter.busy ? 'Preparing…' : 'Export to Excel'}
         </button>
-        <button type="button" className={secondaryButton} disabled={certs.busy || rows.length === 0}
+        <button type="button" className={secondaryButton} disabled={certs.busy || total === 0}
                 onClick={() => certs.open(`/api/v1/training/records/mine/certificates${qs ? `?${qs}` : ''}`,
                                           'my-certificates.pdf')}>
           <Award className="h-4 w-4" aria-hidden />
-          {certs.busy ? 'Preparing…' : `Print all certificates${ours ? ` (${ours})` : ''}`}
+          {certs.busy ? 'Preparing…' : 'Print all certificates'}
         </button>
       </div>
       <p className="mb-2 text-xs text-neutral-500">
@@ -282,7 +284,7 @@ function MyRecordsTab() {
               {records.isPending && (
                 <tr><td colSpan={5} className="p-6 text-center text-sm text-neutral-500">Loading…</td></tr>
               )}
-              {records.data && rows.length === 0 && (
+              {records.data && total === 0 && (
                 <tr><td colSpan={5} className="p-8 text-center text-sm text-neutral-500">
                   {qs ? 'Nothing matches.' : 'Nothing is on your training record yet.'}
                 </td></tr>
@@ -324,7 +326,7 @@ function MyRecordsTab() {
             </tbody>
           </table>
         </div>
-        <Pagination page={page} pageSize={pageSize} total={rows.length} onPageChange={setPage}
+        <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage}
                     onPageSizeChange={(n) => { setPageSize(n); setPage(1) }} />
       </div>
     </>

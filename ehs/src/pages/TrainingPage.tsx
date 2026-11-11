@@ -9,16 +9,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { Award, CalendarDays, Pencil, Plus, Printer, Sheet, Upload, X, Paperclip } from 'lucide-react'
+import { Award, Pencil, Plus, Printer, Sheet, Upload, X, Paperclip } from 'lucide-react'
 import MaterialsList from '@/components/MaterialsList'
 import { api, apiBlob, useFileOpener } from '@/lib/api'
 import { Pagination, useListView, DateRangeFilter, useDateFilter } from '@/components/ListView'
+import { Pagination as ShellPagination, SortTh, sortParams, useSort } from '@uniops/shell'
 import { CoursePicker } from '@/components/CoursePicker'
 import { formatDate, todayForInput } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import {
-  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, SectionTitle, Tabs,
+  Card, Empty, ErrorNote, Field, inputClass, PageHeader, primaryButton, secondaryButton, Tabs,
 } from '@/components/ui'
 import TrainingGapsPanel from '@/pages/TrainingGapsPage'
 
@@ -141,35 +142,35 @@ function ExpiryFigures({ onOpen }: { onOpen: (w: ExpiryWindow) => void }) {
 
 // ── Course sessions ──────────────────────────────────────────────────────────
 
+const TH = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500'
+type SessionSort = 'delivery_no' | 'title' | 'session_date' | 'status'
+
 function SessionsTab({ mayWrite }: { mayWrite: boolean }) {
   const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
 
-  // `list_sessions` caps at 100 with no parameter to raise it. This tab has no
-  // pager to carry the usual note, so it says so in a line of its own — past
-  // sessions are what accumulate, and they are the half that would drop off.
-  const SESSION_LIMIT = 100
-
   // ★ Round 12, TRN-04: "the same search options as on the training
-  // compliance page … by title, date or number" — sent to the server, so a
-  // session older than the most recent hundred is still found.
+  // compliance page … by title, date or number". ★ Review C7: one table under
+  // the list standard — searched, sorted and paged on the server, so it reaches
+  // past the hundred most recent sessions.
   const [search, setSearch] = useState('')
-  const dateFilter = useDateFilter()
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
+  const [sort, onSort] = useSort<SessionSort>(null, () => setPage(1))
+  const dateFilter = useDateFilter(() => setPage(1))
   const { from, to } = dateFilter.range
-  const qs = new URLSearchParams()
+  const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize), ...sortParams(sort) })
   if (search.trim()) qs.set('search', search.trim())
   if (from) qs.set('date_from', from)
   if (to) qs.set('date_to', to)
 
   const sessions = useQuery({
-    queryKey: ['course-sessions', qs.toString()],
-    queryFn: () => api.get<Session[]>(`/api/v1/course-sessions${qs.toString() ? `?${qs}` : ''}`),
+    queryKey: ['course-sessions', 'page', qs.toString()],
+    queryFn: () => api.get<{ items: Session[]; total: number }>(`/api/v1/course-sessions/page?${qs}`),
     placeholderData: (prev) => prev,
   })
-
-  const upcoming = (sessions.data ?? []).filter((s) => s.status === 'scheduled')
-  const past = (sessions.data ?? []).filter((s) => s.status !== 'scheduled')
-  const capped = (sessions.data ?? []).length >= SESSION_LIMIT
+  const rows = sessions.data?.items ?? []
+  const filtered = Boolean(search.trim() || from || to)
 
   return (
     <>
@@ -186,82 +187,67 @@ function SessionsTab({ mayWrite }: { mayWrite: boolean }) {
 
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
         <input className="h-10 min-w-0 flex-1 rounded-lg border border-neutral-200 px-3 text-sm"
-               value={search} onChange={(e) => setSearch(e.target.value)}
+               value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }}
                placeholder="Search by session number or title" aria-label="Search course sessions" />
         <DateRangeFilter {...dateFilter} />
       </div>
 
-      {sessions.data?.length === 0 && !creating && qs.toString() !== '' && (
-        <Empty>No session matches.</Empty>
-      )}
-      {sessions.data?.length === 0 && !creating && qs.toString() === '' && (
-        <Empty>
-          No course sessions yet. Scheduling one is how a course gets a date, a
-          room, and a register of who attended.
-        </Empty>
-      )}
-
-      {capped && (
-        <p className="mb-3 text-xs text-warning-700">
-          Only the {SESSION_LIMIT} most recent sessions were loaded; older ones are
-          not in this list.
-        </p>
-      )}
-
-      {upcoming.length > 0 && (
-        <>
-          <SectionTitle className="mb-2">Coming up</SectionTitle>
-          <ul className="mb-6 flex flex-col gap-2">
-            {upcoming.map((s) => (
-              <SessionRow key={s.id} session={s}
-                          onOpen={() => navigate(`/training/sessions/${s.id}`)} />
-            ))}
-          </ul>
-        </>
-      )}
-
-      {past.length > 0 && (
-        <>
-          <SectionTitle className="mb-2">Held</SectionTitle>
-          <ul className="flex flex-col gap-2">
-            {past.map((s) => (
-              <SessionRow key={s.id} session={s}
-                          onOpen={() => navigate(`/training/sessions/${s.id}`)} />
-            ))}
-          </ul>
-        </>
-      )}
+      <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+        <div className="max-h-[calc(100vh-18rem)] overflow-auto">
+          <table className="w-full min-w-[760px] text-sm">
+            <thead className="sticky top-0 z-10 bg-neutral-50 shadow-[0_1px_0_#e5e5e5]">
+              <tr>
+                <SortTh label="No." sortKey="delivery_no" sort={sort} onSort={onSort} className={TH} />
+                <SortTh label="Session" sortKey="title" sort={sort} onSort={onSort} className={TH} />
+                <SortTh label="Date" sortKey="session_date" sort={sort} onSort={onSort} className={TH} />
+                <th className={TH}>Roster</th>
+                <th className={TH}>Run by</th>
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={TH} />
+              </tr>
+            </thead>
+            <tbody>
+              {sessions.isPending && (
+                <tr><td colSpan={6} className="p-6 text-center text-sm text-neutral-500">Loading…</td></tr>
+              )}
+              {sessions.data && rows.length === 0 && (
+                <tr><td colSpan={6} className="p-8 text-center text-sm text-neutral-500">
+                  {filtered ? 'No session matches.'
+                    : 'No course sessions yet. Scheduling one is how a course gets a date, a room, and a register of who attended.'}
+                </td></tr>
+              )}
+              {rows.map((s) => (
+                <tr key={s.id} onClick={() => navigate(`/training/sessions/${s.id}`)}
+                    className="cursor-pointer border-t border-neutral-100 hover:bg-primary-50/40">
+                  <td className="px-3 py-2 font-mono text-xs text-neutral-600">{s.delivery_no}</td>
+                  <td className="px-3 py-2">
+                    <Link to={`/training/sessions/${s.id}`} onClick={(e) => e.stopPropagation()}
+                          className="font-medium text-neutral-900 hover:text-primary-700 hover:underline">
+                      {s.title}
+                    </Link>
+                    {s.location_text && <span className="block text-xs text-neutral-500">{s.location_text}</span>}
+                  </td>
+                  <td className="px-3 py-2 tabular-nums">
+                    {formatDate(s.session_date)}{s.start_time && ` ${s.start_time.slice(0, 5)}`}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-neutral-600">
+                    {s.enrolled === 0 ? 'Nobody yet' : `${s.enrolled}${s.passed ? `, ${s.passed} passed` : ''}`}
+                  </td>
+                  <td className="px-3 py-2 text-xs text-neutral-600">{s.coordinator_name ?? '—'}</td>
+                  <td className="px-3 py-2">
+                    <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                      s.status === 'scheduled' ? 'bg-primary-50 text-primary-700' : 'bg-neutral-100 text-neutral-600'}`}>
+                      {s.status === 'scheduled' ? 'Coming up' : s.status === 'completed' ? 'Complete' : 'Cancelled'}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <ShellPagination page={page} pageSize={pageSize} total={sessions.data?.total ?? 0}
+                         onPageChange={setPage} onPageSizeChange={(n) => { setPageSize(n); setPage(1) }} />
+      </div>
     </>
-  )
-}
-
-function SessionRow({ session, onOpen }: { session: Session; onOpen: () => void }) {
-  return (
-    <li>
-      <button type="button" onClick={onOpen}
-              className="flex w-full items-start gap-3 rounded-xl border border-neutral-200 bg-white p-3.5 text-left transition-colors hover:border-primary-300">
-        <CalendarDays className="mt-0.5 h-5 w-5 shrink-0 text-primary-600" aria-hidden />
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold text-neutral-900">{session.title}</span>
-          <span className="mt-0.5 block text-xs text-neutral-500">
-            {session.delivery_no} · {formatDate(session.session_date)}
-            {session.start_time && ` at ${session.start_time.slice(0, 5)}`}
-            {session.location_text && ` · ${session.location_text}`}
-          </span>
-          <span className="mt-1 block text-xs text-neutral-600">
-            {session.enrolled === 0
-              ? 'Nobody on the roster yet'
-              : `${session.enrolled} on the roster${session.passed ? `, ${session.passed} passed` : ''}`}
-            {session.coordinator_name && ` · run by ${session.coordinator_name}`}
-          </span>
-        </span>
-        {session.status !== 'scheduled' && (
-          <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-semibold text-neutral-600">
-            {session.status === 'completed' ? 'Complete' : 'Cancelled'}
-          </span>
-        )}
-      </button>
-    </li>
   )
 }
 
@@ -773,24 +759,32 @@ function NewRecordForm({ onClose, courseCode }: {
  * written to, so a course's own handout had to be attached to each session
  * separately or not at all.
  */
+type CourseSort = 'name' | 'validity_months'
+
 function CoursesTab({ mayWrite }: { mayWrite: boolean }) {
   const [adding, setAdding] = useState(false)
   // ★ Round 12, TRN-04: courses are searched by name — round 8 took the
   // number off them and they carry no date. TRN-08: and corrected in place.
+  // ★ Review C7: a table under the list standard, paged on the server.
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
+  const [sort, onSort] = useSort<CourseSort>(null, () => setPage(1))
+  const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize), ...sortParams(sort) })
+  if (search.trim()) qs.set('q', search.trim())
   const courses = useQuery({
-    queryKey: ['training-courses'],
-    queryFn: () => api.get<Course[]>('/api/v1/training/courses'),
+    queryKey: ['training-courses', 'page', qs.toString()],
+    queryFn: () => api.get<{ items: Course[]; total: number }>(`/api/v1/training/courses/page?${qs}`),
+    placeholderData: (prev) => prev,
   })
   const quizzes = useQuery({
     queryKey: ['quizzes'],
     queryFn: () => api.get<QuizSummary[]>('/api/v1/quizzes'),
   })
-  if (courses.isLoading) return <p className="text-sm text-neutral-500">Loading…</p>
-
   const quizFor = (courseId: string) =>
     (quizzes.data ?? []).find((q) => q.course_id === courseId) ?? null
+  const rows = courses.data?.items ?? []
 
   return (
     <div>
@@ -804,54 +798,71 @@ function CoursesTab({ mayWrite }: { mayWrite: boolean }) {
       {adding && <NewCourseForm onClose={() => setAdding(false)} />}
 
       <input className="mb-3 h-10 w-full rounded-lg border border-neutral-200 px-3 text-sm"
-             value={search} onChange={(e) => setSearch(e.target.value)}
+             value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }}
              placeholder="Search by course name" aria-label="Search courses" />
 
-      <ul className="overflow-hidden rounded-xl border border-neutral-200 bg-white">
-        {(courses.data ?? []).filter((c) =>
-          !search.trim() || c.name.toLowerCase().includes(search.trim().toLowerCase())).map((c) => {
-          const quiz = quizFor(c.id)
-          if (editing === c.id) {
-            return (
-              <li key={c.id} className="border-b border-neutral-100 p-3.5 last:border-b-0">
-                <EditCourseForm course={c} hasQuiz={Boolean(quiz)} onClose={() => setEditing(null)} />
-              </li>
-            )
-          }
-          return (
-            <li key={c.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-neutral-100 p-3.5 last:border-b-0">
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold text-neutral-900">{c.name}</span>
-                <span className="mt-0.5 block text-xs text-neutral-500">
-                  {/* ★ Round 8: the name is the course; the code stays
-                      internal (it is what other pages link by). */}
-                  {c.validity_months ? `Valid ${c.validity_months} months` : 'Does not expire'}
-                </span>
-              </span>
-
-              {/* The quiz that belongs to this course, which the training
-                  screens never showed — so a quiz and the course it tests
-                  looked like two unrelated things. ★ And how the room did on
-                  it: the third round asked for the course to hold everything
-                  about itself, and a pass rate is the part of a quiz anybody
-                  running the course actually wants. */}
-              {quiz ? <CourseQuiz quiz={quiz} /> : (
-                <span className="text-xs text-neutral-400">No quiz</span>
+      <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+        <div className="max-h-[calc(100vh-18rem)] overflow-auto">
+          <table className="w-full min-w-[760px] text-sm">
+            <thead className="sticky top-0 z-10 bg-neutral-50 shadow-[0_1px_0_#e5e5e5]">
+              <tr>
+                <SortTh label="Course" sortKey="name" sort={sort} onSort={onSort} className={TH} />
+                <SortTh label="Valid for" sortKey="validity_months" sort={sort} onSort={onSort} className={TH} />
+                <th className={TH}>Quiz</th>
+                <th className={TH}>Material</th>
+                {mayWrite && <th className={TH}><span className="sr-only">Edit</span></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {courses.isPending && (
+                <tr><td colSpan={5} className="p-6 text-center text-sm text-neutral-500">Loading…</td></tr>
               )}
-
-              <CourseMaterial course={c} mayWrite={mayWrite} />
-
-              {mayWrite && (
-                <button type="button" onClick={() => setEditing(c.id)}
-                        className="flex min-h-[32px] items-center gap-1 rounded-md px-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900">
-                  <Pencil className="h-3.5 w-3.5" aria-hidden />
-                  Edit
-                </button>
+              {courses.data && rows.length === 0 && (
+                <tr><td colSpan={5} className="p-8 text-center text-sm text-neutral-500">
+                  {search.trim() ? 'No course matches.' : 'No courses yet.'}
+                </td></tr>
               )}
-            </li>
-          )
-        })}
-      </ul>
+              {rows.map((c) => {
+                const quiz = quizFor(c.id)
+                if (editing === c.id) {
+                  return (
+                    <tr key={c.id} className="border-t border-neutral-100">
+                      <td colSpan={5} className="p-3.5">
+                        <EditCourseForm course={c} hasQuiz={Boolean(quiz)} onClose={() => setEditing(null)} />
+                      </td>
+                    </tr>
+                  )
+                }
+                return (
+                  <tr key={c.id} className="border-t border-neutral-100 align-top">
+                    {/* ★ Round 8: the name is the course; the code stays internal. */}
+                    <td className="px-3 py-2 font-medium text-neutral-900">{c.name}</td>
+                    <td className="px-3 py-2 text-xs text-neutral-600">
+                      {c.validity_months ? `${c.validity_months} months` : 'Does not expire'}
+                    </td>
+                    {/* The quiz that belongs to this course, and how the room did on it. */}
+                    <td className="px-3 py-2">
+                      {quiz ? <CourseQuiz quiz={quiz} /> : <span className="text-xs text-neutral-400">No quiz</span>}
+                    </td>
+                    <td className="px-3 py-2"><CourseMaterial course={c} mayWrite={mayWrite} /></td>
+                    {mayWrite && (
+                      <td className="px-3 py-2 text-right">
+                        <button type="button" onClick={() => setEditing(c.id)}
+                                className="inline-flex min-h-[32px] items-center gap-1 rounded-md px-1.5 text-xs font-medium text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900">
+                          <Pencil className="h-3.5 w-3.5" aria-hidden />
+                          Edit
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+        <ShellPagination page={page} pageSize={pageSize} total={courses.data?.total ?? 0}
+                         onPageChange={setPage} onPageSizeChange={(n) => { setPageSize(n); setPage(1) }} />
+      </div>
       <p className="mt-2 text-xs text-neutral-500">
         Who has to take a course is set on the position, under Settings → Positions;
         the compliance report counts it against the people in those positions.

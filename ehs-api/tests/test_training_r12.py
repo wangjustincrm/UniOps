@@ -304,3 +304,35 @@ async def test_a_session_scheduled_before_a_course_change_keeps_its_period_and_t
     rec2 = (await db_session.execute(select(TrainingRecord).where(
         TrainingRecord.user_id == other.id))).scalar_one()
     assert rec2.expires_on == validity.expires_on(when, 12)
+
+
+async def test_the_three_lists_are_paged_and_sorted_on_the_server(hse_manager, worker, trained):
+    """Review C7: My training's records, courses and sessions under the list
+    standard — totals, pages, whitelisted sorts."""
+    _, hse = hse_manager
+    _, client = worker
+
+    mine = (await client.get("/api/v1/training/records/mine/page?page_size=2&sort=course_label")).json()
+    assert mine["total"] == 3 and len(mine["items"]) == 2
+    rest = (await client.get("/api/v1/training/records/mine/page?page_size=2&page=2&sort=course_label")).json()
+    names = [r["course_label"] for r in mine["items"] + rest["items"]]
+    assert names == sorted(names, key=str.lower)
+
+    name = trained["forklift"]["name"]
+    found = (await hse.get(f"/api/v1/training/courses/page?q={name[:8]}")).json()
+    assert found["total"] >= 1 and all(name[:8].lower() in c["name"].lower() for c in found["items"])
+    by_validity = (await hse.get("/api/v1/training/courses/page?sort=validity_months&dir=desc&page_size=200")).json()
+    months = [c["validity_months"] for c in by_validity["items"]]
+    present = [m for m in months if m is not None]
+    assert present == sorted(present, reverse=True) and months[len(present):] == [None] * (len(months) - len(present))
+    assert (await hse.get("/api/v1/training/courses/page?sort=code")).status_code == 422
+    assert (await client.get("/api/v1/training/courses/page")).status_code == 403
+
+    for i in range(3):
+        await hse.post("/api/v1/course-sessions", json={
+            "course_id": trained["first_aid"]["id"], "title": f"Paged {i}",
+            "session_date": (plant_today() - timedelta(days=i)).isoformat()})
+    page = (await hse.get("/api/v1/course-sessions/page?search=Paged&page_size=2&sort=title&dir=asc")).json()
+    assert page["total"] == 3 and [s["title"] for s in page["items"]] == ["Paged 0", "Paged 1"]
+    assert (await hse.get("/api/v1/course-sessions/page?sort=notes")).status_code == 422
+    assert (await client.get("/api/v1/course-sessions/page")).status_code == 403
