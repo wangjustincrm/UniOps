@@ -82,10 +82,38 @@ async def _refuse_on_a_closed_incident(db, payload: ActionCreate) -> None:
         incident_crud.assert_open(incident, "its corrective actions")
 
 
+async def _feedback_ref(db, user: dict, payload: ActionCreate) -> str | None:
+    """★ Round 12, ACT-04: "allow the HSE role to create a CAPA on the
+    feedback". HSE's only — feedback is not a register the others browse — and
+    on a comment that exists. A comment has no number; it is named by its day.
+    """
+    if payload.source_type != "feedback":
+        return None
+    if not await has_permission(db, _user_id(user), user.get("role", ""), "ehs.settings.manage"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "Only HSE raises a corrective action on feedback")
+    from app.models.feedback import Feedback
+    row = await db.get(Feedback, payload.source_id) if payload.source_id else None
+    if row is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "No such comment")
+    from app.services.day_range import ONTARIO
+    return f"Feedback of {row.created_at.astimezone(ONTARIO):%-d %b %Y}"
+
+
+async def _left_the_feedback(db, user: dict, action) -> bool:
+    """ACT-04: whoever left the comment follows the work done about it."""
+    if action.source_type != "feedback" or action.source_id is None:
+        return False
+    from app.models.feedback import Feedback
+    row = await db.get(Feedback, action.source_id)
+    return row is not None and row.submitted_by == _user_id(user)
+
+
 @router.post("", response_model=ActionDetail, status_code=status.HTTP_201_CREATED)
 async def create_action(payload: ActionCreate, db: SessionDep, user: CanWriteAction):
     await _refuse_on_a_closed_incident(db, payload)
-    action = await crud.create(db, payload, raised_by=_user_id(user))
+    source_ref = await _feedback_ref(db, user, payload)
+    action = await crud.create(db, payload, raised_by=_user_id(user), source_ref=source_ref)
     return await _detail(db, action)
 
 
@@ -473,6 +501,10 @@ async def _source_readable(db, user: dict, source_type: str, source_id) -> bool:
         from app.models.incident import Incident
         incident = await db.get(Incident, source_id)
         return incident is not None and await _may_read(db, user, incident)
+    if source_type == "feedback":
+        from app.models.feedback import Feedback
+        row = await db.get(Feedback, source_id)
+        return row is not None and row.submitted_by == _user_id(user)
     if source_type == "hazard":
         from app.models.hazard import Hazard
         hazard = await db.get(Hazard, source_id)
@@ -572,12 +604,17 @@ async def mark_reviewed(task_id: uuid.UUID, db: SessionDep, user: CanReadAction)
 @router.get("/{action_id}", response_model=ActionDetail)
 async def get_action(action_id: uuid.UUID, db: SessionDep, user: CanReadAction):
     action = await crud.get(db, action_id)
+    follow_only = False
     if action.owner_id != _user_id(user) and not await _may_browse(db, user):
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN,
-            "You can only open corrective actions assigned to you",
-        )
-    return await _detail(db, action)
+        if not await _left_the_feedback(db, user, action):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "You can only open corrective actions assigned to you",
+            )
+        follow_only = True
+    detail = await _detail(db, action)
+    detail.follow_only = follow_only
+    return detail
 
 
 @router.post("/{action_id}/updates", response_model=ActionDetail)

@@ -12,7 +12,7 @@ exactly who has something to say.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -54,6 +54,17 @@ class ReplyIn(BaseModel):
     reply: str | None = Field(default=None, max_length=4000)
 
 
+class FeedbackActionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    action_no: str
+    title: str
+    status: str
+    owner_name: str | None
+    due_date: date
+
+
 class FeedbackOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -67,6 +78,9 @@ class FeedbackOut(BaseModel):
     answered_at: datetime | None
     answered_by_name: str | None
     created_at: datetime
+    # ★ Round 12, ACT-04: the corrective actions HSE raised on it, for whoever
+    # left it to follow — they cannot browse the action register.
+    actions: list[FeedbackActionOut] = []
 
 
 @router.post("", response_model=FeedbackOut, status_code=status.HTTP_201_CREATED)
@@ -114,9 +128,21 @@ async def list_feedback(
         stmt = stmt.where(Feedback.submitted_by == me)
     if status_in:
         stmt = stmt.where(Feedback.status.in_(status_in))
-    rows = (await db.execute(
-        stmt.order_by(Feedback.created_at.desc()).limit(limit))).scalars()
-    return [FeedbackOut.model_validate(r) for r in rows]
+    rows = list((await db.execute(
+        stmt.order_by(Feedback.created_at.desc()).limit(limit))).scalars())
+    from app.models.action import Action
+    by_comment: dict[uuid.UUID, list] = {}
+    if rows:
+        for a in (await db.execute(select(Action).where(
+                Action.source_type == "feedback",
+                Action.source_id.in_([r.id for r in rows])).order_by(Action.created_at))).scalars():
+            by_comment.setdefault(a.source_id, []).append(FeedbackActionOut.model_validate(a))
+    out = []
+    for r in rows:
+        item = FeedbackOut.model_validate(r)
+        item.actions = by_comment.get(r.id, [])
+        out.append(item)
+    return out
 
 
 @router.get("/unread-count")

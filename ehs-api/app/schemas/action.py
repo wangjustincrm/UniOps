@@ -13,7 +13,7 @@ HIERARCHY = ("elimination", "substitution", "engineering", "administrative", "pp
 
 class ActionCreate(BaseModel):
     source_type: str = Field(
-        pattern="^(incident|inspection|jhsc|audit|observation|hazard|drill|permit|manual|asset)$")
+        pattern="^(incident|inspection|jhsc|audit|observation|hazard|drill|permit|manual|asset|feedback)$")
     source_id: uuid.UUID | None = None
     # The specific root cause this addresses, when it came from an
     # investigation. What lets the cause tree show whether anything is being
@@ -111,4 +111,7 @@ class ActionOut(BaseModel):
 
 class ActionDetail(ActionOut):
     updates: list[ActionUpdateOut] = Field(default_factory=list)
+    # Round 12, ACT-04: opened by whoever left the feedback it answers, who may
+    # follow it and not work on it.
+    follow_only: bool = False
     verifications: list[ActionVerificationOut] = Field(default_factory=list)

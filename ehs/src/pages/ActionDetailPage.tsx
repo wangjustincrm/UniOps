@@ -38,6 +38,8 @@ interface ActionDetail {
   due_date: string; escalation_level: number; closed_at: string | null
   work_request_no: string | null
   updates: Update[]; verifications: Verification[]
+  /** Round 12, ACT-04: opened by whoever left the feedback it answers. */
+  follow_only?: boolean
 }
 
 const HIERARCHY_LABEL: Record<string, string> = {
@@ -182,8 +184,14 @@ export default function ActionDetailPage() {
         ))}
       </ul>
 
+      {a.follow_only && (
+        <p className="mt-5 rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+          You can follow this because it answers a comment you left on Feedback.
+        </p>
+      )}
+
       {/* ── Doing the work ──────────────────────────────────────────────── */}
-      {a.status !== 'closed' && (
+      {a.status !== 'closed' && !a.follow_only && (
         <>
           <SectionTitle className="mb-2 mt-5">Report progress</SectionTitle>
           <textarea

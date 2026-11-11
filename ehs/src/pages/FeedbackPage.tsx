@@ -21,7 +21,11 @@ import { MessageSquare } from 'lucide-react'
 import { api } from '@/lib/api'
 import { usePermissions } from '@/hooks/usePermissions'
 import { useMarkRead } from '@/hooks/useSeen'
-import { formatDateTime } from '@/lib/formatDate'
+import { formatDate, formatDateTime } from '@/lib/formatDate'
+import TabLink from '@/components/TabLink'
+import {
+  ActionFields, actionIsComplete, emptyActionDraft, type ActionDraft,
+} from '@/components/ActionFields'
 import {
   Card, Empty, ErrorNote, Field, inputClass, LoadFailedNote, PageHeader,
   primaryButton, secondaryButton, SectionTitle, Tabs,
@@ -38,6 +42,9 @@ interface Comment {
   answered_at: string | null
   answered_by_name: string | null
   created_at: string
+  /** Round 12, ACT-04: the corrective actions HSE raised on it. */
+  actions: { id: string; action_no: string; title: string; status: string
+             owner_name: string | null; due_date: string }[]
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -211,6 +218,33 @@ function Row({ c, mayTriage }: { c: Comment; mayTriage: boolean }) {
         </div>
       )}
 
+      {/* ★ Round 12, ACT-04: what is being done about it, for whoever left it
+          to follow. Each opens the action, which they may read. */}
+      {c.actions.length > 0 && (
+        <div className="mt-2.5">
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+            Corrective actions
+          </p>
+          <ul className="flex flex-col gap-1">
+            {c.actions.map((a) => (
+              <li key={a.id}>
+                <TabLink to={`/actions/${a.id}`}
+                         className="flex flex-wrap items-baseline gap-x-2 rounded-lg border border-neutral-200 px-2.5 py-1.5 text-xs hover:border-primary-300 hover:bg-primary-50/40">
+                  <span className="font-mono text-neutral-500">{a.action_no}</span>
+                  <span className="min-w-0 flex-1 font-medium text-neutral-900">{a.title}</span>
+                  <span className="capitalize text-neutral-600">{a.status.replace('_', ' ')}</span>
+                  <span className="text-neutral-400">
+                    {a.owner_name ?? 'Nobody named'} · due {formatDate(a.due_date)}
+                  </span>
+                </TabLink>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {mayTriage && <RaiseAction commentId={c.id} />}
+
       {mayTriage && (
         <div className="mt-2.5">
           {!open ? (
@@ -243,5 +277,58 @@ function Row({ c, mayTriage }: { c: Comment; mayTriage: boolean }) {
         </div>
       )}
     </Card>
+  )
+}
+
+/** ★ Round 12, ACT-04: "allow the HSE role to create a CAPA on the feedback". */
+function RaiseAction({ commentId }: { commentId: string }) {
+  const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState<ActionDraft>(emptyActionDraft)
+  const raise = useMutation({
+    mutationFn: () => api.post('/api/v1/actions', {
+      source_type: 'feedback',
+      source_id: commentId,
+      action_type: 'corrective',
+      title: draft.title,
+      description: draft.description || null,
+      hierarchy_of_control: draft.controlCode,
+      priority: draft.priority,
+      owner_id: draft.ownerId,
+      due_date: draft.dueDate,
+    }),
+    onSuccess: () => {
+      setOpen(false)
+      setDraft(emptyActionDraft())
+      void queryClient.invalidateQueries({ queryKey: ['feedback'] })
+    },
+  })
+  if (!open) {
+    return (
+      <div className="mt-2.5">
+        <button type="button" className={secondaryButton} onClick={() => setOpen(true)}>
+          Raise a corrective action
+        </button>
+      </div>
+    )
+  }
+  const ready = actionIsComplete(draft)
+  return (
+    <div className="mt-2.5 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+      <ActionFields value={draft} onChange={setDraft} />
+      <p className="mt-2 text-xs text-neutral-500">
+        Whoever left this comment can follow it from here.
+      </p>
+      <ErrorNote error={raise.error} />
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button type="button" className={primaryButton} disabled={!ready || raise.isPending}
+                onClick={() => { if (ready && !raise.isPending) raise.mutate() }}>
+          {raise.isPending ? 'Raising…' : 'Raise it'}
+        </button>
+        <button type="button" className={secondaryButton} onClick={() => setOpen(false)}>
+          Cancel
+        </button>
+      </div>
+    </div>
   )
 }

@@ -28,6 +28,8 @@ _SOURCE_TYPES = (
     "hazard", "drill", "permit", "manual",
     # Round 10: a safety equipment check recorded without a checklist.
     "asset",
+    # Round 12, ACT-04: HSE answering a feedback comment with work.
+    "feedback",
 )
 
 
