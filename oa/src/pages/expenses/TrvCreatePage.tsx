@@ -191,7 +191,7 @@ function CategorySection({
 
       {open && (
         <div className="p-4 flex flex-col gap-3">
-          {lines.map((li) => {
+          {lines.map((li, k) => {
             const isRange = li.mode === 'range'
             const taxRate = rateOf(li.tax_code)
             // The cap is per day: a range line is judged on its daily rate.
@@ -215,7 +215,8 @@ function CategorySection({
                   isOver ? 'border-warning-300 bg-warning-50/40' : 'border-neutral-200',
                 )}
               >
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-neutral-700">Line {k + 1}</span>
                   {/* Single day vs. date range (long trips: N days × a daily rate) */}
                   <div className="inline-flex rounded border border-neutral-200 text-[11px] font-medium overflow-hidden">
                     {(['day', 'range'] as const).map(m => (
@@ -247,12 +248,13 @@ function CategorySection({
                   </div>
                   {isOver && <OverLimitBadge amount={perDay} limit={limit!} />}
                   <button type="button" onClick={() => onRemove(li.line_number)}
+                    aria-label={`Remove ${label} line ${k + 1}`}
                     className="ml-auto text-neutral-300 hover:text-danger-500 transition-colors">
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                   {!isRange && (
                   <div>
                     <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">Date</label>
@@ -262,7 +264,7 @@ function CategorySection({
                     />
                   </div>
                   )}
-                  <div className={isRange ? 'col-span-2 sm:col-span-3' : 'col-span-2 sm:col-span-2'}>
+                  <div className={isRange ? 'sm:col-span-2 lg:col-span-3' : 'sm:col-span-2'}>
                     <div className="flex items-center justify-between">
                       <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">Description</label>
                       <ReceiptScanButton
@@ -332,7 +334,7 @@ function CategorySection({
                 </div>
 
                 {isRange && (
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
                     <div>
                       <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">From</label>
                       <input type="date" value={li.period_from} min={tripFrom || undefined} max={li.period_to || tripTo || undefined}
@@ -373,7 +375,7 @@ function CategorySection({
                         )}
                       />
                     </div>
-                    <div className="col-span-2 sm:col-span-4 text-xs text-neutral-500">
+                    <div className="sm:col-span-2 lg:col-span-4 text-xs text-neutral-500">
                       {li.period_days || 0} days × {formatAmount(parseFloat(li.daily_rate) || 0)} ={' '}
                       <span className="font-mono text-neutral-700">{formatAmount(parseFloat(li.net_amount) || 0)}</span> net
                       {taxRate > 0 && <> + tax <span className="font-mono">{formatAmount(parseFloat(li.tax_amount) || 0)}</span></>}
@@ -402,8 +404,8 @@ function CategorySection({
 
                 {/* Sales tax — Canada only; abroad lines carry none */}
                 {!abroad && (
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <div className="col-span-2">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="sm:col-span-2">
                       <label className="text-[10px] font-medium text-neutral-500 uppercase tracking-wide">Tax</label>
                       <select value={li.tax_code ?? ''}
                         onChange={e => {
@@ -420,7 +422,7 @@ function CategorySection({
                         ))}
                       </select>
                     </div>
-                    <div className="col-span-2 self-end pb-1.5 text-right text-xs text-neutral-500">
+                    <div className="sm:col-span-2 lg:self-end lg:pb-1.5 text-right text-xs text-neutral-500">
                       Tax <span className="font-mono">{formatAmount(parseFloat(li.tax_amount) || 0)}</span>
                       {' · '}Total <span className="font-mono font-semibold text-neutral-800">{formatAmount(parseFloat(li.total_amount) || 0)}</span>
                     </div>

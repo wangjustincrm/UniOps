@@ -7,6 +7,7 @@ import { formatAmount, todayLocal } from '@/lib/utils'
 import { useEditableClaim, useSaveClaim, type EditableFormProps } from '@/lib/editableClaim'
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { api } from '@/lib/api'
+import { CardField } from '@/components/LineCardField'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -185,6 +186,80 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
     })
   }
 
+  // One trip's controls, used by both the desktop table row and the phone
+  // card (ISS-0255), so both share one set of handlers.
+  const renderTrip = (trip: TripItem, idx: number) => ({
+    date: (
+      <input
+        type="date"
+        value={trip.trip_date}
+        onChange={(e) => updateTrip(idx, { trip_date: e.target.value })}
+        className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
+      />
+    ),
+    from: (
+      <input
+        type="text"
+        value={trip.from_location}
+        onChange={(e) => updateTrip(idx, { from_location: e.target.value })}
+        placeholder="Starting location"
+        className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
+      />
+    ),
+    to: (
+      <input
+        type="text"
+        value={trip.to_location}
+        onChange={(e) => updateTrip(idx, { to_location: e.target.value })}
+        placeholder="Destination"
+        className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
+      />
+    ),
+    purpose: (
+      <input
+        type="text"
+        value={trip.purpose}
+        onChange={(e) => updateTrip(idx, { purpose: e.target.value })}
+        placeholder="Business reason"
+        className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
+      />
+    ),
+    roundTrip: (
+      <input
+        type="checkbox"
+        checked={trip.is_round_trip}
+        onChange={(e) => updateTrip(idx, { is_round_trip: e.target.checked })}
+        className="h-4 w-4 rounded accent-primary-600"
+      />
+    ),
+    km: (
+      <input
+        type="number"
+        step="0.1"
+        min="0"
+        value={trip.distance_km}
+        onChange={(e) => updateTrip(idx, { distance_km: e.target.value })}
+        placeholder="0.0"
+        className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs text-right font-mono focus:outline-none focus:border-primary-400"
+      />
+    ),
+    amount: (
+      <div className="rounded bg-neutral-50 px-2 py-1.5 text-xs text-right font-mono text-neutral-700">
+        {parseFloat(trip.amount) > 0 ? `$${parseFloat(trip.amount).toFixed(2)}` : '—'}
+      </div>
+    ),
+    remove: trips.length > 1 ? (
+      <button
+        type="button"
+        aria-label={`Remove line ${idx + 1}`}
+        onClick={() => setTrips((prev) => prev.filter((_, i) => i !== idx).map((t, i) => ({ ...t, trip_number: i + 1 })))}
+        className="rounded p-1 text-neutral-300 hover:text-danger-400 transition-colors"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    ) : null,
+  })
+
   if (loadingClaim) {
     return <div className="p-8 text-sm text-neutral-500">Loading claim…</div>
   }
@@ -280,7 +355,10 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
           <span className="text-xs text-neutral-400">Rate: ${parseFloat(currentRate).toFixed(4)}/km</span>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* A table from lg up; below that each trip is a card with its fields
+            stacked full width (ISS-0255). Both use the same renderTrip()
+            controls, so state and handlers are shared. */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 border-b border-neutral-100">
               <tr>
@@ -296,81 +374,22 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
               </tr>
             </thead>
             <tbody>
-              {trips.map((trip, idx) => (
-                <tr key={idx} className="border-b border-neutral-100">
-                  <td className="px-3 py-2 text-xs text-neutral-400 font-mono">{idx + 1}</td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="date"
-                      value={trip.trip_date}
-                      onChange={(e) => updateTrip(idx, { trip_date: e.target.value })}
-                      className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="text"
-                      value={trip.from_location}
-                      onChange={(e) => updateTrip(idx, { from_location: e.target.value })}
-                      placeholder="Starting location"
-                      className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="text"
-                      value={trip.to_location}
-                      onChange={(e) => updateTrip(idx, { to_location: e.target.value })}
-                      placeholder="Destination"
-                      className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="text"
-                      value={trip.purpose}
-                      onChange={(e) => updateTrip(idx, { purpose: e.target.value })}
-                      placeholder="Business reason"
-                      className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400"
-                    />
-                  </td>
-                  <td className="px-3 py-2 text-center">
-                    <input
-                      type="checkbox"
-                      checked={trip.is_round_trip}
-                      onChange={(e) => updateTrip(idx, { is_round_trip: e.target.checked })}
-                      className="h-4 w-4 rounded accent-primary-600"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      value={trip.distance_km}
-                      onChange={(e) => updateTrip(idx, { distance_km: e.target.value })}
-                      placeholder="0.0"
-                      className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs text-right font-mono focus:outline-none focus:border-primary-400"
-                    />
-                  </td>
-                  <td className="px-3 py-2">
-                    <div className="rounded bg-neutral-50 px-2 py-1.5 text-xs text-right font-mono text-neutral-700">
-                      {parseFloat(trip.amount) > 0 ? `$${parseFloat(trip.amount).toFixed(2)}` : '—'}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2">
-                    {trips.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => setTrips((prev) => prev.filter((_, i) => i !== idx).map((t, i) => ({ ...t, trip_number: i + 1 })))}
-                        className="rounded p-1 text-neutral-300 hover:text-danger-400 transition-colors"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {trips.map((trip, idx) => {
+                const f = renderTrip(trip, idx)
+                return (
+                  <tr key={idx} className="border-b border-neutral-100">
+                    <td className="px-3 py-2 text-xs text-neutral-400 font-mono">{idx + 1}</td>
+                    <td className="px-3 py-2">{f.date}</td>
+                    <td className="px-3 py-2">{f.from}</td>
+                    <td className="px-3 py-2">{f.to}</td>
+                    <td className="px-3 py-2">{f.purpose}</td>
+                    <td className="px-3 py-2 text-center">{f.roundTrip}</td>
+                    <td className="px-3 py-2">{f.km}</td>
+                    <td className="px-3 py-2">{f.amount}</td>
+                    <td className="px-3 py-2">{f.remove}</td>
+                  </tr>
+                )
+              })}
             </tbody>
 
             <tfoot>
@@ -384,6 +403,39 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
               </tr>
             </tfoot>
           </table>
+        </div>
+
+        {/* Phone / tablet: one card per trip */}
+        <div className="flex flex-col gap-3 p-3 lg:hidden">
+          {trips.map((trip, idx) => {
+            const f = renderTrip(trip, idx)
+            return (
+              <div key={idx} className="rounded-lg border border-neutral-200 p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-neutral-700">Line {idx + 1}</span>
+                  {f.remove}
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <CardField label="Date">{f.date}</CardField>
+                  <CardField label="From">{f.from}</CardField>
+                  <CardField label="To">{f.to}</CardField>
+                  <CardField label="Purpose">{f.purpose}</CardField>
+                  <CardField label="km">{f.km}</CardField>
+                  <CardField label="Amount">{f.amount}</CardField>
+                  <label className="flex items-center gap-2 text-xs text-neutral-700">
+                    {f.roundTrip}
+                    Round trip
+                  </label>
+                </div>
+              </div>
+            )
+          })}
+          <div className="flex justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs font-semibold text-neutral-700">
+            <span>Total</span>
+            <span className="font-mono">
+              {totalKm.toFixed(1)} km · <span className="text-primary-700">{formatAmount(totalAmount)}</span>
+            </span>
+          </div>
         </div>
 
         <div className="border-t border-neutral-100 p-3">
