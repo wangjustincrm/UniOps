@@ -13,7 +13,7 @@ import { useAuthStore } from '@/store/auth'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { adminPageLinks } from '@/components/layout/navConfig'
 import { epmsApi, epmsDownload, epmsUpload, mdmApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTime } from '@/lib/utils'
 import { UnitsOfMeasure } from './UnitsOfMeasure'
 import { NcSyncSection } from './nc-sync/NcSyncSection'
 import { WmsSyncSection } from './WmsSyncSection'
@@ -1904,7 +1904,7 @@ function ErpSyncToolbar({ kind, onSearchChange, search, filters }: {
     <div className="mb-4 space-y-3">
       <div className="flex items-center gap-2 text-xs text-neutral-500">
         {s ? <>
-          Last synced: {s.last_synced_at ? new Date(s.last_synced_at).toLocaleString() : '—'}
+          Last synced: {s.last_synced_at ? formatDateTime(s.last_synced_at) : '—'}
           {' · '}<span className={cn(s.last_status === 'success' ? 'text-green-700' : s.last_status === 'failed' ? 'text-red-700' : '')}>{s.last_status || 'never'}</span>
           {' · '}{s.last_row_count} rows
         </> : 'Never synced'}
@@ -2004,7 +2004,7 @@ function ErpMaterialsTab() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-[11px] text-neutral-400">
-                    {m.erp_rowversion ? new Date(m.erp_rowversion).toLocaleString() : '—'}
+                    {m.erp_rowversion ? formatDateTime(m.erp_rowversion) : '—'}
                   </td>
                 </tr>
               ))}
