@@ -29,7 +29,8 @@ import {
 } from '@/components/ui'
 import { LocationSelect } from '@/components/LocationSelect'
 import { VocabularySelect } from '@/components/VocabularyPicker'
-import { PAGE_SIZE, Pagination, SearchBox } from '@/components/ListView'
+import { SearchBox } from '@/components/ListView'
+import { Pagination, SortTh, sortParams, useSort } from '@uniops/shell'
 
 interface Equipment {
   id: string; asset_no: string | null; name: string
@@ -53,19 +54,26 @@ type Filter = { kind: 'all' } | { kind: 'system'; id: string; label: string }
 
 const BOXES = 11
 
+type SortKey = 'asset_no' | 'name' | 'system' | 'area' | 'department' | 'status'
+const TH = 'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500'
+
 export default function EquipmentPage() {
   const queryClient = useQueryClient()
   const fileInput = useRef<HTMLInputElement>(null)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>({ kind: 'all' })
-  const [page, setPage] = useState(0)
+  // ★ The list standard (10-29, extended to Safety 11-10): headers that sort
+  // on the server, the standard pager, the header locked while it scrolls.
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+  const [sort, onSort] = useSort<SortKey>(null, () => setPage(1))
   const [allBoxes, setAllBoxes] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
   const [editing, setEditing] = useState<Equipment | null>(null)
 
-  const choose = (f: Filter) => { setFilter(f); setPage(0) }
+  const choose = (f: Filter) => { setFilter(f); setPage(1) }
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['equipment'] })
 
   const summary = useQuery({
@@ -74,9 +82,11 @@ export default function EquipmentPage() {
   })
 
   const list = useQuery({
-    queryKey: ['equipment', 'register', search.trim(), filter, page],
+    queryKey: ['equipment', 'register', search.trim(), filter, page, pageSize, sort],
     queryFn: () => {
-      const qs = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE) })
+      const qs = new URLSearchParams({
+        limit: String(pageSize), offset: String((page - 1) * pageSize),
+        ...sortParams(sort) })
       if (search.trim()) qs.set('search', search.trim())
       if (filter.kind === 'system') qs.set('system_id', filter.id)
       if (filter.kind === 'none') qs.set('no_system', 'true')
@@ -155,46 +165,63 @@ export default function EquipmentPage() {
                     onMerged={(into) => { choose(into); refresh() }} />
       )}
 
-      <SearchBox value={search} onChange={(v) => { setSearch(v); setPage(0) }}
+      <SearchBox value={search} onChange={(v) => { setSearch(v); setPage(1) }}
                  placeholder="Search by name, asset number, System or area" />
 
       {list.isError && <ErrorNote error={list.error} />}
-      {list.data && list.data.items.length === 0 && (
-        <p className="p-8 text-center text-sm text-neutral-500">
-          {search.trim()
-            ? `Nothing matches “${search.trim()}”.`
-            : filter.kind === 'retired' ? 'No machine has been retired.'
-            : 'No equipment here yet — add one, or upload a spreadsheet.'}
-        </p>
-      )}
-      <ul className="flex flex-col gap-1.5">
-        {list.data?.items.map((e) => (
-          <li key={e.id} className="rounded-lg border border-neutral-200 bg-white p-3">
-            <div className="flex flex-wrap items-baseline gap-x-2">
-              <span className="font-mono text-xs text-neutral-500">{e.asset_no ?? '—'}</span>
-              <span className="min-w-0 flex-1 text-sm font-medium text-neutral-900">{e.name}</span>
-              {e.system_label && <span className="text-xs text-neutral-500">{e.system_label}</span>}
-              {!e.is_active && (
-                <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-600">
-                  Retired
-                </span>
+      <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white">
+        <div className="max-h-[calc(100vh-15rem)] overflow-auto">
+          <table className="w-full min-w-[760px] text-sm">
+            <thead className="sticky top-0 z-10 bg-neutral-50 shadow-[0_1px_0_#e5e5e5]">
+              <tr>
+                <SortTh label="Asset no." sortKey="asset_no" sort={sort} onSort={onSort} className={TH} />
+                <SortTh label="Name" sortKey="name" sort={sort} onSort={onSort} className={TH} />
+                <SortTh label="System" sortKey="system" sort={sort} onSort={onSort} className={TH} />
+                <SortTh label="Area" sortKey="area" sort={sort} onSort={onSort} className={TH} />
+                <SortTh label="Department" sortKey="department" sort={sort} onSort={onSort} className={TH} />
+                <SortTh label="Status" sortKey="status" sort={sort} onSort={onSort} className={TH} />
+                <th className={TH}><span className="sr-only">Edit</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {list.data && list.data.items.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="p-8 text-center text-sm text-neutral-500">
+                    {search.trim()
+                      ? `Nothing matches “${search.trim()}”.`
+                      : filter.kind === 'retired' ? 'No machine has been retired.'
+                      : 'No equipment here yet — add one, or upload a spreadsheet.'}
+                  </td>
+                </tr>
               )}
-            </div>
-            <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2">
-              <p className="min-w-0 flex-1 text-xs text-neutral-500">
-                {formatAreaPath(e.location_path) ?? 'No area'}
-                {e.department_name ? ` · ${e.department_name}` : ''}
-              </p>
-              <button type="button" onClick={() => { setEditing(e); setAdding(false) }}
-                      className="min-h-[28px] text-xs font-medium text-primary-700 hover:underline">
-                Edit
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
-      <Pagination page={page} pageCount={Math.max(1, Math.ceil(total / PAGE_SIZE))}
-                  total={total} onPage={setPage} noun="machines" />
+              {list.data?.items.map((e) => (
+                <tr key={e.id} className={`border-t border-neutral-100 ${e.is_active ? '' : 'text-neutral-500'}`}>
+                  <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-neutral-600">{e.asset_no ?? '—'}</td>
+                  <td className="px-3 py-2 font-medium text-neutral-900">{e.name}</td>
+                  <td className="px-3 py-2 text-neutral-700">{e.system_label ?? '—'}</td>
+                  <td className="px-3 py-2 text-xs text-neutral-600">{formatAreaPath(e.location_path) ?? 'No area'}</td>
+                  <td className="px-3 py-2 text-xs text-neutral-600">{e.department_name ?? '—'}</td>
+                  <td className="px-3 py-2">
+                    {e.is_active ? <span className="text-xs text-neutral-600">In service</span> : (
+                      <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold text-neutral-600">
+                        Retired
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <button type="button" onClick={() => { setEditing(e); setAdding(false) }}
+                            className="min-h-[28px] text-xs font-medium text-primary-700 hover:underline">
+                      Edit
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage}
+                    onPageSizeChange={(n) => { setPageSize(n); setPage(1) }} />
+      </div>
 
       {/* The spreadsheet — EQ-04 */}
       <div className="mt-6 rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-4">

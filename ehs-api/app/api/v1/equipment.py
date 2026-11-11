@@ -27,6 +27,8 @@ from app.models.equipment import Equipment
 from app.models.mirrors import Department, Location, User
 from app.models.vocabulary import VocabularyItem
 
+from app.crud._list_order import lower_text, sort_clauses  # noqa: E402
+
 router = APIRouter(prefix="/equipment")
 
 SYSTEMS = "equipment_system"
@@ -160,6 +162,19 @@ async def _scope_for(db: SessionDep, location_id: uuid.UUID) -> str | None:
     return None
 
 
+# ★ The list standard (10-29, applied to Safety on 11-10): every column the
+# register shows sorts on the server, since it is paged.
+EQUIPMENT_SORTABLE = {
+    "asset_no": lower_text(Equipment.asset_no),
+    "name": lower_text(Equipment.name),
+    "system": select(func.lower(VocabularyItem.label)).where(
+        VocabularyItem.id == Equipment.system_id).correlate(Equipment).scalar_subquery(),
+    "area": lower_text(Equipment.location_path),
+    "department": lower_text(Equipment.department_name),
+    "status": Equipment.is_active,
+}
+
+
 @router.get("", response_model=EquipmentPage)
 async def list_equipment(
     db: SessionDep, user: CanReportIncident,  # noqa: ARG001
@@ -171,6 +186,8 @@ async def list_equipment(
     state: str = Query(default="active", pattern="^(active|retired|all)$"),
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=PAGE_MAX),
+    sort: str | None = Query(default=None, description="A key of EQUIPMENT_SORTABLE; unknown -> 422"),
+    dir: str = Query(default="asc", pattern="^(asc|desc)$"),
 ):
     """A page of the register, with the total it is a page of.
 
@@ -204,7 +221,10 @@ async def list_equipment(
     where = and_(*conds) if conds else text("true")
     total = (await db.execute(select(func.count()).select_from(Equipment).where(where))).scalar()
     rows = list((await db.execute(
-        select(Equipment).where(where).order_by(Equipment.name, Equipment.asset_no)
+        select(Equipment).where(where)
+        .order_by(*(sort_clauses(sort, dir, EQUIPMENT_SORTABLE,
+                                 tiebreak=[Equipment.name, Equipment.id])
+                    or [Equipment.name, Equipment.asset_no, Equipment.id]))
         .offset(offset).limit(limit))).scalars())
     return EquipmentPage(items=await _out(db, rows), total=total or 0, scope_path=scope)
 

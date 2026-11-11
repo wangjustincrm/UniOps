@@ -274,3 +274,30 @@ async def test_import_follows_a_merge_and_never_refills_a_retired_system(hse_man
     new = (await db_session.execute(select(Equipment).where(
         Equipment.name == f"New {tag}"))).scalar_one()
     assert new.system_id is None, "a retired, unmerged System is reported, not used"
+
+
+async def test_the_register_sorts_on_the_server_with_blanks_last(hse_manager, db_session):
+    """★ The list standard, applied to Safety 11-10: a paged list sorts on the
+    server (sorting the page on screen would be wrong), unknown keys are
+    refused, and empty values sit last both ways."""
+    _, client = hse_manager
+    tag = _tag()
+    b = await _system(db_session, f"Bravo {tag}")
+    a = await _system(db_session, f"alpha {tag}")
+    await _machine(db_session, f"Mixer {tag}", system=b)
+    await _machine(db_session, f"Auger {tag}", system=a)
+    await _machine(db_session, f"Valve {tag}")
+    await db_session.commit()
+
+    def names(r):
+        return [x["name"].split()[0] for x in r.json()["items"]]
+
+    up = await client.get("/api/v1/equipment", params={"search": tag, "sort": "system"})
+    assert names(up) == ["Auger", "Mixer", "Valve"]
+    rows = await client.get("/api/v1/equipment", params={"search": tag, "sort": "system",
+                                                        "dir": "desc"})
+    assert names(rows)[:2] == ["Mixer", "Auger"], "case-insensitive, reversed"
+    assert names(rows)[-1] == "Valve", "★ no System sorts last in both directions"
+    assert names(await client.get("/api/v1/equipment", params={
+        "search": tag, "sort": "name", "dir": "desc"})) == ["Valve", "Mixer", "Auger"]
+    assert (await client.get("/api/v1/equipment", params={"sort": "drop table"})).status_code == 422
