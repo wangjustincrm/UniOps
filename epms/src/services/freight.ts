@@ -64,6 +64,22 @@ export interface FreightShipment {
   invoice_id: string | null
   invoice_number: string | null
   billed_amount: Money | null
+  /** Files kept on the shipment (scanned label + supporting documents). */
+  attachment_count: number
+}
+
+/** waybill = the shipping label scanned on New Shipment; other = any supporting file. */
+export type ShipmentAttachmentKind = 'waybill' | 'other'
+
+export interface ShipmentAttachment {
+  id: string
+  shipment_id: string
+  kind: ShipmentAttachmentKind
+  filename: string
+  content_type: string
+  file_size: number
+  uploaded_by_name: string | null
+  created_at: string
 }
 
 export interface ShipmentFilters {
@@ -265,6 +281,8 @@ export const freightService = {
   voidShipment: (id: string) =>
     api.post<FreightShipment>(`/freight/shipments/${id}/void`),
 
+  shipment: (id: string) => api.get<FreightShipment>(`/freight/shipments/${id}`),
+
   invoices: (filters?: InvoiceFilters) =>
     api.get<ListResponse<FreightInvoiceListItem>>('/freight/invoices', filters ? { ...filters } : undefined),
 
@@ -348,6 +366,69 @@ export const freightAttachmentService = {
     // Give the new tab time to load before releasing the blob.
     setTimeout(() => URL.revokeObjectURL(url), 60_000)
   },
+}
+
+// ─── Shipment attachments (epms-api /freight/shipments/{id}/attachments) ─────
+
+const API_BASE = () => (import.meta.env.VITE_API_URL as string | undefined) || '/api/v1'
+
+async function fetchShipmentFile(shipmentId: string, attId: string): Promise<Blob> {
+  const res = await fetch(`${API_BASE()}/freight/shipments/${shipmentId}/attachments/${attId}/download`, {
+    headers: authHeader(),
+  })
+  if (!res.ok) throw new Error(`Could not fetch the file (${res.status})`)
+  return res.blob()
+}
+
+export const shipmentAttachmentService = {
+  list: (shipmentId: string) =>
+    api.get<ShipmentAttachment[]>(`/freight/shipments/${shipmentId}/attachments`),
+
+  /** Throws with the server's reason so the caller can say which file did not attach. */
+  upload: async (shipmentId: string, file: File, kind: ShipmentAttachmentKind = 'other'): Promise<ShipmentAttachment> => {
+    const form = new FormData()
+    form.append('file', file)
+    form.append('kind', kind)
+    const res = await fetch(`${API_BASE()}/freight/shipments/${shipmentId}/attachments`, {
+      method: 'POST', headers: authHeader(), body: form,
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      throw new Error(typeof err.detail === 'string' ? err.detail : `Upload failed (${res.status})`)
+    }
+    return res.json()
+  },
+
+  /** Opens the file in a new browser tab — the tab is opened inside the click
+   *  so popup blockers allow it, then pointed at the blob once downloaded. */
+  open: async (shipmentId: string, attId: string): Promise<void> => {
+    const win = window.open('', '_blank')
+    let blob: Blob
+    try {
+      blob = await fetchShipmentFile(shipmentId, attId)
+    } catch (e) {
+      win?.close()
+      throw e
+    }
+    const url = URL.createObjectURL(blob)
+    if (win) win.location.href = url
+    else window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  },
+
+  download: async (shipmentId: string, att: Pick<ShipmentAttachment, 'id' | 'filename'>): Promise<void> => {
+    const url = URL.createObjectURL(await fetchShipmentFile(shipmentId, att.id))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = att.filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  },
+
+  delete: (shipmentId: string, attId: string) =>
+    api.delete(`/freight/shipments/${shipmentId}/attachments/${attId}`),
 }
 
 // ─── OCR (expense-api /ocr/freight_invoice, /ocr/waybill) ─────────────────────

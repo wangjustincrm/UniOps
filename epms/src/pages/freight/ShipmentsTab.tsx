@@ -1,23 +1,26 @@
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { Plus, Search, Loader2, Package, Pencil, Ban, ScanLine } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { Plus, Search, Loader2, Package, Pencil, Ban, ScanLine, Eye, Paperclip } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Pagination } from '@/components/ui/Pagination'
 import { cn, formatDate } from '@/lib/utils'
+import { ATTACHMENT_RULE, uploadProblem } from '@/lib/uploadLimits'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useCostCenters } from '@/hooks/useCostCenters'
 import {
   useFreightCarriers, useFreightShipments, useCreateShipment, useUpdateShipment, useVoidShipment,
 } from '@/hooks/useFreight'
 import {
-  freightService, readWaybill,
+  freightService, readWaybill, shipmentAttachmentService,
   type DefaultCostCenter, type Direction, type FreightShipment, type ShipmentStatus,
 } from '@/services/freight'
 import {
   CostCenterSelect, Modal, SELECT_CLS, ShipmentStatusBadge, TH_CLS, daysSince, errorMessage,
 } from './freightUi'
 import { SortTh, useSort, sortParams } from '@uniops/shell'
+import { ShipmentAttachmentsPanel, StagedShipmentAttachments } from './ShipmentAttachments'
 
 type ShipmentSortKey =
   | 'carrier' | 'tracking_no' | 'direction' | 'department' | 'created_by_name'
@@ -129,6 +132,12 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
                       <td className="px-3 py-2.5 font-medium text-neutral-800">{s.carrier_code ?? '—'}</td>
                       <td className="px-3 py-2.5">
                         <span className="font-mono text-xs text-neutral-800">{s.tracking_no}</span>
+                        {s.attachment_count > 0 && (
+                          <span className="ml-1.5 inline-flex items-center gap-0.5 text-[10px] text-neutral-400"
+                            title={`${s.attachment_count} attachment${s.attachment_count !== 1 ? 's' : ''}`}>
+                            <Paperclip className="h-3 w-3" />{s.attachment_count}
+                          </span>
+                        )}
                         {s.source === 'from_invoice' && (
                           <div className="text-[10px] text-neutral-400">Added from invoice</div>
                         )}
@@ -154,8 +163,14 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
                         ) : <span className="text-neutral-300">—</span>}
                       </td>
                       <td className="px-3 py-2.5 whitespace-nowrap text-right">
-                        {s.status === 'pending' && (
-                          <div className="inline-flex gap-1">
+                        <div className="inline-flex gap-1">
+                          <Link
+                            to={`/freight/shipments/${s.id}`}
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100"
+                          >
+                            <Eye className="h-3.5 w-3.5" /> View
+                          </Link>
+                          {s.status === 'pending' && (<>
                             <button
                               onClick={() => setDialog({ mode: 'edit', shipment: s })}
                               className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-primary-700 hover:bg-primary-50"
@@ -169,8 +184,8 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
                             >
                               <Ban className="h-3.5 w-3.5" /> Void
                             </button>
-                          </div>
-                        )}
+                          </>)}
+                        </div>
                       </td>
                     </tr>
                   )
@@ -196,7 +211,7 @@ export function ShipmentsTab({ canManage }: { canManage: boolean }) {
 
 // ─── New / edit shipment ──────────────────────────────────────────────────────
 
-function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipment | null; onClose: () => void }) {
+export function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipment | null; onClose: () => void }) {
   const isEdit = !!shipment
   const { data: carriers = [] } = useFreightCarriers()
   const { data: deptData } = useDepartments()
@@ -219,9 +234,16 @@ function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipment | nul
   const scanInput = useRef<HTMLInputElement>(null)
   const trackingInput = useRef<HTMLInputElement>(null)
 
+  // New Shipment holds the scanned label and the extra files until the
+  // shipment exists, then uploads them (save). Edit attaches immediately.
+  const [labelFile, setLabelFile] = useState<File | null>(null)
+  const [extraFiles, setExtraFiles] = useState<File[]>([])
+  const [attaching, setAttaching] = useState(false)
+  const qc = useQueryClient()
+
   const createShipment = useCreateShipment()
   const updateShipment = useUpdateShipment()
-  const busy = createShipment.isPending || updateShipment.isPending
+  const busy = createShipment.isPending || updateShipment.isPending || attaching
 
   // Latest department the user picked — a slow default-cost-center response for
   // a department they have since changed away from must not overwrite anything.
@@ -259,8 +281,24 @@ function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipment | nul
     setScanning(true)
     setScanMsg(null)
     setScanChoices([])
+    // The scanned label is kept on the shipment whatever the AI makes of it.
+    const keepProblem = uploadProblem(file, ATTACHMENT_RULE)
+    let keepMsg: string | null = null
+    if (keepProblem) {
+      keepMsg = `The label cannot be kept as an attachment: ${keepProblem}`
+    } else if (isEdit && shipment) {
+      try {
+        await shipmentAttachmentService.upload(shipment.id, file, 'waybill')
+        qc.invalidateQueries({ queryKey: ['freight', 'shipments'] })
+      } catch (err) {
+        keepMsg = `The label could not be attached: ${errorMessage(err, 'upload failed')}`
+      }
+    } else {
+      setLabelFile(file)
+    }
     const res = await readWaybill(file)
     setScanning(false)
+    if (keepMsg) setScanMsg(keepMsg)
     if (!res.ok) {
       setScanMsg(res.kind === 'service'
         ? 'The AI reading service is unavailable right now. Type the tracking number instead.'
@@ -272,7 +310,7 @@ function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipment | nul
       const hit = carriers.find((c) => c.code.toUpperCase() === res.data.carrier?.toUpperCase())
       if (hit) setCarrierId(hit.id)
     }
-    if (nums.length === 0) setScanMsg('No tracking number found on that image. Type it instead.')
+    if (nums.length === 0) setScanMsg('No tracking number found on that image. Type it instead.' + (keepMsg ? ` ${keepMsg}` : ''))
     else if (nums.length === 1) setTracking(nums[0])
     else { setTracking(nums[0]); setScanChoices(nums) }
   }
@@ -302,10 +340,35 @@ function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipment | nul
         onClose()
         return
       }
-      await createShipment.mutateAsync({
+      const created = await createShipment.mutateAsync({
         carrier_id: carrierId, tracking_no: tracking.trim(), cost_center_id: costCenterId,
         direction, note: note.trim() || null,
       })
+      // The shipment is saved; now its files. A failed file does not undo the
+      // shipment — the user is told which ones to add again from View.
+      const toAttach: { file: File; kind: 'waybill' | 'other' }[] = [
+        ...(labelFile ? [{ file: labelFile, kind: 'waybill' as const }] : []),
+        ...extraFiles.map((file) => ({ file, kind: 'other' as const })),
+      ]
+      if (toAttach.length) {
+        setAttaching(true)
+        const failed: string[] = []
+        for (const { file, kind } of toAttach) {
+          try {
+            await shipmentAttachmentService.upload(created.id, file, kind)
+          } catch (err) {
+            failed.push(`${file.name} (${errorMessage(err, 'upload failed')})`)
+          }
+        }
+        setAttaching(false)
+        qc.invalidateQueries({ queryKey: ['freight', 'shipments'] })
+        if (failed.length) {
+          window.alert(`Shipment ${created.tracking_no} was saved, but these files could not be attached:\n\n`
+            + failed.join('\n') + '\n\nOpen the shipment with View to add them again.')
+        }
+      }
+      setLabelFile(null)
+      setExtraFiles([])
       if (addAnother) {
         // Keep carrier / department / cost center / direction — the usual case
         // is several parcels to the same place at once.
@@ -319,6 +382,7 @@ function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipment | nul
         onClose()
       }
     } catch (e) {
+      setAttaching(false)
       setError(errorMessage(e, 'Could not save the shipment'))
     }
   }
@@ -411,6 +475,18 @@ function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipment | nul
             className="w-full resize-none rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600" />
         </div>
 
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-neutral-700">Attachments</label>
+          {isEdit && shipment ? (
+            <ShipmentAttachmentsPanel shipmentId={shipment.id} editable />
+          ) : (
+            <StagedShipmentAttachments
+              label={labelFile} onRemoveLabel={() => setLabelFile(null)}
+              files={extraFiles} onFilesChange={setExtraFiles} disabled={busy}
+            />
+          )}
+        </div>
+
         {error && <p className="rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-600">{error}</p>}
 
         <div className="flex justify-end gap-2">
@@ -421,7 +497,7 @@ function ShipmentDialog({ shipment, onClose }: { shipment: FreightShipment | nul
             </Button>
           )}
           <Button size="sm" onClick={() => save(false)} disabled={busy}>
-            {busy ? 'Saving…' : 'Save'}
+            {attaching ? 'Attaching files…' : busy ? 'Saving…' : 'Save'}
           </Button>
         </div>
       </div>
