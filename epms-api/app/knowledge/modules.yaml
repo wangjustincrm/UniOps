@@ -66,8 +66,11 @@ modules:
         Courier freight (UPS, FedEx, Purolator…) does not go through PR → PO.
         A buyer registers the tracking number of each pickup with the department
         / cost center that bears it on EPMS → Freight → Shipments (Register
-        Courier Shipments permission); carriers are set up on Freight →
-        Carriers. The carrier's invoice is uploaded like any other invoice, on
+        Courier Shipments permission); Scan waybill on New Shipment reads the
+        tracking number from a photo or PDF of the shipping label and keeps
+        that label on the shipment, other supporting files can be attached
+        too, and View opens a shipment with all its attachments. Carriers
+        are set up on Freight → Carriers. The carrier's invoice is uploaded like any other invoice, on
         EPMS → Invoices → Upload Invoice, by anyone who uploads invoices: when
         the vendor is a carrier's, the form turns into the courier review by
         itself (no carrier to choose). The supply-chain person (Match Courier
