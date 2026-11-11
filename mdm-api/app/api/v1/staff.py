@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.authz import require_permission
 from app.core.config import settings
 from app.core.deps import require_roles
+from app.core.plant_time import plant_today, to_plant
 from app.crud.erp import UnknownSortKey, _order
 from app.db.base import get_db
 from app.models.department import Department
@@ -181,7 +182,7 @@ async def export_staff(db: Db, _: ViewDep, filters: Annotated[dict, Depends(_fil
         r["employee_number"], r["display_name"], r["payroll_name"], r["work_email"], r["job_title"],
         r["adp_department"], r["department_name"], r["status"], r["source"],
         r["user"]["email"] if r["user"] else None, r["nc_state"],
-    ] for r in rows], f"staff-{date.today().isoformat()}.xlsx")
+    ] for r in rows], f"staff-{plant_today().isoformat()}.xlsx")
 
 
 class EmployeeCreate(BaseModel):
@@ -270,7 +271,7 @@ def _need_preview(imp: AdpImport) -> None:
 
 @router.post("/imports", status_code=status.HTTP_201_CREATED)
 async def upload_roster(db: Db, payload: ImportDep, file: UploadFile = File(...),
-                        roster_date: date = Form(default_factory=date.today)):
+                        roster_date: date = Form(default_factory=plant_today)):
     if not (file.filename or "").lower().endswith(".xlsx"):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Only .xlsx files are accepted")
     if (await db.execute(select(AdpImport.id).where(AdpImport.status == "preview"))).first():
@@ -503,8 +504,8 @@ async def export_todos(
         r["employee_number"], r["display_name"], r["type"],
         " ".join(filter(None, [r["target"].get("nc_department_code"), r["target"].get("nc_department_name")])),
         r["target"].get("person_category"), r["target"].get("old_code"), r["target"].get("new_code"),
-        r["target"].get("description"), r["status"], r["created_at"].date().isoformat(),
-    ] for r in rows], f"nc-todo-{date.today().isoformat()}.xlsx")
+        r["target"].get("description"), r["status"], to_plant(r["created_at"]).date().isoformat(),
+    ] for r in rows], f"nc-todo-{plant_today().isoformat()}.xlsx")
 
 
 class TodoClose(BaseModel):

@@ -17,10 +17,15 @@ configure_task_logging()
 async def lifespan(app: FastAPI):
     import asyncio
 
+    from app.core.plant_time import plant_tz_refresh_loop, refresh_plant_tz
     from app.tasks.erp_sync_scheduler import erp_sync_loop
+    # Plant time zone (Company Settings): read now, then keep it fresh.
+    await refresh_plant_tz(engine)
+    plant_tz_task = asyncio.create_task(plant_tz_refresh_loop(engine))
     scheduler_task = asyncio.create_task(erp_sync_loop())
     yield
     scheduler_task.cancel()
+    plant_tz_task.cancel()
 
 
 app = FastAPI(
