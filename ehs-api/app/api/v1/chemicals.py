@@ -34,17 +34,26 @@ class HazardClass(BaseModel):
     label: str = Field(max_length=120)
 
 
+class HazardStatement(BaseModel):
+    code: str | None = Field(default=None, max_length=40)
+    text: str = Field(min_length=1, max_length=400)
+
+
 class ChemicalIn(BaseModel):
     name: str = Field(min_length=1, max_length=250)
     product_name: str | None = Field(default=None, max_length=250)
     manufacturer: str | None = Field(default=None, max_length=200)
     supplier: str | None = Field(default=None, max_length=200)
     manufacturer_contact: str | None = Field(default=None, max_length=300)
+    # Round 12, CHM-04: printed at the top of the workplace label.
+    emergency_contact: str | None = Field(default=None, max_length=300)
     product_code: str | None = Field(default=None, max_length=80)
     # A product is routinely several of these at once; picking the worst and
     # dropping the rest loses what a first aider needs.
     hazard_classes: list[HazardClass] = Field(default_factory=list)
     signal_word: str | None = Field(default=None, pattern="^(Danger|Warning)$")
+    # Round 12, CHM-03: a label drafted from the chemical starts with these.
+    hazard_statements: list[HazardStatement] = Field(default_factory=list)
     physical_state: str | None = Field(default=None, max_length=20)
     location_id: uuid.UUID | None = None
     storage_note: str | None = Field(default=None, max_length=300)
@@ -88,8 +97,10 @@ class ChemicalOut(BaseModel):
     manufacturer: str | None
     supplier: str | None
     manufacturer_contact: str | None = None
+    emergency_contact: str | None = None
     product_code: str | None
     hazard_classes: list
+    hazard_statements: list = []
     signal_word: str | None
     physical_state: str | None
     location_id: uuid.UUID | None

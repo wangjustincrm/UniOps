@@ -17,6 +17,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Query, Response, status
 from pydantic import BaseModel, ConfigDict, Field
+from uniops_authz import has_permission
 
 from app.api.v1.incidents import _user_id
 from app.core.deps import BearerToken, SessionDep
@@ -44,6 +45,7 @@ class LabelPatch(BaseModel):
     product_identifier: str | None = Field(default=None, max_length=250)
     supplier: str | None = Field(default=None, max_length=200)
     supplier_contact: str | None = Field(default=None, max_length=300)
+    emergency_contact: str | None = Field(default=None, max_length=300)
     signal_word: str | None = Field(default=None, pattern="^(Danger|Warning)$")
     pictograms: list[str] | None = None
     hazard_statements: list[Statement] | None = None
@@ -61,6 +63,7 @@ class LabelOut(BaseModel):
     product_identifier: str
     supplier: str | None
     supplier_contact: str | None = None
+    emergency_contact: str | None = None
     signal_word: str | None
     pictograms: list
     hazard_statements: list
@@ -119,6 +122,13 @@ async def draft_label(
     registered. Only the H- and P-statements need the data sheet.
     """
     chemical = await chemical_crud.get_chemical(db, chemical_id)
+    # ★ Round 12, CHM-04: a new version can be started beside an approved
+    # label (which goes on printing until the new one is approved) — but only
+    # one draft at a time, or two people transcribe the same sheet.
+    if await crud.list_labels(db, chemical_id=chemical_id, status_in=["draft"]):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "This product already has a label being drafted. Finish or approve that one.")
     label = await crud.draft_from_chemical(db, chemical, creator_id=_user_id(user))
     return await _out(db, label)
 
@@ -217,6 +227,10 @@ async def label_sizes(user: CanReadDocument):  # noqa: ARG001
 async def label_pdf_download(
     label_id: uuid.UUID, db: SessionDep, user: CanReadDocument, token: BearerToken,  # noqa: ARG001
     copies: int = Query(default=2, ge=1, le=20),
+    preview: bool = Query(
+        default=False,
+        description="Round 12, CHM-02: lay it out marked DRAFT, before it is "
+                    "approved, without counting a print."),
     size: str = Query(
         default=label_pdf.DEFAULT_SIZE,
         description="Which label stock, or 'fit' for the smallest that holds it all: "
@@ -238,11 +252,24 @@ async def label_pdf_download(
             "A newer safety data sheet has been filed since this label was "
             "approved. Make a new label from the current sheet — the hazards "
             "may have changed.")
-    if label.status not in ("approved", "printed"):
+    # ★ Round 12, CHM-02: "allow the workplace label to be viewed before it is
+    # approved." Seeing the layout is not printing it: a preview is stamped
+    # DRAFT across every label on the sheet and is not counted, so the gate
+    # still holds — nothing that could go on a drum leaves here unapproved. A
+    # draft is the label editor's work in progress, so only those who may edit
+    # it may preview it.
+    if preview:
+        if label.status == "draft" and not await has_permission(
+                db, _user_id(user), user.get("role", ""), "ehs.document.manage"):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Only those who look after the chemical register can see a draft label.")
+    elif label.status not in ("approved", "printed"):
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             "This label has not been approved. Nothing prints until somebody has "
             "checked it against the data sheet.")
+    draft = preview and label.status == "draft"
 
     # Fetch the artwork for whatever classes this label claims. Keyed by the
     # vocabulary code so both shapes on file resolve — the reader writes the
@@ -268,13 +295,14 @@ async def label_pdf_download(
         has_sheet = await chemical_crud.current_sheet(db, label.chemical_id) is not None
         pdf, used, omitted = label_pdf.render_with_omitted(
             label, chemical_id=str(label.chemical_id), copies=copies, artwork=artwork,
-            size=size, sds_available=has_sheet)
+            size=size, sds_available=has_sheet, draft=draft)
     except label_pdf.LabelTooLarge as e:
         # ★ Round 5, TC-21: "some of the data is being cut off". It used to cut
         # it off silently. A label short of a hazard statement is a WHMIS
         # problem, so this says what will not fit instead of printing it anyway.
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from None
-    await crud.record_print(db, label)
+    if not preview:
+        await crud.record_print(db, label)
     return Response(
         content=pdf,
         media_type="application/pdf",
@@ -282,7 +310,7 @@ async def label_pdf_download(
         # as-is, and this printed the label fine and then answered 500 on the
         # way out.
         headers={"Content-Disposition": content_disposition(
-            f"label-{label.product_identifier[:40]}"),
+            ("draft-" if draft else "") + f"label-{label.product_identifier[:40]}"),
             # Which stock it was actually laid out for — the point of asking
             # for 'fit' is not knowing in advance.
             "X-Label-Size": used.code,

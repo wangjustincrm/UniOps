@@ -73,7 +73,11 @@ async def draft_from_chemical(
         # The maker first: round 6 asked for "the manufacturer's name contact".
         supplier=chemical.manufacturer or chemical.supplier,
         supplier_contact=chemical.manufacturer_contact,
+        emergency_contact=chemical.emergency_contact,
         signal_word=chemical.signal_word,
+        # Round 12, CHM-03: the H-statements entered on the chemical's form.
+        hazard_statements=[dict(h) for h in (chemical.hazard_statements or [])
+                           if isinstance(h, dict) and (h.get("text") or "").strip()],
         pictograms=[h.get("label") for h in (chemical.hazard_classes or [])
                     if isinstance(h, dict) and h.get("label")],
         first_aid=chemical.first_aid_note,

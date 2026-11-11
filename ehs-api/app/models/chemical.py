@@ -44,6 +44,10 @@ class Chemical(UUIDPrimaryKey, TimestampMixin, Base):
     # it. Round 6: "the manufacturer's name contact must be shown" on the label.
     manufacturer_contact: Mapped[str | None] = mapped_column(String(300), nullable=True)
     product_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    # ★ Round 12, CHM-04: "a field for the manufacturer's Emergency health
+    # contact information that will print on the label." Not the ordinary
+    # contact above — the number a poison centre or physician rings.
+    emergency_contact: Mapped[str | None] = mapped_column(String(300), nullable=True)
 
     # GHS hazard classes, as a list of {id, label} taken from the vocabulary.
     # A list because a product is routinely several — corrosive and toxic — and
@@ -54,6 +58,10 @@ class Chemical(UUIDPrimaryKey, TimestampMixin, Base):
     # Danger | Warning | None — GHS allows only these, and it is what goes on
     # the workplace label.
     signal_word: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # ★ Round 12, CHM-03: the H-statements on the chemical's own form, so a
+    # label drafted from it starts with them — [{code, text}], as on the label.
+    hazard_statements: Mapped[list] = mapped_column(JSONB, nullable=False,
+                                                    default=list, server_default="[]")
     physical_state: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     location_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True),

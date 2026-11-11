@@ -21,7 +21,7 @@ import { useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, Download, FileText, FlaskConical, Plus, Printer,
-  Search, Sparkles, Upload, X, QrCode } from 'lucide-react'
+  Eye, Search, Sparkles, Upload, X, QrCode } from 'lucide-react'
 import { api, apiBlob, apiFile, ApiError } from '@/lib/api'
 import { Pagination, useListView } from '@/components/ListView'
 import QrPanel from '@/components/QrPanel'
@@ -49,7 +49,9 @@ interface Chemical {
   id: string; chemical_no: string; name: string; product_name: string | null
   manufacturer: string | null; supplier: string | null; product_code: string | null
   manufacturer_contact: string | null
+  emergency_contact: string | null
   hazard_classes: { id: string | null; label: string }[]
+  hazard_statements: { code: string | null; text: string }[]
   signal_word: string | null; physical_state: string | null
   location_id: string | null; location_path: string | null; department_name: string | null
   storage_note: string | null; container_size: string | null
@@ -61,6 +63,7 @@ interface Label {
   id: string; chemical_id: string; product_identifier: string
   supplier: string | null
   supplier_contact: string | null
+  emergency_contact: string | null
   signal_word: string | null; pictograms: string[]
   first_aid: string | null; ppe_note: string | null
   hazard_statements: { code: string | null; text: string }[]
@@ -489,9 +492,22 @@ function Detail({ chemical, mayManage }: { chemical: Chemical; mayManage: boolea
         <Row label="Stored">{chemical.storage_note ?? chemical.location_path ?? '—'}</Row>
         <Row label="Supplier">{chemical.supplier ?? chemical.manufacturer ?? '—'}</Row>
         <Row label="Manufacturer contact">{chemical.manufacturer_contact ?? '—'}</Row>
+        <Row label="Emergency health contact">{chemical.emergency_contact ?? '—'}</Row>
         <Row label="Product code">{chemical.product_code ?? '—'}</Row>
       </dl>
 
+      {chemical.hazard_statements.length > 0 && (
+        <div className="mt-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+            Hazard statements
+          </p>
+          <ul className="mt-1 list-disc pl-5 text-sm text-neutral-800">
+            {chemical.hazard_statements.map((h, i) => (
+              <li key={i}>{h.code ? `${h.code} ` : ''}{h.text}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {chemical.ppe_required && (
         <p className="mt-3 rounded-lg bg-neutral-50 px-3 py-2 text-sm text-neutral-800">
           <span className="font-semibold">PPE:</span> {chemical.ppe_required}
@@ -588,6 +604,7 @@ function LabelEditor({ label, onClose }: { label: Label; onClose: () => void }) 
   const [productIdentifier, setProductIdentifier] = useState(label.product_identifier)
   const [supplier, setSupplier] = useState(label.supplier ?? '')
   const [contact, setContact] = useState(label.supplier_contact ?? '')
+  const [emergency, setEmergency] = useState(label.emergency_contact ?? '')
   const [signalWord, setSignalWord] = useState(label.signal_word ?? '')
   const [pictograms, setPictograms] = useState<string[]>(label.pictograms ?? [])
   const [hazards, setHazards] = useState(label.hazard_statements ?? [])
@@ -606,6 +623,7 @@ function LabelEditor({ label, onClose }: { label: Label; onClose: () => void }) 
       product_identifier: productIdentifier,
       supplier: supplier || null,
       supplier_contact: contact || null,
+      emergency_contact: emergency || null,
       signal_word: signalWord || null,
       pictograms,
       // Blank rows are the ordinary result of adding one and changing your
@@ -645,6 +663,10 @@ function LabelEditor({ label, onClose }: { label: Label; onClose: () => void }) 
         <Field label="Manufacturer contact" hint="Phone, address — as the data sheet gives it">
           <input className={inputClass} value={contact}
                  onChange={(e) => setContact(e.target.value)} />
+        </Field>
+        <Field label="Emergency health contact" hint="Printed at the top, under the signal word">
+          <input className={inputClass} value={emergency}
+                 onChange={(e) => setEmergency(e.target.value)} />
         </Field>
         <Field label="Signal word" hint="GHS allows only these two, or neither">
           <select className={inputClass} value={signalWord}
@@ -768,7 +790,7 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ['chemical-labels', chemical.id] })
 
-  const draft = useMutation({
+  const draftNew = useMutation({
     mutationFn: () => api.post(`/api/v1/chemicals/${chemical.id}/labels`, {}),
     onSuccess: invalidate,
   })
@@ -782,17 +804,20 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
     onSuccess: invalidate,
   })
 
-  const current = (labels.data ?? []).find(
-    (l) => l.status === 'draft' || l.status === 'approved' || l.status === 'printed')
+  // ★ Round 12, CHM-04: the label in force and the one being prepared are
+  // two things. A new version (to carry the emergency contact, say) is drafted
+  // beside the approved label, which goes on printing until the new one is
+  // approved and replaces it.
+  const live = (labels.data ?? []).find((l) => l.status === 'approved' || l.status === 'printed')
+  const draft = (labels.data ?? []).find((l) => l.status === 'draft')
   // Something was approved once and a revision has retired it, with nothing
   // live in its place. That is the state worth saying out loud: the drums in
   // the plant are wearing a label this system will no longer print.
   const supersededByRevision =
-    !current && (labels.data ?? []).some((l) => l.status === 'superseded')
+    !live && !draft && (labels.data ?? []).some((l) => l.status === 'superseded')
 
-  // ★ Round 5, TC-21: "need a means to resize the label as some of the data is
-  // being cut off". The sizes come from the server, which is also what does the
-  // measuring — a list here would drift from the layout that honours it.
+  // ★ Round 5, TC-21: the sizes come from the server, which is also what does
+  // the measuring — a list here would drift from the layout that honours it.
   const sizes = useQuery({
     queryKey: ['label-sizes'],
     queryFn: () => api.get<LabelSize[]>('/api/v1/label-sizes'),
@@ -802,14 +827,17 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
   const [printError, setPrintError] = useState<string | null>(null)
   const [printNote, setPrintNote] = useState<string | null>(null)
 
-  const print = async (labelId: string) => {
+  /** `view` lays it out without counting a print — and, for a draft, stamps
+   *  it DRAFT (round 12, CHM-01/02). `print` is the counted one. */
+  const open = async (labelId: string, mode: 'view' | 'print') => {
     if (busy) return
     setBusy(true)
     setPrintError(null)
     setPrintNote(null)
     try {
       const { blob, headers } = await apiFile(
-        `/api/v1/labels/${labelId}/pdf?copies=2&size=${encodeURIComponent(labelSize)}`)
+        `/api/v1/labels/${labelId}/pdf?copies=${mode === 'view' ? 1 : 2}`
+        + `&size=${encodeURIComponent(labelSize)}${mode === 'view' ? '&preview=true' : ''}`)
       // ★ Said on screen as well as on the label: the small stock left this
       // many statements for the data sheet the code opens (round 6).
       const omitted = Number(headers.get('X-Label-Omitted') ?? 0)
@@ -820,7 +848,7 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
       const url = URL.createObjectURL(blob)
       window.open(url, '_blank', 'noopener')
       setTimeout(() => URL.revokeObjectURL(url), 60_000)
-      invalidate()
+      if (mode === 'print') invalidate()
     } catch (e) {
       // ★ The server refuses rather than printing a label short of a hazard
       // statement, and it says how much does not fit. That message is the whole
@@ -833,6 +861,20 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
     }
   }
 
+  const sizePicker = (
+    <label className="flex items-center gap-1.5 text-xs text-neutral-600">
+      On
+      <select className={inputSized('w-56')}
+              value={labelSize}
+              onChange={(e) => { setLabelSize(e.target.value); setPrintError(null) }}
+              aria-label="Label size">
+        {(sizes.data ?? []).map((sz) => (
+          <option key={sz.code} value={sz.code}>{sz.label}</option>
+        ))}
+      </select>
+    </label>
+  )
+
   return (
     <div className="mt-4">
       <SectionTitle className="mb-1.5">Workplace label</SectionTitle>
@@ -841,8 +883,7 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
           being printable, because the supplier may have reclassified the
           product and the label on the drum is what somebody reads before
           opening it. It is not rewritten automatically: the new hazards have
-          to be read off the new sheet and approved by a person, which is the
-          rule every label here already follows. */}
+          to be read off the new sheet and approved by a person. */}
       {supersededByRevision && (
         <p className="mb-2 max-w-[68ch] rounded-lg bg-warning-50 px-3 py-2 text-sm text-warning-800">
           A newer data sheet has been filed since the last label was approved, so
@@ -852,7 +893,7 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
         </p>
       )}
 
-      {!current ? (
+      {!live && !draft && (
         <>
           <p className="mb-2 max-w-[60ch] text-sm text-neutral-600">
             Needed on any container this is decanted into. A draft starts from
@@ -860,53 +901,72 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
             data sheet.
           </p>
           {mayManage && (
-            <button type="button" className={secondaryButton} disabled={draft.isPending}
-                    onClick={() => { if (!draft.isPending) draft.mutate() }}>
+            <button type="button" className={secondaryButton} disabled={draftNew.isPending}
+                    onClick={() => { if (!draftNew.isPending) draftNew.mutate() }}>
               <Plus className="h-4 w-4" aria-hidden />
-              {/* ★ Round 4, TC-15: "need a button and approval review process
-                  to refresh the workplace label after a revision has been
-                  created." The process was here — start a draft, read the
-                  hazards off the new sheet, approve it — and the button said
-                  "Start a label", which does not read as the answer to "the
-                  sheet changed, now what". Named for what it is doing when
-                  that is what it is doing. */}
-              {draft.isPending ? 'Starting…'
+              {/* ★ Round 4, TC-15: named for what it is doing when that is
+                  what it is doing. */}
+              {draftNew.isPending ? 'Starting…'
                 : supersededByRevision ? 'Refresh the label from the new sheet'
                 : 'Start a label'}
             </button>
           )}
         </>
-      ) : (
+      )}
+
+      {!live && draft && !mayManage && (
+        <p className="max-w-[60ch] text-sm text-neutral-600">
+          HSE is preparing the label for this product. It can be viewed and
+          printed here once it has been approved.
+        </p>
+      )}
+
+      {live && (
         <div className="rounded-lg border border-neutral-200 p-3">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="min-w-0 flex-1 text-sm font-medium text-neutral-900">
-              {current.product_identifier}
-            </span>
-            <span className={
-              'rounded-full px-2.5 py-0.5 text-[11px] font-semibold ' +
-              (current.status === 'draft' ? 'bg-warning-50 text-warning-700'
-                : 'bg-success-50 text-success-700')
-            }>
-              {current.status === 'draft' ? 'Draft — not approved'
-                : current.status === 'printed'
-                  ? `Approved · printed ${current.print_count}×` : 'Approved'}
-            </span>
+          <LabelSummary label={live} />
+          {/* ★ Round 12, CHM-01: "allow the supervisors the ability to view the
+              workplace label and print it." The server always allowed anyone
+              who reads chemicals; the buttons were behind the manager check. */}
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {sizePicker}
+            <button type="button" className={secondaryButton} disabled={busy}
+                    onClick={() => open(live.id, 'view')}>
+              <Eye className="h-4 w-4" aria-hidden />
+              View
+            </button>
+            <button type="button" className={primaryButton} disabled={busy}
+                    onClick={() => open(live.id, 'print')}>
+              <Printer className="h-4 w-4" aria-hidden />
+              {busy ? 'Opening…' : 'Print'}
+            </button>
+            {mayManage && !draft && (
+              <button type="button" className={secondaryButton} disabled={draftNew.isPending}
+                      onClick={() => { if (!draftNew.isPending) draftNew.mutate() }}>
+                <Plus className="h-4 w-4" aria-hidden />
+                {draftNew.isPending ? 'Starting…' : 'Start a new version'}
+              </button>
+            )}
           </div>
-
-          <p className="mt-1 text-xs text-neutral-500">
-            {current.signal_word ?? 'No signal word'} ·
-            {' '}{current.pictograms.length} pictogram
-            {current.pictograms.length === 1 ? '' : 's'} ·
-            {' '}{current.hazard_statements.length} hazard statement
-            {current.hazard_statements.length === 1 ? '' : 's'}
-          </p>
-
-          {current.missing.length > 0 && (
-            <p className="mt-1.5 rounded-lg bg-warning-50 px-2.5 py-1.5 text-xs text-warning-700">
-              Not yet a label — missing {current.missing.join(' and ')}.
+          {mayManage && !draft && (
+            <p className="mt-1.5 text-xs text-neutral-500">
+              An approved label is not edited. A new version starts from the
+              product as recorded now — its emergency contact and hazard
+              statements included — and this one goes on printing until the
+              new one is approved.
             </p>
           )}
+        </div>
+      )}
 
+      {draft && mayManage && (
+        <div className={`rounded-lg border border-warning-200 p-3 ${live ? 'mt-2' : ''}`}>
+          <LabelSummary label={draft} />
+
+          {draft.missing.length > 0 && (
+            <p className="mt-1.5 rounded-lg bg-warning-50 px-2.5 py-1.5 text-xs text-warning-700">
+              Not yet a label — missing {draft.missing.join(' and ')}.
+            </p>
+          )}
           {read.data && !read.data.available && (
             <p className="mt-1.5 rounded-lg bg-neutral-50 px-2.5 py-1.5 text-xs text-neutral-600">
               {read.data.note}
@@ -921,72 +981,84 @@ function LabelPanel({ chemical, mayManage }: { chemical: Chemical; mayManage: bo
             </p>
           )}
 
-          <ErrorNote error={draft.error || read.error || approve.error} />
-
-          {mayManage && editingLabel && (
-            <LabelEditor label={current} onClose={() => setEditingLabel(false)} />
+          {editingLabel && (
+            <LabelEditor label={draft} onClose={() => setEditingLabel(false)} />
           )}
 
-          {mayManage && !editingLabel && (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {current.status === 'draft' && (
-                <>
-                  <button type="button" className={secondaryButton}
-                          onClick={() => setEditingLabel(true)}>
-                    Edit the wording
-                  </button>
-                  <button type="button" className={secondaryButton}
-                          disabled={read.isPending}
-                          onClick={() => { if (!read.isPending) read.mutate(current.id) }}>
-                    <Sparkles className="h-4 w-4" aria-hidden />
-                    {read.isPending ? 'Reading the sheet…' : 'Read it off the data sheet'}
-                  </button>
-                  <button type="button" className={primaryButton}
-                          disabled={current.missing.length > 0 || approve.isPending}
-                          onClick={() => { if (!approve.isPending) approve.mutate(current.id) }}>
-                    Approve it
-                  </button>
-                </>
-              )}
-              {(current.status === 'approved' || current.status === 'printed') && (
-                <>
-                  <label className="flex items-center gap-1.5 text-xs text-neutral-600">
-                    On
-                    <select className={inputSized('w-56')}
-                            value={labelSize}
-                            onChange={(e) => { setLabelSize(e.target.value); setPrintError(null) }}
-                            aria-label="Label size">
-                      {(sizes.data ?? []).map((sz) => (
-                        <option key={sz.code} value={sz.code}>{sz.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <button type="button" className={primaryButton} disabled={busy}
-                          onClick={() => print(current.id)}>
-                    <Printer className="h-4 w-4" aria-hidden />
-                    {busy ? 'Opening…' : 'Print'}
-                  </button>
-                </>
-              )}
+          {!editingLabel && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button type="button" className={secondaryButton}
+                      onClick={() => setEditingLabel(true)}>
+                Edit the wording
+              </button>
+              <button type="button" className={secondaryButton}
+                      disabled={read.isPending}
+                      onClick={() => { if (!read.isPending) read.mutate(draft.id) }}>
+                <Sparkles className="h-4 w-4" aria-hidden />
+                {read.isPending ? 'Reading the sheet…' : 'Read it off the data sheet'}
+              </button>
+              {/* ★ Round 12, CHM-02: "allow the workplace label to be viewed
+                  before it is approved." Stamped DRAFT, and not a print. */}
+              {!live && sizePicker}
+              <button type="button" className={secondaryButton} disabled={busy}
+                      onClick={() => open(draft.id, 'view')}>
+                <Eye className="h-4 w-4" aria-hidden />
+                Preview
+              </button>
+              <button type="button" className={primaryButton}
+                      disabled={draft.missing.length > 0 || approve.isPending}
+                      onClick={() => { if (!approve.isPending) approve.mutate(draft.id) }}>
+                {live ? 'Approve — replaces the label above' : 'Approve it'}
+              </button>
             </div>
           )}
-          {printNote && (
-            <p className="mt-2 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-800">{printNote}</p>
-          )}
-          {printError && (
-            <p className="mt-2 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-800">
-              {printError}
-            </p>
-          )}
-          {current.status === 'draft' && (
-            <p className="mt-1.5 text-xs text-neutral-500">
-              Nothing prints until somebody approves it — a container labelled
-              with the wrong pictogram is worse than one with none.
-            </p>
-          )}
+          <p className="mt-1.5 text-xs text-neutral-500">
+            Nothing prints until somebody approves it — the preview is stamped
+            DRAFT across the label. A container labelled with the wrong
+            pictogram is worse than one with none.
+          </p>
         </div>
       )}
+
+      <ErrorNote error={draftNew.error || read.error || approve.error} />
+      {printNote && (
+        <p className="mt-2 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-800">{printNote}</p>
+      )}
+      {printError && (
+        <p className="mt-2 rounded-lg bg-warning-50 px-3 py-2 text-xs text-warning-800">
+          {printError}
+        </p>
+      )}
     </div>
+  )
+}
+
+function LabelSummary({ label }: { label: Label }) {
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span className="min-w-0 flex-1 text-sm font-medium text-neutral-900">
+          {label.product_identifier}
+        </span>
+        <span className={
+          'rounded-full px-2.5 py-0.5 text-[11px] font-semibold ' +
+          (label.status === 'draft' ? 'bg-warning-50 text-warning-700'
+            : 'bg-success-50 text-success-700')
+        }>
+          {label.status === 'draft' ? 'Draft — not approved'
+            : label.status === 'printed'
+              ? `Approved · printed ${label.print_count}×` : 'Approved'}
+        </span>
+      </div>
+      <p className="mt-1 text-xs text-neutral-500">
+        {label.signal_word ?? 'No signal word'} ·
+        {' '}{label.pictograms.length} pictogram
+        {label.pictograms.length === 1 ? '' : 's'} ·
+        {' '}{label.hazard_statements.length} hazard statement
+        {label.hazard_statements.length === 1 ? '' : 's'}
+        {label.emergency_contact ? ' · emergency contact' : ' · no emergency contact'}
+      </p>
+    </>
   )
 }
 
@@ -1139,6 +1211,8 @@ function ChemicalForm({ existing, onClose }: { existing?: Chemical; onClose: () 
   const [name, setName] = useState(existing?.name ?? '')
   const [manufacturer, setManufacturer] = useState(existing?.manufacturer ?? '')
   const [manufacturerContact, setManufacturerContact] = useState(existing?.manufacturer_contact ?? '')
+  const [emergencyContact, setEmergencyContact] = useState(existing?.emergency_contact ?? '')
+  const [hazardStatements, setHazardStatements] = useState(existing?.hazard_statements ?? [])
   const [productCode, setProductCode] = useState(existing?.product_code ?? '')
   const [locationId, setLocationId] = useState<string | null>(existing?.location_id ?? null)
   const [hazardIds, setHazardIds] = useState<string[]>(
@@ -1155,6 +1229,8 @@ function ChemicalForm({ existing, onClose }: { existing?: Chemical; onClose: () 
     name,
     manufacturer: manufacturer || null,
     manufacturer_contact: manufacturerContact || null,
+    emergency_contact: emergencyContact || null,
+    hazard_statements: hazardStatements.filter((h) => h.text.trim()),
     product_code: productCode || null,
     location_id: locationId,
     hazard_classes: hazardIds.map((id) => ({ id, label: hazardLabels[id] ?? '' })),
@@ -1261,6 +1337,13 @@ function ChemicalForm({ existing, onClose }: { existing?: Chemical; onClose: () 
           <input className={inputClass} value={manufacturerContact}
                  onChange={(e) => setManufacturerContact(e.target.value)} />
         </Field>
+        {/* ★ Round 12, CHM-04: printed at the top of the workplace label. */}
+        <Field label="Emergency health contact"
+               hint="The manufacturer's emergency number, as section 1 of the data sheet gives it">
+          <input className={inputClass} value={emergencyContact}
+                 onChange={(e) => setEmergencyContact(e.target.value)}
+                 placeholder="CANUTEC 1-888-226-8832" />
+        </Field>
         <Field label="Where it is kept">
           <LocationSelect value={locationId} onChange={(id) => setLocationId(id)} />
         </Field>
@@ -1297,6 +1380,13 @@ function ChemicalForm({ existing, onClose }: { existing?: Chemical; onClose: () 
               }}
             />
           </Field>
+        </div>
+        {/* ★ Round 12, CHM-03: a label started from this product begins with
+            these, under the manufacturer and the emergency contact. */}
+        <div className="sm:col-span-2">
+          <StatementRows title="Hazard statements" rows={hazardStatements}
+                         onChange={setHazardStatements}
+                         placeholder="Causes severe skin burns and eye damage." />
         </div>
         <div className="sm:col-span-2">
           <Field label="PPE required">

@@ -207,7 +207,7 @@ def _pictogram(c: pdfcanvas.Canvas, x: float, y: float, size: float,
 def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float,
                artwork: dict[str, bytes] | None = None, *,
                size: LabelSize, scale: float, draw: bool = True,
-               left: float = MARGIN_X) -> float:
+               left: float = MARGIN_X, draft: bool = False) -> float:
     """Lay one label out, and return how much height it needed.
 
     ★ The same routine measures and draws. Two routines would drift, and a
@@ -284,6 +284,25 @@ def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float,
             c.setFillColor(black)
         y -= 10 * mm * scale
 
+    # ── Manufacturer and the emergency health contact ───────────────────────
+    # Round 6, TC-09: "the manufacturer's name contact must be shown." ★ Round
+    # 12, CHM-05: "at the top of the label, just under the hazard warning, add
+    # the manufacturer information and the emergency health contact" — and
+    # CHM-03, the hazard statements "just under" that. It used to sit at the
+    # foot of the label, after first aid.
+    contact = getattr(label, "supplier_contact", None)
+    if label.supplier or contact:
+        line("MANUFACTURER", "Helvetica-Bold", body_pt, body_lead)
+        line(" · ".join(x for x in (label.supplier, contact) if x), "Helvetica", body_pt,
+             body_lead, colour=HexColor("#444444"))
+    emergency = getattr(label, "emergency_contact", None)
+    if emergency:
+        line("EMERGENCY HEALTH CONTACT", "Helvetica-Bold", body_pt, body_lead,
+             colour=GHS_RED)
+        line(emergency, "Helvetica", body_pt, body_lead)
+    if label.supplier or contact or emergency:
+        y -= 1.5 * mm * scale
+
     # ── Hazard statements ───────────────────────────────────────────────────
     # ★ No cap. Six of seven statements printed, with nothing saying so, is the
     # fault round 5 reported as "data is being cut off".
@@ -314,15 +333,6 @@ def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float,
         y -= 1.5 * mm * scale
         line("FIRST AID", "Helvetica-Bold", body_pt, body_lead, colour=GHS_RED)
         line(label.first_aid, "Helvetica", body_pt, body_lead)
-
-    # ── Manufacturer: name and how to reach them ────────────────────────────
-    # Round 6, TC-09: "the manufacturer's name contact must be shown."
-    contact = getattr(label, "supplier_contact", None)
-    if label.supplier or contact:
-        y -= 2 * mm * scale
-        line("MANUFACTURER", "Helvetica-Bold", body_pt, body_lead)
-        line(" · ".join(x for x in (label.supplier, contact) if x), "Helvetica", body_pt,
-             body_lead, colour=HexColor("#444444"))
 
     text_height = top - y
 
@@ -365,8 +375,24 @@ def _one_label(c: pdfcanvas.Canvas, label, chemical_id: str, top: float,
         approved = (f"{label.approved_at:%Y-%m-%d}" if label.approved_at else "—")
         footer = (f"Approved {approved} by {label.approved_by_name or 'HSE'} · "
                   "a safety data sheet for this product is available — scan the code")
+        if draft:
+            footer = "DRAFT — not approved by HSE. Do not put this on a container."
         c.drawString(inner, top - size.height + 4 * mm * min(scale, 1), footer[:150])
         c.setFillColor(black)
+
+    if draw and draft:
+        # ★ Round 12, CHM-02: a preview before approval is stamped across the
+        # label, in grey over the content, so it cannot be mistaken for — or
+        # used as — the real one.
+        c.saveState()
+        c.setFillColor(HexColor("#9a9a9a"))
+        if hasattr(c, "setFillAlpha"):
+            c.setFillAlpha(0.35)
+        c.translate(left + size.width / 2, top - size.height / 2)
+        c.rotate(28)
+        c.setFont("Helvetica-Bold", min(size.width, size.height) / 3.2)
+        c.drawCentredString(0, -min(size.width, size.height) / 10, "DRAFT")
+        c.restoreState()
 
     # The footer sits at the bottom of the box, so the content has to stop
     # above it rather than merely inside the box.
@@ -407,18 +433,19 @@ class _Trimmed:
 def render(label, *, chemical_id: str, copies: int = 2,
            artwork: dict[str, bytes] | None = None,
            size: str = DEFAULT_SIZE, _strict: bool = False,
-           sds_available: bool = False) -> tuple[bytes, LabelSize]:
+           sds_available: bool = False, draft: bool = False) -> tuple[bytes, LabelSize]:
     """The PDF and the stock it was laid out for. See `render_with_omitted`."""
     pdf, used, _ = render_with_omitted(
         label, chemical_id=chemical_id, copies=copies, artwork=artwork, size=size,
-        _strict=_strict, sds_available=sds_available)
+        _strict=_strict, sds_available=sds_available, draft=draft)
     return pdf, used
 
 
 def render_with_omitted(label, *, chemical_id: str, copies: int = 2,
                         artwork: dict[str, bytes] | None = None,
                         size: str = DEFAULT_SIZE, _strict: bool = False,
-                        sds_available: bool = False) -> tuple[bytes, LabelSize, int]:
+                        sds_available: bool = False,
+                        draft: bool = False) -> tuple[bytes, LabelSize, int]:
     """One or more labels to an A4 sheet, laid out for a laminator.
 
     ★ Measured before it is drawn. The type shrinks to fit within a floor, and
@@ -433,11 +460,12 @@ def render_with_omitted(label, *, chemical_id: str, copies: int = 2,
         for candidate in SIZES[:-1]:
             try:
                 return render_with_omitted(label, chemical_id=chemical_id, copies=copies,
-                                           artwork=artwork, size=candidate.code, _strict=True)
+                                           artwork=artwork, size=candidate.code, _strict=True,
+                                           draft=draft)
             except LabelTooLarge:
                 continue
         return render_with_omitted(label, chemical_id=chemical_id, copies=copies,
-                                   artwork=artwork, size=SIZES[-1].code)
+                                   artwork=artwork, size=SIZES[-1].code, draft=draft)
 
     chosen = BY_SIZE.get(size) or SIZES[1]
     page_w, page_height = chosen.page or A4
@@ -504,7 +532,8 @@ def render_with_omitted(label, *, chemical_id: str, copies: int = 2,
         if slot == 0 and index:
             c.showPage()
         top = first_top - slot * (chosen.height + 8 * mm)
-        _one_label(c, printed, chemical_id, top, artwork, size=chosen, scale=scale, left=left)
+        _one_label(c, printed, chemical_id, top, artwork, size=chosen, scale=scale, left=left,
+                   draft=draft)
 
     c.showPage()
     c.save()
