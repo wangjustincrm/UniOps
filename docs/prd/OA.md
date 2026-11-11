@@ -1,9 +1,13 @@
 # OA — Product Requirements Document
 
-**Version:** 3.4
-**Date:** 2026-11-05
+**Version:** 3.5
+**Date:** 2026-11-11
 **Status:** In Production
 **Scope:** Employee expense reimbursement and business travel in UniOps — General Expense (EXP), Mileage (MIL), Travel Application (TRA), Travel Expense (TRV) and admin-defined Custom Forms (CFM), with their approvals, attachments, claim PDF, payment hand-off and budget display.
+
+**What changed in version 3.5** (2026-11-11)
+
+- **Dates follow the plant time zone (Company Settings → Time Zone), not UTC (§1.4, §7.2, §7.8).** "Today" for delegation, the date in claim numbers, and every date and time printed on the claim PDF and the Travel Application form are taken in the plant's zone, so an evening action in Toronto no longer lands on the next day. Printed dates read `2026-NOV-11`, date-times `2026-NOV-11 14:30`; the PDF no longer labels times "UTC".
 
 **What changed in version 3.4** (2026-11-05)
 
@@ -92,7 +96,7 @@ EPMS.md (approval engine, tasks, notifications, delegation, PDF and file storage
 | The claimant (employee on the claim) | Their own claims, any status including draft |
 | A listed traveller | Travel Applications that name them, from submission on, read-only (TRA-008) |
 | Whoever filed a TRV on a traveller's behalf | That claim, any status (TRV-GATE-004) |
-| An approver | Claims with an **open approval task** for them — pinned to them, a role-pool task whose role they hold (`gm_or_opm` satisfied by GM or OPM), or either of these for someone who has delegated to them today |
+| An approver | Claims with an **open approval task** for them — pinned to them, a role-pool task whose role they hold (`gm_or_opm` satisfied by GM or OPM), or either of these for someone who has delegated to them today (the plant's date, Company Settings → Time Zone) |
 | Anyone who has acted on a claim | Claims they have approved / returned / rejected / submitted (from the approval history), so a claim does not vanish from an approver's list once approved |
 | Payment roles (Finance BP, Finance Manager, AP Clerk, Payment Officer, System Admin — primary or additional) | In lists: approved claims (not TRAs). On detail: any claim |
 | System Admin, AP Clerk (primary role) | All claims |
@@ -115,7 +119,7 @@ Receipt-based reimbursement.
 | Field | Rule |
 |-------|------|
 | Employee, Department | Taken from the user record when the claim is created (not editable) |
-| Submission Date | Required; defaults to today (local date) |
+| Submission Date | Required; defaults to today (the plant's date, Company Settings → Time Zone) |
 | Currency | CAD or USD; default CAD |
 | Notes / Purpose | Optional free text |
 
@@ -179,7 +183,7 @@ Pre-approval for business travel, modelled on the paper travel approval form (co
 | TRA-001 | A TRA is saved as a draft, then submitted into the `tra` workflow (default: Department Manager → Finance Manager → General Manager; configurable, §7.1). |
 | TRA-002 | Approval of a TRA creates no follow-up task (no reimbursement, no payment). |
 | TRA-003 | A TRA is never payable: payment is refused and it never appears as a payment task or in the payment-role list branch. |
-| TRA-004 | The TRA prints as its own English form (travel details, roster, transport, approval signatures from the approval history). The PDF is filed on approval and can be regenerated at any status from the Travel Application card. |
+| TRA-004 | The TRA prints as its own English form (travel details, roster, transport, approval signatures from the approval history). Dates print as YYYY-MMM-DD; a signature's date is the plant's date of the approval. The PDF is filed on approval and can be regenerated at any status from the Travel Application card. |
 | TRA-005 | The applicant (or System Admin) may **hard-delete** a TRA in draft, returned, submitted or in-review status from the list or the detail page, after confirmation. Deletion removes the record, its approval tasks and approval history, and its attachment files; no reason is recorded. Approved TRAs cannot be deleted. Deletion is refused if any travel expense claim references the TRA. |
 | TRA-006 | Only TRAs can be deleted; other claim types are refused (they have budget and payment consequences). |
 | TRA-007 | TRAs appear only under **Travel Applications**, never in the Expense Claims list; their detail lives at the Travel route. |
@@ -390,7 +394,7 @@ The Approve / Return / Reject buttons and the pay and delete buttons are shown f
 
 ### 7.5 Document Numbers
 
-`<TYPE>-YYYYMMDD-NNNN` (e.g. `EXP-20261016-0001`, `TRA-…`, `CFM_<CODE>-…`). The sequence is the highest existing suffix + 1 for that prefix and day, allocated under a lock, so numbers never collide and are never reused (deleted TRA numbers are retired).
+`<TYPE>-YYYYMMDD-NNNN` (e.g. `EXP-20261016-0001`, `TRA-…`, `CFM_<CODE>-…`). The date is the plant's date in the Company Settings time zone, not the UTC date. The sequence is the highest existing suffix + 1 for that prefix and day, allocated under a lock, so numbers never collide and are never reused (deleted TRA numbers are retired).
 
 ### 7.6 Approval Status and Timeline
 
@@ -412,7 +416,7 @@ The comment typed on Submit appears in the timeline.
 | FR ID | Requirement |
 |-------|-------------|
 | PDF-001 | When a claim becomes **approved** (by the last approval, or on submit when every step is skipped) a PDF named `<claim number>.pdf` is generated and filed in its Attachments. A PDF failure never fails the approval. |
-| PDF-002 | Content: company name, form title, claim header (employee, department, dates, purpose / travel / vehicle details), lines or trip log or custom-form answers, totals (Net, Tax, Total Reimbursable; total distance for MIL), notes, and the **Approval Record**: "Submitted" with its comment, then each configured step with approver, date/time and comment, or "Skipped — no approval required". Only the latest submission round counts. Non-Latin names print correctly. |
+| PDF-002 | Content: company name, form title, claim header (employee, department, dates, purpose / travel / vehicle details), lines or trip log or custom-form answers, totals (Net, Tax, Total Reimbursable; total distance for MIL), notes, and the **Approval Record**: "Submitted" with its comment, then each configured step with approver, date/time and comment, or "Skipped — no approval required". Only the latest submission round counts. Non-Latin names print correctly. Dates print as YYYY-MMM-DD (e.g. 2026-NOV-11) and date-times as YYYY-MMM-DD HH:MM, in the plant time zone (Company Settings → Time Zone); the footer shows when the PDF was generated, in the same zone. |
 | PDF-003 | **Regenerate PDF** on the Attachments card (approved or paid claims; anyone who may view the claim) rebuilds the PDF and **replaces** the earlier file. |
 | PDF-004 | Travel Applications use their own form (TRA-004). |
 
