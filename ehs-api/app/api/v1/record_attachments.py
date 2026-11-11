@@ -7,7 +7,14 @@ Who may see and add them follows the record, not a key of their own:
   before that); added and removed with `ehs.action.write`;
 * a JSA — read by everyone who can open one (`ehs.incident.report`); added
   with `ehs.action.write`, as the JSA itself is written;
-* a permit — read and added with `ehs.permit.request`, as the permit itself.
+* a permit — as the permit itself: seen by whoever raised it or holds the
+  register (`ehs.permit.read`), added by whoever raised it or issues permits.
+  ★ The key alone was checked, which every employee holds, so anyone with a
+  permit's id could list, download, add and remove its photographs while the
+  permit itself answered 403 (B3/B4 review by uniops-95, H1). Photographs are
+  added until the permit is closed out and removed only while it is a draft
+  or suspended, the same window in which it can be edited: what a permit
+  showed when it was issued and closed is evidence.
 
 A file is removed only by whoever added it or by someone who may write the
 record: a crew member's photograph of a guard is not someone else's to delete.
@@ -58,7 +65,12 @@ async def _can(db, user: dict, key: str) -> bool:
     return await has_permission(db, _user_id(user), user.get("role", ""), key)
 
 
-async def _owner(db, user: dict, owner_type: str, owner_id: uuid.UUID, *, write: bool) -> None:
+_PERMIT_FINISHED = ("closed", "cancelled", "expired")
+_PERMIT_EDITABLE = ("draft", "suspended")
+
+
+async def _owner(db, user: dict, owner_type: str, owner_id: uuid.UUID, *, write: bool,
+                 removing: bool = False) -> None:
     """The record exists and this person may read it (or write to it)."""
     if owner_type not in OWNERS:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No such kind of record")
@@ -74,8 +86,20 @@ async def _owner(db, user: dict, owner_type: str, owner_id: uuid.UUID, *, write:
         from app.crud import hazard as crud
         await crud.get_jsa(db, owner_id)
     else:
+        from app.api.v1.permits import _editable, _readable
         from app.crud import permit as crud
-        await crud.get_permit(db, owner_id)
+        permit = await crud.get_permit(db, owner_id)
+        await _readable(db, user, permit)
+        if write:
+            await _editable(db, user, permit)
+            if crud.effective(permit) in _PERMIT_FINISHED:
+                raise HTTPException(status.HTTP_409_CONFLICT,
+                                    f"{permit.permit_no} is {crud.effective(permit)}: "
+                                    "its photographs are part of the record now")
+        if removing and crud.effective(permit) not in _PERMIT_EDITABLE:
+            raise HTTPException(status.HTTP_409_CONFLICT,
+                                f"{permit.permit_no} is {crud.effective(permit)}: a photograph "
+                                "can be removed only while it is a draft or suspended")
 
 
 @router.get("", response_model=list[AttachmentMeta])
@@ -129,9 +153,17 @@ async def download_attachment(owner_type: str, owner_id: uuid.UUID, attachment_i
 @router.delete("/{attachment_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_attachment(owner_type: str, owner_id: uuid.UUID, attachment_id: uuid.UUID,
                             db: SessionDep, user: CurrentUserPayload, token: BearerToken):
-    await _owner(db, user, owner_type, owner_id, write=False)
+    await _owner(db, user, owner_type, owner_id, write=False, removing=True)
     att = await _one(db, owner_type, owner_id, attachment_id)
-    if att.uploaded_by != _user_id(user) and not await _can(db, user, OWNERS[owner_type][1]):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only whoever added it can remove it")
+    if att.uploaded_by != _user_id(user):
+        # Someone else's photograph: only whoever may write the record. For a
+        # permit the key is held by everyone, so ask the permit's own rule.
+        try:
+            await _owner(db, user, owner_type, owner_id, write=True)
+        except HTTPException as e:
+            if e.status_code != status.HTTP_403_FORBIDDEN:
+                raise
+            raise HTTPException(status.HTTP_403_FORBIDDEN,
+                                "Only whoever added it can remove it") from None
     await delete_from_file_server(att.storage_key, token)
     await db.delete(att)
