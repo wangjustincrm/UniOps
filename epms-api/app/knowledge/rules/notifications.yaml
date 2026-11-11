@@ -48,12 +48,12 @@ rules:
       - 每日摘要邮件什么时候发？
       - when is the daily digest sent
     answer: >
-      The daily digest goes out once a day at {time} UTC (Portal → Admin →
+      The daily digest goes out once a day at {time} plant time (Portal → Admin →
       Notification Settings → Daily Digest Time). It lists each person's
       open tasks of the kinds an admin set to "digest".
     provenance: derived
     derive: digest_time
-    enforced_in: "epms-api app/tasks/daily_followup.py _load_schedule (notification_settings.followup_time, UTC, default 08:00)"
+    enforced_in: "epms-api app/tasks/daily_followup.py _load_schedule (notification_settings.followup_time, plant time — Company Settings → Time Zone, default 08:00)"
     test:
       - "tests/test_task_notifications.py::test_digest_bundles_one_email_per_person"
       - "tests/test_rule_registry.py::test_digest_time_is_read_from_config"

@@ -1,10 +1,11 @@
 """CRUD for Purchase Agreement (AGR)."""
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date
 
 from sqlalchemy import and_, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_now, plant_today
 from app.crud import agreement_schedule
 from app.crud._list_order import lower_text, sort_clauses
 from app.crud._numbering import next_number
@@ -22,7 +23,7 @@ EDITABLE_STATUSES = ("draft", "returned")
 
 
 async def _next_number(db: AsyncSession) -> str:
-    ym = datetime.now(timezone.utc).strftime("%Y%m")
+    ym = plant_now().strftime("%Y%m")
     return await next_number(db, PurchaseAgreement.number, f"AGR-{ym}-", width=4)
 
 
@@ -252,7 +253,7 @@ async def is_admissible(
     potentially stale) copy; re-reading through the SAME predicate the list
     query uses is the whole point of factoring it out.
     """
-    today = on_date or date.today()
+    today = on_date or plant_today()
     row = (await db.execute(
         select(PurchaseAgreement.id).where(
             PurchaseAgreement.id == agr.id,
@@ -267,7 +268,7 @@ async def candidates_for_vendor(
 ) -> list[PurchaseAgreement]:
     """Agreements an invoice from this vendor may be matched against —
     admission per `_admissible_predicate` (spec §5.1)."""
-    today = on_date or date.today()
+    today = on_date or plant_today()
     q = select(PurchaseAgreement).where(
         PurchaseAgreement.vendor_id == vendor_id,
         _admissible_predicate(today),

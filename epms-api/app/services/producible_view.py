@@ -53,6 +53,8 @@ from decimal import Decimal
 
 import sqlalchemy as sa
 
+from app.core.plant_time import plant_today
+
 # Units are named differently on the two sides — the recipe says EA and KGM,
 # the warehouse says PIECES and KG — and they mean the same thing. Anything not
 # in here is REFUSED rather than assumed equal: a recipe in litres divided by an
@@ -228,17 +230,19 @@ async def _availability(db, codes: list[str]) -> dict[str, tuple[Decimal, str | 
         "SELECT material_code, "
         "  COALESCE(SUM(qty - COALESCE(qty_onhold, 0)) FILTER ("
         "    WHERE mapped_status = 'available' "
-        "      AND (expiry_date IS NULL OR expiry_date >= CURRENT_DATE)), 0), "
+        "      AND (expiry_date IS NULL OR expiry_date >= :today)), 0), "
         "  MAX(uom) FILTER ("
         "    WHERE mapped_status = 'available' "
-        "      AND (expiry_date IS NULL OR expiry_date >= CURRENT_DATE)), "
+        "      AND (expiry_date IS NULL OR expiry_date >= :today)), "
         "  COUNT(*) FILTER ("
         "    WHERE mapped_status = 'available' "
-        "      AND (expiry_date IS NULL OR expiry_date >= CURRENT_DATE)), "
+        "      AND (expiry_date IS NULL OR expiry_date >= :today)), "
         "  COUNT(*) "
         "FROM wms_inventory_lots WHERE material_code = ANY(:codes) "
         "GROUP BY material_code"
-    ), {"codes": codes})).all()
+    # :today is the plant's date: CURRENT_DATE is UTC's, which after 19:00/
+    # 20:00 in Toronto already treated lots expiring today as expired.
+    ), {"codes": codes, "today": plant_today()})).all()
     return {r[0]: (Decimal(str(r[1])), r[2], int(r[3]), int(r[4])) for r in rows}
 
 

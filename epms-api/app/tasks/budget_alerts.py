@@ -50,6 +50,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_today
 from app.crud.config import get_or_create as get_config
 from app.db import session as session_module
 from app.models.budget_alert_state import BudgetAlertState
@@ -341,7 +342,7 @@ async def run_budget_alerts(over_only: bool = False) -> None:
             bac = cfg.budget_admin_config or {}
             yellow = Decimal(str(bac.get("yellow_threshold_pct", 80)))
             red = Decimal(str(bac.get("red_threshold_pct", 100)))
-            fiscal_year = datetime.now(timezone.utc).year
+            fiscal_year = plant_today().year
             token = await _service_token(db)
             if token is None:
                 logger.error("Budget alerts: no active system_admin account to read budgets as")
@@ -403,6 +404,6 @@ async def budget_alerts_loop() -> None:
         if wait > _RECHECK_SECONDS:
             await asyncio.sleep(_RECHECK_SECONDS)
             continue
-        logger.info("Budget alerts: next run in %.0f seconds (at %02d:%02dZ)", wait, hour, minute)
+        logger.info("Budget alerts: next run in %.0f seconds (at %02d:%02d plant time)", wait, hour, minute)
         await asyncio.sleep(wait)
         await run_budget_alerts()

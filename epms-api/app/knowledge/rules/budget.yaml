@@ -20,7 +20,7 @@ rules:
       (vouchers not yet tallied included) ÷ the approved annual budget, as on
       the Budget Dashboard; committed is not counted, and spend with no budget
       counts as over. A line that reaches the warning threshold ({warning}%) is
-      listed in a daily digest (at {time} UTC) to the Department Manager; one
+      listed in a daily digest (at {time} plant time) to the Department Manager; one
       that reaches the over-budget threshold ({over}%) is reported within the
       hour (NC actuals are synced hourly) by email to the Department Manager,
       every Finance Manager and the department's GM or OPM, and by a Teams

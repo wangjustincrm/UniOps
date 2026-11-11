@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_now
 from app.core.ontology import scope_pr
 from app.crud._list_order import lower_text, sort_clauses
 from app.crud._numbering import next_number
@@ -27,7 +28,7 @@ from app.services.pdf_pr import generate_pr_pdf
 # ── Number generation ──────────────────────────────────────────────────────────
 
 async def _next_number(db: AsyncSession) -> str:
-    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    today = plant_now().strftime("%Y%m%d")
     prefix = f"PR-{today}-"
     return await next_number(db, PurchaseRequest.number, prefix, width=4)
 
@@ -256,7 +257,7 @@ async def compute_budget_check(
     """
     if not budget_code or cost_center_id is None or amount <= 0:
         return False, None
-    fiscal_year = datetime.now(timezone.utc).year
+    fiscal_year = plant_now().year
     data = await budget_client.get_balance(
         bearer_token, cost_center_id, fiscal_year, account_code=budget_code,
     )

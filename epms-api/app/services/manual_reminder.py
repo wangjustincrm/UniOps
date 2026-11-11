@@ -31,6 +31,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import fmt_datetime
 from app.models.notification_log import NotificationLog
 from app.models.task import Task
 from app.services.notification import (
@@ -77,9 +78,9 @@ class ReminderCooldown(Exception):
         super().__init__(
             f"A reminder was already sent for this step in the last {COOLDOWN_HOURS} "
             f"hours. You can send another one after "
-            # DD/MM/YYYY like the rest of the app (UI-DATE-001, ISS-0183). Format
-            # only — the time is still the UTC instant (zone left as is).
-            f"{retry_at.strftime('%d/%m/%Y %H:%M')} UTC."
+            # The plant's wall clock, YYYY-MMM-DD HH:MM like the rest of the
+            # app (UI-DATE-002), which shows plant time without a zone suffix.
+            f"{fmt_datetime(retry_at)}."
         )
 
 

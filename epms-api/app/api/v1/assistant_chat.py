@@ -30,7 +30,7 @@ from sqlalchemy import select
 from app.api.v1.assistant_preflight import preflight as run_preflight
 from app.api.v1.assistant_query import assistant_schema
 from app.core.access_scope import build_scope, is_pr_visible
-from app.core.delegation import local_today
+from app.core.plant_time import plant_today as local_today
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.core.ontology import REGISTRY
 from app.models.pr import PurchaseRequest

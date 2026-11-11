@@ -26,12 +26,11 @@ exhaust the shared quota and take invoice OCR down with it.
 import json
 import re
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, timezone
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from app.core.config import settings
-from app.core.delegation import PLANT_TIMEZONE
+from app.core.plant_time import plant_now
 from app.services.controlled_query import _OPS_BY_KIND as cq_ops
 
 log = logging.getLogger(__name__)
@@ -39,7 +38,6 @@ log = logging.getLogger(__name__)
 from app.services import guide_view, reply_language
 
 MODEL = "claude-haiku-4-5-20251001"
-_PLANT_TZ = ZoneInfo(PLANT_TIMEZONE)
 
 # The plan call returns a small JSON object; 1024 is generous for it. Narration
 # is prose about at most a few hundred rows of summary.
@@ -1029,7 +1027,7 @@ def _today_note() -> str:
     The plant's date, not UTC's: after 20:00 in Toronto UTC is already
     tomorrow, and "today" pointed at a day that had not started (ISS-0048).
     """
-    now = datetime.now(_PLANT_TZ)
+    now = plant_now()
     return (
         f"\n\nToday is {now:%Y-%m-%d} ({now:%A}). Resolve every date against "
         f"this, never against anything you remember. A month or day given "

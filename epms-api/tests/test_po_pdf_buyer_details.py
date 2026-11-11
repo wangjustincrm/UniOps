@@ -146,8 +146,8 @@ def test_pdf_delivery_falls_back_to_earliest_line_date_when_header_is_unset():
         ),
     ]
     text = _text_of(generate_po_pdf(po))
-    assert "2026-09-05" in text, "the earlier line date must win"
-    assert "2026-09-20" not in text, "the later line date must not appear"
+    assert "2026-SEP-05" in text, "the earlier line date must win"
+    assert "2026-SEP-20" not in text, "the later line date must not appear"
     assert "from ERP" not in text, "no internal provenance marker on the vendor-facing PDF"
     # Positive control — see test_nc_notes_never_leak_into_the_vendor_facing_pdf.
     assert "Widget A" in text
@@ -470,8 +470,8 @@ def test_pdf_header_expected_delivery_wins_over_line_dates():
     po = _po(source="nc", expected_delivery=date(2026, 10, 1),
              line_kw={"planned_arrival_date": date(2026, 9, 5)})
     text = _text_of(generate_po_pdf(po))
-    assert "2026-10-01" in text, "the human-entered header value must win"
-    assert "2026-09-05" not in text, "the line date must not override the header value"
+    assert "2026-OCT-01" in text, "the human-entered header value must win"
+    assert "2026-SEP-05" not in text, "the line date must not override the header value"
     assert "from ERP" not in text, "a header value is not ERP-derived, so no marker"
     # Positive control — see test_nc_notes_never_leak_into_the_vendor_facing_pdf.
     assert "Widget" in text

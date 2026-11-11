@@ -15,13 +15,14 @@ conversation can still be trusted:
     half its rows is the failure this whole layer exists to avoid, and it is
     invisible in a spreadsheet in a way it is not on screen.
 """
-from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+
+from app.core.plant_time import fmt_datetime, plant_now, plant_today
 
 _HEADER_FILL = PatternFill("solid", fgColor="E8EFEE")
 _TITLE_FONT = Font(bold=True, size=13)
@@ -75,7 +76,7 @@ def build_workbook(*, question: str, entity_label: str, query: dict,
     ws.cell(row=1, column=1, value=question.strip() or entity_label).font = _TITLE_FONT
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=width)
 
-    stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    stamp = fmt_datetime(plant_now())   # plant time, UI-DATE-002 (a title, not a data cell)
     meta = f"{entity_label} · generated {stamp}"
     if generated_for:
         meta += f" · for {generated_for}"
@@ -159,4 +160,4 @@ def build_workbook(*, question: str, entity_label: str, query: dict,
 
 
 def filename_for(entity: str) -> str:
-    return f"{entity.replace('_', '-')}-{date.today()}.xlsx"
+    return f"{entity.replace('_', '-')}-{plant_today()}.xlsx"

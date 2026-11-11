@@ -10,6 +10,7 @@ from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from app.core.plant_time import fmt_date, plant_now
 from app.crud._list_order import lower_text, sort_clauses
 from app.crud import agreement as agreement_crud
 from app.crud import agreement_receipt as agreement_receipt_crud
@@ -233,7 +234,7 @@ async def _next_ref(db: AsyncSession) -> str:
     in that year — a deleted invoice's number is not handed out again (see
     app.models.document_counter). Shared with the Freight upload."""
     from app.crud._numbering import next_number_never_reused
-    year = datetime.now(timezone.utc).strftime("%Y")
+    year = plant_now().strftime("%Y")
     return await next_number_never_reused(db, Invoice.internal_ref, f"INV-{year}-", width=4)
 
 
@@ -659,7 +660,7 @@ async def _match_to_agreement(
     if not await agreement_crud.is_admissible(db, agr):
         raise AgreementMatchInvalid(
             f"Agreement {agr.number} is not open for new spend "
-            f"(status={agr.status}, valid to {agr.valid_to} + {agr.grace_days or 0}d grace); "
+            f"(status={agr.status}, valid to {fmt_date(agr.valid_to)} + {agr.grace_days or 0}d grace); "
             "renew it before matching invoices to it.")
 
     # Review fix (Important #1, Task 5 round 1): release any evidence this

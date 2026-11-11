@@ -122,13 +122,13 @@ class PurchaseAgreement(UUIDPrimaryKey, TimestampMixin, Base):
     # Grace days are NOT included — valid_to is the date on the agreement.
     @hybrid_property
     def days_until_expiry(self) -> int:
-        from app.core.delegation import local_today
+        from app.core.plant_time import plant_today as local_today
         return (self.valid_to - local_today()).days
 
     @days_until_expiry.inplace.expression
     @classmethod
     def _days_until_expiry_expression(cls):
-        from app.core.delegation import local_today
+        from app.core.plant_time import plant_today as local_today
         # date - date is an integer number of days in PostgreSQL. Bound when the
         # query is built, so it is today at the plant, not the server's UTC date.
         return cls.valid_to - cast(literal(local_today()), Date)
