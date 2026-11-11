@@ -18,6 +18,7 @@ import {
   type VisitPurpose,
 } from '@/services/api'
 import { localToday } from '@/lib/utils'
+import { plantWallClockToISO } from '@/lib/plantTime'
 
 /** Build a UserBrief for the currently logged-in user from the persisted
  * auth store (vms-auth) or the SSO handoff blob (portal-auth). Returns
@@ -172,9 +173,10 @@ export default function VisitCreatePage() {
   const submit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!visitor || !host) return
-    const arrivalIso = new Date(`${visitDate}T${arrivalTime}:00`).toISOString()
+    // Typed times are the plant's wall clock (company time zone), not the browser's.
+    const arrivalIso = plantWallClockToISO(visitDate, arrivalTime)
     const departureIso = departureTime
-      ? new Date(`${visitDate}T${departureTime}:00`).toISOString()
+      ? plantWallClockToISO(visitDate, departureTime)
       : null
     mutate(
       {

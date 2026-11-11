@@ -5,12 +5,14 @@ import {
   type AccessArea, type Visit, type VisitPurpose,
 } from '@/services/api'
 import { PURPOSES, mayMoveConfirmed, zoneOptions } from '@/lib/visitOptions'
+import { plantWallClockToISO } from '@/lib/plantTime'
+import { formatTime } from '@/lib/utils'
 
-/** "HH:MM" of an ISO instant in the browser's (the plant's) time zone. */
+/** "HH:MM" of an ISO instant on the plant's clock (company time zone). */
 function localTime(iso: string | null): string {
   if (!iso) return ''
-  const d = new Date(iso)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  const t = formatTime(iso)
+  return t === '—' ? '' : t
 }
 
 /**
@@ -44,8 +46,8 @@ export function EditVisitModal({ visit, onClose }: { visit: Visit; onClose: () =
     update.mutate(
       {
         visit_date: visitDate,
-        planned_arrival: new Date(`${visitDate}T${arrival}:00`).toISOString(),
-        planned_departure: departure ? new Date(`${visitDate}T${departure}:00`).toISOString() : null,
+        planned_arrival: plantWallClockToISO(visitDate, arrival),
+        planned_departure: departure ? plantWallClockToISO(visitDate, departure) : null,
         visit_purpose: purpose,
         ...(area !== visit.access_area ? { access_area: area } : {}),
         notes: notes.trim() || null,
