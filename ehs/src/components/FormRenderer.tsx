@@ -31,6 +31,27 @@ export interface Question {
   options?: string[]
   vocabulary?: string
   fail_on?: Record<string, unknown>
+  /** Round 12, FRM-03: a one-person question filled with whoever opens the
+   *  form. Absent on every template built before it — see `fillsWithMe`. */
+  fill_me?: boolean
+}
+
+/**
+ * ★ Round 12, FRM-03. Whether this one-person question starts filled with
+ * whoever opens the form.
+ *
+ * Templates built before the box existed say nothing on any question, and
+ * keep round 5's rule: the first one-person question only ("the logged in
+ * user should be the default inspector"). Once the box has been touched on any
+ * question of a template, the template says it explicitly for each.
+ */
+export function fillsWithMe<Q extends Pick<Question, 'key' | 'type' | 'fill_me'>>(
+  schema: Q[], q: Q,
+): boolean {
+  if (q.type !== 'person') return false
+  const people = schema.filter((x) => x.type === 'person')
+  if (people.some((x) => x.fill_me !== undefined)) return Boolean(q.fill_me)
+  return people[0]?.key === q.key
 }
 
 /** Answers keyed by question. Shapes match what the API normalises. */

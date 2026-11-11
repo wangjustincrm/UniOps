@@ -19,7 +19,7 @@ import { AlertTriangle, Check, CloudOff } from 'lucide-react'
 import { useTabTitle } from '@uniops/shell'
 import { api, ApiError } from '@/lib/api'
 import { ehsRoutes } from '@/app/routes'
-import { FormRenderer, looksLikeFailure, type FormValues, type Question } from '@/components/FormRenderer'
+import { FormRenderer, fillsWithMe, looksLikeFailure, type FormValues, type Question } from '@/components/FormRenderer'
 import { LinkedActions } from '@/components/LinkedActions'
 import { ActionHistory } from '@/components/ActionHistory'
 import { useMyProfile } from '@/hooks/useMyProfile'
@@ -40,6 +40,8 @@ interface Submission {
   source_id: string | null
   source_ref: string | null
   failed_count: number
+  /** Round 12, FRM-01: the server's answer to "may I throw this away". */
+  may_delete: boolean
 }
 
 interface Answer {
@@ -158,22 +160,25 @@ export default function FormFillPage() {
     if (rows.length === 0 && submission.data.status !== 'submitted') {
       const today = todayForInput()
       // ★ Round 5, TC-06: "the logged in user should be the default inspector
-      // when opening inspection forms."
-      //
-      // Only the first single-person question, and only while the form is
-      // untouched. A form can ask for more than one person — who carried it
-      // out, who was present — and filling them all with whoever opened it
-      // would be worse than filling none. The first one is "who is doing
-      // this" by convention on every template HSE has shown us; a form where
-      // it is not can have it changed, which is the point of a default.
-      let inspectorSeeded = false
-      for (const q of submission.data.schema_snapshot ?? []) {
+      // when opening inspection forms." ★ Round 12, FRM-03: which one-person
+      // questions take whoever opens the form is now the template's to say —
+      // a box on each in the form builder; `fillsWithMe` keeps round 5's
+      // "the first one only" for templates built before the box existed.
+      // And the time, which Kirk took to be filled already and was not: the
+      // current time, as the date takes today's.
+      const now = new Date()
+      const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+      const schema = submission.data.schema_snapshot ?? []
+      for (const q of schema) {
         if (q.type === 'date' && next[q.key] === undefined) {
           next[q.key] = today
           pending.current[q.key] = today
         }
-        if (q.type === 'person' && !inspectorSeeded && next[q.key] === undefined && me) {
-          inspectorSeeded = true
+        if (q.type === 'time' && next[q.key] === undefined) {
+          next[q.key] = time
+          pending.current[q.key] = time
+        }
+        if (fillsWithMe(schema, q) && next[q.key] === undefined && me) {
           const value = [{ id: me.id, label: me.full_name }]
           next[q.key] = value
           pending.current[q.key] = value
@@ -231,6 +236,24 @@ export default function FormFillPage() {
     onError: (e: unknown) => setError(e instanceof ApiError ? e.message : String(e)),
   })
 
+  // ★ Round 12, FRM-01: "create a process to delete a draft form." The
+  // autosave is stopped first, or a save still waiting would land on a form
+  // that is no longer there and report itself as a failure.
+  const discard = useMutation({
+    mutationFn: () => {
+      if (timer.current) clearTimeout(timer.current)
+      pending.current = {}
+      return api.del(`/api/v1/forms/submissions/${id}`)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['form-submissions'] })
+      queryClient.invalidateQueries({ queryKey: ['form-runs'] })
+      readersOfTheAnswers()
+      navigate('/forms/submissions')
+    },
+    onError: (e: unknown) => setError(e instanceof ApiError ? e.message : String(e)),
+  })
+
   if (submission.isLoading) return <p className="p-4 text-sm text-neutral-500">Loading…</p>
   if (submission.isError) {
     return <p className="p-4 text-sm text-danger-700">{(submission.error as ApiError).message}</p>
@@ -262,7 +285,27 @@ export default function FormFillPage() {
   return (
     <div className="p-4 pb-28">
       <header className="mb-4">
-        <p className="font-mono text-xs text-neutral-500">{sub.submission_no}</p>
+        <div className="flex items-center gap-2">
+          <p className="min-w-0 flex-1 font-mono text-xs text-neutral-500">
+            {sub.submission_no}{!done && ' · draft'}
+          </p>
+          {!done && sub.may_delete && (
+            <button
+              type="button"
+              disabled={discard.isPending}
+              onClick={() => {
+                if (discard.isPending) return
+                if (window.confirm('Delete this draft? What has been filled in on it is thrown away.')) {
+                  setError(null)
+                  discard.mutate()
+                }
+              }}
+              className="min-h-[36px] rounded-md px-2 text-xs font-semibold text-danger-700 hover:bg-danger-50 disabled:opacity-50"
+            >
+              {discard.isPending ? 'Deleting…' : 'Delete this draft'}
+            </button>
+          )}
+        </div>
         {/* ★ What this form is for. Opened from a meeting, an unfilled set of
             minutes used to be indistinguishable from a fresh blank form — the
             only thing on screen was this reference number, and checking it

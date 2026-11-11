@@ -10,13 +10,13 @@ from datetime import datetime
 from typing import Any
 
 from datetime import date
-from fastapi import APIRouter, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, HTTPException, Query, Response, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.v1.incidents import _user_id
 from app.core.deps import BearerToken, SessionDep
 from app.core.permissions import CanManageSettings, CanReportIncident
-from sqlalchemy import select
+from sqlalchemy import select, update
 from uniops_authz import has_permission
 
 from app.crud import form as crud
@@ -142,6 +142,8 @@ class SubmissionOut(BaseModel):
     source_type: str | None = None
     source_id: uuid.UUID | None = None
     source_ref: str | None = None
+    # Round 12, FRM-01: whether the person asking may throw this draft away.
+    may_delete: bool = False
 
 
 class SubmissionListItem(BaseModel):
@@ -374,7 +376,66 @@ async def _submission(db, user: dict, submission_id: uuid.UUID):
 
 @router.get("/submissions/{submission_id}", response_model=SubmissionOut)
 async def get_submission(submission_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
-    return await _submission(db, user, submission_id)
+    submission = await _submission(db, user, submission_id)
+    out = SubmissionOut.model_validate(submission)
+    out.may_delete = (await _why_not_delete(db, user, submission)) is None
+    return out
+
+
+async def _is_shared(db, submission) -> bool:
+    from app.models.schedule import FormScheduleRun
+    if submission.source_type in _SHARED_SOURCES:
+        return True
+    return (await db.execute(select(FormScheduleRun.id).where(
+        FormScheduleRun.submission_id == submission.id).limit(1))).first() is not None
+
+
+async def _why_not_delete(db, user: dict, submission) -> str | None:
+    """★ Round 12, FRM-01: "create a process to delete a draft form."
+
+    A draft only — a submitted form is a record, and its failed checks have
+    already raised actions. Your own draft is yours to throw away. A shared one
+    (an equipment check a second inspector may pick up, a meeting's minutes, a
+    scheduled occurrence's form) is not any one person's, so only HSE removes
+    it; HSE may remove any draft.
+    """
+    if submission.status != "draft":
+        return "Only a draft can be deleted. A submitted form is a record and stays."
+    if await has_permission(db, _user_id(user), user.get("role", ""), "ehs.settings.manage"):
+        return None
+    if await _is_shared(db, submission):
+        return ("This draft is shared — an equipment check, a meeting's minutes or a "
+                "scheduled form — so only HSE can delete it.")
+    if submission.submitted_by != _user_id(user):
+        return "This is somebody else's draft. Only they, or HSE, can delete it."
+    return None
+
+
+@router.delete("/submissions/{submission_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_draft(submission_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
+    from app.models.asset import AssetInspection
+    from app.models.jhsc import JhscMeeting
+    from app.models.schedule import FormScheduleRun
+
+    submission = await _submission(db, user, submission_id)
+    reason = await _why_not_delete(db, user, submission)
+    if reason:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT if submission.status != "draft"
+            else status.HTTP_403_FORBIDDEN, reason)
+    # Whatever pointed at it lets go, said here rather than left to the foreign
+    # keys: a scheduled occurrence goes back to being unstarted (its task still
+    # open, so the next tap starts a fresh form), a meeting's minutes can be
+    # started again, and an equipment check stops naming a form that is gone.
+    await db.execute(update(FormScheduleRun).where(
+        FormScheduleRun.submission_id == submission.id).values(submission_id=None))
+    await db.execute(update(JhscMeeting).where(
+        JhscMeeting.minutes_submission_id == submission.id).values(minutes_submission_id=None))
+    await db.execute(update(AssetInspection).where(
+        AssetInspection.submission_id == submission.id).values(submission_id=None))
+    await db.delete(submission)
+    await db.flush()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/submissions/{submission_id}/answers", response_model=list[AnswerOut])

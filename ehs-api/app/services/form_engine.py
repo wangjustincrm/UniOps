@@ -118,6 +118,14 @@ def validate_schema(schema: list[dict]) -> None:
             raise SchemaError(f"{where}: a {qtype} question cannot have a fail condition")
         if "emphasis" in q and not isinstance(q["emphasis"], bool):
             raise SchemaError(f"{where}: emphasis is true or false")
+        # Round 12, FRM-03: "an optional checkbox that … would automatically
+        # add the logged in person's name into that field".
+        if "fill_me" in q:
+            if not isinstance(q["fill_me"], bool):
+                raise SchemaError(f"{where}: fill_me is true or false")
+            if qtype != "person":
+                raise SchemaError(f"{where}: only a one-person question can be filled "
+                                  "with whoever opens the form")
         if q.get("required") and not spec.answerable:
             raise SchemaError(f"{where}: a {qtype} holds no answer, so it cannot be required")
         if qtype in ("select", "multi_select") and not q.get("options"):

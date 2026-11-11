@@ -11,6 +11,7 @@
  * changing what people have already filled in. That is HSE's audit trail, and
  * it is also what stops a form mutating under someone mid-inspection.
  */
+import { fillsWithMe } from '@/components/FormRenderer'
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -35,6 +36,7 @@ interface Question {
   options?: string[]
   vocabulary?: string
   fail_on?: Record<string, unknown> | null
+  fill_me?: boolean
 }
 
 interface Version {
@@ -275,6 +277,23 @@ export default function FormBuilderPage() {
                            onChange={(e) => update(i, { emphasis: e.target.checked || undefined })} />
                     Emphasise (bold, larger)
                   </label>
+                  {/* ★ Round 12, FRM-03: "an optional checkbox that if checked
+                      would automatically add the logged in person's name".
+                      Ticking any one writes the choice for every one-person
+                      question, so the template says it outright from then on
+                      (fillsWithMe keeps the old first-one rule until then). */}
+                  {q.type === 'person' && (
+                    <label className="flex items-center gap-1.5 text-xs text-neutral-700">
+                      <input type="checkbox" checked={fillsWithMe(schema, q)}
+                             onChange={(e) => {
+                               const on = e.target.checked
+                               setSchema((all) => all.map((x) => x.type !== 'person' ? x
+                                 : { ...x, fill_me: x.key === q.key ? on : fillsWithMe(all, x) }))
+                               setSaved(false)
+                             }} />
+                      Fill in with whoever opens the form
+                    </label>
+                  )}
 
                   {/* ★ Round 5, TC-09: "minutes are a documentation of a
                       meeting, there is no pass or fail in the form nor in the
