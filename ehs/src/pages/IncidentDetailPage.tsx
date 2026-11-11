@@ -7,7 +7,7 @@
  * screen shows that rather than leaving a reader to notice the absence.
  */
 import EquipmentSelect, { useEquipmentName } from '@/components/EquipmentSelect'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, FileText, Plus } from 'lucide-react'
@@ -894,6 +894,8 @@ function EditReport({ incident, isHse, onDone, onCancel }: {
   const [recountOk, setRecountOk] = useState(false)
   const needsRecountOk = clocks.length > 0 && isHse && timeChanged
 
+  const sent = useRef<{ body: string | null; photos: WeakSet<object> }>(
+    { body: null, photos: new WeakSet() })
   const save = useMutation({
     mutationFn: async () => {
       const body: Record<string, unknown> = {}
@@ -904,12 +906,21 @@ function EditReport({ incident, isHse, onDone, onCancel }: {
       if (form.date !== initial.date || form.time !== initial.time) {
         body.occurred_at = new Date(`${form.date}T${form.time || '00:00'}`).toISOString()
       }
-      if (Object.keys(body).length) await api.patch(`/api/v1/incidents/${incident.id}`, body)
+      // ★ B3/B4 review L5: a retry after the second photo failed sent the
+      // first again, and the same edit again — which withdrew HSE's review a
+      // second time. What has gone through is remembered and not resent.
+      const sentKey = JSON.stringify(body)
+      if (Object.keys(body).length && sent.current.body !== sentKey) {
+        await api.patch(`/api/v1/incidents/${incident.id}`, body)
+        sent.current.body = sentKey
+      }
       for (const photo of newPhotos) {
+        if (sent.current.photos.has(photo)) continue
         const blob = await (await fetch(photo.dataUrl)).blob()
         const upload = new FormData()
         upload.append('file', blob, photo.name)
         await api.upload(`/api/v1/incidents/${incident.id}/attachments`, upload)
+        sent.current.photos.add(photo)
       }
     },
     onSuccess: onDone,
