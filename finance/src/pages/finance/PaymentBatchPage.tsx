@@ -20,7 +20,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Loader2, Play, Wallet, X } from 'lucide-react'
+import { CheckCircle2, Loader2, Play, Undo2, Wallet, X } from 'lucide-react'
 import { SortTh, sortParams, useOptionalTabStoreApi, useSort, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
@@ -133,7 +133,7 @@ function dueTypeLabel(d: Due): string {
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, string> = {
     draft: 'bg-neutral-100 text-neutral-600', executed: 'bg-green-50 text-green-700',
-    cancelled: 'bg-neutral-100 text-neutral-400',
+    cancelled: 'bg-neutral-100 text-neutral-400', reversed: 'bg-orange-50 text-orange-700',
     paid: 'bg-green-50 text-green-700', failed: 'bg-red-50 text-red-700',
     pending: 'bg-amber-50 text-amber-700',
   }
@@ -547,15 +547,23 @@ export default function PaymentBatchPage() {
             qc.invalidateQueries({ queryKey: ['payments-due'] })
             setOpenBatch(null)
           }}
+          onReversed={(number) => {
+            flash('ok', `Batch ${number} reversed — its payments are cancelled and can be paid again`)
+            qc.invalidateQueries({ queryKey: ['payment-batches'] })
+            qc.invalidateQueries({ queryKey: ['payments-due'] })
+            qc.invalidateQueries({ queryKey: ['payments'] })
+            setOpenBatch(null)
+          }}
           onError={(m) => flash('err', m)} />
       )}
     </PortalChromeLayout>
   )
 }
 
-function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, onError }: {
+function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, onReversed, onError }: {
   batchId: string; canPay: boolean; onClose: () => void
   onCancelled: (batchNumber: string) => void
+  onReversed: (batchNumber: string) => void
   onExecuted: (paid: number, failed: number) => void; onError: (m: string) => void
 }) {
   const qc = useQueryClient()
@@ -647,6 +655,18 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
     onSuccess: (b) => {
       qc.invalidateQueries({ queryKey: ['batch', batchId] })
       onCancelled(b.batch_number)
+    },
+    onError: (e: Error) => onError(e.message),
+  })
+
+  // Reverse an executed batch whose money never went out: its payments are
+  // cancelled and the PAs go back to the due list (finance-api payment_reverse.py).
+  const reverse = useMutation({
+    mutationFn: (reason: string) =>
+      financeApi.post<Batch>(`/payments/batches/${batchId}/reverse`, { reason }),
+    onSuccess: async (b) => {
+      await qc.invalidateQueries({ queryKey: ['batch', batchId] })
+      onReversed(b.batch_number)
     },
     onError: (e: Error) => onError(e.message),
   })
@@ -848,8 +868,31 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
 
             <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
               {batch?.status === 'executed' ? (
-                <span className="flex items-center gap-1.5 text-sm text-green-700">
-                  <CheckCircle2 className="h-4 w-4" /> Executed
+                <>
+                  {canPay && lines.some((ln) => ln.status === 'paid') && (
+                    <button onClick={() => {
+                      if (reverse.isPending) return
+                      const reason = window.prompt(
+                        `Reverse ${batch.batch_number}?\n\nUse this only when the money was NOT actually sent. `
+                        + 'Every paid line is cancelled, its invoices go back to unpaid, the draft journal '
+                        + 'voucher is removed, and the PAs return to the due list to be paid again. '
+                        + 'If a remittance email already went out, tell the vendor.\n\nReason (required):')
+                      if (reason === null) return
+                      if (!reason.trim()) { onError('A reason is required to reverse a batch'); return }
+                      reverse.mutate(reason.trim())
+                    }} disabled={reverse.isPending}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-red-300 px-3 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50">
+                      {reverse.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />}
+                      Reverse Batch
+                    </button>
+                  )}
+                  <span className="flex items-center gap-1.5 text-sm text-green-700">
+                    <CheckCircle2 className="h-4 w-4" /> Executed
+                  </span>
+                </>
+              ) : batch?.status === 'reversed' ? (
+                <span className="flex items-center gap-1.5 text-sm text-orange-700">
+                  <Undo2 className="h-4 w-4" /> Reversed — payments cancelled
                 </span>
               ) : canPay && batch?.status === 'draft' ? (
                 <>

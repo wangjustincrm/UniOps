@@ -306,6 +306,17 @@ modules:
         batch can be cancelled (Cancel Draft, same roles that can pay): nothing
         is paid and its documents are simply no longer marked.
       - >-
+        An executed batch whose money was never actually sent is undone with
+        Reverse Batch on the batch (same roles that can pay, reason required),
+        not by deleting it in Data Maintenance — Data Maintenance refuses to
+        delete an executed batch whose payments still stand. Reversing cancels
+        each payment, puts its PA back to approved and on the due list, puts
+        its invoices back to unpaid and removes its draft journal voucher, so
+        the PA can simply be paid again in a new batch. It is refused when a
+        payment's journal voucher is already reviewed or posted, when the
+        payment is matched in bank reconciliation, in a closed period, and for
+        expense-claim payments (their Budget booking cannot be undone yet).
+      - >-
         Payment Batches has two tabs: Due for Payment and Batches. The search
         box beside Create Batch finds a PA, claim or invoice by its number, and
         rows already ticked stay ticked while searching. A PA with

@@ -974,6 +974,39 @@ def _sync_voucher_names(cur, names: dict | None) -> int:
     return len(rows)
 
 
+def _relink_income_expense_items(cur) -> int:
+    """Attach income-expense items that were added to budget_accounts AFTER the
+    line was imported.
+
+    The item is resolved once, at import time (uni_ba lookup in _resolve_dims),
+    and an already-imported voucher is skipped by every later incremental run —
+    status/name backfills touch only the header. So a code finance adds to the
+    catalog after seeing it flagged on JV Validation never reaches the old
+    lines: CRM09999 was created at 2026-11-09 21:13 UTC, JV-202610-0692 #1
+    (85.80) was imported at 16:43 the same day and stayed off the Budget
+    Dashboard. Same match rule as import (exact code on the raw NC text kept in
+    jv_line_dimensions), so a line that resolves here is exactly what a full
+    re-sync would produce. The dimension row's value_id is filled too — the
+    auxiliary filter reads that, not the line column."""
+    cur.execute(
+        "with fix as ("
+        "  select l.id as line_id, ba.id as ba_id"
+        "    from journal_voucher_lines l"
+        "    join jv_line_dimensions d"
+        "      on d.jv_line_id = l.id and d.dim_code = 'income_expense_item'"
+        "    join budget_accounts ba on ba.code = d.value_text"
+        "   where l.income_expense_item_id is null"
+        "), upd_dim as ("
+        "  update jv_line_dimensions d set value_id = fix.ba_id, updated_at = now()"
+        "    from fix where d.jv_line_id = fix.line_id"
+        "     and d.dim_code = 'income_expense_item' and d.value_id is null"
+        ") "
+        "update journal_voucher_lines l set income_expense_item_id = fix.ba_id, "
+        "       updated_at = now() "
+        "  from fix where l.id = fix.line_id")
+    return cur.rowcount
+
+
 def _repoint_recon_refs(cur, pks: list) -> int:
     """Re-attach bank-reconciliation references to re-imported vouchers.
 
@@ -1262,6 +1295,12 @@ def _run_worker(run_id, mode: str, fetch, dsn: str) -> None:
                     run_id, n_posted, n_draft)
         n_state = _sync_voucher_states(cur, extract.states)
         logger.info("nc_sync run %s: voucher-state backfill changed %d", run_id, n_state)
+        # Before the validation task below, so a code added to the catalog since
+        # the last run clears its finding in this same run.
+        if uni_ba:
+            n_ie = _relink_income_expense_items(cur)
+            logger.info("nc_sync run %s: income-expense item attached to %d lines "
+                        "imported before their budget account existed", run_id, n_ie)
 
         # What the run could not PLACE (as opposed to could not read): lines with
         # no resolvable cost center / income-expense item never reach the Budget
