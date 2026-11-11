@@ -308,7 +308,7 @@ Round 12, fourth batch (built)
 
 On HSE's answers Q11 ("one overall score works … complete once it has at least one assessment") and Q12 ("one per step"), and the defaults D5–D8.
 
-- A hazard has its own page (/hazards/:id; HAZ-04/09/10, D7), read-only, with every field: who recorded it and when, last revised, owner, kinds, area and department, equipment, description, what was found, controls, kind of control, causes, the history of each corrective action, every risk assessment, photographs and the change history. Every link to a hazard (tasks, actions, reports, the staff file, reallocation) opens it.
+- A hazard has its own page (/hazards/:id; HAZ-04/09/10, D7), read-only, with every field: who recorded it and when, last revised, owner, kinds, area and department, equipment, description, what was found, controls, kind of control, causes, the history of each corrective action, every risk assessment, photographs and, for those who may read the audit trail (ehs.incident.read), the change history. Every link to a hazard (tasks, actions, reports, the staff file, reallocation) opens it.
 - Someone who cannot write hazards sees a hazard once it has at least one assessment (Q11); before that it is not listed and its page says it is shown once assessed.
 - The person recording a hazard is shown and cannot be changed; Owner is filled in with them and stays editable (HAZ-01, D5).
 - A hazard can be several kinds and have several controls, picked from the Hazard and Hazard Control lists (HAZ-11, migration 0094); the single kind each had is carried over. Controls in words and the kind of control stay.

@@ -10,12 +10,18 @@
  * gate than the medical table exists to provide. The field, the person and the
  * time are still there, which is what "was this altered, by whom, when"
  * actually needs.
+ *
+ * ★ The trail is read with `ehs.incident.read` — the auditor's key. The panel
+ * was offered to everyone, so a worker on their own action or an assessed
+ * hazard pressed it and got an error (B3/B4 review L1). It is shown to those
+ * who may read it.
  */
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { History } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatDateTime } from '@/lib/formatDate'
+import { usePermissions } from '@/hooks/usePermissions'
 
 interface Change {
   id: string
@@ -36,6 +42,12 @@ function fieldLabel(field: string | null): string {
 }
 
 export function ChangeHistory({ table, rowId }: { table: string; rowId: string }) {
+  const { can } = usePermissions()
+  if (!can('ehs.incident.read')) return null
+  return <Trail table={table} rowId={rowId} />
+}
+
+function Trail({ table, rowId }: { table: string; rowId: string }) {
   const [open, setOpen] = useState(false)
 
   const changes = useQuery({
