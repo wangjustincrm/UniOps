@@ -35,8 +35,11 @@ rules:
       current tab at once (the Task Inbox has its own Refresh button). Other
       tabs stay open. A reload
       of the browser (F5) starts again from the pinned tabs only. New and edit
-      forms are not refreshed, so what you have typed is kept.
-    enforced_in: "epms/src/components/layout/TabQueryScope.tsx (TabQueryScope, TabRefreshButton); epms/src/components/layout/AppLayout.tsx REFRESHABLE_ROUTES; PRD EPMS UI-TAB-003, DSH-010"
+      forms are not refreshed, so what you have typed is kept. OA works the
+      same way for its Task Inbox, Expense Claims and Travel Applications
+      lists and claim pages (the Refresh button there covers the Task Inbox
+      too); OA's new, edit and admin settings forms are not refreshed.
+    enforced_in: "epms/src/components/layout/TabQueryScope.tsx (TabQueryScope, TabRefreshButton); epms/src/components/layout/AppLayout.tsx REFRESHABLE_ROUTES; oa/src/components/layout/TabQueryScope.tsx; oa/src/components/layout/AppLayout.tsx REFRESHABLE_ROUTES; PRD EPMS UI-TAB-003, UI-TAB-004, DSH-010"
     provenance: pinned
     test:
       - "epms/src/components/layout/TabQueryScope.test.ts"

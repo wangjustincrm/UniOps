@@ -12,8 +12,18 @@ import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { signOut } from '@/lib/signOut'
 import { useBranding } from '@/hooks/useBranding'
+import { TabQueryScope, TabRefreshButton } from './TabQueryScope'
 
 const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'
+
+// Task Inbox, list and detail tabs re-read their data when the user comes back
+// to them and get a Refresh button beside the tab bar (as EPMS, UI-TAB-004).
+// Create / edit forms and the admin settings forms are left out on purpose —
+// see TabQueryScope.
+const REFRESHABLE_ROUTES = new Set(['/tasks', '/expenses', '/expenses/:id', '/travel', '/travel/:id'])
+const tabRoutes = oaRoutes.map((r) => REFRESHABLE_ROUTES.has(r.path)
+  ? { ...r, element: <TabQueryScope routes={oaRoutes}>{r.element}</TabQueryScope> }
+  : r)
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 
@@ -366,9 +376,13 @@ export default function AppLayout() {
         <div className="flex flex-1 flex-col overflow-hidden min-w-0">
           <Header onMobileMenuToggle={() => setMobileOpen(v => !v)} />
           <TabRouterSync routes={oaRoutes} />
-          <TabBar />
+          {/* The tab strip scrolls sideways only (no ▲▼ arrows beside it). */}
+          <div className="flex shrink-0">
+            <div className="min-w-0 flex-1 [&>div]:overflow-y-hidden"><TabBar /></div>
+            <TabRefreshButton />
+          </div>
           <main className="relative flex-1 overflow-hidden">
-            <TabHost routes={oaRoutes} pageClassName="mx-auto max-w-[1440px] p-6" />
+            <TabHost routes={tabRoutes} pageClassName="mx-auto max-w-[1440px] p-6" />
           </main>
         </div>
       </div>
