@@ -42,6 +42,7 @@ Some behaviour is shared by every module. Each topic is specified once, and the 
 | Task Inbox and notification outbox (immediate / digest per task type) | EPMS.md §3.7, §3.9; PORTAL.md §5.7 |
 | Data Maintenance | PORTAL.md §5.14; EPMS.md §3.6.8 |
 | AI Assistant and UI conventions (tabs, embedding, dates) | EPMS.md §3.19, §3.20 |
+| Date display format: YYYY-MMM-DD (`2026-NOV-11`), date-times YYYY-MMM-DD HH:mm, in every module | EPMS.md §3.20 (UI-DATE-002) |
 | Sortable list columns (click a header: ascending, then descending; server-sorted when paged) | EPMS.md §3.20 (UI-SORT-001…007) |
 
 ## Maintenance rules

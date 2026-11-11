@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.50
+**Version:** 2.51
 **Date:** 2026-11-11
 **Status:** In Production
+
+> **v2.51 (2026-11-11)** — One date format across UniOps (§3.20, UI-DATE-001/002): every date on screen reads **YYYY-MMM-DD** with an upper-case English month (`2026-NOV-11`), and a date-time adds a 24-hour clock (`2026-NOV-11 14:30`). Replaces DD/MM/YYYY in EPMS and the mixed formats in the other modules, which were being misread. Date inputs, exported Excel/CSV files and document numbers are unchanged; PDFs and emails produced by the server are not yet covered.
 
 > **v2.50 (2026-11-11)** — Freight shipment attachments and View (§3.21, FRT-002, FRT-018): the shipping label scanned on *New Shipment* is kept on the shipment as its **Shipping label** attachment, and an **Attachments** row takes any other supporting files; the Shipments list has **View** on every row, opening the shipment's page with its details and attachments.
 
@@ -2507,7 +2509,7 @@ Every EPMS page carries an **Assistant** panel (floating button, available to an
 
 **Embedded mode.** When EPMS runs inside another UniOps module (for example the Budget pages under Portal → Finance), it renders the page content only. Cross-app links hand the session over so the user is not asked to sign in again.
 
-**Other conventions.** Calendar dates (no time) are treated as local dates and never shift by a day; dates display as DD/MM/YYYY and date-times as DD/MM/YYYY HH:mm. Notes keep their line breaks on detail pages. Dropdowns render in a portal so they are not clipped by scrolling containers. UI text is English only.
+**Other conventions.** Calendar dates (no time) are treated as local dates and never shift by a day; every module displays dates as YYYY-MMM-DD (e.g. 2026-NOV-11) and date-times as YYYY-MMM-DD HH:mm (24-hour). Notes keep their line breaks on detail pages. Dropdowns render in a portal so they are not clipped by scrolling containers. UI text is English only.
 
 | FR ID | Requirement |
 |---|---|
@@ -2517,7 +2519,8 @@ Every EPMS page carries an **Assistant** panel (floating button, available to an
 | **UI-TAB-004** | List and detail tabs re-read their data when the user returns to them, and the tab bar has a **Refresh** button for the open tab. Create, edit and confirm forms are not refreshed, so typed input is kept. |
 | **UI-TAB-005** | A link into a create page that is already open re-opens its tab from the link's query (e.g. Create PO on another PR); it is still one tab per create page. |
 | **UI-EMB-001** | When EPMS is embedded in another UniOps module, it shows only the page content (no sidebar, header or tabs). |
-| **UI-DATE-001** | Calendar dates (no time) display as the same calendar day in every time zone; display format DD/MM/YYYY. |
+| **UI-DATE-001** | Calendar dates (no time) display as the same calendar day in every time zone. |
+| **UI-DATE-002** | Display format, in every UniOps module and on every screen (lists, detail pages, cards, dialogs, the AI Assistant): dates **YYYY-MMM-DD** with the month as an upper-case English abbreviation (JAN … DEC), e.g. `2026-NOV-11`; date-times **YYYY-MMM-DD HH:mm**, 24-hour, in the reader's time zone. Not affected: date input fields (the browser's date picker), month-only labels (periods, chart axes), exported Excel/CSV files, and document numbers. Server-generated PDFs and emails are not yet covered. |
 | **UI-BTN-001** | Action buttons that change document state (Approve, Return, Reject, Withdraw and similar) are disabled while their request is pending. |
 
 **Sortable list columns (all UniOps modules).** Every list of records in every UniOps app (EPMS, OA, Finance, Inventory, MRP, Portal, VMS, Booking) can be sorted by clicking a column header. This rule is specified once here; the other PRDs refer to it.
@@ -2645,7 +2648,7 @@ Line items table: horizontal scroll on narrow viewports (min-width: 860px).
 | **Audit** | Every document keeps its approval history (actions, approvers, comments). Corrections made through Data Maintenance (§3.6.8) are written to an admin audit log. A general audit log for admin configuration changes and vendor record edits is **not implemented** — see §11. |
 | **Configurability** | Workflow definitions, approval routing, role permissions (Access Control Matrix), budget config and notification policy are changeable in Portal / EPMS admin screens without code deployment or server restart (the daily digest time takes effect within 15 minutes). |
 | **Record Retention** | All procurement records (PR, PO, GR, Invoice, PA, approval history) retained for a minimum of 7 years. Note: Data Maintenance can delete records; deletion within the retention window is a matter of admin policy, not a system block. |
-| **Localisation** | English UI. Currency display: CAD default; multi-currency supported. Dates displayed DD/MM/YYYY (§3.20); stored in ISO 8601. |
+| **Localisation** | English UI. Currency display: CAD default; multi-currency supported. Dates displayed YYYY-MMM-DD (§3.20); stored in ISO 8601. |
 | **Compliance** | PIPEDA (Canadian privacy law). Canadian GAAP / IFRS record-keeping obligations. 7-year CRA record retention. |
 
 ---
@@ -2674,7 +2677,7 @@ Line items table: horizontal scroll on narrow viewports (min-width: 860px).
 ### 5.3 Typography
 - Font: Inter (system fallback)
 - CAD amounts: monospace, right-aligned, 2 decimal places — `.amount` utility class
-- Dates: displayed DD/MM/YYYY (date-times DD/MM/YYYY HH:mm); backend stores ISO format (§3.20)
+- Dates: displayed YYYY-MMM-DD, e.g. 2026-NOV-11 (date-times YYYY-MMM-DD HH:mm); backend stores ISO format (§3.20)
 
 ---
 

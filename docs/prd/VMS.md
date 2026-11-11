@@ -1,9 +1,13 @@
 # VMS (Visitor Management System) — Product Requirements Document
 
-**Version**: V2.14
-**Date**: 2026-10-21
+**Version**: V2.15
+**Date**: 2026-11-11
 **Status**: As-built. Describes the system on the main line as of 2026-10-16. Everything marked **Implemented** is in production; wanted-but-not-built items are marked **Not implemented** and collected in §13 Open Items.
 **Scope**: Visitor appointments, approval, health and safety checks, badge printing (= check-in), QR check-out, overdue alerts and the compliance audit trail for Canada Royal Milk ULC's plant and offices.
+
+**What changed in V2.15** (2026-11-11)
+
+- **Dates on screen read YYYY-MMM-DD** (e.g. `2026-NOV-11`; date-times `2026-NOV-11 14:30`), the format used across UniOps (EPMS.md UI-DATE-002). Exported CSV files are unchanged.
 
 **What changed in V2.14** (2026-10-21)
 
@@ -834,7 +838,7 @@ Targets below are product targets; they have not been re-measured in this revisi
 | Setting | Value |
 |---|---|
 | Time zone | America/Toronto — used for "today", reminders, email times and after-hours |
-| Date format | YYYY-MM-DD |
+| Date format | On screen YYYY-MMM-DD, e.g. 2026-NOV-11 (EPMS.md UI-DATE-002); CSV exports YYYY-MM-DD |
 | Time format | 24-hour |
 | Paper | Letter |
 
