@@ -269,8 +269,13 @@ class History:
 
     async def cancel_writes(self, s) -> None:
         """The Shopify fulfilment and close a 945 queues: Zoho made them."""
-        await s.execute(update(OutboxRecord).where(OutboxRecord.status.in_((PENDING, FAILED)))
-                        .values(status=CANCELLED, last_error="Zoho history: done by Zoho"))
+        rows = (await s.execute(update(OutboxRecord).where(OutboxRecord.status.in_((PENDING, FAILED)))
+                                .values(status=CANCELLED, last_error="Zoho history: done by Zoho")
+                                .returning(OutboxRecord.entity_type, OutboxRecord.entity_id))).all()
+        shipments = {int(i) for kind, i in rows if kind == Shipment.__tablename__ and i is not None}
+        if shipments:  # its write is not waited for: the shipment shows Shopify as done
+            await s.execute(update(Shipment).where(Shipment.id.in_(shipments), Shipment.shopify_status == "Pending")
+                            .values(shopify_status="Done"))
 
     async def source(self, c: Chain, out: Outcome) -> int | None:
         """The order from its source, at the time Zoho had it."""
