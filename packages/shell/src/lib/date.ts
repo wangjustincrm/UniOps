@@ -151,6 +151,28 @@ export function timeZoneAbbrev(date: Date = new Date()): string {
   }
 }
 
+/** A date + 'HH:MM' typed on the plant's wall clock → the instant, as a UTC
+ *  ISO string. `new Date(`${d}T${t}`)` would read it in the BROWSER's zone.
+ *  No date library: take the naive UTC reading, see what wall clock that shows
+ *  in the zone, subtract the difference, then re-check once (DST gap). The
+ *  difference is taken on date + time, so early-morning times do not slip a day. */
+export function wallClockToISO(dateStr: string, timeStr: string, tz: string = zone): string {
+  const naiveMs = Date.parse(`${dateStr}T${timeStr.slice(0, 5)}:00Z`)
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  })
+  const apparentMs = (ms: number): number => {
+    const p: Record<string, number> = {}
+    for (const part of fmt.formatToParts(new Date(ms))) {
+      if (part.type !== 'literal') p[part.type] = Number(part.value)
+    }
+    return Date.UTC(p.year, p.month - 1, p.day, p.hour === 24 ? 0 : p.hour, p.minute)
+  }
+  const adjusted = naiveMs - (apparentMs(naiveMs) - naiveMs)
+  return new Date(adjusted - (apparentMs(adjusted) - naiveMs)).toISOString()
+}
+
 /** The plant's calendar date of an instant, as 'YYYY-MM-DD' (input values,
  *  comparisons with due dates, query parameters). */
 export function isoDateInZone(d: Date): string {

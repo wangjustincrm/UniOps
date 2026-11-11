@@ -32,5 +32,5 @@ export * from './ui'
 export {
   DEFAULT_TIME_ZONE, setDisplayTimeZone, displayTimeZone, loadDisplayTimeZone,
   zonedParts, toLocalDate, formatDate, formatDateTime, formatTime, timeZoneAbbrev,
-  isoDateInZone, todayISO, currentMonthISO,
+  isoDateInZone, todayISO, currentMonthISO, wallClockToISO,
 } from './lib/date'

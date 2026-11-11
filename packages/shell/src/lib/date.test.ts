@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   displayTimeZone, formatDate, formatDateTime, formatTime, isoDateInZone, loadDisplayTimeZone,
-  setDisplayTimeZone, timeZoneAbbrev, todayISO,
+  setDisplayTimeZone, timeZoneAbbrev, todayISO, wallClockToISO,
 } from './date'
 
 afterEach(() => {
@@ -81,6 +81,21 @@ describe('today', () => {
   it('isoDateInZone gives the plant calendar day', () => {
     expect(isoDateInZone(new Date('2026-11-12T04:59:00Z'))).toBe('2026-11-11')
     expect(isoDateInZone(new Date('2026-11-12T05:00:00Z'))).toBe('2026-11-12')
+  })
+})
+
+describe('wallClockToISO', () => {
+  it('reads the time on the plant clock, whatever the browser zone', () => {
+    expect(wallClockToISO('2026-11-11', '14:05')).toBe('2026-11-11T19:05:00.000Z')   // EST
+    expect(wallClockToISO('2026-07-04', '09:30')).toBe('2026-07-04T13:30:00.000Z')   // EDT
+  })
+  it('early morning stays on the same day', () => {
+    expect(wallClockToISO('2026-11-11', '02:00')).toBe('2026-11-11T07:00:00.000Z')
+  })
+  it('follows the zone', () => {
+    setDisplayTimeZone('America/Regina')
+    expect(wallClockToISO('2026-11-11', '14:05')).toBe('2026-11-11T20:05:00.000Z')
+    expect(wallClockToISO('2026-11-11', '14:05', 'Asia/Shanghai')).toBe('2026-11-11T06:05:00.000Z')
   })
 })
 
