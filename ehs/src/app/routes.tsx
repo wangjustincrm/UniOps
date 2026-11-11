@@ -199,10 +199,11 @@ export const ehsRoutes: RouteDef[] = [
     tab: { title: 'Work permits', icon: 'ShieldCheck', keyStrategy: 'static' },
   },
   {
-    // Scanning the board by a confined space lands on the permit list.
+    // Scanning the board by a confined space opens that permit.
     path: '/permits/:id',
     element: <PermitsPage />,
-    tab: { title: 'Work permits', icon: 'ShieldCheck', keyStrategy: 'static' },
+    // A tab per permit: a second link was focusing the first one's tab.
+    tab: { title: 'Work permit', icon: 'ShieldCheck', keyStrategy: 'param', paramName: 'id' },
   },
   {
     path: '/quizzes',

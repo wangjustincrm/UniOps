@@ -20,12 +20,14 @@
  */
 import EquipmentSelect, { EquipmentName } from '@/components/EquipmentSelect'
 import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
+import { useTabTitle } from '@uniops/shell'
+import { ehsRoutes } from '@/app/routes'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, Check, ClipboardCheck, Gauge, Plus, ShieldCheck, X,
 } from 'lucide-react'
-import { api } from '@/lib/api'
+import { api, ApiError } from '@/lib/api'
 import { Pagination, SearchBox, useListView, DateRangeFilter } from '@/components/ListView'
 import QrPanel from '@/components/QrPanel'
 import { formatDateTime } from '@/lib/formatDate'
@@ -103,15 +105,78 @@ const TABS = [
 type TabKey = (typeof TABS)[number]['key']
 
 export default function PermitsPage() {
+  // ★ /permits/:id (task links, CAPA sources, the QR board) opens that permit.
+  // It was found in the list of the latest 200 — so a worker's link to an
+  // older one, or one not theirs, landed on the list in silence — and the tab
+  // was shared, so a second link showed the first (B3/B4 review M3). It is
+  // now fetched by its id, in a tab of its own.
+  const { id: linked } = useParams()
+  return linked ? <LinkedPermit id={linked} /> : <PermitList />
+}
+
+function LinkedPermit({ id }: { id: string }) {
+  const { can } = usePermissions()
+  const permit = useQuery({
+    queryKey: ['permits', 'one', id],
+    queryFn: () => api.get<Permit>(`/api/v1/permits/${id}`),
+    refetchInterval: 30_000,
+  })
+  useTabTitle(ehsRoutes, permit.data?.permit_no)
+  const back = (
+    <Link to="/permits" className="text-sm font-medium text-primary-700 hover:underline">
+      All work permits
+    </Link>
+  )
+  if (permit.isPending) return <div className="p-4 text-sm text-neutral-500">Loading…</div>
+  if (permit.isError || !permit.data) {
+    const st = permit.error instanceof ApiError ? permit.error.status : 0
+    return (
+      <div className="p-4">
+        <PageHeader title="Work permit" />
+        <Empty>
+          {st === 404 ? 'This permit no longer exists.'
+            : st === 403 ? 'You can only open permits you raised.'
+              : 'The permit could not be loaded. Try again in a moment.'}
+        </Empty>
+        <div className="mt-3">{back}</div>
+      </div>
+    )
+  }
+  const p = permit.data
+  return (
+    <div className="p-4">
+      <PageHeader title={`${p.type_label} · ${p.permit_no}`}
+                  subtitle={[p.location_path, p.work_description].filter(Boolean).join(' · ')}>
+        {back}
+      </PageHeader>
+      <Card className={'!p-0 ' + (p.status === 'expired' && !p.closed_at
+        ? '!border-danger-400' : p.status === 'suspended' ? '!border-warning-400' : '')}>
+        <div className="flex items-start gap-3 p-3.5" data-print-row="" data-print-target="">
+          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-neutral-400" aria-hidden />
+          <span className="min-w-0 flex-1 text-xs text-neutral-500">
+            {p.permit_no}<EquipmentName id={p.equipment_id} />
+            {p.contractor_company && ` · ${p.contractor_company}`}
+            {p.valid_to && <span className="mt-0.5 block">
+              {p.status === 'issued' ? 'Valid until ' : 'Ran to '}{formatDateTime(p.valid_to)}
+            </span>}
+            {p.suspended_reason && <span className="mt-1 block font-medium text-warning-700">
+              Suspended: {p.suspended_reason}
+            </span>}
+          </span>
+          <StatusPill status={p.status} />
+        </div>
+        <PermitDetail permit={p} mayIssue={can('ehs.permit.issue')} />
+      </Card>
+    </div>
+  )
+}
+
+function PermitList() {
   const { can } = usePermissions()
   const mayIssue = can('ehs.permit.issue')
   const [tab, setTab] = useState<TabKey>('live')
   const [creating, setCreating] = useState(false)
-  // ★ /permits/:id (task links, CAPA sources, the QR board) lands with that
-  // permit open, on the tab it sits in. It used to land on the list, closed.
-  const { id: linked } = useParams()
-  const [open, setOpen] = useState<string | null>(linked ?? null)
-  const [landed, setLanded] = useState(false)
+  const [open, setOpen] = useState<string | null>(null)
 
   // `list_permits` caps at 200 with no parameter to raise it.
   //
@@ -135,16 +200,6 @@ export default function PermitsPage() {
   const history = rows.filter(
     (p) => p.status === 'closed' || p.status === 'expired' || p.status === 'cancelled')
   const expiredOpen = rows.filter((p) => p.status === 'expired' && !p.closed_at)
-
-  if (linked && !landed && permits.data) {
-    setLanded(true)
-    const p = permits.data.find((x) => x.id === linked)
-    if (p) {
-      setOpen(p.id)
-      setTab(p.status === 'draft' ? 'preparing'
-        : p.status === 'issued' || p.status === 'suspended' ? 'live' : 'history')
-    }
-  }
 
   const shown = tab === 'live' ? live : tab === 'preparing' ? preparing : history
   // Searched within the tab rather than across all of them: somebody on
