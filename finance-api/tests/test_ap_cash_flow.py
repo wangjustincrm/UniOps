@@ -44,16 +44,20 @@ def _vendor(erp_id, terms, *, active=True, updated=datetime(2026, 9, 1, tzinfo=t
     return vid
 
 
-def _pa(pa_number, vendor_id, invoice_numbers, *, status="approved"):
-    """An EPMS PA over one EPMS invoice per number, all for `vendor_id`."""
+def _pa(pa_number, vendor_id, invoice_numbers, *, status="approved", dates=None):
+    """An EPMS PA over one EPMS invoice per number, all for `vendor_id`.
+
+    `dates` maps an invoice number to its (invoice_date, due_date); the default
+    is today for both."""
     ids = []
     for n in invoice_numbers:
         iid = uuid.uuid4()
+        inv_date, due = (dates or {}).get(n, (date.today(), date.today()))
         _exec("insert into invoices (id, internal_ref, vendor_invoice_number, vendor_id, "
               "vendor_name, amount, tax_amount, total_amount, currency, invoice_date, "
               "due_date, status, created_at, updated_at) values "
-              "(%s,%s,%s,%s,'V',0,0,0,'CAD',current_date,current_date,'matched',now(),now())",
-              (iid, f"INV-{iid.hex[:8]}", n, vendor_id))
+              "(%s,%s,%s,%s,'V',0,0,0,'CAD',%s,%s,'matched',now(),now())",
+              (iid, f"INV-{iid.hex[:8]}", n, vendor_id, inv_date, due))
         ids.append(str(iid))
     _exec("insert into payment_applications (id, pa_number, title, pa_type, status, source, "
           "vendor_id, vendor_name, invoice_ids, payment_amount, currency, created_by, "
@@ -62,7 +66,9 @@ def _pa(pa_number, vendor_id, invoice_numbers, *, status="approved"):
           (uuid.uuid4(), pa_number, status, vendor_id, json.dumps(ids), uuid.uuid4()))
 
 
-def _bill(bill_no, amount, *, sc, day, inv="INV"):
+def _bill(bill_no, amount, *, sc, day, inv="INV", more=()):
+    """One NC bill, one line per invoice: `inv` for `amount`, plus `more` as
+    further (invoice number, amount) lines."""
     bid = uuid.uuid4()
     when = datetime(day.year, day.month, day.day, 12, tzinfo=timezone.utc)
     _exec("insert into nc_ap_bills (id, nc_pk, bill_no, trade_type, bill_status, "
@@ -75,6 +81,12 @@ def _bill(bill_no, amount, *, sc, day, inv="INV"):
           "synced_at) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'2026-09-01 00:00:00',now())",
           (uuid.uuid4(), bid, f"L{bill_no}", bill_no, when, amount, amount, inv,
            inv.upper().replace(" ", ""), sc, f"Supplier {sc}"))
+    for i, (n, amt) in enumerate(more, 1):
+        _exec("insert into nc_ap_bill_lines (id, bill_id, nc_pk, bill_no, bill_date, money_cr, "
+              "money_bal, invoice_no, invoice_no_norm, supplier_code, supplier_name, nc_ts, "
+              "synced_at) values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'2026-09-01 00:00:00',now())",
+              (uuid.uuid4(), bid, f"L{bill_no}-{i}", bill_no, when, amt, amt, n,
+               n.upper().replace(" ", ""), sc, f"Supplier {sc}"))
 
 
 async def test_duplicate_vendor_records_do_not_repeat_a_bill(db_session):
@@ -96,7 +108,8 @@ async def test_duplicate_vendor_records_do_not_repeat_a_bill(db_session):
     ecolab = next(r for r in rows if r["bill_no"] == "D2001")
     # The active record's terms win over the more recently edited inactive one.
     assert ecolab["payment_terms"] == "net30"
-    assert ecolab["due_date"] == (day + timedelta(days=30)).isoformat()
+    # The due date is the EPMS invoice's (today, from _pa), not day + net30.
+    assert ecolab["due_date"] == date.today().isoformat()
 
     summary = await svc.summary(db_session, "CAD")
     cad = next(c for c in summary["currencies"] if c["currency"] == "CAD")
@@ -267,15 +280,19 @@ async def test_all_three_kinds_add_up_and_stay_off_the_missing_terms_list(db_ses
 
     cad = next(c for c in (await svc.summary(db_session, "CAD"))["currencies"]
                if c["currency"] == "CAD")
-    assert cad["total"] == "163.00" and cad["undated"] == "40.00"
+    # A supplier with no vendor term is no longer undated: the EPMS invoice
+    # carries its own due date (2026-11-11), and every counted bill has one.
+    assert cad["total"] == "163.00" and cad["undated"] == "0"
     usd = next(c for c in (await svc.summary(db_session, "USD"))["currencies"]
                if c["currency"] == "USD")
     assert usd["total"] == "7.00"
 
-    # Only the NC bill is on the work list, though its supplier also has a prepayment.
     missing = await svc.missing_terms(db_session, "CAD")
-    assert [(m["supplier_code"], m["bills"], m["amount"]) for m in missing["items"]] \
-        == [("0000013", 1, "40.00")]
+    assert missing["items"] == []
+    no_term = next(r for r in (await svc.items(db_session, "CAD"))["items"]
+                   if r["doc_key"] == "D7002")
+    assert (no_term["payment_terms"], no_term["due_from"]) == (None, "invoice")
+    assert no_term["due_date"] == today.isoformat()
 
 
 async def test_search_and_sort_reach_prepayments_and_claims(db_session):
@@ -301,3 +318,84 @@ async def test_search_and_sort_reach_prepayments_and_claims(db_session):
     pages = [(await svc.items(db_session, "CAD", limit=1, offset=i, order=order))["items"][0]
              ["doc_key"] for i in range(4)]
     assert sorted(pages) == ["D8001", "EXP-T-0201", "PA-T-0602", "PA-T-0603"]
+
+
+# ── Due date = the EPMS invoice's (finance, 2026-11-11) ─────────────────────
+
+async def test_due_date_is_the_epms_invoices_not_nc_bill_date_plus_term(db_session):
+    """NC's bill date is when the payable was keyed. The invoice says when it
+    was issued and when it is due; that decides the bucket."""
+    _vendors_table()
+    v = _vendor("0000020", "net30")
+    today = date.today()
+    keyed = today - timedelta(days=2)             # NC: keyed two days ago
+    issued = today - timedelta(days=50)           # EPMS: issued 50 days ago,
+    due = today - timedelta(days=20)              # due net30 → 20 days late
+    _bill("D9001", "300.00", sc="0000020", day=keyed, inv="E-1")
+    _pa("PA-T-0701", v, ["E-1"], dates={"E-1": (issued, due)})
+
+    r = (await svc.items(db_session, "CAD", limit=1000))["items"][0]
+    assert r["bill_no"] == "D9001" and r["doc_key"] == "D9001"
+    assert r["invoice_date"] == issued.isoformat()
+    assert r["bill_date"] == keyed.isoformat()       # still returned, for reference
+    assert r["due_date"] == due.isoformat() and r["due_from"] == "invoice"
+    assert r["term_days"] == 30 and r["days_to_due"] == -20
+    assert r["bucket"] == "overdue_now"
+    # Under the old rule (keyed + net30) it would have been due in 28 days.
+    cad = next(c for c in (await svc.summary(db_session, "CAD"))["currencies"]
+               if c["currency"] == "CAD")
+    assert cad["overdue"] == "300.00" and cad["forward"] == "0.00"
+
+
+async def test_a_bill_whose_invoices_fall_due_apart_is_split(db_session):
+    _vendors_table()
+    v = _vendor("0000021", "net30")
+    today = date.today()
+    soon, later = today + timedelta(days=3), today + timedelta(days=45)
+    _bill("D9101", "100.00", sc="0000021", day=today, inv="F-1",
+          more=[("F-2", "40.00"), ("F-3", "7.00")])
+    _pa("PA-T-0801", v, ["F-1"], dates={"F-1": (today - timedelta(days=27), soon)})
+    _pa("PA-T-0802", v, ["F-2", "F-3"], dates={"F-2": (today + timedelta(days=15), later),
+                                               "F-3": (today + timedelta(days=15), later)})
+
+    got = await svc.items(db_session, "CAD", limit=1000)
+    assert got["total"] == 2 and got["amount"] == "147.00"
+    rows = {r["due_date"]: r for r in got["items"]}
+    a, b = rows[soon.isoformat()], rows[later.isoformat()]
+    assert a["bill_no"] == b["bill_no"] == "D9101"
+    assert a["doc_key"] != b["doc_key"]               # React key / paging tiebreak
+    assert (a["open_bal"], a["bucket"], a["pa_numbers"]) == ("100.00", "due_7", ["PA-T-0801"])
+    assert (b["open_bal"], b["bucket"], b["pa_numbers"]) == ("47.00", "due_60", ["PA-T-0802"])
+    assert sorted(i["invoice_no"] for i in b["invoices"]) == ["F-2", "F-3"]
+
+    cad = next(c for c in (await svc.summary(db_session, "CAD"))["currencies"]
+               if c["currency"] == "CAD")
+    by = {x["key"]: x for x in cad["buckets"]}
+    assert (by["due_7"]["amount"], by["due_60"]["amount"]) == ("100.00", "47.00")
+    assert cad["total"] == "147.00"
+
+
+async def test_one_due_date_keeps_one_row_whatever_the_line_count(db_session):
+    """The control for the split: invoices due the same day stay one row."""
+    _vendors_table()
+    v = _vendor("0000022", "net30")
+    due = date.today() + timedelta(days=10)
+    _bill("D9201", "10.00", sc="0000022", day=date.today(), inv="G-1", more=[("G-2", "5.00")])
+    _pa("PA-T-0901", v, ["G-1", "G-2"], dates={"G-1": (date.today(), due),
+                                               "G-2": (date.today(), due)})
+
+    got = await svc.items(db_session, "CAD", limit=1000)
+    assert [(r["doc_key"], r["open_bal"]) for r in got["items"]] == [("D9201", "15.00")]
+
+
+async def test_prepayment_and_claim_are_dated_by_approval(db_session):
+    _vendors_table()
+    v = _vendor("0000023", "net30")
+    approved = date.today() - timedelta(days=4)
+    _prepayment("PA-T-1001", v, "9.00", approved=_at(approved))
+    _claim("EXP-T-1001", "8.00", approved=_at(approved))
+
+    got = await svc.items(db_session, "CAD", limit=1000)
+    for r in got["items"]:
+        assert r["invoice_date"] == r["due_date"] == approved.isoformat()
+        assert r["due_from"] == "approval"

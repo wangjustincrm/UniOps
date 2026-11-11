@@ -41,6 +41,17 @@ Two rules finance set on 2026-11-02 decide what counts at all:
   bills that day; none was on an approved PA, so the rule above already drops
   them — this keeps a future one from splitting across two buckets).
 
+**Due dates are the EPMS invoice's** (finance, 2026-11-11). NC's bill date is
+when the payable was keyed in NC, not when the supplier issued the invoice, so
+NC bill date + vendor term put almost every bill "due in 8-30 days". Every
+counted line already reached an EPMS invoice through the match above, so its
+invoice date and due date come from there, and the term shown is the days
+between the two. Measured that day on the same 227 lines: totals unchanged,
+but CAD overdue went from 9,425.51 to 342,688.21. A bill whose invoices fall
+due on different days is split into one row per due date (6 of 203 bills).
+NC bill date + vendor term is kept only as a fallback for an invoice with no
+due date, which EPMS does not allow, so undated bills should no longer occur.
+
 Two kinds of approved money never reach NC as a payable, so the NC route above
 cannot see them, and they are added as rows of their own (finance, 2026-11-05):
 
@@ -122,6 +133,12 @@ _TERM_CASE = (
 PA_APPROVED = "approved"
 CLAIM_APPROVED = "approved"
 PA_PREPAYMENT = "prepayment"
+# Where a row's due date came from (`due_from`): the EPMS invoice (every NC
+# bill row, since 2026-11-11), NC bill date + vendor term (fallback for a bill
+# row whose invoice has no due date), or the approval date (prepayment, claim).
+DUE_FROM_INVOICE = "invoice"
+DUE_FROM_TERM = "vendor_term"
+DUE_FROM_APPROVAL = "approval"
 _NON_PAYABLE_SQL = ", ".join(f"'{t}'" for t in NON_PAYABLE_CLAIM_TYPES)
 # The AP <-> NC invoice-number match (nc_push.match_invoice_no and its SQL twin
 # LINE_MATCH_SQL): upper-case, no whitespace, no hyphens.
@@ -166,7 +183,8 @@ offset_pairs as (
 -- commitment. The NC line is found the way the AP list finds it: invoice
 -- number ignoring case, spaces and hyphens, for the same NC supplier.
 approved_pa as (
-    select distinct p.pa_number, v.erp_id, {INV_KEY_EPMS} as inv_key
+    select distinct p.pa_number, v.erp_id, {INV_KEY_EPMS} as inv_key,
+           i.invoice_date, i.due_date
       from payment_applications p
       cross join lateral jsonb_array_elements_text(p.invoice_ids) x(invoice_id)
       join invoices i on i.id::text = x.invoice_id
@@ -176,18 +194,37 @@ approved_pa as (
        and i.status <> 'paid'
 ),
 line_pa as (
-    select o.id as line_id, o.bill_no, a.pa_number
+    select o.id as line_id, o.bill_no, a.pa_number, a.invoice_date, a.due_date
       from open_lines o
       join approved_pa a on a.inv_key = o.inv_key and a.erp_id = o.supplier_code
      where not exists (select 1 from offset_pairs k
                         where k.supplier_code = o.supplier_code
                           and k.currency = o.currency and k.inv_key = o.inv_key)
 ),
+-- The dates a line is paid by are the EPMS invoice's, not NC's (finance,
+-- 2026-11-11): NC's bill date is when the payable was keyed, not when the
+-- supplier issued the invoice. Every counted line reached an EPMS invoice
+-- above, and EPMS requires a due date, so every counted line has one. A line
+-- matching two invoices (none did when this was written) takes the earlier.
+line_due as (
+    select line_id, min(invoice_date) as invoice_date, min(due_date) as due_date
+      from line_pa
+     group by line_id
+),
 open_bills as (
-    -- One row per NC document, over its PA-linked lines only. Everything else
-    -- on a payable is a header property and is taken with min() rather than
-    -- repeated per line.
+    -- One row per NC document and invoice due date, over its PA-linked lines
+    -- only. A bill carrying invoices due on different days is split, so each
+    -- amount lands in its own bucket (6 of 203 bills on 2026-11-11). Everything
+    -- else on a payable is a header property and is taken with min() rather
+    -- than repeated per line.
     select l.bill_no, l.currency,
+           -- Unique across rows: the AP number, plus the due date when the
+           -- bill had to be split.
+           case when count(*) over (partition by l.bill_no, l.currency) > 1
+                then l.bill_no || ' / ' || d.due_date::text
+                else l.bill_no end as doc_key,
+           d.due_date as invoice_due_date,
+           min(d.invoice_date) as invoice_date,
            min(l.bill_date)::date as bill_date,
            min(l.supplier_code) as supplier_code,
            min(l.supplier_name) as supplier_name,
@@ -201,17 +238,30 @@ open_bills as (
            -- Search text only: every invoice number on the bill's lines.
            string_agg(l.invoice_no, ' ') as invoice_search,
            (select string_agg(distinct p.pa_number, ', ' order by p.pa_number)
-              from line_pa p where p.bill_no = l.bill_no) as pa_numbers
+              from line_pa p join line_due pd on pd.line_id = p.line_id
+             where p.bill_no = l.bill_no
+               and pd.due_date is not distinct from d.due_date) as pa_numbers
       from open_lines l
-     where l.id in (select line_id from line_pa)
-     group by l.bill_no, l.currency
+      join line_due d on d.line_id = l.id
+     group by l.bill_no, l.currency, d.due_date
 ),
 termed as (
-    select o.*,
+    -- Explicit columns: `docs` below unions by position.
+    select o.doc_key, o.bill_no, o.currency, o.bill_date, o.invoice_date,
+           o.supplier_code, o.supplier_name, o.invoice_no, o.purchase_order,
+           o.invoice_lines, o.trade_type, o.open_bal, o.invoice_search, o.pa_numbers,
            v.payment_terms,
-           {_TERM_CASE} as term_days,
-           case when o.bill_date is not null and {_TERM_CASE} is not null
-                then o.bill_date + ({_TERM_CASE}) end as due_date,
+           -- The term as the invoice states it, when it does.
+           case when o.invoice_due_date is not null and o.invoice_date is not null
+                then o.invoice_due_date - o.invoice_date
+                else {_TERM_CASE} end as term_days,
+           -- Fallback only (an EPMS invoice always has a due date): NC's bill
+           -- date plus the vendor master term, as before 2026-11-11.
+           coalesce(o.invoice_due_date,
+                    case when o.bill_date is not null and {_TERM_CASE} is not null
+                         then o.bill_date + ({_TERM_CASE}) end) as due_date,
+           case when o.invoice_due_date is not null then '{DUE_FROM_INVOICE}'
+                else '{DUE_FROM_TERM}' end as due_from,
            v.id is null as no_vendor_record
       from open_bills o
       -- erp_id is not unique in the vendor master (the same NC supplier has
@@ -230,14 +280,16 @@ termed as (
 -- line up with `termed`. A claim's number rides in `pa_numbers`: that column is
 -- "the approved document behind this row", and search and sort already use it.
 docs as (
-    select 'bill' as doc_kind, t.bill_no as doc_key, t.* from termed t
+    select 'bill' as doc_kind, t.* from termed t
     union all
     select '{PA_PREPAYMENT}', p.pa_number,
            null, p.currency, coalesce(p.approved_at, p.created_at)::date,
+           coalesce(p.approved_at, p.created_at)::date,
            v.erp_id, p.vendor_name, null, p.po_number,
            json_build_array(json_build_object('purchase_order', p.po_number)),
            null, p.payment_amount, null, p.pa_number,
-           '{PA_PREPAYMENT}', 0, coalesce(p.approved_at, p.created_at)::date, false
+           '{PA_PREPAYMENT}', 0, coalesce(p.approved_at, p.created_at)::date,
+           '{DUE_FROM_APPROVAL}', false
       from payment_applications p
       left join vendors v on v.id = p.vendor_id
      where p.status = '{PA_APPROVED}' and p.pa_type = '{PA_PREPAYMENT}'
@@ -246,9 +298,11 @@ docs as (
     union all
     select 'claim', c.claim_number,
            null, c.currency, coalesce(c.approved_at, c.created_at)::date,
+           coalesce(c.approved_at, c.created_at)::date,
            null, c.employee_name, null, null,
            null, null, c.total_amount, null, c.claim_number,
-           'on approval', 0, coalesce(c.approved_at, c.created_at)::date, false
+           'on approval', 0, coalesce(c.approved_at, c.created_at)::date,
+           '{DUE_FROM_APPROVAL}', false
       from expense_claims c
      where c.status = '{CLAIM_APPROVED}' and c.claim_type not in ({_NON_PAYABLE_SQL})
 ),
@@ -326,7 +380,9 @@ ITEM_SORT = {
     "invoice_no": "lower(nullif(invoice_no, ''))",
     "purchase_order": "lower(nullif(purchase_order, ''))",
     "bill_date": "bill_date",
-    "payment_terms": "lower(nullif(payment_terms, ''))",
+    "invoice_date": "invoice_date",
+    # The Term column shows days (invoice date to due date for a bill).
+    "payment_terms": "term_days",
     "due_date": "due_date",
     "open_bal": "open_bal",
     "pa": "pa_numbers",
@@ -361,9 +417,10 @@ async def items(db: AsyncSession, currency: str, bucket: str | None = None,
                              .replace("_", "\\_")) + "%"
     clause = " where " + " and ".join(where)
     rows = (await db.execute(text(_BASE + f"""
-        select doc_kind, doc_key, bill_no, currency, bill_date, supplier_code, supplier_name,
+        select doc_kind, doc_key, bill_no, currency, bill_date, invoice_date,
+               supplier_code, supplier_name,
                invoice_lines, trade_type, open_bal, pa_numbers,
-               payment_terms, term_days, due_date, days_to_due, bucket,
+               payment_terms, term_days, due_date, due_from, days_to_due, bucket,
                no_vendor_record
           from bucketed {clause}
          -- Undated rows sort last within a bucket: they have no date to sort
@@ -379,12 +436,17 @@ async def items(db: AsyncSession, currency: str, bucket: str | None = None,
         "amount": str(total[1]),
         "items": [{
             # bill | prepayment | claim. Only a bill has a bill_no; doc_key is
-            # unique across all three.
+            # unique across all three (a bill split by invoice due date shows
+            # the same bill_no on two rows, with two doc_keys).
             "doc_kind": r["doc_kind"],
             "doc_key": r["doc_key"],
             "bill_no": r["bill_no"],
             "currency": r["currency"],
+            # NC's bill date — kept for reference; it no longer decides anything
+            # for a bill row. What the page shows is invoice_date.
             "bill_date": r["bill_date"].isoformat() if r["bill_date"] else None,
+            # EPMS invoice date for a bill; approval date for prepayment/claim.
+            "invoice_date": r["invoice_date"].isoformat() if r["invoice_date"] else None,
             "supplier_code": r["supplier_code"],
             "supplier_name": r["supplier_name"],
             "invoices": invoices(r["invoice_lines"]),
@@ -396,6 +458,7 @@ async def items(db: AsyncSession, currency: str, bucket: str | None = None,
             "payment_terms": r["payment_terms"],
             "term_days": r["term_days"],
             "due_date": r["due_date"].isoformat() if r["due_date"] else None,
+            "due_from": r["due_from"],
             "days_to_due": r["days_to_due"],
             "bucket": r["bucket"],
             "bucket_label": BUCKET_LABELS.get(r["bucket"], r["bucket"]),
