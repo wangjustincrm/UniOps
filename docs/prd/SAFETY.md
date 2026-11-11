@@ -1,12 +1,15 @@
 # Safety (EHS) — Product Requirements Document
 
-**Version**: 0.20
+**Version**: 0.21
 **Date**: 2026-11-11
 **Status**: In Development (branch, not deployed)
 **Scope**: A workplace health and safety module for the Kingston plant (Ontario OHSA / WSIB), replacing SiteDocs. It covers incidents and statutory clocks, corrective actions, inspections and forms, training, JHSC, chemicals/WHMIS, permits, equipment, documents, and dashboards.
 **Source**: Consolidated from the Safety Module PRD series in `/srv/uniops/`. The baseline is the full requirement list in v0.2 (`Safety-Module-PRD-EN-v0.2.docx`, 28 Aug 2026). Changes come from v0.3 and the HSE reply to it (`Safety-Module-PRD-EN-v0.3_Reply.docx`, 31 Aug), and from v0.4 and the HSE reply to it (`Safety-Module-PRD-EN-v0.4_Reply.docx`, 1 Sep). v0.3 and v0.4 were delta documents, so they do not restate the full list.
 
-**What changed in this version (0.19 → 0.20)**
+**What changed in this version (0.20 → 0.21)**
+- §1.6 "Round 12, sixth batch": chemical labels viewed and printed by everybody who reads chemicals, previewed stamped DRAFT before approval, with the manufacturer and an emergency health contact at the top and a new version drafted beside the approved one; documents' Attachments beside the QR code; draft forms deleted; a one-person form question filled with whoever opens it, and times with the current time; out-of-service equipment opened from My Actions and put back by supervisors (a new key); HSE's monthly toolbox talk tracker with reminders; My training's Records tab; certificates printed from a register search; courses and sessions searched; a course edited.
+
+**What changed in version 0.20 (0.19 → 0.20)**
 - §1.6 "Round 12, fifth batch": what is new to each person — flags on My Actions (new work, news, new incidents for HSE and the area's supervisors) and on Feedback (an answer to one's comment), a "New" tile and chips; due dates coloured green, yellow and red by HSE's numbers; every corrective action given to somebody emailed through Who is told, with the previous owner, the reporter and the owner's supervisor as options, and a handover written on each record; corrective actions on feedback, followed by whoever left it; Communications lists every email, searched and sent again as a reminder, with the words kept for HSE's retention days.
 
 **What changed in version 0.19 (0.18 → 0.19)**
@@ -122,7 +125,7 @@ The module is named **"Safety"**, not "Security": in English, "security" means g
 | SiteDocs retirement | Staged. The three day-one incident forms (Medical, Equipment, Near Miss) move at the end of Phase 1, and both systems run in parallel while staff train. |
 | Contractors | Configured the same way as VMS (VMS.md), reusing its health declaration, PPE issue and orientation validity. |
 | Custom dashboards | Option A: managers arrange charts chosen from a library. HSE's existing management dashboard is to be reproduced. |
-| AI GHS labels | HSE must approve before any label can be printed. Nothing is released automatically. |
+| AI GHS labels | HSE must approve before any label can be printed. Nothing is released automatically. A draft may be previewed (round 12), stamped DRAFT and not counted as a print. |
 | Reference lists | Maintained by HSE in Settings, not fixed in code. Entries are retired, never deleted, and records keep the wording used at the time. Immediate and root causes share one grouped list (7 standalone entries + 27 under 6 groups). Body part and nature of injury use WSIB wording. Any list not supplied gets manual entry plus spreadsheet upload. |
 | Cause selection (v0.4 reply) | **Any entry at any level can be chosen on all forms**, not just the 7 top-level entries. **Multiple causes can be selected**, since an incident may have more than one root cause. |
 | Plant area picker (v0.4 reply) | Whether an area can be selected is a **property of the area**, not a fixed rule. See §1.4. |
@@ -353,6 +356,25 @@ On HSE's answer Q16 ("21 days, in Rules; HSE only; resend to people HSE picks") 
 - What an email said is kept for the number of days under Settings → Rules → Emails (Q16, default 21; 0 keeps it for good) and then removed by the scheduled sweep; who it went to, about which record, when and whether it left are kept, on the record and in Communications, and say that the words were removed. A message whose words are gone cannot be sent again, as a reminder or (never having left) by trying once more.
 - Review of the fifth batch (uniops-95): new incidents are flagged to an area owner only if they may read the incident register (ehs.incident.read) — an area owner can hold any role, and the flag names the incident; the area is matched in the query and the list is paged and sorted on the server under the list standard, so neither the count nor an area's older incidents are cut off. Whoever raised an action is recorded on every path (a cause on a hazard or an investigation, a failed form, a failed check). A person's baseline is when the flags went live, or when their account was made if that is later, so a new starter's first work is new. A task given to a role, opened from the Portal's inbox, is opened for whoever opened it.
 
+Round 12, sixth batch (built)
+
+On HSE's answers Q14 ("certificates should stay once issued. a new valid for period should only affect new course sessions") and Q15 ("each person is the person the talk has been assigned to, not every worker"), and the defaults D9, D10 and D11. TRN-05 (one quiz on several courses) was withdrawn (Q13) and is not built.
+
+- Chemicals (CHM-01): everybody who reads chemicals may view and print an approved workplace label; the buttons were HSE's only, though the label itself never was (D9). Viewing is not a print and is not counted.
+- A draft label may be previewed before it is approved (CHM-02) by whoever may edit it: every label on the sheet is stamped DRAFT and its footer says it is not approved and is not to go on a container. Printing it is still refused until it is approved.
+- A product carries an emergency health contact and its hazard statements on its own form (CHM-03/04, migration 0103); a label started from the product begins with both, and the contact is editable on the label. The label prints the manufacturer and its contact, then the emergency health contact, under the signal word and above the hazard statements (CHM-05); they used to be at the foot. The small label keeps its type size and, as before, leaves statements for the data sheet rather than cutting the top block.
+- An approved label is not edited, so the labels approved before this carry the emergency contact only once a new version is approved. A new version is started beside the approved label, which goes on printing until the new one is approved and replaces it; one draft at a time.
+- Documents (DOC-01/02): the attachment sits in the middle of the top card, on the same line as the QR code, in a box titled Attachments with a light blue background; the add-a-document form uses the same box.
+- Forms (FRM-01): a draft can be deleted — one's own, or any by HSE; a shared draft (an equipment check, a meeting's minutes, a scheduled form) by HSE only. A submitted form is a record and is never deleted. What pointed at the draft lets go: a scheduled form goes back to not started, with its task still open; a meeting's minutes can be started again.
+- A one-person question has a box in the form builder, "Fill in with whoever opens the form" (FRM-03). Templates that never used it keep round 5's rule (the first such question only); once used, each question says for itself. A time question starts at the current time, as a date starts at today.
+- Out-of-service safety equipment on My Actions opens the item on the register (FRM-04) for whoever may read it. Supervisors and area supervisors may put an item back in service (D11) under a new key, ehs.asset.return (identity migration 0028), which allows that and nothing else on the register; the plain supervisor role also reads the register, or the link would refuse them. Every return still asks why and is in the item's history.
+- Toolbox talks (TBT-01): HSE has a monthly tracker — everybody a talk of that month went to, how many they were handed, delivered and still owe, when they were last reminded, and the talks themselves; searched, sorted and paged on the server. Nothing new is recorded to make it (Q15).
+- An outstanding talk can be chased now, one at a time or all of a month's at once (TBT-02): the same email as the fortnightly reminder, after which the fortnight counts from that day.
+- My training (TRN-02) has a Records tab: one's own records searched by course, dates and type — taken here or elsewhere (D10) — in a sortable table, printed as a list, exported to Excel, with each certificate and all of them at once. Training taken elsewhere is listed at the end of the certificates, not reissued (D10). No register permission is needed; it is only ever one's own.
+- The training register (TRN-03) is narrowed by status — including Not expired: each person's latest record of a course, still in date or never expiring — and by type, and prints the certificates of what it shows, one per page, up to 200 at a time; more is refused with the number that matched.
+- Courses are searched by name and sessions by number, title and dates (TRN-04), the sessions on the server, past the hundred most recent.
+- A course can be edited (TRN-08): its name, refused if another course has it, and how long it is valid for. A record keeps the course name and expiry it was made with, so certificates already issued do not change and a new period applies to training recorded from then on (Q14).
+
 ## 2. Functional Requirements — 57 Items
 
 Priority: **P0** legally required or the loop breaks without it · **P1** needed day to day · **P2** strengthens the system · **P3** needed for COR. **Phase** is as stated in v0.2–v0.4; "—" means the source did not assign one.
@@ -538,6 +560,7 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | 0.18 | 2026-11-10 | Round 12 fourth batch: hazards, job analyses, permits, photographs; the chart by supervisor (§1.6). |
 | 0.19 | 2026-11-10 | Review of the third and fourth batches; the list standard on three lists (§1.6). |
 | 0.20 | 2026-11-11 | Round 12 fifth batch: new-item flags, due-date colours, Who is told for corrective actions, handovers on each record, actions on feedback, the Communications log (§1.6). |
+| 0.21 | 2026-11-11 | Round 12 sixth batch: chemical labels (everybody views and prints; DRAFT preview; emergency contact at the top), document attachments, deleting draft forms, filling in the opener, supervisors returning equipment, the toolbox talk tracker, My training records, certificates by search, course editing (§1.6). |
 
 ---
 
