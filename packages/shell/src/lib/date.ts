@@ -13,7 +13,11 @@
 // Two kinds of value:
 //  * a bare 'YYYY-MM-DD' string is a calendar date (due date, invoice date):
 //    printed as is, never shifted by any zone;
-//  * anything else (ISO timestamp, Date) is an instant: shown on the plant's
+//  * a date-time string WITHOUT a zone ('2026-11-11 14:05:00',
+//    '2026-11-11T14:05') is a wall-clock reading — NC / WMS times, already on
+//    the plant's clock: printed as written, never re-zoned (new Date() would
+//    read it in the BROWSER's zone and shift it for a reader abroad);
+//  * a string with Z / ±hh:mm, or a Date, is an instant: shown on the plant's
 //    clock.
 // Date inputs keep ISO values; use todayISO() / isoDateInZone() for them.
 
@@ -21,6 +25,8 @@ export const DEFAULT_TIME_ZONE = 'America/Toronto'
 const STORAGE_KEY = 'uniops.timeZone'
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/
+// Date + clock, no zone designator after it.
+const WALL_CLOCK = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?$/
 const pad2 = (n: number) => String(n).padStart(2, '0')
 
 function isValidTimeZone(tz: unknown): tz is string {
@@ -100,39 +106,39 @@ function calendar(y: number, m: number, d: number): string {
   return `${y}-${MONTHS[m - 1]}-${pad2(d)}`
 }
 
-/** '2026-NOV-11'. '—' for empty or unparseable input. */
-export function formatDate(date: string | Date | null | undefined): string {
-  if (!date) return '—'
-  if (typeof date === 'string' && DATE_ONLY.test(date)) {
-    const [y, m, d] = date.split('-').map(Number)
-    return m >= 1 && m <= 12 ? calendar(y, m, d) : '—'
+/** Plant wall-clock fields of any accepted value, or null if unusable. */
+function fields(date: string | Date): ZonedParts | null {
+  if (typeof date === 'string') {
+    if (DATE_ONLY.test(date)) {
+      const [y, m, d] = date.split('-').map(Number)
+      return m >= 1 && m <= 12 ? { year: y, month: m, day: d, hour: 0, minute: 0 } : null
+    }
+    const w = WALL_CLOCK.exec(date)
+    if (w) {
+      const [y, m, d, h, mi] = w.slice(1, 6).map(Number)
+      return m >= 1 && m <= 12 ? { year: y, month: m, day: d, hour: h, minute: mi } : null
+    }
   }
   const inst = typeof date === 'string' ? new Date(date) : date
-  if (isNaN(inst.getTime())) return '—'
-  const p = zonedParts(inst)
-  return calendar(p.year, p.month, p.day)
+  return isNaN(inst.getTime()) ? null : zonedParts(inst)
+}
+
+/** '2026-NOV-11'. '—' for empty or unparseable input. */
+export function formatDate(date: string | Date | null | undefined): string {
+  const p = date ? fields(date) : null
+  return p ? calendar(p.year, p.month, p.day) : '—'
 }
 
 /** '2026-NOV-11 14:30' on the plant's clock. A bare date gets 00:00. */
 export function formatDateTime(date: string | Date | null | undefined): string {
-  if (!date) return '—'
-  if (typeof date === 'string' && DATE_ONLY.test(date)) {
-    const day = formatDate(date)
-    return day === '—' ? day : `${day} 00:00`
-  }
-  const inst = typeof date === 'string' ? new Date(date) : date
-  if (isNaN(inst.getTime())) return '—'
-  const p = zonedParts(inst)
-  return `${calendar(p.year, p.month, p.day)} ${pad2(p.hour)}:${pad2(p.minute)}`
+  const p = date ? fields(date) : null
+  return p ? `${calendar(p.year, p.month, p.day)} ${pad2(p.hour)}:${pad2(p.minute)}` : '—'
 }
 
 /** '14:30' on the plant's clock. */
 export function formatTime(date: string | Date | null | undefined): string {
-  if (!date) return '—'
-  const inst = typeof date === 'string' ? new Date(date) : date
-  if (isNaN(inst.getTime())) return '—'
-  const p = zonedParts(inst)
-  return `${pad2(p.hour)}:${pad2(p.minute)}`
+  const p = date ? fields(date) : null
+  return p ? `${pad2(p.hour)}:${pad2(p.minute)}` : '—'
 }
 
 /** 'EST' / 'EDT' (the plant zone's abbreviation at that instant). */

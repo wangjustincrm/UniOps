@@ -32,6 +32,21 @@ describe('format (UI-DATE-002)', () => {
     expect(formatDateTime('2026-11-12T02:30:00Z')).toBe('2026-NOV-11 20:30')
   })
 
+  it('a wall-clock string without a zone is printed as written', () => {
+    // NC / WMS times are already plant time; re-zoning them would shift them
+    // for a reader whose browser is elsewhere (run with TZ=Asia/Shanghai).
+    expect(formatDateTime('2026-11-11 14:05:00')).toBe('2026-NOV-11 14:05')
+    expect(formatDateTime('2026-11-11T23:30')).toBe('2026-NOV-11 23:30')
+    expect(formatDate('2026-11-11T23:30:00.123')).toBe('2026-NOV-11')
+    expect(formatTime('2026-11-11 07:08:09')).toBe('07:08')
+  })
+
+  it('a string with Z or an offset is an instant', () => {
+    expect(formatDateTime('2026-11-11T14:05:00Z')).toBe('2026-NOV-11 09:05')
+    expect(formatDateTime('2026-11-11T14:05:00-05:00')).toBe('2026-NOV-11 14:05')
+    expect(formatDateTime('2026-11-11T14:05:00+08:00')).toBe('2026-NOV-11 01:05')
+  })
+
   it('midnight prints as 00, not 24', () => {
     expect(formatDateTime('2026-11-11T05:00:00Z')).toBe('2026-NOV-11 00:00')
   })
