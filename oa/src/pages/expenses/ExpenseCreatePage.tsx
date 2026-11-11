@@ -10,6 +10,7 @@ import { api, mdmApi } from '@/lib/api'
 import { ReceiptScanButton, type ReceiptFields } from '@/components/ReceiptScanButton'
 import { AccountPicker, useBudgetAccounts, type BudgetAccount } from '@/components/BudgetAccountPicker'
 import { CardField } from '@/components/LineCardField'
+import { LINE_TABLE_QUERY, useMediaQuery } from '@/lib/useMediaQuery'
 import { INVALID_FIELD, isBlankLine, lineMessage, missingFields, useJumpToFirstInvalid, type LineField } from '@/lib/lineValidation'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -242,6 +243,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
   })
 
   const jumpToFirstInvalid = useJumpToFirstInvalid()
+  const wide = useMediaQuery(LINE_TABLE_QUERY)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -483,7 +485,8 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
           <span className="text-xs text-neutral-400">Default rate: {(hstRate * 100).toFixed(0)}% · per-line tax code overrides</span>
         </div>
 
-        <div className="hidden lg:block overflow-x-auto">
+        {wide && (
+        <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 border-b border-neutral-100">
               <tr>
@@ -536,9 +539,11 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
             </tfoot>
           </table>
         </div>
+        )}
 
         {/* Phone / tablet: one card per line */}
-        <div className="flex flex-col gap-3 p-3 lg:hidden">
+        {!wide && (
+        <div className="flex flex-col gap-3 p-3">
           {lines.map((line, idx) => {
             const f = renderLine(line, idx)
             return (
@@ -580,6 +585,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
             </div>
           </div>
         </div>
+        )}
 
         {/* Add row button */}
         {lines.length < 20 && (

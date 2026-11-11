@@ -8,6 +8,7 @@ import { useEditableClaim, useSaveClaim, type EditableFormProps } from '@/lib/ed
 import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { api } from '@/lib/api'
 import { CardField } from '@/components/LineCardField'
+import { LINE_TABLE_QUERY, useMediaQuery } from '@/lib/useMediaQuery'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -188,6 +189,7 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
 
   // One trip's controls, used by both the desktop table row and the phone
   // card (ISS-0255), so both share one set of handlers.
+  const wide = useMediaQuery(LINE_TABLE_QUERY)
   const renderTrip = (trip: TripItem, idx: number) => ({
     date: (
       <input
@@ -358,7 +360,8 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
         {/* A table from lg up; below that each trip is a card with its fields
             stacked full width (ISS-0255). Both use the same renderTrip()
             controls, so state and handlers are shared. */}
-        <div className="hidden lg:block overflow-x-auto">
+        {wide && (
+        <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 border-b border-neutral-100">
               <tr>
@@ -404,9 +407,11 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
             </tfoot>
           </table>
         </div>
+        )}
 
         {/* Phone / tablet: one card per trip */}
-        <div className="flex flex-col gap-3 p-3 lg:hidden">
+        {!wide && (
+        <div className="flex flex-col gap-3 p-3">
           {trips.map((trip, idx) => {
             const f = renderTrip(trip, idx)
             return (
@@ -437,6 +442,7 @@ export default function MilCreatePage({ editClaimId }: EditableFormProps = {}) {
             </span>
           </div>
         </div>
+        )}
 
         <div className="border-t border-neutral-100 p-3">
           <button
