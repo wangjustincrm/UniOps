@@ -4,7 +4,7 @@ import { Plus, X, Save, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { StatusBadge, statusLabel } from '@/components/ui/badge'
 import { SortTh, useSortableRows } from '@uniops/shell'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, todayISO } from '@/lib/utils'
 import { usePlans, useCreatePlan, useDeletePlan, useAvailableFiscalYears } from '@/hooks/useBudget'
 import { useCostCenters } from '@/hooks/useCostCenters'
 import { useAuthStore } from '@/stores/auth.store'
@@ -20,7 +20,8 @@ const STATUS_FILTER = [
   { value: 'rejected', label: 'Rejected' },
 ]
 
-const currentYear = new Date().getUTCFullYear()
+/** The plant's calendar year (company time zone), read when used. */
+const currentYear = () => Number(todayISO().slice(0, 4))
 
 const WRITE_ROLES = new Set(['system_admin', 'finance_manager', 'finance_bp', 'dept_manager'])
 
@@ -29,7 +30,7 @@ export default function BudgetPlanListPage() {
   const { user } = useAuthStore()
   const canCreate = !!user && WRITE_ROLES.has(user.role)
   const [filterStatus, setFilterStatus] = useState<string>('all')
-  const [filterYear, setFilterYear] = useState<number | 'all'>(currentYear)
+  const [filterYear, setFilterYear] = useState<number | 'all'>(currentYear())
   const [filterCcId, setFilterCcId] = useState<string>('all')
   const [includeHistory, setIncludeHistory] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
@@ -230,7 +231,7 @@ function CreatePlanModal({ onClose }: { onClose: () => void }) {
   const yearOptions = useAvailableFiscalYears()
   // Default to current year if it's in the options, otherwise the most recent
   // configured year — avoids submitting a year that's no longer offered.
-  const defaultYear = yearOptions.includes(currentYear) ? currentYear : (yearOptions[0] ?? currentYear)
+  const defaultYear = yearOptions.includes(currentYear()) ? currentYear() : (yearOptions[0] ?? currentYear())
   const [ccId, setCcId] = useState('')
   const [year, setYear] = useState<number>(defaultYear)
   const [notes, setNotes] = useState('')

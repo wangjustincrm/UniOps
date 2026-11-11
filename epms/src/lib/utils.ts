@@ -2,7 +2,7 @@ import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import {
   currentMonthISO, displayTimeZone, formatDate, formatDateTime, formatTime, isoDateInZone,
-  setDisplayTimeZone, timeZoneAbbrev, toLocalDate, todayISO, zonedParts,
+  setDisplayTimeZone, timeZoneAbbrev, toLocalDate, todayISO, wallClockToISO, zonedParts,
 } from '@uniops/shell'
 
 // Dates and times have ONE implementation, in @uniops/shell (lib/date.ts):
@@ -10,7 +10,7 @@ import {
 // the plant's time zone from Company Settings, bare dates never shifted.
 export {
   currentMonthISO, displayTimeZone, formatDate, formatDateTime, formatTime, isoDateInZone,
-  setDisplayTimeZone, timeZoneAbbrev, toLocalDate, todayISO, zonedParts,
+  setDisplayTimeZone, timeZoneAbbrev, toLocalDate, todayISO, wallClockToISO, zonedParts,
 }
 
 export function cn(...inputs: ClassValue[]) {

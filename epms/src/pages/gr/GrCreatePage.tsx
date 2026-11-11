@@ -4,7 +4,7 @@ import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, AlertTriangle, CheckCircle2, Package, Paperclip, X, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn, formatAmount, formatDate, formatQty } from '@/lib/utils'
+import { cn, formatAmount, formatDate, formatQty, todayISO } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth.store'
 import { usePo, usePos } from '@/hooks/usePos'
 import { useCreateGr, usePoOpenQuantities } from '@/hooks/useGrs'
@@ -106,7 +106,7 @@ export default function GrCreatePage() {
       ? deepLinkedPo
       : null
 
-  const [receivedAt, setReceivedAt] = useState(new Date().toISOString().slice(0, 10))
+  const [receivedAt, setReceivedAt] = useState(todayISO())
   // GR-P-002: title and received by are the user's to enter (ISS-0091). They
   // start from the PO title and the signed-in user, who is often not the
   // person who physically received the goods.

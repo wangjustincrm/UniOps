@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { FormField } from '@/components/ui/form-field'
-import { cn, formatAmount, formatDate, formatDateTime } from '@/lib/utils'
+import { cn, formatAmount, formatDate, formatDateTime, formatTime } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth.store'
 import { useRolePermissions } from '@/hooks/useConfig'
 import { useUserDirectory } from '@/hooks/useUsers'
@@ -261,7 +261,7 @@ function ReceiptDetail({
     }, {
       onSuccess: () => {
         dirty.current = false
-        setSavedAt(new Date().toLocaleTimeString())
+        setSavedAt(formatTime(new Date()))
       },
     })
   }

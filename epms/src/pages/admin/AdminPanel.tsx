@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { cn } from '@/lib/utils'
+import { cn, todayISO } from '@/lib/utils'
 import { PmsImportPanel } from './PmsImportPanel'
 import {
   useConfig, useUpdateConfig, useRoles,
@@ -1194,7 +1194,7 @@ function exportUsersCsv(users: ApiUser[]) {
   const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a'); a.href = url
-  a.download = `epms-users-${new Date().toISOString().slice(0,10)}.csv`
+  a.download = `epms-users-${todayISO()}.csv`
   a.click(); URL.revokeObjectURL(url)
 }
 

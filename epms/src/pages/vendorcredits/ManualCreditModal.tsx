@@ -4,7 +4,7 @@ import { AlertTriangle, Mail, Paperclip, Search, X } from 'lucide-react'
 
 import { useCreateVendorCredit } from '@/hooks/useVendorCredits'
 import { useVendors } from '@/hooks/useVendors'
-import { cn, formatAmount } from '@/lib/utils'
+import { cn, formatAmount, todayISO } from '@/lib/utils'
 import {
   CREDIT_EVIDENCE_ACCEPT, creditAttachmentService, type VendorCredit,
 } from '@/services/vendorCredits'
@@ -23,11 +23,9 @@ import {
 
 const CURRENCIES = ['CAD', 'USD', 'EUR', 'RMB']
 
-// Not toISOString(): that is the UTC date, which is tomorrow after ~20:00 here.
-const localToday = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
+// The plant's date (company time zone). Not toISOString(): that is the UTC
+// date, which is tomorrow after ~20:00 here.
+const localToday = () => todayISO()
 
 type Vendor = { id: string; name: string; code: string }
 

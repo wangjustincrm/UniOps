@@ -3,6 +3,7 @@
  * All actual HTTP + auth logic lives in src/lib/api.ts.
  */
 import { downloadCsv } from '@/lib/api'
+import { todayISO } from '@/lib/utils'
 
 export type ReportType = 'pr' | 'po' | 'gr' | 'invoices' | 'pa' | 'budget' | 'vendors'
 
@@ -20,7 +21,7 @@ export interface ReportFilters {
   [key: string]: string | number | boolean | undefined
 }
 
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => todayISO()   // the plant's date, not UTC
 
 export const reportService = {
   downloadPr:       (f?: ReportFilters) => downloadCsv('/reports/pr',       f, `pr-report-${today()}.csv`),

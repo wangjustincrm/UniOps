@@ -4,7 +4,7 @@ import { Download, Loader2, PackageSearch, Search } from 'lucide-react'
 import { SortTh, sortParams, useSort, type Sort } from '@uniops/shell'
 import { Button } from '@/components/ui/button'
 import { Pagination } from '@/components/ui/Pagination'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, todayISO, toLocalDate } from '@/lib/utils'
 import { useDepartments } from '@/hooks/useDepartments'
 import { useVendors } from '@/hooks/useVendors'
 import { useReceivingReport } from '@/hooks/useGrReport'
@@ -28,7 +28,9 @@ const PRESETS: { value: Preset; label: string }[] = [
 ]
 
 function presetRange(preset: Preset): { from: string; to: string } {
-  const today = new Date()
+  // The plant's today (company time zone), as a local-midnight Date for the
+  // calendar arithmetic below.
+  const today = toLocalDate(todayISO())
   const to = isoDay(today)
   switch (preset) {
     case 'last_30': {

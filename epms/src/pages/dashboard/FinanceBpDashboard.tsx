@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
-import { formatAmount, formatDate } from '@/lib/utils'
+import { displayTimeZone, formatAmount, formatDate, todayISO } from '@/lib/utils'
 import { SortTh, useSortableRows } from '@uniops/shell'
 
 function PaTypeBadge({ type }: { type: string }) {
@@ -32,7 +32,7 @@ export default function FinanceBpDashboard() {
   const inReviewCount = inReview.length
 
   const now = new Date()
-  const todayStr = now.toISOString().slice(0, 10)
+  const todayStr = formatDate(todayISO())
 
   return (
     <div className="flex flex-col gap-6">
@@ -51,7 +51,7 @@ export default function FinanceBpDashboard() {
         <StatCard
           title="Processed This Month"
           value={kpi('Processed This Month')?.value ?? '—'}
-          subtitle={now.toLocaleString('en-CA', { month: 'long', year: 'numeric' })}
+          subtitle={now.toLocaleString('en-CA', { month: 'long', year: 'numeric', timeZone: displayTimeZone() })}
         />
       </div>
 

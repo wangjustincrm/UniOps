@@ -4,7 +4,7 @@ import {
   PiggyBank, Store, Download, Loader2, AlertCircle,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { cn, todayISO } from '@/lib/utils'
 import { downloadCsv } from '@/lib/api'
 import { useVendors } from '@/hooks/useVendors'
 import { useCostCenters } from '@/hooks/useCostCenters'
@@ -180,7 +180,7 @@ function PrReport() {
     setLoading(true); setError(null)
     try {
       const params: Params = { ...dates, status: status || undefined, cost_center_id: costCenterId || undefined }
-      await downloadCsv('/reports/pr', params, `pr-report-${new Date().toISOString().slice(0,10)}.csv`)
+      await downloadCsv('/reports/pr', params, `pr-report-${todayISO()}.csv`)
     } catch (e) { setError((e as Error).message) }
     finally { setLoading(false) }
   }
@@ -216,7 +216,7 @@ function PoReport() {
     setLoading(true); setError(null)
     try {
       const params: Params = { ...dates, status: status || undefined, po_type: poType ? Number(poType) : undefined, vendor_id: vendorId || undefined }
-      await downloadCsv('/reports/po', params, `po-report-${new Date().toISOString().slice(0,10)}.csv`)
+      await downloadCsv('/reports/po', params, `po-report-${todayISO()}.csv`)
     } catch (e) { setError((e as Error).message) }
     finally { setLoading(false) }
   }
@@ -256,7 +256,7 @@ function GrReport() {
     setLoading(true); setError(null)
     try {
       const params: Params = { ...dates, status: status || undefined, gr_type: grType || undefined }
-      await downloadCsv('/reports/gr', params, `gr-report-${new Date().toISOString().slice(0,10)}.csv`)
+      await downloadCsv('/reports/gr', params, `gr-report-${todayISO()}.csv`)
     } catch (e) { setError((e as Error).message) }
     finally { setLoading(false) }
   }
@@ -292,7 +292,7 @@ function InvoiceReport() {
     setLoading(true); setError(null)
     try {
       const params: Params = { ...dates, status: status || undefined, vendor_id: vendorId || undefined }
-      await downloadCsv('/reports/invoices', params, `invoice-report-${new Date().toISOString().slice(0,10)}.csv`)
+      await downloadCsv('/reports/invoices', params, `invoice-report-${todayISO()}.csv`)
     } catch (e) { setError((e as Error).message) }
     finally { setLoading(false) }
   }
@@ -326,7 +326,7 @@ function PaReport() {
     setLoading(true); setError(null)
     try {
       const params: Params = { ...dates, status: status || undefined, pa_type: paType || undefined, vendor_id: vendorId || undefined }
-      await downloadCsv('/reports/pa', params, `pa-report-${new Date().toISOString().slice(0,10)}.csv`)
+      await downloadCsv('/reports/pa', params, `pa-report-${todayISO()}.csv`)
     } catch (e) { setError((e as Error).message) }
     finally { setLoading(false) }
   }
@@ -363,7 +363,7 @@ function BudgetReport() {
   const handleDownload = async () => {
     setLoading(true); setError(null)
     try {
-      await downloadCsv('/reports/budget', undefined, `budget-report-${new Date().toISOString().slice(0,10)}.csv`)
+      await downloadCsv('/reports/budget', undefined, `budget-report-${todayISO()}.csv`)
     } catch (e) { setError((e as Error).message) }
     finally { setLoading(false) }
   }
@@ -388,7 +388,7 @@ function VendorReport() {
     setLoading(true); setError(null)
     try {
       const params: Params = { category: category || undefined, active_only: activeOnly || undefined }
-      await downloadCsv('/reports/vendors', params, `vendor-report-${new Date().toISOString().slice(0,10)}.csv`)
+      await downloadCsv('/reports/vendors', params, `vendor-report-${todayISO()}.csv`)
     } catch (e) { setError((e as Error).message) }
     finally { setLoading(false) }
   }

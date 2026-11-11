@@ -6,11 +6,13 @@
  *  - a stored `due_date` is a date-only string with no zone, so `new Date(s)`
  *    reads it as UTC midnight — the previous local day for this company
  *    (UTC-4/-5). See toLocalDate() in ./utils for the same trap.
- *  - `today` is a real instant, so it has to be flattened to its own calendar
- *    day before the two can be compared.
+ *  - `today` defaults to the plant's date (company time zone, todayISO()) —
+ *    not the browser's or UTC. A `today` passed in (tests) is a real instant,
+ *    flattened to its own calendar day before the two can be compared.
  *  - dividing elapsed ms by 86_400_000 is off by one across a DST boundary,
  *    so both ends are converted to a day index via Date.UTC instead.
  */
+import { todayISO } from '@/lib/utils'
 
 /** Days of remaining runway that still count as "due soon" (amber). */
 export const DUE_SOON_DAYS = 5
@@ -49,14 +51,15 @@ function dayIndexFromInstant(d: Date): number {
 export function dueInfo(
   dueDate: string | null | undefined,
   status: string,
-  today: Date = new Date(),
+  today?: Date,
 ): DueInfo {
   if (!dueDate) return { tone: 'normal', days: null, label: '' }
 
   const due = dayIndexFromDateOnly(dueDate)
   if (due === null) return { tone: 'normal', days: null, label: '' }
 
-  const days = due - dayIndexFromInstant(today)
+  const todayIdx = today ? dayIndexFromInstant(today) : dayIndexFromDateOnly(todayISO())!
+  const days = due - todayIdx
 
   if (status === 'paid') return { tone: 'settled', days, label: '' }
   if (days < 0) return { tone: 'overdue', days, label: `Overdue ${-days}d` }

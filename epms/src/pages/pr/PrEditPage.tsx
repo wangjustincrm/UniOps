@@ -28,6 +28,7 @@ import type { ApiVendor } from '@/services/vendors'
 import type { ApiBudgetL1 } from '@/services/budget'
 import type { PrLineItem, Currency, ProcurementType } from '@/types'
 import { enabledCurrencyOptions } from '@/lib/currencies'
+import { todayISO } from '@/lib/utils'
 
 const TYPE_LABELS: Record<number, string> = {
   1: 'Raw Mat./Pack.',
@@ -44,7 +45,8 @@ function defaultLine(): PrLineItem {
 
 // Budget figures (annual_budget/committed/actual_spent) are per cost-center +
 // fiscal year — they live behind /balance, not on the shared catalog account.
-const currentFiscalYear = new Date().getUTCFullYear()
+/** The plant's calendar year (company time zone), read when used. */
+const currentFiscalYear = () => Number(todayISO().slice(0, 4))
 
 export default function PrEditPage() {
   const { id } = useParams()
@@ -235,7 +237,7 @@ export default function PrEditPage() {
   // NOT the catalog account — the catalog carries no annual_budget/committed/actual_spent.
   const { data: budgetBalance } = useBalance(
     selectedCostCenterId && selectedL2
-      ? { cost_center_id: selectedCostCenterId, fiscal_year: currentFiscalYear, account_code: selectedL2 }
+      ? { cost_center_id: selectedCostCenterId, fiscal_year: currentFiscalYear(), account_code: selectedL2 }
       : null,
   )
   const annualBudget = Number(budgetBalance?.annual_budget ?? 0)
