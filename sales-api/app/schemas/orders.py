@@ -287,6 +287,7 @@ class OrderDetail(OrderRead):
     discount: Decimal | None = None
     department: str | None = None
     order_type: str | None = None
+    edi_mailbox: str | None = None  # the buyer's TrueCommerce mailbox (850 EDIMailbox), sent back in the 810
     lines: list[LineRead] = []
     has_invoice: bool = False  # the draft exists: invoice prices are edited on the invoice
     # The DC a retailer ship-to GLN routes to (Walmart; FR-OB-03), shown with the address.

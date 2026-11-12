@@ -33,6 +33,7 @@ export function OverviewTab({ o }: { o: OrderDetail }) {
           ['Partner', partnerLabel(o.partner_name, o.partner_code)], ['Customer PO / reference', o.source_order_number],
           ['Source', SOURCE_LABEL[o.source_type] ?? o.source_type], ['Received', formatDateTime(o.first_received_at)], ['Paid (delay start)', formatDateTime(o.paid_at)],
           ['Requested delivery', o.requested_delivery_date ? formatDate(o.requested_delivery_date) : null],
+          ...(o.source_type === 'EDI_850' ? [['EDI mailbox', o.edi_mailbox] as [string, string | null | undefined]] : []),
           ['Total', formatMoney(o.total_amount ?? o.total, o.currency)],
           ['Notes', o.notes],
         ]} />

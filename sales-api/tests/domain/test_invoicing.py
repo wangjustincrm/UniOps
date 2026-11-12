@@ -51,3 +51,12 @@ def test_the_810_names_what_a9_names():
             one["UOM"], one["UnitPrice"], one["PackSize"], one["ofInnerPacks"]) == (
         1, "CF0092", "10062639300019", "10062639300019", 10, 10, "CA", 108.6, 1, 6)
     assert (two["Line"], two["QuantityShipped"], two["QuantityOrdered"]) == (2, 0, 60)
+
+
+def test_the_810_goes_back_to_the_mailbox_the_850_named_and_only_then():
+    ship = {"name": "DC", "address1": "1 Road", "city": "Toronto", "province": "ON", "zip": "M1M 1M1", "country": "CA"}
+    items = [Item810("CF0092", None, "10062639300019", "Formula", 1, 1, Decimal("10"), 6)]
+    sobeys = json.loads(build_810(Header810("Sobeys", 1, "PO-1", date(2026, 11, 5), None, ship, ship, "MBX0000001"), items))
+    assert sobeys["Invoice"][0]["EDIMailbox"] == "MBX0000001"
+    walmart = json.loads(build_810(Header810("Walmart", 1, "PO-1", date(2026, 11, 5), None, ship, ship), items))
+    assert "EDIMailbox" not in walmart["Invoice"][0]  # a partner without one gets the file as before

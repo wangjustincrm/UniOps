@@ -91,6 +91,9 @@ def test_a_real_850_item_list_nested_ship_to_and_bill_to_case_and_dates():
     po["BillTo"] = {"BillToCode": "0000000000099", "BillToName": "SAMPLE BUYER"}
     bt = from_850({"PurchaseOrder": [po]})[0].header["bill_to"]
     assert (bt["name"], bt["address1"], bt["zip"]) == ("SAMPLE BUYER", h["ship_to"]["address1"], h["ship_to"]["zip"])
+    assert h["edi_mailbox"] is None  # the fixture's EDIMailbox is empty (Walmart's and Loblaws' are)
+    po["EDIMailbox"] = " MBX0000001 "
+    assert from_850({"PurchaseOrder": [po]})[0].header["edi_mailbox"] == "MBX0000001"  # Sobeys': kept for its 810
     assert [(ln.line_no, ln.quantity, ln.unit, ln.inner_packs, ln.identifiers["upc"], ln.identifiers["description"])
             for ln in src.lines] == [(10, 200, "CASE", 6, "628347940140", "SAMPLE ITEM ONE"),
                                      (20, 12, "CASE", 12, "062639300029", "SAMPLE ITEM TWO")]

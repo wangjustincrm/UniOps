@@ -49,7 +49,7 @@ UPDATABLE = {F.REVIEW, F.PAYMENT_HOLD, F.PENDING, F.ARCHIVE_SUPPRESSED, F.DRAFT}
 # Hold lines carry 945 data and are never rebuilt.
 AFTER_940 = {F.GENERATED_940, F.SENT_940, F.ACCEPTED_940, F.REJECTED_940, F.TIMEOUT_940, F.FAILED_940}
 _HEADER_COLUMNS = (
-    "order_type", "department", "order_date", "requested_delivery_date", "do_not_deliver_after", "cancel_date",
+    "order_type", "department", "edi_mailbox", "order_date", "requested_delivery_date", "do_not_deliver_after", "cancel_date",
     "ship_to", "bill_to", "contact", "notes", "currency", "subtotal", "tax", "shipping", "discount", "total",
     "shopify_financial_status", "shopify_fulfillment_status", "shipping_method", "archived_in_shopify_at",
 )

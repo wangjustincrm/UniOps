@@ -58,6 +58,8 @@ class Order(Audited, Versioned, Base):
     source_reference: Mapped[str | None] = mapped_column(String(80), nullable=True)
     order_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     department: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # TrueCommerce's mailbox of the buyer (850 EDIMailbox; Sobeys: one per division): its 810 goes back to it.
+    edi_mailbox: Mapped[str | None] = mapped_column(String(40), nullable=True)
     order_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     requested_delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     do_not_deliver_after: Mapped[date | None] = mapped_column(Date, nullable=True)

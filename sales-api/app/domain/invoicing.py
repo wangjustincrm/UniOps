@@ -100,6 +100,7 @@ class Header810:
     po_date: date | None
     ship_to: dict
     bill_to: dict
+    edi_mailbox: str | None = None  # the buyer's TrueCommerce mailbox, from its 850 (Sobeys)
 
 
 @dataclass(frozen=True)
@@ -125,7 +126,10 @@ def build_810(h: Header810, items: list[Item810]) -> bytes:
     """A.9: one invoice; InvoiceDate = ShipDate = the delivery date."""
     d = h.invoice_date.strftime("%Y-%m-%d")
     body = {"Invoice": [{
-        "TransactionType": "810", "AccountingID": h.partner_code, "Invoice": str(h.order_number), "InvoiceDate": d,
+        "TransactionType": "810", "AccountingID": h.partner_code,
+        # Only when the 850 named one: a partner without (Walmart, Loblaws) gets the file as before.
+        **({"EDIMailbox": h.edi_mailbox} if h.edi_mailbox else {}),
+        "Invoice": str(h.order_number), "InvoiceDate": d,
         "PO": h.po, "PODate": h.po_date.strftime("%Y-%m-%d") if h.po_date else "", "DepartmentNumber": "",
         "BillofLading": f"{h.order_number:09d}", "CarrierPro": f"CRM|{h.order_number}", "SCAC": "WIFS", "ShipVia": "",
         "ShipTo": _party("ShipTo", "ShiptoCountry", "ShipToZipcode", h.ship_to),
