@@ -96,6 +96,52 @@ async def attach_cumulative_variance(db: AsyncSession, invoice: Invoice) -> None
     )).scalars().all())
 
 
+async def attach_gr_value_pre_tax(db: AsyncSession, invoice: Invoice) -> None:
+    """Put the linked receipts' value on the invoice PRE-TAX, for the 3-Way
+    Match tab, where the PO figure (po_total) and the variance are pre-tax.
+
+    `gr_value` is the plain sum of GR line_total, and a GR line is priced from
+    its PO line. On a PO mirrored from NC the line amount is NC's TAX-INCLUSIVE
+    norigtaxmny (and the price norigtaxprice), while the PO header subtotal is
+    the pre-tax norigmny — so a receipt against an NC PO reads "PO 492.80 /
+    GR 556.86" for the same goods. Those lines are brought back to pre-tax
+    with that PO's own pre-tax share, subtotal / (subtotal + tax_amount): NC
+    keeps no per-line pre-tax amount on our side, and NC's subtotal and tax are
+    the sums of its lines, so the PO-wide share is exact for a single-rate PO.
+    A line a buyer added on this side (no nc_source_pk) is already pre-tax.
+
+    Detail endpoint only. Leaves None when no receipt is linked.
+    """
+    gr_ids: list[uuid.UUID] = []
+    for g in (invoice.gr_ids or ([str(invoice.gr_id)] if invoice.gr_id else [])):
+        try:
+            gr_ids.append(uuid.UUID(str(g)))
+        except ValueError:
+            continue
+    if not gr_ids:
+        invoice.gr_value_pre_tax = None
+        return
+    rows = (await db.execute(
+        select(GrLineItem.line_total, GrLineItem.nc_source_pk,
+               PoLineItem.nc_source_pk, PurchaseOrder.subtotal, PurchaseOrder.tax_amount)
+        .join(GoodsReceipt, GoodsReceipt.id == GrLineItem.gr_id)
+        .join(PurchaseOrder, PurchaseOrder.id == GoodsReceipt.po_id)
+        .outerjoin(PoLineItem, PoLineItem.id == GrLineItem.po_line_id)
+        .where(GrLineItem.gr_id.in_(gr_ids))
+    )).all()
+    total = Decimal("0")
+    for line_total, gr_nc_pk, po_line_nc_pk, subtotal, tax_amount in rows:
+        amount = line_total or Decimal("0")
+        # A GR line whose PO line is gone (SET NULL) still tells by its own
+        # nc_source_pk whether NC priced it.
+        tax_inclusive = po_line_nc_pk is not None or gr_nc_pk is not None
+        gross = (subtotal or Decimal("0")) + (tax_amount or Decimal("0"))
+        if tax_inclusive and gross != Decimal("0"):
+            amount = amount * (subtotal or Decimal("0")) / gross
+        total += amount
+    invoice.gr_value_pre_tax = total.quantize(Decimal("0.01"))
+
+
 async def attach_claimed_receipts(db: AsyncSession, invoices: list) -> None:
     """Inject `claimed_receipts` onto ORM invoice instances, batched.
 

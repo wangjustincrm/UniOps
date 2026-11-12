@@ -57,7 +57,7 @@ function InvoiceStatusBadge({ status }: { status: InvoiceStatus }) {
 // ─── 3-way match result row ───────────────────────────────────────────────────
 
 function MatchRow({
-  icon, label, docRef, href, amount, currency, note, ok, action,
+  icon, label, docRef, href, amount, amountInclTax, currency, note, ok, action,
 }: {
   icon: React.ReactNode
   label: string
@@ -66,7 +66,10 @@ function MatchRow({
       treat every attribute on these rows as a ref access during render. */
   docRef?: string
   href?: string
+  /** Pre-tax — the basis every row and the variance share. */
   amount?: number
+  /** Shown under the amount when it differs from it (tax on this document). */
+  amountInclTax?: number
   currency?: string
   note?: string
   ok?: boolean
@@ -93,6 +96,12 @@ function MatchRow({
           ? <span className="font-mono text-sm font-semibold text-neutral-900">{formatAmount(amount, currency)}</span>
           : <span className="text-neutral-300 text-xs">—</span>
         }
+        {amount != null && amountInclTax != null && currency
+          && Math.abs(Number(amountInclTax) - Number(amount)) >= 0.005 && (
+          <div className="font-mono text-xs text-neutral-400 mt-0.5">
+            {formatAmount(amountInclTax, currency)} incl. tax
+          </div>
+        )}
       </td>
       <td className="px-4 py-3 text-xs text-neutral-500">{note}</td>
       <td className="px-4 py-3 text-center">
@@ -384,6 +393,7 @@ export default function InvoiceDetailPage() {
   // compares amounts only and runs without one (ISS-0138: such invoices read
   // "✓ Passed" with a "Fully delivered" GR row while nothing was received).
   const hasGr = inv.gr_id != null
+  const grPreTax = inv.gr_value_pre_tax ?? inv.gr_value
   const matchLabel = hasGr ? '3-Way Match' : '2-Way Match'
   const awaitingGr = !hasGr && !hasException && !exceptionAccepted
   // Matched when it was the only bill, but a later invoice on the same PO line
@@ -1380,7 +1390,7 @@ export default function InvoiceDetailPage() {
                         <tr className="border-b border-neutral-200 bg-neutral-50">
                           <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Document</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Reference</th>
-                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Amount</th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Amount (pre-tax)</th>
                           <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-neutral-500">Note</th>
                           <th className="px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-neutral-500">Status</th>
                           <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-neutral-500">Action</th>
@@ -1434,10 +1444,15 @@ export default function InvoiceDetailPage() {
                           label="Goods / Service Receipt"
                           docRef={inv.gr_number}
                           href={`/gr/${inv.gr_id}`}
-                          amount={inv.gr_value}
+                          // Pre-tax like the PO row: on a PO mirrored from NC the
+                          // line amounts (and so the receipt's) include tax while
+                          // the PO total is pre-tax — 492.80 vs 556.86 for the
+                          // same goods. gr_value is kept as the incl-tax line.
+                          amount={grPreTax}
+                          amountInclTax={inv.gr_value}
                           currency={inv.currency}
                           note={!hasGr ? 'Not received'
-                            : inv.gr_value != null && inv.po_total != null && Number(inv.gr_value) < Number(inv.po_total)
+                            : grPreTax != null && inv.po_total != null && Number(grPreTax) < Number(inv.po_total) - 0.005
                             ? 'Partial delivery' : 'Fully delivered'}
                           ok={inv.gr_value != null}
                           action={canUnmatch && inv.gr_id != null && (
@@ -1453,7 +1468,9 @@ export default function InvoiceDetailPage() {
                           label="Invoice"
                           docRef={inv.internal_ref}
                           href={`/invoices/${inv.id}`}
-                          amount={inv.total_amount}
+                          // Pre-tax: the variance below is measured on it.
+                          amount={inv.amount}
+                          amountInclTax={inv.total_amount}
                           currency={inv.currency}
                           note={hasException || exceptionAccepted || overBilledSince
                             ? `${decidingPct > 0 ? '+' : ''}${decidingPct.toFixed(1)}% vs PO${varianceScope}${exceptionAccepted ? ' (accepted)' : ''}`
