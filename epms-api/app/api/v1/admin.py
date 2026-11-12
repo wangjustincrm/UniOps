@@ -127,7 +127,36 @@ async def edit_record(entity: str, record_id: uuid.UUID, db: SessionDep, user: A
                 f"failed: {e} — the link is saved, but this PA's invoice and AP rows "
                 "still show unpaid. Re-save the PA once finance-api is reachable."
             )
+    # Finance keeps its own copy of every EPMS invoice (ap_invoices), refreshed
+    # only by the invoice workflow endpoints. A DM edit bypassed them, so Finance
+    # kept the old values — and Push to NC reads Finance's copy: an invoice
+    # corrected CAD -> USD here went to NC as CAD at rate 1 (AP-20261112-0002).
+    # Same post-commit / warn-don't-fail rule as above.
+    if entity == "invoice":
+        result.update(await _resync_invoice_ap(db, record_id, token))
     return result
+
+
+async def _resync_invoice_ap(db, invoice_id: uuid.UUID, token: str) -> dict:
+    from app.models.invoice import Invoice
+    inv = await db.get(Invoice, invoice_id, populate_existing=True)
+    if inv is None:
+        return {}
+    try:
+        ap = await finance_sync.sync_ap_invoice(db, inv, token, strict=True)
+    except finance_client.FinanceSyncError as e:
+        return {"ap_sync": (
+            f"failed: {e} — the invoice is saved, but Finance's AP record still shows the "
+            "old values (and Push to NC would send them). Re-save this invoice once "
+            "finance-api is reachable.")}
+    out: dict = {"ap_sync": "ok"}
+    nc_bill = (ap or {}).get("nc_bill_no")
+    if nc_bill:
+        out["ap_nc_warning"] = (
+            f"{ap.get('ap_invoice_number')} was already pushed to NC as {nc_bill}. "
+            "That NC bill still has the old values — click Push to NC again on the "
+            "Finance AP page (it replaces the bill while it is unapproved in NC).")
+    return out
 
 
 @router.get("/{entity}/{record_id}/workflow-steps")
