@@ -3,9 +3,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ActionButton, Badge, ConfirmAction, Hint, RecordSheet, RecordSheetHostContext, formatDate, formatMoney,
   queryKeys, type RecordFact, type RecordTab,
-  compareRecord, useRefresh,
+  compareRecord, useFileViewer, useRefresh,
 } from '@/platform-ui'
-import { SOURCE_LABEL, downloadPacket, downloadPoPdf, fetchOrder, ordersClient, type OrderRead } from './ordersApi'
+import { SOURCE_LABEL, downloadPacket, fetchOrder, poPdf, ordersClient, type OrderRead } from './ordersApi'
 import { OrderHoldActions } from './OrderHoldActions'
 import { OrderStatusBadge } from './OrderStatusCells'
 import { statusDetailText } from './orderStatus'
@@ -40,6 +40,7 @@ export interface OrderSheetProps {
 export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderSheetProps) {
   const qc = useQueryClient()
   const host = useContext(RecordSheetHostContext)
+  const { view, viewer } = useFileViewer()
   const q = useQuery({ queryKey: queryKeys.detail(ordersClient, o.id), queryFn: () => fetchOrder(o.id) })
   const sheetRefresh = useRefresh(q, { queryKey: queryKeys.detail(ordersClient, o.id), compare: compareRecord, noChange: 'Up to date', auto: 'follow' })
   const [pricing, setPricing] = useState(false)
@@ -131,6 +132,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
 
   return (
     <>
+      {viewer}
       <RecordSheet
         title={live.source_reference ?? `#${live.order_number}`}
         subtitle={[...new Set([`Internal no. ${live.order_number}`, live.partner_name ?? live.partner_code,
@@ -146,7 +148,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
         refresh={sheetRefresh}
         facts={facts} actions={actions} tabs={tabs}
         more={[
-          { label: 'Purchase order (PDF)', onSelect: () => downloadPoPdf(live), failPrefix: 'Download failed' },
+          { label: 'Purchase order (PDF)', onSelect: () => view(poPdf(live)), opensDialog: true },
           { label: 'Audit packet: every file and PDF (zip)', onSelect: () => downloadPacket(live), failPrefix: 'Download failed' },
         ]}
       />

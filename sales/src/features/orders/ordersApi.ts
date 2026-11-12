@@ -1,4 +1,4 @@
-import { createResourceClient } from '@/platform-ui'
+import { createResourceClient, type FileSource } from '@/platform-ui'
 import { api } from '@/lib/api'
 
 // Mirrors sales-api app/schemas/orders.py (hand-written, see partnersApi.ts).
@@ -323,14 +323,19 @@ export const cancelManual = (id: number, version: number) => api.post<OrderRead>
 
 export interface Send940Result { order: OrderRead; document_id: number; file_status: string; control: string; errors: string[] }
 export const send940 = (id: number, replace = false) => api.post<Send940Result>(`/orders/${id}/send-940${replace ? '?replace=true' : ''}`)
+/** The order's printable files (2026-11-12): each one looked at in FileViewer first, then downloaded or printed there. */
+export const poPdf = (o: Pick<OrderRead, 'id' | 'source_order_number' | 'order_number'>): FileSource => ({
+  key: `po-${o.id}`, title: `Purchase order ${o.source_order_number ?? o.order_number}`,
+  load: () => api.file(`/orders/${o.id}/po.pdf`, `PO-${o.source_order_number ?? o.order_number}.pdf`) })
+export const invoicePdf = (invoiceId: number, number: string): FileSource => ({
+  key: `invoice-${invoiceId}`, title: `Invoice ${number}`, load: () => api.file(`/invoices/${invoiceId}/invoice.pdf`, `${number}.pdf`) })
 /** One shipment's packing list (PDF): pallets → items → lots → expiry → qty, tracking and BOL. */
-export const downloadPoPdf = (o: Pick<OrderRead, 'id' | 'source_order_number' | 'order_number'>) =>
-  api.download(`/orders/${o.id}/po.pdf`, `PO-${o.source_order_number ?? o.order_number}.pdf`)
+export const packingListPdf = (orderId: number, shipmentId: number, label = ''): FileSource => ({
+  key: `packing-${shipmentId}`, title: `Packing list${label ? ` ${label}` : ''}`,
+  load: () => api.file(`/orders/${orderId}/shipments/${shipmentId}/packing-list.pdf`, `PackingList-${shipmentId}.pdf`) })
+/** Every stored file and PDF of the order in one zip: saved, not shown. */
 export const downloadPacket = (o: Pick<OrderRead, 'id' | 'source_reference' | 'order_number'>) =>
   api.download(`/orders/${o.id}/packet.zip`, `Order-${o.source_reference ?? o.order_number}.zip`)
-export const downloadInvoicePdf = (invoiceId: number, number: string) => api.download(`/invoices/${invoiceId}/invoice.pdf`, `${number}.pdf`)
-export const downloadPackingList = (orderId: number, shipmentId: number) =>
-  api.download(`/orders/${orderId}/shipments/${shipmentId}/packing-list.pdf`, `PackingList-${shipmentId}.pdf`)
 export interface InvoicePricesBody { reason: string | null; lines: { id: number; invoice_unit_price: string | null }[] }
 export const setInvoicePrices = (id: number, body: InvoicePricesBody) => api.put<OrderDetail>(`/orders/${id}/invoice-prices`, body)
 /** What the customer returned per line, with why (user 2026-11-12): until the invoice is sent. */

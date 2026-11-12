@@ -1,8 +1,8 @@
 import {
-  Button, DetailList, DownloadButton, ErrorMessage, formatDate, formatDateTime, formatMoney, Section, StatusCell, useOpenRecord,
+  Button, DetailList, ErrorMessage, ViewFileButton, formatDate, formatDateTime, formatMoney, Section, StatusCell, useOpenRecord,
 } from '@/platform-ui'
-import { downloadDocument } from '@/features/operations/operationsApi'
-import { downloadInvoicePdf, type OrderDetail } from '../ordersApi'
+import { documentFile } from '@/features/operations/operationsApi'
+import { invoicePdf, type OrderDetail } from '../ordersApi'
 import { useOrderInvoice } from '../useOrderInvoice'
 
 /** The order's invoice: status, number, method, total, the file it was sent as; opened on Invoices. */
@@ -23,11 +23,11 @@ export function InvoiceTab({ o }: { o: OrderDetail }) {
       {inv && (
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="secondary" onClick={() => { openRecord('/invoices', inv.id) }}>Open invoice {inv.invoice_number}</Button>
-          <DownloadButton onAction={() => downloadInvoicePdf(inv.id, inv.invoice_number)}>Invoice PDF</DownloadButton>
+          <ViewFileButton source={invoicePdf(inv.id, inv.invoice_number)}>Invoice PDF</ViewFileButton>
           {inv.document_id != null && (
-            <DownloadButton onAction={() => downloadDocument(inv.document_id!, `${inv.invoice_number}-${inv.method}`)}>
+            <ViewFileButton source={documentFile(inv.document_id, `${inv.invoice_number}-${inv.method}`, `The file sent for ${inv.invoice_number}`)}>
               The file sent ({inv.method === '810_JSON' ? '810' : inv.method})
-            </DownloadButton>
+            </ViewFileButton>
           )}
         </div>
       )}

@@ -1,4 +1,4 @@
-import { createResourceClient, type RecordRef } from '@/platform-ui'
+import { createResourceClient, type FileSource, type RecordRef } from '@/platform-ui'
 import { api } from '@/lib/api'
 
 // Mirrors sales-api app/schemas/operations.py (hand-written, see partnersApi.ts).
@@ -86,6 +86,9 @@ export const runsClient = createResourceClient<RunRead, never>(api, '/runs')
 export const logClient = createResourceClient<LogRead, never>(api, '/log')
 export const downloadDocument = (id: number, name: string) => api.download(`/documents/${id}/raw`, name)
 export const downloadOriginal = (d: DocumentRead) => downloadDocument(d.id, d.remote_name ?? `document-${d.id}`)
+/** A stored file as received or sent, looked at in FileViewer. */
+export const documentFile = (id: number, name: string, title = name): FileSource => ({
+  key: `document-${id}`, title, load: () => api.file(`/documents/${id}/raw`, name) })
 /** FR-OB-62: a received file that failed: read it again (the next pass reads it), or ignore it with a reason. */
 export const readAgain = (id: number) => api.post<DocumentRead>(`/documents/${id}/read-again`)
 export const ignoreDocument = (id: number, reason: string) => api.post<DocumentRead>(`/documents/${id}/ignore`, { reason })

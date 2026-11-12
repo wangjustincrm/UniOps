@@ -1,6 +1,6 @@
 import { Badge } from './shell'
 import type { BadgeVariant } from './StatusBadge'
-import { Download } from 'lucide-react'
+import { Download, Eye } from 'lucide-react'
 import { cn } from '../lib/cn'
 import { CopyChip } from './Copy'
 import { IconButton } from './IconButton'
@@ -91,10 +91,12 @@ export function DurationCell({ from, to }: { from: string | null | undefined; to
 }
 
 /** A file: its name, and the way to get it. */
-export function FileCell({ name, label, onDownload }: { name: string | null | undefined; label: string; onDownload: () => void }) {
+export function FileCell({ name, label, onDownload, onView }:
+  { name: string | null | undefined; label: string; onDownload: () => void; onView?: () => void }) {
   return (
     <span className="flex items-center gap-1">
       <span className="min-w-0 break-all">{name ?? '—'}</span>
+      {onView && <IconButton label={label.replace(/^Download\b/, 'View')} icon={<Eye className="h-4 w-4" />} onClick={onView} />}
       <IconButton label={label} icon={<Download className="h-4 w-4" />} onClick={onDownload} />
     </span>
   )

@@ -60,7 +60,7 @@ describe('Transfers', () => {
     expect(within(rows).getByText('CF0103').closest('tr')).toHaveTextContent('not on the transfer')
     expect(within(dialog).getByText('CF0103 7200 EA received but not on the transfer')).toBeInTheDocument()
     fireEvent.keyDown(within(dialog).getByRole('button', { name: 'More actions' }), { key: 'Enter' })  // print only: the 943 is sent
-    expect(await screen.findByRole('menuitem', { name: 'Print transfer order (PDF)' })).toBeInTheDocument()
+    expect(await screen.findByRole('menuitem', { name: 'Transfer order (PDF)' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Cancel transfer' })).toBeNull()
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
   })
@@ -91,7 +91,7 @@ describe('Transfers', () => {
     let dialog = await screen.findByRole('dialog')
     await within(dialog).findByRole('tab', { name: /^Lines/ })
     fireEvent.keyDown(within(dialog).getByRole('button', { name: 'More actions' }), { key: 'Enter' })  // Cancel needs the permission
-    expect(await screen.findByRole('menuitem', { name: 'Print transfer order (PDF)' })).toBeInTheDocument()
+    expect(await screen.findByRole('menuitem', { name: 'Transfer order (PDF)' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Cancel transfer' })).toBeNull()
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
     expect(within(dialog).queryByRole('button', { name: 'Edit draft' })).toBeNull()

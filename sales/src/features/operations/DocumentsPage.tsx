@@ -2,10 +2,10 @@ import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   ActionButton, ConfirmAction, DetailList, ListPage, LocalTable, RecordSheet, RefsCell, Section, StatusCell, formatDateTime, queryKeys,
-  useOpenRecord, type ColumnDef, type RecordRef, Muted, columnsOf,
+  useOpenRecord, type ColumnDef, type RecordRef, Muted, ViewFileButton, columnsOf,
 } from '@/platform-ui'
 import { OrderFrom945 } from '@/features/orders/OrderFrom945'
-import { documentsClient, downloadOriginal, ignoreDocument, readAgain, sendAgain, type DocumentRead } from './operationsApi'
+import { documentFile, documentsClient, downloadOriginal, ignoreDocument, readAgain, sendAgain, type DocumentRead } from './operationsApi'
 
 const colDocumentRead = columnsOf<DocumentRead>()
 
@@ -94,6 +94,7 @@ function Detail({ d }: { d: DocumentRead }) {
       ]}
       actions={d.has_content ? (
         <>
+          <ViewFileButton source={documentFile(d.id, d.remote_name ?? `document-${d.id}`, `${d.kind}: ${d.remote_name ?? d.id}`)}>View</ViewFileButton>
           <ActionButton size="sm" variant="secondary" onAction={() => downloadOriginal(d)}>Download original</ActionButton>
           {stuck && <ActionButton size="sm" permission={RETRY} errorMessages={ERRORS} done="Read again: the next pass reads it"
             onAction={async () => { await readAgain(d.id); await refresh() }}>Read again</ActionButton>}

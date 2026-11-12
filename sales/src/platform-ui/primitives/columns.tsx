@@ -37,8 +37,9 @@ export function columnsOf<T>() {
       cell(key, header, (r) => <TrackingCell value={read(r, key) as string | null} url={opts?.url ? read(r, opts.url) as string | null : undefined} />),
     duration: (id: string, header: string, from: Key<T>, to: Key<T>): ColumnDef<T, unknown> => (
       { id, header, enableSorting: false, cell: ({ row }) => <DurationCell from={read(row.original, from) as string | null} to={read(row.original, to) as string | null} /> }),
-    file: (key: Key<T>, header: string, opts: { label: (row: T) => string; onDownload: (row: T) => void }) =>
-      cell(key, header, (r) => <FileCell name={read(r, key) as string | null} label={opts.label(r)} onDownload={() => opts.onDownload(r)} />),
+    file: (key: Key<T>, header: string, opts: { label: (row: T) => string; onDownload: (row: T) => void; onView?: (row: T) => void }) =>
+      cell(key, header, (r) => <FileCell name={read(r, key) as string | null} label={opts.label(r)} onDownload={() => opts.onDownload(r)}
+        onView={opts.onView && (() => opts.onView!(r))} />),
     bool: (key: Key<T>, header: string) => cell(key, header, (r) => <BooleanCell value={read(r, key) as boolean | null} />),
     tags: (key: Key<T>, header: string) => cell(key, header, (r) => <TagsCell values={read(r, key) as string[] | null} />),
     /** Where an address is (city, province; `withName`: the place's name above, e.g. a DC). Not sortable. */

@@ -7,6 +7,7 @@
 const BASE = (import.meta.env.VITE_API_URL as string | undefined) || 'http://localhost:8014'
 const EPMS_BASE = (import.meta.env.VITE_EPMS_API_URL as string | undefined) || 'http://localhost:8000'
 
+import { saveFile, type FileData } from '@/platform-ui/lib/files'
 import { exitToPortal, leaveFor, markSessionExpired } from './session'
 
 export const PORTAL_URL = (import.meta.env.VITE_PORTAL_URL as string | undefined) || 'http://localhost:5174'
@@ -122,18 +123,19 @@ async function request<T>(url: string, method: string, body?: unknown): Promise<
   return res.json()
 }
 
-/** Saves an authenticated GET (e.g. a CSV export) as a file: a plain link
- *  would carry no token. */
-async function download(url: string, fallbackName: string): Promise<void> {
+/** A file read with the token (a plain link would carry none): its bytes, its name (the server's,
+ *  else the fallback) and its media type — shown by FileViewer, or saved by saveFile. */
+async function fetchFile(url: string, fallbackName: string): Promise<FileData> {
   const res = await authFetch(url)
   if (!res.ok) throw await toApiError(res)
   const name = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')?.[1] ?? fallbackName
-  const href = URL.createObjectURL(await res.blob())
-  const a = document.createElement('a')
-  a.href = href
-  a.download = name
-  a.click()
-  URL.revokeObjectURL(href)
+  const blob = await res.blob()
+  return { blob, name, type: (res.headers.get('Content-Type') ?? blob.type ?? '').split(';')[0].trim() }
+}
+
+/** Saves an authenticated GET (e.g. a CSV export) as a file. */
+async function download(url: string, fallbackName: string): Promise<void> {
+  saveFile(await fetchFile(url, fallbackName))
 }
 
 function client(base: string) {
@@ -144,6 +146,7 @@ function client(base: string) {
     delete:   <T>(path: string)                 => request<T>(`${base}${path}`, 'DELETE'),
     upload:   <T>(path: string, form: FormData) => request<T>(`${base}${path}`, 'POST', form),
     download: (path: string, fallbackName = 'export.csv') => download(`${base}${path}`, fallbackName),
+    file:     (path: string, fallbackName = 'file') => fetchFile(`${base}${path}`, fallbackName),
   }
 }
 

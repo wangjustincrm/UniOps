@@ -4,14 +4,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
   ActionButton, Autocomplete, ConfirmAction, DateCell, DetailList, ListPage, LocalTable,
-  MasterDetailForm, RecordSheet, Section, StatusCell, numberColumn, queryKeys,
+  MasterDetailForm, RecordSheet, Section, StatusCell, numberColumn, queryKeys, useFileViewer,
   type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab,
   compareRecord, useRefresh, Muted, columnsOf
  } from '@/platform-ui'
 import { itemOptions, warehouseOptions } from '../configuration/lookups'
 import {
   cancelTransfer, createTransfer, fetchTransfer, readyTransfer, resendTransfer, transfersClient, updateTransfer,
-  printTransfer, type ReceiptRowRead, type TransferDetail, type TransferLineRead, type TransferRead,
+  transferPdf, type ReceiptRowRead, type TransferDetail, type TransferLineRead, type TransferRead,
 } from './transfersApi'
 
 const colReceiptRowRead = columnsOf<ReceiptRowRead>()
@@ -98,6 +98,7 @@ function TransferForm({ t, onSaved, onCancel }: { t?: TransferDetail; onSaved: (
 function Detail({ row }: { row: TransferRead }) {
   const id = row.id
   const qc = useQueryClient()
+  const { view, viewer } = useFileViewer()
   const q = useQuery({ queryKey: queryKeys.detail(transfersClient, id), queryFn: () => fetchTransfer(id) })
   const sheetRefresh = useRefresh(q, { queryKey: queryKeys.detail(transfersClient, id), compare: compareRecord, noChange: 'Up to date', auto: 'follow' })
   const [cancelling, setCancelling] = useState(false)
@@ -140,6 +141,7 @@ function Detail({ row }: { row: TransferRead }) {
   ]
   return (
     <>
+      {viewer}
       <RecordSheet
         title={row.transfer_number}
         subtitle={`${row.from_warehouse ?? '?'} → ${row.to_warehouse ?? '?'}`}
@@ -161,7 +163,7 @@ function Detail({ row }: { row: TransferRead }) {
           </>
         ) : undefined}
         more={t && !editing ? [
-          { label: 'Print transfer order (PDF)', onSelect: () => { printTransfer(t.id, t.transfer_number).catch(() => {}) } },
+          { label: 'Transfer order (PDF)', onSelect: () => view(transferPdf(t.id, t.transfer_number)), opensDialog: true },
           ...(CANCELLABLE.includes(t.status)
             ? [{ label: 'Cancel transfer', permission: MANAGE, onSelect: () => setCancelling(true), opensDialog: true }] : []),
         ] : undefined}

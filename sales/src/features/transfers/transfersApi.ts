@@ -1,4 +1,4 @@
-import { createResourceClient } from '@/platform-ui'
+import { createResourceClient, type FileSource } from '@/platform-ui'
 import { api } from '@/lib/api'
 
 // Mirrors sales-api app/schemas/transfers.py (hand-written, see partnersApi.ts).
@@ -40,4 +40,5 @@ export const readyTransfer = (id: number, version: number) => api.post<TransferD
 export const cancelTransfer = (id: number, version: number, reason: string) => api.post<TransferDetail>(`/transfers/${id}/cancel?version=${version}`, { reason })
 export const resendTransfer = (id: number, version: number) => api.post<TransferDetail>(`/transfers/${id}/resend?version=${version}`)
 
-export const printTransfer = (id: number, number: string) => api.download(`/transfers/${id}/print.pdf`, `TO-${number}.pdf`)
+export const transferPdf = (id: number, number: string): FileSource => ({
+  key: `transfer-${id}`, title: `Transfer order ${number}`, load: () => api.file(`/transfers/${id}/print.pdf`, `TO-${number}.pdf`) })

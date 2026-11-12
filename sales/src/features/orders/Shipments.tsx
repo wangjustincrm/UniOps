@@ -1,10 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, AddressView, Badge, Button, DateCell, DateTimeCell, Tooltip, LocalTable, StatusCell, TrackingLink, queryKeys, useOpenRecord,
+  ActionButton, AddressView, Badge, Button, DateCell, DateTimeCell, Tooltip, LocalTable, StatusCell, TrackingLink, ViewFileButton, queryKeys, useOpenRecord,
   type ColumnDef, Hint, columnsOf
  } from '@/platform-ui'
 import { LineNo } from './LineNo'
-import { downloadPackingList, ordersClient, retryShopify, type LineRead, type ShipmentRead, type ShipmentRowRead } from './ordersApi'
+import { ordersClient, packingListPdf, retryShopify, type LineRead, type ShipmentRead, type ShipmentRowRead } from './ordersApi'
 import { ResolveRow } from './ResolveRow'
 
 const errorMessages: Record<string, string> = {
@@ -128,7 +128,7 @@ export function Shipments({ shipments, orderId, lineNumbers = new Map(), lines =
             {s.part && <Badge variant="info">Part {s.part}</Badge>}
             {!s.shadow && !s.applied && <Badge variant="warning">Not applied (second 945)</Badge>}
             <span className="ml-auto">
-              <ActionButton size="sm" variant="secondary" onAction={() => downloadPackingList(orderId, s.id)}>Packing list (PDF)</ActionButton>
+              <ViewFileButton source={packingListPdf(orderId, s.id, `945 #${s.document_id}`)}>Packing list (PDF)</ViewFileButton>
             </span>
           </div>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">

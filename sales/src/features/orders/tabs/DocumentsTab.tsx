@@ -1,7 +1,7 @@
-import { DownloadButton, LocalTable, Section, StatusCell, columnsOf, useNotices, type ColumnDef } from '@/platform-ui'
-import { downloadDocument } from '@/features/operations/operationsApi'
+import { DownloadButton, LocalTable, Section, StatusCell, ViewFileButton, columnsOf, useFileViewer, useNotices, type ColumnDef } from '@/platform-ui'
+import { documentFile, downloadDocument } from '@/features/operations/operationsApi'
 import { useOrderInvoice } from '../useOrderInvoice'
-import { downloadInvoicePdf, downloadPacket, downloadPackingList, downloadPoPdf, type OrderDetail, type OrderDocument } from '../ordersApi'
+import { downloadPacket, invoicePdf, packingListPdf, poPdf, type OrderDetail, type OrderDocument } from '../ordersApi'
 
 const colOrderDocument = columnsOf<OrderDocument>()
 
@@ -12,12 +12,14 @@ const colOrderDocument = columnsOf<OrderDocument>()
 export function DocumentsTab({ o }: { o: OrderDetail }) {
   const notices = useNotices()
   const inv = useOrderInvoice(o).data?.items[0]
+  const { view, viewer } = useFileViewer()
   const failed = (e: unknown) => notices.notify({ tone: 'error', text: `Download failed: ${e instanceof Error ? e.message : String(e)}` })
   const columns: ColumnDef<OrderDocument, unknown>[] = [
     colOrderDocument.datetime('created_at', 'Created'),
     { accessorKey: 'kind', header: 'Kind', cell: ({ row: { original: d } }) => <span className="whitespace-nowrap">{d.kind}{d.direction === 'OUT' ? ' (sent)' : ''}</span> },
     colOrderDocument.file('remote_name', 'File', { label: (d) => `Download ${d.remote_name ?? d.kind}`,
-      onDownload: (d) => { downloadDocument(d.id, d.remote_name ?? `document-${d.id}`).catch(failed) } }),
+      onDownload: (d) => { downloadDocument(d.id, d.remote_name ?? `document-${d.id}`).catch(failed) },
+      onView: (d) => view(documentFile(d.id, d.remote_name ?? `document-${d.id}`, `${d.kind}${d.direction === 'OUT' ? ' (sent)' : ''}: ${d.remote_name ?? d.id}`)) }),
     { accessorKey: 'st02', header: 'Control', cell: ({ row }) => row.original.st02 ?? '', meta: { hidden: true } },
     { accessorKey: 'file_status', header: 'File status', cell: ({ row }) => (row.original.file_status ? <StatusCell value={row.original.file_status} /> : '') },
     { accessorKey: 'ack_status', header: '997', cell: ({ row: { original: d } }) => (
@@ -30,16 +32,16 @@ export function DocumentsTab({ o }: { o: OrderDetail }) {
     <>
       <Section title="Printable">
         <div className="flex flex-wrap gap-2">
-          <DownloadButton onAction={() => downloadPoPdf(o)}>Purchase order (PDF)</DownloadButton>
+          <ViewFileButton source={poPdf(o)}>Purchase order (PDF)</ViewFileButton>
           {shipped.map((s) => (
-            <DownloadButton key={s.id} onAction={() => downloadPackingList(o.id, s.id)}>
+            <ViewFileButton key={s.id} source={packingListPdf(o.id, s.id, shipped.length > 1 ? String(s.ship_date ?? s.id) : '')}>
               Packing list{shipped.length > 1 ? ` ${s.ship_date ?? s.id}` : ''} (PDF)
-            </DownloadButton>
+            </ViewFileButton>
           ))}
           {inv && (
-            <DownloadButton onAction={() => downloadInvoicePdf(inv.id, inv.invoice_number)}>
+            <ViewFileButton source={invoicePdf(inv.id, inv.invoice_number)}>
               Invoice {inv.invoice_number} (PDF)
-            </DownloadButton>
+            </ViewFileButton>
           )}
           <DownloadButton onAction={() => downloadPacket(o)}>Everything (zip)</DownloadButton>
         </div>
@@ -52,6 +54,7 @@ export function DocumentsTab({ o }: { o: OrderDetail }) {
           ? <LocalTable<OrderDocument> ariaLabel="Documents" columns={columns} rows={o.documents} rowKey={(d) => d.id} />
           : <p className="text-sm text-neutral-500">No file yet: entered by hand and not sent yet.</p>}
       </Section>
+      {viewer}
     </>
   )
 }
