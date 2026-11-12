@@ -77,20 +77,20 @@ describe('Delivery confirmation', () => {
     renderAs(['sales.read', 'sales.order.operate', 'sales.invoice.manage'], <DeliveryPage />)
     fireEvent.click(await screen.findByText('PO-1'))
     const form = await screen.findByRole('dialog')
-    await within(form).findByRole('table', { name: 'Delivered quantities' })
+    await within(form).findByRole('table', { name: 'Returned and delivered' })
     expect(within(form).getByLabelText(/Delivered on \(the invoice date\)/)).toHaveValue('2026-11-01')
     fireEvent.click(within(form).getByRole('button', { name: 'Confirm and send' }))
     await waitFor(() => expect(api.confirm).toHaveBeenCalledWith(expect.objectContaining({ order_id: 7, confirmed_date: '2026-11-01', send: true })))
   })
 
-  it('one order: the delivered quantity per line, less than shipped allowed', async () => {
+  it('one order: what the customer returned per line; delivered = shipped − returned is what is sent', async () => {
     api.confirm.mockResolvedValue(invDetail)
     renderAs(['sales.read', 'sales.order.operate'], <DeliveryPage />)
     fireEvent.click(await screen.findByText('PO-1'))
     const dialog = await screen.findByRole('dialog')
     const form = dialog
-    await within(form).findByRole('table', { name: 'Delivered quantities' })
-    fireEvent.change(within(form).getByLabelText('Delivered CF0092'), { target: { value: '54' } })
+    await within(form).findByRole('table', { name: 'Returned and delivered' })
+    fireEvent.change(within(form).getByLabelText('Returned CF0092'), { target: { value: '6' } })  // 60 shipped: 54 delivered
     fireEvent.change(within(form).getByLabelText(/Delivered on \(the invoice date\)/), { target: { value: '2026-11-05' } })
     fireEvent.click(within(form).getByRole('button', { name: 'Confirm delivery' }))
     await waitFor(() => expect(api.confirm).toHaveBeenCalledWith({ order_id: 7, confirmed_date: '2026-11-05',

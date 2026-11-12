@@ -212,11 +212,14 @@ class Invoicing:
         for ln in lines:
             if ln.shipped_ea is None:
                 continue
-            want = delivered.get(ln.id, ln.shipped_ea)
+            # Delivered = shipped − what the customer returned (sales25, user 2026-11-12); a delivered quantity
+            # given here sets the returned to match, so the two never disagree.
+            want = delivered.get(ln.id, ln.shipped_ea - ln.returned_ea)
             if want < 0 or want > ln.shipped_ea:
                 raise BusinessError("delivery.quantity", f"line {ln.line_no}: delivered {want} EA must be 0 … {ln.shipped_ea} "
                                     "(the shipped quantity)", {"line_id": ln.id})
             ln.delivered_qty = want
+            ln.returned_ea = ln.shipped_ea - want
         uow.set_reason("delivery confirmed")
         s.add(DeliveryConfirmation(order_id=order.id, confirmed_date=confirmed_date, note=note, version=1))
         inv, problems = await self._build(s, order, lines, confirmed_date)

@@ -11,6 +11,7 @@ import { OrderStatusBadge } from './OrderStatusCells'
 import { statusDetailText } from './orderStatus'
 import { PaymentsAndRefunds } from './PaymentsAndRefunds'
 import { InvoicePricesForm } from './InvoicePrices'
+import { ReturnedForm } from './Returned'
 import { Recheck } from './Recheck'
 import { DraftActions } from './DraftActions'
 import { Send940 } from './Send940'
@@ -42,12 +43,13 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
   const q = useQuery({ queryKey: queryKeys.detail(ordersClient, o.id), queryFn: () => fetchOrder(o.id) })
   const sheetRefresh = useRefresh(q, { queryKey: queryKeys.detail(ordersClient, o.id), compare: compareRecord, noChange: 'Up to date', auto: 'follow' })
   const [pricing, setPricing] = useState(false)
+  const [returning, setReturning] = useState(false)
   const [releasing, setReleasing] = useState(false)
   const d = q.data
   const live = d ?? o  // the list's row until the detail arrives
   const open = d ? d.lines.filter((ln) => !ln.removed) : []
   const unmatched = open.some((ln) => !ln.item_code || (ln.problem && !ln.removed))
-  const backordered = live.backordered_ea ?? null
+  const returned = live.returned_ea ?? null
   const orderedEa = open.reduce((n, ln) => n + (ln.qty_ea ?? 0), 0)
   const shippedOf = (ln: (typeof open)[number]) => ln.shipped_ea ?? ln.shipped_shadow_ea
   const shippedEa = open.some((ln) => shippedOf(ln) != null) ? open.reduce((n, ln) => n + (shippedOf(ln) ?? 0), 0) : null
@@ -58,12 +60,20 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
     && (['Rejected', 'Failed'].includes(x.file_status ?? '') || x.ack_status === 'Rejected' || !!x.error))
   // Only an order that is invoiced here (not a Shopify order: Not Required) has an invoice price.
   const priceable = !!d && !d.has_invoice && d.invoice_status !== 'Not Required' && d.fulfillment_status !== 'Cancelled' && open.length > 0
+  // Returned: what shipped, until the invoice is queued or sent (then Record a return).
+  const returnable = !!d && d.fulfillment_status !== 'Cancelled' && !['Queued', 'Sent'].includes(d.invoice_status)
+    && open.some((ln) => ln.shipped_ea != null)
 
   const tabs: RecordTab[] = !d ? [] : [
     ...extraTabs,
     { id: 'overview', label: 'Overview', tone: d.review_reason ? 'warning' : undefined, render: () => <OverviewTab o={d} /> },
-    { id: 'lines', label: 'Lines', count: open.length, tone: unmatched || (backordered ?? 0) > 0 ? 'warning' : undefined, render: () => (
-      pricing ? (
+    { id: 'lines', label: 'Lines', count: open.length, tone: unmatched || (returned ?? 0) > 0 || live.short_shipped || (live.backordered_ea ?? 0) > 0 ? 'warning' : undefined, render: () => (
+      returning ? (
+        <ReturnedForm o={d} onCancel={() => setReturning(false)} onSaved={(next) => {
+          qc.setQueryData(queryKeys.detail(ordersClient, o.id), next)
+          setReturning(false)
+        }} />
+      ) : pricing ? (
         <InvoicePricesForm o={d} onCancel={() => setPricing(false)} onSaved={async (next) => {
           qc.setQueryData(queryKeys.detail(ordersClient, o.id), next)
           setPricing(false)
@@ -93,9 +103,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
       hint: Number(d.total_refunded ?? 0) > 0 ? `${formatMoney(d.total_refunded!, d.currency)} refunded` : 'nothing refunded' }] : []),
     { label: 'Ordered EA', value: orderedEa },
     { label: 'Shipped EA', value: shippedEa == null ? '—' : shippedEa, hint: shippedEa == null ? 'no 945 yet' : `of ${orderedEa} ordered` },
-    // Short, not a backorder (user 2026-11-12): one 945 per order (D18), what it did not ship is never sent later.
-    ...(backordered != null ? [{ label: 'Not shipped EA', value: backordered, tone: backordered > 0 ? 'warning' as const : 'neutral' as const,
-      hint: backordered > 0 ? 'short: not sent later' : undefined }] : []),
+    ...(returned ? [{ label: 'Returned EA', value: returned, tone: 'warning' as const, hint: 'by the customer: not invoiced' }] : []),
     { label: 'Requested delivery', value: d.requested_delivery_date ? formatDate(d.requested_delivery_date) : '—' },
   ]
 
@@ -106,9 +114,13 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
       {isDraft && <DraftActions o={d} close={close} />}
       <Send940 o={d} />
       <OrderHoldActions o={d} />
+      {returnable && !returning && (
+        <ActionButton size="sm" variant="secondary" permission={MANAGE_INVOICE}
+          onAction={() => { setPricing(false); setReturning(true); host?.onTabChange?.('lines') }}>Edit returned</ActionButton>
+      )}
       {priceable && !pricing && (
         <ActionButton size="sm" variant="secondary" permission={MANAGE_INVOICE}
-          onAction={() => { setPricing(true); host?.onTabChange?.('lines') }}>Edit invoice prices</ActionButton>
+          onAction={() => { setReturning(false); setPricing(true); host?.onTabChange?.('lines') }}>Edit invoice prices</ActionButton>
       )}
       {d.invoice_status === 'Blocked' && (
         <ActionButton size="sm" permission={MANAGE_INVOICE} onAction={() => setReleasing(true)}>Release invoice…</ActionButton>

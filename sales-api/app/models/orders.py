@@ -141,10 +141,18 @@ class Order(Audited, Versioned, Base):
 
     @property
     def backordered_ea(self) -> int | None:
-        """What the 945 left unshipped, in EA (`backordered_ea_sql`); never a lazy load."""
+        """What the 945 left unshipped, in EA (`backordered_ea_sql`); never a lazy load. Not shown any
+        more (user 2026-11-12): only the Short shipped mark reads it."""
         v = self.__dict__.get("backordered_ea_sql")
         if v is None:
             v = self.__dict__.get("shadow_backordered_sql")  # the shadow run's 945: the same figure
+        return None if v is None else int(v)
+
+
+    @property
+    def returned_ea(self) -> int | None:
+        """What the customer returned of what shipped, over the lines (`returned_ea_sql`); None when nothing."""
+        v = self.__dict__.get("returned_ea_sql")
         return None if v is None else int(v)
 
 
@@ -204,6 +212,9 @@ class OrderLine(Audited, Base):
     line_status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="Active")
     shipped_ea: Mapped[int | None] = mapped_column(Integer, nullable=True)
     delivered_qty: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # sales25: what the customer returned (or refused) of what shipped, entered by a person before the
+    # invoice goes (user 2026-11-12). Delivered = shipped − returned; the invoice bills the delivered.
+    returned_ea: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     removed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=false())
     problem: Mapped[str | None] = mapped_column(Text, nullable=True)  # why this line holds the order in Review
     # Shopify (sales17): the line's taxes and discounts as the store gives them
@@ -222,6 +233,10 @@ Order.total_amount_sql = order_fact(func.coalesce(Order.total, select(
 
 # The order's backordered EA: the sum over its lines with an applied 945 (NULL
 # before any) — the list's Not shipped EA column and view (labelled Backordered EA before 2026-11-12: a short shipment is never sent later).
+# What the customer returned of what shipped, over the order's lines (the list's Returned EA).
+Order.returned_ea_sql = order_fact(select(func.nullif(func.sum(OrderLine.returned_ea), 0)).where(
+    OrderLine.order_id == Order.id, OrderLine.removed.is_(False)).correlate_except(OrderLine).scalar_subquery())
+
 Order.backordered_ea_sql = order_fact(select(
     func.sum(func.greatest(OrderLine.qty_ea - OrderLine.shipped_ea, 0))).where(
     OrderLine.order_id == Order.id, OrderLine.removed.is_(False), OrderLine.shipped_ea.is_not(None),

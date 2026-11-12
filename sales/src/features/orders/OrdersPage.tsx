@@ -20,8 +20,8 @@ const orderColumns: ColumnDef<OrderRead, unknown>[] = [
   { id: 'status_detail', header: 'Detail', cell: ({ row }) => <StatusDetail o={row.original} /> },
   { id: 'shopify', header: 'Shopify', cell: ({ row }) => <ShopifyCell o={row.original} /> },
   col.money('total_amount', 'Total', { currency: 'currency' }),
-  { accessorKey: 'backordered_ea', header: 'Not shipped EA', cell: ({ row }) => row.original.backordered_ea
-    ? <span className="font-medium text-warning-700">{row.original.backordered_ea}</span> : '' },
+  { accessorKey: 'returned_ea', header: 'Returned EA', cell: ({ row }) => row.original.returned_ea
+    ? <span className="font-medium text-warning-700">{row.original.returned_ea}</span> : '' },
   { accessorKey: 'total_refunded', header: 'Refunded', cell: ({ row }) => Number(row.original.total_refunded ?? 0)
     ? <MoneyCell amount={row.original.total_refunded} currency={row.original.currency} /> : '' },
   col.money('net_amount', 'Net', { currency: 'currency' }),

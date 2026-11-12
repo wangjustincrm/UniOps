@@ -61,8 +61,10 @@ export interface OrderRead {
   original_total?: string | null
   total_refunded?: string | null
   net_amount?: string | null
-  /** What the applied 945 left unshipped, in EA (none before a 945). */
+  /** What the applied 945 left unshipped, in EA (none before a 945): read only by the Short shipped mark. */
   backordered_ea?: number | null
+  /** What the customer returned (or refused) of what shipped, over the lines; none when nothing. */
+  returned_ea?: number | null
   source_updated_at: string | null
   version: number
   created_at: string
@@ -98,6 +100,8 @@ export interface LineRead {
   state?: string | null
   /** Ordered − shipped EA once an applied 945 set the shipped quantity. */
   backordered_ea?: number | null
+  /** Returned (or refused) by the customer, entered before the invoice goes; delivered = shipped − returned. */
+  returned_ea?: number
   /** The shadow run's 945s for this line (Zoho is live): shown, never applied */
   shipped_shadow_ea?: number | null
   backordered_shadow_ea?: number | null
@@ -329,6 +333,9 @@ export const downloadPackingList = (orderId: number, shipmentId: number) =>
   api.download(`/orders/${orderId}/shipments/${shipmentId}/packing-list.pdf`, `PackingList-${shipmentId}.pdf`)
 export interface InvoicePricesBody { reason: string | null; lines: { id: number; invoice_unit_price: string | null }[] }
 export const setInvoicePrices = (id: number, body: InvoicePricesBody) => api.put<OrderDetail>(`/orders/${id}/invoice-prices`, body)
+/** What the customer returned per line, with why (user 2026-11-12): until the invoice is sent. */
+export interface ReturnedBody { reason: string; lines: { id: number; returned_ea: number }[] }
+export const setReturned = (id: number, body: ReturnedBody) => api.put<OrderDetail>(`/orders/${id}/returned`, body)
 export const retryShopify = (shipmentId: number) =>
   api.post<{ shipment_id: number; shopify_status: string }>(`/orders/shipments/${shipmentId}/shopify-retry`)
 

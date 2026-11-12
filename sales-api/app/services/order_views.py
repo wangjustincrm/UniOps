@@ -11,6 +11,7 @@ from sqlalchemy import and_, case, or_, select
 
 from app.domain.address import address_flags
 from app.domain.carriers import tracking_url
+from app.domain.invoicing import CASE_UNIT, amount
 from app.domain.lifecycle import backordered, line_state, spread
 from app.domain.order_rules import (
     ON_HOLD_FULFILLMENT,
@@ -60,6 +61,7 @@ from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.schemas.orders import (
     InvoicePricesIn,
+    ReturnedIn,
     LinePreview,
     LineRead,
     ManualLineIn,
@@ -137,7 +139,7 @@ class OrderRepository(Repository[Order]):
               "shopify_financial_status": "Shopify Payment", "shopify_fulfillment_status": "Shopify Fulfillment",
               "archived_in_shopify_at": "Archived", "source_cancelled_at": "Cancelled",
               "source_name": "Sales channel", "tags": "Tags", "original_total": "Original total",
-              "total_refunded": "Refunded", "net_amount": "Net", "backordered_ea": "Not shipped EA",
+              "total_refunded": "Refunded", "net_amount": "Net", "returned_ea": "Returned EA",
               "delivery_due_date": "Delivery due"}
     enums = {"source_type": SOURCE_TYPES, "fulfillment_status": tuple(s.value for s in F),
              "invoice_status": tuple(s.value for s in Inv), "hold_reason": HOLD_REASONS,
@@ -145,15 +147,19 @@ class OrderRepository(Repository[Order]):
     # The internal lines stay filterable and sortable, so a saved view on them still lists,
     # but no list offers them any more: they show on the order page, for diagnosis.
     meta_hidden = ("order_status_label", "short_shipped", "status_detail", "status_detail_at", "shadow", "to_confirm",
-                   "fulfillment_status", "invoice_status", "order_state", "hold_reason")
+                   "fulfillment_status", "invoice_status", "order_state", "hold_reason",
+                   # what the 945 left unshipped: no column any more (user 2026-11-12), only the Short shipped mark
+                   "backordered_ea")
     sortable = {"order_state": ORDER_STATE_SQL, "order_status": ORDER_STATUS_SQL, "on_hold_reason": ON_HOLD_REASON_SQL, "partner_name": Order.partner_name_sql,
-                "total_amount": Order.total_amount_sql, "backordered_ea": BACKORDERED_SQL, "delivery_due_date": Order.delivery_due_sql}
+                "total_amount": Order.total_amount_sql, "backordered_ea": BACKORDERED_SQL, "returned_ea": Order.returned_ea_sql,
+                "delivery_due_date": Order.delivery_due_sql}
     filterable = {"order_state": FilterRule(ORDER_STATE_SQL, kind="text"),
                   "order_status": FilterRule(ORDER_STATUS_SQL, kind="text"),
                   "on_hold_reason": FilterRule(ON_HOLD_REASON_SQL, kind="text"),
                   "partner_name": FilterRule(Order.partner_name_sql, kind="text"),
                   "total_amount": FilterRule(Order.total_amount_sql, kind="number", cast=lambda v: Decimal(str(v))),
                   "backordered_ea": FilterRule(BACKORDERED_SQL, kind="number", cast=int),
+                  "returned_ea": FilterRule(Order.returned_ea_sql, kind="number", cast=int),
                   "to_confirm": FilterRule(TO_CONFIRM_SQL, kind="bool", cast=lambda v: str(v).lower() == "true")}
     summable = ("total_amount", "net_amount", "total_refunded")
     sum_currency = "currency"
@@ -174,13 +180,13 @@ class OrderRepository(Repository[Order]):
             "columns": ["source_reference", "first_received_at", "order_status", "status_detail", "shopify", "shopify_financial_status",
                         "ship_to_place", "total_amount"],
             "hidden": ["order_number", "partner_name", "source_order_number", "order_date", "total_refunded", "net_amount",
-                       "backordered_ea", "review_reason"]}),
+                       "returned_ea", "review_reason"]}),
         Preset("open_retailers", "Open retailers", {
             "filters": [{"field": "order_status", "op": "not_in", "value": list(NOT_OPEN_STATUSES)},
                         {"field": "source_type", "op": "in", "value": ["EDI_850", "FROM_945"]}],
             "sort": [{"field": "delivery_due_date", "desc": False}],
             "columns": ["source_reference", "partner_name", "source_order_number", "order_date", "delivery_due_date",
-                        "cancel_date", "ship_to_place", "order_status", "status_detail", "total_amount", "backordered_ea"],
+                        "cancel_date", "ship_to_place", "order_status", "status_detail", "total_amount", "returned_ea"],
             "hidden": ["order_number", "shopify", "total_refunded", "net_amount", "review_reason"]}),
         Preset("pending", "To fulfill", {"filters": [{"field": "order_status", "op": "eq", "value": "To Fulfill"}], "hidden": ["review_reason"],
                                        "sort": [{"field": "first_received_at", "desc": False}]}),
@@ -334,6 +340,75 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
             for ln, new in changed:
                 ln.invoice_unit_price = new
             await s.flush()
+        return await self.detail(id)
+
+    @requires(INVOICE_MANAGE)
+    async def set_returned(self, id: int, body: ReturnedIn) -> OrderDetail:
+        """What the customer returned (or refused) per line, before the invoice goes (user 2026-11-12):
+        delivered = shipped − returned, and the invoice bills the delivered. With the delivery already
+        confirmed the delivered follows, and a draft invoice's line too (whole cases only; its price
+        stays). Once the invoice is queued or sent the number is locked: a later return is recorded with
+        Record a return. Every change has its reason, in the audit and the log."""
+        s = self.uow.session
+        o = await self.repo.get(id, for_update=True)
+        if o.fulfillment_status == F.CANCELLED:
+            raise BusinessError("order.cancelled", "the order is cancelled")
+        if o.invoice_status in (Inv.QUEUED.value, Inv.SENT.value):
+            raise BusinessError("returned.invoice_sent", "the invoice is sent: record a later return with Record a return",
+                                {"status": o.invoice_status})
+        mine = {ln.id: ln for ln in (await s.execute(select(OrderLine).where(
+            OrderLine.order_id == id, OrderLine.removed.is_(False)).with_for_update())).scalars()}
+        inv = (await s.execute(select(Invoice).where(Invoice.order_id == id).with_for_update())).scalar_one_or_none()
+        ilines = {il.order_line_id: il for il in (await s.execute(select(InvoiceLine).where(
+            InvoiceLine.invoice_id == inv.id))).scalars()} if inv else {}
+        changed: list[tuple[OrderLine, int, int]] = []
+        for c in body.lines:
+            ln = mine.get(c.id)
+            if ln is None:
+                raise BusinessError("order.line", f"line {c.id} is not an open line of this order", {"line_id": c.id})
+            if ln.shipped_ea is None:
+                raise BusinessError("returned.not_shipped", f"line {ln.line_no} has not shipped: nothing can come back",
+                                    {"line_id": ln.id})
+            if c.returned_ea > ln.shipped_ea:
+                raise BusinessError("returned.more_than_shipped", f"line {ln.line_no}: returned {c.returned_ea} EA is more than "
+                                    f"the {ln.shipped_ea} EA shipped", {"line_id": ln.id, "field": "returned_ea"}, status_code=422)
+            if c.returned_ea != ln.returned_ea:
+                changed.append((ln, ln.returned_ea, c.returned_ea))
+        if not changed:
+            return await self.detail(id)
+        reason = body.reason.strip()
+        cases = dict((await s.execute(select(ItemUnit.item_code, ItemUnit.factor_ea).where(
+            ItemUnit.item_code.in_({ln.item_code for ln, _, _ in changed if ln.item_code}), ItemUnit.unit == CASE_UNIT,
+            ItemUnit.active.is_(True)))).all())
+        for ln, _old, new in changed:
+            ln.returned_ea = new
+            if ln.delivered_qty is not None:  # the delivery is confirmed: what it says follows
+                ln.delivered_qty = ln.shipped_ea - new
+            il = ilines.get(ln.id)
+            if inv is None:
+                continue
+            delivered = ln.shipped_ea - new
+            if il is None:
+                if delivered:
+                    raise BusinessError("returned.invoice_line", f"line {ln.line_no} is not on the invoice: change it on the invoice",
+                                        {"line_id": ln.id})
+                continue
+            factor = int(cases.get(ln.item_code) or 0)
+            whole, rest = divmod(delivered, factor) if factor else (0, delivered)
+            if rest:
+                raise BusinessError("returned.part_case", f"line {ln.line_no}: {delivered} EA delivered is not a whole number of "
+                                    f"cases{f' of {factor}' if factor else ''}: the invoice bills cases", {"line_id": ln.id, "field": "returned_ea"},
+                                    status_code=422)
+            il.qty, il.amount = whole, amount(whole, il.unit_price)
+        if inv is not None:
+            inv.subtotal = inv.total = sum((il.amount for il in ilines.values()), Decimal(0))
+        self.uow.set_reason(f"returned: {reason}")
+        await oplog.write(s, "INFO", "invoice", f"order {o.label}: returned " + "; ".join(
+            f"line {ln.line_no} {ln.item_code or ''} {old} → {new} EA (delivered {ln.shipped_ea - new})" for ln, old, new in changed)
+            + f" — {reason}" + (f"; invoice {inv.invoice_number} follows" if inv is not None else ""),
+            order_id=o.id, context={"reason": reason})
+        await s.flush()
+        await s.refresh(o, ["returned_ea_sql"])  # the order's total, read in this unit before the change
         return await self.detail(id)
 
     @requires(OPERATE)

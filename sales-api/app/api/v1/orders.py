@@ -9,7 +9,7 @@ from app.platform.crud_router import page_body
 from app.platform.query import QuerySpec, query_spec
 from app.runtime import Runtime, get_runtime
 from app.schemas.orders import (
-    CancelOrderIn, InvoicePricesIn, LinePreview, ManualLineIn, ManualOrderIn, OrderDetail, OrderFrom945In, OrderFrom945Plan, OrderRead,
+    CancelOrderIn, InvoicePricesIn, ReturnedIn, LinePreview, ManualLineIn, ManualOrderIn, OrderDetail, OrderFrom945In, OrderFrom945Plan, OrderRead,
     ReleaseHoldIn, ResolveRowIn, ReviewResult,
 )
 from app.services.order_from_945 import OrderFrom945
@@ -126,6 +126,13 @@ async def manual_cancel(u: UoW, id: int, version: Version = None):
 @router.get("/{id}", response_model=OrderDetail)
 async def order_detail(u: UoW, id: int):
     return await OrderService(u).detail(id)
+
+
+@router.put("/{id}/returned", response_model=OrderDetail)
+async def set_returned(u: UoW, id: int, body: ReturnedIn):
+    out = await OrderService(u).set_returned(id, body)
+    await u.commit()
+    return out
 
 
 @router.put("/{id}/invoice-prices", response_model=OrderDetail)

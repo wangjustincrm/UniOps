@@ -20,6 +20,9 @@ const sum = (lines: LineRead[], f: (ln: LineRead) => number | null | undefined) 
 
 // One row per line, ordered → shipped (945) → delivered → invoiced; its ▸ opens
 // the 945 rows packed for it. The less-used columns start hidden (the eye shows them).
+/** Delivered: as confirmed, else what shipped less what came back (it is what the invoice will bill). */
+const deliveredOf = (ln: LineRead) => ln.delivered_qty ?? (ln.shipped_ea == null || ln.removed ? null : ln.shipped_ea - (ln.returned_ea ?? 0))
+
 const lineColumns = (currency: string, numbers: Map<number, number>): ColumnDef<LineRead, unknown>[] => [
   { accessorKey: 'line_no', header: '#', cell: ({ row }) => <LineNo lineNo={row.original.line_no} numbers={numbers} />, meta: { hidden: true } },
   { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => row.original.item_code ?? <span className="text-danger-600">unmatched</span> },
@@ -37,11 +40,10 @@ const lineColumns = (currency: string, numbers: Map<number, number>): ColumnDef<
     : <MoneyCell amount={row.original.tax_amount} currency={currency} />, meta: { hidden: true } },
   { accessorKey: 'qty_ea', header: 'EA', cell: ({ row }) => ea(row.original.qty_ea) },
   { accessorKey: 'shipped_ea', header: 'Shipped EA', cell: ({ row: { original: ln } }) => ea(ln.shipped_ea ?? ln.shipped_shadow_ea) },
-  { accessorKey: 'backordered_ea', header: 'Not shipped EA', cell: ({ row: { original: ln } }) => {
-    const n = ln.backordered_ea ?? ln.backordered_shadow_ea
-    return n ? <span className="font-medium text-warning-700">{n}</span> : ea(n)
-  } },
-  { accessorKey: 'delivered_qty', header: 'Delivered EA', cell: ({ row }) => ea(row.original.delivered_qty) },
+  // Returned: entered by a person before the invoice goes (Edit returned); delivered = shipped − returned.
+  { accessorKey: 'returned_ea', header: 'Returned EA', cell: ({ row: { original: ln } }) => ln.returned_ea
+    ? <span className="font-medium text-warning-700">{ln.returned_ea}</span> : (ln.shipped_ea == null ? '—' : '0') },
+  { accessorKey: 'delivered_qty', header: 'Delivered EA', cell: ({ row }) => ea(deliveredOf(row.original)) },
   { id: 'invoiced', header: 'Invoiced', cell: ({ row }) => row.original.invoiced_qty == null ? '—'
     : `${row.original.invoiced_qty} ${row.original.invoice_unit ?? ''}` },
   // Invoiced: the invoice's price per its unit (CA). Before: what the draft will take, per order unit.
@@ -90,8 +92,8 @@ function LifecycleTable({ o }: { o: OrderDetail }) {
       expand={(ln) => (ln.packing?.length ? <Packing rows={ln.packing} /> : null)}
       footer={[null, 'Total', null, null, null, money(sum(o.lines, lineAmount)), null, null, sum(o.lines, (ln) => ln.qty_ea),
         sum(o.lines, (ln) => ln.shipped_ea),
-        o.lines.some((ln) => ln.backordered_ea != null) ? sum(o.lines, (ln) => ln.backordered_ea) : null,
-        sum(o.lines, (ln) => ln.delivered_qty), null, null,
+        o.lines.some((ln) => ln.shipped_ea != null) ? sum(o.lines, (ln) => ln.returned_ea ?? 0) : null,
+        sum(o.lines, deliveredOf), null, null,
         o.lines.some((ln) => ln.invoice_amount != null) ? money(sum(o.lines, (ln) => Number(ln.invoice_amount ?? 0))) : null,
         null, null]} />
   )
@@ -102,7 +104,7 @@ export function LinesTab({ o }: { o: OrderDetail }) {
   return (
     <>
       <Hint as="p">
-        Ordered → shipped (945) → delivered → invoiced. ▸ shows the pallets and lots packed for a line.
+        Ordered → shipped (945) → returned by the customer → delivered (shipped − returned) → invoiced. ▸ shows the pallets and lots packed for a line.
         {o.has_invoice ? ' The invoice is drafted: change its prices on the invoice.'
           : ' The invoice price starts as the PO price; the invoice draft takes it.'}
       </Hint>

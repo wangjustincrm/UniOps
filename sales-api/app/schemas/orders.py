@@ -68,6 +68,7 @@ class OrderRead(BaseModel):
     original_total: Decimal | None = None
     total_refunded: Decimal | None = None
     net_amount: Decimal | None = None
+    returned_ea: int | None = None  # what the customer returned of what shipped (none when nothing)
     backordered_ea: int | None = None  # what the applied 945 left unshipped (none before a 945)
     source_updated_at: datetime | None
     version: int
@@ -111,7 +112,8 @@ class LineRead(BaseModel):
     discount_amount: Decimal | None = None  # Shopify: the line's discounts
     tax_lines: list[dict[str, Any]] | None = None
     shipped_ea: int | None = None     # P5: from the 945
-    delivered_qty: int | None = None  # P6: confirmed delivery (EA)
+    delivered_qty: int | None = None  # P6: confirmed delivery (EA) = shipped − returned
+    returned_ea: int = 0              # sales25: returned / refused by the customer, entered before the invoice goes
     # The detail's lifecycle (filled by the service): the invoice's lines for
     # this line, its state, and the 945 rows (pallet, lot, expiry) packed for it.
     invoiced_qty: int | None = None
@@ -426,6 +428,19 @@ class OrderFrom945Plan(BaseModel):
     order_ref: str | None
     refused: str | None
     refused_message: str | None
+
+
+class ReturnedLineIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: int
+    returned_ea: Annotated[int, Field(ge=0)]
+
+
+class ReturnedIn(BaseModel):
+    """What the customer returned (or refused) per order line, before the invoice goes; why, in a few words."""
+    model_config = ConfigDict(extra="forbid")
+    reason: Annotated[str, Field(min_length=3, max_length=500)]
+    lines: Annotated[list[ReturnedLineIn], Field(min_length=1, max_length=500)]
 
 
 class InvoicePriceIn(BaseModel):

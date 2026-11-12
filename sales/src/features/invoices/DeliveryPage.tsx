@@ -14,24 +14,28 @@ const OPERATE = 'sales.order.operate'
 const MANAGE = 'sales.invoice.manage'  // sending is invoice work: Confirm and send needs both
 const WAITING = [{ field: 'to_confirm', op: 'eq' as const, value: 'true' }]
 
-type Delivered = { line: LineRead; delivered: string }
+// What the customer returned (or refused) per line; delivered = shipped − returned, which the invoice bills (user 2026-11-12).
+type Delivered = { line: LineRead; returned: string }
+const shippedOf = (d: Delivered) => d.line.shipped_ea ?? 0
+const deliveredOf = (d: Delivered) => shippedOf(d) - Number(d.returned || 0)
 
 const deliveredColumns = [
   readColumn<Delivered>('item', 'Item', (d) => d.line.item_code),
   readColumn<Delivered>('shipped', 'Shipped EA', (d) => d.line.shipped_ea),
-  numberColumn<Delivered>('delivered', 'Delivered EA', { label: (d) => `Delivered ${d.line.item_code}`, get: (d) => d.delivered,
-    set: (v) => ({ delivered: v }), min: 0, max: (d) => d.line.shipped_ea ?? undefined }),
+  numberColumn<Delivered>('returned', 'Returned EA', { label: (d) => `Returned ${d.line.item_code}`, get: (d) => d.returned,
+    set: (v) => ({ returned: v }), min: 0, max: (d) => d.line.shipped_ea ?? undefined }),
+  readColumn<Delivered>('delivered', 'Delivered EA', (d) => (Number.isInteger(deliveredOf(d)) ? deliveredOf(d) : '—')),
 ]
 
 function deliveredProblem(d: Delivered): string | null {
-  const n = Number(d.delivered)
-  return Number.isInteger(n) && n >= 0 && n <= (d.line.shipped_ea ?? 0) ? null : `0 … ${d.line.shipped_ea} EA (the shipped quantity)`
+  const n = Number(d.returned || 0)
+  return Number.isInteger(n) && n >= 0 && n <= shippedOf(d) ? null : `0 … ${d.line.shipped_ea} EA (what shipped)`
 }
 
 const confirmSchema = z.object({ confirmed_date: z.string().min(1, 'Required') })
 const confirmFields: FieldSpec[] = [{ name: 'confirmed_date', label: 'Delivered on (the invoice date)', type: 'date', required: true }]
 
-/** One order: the delivered EA per line (≤ shipped) and the date — the standard
+/** One order: what the customer returned per line (delivered = shipped − returned) and the date — the standard
  *  form, in the order's sheet; read only without sales.order.operate. */
 function ConfirmOne({ o, close }: { o: OrderRead; close: () => void }) {
   const qc = useQueryClient()
@@ -42,7 +46,7 @@ function ConfirmOne({ o, close }: { o: OrderRead; close: () => void }) {
   if (q.isLoading || !q.data) return <Skeleton className="h-20 w-full" />
   const save = async (v: Record<string, unknown>, lines: Delivered[], send: boolean) => {
     await confirmDelivery({ order_id: o.id, confirmed_date: String(v.confirmed_date), ...(send ? { send } : {}),
-      lines: lines.map((d) => ({ order_line_id: d.line.id, delivered_qty: Number(d.delivered) })) }).catch(refused)
+      lines: lines.map((d) => ({ order_line_id: d.line.id, delivered_qty: deliveredOf(d) })) }).catch(refused)
     await qc.invalidateQueries({ queryKey: queryKeys.list(ordersClient) })
     await qc.invalidateQueries({ queryKey: queryKeys.list(invoicesClient) })
     close()
@@ -52,9 +56,9 @@ function ConfirmOne({ o, close }: { o: OrderRead; close: () => void }) {
   return (
     <MasterDetailForm<Delivered>
       schema={confirmSchema} fields={confirmFields} defaultValues={{ confirmed_date: due }} readOnly={!can}
-      lines={{ label: 'Delivered quantities', columns: deliveredColumns, rowKey: (d) => d.line.id, problem: deliveredProblem,
+      lines={{ label: 'Returned and delivered', columns: deliveredColumns, rowKey: (d) => d.line.id, problem: deliveredProblem,
         initial: q.data.lines.filter((l) => (l.shipped_ea ?? l.shipped_shadow_ea) != null)
-          .map((line) => ({ line, delivered: String(line.shipped_ea ?? line.shipped_shadow_ea) })) }}
+          .map((line) => ({ line: { ...line, shipped_ea: line.shipped_ea ?? line.shipped_shadow_ea }, returned: String(line.returned_ea ?? 0) })) }}
       submitLabel="Confirm delivery"
       alsoSubmit={canSend ? { label: 'Confirm and send', onSubmit: (v, lines) => save(v, lines, true) } : undefined}
       onSubmit={(v, lines) => save(v, lines, false)}
