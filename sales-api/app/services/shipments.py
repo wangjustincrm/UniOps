@@ -65,7 +65,7 @@ from app.services.settings import SETTINGS, SHADOW_MODE
 
 logger = logging.getLogger(__name__)
 
-SKIPPED_TEST = "Not needed"  # a Test-mode store connection: the write is not made, and that is not a failure
+SKIPPED_NO_WRITE = "Not needed"  # the store connection's Write tick is off: the write is not made, and that is not a failure
 STEP = "945"
 FULFILL, CLOSE = "shopify_fulfill", "shopify_close"
 OUTBOX = Outbox(OutboxRecord)
@@ -598,13 +598,13 @@ class Shipments:
             return "the shipment was not applied"
         order = await s.get(Order, sh.order_id, with_for_update=True)
         conn = await s.get(Connection, order.connection_id) if order.connection_id else None
-        if conn is not None and conn.kind == "SHOPIFY" and conn.mode == "TEST":
-            # A test store connection: the write is skipped on purpose. Not a failure: the order goes on
+        if conn is not None and conn.kind == "SHOPIFY" and not conn.can_write:
+            # Writing is off for the store: the write is skipped on purpose. Not a failure: the order goes on
             # exactly as in production (no hold, no task); the shipment says it was skipped.
-            await oplog.write(s, "INFO", STEP, f"Shopify write for shipment {sh.id} skipped: the store connection is in Test mode",
+            await oplog.write(s, "INFO", STEP, f"Shopify write for shipment {sh.id} skipped: writing is off for the store connection",
                               order_id=order.id)
-            sh.shopify_status = SKIPPED_TEST
-            return "the store connection is in Test mode: nothing is written to Shopify"
+            sh.shopify_status = SKIPPED_NO_WRITE
+            return "writing is off for the store connection: nothing is written to Shopify"
         if F(order.fulfillment_status) in STOPPED:  # a row queued before the hold or the cancellation
             await oplog.write(s, "WARNING", STEP, f"no Shopify write for shipment {sh.id}: the order is {order.fulfillment_status}",
                               order_id=order.id)

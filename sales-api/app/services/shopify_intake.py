@@ -83,6 +83,9 @@ class ShopifyIntake:
         if conn.auth_failed_at is not None:
             report.status = "latched"
             return report
+        if not conn.can_read:
+            report.status = "read_off"  # the connection's Read tick is off: nothing is pulled
+            return report
         if conn.cursor_updated_at is None:
             report.status = "cursor_not_set"
             return report

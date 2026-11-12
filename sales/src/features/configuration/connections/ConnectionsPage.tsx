@@ -77,7 +77,10 @@ export default function ConnectionsPage() {
       recordSubtitle={(c) => [c.kind, c.host, c.partner_code].filter(Boolean).join(' · ')}
       recordFacts={(c) => [
         { label: 'Health', value: connectionHealth(c).label, tone: connectionHealth(c).tone },
-        { label: 'Mode', value: c.mode === 'LIVE' ? 'Live' : 'Test', tone: c.mode === 'LIVE' ? 'success' : 'neutral' },
+        { label: 'Read', value: c.can_read ? 'On' : 'Off', tone: c.can_read ? 'success' : 'neutral',
+          hint: c.kind === 'SFTP' && c.can_read ? c.inbound_folder ?? undefined : undefined },
+        { label: 'Write', value: c.can_write ? 'On' : 'Off', tone: c.can_write ? 'success' : 'neutral',
+          hint: c.kind === 'SFTP' && c.can_write ? c.outbound_folder ?? undefined : undefined },
         { label: 'Schedule', value: c.schedule_paused ? 'Paused' : `Every ${c.schedule_minutes} min`, tone: c.schedule_paused ? 'warning' : 'neutral' },
         { label: 'Last run', value: c.last_run_status ?? '—', tone: factTone(c.last_run_status),
           hint: c.last_run_at ? formatDateTime(c.last_run_at) : undefined },

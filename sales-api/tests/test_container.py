@@ -79,7 +79,7 @@ async def test_guarded_outside_tests_refused_while_off_and_logged():
     with pytest.raises(Suppressed):
         await c.email.send_external(MSG)
     with pytest.raises(Suppressed):
-        await c.sftp.put(SimpleNamespace(mode="LIVE", id=7, host=RADIANT), "/in", "a.edi", b"xyz")
+        await c.sftp.put(SimpleNamespace(can_write=True, id=7, host=RADIANT, outbound_folder="/in"), "/in", "a.edi", b"xyz")
     assert inner["email"].sent == [] and inner["sftp"].files == {}
     mail, put = records
     assert mail.message.startswith("would have sent: email.send_external")
@@ -89,36 +89,36 @@ async def test_guarded_outside_tests_refused_while_off_and_logged():
     assert put.message.startswith("would have written: sftp.put")
     assert put.context | {"sha256": None} == {
         "gateway": "sftp", "method": "put", "switch": PARTNER_WRITES_SWITCH, "reason": "switch off",
-        "connection": 7, "mode": "LIVE", "size": 3, "sha256": None, "folder": "/in", "name": "a.edi",
+        "connection": 7, "can_write": True, "size": 3, "sha256": None, "folder": "/in", "name": "a.edi",
     }
 
 
-async def test_guarded_outside_tests_allowed_when_on_and_live_only():
+async def test_guarded_outside_tests_allowed_when_on_and_with_write_only():
     _, c, inner, records = _prod_like(True, True)
     await c.email.send_external(MSG)
     with pytest.raises(Suppressed):
-        await c.sftp.put(SimpleNamespace(mode="TEST", host=RADIANT), "/in", "a", b"x")
-    await c.sftp.put(SimpleNamespace(mode="LIVE", host=RADIANT), "/in", "b", b"x")
+        await c.sftp.put(SimpleNamespace(can_write=False, host=RADIANT, outbound_folder="/in"), "/in", "a", b"x")
+    await c.sftp.put(SimpleNamespace(can_write=True, host=RADIANT, outbound_folder="/in"), "/in", "b", b"x")
     assert inner["email"].sent == [MSG] and list(inner["sftp"].files) == ["/in/b"]
-    assert [r.context["reason"] for r in records] == ["connection not LIVE"]
+    assert [r.context["reason"] for r in records] == ["writing is off for this connection"]
 
 
 async def test_a_host_readable_but_not_writable_is_refused_before_any_traffic():
-    """The third guard (P4): switch on and LIVE are not enough — the host must
+    """The third guard (P4): switch on and Write on are not enough — the host must
     be in SALES_SFTP_WRITE_HOSTS. Read at call time; empty = no write anywhere."""
     s, c, inner, records = _prod_like(False, True, write_hosts=frozenset({"sftp-test"}))
-    truecommerce = SimpleNamespace(mode="LIVE", id=3, host="sftp.truecommerce.example")
+    truecommerce = SimpleNamespace(can_write=True, id=3, host="sftp.truecommerce.example", outbound_folder="/Import", inbound_folder="/Export", processed_folder="/Export/done")
     for call in (c.sftp.put(truecommerce, "/Import", "a.json", b"x"), c.sftp.move(truecommerce, "/Export/a", "/Export/done/a"),
                  c.sftp.delete(truecommerce, "/Export/a")):
         with pytest.raises(Suppressed):
             await call
     assert inner["sftp"].calls == [] and inner["sftp"].files == {}  # nothing reached the gateway
     assert {r.context["reason"] for r in records} == {"host not in SALES_SFTP_WRITE_HOSTS"}
-    await c.sftp.put(SimpleNamespace(mode="LIVE", id=1, host="SFTP-TEST"), "/in", "ok.edi", b"x")  # case does not matter
+    await c.sftp.put(SimpleNamespace(can_write=True, id=1, host="SFTP-TEST", outbound_folder="/in"), "/in", "ok.edi", b"x")  # case does not matter
     assert list(inner["sftp"].files) == ["/in/ok.edi"]
     s.sftp_write_hosts = frozenset()  # emptied at run time: every write refused at once
     with pytest.raises(Suppressed):
-        await c.sftp.put(SimpleNamespace(mode="LIVE", id=1, host="sftp-test"), "/in", "no.edi", b"x")
+        await c.sftp.put(SimpleNamespace(can_write=True, id=1, host="sftp-test", outbound_folder="/in"), "/in", "no.edi", b"x")
     assert list(inner["sftp"].files) == ["/in/ok.edi"]
 
 

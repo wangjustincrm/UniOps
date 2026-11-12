@@ -239,14 +239,14 @@ async def test_a_rule_test_writes_its_task_and_email_and_the_history_shows_both(
     assert sorted((x["channel"], x["test"], x["delivery"]) for x in h) == [("EMAIL", True, "PENDING"), ("TASK", True, "Task written")]
 
 
-async def test_ac71_a_channel_goes_live_only_through_the_notification_gate(api):
+async def test_ac71_writing_is_turned_on_only_through_the_notification_gate(api):
     async with api.n.f(SYSTEM_ACTOR) as u:
-        c = Connection(name="radiant", kind="SFTP", host="sftp-test", port=22, username="r", after_read="LEAVE", mode="TEST",
+        c = Connection(name="radiant", kind="SFTP", host="sftp-test", port=22, username="r", after_read="LEAVE", can_write=False,
                        inbound_folder="/in", processed_folder="/processed", error_folder="/error", outbound_folder="/out",
                        secret_name="SALES_SECRET_TEST", stable_seconds=0, version=1, created_by_name="t")
         u.session.add(c)
         await u.commit()
-    live = await api.put(f"/api/v1/config/connections/{c.id}?version=1", json={"mode": "LIVE"}, headers=OP)
+    live = await api.put(f"/api/v1/config/connections/{c.id}?version=1", json={"can_write": True}, headers=OP)
     assert live.status_code == 422 and live.json()["error"]["code"] == "connection.go_live_gate"
     assert set(live.json()["error"]["details"]["events"]) == set(GATE_EVENTS)
     for e in GATE_EVENTS:
@@ -256,12 +256,12 @@ async def test_ac71_a_channel_goes_live_only_through_the_notification_gate(api):
     gate = (await api.get("/api/v1/config/notification-gate", headers=READER)).json()
     assert [g["event_type"] for g in gate if not g["ok"]] == ["order_archived"]
     assert {g["problem"] for g in gate if not g["ok"]} == {"no test notification sent"}
-    r = await api.put(f"/api/v1/config/connections/{c.id}?version=1", json={"mode": "LIVE"}, headers=OP)
+    r = await api.put(f"/api/v1/config/connections/{c.id}?version=1", json={"can_write": True}, headers=OP)
     assert r.status_code == 422 and r.json()["error"]["details"]["events"] == ["order_archived"]
     rid = next(g["rule_id"] for g in gate if g["event_type"] == "order_archived")
     await api.post(f"{R}/{rid}/test", headers=OP)
-    r = await api.put(f"/api/v1/config/connections/{c.id}?version=1", json={"mode": "LIVE"}, headers=OP)
-    assert r.status_code == 200 and r.json()["mode"] == "LIVE"
+    r = await api.put(f"/api/v1/config/connections/{c.id}?version=1", json={"can_write": True}, headers=OP)
+    assert r.status_code == 200 and r.json()["can_write"] is True
 
 
 async def test_ac53_health_automatic_runs_not_available_warns_and_a_latch_fails(api):
@@ -274,7 +274,7 @@ async def test_ac53_health_automatic_runs_not_available_warns_and_a_latch_fails(
     assert h["gate_ok"] is False and len(h["gate"]) == len(GATE_EVENTS)
     async with api.n.f(SYSTEM_ACTOR) as u:
         await SETTINGS.set(u.session, SCHEDULER_PAUSED, True)
-        u.session.add(Connection(name="shop", kind="SFTP", host="h", port=22, username="u", after_read="LEAVE", mode="TEST",
+        u.session.add(Connection(name="shop", kind="SFTP", host="h", port=22, username="u", after_read="LEAVE", can_write=False,
                                  inbound_folder="/in", stable_seconds=0, version=1, created_by_name="t",
                                  auth_failed_at=datetime.now(timezone.utc), auth_failed_reason="Permission denied"))
         await u.commit()

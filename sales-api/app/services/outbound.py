@@ -7,9 +7,9 @@
   (FR-OB-22), validated (FR-OB-29a). A file that fails validation is not sent:
   the order goes 940 Generated → 940 Failed and a task names the errors.
 - Sending: an outbox row (ONCE). `pre_check` re-reads document and order under
-  lock; the effect puts the file in the warehouse connection's outbound folder
-  (TEST mode: its test folder) through the guarded gateway, so a write needs
-  the switch, a LIVE connection and a write host (§5.5) — else Suppressed.
+  lock; the effect puts the file in the warehouse connection's write folder
+  through the guarded gateway, so a write needs the switch, the connection's
+  Write tick and a write host (§5.5) — else Suppressed.
   Failure is never retried by itself (FR-OB-24).
 - 997s: matched by AK1 + AK2 (leading zeros normalised), the warehouse and the
   group / document type (FR-OB-22a); A / E accepted, anything else rejected

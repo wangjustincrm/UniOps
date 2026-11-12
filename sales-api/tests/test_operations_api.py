@@ -68,7 +68,7 @@ async def api(db_engine, monkeypatch):
 def conn_body(**over):
     body = {"name": "radiant", "kind": "SFTP", "host": "sftp-test", "port": 22, "username": "radiant",
             "inbound_folder": "/in", "processed_folder": "/processed", "error_folder": "/error",
-            "after_read": "LEAVE", "mode": "TEST", "secret_name": "SALES_SECRET_TEST"}
+            "after_read": "LEAVE", "secret_name": "SALES_SECRET_TEST"}
     return {**body, **over}
 
 
@@ -83,6 +83,11 @@ async def make_conn(api, **over):
 
 # ── connections ──────────────────────────────────────────────────────────────
 
+async def test_a_connection_not_read_needs_no_read_folder_and_starts_without_writing(api):
+    r = await api.post(C, json=conn_body(can_read=False, inbound_folder=None), headers=OP)
+    assert r.status_code == 201 and r.json()["can_read"] is False and r.json()["can_write"] is False
+
+
 async def test_connection_crud_rules_and_secret_presence(api):
     r = await api.post(C, json=conn_body(host=None), headers=OP)
     assert r.status_code == 422 and r.json()["error"]["code"] == "connection.field_required"
@@ -92,8 +97,12 @@ async def test_connection_crud_rules_and_secret_presence(api):
     r = await api.post(C, json=conn_body(secret_name="lower-case"), headers=OP)
     assert r.status_code == 422 and r.json()["error"]["details"]["field"] == "secret_name"
     assert (await api.post(C, json=conn_body(), headers=READER)).status_code == 403
-    r = await api.post(C, json=conn_body(outbound_folder="/out/", test_outbound_folder="out"), headers=OP)
-    assert r.status_code == 422 and r.json()["error"]["code"] == "connection.test_folder_is_real"
+    r = await api.post(C, json=conn_body(can_write=True, outbound_folder=None), headers=OP)  # writing needs its folder
+    assert r.status_code == 422 and r.json()["error"]["details"]["field"] == "outbound_folder"
+    r = await api.post(C, json=conn_body(name="clash", outbound_folder="/processed/"), headers=OP)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "connection.folder_is_write_folder"
+    r = await api.post(C, json=conn_body(name="no-mode", mode="TEST"), headers=OP)                  # the mode is gone
+    assert r.status_code == 422
 
     c = await make_conn(api)
     assert c["secret_present"] is True and "pw" not in str(c)  # presence only, never the value

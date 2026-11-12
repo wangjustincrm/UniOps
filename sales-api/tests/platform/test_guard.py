@@ -19,7 +19,7 @@ def _sftp(settings, refused, inner=None):
     return GuardedGateway(
         inner if inner is not None else FakeSftp({"/out/a.txt": b"x"}), settings=settings,
         guarded={"put": "WRITES", "move": "WRITES", "delete": "WRITES"}, reads=("list", "get"), name="sftp",
-        allow=lambda m, a, k: None if a[0].mode == "LIVE" else "connection not LIVE",
+        allow=lambda m, a, k: None if a[0].can_write else "writing is off for this connection",
         on_refused=refused.append,
     )
 
@@ -28,7 +28,7 @@ def _email(settings, inner, **kw):
     return GuardedGateway(inner, settings=settings, guarded={"send_external": "MAIL"}, **kw)
 
 
-LIVE, TEST = SimpleNamespace(mode="LIVE"), SimpleNamespace(mode="TEST")
+LIVE, TEST = SimpleNamespace(can_write=True), SimpleNamespace(can_write=False)  # Write tick on / off
 
 
 async def test_sftp_writes_refused_while_switch_off():
@@ -43,19 +43,19 @@ async def test_sftp_writes_refused_while_switch_off():
     assert refused[0].summary["args"][3] == "<4 bytes>"
 
 
-async def test_sftp_put_happens_with_switch_on_and_live_connection():
+async def test_sftp_put_happens_with_switch_on_and_write_on():
     refused, inner = [], FakeSftp()
     g = _sftp(_settings(WRITES=True), refused, inner)
     await g.put(LIVE, "/in", "f.edi", b"data")
     assert inner.files["/in/f.edi"] == b"data" and refused == []
 
 
-async def test_sftp_put_refused_on_test_connection_even_with_switch_on():
+async def test_sftp_put_refused_with_write_off_even_with_switch_on():
     refused, inner = [], FakeSftp()
     g = _sftp(_settings(WRITES=True), refused, inner)
     with pytest.raises(Suppressed) as e:
         await g.put(TEST, "/in", "f.edi", b"data")
-    assert "/in/f.edi" not in inner.files and refused[0].reason == "connection not LIVE"
+    assert "/in/f.edi" not in inner.files and refused[0].reason == "writing is off for this connection"
     assert e.value.refused is refused[0]
 
 

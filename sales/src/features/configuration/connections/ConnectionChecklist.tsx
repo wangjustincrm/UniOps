@@ -81,10 +81,10 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
   const failedFolders = result?.folders.filter((f) => !f.ok).length ?? 0
   const reached: Status = !result ? 'unknown' : result.error || failedFolders ? 'problem' : 'done'
   const health = connectionHealth(c)
-  // Sending looks for this folder before anything refuses the write: without it, what is sent ends as Failed.
+  // What it is used for: with writing off, what it sends is kept, not sent (Suppressed).
   const edi = useEdiSettings().settings
   const usedFor = [edi?.connection_id === c.id && 'warehouse connection', edi?.invoice_connection_id === c.id && '810 connection'].filter(Boolean).join(' and the ')
-  const needsTestFolder = sftp && c.mode === 'TEST' && !c.test_outbound_folder && !!usedFor
+  const moves = sftp && c.after_read !== 'LEAVE'
   return (
     <Section title="Set-up" label="Connection status" plain className="gap-3 text-sm">
       <ol aria-label="Set-up checklist" className="flex flex-col divide-y divide-neutral-100">
@@ -113,11 +113,22 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
           {!result ? (sftp && !c.host_key ? 'Pin the key first, then the test lists the folders.' : 'Test the connection to check.')
             : reached === 'done' ? 'The test reached everything.' : (result.error ?? `${failedFolders} folder(s) could not be reached.`)}
         </Step>
-        {needsTestFolder && (
-          <Step label="Test outbound folder" status="todo">
-            This is the {usedFor} and it is on Test: without a test outbound folder, what it sends will end as Failed. Add one in Settings; nothing is written to it while it is Test.
-          </Step>
-        )}
+        <Step label="Reads" status={c.can_read ? 'done' : 'todo'}>
+          {!c.can_read ? 'Read is off: nothing is read.'
+            : sftp ? <>From <code>{c.inbound_folder}</code>
+              {moves ? (c.can_write
+                ? <>; after reading, {c.after_read === 'MOVE' ? <>moved to <code>{c.processed_folder}</code></> : 'deleted'}</>
+                : <>; after reading, left in place (moving and deleting need Write)</>)
+                : <>; after reading, left in place</>}
+              {c.error_folder && c.can_write ? <>; a file that cannot be read goes to <code>{c.error_folder}</code></> : null}.</>
+              : "The store's orders."}
+        </Step>
+        <Step label="Writes" status={c.can_write ? 'done' : usedFor ? 'todo' : 'unknown'}>
+          {c.can_write
+            ? (sftp ? <>Into <code>{c.outbound_folder}</code>{usedFor ? ` (the ${usedFor})` : ''}. The server must also allow this address.</> : 'Fulfilments and tracking to the store, and closing orders.')
+            : usedFor ? <>Write is off: this is the {usedFor}, so what it sends is kept and not sent (Suppressed).</>
+              : 'Write is off: nothing is written.'}
+        </Step>
         <Step label="Last run" action={<RunNowButton connection={c} variant="secondary" />}
           status={!c.last_run_at ? 'unknown' : c.last_run_status === 'FAILED' ? 'problem' : c.last_run_status === 'PARTIAL' ? 'todo' : 'done'}>
           {!c.last_run_at ? 'Not run yet.'

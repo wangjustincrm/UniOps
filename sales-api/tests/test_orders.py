@@ -75,7 +75,7 @@ async def env(db_engine):
         for partner, part in (("LBL", "L-555"), ("SOB", "S-777"), ("WMT", "W-999")):
             s.add(ItemPartnerCode(partner_code=partner, buyer_part=part, item_code="CF0092", version=1))
         s.add(DcRouting(partner_code="WMT", ship_to_gln="0012345000011", dc_number="6080", version=1))
-        conn = Connection(name="store", kind="SHOPIFY", host="example.myshopify.com", after_read="LEAVE", mode="TEST",
+        conn = Connection(name="store", kind="SHOPIFY", host="example.myshopify.com", after_read="LEAVE", can_write=False,
                           secret_name="SALES_SECRET_SHOPIFY", api_version="2026-04", page_size=2,
                           order_number_cutoff=9000, partner_code="SHOP", cursor_updated_at=T0 - timedelta(days=1),
                           version=1)

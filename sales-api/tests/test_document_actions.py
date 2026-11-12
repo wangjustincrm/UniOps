@@ -65,14 +65,14 @@ async def test_a_refused_940_is_sent_again_from_the_register(edi):  # noqa: F811
     o = await a_paid_order(edi)
     async with edi.env.factory(SYSTEM_ACTOR) as u:
         c = await u.session.get(Connection, edi.conn_id)
-        c.mode, c.test_outbound_folder = "TEST", c.outbound_folder
+        c.can_write = False
         await u.commit()
     await edi.out.queue_due()
     await edi.worker.run_once()
     [d] = await docs(edi)
     assert d["file_status"] == "Suppressed" and await status(edi, o.id) == F.FAILED_940
     async with edi.env.factory(SYSTEM_ACTOR) as u:
-        (await u.session.get(Connection, edi.conn_id)).mode = "LIVE"
+        (await u.session.get(Connection, edi.conn_id)).can_write = True
         await u.commit()
     async with edi.env.factory(OP) as u:
         text = await DocumentActions(u).send_again(d["id"], SimpleNamespace(outbound=edi.out))

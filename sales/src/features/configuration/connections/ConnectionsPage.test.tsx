@@ -8,8 +8,8 @@ import type { ConnectionRead } from './connectionsApi'
 
 const conn: ConnectionRead = {
   id: 7, name: 'radiant', kind: 'SFTP', host: 'sftp-test', port: 22, username: 'radiant', inbound_folder: '/in',
-  outbound_folder: null, processed_folder: '/processed', error_folder: '/error', test_inbound_folder: null,
-  test_outbound_folder: null, after_read: 'LEAVE', stable_seconds: 60, mode: 'TEST', secret_name: 'SALES_SECRET_SFTP_TEST',
+  outbound_folder: null, processed_folder: '/processed', error_folder: '/error',
+  after_read: 'LEAVE', stable_seconds: 60, can_read: true, can_write: false, secret_name: 'SALES_SECRET_SFTP_TEST',
   secret_present: true, host_key: null, auth_failed_at: null, auth_failed_reason: null, active: true, version: 3,
   api_version: null, cursor_updated_at: null, page_size: null, order_number_cutoff: null, partner_code: null,
   created_at: '2026-10-29T12:00:00Z', created_by_name: 'Op', updated_at: null, updated_by_name: null,
@@ -561,8 +561,8 @@ describe('the Overview checklist', () => {
   })
 })
 
-describe('the Overview: a Test connection the module writes to', () => {
-  const bare = { ...conn, host_key: LINE, mode: 'TEST' as const, test_outbound_folder: null }
+describe('the Overview: where it reads and where it writes', () => {
+  const bare = { ...conn, host_key: LINE, outbound_folder: '/to-partner', after_read: 'MOVE' as const }
   const step2 = async (c: ConnectionRead, edi: { connection_id: number | null; invoice_connection_id?: number | null }) => {
     api.edi.mockResolvedValue({ ack_timeout_minutes: 120, ...edi })
     api.list.mockResolvedValue({ items: [c], total: 1 })
@@ -570,28 +570,32 @@ describe('the Overview: a Test connection the module writes to', () => {
     return open()
   }
 
-  it('the warehouse connection without a test outbound folder is warned about', async () => {
+  it('with Write off, the warehouse connection says what it sends is kept and not sent, and files are left', async () => {
     const status = await step2(bare, { connection_id: 7 })
-    const row = await within(status).findByRole('listitem', { name: 'Test outbound folder' })
-    expect(row).toHaveAttribute('data-status', 'todo')
-    expect(row).toHaveTextContent('warehouse connection')
-    expect(row).toHaveTextContent('end as Failed')
+    const writes = await within(status).findByRole('listitem', { name: 'Writes' })
+    expect(writes).toHaveAttribute('data-status', 'todo')
+    expect(writes).toHaveTextContent('warehouse connection')
+    expect(writes).toHaveTextContent('kept and not sent')
+    const reads = within(status).getByRole('listitem', { name: 'Reads' })
+    expect(reads).toHaveTextContent('left in place (moving and deleting need Write)')
   })
 
   it('so is the 810 connection', async () => {
     const status = await step2(bare, { connection_id: null, invoice_connection_id: 7 })
-    expect(await within(status).findByRole('listitem', { name: 'Test outbound folder' })).toHaveTextContent('810 connection')
+    expect(await within(status).findByRole('listitem', { name: 'Writes' })).toHaveTextContent('810 connection')
   })
 
-  it('not with the folder set, on Live, or on a connection nothing is sent through', async () => {
-    for (const [c, edi] of [[{ ...bare, test_outbound_folder: '/t' }, { connection_id: 7 }], [{ ...bare, mode: 'LIVE' as const }, { connection_id: 7 }],
-      [bare, { connection_id: 99 }]] as const) {
-      const status = await step2(c, edi)
-      await within(status).findByRole('listitem', { name: 'Last run' })
-      await waitFor(() => expect(api.edi).toHaveBeenCalled())
-      expect(within(status).queryByRole('listitem', { name: 'Test outbound folder' })).toBeNull()
-      cleanup()
-    }
+  it('with Write on, it names the write folder and where read files go', async () => {
+    const status = await step2({ ...bare, can_write: true }, { connection_id: 7 })
+    const writes = await within(status).findByRole('listitem', { name: 'Writes' })
+    expect(writes).toHaveAttribute('data-status', 'done')
+    expect(writes).toHaveTextContent('/to-partner')
+    expect(within(status).getByRole('listitem', { name: 'Reads' })).toHaveTextContent('moved to /processed')
+  })
+
+  it('with Read off, nothing is read', async () => {
+    const status = await step2({ ...bare, can_read: false }, { connection_id: 99 })
+    expect(await within(status).findByRole('listitem', { name: 'Reads' })).toHaveTextContent('Read is off')
   })
 })
 
@@ -604,23 +608,24 @@ describe('the form, by type of connection', () => {
   }
   const form = (sheet: HTMLElement) => sheet.querySelector('form')!
 
-  it('SFTP: its sections, no Shopify ones; the less used folders under Advanced', async () => {
+  it('SFTP: its sections, no Shopify ones; every folder in view, by what it is for', async () => {
     const sheet = await newForm()
-    expect(headings(form(sheet))).toEqual(['Basics', 'Login', 'Folders', 'Reading', 'Schedule'])
-    const details = within(sheet).getByLabelText('Error folder').closest('details')!
-    expect(details.open).toBe(false)
-    expect(within(sheet).getByLabelText('Inbound folder').closest('details')).toBeNull()
+    expect(headings(form(sheet))).toEqual(['Basics', 'Login', 'Reading', 'Writing', 'Schedule'])
+    for (const f of ['Read folder', 'Archive folder', 'Error folder', 'Write folder']) {
+      expect(within(sheet).getByLabelText(new RegExp(`^${f}`)).closest('details')).toBeNull()
+    }
     expect(within(sheet).queryByLabelText('API version')).toBeNull()
   })
 
-  it('Shopify: no folders, no reading, no user name; a saved one sends what the server needs', async () => {
+  it('Shopify: no folders, no user name, Read and Write only; a saved one sends what the server needs', async () => {
     api.create.mockReset()
     api.create.mockResolvedValue({ ...conn, id: 9, kind: 'SHOPIFY' })
     api.get.mockResolvedValue({ ...conn, id: 9, kind: 'SHOPIFY' })
     const sheet = await newForm()
     fireEvent.click(within(sheet).getByRole('radio', { name: 'Shopify' }))
-    expect(headings(form(sheet))).toEqual(['Basics', 'Login', 'Shopify', 'Schedule'])
+    expect(headings(form(sheet))).toEqual(['Basics', 'Login', 'Reading', 'Writing', 'Shopify', 'Schedule'])
     expect(within(sheet).queryByLabelText('User name')).toBeNull()
+    expect(within(sheet).queryByLabelText(/^Read folder|^Write folder/)).toBeNull()
     fireEvent.change(within(sheet).getByLabelText(/^Name/), { target: { value: 'store' } })
     fireEvent.change(within(sheet).getByLabelText(/^Address/), { target: { value: 'x.myshopify.com' } })
     fireEvent.change(within(sheet).getByLabelText(/^API version/), { target: { value: '2026-04' } })
@@ -628,7 +633,7 @@ describe('the form, by type of connection', () => {
     fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(api.create).toHaveBeenCalledOnce())
     const sent = api.create.mock.calls[0][0]
-    expect(sent).toMatchObject({ kind: 'SHOPIFY', after_read: 'LEAVE', stable_seconds: 60, port: 22 })  // required by the server: as before
+    expect(sent).toMatchObject({ kind: 'SHOPIFY', after_read: 'LEAVE', stable_seconds: 60, port: 22, can_read: true, can_write: false })
     for (const k of ['username', 'inbound_folder', 'host_key']) expect(sent).not.toHaveProperty(k)
   })
 
@@ -637,7 +642,7 @@ describe('the form, by type of connection', () => {
     api.create.mockResolvedValue({ ...conn, id: 9, name: 'new-one' })
     api.get.mockResolvedValue({ ...conn, id: 9, name: 'new-one' })
     const sheet = await newForm()
-    for (const [label, value] of [[/^Name/, 'new-one'], [/^Address/, 'h'], [/^User name/, 'u'], [/^Password name/, 'SALES_SECRET_X'], [/^Inbound folder/, '/in']] as const) {
+    for (const [label, value] of [[/^Name/, 'new-one'], [/^Address/, 'h'], [/^User name/, 'u'], [/^Password name/, 'SALES_SECRET_X'], [/^Read folder/, '/in']] as const) {
       fireEvent.change(within(sheet).getByLabelText(label), { target: { value } })
     }
     fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
@@ -651,17 +656,24 @@ describe('the form, by type of connection', () => {
     expect(text).not.toMatch(/host_key|secret_name|SALES_[A-Z]|FR-OB/)
   })
 
-  it('Mode says what it does for each type: a Test connection writes nothing', async () => {
+  it('Read and Write say what they do for each type; a new connection reads and does not write', async () => {
     const sheet = await newForm()
-    expect(sheet).toHaveTextContent('Test reads the inbound folder, leaves the files there and writes nothing to the server')
+    expect(within(sheet).getByLabelText(/^Read$/)).toBeChecked()
+    expect(within(sheet).getByLabelText(/^Write$/)).not.toBeChecked()
+    expect(sheet).toHaveTextContent('Sales lists and reads the read folder')
+    expect(sheet).toHaveTextContent('Sales puts its files in the write folder')
     fireEvent.click(within(sheet).getByRole('radio', { name: 'Shopify' }))
-    expect(sheet).toHaveTextContent('Test reads orders and writes nothing to the store')
+    expect(sheet).toHaveTextContent("Sales pulls the store's orders")
+    expect(sheet).toHaveTextContent('Sales sends fulfilments and tracking to the store')
   })
 
-  it('there is no test inbound folder: nothing reads one', async () => {
+  it('reading has its folder, archive and error folder; writing has one folder; there is no mode and no test folder', async () => {
     const sheet = await newForm()
-    expect(within(sheet).queryByLabelText('Test inbound folder')).toBeNull()
-    expect(within(sheet).getByLabelText('Test outbound folder')).toBeInTheDocument()
+    for (const label of ['Read folder', 'Archive folder', 'Error folder', 'Write folder']) {
+      expect(within(sheet).getByLabelText(new RegExp(`^${label}`))).toBeInTheDocument()
+    }
+    expect(within(sheet).queryByLabelText(/Test outbound folder|Test inbound folder/)).toBeNull()
+    expect(within(sheet).queryByRole('radio', { name: 'Live' })).toBeNull()
   })
 
   it('a server refusal naming a field is said in the form\'s words', async () => {
@@ -669,7 +681,7 @@ describe('the form, by type of connection', () => {
     api.create.mockRejectedValue(Object.assign(new Error('x'), { body: { error: { code: 'validation', message: 'x',
       details: { errors: [{ field: 'secret_name', message: 'secret_name must be a name' }] } } } }))
     const sheet = await newForm()
-    for (const [label, value] of [[/^Name/, 'n'], [/^Address/, 'h'], [/^User name/, 'u'], [/^Password name/, 'SALES_SECRET_X'], [/^Inbound folder/, '/in']] as const) {
+    for (const [label, value] of [[/^Name/, 'n'], [/^Address/, 'h'], [/^User name/, 'u'], [/^Password name/, 'SALES_SECRET_X'], [/^Read folder/, '/in']] as const) {
       fireEvent.change(within(sheet).getByLabelText(label), { target: { value } })
     }
     fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))

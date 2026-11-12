@@ -82,7 +82,7 @@ class Settings(BaseSettings):
 
     # ── SFTP hosts a put / move / delete may touch (fail closed) ─────────────
     # The third guard on partner writes, beside SALES_PARTNER_WRITES_ENABLED and
-    # a LIVE connection (P4, 2026-10-30). Empty or unset: no SFTP write
+    # the connection's Write tick (P4, 2026-10-30). Empty or unset: no SFTP write
     # anywhere. A host may be readable (SALES_SFTP_ALLOWED_HOSTS) and still not
     # writable: dev lists only its test container; production lists Radiant at
     # release (DEPLOYMENT.md).

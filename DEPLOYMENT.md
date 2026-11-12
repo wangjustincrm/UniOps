@@ -566,8 +566,8 @@ the first Sales release:
    the partner's and **Pin this key** — an unpinned connection never logs in.
 
 4a. **SFTP writes (the release that sends 940s, P4)** — a put / move / delete
-   needs all three guards: `SALES_PARTNER_WRITES_ENABLED=true`, the connection
-   in mode LIVE, and its host in `SALES_SFTP_WRITE_HOSTS` (empty = no write
+   needs all three guards: `SALES_PARTNER_WRITES_ENABLED=true`, the connection's
+   **Write** tick on, and its host in `SALES_SFTP_WRITE_HOSTS` (empty = no write
    anywhere, fail closed). At that release list **Radiant only**:
    `SALES_SFTP_WRITE_HOSTS=commhub.wheelsgroup.com` (TrueCommerce is added only
    when 810s go out, P6). Dev stacks list only their test container.
@@ -586,8 +586,8 @@ the first Sales release:
      a message with any other recipient is refused. The addresses are set on Configuration →
      Connections → Internal invoice recipients.
    - 810 JSON: add TrueCommerce to `SALES_SFTP_WRITE_HOSTS`
-     (`commhub.wheelsgroup.com,sftp.truecommerce.com`), set its connection
-     LIVE with the Import folder as its outbound folder, and choose it as the
+     (`commhub.wheelsgroup.com,sftp.truecommerce.com`), turn its connection's
+     **Write** tick on with the Import folder as its write folder, and choose it as the
      "810 invoice connection" on Configuration → Connections.
    - Nothing is invoiced while the shadow run is on; orders received during
      it are never invoiced by Sales.
@@ -614,8 +614,10 @@ the first Sales release:
    Shopify titles `2-Can, 2-Pack`. Then run `/srv/uniops/sales-zoho-check/tools/check.sh`: PASS.
 6. Load the Radiant export once by hand (retailer and manual orders, tracking, lots). The load
    must not raise a 940, invoice, email, task or Shopify write.
-7. Stop Zoho's sending, then turn off `shadow_mode`, set the guards above, and put the Radiant
-   and TrueCommerce connections in LIVE. Set `edi.warehouse_connection_id` and
+7. Stop Zoho's sending, then turn off `shadow_mode`, set the guards above, and turn the Radiant
+   and TrueCommerce connections' **Write** tick on (sales24: there is no Test / Live mode).
+   Before `alembic upgrade` to sales24, clear every connection's test outbound folder (the
+   migration refuses one still set, so nothing is lost silently). Set `edi.warehouse_connection_id` and
    `invoice.connection_id`. Check Health: every gate passes.
 8. Turn on Automatic runs (Connections, the Automatic runs card: Off by default).
 9. Watch the first day: Sent (waiting for the 997), Delivery confirmation, Failed files.

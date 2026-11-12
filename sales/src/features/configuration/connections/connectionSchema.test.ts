@@ -12,10 +12,13 @@ describe('connection form schema', () => {
   it('accepts a complete SFTP connection (the positive half)', () => {
     expect(connectionCreateSchema.safeParse(valid).success).toBe(true)
   })
-  it('an SFTP connection needs host, user, inbound folder and secret name', () => {
+  it('an SFTP connection needs host, user and secret name; a read folder to read, a write folder to write', () => {
     const r = connectionCreateSchema.safeParse({ ...valid, host: '', username: ' ', inbound_folder: null, secret_name: '' })
     expect(issues(r)).toEqual({ host: 'Required for an SFTP connection', username: 'Required for an SFTP connection',
-      inbound_folder: 'Required for an SFTP connection', secret_name: 'Required for an SFTP connection' })
+      inbound_folder: 'Needed to read', secret_name: 'Required for an SFTP connection' })
+    expect(issues(connectionCreateSchema.safeParse({ ...valid, can_read: false, inbound_folder: null }))).toEqual({})
+    expect(issues(connectionCreateSchema.safeParse({ ...valid, can_write: true, outbound_folder: '' }))).toEqual({ outbound_folder: 'Needed to write' })
+    expect(issues(connectionCreateSchema.safeParse({ ...valid, outbound_folder: '/in/', inbound_folder: '/in' }))).toEqual({ inbound_folder: 'Must not be the write folder' })
   })
   it('MOVE needs a processed folder; the secret is a variable name, never a password', () => {
     expect(issues(connectionUpdateSchema.safeParse({ ...valid, after_read: 'MOVE' }))).toEqual({ processed_folder: 'Needed when the file is moved after reading' })

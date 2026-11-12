@@ -27,7 +27,7 @@ export function useEdiSettings() {
   const items = conns.data?.items ?? []
   return {
     settings: settings.data, error: settings.error ?? conns.error, loading: settings.isLoading || conns.isLoading,
-    options: items.map((c) => ({ value: String(c.id), label: `${c.name} (${c.mode})` })),
+    options: items.map((c) => ({ value: String(c.id), label: `${c.name} (write ${c.can_write ? 'on' : 'off'})` })),
     /** A connection's name by id: "None" for no id. */
     name: (id: number | null | undefined) => (id == null ? 'None' : items.find((c) => c.id === id)?.name ?? `#${id}`),
   }

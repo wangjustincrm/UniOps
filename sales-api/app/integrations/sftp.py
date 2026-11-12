@@ -96,7 +96,7 @@ def readable(e: BaseException) -> str:
 
 class SftpGateway(Protocol):
     # `conn` is whatever connection record the business code keeps (host,
-    # credentials, LIVE/TEST mode); the gateway only reads what it needs.
+    # credentials, its Read / Write ticks); the gateway only reads what it needs.
     async def list(self, conn: Any, folder: str) -> list[RemoteFile]: ...
     async def get(self, conn: Any, path: str) -> bytes: ...
     async def put(self, conn: Any, folder: str, name: str, data: bytes) -> None: ...
@@ -116,10 +116,10 @@ def guarded(switch: str) -> dict[str, str]:
     return {m: switch for m in WRITES}
 
 
-def live_only(method: str, args: tuple, kwargs: dict) -> str | None:  # noqa: ARG001
-    """SFTP writes also need the connection in LIVE mode (design §5.4)."""
+def write_on(method: str, args: tuple, kwargs: dict) -> str | None:  # noqa: ARG001
+    """A write needs the connection's Write tick (user 2026-11-12; was the Live mode). Shopify's too."""
     conn = args[0] if args else kwargs.get("conn")
-    return None if getattr(conn, "mode", None) == "LIVE" else "connection not LIVE"
+    return None if getattr(conn, "can_write", False) else "writing is off for this connection"
 
 
 def _folder(path: Any) -> str:
@@ -127,38 +127,39 @@ def _folder(path: Any) -> str:
 
 
 def write_folder(conn: Any) -> str:
-    """The folder a send puts its file in: a TEST connection's test outbound folder, else its
-    outbound folder. A TEST connection with no test folder (the partner has none) sends
-    nothing: that is refused like a guard refusal (Suppressed, a person decides), not a failure."""
-    if getattr(conn, "mode", None) == "TEST":
-        folder = getattr(conn, "test_outbound_folder", None)
-        if not str(folder or "").strip("/ "):
-            raise Suppressed(Refused("sftp", "put", "test mode", f"connection {getattr(conn, 'name', '?')} has no test "
-                                     "outbound folder: nothing is sent in Test mode", {"connection": getattr(conn, "id", None)}))
-        return folder
+    """The folder a send puts its file in: the connection's write folder. With writing off the send
+    is refused like a guard refusal (Suppressed: nothing left, a person decides), never a failure."""
+    if not getattr(conn, "can_write", False):
+        raise Suppressed(Refused("sftp", "put", "write tick", f"writing is off for connection {getattr(conn, 'name', '?')}: "
+                                 "nothing was sent", {"connection": getattr(conn, "id", None)}))
     folder = getattr(conn, "outbound_folder", None)
-    if not folder:
-        raise RuntimeError(f"connection {getattr(conn, 'name', '?')} has no outbound folder")
+    if not str(folder or "").strip("/ "):
+        raise RuntimeError(f"connection {getattr(conn, 'name', '?')} has no write folder")
     return folder
 
 
-def test_folder_put(method: str, args: tuple, kwargs: dict) -> bool:
-    """The one write a TEST connection may make: a put into its test outbound folder, and only
-    when that folder is not its real one (a test folder set to the real path is refused)."""
+def _where(method: str, args: tuple, kwargs: dict) -> str | None:
+    """Belt and braces: a put only into the write folder; a move only from the read folder into its
+    archive or error folder; a delete only in the read folder. Anything else is refused."""
     conn = args[0] if args else kwargs.get("conn")
-    folder = args[1] if len(args) > 1 else kwargs.get("folder")
-    test, real = getattr(conn, "test_outbound_folder", None), getattr(conn, "outbound_folder", None)
-    return (method == "put" and getattr(conn, "mode", None) == "TEST" and bool(str(test or "").strip("/ "))
-            and _folder(folder) == _folder(test) and _folder(test) != _folder(real))
+    a = dict(zip({"put": ("conn", "folder"), "move": ("conn", "src", "dst"), "delete": ("conn", "path")}[method], args)) | kwargs
+    read = _folder(getattr(conn, "inbound_folder", None))
+    if method == "put":
+        return None if _folder(a.get("folder")) == _folder(getattr(conn, "outbound_folder", None)) else "a put outside the write folder"
+    if method == "move":
+        src_dir, dst_dir = _folder(posixpath.dirname(str(a.get("src") or ""))), _folder(posixpath.dirname(str(a.get("dst") or "")))
+        targets = {_folder(getattr(conn, f, None)) for f in ("processed_folder", "error_folder") if getattr(conn, f, None)}
+        return None if src_dir == read and dst_dir in targets else "a move outside the read folder and its archive / error folders"
+    return None if _folder(posixpath.dirname(str(a.get("path") or ""))) == read else "a delete outside the read folder"
 
 
 def writes_allowed(settings: Any) -> Callable[[str, tuple, dict], str | None]:
-    """The guard's allow check for SFTP writes: a LIVE connection AND its host
-    listed in SALES_SFTP_WRITE_HOSTS — read at call time, so switching it off
-    takes effect at once; empty = no write anywhere. Runs before any traffic."""
+    """The guard's allow check for SFTP writes: the connection's Write tick, the right folder, AND its
+    host listed in SALES_SFTP_WRITE_HOSTS — read at call time, so switching it off takes effect at
+    once; empty = no write anywhere. Runs before any traffic."""
     def allow(method: str, args: tuple, kwargs: dict) -> str | None:
-        reason = live_only(method, args, kwargs)
-        if reason and not test_folder_put(method, args, kwargs):
+        reason = write_on(method, args, kwargs) or _where(method, args, kwargs)
+        if reason:
             return reason
         conn = args[0] if args else kwargs.get("conn")
         host = (getattr(conn, "host", None) or "").strip().lower()
@@ -173,7 +174,7 @@ def summary(method: str, args: tuple, kwargs: dict) -> dict[str, Any]:
     names = {"put": ("conn", "folder", "name", "data"), "move": ("conn", "src", "dst"), "delete": ("conn", "path")}
     a = dict(zip(names[method], args)) | kwargs
     conn = a.pop("conn", None)
-    out: dict[str, Any] = {"connection": getattr(conn, "id", None), "mode": getattr(conn, "mode", None)}
+    out: dict[str, Any] = {"connection": getattr(conn, "id", None), "can_write": getattr(conn, "can_write", None)}
     data = a.pop("data", None)
     if data is not None:
         out |= {"size": len(data), "sha256": hashlib.sha256(bytes(data)).hexdigest()}

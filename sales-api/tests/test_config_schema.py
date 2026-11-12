@@ -79,12 +79,12 @@ def test_partner_channel_is_a_closed_set(conn):
             _partner(conn, "FAX")
 
 
-def test_connection_stable_seconds_defaults_to_60(conn):
+def test_connection_stable_seconds_defaults_to_60_and_a_new_one_reads_but_does_not_write(conn):
     conn.execute(sa.text(
-        "INSERT INTO sales_connections (name, kind, after_read, mode, version, created_by_name) "
-        "VALUES ('schema-test-connection', 'SFTP', 'LEAVE', 'TEST', 1, 'test')"))  # a name no other test uses
+        "INSERT INTO sales_connections (name, kind, after_read, version, created_by_name) "
+        "VALUES ('schema-test-connection', 'SFTP', 'LEAVE', 1, 'test')"))  # a name no other test uses
     assert conn.execute(sa.text(
-        "SELECT stable_seconds FROM sales_connections WHERE name = 'schema-test-connection'")).scalar() == 60
+        "SELECT stable_seconds, can_read, can_write FROM sales_connections WHERE name = 'schema-test-connection'")).one() == (60, True, False)
 
 
 def test_downgrade_removes_the_tables_and_upgrade_restores_them(migrated_db):

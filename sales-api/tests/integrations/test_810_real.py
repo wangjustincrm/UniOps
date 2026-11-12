@@ -44,7 +44,7 @@ async def test_confirm_and_send_puts_the_810_on_the_server(p6):  # noqa: F811
     await p6.inv.advance()
     gateway = AsyncsshSftp(allowed_hosts=frozenset({HOST}), secret=lambda n: PASSWORD if n == "SFTP_PW" else None, connect_timeout=10)
     async with p6.factory(SYSTEM_ACTOR) as u:
-        conn = Connection(name="sftp real", kind="SFTP", host=HOST, port=PORT, username=USER, secret_name="SFTP_PW", mode="LIVE",
+        conn = Connection(name="sftp real", kind="SFTP", host=HOST, port=PORT, username=USER, secret_name="SFTP_PW", can_write=True,
                           inbound_folder="/processed", outbound_folder="/in", processed_folder="/processed", error_folder="/error",
                           after_read="LEAVE", stable_seconds=0, active=True, version=1)
         u.session.add(conn)

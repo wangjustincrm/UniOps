@@ -48,8 +48,8 @@ SCHEDULER_PAUSED = SETTINGS.declare(Setting(
 # X2: every Action Required task goes to the operator.
 OPERATOR_USER_ID = SETTINGS.declare(Setting(
     "operator_user_id", None, _uuid_or_none, safe=None, description="User who receives Action Required tasks"))
-# P4: the warehouse's SFTP connection — 940s are put in its outbound folder
-# (TEST mode: test_outbound_folder), its 997s are read from it. Unset: no 940
+# P4: the warehouse's SFTP connection — 940s are put in its write folder (when
+# its Write tick is on), its 997s are read from its read folder. Unset: no 940
 # is generated (fail closed); every queued order says why.
 EDI_CONNECTION_ID = SETTINGS.declare(Setting(
     "edi.warehouse_connection_id", None, lambda v: None if v in (None, "") else int(v), safe=None,
@@ -63,7 +63,7 @@ EDI_CONNECTION_ID = SETTINGS.declare(Setting(
 SHADOW_MODE = SETTINGS.declare(Setting(
     "shadow_mode", False, as_bool, safe=True, description="Shadow run: read only, send nothing (Zoho is live)"))
 # P6: the SFTP connection 810 JSON invoices are put to (TrueCommerce Import);
-# TEST mode: its test outbound folder. Unset: an 810 is not sent (it fails with a task).
+# its write folder, with its Write tick on. Unset: an 810 is not sent (it fails with a task).
 INVOICE_CONNECTION_ID = SETTINGS.declare(Setting(
     "invoice.connection_id", None, lambda v: None if v in (None, "") else int(v), safe=None,
     description="SFTP connection for 810 invoices"))

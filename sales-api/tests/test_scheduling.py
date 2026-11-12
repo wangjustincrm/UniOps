@@ -175,7 +175,7 @@ async def test_the_schedule_is_edited_with_sales_config_and_audited(http):
     assert (await http.put(f"{C}/{c['id']}?version=2", json={"schedule_minutes": 0}, headers=OP)).status_code == 422
     assert (await http.put(f"{C}/{c['id']}?version=2", json={"active_days": "Mon,Funday"}, headers=OP)).status_code == 422
     from app.services.connections import ConnectionService
-    built = ConnectionService(None).build({"name": "store", "kind": "SHOPIFY", "after_read": "LEAVE", "mode": "TEST"})
+    built = ConnectionService(None).build({"name": "store", "kind": "SHOPIFY", "after_read": "LEAVE", "can_write": False})
     assert built.schedule_minutes == 10  # a new Shopify connection: 10
     csv = (await http.get(f"{C}/export.csv", headers=READER)).text.splitlines()[0]
     assert "schedule_minutes,schedule_paused,active_from,active_to,active_days" in csv

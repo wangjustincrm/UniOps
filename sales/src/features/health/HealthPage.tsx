@@ -108,7 +108,7 @@ export default function HealthPage() {
       <Section label="Go-live gate" plain level={2}
         title={<>Go-live gate {h.gate_ok ? <Badge variant="success">Ready</Badge> : <Badge variant="danger">Not ready</Badge>}</>}>
         <p className="text-sm text-neutral-600">
-          A channel goes LIVE only when each of these events has recipients and a test notification was sent (Configuration → Notifications).
+          Writing is turned on for a channel only when each of these events has recipients and a test notification was sent (Configuration → Notifications).
         </p>
         <LocalTable<GateEventRead> ariaLabel="Go-live gate" columns={gateColumns} rows={h.gate} rowKey={(g) => g.event_type} />
         <span><Button size="sm" variant="secondary" onClick={() => navigate('/config/notifications')}>Open the notification rules</Button></span>

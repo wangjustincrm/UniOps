@@ -66,13 +66,13 @@ async def t(env, monkeypatch):  # noqa: F811
         await s.execute(sa.text("TRUNCATE sales_outbox RESTART IDENTITY"))
         for code, w in (("CF0092", "2.03"), ("CF0010", "2.48")):
             (await s.execute(sa.select(Item).where(Item.item_code == code))).scalar_one().gross_weight_lb_per_ea = Decimal(w)
-        common = dict(kind="SFTP", port=22, username="crm", after_read="LEAVE", mode="LIVE", stable_seconds=0, version=1)
+        common = dict(kind="SFTP", port=22, username="crm", after_read="LEAVE", can_write=True, stable_seconds=0, version=1)
         radiant = Connection(name="radiant", host="commhub.example", secret_name="SALES_SECRET_RADIANT", inbound_folder=RADIANT_IN,
-                             outbound_folder="/prod/in", test_outbound_folder="/test/in", **common)
+                             outbound_folder="/prod/in", **common)
         tc = Connection(name="truecommerce", host="tc.example", secret_name="SALES_SECRET_TC", inbound_folder=TC_IN,
-                        outbound_folder=TC_OUT, test_outbound_folder="/tc/test", **common)
+                        outbound_folder=TC_OUT, **common)
         s.add_all([radiant, tc])
-        (await s.execute(sa.select(Connection).where(Connection.kind == "SHOPIFY"))).scalar_one().mode = "LIVE"
+        (await s.execute(sa.select(Connection).where(Connection.kind == "SHOPIFY"))).scalar_one().can_write = True
         s.add(Partner(code="HAND", name="By hand", abbrev="HND", channel="MANUAL", settlement_mode="INVOICE", sending_mode="MANUAL",
                       delay_minutes=0, invoice_method="NONE", dc_routing_required=False, version=1))
         await s.flush()

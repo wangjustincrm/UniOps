@@ -16,14 +16,14 @@ from typing import Any
 
 from sqlalchemy import (
     Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, Time,
-    UniqueConstraint, false, text,
+    UniqueConstraint, false, text, true,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 from app.domain.config import (
-    AFTER_READ, CHANNELS, CONNECTION_KINDS, CONNECTION_MODES, INVOICE_METHODS, NOTIFICATION_CHANNELS,
+    AFTER_READ, CHANNELS, CONNECTION_KINDS, INVOICE_METHODS, NOTIFICATION_CHANNELS,
     SENDING_MODES, SETTLEMENT_MODES, WAREHOUSE_ROLES,
 )
 from app.platform.entities import Audited, Deactivatable, Versioned
@@ -150,7 +150,6 @@ class Connection(Audited, Versioned, Deactivatable, Base):
     __table_args__ = (
         one_of("kind", CONNECTION_KINDS, "ck_sales_connections_kind"),
         one_of("after_read", AFTER_READ, "ck_sales_connections_after_read"),
-        one_of("mode", CONNECTION_MODES, "ck_sales_connections_mode"),
         # The store's orders belong to one partner; an SFTP channel's partner
         # comes from each file's content (850 TradingPartner). sales04.
         CheckConstraint("kind = 'SHOPIFY' OR partner_code IS NULL", name="ck_sales_connections_partner_shopify_only"),
@@ -168,11 +167,13 @@ class Connection(Audited, Versioned, Deactivatable, Base):
     outbound_folder: Mapped[str | None] = mapped_column(Text, nullable=True)
     processed_folder: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_folder: Mapped[str | None] = mapped_column(Text, nullable=True)
-    test_inbound_folder: Mapped[str | None] = mapped_column(Text, nullable=True)
-    test_outbound_folder: Mapped[str | None] = mapped_column(Text, nullable=True)
     after_read: Mapped[str] = mapped_column(String(10), nullable=False)
     stable_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=60, server_default="60")
-    mode: Mapped[str] = mapped_column(String(10), nullable=False)
+    # What Sales may do on this channel (user 2026-11-12; replaces the Test / Live mode and the test
+    # folders). Read: list and read the inbound folder (Shopify: pull orders). Write: put files in the
+    # outbound folder (Shopify: fulfilments, tracking, close) and move or delete what it read.
+    can_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    can_write: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     auth_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     auth_failed_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     secret_name: Mapped[str | None] = mapped_column(String(100), nullable=True)

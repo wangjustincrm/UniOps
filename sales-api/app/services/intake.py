@@ -56,7 +56,7 @@ class PassReport:
     stored: int = 0
     duplicates: int = 0
     failed: int = 0
-    status: str = "ok"  # ok | latched | list_failed
+    status: str = "ok"  # ok | latched | list_failed | read_off
 
     @property
     def balanced(self) -> bool:
@@ -78,7 +78,8 @@ class ConnectionSnapshot:
     username: str | None
     secret_name: str | None
     host_key: str | None
-    mode: str
+    can_read: bool
+    can_write: bool
     inbound_folder: str | None
     processed_folder: str | None
     error_folder: str | None
@@ -91,19 +92,18 @@ class ConnectionSnapshot:
     page_size: int | None = None
     order_number_cutoff: int | None = None
     partner_code: str | None = None
-    # Outbound (P4): where 940s are put; TEST mode uses the test folder.
+    # Outbound (P4): where 940s, 943s and 810s are put, when writing is on.
     outbound_folder: str | None = None
-    test_outbound_folder: str | None = None
     # The shadow run (§5.4), read at the start of a pass: after-read is Leave
     # and every stored document is flagged.
     shadow: bool = False
 
     @classmethod
     def of(cls, c: Connection) -> ConnectionSnapshot:
-        return cls(c.id, c.name, c.kind, c.host, c.port, c.username, c.secret_name, c.host_key, c.mode,
+        return cls(c.id, c.name, c.kind, c.host, c.port, c.username, c.secret_name, c.host_key, c.can_read, c.can_write,
                    c.inbound_folder, c.processed_folder, c.error_folder, c.after_read, c.stable_seconds,
                    c.auth_failed_at, c.api_version, c.cursor_updated_at, c.page_size, c.order_number_cutoff,
-                   c.partner_code, c.outbound_folder, c.test_outbound_folder)
+                   c.partner_code, c.outbound_folder)
 
 
 class Intake:
@@ -129,6 +129,9 @@ class Intake:
             conn = replace(conn, shadow=await SETTINGS.get(uow.session, SHADOW_MODE))
         if conn.auth_failed_at is not None:
             report.status = "latched"  # reported once, when it latched (AC-OB-48)
+            return report
+        if not conn.can_read:
+            report.status = "read_off"  # the connection's Read tick is off: nothing is listed
             return report
         if not conn.inbound_folder:
             report.status = "list_failed"
@@ -277,7 +280,10 @@ class Intake:
             await self._remote_write(conn, f, "delete", None, doc_id, run_id)
 
     async def _remote_write(self, conn, f: RemoteFile, op: str, dst: str | None, doc_id, run_id) -> None:
-        """An after-read write never fails the pass (FR-OB-72)."""
+        """An after-read write never fails the pass (FR-OB-72). With the Write tick off the file is
+        left where it is, as Leave would (no attempt: the guard would only refuse it)."""
+        if not conn.can_write:
+            return
         try:
             if op == "move":
                 await self.sftp.move(conn, f.path, dst)

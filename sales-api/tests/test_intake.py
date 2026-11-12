@@ -92,7 +92,7 @@ async def env(db_engine):
     async def add_conn(name="radiant", folder="/in", **kw):
         values = dict(name=name, kind="SFTP", host="sftp-test", username="u", secret_name="S",
                       inbound_folder=folder, processed_folder="/processed", error_folder="/error",
-                      after_read="LEAVE", stable_seconds=60, mode="TEST", host_key="ssh-ed25519 AAAA", version=1)
+                      after_read="LEAVE", stable_seconds=60, can_write=True, host_key="ssh-ed25519 AAAA", version=1)
         values.update(kw)
         async with factory(SYSTEM_ACTOR) as uow:
             c = Connection(**values)
@@ -292,23 +292,24 @@ async def test_ac09_listed_equals_the_sum_of_the_other_six(env):
 
 # ── the guard on dev2: switch off → Suppressed → treated as Leave (§5.5) ────
 
-@pytest.mark.parametrize("switch, mode, moved", [(False, "LIVE", False), (True, "TEST", False), (True, "LIVE", True)])
-async def test_after_read_follows_the_switch_and_the_live_mode(env, switch, mode, moved):
+# With Write off the move is not even tried (no refusal): the file is left, as Leave would.
+@pytest.mark.parametrize("switch, can_write, moved, refusals", [(False, True, False, 1), (True, False, False, 0), (True, True, True, 0)])
+async def test_after_read_follows_the_switch_and_the_write_tick(env, switch, can_write, moved, refusals):
     settings = SimpleNamespace(SALES_PARTNER_WRITES_ENABLED=switch)
     refused = []
 
     async def on_refused(r):
         refused.append(r)
     env.intake.sftp = GuardedGateway(env.fake, settings=settings, guarded=sftp_mod.guarded("SALES_PARTNER_WRITES_ENABLED"),
-                                     reads=sftp_mod.READS, allow=sftp_mod.live_only, name="sftp",
+                                     reads=sftp_mod.READS, allow=sftp_mod.write_on, name="sftp",
                                      summarise=sftp_mod.summary, on_refused=on_refused)
-    c = await env.add_conn(after_read="MOVE", mode=mode)
+    c = await env.add_conn(after_read="MOVE", can_write=can_write)
     env.fake.files["/in/a.945"] = x12("945")
     r = await env.intake.run_pass(c)
     assert counts(r) == {"listed": 1, "stored": 1}  # stored either way
     assert sorted(env.fake.files) == (["/processed/a.945"] if moved else ["/in/a.945"])
-    assert len(refused) == (0 if moved else 1)
-    if not moved:
+    assert len(refused) == refusals
+    if refusals:  # refused by the guard: said so; with Write off the move is not even tried
         [info] = await env.q("SELECT message FROM sales_log WHERE message LIKE '%treated as Leave%'")
         assert "move of a.945 refused" in info["message"]
 
@@ -422,26 +423,9 @@ async def test_the_document_model_refuses_content_less_rows_other_than_identity_
             await uow.session.flush()
 
 
-# ── a TEST connection's one write: its own test folder (user 2026-11-06) ─────
-def _test_conn(**over):
-    return SimpleNamespace(**({"mode": "TEST", "host": "h.example", "outbound_folder": "/prod/in/",
-                               "test_outbound_folder": "/test/in/"} | over))
-
-
-def _allow(*args, method="put", hosts=("h.example",)):
-    return sftp_mod.writes_allowed(SimpleNamespace(sftp_write_hosts=frozenset(hosts)))(method, args, {})
-
-
-def test_a_test_connection_may_put_only_into_its_test_folder():
-    assert _allow(_test_conn(), "/test/in", "a.edi", b"x") is None  # the positive case, trailing slash ignored
-    assert _allow(_test_conn(), "/prod/in/", "a.edi", b"x") == "connection not LIVE"
-    assert _allow(_test_conn(), "/test/in/", method="move") == "connection not LIVE"
-    assert _allow(_test_conn(), "/test/in/", method="delete") == "connection not LIVE"
-    assert _allow(_test_conn(), "/test/in/", "a.edi", b"x", hosts=()) == "host not in SALES_SFTP_WRITE_HOSTS"
-
-
-def test_a_test_folder_that_is_the_real_folder_or_empty_is_refused():
-    same = _test_conn(outbound_folder="/Import/Transaction/", test_outbound_folder="/Import/Transaction")
-    assert _allow(same, "/Import/Transaction/", "a.json", b"x") == "connection not LIVE"
-    assert _allow(_test_conn(test_outbound_folder=None), "/", "a.edi", b"x") == "connection not LIVE"
-    assert _allow(_test_conn(test_outbound_folder="/"), "/", "a.edi", b"x") == "connection not LIVE"
+# ── Read off: the connection is not listed at all (user 2026-11-12) ──────────
+async def test_with_read_off_nothing_is_listed(env):
+    c = await env.add_conn(can_read=False)
+    env.fake.files["/in/a.945"] = x12("945")
+    r = await env.intake.run_pass(c)
+    assert r.status == "read_off" and r.listed == 0 and env.fake.calls == []

@@ -10,7 +10,7 @@ from typing import Any, ClassVar
 from app.core.config import settings as app_settings
 from app.domain.schedule import is_overdue
 
-from app.domain.config import AFTER_READ, CONNECTION_KINDS, CONNECTION_MODES
+from app.domain.config import AFTER_READ, CONNECTION_KINDS
 from app.domain.connections import check_connection
 from app.integrations import shopify as shopify_mod
 from app.integrations.sftp import readable
@@ -43,12 +43,10 @@ FILE_RETRY = "sales.file.retry"
 DEFAULT_MINUTES = {"SFTP": 5, "SHOPIFY": 10}  # a new connection's schedule (user 2026-11-02)
 
 
-_RULE_FIELDS = ("kind", "host", "username", "inbound_folder", "outbound_folder", "test_outbound_folder", "secret_name",
-                "after_read", "processed_folder", "host_key", "api_version", "partner_code")
-_FOLDERS = ("inbound_folder", "outbound_folder", "processed_folder", "error_folder",
-            "test_inbound_folder", "test_outbound_folder")
-# What the connection test lists: test_inbound_folder stays a stored column (and in the CSV), but nothing reads it.
-_TESTED_FOLDERS = tuple(f for f in _FOLDERS if f != "test_inbound_folder")
+_RULE_FIELDS = ("kind", "host", "username", "inbound_folder", "outbound_folder", "error_folder", "secret_name",
+                "after_read", "processed_folder", "host_key", "api_version", "partner_code", "can_read", "can_write")
+# Reading: its folder, its archive (after-read Move) and its error folder. Writing: one folder.
+_FOLDERS = ("inbound_folder", "processed_folder", "error_folder", "outbound_folder")
 
 
 def same_key(a: str | None, b: str | None) -> bool:
@@ -65,19 +63,21 @@ class ConnectionRepository(Repository[Connection]):
     model = Connection
     search_fields = ("name", "host")
     # secret_name and host_key are not list fields: never echoed back in a filter error,
-    # and not offered as columns either; test_inbound_folder is read by nothing.
-    meta_hidden = ("secret_name", "host_key", "test_inbound_folder")
-    list_fields = ("name", "kind", "host", "port", "username", "after_read", "stable_seconds", "mode",
+    # and not offered as columns either.
+    meta_hidden = ("secret_name", "host_key")
+    list_fields = ("name", "kind", "host", "port", "username", "after_read", "stable_seconds", "can_read", "can_write",
                    "auth_failed_at", "api_version", "cursor_updated_at", "page_size", "order_number_cutoff",
                    "partner_code", "schedule_minutes", "schedule_paused", "last_run_at", "last_run_status", "next_run_at",
                    "active", "created_at", "updated_at")
     filterable = {"needs_attention": FilterRule(NEEDS_ATTENTION, kind="bool", cast=parse_bool)}
     labels = {"schedule_minutes": "Every (minutes)", "schedule_paused": "Paused", "last_run_at": "Last run",
               "last_run_status": "Last run status", "next_run_at": "Next run", "after_read": "After read", "stable_seconds": "Stable (seconds)", "auth_failed_at": "Login refused at",
-              "api_version": "API version", "cursor_updated_at": "Cursor (updated at)"}
-    enums = {"kind": CONNECTION_KINDS, "after_read": AFTER_READ, "mode": CONNECTION_MODES}
+              "api_version": "API version", "cursor_updated_at": "Cursor (updated at)", "can_read": "Read",
+              "can_write": "Write", "inbound_folder": "Read folder", "processed_folder": "Archive folder",
+              "error_folder": "Error folder", "outbound_folder": "Write folder"}
+    enums = {"kind": CONNECTION_KINDS, "after_read": AFTER_READ}
     default_sort = ("name",)
-    groupable = ("kind", "mode", "after_read", "partner_code", "schedule_paused", "last_run_status", "active")
+    groupable = ("kind", "can_read", "can_write", "after_read", "partner_code", "schedule_paused", "last_run_status", "active")
     presets = (Preset("all", "All"),
                Preset("paused_or_failing", "Paused or failing",
                       {"filters": [{"field": "needs_attention", "op": "eq", "value": "true"}]}),
@@ -93,7 +93,7 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
     read_permission = READ
     write_permission = CONFIG
     csv_key = "name"
-    csv_columns = ("name", "kind", "host", "port", "username", *_FOLDERS, "after_read", "stable_seconds", "mode",
+    csv_columns = ("name", "kind", "host", "port", "username", *_FOLDERS, "after_read", "stable_seconds", "can_read", "can_write",
                    "secret_name", "host_key", "api_version", "page_size", "order_number_cutoff", "partner_code",
                    "schedule_minutes", "schedule_paused", "active_from", "active_to", "active_days", "active")
     unique_constraints = {"sales_connections_name_key": ("connection.name_taken", "name")}
@@ -127,6 +127,8 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
     async def validate_create(self, data: ConnectionCreate) -> None:
         check_connection(data.model_dump())
         await self._partner_exists(data.partner_code)
+        if data.can_write:
+            await self._go_live_gate()
 
     def build(self, values: dict[str, Any]) -> Connection:
         if values.get("schedule_minutes") is None:  # by kind (user 2026-11-02)
@@ -141,12 +143,12 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
         if (start is None) != (end is None):
             raise InvalidInput("connection.active_window", "give both the start and the end of the active hours, or neither",
                                {"field": "active_to" if start is not None else "active_from"})
-        if changes.get("mode") == "LIVE" and entity.mode != "LIVE":
-            await self._go_live_gate()
+        if changes.get("can_write") and not entity.can_write:
+            await self._go_live_gate()  # writing is where the real work starts
 
     async def _go_live_gate(self) -> None:
-        """PRD section 11 step 3 / AC-OB-71 (design §5.4): a channel goes LIVE
-        only when every gate event has an active rule with recipients and a
+        """PRD section 11 step 3 / AC-OB-71 (design §5.4): writing is turned on for a
+        channel only when every gate event has an active rule with recipients and a
         test notification was sent through it — the health page shows which."""
         from app.services.notifications import gate  # notifications → schemas; kept local
         missing = [g for g in await gate(self.uow.session) if not g.ok]
@@ -154,7 +156,7 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
             raise InvalidInput(
                 "connection.go_live_gate",
                 "the notification gate is not met: " + "; ".join(f"{g.label} ({g.problem})" for g in missing),
-                {"field": "mode", "events": [g.event_type for g in missing]})
+                {"field": "can_write", "events": [g.event_type for g in missing]})
 
     @requires(FILE_RETRY)
     async def run_now(self, id: int, scheduler, background) -> int:
@@ -211,7 +213,7 @@ class ConnectionService(CrudService[Connection, ConnectionRead, ConnectionCreate
             result.error = ("the host key is not pinned yet: compare the fingerprint and pin it" if not pinned
                             else "the server presents a different host key than the pinned one")
             return result
-        folders = [getattr(entity, f) for f in _TESTED_FOLDERS if getattr(entity, f)]
+        folders = [getattr(entity, f) for f in _FOLDERS if getattr(entity, f)]
         try:
             checks = await sftp.check(snap, folders)
             result.folders = [FolderCheckRead(folder=c.folder, ok=c.ok, files=c.files, error=c.error) for c in checks]

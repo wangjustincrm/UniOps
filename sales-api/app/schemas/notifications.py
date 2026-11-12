@@ -57,7 +57,7 @@ class NotificationRuleRead(BaseModel):
     event_type: str
     event_label: str
     kind: str          # action: always a task (FR-OB-06); notify: follows the channel
-    gate: bool         # required before a channel goes LIVE
+    gate: bool         # required before writing is turned on for a channel
     channel: str
     users: list[str]
     emails: list[str]

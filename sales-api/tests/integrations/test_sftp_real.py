@@ -24,7 +24,7 @@ PASSWORD = os.getenv("SALES_TEST_SFTP_PASSWORD", "")
 
 def snapshot(**over) -> ConnectionSnapshot:
     base = dict(id=1, name="sftp-test", kind="SFTP", host=HOST, port=PORT, username=USER, secret_name="SFTP_PW",
-                host_key=None, mode="TEST", inbound_folder="/in", processed_folder="/processed",
+                host_key=None, can_read=True, can_write=False, inbound_folder="/in", processed_folder="/processed",
                 error_folder="/error", after_read="LEAVE", stable_seconds=0, auth_failed_at=None)
     return replace(ConnectionSnapshot(**base), **over)
 

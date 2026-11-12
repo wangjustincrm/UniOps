@@ -151,7 +151,7 @@ class Health:
                 add(f"connection:{c.id}", f"Connection {c.name}", FAILED, "the warehouse connection is inactive",
                     link="/config/connections")
             else:
-                add(f"connection:{c.id}", f"Connection {c.name}", PASSED, f"{c.kind}, {c.mode}", link="/config/connections")
+                add(f"connection:{c.id}", f"Connection {c.name}", PASSED, f"{c.kind}, read {'on' if c.can_read else 'off'}, write {'on' if c.can_write else 'off'}", link="/config/connections")
 
         # scheduler: every job (per connection, and the system job)
         jobs = await self.jobs(now)

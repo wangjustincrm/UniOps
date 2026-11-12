@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import type { FieldValues } from 'react-hook-form'
 import type { FieldSpec } from '@/platform-ui'
-import { AFTER_READ, DAYS, FOLDERS, KINDS, MODES, scheduleSentence, type ConnectionRead } from './connectionsApi'
+import { AFTER_READ, DAYS, KINDS, READ_FOLDERS, WRITE_FOLDERS, scheduleSentence, type ConnectionRead } from './connectionsApi'
 
 // Mirrors the API's DTO and the connection rules (sales-api domain/connections.py).
 const optional = (max?: number) => {
@@ -25,10 +25,10 @@ const fields = {
   port: z.number({ error: 'Enter a port' }).int().min(1, 'From 1').max(65535, 'At most 65535').nullable().optional(),
   username: optional(255).refine((v) => !v || !EXCEL_NUMBER.test(v.trim()), EXCEL_MESSAGE),
   inbound_folder: optional(), outbound_folder: optional(), processed_folder: optional(), error_folder: optional(),
-  test_outbound_folder: optional(),
   after_read: choice(AFTER_READ),
   stable_seconds: z.number({ error: 'Enter seconds' }).int('Whole seconds').min(0, 'Cannot be negative'),
-  mode: choice(MODES),
+  can_read: z.boolean(),
+  can_write: z.boolean(),
   secret_name: z.string().trim().max(100).refine((v) => v === '' || SECRET.test(v), SECRET_NAME_MESSAGE).nullable().optional(),
   host_key: z.string().trim().refine((v) => v === '' || KEY_LINE.test(v), HOST_KEY_MESSAGE).nullable().optional(),
   api_version: z.string().trim().refine((v) => v === '' || /^\d{4}-\d{2}$/.test(v), 'A version like 2026-04').nullable().optional(),
@@ -45,8 +45,9 @@ const schedule = {
   active_days: z.array(z.enum(DAYS)).transform((d) => (d.length ? DAYS.filter((x) => d.includes(x)).join(',') : null)),
 }
 
-type Values = { kind?: string; after_read?: string; processed_folder?: string | null; host_key?: string | null; host?: string | null; partner_code?: string | null; active_from?: string | null; active_to?: string | null } & Record<string, unknown>
-const SFTP_REQUIRED = ['host', 'username', 'inbound_folder', 'secret_name'] as const
+type Values = { kind?: string; after_read?: string; processed_folder?: string | null; host_key?: string | null; host?: string | null; partner_code?: string | null; active_from?: string | null; active_to?: string | null; can_read?: boolean; can_write?: boolean } & Record<string, unknown>
+const SFTP_REQUIRED = ['host', 'username', 'secret_name'] as const
+const folderOf = (v: unknown) => '/' + String(v ?? '').trim().replace(/^\/+|\/+$/g, '')
 
 function scheduleRules(v: Values, ctx: z.RefinementCtx) {
   if (!String(v.active_from ?? '').trim() !== !String(v.active_to ?? '').trim()) {
@@ -59,6 +60,15 @@ function rules(v: Values, ctx: z.RefinementCtx) {
   if (v.kind === 'SFTP') {
     for (const f of SFTP_REQUIRED) {
       if (!String(v[f] ?? '').trim()) ctx.addIssue({ code: 'custom', path: [f], message: 'Required for an SFTP connection' })
+    }
+    if (v.can_read && !String(v.inbound_folder ?? '').trim()) ctx.addIssue({ code: 'custom', path: ['inbound_folder'], message: 'Needed to read' })
+    if (v.can_write && !String(v.outbound_folder ?? '').trim()) ctx.addIssue({ code: 'custom', path: ['outbound_folder'], message: 'Needed to write' })
+    if (String(v.outbound_folder ?? '').trim()) {
+      for (const f of READ_FOLDERS) {
+        if (String(v[f] ?? '').trim() && folderOf(v[f]) === folderOf(v.outbound_folder)) {
+          ctx.addIssue({ code: 'custom', path: [f], message: 'Must not be the write folder' })
+        }
+      }
     }
   }
   if (v.kind === 'SHOPIFY') {
@@ -83,9 +93,14 @@ export const connectionUpdateSchema = z.object(fields).superRefine(rules)
 /** The Schedule tab's form. */
 export const connectionScheduleSchema = z.object(schedule).superRefine(scheduleRules)
 
-const folderLabel: Record<(typeof FOLDERS)[number], string> = {
-  inbound_folder: 'Inbound folder', outbound_folder: 'Outbound folder', processed_folder: 'Processed folder',
-  error_folder: 'Error folder', test_outbound_folder: 'Test outbound folder',
+const folderLabel: Record<(typeof READ_FOLDERS)[number] | (typeof WRITE_FOLDERS)[number], string> = {
+  inbound_folder: 'Read folder', processed_folder: 'Archive folder', error_folder: 'Error folder', outbound_folder: 'Write folder',
+}
+const folderHint: Record<string, string> = {
+  inbound_folder: 'Where Sales reads the files the partner leaves.',
+  processed_folder: 'Where a read file is moved when "After reading" is Move.',
+  error_folder: 'Where a file that cannot be read is moved.',
+  outbound_folder: 'Where Sales puts the files it sends (940, 943, 810).',
 }
 
 const sftp = (v: FieldValues) => v.kind === 'SFTP'
@@ -107,10 +122,6 @@ export const scheduleFields: FieldSpec[] = scheduleSpecs.map((f) => ({ ...f, sec
 export const connectionFields: FieldSpec[] = [
   { name: 'name', label: 'Name', required: true, section: 'Basics', hint: 'Cannot be changed after the connection is created.' },
   { name: 'kind', label: 'Type', type: 'segmented', required: true, section: 'Basics', options: [{ value: 'SFTP', label: 'SFTP' }, { value: 'SHOPIFY', label: 'Shopify' }] },
-  { name: 'mode', label: 'Mode', type: 'segmented', required: true, section: 'Basics', options: [{ value: 'TEST', label: 'Test' }, { value: 'LIVE', label: 'Live' }],
-    hint: (v) => (v.kind === 'SHOPIFY'
-      ? 'Test reads orders and writes nothing to the store. Live can also send fulfilments and close orders, once writing to partners is switched on.'
-      : 'Test reads the inbound folder, leaves the files there and writes nothing to the server. Live can also send, move and delete, once writing to partners is switched on for this server.') },
   { name: 'active', label: 'Active', type: 'checkbox', section: 'Basics' },
 
   { name: 'host', label: 'Address', section: 'Login', hint: "The server's address (a Shopify store: <name>.myshopify.com). An SFTP server must also be on the server's allowed list; ask your administrator." },
@@ -122,14 +133,20 @@ export const connectionFields: FieldSpec[] = [
   { name: 'host_key', label: "Server's key", type: 'textarea', section: 'Login', showWhen: sftp, advanced: true,
     hint: 'Filled in by "Pin this key" after a test on the Overview.' },
 
-  ...FOLDERS.map((f): FieldSpec => ({ name: f, label: folderLabel[f], section: 'Folders', showWhen: sftp, advanced: !['inbound_folder', 'outbound_folder'].includes(f),
-    hint: f === 'test_outbound_folder' ? 'Takes the place of the outbound folder on a Test connection. Nothing is written while it is Test.' : undefined })),
-
+  { name: 'can_read', label: 'Read', type: 'checkbox', section: 'Reading',
+    hint: (v) => (v.kind === 'SHOPIFY' ? 'Sales pulls the store\'s orders.' : 'Sales lists and reads the read folder.') },
+  ...READ_FOLDERS.map((f): FieldSpec => ({ name: f, label: folderLabel[f], section: 'Reading', showWhen: sftp, hint: folderHint[f] })),
   { name: 'after_read', label: 'After reading a file', type: 'segmented', required: true, section: 'Reading', showWhen: sftp, alwaysSent: true,
     options: [{ value: 'LEAVE', label: 'Leave the file' }, { value: 'MOVE', label: 'Move it' }, { value: 'DELETE', label: 'Delete it' }],
-    hint: 'Move puts it in the processed folder. Moving and deleting happen only on a Live connection with writing to partners switched on; otherwise the file is left.' },
+    hint: 'Move puts it in the archive folder. Moving and deleting change the partner\'s server: they happen only with Write on; otherwise the file is left.' },
   { name: 'stable_seconds', label: 'Wait before reading (seconds)', type: 'number', required: true, section: 'Reading', showWhen: sftp, alwaysSent: true, advanced: true,
     hint: 'A file is read once its modified time is at least this old.' },
+
+  { name: 'can_write', label: 'Write', type: 'checkbox', section: 'Writing',
+    hint: (v) => (v.kind === 'SHOPIFY'
+      ? 'Sales sends fulfilments and tracking to the store and closes orders. Turned on only when the go-live notifications are set (Health).'
+      : 'Sales puts its files in the write folder and moves or deletes what it read. Turned on only when the go-live notifications are set (Health); the server must also allow writing to this address.') },
+  ...WRITE_FOLDERS.map((f): FieldSpec => ({ name: f, label: folderLabel[f], section: 'Writing', showWhen: sftp, hint: folderHint[f] })),
 
   { name: 'api_version', label: 'API version', placeholder: '2026-04', section: 'Shopify', showWhen: shopify },
   { name: 'partner_code', label: 'Partner', section: 'Shopify', showWhen: shopify, hint: "Whose orders the store's are." },
@@ -149,8 +166,8 @@ export const connectionFieldLabels: Record<string, string> = Object.fromEntries(
 
 export const connectionEmptyValues: Record<string, unknown> = {
   name: '', kind: 'SFTP', host: '', port: 22, username: '', inbound_folder: '', outbound_folder: '', processed_folder: '',
-  error_folder: '', test_outbound_folder: '', after_read: 'LEAVE', stable_seconds: 60,
-  mode: 'TEST', secret_name: '', host_key: '', api_version: '', page_size: null, order_number_cutoff: null, partner_code: '',
+  error_folder: '', after_read: 'LEAVE', stable_seconds: 60,
+  can_read: true, can_write: false, secret_name: '', host_key: '', api_version: '', page_size: null, order_number_cutoff: null, partner_code: '',
   schedule_minutes: 5, schedule_paused: false, active_from: '', active_to: '', active_days: [], active: true,
 }
 

@@ -5,8 +5,8 @@ from typing import Any
 
 from app.platform.errors import InvalidInput
 
-# An SFTP connection the intake can use needs these (an empty one is useless).
-SFTP_REQUIRED = ("host", "username", "inbound_folder", "secret_name")
+# An SFTP connection needs these (an empty one is useless); its folders by what it may do.
+SFTP_REQUIRED = ("host", "username", "secret_name")
 
 
 def _same_folder(a: Any, b: Any) -> bool:
@@ -14,18 +14,23 @@ def _same_folder(a: Any, b: Any) -> bool:
 
 
 def check_connection(values: dict[str, Any]) -> None:
-    # A Test connection writes only into its test outbound folder: set to the real
-    # folder, a Test run would deliver to the partner (the write guard refuses it too).
-    if str(values.get("test_outbound_folder") or "").strip("/ ") and _same_folder(
-            values.get("test_outbound_folder"), values.get("outbound_folder")):
-        raise InvalidInput("connection.test_folder_is_real",
-                           "the test outbound folder must not be the real outbound folder: leave it empty when the "
-                           "partner has no test folder (nothing is then sent in Test mode)", {"field": "test_outbound_folder"})
     if values.get("kind") == "SFTP":
         for field in SFTP_REQUIRED:
             if not values.get(field):
                 raise InvalidInput("connection.field_required", f"{field} is required for an SFTP connection",
                                    {"field": field})
+        # Reading has its folder, its archive (after-read Move) and its error folder; writing has one folder.
+        if values.get("can_read", True) and not values.get("inbound_folder"):
+            raise InvalidInput("connection.field_required", "a read folder is required to read this connection",
+                               {"field": "inbound_folder"})
+        if values.get("can_write") and not values.get("outbound_folder"):
+            raise InvalidInput("connection.field_required", "a write folder is required to write to this connection",
+                               {"field": "outbound_folder"})
+        for field in ("inbound_folder", "processed_folder", "error_folder"):
+            if values.get(field) and values.get("outbound_folder") and _same_folder(values[field], values["outbound_folder"]):
+                raise InvalidInput("connection.folder_is_write_folder",
+                                   "the read, archive and error folders must not be the write folder: Sales would read "
+                                   "its own files back, or the partner would read what Sales moved there", {"field": field})
     # A host key is pinned for SFTP only; for SHOPIFY the field must stay
     # empty (a token put there by mistake must never be stored). The message
     # never repeats the value.
@@ -51,5 +56,5 @@ def check_connection(values: dict[str, Any]) -> None:
                            {"field": "partner_code"})
     # After-read Move needs somewhere to move to (FR-OB-74).
     if values.get("after_read") == "MOVE" and not values.get("processed_folder"):
-        raise InvalidInput("connection.field_required", "a processed folder is required when after-read is MOVE",
+        raise InvalidInput("connection.field_required", "an archive folder is required when after-read is Move",
                            {"field": "processed_folder"})

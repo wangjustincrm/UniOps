@@ -73,7 +73,7 @@ async def shipped_order(t, data: bytes, name="945.edi"):
 
 async def live_store(t):
     async with t.factory(SYSTEM_ACTOR) as u:
-        (await u.session.get(Connection, t.edi.env.conn_id)).mode = "LIVE"
+        (await u.session.get(Connection, t.edi.env.conn_id)).can_write = True
         await u.commit()
 
 
@@ -355,13 +355,13 @@ async def test_a_write_queued_before_the_switch_on_is_cancelled(p5):
     assert (await p5.q("SELECT shopify_status FROM sales_shipments"))[0]["shopify_status"] == "Suppressed"
 
 
-async def test_a_test_store_skips_the_shopify_write_and_the_order_goes_on_as_in_production(p5):
-    """dev2 (user 2026-11-06): the only difference from production is that a Test-mode store is not
-    written to — no hold, no task, the order completes; the shipment says the write was skipped."""
+async def test_a_store_with_write_off_skips_the_shopify_write_and_the_order_goes_on_as_in_production(p5):
+    """dev2 (user 2026-11-06): the only difference from production is that a store with its Write tick
+    off is not written to — no hold, no task, the order completes; the shipment says the write was skipped."""
     o, d = await sent_order(p5.edi)
     async with p5.factory(SYSTEM_ACTOR) as u:
         conn = (await u.session.execute(sa.select(Connection).where(Connection.kind == "SHOPIFY"))).scalar_one()
-        conn.mode = "TEST"
+        conn.can_write = False
         await u.commit()
     await store_945(p5, x945(f"{o.order_number:09d}", PALLET_12[:0] + ["LX*1", "W12*CP*12*12*0*EA**VN*CF0092", "N9*LT*L1"]),
                     "945-test-store.edi")

@@ -135,7 +135,7 @@ class ShopifyGateway(Protocol):
 
 
 READS = ("shop", "orders_page", "order", "transactions", "variant", "fulfillment_orders", "fulfillments", "locations")
-# P5: behind SALES_PARTNER_WRITES_ENABLED, and only for a LIVE connection.
+# P5: behind SALES_PARTNER_WRITES_ENABLED, and only with the connection's Write tick on.
 WRITES: tuple[str, ...] = ("create_fulfillment", "update_tracking", "close_order")
 FULFILLMENT_MUTATION = """mutation($fulfillment: FulfillmentInput!) {
   fulfillmentCreate(fulfillment: $fulfillment) { fulfillment { id status } userErrors { field message } }
@@ -382,7 +382,7 @@ def _errors(r: httpx.Response) -> str:
 def summary(method: str, args: tuple, kwargs: dict) -> dict[str, Any]:
     """The "would have written" record of a refused write: ids only."""
     conn = args[0] if args else kwargs.get("conn")
-    out: dict[str, Any] = {"connection": getattr(conn, "id", None), "mode": getattr(conn, "mode", None)}
+    out: dict[str, Any] = {"connection": getattr(conn, "id", None), "can_write": getattr(conn, "can_write", None)}
     if method == "create_fulfillment":
         items = args[1] if len(args) > 1 else kwargs.get("items", [])
         out["fulfillment_orders"] = [i.get("fulfillment_order_id") for i in items]

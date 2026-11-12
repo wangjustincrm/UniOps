@@ -75,17 +75,16 @@ async def test_secret_name_and_excel_numbers_get_a_clear_message(api):  # noqa: 
 
 
 async def test_the_users_three_rows_are_refused_per_field_and_nothing_leaks(api, db_engine):  # noqa: F811
-    base = {k: "" for k in ("inbound_folder", "outbound_folder", "processed_folder", "error_folder",
-                            "test_inbound_folder", "test_outbound_folder")}
+    base = {k: "" for k in ("inbound_folder", "outbound_folder", "processed_folder", "error_folder")}
     rows = [
         {"name": "Shopify", "kind": "SHOPIFY", "host": "example.myshopify.com", "port": "443", "username": "",
-         **base, "after_read": "LEAVE", "stable_seconds": "60", "mode": "TEST", "secret_name": "Shopify",
+         **base, "after_read": "LEAVE", "stable_seconds": "60", "can_read": "true", "can_write": "false", "secret_name": "Shopify",
          "host_key": TOKEN, "active": "true"},
         {"name": "TrueCommerce", "kind": "SFTP", "host": "sftp.example.com", "port": "22", "username": "1.22E+11",
-         **base, "inbound_folder": "/in", "after_read": "LEAVE", "stable_seconds": "60", "mode": "TEST",
+         **base, "inbound_folder": "/in", "after_read": "LEAVE", "stable_seconds": "60", "can_read": "true", "can_write": "false",
          "secret_name": "TrueCommerce", "host_key": PASSWORD, "active": "true"},
         {"name": "Radiant", "kind": "SFTP", "host": "sftp.example.org", "port": "22", "username": "radiant",
-         **base, "inbound_folder": "/in", "after_read": "LEAVE", "stable_seconds": "60", "mode": "TEST",
+         **base, "inbound_folder": "/in", "after_read": "LEAVE", "stable_seconds": "60", "can_read": "true", "can_write": "false",
          "secret_name": "Radiant", "host_key": PASSWORD_WITH_SPACE, "active": "true"},
     ]
     for dry_run in ("true", "false"):
@@ -111,10 +110,10 @@ async def test_the_users_three_rows_are_refused_per_field_and_nothing_leaks(api,
 async def test_the_secret_name_and_host_key_are_no_column_but_the_form_and_the_csv_keep_them(api):  # noqa: F811
     c = (await api.post(C, json=conn_body(host_key=FAKE_KEY), headers=OP)).json()
     names = {f["name"] for f in (await api.get(f"{C}/meta", headers=OP)).json()["fields"]}
-    assert {"name", "host", "mode"} <= names                                    # the others stay
-    assert not names & {"secret_name", "host_key", "test_inbound_folder"}
+    assert {"name", "host", "can_read", "can_write"} <= names                   # the others stay
+    assert not names & {"secret_name", "host_key"}
     row = (await api.get(f"{C}/{c['id']}", headers=OP)).json()
     assert row["secret_name"] == c["secret_name"] and row["host_key"]            # the form still gets them
     header = (await api.get(f"{C}/export.csv", headers=OP)).text.splitlines()[0]
-    assert {"secret_name", "host_key", "test_inbound_folder"} <= set(header.split(","))  # and the CSV
+    assert {"secret_name", "host_key", "can_read", "can_write"} <= set(header.split(","))  # and the CSV
 

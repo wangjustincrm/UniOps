@@ -44,8 +44,8 @@ async def edi(env):  # noqa: F811
         s.add(Partner(code="MNL", name="Manual sender", abbrev="MNL", channel="SHOPIFY", settlement_mode="PREPAID",
                       sending_mode="MANUAL", delay_minutes=0, invoice_method="NONE", dc_routing_required=False, version=1))
         conn = Connection(name="radiant", kind="SFTP", host="commhub.example", port=22, username="crm", after_read="LEAVE",
-                          mode="LIVE", secret_name="SALES_SECRET_RADIANT", inbound_folder="/prod/out",
-                          outbound_folder="/prod/in", test_outbound_folder="/test/in", stable_seconds=0, version=1)
+                          can_write=True, secret_name="SALES_SECRET_RADIANT", inbound_folder="/prod/out",
+                          outbound_folder="/prod/in", stable_seconds=0, version=1)
         s.add(conn)
         await s.flush()
         await SETTINGS.set(s, EDI_CONNECTION_ID, conn.id)
@@ -144,22 +144,21 @@ async def test_an_eligible_order_gets_its_940_put_through_the_guard(edi):
     assert (await edi.out.queue_due()).queued == 0  # sent once
 
 
-async def test_a_write_is_suppressed_without_live_or_without_a_write_host(edi):
+async def test_a_write_is_suppressed_with_write_off_or_without_a_write_host(edi):
     o = await a_paid_order(edi)
     async with edi.env.factory(SYSTEM_ACTOR) as u:
         c = await u.session.get(Connection, edi.conn_id)
-        c.mode, c.test_outbound_folder = "TEST", c.outbound_folder  # a "test folder" that is the real one writes nothing
+        c.can_write = False  # the Write tick off: refused before the guard is even asked
         await u.commit()
     await edi.out.queue_due()
     assert (await edi.worker.run_once()).suppressed == 1
     assert edi.store.files == {} and edi.store.calls == []  # nothing reached the store
     assert [d["file_status"] for d in await docs(edi)] == ["Suppressed"] and await status(edi, o.id) == F.FAILED_940
-    assert edi.refused[-1].context["reason"] == "connection not LIVE"
     [t] = await tasks_of(edi, "send_refused")  # P8: a refused send is a task, not only a log row
     assert f"the 940 for order {o.source_reference} (internal no. {o.order_number}) was not sent" in t["description"]
-    # LIVE, switch on, but the host is not a write host (e.g. Radiant on a dev stack)
+    # Write on, switch on, but the host is not a write host (e.g. Radiant on a dev stack)
     async with edi.env.factory(SYSTEM_ACTOR) as u:
-        (await u.session.get(Connection, edi.conn_id)).mode = "LIVE"
+        (await u.session.get(Connection, edi.conn_id)).can_write = True
         await u.commit()
     edi.settings.sftp_write_hosts = frozenset({"sftp-test"})
     o2 = await a_paid_order(edi, number=9302)

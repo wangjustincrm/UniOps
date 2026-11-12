@@ -12,7 +12,6 @@ from app.schemas.common import host_key_line, not_excel_number, secret_name
 
 Kind = Literal["SFTP", "SHOPIFY"]
 AfterRead = Literal["LEAVE", "MOVE", "DELETE"]
-Mode = Literal["LIVE", "TEST"]
 
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
 Host = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
@@ -58,11 +57,10 @@ class ConnectionCreate(BaseModel):
     outbound_folder: Folder | None = None
     processed_folder: Folder | None = None
     error_folder: Folder | None = None
-    test_inbound_folder: Folder | None = None
-    test_outbound_folder: Folder | None = None
     after_read: AfterRead
     stable_seconds: Seconds = 60
-    mode: Mode
+    can_read: bool = True
+    can_write: bool = False
     secret_name: SecretName | None = None
     host_key: HostKeyLine | None = None
     api_version: ApiVersion | None = None
@@ -93,11 +91,10 @@ class ConnectionUpdate(BaseModel):
     outbound_folder: Folder | None = None
     processed_folder: Folder | None = None
     error_folder: Folder | None = None
-    test_inbound_folder: Folder | None = None
-    test_outbound_folder: Folder | None = None
     after_read: AfterRead = None  # type: ignore[assignment]
     stable_seconds: Seconds = None  # type: ignore[assignment]
-    mode: Mode = None  # type: ignore[assignment]
+    can_read: bool = None  # type: ignore[assignment]
+    can_write: bool = None  # type: ignore[assignment]
     secret_name: SecretName | None = None
     host_key: HostKeyLine | None = None
     api_version: ApiVersion | None = None
@@ -125,11 +122,10 @@ class ConnectionRead(BaseModel):
     outbound_folder: str | None
     processed_folder: str | None
     error_folder: str | None
-    test_inbound_folder: str | None
-    test_outbound_folder: str | None
     after_read: AfterRead
     stable_seconds: int
-    mode: Mode
+    can_read: bool
+    can_write: bool
     secret_name: str | None
     secret_present: bool = False  # filled by the service; the value is never read out
     host_key: str | None

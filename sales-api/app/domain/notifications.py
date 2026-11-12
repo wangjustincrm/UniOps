@@ -19,7 +19,7 @@ class EventType:
     key: str
     label: str
     kind: str = ACTION
-    gate: bool = False  # required before a channel goes LIVE (PRD section 11 step 3)
+    gate: bool = False  # required before writing is turned on for a channel (PRD section 11 step 3)
 
 
 EVENT_TYPES: tuple[EventType, ...] = (

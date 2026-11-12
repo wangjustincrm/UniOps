@@ -100,7 +100,7 @@ def build_container(settings: Any, *, real_sftp=None, real_email=None, real_shop
         shopify=gateway(
             settings, real=real_shopify or _not_built_yet("Shopify", "P3"), fake=FakeShopify,
             guarded=shopify.guarded(PARTNER_WRITES_SWITCH), reads=shopify.READS, name="shopify",
-            allow=sftp.live_only, summarise=shopify.summary, on_refused=on_refused,
+            allow=sftp.write_on, summarise=shopify.summary, on_refused=on_refused,
         ),
         notify_tasks=lambda: getattr(settings, EXTERNAL_EMAIL_SWITCH, False) is True,
     )
