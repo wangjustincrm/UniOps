@@ -21,11 +21,11 @@ ROWS = [("A1", "Apple", "3.00", False), ("B2", "Banana", "1.50", False),
 
 
 async def test_page_total_sort_search_filters(uow_factory):
-    await _seed(uow_factory, ROWS)
+    await _seed(uow_factory, ROWS[:3])  # the historical row has its own test below
     async with uow_factory(SYSTEM_ACTOR) as uow:
         repo = WidgetRepository(uow)
         page = await repo.list(QuerySpec(page_size=2))
-        assert page.total == 3 and [w.code for w in page.items] == ["A1", "B2"]  # default sort, no history
+        assert page.total == 3 and [w.code for w in page.items] == ["A1", "B2"]  # default sort
         page2 = await repo.list(QuerySpec(page=2, page_size=2))
         assert [w.code for w in page2.items] == ["C3"]
         desc = await repo.list(QuerySpec(sort=[SortKey(field="price", desc=True)]))
@@ -40,13 +40,12 @@ async def test_page_total_sort_search_filters(uow_factory):
         assert [w.code for w in listed.items] == ["A1", "C3"]
 
 
-async def test_historical_rows_only_on_request_and_never_on_open_work(uow_factory):
+async def test_historical_rows_are_listed_like_any_other_but_never_on_open_work(uow_factory):
     await _seed(uow_factory, ROWS)
     async with uow_factory(SYSTEM_ACTOR) as uow:
         repo = WidgetRepository(uow)
-        assert (await repo.list(QuerySpec())).total == 3
-        assert (await repo.list(QuerySpec(include_historical=True))).total == 4
-        assert (await repo.list(QuerySpec(include_historical=True), open_work=True)).total == 3
+        assert (await repo.list(QuerySpec())).total == 4
+        assert (await repo.list(QuerySpec(), open_work=True)).total == 3
 
 
 @pytest.mark.parametrize("spec,code", [

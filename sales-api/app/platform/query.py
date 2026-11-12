@@ -85,7 +85,6 @@ class QuerySpec(BaseModel):
     sort: list[SortKey] = Field(default_factory=list, max_length=10)
     search: str | None = Field(None, max_length=MAX_SEARCH)
     filters: list[Filter] = Field(default_factory=list, max_length=MAX_FILTERS)
-    include_historical: bool = False
     group: list[SortKey] = Field(default_factory=list, max_length=MAX_GROUP_KEYS)
 
 
@@ -244,7 +243,6 @@ def query_spec(
     sort: Annotated[str | None, Query(max_length=500)] = None,
     search: Annotated[str | None, Query(max_length=MAX_SEARCH)] = None,
     filter: Annotated[list[str] | None, Query(max_length=MAX_FILTERS)] = None,  # noqa: A002 — the parameter's name
-    include_historical: bool = False,
     group: Annotated[str | None, Query(max_length=200)] = None,
 ) -> QuerySpec:
     """FastAPI dependency: `?page=&page_size=&sort=a,-b&search=&filter=f:op:v&filter=…&group=a,-b`."""
@@ -257,6 +255,5 @@ def query_spec(
         sort=parse_sort(sort),
         search=search,
         filters=[parse_filter(f) for f in (filter or [])],
-        include_historical=include_historical,
         group=keys,
     )

@@ -12,14 +12,13 @@ describe('toSearchParams', () => {
         { field: 'price', op: 'range', value: [null, '5'] },
         { field: 'active', op: 'eq', value: 'true' },
       ],
-      includeHistorical: true,
     })
     expect(p.get('page')).toBe('2')
     expect(p.get('page_size')).toBe('200') // capped at the server maximum
     expect(p.get('sort')).toBe('code,-price')
     expect(p.get('search')).toBe('ab')
     expect(p.getAll('filter')).toEqual(['code:in:A|B', 'price:range:..5', 'active:eq:true'])
-    expect(p.get('include_historical')).toBe('true')
+    expect(p.has('include_historical')).toBe(false)
   })
   it('omits what is not set', () => {
     expect(toSearchParams({ page: 1, pageSize: 50 }).toString()).toBe('page=1&page_size=50')

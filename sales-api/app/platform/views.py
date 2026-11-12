@@ -33,6 +33,7 @@ from app.platform.query import MAX_FILTERS, MAX_GROUP_KEYS, MAX_PAGE_SIZE
 
 VIEW_STATE_VERSION = 1
 MAX_VIEWS_PER_LIST = 50
+# "includeHistorical" is still accepted (views saved before 2026-11-12 carry it) and has no effect.
 _STATE_KEYS = {"version", "sort", "group", "filters", "search", "pageSize", "columns", "hidden", "includeHistorical",
                "refresh"}
 # Auto-refresh every N seconds, as the list's refresh control offers them (absent: off).

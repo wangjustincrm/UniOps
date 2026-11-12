@@ -1,7 +1,9 @@
 """Closes old Shopify orders that Sales still shows open, from the store's own state.
 
 After the Zoho history replay, some Shopify orders stop at 940 Accepted / Rejected /
-Timeout: Zoho's export has no 945 for them, but the store finished them long ago.
+Timeout: Zoho's export has no 945 for them, but the store finished them long ago; and
+old orders read from the store stop at Payment Hold / Archive Suppressed (never paid,
+or archived). Historical or not, each is settled from the store.
 This reads each one from Shopify (read only: the order and its fulfillments) and
   - fulfilled in the store (or closed with one)    → Shipped
   - cancelled, or refunded in full with no tracking,
@@ -35,7 +37,8 @@ from app.services.intake import ConnectionSnapshot
 from app.services.order_holds import ORDER_PROBLEMS
 from app.services.problems import task_service
 
-OPEN = (F.SENT_940, F.ACCEPTED_940, F.REJECTED_940, F.TIMEOUT_940)
+# Not finished: a 940 out with no answer applied, or stopped before any 940 (unpaid, archived).
+OPEN = (F.SENT_940, F.ACCEPTED_940, F.REJECTED_940, F.TIMEOUT_940, F.PAYMENT_HOLD, F.ARCHIVE_SUPPRESSED)
 
 
 @dataclass(frozen=True)
@@ -77,7 +80,7 @@ async def main(args: ScriptArgs) -> dict:
     async with uow_factory(SYSTEM_ACTOR) as u:
         s = u.session
         orders = list((await s.execute(select(Order).where(
-            Order.source_type == "SHOPIFY", Order.historical.is_(False), Order.shadow.is_(False),
+            Order.source_type == "SHOPIFY", Order.shadow.is_(False),
             Order.fulfillment_status.in_([x.value for x in OPEN]), Order.order_date < before)
             .order_by(Order.order_date, Order.id).with_for_update())).scalars())
         conns: dict[str, ConnectionSnapshot] = {}

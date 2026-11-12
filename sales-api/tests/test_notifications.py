@@ -290,15 +290,15 @@ async def test_every_dashboard_card_is_the_total_of_the_list_it_opens(api):
         for i, (f, inv, src, hist) in enumerate((
                 (F.PENDING, Inv.PENDING, "SHOPIFY", False), (F.REVIEW, Inv.PENDING, "EDI_850", False),
                 (F.SHIPPED, Inv.SENT, "SHOPIFY", False), (F.SENT_940, Inv.PENDING, "MANUAL", False),
-                (F.SHIPPED, Inv.READY, "EDI_850", False), (F.PENDING, Inv.PENDING, "SHOPIFY", True))):
+                (F.SHIPPED, Inv.READY, "EDI_850", False), (F.SHIPPED, Inv.NOT_REQUIRED, "SHOPIFY", True))):
             u.session.add(Order(partner_code="SHOP", source_type=src, source_order_id=f"d{i}", fulfillment_status=f.value,
                                 invoice_status=inv.value, historical=hist, first_received_at=T0, version=1))
         await u.commit()
     d = (await api.get("/api/v1/operations/dashboard", headers=READER)).json()
     cards = {c["key"]: c for c in d["cards"]}
     assert {k: c["count"] for k, c in cards.items() if k != "failed_files"} == {
-        "active": 3, "on_hold": 1, "completed": 1, "cancelled": 0, "open_retailer": 2, "open_shopify": 1, "open_manual": 1,
-        "warehouse_waiting": 2, "invoice_work": 1}  # the historical order is in none
+        "active": 3, "on_hold": 1, "completed": 2, "cancelled": 0, "open_retailer": 2, "open_shopify": 1, "open_manual": 1,
+        "warehouse_waiting": 2, "invoice_work": 1}  # the historical order counts like any other (user 2026-11-12)
     for c in d["cards"]:
         if c["key"] == "failed_files":
             continue

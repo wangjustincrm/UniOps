@@ -18,7 +18,6 @@ export interface ViewState {
   filters: Filter[]
   search?: string
   pageSize: number
-  includeHistorical?: boolean
   columns: string[]
   hidden: string[]
   /** Auto-refresh every N seconds (absent: off). */
@@ -40,7 +39,7 @@ export const emptyLayout = (): Layout => ({ columns: [], hidden: [] })
 export function viewStateOf(spec: QuerySpec, layout: Layout): ViewState {
   return normalizeView({
     version: VIEW_STATE_VERSION, sort: spec.sort ?? [], group: spec.group ?? [], filters: spec.filters ?? [],
-    search: spec.search, pageSize: spec.pageSize, includeHistorical: spec.includeHistorical,
+    search: spec.search, pageSize: spec.pageSize,
     columns: layout.columns, hidden: layout.hidden, refresh: layout.refresh,
   })
 }
@@ -49,7 +48,6 @@ export function viewStateOf(spec: QuerySpec, layout: Layout): ViewState {
 export function specOf(view: ViewState): QuerySpec {
   return {
     page: 1, pageSize: view.pageSize, sort: view.sort, group: view.group, filters: view.filters, search: view.search,
-    ...(view.includeHistorical ? { includeHistorical: true } : {}),
   }
 }
 
@@ -66,7 +64,6 @@ export function normalizeView(v: Partial<ViewState>): ViewState {
     filters: (v.filters ?? []).map((f) => ({ field: f.field, op: f.op, value: f.value ?? null })),
     ...(v.search?.trim() ? { search: v.search.trim() } : {}),
     pageSize: v.pageSize ?? 50,
-    ...(v.includeHistorical ? { includeHistorical: true } : {}),
     columns: v.columns ?? [],
     hidden: v.hidden ?? [],
     ...(v.refresh ? { refresh: v.refresh } : {}),

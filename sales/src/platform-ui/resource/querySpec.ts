@@ -1,6 +1,6 @@
 // The list query contract of the back-end platform (app/platform/query.py,
 // design §13.19):
-//   ?page=&page_size=&sort=a,-b&search=&filter=field:op:value&include_historical=
+//   ?page=&page_size=&sort=a,-b&search=&filter=field:op:value&group=
 // Several values are joined with "|" (a literal | is \|, a backslash \\):
 // any of them for the positive operators, none of them for ne / not_contains
 // / not_in. between (old name range) is "low..high", either side empty;
@@ -34,7 +34,6 @@ export interface QuerySpec {
   sort?: SortKey[]
   search?: string
   filters?: Filter[]
-  includeHistorical?: boolean
   /** Group by these fields (at most MAX_GROUP_KEYS), before the sort. */
   group?: SortKey[]
 }
@@ -148,7 +147,6 @@ export function toSearchParams(spec: QuerySpec): URLSearchParams {
   if (spec.sort?.length) p.set('sort', spec.sort.map((s) => (s.desc ? `-${s.field}` : s.field)).join(','))
   if (spec.search?.trim()) p.set('search', spec.search.trim())
   for (const f of spec.filters ?? []) p.append('filter', `${f.field}:${f.op}:${filterValue(f)}`)
-  if (spec.includeHistorical) p.set('include_historical', 'true')
   if (spec.group?.length) p.set('group', spec.group.map((g) => (g.desc ? `-${g.field}` : g.field)).join(','))
   return p
 }
