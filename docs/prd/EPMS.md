@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.53
+**Version:** 2.54
 **Date:** 2026-11-12
 **Status:** In Production
+
+> **v2.54 (2026-11-12)** — The 3-Way Match tab shows the PO, receipt and invoice on one basis, pre-tax, the basis the variance is measured on (INV-3WM-001); each document's tax-inclusive amount is shown under it. INV-2026-0243 read PO CA$492.80 (pre-tax) against GR and Invoice CA$556.86 (tax-inclusive) with a variance of 0. A PO mirrored from NC keeps NC's tax-inclusive line amounts, so a receipt priced from those lines is brought back to pre-tax with that PO's own pre-tax share (subtotal ÷ (subtotal + tax)).
 
 > **v2.53 (2026-11-12)** — Editing an invoice in Data Maintenance re-sends it to Finance Accounts Payable (DM-008). Finance kept the values from before the edit, and Push to NC reads Finance's copy: INV-2026-0966, corrected from CAD to USD, reached NC as CAD at rate 1 (AP-20261112-0002). When the AP record is already in NC, the edit says the NC bill must be pushed again.
 
@@ -1956,7 +1958,7 @@ Variance is checked per PO line against everything invoiced on that line. "Three
 
 | FR ID | Requirement |
 |-------|-------------|
-| **INV-3WM-001** | Variance is measured per allocated PO line: (sum of pre-tax amounts allocated to that line by **all** invoices) − (PO line pre-tax total). Header-level allocations compare against the PO pre-tax subtotal. Non-PO fee lines are excluded. Invoice Detail (banner, 3-Way Match header, Variance footer) shows this cumulative figure and names the other invoices on those lines; on a multi-PO invoice the 3-Way Match tab lists each PO with its own amount. |
+| **INV-3WM-001** | Variance is measured per allocated PO line: (sum of pre-tax amounts allocated to that line by **all** invoices) − (PO line pre-tax total). Header-level allocations compare against the PO pre-tax subtotal. Non-PO fee lines are excluded. Invoice Detail (banner, 3-Way Match header, Variance footer) shows this cumulative figure and names the other invoices on those lines; on a multi-PO invoice the 3-Way Match tab lists each PO with its own amount. Every amount on the 3-Way Match tab is pre-tax — PO, Goods / Service Receipt and Invoice alike — with the tax-inclusive amount shown beneath where it differs. A receipt against a PO mirrored from NC, whose line amounts include tax, is shown at that PO's pre-tax share: line amount × subtotal ÷ (subtotal + tax); a line added on this side is already pre-tax. *Partial delivery* compares the receipt's pre-tax value with the PO's. |
 | **INV-3WM-002** | Under-invoicing (negative variance) always passes — a PO line may be billed across several invoices. Over-invoicing passes when \|variance %\| ≤ the match tolerance; an exact match always passes. |
 | **INV-3WM-003** | Match tolerance is a company setting (`invoice_match_tolerance_pct`, default **5%**). It is not editable in the UI. |
 | **INV-3WM-004** | A passing match sets the invoice to `matched`; the Invoice Detail shows the variance per line ("partially invoiced" or "matched within tolerance"). When the invoice bills less than the PO, the 3-Way Match summary reads *Partially invoiced — <amount> (<pct>) below PO* (not *Passed — within tolerance*) and states that no review is required; the Invoice row reads *-<pct>% vs PO (partial)* and the History match entry reads *partially invoiced*. A failing match sets `exception` and opens a *resolve_exception* task for the AP pool. |
