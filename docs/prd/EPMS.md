@@ -1,7 +1,9 @@
 # EPMS — Product Requirements Document
-**Version:** 2.52
-**Date:** 2026-11-11
+**Version:** 2.53
+**Date:** 2026-11-12
 **Status:** In Production
+
+> **v2.53 (2026-11-12)** — Editing an invoice in Data Maintenance re-sends it to Finance Accounts Payable (DM-008). Finance kept the values from before the edit, and Push to NC reads Finance's copy: INV-2026-0966, corrected from CAD to USD, reached NC as CAD at rate 1 (AP-20261112-0002). When the AP record is already in NC, the edit says the NC bill must be pushed again.
 
 > **v2.52 (2026-11-11)** — **Plant time is the company setting** (UI-DATE-003): "today", "this month", the date in document numbers, the hour the daily jobs run and the dates printed in PDFs and emails all follow Portal → Admin → Company Settings → **Time Zone** (default America/Toronto) instead of UTC, which in Toronto turned to tomorrow at 19:00 EST / 20:00 EDT. **Numbers:** PR/PA/GR-YYYYMMDD, PO-…-YYMM, AGR-YYYYMM and INV-YYYY take the plant's date (PR-006, GR-P-005, AGR-001, INV-005); the sequence carries on from the highest number under that prefix, so no number repeats at the switch. **Daily jobs** (task digest, GR acknowledgement / collection / service-completion reminders, agreement overdue sweep, budget alerts) run at the Daily Digest Time on the plant's clock, also across daylight-saving changes (§3.9.4) — it was read as UTC, so 08:00 ran at 03:00/04:00. **Dashboard** *Approved Today* and the *… This Month* tiles count the plant's day and month (§3.7). **PDFs and emails** (PR, PA, PO, GR PDFs; task, digest and reminder emails) print dates as **YYYY-MMM-DD** on the plant's calendar; the PDF footer reads `Generated 2026-NOV-11 14:30` without "UTC". Exported Excel/CSV cells keep their ISO shape, with times in plant time; export file names carry the plant date.
 
@@ -1122,6 +1124,7 @@ System-level corrections to procurement records are made in **Portal → Data Ma
 | **DM-004** | Agreements and Agreement Receipts can be maintained here (§3.17). |
 | **DM-005** | A PA's invoice and receipt links can be repaired; on an already-paid PA the repair also replays the invoice and AP payment write-back. PA totals can be recomputed when a charge or tax rate is changed without editing lines. |
 | **DM-006** | Deleting the last PA of a PO reopens that PO's Create PA task. |
+| **DM-008** | Saving an **invoice** edit re-sends the invoice to Finance Accounts Payable, as the Invoices page does, so Finance's copy (currency, amounts, tax lines, dates, vendor, status) matches the edit; Push to NC (FINANCE.md FIN-AP-05) sends that copy. The edit is kept when Finance cannot be reached, and the dialog says the AP record still shows the old values and to save the invoice again later. When the AP record has already been pushed to NC, the dialog names the NC bill and says to click Push to NC again (NC replaces a bill that is still saved; an approved one has to be changed in NC). |
 | **DM-007** | A PA's pre-tax amount cannot be edited in Data Maintenance; its lines are the only input. (a) Changing only a charge or the tax rate recomputes from the lines only when they add up to the stored pre-tax amount; when they do not, the pre-tax amount is kept and the tax is re-derived from it only if the rate changed. (b) A line edit that would change the pre-tax amount is refused unless the operator confirms it; the edit dialog shows the current and the new amount and enables Save only once the change is confirmed. A line edit that leaves the pre-tax amount unchanged needs no confirmation. |
 
 ### 3.7 Dashboard

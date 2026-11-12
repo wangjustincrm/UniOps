@@ -1,9 +1,13 @@
 # Finance — Product Requirements Document
 
-**Version:** 2.27
-**Date:** 2026-11-11
+**Version:** 2.28
+**Date:** 2026-11-12
 **Status:** Current. Describes the system as built on the main line, under the 2026-09-20 positioning decision.
 **Scope:** The UniOps Finance module: Finance web app and finance service. Covers the NC65 data mirror, the checks and reports built on it, AP handoff to NC, payments, remittance, vendor credits, bank reconciliation and the remaining finance-held records.
+
+**What changed in version 2.28** (2026-11-12)
+
+- An EPMS invoice edited in Data Maintenance now updates its AP invoice, like any other EPMS change (FIN-AP-01). Before, the AP invoice kept the old values and Push to NC sent them: AP-20261112-0002 reached NC in CAD after its invoice was corrected to USD.
 
 **What changed in version 2.27** (2026-11-11)
 
@@ -412,7 +416,7 @@ Budget planning, the dashboard, catalog, factors and budget settings (including 
 
 | FR ID | Requirement |
 |---|---|
-| FIN-AP-01 | EPMS (procurement) and OA (expense) push their vendor invoices into one AP table, keyed by source + source document. Statuses: draft, posted, partially paid, paid, void. The Accounts Payable page shows `posted` as **Matched** (matched and accrued in UniOps; it says nothing about NC — see NC AP Doc, FIN-AP-04). |
+| FIN-AP-01 | EPMS (procurement) and OA (expense) push their vendor invoices into one AP table, keyed by source + source document. EPMS re-sends an invoice on every change, an edit in Data Maintenance included (EPMS.md DM-008); Push to NC (FIN-AP-05) sends the AP table's copy. Statuses: draft, posted, partially paid, paid, void. The Accounts Payable page shows `posted` as **Matched** (matched and accrued in UniOps; it says nothing about NC — see NC AP Doc, FIN-AP-04). |
 | FIN-AP-02 | A vendor + vendor invoice number is unique. A second one is refused with "duplicate vendor invoice". This is the anchor for reconciling against NC. |
 | FIN-AP-03 | When the source deletes an invoice: an AP row with no postings and no payment is removed; a posted one is voided and its accrual reversed. EPMS sends this on every delete path, Data Maintenance included, and does not delete when Finance does not confirm (EPMS.md INV-DEL-001…003). |
 | FIN-AP-04 | **Accounts Payable page:** paginated list with vendor and vendor-invoice-number search. Column **GL Code** shows the budget account code of the PO the invoice is on — its own PO plus any multi-PO allocation, distinct codes comma-separated; for an invoice not on a PO it is the budget account the NC push (FIN-AP-05) uses as revenue/expense item — courier invoices the fixed freight account CRM00204, Direct and OA invoices the Direct PA's budget account, agreement invoices the agreement's; empty when none is known yet (not matched, or a Direct invoice not on a PA). Column **NC AP Doc** shows the NC payable bill(s) holding the invoice, each with its NC state (Saved / Approved, or Pushed until the hourly NC AP sync has seen it): the bill UniOps pushed, plus any bill in the NC AP mirror (§4.3) carrying the same invoice number for the vendor's ERP ID (compared ignoring case, spaces and hyphens), in any approval state. When the numbers match only once the hyphens are dropped (UniOps "IN-22-1014797", NC "IN-221014797"), the bill carries a **Hyphens ignored · NC: <NC number>** note, with both numbers on hover, so the clerk can check it is the same invoice; the push refusal for such a bill names the NC number the same way (FIN-AP-05). A bill UniOps pushed and later replaced is not shown. A failed push shows "Push failed" with NC's reason on hover. An invoice on a PO imported from NC (type 1, raw material / packaging; through the invoice's own PO or a multi-PO allocation) is tagged **NC flow** and has no tick box: NC makes that payable itself from its purchase invoice, so pushing it would book it twice (FIN-AP-06). **Hide in NC** (on by default) hides invoices that have an NC AP Doc and NC-flow invoices. Sorting by NC AP Doc orders by the pushed bill or, failing that, the first matched NC bill; invoices with neither sort last. Aging tab: vendor × currency, five buckets by due date. |

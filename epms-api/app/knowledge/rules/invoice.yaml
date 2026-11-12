@@ -121,6 +121,25 @@ rules:
       - "tests/test_invoice_delete_voids_finance.py::test_invoices_page_delete_voids_in_finance"
       - "tests/test_invoice_delete_voids_finance.py::test_invoices_page_delete_is_refused_when_finance_cannot_void"
 
+  - id: invoice_dm_edit_and_finance
+    asked_as:
+      - I changed an invoice's currency in Data Maintenance but NC still shows the old one
+      - does a Data Maintenance invoice edit update Finance Accounts Payable
+    answer: >
+      Saving an invoice in Data Maintenance also updates its record in Finance
+      Accounts Payable — currency, amounts, tax lines, dates and vendor — and
+      Push to NC always sends that Finance record. If the invoice was already
+      pushed to NC, the NC bill keeps the old values: the save says so and
+      names the bill; click Push to NC again on the Accounts Payable page (NC
+      replaces a bill that is still saved; an approved bill has to be changed
+      in NC). If Finance could not be reached, the save says so; save the
+      invoice again later.
+    enforced_in: "epms-api app/api/v1/admin.py _resync_invoice_ap → services/finance_sync.py sync_ap_invoice(strict); finance-api crud/ap_invoice.py upsert; portal RecordEditForm.tsx; PRD EPMS DM-008, PORTAL DM-P-009, FINANCE FIN-AP-01"
+    provenance: pinned
+    test:
+      - "tests/test_admin_edit_expansion.py::test_dm_invoice_edit_resends_ap_with_new_currency"
+      - "tests/test_admin_edit_expansion.py::test_dm_invoice_edit_warns_when_ap_already_in_nc"
+
   # ── Added 2026-10-21 (issue review batch 3) ───────────────────────────────
   - id: match_tolerance
     asked_as:

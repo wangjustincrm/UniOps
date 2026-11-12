@@ -1,9 +1,13 @@
 # UniOps Portal — Product Requirements Document
 
-**Version:** 2.8
-**Date:** 2026-11-10
+**Version:** 2.9
+**Date:** 2026-11-12
 **Status:** In Production
 **Scope:** Portal web app (sign-in, launcher, Task Inbox, platform administration) and the platform services it administers: identity service (sign-in, MFA, password policy, users, roles, access control), approval engine (workflows, routing, delegation, re-sync), task-notification outbox, master-data service (MDM), file service, Data Maintenance and the AI Assistant panel.
+
+**What changed in version 2.9** (2026-11-12)
+
+- Editing an EPMS invoice in Data Maintenance updates its Finance AP record too, and warns when that AP record is already in NC and has to be pushed again (DM-P-009, EPMS.md DM-008).
 
 **What changed in version 2.8** (2026-11-10)
 
@@ -592,6 +596,7 @@ Each record list sorts on the server by any of its columns (EPMS.md UI-SORT-004)
 | **DM-P-005** | Changing a PO's vendor offers **Regenerate PO number** (on by default, asks for confirmation). The new number is carried to the linked PR, PA, GR, invoices, tasks and approval records. |
 | **DM-P-006** | **Approval State** panel (PR, PO, PA, Agreement): shows the document's real workflow chain and its open approval tasks. Setting a step closes outdated approval tasks and issues the task for the chosen step, to the resolved approver or to a chosen role. It reports any step the engine settled on instead, any re-sync actions, and whether anyone will see an Approve button. |
 | **DM-P-007** | Changing an agreement's owner reports how many open period-confirmation tasks moved to the new owner. |
+| **DM-P-009** | Saving an EPMS **invoice** updates its Finance AP record. The dialog warns when that update failed (save again later) and when the AP record is already in NC (push it to NC again) (EPMS.md DM-008). |
 | **DM-P-008** | Every change is written to the owning service's admin audit log. Rules specific to EPMS records: EPMS.md §3.6.8 (DM-001 … DM-006). |
 
 ---
