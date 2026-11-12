@@ -129,7 +129,7 @@ _shadow_ea = (select(func.coalesce(func.sum(ShipmentRow.qty_shipped_ea), 0))
               .correlate(Order, OrderLine).scalar_subquery())
 _shadow_linked = exists().where(ShipmentRow.shipment_id == Shipment.id, Shipment.order_id == Order.id, Shipment.shadow.is_(True),
                                 ShipmentRow.order_line_id.is_not(None)).correlate(Order)
-# What the shadow run's 945 left unshipped, the Backordered EA of a shadow order: by item, once
+# What the shadow run's 945 left unshipped, the Not shipped EA of a shadow order: by item, once
 # per item (on its first line), NULL before a linked 945.
 _item_ea = (select(func.sum(_item_line.qty_ea)).where(_item_line.order_id == Order.id, _item_line.item_code == OrderLine.item_code,
                                                       _item_line.removed.is_(False)).correlate(Order, OrderLine).scalar_subquery())

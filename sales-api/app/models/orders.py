@@ -221,7 +221,7 @@ Order.total_amount_sql = order_fact(func.coalesce(Order.total, select(
 
 
 # The order's backordered EA: the sum over its lines with an applied 945 (NULL
-# before any) — the list's Backordered column and view.
+# before any) — the list's Not shipped EA column and view (labelled Backordered EA before 2026-11-12: a short shipment is never sent later).
 Order.backordered_ea_sql = order_fact(select(
     func.sum(func.greatest(OrderLine.qty_ea - OrderLine.shipped_ea, 0))).where(
     OrderLine.order_id == Order.id, OrderLine.removed.is_(False), OrderLine.shipped_ea.is_not(None),

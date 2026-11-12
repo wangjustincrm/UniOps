@@ -92,8 +92,10 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
       label: 'Net', value: formatMoney(d.net_amount, d.currency), tone: Number(d.total_refunded ?? 0) > 0 ? 'warning' as const : 'neutral' as const,
       hint: Number(d.total_refunded ?? 0) > 0 ? `${formatMoney(d.total_refunded!, d.currency)} refunded` : 'nothing refunded' }] : []),
     { label: 'Ordered EA', value: orderedEa },
-    { label: 'Shipped EA', value: shippedEa == null ? '—' : shippedEa, hint: shippedEa == null ? 'no 945 yet' : undefined },
-    ...(backordered != null ? [{ label: 'Backordered EA', value: backordered, tone: backordered > 0 ? 'warning' as const : 'neutral' as const }] : []),
+    { label: 'Shipped EA', value: shippedEa == null ? '—' : shippedEa, hint: shippedEa == null ? 'no 945 yet' : `of ${orderedEa} ordered` },
+    // Short, not a backorder (user 2026-11-12): one 945 per order (D18), what it did not ship is never sent later.
+    ...(backordered != null ? [{ label: 'Not shipped EA', value: backordered, tone: backordered > 0 ? 'warning' as const : 'neutral' as const,
+      hint: backordered > 0 ? 'short: not sent later' : undefined }] : []),
     { label: 'Requested delivery', value: d.requested_delivery_date ? formatDate(d.requested_delivery_date) : '—' },
   ]
 

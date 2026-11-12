@@ -37,7 +37,7 @@ const lineColumns = (currency: string, numbers: Map<number, number>): ColumnDef<
     : <MoneyCell amount={row.original.tax_amount} currency={currency} />, meta: { hidden: true } },
   { accessorKey: 'qty_ea', header: 'EA', cell: ({ row }) => ea(row.original.qty_ea) },
   { accessorKey: 'shipped_ea', header: 'Shipped EA', cell: ({ row: { original: ln } }) => ea(ln.shipped_ea ?? ln.shipped_shadow_ea) },
-  { accessorKey: 'backordered_ea', header: 'Backordered EA', cell: ({ row: { original: ln } }) => {
+  { accessorKey: 'backordered_ea', header: 'Not shipped EA', cell: ({ row: { original: ln } }) => {
     const n = ln.backordered_ea ?? ln.backordered_shadow_ea
     return n ? <span className="font-medium text-warning-700">{n}</span> : ea(n)
   } },

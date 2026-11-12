@@ -582,7 +582,7 @@ describe('Orders: backordered quantities and the invoice price before the invoic
   const line = { ...detail.lines[0], id: 2, line_no: 2, item_code: 'CF0093', ordered_qty: '40', order_unit: 'CASE', unit_price: '150.00',
     problem: null, qty_ea: 480, shipped_ea: 400, backordered_ea: 80, state: 'Short shipped', invoice_price: '150.00', packing: [] }
 
-  it('a partial 945: Backordered EA on the line, in the footer and the list; the order is marked Short shipped', async () => {
+  it('a partial 945: Not shipped EA on the line, in the footer and the list; the order is marked Short shipped', async () => {
     api.list.mockResolvedValue({ items: [shipped], total: 1 })
     api.fetchOrder.mockResolvedValue({ ...detail, ...shipped, currency: 'CAD', has_invoice: false, lines: [line] })
     renderAs(['sales.read'])
@@ -594,7 +594,7 @@ describe('Orders: backordered quantities and the invoice price before the invoic
     fireEvent.click(within(row).getByText('SHOP-9303'))
     const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
     const lines = await linesOf(sheet)
-    expect(within(lines).getByText('Backordered EA')).toBeInTheDocument()
+    expect(within(lines).getByText('Not shipped EA')).toBeInTheDocument()
     expect(within(lines).getByText('CF0093').closest('tr')).toHaveTextContent('80')
     expect(lines.querySelector('tfoot')).toHaveTextContent('80')
     expect(within(lines).getByText('CF0093').closest('tr')).toHaveTextContent('150.00 CAD /CASE')  // the PO price, per order unit
@@ -671,8 +671,9 @@ describe('the order sheet: facts, actions and tabs', () => {
     expect(facts).toHaveTextContent('Total6,000.00 CAD1 line')
     expect(facts).toHaveTextContent('Net5,963.00 CAD37.00 CAD refunded')
     expect(facts).toHaveTextContent('Ordered EA480')
-    expect(facts).toHaveTextContent('Backordered EA80')
-    expect(within(facts).getByText('Backordered EA').closest('[data-tone]')).toHaveAttribute('data-tone', 'warning')
+    expect(facts).toHaveTextContent('Not shipped EA80')
+    expect(within(facts).getByText('Not shipped EA').closest('[data-tone]')).toHaveAttribute('data-tone', 'warning')
+    expect(facts).toHaveTextContent('short: not sent later')
     expect(within(sheet).getByRole('tab', { name: /^Payments/ })).toBeInTheDocument()
     expect(within(sheet).queryByRole('tab', { name: /^Invoice/ })).toBeNull()  // Not Required, none built
     expect(within(sheet).queryByRole('button', { name: 'Edit invoice prices' })).toBeNull()  // never invoiced here

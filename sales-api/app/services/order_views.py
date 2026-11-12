@@ -137,7 +137,7 @@ class OrderRepository(Repository[Order]):
               "shopify_financial_status": "Shopify Payment", "shopify_fulfillment_status": "Shopify Fulfillment",
               "archived_in_shopify_at": "Archived", "source_cancelled_at": "Cancelled",
               "source_name": "Sales channel", "tags": "Tags", "original_total": "Original total",
-              "total_refunded": "Refunded", "net_amount": "Net", "backordered_ea": "Backordered EA",
+              "total_refunded": "Refunded", "net_amount": "Net", "backordered_ea": "Not shipped EA",
               "delivery_due_date": "Delivery due"}
     enums = {"source_type": SOURCE_TYPES, "fulfillment_status": tuple(s.value for s in F),
              "invoice_status": tuple(s.value for s in Inv), "hold_reason": HOLD_REASONS,
