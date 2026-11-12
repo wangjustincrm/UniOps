@@ -50,6 +50,9 @@ async def test_orders_list_detail_and_the_review_worklist(api):
     # the Total column's sums: over the whole result (not the page), per currency, and per group
     assert [(t["currency"], t["count"], t["sums"]["total_amount"]) for t in g["totals"]] == [("CAD", 2, "200.00")]
     assert [(t["count"], t["sums"]["total_amount"]) for t in g["groups"][0]["totals"]] == [(1, "100.00")]
+    # a computed field alone, with no filter: the grouping keeps FROM sales_orders (it once read every row)
+    g = (await api.get("/api/v1/orders?group=partner_name,order_status", headers=READER)).json()
+    assert sum(x["count"] for x in g["groups"]) == 2 and g["total"] == 2
     r = await api.get("/api/v1/orders?group=review_reason", headers=READER)
     assert r.status_code == 422 and r.json()["error"]["code"] == "query.not_groupable"
     assert "groups" not in (await api.get("/api/v1/orders", headers=READER)).json()  # only when asked

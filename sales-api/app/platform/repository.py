@@ -74,7 +74,9 @@ class Repository(Generic[T]):
     presets: ClassVar[tuple[Preset, ...]] = ()
     default_sort: ClassVar[tuple[str, ...]] = ()  # sortable keys, "-" for descending
     # A boolean column marking rows imported as history (e.g. from the system
-    # being replaced). Excluded unless asked for; never on open-work lists.
+    # being replaced). Lists show them like any other row (user 2026-11-12: the
+    # difference lives on the record, not in the tables); only open-work lists
+    # (`open_work=True`) leave them out. Jobs keep their own guard (FR-OB-17).
     historical_column: ClassVar[str | None] = None
 
     def __init_subclass__(cls, **kw: Any) -> None:
@@ -118,7 +120,16 @@ class Repository(Generic[T]):
         )).scalar_one()
         groups, truncated = (await self._groups(q, spec)) if spec.group else (None, False)
         totals = (await self._totals(q)) if self.summable else None
-        q = self._order(q, spec).offset((spec.page - 1) * spec.page_size).limit(spec.page_size)
+        q = self._order(q, spec)
+        offset = (spec.page - 1) * spec.page_size
+        if offset:
+            # A later page: its keys first, then the rows. With OFFSET over the full row, SQL computes
+            # every computed field (correlated subqueries) of each skipped row too (page 100: 7.7 s).
+            pk = self.model.__mapper__.primary_key[0]
+            keys = self._only(q, pk).offset(offset).limit(spec.page_size).scalar_subquery()
+            q = q.where(pk.in_(keys))
+        else:
+            q = q.limit(spec.page_size)
         items = list((await self.session.execute(q)).scalars().all())
         return Page[Any](items=items, total=total, groups=groups, groups_truncated=truncated, totals=totals)
 
@@ -131,7 +142,7 @@ class Repository(Generic[T]):
         q = self._apply(self.base_query(), QuerySpec(), open_work=False).where(col.is_not(None), col != "")
         if text.strip():
             q = q.where(col.ilike(f"%{_like_escape(text.strip())}%", escape="\\"))
-        rows = await self.session.execute(q.with_only_columns(col, func.count()).group_by(col)
+        rows = await self.session.execute(self._only(q, col, func.count()).group_by(col)
                                           .order_by(func.count().desc(), col.asc()).limit(MAX_SUGGESTIONS))
         return [str(r[0]) for r in rows]
 
@@ -148,7 +159,7 @@ class Repository(Generic[T]):
         """The summable fields' sums over the whole filtered result, per currency."""
         cur, sums = self._sum_columns()
         cols = [cur] if cur is not None else []
-        tq = q.with_only_columns(*cols, func.count(), *sums).order_by(None)
+        tq = self._only(q, *cols, func.count(), *sums).order_by(None)
         if cur is not None:
             tq = tq.group_by(cur).order_by(cur.asc().nulls_last())
         rows = (await self.session.execute(tq)).all()
@@ -178,7 +189,7 @@ class Repository(Generic[T]):
         group header shows its true size whichever page it starts on."""
         order = self._group_order(spec)
         cols = [c for c, _ in order]
-        gq = (q.with_only_columns(*cols, func.count()).group_by(*cols)
+        gq = (self._only(q, *cols, func.count()).group_by(*cols)
               .order_by(*(o for _, o in order)).limit(MAX_GROUPS + 1))
         rows = (await self.session.execute(gq)).all()
         groups = [Group(key=[_json_key(v) for v in r[:-1]], count=r[-1]) for r in rows[:MAX_GROUPS]]
@@ -191,7 +202,7 @@ class Repository(Generic[T]):
         cur, sums = self._sum_columns()
         by = [*cols, *([cur] if cur is not None else [])]
         rows = (await self.session.execute(
-            q.with_only_columns(*by, func.count(), *sums).group_by(*by)
+            self._only(q, *by, func.count(), *sums).group_by(*by)
             .order_by(*([cur.asc().nulls_last()] if cur is not None else [])))).all()
         index = {tuple(g.key): g for g in groups}
         n = len(cols)
@@ -218,10 +229,17 @@ class Repository(Generic[T]):
         return entity
 
     # ── query building ───────────────────────────────────────────────────────
+    def _only(self, q: Select, *columns: Any) -> Select:
+        """`q` with only these columns, still FROM the model's table. A computed field is a correlated
+        subquery: with no plain column of the table left (and no filter naming it), SQL would lose the
+        table, the subquery would no longer correlate and would read every row ("more than one row
+        returned by a subquery")."""
+        return q.with_only_columns(*columns).select_from(self.model)
+
     def _apply(self, q: Select, spec: QuerySpec, *, open_work: bool) -> Select:
         if self.historical_column is not None:
             col = getattr(self.model, self.historical_column)
-            if open_work or not spec.include_historical:
+            if open_work:
                 q = q.where(col.is_(False))
         if spec.search and (self.search_fields or self.search_numbers):
             text = spec.search.strip()
