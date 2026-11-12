@@ -259,6 +259,12 @@ def test_a_day_without_a_year_is_this_year_on_every_page():
     assert period_words.explicit_days("2025年11月10日", TODAY) == [("2025年11月10日", date(2025, 11, 10))]
     assert period_words.explicit_days("10/11/2025", TODAY) == [("10/11/2025", date(2025, 11, 10))]
     assert period_words.explicit_days("2026-11-10", TODAY) == []
+    # The on-screen format, copied from a page or an answer (UI-DATE-002).
+    assert period_words.explicit_days("2026-NOV-01 到 2026-NOV-11 付了多少", TODAY) == [
+        ("2026-NOV-01", date(2026, 11, 1)), ("2026-NOV-11", date(2026, 11, 11))]
+    assert period_words.explicit_days("paid on 2026-Nov-01?", TODAY) == [("2026-Nov-01", date(2026, 11, 1))]
+    assert period_words.explicit_days("2026-FEB-30", TODAY) == []
+    assert period_words._WRITTEN_DATE.search("2026-NOV-01")
     # The planner on Portal wrote 2025: the query runs on the day as read.
     gr = REGISTRY["goods_receipt"]
     out = _enforce({"entity": "goods_receipt", "select": ["number"],

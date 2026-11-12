@@ -78,10 +78,15 @@ _STATE_WORDS = ("审批中", "待审批", "审核中", "待审", "未批", "还�
 _SLASHED = re.compile(r"(?<![\d/])(\d{1,2})/(\d{1,2})(?:/(\d{4}))?(?![\d/])")
 _CHINESE_DAY = re.compile(r"(?:(\d{4})\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]")
 _ISO_DAY = re.compile(r"\b\d{4}-\d{1,2}-\d{1,2}\b")
+# 2026-NOV-11, the way every screen, PDF and answer shows dates (UI-DATE-002):
+# people copy it into their questions. Read in code like the forms above, so
+# the day they wrote is the day queried.
+_MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
+_YMMMD_DAY = re.compile(r"\b(\d{4})-(" + "|".join(_MONTHS) + r")-(\d{1,2})\b", re.I)
 # Any date or month written out, besides the calendar word: then the dates in
 # the query may be the person's own, and the query is left as planned.
 _WRITTEN_DATE = re.compile(
-    r"\d\s*月|\d{1,2}/\d{1,2}|\d{4}-\d{1,2}|\d{4}\s*年|\bq[1-4]\b|\b(?:january|february|"
+    r"\d\s*月|\d{1,2}/\d{1,2}|\d{4}-\d{1,2}|\d{4}-[a-z]{3}-\d{1,2}|\d{4}\s*年|\bq[1-4]\b|\b(?:january|february|"
     r"march|april|june|july|august|september|october|november|december|jan|feb|apr|jun|"
     r"jul|aug|sept?|oct|nov|dec)\b", re.I)
 
@@ -130,6 +135,12 @@ def explicit_days(message: str, today: date) -> list[tuple[str, date]]:
         year = int(m.group(1)) if m.group(1) else today.year
         try:
             out.append((m.group(0), date(year, int(m.group(2)), int(m.group(3)))))
+        except ValueError:
+            continue
+    for m in _YMMMD_DAY.finditer(text):
+        try:
+            out.append((m.group(0), date(int(m.group(1)), _MONTHS.index(m.group(2).lower()) + 1,
+                                         int(m.group(3)))))
         except ValueError:
             continue
     for m in _SLASHED.finditer(_ISO_DAY.sub(" ", text)):
