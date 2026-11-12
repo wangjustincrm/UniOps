@@ -37,4 +37,27 @@ describe('CrudPage keeps the open record current', () => {
     fireEvent.click(within(sheet).getByText('Save'))
     await waitFor(() => expect(update).toHaveBeenCalledWith(1, { name: 'X' }, 3))
   })
+
+  it('a save keeps the record open, says Saved and shows what was saved (no page refresh)', async () => {
+    let saved = rec
+    const list = vi.fn(async () => ({ items: [saved], total: 1 }))
+    const update = vi.fn(async (_id: number, data: Partial<Rec>) => { saved = { ...saved, ...data, version: saved.version + 1 }; return saved })
+    const client = { basePath: '/crud2', list, update, exportPath: () => '',
+      meta: async () => ({ version: 1, searchable: true, default_sort: [], fields: [], views: [{ key: 'all', name: 'All', state: { version: 1 } }] }),
+    } as unknown as ResourceClient<Rec, Rec, Rec>
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={qc}><ViewsProvider client={views}><PermissionProvider can={() => true}>
+      <CrudPage<Rec, Rec, Rec> title="Things" client={client} columns={columns} writePermission="w" createSchema={schema} updateSchema={schema}
+        fields={fields} emptyValues={{ name: '', terms: '' }} toFormValues={(r) => ({ ...r })} />
+    </PermissionProvider></ViewsProvider></QueryClientProvider>)
+    fireEvent.click(await screen.findByText('A'))
+    const sheet = await screen.findByRole('dialog')
+    fireEvent.change(within(sheet).getByLabelText('Terms'), { target: { value: 'Net 45' } })
+    fireEvent.click(within(sheet).getByText('Save'))
+    await waitFor(() => expect(update).toHaveBeenCalledWith(1, { terms: 'Net 45' }, 2))
+    expect(await within(sheet).findByText('Saved')).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBe(sheet)                                           // still open
+    await waitFor(() => expect(within(sheet).getByLabelText('Terms')).toHaveValue('Net 45'))  // the saved value
+    await waitFor(() => expect(screen.getAllByText('A').length).toBeGreaterThan(0))
+  })
 })

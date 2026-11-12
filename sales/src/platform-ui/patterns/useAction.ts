@@ -1,4 +1,5 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useContext, useRef, useState } from 'react'
+import { QueryClientContext } from '@tanstack/react-query'
 import { errorText } from '../resource/businessError'
 import { useNotices } from './notices'
 
@@ -9,6 +10,8 @@ export interface ActionOptions {
   errorMessages?: Record<string, string>
   /** Before the error text, e.g. "Download failed". */
   failPrefix?: string
+  /** Read again what is on screen after it worked (default): false for what changes nothing (a download). */
+  refreshes?: boolean
 }
 
 /** The one way an action runs (2026-11-10): ActionButton, RowActions, DownloadButton and a
@@ -17,9 +20,10 @@ export interface ActionOptions {
  *  never leaves a rejected promise behind: outside any status row the failure is logged. */
 export function useAction(opts: ActionOptions = {}) {
   const notices = useNotices()
+  const qc = useContext(QueryClientContext)  // none outside the app (a test, an embedded page): nothing to refresh
   const [pending, setPending] = useState(false)
   const inFlight = useRef(false)
-  const { done: baseDone, errorMessages: baseMessages, failPrefix: basePrefix } = opts
+  const { done: baseDone, errorMessages: baseMessages, failPrefix: basePrefix, refreshes = true } = opts
   /** `call` overrides the hook's options for this run (a menu runs several kinds of item). */
   const run = useCallback(async (action: () => unknown | Promise<unknown>, call: ActionOptions = {}): Promise<boolean> => {
     const done = call.done ?? baseDone
@@ -30,6 +34,7 @@ export function useAction(opts: ActionOptions = {}) {
     setPending(true)
     try {
       const result = await action()
+      if (refreshes) void qc?.invalidateQueries()  // what it changed shows at once, wherever it is on screen
       const said = typeof done === 'function' ? done(result) : done
       if (said) notices.notify({ tone: 'success', text: said })
       return true
@@ -42,6 +47,6 @@ export function useAction(opts: ActionOptions = {}) {
       inFlight.current = false
       setPending(false)
     }
-  }, [baseDone, baseMessages, basePrefix, notices])
+  }, [baseDone, baseMessages, basePrefix, notices, qc, refreshes])
   return { run, pending }
 }

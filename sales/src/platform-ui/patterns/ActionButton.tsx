@@ -15,6 +15,8 @@ export interface ActionButtonProps extends Omit<ButtonProps, 'onClick'> {
   errorMessages?: Record<string, string>
   /** Before the error text (e.g. "Download failed"). */
   failPrefix?: string
+  /** Read again what is on screen after it worked (default true; a download changes nothing). */
+  refreshes?: boolean
 }
 
 /** A button that cannot fire twice: disabled while its action is pending, and
@@ -23,10 +25,10 @@ export interface ActionButtonProps extends Omit<ButtonProps, 'onClick'> {
  *  given, so it never submits a surrounding form. Inside a list or a sheet, a
  *  failure (and with `done`, a success) is said in its status row (useNotices). */
 export function ActionButton({
-  permission, whenDenied = 'hide', onAction, pendingLabel, disabled, children, done, errorMessages, failPrefix, ...rest
+  permission, whenDenied = 'hide', onAction, pendingLabel, disabled, children, done, errorMessages, failPrefix, refreshes, ...rest
 }: ActionButtonProps) {
   const allowed = useCan(permission)
-  const { run, pending } = useAction({ done, errorMessages, failPrefix })
+  const { run, pending } = useAction({ done, errorMessages, failPrefix, refreshes })
   if (!allowed && whenDenied === 'hide') return null
 
   return (

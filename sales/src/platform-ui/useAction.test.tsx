@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, expect, it, vi } from 'vitest'
-import { DownloadButton, NoticeScope, RowActions } from './index'
+import { ActionButton, DownloadButton, NoticeScope, RowActions } from './index'
 
 // One action runner (2026-11-10): a row action runs once for two clicks in one tick, and a download
 // failure is said in the status row it is in, with its prefix.
@@ -19,5 +20,18 @@ describe('useAction', () => {
     render(<NoticeScope><DownloadButton onAction={() => Promise.reject(new Error('no file'))}>PO</DownloadButton></NoticeScope>)
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /PO/ })) })
     expect(await screen.findByText(/Download failed: no file/)).toBeInTheDocument()
+  })
+
+  it('an action that worked reads again what is on screen; a download does not', async () => {
+    const qc = new QueryClient()
+    const spy = vi.spyOn(qc, 'invalidateQueries')
+    render(<QueryClientProvider client={qc}>
+      <ActionButton onAction={async () => 'ok'}>Approve</ActionButton>
+      <DownloadButton onAction={async () => undefined}>PDF</DownloadButton>
+    </QueryClientProvider>)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Approve' })) })
+    expect(spy).toHaveBeenCalledTimes(1)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /PDF/ })) })
+    expect(spy).toHaveBeenCalledTimes(1)
   })
 })
