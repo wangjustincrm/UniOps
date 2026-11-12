@@ -194,8 +194,8 @@ export function CrudPage<T extends Row, TCreate, TUpdate>(props: CrudPageProps<T
 /** An existing record in its RecordSheet: the form (read-only without the
  *  write permission) as "Details", the page's own tabs, Deactivate in "More". */
 /** The record's edit form, inside its sheet: a save keeps the record open, says "Saved" in the
- *  sheet's status row and starts again from the saved values (the key carries the version), so
- *  what was saved is what it shows — no page refresh (user 2026-11-12). */
+ *  sheet's status row, and the form stands on what was saved and its new version (SchemaForm),
+ *  so what was saved is what it shows — no page refresh, no "discard?" (user 2026-11-12). */
 function SavingForm({ save, onCancel, form }: {
   save: (values: Record<string, unknown>, version: number | undefined) => Promise<unknown>
   onCancel: () => void
@@ -205,8 +205,9 @@ function SavingForm({ save, onCancel, form }: {
   return (
     <SchemaForm {...form} changesOnly onCancel={onCancel}
       onSubmit={async (values, edit) => {
-        await save(values, edit.version)
+        const saved = await save(values, edit.version)
         notices.notify({ key: 'saved', tone: 'success', text: 'Saved' })
+        return saved  // its version: the form stands on it from now
       }} />
   )
 }
@@ -225,7 +226,7 @@ function RecordForm<T extends Row, TCreate, TUpdate>({ row, close, canWrite, pro
   const singular = props.singular ?? props.title
   const details: RecordTab = {
     id: 'details', label: 'Details', render: () => (
-      <SavingForm key={`${row.id}:${row.version ?? ''}`} save={save} onCancel={close}
+      <SavingForm key={row.id} save={save} onCancel={close}
         form={{ version: row.version ?? undefined, schema: props.updateSchema, fields, defaultValues: props.toFormValues(row),
           readOnly: !canWrite, errorMessages: props.errorMessages, fieldLabels: props.fieldLabels }} />
     ),

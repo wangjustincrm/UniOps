@@ -19,7 +19,8 @@ describe('SchemaForm with a version', () => {
   })
 
   it('typed: the input stays, it says so, the save sends the version it started from, Reload takes theirs', async () => {
-    const onSubmit = vi.fn()
+    // As the server does: a save on an older version is refused (entity.stale), so the input stays typed.
+    const onSubmit = vi.fn(async () => { throw Object.assign(new Error('stale'), { body: { error: { code: 'entity.stale', message: 'stale' } } }) })
     const { rerender } = render(form(1, 'Old', onSubmit))
     fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Mine' } })
     rerender(form(2, 'Theirs', onSubmit))
@@ -30,5 +31,18 @@ describe('SchemaForm with a version', () => {
     fireEvent.click(screen.getByRole('button', { name: /Reload/ }))
     await waitFor(() => expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('Theirs'))
     expect(screen.queryByText('Someone else saved this record meanwhile')).toBeNull()
+  })
+
+  it('after its own save the form stands on what was saved and the new version: no "changed elsewhere"', async () => {
+    const onSubmit = vi.fn(async () => ({ id: 1, name: 'Mine', version: 2 }))
+    const { rerender } = render(form(1, 'Old', onSubmit))
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Mine' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith({ name: 'Mine' }, { version: 1 }))
+    rerender(form(2, 'Mine', onSubmit))  // the record as the list now has it
+    expect(screen.queryByText('Someone else saved this record meanwhile')).toBeNull()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Again' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenLastCalledWith({ name: 'Again' }, { version: 2 }))  // never the old version
   })
 })

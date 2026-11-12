@@ -19,10 +19,14 @@ export function useEditVersion(current: number | undefined, dirty: boolean, relo
     reloadRef.current()
   }, [seen])
   const takeTheirs = useCallback(() => setSeen(current), [current])
+  // Our own save: the version it made is the one the form now stands on (no reload: it shows
+  // what was saved), so a second save is never sent with the version before it.
+  const adopt = useCallback((v: number) => { started.current = v; setSeen(v) }, [])
   return {
     /** The version to send with the save. */
     seen,
     changedElsewhere: changed && dirty,
     takeTheirs,
+    adopt,
   }
 }

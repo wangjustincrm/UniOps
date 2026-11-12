@@ -111,7 +111,14 @@ export function SchemaForm({
       ? Object.fromEntries(Object.keys(dirtyFields).filter((k) => !off.includes(k)).map((k) => [k, emptyToNull(values[k])]))
       : Object.fromEntries(Object.entries(values).map(([k, v]) => [k, emptyToNull(v)]))
     try {
-      await onSubmit(out, { version: edit.seen })
+      const saved = await onSubmit(out, { version: edit.seen })
+      // What was saved is the form's new starting point: not "unsaved", and a later change of the
+      // record (our own new version) is no edit elsewhere (user 2026-11-12: "Discard your changes?"
+      // and "Someone else changed" right after a save).
+      // (A form closed by its onSubmit is gone: these then change nothing.)
+      form.reset(form.getValues())
+      const v = (saved as { version?: unknown } | null | undefined)?.version
+      if (typeof v === 'number') edit.adopt(v)
     } catch (e) {
       // A refusal names its field (details.field), or several
       // (details.errors: [{field, message}] for a request the server's
