@@ -51,6 +51,7 @@ const NAV: NavItem[] = [
   { label: 'Invoices', href: '/invoices', icon: Receipt, perm: 'sales.read', section: 'Invoicing' },
   { label: 'Documents', href: '/documents', icon: FileText, perm: 'sales.read', section: 'Operations' },
   { label: 'Runs and log', href: '/runs', icon: Activity, perm: 'sales.read', section: 'Operations' },
+  { label: 'Inventory', href: '/inventory', icon: Warehouse, perm: 'sales.read', section: 'Operations' },
   { label: 'Lots', href: '/lots', icon: Boxes, perm: 'sales.read', section: 'Operations' },
   { label: 'Shadow compare', href: '/shadow', icon: GitCompare, perm: 'sales.read', section: 'Operations' },
   { label: 'Health', href: '/health', icon: HeartPulse, perm: 'sales.read', section: 'Operations' },

@@ -191,6 +191,12 @@ class SystemJob(ScheduledJob):
             out["940_timeouts"] = asdict(await self.outbound.timeouts(run_id=run.id))
         if self.transfers:
             out["943_timeouts"] = asdict(await self.transfers.timeouts(run_id=run.id))
+        try:  # the Radiant inventory: the moves the last steps made due (design 2026-11-12)
+            from app.services.stock import sync_all
+            out["stock"] = await sync_all(self.uow_factory)
+        except Exception as e:  # noqa: BLE001 — the ledger never stops the sends; it catches up next run
+            await oplog.write_alone(self.uow_factory, "ERROR", "cycle", f"inventory sync failed: {type(e).__name__}: {e}"[:500], run_id=run.id)
+            trouble += 1
         if self.shadow:  # the shadow run (§5.4): Zoho's reference files in, then the comparison
             try:
                 sh = asdict(await self.shadow.run(run_id=run.id))

@@ -65,6 +65,30 @@ class ReadOnlyService(Generic[T, R]):
     async def _authorize(self, key: str) -> None:
         await authorize(self.uow, key, system=self.system_allowed)
 
+    # ── CSV export: every row the spec selects (a read model: its list columns) ──
+    def _csv_export_columns(self) -> tuple[str, ...]:
+        return tuple(self.repo_cls.list_fields)
+
+    def csv_value(self, entity: T, column: str) -> Any:
+        return getattr(entity, column)
+
+    async def export_csv(self, spec: QuerySpec) -> bytes:
+        await self._authorize(self.read_permission)
+        out = io.StringIO()
+        w = csv.writer(out, lineterminator="\n")
+        columns = self._csv_export_columns()
+        w.writerow(columns)
+        page_no = 1
+        while True:
+            page = await self.repo.list(spec.model_copy(update={"page": page_no, "page_size": EXPORT_PAGE}))
+            for e in page.items:
+                w.writerow([_csv_cell(self.csv_value(e, c)) for c in columns])
+            if page_no * EXPORT_PAGE >= page.total:
+                break
+            page_no += 1
+        return out.getvalue().encode("utf-8")
+
+
     def to_read(self, entity: T) -> R:
         return self.read_schema.model_validate(entity, from_attributes=True)
 
@@ -234,22 +258,6 @@ class CrudService(ReadOnlyService[T, R], Generic[T, R, C, U]):
         return await self._read_one(entity)
 
     # ── CSV ──────────────────────────────────────────────────────────────────
-    async def export_csv(self, spec: QuerySpec) -> bytes:
-        await self._authorize(self.read_permission)
-        out = io.StringIO()
-        w = csv.writer(out, lineterminator="\n")
-        columns = self._csv_export_columns()
-        w.writerow(columns)
-        page_no = 1
-        while True:
-            page = await self.repo.list(spec.model_copy(update={"page": page_no, "page_size": EXPORT_PAGE}))
-            for e in page.items:
-                w.writerow([_csv_cell(self.csv_value(e, c)) for c in columns])
-            if page_no * EXPORT_PAGE >= page.total:
-                break
-            page_no += 1
-        return out.getvalue().encode("utf-8")
-
     async def import_csv(self, file: bytes, *, dry_run: bool) -> ImportReport:
         """Validates every row first. Any error: the full list, nothing
         written. Otherwise all rows are written in this unit of work (the
