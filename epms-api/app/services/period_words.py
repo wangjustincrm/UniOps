@@ -77,18 +77,23 @@ _STATE_WORDS = ("审批中", "待审批", "审核中", "待审", "未批", "还�
 # 2026年11月10日. ISO dates (2026-11-10) are unambiguous and left alone.
 _SLASHED = re.compile(r"(?<![\d/])(\d{1,2})/(\d{1,2})(?:/(\d{4}))?(?![\d/])")
 _CHINESE_DAY = re.compile(r"(?:(\d{4})\s*年\s*)?(\d{1,2})\s*月\s*(\d{1,2})\s*[日号]")
-_ISO_DAY = re.compile(r"\b\d{4}-\d{1,2}-\d{1,2}\b")
+# Edges are ASCII look-arounds, not \b: in Python 3 a Han character is a word
+# character, so "从2026-11-01到" has no word boundary around the date and \b
+# missed every question typed without spaces - most Chinese ones.
+_A = r"(?<![0-9A-Za-z])"
+_Z = r"(?![0-9A-Za-z])"
+_ISO_DAY = re.compile(_A + r"\d{4}-\d{1,2}-\d{1,2}" + _Z)
 # 2026-NOV-11, the way every screen, PDF and answer shows dates (UI-DATE-002):
 # people copy it into their questions. Read in code like the forms above, so
 # the day they wrote is the day queried.
 _MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
-_YMMMD_DAY = re.compile(r"\b(\d{4})-(" + "|".join(_MONTHS) + r")-(\d{1,2})\b", re.I)
+_YMMMD_DAY = re.compile(_A + r"(\d{4})-(" + "|".join(_MONTHS) + r")-(\d{1,2})" + _Z, re.I)
 # Any date or month written out, besides the calendar word: then the dates in
 # the query may be the person's own, and the query is left as planned.
 _WRITTEN_DATE = re.compile(
-    r"\d\s*月|\d{1,2}/\d{1,2}|\d{4}-\d{1,2}|\d{4}-[a-z]{3}-\d{1,2}|\d{4}\s*年|\bq[1-4]\b|\b(?:january|february|"
+    r"\d\s*月|\d{1,2}/\d{1,2}|\d{4}-\d{1,2}|\d{4}-[a-z]{3}-\d{1,2}|\d{4}\s*年|" + _A + r"q[1-4]" + _Z + r"|" + _A + r"(?:january|february|"
     r"march|april|june|july|august|september|october|november|december|jan|feb|apr|jun|"
-    r"jul|aug|sept?|oct|nov|dec)\b", re.I)
+    r"jul|aug|sept?|oct|nov|dec)" + _Z, re.I)
 
 
 def _found(text: str, patterns) -> bool:

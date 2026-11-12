@@ -265,6 +265,12 @@ def test_a_day_without_a_year_is_this_year_on_every_page():
     assert period_words.explicit_days("paid on 2026-Nov-01?", TODAY) == [("2026-Nov-01", date(2026, 11, 1))]
     assert period_words.explicit_days("2026-FEB-30", TODAY) == []
     assert period_words._WRITTEN_DATE.search("2026-NOV-01")
+    # Typed without spaces, as Chinese questions usually are.
+    assert period_words.explicit_days("从2026-NOV-01到2026-NOV-11付了多少", TODAY) == [
+        ("2026-NOV-01", date(2026, 11, 1)), ("2026-NOV-11", date(2026, 11, 11))]
+    for q in ("从2026-11-01到2026-11-11付了多少", "Q3付了多少", "nov的发票", "2026-NOV-01的付款"):
+        assert period_words._WRITTEN_DATE.search(q), q
+    assert not period_words._WRITTEN_DATE.search("novel decimal")
     # The planner on Portal wrote 2025: the query runs on the day as read.
     gr = REGISTRY["goods_receipt"]
     out = _enforce({"entity": "goods_receipt", "select": ["number"],
