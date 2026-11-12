@@ -162,3 +162,11 @@ def test_a_typo_in_a_system_view_column_is_caught():  # 'payment' for 'shopify_f
     class Typo(OrderRepository):
         presets = (Preset("x", "X", {"columns": ["source_reference", "payment", "status_detail"], "hidden": ["shopify"]}),)
     assert Typo.unknown_view_columns(OrderRead) == ["payment"]
+
+
+
+async def test_a_retired_part_of_a_saved_state_is_dropped_not_refused(http):
+    """A view saved before 2026-11-12 carries includeHistorical: it still saves and loads, without it."""
+    r = await new(http, state={"version": VIEW_STATE_VERSION, "includeHistorical": True, "refresh": 60})
+    assert r.status_code == 201, r.text
+    assert "includeHistorical" not in r.json()["state"] and r.json()["state"]["refresh"] == 60

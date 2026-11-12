@@ -33,9 +33,10 @@ from app.platform.query import MAX_FILTERS, MAX_GROUP_KEYS, MAX_PAGE_SIZE
 
 VIEW_STATE_VERSION = 1
 MAX_VIEWS_PER_LIST = 50
-# "includeHistorical" is still accepted (views saved before 2026-11-12 carry it) and has no effect.
-_STATE_KEYS = {"version", "sort", "group", "filters", "search", "pageSize", "columns", "hidden", "includeHistorical",
-               "refresh"}
+_STATE_KEYS = {"version", "sort", "group", "filters", "search", "pageSize", "columns", "hidden", "refresh"}
+# Parts a state no longer has: dropped as it is read (a view saved before carries them).
+# includeHistorical: lists show historical rows like any other since 2026-11-12.
+_RETIRED_KEYS = {"includeHistorical"}
 # Auto-refresh every N seconds, as the list's refresh control offers them (absent: off).
 AUTO_REFRESH_SECONDS = (30, 60, 300)
 
@@ -83,6 +84,7 @@ def check_state(state: Any, repo: Any) -> dict[str, Any]:
     if v != VIEW_STATE_VERSION:
         raise InvalidInput("view.bad_version", f"the view's state is version {state['version']}; this server reads "
                            f"{VIEW_STATE_VERSION}", {"field": "state"})
+    state = {k: x for k, x in state.items() if k not in _RETIRED_KEYS}
     unknown = set(state) - _STATE_KEYS
     if unknown:
         raise InvalidInput("view.bad_state", f"unknown parts of the state: {', '.join(sorted(unknown))}", {"field": "state"})
