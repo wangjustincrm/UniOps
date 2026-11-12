@@ -115,8 +115,11 @@ class Repository(Generic[T]):
 
     async def list(self, spec: QuerySpec, *, open_work: bool = False) -> Page[T]:
         q = self._apply(self.base_query(), spec, open_work=open_work)
+        # Counted over the keys only: over the full row, SQL would compute every computed field of
+        # every matching row just to count them (8755 orders: 5 s).
+        pk = self.model.__mapper__.primary_key[0]
         total = (await self.session.execute(
-            select(func.count()).select_from(q.order_by(None).subquery())
+            select(func.count()).select_from(self._only(q, pk).order_by(None).subquery())
         )).scalar_one()
         groups, truncated = (await self._groups(q, spec)) if spec.group else (None, False)
         totals = (await self._totals(q)) if self.summable else None

@@ -22,7 +22,7 @@ from jose import jwt as _jwt  # noqa: E402
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 
 from app.core.config import settings  # noqa: E402
-from app.db.session import get_session  # noqa: E402
+from app.db.session import CONNECT_ARGS, get_session  # noqa: E402
 from app.main import app  # noqa: E402
 
 TEST_DB = os.getenv("TEST_SALES_DB", "sales_test")
@@ -81,7 +81,7 @@ def migrated_db():
 
 @pytest_asyncio.fixture
 async def db_engine(migrated_db):
-    engine = create_async_engine(migrated_db, echo=False, connect_args={"ssl": False})
+    engine = create_async_engine(migrated_db, echo=False, connect_args=CONNECT_ARGS)
     from app.services.settings import SETTINGS
     SETTINGS.invalidate()  # each test truncates sales_settings: never read the last test's cached values
     yield engine
