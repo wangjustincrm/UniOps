@@ -25,7 +25,7 @@ export {
 } from './primitives/cells'
 export { columnsOf } from './primitives/columns'
 export {
-  dateAndTime, formatDateTime, formatDate, formatDuration, formatTime, formatMoney, formatNumber, registerStatusTones, statusTone, timeFromNow,
+  dateAndTime, formatShortMoment, formatDateTime, formatDate, formatDuration, formatTime, formatMoney, formatNumber, registerStatusTones, statusTone, timeFromNow,
 } from './primitives/format'
 export { useNow } from './primitives/useNow'
 export { Autocomplete } from './primitives/Autocomplete'

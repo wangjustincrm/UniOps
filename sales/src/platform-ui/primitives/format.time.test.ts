@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dateAndTime, formatDuration, formatNumber, timeFromNow } from './format'
+import { dateAndTime, formatDuration, formatNumber, formatShortMoment, timeFromNow } from './format'
 
 const NOW = new Date(2026, 10, 6, 12, 0).getTime()
 
@@ -37,5 +37,15 @@ describe('a moment in two parts', () => {
   })
   it('no value is a dash', () => {
     expect(dateAndTime(null)).toEqual({ day: '—', time: null })
+  })
+})
+
+describe('a moment for a narrow tile', () => {
+  it('the time alone today, the day and the time on another day', () => {
+    const today = new Date(2026, 10, 6, 16, 37).toISOString()
+    const tomorrow = new Date(2026, 10, 7, 9, 5).toISOString()
+    expect(formatShortMoment(today, NOW)).toBe(dateAndTime(today).time)
+    expect(formatShortMoment(tomorrow, NOW)).toBe(`${dateAndTime(tomorrow).day} ${dateAndTime(tomorrow).time}`)
+    expect(formatShortMoment('2026-11-06', NOW)).toBe(dateAndTime('2026-11-06').day)
   })
 })

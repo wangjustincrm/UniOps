@@ -32,6 +32,14 @@ export function dateAndTime(iso: string | null | undefined): { day: string; time
   return Number.isNaN(d.getTime()) ? { day: iso, time: null } : { day: LOCAL_DAY.format(d), time: SHORT_TIME.format(d) }
 }
 
+/** A moment for a narrow tile: the time alone when it is today, else the day and the time
+ *  ("4:37 p.m." / "Nov 13, 2026 4:37 p.m."). */
+export function formatShortMoment(iso: string | null | undefined, now: number = Date.now()): string {
+  const { day, time } = dateAndTime(iso)
+  if (!time) return day
+  return day === LOCAL_DAY.format(new Date(now)) ? time : `${day} ${time}`
+}
+
 /** A date-only value ("2026-10-30" → "Oct 30, 2026"), in the style of
  *  formatDateTime; a date-time keeps its date part as written. */
 export function formatDate(day: string | null | undefined): string {

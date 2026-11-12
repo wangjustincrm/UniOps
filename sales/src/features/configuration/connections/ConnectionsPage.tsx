@@ -1,6 +1,6 @@
 import { factTone } from '@/features/common/statusTones'
 import { Server, ShoppingBag } from 'lucide-react'
-import { Badge, CrudPage, DateTimeCell, Hint, StatusCell, Tooltip, formatDateTime, type ColumnDef } from '@/platform-ui'
+import { Badge, CrudPage, DateTimeCell, Hint, StatusCell, Tooltip, formatShortMoment, type ColumnDef } from '@/platform-ui'
 import { historyTab } from '../historyTab'
 import { ConnectionFiles } from './ConnectionFiles'
 import { NextRun, SchedulerOffBanner } from './SchedulerState'
@@ -19,7 +19,16 @@ import {
   connectionCreateSchema, connectionEmptyValues, connectionFieldLabels, connectionFields, connectionSettingsFields, connectionToFormValues, connectionUpdateSchema,
 } from './connectionSchema'
 
-// Kind, Host, Mode and After read stay in the column chooser (fields of the list's /meta, hidden at first).
+/** A folder on one line, cut with "…" when long; the whole path on hover. Off: where it would go. */
+function FolderHint({ path, off = false }: { path: string; off?: boolean }) {
+  return (
+    <Tooltip tip={off ? `Would write to ${path} (Write is off)` : path}>
+      <span className={`block max-w-[11rem] truncate text-xs ${off ? 'text-neutral-400' : 'text-neutral-600'}`}>{path}</span>
+    </Tooltip>
+  )
+}
+
+// Kind, Host and After read stay in the column chooser (fields of the list's /meta, hidden at first).
 const columns: ColumnDef<ConnectionRead, unknown>[] = [
   { accessorKey: 'name', header: 'Connection', cell: ({ row: { original: c } }) => (
     <span className="flex items-center gap-2">
@@ -30,6 +39,19 @@ const columns: ColumnDef<ConnectionRead, unknown>[] = [
     </span>
   ) },
   { id: 'health', header: 'Health', cell: ({ row }) => <HealthBadge c={row.original} /> },
+  // What Sales may do on it, and where (the connection's two ticks; user 2026-11-12).
+  { accessorKey: 'can_read', header: 'Read', cell: ({ row: { original: c } }) => (
+    <span className="flex flex-col items-start gap-0.5">
+      <Badge variant={c.can_read ? 'success' : 'neutral'}>{c.can_read ? 'On' : 'Off'}</Badge>
+      {c.can_read && c.kind === 'SFTP' && c.inbound_folder && <FolderHint path={c.inbound_folder} />}
+    </span>
+  ) },
+  { accessorKey: 'can_write', header: 'Write', cell: ({ row: { original: c } }) => (
+    <span className="flex flex-col items-start gap-0.5">
+      <Badge variant={c.can_write ? 'success' : 'neutral'}>{c.can_write ? 'On' : 'Off'}</Badge>
+      {c.kind === 'SFTP' && c.outbound_folder && <FolderHint path={c.outbound_folder} off={!c.can_write} />}
+    </span>
+  ) },
   { id: 'schedule', header: 'Schedule', cell: ({ row: { original: c } }) => c.schedule_paused
     ? <Badge variant="warning">Paused</Badge> : scheduleLabel(c) },
   { accessorKey: 'last_run_at', header: 'Last run', cell: ({ row: { original: c } }) => !c.last_run_at ? '—' : (
@@ -45,6 +67,8 @@ const errorMessages: Record<string, string> = {
   'connection.name_taken': 'A connection with this name already exists.',
   'entity.stale': 'Someone else changed this connection. Close the form and open it again.',
   'auth.forbidden': 'You do not have permission to change connections.',
+  'connection.go_live_gate': 'Writing can be turned on once every go-live notification has a recipient and was tested: Configuration → Notifications (Health lists what is missing).',
+  'connection.folder_is_write_folder': 'The read, archive and error folders must not be the write folder.',
 }
 
 /** Configuration → Connections (design §3.1, §5.1, §5.3). */
@@ -83,8 +107,8 @@ export default function ConnectionsPage() {
           hint: c.kind === 'SFTP' && c.can_write ? c.outbound_folder ?? undefined : undefined },
         { label: 'Schedule', value: c.schedule_paused ? 'Paused' : `Every ${c.schedule_minutes} min`, tone: c.schedule_paused ? 'warning' : 'neutral' },
         { label: 'Last run', value: c.last_run_status ?? '—', tone: factTone(c.last_run_status),
-          hint: c.last_run_at ? formatDateTime(c.last_run_at) : undefined },
-        { label: 'Next run', value: <NextRun c={c} />, tone: c.overdue ? 'danger' : 'neutral' },
+          hint: c.last_run_at ? formatShortMoment(c.last_run_at) : undefined },
+        { label: 'Next run', value: <NextRun c={c} compact />, tone: c.overdue ? 'danger' : 'neutral' },
       ]}
       detailTabs={(c, details) => [
         { id: 'overview', label: 'Overview', tone: ['danger', 'warning'].includes(connectionHealth(c).tone) ? connectionHealth(c).tone as 'danger' | 'warning' : undefined,

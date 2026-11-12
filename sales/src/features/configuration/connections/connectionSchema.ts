@@ -124,15 +124,6 @@ export const connectionFields: FieldSpec[] = [
   { name: 'kind', label: 'Type', type: 'segmented', required: true, section: 'Basics', options: [{ value: 'SFTP', label: 'SFTP' }, { value: 'SHOPIFY', label: 'Shopify' }] },
   { name: 'active', label: 'Active', type: 'checkbox', section: 'Basics' },
 
-  { name: 'host', label: 'Address', section: 'Login', hint: "The server's address (a Shopify store: <name>.myshopify.com). An SFTP server must also be on the server's allowed list; ask your administrator." },
-  // The server keeps a value for these on either kind: hidden, they go as they are today.
-  { name: 'port', label: 'Port', type: 'number', section: 'Login', showWhen: sftp, alwaysSent: true },
-  { name: 'username', label: 'User name', section: 'Login', showWhen: sftp },
-  { name: 'secret_name', label: 'Password name on the server', section: 'Login',
-    hint: 'The name your administrator gave the password on the server. The password itself is never typed here.' },
-  { name: 'host_key', label: "Server's key", type: 'textarea', section: 'Login', showWhen: sftp, advanced: true,
-    hint: 'Filled in by "Pin this key" after a test on the Overview.' },
-
   { name: 'can_read', label: 'Read', type: 'checkbox', section: 'Reading',
     hint: (v) => (v.kind === 'SHOPIFY' ? 'Sales pulls the store\'s orders.' : 'Sales lists and reads the read folder.') },
   ...READ_FOLDERS.map((f): FieldSpec => ({ name: f, label: folderLabel[f], section: 'Reading', showWhen: sftp, hint: folderHint[f] })),
@@ -153,6 +144,16 @@ export const connectionFields: FieldSpec[] = [
   { name: 'page_size', label: 'Orders per page', type: 'number', section: 'Shopify', showWhen: shopify, hint: 'At most 250 (default 50).' },
   { name: 'order_number_cutoff', label: 'Order number cut-off', type: 'number', section: 'Shopify', showWhen: shopify,
     hint: 'Orders numbered below it are historical and never sent.' },
+
+  // Login comes after what the connection does: it is set once.
+  { name: 'host', label: 'Address', section: 'Login', hint: "The server's address (a Shopify store: <name>.myshopify.com). An SFTP server must also be on the server's allowed list; ask your administrator." },
+  // The server keeps a value for these on either kind: hidden, they go as they are today.
+  { name: 'port', label: 'Port', type: 'number', section: 'Login', showWhen: sftp, alwaysSent: true },
+  { name: 'username', label: 'User name', section: 'Login', showWhen: sftp },
+  { name: 'secret_name', label: 'Password name on the server', section: 'Login',
+    hint: 'The name your administrator gave the password on the server. The password itself is never typed here.' },
+  { name: 'host_key', label: "Server's key", type: 'textarea', section: 'Login', showWhen: sftp, advanced: true,
+    hint: 'Filled in by "Pin this key" after a test on the Overview.' },
 
   ...scheduleFields,
 ]

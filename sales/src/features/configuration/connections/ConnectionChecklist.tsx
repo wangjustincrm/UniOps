@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, Circle, TriangleAlert, XCircle } from 'lucide-react'
 import {
-  ActionButton, Badge, Callout, DateTimeInput, Hint, LocalTable, Section, formatDateTime, queryKeys, type ColumnDef,
+  ActionButton, Badge, Callout, DateTimeInput, Hint, LocalTable, Section, ask, formatDateTime, queryKeys, type ColumnDef,
 } from '@/platform-ui'
 import { RunNowButton } from './RunNowButton'
 import { connectionHealth } from './connectionHealth'
@@ -10,6 +10,11 @@ import { useEdiSettings } from './connectionSettings'
 import { clearAuthLatch, connectionsClient, pinHostKey, resetCursor, testConnection, type ConnectionRead, type ConnectionTest } from './connectionsApi'
 
 const CONFIG = 'sales.config'
+const TICK_ERRORS: Record<string, string> = {
+  'connection.go_live_gate': 'Writing can be turned on once every go-live notification has a recipient and was tested: Configuration → Notifications (Health lists what is missing).',
+  'connection.field_required': 'Set the folder first, in Settings.',
+  'entity.stale': 'Someone else changed this connection. Refresh and try again.',
+}
 
 type Status = 'done' | 'todo' | 'problem' | 'unknown'
 const ICON: Record<Status, ReactNode> = {
@@ -68,6 +73,35 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
   const test = useMutation({ mutationFn: () => testConnection(c.id), onSuccess: setResult })
   const pin = useMutation({ mutationFn: (line: string) => pinHostKey(c, line), onSuccess: () => { setResult(null); refresh() } })
   const clear = useMutation({ mutationFn: () => clearAuthLatch(c.id), onSuccess: refresh })
+  // Read / Write on or off right here, after a question that says what it will do (user 2026-11-12).
+  const tick = useMutation({
+    mutationFn: (change: { can_read: boolean } | { can_write: boolean }) => connectionsClient.update(c.id, change, c.version),
+    onSuccess: refresh,
+  })
+  const toggle = async (which: 'can_read' | 'can_write') => {
+    const turnOn = !c[which]
+    const sftpFolder = which === 'can_read' ? c.inbound_folder : c.outbound_folder
+    const what = which === 'can_read'
+      ? (sftp ? `Sales will read the files in ${sftpFolder ?? '(no read folder)'}` : "Sales will pull the store's orders")
+      : (sftp ? `Sales will put the files it sends (940, 943, 810) in ${sftpFolder ?? '(no write folder)'}`
+        + (c.after_read !== 'LEAVE' ? ` and ${c.after_read === 'MOVE' ? `move what it reads to ${c.processed_folder}` : 'delete what it reads'}` : '')
+        : 'Sales will send fulfilments and tracking to the store and close orders')
+    const ok = await ask(turnOn
+      ? { title: `Turn ${which === 'can_read' ? 'reading' : 'writing'} on for ${c.name}?`, description: `${what}. This is real work on the partner's side.`,
+        confirmLabel: 'Turn on', destructive: which === 'can_write' }
+      : { title: `Turn ${which === 'can_read' ? 'reading' : 'writing'} off for ${c.name}?`,
+        description: which === 'can_read' ? 'Nothing will be read from this connection.' : 'Nothing will be written; what it would send is kept, not sent (Suppressed).',
+        confirmLabel: 'Turn off' })
+    if (!ok) return null
+    return tick.mutateAsync(which === 'can_read' ? { can_read: turnOn } : { can_write: turnOn })
+  }
+  const tickButton = (which: 'can_read' | 'can_write') => (
+    <ActionButton size="sm" variant="secondary" permission={CONFIG} errorMessages={TICK_ERRORS}
+      done={(r) => (r ? `${which === 'can_read' ? 'Reading' : 'Writing'} turned ${c[which] ? 'off' : 'on'}` : null)}
+      onAction={() => toggle(which)}>
+      {c[which] ? 'Turn off' : 'Turn on'}
+    </ActionButton>
+  )
   const sftp = c.kind === 'SFTP'
   const key = result?.host_key
   const testButton = (
@@ -113,7 +147,7 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
           {!result ? (sftp && !c.host_key ? 'Pin the key first, then the test lists the folders.' : 'Test the connection to check.')
             : reached === 'done' ? 'The test reached everything.' : (result.error ?? `${failedFolders} folder(s) could not be reached.`)}
         </Step>
-        <Step label="Reads" status={c.can_read ? 'done' : 'todo'}>
+        <Step label="Reads" status={c.can_read ? 'done' : 'todo'} action={tickButton('can_read')}>
           {!c.can_read ? 'Read is off: nothing is read.'
             : sftp ? <>From <code>{c.inbound_folder}</code>
               {moves ? (c.can_write
@@ -123,7 +157,7 @@ export function ConnectionChecklist({ connection: c }: { connection: ConnectionR
               {c.error_folder && c.can_write ? <>; a file that cannot be read goes to <code>{c.error_folder}</code></> : null}.</>
               : "The store's orders."}
         </Step>
-        <Step label="Writes" status={c.can_write ? 'done' : usedFor ? 'todo' : 'unknown'}>
+        <Step label="Writes" status={c.can_write ? 'done' : usedFor ? 'todo' : 'unknown'} action={tickButton('can_write')}>
           {c.can_write
             ? (sftp ? <>Into <code>{c.outbound_folder}</code>{usedFor ? ` (the ${usedFor})` : ''}. The server must also allow this address.</> : 'Fulfilments and tracking to the store, and closing orders.')
             : usedFor ? <>Write is off: this is the {usedFor}, so what it sends is kept and not sent (Suppressed).</>

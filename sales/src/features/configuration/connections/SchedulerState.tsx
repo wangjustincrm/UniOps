@@ -1,4 +1,4 @@
-import { Badge, DateTimeCell, Tooltip, Callout, Muted } from '@/platform-ui'
+import { Badge, DateTimeCell, Tooltip, Callout, Muted, formatShortMoment } from '@/platform-ui'
 import type { ConnectionRead } from './connectionsApi'
 import { useAutomaticRuns } from './connectionSettings'
 
@@ -16,13 +16,13 @@ export function SchedulerOffBanner() {
 
 /** A connection's next run: the time, "Overdue" when it should have run and did
  *  not, or a short Off while nothing runs by itself (the card and the Callout say why). */
-export function NextRun({ c }: { c: ConnectionRead }) {
+export function NextRun({ c, compact = false }: { c: ConnectionRead; compact?: boolean }) {
   const { state } = useAutomaticRuns()
   if (state === 'off' || state === 'unavailable') return <Tooltip tip={WORDS[state]}><Muted>Off</Muted></Tooltip>
   if (!c.next_run_at) return <Muted>{c.active ? 'at the next tick' : '—'}</Muted>
   return (
     <span className="inline-flex flex-wrap items-center gap-1">
-      <DateTimeCell value={c.next_run_at} />
+      {compact ? <span title={c.next_run_at}>{formatShortMoment(c.next_run_at)}</span> : <DateTimeCell value={c.next_run_at} />}
       {c.overdue && <Badge variant="danger">Overdue</Badge>}
     </span>
   )

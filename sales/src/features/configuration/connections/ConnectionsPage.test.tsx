@@ -57,6 +57,11 @@ function renderAs(keys: string[]) {
 }
 
 const step = (status: HTMLElement, name: string) => within(status).getByRole('listitem', { name })
+// One column's cell in a row (the Write column also says Off: a row-wide search would find it).
+const cellOf = (row: HTMLElement, header: string) => {
+  const i = screen.getAllByRole('columnheader').findIndex((h) => (h.textContent ?? '').trim().startsWith(header))
+  return within(row).getAllByRole('cell')[i]
+}
 
 async function open() {
   fireEvent.click(await screen.findByText('sftp-test'))
@@ -388,8 +393,8 @@ describe('when nothing runs by itself, and a run that is overdue', () => {
       expect(await card('Automatic runs', word)).toBeInTheDocument()
       expect(await screen.findByText(callout)).toBeInTheDocument()
       const row = (await screen.findByText('sftp-test')).closest('tr')!
-      expect(await within(row).findByText('Off')).toBeInTheDocument()
-      expect(within(row).queryByText(/2026|Nov/)).toBeNull()  // no next-run time that never comes
+      await waitFor(() => expect(within(cellOf(row, 'Next run')).getByText('Off')).toBeInTheDocument())
+      expect(within(cellOf(row, 'Next run')).queryByText(/2026|Nov/)).toBeNull()  // no next-run time that never comes
       fireEvent.click(within(row).getByText('sftp-test'))
       const sheet = await screen.findByRole('dialog')
       await openTab(sheet, 'Schedule')
@@ -405,7 +410,7 @@ describe('when nothing runs by itself, and a run that is overdue', () => {
     const row = (await screen.findByText('sftp-test')).closest('tr')!
     await waitFor(() => expect(within(row).getByText('Overdue')).toBeInTheDocument())
     expect(screen.queryByText(/Automatic runs are/)).toBeNull()
-    expect(within(row).queryByText('Off')).toBeNull()
+    expect(within(cellOf(row, 'Next run')).queryByText('Off')).toBeNull()
   })
 })
 
@@ -599,6 +604,60 @@ describe('the Overview: where it reads and where it writes', () => {
   })
 })
 
+describe('Read and Write: in the list and turned on or off from the Overview', () => {
+  const sftpConn = { ...conn, host_key: LINE, outbound_folder: '/to-partner' }
+
+  it('the list says whether each connection reads and writes, and where', async () => {
+    api.list.mockResolvedValue({ items: [{ ...sftpConn, can_write: true }], total: 1 })
+    renderAs(['sales.read'])
+    const row = (await screen.findByText('sftp-test')).closest('tr')!
+    expect(row).toHaveTextContent('/in')
+    expect(row).toHaveTextContent('/to-partner')
+    expect(within(row).getAllByText('On')).toHaveLength(2)
+  })
+
+  it('Turn on asks what it will do, then saves only the tick', async () => {
+    api.list.mockResolvedValue({ items: [sftpConn], total: 1 })
+    api.update.mockReset()
+    api.update.mockResolvedValue({ ...sftpConn, can_write: true })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderAs(['sales.read', 'sales.config'])
+    const status = await open()
+    fireEvent.click(within(step(status, 'Writes')).getByRole('button', { name: 'Turn on' }))
+    await waitFor(() => expect(api.update).toHaveBeenCalledWith(sftpConn.id, { can_write: true }, sftpConn.version))
+    expect(confirm.mock.calls[0][0]).toContain('/to-partner')
+    confirm.mockRestore()
+  })
+
+  it('a No changes nothing; without sales.config there is no button', async () => {
+    api.list.mockResolvedValue({ items: [sftpConn], total: 1 })
+    api.update.mockReset()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    renderAs(['sales.read', 'sales.config'])
+    const status = await open()
+    fireEvent.click(within(step(status, 'Reads')).getByRole('button', { name: 'Turn off' }))
+    await waitFor(() => expect(confirm).toHaveBeenCalled())
+    expect(api.update).not.toHaveBeenCalled()
+    confirm.mockRestore()
+    cleanup()
+    renderAs(['sales.read'])
+    const readOnly = await open()
+    expect(within(step(readOnly, 'Writes')).queryByRole('button', { name: /Turn/ })).toBeNull()
+  })
+
+  it('the go-live gate refusal is said in plain words', async () => {
+    api.list.mockResolvedValue({ items: [sftpConn], total: 1 })
+    api.update.mockReset()
+    api.update.mockRejectedValue(Object.assign(new Error('x'), { body: { error: { code: 'connection.go_live_gate', message: 'x' } } }))
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    renderAs(['sales.read', 'sales.config'])
+    const status = await open()
+    fireEvent.click(within(step(status, 'Writes')).getByRole('button', { name: 'Turn on' }))
+    expect(await screen.findByText(/Configuration → Notifications/)).toBeInTheDocument()
+    confirm.mockRestore()
+  })
+})
+
 describe('the form, by type of connection', () => {
   const headings = (el: HTMLElement) => within(el).getAllByRole('heading').map((h) => h.textContent)
   const newForm = async () => {
@@ -610,7 +669,7 @@ describe('the form, by type of connection', () => {
 
   it('SFTP: its sections, no Shopify ones; every folder in view, by what it is for', async () => {
     const sheet = await newForm()
-    expect(headings(form(sheet))).toEqual(['Basics', 'Login', 'Reading', 'Writing', 'Schedule'])
+    expect(headings(form(sheet))).toEqual(['Basics', 'Reading', 'Writing', 'Login', 'Schedule'])  // Login is set once: after what it does
     for (const f of ['Read folder', 'Archive folder', 'Error folder', 'Write folder']) {
       expect(within(sheet).getByLabelText(new RegExp(`^${f}`)).closest('details')).toBeNull()
     }
@@ -623,7 +682,7 @@ describe('the form, by type of connection', () => {
     api.get.mockResolvedValue({ ...conn, id: 9, kind: 'SHOPIFY' })
     const sheet = await newForm()
     fireEvent.click(within(sheet).getByRole('radio', { name: 'Shopify' }))
-    expect(headings(form(sheet))).toEqual(['Basics', 'Login', 'Reading', 'Writing', 'Shopify', 'Schedule'])
+    expect(headings(form(sheet))).toEqual(['Basics', 'Reading', 'Writing', 'Shopify', 'Login', 'Schedule'])
     expect(within(sheet).queryByLabelText('User name')).toBeNull()
     expect(within(sheet).queryByLabelText(/^Read folder|^Write folder/)).toBeNull()
     fireEvent.change(within(sheet).getByLabelText(/^Name/), { target: { value: 'store' } })

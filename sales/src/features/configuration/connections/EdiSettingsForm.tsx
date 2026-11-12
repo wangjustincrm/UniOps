@@ -27,9 +27,9 @@ export function EdiSettingsForm({ settings: s, options, onDone }: {
       hint: '940s and 943s go to its write folder (only with its Write tick on) and 997s are read from its read folder. None: none is made.' },
     { name: 'ack_timeout_minutes', label: '997 wait (minutes)', type: 'number', required: true, hint: 'No 997 in this time: Timeout and a task.' },
     { name: 'invoice_connection_id', label: '810 invoice connection', type: 'select', numeric: true, options,
-      hint: '810 JSON invoices are put in its outbound folder. None: no 810 is sent.' },
+      hint: '810 JSON invoices go to its write folder (only with its Write tick on). None: no 810 is sent.' },
     { name: 'internal_emails', label: 'Internal invoice recipients', type: 'tags',
-      hint: 'Company addresses only. Each time an invoice is sent they get every document: the invoice, the PO, the packing list and, for an 810 partner, the 810 file. Sent in Test too; partners get theirs only as their configuration says. Empty: nobody.' },
+      hint: 'Company addresses only. Each time an invoice is sent they get every document: the invoice, the PO, the packing list and, for an 810 partner, the 810 file. Sent whether or not the 810 connection writes; partners get theirs only as their configuration says. Empty: nobody.' },
   ]
   return (
     <SchemaForm schema={schema} fields={fields} errorMessages={errorMessages} onCancel={onDone} readOnly={!canEdit}
