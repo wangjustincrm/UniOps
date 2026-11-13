@@ -146,6 +146,20 @@ describe('Transfers', () => {
     fireEvent.keyDown(screen.getByRole('menu'), { key: 'Escape' })
   })
 
+  it('under each line, what the 944 received for it (pallet, lot, EA); what came off the transfer apart', async () => {
+    api.fetch.mockResolvedValue(detail)
+    renderAs(['sales.read', 'sales.transfer.manage'])
+    fireEvent.click(await screen.findByText('00104'))
+    const dialog = await screen.findByRole('dialog')
+    await openTab(dialog, 'Lines')
+    const lines = await within(dialog).findByRole('table', { name: 'Transfer lines' })
+    fireEvent.click(within(within(lines).getByText('CF0092').closest('tr')!).getByRole('button', { name: 'Show details' }))
+    const packed = await within(dialog).findByRole('table', { name: 'Received for this line' })
+    expect(within(packed).getByText('26C253125110231').closest('tr')).toHaveTextContent('600')
+    expect(within(dialog).getByText('Received but not on the transfer')).toBeInTheDocument()
+    expect(within(dialog).getByText('26E248121010211')).toBeInTheDocument()  // CF0103: off the transfer
+  })
+
   it('a new draft: warehouses and lines; Save needs both warehouses and a quantity', async () => {
     api.create.mockResolvedValue({ ...detail, ...draft })
     renderAs(['sales.read', 'sales.transfer.manage'])

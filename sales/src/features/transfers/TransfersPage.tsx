@@ -64,6 +64,26 @@ const rowColumns: ColumnDef<ReceiptRowRead, unknown>[] = [
   { accessorKey: 'transfer_line_no', header: 'To line', cell: ({ row }) => row.original.transfer_line_no ?? <span className="text-danger-600">not on the transfer</span> },
 ]
 
+type PackedRow = ReceiptRowRead & { file: string; receipt_date: string | null }
+const colPacked = columnsOf<PackedRow>()
+const packedColumns: ColumnDef<PackedRow, unknown>[] = [
+  { accessorKey: 'lx_number', header: 'Pallet (LX)', cell: ({ row }) => row.original.lx_number ?? '—' },
+  { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => row.original.item_code ?? row.original.upc ?? '—' },
+  colPacked.text('lot', 'Lot'),
+  { accessorKey: 'description', header: 'Description', cell: ({ row }) => <span className="text-xs">{row.original.description ?? ''}</span> },
+  colPacked.number('qty_ea', 'EA'),
+  colPacked.date('receipt_date', 'Received on'),
+  colPacked.text('file', '944'),
+]
+
+/** What a 944 received, row by row (an order's packed rows, for a transfer). */
+function Received({ rows, label = 'Received for this line' }: { rows: PackedRow[]; label?: string }) {
+  return (
+    <LocalTable<PackedRow> ariaLabel={label} columns={packedColumns} rows={rows} rowKey={(x, i) => `${x.file}-${x.position}-${i}`}
+      sortable={['lot', 'lx_number']} footer={[null, null, 'Total', null, rows.reduce((n, x) => n + x.qty_ea, 0), null, null]} />
+  )
+}
+
 type Line = { item_code: string; qty_ea: string }
 const editColumns: EditableColumn<Line>[] = [
   { id: 'item', header: 'Item', cell: ({ row, index, update, invalid }) => (
@@ -185,6 +205,10 @@ function Detail({ row }: { row: TransferRead }) {
   const sent = t ? t.lines.reduce((n, l) => n + l.qty_ea, 0) : 0
   const received = t ? t.lines.reduce((n, l) => n + l.received_ea, 0) : 0
   const discrepant = !!t?.receipts.some((r) => r.discrepancies && r.discrepancies.length > 0)
+  // What the applied 944s received, row by row, with the file it came in (user 2026-11-13: under each line, as an order's).
+  const receivedRows: PackedRow[] = (t?.receipts ?? []).filter((r) => r.applied).flatMap((r) => r.rows.map((x) => ({ ...x, file: r.document_name ?? `#${r.document_id}`, receipt_date: r.receipt_date })))
+  const packedFor = (lineNo: number) => receivedRows.filter((x) => x.transfer_line_no === lineNo)
+  const offTransfer = receivedRows.filter((x) => x.transfer_line_no == null)
   const tabs: RecordTab[] = !t ? [] : editing ? [{
     id: 'edit', label: 'Edit draft', render: () => (
       <TransferForm t={t} onCancel={() => setEditing(false)} onSaved={async (d) => { setEditing(false); await done(d) }} />),
@@ -208,9 +232,18 @@ function Detail({ row }: { row: TransferRead }) {
         ]} />
       </Section>
     ) },
-    { id: 'lines', label: 'Lines', count: t.lines.length, render: () => (
-      <LocalTable<TransferLineRead> ariaLabel="Transfer lines" columns={lineColumns} rows={t.lines} rowKey={(l) => l.id}
-        footer={[null, 'Total', sent, received, null]} />
+    { id: 'lines', label: 'Lines', count: t.lines.length, tone: offTransfer.length ? 'warning' : undefined, render: () => (
+      <>
+        <p className="mb-2 text-xs text-neutral-500">▸ shows what the warehouse's 944 received for a line: pallet, lot and quantity.</p>
+        <LocalTable<TransferLineRead> ariaLabel="Transfer lines" columns={lineColumns} rows={t.lines} rowKey={(l) => l.id}
+          expand={(l) => { const rows = packedFor(l.line_no); return rows.length ? <Received rows={rows} /> : null }}
+          footer={[null, 'Total', sent, received, null]} />
+        {offTransfer.length > 0 && (
+          <Section title="Received but not on the transfer" plain>
+            <Received rows={offTransfer} label="Received, not on the transfer" />
+          </Section>
+        )}
+      </>
     ) },
     { id: 'receipts', label: 'Receipts (944)', count: t.receipts.length, tone: discrepant ? 'warning' : undefined,
       empty: t.receipts.length === 0 && 'No 944 yet', render: () => t.receipts.map((r) => (
