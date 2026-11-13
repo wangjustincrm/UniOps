@@ -244,16 +244,16 @@ async def sync_all(uow_factory) -> dict:
 class StockItemRepository(Repository[StockItem]):
     model = StockItem
     search_fields = ("item_code", "description")
-    list_fields = ("item_code", "description", "received_ea", "returned_ea", "shipped_ea", "adjusted_ea", "on_hand_ea", "hold_ea",
+    list_fields = ("item_code", "description", "received_ea", "returned_ea", "shipped_ea", "adjusted_ea", "report_diff_ea", "on_hand_ea", "hold_ea",
                    "allocated_ea", "available_ea", "to_radiant_ea", "to_customer_ea", "returning_ea", "lots", "first_expiry",
                    "days_to_first_expiry", "last_move_at")
     labels = {"item_code": "Item", "received_ea": "Received EA", "returned_ea": "Returned EA", "shipped_ea": "Shipped EA",
-              "adjusted_ea": "Adjusted EA", "on_hand_ea": "On hand EA", "hold_ea": "On hold EA", "allocated_ea": "In process EA",
+              "adjusted_ea": "Adjusted EA", "report_diff_ea": "Difference vs Radiant EA", "on_hand_ea": "On hand EA", "hold_ea": "On hold EA", "allocated_ea": "In process EA",
               "available_ea": "Available EA", "to_radiant_ea": "In transit to Radiant EA", "to_customer_ea": "In transit to customers EA",
               "returning_ea": "Returns on the way EA", "lots": "Lots on hand", "first_expiry": "First expiry",
               "days_to_first_expiry": "Days to first expiry", "last_move_at": "Last move"}
     suggestable = ("item_code",)
-    summable = ("received_ea", "returned_ea", "shipped_ea", "adjusted_ea", "on_hand_ea", "hold_ea", "allocated_ea", "available_ea",
+    summable = ("received_ea", "returned_ea", "shipped_ea", "adjusted_ea", "report_diff_ea", "on_hand_ea", "hold_ea", "allocated_ea", "available_ea",
                 "to_radiant_ea", "to_customer_ea", "returning_ea")
     default_sort = ("item_code",)
 
@@ -261,16 +261,16 @@ class StockItemRepository(Repository[StockItem]):
 class StockLotRepository(Repository[StockLot]):
     model = StockLot
     search_fields = ("item_code", "lot")
-    list_fields = ("item_code", "lot", "expiry", "days_to_expiry", "received_ea", "returned_ea", "shipped_ea", "adjusted_ea",
+    list_fields = ("item_code", "lot", "expiry", "days_to_expiry", "received_ea", "returned_ea", "shipped_ea", "adjusted_ea", "report_diff_ea",
                    "on_hand_ea", "hold_ea", "available_ea", "to_customer_ea", "returning_ea", "to_radiant_ea", "first_move_at", "last_move_at")
     filterable = {"item_code": FilterRule(StockLot.item_code)}
     labels = {"item_code": "Item", "received_ea": "Received EA", "returned_ea": "Returned EA", "shipped_ea": "Shipped EA",
-              "adjusted_ea": "Adjusted EA", "on_hand_ea": "On hand EA", "hold_ea": "On hold EA", "available_ea": "Available EA",
+              "adjusted_ea": "Adjusted EA", "report_diff_ea": "Difference vs Radiant EA", "on_hand_ea": "On hand EA", "hold_ea": "On hold EA", "available_ea": "Available EA",
               "to_customer_ea": "In transit to customers EA", "returning_ea": "Returns on the way EA",
               "days_to_expiry": "Days to expiry", "first_move_at": "First move", "last_move_at": "Last move"}
     suggestable = ("item_code", "lot")
     groupable = ("item_code", "expiry")
-    summable = ("received_ea", "returned_ea", "shipped_ea", "adjusted_ea", "on_hand_ea", "hold_ea", "available_ea", "to_customer_ea", "returning_ea")
+    summable = ("received_ea", "returned_ea", "shipped_ea", "adjusted_ea", "report_diff_ea", "on_hand_ea", "hold_ea", "available_ea", "to_customer_ea", "returning_ea")
     default_sort = ("item_code", "expiry", "lot")
     presets = (
         Preset("on_hand", "On hand", {"filters": [{"field": "on_hand_ea", "op": "gt", "value": 0}]}),

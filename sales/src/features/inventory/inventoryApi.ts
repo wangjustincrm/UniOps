@@ -11,6 +11,8 @@ export interface StockItemRead {
   returned_ea: number
   shipped_ea: number
   adjusted_ea: number
+  /** Sales − Radiant at the latest applied report (its open lots). */
+  report_diff_ea: number
   on_hand_ea: number
   /** As Radiant's latest applied report gave it. */
   hold_ea: number
@@ -40,8 +42,10 @@ export interface StockLotRead {
   returned_ea: number
   /** 945 rows and orders shipped with no 945, less what customers sent back. */
   shipped_ea: number
-  /** People's adjustments and Radiant counts. */
+  /** People's adjustments after the latest applied report. */
   adjusted_ea: number
+  /** Sales − Radiant at the latest applied report. */
+  report_diff_ea: number
   on_hand_ea: number
   hold_ea: number
   /** On hand − on hold. */

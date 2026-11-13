@@ -26,6 +26,7 @@ const itemColumns: ColumnDef<StockItemRead, unknown>[] = [
   colItem.number('allocated_ea', 'In process'),
   colItem.number('shipped_ea', 'Shipped'),
   colItem.number('available_ea', 'Available'),
+  { id: 'report_diff_ea', header: 'Diff. vs Radiant', cell: ({ row }) => <DiffCell value={row.original.report_diff_ea} /> },
   startHidden(colItem.number('on_hand_ea', 'On hand')),
   startHidden(colItem.number('hold_ea', 'On hold')),
   startHidden(colItem.number('returned_ea', 'Returned (in Shipped)')),
@@ -46,6 +47,7 @@ const lotColumns: ColumnDef<StockLotRead, unknown>[] = [
   colLot.number('received_ea', 'Received'),
   colLot.number('shipped_ea', 'Shipped'),
   colLot.number('available_ea', 'Available'),
+  { id: 'report_diff_ea', header: 'Diff. vs Radiant', cell: ({ row }) => <DiffCell value={row.original.report_diff_ea} /> },
   startHidden(colLot.number('on_hand_ea', 'On hand')),
   startHidden(colLot.number('hold_ea', 'On hold')),
   startHidden(colLot.number('returned_ea', 'Returned (in Shipped)')),
@@ -54,6 +56,27 @@ const lotColumns: ColumnDef<StockLotRead, unknown>[] = [
   startHidden(colLot.number('returning_ea', 'Returns on the way')),
   startHidden(colLot.datetime('last_move_at', 'Last move')),
 ]
+
+/** Sales − Radiant at the latest applied report: 0 grey, else signed and marked (user 2026-11-13: in sight until settled). */
+function DiffCell({ value }: { value: number }) {
+  return (
+    <span className={`block text-right tabular-nums ${value ? 'font-semibold text-warning-700' : 'text-neutral-400'}`}>
+      {value > 0 ? `+${formatNumber(value)}` : formatNumber(value)}
+    </span>
+  )
+}
+
+/** An item's active lots (something on hand), nearest expiry first — under its row in the list. */
+function ActiveLots({ item }: { item: string }) {
+  const spec: QuerySpec = { page: 1, pageSize: 200, filters: [{ field: 'item_code', op: 'eq', value: item }, { field: 'on_hand_ea', op: 'ne', value: '0' }],
+    sort: [{ field: 'expiry', desc: false }] }
+  const q = useQuery({ queryKey: [...queryKeys.list(stockLotsClient), 'active', item], queryFn: () => stockLotsClient.list(spec) })
+  return (
+    <LocalTable<StockLotRead> ariaLabel={`Active lots of ${item}`} density="compact" fetching={q.isFetching}
+      columns={lotColumns.filter((c) => (c as { accessorKey?: string }).accessorKey !== 'item_code')}
+      rows={q.data?.items ?? []} rowKey={(l) => l.id} emptyTitle={q.isLoading ? 'Loading…' : 'No active lot'} />
+  )
+}
 
 const moveColumns: ColumnDef<StockMoveRead, unknown>[] = [
   colMove.datetime('at', 'When'),
@@ -196,6 +219,7 @@ export default function InventoryPage() {
       description="Stock at Radiant by item (its open lots): received − in process (940 sent, no 945 yet) − shipped (less returns) = available."
       columns={itemColumns} notice={NOTE} emptyTitle="No stock moves yet"
       renderDetail={(r) => <ItemSheet row={r} />}
+      expand={(r) => (r.lots > 0 || r.on_hand_ea !== 0 ? <ActiveLots item={r.item_code} /> : null)}
       toolbar={(ctx) => (<>
         {nav}
         <ExportButton client={stockItemsClient} spec={ctx.spec} name="inventory-items.csv" />

@@ -15,6 +15,7 @@ class StockItemRead(BaseModel):
     returned_ea: int = 0
     shipped_ea: int = 0
     adjusted_ea: int = 0
+    report_diff_ea: int = 0   # Sales − Radiant at the latest applied report (its open lots)
     on_hand_ea: int
     hold_ea: int = 0
     allocated_ea: int
@@ -39,6 +40,7 @@ class StockLotRead(BaseModel):
     returned_ea: int = 0
     shipped_ea: int
     adjusted_ea: int = 0
+    report_diff_ea: int = 0   # Sales − Radiant at the latest applied report
     on_hand_ea: int
     hold_ea: int = 0
     available_ea: int = 0

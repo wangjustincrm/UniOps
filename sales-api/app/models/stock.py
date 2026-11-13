@@ -10,7 +10,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid, case, cast, func, select
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid, case, cast, func, literal, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -87,12 +87,23 @@ RETURNED_SOURCES = ("return_944",)                     # RA 944s: back from cust
 SHIPPED_SOURCES = ("shipment_row", "order_line")       # 945 rows; orders shipped with no 945
 
 
+# The start (user 2026-11-13): once a Radiant report is applied, a lot's figures start from it — its figure there
+# counts as received, and only the moves after it add up — so received − shipped = on hand stays true. With no
+# report applied, everything from the first data counts.
+_LATEST_COUNT = (select(StockCount.id).where(StockCount.applied_at.is_not(None))
+                 .order_by(StockCount.counted_at.desc(), StockCount.id.desc()).limit(1).scalar_subquery())
+_START = func.coalesce(select(StockCount.counted_at).where(StockCount.id == _LATEST_COUNT).scalar_subquery(),
+                       cast(literal("-infinity"), DateTime(timezone=True)))
+
+
 def _in_from(sources: tuple[str, ...]):
-    return func.coalesce(func.sum(case(((StockMove.to_place == RADIANT) & StockMove.source_type.in_(sources), StockMove.qty_ea), else_=0)), 0)
+    return func.coalesce(func.sum(case(((StockMove.to_place == RADIANT) & StockMove.source_type.in_(sources) & (StockMove.at > _START),
+                                        StockMove.qty_ea), else_=0)), 0)
 
 
 def _out_from(sources: tuple[str, ...]):
-    return func.coalesce(func.sum(case(((StockMove.from_place == RADIANT) & StockMove.source_type.in_(sources), StockMove.qty_ea), else_=0)), 0)
+    return func.coalesce(func.sum(case(((StockMove.from_place == RADIANT) & StockMove.source_type.in_(sources) & (StockMove.at > _START),
+                                        StockMove.qty_ea), else_=0)), 0)
 
 
 _BY_LOT = (
@@ -109,34 +120,45 @@ _BY_LOT = (
         _in_from(RETURNED_SOURCES).label("returned_ea"),
         # Shipped is net (user 2026-11-13): what a customer sent back (RA 944) comes off what was shipped.
         (_out_from(SHIPPED_SOURCES) - _in_from(RETURNED_SOURCES)).label("shipped_ea"),
+        # The latest applied report's own moves (at its moment): Radiant − Sales there, per lot.
+        func.coalesce(func.sum(case(((StockMove.source_type == "count") & (StockMove.at == _START),
+                                     case((StockMove.to_place == RADIANT, StockMove.qty_ea), else_=-StockMove.qty_ea)), else_=0)), 0)
+        .label("count_net"),
         func.min(StockMove.at).label("first_move_at"),
         func.max(StockMove.at).label("last_move_at"),
     )
     .group_by(StockMove.item_code, StockMove.lot)
     .subquery("l")
 )
-# On hold: as Radiant's latest applied report gave it, never more than what is on hand now.
-_LATEST_COUNT = (select(StockCount.id).where(StockCount.applied_at.is_not(None))
-                 .order_by(StockCount.counted_at.desc(), StockCount.id.desc()).limit(1).scalar_subquery())
-_HOLDS = (select(StockCountLine.item_code.label("item_code"), StockCountLine.lot.label("lot"), func.sum(StockCountLine.hold_ea).label("hold"))
-          .where(StockCountLine.count_id == _LATEST_COUNT).group_by(StockCountLine.item_code, StockCountLine.lot).subquery("hold"))
-_hold = case((_BY_LOT.c.on_hand_ea > 0, func.least(func.coalesce(_HOLDS.c.hold, 0), _BY_LOT.c.on_hand_ea)), else_=0)
+# Radiant's latest applied report, per lot: its figure (the start) and what it held on hold.
+_REPORT = (select(StockCountLine.item_code.label("item_code"), StockCountLine.lot.label("lot"),
+                  func.sum(StockCountLine.qty_ea).label("start"), func.sum(StockCountLine.hold_ea).label("hold"),
+                  func.max(StockCountLine.expiry).label("expiry"))
+           .where(StockCountLine.count_id == _LATEST_COUNT).group_by(StockCountLine.item_code, StockCountLine.lot).subquery("report"))
+_start = func.coalesce(_REPORT.c.start, 0)
+# A lot's expiry as its 945s gave it, else as Radiant's report gives it (a 944 carries none).
+_expiry = func.coalesce(_BY_LOT.c.expiry, _REPORT.c.expiry)
+_received = _start + _BY_LOT.c.received_ea
+# On hold: never more than what is on hand now.
+_hold = case((_BY_LOT.c.on_hand_ea > 0, func.least(func.coalesce(_REPORT.c.hold, 0), _BY_LOT.c.on_hand_ea)), else_=0)
 _LOTS = (
     select(
-        _BY_LOT.c.id, _BY_LOT.c.item_code, _BY_LOT.c.lot, _BY_LOT.c.expiry,
-        cast(_BY_LOT.c.expiry - func.current_date(), Integer).label("days_to_expiry"),
-        _BY_LOT.c.received_ea, _BY_LOT.c.returned_ea, _BY_LOT.c.shipped_ea,
-        # people's adjustments and Radiant counts: what on hand holds beyond received − shipped (net of returns)
-        cast(_BY_LOT.c.on_hand_ea - _BY_LOT.c.received_ea + _BY_LOT.c.shipped_ea, Integer).label("adjusted_ea"),
+        _BY_LOT.c.id, _BY_LOT.c.item_code, _BY_LOT.c.lot, _expiry.label("expiry"),
+        cast(_expiry - func.current_date(), Integer).label("days_to_expiry"),
+        cast(_received, Integer).label("received_ea"), _BY_LOT.c.returned_ea, _BY_LOT.c.shipped_ea,
+        # people's adjustments after the start: what on hand holds beyond received − shipped
+        cast(_BY_LOT.c.on_hand_ea - _received + _BY_LOT.c.shipped_ea, Integer).label("adjusted_ea"),
         _BY_LOT.c.on_hand_ea,
+        # Sales − Radiant at the latest applied report (user 2026-11-13: kept in sight until every difference is settled)
+        cast(-_BY_LOT.c.count_net, Integer).label("report_diff_ea"),
         cast(_hold, Integer).label("hold_ea"),
         cast(_BY_LOT.c.on_hand_ea - _hold, Integer).label("available_ea"),
         _BY_LOT.c.to_customer_ea, _BY_LOT.c.returning_ea, _BY_LOT.c.to_radiant_ea,
         _BY_LOT.c.first_move_at, _BY_LOT.c.last_move_at,
     )
     .select_from(_BY_LOT)
-    .outerjoin(_HOLDS, (_HOLDS.c.item_code == _BY_LOT.c.item_code)
-               & (func.coalesce(_HOLDS.c.lot, "") == func.coalesce(_BY_LOT.c.lot, "")))
+    .outerjoin(_REPORT, (_REPORT.c.item_code == _BY_LOT.c.item_code)
+               & (func.coalesce(_REPORT.c.lot, "") == func.coalesce(_BY_LOT.c.lot, "")))
     .subquery("sales_stock_lots")
 )
 
@@ -160,6 +182,7 @@ def _item_read_model():
                    func.sum(case((_LOTS.c.on_hand_ea != 0, _LOTS.c.shipped_ea), else_=0)).label("shipped"),
                    func.sum(case((_LOTS.c.on_hand_ea != 0, _LOTS.c.adjusted_ea), else_=0)).label("adjusted"),
                    func.sum(_LOTS.c.on_hand_ea).label("on_hand"), func.sum(_LOTS.c.hold_ea).label("hold"),
+                   func.sum(case((_LOTS.c.on_hand_ea != 0, _LOTS.c.report_diff_ea), else_=0)).label("report_diff"),
                    func.sum(_LOTS.c.to_radiant_ea).label("to_radiant"), func.sum(_LOTS.c.to_customer_ea).label("to_customer"),
                    func.sum(_LOTS.c.returning_ea).label("returning"), func.max(_LOTS.c.last_move_at).label("last_move_at"),
                    func.count().filter(_LOTS.c.on_hand_ea > 0).label("lots"),
@@ -178,7 +201,7 @@ def _item_read_model():
     return (
         select(Item.id.label("id"), Item.item_code.label("item_code"), Item.description.label("description"),
                n(lots.c.received).label("received_ea"), n(lots.c.returned).label("returned_ea"), n(lots.c.shipped).label("shipped_ea"),
-               n(lots.c.adjusted).label("adjusted_ea"), cast(on_hand, Integer).label("on_hand_ea"), cast(hold, Integer).label("hold_ea"),
+               n(lots.c.adjusted).label("adjusted_ea"), n(lots.c.report_diff).label("report_diff_ea"), cast(on_hand, Integer).label("on_hand_ea"), cast(hold, Integer).label("hold_ea"),
                cast(allocated, Integer).label("allocated_ea"), cast(on_hand - hold - allocated, Integer).label("available_ea"),
                n(lots.c.to_radiant).label("to_radiant_ea"), n(lots.c.to_customer).label("to_customer_ea"),
                n(lots.c.returning).label("returning_ea"), n(lots.c.lots).label("lots"),

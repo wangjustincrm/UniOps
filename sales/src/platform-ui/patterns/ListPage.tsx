@@ -50,6 +50,8 @@ export interface ListPageProps<T extends { id: number }> {
   detailSize?: RecordSheetSize
   /** Opening a row: by default the detail sheet (when renderDetail is given). */
   onRowClick?: (row: T) => void
+  /** A row's detail under it, opened with its ▸ in the list (e.g. an item's lots). */
+  expand?: (row: T) => ReactNode | null
   /** Per-row buttons in a last column (a click there never opens the row). */
   rowActions?: (row: T) => ReactNode
   /** Filters the page sets itself (a record's own list): kept, not removable; no views. */
@@ -224,6 +226,7 @@ export function ListPage<T extends { id: number }>(props: ListPageProps<T>) {
         statusBar={(pager) => <TableStatusBar store={notices} right={pager} />}
         rowKey={(r) => r.id}
         onRowClick={props.onRowClick ?? (renderDetail ? setOpen : undefined)}
+        expand={props.expand}
         emptyTitle={props.emptyTitle}
         toolbar={toolbar}
       />

@@ -59,6 +59,8 @@ export interface QueryTableProps<T> {
   onRetry?: () => void
   rowKey: (row: T) => string | number
   onRowClick?: (row: T) => void
+  /** A row's detail under it, opened with its ▸ (DataTable `expand`); null: nothing to open. */
+  expand?: (row: T) => ReactNode | null
   emptyTitle?: string
   toolbar?: ReactNode
   /** Everything the view is, on every change. */

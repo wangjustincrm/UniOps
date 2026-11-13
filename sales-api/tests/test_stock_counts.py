@@ -142,12 +142,16 @@ async def test_the_report_compares_each_lot_and_apply_starts_from_radiant(p7):  
         lot = {(x.item_code, x.lot): x for x in (await StockLotService(u).list(QuerySpec(page_size=200))).items}
         items = {x.item_code: x for x in (await StockItemService(u).list(QuerySpec(page_size=200))).items}
     a = lot[("CF0092", "26C253125110231")]
-    assert (a.received_ea, a.returned_ea, a.shipped_ea, a.adjusted_ea, a.on_hand_ea, a.hold_ea, a.available_ea) == (8400, 0, 0, -400, 8000, 0, 8000)
+    # Applied, the lot starts from Radiant's figure: received = 8000 (the report) + what came after; nothing adjusted.
+    assert (a.received_ea, a.returned_ea, a.shipped_ea, a.adjusted_ea, a.on_hand_ea, a.hold_ea, a.available_ea) == (8000, 0, 0, 0, 8000, 0, 8000)
+    assert a.report_diff_ea == 400  # Sales had 8400, Radiant 8000: kept in sight
+    assert lot[("CF0103", "26E248121010211")].expiry == date(2028, 9, 3)  # no 945 named it: Radiant's report does
     h = lot[("CF0110", "25C26112511032")]  # on hold at Radiant: on hand, not available
     assert (h.on_hand_ea, h.hold_ea, h.available_ea) == (5, 5, 0)
     assert lot[("CF0092", "OLD1")].on_hand_ea == 0  # closed by the count
-    # The item adds up its open lots only: OLD1's 30 received is not in CF0092's Received.
-    assert (items["CF0092"].received_ea, items["CF0092"].on_hand_ea) == (8400, 8000)
+    # The item adds up its open lots only: OLD1 (closed by the report) is in none of CF0092's figures.
+    assert (items["CF0092"].received_ea, items["CF0092"].shipped_ea, items["CF0092"].on_hand_ea) == (8000, 0, 8000)
+    assert items["CF0092"].report_diff_ea == 400  # its open lots only (OLD1's 30 is closed)
     assert items["CF0092"].available_ea == items["CF0092"].on_hand_ea - items["CF0092"].hold_ea - items["CF0092"].allocated_ea
 
     # Kept right: a move dated before the count, arriving later, changes the count's move, not the figure;
