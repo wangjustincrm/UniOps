@@ -120,8 +120,12 @@ export interface CountCompareRow {
   in_after_ea: number
   out_after_ea: number
   since_ea: number
-  /** Remaining now: Radiant + in after − out after. */
+  /** Total now: Radiant + in after − out after. */
   now_ea: number
+  /** Total now − on hold. */
+  available_ea: number
+  /** In Radiant's report, holding stock, or moved after it; a closed lot counts in no total. */
+  open: boolean
   kind: CompareKind
 }
 

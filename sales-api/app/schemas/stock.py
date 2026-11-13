@@ -119,7 +119,9 @@ class CountCompareRow(BaseModel):
     in_after_ea: int = 0      # came in after the count (944, RA)
     out_after_ea: int = 0     # went out after the count (945, adjustments)
     since_ea: int = 0         # in after − out after
-    now_ea: int = 0           # remaining now: Radiant + in after − out after (the figure once the count is the start)
+    now_ea: int = 0           # total now: Radiant + in after − out after (the figure once the count is the start)
+    available_ea: int = 0     # total now − on hold
+    open: bool = False        # in Radiant's report, holding stock, or moved after it; a closed lot counts in no total
     kind: str = "match"       # match | differs | sales_only | radiant_only | no_lot
 
 

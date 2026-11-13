@@ -249,6 +249,8 @@ class StockCountService(ReadOnlyService[StockCount, StockCountRead]):
             r.days_to_expiry = (r.expiry - today).days if r.expiry else None
             r.difference_ea = r.sales_ea - r.radiant_ea
             r.now_ea = r.radiant_ea + r.since_ea
+            r.available_ea = r.now_ea - r.hold_ea
+            r.open = bool(r.in_report or r.now_ea or r.in_after_ea or r.out_after_ea)
             r.kind = ("match" if not r.difference_ea else "radiant_only" if not r.sales_ea and r.in_report
                       else "no_lot" if lot is None and not r.in_report else "sales_only" if not r.in_report else "differs")
             out.append(r)

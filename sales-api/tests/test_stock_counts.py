@@ -109,6 +109,11 @@ async def _upload(t, when):
 async def test_the_report_compares_each_lot_and_apply_starts_from_radiant(p7):  # noqa: F811
     await _received(p7)
     when = datetime.now(timezone.utc) - timedelta(minutes=1)
+    async with p7.factory(SYSTEM_ACTOR) as u:  # an old lot: 30 received long ago, never shipped in Sales' records
+        await u.session.execute(sa.text("""INSERT INTO sales_stock_moves (at, item_code, lot, qty_ea, from_place, to_place, source_type, source_key)
+                                           VALUES (:at, 'CF0092', 'OLD1', 30, 'TO_RADIANT', 'RADIANT', 'receipt_row', 'old-1')"""),
+                                {"at": when - timedelta(days=300)})
+        await u.commit()
     c = await _upload(p7, when)
     assert (c.lines, c.total_ea, c.hold_ea, c.applied_at) == (4, 8000 + 7200 + 5 + 145, 5, None)
     async with p7.factory(OP) as u:
@@ -116,6 +121,11 @@ async def test_the_report_compares_each_lot_and_apply_starts_from_radiant(p7):  
     a = rows[("CF0092", "26C253125110231")]
     assert (a.received_ea, a.shipped_ea, a.sales_ea, a.radiant_ea, a.difference_ea, a.kind) == (8400, 0, 8400, 8000, 400, "differs")
     assert (a.in_ea, a.in_after_ea, a.out_after_ea, a.now_ea) == (8400, 0, 0, 8000)
+    hold = rows[("CF0110", "25C26112511032")]
+    assert (hold.now_ea, hold.hold_ea, hold.available_ea, hold.open) == (5, 5, 0, True)  # on hold: in the total, not available
+    old = rows[("CF0092", "OLD1")]  # an old lot Sales still holds 30 of, Radiant none: closed, in no total
+    assert (old.sales_ea, old.radiant_ea, old.now_ea, old.kind, old.open) == (30, 0, 0, "sales_only", False)
+    assert rows[("CF0092", "26C253125110231")].open
     assert rows[("CF0103", "26E248121010211")].kind == "match"
     assert rows[("CHEP", None)].kind == "radiant_only" and rows[("CF0110", "25C26112511032")].hold_ea == 5
     before = await _lots(p7)

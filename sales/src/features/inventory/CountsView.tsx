@@ -46,16 +46,6 @@ function ExpiryCell({ value, days }: { value: string | null; days: number | null
   )
 }
 
-/** Radiant's figure, with what of it is on hold under it. */
-function RadiantCell({ r }: { r: { radiant_ea: number; hold_ea: number } }) {
-  return (
-    <span className="flex flex-col items-end">
-      <span className="font-medium">{formatNumber(r.radiant_ea)}</span>
-      {r.hold_ea > 0 && <span className="text-xs text-warning-700">{formatNumber(r.hold_ea)} on hold</span>}
-    </span>
-  )
-}
-
 const strong = (v: number) => <span className="block text-right font-semibold tabular-nums">{formatNumber(v)}</span>
 const signed = (v: number) => (
   <span className={`block text-right font-semibold tabular-nums ${v ? 'text-warning-700' : 'text-neutral-400'}`}>{v > 0 ? `+${formatNumber(v)}` : formatNumber(v)}</span>
@@ -70,9 +60,9 @@ function figureColumns<R extends ItemFigures>(): ColumnDef<R, unknown>[] {
     startHidden(c.number('received_ea' as never, 'Received (944)')),
     startHidden(c.number('returned_ea' as never, 'Returned (RA)')),
     c.number('shipped_ea' as never, 'Out (945)'),
-    c.number('adjusted_ea' as never, 'Adjusted'),
+    startHidden(c.number('adjusted_ea' as never, 'Adjusted')),
     { id: 'sales_ea', header: 'Remaining (Sales)', cell: ({ row }) => strong(row.original.sales_ea) },
-    { id: 'radiant_ea', header: 'Radiant', cell: ({ row }) => <RadiantCell r={row.original} /> },
+    c.number('radiant_ea' as never, 'Radiant'),
     { id: 'difference_ea', header: 'Difference', cell: ({ row }) => signed(row.original.difference_ea) },
   ]
 }
@@ -82,7 +72,9 @@ function afterColumns<R extends ItemFigures>(applied: boolean): ColumnDef<R, unk
   return [
     c.number('in_after_ea' as never, 'In after'),
     c.number('out_after_ea' as never, 'Out after'),
-    { id: 'now_ea', header: applied ? 'Remaining now' : 'Remaining now (once applied)', cell: ({ row }) => strong(row.original.now_ea) },
+    { id: 'now_ea', header: applied ? 'Total' : 'Total (once applied)', cell: ({ row }) => strong(row.original.now_ea) },
+    c.number('hold_ea' as never, 'On hold'),
+    { id: 'available_ea', header: 'Available', cell: ({ row }) => strong(row.original.available_ea) },
   ]
 }
 
@@ -91,17 +83,19 @@ function compareColumns(applied: boolean): ColumnDef<CountCompareRow, unknown>[]
     { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => <span className="font-medium">{row.original.lot ?? '(no lot)'}</span> },
     { accessorKey: 'expiry', header: 'Expiry', cell: ({ row }) => <ExpiryCell value={row.original.expiry} days={row.original.days_to_expiry} /> },
     ...figureColumns<CountCompareRow>(),
-    { accessorKey: 'kind', header: 'Result', cell: ({ row }) => <StatusCell value={COMPARE_KIND[row.original.kind]} tone={KIND_TONE[row.original.kind]} /> },
+    { accessorKey: 'kind', header: 'Result', cell: ({ row }) => (row.original.open
+      ? <StatusCell value={COMPARE_KIND[row.original.kind]} tone={KIND_TONE[row.original.kind]} />
+      : <StatusCell value="Closed" tone="neutral" />) },
     ...afterColumns<CountCompareRow>(applied),
   ]
 }
 
 const SUMS = ['in_ea', 'received_ea', 'returned_ea', 'shipped_ea', 'adjusted_ea', 'sales_ea', 'radiant_ea', 'hold_ea', 'difference_ea',
-  'in_after_ea', 'out_after_ea', 'since_ea', 'now_ea'] as const
+  'in_after_ea', 'out_after_ea', 'since_ea', 'now_ea', 'available_ea'] as const
 type ItemFigures = Record<(typeof SUMS)[number], number>
 
 interface ItemGroup extends ItemFigures {
-  item_code: string; description: string | null; lots: CountCompareRow[]; differing: number; first_expiry: string | null; first_days: number | null
+  item_code: string; description: string | null; lots: CountCompareRow[]; open: number; closed: number; differing: number; first_expiry: string | null; first_days: number | null
 }
 
 function group(rows: CountCompareRow[]): ItemGroup[] {
@@ -109,16 +103,18 @@ function group(rows: CountCompareRow[]): ItemGroup[] {
   for (const r of rows) {
     let g = by.get(r.item_code)
     if (!g) {
-      g = { item_code: r.item_code, description: r.description, lots: [], differing: 0, first_expiry: null, first_days: null,
+      g = { item_code: r.item_code, description: r.description, lots: [], open: 0, closed: 0, differing: 0, first_expiry: null, first_days: null,
         ...(Object.fromEntries(SUMS.map((k) => [k, 0])) as ItemFigures) }
       by.set(r.item_code, g)
     }
     g.lots.push(r)
+    if (!r.open) { g.closed += 1; continue }  // a closed lot counts in no total (user 2026-11-13)
+    g.open += 1
     for (const k of SUMS) g[k] += r[k]
     if (r.kind !== 'match') g.differing += 1
     if (r.expiry && r.now_ea > 0 && (!g.first_expiry || r.expiry < g.first_expiry)) { g.first_expiry = r.expiry; g.first_days = r.days_to_expiry }
   }
-  for (const g of by.values()) g.lots.sort((a, b) => (a.expiry ?? '9999').localeCompare(b.expiry ?? '9999') || (a.lot ?? '').localeCompare(b.lot ?? ''))
+  for (const g of by.values()) g.lots.sort((a, b) => Number(b.open) - Number(a.open) || (a.expiry ?? '9999').localeCompare(b.expiry ?? '9999') || (a.lot ?? '').localeCompare(b.lot ?? ''))
   return [...by.values()]
 }
 
@@ -126,31 +122,44 @@ const colGroup = columnsOf<ItemGroup>()
 
 function Comparison({ count }: { count: StockCountRead }) {
   const [onlyDiff, setOnlyDiff] = useState(false)
+  const [showClosed, setShowClosed] = useState(false)
   const q = useQuery({ queryKey: ['stock-count-compare', count.id, count.version], queryFn: () => fetchCountCompare(count.id) })
-  const groups = useMemo(() => group((q.data ?? []).filter((r) => !onlyDiff || r.kind !== 'match')), [q.data, onlyDiff])
+  const all = useMemo(() => q.data ?? [], [q.data])
+  // An item lists its open lots and adds up only them; a closed lot (no stock, not in Radiant's report, no move
+  // after it) shows only on request, greyed, in no total (user 2026-11-13).
+  const groups = useMemo(() => group(all.filter((r) => (showClosed || r.open) && (!onlyDiff || r.kind !== 'match'))), [all, onlyDiff, showClosed])
   const lotCols = useMemo(() => compareColumns(!!count.applied_at), [count.applied_at])
   const itemCols = useMemo<ColumnDef<ItemGroup, unknown>[]>(() => [
     { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => <span className="font-medium">{row.original.item_code}</span> },
-    colGroup.text('description', 'Description'),
-    { id: 'lots', header: 'Lots', cell: ({ row: { original: g } }) => `${g.lots.length}${g.differing ? ` · ${g.differing} differ` : ''}` },
+    startHidden(colGroup.text('description', 'Description')),
+    { id: 'lots', header: 'Open lots', cell: ({ row: { original: g } }) => (
+      <span className="whitespace-nowrap">
+        {formatNumber(g.open)}{g.differing ? <span className="text-warning-700"> · {g.differing} differ</span> : null}
+        {g.closed ? <span className="block text-xs text-neutral-400">+ {g.closed} closed</span> : null}
+      </span>
+    ) },
     { id: 'first_expiry', header: 'First expiry', cell: ({ row }) => <ExpiryCell value={row.original.first_expiry} days={row.original.first_days} /> },
     ...figureColumns<ItemGroup>(),
     ...afterColumns<ItemGroup>(!!count.applied_at),
   ], [count.applied_at])
-  const all = q.data ?? []
-  const differ = all.filter((r) => r.kind !== 'match').length
+  const open = all.filter((r) => r.open)
+  const differ = open.filter((r) => r.kind !== 'match').length
   return (
-    <Section title="Per item and lot: up to the report, and after it" plain>
+    <Section title="Per item and open lot: up to the report, and after it" plain>
       {count.note && <Callout label="Note">{count.note}</Callout>}
       <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-600">
-        <span>{formatNumber(all.length)} lots · {formatNumber(all.length - differ)} match · {formatNumber(differ)} differ</span>
+        <span>
+          {formatNumber(open.length)} open lots · {formatNumber(open.length - differ)} match · {formatNumber(differ)} differ
+          {' · '}{formatNumber(all.length - open.length)} closed (not counted)
+        </span>
         <Checkbox checked={onlyDiff} onCheckedChange={(v) => setOnlyDiff(v === true)} label="Only the lots that differ" />
+        <Checkbox checked={showClosed} onCheckedChange={(v) => setShowClosed(v === true)} label="Show closed lots" />
       </div>
       <LocalTable<ItemGroup> ariaLabel="Comparison by item" columns={itemCols} rows={groups} rowKey={(g) => g.item_code}
         fetching={q.isFetching} emptyTitle={q.isLoading ? 'Loading…' : 'Nothing to compare'}
         expand={(g) => (
           <LocalTable<CountCompareRow> ariaLabel={`Lots of ${g.item_code}`} columns={lotCols} rows={g.lots} density="compact"
-            rowKey={(r) => `${r.item_code}|${r.lot ?? ''}`} />
+            rowKey={(r) => `${r.item_code}|${r.lot ?? ''}`} rowAttrs={(r) => (r.open ? {} : { className: 'opacity-50', 'data-closed': true })} />
         )} />
     </Section>
   )
