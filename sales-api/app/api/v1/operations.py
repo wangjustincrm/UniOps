@@ -12,12 +12,12 @@ from app.platform.crud_router import crud_router, read_router
 from app.runtime import Runtime, get_runtime
 from app.schemas.audit import AuditEntryRead
 from app.schemas.connections import (
-    ConnectionRead, ConnectionTestRead, CursorReset, EdiSettings, SchedulerSettings, SchedulerUpdate, ShadowSetting,
+    ConnectionRead, ConnectionTestRead, CursorReset, EdiSettings, SchedulerSettings, SchedulerUpdate,
 )
 from app.schemas.operations import DocumentRead, RunStarted
 from app.services import audit
 from app.services.connections import (
-    READ, ConnectionService, EdiSettingsService, SchedulerSettingsService, ShadowSettingService,
+    READ, ConnectionService, EdiSettingsService, SchedulerSettingsService,
 )
 from app.services.operations import DocumentActions, DocumentService, LogService, RunService
 
@@ -139,16 +139,3 @@ async def put_edi_settings(u: UoW, body: EdiSettings):
     return out
 
 
-shadow_setting = APIRouter(prefix="/config/shadow", tags=["connections"])
-
-
-@shadow_setting.get("", response_model=ShadowSetting)
-async def get_shadow(u: UoW):
-    return await ShadowSettingService(u).get()
-
-
-@shadow_setting.put("", response_model=ShadowSetting)
-async def put_shadow(u: UoW, body: ShadowSetting):
-    out = await ShadowSettingService(u).update(body)
-    await u.commit()
-    return out

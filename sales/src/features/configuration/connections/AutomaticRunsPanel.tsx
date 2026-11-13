@@ -3,16 +3,16 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import { ActionButton, ConfirmAction, ErrorMessage, Hint, SchemaForm, Skeleton, queryKeys, useCan, type FieldSpec } from '@/platform-ui'
 import { connectionsClient, describeSchedule, saveSchedulerSettings, type ConnectionRead } from './connectionsApi'
-import { SCHEDULER_KEY, useAutomaticRuns, useShadowSetting } from './connectionSettings'
+import { SCHEDULER_KEY, useAutomaticRuns } from './connectionSettings'
 
 const minutesSchema = z.object({ system_minutes: z.number({ error: 'Enter minutes' }).int().min(1, 'At least 1').max(1440) })
 const minutesFields: FieldSpec[] = [
   { name: 'system_minutes', label: 'System job: every (minutes)', type: 'number', required: true,
-    hint: 'Queues 940s and 943s, sends the outbox, times out ACKs, moves invoices on, compares with Zoho in the shadow run.' },
+    hint: 'Queues 940s and 943s, sends the outbox, times out ACKs, moves invoices on, keeps the inventory.' },
 ]
 
 /** What turning it on starts, in words. */
-function willStart(active: ConnectionRead[], minutes: number, shadow: boolean | undefined): string {
+function willStart(active: ConnectionRead[], minutes: number): string {
   const running = active.filter((c) => !c.schedule_paused)
   const held = active.filter((c) => c.schedule_paused)
   return [
@@ -20,8 +20,7 @@ function willStart(active: ConnectionRead[], minutes: number, shadow: boolean | 
       : 'No active connection has a running schedule yet.',
     held.length ? `Paused on their own, they stay paused: ${held.map((c) => c.name).join(', ')}.` : '',
     `The system job runs every ${minutes} min.`,
-    shadow ? 'The shadow run is on: files are read and left in place, and nothing is sent.'
-      : 'The shadow run is off: Sales acts on what it reads, and 940s go out for orders that qualify, as each connection\'s mode and the write settings allow.',
+    'Sales acts on what it reads, and 940s go out for orders that qualify, as each connection\'s Write tick and the write settings allow.',
   ].filter(Boolean).join(' ')
 }
 
@@ -31,7 +30,6 @@ function willStart(active: ConnectionRead[], minutes: number, shadow: boolean | 
 export function AutomaticRunsPanel() {
   const qc = useQueryClient()
   const { state, settings, error } = useAutomaticRuns()
-  const shadow = useShadowSetting()
   const canEdit = useCan('sales.config')
   const [confirming, setConfirming] = useState(false)
   const active = useQuery({
@@ -63,7 +61,7 @@ export function AutomaticRunsPanel() {
         </span>
       </section>
       <ConfirmAction open={confirming} onOpenChange={setConfirming} title="Turn automatic runs on?"
-        description={willStart(active.data?.items ?? [], settings.system_minutes, shadow.data?.shadow_mode)}
+        description={willStart(active.data?.items ?? [], settings.system_minutes)}
         confirmLabel="Turn on" onConfirm={() => save({ paused: false })} />
       <div className="flex flex-col gap-2">
         <SchemaForm key={settings.system_minutes} schema={minutesSchema} fields={minutesFields} readOnly={!canEdit}

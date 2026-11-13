@@ -87,7 +87,7 @@ describe('Health (FR-OB-52a)', () => {
     renderAt('/health', <HealthPage />)
     const checks = await screen.findByRole('table', { name: 'Health checks' })
     expect(within(checks).getByText('authentication failed')).toBeInTheDocument()
-    expect(screen.getByText('On — nothing is sent, Zoho is live')).toBeInTheDocument()
+    expect(screen.queryByText(/Zoho is live/)).toBeNull()  // the shadow run is retired: no row for it
     expect(within(screen.getByRole('table', { name: 'Go-live gate' })).getByText('no active rule; no test notification sent')).toBeInTheDocument()
     const row = within(checks).getByText('Connection radiant').closest('tr')!
     fireEvent.click(within(row).getByRole('button', { name: 'Test' }))

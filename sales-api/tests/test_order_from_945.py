@@ -6,27 +6,20 @@ shipment made once; a later part joining the same order; refused outside shadow.
 from types import SimpleNamespace
 
 import pytest
-import pytest_asyncio
 import sqlalchemy as sa
-from httpx import ASGITransport, AsyncClient
 
-from app.core.config import settings
-from app.core.deps import get_uow_factory
 from app.domain.edi945 import zoho_reference
 from app.domain.order_rules import facts_of, qualifies
 from app.domain.orders import FROM_945
 from app.domain.status import Fulfillment as F
-from app.main import app
 from app.models.config import Partner
 from app.models.orders import Order
 from app.models.shipments import Shipment
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.errors import BusinessError, InvalidInput
-from app.runtime import build_runtime, get_runtime
 from app.scripts.orders_from_945 import run
 from app.services.order_from_945 import OrderFrom945
 from app.services.settings import SETTINGS, SHADOW_MODE
-from tests.conftest import make_token
 from tests.test_invoicing import confirm, inv_status, p6  # noqa: F401 — p6 is a fixture
 from tests.test_orders import OP, T0, env, po, run_850  # noqa: F401 — env is a fixture
 from tests.test_outbound import edi as p4_edi  # noqa: F401 — a fixture
@@ -267,45 +260,4 @@ async def test_the_script_is_a_dry_run_by_default_and_uses_the_same_path(p5):  #
     assert (again["shipments"], again["created"]) == (0, 0)
     text = str(done)
     assert "STORE" not in text and "MAIN ST" not in text and "Mississauga" not in text
-
-
-GRANTS = {"op": {"sales.read", "sales.order.operate"}, "reader": {"sales.read"}}
-OPERATOR, READER = ({"Authorization": f"Bearer {make_token(r)}"} for r in ("op", "reader"))
-
-
-@pytest_asyncio.fixture
-async def api(p5):  # noqa: F811
-    env_ = p5.edi.env
-
-    async def matrix(session, actor, key):  # noqa: ARG001
-        return key in GRANTS.get(actor.role or "", set())
-    env_.factory.permissions = matrix
-    runtime = build_runtime(settings, env_.factory, shopify=env_.shop)
-    app.dependency_overrides[get_uow_factory] = lambda: env_.factory
-    app.dependency_overrides[get_runtime] = lambda: runtime
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        c.p5 = p5
-        yield c
-    app.dependency_overrides.clear()
-
-
-async def test_the_endpoints_are_read_and_operate_and_documents_find_the_945(api):
-    sid = await a_945(api.p5)
-    [doc] = await api.p5.q("SELECT document_id d FROM sales_shipments")
-    r = await api.get(f"/api/v1/orders/shipments-without-order?document_id={doc['d']}", headers=READER)
-    assert r.status_code == 200
-    [plan] = r.json()
-    assert (plan["partner_code"], plan["po"], plan["refused"], plan["order_id"]) == ("WMT", "4550827924", None, None)
-    assert [(ln["item_code"], ln["qty_ea"]) for ln in plan["lines"]] == [("CF0092", 1320), ("CF0010", 600)]
-    found = (await api.get("/api/v1/documents?filter=shipments_without_order:gt:0", headers=READER)).json()
-    assert [(d["id"], d["shipments_without_order"]) for d in found["items"]] == [(doc["d"], 1)]
-    assert (await api.post(f"/api/v1/orders/shipments/{sid}/create-order", json={}, headers=READER)).status_code == 403
-    r = await api.post(f"/api/v1/orders/shipments/{sid}/create-order", json={}, headers=OPERATOR)
-    assert r.status_code == 201 and r.json()["source_type"] == FROM_945
-    assert (await api.get("/api/v1/documents?filter=shipments_without_order:gt:0", headers=READER)).json()["items"] == []
-    r = await api.post(f"/api/v1/orders/shipments/{sid}/create-order", json={}, headers=OPERATOR)
-    assert r.status_code == 409 and r.json()["error"]["code"] == "order945.has_order"
-    r = await api.get(f"/api/v1/orders/{(await api.p5.q('SELECT id FROM sales_orders'))[0]['id']}", headers=READER)
-    assert r.json()["lines"][0]["shipped_ea"] is None
-
 

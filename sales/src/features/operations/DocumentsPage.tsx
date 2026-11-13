@@ -4,7 +4,6 @@ import {
   ActionButton, ConfirmAction, DetailList, ListPage, LocalTable, RecordSheet, RefsCell, Section, StatusCell, formatDateTime, queryKeys,
   useOpenRecord, type ColumnDef, type RecordRef, Muted, ViewFileButton, columnsOf,
 } from '@/platform-ui'
-import { OrderFrom945 } from '@/features/orders/OrderFrom945'
 import { documentFile, documentsClient, downloadOriginal, ignoreDocument, readAgain, sendAgain, type DocumentRead } from './operationsApi'
 
 const colDocumentRead = columnsOf<DocumentRead>()
@@ -119,7 +118,9 @@ function Detail({ d }: { d: DocumentRead }) {
       ) }, ...(d.orders_total || d.transfers.length ? [{
         id: 'orders', label: 'Orders', count: d.orders_total || d.transfers.length, render: () => <BelongsTo d={d} />,
       }] : []), ...(d.shipments_without_order > 0 ? [{
-        id: 'no-order', label: 'No order', tone: 'warning' as const, render: () => <OrderFrom945 documentId={d.id} />,
+        id: 'no-order', label: 'No order', tone: 'warning' as const, render: () => (
+          <Muted as="p">{d.shipments_without_order} shipment(s) in this 945 match no order in Sales. The rows are kept with the file;
+            find the order (its number in the 945) or tell the warehouse.</Muted>),
       }] : [])]}
     />
     </>

@@ -83,7 +83,9 @@ def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify:
                                                  SEND_943: transfers.outbox_kind(), NOTIFY_EMAIL: email_kind(container.email, lambda: getattr(settings, "internal_email_domains", frozenset()))},
                           uow_factory, on_hook_failed=hook_failed(tasks))
     scheduler = SalesScheduler(uow_factory=uow_factory, run_model=Run, intake=intake, outbox_worker=worker,
-                               shopify_intake=shopify_intake, edi_intake=edi_intake, outbound=outbound, shadow=shadow,
+                               # Shadow compare retired (user 2026-11-13, step 1): no comparison runs; the shadow-run guards in
+                               # the steps stay until step 2 (after go-live), off.
+                               shopify_intake=shopify_intake, edi_intake=edi_intake, outbound=outbound, shadow=None,
                                shipments=shipments, invoicing=invoicing, transfers=transfers, tasks=tasks)
     return Runtime(container, uow_factory, intake, shopify_intake, edi_intake, scheduler, Background(), outbound, shipments,
                    invoicing, transfers, tasks)

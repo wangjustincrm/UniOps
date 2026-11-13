@@ -6,7 +6,6 @@ import DocumentsPage from '@/features/operations/DocumentsPage'
 import LotsPage from '@/features/lots/LotsPage'
 import InventoryPage from '@/features/inventory/InventoryPage'
 import RunsPage from '@/features/operations/RunsPage'
-import ShadowComparePage from '@/features/shadow/ShadowComparePage'
 import DeliveryPage from '@/features/invoices/DeliveryPage'
 import InvoicesPage from '@/features/invoices/InvoicesPage'
 import TransfersPage from '@/features/transfers/TransfersPage'
@@ -54,7 +53,6 @@ export const moduleRoutes: RouteDef[] = [
   },
   { path: '/lots', element: <LotsPage />, tab: { title: 'Lots', icon: 'Boxes', keyStrategy: 'static' } },
   { path: '/inventory', element: <InventoryPage />, tab: { title: 'Inventory', icon: 'Warehouse', keyStrategy: 'static' } },
-  { path: '/shadow', element: <ShadowComparePage />, tab: { title: 'Shadow compare', icon: 'GitCompare', keyStrategy: 'static' } },
   { path: '/deliveries', element: <DeliveryPage />, tab: { title: 'Delivery confirmation', icon: 'Truck', keyStrategy: 'static' } },
   { path: '/invoices', element: <InvoicesPage />, tab: { title: 'Invoices', icon: 'Receipt', keyStrategy: 'static' } },
   { path: '/transfers', element: <TransfersPage />, tab: { title: 'Transfers', icon: 'ArrowLeftRight', keyStrategy: 'static' } },

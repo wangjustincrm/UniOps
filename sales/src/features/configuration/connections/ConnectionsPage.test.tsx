@@ -21,7 +21,6 @@ const LINE = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample'
 const api = vi.hoisted(() => ({
   test: vi.fn(), pin: vi.fn(), clear: vi.fn(), importCsv: vi.fn(),
   edi: vi.fn(async (): Promise<{ connection_id: number | null; ack_timeout_minutes: number }> => ({ connection_id: null, ack_timeout_minutes: 120 })), saveEdi: vi.fn(),
-  shadow: vi.fn(async (): Promise<{ shadow_mode: boolean; open_orders?: number | null }> => ({ shadow_mode: true })), saveShadow: vi.fn(),
   scheduler: vi.fn(async () => ({ paused: false, system_minutes: 5, enabled: true })), saveScheduler: vi.fn(), create: vi.fn(), get: vi.fn(),
   runNow: vi.fn(), runs: vi.fn(async (): Promise<{ items: unknown[]; total: number }> => ({ items: [], total: 0 })), update: vi.fn(),
   list: vi.fn(), getRun: vi.fn(),
@@ -37,7 +36,6 @@ vi.mock('./connectionsApi', async (orig) => {
     fetchConnectionAudit: vi.fn(async () => []),
     testConnection: api.test, pinHostKey: api.pin, clearAuthLatch: api.clear,
     fetchEdiSettings: api.edi, saveEdiSettings: api.saveEdi,
-    fetchShadowSetting: api.shadow, saveShadowSetting: api.saveShadow,
   }
 })
 vi.mock('@/features/operations/operationsApi', async (orig) => {
@@ -71,18 +69,11 @@ async function open() {
 beforeEach(() => {
   api.list.mockResolvedValue({ items: [conn], total: 1 })
   api.edi.mockResolvedValue({ connection_id: null, ack_timeout_minutes: 120 })
-  api.shadow.mockResolvedValue({ shadow_mode: true })
   api.scheduler.mockResolvedValue({ paused: false, system_minutes: 5, enabled: true })
 })
 
 /** A summary card, once its value has come. */
 const card = (label: string, value: string) => screen.findByRole('button', { name: new RegExp(`^${label}\\s*${value}`, 'i') })
-
-/** The shadow panel, in the sheet its card opens. */
-async function shadowPanel() {
-  fireEvent.click(await card('Shadow run', '(On|Off)'))
-  return within(await screen.findByRole('dialog', { name: 'Shadow run' })).findByRole('region', { name: 'Shadow run' })
-}
 
 /** The open connection's "Schedule & runs" tab. */
 async function scheduleOf() {
@@ -175,57 +166,6 @@ describe('Connections page: warehouse EDI settings (P4)', () => {
     fireEvent.change(within(sheet).getByLabelText(/997 wait \(minutes\)/), { target: { value: '90' } })
     fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(api.saveEdi).toHaveBeenCalledWith({ connection_id: null, ack_timeout_minutes: 90, invoice_connection_id: null, internal_emails: [], operator_user_id: null, express_offered: true, ltl_from_lb: 150 }))
-  })
-})
-
-describe('Connections page: the shadow run switch', () => {
-  it('says what it does; only sales.config turns it off, after a confirmation', async () => {
-    const { unmount } = renderAs(['sales.read'])
-    let panel = await shadowPanel()
-    expect(await within(panel).findByText(/On: Zoho is live/)).toBeInTheDocument()
-    expect(within(panel).queryByText('Turn the shadow run off')).toBeNull()
-    unmount()
-    api.saveShadow.mockImplementation(async (d) => d)
-    renderAs(['sales.read', 'sales.config'])
-    panel = await shadowPanel()
-    fireEvent.click(await within(panel).findByText('Turn the shadow run off'))
-    expect(api.saveShadow).not.toHaveBeenCalled()
-    const confirm = await screen.findByRole('dialog', { name: 'Turn the shadow run off?' })
-    fireEvent.click(within(confirm).getByRole('button', { name: 'Turn off' }))
-    await waitFor(() => expect(api.saveShadow).toHaveBeenCalledWith({ shadow_mode: false }))
-  })
-})
-
-describe('Connections page: switching the shadow run on', () => {
-  it('asks first, saying how many open orders would be marked; nothing is sent until confirmed', async () => {
-    api.saveShadow.mockReset()
-    api.shadow.mockResolvedValue({ shadow_mode: false, open_orders: 26 })
-    api.saveShadow.mockImplementation(async () => {
-      api.shadow.mockResolvedValue({ shadow_mode: true })
-      return { shadow_mode: true, marked_orders: 26 }
-    })
-    renderAs(['sales.read', 'sales.config'])
-    const panel = await shadowPanel()
-    fireEvent.click(await within(panel).findByText('Turn the shadow run on'))
-    const confirm = await screen.findByRole('dialog', { name: 'Turn the shadow run on?' })
-    expect(confirm).toHaveTextContent("26 open orders will be marked as Zoho's")
-    expect(api.saveShadow).not.toHaveBeenCalled()
-    fireEvent.click(within(confirm).getByRole('button', { name: 'Turn on' }))
-    await waitFor(() => expect(api.saveShadow).toHaveBeenCalledWith({ shadow_mode: true }))
-    expect(await within(panel).findByText("26 open order(s) were marked as Zoho's.")).toBeInTheDocument()
-  })
-
-  it('cancelling the confirmation changes nothing', async () => {
-    api.saveShadow.mockReset()
-    api.shadow.mockResolvedValue({ shadow_mode: false, open_orders: 1 })
-    renderAs(['sales.read', 'sales.config'])
-    const panel = await shadowPanel()
-    fireEvent.click(await within(panel).findByText('Turn the shadow run on'))
-    const confirm = await screen.findByRole('dialog', { name: 'Turn the shadow run on?' })
-    expect(confirm).toHaveTextContent("1 open order will be marked")
-    fireEvent.click(within(confirm).getByRole('button', { name: 'Cancel' }))
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Turn the shadow run on?' })).toBeNull())
-    expect(api.saveShadow).not.toHaveBeenCalled()
   })
 })
 
@@ -439,7 +379,7 @@ describe('the Automatic runs switch', () => {
     expect(within(sheet).queryByRole('button', { name: /Turn automatic runs/ })).toBeNull()
   })
 
-  it('On asks first: which connections and how often, and the shadow run; nothing is sent until confirmed', async () => {
+  it('On asks first: which connections and how often; nothing is sent until confirmed', async () => {
     api.scheduler.mockResolvedValue(off)
     api.list.mockResolvedValue({ items: [conn, { ...conn, id: 8, name: 'held', schedule_paused: true }], total: 2 })
     renderAs(['sales.read', 'sales.config'])
@@ -451,21 +391,10 @@ describe('the Automatic runs switch', () => {
     expect(confirm).toHaveTextContent('These connections start reading now: radiant (every 5 min)')
     expect(confirm).toHaveTextContent('they stay paused: held')
     expect(confirm).toHaveTextContent('The system job runs every 5 min')
-    expect(confirm).toHaveTextContent('The shadow run is on')
+    expect(confirm).toHaveTextContent('Sales acts on what it reads')
     expect(api.saveScheduler).not.toHaveBeenCalled()
     fireEvent.click(within(confirm).getByRole('button', { name: 'Turn on' }))
     await waitFor(() => expect(api.saveScheduler).toHaveBeenCalledWith({ paused: false }))  // the switch alone
-  })
-
-  it('with the shadow run off it says Sales will act on what it reads', async () => {
-    api.scheduler.mockResolvedValue(off)
-    api.shadow.mockResolvedValue({ shadow_mode: false, open_orders: 0 })
-    renderAs(['sales.read', 'sales.config'])
-    const sheet = await sheetOf('Off')
-    const go = await within(sheet).findByRole('button', { name: 'Turn automatic runs on' })
-    await waitFor(() => expect(go).toBeEnabled())
-    fireEvent.click(go)
-    expect(await screen.findByRole('dialog', { name: 'Turn automatic runs on?' })).toHaveTextContent('The shadow run is off: Sales acts on what it reads')
   })
 
   it('Off needs no confirmation', async () => {

@@ -1,13 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
 import { fetchUsers } from '../notifications/notificationsApi'
-import { connectionsClient, fetchEdiSettings, fetchSchedulerSettings, fetchShadowSetting } from './connectionsApi'
+import { connectionsClient, fetchEdiSettings, fetchSchedulerSettings } from './connectionsApi'
 
 export const EDI_KEY = ['sales', 'config', 'edi-settings']
-export const SHADOW_KEY = ['sales', 'config', 'shadow']
 export const SCHEDULER_KEY = ['sales', 'config', 'scheduler']
-
-/** The shadow run's setting (on or off, and while off what switching it on would mark). */
-export const useShadowSetting = () => useQuery({ queryKey: SHADOW_KEY, queryFn: fetchShadowSetting })
 
 export type AutomaticRuns = 'on' | 'off' | 'unavailable'
 

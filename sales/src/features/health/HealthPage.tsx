@@ -95,7 +95,6 @@ export default function HealthPage() {
       </section>
       <section aria-label="Switches">
         <DetailList items={[
-          ['Shadow run', h.shadow_mode ? 'On — nothing is sent, Zoho is live' : 'Off'],
           ['Partner writes (SALES_PARTNER_WRITES_ENABLED)', h.partner_writes_enabled ? 'On' : 'Off — files and Shopify writes are refused'],
           ['External email (SALES_EXTERNAL_EMAIL_ENABLED)', h.external_email_enabled ? 'On' : 'Off — emails are refused and logged'],
           ['Automatic runs (SALES_SCHEDULER_ENABLED)', !h.scheduler_enabled ? 'Not available on this server' : h.scheduler_paused ? 'Off' : 'On'],
