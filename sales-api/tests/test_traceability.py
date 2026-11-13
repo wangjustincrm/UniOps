@@ -138,3 +138,27 @@ async def test_nothing_is_deleted_a_second_945_keeps_the_first_and_its_document(
     assert docs == [{"n": 2}]  # both raw 945s, as received
     p = await lots(p6, filters=[parse_filter("lot:eq:LOT-C")])
     assert [(r.applied, r.order_ref) for r in p.items] == [(False, "LBL-PO-1")]  # listed, marked not applied
+
+
+MIXED_PALLETS = ["LX*1", "MAN*GM*00077777770077782891", "W12*CP*60*40*0*EA**VN*CF0092", "N9*LT*LOT-A", "DTM*036*20280519",
+                 "W12*CP*60*10*0*EA**VN*CF0092", "N9*LT*LOT-C", "DTM*036*20280601",
+                 "LX*2", "MAN*GM*00077777770077782907", "W12*CP*60*10*0*EA**VN*CF0092", "N9*LT*LOT-B", "DTM*036*20261120"]
+ONE_PALLET = ["LX*1", "MAN*GM*00077777770077782891", "W12*CP*60*40*0*EA**VN*CF0092", "N9*LT*LOT-A", "DTM*036*20280519",
+              "W12*CP*60*20*0*EA**VN*CF0092", "N9*LT*LOT-B", "DTM*036*20261120"]
+
+
+async def test_a_pallet_total_prints_only_with_several_pallets_and_for_a_pallet_of_several_rows(p6):  # noqa: F811
+    """User 2026-11-13: keep the Pallet total row. It prints when the shipment has more than one pallet AND that pallet
+    holds more than one row (a one-row pallet is its own total; one pallet's total is the Shipment total)."""
+    o = await shipped(p6, "PO-MIX", rows=MIXED_PALLETS)
+    [sh] = await p6.q("SELECT id FROM sales_shipments WHERE order_id = :o", o=o.id)
+    async with p6.factory(OP) as u:
+        _, pdf = await OrderService(u).packing_list(o.id, sh["id"])
+    body = pdf_text(pdf)
+    assert body.count(b"Pallet total") == 1 and b"Shipment total" in body  # pallet 1 (two rows) only
+    o2 = await shipped(p6, "PO-ONE", rows=ONE_PALLET)
+    [sh2] = await p6.q("SELECT id FROM sales_shipments WHERE order_id = :o", o=o2.id)
+    async with p6.factory(OP) as u:
+        _, pdf2 = await OrderService(u).packing_list(o2.id, sh2["id"])
+    body2 = pdf_text(pdf2)
+    assert b"Pallet total" not in body2 and b"Shipment total" in body2  # one pallet: the Shipment total says it
