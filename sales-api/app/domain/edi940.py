@@ -25,6 +25,9 @@ ID_QUALIFIER = "94"
 LABEL_WALMART, LABEL_OTHER = "UCC_CRM_WMT", "UCC_CRM_LBW"
 
 
+PUROLATOR, LTL = "Purolator", "LTL"
+CARRIERS = (PUROLATOR, LTL)
+
 @dataclass(frozen=True)
 class Address:
     name: str | None = None
@@ -78,6 +81,10 @@ class Order940:
     express: bool                # the shipping method says "express"
     lines: tuple[Line940, ...]
     partner_name: str | None = None  # N9*E1: CRM-940_<number>_<name without spaces>_<PO>
+    # A manual order goes in the retailer's layout (user 2026-11-13: Radiant rejected the Shopify layout
+    # for it), by the carrier chosen on it: Purolator (parcel) or LTL.
+    manual: bool = False
+    carrier: str | None = None       # "Purolator" / "LTL" (manual orders)
 
 
 @dataclass
@@ -132,6 +139,8 @@ def build_940(o: Order940, control_no: int, now: datetime) -> Built940:
             errors.append(f"{label} is empty")
     if o.walmart and not (o.dc_number or "").strip():
         errors.append("a Walmart order needs its DC number (DC routing)")
+    if o.manual and o.carrier not in CARRIERS:
+        errors.append("a manual order needs its carrier: Purolator or LTL")
 
     def party(code: str, a: Address) -> list[str]:
         country = (a.country or "").strip() or "CA"  # AC-OB-30: an empty country is sent as Canada
@@ -153,7 +162,7 @@ def build_940(o: Order940, control_no: int, now: datetime) -> Built940:
     body.append(segment("N1", SHIP_FROM[0], SHIP_FROM[1], ID_QUALIFIER, SHIP_FROM[2]))
     body.append(segment("N1", WAREHOUSE[0], WAREHOUSE[1], ID_QUALIFIER, WAREHOUSE[2]))
     body += party("ST", st)
-    if not o.retail:  # the ship-to's contact, between the two parties
+    if not o.retail or o.carrier == PUROLATOR:  # the ship-to's contact (a parcel needs it), between the two parties
         c = o.contact or {}
         body.append(segment("PER", "CN", v("contact.name", c.get("name") or st.name, issues),
                             "EM" if c.get("email") else "", v("contact.email", c.get("email"), issues),
@@ -181,7 +190,7 @@ def build_940(o: Order940, control_no: int, now: datetime) -> Built940:
         body.append(segment("G62", "38", today))
         if o.requested_delivery:
             body.append(segment("G62", "79", _d(o.requested_delivery)))
-        body.append("W66*PP*LT********WIFS")
+        body.append(f"W66*PP*U***{'EXP' if o.express else 'GND'}*****PRLA" if o.carrier == PUROLATOR else "W66*PP*LT********WIFS")
     else:
         body.append(f"W66*PP*U***{'EXP' if o.express else 'GND'}*****PRLA")
     total_qty, total_weight = 0, Decimal(0)

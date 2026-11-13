@@ -537,7 +537,7 @@ async def test_an_850_resend_updates_the_order(env):
 
 async def test_ac19_a_manual_draft_is_never_queued_and_after_submit_it_is(env):
     from app.schemas.orders import AddressIn, ManualLineIn, ManualOrderIn
-    data = ManualOrderIn(partner_code="MAN", customer_reference="staff-1", ship_to=AddressIn(name="Staff shop", phone="613-555-0100", address1="1680 Venture Dr", city="Kingston", province="ON", zip="K7P 0E9"), lines=[
+    data = ManualOrderIn(partner_code="MAN", customer_reference="staff-1", carrier="LTL", ship_to=AddressIn(name="Staff shop", phone="613-555-0100", address1="1680 Venture Dr", city="Kingston", province="ON", zip="K7P 0E9"), lines=[
         ManualLineIn(item_code="CF0092", quantity=Decimal(2), unit="CASE")])
     async with env.factory(OP) as u:
         o = await ManualOrderService(u).create(data)
@@ -558,7 +558,7 @@ async def test_a_manual_order_with_a_bad_line_cannot_be_submitted(env):
     from app.schemas.orders import AddressIn, ManualLineIn, ManualOrderIn
     async with env.factory(OP) as u:
         preview = await ManualOrderService(u).preview([ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="PALLET")])
-        o = await ManualOrderService(u).create(ManualOrderIn(partner_code="MAN", ship_to=AddressIn(name="Staff shop", phone="613-555-0100", address1="1680 Venture Dr", city="Kingston", province="ON", zip="K7P 0E9"), lines=[
+        o = await ManualOrderService(u).create(ManualOrderIn(partner_code="MAN", carrier="Purolator", ship_to=AddressIn(name="Staff shop", phone="613-555-0100", address1="1680 Venture Dr", city="Kingston", province="ON", zip="K7P 0E9"), lines=[
             ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="PALLET")]))
         await u.commit()
     assert preview[0].problem == "no conversion for unit PALLET"

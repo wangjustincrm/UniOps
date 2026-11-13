@@ -8,7 +8,7 @@ import {
 } from '@/platform-ui'
 import { itemOptions, itemUnits, manualPartnerOptions } from '../configuration/lookups'
 import {
-  createManual, previewManual, updateManual, type LinePreview, type ManualLine, type ManualOrderIn, type OrderDetail, type OrderRead,
+  CARRIERS, createManual, previewManual, updateManual, type LinePreview, type ManualLine, type ManualOrderIn, type OrderDetail, type OrderRead,
 } from './ordersApi'
 
 const OPERATE = 'sales.order.operate'
@@ -17,6 +17,7 @@ const blank: ManualLine = { item_code: '', quantity: 1, unit: 'EA' }
 const schema = z.object({
   partner_code: z.string().min(1, 'Choose the customer'),
   customer_reference: z.string().trim().max(50).nullable().optional(),
+  carrier: z.string().nullable().optional(),
   requested_delivery_date: z.string().nullable().optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
   ship_to: addressSchema({ phone: true }),
@@ -28,6 +29,8 @@ const fields: FieldSpec[] = [
   { name: 'partner_code', label: 'Customer', type: 'reference', required: true, loadOptions: (q) => manualPartnerOptions(q),
     hint: 'Who the order is for. Manual orders use partners whose channel is Manual (Configuration → Partners).' },
   { name: 'customer_reference', label: 'Customer PO / reference', hint: "The customer's own number for this order, if they gave one." },
+  { name: 'carrier', label: 'Ships by', type: 'segmented', options: CARRIERS,
+    hint: 'Purolator: a parcel (the ship-to phone goes with it). LTL: a pallet shipment, as a retailer order. Needed before it is submitted.' },
   { name: 'requested_delivery_date', label: 'Requested delivery', type: 'date' },
   { name: 'notes', label: 'Notes', type: 'textarea' },
 ]
@@ -76,7 +79,7 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
     <MasterDetailForm<ManualLine>
       schema={schema}
       fields={fields}
-      defaultValues={{ partner_code: draft?.partner_code ?? single, customer_reference: draft?.source_order_number ?? '',
+      defaultValues={{ partner_code: draft?.partner_code ?? single, customer_reference: draft?.source_order_number ?? '', carrier: draft?.shipping_method ?? '',
         requested_delivery_date: draft?.requested_delivery_date ?? '', notes: draft?.notes ?? '', ship_to: shipToDefaults(draft?.ship_to) }}
       addresses={[{ name: 'ship_to', legend: 'Ship to', phoneRequired: true }]}
       lines={{ label: 'Order lines', columns, initial: lines, add: () => ({ ...blank }), removable: true,
@@ -96,7 +99,8 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
       onSubmit={async (v, ls) => {
         const body: ManualOrderIn = { partner_code: String(v.partner_code), customer_reference: (v.customer_reference as string) ?? null,
           requested_delivery_date: (v.requested_delivery_date as string) ?? null, notes: (v.notes as string) ?? null,
-          ship_to: cleanAddress(v.ship_to as Record<string, unknown>), lines: ls }
+          ship_to: cleanAddress(v.ship_to as Record<string, unknown>), lines: ls,
+          carrier: v.carrier === 'Purolator' || v.carrier === 'LTL' ? v.carrier : null }
         onSaved(draft ? await updateManual(draft.id, body, draft.version) : await createManual(body))
       }}
     />

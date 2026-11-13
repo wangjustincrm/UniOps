@@ -463,15 +463,25 @@ async def test_a_settings_save_writes_only_what_changes_and_answers_what_was_wri
 
 
 async def test_a_manual_order_with_its_ship_to_builds_a_valid_940(edi):
+    """User 2026-11-13: Radiant rejected a manual order's 940 in the Shopify layout (W05-02 the customer's text,
+    two G62): a manual order goes in the retailer's layout, by its carrier — Purolator (parcel) or LTL."""
+    import pytest
+    from app.platform.errors import InvalidInput
     from app.schemas.orders import AddressIn, ManualLineIn, ManualOrderIn
     from app.services.order_views import ManualOrderService
+    ship = AddressIn(name="Staff shop", phone="613-555-0100", attention="J. Doe", address1="1680 Venture Dr", city="Kingston",
+                     province="ON", zip="k7p0e9")
     async with edi.env.factory(OP) as u:
-        o = await ManualOrderService(u).create(ManualOrderIn(
-            partner_code="MAN", customer_reference="phone-7",
-            ship_to=AddressIn(name="Staff shop", phone="613-555-0100", attention="J. Doe", address1="1680 Venture Dr", city="Kingston", province="ON", zip="k7p0e9"),
-            lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]))
+        o = await ManualOrderService(u).create(ManualOrderIn(partner_code="MAN", customer_reference="Canada Royal Milk", ship_to=ship,
+                                                             lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]))
         await u.commit()
     async with edi.env.factory(OP) as u:
+        with pytest.raises(InvalidInput) as e:  # how it ships is chosen before it goes
+            await ManualOrderService(u).submit(o.id, o.version)
+    assert e.value.code == "order.carrier"
+    async with edi.env.factory(OP) as u:
+        o = await ManualOrderService(u).update(o.id, ManualOrderIn(partner_code="MAN", customer_reference="Canada Royal Milk", ship_to=ship,
+                                               carrier="Purolator", lines=[ManualLineIn(item_code="CF0092", quantity=Decimal(1), unit="CASE")]), o.version)
         o = await ManualOrderService(u).submit(o.id, o.version)
         await u.commit()
     edi.clock.now = o.paid_at + timedelta(minutes=1)
@@ -480,8 +490,30 @@ async def test_a_manual_order_with_its_ship_to_builds_a_valid_940(edi):
     assert (await edi.worker.run_once()).done == 1
     [(_, content)] = edi.store.files.items()
     segs = segments(content)
+    assert [s for s in segs if s[0] == "W05"][0] == ["W05", "N", f"{o.order_number:09d}", o.source_reference]  # the retailer's layout
+    assert [s[1] for s in segs if s[0] == "G62"] == ["10", "38"]
+    assert [s for s in segs if s[0] == "W66"][0][:2] == ["W66", "PP"] and "PRLA" in [s for s in segs if s[0] == "W66"][0]
+    assert any(s[0] == "PER" for s in segs)                    # a parcel carries the contact
     assert ["N1", "ST", "Staff shop"] == [s for s in segs if s[0] == "N1" and s[1] == "ST"][0][:3]
     assert ["N4", "Kingston", "ON", "K7P 0E9"] == [s for s in segs if s[0] == "N4"][0][:4]
+
+
+def test_a_manual_order_by_ltl_ships_as_a_retailer_s_and_none_chosen_is_refused():
+    from datetime import date as _date
+    from datetime import datetime as _dt
+    from app.domain.edi940 import Address, Line940, Order940, build_940
+    a = Address(name="Shop", address1="1 Rd", city="Kingston", province="ON", zip="K7P 0E9", country="CA")
+    def order(carrier):
+        return Order940(order_id=1, order_number=1018769, retail=True, source_order_number="MAN-1018769", source_reference="MAN-1018769",
+                        partner_code="MAN", walmart=False, label_code=None, dc_number=None, order_type=None, department=None,
+                        requested_delivery=_date(2026, 11, 20), ship_to=a, bill_to=a, contact={}, express=False,
+                        lines=(Line940(line_no=1, item_code="CF0092", qty_ea=6, buyer_part=None, gtin=None, item_name=None,
+                                       weight_lb_per_ea=Decimal("2.03"), warehouse_held=True),), manual=True, carrier=carrier)
+    built = build_940(order("LTL"), 1010099, _dt(2026, 11, 13, 10, 0))
+    segs = segments(built.content)
+    assert not built.errors and [s for s in segs if s[0] == "W66"][0] == ["W66", "PP", "LT", "", "", "", "", "", "", "", "WIFS"]
+    assert not any(s[0] == "PER" for s in segs)
+    assert "a manual order needs its carrier: Purolator or LTL" in build_940(order(None), 1010100, _dt(2026, 11, 13, 10, 0)).errors
 
 
 async def test_a_shopify_940_bills_the_ship_to_whatever_the_billing_address(edi):  # user 2026-11-10

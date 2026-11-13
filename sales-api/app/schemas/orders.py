@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationInfo, field_validator
 
@@ -25,6 +25,7 @@ class OrderRead(BaseModel):
     partner_code: str
     partner_name: str | None = None  # the partner's name (lists show it; the code in its tooltip)
     source_type: str
+    shipping_method: str | None = None  # Shopify's shipping line; a manual order's carrier (Purolator / LTL)
     source_order_id: str
     source_order_number: str | None
     source_reference: str | None
@@ -369,6 +370,8 @@ class ManualOrderIn(BaseModel):
     ship_to: AddressIn  # required: the 940 cannot go without it
     notes: Text | None = None
     lines: Annotated[list[ManualLineIn], Field(min_length=1, max_length=200)]
+    # How it ships (user 2026-11-13): Purolator (parcel) or LTL; required to submit.
+    carrier: Literal["Purolator", "LTL"] | None = None
 
 
 class CancelOrderIn(BaseModel):
@@ -449,6 +452,7 @@ class AmendOrderIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reason: Annotated[str, Field(min_length=3, max_length=500)]
     lines: Annotated[list[AmendLineIn], Field(min_length=1, max_length=500)]
+    carrier: Literal["Purolator", "LTL"] | None = None  # a manual order's carrier, changed with the amend
 
 
 class ReturnedIn(BaseModel):

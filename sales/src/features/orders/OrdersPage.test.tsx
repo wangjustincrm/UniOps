@@ -317,7 +317,7 @@ describe('Orders: manual orders (FR-OB-19a) — New in the standard sheet, draft
     await fillShipTo(form)
     fireEvent.click(within(form).getByRole('button', { name: 'Save draft' }))
     await waitFor(() => expect(api.create).toHaveBeenCalledWith({ partner_code: 'MAN', customer_reference: null,
-      requested_delivery_date: null, notes: null, ship_to: { ...shipTo, zip: 'm5h1a1' }, lines: [{ item_code: 'CF0092', quantity: 1, unit: 'CASE' }] }))
+      requested_delivery_date: null, notes: null, ship_to: { ...shipTo, zip: 'm5h1a1' }, lines: [{ item_code: 'CF0092', quantity: 1, unit: 'CASE' }], carrier: null }))
     expect(await screen.findByRole('dialog', { name: 'MAN-110' })).toBeInTheDocument()  // the new draft opens
   })
 

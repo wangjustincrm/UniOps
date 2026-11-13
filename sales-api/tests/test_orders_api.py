@@ -68,7 +68,7 @@ async def test_orders_list_detail_and_the_review_worklist(api):
 
 
 async def test_manual_order_preview_create_submit(api):
-    body = {"partner_code": "MAN", "customer_reference": "phone-1",
+    body = {"partner_code": "MAN", "customer_reference": "phone-1", "carrier": "Purolator",
             "ship_to": {"name": "A B", "phone": "514-555-0100", "address1": "1 rue", "city": "Montréal", "province": "QC", "zip": "h2x1y4"},
             "lines": [{"item_code": "CF0092", "quantity": 2, "unit": "case"}]}
     assert (await api.post("/api/v1/orders/manual/preview", json=body["lines"], headers=READER)).status_code == 403

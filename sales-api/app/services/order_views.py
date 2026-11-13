@@ -440,7 +440,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         for x in lines:
             if not x["removed"] and (not x["item_code"] or x["ordered_qty"] is None):
                 raise BusinessError("order.amend_line", f"line {x['id']}: an item and a quantity, or take it off")
-        out = await amend_order(self.uow, outbound, id, lines, body.reason)
+        out = await amend_order(self.uow, outbound, id, lines, body.reason, carrier=body.carrier)
         order = await self.repo.get(id)
         return {"order": self.to_read(order).model_dump(mode="json"), **out}
 
@@ -672,6 +672,7 @@ class ManualOrderService:
         order = Order(partner_code=p.code, source_type="MANUAL", source_order_id=f"MANUAL-{uuid.uuid4().hex}",
                       source_order_number=data.customer_reference, requested_delivery_date=data.requested_delivery_date,
                       ship_to=data.ship_to.model_dump(exclude_none=True), notes=data.notes, fulfillment_status=F.DRAFT.value,
+                      shipping_method=data.carrier,
                       invoice_status=(Inv.NOT_REQUIRED if p.invoice_method == "NONE" else Inv.PENDING).value,
                       first_received_at=datetime.now(timezone.utc), version=1,
                       shadow=await SETTINGS.get(self.s, SHADOW_MODE))
@@ -700,6 +701,7 @@ class ManualOrderService:
         self.uow.set_reason("manual order: edit draft")
         o.partner_code, o.source_order_number = p.code, data.customer_reference
         o.requested_delivery_date, o.ship_to, o.notes = data.requested_delivery_date, data.ship_to.model_dump(exclude_none=True), data.notes
+        o.shipping_method = data.carrier
         for ln in (await self.s.execute(select(OrderLine).where(OrderLine.order_id == o.id))).scalars():
             await self.s.delete(ln)
         await self.s.flush()
@@ -716,6 +718,8 @@ class ManualOrderService:
         if bad:
             raise InvalidInput("order.lines_invalid", "fix every line before submitting",
                                {"field": "lines", "lines": [{"line_no": n, "problem": p} for n, p in bad]})
+        if (o.shipping_method or "") not in ("Purolator", "LTL"):
+            raise InvalidInput("order.carrier", "choose how it ships: Purolator or LTL", {"field": "carrier"})
         p = await self._partner(o.partner_code)
         self.uow.set_reason("manual order: submit")
         now = datetime.now(timezone.utc)

@@ -92,6 +92,12 @@ def eligible_clause(now: datetime) -> ColumnElement[bool]:
     )
 
 
+def carrier_of(shipping_method: str | None) -> str | None:
+    """A manual order's carrier as the 940 takes it: Purolator or LTL (else none chosen)."""
+    m = (shipping_method or "").strip().lower()
+    return "Purolator" if "purolator" in m else "LTL" if m == "ltl" else None
+
+
 @dataclass
 class EdiReport:
     queued: int = 0
@@ -202,7 +208,8 @@ class Outbound940:
             OrderLine.order_id == order.id, OrderLine.removed.is_(False)).order_by(OrderLine.line_no))).scalars())
         codes = {ln.item_code for ln in lines if ln.item_code}
         items = {i.item_code: i for i in (await session.execute(select(Item).where(Item.item_code.in_(codes)))).scalars()}
-        retail = order.source_type == "EDI_850"
+        retail = order.source_type in ("EDI_850", "MANUAL")  # a manual order: the retailer's layout (2026-11-13)
+        manual = order.source_type == "MANUAL"
         gln = (order.ship_to or {}).get("gln")
         dc = None
         if retail and gln:
@@ -222,7 +229,9 @@ class Outbound940:
                 warehouse_held=bool(item and item.warehouse_held)))
         return Order940(
             order_id=order.id, order_number=order.order_number, retail=retail,
-            source_order_number=str(order.source_order_number or ""), source_reference=order.source_reference,
+            # W05-03 / N9*E1: a manual order's reference is its Order ref (the customer's text may hold spaces).
+            source_order_number=str((order.source_reference if manual else order.source_order_number) or ""),
+            source_reference=order.source_reference, manual=manual, carrier=carrier_of(order.shipping_method) if manual else None,
             partner_code=order.partner_code, partner_name=partner.name, walmart=bool(partner.dc_routing_required),
             label_code=partner.label_code,
             dc_number=dc, order_type=order.order_type, department=order.department,

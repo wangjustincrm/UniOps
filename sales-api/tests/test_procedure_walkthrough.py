@@ -342,7 +342,7 @@ async def test_d_short_retailer_invoices_the_confirmed_quantity(t):
 
 # ── E. Manual ────────────────────────────────────────────────────────────────
 def manual_body(partner):
-    return ManualOrderIn(partner_code=partner, customer_reference="phone-1", ship_to={
+    return ManualOrderIn(partner_code=partner, customer_reference="phone-1", carrier="Purolator", ship_to={
         "name": "Sample Person", "phone": "514-555-0100", "address1": "1 Sample St", "city": "Montreal", "province": "QC",
         "zip": "H2X1Y4"}, lines=[{"item_code": "CF0092", "quantity": 2, "unit": "CASE"}])
 

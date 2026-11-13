@@ -22,7 +22,7 @@ AMENDABLE = (F.PENDING, F.SENT_940, F.ACCEPTED_940, F.REJECTED_940, F.TIMEOUT_94
 SOURCES = ("EDI_850", "MANUAL")
 
 
-async def amend_order(uow, outbound, order_id: int, lines: list[dict[str, Any]], reason: str) -> dict:
+async def amend_order(uow, outbound, order_id: int, lines: list[dict[str, Any]], reason: str, *, carrier: str | None = None) -> dict:
     s = uow.session
     o = await s.get(Order, order_id, with_for_update=True)
     if o is None:
@@ -69,6 +69,12 @@ async def amend_order(uow, outbound, order_id: int, lines: list[dict[str, Any]],
         raise BusinessError("order.amend_line", "; ".join(problems))
     if all(ln.removed for ln in current.values()):
         raise BusinessError("order.amend_line", "an order needs at least one line: cancel it instead")
+    if carrier is not None:
+        if o.source_type != "MANUAL":
+            raise BusinessError("order.amend", "only a manual order's carrier is chosen here")
+        before.append({"carrier": o.shipping_method})
+        o.shipping_method = carrier
+        after.append({"carrier": carrier})
     uow.set_reason(f"order amended: {reason}")
     await s.flush()
     status = F(o.fulfillment_status)
