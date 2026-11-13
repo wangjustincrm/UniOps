@@ -1,10 +1,13 @@
 """FastAPI dependency injection: DB session, unit of work, current user."""
+import uuid
 from collections.abc import AsyncGenerator
+from dataclasses import replace
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_token
@@ -59,9 +62,29 @@ async def check_permission(session: AsyncSession, actor: Actor, key: str) -> boo
     return await has_permission(session, actor.user_id, actor.role, key)
 
 
+_names: dict[uuid.UUID, str] = {}
+
+
+async def named(actor: Actor) -> Actor:
+    """A token with no name, email or full name gives the person's id as their name: every "by" (audit, log,
+    resolved by, created by) would show an id. Their full name is read once from the users table instead;
+    unreadable (a test schema without it) → the id stays."""
+    if actor.user_id is None or actor.name != str(actor.user_id):
+        return actor
+    if actor.user_id not in _names:
+        try:
+            from app.integrations.epms_users import USERS
+            async with AsyncSessionLocal() as s:
+                row = (await s.execute(select(USERS.c.full_name, USERS.c.email).where(USERS.c.id == actor.user_id))).first()
+            _names[actor.user_id] = (row and (row.full_name or row.email)) or str(actor.user_id)
+        except Exception:  # noqa: BLE001 — a name never stops a request
+            return actor
+    return replace(actor, name=_names[actor.user_id])
+
+
 def make_get_uow(factory: UnitOfWorkFactory):
     async def get_uow(payload: CurrentUserPayload) -> AsyncGenerator[SqlAlchemyUnitOfWork, None]:
-        async with factory(actor_from_token(payload)) as uow:
+        async with factory(await named(actor_from_token(payload))) as uow:
             yield uow
     return get_uow
 
@@ -80,7 +103,7 @@ async def get_uow(
     payload: CurrentUserPayload,
     factory: Annotated[UnitOfWorkFactory, Depends(get_uow_factory)],
 ) -> AsyncGenerator[SqlAlchemyUnitOfWork, None]:
-    async with factory(actor_from_token(payload)) as uow:
+    async with factory(await named(actor_from_token(payload))) as uow:
         yield uow
 
 
