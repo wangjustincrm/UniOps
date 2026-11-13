@@ -184,7 +184,16 @@ DIMENSIONS: dict[str, Dimension] = {
     "department": Dimension("department", "Department", "department_id::text",
                             "(select name from departments d where d.id = t.department_id)"),
     "shift": Dimension("shift", "Shift", "shift_code"),
-    "category": Dimension("category", "Category", "category_label"),
+    # ★ UAT 13: "there are 120 incidents that are not categorized which is
+    # wrong. Every type of incident has a category related to on the Incident
+    # type registry." Only five built-in types carry a category of their own;
+    # the rest — first aid, near miss, property damage… — had none, so most
+    # incidents read "Not recorded". An incident is in its type's category
+    # where it has one (Food Safety, Environmental…), and otherwise its type
+    # is its category, as Settings → Incident types lists them.
+    "category": Dimension("category", "Category",
+                          "coalesce(category_label, extra->>'incident_type')",
+                          labels=incident_type.BY_CODE),
     "injury_class": Dimension("injury_class", "Injury classification", "injury_class"),
     # The twelve types on HSE's form. Held in `extra`, which is where the form
     # writes it (crud/incident.py), so this reads it from there.

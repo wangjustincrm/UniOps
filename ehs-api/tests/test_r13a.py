@@ -129,3 +129,29 @@ async def test_a_coordinator_records_the_mol_and_wsib_filings_but_not_that_a_clo
         lapse = await c.post(f"/api/v1/deadlines/{kinds['wsib_form7']['id']}/not-required",
                              json={"reason": "Reclassified as first aid"})
         assert lapse.status_code == 403
+
+
+async def test_every_incident_has_a_category_in_reports(hse_manager, db_session):
+    """UAT 13: "120 incidents that are not categorized which is wrong … Use the
+    list in the Settings/Incident types registry as the categories." A type
+    with a category of its own is grouped under it; any other type is its own
+    category; and the bar opens to exactly its incidents."""
+    from tests.test_reporting_search import _area, _counts, _incident
+    _, client = hse_manager
+    area = _area()
+    for kind in ("first_aid", "first_aid", "near_miss"):
+        await _incident(db_session, area=area, kind=kind)
+    food = await _incident(db_session, area=area, kind="near_miss_food_safety", form="near_miss")
+    food.category_label = "Food Safety"
+    await _incident(db_session, area=area, kind=None)
+    await db_session.flush()
+
+    got = await client.get("/api/v1/reports/group", params={
+        "entity": "incident", "dimension": "category", "filter": f"location:{area}"})
+    assert got.status_code == 200, got.text
+    assert _counts(got.json()) == {"First Aid Injury": 2, "Near Miss": 1,
+                                   "Food Safety": 1, "Not recorded": 1}
+    opened = await client.get("/api/v1/reports/group", params=[
+        ("entity", "incident"), ("dimension", "form_kind"),
+        ("filter", f"location:{area}"), ("filter", "category:first_aid")])
+    assert sum(r["count"] for r in opened.json()) == 2
