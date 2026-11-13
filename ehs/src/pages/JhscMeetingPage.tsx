@@ -540,12 +540,12 @@ function RecommendationList({
               )}
 
               {r.response ? (
-                <p className="mt-2 border-l-2 border-neutral-200 pl-2.5 text-sm text-neutral-700">
-                  {r.response}
+                <div className="mt-2 border-l-2 border-neutral-200 pl-2.5 text-sm text-neutral-700">
+                  <ReplyText text={r.response} fromAction={Boolean(r.action_id)} />
                   <span className="mt-0.5 block text-xs text-neutral-500">
                     {r.responded_by_name} · {r.responded_at && formatDate(r.responded_at)}
                   </span>
-                </p>
+                </div>
               ) : mayManage && (
                 replyTo === r.id
                   ? <ReplyForm recId={r.id} onDone={() => { setReplyTo(null); onChanged() }}
@@ -793,5 +793,26 @@ function MinutesPanel(
         </button>
       </div>
     </Card>
+  )
+}
+
+
+/**
+ * ★ UAT 13, TC-08: "the 'this is what will be done' field and the 'this is the
+ * detail field' are on the same line and does not read properly. put the
+ * detail under the what will be done." A reply given as a corrective action is
+ * stored as what will be done, a blank line, then the detail; the line breaks
+ * were not kept, so the two ran together.
+ */
+function ReplyText({ text, fromAction }: { text: string; fromAction: boolean }) {
+  const cut = fromAction ? text.indexOf('\n\n') : -1
+  if (cut === -1) return <p className="whitespace-pre-wrap">{text}</p>
+  return (
+    <>
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">What will be done</p>
+      <p className="whitespace-pre-wrap font-medium text-neutral-800">{text.slice(0, cut)}</p>
+      <p className="mt-1.5 text-[11px] font-semibold uppercase tracking-wide text-neutral-500">Detail</p>
+      <p className="whitespace-pre-wrap">{text.slice(cut + 2)}</p>
+    </>
   )
 }

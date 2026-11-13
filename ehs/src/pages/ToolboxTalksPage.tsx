@@ -122,6 +122,10 @@ export default function ToolboxTalksPage() {
         )}
       </PageHeader>
 
+      {/* ★ Round 12, TBT-01/02: HSE's month-by-month view, and the chase.
+          UAT 13, TC-24: "place this tracker at the top of the page." */}
+      {isHse && <ToolboxTracker />}
+
       {mine.length > 0 && (
         <>
           <SectionTitle className="mb-2">To deliver</SectionTitle>
@@ -153,9 +157,6 @@ export default function ToolboxTalksPage() {
                       total={toDeliver.total} onPage={toDeliver.setPage} noun="to deliver" />
         </>
       )}
-
-      {/* ★ Round 12, TBT-01/02: HSE's month-by-month view, and the chase. */}
-      {isHse && <ToolboxTracker />}
 
       <SectionTitle className="mb-2">Topics</SectionTitle>
       <SearchBox value={topics.query} onChange={topics.setQuery}
