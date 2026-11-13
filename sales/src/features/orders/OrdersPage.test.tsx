@@ -690,8 +690,9 @@ describe('the order sheet: facts, actions and tabs', () => {
   })
 
   it('a retailer order: no Payments; Invoice and Documents tabs; a document downloads; no 945 yet is said in its tab', async () => {
-    const ops = await import('@/features/operations/operationsApi')
-    const download = vi.spyOn(ops, 'downloadDocument').mockResolvedValue(undefined)
+    const files = await import('@/features/common/recordFiles')
+    const download = vi.spyOn(files, 'downloadRecordFile').mockResolvedValue(undefined)
+    vi.spyOn(files, 'listAttachments').mockResolvedValue([])
     api.list.mockResolvedValue({ items: [{ ...pending, source_type: 'EDI_850' as const, invoice_status: 'Pending' }], total: 1 })
     api.fetchOrder.mockResolvedValue({ ...detail, ...pending, source_type: 'EDI_850', invoice_status: 'Pending', has_invoice: false,
       documents: [{ id: 9, kind: '850_JSON', direction: 'IN', remote_name: 'PO-1.json', created_at: order.created_at,
@@ -705,7 +706,8 @@ describe('the order sheet: facts, actions and tabs', () => {
     expect(within(sheet).getByText('No 945 yet: the warehouse has not reported a shipment.')).toBeInTheDocument()
     await openTab(sheet, 'Documents')
     fireEvent.click(within(sheet).getByRole('button', { name: 'Download PO-1.json' }))
-    expect(download).toHaveBeenCalledWith(9, 'PO-1.json')
+    expect(download).toHaveBeenCalledWith(expect.objectContaining({ id: 9, remote_name: 'PO-1.json' }))
+    expect(await within(sheet).findByText('No file attached.')).toBeInTheDocument()
     await openTab(sheet, 'Invoice')
     expect(within(sheet).getByText('Not built yet (built at delivery confirmation)')).toBeInTheDocument()
     download.mockRestore()

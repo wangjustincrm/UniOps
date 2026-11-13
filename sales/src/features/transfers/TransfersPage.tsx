@@ -3,14 +3,17 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
-  ActionButton, Autocomplete, ConfirmAction, DateCell, DetailList, ListPage, LocalTable,
+  ActionButton, Autocomplete, ConfirmAction, DateCell, DetailList, ListPage, LocalTable, ViewFileButton,
   MasterDetailForm, RecordSheet, Section, StatusCell, numberColumn, queryKeys, useFileViewer,
   type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab,
   compareRecord, useRefresh, Muted, columnsOf
  } from '@/platform-ui'
 import { itemOptions, warehouseOptions } from '../configuration/lookups'
+import { Attachments } from '@/features/common/Attachments'
+import { RecordActivity } from '@/features/common/RecordActivity'
+import { RecordFilesTable } from '@/features/common/RecordFilesTable'
 import {
-  cancelTransfer, createTransfer, fetchTransfer, readyTransfer, resendTransfer, transfersClient, updateTransfer,
+  cancelTransfer, createTransfer, fetchTransfer, readyTransfer, releaseTransfer, resendTransfer, transfersClient, updateTransfer,
   transferPdf, type ReceiptRowRead, type TransferDetail, type TransferLineRead, type TransferRead,
 } from './transfersApi'
 
@@ -25,6 +28,7 @@ const errorMessages: Record<string, string> = {
   'transfer.same_warehouse': 'The two warehouses must differ.',
   'entity.stale': 'Someone else changed this transfer. Close it and open it again.',
   'auth.forbidden': 'You do not have permission to manage transfers.',
+  'transfer.not_on_hold': 'This transfer is not On Hold any more.',
 }
 
 const columns: ColumnDef<TransferRead, unknown>[] = [
@@ -32,6 +36,11 @@ const columns: ColumnDef<TransferRead, unknown>[] = [
   colTransferRead.text('from_warehouse', 'From'),
   colTransferRead.text('to_warehouse', 'To'),
   colTransferRead.status('status', 'Status'),
+  { accessorKey: 'items', header: 'Items', cell: ({ row }) => <span className="line-clamp-1">{row.original.items ?? ''}</span> },
+  colTransferRead.number('sent_ea', 'Sent EA'),
+  colTransferRead.number('received_ea', 'Received EA'),
+  colTransferRead.date('receipt_date', 'Received on'),
+  colTransferRead.number('attachments', 'Attachments'),
   colTransferRead.datetime('created_at', 'Created'),
   { accessorKey: 'error', header: 'Note', cell: ({ row }) => <Muted className="line-clamp-1">{row.original.error ?? ''}</Muted> },
 ]
@@ -102,6 +111,7 @@ function Detail({ row }: { row: TransferRead }) {
   const q = useQuery({ queryKey: queryKeys.detail(transfersClient, id), queryFn: () => fetchTransfer(id) })
   const sheetRefresh = useRefresh(q, { queryKey: queryKeys.detail(transfersClient, id), compare: compareRecord, noChange: 'Up to date', auto: 'follow' })
   const [cancelling, setCancelling] = useState(false)
+  const [releasing, setReleasing] = useState(false)
   const [editing, setEditing] = useState(false)
   const done = async (d: TransferDetail) => {
     qc.setQueryData(queryKeys.detail(transfersClient, id), d)
@@ -138,6 +148,23 @@ function Detail({ row }: { row: TransferRead }) {
             footer={[null, null, 'Total', null, r.rows.reduce((n, x) => n + x.qty_ea, 0), null]} />
         </Section>
       )) },
+    { id: 'documents', label: 'Documents', count: t.documents.length,
+      tone: t.documents.some((x) => x.direction === 'OUT' && ['Failed', 'Suppressed'].includes(x.file_status ?? '')) ? 'danger' : undefined,
+      render: () => (
+        <>
+          <Section title="Printable">
+            <div className="flex flex-wrap gap-2">
+              <ViewFileButton source={transferPdf(t.id, t.transfer_number)}>Transfer order (PDF)</ViewFileButton>
+            </div>
+          </Section>
+          <Attachments type="transfer" id={t.id} />
+          <Section title="Files received and sent">
+            <RecordFilesTable documents={t.documents} empty="No file yet: the 943 goes when it is ready to send." />
+          </Section>
+        </>
+      ) },
+    { id: 'activity', label: 'Activity', count: t.timeline.length, empty: t.timeline.length === 0 && 'Nothing recorded yet',
+      render: () => <RecordActivity entries={t.timeline} /> },
   ]
   return (
     <>
@@ -154,12 +181,14 @@ function Detail({ row }: { row: TransferRead }) {
           { label: 'Received EA', value: received, tone: t.receipts.length > 0 && received < sent ? 'warning' : 'neutral' },
           { label: '943', value: t.control ?? '—', hint: t.file_status ?? undefined },
           { label: '997', value: t.ack_status ?? '—' },
+          ...(t.receipt_date ? [{ label: 'Received on', value: <DateCell value={t.receipt_date} /> }] : []),
         ] : undefined}
         actions={t && !editing ? (
           <>
             {t.status === 'Draft' && <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done="Ready to send: the 943 goes on the next pass" onAction={() => ready.mutateAsync()}>Ready to send</ActionButton>}
             {t.status === 'Draft' && <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setEditing(true)}>Edit draft</ActionButton>}
             {t.status === 'Failed' && <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done="943 queued again" onAction={() => resend.mutateAsync()}>Resend 943</ActionButton>}
+            {t.status === 'On Hold' && <ActionButton size="sm" permission={MANAGE} onAction={() => setReleasing(true)}>Release hold…</ActionButton>}
           </>
         ) : undefined}
         more={t && !editing ? [
@@ -174,6 +203,12 @@ function Detail({ row }: { row: TransferRead }) {
           confirmLabel="Cancel transfer" reason={{ label: 'Why' }} errorMessages={errorMessages}
           description="Allowed before its 943 is sent, or after it was rejected. A queued 943 is withdrawn."
           onConfirm={async (why) => done(await cancelTransfer(id, t.version, why))} />
+      )}
+      {t && (
+        <ConfirmAction open={releasing} onOpenChange={setReleasing} title={`Release transfer ${t.transfer_number}?`}
+          confirmLabel={`Back to ${t.status_before_hold ?? 'its status'}`} reason={{ label: 'What you decided (compared both 944s)' }} errorMessages={errorMessages}
+          description="A second, different 944 put it On Hold. The first 944 stays applied; the second stays kept, not applied."
+          onConfirm={async (why) => done(await releaseTransfer(id, t.version, why))} />
       )}
     </>
   )

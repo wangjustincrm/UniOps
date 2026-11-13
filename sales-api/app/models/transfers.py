@@ -83,3 +83,23 @@ class ReceiptRow(Base):
     qty_ea: Mapped[int] = mapped_column(Integer, nullable=False)
     transfer_line_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+
+
+# The facts a transfer list shows and sums (user 2026-11-13: as the orders' list): read with the row.
+from sqlalchemy import func, literal, select  # noqa: E402
+from sqlalchemy.dialects.postgresql import aggregate_order_by  # noqa: E402
+from sqlalchemy.orm import column_property  # noqa: E402
+
+from app.models.documents import Document, DocumentLink  # noqa: E402
+
+Transfer.sent_ea = column_property(select(func.coalesce(func.sum(TransferLine.qty_ea), 0)).where(
+    TransferLine.transfer_id == Transfer.id).correlate_except(TransferLine).scalar_subquery())
+Transfer.received_ea = column_property(select(func.coalesce(func.sum(TransferLine.received_ea), 0)).where(
+    TransferLine.transfer_id == Transfer.id).correlate_except(TransferLine).scalar_subquery())
+Transfer.items = column_property(select(func.string_agg(TransferLine.item_code, aggregate_order_by(literal(", "), TransferLine.line_no))).where(
+    TransferLine.transfer_id == Transfer.id).correlate_except(TransferLine).scalar_subquery())
+Transfer.receipt_date = column_property(select(func.max(Receipt.receipt_date)).where(
+    Receipt.transfer_id == Transfer.id, Receipt.applied.is_(True)).correlate_except(Receipt).scalar_subquery())
+Transfer.attachments = column_property(select(func.count(DocumentLink.id)).join(Document, Document.id == DocumentLink.document_id).where(
+    DocumentLink.entity_type == "transfer", DocumentLink.entity_id == Transfer.id, Document.kind == "ATTACHMENT")
+    .correlate_except(DocumentLink, Document).scalar_subquery())

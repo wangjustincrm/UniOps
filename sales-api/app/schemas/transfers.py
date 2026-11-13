@@ -6,6 +6,9 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
+from app.schemas.orders import TimelineEntry
+from app.schemas.records import RecordDocumentRead
+
 Code = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=50)]
 Reason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=2000)]
 
@@ -46,6 +49,12 @@ class TransferRead(BaseModel):
     updated_at: datetime | None
     from_warehouse: str | None = None   # code (filled by the service)
     to_warehouse: str | None = None
+    # The list's facts (user 2026-11-13: as the orders' list): read with the row.
+    sent_ea: int = 0
+    received_ea: int = 0
+    items: str | None = None
+    receipt_date: date | None = None
+    attachments: int = 0
 
 
 class TransferLineRead(BaseModel):
@@ -91,3 +100,11 @@ class TransferDetail(TransferRead):
     ack_status: str | None = None     # the live 943's 997 status
     file_status: str | None = None
     control: str | None = None
+    status_before_hold: str | None = None
+    documents: list[RecordDocumentRead] = []   # received, sent and attached (record_files)
+    timeline: list[TimelineEntry] = []
+
+
+class ReleaseIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reason: Reason

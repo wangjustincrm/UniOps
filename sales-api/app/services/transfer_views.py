@@ -4,15 +4,19 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
+from app.domain.status import TRANSFER
 from app.domain.status import Transfer as T
 from app.models.config import Warehouse
 from app.models.documents import Document
 from app.models.transfers import Receipt, ReceiptRow, Transfer, TransferLine
 from app.platform.authorization import requires
+from app.platform.commands import ANY_VERSION, VersionArg, load_for_command
+from app.platform.errors import BusinessError
 from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
-from app.services import print_docs
+from app.services import oplog, print_docs
+from app.services.record_files import documents_of, timeline_of
 from app.schemas.transfers import ReceiptRead, ReceiptRowRead, TransferDetail, TransferLineRead, TransferRead
 
 READ = "sales.read"
@@ -22,12 +26,15 @@ MANAGE = "sales.transfer.manage"
 class TransferRepository(Repository[Transfer]):
     model = Transfer
     search_fields = ("transfer_number", "notes")
-    list_fields = ("id", "transfer_number", "from_warehouse_id", "to_warehouse_id", "status", "notes", "error",
-                   "created_at", "updated_at")
-    labels = {"transfer_number": "Transfer", "from_warehouse_id": "From", "to_warehouse_id": "To"}
+    list_fields = ("id", "transfer_number", "from_warehouse_id", "to_warehouse_id", "status", "items", "sent_ea", "received_ea",
+                   "receipt_date", "attachments", "notes", "error", "created_at", "updated_at")
+    labels = {"transfer_number": "Transfer", "from_warehouse_id": "From", "to_warehouse_id": "To", "sent_ea": "Sent EA",
+              "received_ea": "Received EA", "receipt_date": "Received on", "items": "Items", "attachments": "Attachments"}
     enums = {"status": tuple(s.value for s in T)}
-    default_sort = ("-transfer_number",)
-    groupable = ("status", "from_warehouse_id", "to_warehouse_id")
+    default_sort = ("-created_at", "-transfer_number")
+    groupable = ("status", "from_warehouse_id", "to_warehouse_id", "receipt_date")
+    summable = ("sent_ea", "received_ea")
+    suggestable = ("transfer_number",)
     presets = (
         Preset("all", "All"),
         Preset("open", "Open", {"filters": [{"field": "status", "op": "in", "value": [
@@ -72,7 +79,8 @@ class TransferService(ReadOnlyService[Transfer, TransferRead]):
                 "document_name": names.get(r.document_id),
                 "rows": [ReceiptRowRead.model_validate(x) for x in rows if x.receipt_id == r.id]}) for r in receipts],
             ack_status=doc.ack_status if doc else None, file_status=doc.file_status if doc else None,
-            control=doc.st02 if doc else None)
+            control=doc.st02 if doc else None, status_before_hold=t.status_before_hold,
+            documents=await documents_of(s, "transfer", id), timeline=await timeline_of(s, "transfer", id))
 
     async def _after(self, id: int) -> TransferDetail:
         await self.uow.session.flush()
@@ -103,4 +111,18 @@ class TransferService(ReadOnlyService[Transfer, TransferRead]):
     @requires(MANAGE)
     async def resend(self, transfers, id: int, version: int | None) -> TransferDetail:
         await transfers.resend(self.uow, id, version)
+        return await self._after(id)
+
+    @requires(MANAGE)
+    async def release(self, id: int, reason: str, version: VersionArg = ANY_VERSION) -> TransferDetail:
+        """On Hold (a second, different 944: compared by a person) back to where it was, with why (as an order's hold).
+        The first 944 stays applied; the second stays kept, not applied."""
+        t = await load_for_command(self.uow.session, Transfer, id, version=version)
+        if t.status != T.ON_HOLD.value or not t.status_before_hold:
+            raise BusinessError("transfer.not_on_hold", f"transfer {t.transfer_number} is not On Hold")
+        back = T(t.status_before_hold)
+        self.uow.set_reason(f"hold released to {back.value}: {reason}")
+        TRANSFER.transition(t, back, actor=self.uow.actor, events=self.uow.events, reason=reason)
+        await oplog.write(self.uow.session, "INFO", "transfer", f"transfer {t.transfer_number} released to {back.value}: {reason}",
+                          transfer_id=t.id)
         return await self._after(id)

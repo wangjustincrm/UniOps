@@ -10,8 +10,12 @@ import type { TransferDetail, TransferRead } from './transfersApi'
 
 const t104: TransferRead = { id: 1, transfer_number: '00104', from_warehouse_id: 1, to_warehouse_id: 2, status: 'Discrepancy', notes: null,
   document_id: 5, error: null, version: 4, created_at: '2026-10-07T13:00:00Z', created_by_name: 'Op', updated_at: null,
-  from_warehouse: 'KGN', to_warehouse: 'CLN02' }
-const detail: TransferDetail = { ...t104, ack_status: 'Accepted', file_status: 'Sent', control: '000000104',
+  from_warehouse: 'KGN', to_warehouse: 'CLN02', sent_ea: 15600, received_ea: 8400, items: 'CF0092, CF0093', receipt_date: '2026-10-08', attachments: 1 }
+const detail: TransferDetail = { ...t104, ack_status: 'Accepted', file_status: 'Sent', control: '000000104', status_before_hold: null,
+  documents: [{ id: 7, kind: '944_EDI', direction: 'IN', remote_name: '944-16468.edi', created_at: '2026-10-08T10:24:00Z', file_status: null,
+    ack_status: null, st02: null, sent_at: null, error: null, ack_detail: null }],
+  timeline: [{ at: '2026-10-08T10:24:00Z', user_name: 'System', entity: 'sales_transfers', action: 'update', before: { status: 'Waiting for 944' },
+    after: { status: 'Discrepancy' }, reason: '944 944-16468.edi (FR-OB-84)' }],
   lines: [{ id: 1, line_no: 1, item_code: 'CF0092', qty_ea: 8400, received_ea: 8400, line_status: 'Received' },
     { id: 2, line_no: 2, item_code: 'CF0093', qty_ea: 7200, received_ea: 0, line_status: 'Open' }],
   receipts: [{ id: 9, document_id: 7, receipt_date: '2026-10-08', total_ea: 15600, applied: true, shadow: false, outcome: 'Discrepancy',
@@ -27,6 +31,11 @@ vi.mock('./transfersApi', async (orig) => {
   const real = await orig<typeof import('./transfersApi')>()
   return { ...real, transfersClient: { ...real.transfersClient, list: api.list, meta: async () => meta },
     fetchTransfer: api.fetch, createTransfer: api.create, cancelTransfer: api.cancel, readyTransfer: api.ready, updateTransfer: api.update }
+})
+const files = vi.hoisted(() => ({ list: vi.fn(), attach: vi.fn(), remove: vi.fn() }))
+vi.mock('@/features/common/recordFiles', async (orig) => {
+  const real = await orig<typeof import('@/features/common/recordFiles')>()
+  return { ...real, listAttachments: files.list, attachFile: files.attach, removeAttachment: files.remove }
 })
 vi.mock('../configuration/lookups', () => ({
   itemOptions: async () => [{ value: 'CF0092', label: 'CF0092' }],
@@ -44,7 +53,51 @@ function renderAs(keys: string[]) {
 describe('Transfers', () => {
   beforeEach(() => {
     Object.values(api).forEach((f) => f.mockReset())
+    Object.values(files).forEach((f) => f.mockReset())
     api.list.mockResolvedValue({ items: [t104, draft], total: 2 })
+    files.list.mockResolvedValue([{ id: 30, kind: 'ATTACHMENT', direction: 'IN', remote_name: 'BOL signed.pdf', created_at: '2026-10-08T12:00:00Z',
+      file_status: null, ack_status: null, st02: null, sent_at: null, error: null, ack_detail: null, size: 2048, created_by_name: 'Op', note: 'signed BOL' }])
+  })
+
+  it('like an order: the list sums what was sent and received; the sheet has its files, attachments and activity', async () => {
+    api.fetch.mockResolvedValue(detail)
+    renderAs(['sales.read', 'sales.transfer.manage'])
+    const row = (await screen.findByText('00104')).closest('tr')!
+    expect(row).toHaveTextContent('15,600')
+    expect(row).toHaveTextContent('CF0092, CF0093')
+    fireEvent.click(within(row).getByText('00104'))
+    const dialog = await screen.findByRole('dialog')
+    await openTab(dialog, 'Documents')
+    expect(await within(dialog).findByRole('table', { name: 'Attachments' })).toHaveTextContent('BOL signed.pdf')
+    expect(within(dialog).getByRole('table', { name: 'Attachments' })).toHaveTextContent('signed BOL')
+    expect(within(dialog).getByRole('table', { name: 'Documents' })).toHaveTextContent('944-16468.edi')
+    expect(within(dialog).queryByRole('table', { name: 'Documents' })).not.toHaveTextContent('BOL signed.pdf')
+    expect(within(dialog).getByRole('button', { name: /Attach file/ })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Remove BOL signed.pdf' })).toBeInTheDocument()
+    await openTab(dialog, 'Activity')
+    expect(within(dialog).getByText('944 944-16468.edi (FR-OB-84)')).toBeInTheDocument()
+  })
+
+  it('a reader sees the attachments but cannot attach or remove; On Hold offers Release to a manager', async () => {
+    api.fetch.mockResolvedValue({ ...detail, status: 'On Hold', status_before_hold: 'Discrepancy' })
+    renderAs(['sales.read'])
+    fireEvent.click(await screen.findByText('00104'))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByRole('button', { name: /Release hold/ })).toBeNull()
+    await openTab(dialog, 'Documents')
+    expect(await within(dialog).findByRole('table', { name: 'Attachments' })).toHaveTextContent('BOL signed.pdf')
+    expect(within(dialog).queryByRole('button', { name: /Attach file/ })).toBeNull()
+    expect(within(dialog).queryByRole('button', { name: 'Remove BOL signed.pdf' })).toBeNull()
+  })
+
+  it('On Hold: Release asks why and goes back to where it was', async () => {
+    const held = { ...detail, status: 'On Hold', status_before_hold: 'Discrepancy' }
+    api.fetch.mockResolvedValue(held)
+    renderAs(['sales.read', 'sales.transfer.manage'])
+    fireEvent.click(await screen.findByText('00104'))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(await within(dialog).findByRole('button', { name: /Release hold/ }))
+    expect(await screen.findByRole('dialog', { name: /Release transfer 00104/ })).toHaveTextContent('first 944 stays applied')
   })
 
   it('a received transfer shows its lines, the 944 rows with the one not on the transfer, and the discrepancies', async () => {
