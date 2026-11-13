@@ -60,6 +60,8 @@ class Order(Audited, Versioned, Base):
     department: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # TrueCommerce's mailbox of the buyer (850 EDIMailbox; Sobeys: one per division): its 810 goes back to it.
     edi_mailbox: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # sales29 (user 2026-11-13): the 850's "Agreement ID", sent back in the 810 when the 850 named one.
+    agreement_id: Mapped[str | None] = mapped_column(String(60), nullable=True)
     order_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     requested_delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     do_not_deliver_after: Mapped[date | None] = mapped_column(Date, nullable=True)

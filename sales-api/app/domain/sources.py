@@ -155,7 +155,7 @@ def from_shopify(o: dict[str, Any], *, partner_code: str, partner_abbrev: str | 
 K = {
     "orders": "PurchaseOrder", "partner": "TradingPartner", "po": "PurchaseOrderNumber", "po_date": "PODate",
     "requested": "RequestedDeliveryDate", "dnda": "DoNotDeliverAfter", "cancel": "CancelDate",
-    "order_type": "OrderType", "department": "DepartmentNumber", "edi_mailbox": "EDIMailbox", "ship_to_code": "ShipToCode",
+    "order_type": "OrderType", "department": "DepartmentNumber", "edi_mailbox": "EDIMailbox", "agreement_id": "Agreement ID", "ship_to_code": "ShipToCode",
     "ship_to_name": "ShipToName", "ship_to_address1": "ShipToAddress1", "ship_to_address2": "ShipToAddress2",
     "ship_to_city": "ShipToCity", "ship_to_state": "ShipToState", "ship_to_zip": "ShipToZip",
     "ship_to_country": "ShipToCountry", "bill_to_name": "BillToName", "bill_to_code": "BillToCode",
@@ -215,6 +215,7 @@ def _po(po: dict[str, Any]) -> SourceOrder:
         "do_not_deliver_after": _day(po.get(K["dnda"])), "cancel_date": _day(po.get(K["cancel"])),
         "order_type": po.get(K["order_type"]), "department": po.get(K["department"]),
         "edi_mailbox": str(po.get(K["edi_mailbox"]) or "").strip() or None,
+        "agreement_id": str(po.get(K["agreement_id"]) or "").strip()[:60] or None,
         "ship_to": {"gln": po.get(K["ship_to_code"]), "name": po.get(K["ship_to_name"]),
                     "address1": po.get(K["ship_to_address1"]), "address2": po.get(K["ship_to_address2"]),
                     "city": po.get(K["ship_to_city"]), "province": po.get(K["ship_to_state"]),

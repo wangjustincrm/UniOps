@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 
+from app.domain.x12 import plain_text
+
 CASE_UNIT = "CASE"
 CENT = Decimal("0.01")
 
@@ -101,6 +103,7 @@ class Header810:
     ship_to: dict
     bill_to: dict
     edi_mailbox: str | None = None  # the buyer's TrueCommerce mailbox, from its 850 (Sobeys)
+    agreement_id: str | None = None  # the 850's "Agreement ID" (user 2026-11-13), as it came
 
 
 @dataclass(frozen=True)
@@ -129,6 +132,7 @@ def build_810(h: Header810, items: list[Item810]) -> bytes:
         "TransactionType": "810", "AccountingID": h.partner_code,
         # Only when the 850 named one: a partner without (Walmart, Loblaws) gets the file as before.
         **({"EDIMailbox": h.edi_mailbox} if h.edi_mailbox else {}),
+        **({"Agreement ID": h.agreement_id} if h.agreement_id else {}),
         "Invoice": str(h.order_number), "InvoiceDate": d,
         "PO": h.po, "PODate": h.po_date.strftime("%Y-%m-%d") if h.po_date else "", "DepartmentNumber": "",
         "BillofLading": f"{h.order_number:09d}", "CarrierPro": f"CRM|{h.order_number}", "SCAC": "WIFS", "ShipVia": "",
@@ -143,4 +147,15 @@ def build_810(h: Header810, items: list[Item810]) -> bytes:
                    "ofInnerPacks": i.inner_packs or "", "ItemAllowancePercent": "", "ItemAllowanceAmount": "",
                    "GTIN#": i.gtin or ""} for n, i in enumerate(items, start=1)],
     }]}
-    return json.dumps(body, ensure_ascii=False, indent=1).encode("utf-8")
+    # UTF-8 with the accents taken off (user 2026-11-13: as the 940 / 943; é → e), every text value.
+    return json.dumps(_plain(body), ensure_ascii=False, indent=1).encode("utf-8")
+
+
+def _plain(v):
+    if isinstance(v, str):
+        return plain_text(v)
+    if isinstance(v, dict):
+        return {k: _plain(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_plain(x) for x in v]
+    return v

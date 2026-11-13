@@ -443,7 +443,7 @@ class Invoicing:
                                unit_price=price, inner_packs=int(factor) if factor else None))
         st = order.ship_to or {}
         return build_810(Header810(order.partner_code, order.order_number, order.source_order_number, inv.invoice_date,
-                                   order.order_date, st, order.bill_to or st, order.edi_mailbox), out)
+                                   order.order_date, st, order.bill_to or st, order.edi_mailbox, order.agreement_id), out)
 
     async def _document(self, uow, inv: Invoice, order: Order, data: bytes, name: str, *, system: str, kind: str,
                         conn_id: int | None) -> Document:

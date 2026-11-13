@@ -29,6 +29,12 @@ class TextIssues:
 _TYPOGRAPHIC = str.maketrans({"’": "'", "‘": "'", "“": '"', "”": '"', "–": "-", "—": "-"})
 
 
+def plain_text(value: str) -> str:
+    """Accents and typographic punctuation taken off (é → e, ’ → '); a character with no plain form stays as it is."""
+    t = value.translate(_TYPOGRAPHIC)
+    return "".join(c if ord(c) < 128 else (unicodedata.normalize("NFKD", c).encode("ascii", "ignore").decode("ascii") or c) for c in t)
+
+
 def ascii_value(name: str, value: object, issues: TextIssues) -> str:
     """`value` as plain ASCII X12 text (FR-OB-29a)."""
     text = "" if value is None else str(value).strip()
