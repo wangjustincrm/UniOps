@@ -18,7 +18,7 @@ const colMove = columnsOf<StockMoveRead>()
 const ADJUST = 'sales.inventory.adjust'
 
 // The figures (user 2026-11-13), read left to right: received − in process − shipped (net: a customer's return comes off
-// it) − on hold = available. In process: an item's 940s sent with no 945 yet; a lot's, what Radiant's latest report shows
+// it) − on hold = available; each row balances. The difference with Radiant's history is on the Radiant reports page only. In process: an item's 940s sent with no 945 yet; a lot's, what Radiant's latest report shows
 // picked for those orders (a 940 names no lot). On hand and the rest: column menu.
 const itemColumns: ColumnDef<StockItemRead, unknown>[] = [
   { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => <span className="font-medium">{row.original.item_code}</span> },
@@ -26,10 +26,9 @@ const itemColumns: ColumnDef<StockItemRead, unknown>[] = [
   colItem.number('received_ea', 'Received'),
   colItem.number('allocated_ea', 'In process'),
   colItem.number('shipped_ea', 'Shipped'),
+  colItem.number('hold_ea', 'On hold'),
   colItem.number('available_ea', 'Available'),
-  { id: 'report_diff_ea', header: 'Diff. vs Radiant', cell: ({ row }) => <DiffCell value={row.original.report_diff_ea} /> },
   startHidden(colItem.number('on_hand_ea', 'On hand')),
-  startHidden(colItem.number('hold_ea', 'On hold')),
   startHidden(colItem.number('returned_ea', 'Returned (in Shipped)')),
   startHidden(colItem.number('adjusted_ea', 'Adjusted')),
   colItem.date('first_expiry', 'First expiry'),
@@ -48,25 +47,15 @@ const lotColumns: ColumnDef<StockLotRead, unknown>[] = [
   colLot.number('received_ea', 'Received'),
   colLot.number('in_process_ea', 'In process'),
   colLot.number('shipped_ea', 'Shipped'),
+  colLot.number('hold_ea', 'On hold'),
   colLot.number('available_ea', 'Available'),
-  { id: 'report_diff_ea', header: 'Diff. vs Radiant', cell: ({ row }) => <DiffCell value={row.original.report_diff_ea} /> },
   startHidden(colLot.number('on_hand_ea', 'On hand')),
-  startHidden(colLot.number('hold_ea', 'On hold')),
   startHidden(colLot.number('returned_ea', 'Returned (in Shipped)')),
   startHidden(colLot.number('adjusted_ea', 'Adjusted')),
   startHidden(colLot.number('to_customer_ea', 'In transit to customers')),
   startHidden(colLot.number('returning_ea', 'Returns on the way')),
   startHidden(colLot.datetime('last_move_at', 'Last move')),
 ]
-
-/** Sales − Radiant at the latest applied report: 0 grey, else signed and marked (user 2026-11-13: in sight until settled). */
-function DiffCell({ value }: { value: number }) {
-  return (
-    <span className={`block text-right tabular-nums ${value ? 'font-semibold text-warning-700' : 'text-neutral-400'}`}>
-      {value > 0 ? `+${formatNumber(value)}` : formatNumber(value)}
-    </span>
-  )
-}
 
 /** An item's active lots (something on hand), nearest expiry first — under its row in the list. */
 function ActiveLots({ item }: { item: string }) {
@@ -218,7 +207,7 @@ export default function InventoryPage() {
   return (
     <ListPage<StockItemRead>
       key="items" resource={stockItemsClient} title="Inventory"
-      description="Stock at Radiant by item (its open lots): received − in process (940 sent, no 945 yet) − shipped (less returns) = available."
+      description="Stock at Radiant by item (its open lots): received − in process (940 sent, no 945 yet) − shipped (less returns) − on hold = available."
       columns={itemColumns} notice={NOTE} emptyTitle="No stock moves yet"
       renderDetail={(r) => <ItemSheet row={r} />}
       expand={(r) => (r.lots > 0 || r.on_hand_ea !== 0 ? <ActiveLots item={r.item_code} /> : null)}

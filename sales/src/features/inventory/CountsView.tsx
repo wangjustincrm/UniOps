@@ -62,7 +62,7 @@ function figureColumns<R extends ItemFigures>(): ColumnDef<R, unknown>[] {
     startHidden(c.number('adjusted_ea' as never, 'Adjusted')),
     { id: 'sales_ea', header: 'On hand (Sales)', cell: ({ row }) => strong(row.original.sales_ea) },
     { id: 'radiant_ea', header: 'Radiant', cell: ({ row }) => strong(row.original.radiant_ea) },
-    { id: 'difference_ea', header: 'Difference', cell: ({ row }) => signed(row.original.difference_ea) },
+    { id: 'difference_ea', header: 'Difference (missing Sales history)', cell: ({ row }) => signed(row.original.difference_ea) },
   ]
 }
 
