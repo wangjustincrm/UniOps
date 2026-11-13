@@ -277,7 +277,11 @@ export interface RefundRead {
 }
 
 /** How a manual order ships (user 2026-11-13). */
-export const CARRIERS = [{ value: 'Purolator', label: 'Purolator' }, { value: 'LTL', label: 'LTL' }]
+export const CARRIERS = [{ value: 'Purolator', label: 'Purolator' }, { value: 'Purolator Express', label: 'Purolator Express' }, { value: 'LTL', label: 'LTL' }]
+export type Carrier = 'Purolator' | 'Purolator Express' | 'LTL'
+export const isCarrier = (v: unknown): v is Carrier => v === 'Purolator' || v === 'Purolator Express' || v === 'LTL'
+/** Above this an order is a pallet shipment: the entry screen suggests LTL (a suggestion only). */
+export const LTL_FROM_LB = 150
 export interface ManualLine { item_code: string; quantity: number; unit: string }
 export interface ManualOrderIn {
   partner_code: string
@@ -287,9 +291,9 @@ export interface ManualOrderIn {
   notes?: string | null
   lines: ManualLine[]
   /** How it ships (user 2026-11-13): Purolator (parcel) or LTL; required to submit. */
-  carrier?: 'Purolator' | 'LTL' | null
+  carrier?: Carrier | null
 }
-export interface LinePreview { item_code: string; quantity: string; unit: string; qty_ea: number | null; problem: string | null }
+export interface LinePreview { item_code: string; quantity: string; unit: string; qty_ea: number | null; problem: string | null; weight_lb?: string | null }
 
 export const ordersClient = createResourceClient<OrderRead, never>(api, '/orders')
 /** A 945 with no order and what making its order would do (FR-OB-25c). */
@@ -348,7 +352,7 @@ export const setInvoicePrices = (id: number, body: InvoicePricesBody) => api.put
 export interface ReturnedBody { reason: string; lines: { id: number; returned_ea: number }[] }
 export const setReturned = (id: number, body: ReturnedBody) => api.put<OrderDetail>(`/orders/${id}/returned`, body)
 /** An order sent wrong, corrected and sent again (user 2026-11-13): until the warehouse ships it. */
-export interface AmendBody { reason: string; carrier?: 'Purolator' | 'LTL' | null; lines: { id: number; item_code?: string; ordered_qty?: string; removed?: boolean }[] }
+export interface AmendBody { reason: string; carrier?: Carrier | null; lines: { id: number; item_code?: string; ordered_qty?: string; removed?: boolean }[] }
 export const amendOrder = (id: number, body: AmendBody) => api.post<{ order: OrderRead; sent: boolean; document_id: number | null }>(`/orders/${id}/amend`, body)
 export const retryShopify = (shipmentId: number) =>
   api.post<{ shipment_id: number; shopify_status: string }>(`/orders/shipments/${shipmentId}/shopify-retry`)

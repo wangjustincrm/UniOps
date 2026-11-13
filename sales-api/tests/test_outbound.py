@@ -463,8 +463,9 @@ async def test_a_settings_save_writes_only_what_changes_and_answers_what_was_wri
 
 
 async def test_a_manual_order_with_its_ship_to_builds_a_valid_940(edi):
-    """User 2026-11-13: Radiant rejected a manual order's 940 in the Shopify layout (W05-02 the customer's text,
-    two G62): a manual order goes in the retailer's layout, by its carrier — Purolator (parcel) or LTL."""
+    """User 2026-11-13: Radiant rejected a manual order's 940 (W05-02 the customer's text with spaces, two G62).
+    By Purolator it goes in the parcel layout Shopify's orders use, its W05-02 the 9-digit internal number and
+    one G62; by LTL in the retailer's layout (the next test)."""
     import pytest
     from app.platform.errors import InvalidInput
     from app.schemas.orders import AddressIn, ManualLineIn, ManualOrderIn
@@ -490,10 +491,11 @@ async def test_a_manual_order_with_its_ship_to_builds_a_valid_940(edi):
     assert (await edi.worker.run_once()).done == 1
     [(_, content)] = edi.store.files.items()
     segs = segments(content)
-    assert [s for s in segs if s[0] == "W05"][0] == ["W05", "N", f"{o.order_number:09d}", o.source_reference]  # the retailer's layout
-    assert [s[1] for s in segs if s[0] == "G62"] == ["10", "38"]
-    assert [s for s in segs if s[0] == "W66"][0][:2] == ["W66", "PP"] and "PRLA" in [s for s in segs if s[0] == "W66"][0]
+    assert [s for s in segs if s[0] == "W05"][0] == ["W05", "N", f"{o.order_number:09d}"]  # the parcel layout, no text
+    assert [s[1] for s in segs if s[0] == "G62"] == ["10"]
+    assert [s for s in segs if s[0] == "W66"][0] == ["W66", "PP", "U", "", "", "GND", "", "", "", "", "PRLA"]
     assert any(s[0] == "PER" for s in segs)                    # a parcel carries the contact
+    assert ["N9", "8X", "BC"] in segs and ["N9", "E1", o.source_reference] in segs
     assert ["N1", "ST", "Staff shop"] == [s for s in segs if s[0] == "N1" and s[1] == "ST"][0][:3]
     assert ["N4", "Kingston", "ON", "K7P 0E9"] == [s for s in segs if s[0] == "N4"][0][:4]
 
@@ -513,7 +515,12 @@ def test_a_manual_order_by_ltl_ships_as_a_retailer_s_and_none_chosen_is_refused(
     segs = segments(built.content)
     assert not built.errors and [s for s in segs if s[0] == "W66"][0] == ["W66", "PP", "LT", "", "", "", "", "", "", "", "WIFS"]
     assert not any(s[0] == "PER" for s in segs)
-    assert "a manual order needs its carrier: Purolator or LTL" in build_940(order(None), 1010100, _dt(2026, 11, 13, 10, 0)).errors
+    assert "a manual order needs its carrier: Purolator, Purolator Express or LTL" in build_940(order(None), 1010100, _dt(2026, 11, 13, 10, 0)).errors
+    express = build_940(Order940(**{**order("Purolator Express").__dict__, "retail": False, "express": True,
+                                    "source_order_number": "001018769"}), 1010101, _dt(2026, 11, 13, 10, 0))
+    segs = segments(express.content)
+    assert not express.errors and [s for s in segs if s[0] == "W66"][0][5:] == ["EXP", "", "", "", "", "PRLA"]
+    assert [s[1] for s in segs if s[0] == "G62"] == ["10"]  # one date in the parcel layout, even with a requested delivery
 
 
 async def test_a_shopify_940_bills_the_ship_to_whatever_the_billing_address(edi):  # user 2026-11-10

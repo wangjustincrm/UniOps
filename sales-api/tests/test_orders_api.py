@@ -73,7 +73,7 @@ async def test_manual_order_preview_create_submit(api):
             "lines": [{"item_code": "CF0092", "quantity": 2, "unit": "case"}]}
     assert (await api.post("/api/v1/orders/manual/preview", json=body["lines"], headers=READER)).status_code == 403
     r = await api.post("/api/v1/orders/manual/preview", json=body["lines"], headers=OPERATOR)
-    assert r.json() == [{"item_code": "CF0092", "quantity": "2", "unit": "CASE", "qty_ea": 12, "problem": None}]
+    assert r.json() == [{"item_code": "CF0092", "quantity": "2", "unit": "CASE", "qty_ea": 12, "problem": None, "weight_lb": None}]  # the test item has no weight
     assert (await api.post("/api/v1/orders/manual", json=body, headers=READER)).status_code == 403
     o = (await api.post("/api/v1/orders/manual", json=body, headers=OPERATOR)).json()
     assert (o["fulfillment_status"], o["order_state"]) == ("Draft", "Draft")

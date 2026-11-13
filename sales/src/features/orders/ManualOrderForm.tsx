@@ -3,12 +3,12 @@ import { useMutation, useQueries, useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { z } from 'zod'
 import {
-  ADDRESS_FIELDS, ActionButton, Autocomplete, ErrorMessage, MasterDetailForm, Skeleton, addressSchema, cleanAddress, numberColumn, readColumn,
+  ADDRESS_FIELDS, ActionButton, Autocomplete, ErrorMessage, MasterDetailForm, formatNumber, Skeleton, addressSchema, cleanAddress, numberColumn, readColumn,
   selectColumn, type EditableColumn, type FieldSpec,
 } from '@/platform-ui'
 import { itemOptions, itemUnits, manualPartnerOptions } from '../configuration/lookups'
 import {
-  CARRIERS, createManual, previewManual, updateManual, type LinePreview, type ManualLine, type ManualOrderIn, type OrderDetail, type OrderRead,
+  CARRIERS, LTL_FROM_LB, isCarrier, createManual, previewManual, updateManual, type LinePreview, type ManualLine, type ManualOrderIn, type OrderDetail, type OrderRead,
 } from './ordersApi'
 
 const OPERATE = 'sales.order.operate'
@@ -30,13 +30,26 @@ const fields: FieldSpec[] = [
     hint: 'Who the order is for. Manual orders use partners whose channel is Manual (Configuration → Partners).' },
   { name: 'customer_reference', label: 'Customer PO / reference', hint: "The customer's own number for this order, if they gave one." },
   { name: 'carrier', label: 'Ships by', type: 'segmented', options: CARRIERS,
-    hint: 'Purolator: a parcel (the ship-to phone goes with it). LTL: a pallet shipment, as a retailer order. Needed before it is submitted.' },
+    hint: 'Purolator (Ground or Express): a parcel, sent like a Shopify order (the ship-to phone goes with it). LTL: a pallet shipment, sent like a retailer order. Needed before it is submitted.' },
   { name: 'requested_delivery_date', label: 'Requested delivery', type: 'date' },
   { name: 'notes', label: 'Notes', type: 'textarea' },
 ]
 
 const lineProblem = (l: ManualLine) =>
   !l.item_code ? 'choose an item' : !(Number(l.quantity) > 0) ? 'a quantity above 0' : !l.unit ? 'a unit' : null
+
+/** The order's gross weight and the carrier it suggests (user 2026-11-13): above LTL_FROM_LB, LTL; else Purolator. */
+function WeightHint({ preview }: { preview: LinePreview[] }) {
+  const known = preview.filter((p) => p.weight_lb != null)
+  if (known.length === 0) return null
+  const lb = known.reduce((n, p) => n + Number(p.weight_lb), 0)
+  const partial = known.length < preview.length
+  return (
+    <p className="text-xs text-neutral-600">
+      About {formatNumber(Math.round(lb))} lb{partial ? ' (some items have no weight)' : ''}: suggested <strong>{lb > LTL_FROM_LB ? 'LTL' : 'Purolator'}</strong>.
+    </p>
+  )
+}
 
 /** A manual order (FR-OB-19a), new or a Draft being edited: the customer, where
  *  it ships (required — the 940 carries it), the lines — each unit chosen from the item's own units — and their EA preview;
@@ -91,6 +104,7 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
         <div className="flex flex-col gap-1">
           <ActionButton size="sm" variant="secondary" permission={OPERATE}
             onAction={() => check.mutateAsync(st.lines).catch(() => {})}>Preview EA</ActionButton>
+          {preview && <WeightHint preview={preview} />}
           <ErrorMessage error={check.error} />
         </div>
       )}
@@ -100,7 +114,7 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
         const body: ManualOrderIn = { partner_code: String(v.partner_code), customer_reference: (v.customer_reference as string) ?? null,
           requested_delivery_date: (v.requested_delivery_date as string) ?? null, notes: (v.notes as string) ?? null,
           ship_to: cleanAddress(v.ship_to as Record<string, unknown>), lines: ls,
-          carrier: v.carrier === 'Purolator' || v.carrier === 'LTL' ? v.carrier : null }
+          carrier: isCarrier(v.carrier) ? v.carrier : null }
         onSaved(draft ? await updateManual(draft.id, body, draft.version) : await createManual(body))
       }}
     />

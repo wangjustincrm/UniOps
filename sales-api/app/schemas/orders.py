@@ -371,7 +371,7 @@ class ManualOrderIn(BaseModel):
     notes: Text | None = None
     lines: Annotated[list[ManualLineIn], Field(min_length=1, max_length=200)]
     # How it ships (user 2026-11-13): Purolator (parcel) or LTL; required to submit.
-    carrier: Literal["Purolator", "LTL"] | None = None
+    carrier: Literal["Purolator", "Purolator Express", "LTL"] | None = None
 
 
 class CancelOrderIn(BaseModel):
@@ -452,7 +452,7 @@ class AmendOrderIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reason: Annotated[str, Field(min_length=3, max_length=500)]
     lines: Annotated[list[AmendLineIn], Field(min_length=1, max_length=500)]
-    carrier: Literal["Purolator", "LTL"] | None = None  # a manual order's carrier, changed with the amend
+    carrier: Literal["Purolator", "Purolator Express", "LTL"] | None = None  # a manual order's carrier, changed with the amend
 
 
 class ReturnedIn(BaseModel):
@@ -483,6 +483,8 @@ class LinePreview(BaseModel):
     unit: str
     qty_ea: int | None
     problem: str | None
+    # The line's gross weight (EA × the item's lb per EA): the entry screen suggests a carrier from the total.
+    weight_lb: Decimal | None = None
 
 
 class ReviewResult(BaseModel):

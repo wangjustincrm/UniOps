@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { Autocomplete, MasterDetailForm, readColumn, textColumn, type EditableColumn, type FieldSpec } from '@/platform-ui'
 import { itemOptions } from '@/features/configuration/lookups'
-import { CARRIERS, amendOrder, lineNumbers, type OrderDetail } from './ordersApi'
+import { CARRIERS, amendOrder, isCarrier, lineNumbers, type OrderDetail } from './ordersApi'
 
 const errorMessages: Record<string, string> = {
   'order.amend': 'This order can no longer be amended: the warehouse has shipped it, or it is not waiting for its 940.',
@@ -32,7 +32,7 @@ const problem = (l: AmendLine) => {
 
 const schema = z.object({ reason: z.string().trim().min(3, 'Say what was wrong, in a few words').max(500), carrier: z.string().nullable().optional() })
 const carrierField: FieldSpec = { name: 'carrier', label: 'Ships by', type: 'segmented', options: CARRIERS,
-  hint: 'A manual order: Purolator (a parcel) or LTL (a pallet shipment).' }
+  hint: 'A manual order: Purolator / Purolator Express (a parcel, like a Shopify order) or LTL (a pallet shipment, like a retailer order).' }
 const fields: FieldSpec[] = [
   { name: 'reason', label: 'What was wrong', type: 'textarea', required: true,
     hint: 'Kept in the order history. A 940 already sent is Replaced by a new one; a rejected or timed-out one is sent again; '
@@ -53,7 +53,7 @@ export function AmendForm({ o, onSaved, onCancel }: { o: OrderDetail; onSaved: (
       submitLabel="Amend and send again" errorMessages={errorMessages} onCancel={onCancel}
       onSubmit={async (v, lines) => {
         const kept = new Set(lines.map((l) => l.id))
-        const carrier = v.carrier === 'Purolator' || v.carrier === 'LTL' ? v.carrier : null
+        const carrier = isCarrier(v.carrier) ? v.carrier : null
         await amendOrder(o.id, {
           reason: String(v.reason ?? '').trim(),
           ...(o.source_type === 'MANUAL' && carrier && carrier !== o.shipping_method ? { carrier } : {}),

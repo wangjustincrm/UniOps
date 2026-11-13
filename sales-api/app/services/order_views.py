@@ -650,7 +650,9 @@ class ManualOrderService:
                                        problem="item not in the Item Master"))
                 continue
             qty_ea, why = to_ea(ln.quantity, ln.unit, {u.unit: Decimal(u.factor_ea) for u in item.units if u.active})
-            out.append(LinePreview(item_code=ln.item_code, quantity=ln.quantity, unit=ln.unit, qty_ea=qty_ea, problem=why))
+            w = item.gross_weight_lb_per_ea
+            out.append(LinePreview(item_code=ln.item_code, quantity=ln.quantity, unit=ln.unit, qty_ea=qty_ea, problem=why,
+                                   weight_lb=(Decimal(qty_ea) * Decimal(w)).quantize(Decimal("0.01")) if qty_ea and w is not None else None))
         return out
 
     @requires(OPERATE)
@@ -718,8 +720,8 @@ class ManualOrderService:
         if bad:
             raise InvalidInput("order.lines_invalid", "fix every line before submitting",
                                {"field": "lines", "lines": [{"line_no": n, "problem": p} for n, p in bad]})
-        if (o.shipping_method or "") not in ("Purolator", "LTL"):
-            raise InvalidInput("order.carrier", "choose how it ships: Purolator or LTL", {"field": "carrier"})
+        if (o.shipping_method or "") not in ("Purolator", "Purolator Express", "LTL"):
+            raise InvalidInput("order.carrier", "choose how it ships: Purolator, Purolator Express or LTL", {"field": "carrier"})
         p = await self._partner(o.partner_code)
         self.uow.set_reason("manual order: submit")
         now = datetime.now(timezone.utc)

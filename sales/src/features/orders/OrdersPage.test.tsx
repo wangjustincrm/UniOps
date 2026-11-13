@@ -305,8 +305,9 @@ describe('Orders: manual orders (FR-OB-19a) — New in the standard sheet, draft
     fireEvent.click(within(form).getByRole('button', { name: 'Preview EA' }))
     expect(await within(form).findByText('no conversion for unit CASE')).toBeInTheDocument()
     expect(within(form).getByRole('button', { name: 'Save draft' })).toBeDisabled()
-    api.preview.mockResolvedValueOnce([{ item_code: 'CF0092', quantity: '1', unit: 'CASE', qty_ea: 6, problem: null }])
+    api.preview.mockResolvedValueOnce([{ item_code: 'CF0092', quantity: '1', unit: 'CASE', qty_ea: 6, problem: null, weight_lb: '12.18' }])
     fireEvent.click(within(form).getByRole('button', { name: 'Preview EA' }))
+    expect(await within(form).findByText(/About 12 lb/)).toHaveTextContent('suggested Purolator')  // a parcel, under 150 lb
     expect(await within(form).findByText('6')).toBeInTheDocument()
     api.create.mockResolvedValue({ ...manualDraft, id: 10, order_number: 110, source_reference: 'MAN-110' })
     fireEvent.click(within(form).getByRole('button', { name: 'Save draft' }))

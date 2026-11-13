@@ -95,7 +95,9 @@ def eligible_clause(now: datetime) -> ColumnElement[bool]:
 def carrier_of(shipping_method: str | None) -> str | None:
     """A manual order's carrier as the 940 takes it: Purolator or LTL (else none chosen)."""
     m = (shipping_method or "").strip().lower()
-    return "Purolator" if "purolator" in m else "LTL" if m == "ltl" else None
+    if "purolator" in m:
+        return "Purolator Express" if "express" in m else "Purolator"
+    return "LTL" if m == "ltl" else None
 
 
 @dataclass
@@ -208,8 +210,10 @@ class Outbound940:
             OrderLine.order_id == order.id, OrderLine.removed.is_(False)).order_by(OrderLine.line_no))).scalars())
         codes = {ln.item_code for ln in lines if ln.item_code}
         items = {i.item_code: i for i in (await session.execute(select(Item).where(Item.item_code.in_(codes)))).scalars()}
-        retail = order.source_type in ("EDI_850", "MANUAL")  # a manual order: the retailer's layout (2026-11-13)
         manual = order.source_type == "MANUAL"
+        carrier = carrier_of(order.shipping_method) if manual else None
+        # A manual order (2026-11-13): LTL in the retailer's layout, Purolator in the parcel (Shopify) layout.
+        retail = order.source_type == "EDI_850" or (manual and carrier == "LTL")
         gln = (order.ship_to or {}).get("gln")
         dc = None
         if retail and gln:
@@ -229,9 +233,11 @@ class Outbound940:
                 warehouse_held=bool(item and item.warehouse_held)))
         return Order940(
             order_id=order.id, order_number=order.order_number, retail=retail,
-            # W05-03 / N9*E1: a manual order's reference is its Order ref (the customer's text may hold spaces).
-            source_order_number=str((order.source_reference if manual else order.source_order_number) or ""),
-            source_reference=order.source_reference, manual=manual, carrier=carrier_of(order.shipping_method) if manual else None,
+            # A manual order: by LTL its W05-03 is the Order ref; by parcel its W05-02 is the 9-digit internal number
+            # (the customer's own text may hold spaces: Radiant rejected it).
+            source_order_number=str((order.source_reference if retail else f"{order.order_number:09d}") if manual
+                                    else (order.source_order_number or "")),
+            source_reference=order.source_reference, manual=manual, carrier=carrier,
             partner_code=order.partner_code, partner_name=partner.name, walmart=bool(partner.dc_routing_required),
             label_code=partner.label_code,
             dc_number=dc, order_type=order.order_type, department=order.department,
@@ -239,7 +245,7 @@ class Outbound940:
             # Shopify (user 2026-11-10): the customer paid in Shopify and nobody is billed, so the 940's
             # bill-to is the ship-to. The order keeps Shopify's billing address.
             bill_to=Address.of(order.ship_to if order.source_type == "SHOPIFY" else order.bill_to), contact=order.contact or {},
-            express="express" in (order.shipping_method or "").lower(), lines=tuple(out))
+            express=("express" in (order.shipping_method or "").lower()), lines=tuple(out))
 
     async def generate(self, uow, order: Order, partner: Partner, *, reason: str) -> Document:
         """One 940 for a locked order in Pending / a resend status: the file,
