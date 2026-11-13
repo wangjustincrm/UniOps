@@ -30,6 +30,9 @@ import {
   CausesEditor, causesPayload, spendActionDrafts, unfinishedAction, type CauseDraft,
 } from '@/components/CausesEditor'
 
+interface Why { question: string; answer: string }
+const NO_WHY: Why = { question: '', answer: '' }
+
 interface Investigation {
   id: string
   investigator_id: string | null
@@ -39,7 +42,7 @@ interface Investigation {
   ppe_that_could_prevent: string[]
   sequence_of_events: string | null
   root_cause_narrative: string | null
-  five_whys?: string[]
+  five_whys?: Why[]
   completed_at: string | null
   signed_by_name: string | null
 }
@@ -139,7 +142,9 @@ export default function InvestigationPage() {
   const [ppe, setPpe] = useState<string[]>([])
   const [sequence, setSequence] = useState('')
   const [narrative, setNarrative] = useState('')
-  const [whys, setWhys] = useState<string[]>(['', '', '', '', ''])
+  // Once somebody opens or folds the 5 Whys, it stays as they left it.
+  const [whysOpen, setWhysOpen] = useState<boolean | null>(null)
+  const [whys, setWhys] = useState<Why[]>(() => [0, 1, 2, 3, 4].map(() => ({ ...NO_WHY })))
   const [causes, setCauses] = useState<Cause[]>([])
   const [signature, setSignature] = useState<string | null>(null)
   const [med, setMed] = useState<Partial<Medical>>({ timeline: [] })
@@ -193,7 +198,7 @@ export default function InvestigationPage() {
       setPpe(inv.ppe_that_could_prevent ?? [])
       setSequence(inv.sequence_of_events ?? '')
       setNarrative(inv.root_cause_narrative ?? '')
-      setWhys([0, 1, 2, 3, 4].map((i) => inv.five_whys?.[i] ?? ''))
+      setWhys([0, 1, 2, 3, 4].map((i) => ({ ...NO_WHY, ...(inv.five_whys?.[i] ?? {}) })))
     } else if (me) {
       // ★ Round 7: "when clicking on the start the investigation button, the
       // lead investigator should default to who ever is logged in." Only when
@@ -218,7 +223,7 @@ export default function InvestigationPage() {
   const [batchCode, setBatchCode] = useState<string | null>(null)
   const batchShown = batchCode ?? incident.data?.batch_code ?? ''
   const needsWhys = Boolean(incident.data?.needs_five_whys)
-  const whysMissing = needsWhys ? whys.filter((w) => !w.trim()).length : 0
+  const whysMissing = needsWhys ? whys.filter((w) => !w.answer.trim()).length : 0
 
   const save = useMutation({
     mutationFn: async (opts: { sign: boolean }) => {
@@ -383,7 +388,16 @@ export default function InvestigationPage() {
 
       {/* ★ Round 12, INC-15/16 and Q8: "the 5 why technique … any items
           categorized as food safety would require it." */}
-      <Section title="5 Whys">
+      {/* ★ UAT 13: "minimize the 5 whys section but let it be expanded if
+          required." Open where food safety requires it or answers are already
+          in; folded otherwise. */}
+      <details open={whysOpen ?? (needsWhys || whys.some((w) => w.question.trim() || w.answer.trim()))}
+               onToggle={(e) => setWhysOpen(e.currentTarget.open)}
+               className="mb-6 rounded-xl border border-neutral-200 bg-white p-4">
+        <summary className="cursor-pointer text-sm font-semibold text-neutral-800">
+          5 Whys{needsWhys ? ' — required for food safety' : ' — optional'}
+        </summary>
+        <div className="mt-3">
         <p className="mb-2 text-xs text-neutral-600">
           Ask why it happened, then why that happened, and keep going until you reach the cause
           that, fixed, stops it happening again.{' '}
@@ -391,18 +405,28 @@ export default function InvestigationPage() {
             ? <b className="text-neutral-800">Required for food safety: all five are answered before it is signed off.</b>
             : 'Optional here; required for food safety.'}
         </p>
-        <ol className="flex flex-col gap-2">
+        {/* ★ UAT 13, TC-06: "add a field under the why question to allow for
+            the answer to be entered." Each step is the question asked, and the
+            answer under it; the next question usually starts from that answer. */}
+        <ol className="flex flex-col gap-3">
           {whys.map((w, i) => (
-            <li key={i}>
-              <label className="text-xs font-medium text-neutral-700">
-                Why {i + 1}{i === 0 ? ' — why did it happen?' : ` — why did that happen?`}
-                <input className={`${inputClass} mt-1`} value={w}
-                       onChange={(e) => setWhys((all) => all.map((x, j) => (j === i ? e.target.value : x)))} />
+            <li key={i} className="rounded-lg border border-neutral-200 p-3">
+              <label className="block text-xs font-medium text-neutral-700">
+                Why {i + 1} — the question
+                <input className={`${inputClass} mt-1`} value={w.question}
+                       placeholder={i === 0 ? 'Why did it happen?' : 'Why did that happen?'}
+                       onChange={(e) => setWhys((all) => all.map((x, j) => (j === i ? { ...x, question: e.target.value } : x)))} />
+              </label>
+              <label className="mt-2 block text-xs font-medium text-neutral-700">
+                Answer
+                <textarea rows={2} className={`${inputClass} mt-1 py-2`} value={w.answer}
+                          onChange={(e) => setWhys((all) => all.map((x, j) => (j === i ? { ...x, answer: e.target.value } : x)))} />
               </label>
             </li>
           ))}
         </ol>
-      </Section>
+        </div>
+      </details>
 
       <Section title="Immediate causes">
         {causeRows('immediate', 'immediate_cause',

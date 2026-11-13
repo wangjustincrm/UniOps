@@ -138,7 +138,8 @@ async def test_a_food_safety_investigation_is_signed_off_with_all_five_whys(hse_
         "investigator_id": None, "five_whys": ["a", "b", "c", "d", "e"]})
     assert (await hse.post(f"/api/v1/incidents/{iid}/investigation/sign", json=sig)).status_code == 200
     got = (await hse.get(f"/api/v1/incidents/{iid}/investigation")).json()
-    assert got["five_whys"] == ["a", "b", "c", "d", "e"]
+    # Strings sent the older way are each step's answer (UAT 13, TC-06).
+    assert got["five_whys"] == [{"question": "", "answer": x} for x in "abcde"]
 
     plain, inc = await investigate("near_miss", [])
     assert inc["needs_five_whys"] is False

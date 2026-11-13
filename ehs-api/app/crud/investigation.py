@@ -19,6 +19,9 @@ from app.schemas.investigation import CausesReplace, InvestigationIn
 LIVE_ACTION_STATUSES = ("open", "in_progress", "pending_verification", "closed")
 
 
+from app.schemas.investigation import as_whys  # noqa: E402
+
+
 async def _name(db: AsyncSession, user_id: uuid.UUID | None) -> str | None:
     if user_id is None:
         return None
@@ -68,8 +71,9 @@ async def upsert_investigation(
     inv.ppe_that_could_prevent = [str(i) for i in payload.ppe_that_could_prevent]
     inv.sequence_of_events = payload.sequence_of_events
     inv.root_cause_narrative = payload.root_cause_narrative
-    whys = [(w or "").strip() for w in payload.five_whys][:5]
-    while whys and not whys[-1]:
+    whys = [{"question": w.question.strip(), "answer": w.answer.strip()}
+            for w in payload.five_whys][:5]
+    while whys and not (whys[-1]["question"] or whys[-1]["answer"]):
         whys.pop()
     inv.five_whys = whys
     await db.flush()
@@ -106,7 +110,7 @@ async def sign_investigation(
         raise HTTPException(status.HTTP_409_CONFLICT,
                             "There is no investigation to sign yet")
     if await needs_five_whys(db, incident):
-        answered = [w for w in (inv.five_whys or []) if (w or "").strip()]
+        answered = [w for w in as_whys(inv.five_whys) if (w.get("answer") or "").strip()]
         if len(answered) < FIVE_WHYS:
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY,

@@ -37,3 +37,29 @@ async def test_sending_an_answered_recommendation_opens_no_reply_task(
                               json={"user_ids": [str(ken.id)]})
     assert again.status_code == 200, again.text
     assert await _reply_tasks(db_session, ken) == []
+
+
+async def test_each_why_is_a_question_and_its_answer(hse_manager, db_session):
+    """TC-06: "add a field under the why question to allow for the answer to be
+    entered." A food-safety investigation counts the answers, not the questions."""
+    from tests.test_incident_types_r12 import _food, _near_miss
+    _, hse = hse_manager
+    await _food(db_session)
+    made = (await hse.post("/api/v1/incidents", json=_near_miss("near_miss_food_safety"))).json()
+    await hse.post(f"/api/v1/incidents/{made['id']}/submit")
+    whys = [{"question": f"Why {n}?", "answer": f"Because {n}"} for n in range(1, 5)]
+    whys.append({"question": "Why was the lid left off?", "answer": ""})
+    put = await hse.put(f"/api/v1/incidents/{made['id']}/investigation",
+                        json={"investigator_id": None, "five_whys": whys})
+    assert put.status_code == 200, put.text
+    got = (await hse.get(f"/api/v1/incidents/{made['id']}/investigation")).json()
+    assert got["five_whys"][4] == {"question": "Why was the lid left off?", "answer": ""}
+
+    sig = {"signature": "data:image/png;base64,iVBORw0KGgo="}
+    refused = await hse.post(f"/api/v1/incidents/{made['id']}/investigation/sign", json=sig)
+    assert refused.status_code == 422 and "4 of 5" in refused.text, refused.text
+    whys[4]["answer"] = "Nobody checks it at changeover"
+    await hse.put(f"/api/v1/incidents/{made['id']}/investigation",
+                  json={"investigator_id": None, "five_whys": whys})
+    assert (await hse.post(f"/api/v1/incidents/{made['id']}/investigation/sign",
+                           json=sig)).status_code == 200

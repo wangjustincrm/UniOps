@@ -4,8 +4,26 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+
+
+class Why(BaseModel):
+    """★ UAT 13, TC-06: one step of the 5 Whys — the question asked, and the
+    answer under it. Until then each step was a single line."""
+    question: str = Field(default="", max_length=500)
+    answer: str = Field(default="", max_length=2000)
+
+
+def as_whys(value):
+    """Older investigations stored each step as one string: that was the answer."""
+    out = []
+    for w in value or []:
+        if isinstance(w, str):
+            out.append({"question": "", "answer": w})
+        else:
+            out.append(w)
+    return out
 
 class InvestigationIn(BaseModel):
     # A PUT replaces the investigation, so anything left out is cleared. That is
@@ -23,7 +41,12 @@ class InvestigationIn(BaseModel):
     ppe_that_could_prevent: list[uuid.UUID] = Field(default_factory=list)
     sequence_of_events: str | None = None
     root_cause_narrative: str | None = None
-    five_whys: list[str] = Field(default_factory=list, max_length=5)
+    five_whys: list[Why] = Field(default_factory=list, max_length=5)
+
+    @field_validator("five_whys", mode="before")
+    @classmethod
+    def _older_shape(cls, v):
+        return as_whys(v)
 
 
 class InvestigationSignIn(BaseModel):
@@ -95,7 +118,12 @@ class InvestigationOut(BaseModel):
     ppe_that_could_prevent: list[uuid.UUID]
     sequence_of_events: str | None
     root_cause_narrative: str | None
-    five_whys: list[str] = []
+    five_whys: list[Why] = []
+
+    @field_validator("five_whys", mode="before")
+    @classmethod
+    def _stored_shape(cls, v):
+        return as_whys(v)
     completed_at: datetime | None
     signed_by_name: str | None
 
