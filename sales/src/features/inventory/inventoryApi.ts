@@ -70,5 +70,72 @@ export const PLACE: Record<string, string> = {
 export const SOURCE: Record<string, string> = {
   transfer_line: 'Transfer sent (943)', transfer_sent: 'Transfer sent (943)', transfer_accepted: 'Transfer difference accepted', receipt_row: 'Received (944)', return_944: 'Return received (RA 944)', return_order: 'Returned by customer (RA)',
   shipment_row: 'Shipped (945)', order_line: 'Shipped (order, no 945)', delivery: 'Delivered', returned: 'Returned by customer',
-  adjustment: 'Adjustment',
+  adjustment: 'Adjustment', count: 'Radiant count (start)',
 }
+
+/** Radiant's inventory report at a moment (user 2026-11-13): compared lot by lot, then applied as the start. */
+export interface StockCountRead {
+  id: number
+  counted_at: string
+  source: string
+  note: string | null
+  file_name: string | null
+  document_id: number | null
+  /** Set: every lot starts from Radiant's figure at `counted_at`. */
+  applied_at: string | null
+  applied_by_name: string | null
+  lines: number
+  total_ea: number
+  hold_ea: number
+  version: number
+  created_at: string
+  created_by_name: string
+}
+
+export interface StockCountLineRead {
+  id: number; item_code: string; lot: string | null; expiry: string | null; qty_ea: number; hold_ea: number; description: string | null
+}
+
+export type CompareKind = 'match' | 'differs' | 'sales_only' | 'radiant_only' | 'no_lot'
+
+/** One item and lot: Sales' moves up to the count, Radiant's figure, the difference (Sales − Radiant), after it. */
+export interface CountCompareRow {
+  item_code: string
+  lot: string | null
+  description: string | null
+  known_item: boolean
+  expiry: string | null
+  received_ea: number
+  returned_ea: number
+  shipped_ea: number
+  adjusted_ea: number
+  sales_ea: number
+  radiant_ea: number
+  hold_ea: number
+  in_report: boolean
+  difference_ea: number
+  since_ea: number
+  now_ea: number
+  kind: CompareKind
+}
+
+export const COMPARE_KIND: Record<CompareKind, string> = {
+  match: 'Matches', differs: 'Differs', sales_only: 'Only in Sales', radiant_only: 'Only at Radiant', no_lot: 'Shipped with no lot',
+}
+
+export const stockCountsClient = createResourceClient<StockCountRead, never>(api, '/inventory/counts')
+export function uploadCount(file: File, countedAt: string, note: string | null) {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('counted_at', countedAt)
+  if (note) form.append('note', note)
+  return api.upload<StockCountRead>('/inventory/counts', form)
+}
+export const fetchCount = (id: number) => api.get<StockCountRead>(`/inventory/counts/${id}`)
+export const fetchCountLines = (id: number) => api.get<StockCountLineRead[]>(`/inventory/counts/${id}/lines`)
+export const fetchCountCompare = (id: number) => api.get<CountCompareRow[]>(`/inventory/counts/${id}/compare`)
+export const updateCount = (id: number, version: number, countedAt: string | null, note: string | null) =>
+  api.put<StockCountRead>(`/inventory/counts/${id}`, { version, counted_at: countedAt, note })
+export const applyCount = (id: number, version: number) => api.post<StockCountRead>(`/inventory/counts/${id}/apply`, { version })
+export const undoCount = (id: number, version: number, reason: string) =>
+  api.post<StockCountRead>(`/inventory/counts/${id}/undo`, { version, reason })

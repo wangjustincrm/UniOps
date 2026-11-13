@@ -19,6 +19,7 @@ opening balance; the result is compared with Radiant's own figures).
      (delivery confirmed and invoiced, an order with no invoice,      and TO_CUSTOMER → RETURNING (returned),
       or an old order)                                                 lot by lot in shipping order
   a person's adjustment (reason)                                → RADIANT ↔ ADJUSTED
+  an applied Radiant count (stock_counts.py)                    → RADIANT ↔ ADJUSTED, at its moment, to Radiant's figure
 
 A 944 row carries no expiry: the lot's expiry as its 945s give it."""
 from __future__ import annotations
@@ -220,6 +221,11 @@ async def sync(uow) -> dict:
                     w.add("delivery", str(r.id), qty=d, frm=TO_CUSTOMER, to=CUSTOMER, **kw)
                     w.add("returned", str(r.id), qty=q - d, frm=TO_CUSTOMER, to=RETURNING, **kw)
     await s.flush()
+    # Applied Radiant counts last: at each count's moment every lot holds Radiant's figure (a late 945 dated
+    # before it changes the count's move, not the figure).
+    from app.services.stock_counts import count_moves
+    if n := await count_moves(s):
+        w.n["count"] += n
     return dict(w.n)
 
 

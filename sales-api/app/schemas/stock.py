@@ -64,3 +64,74 @@ class AdjustIn(BaseModel):
     lot: str | None = Field(default=None, max_length=50)
     qty_ea: int = Field(ge=-10_000_000, le=10_000_000)
     reason: str = Field(min_length=3, max_length=500)
+
+
+class StockCountRead(BaseModel):
+    """Radiant's inventory report at a moment (sales30)."""
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    counted_at: datetime
+    source: str
+    note: str | None = None
+    file_name: str | None = None
+    document_id: int | None = None
+    applied_at: datetime | None = None
+    applied_by_name: str | None = None
+    lines: int = 0
+    total_ea: int = 0
+    hold_ea: int = 0
+    version: int
+    created_at: datetime
+    created_by_name: str
+    updated_at: datetime | None = None
+    updated_by_name: str | None = None
+
+
+class StockCountLineRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    item_code: str
+    lot: str | None = None
+    expiry: date | None = None
+    qty_ea: int
+    hold_ea: int
+    description: str | None = None
+
+
+class CountCompareRow(BaseModel):
+    """One item and lot: Sales' moves up to the count, Radiant's figure, the difference, and after it."""
+    item_code: str
+    lot: str | None = None
+    description: str | None = None
+    known_item: bool = True
+    expiry: date | None = None
+    received_ea: int = 0      # 944 rows (transfers)
+    returned_ea: int = 0      # RA 944s (customer returns)
+    shipped_ea: int = 0       # 945 rows (packing lists) and orders shipped with no 945
+    adjusted_ea: int = 0      # people's adjustments, earlier counts
+    sales_ea: int = 0         # Sales' balance at the count
+    radiant_ea: int = 0
+    hold_ea: int = 0
+    in_report: bool = False
+    difference_ea: int = 0    # Sales − Radiant
+    since_ea: int = 0         # moved after the count
+    now_ea: int = 0           # Radiant + since: the figure once the count is the start
+    kind: str = "match"       # match | differs | sales_only | radiant_only | no_lot
+
+
+class CountUpdateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: int
+    counted_at: datetime | None = None
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class CountVersionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: int
+
+
+class CountUndoIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    version: int
+    reason: str = Field(min_length=3, max_length=500)

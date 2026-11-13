@@ -10,6 +10,7 @@ import {
   PLACE, SOURCE, adjustStock, exportStock, stockItemsClient, stockLotsClient, stockMovesClient,
   type StockItemRead, type StockLotRead, type StockMoveRead,
 } from './inventoryApi'
+import { CountsView } from './CountsView'
 
 const colItem = columnsOf<StockItemRead>()
 const colLot = columnsOf<StockLotRead>()
@@ -144,22 +145,31 @@ function ExportButton({ client, spec, name }: { client: { exportPath: (s: QueryS
 const NOTE = (
   <Callout label="How these figures are made">
     Every figure is a sum of moves made from Sales' own records: transfers (943) and their receipts (944), shipments (945),
-    deliveries and returns. They start from the first data Sales holds; shipments that never reached Sales (retailer orders
-    before July 2026) are not in them, so compare with Radiant's portal and record any difference as an adjustment.
+    deliveries and returns. A Radiant report applied as the start (Radiant reports) sets every lot to Radiant's figure at
+    its moment; the moves after it add up from there.
   </Callout>
 )
 
 /** Operations → Inventory: the stock at Radiant (design §15), by item or by lot, with each item's stock card. */
+type View = 'items' | 'lots' | 'counts'
+
+function ViewSwitch({ view, set }: { view: View; set: (v: View) => void }) {
+  const views: [View, string][] = [['items', 'By item'], ['lots', 'By lot'], ['counts', 'Radiant reports']]
+  return <>{views.filter(([v]) => v !== view).map(([v, label]) => <Button key={v} size="sm" variant="secondary" onClick={() => set(v)}>{label}</Button>)}</>
+}
+
 export default function InventoryPage() {
-  const [byLot, setByLot] = useState(false)
-  if (byLot) {
+  const [view, setView] = useState<View>('items')
+  const nav = <ViewSwitch view={view} set={setView} />
+  if (view === 'counts') return <CountsView toolbar={nav} />
+  if (view === 'lots') {
     return (
       <ListPage<StockLotRead>
         key="lots" resource={stockLotsClient} title="Inventory by lot"
         description="Each lot at Radiant: on hand, received, shipped, expiry."
         columns={lotColumns} notice={NOTE} emptyTitle="No stock moves yet"
         toolbar={(ctx) => (<>
-          <Button size="sm" variant="secondary" onClick={() => setByLot(false)}>By item</Button>
+          {nav}
           <ExportButton client={stockLotsClient} spec={ctx.spec} name="inventory-lots.csv" />
         </>)}
       />
@@ -172,7 +182,7 @@ export default function InventoryPage() {
       columns={itemColumns} notice={NOTE} emptyTitle="No stock moves yet"
       renderDetail={(r) => <ItemSheet row={r} />}
       toolbar={(ctx) => (<>
-        <Button size="sm" variant="secondary" onClick={() => setByLot(true)}>By lot</Button>
+        {nav}
         <ExportButton client={stockItemsClient} spec={ctx.spec} name="inventory-items.csv" />
       </>)}
     />

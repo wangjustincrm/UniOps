@@ -24,6 +24,7 @@ export {
   type RecordRef,
 } from './primitives/cells'
 export { columnsOf } from './primitives/columns'
+export { Checkbox } from './primitives/Checkbox'
 export {
   dateAndTime, formatShortMoment, formatDateTime, formatDate, formatDuration, formatTime, formatMoney, formatNumber, registerStatusTones, statusTone, timeFromNow,
 } from './primitives/format'

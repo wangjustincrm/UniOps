@@ -10,10 +10,11 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Index, Integer, String, Text, UniqueConstraint, Uuid, case, cast, func, select
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid, case, cast, func, select
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+from app.platform.entities import Audited, Versioned
 
 PLANT, TO_RADIANT, RADIANT, TO_CUSTOMER, CUSTOMER, RETURNING, ADJUSTED = (
     "PLANT", "TO_RADIANT", "RADIANT", "TO_CUSTOMER", "CUSTOMER", "RETURNING", "ADJUSTED")
@@ -121,3 +122,34 @@ class StockItem(Base):
     """One item: on hand at Radiant, allocated to 940s, available, and on its way (columns: _ITEMS's labels)."""
     __table__ = _ITEMS
     __mapper_args__ = {"primary_key": [_ITEMS.c.id]}
+
+
+class StockCount(Audited, Versioned, Base):
+    """Radiant's inventory report at a moment (sales30, user 2026-11-13): what the warehouse said it held,
+    compared lot by lot with Sales' own figures. Applied, it becomes the starting point: at `counted_at`
+    each lot is set to Radiant's figure by "count" moves, and every move after it adds up from there.
+    The moves before stay as they are (the report shows the difference they make)."""
+    __tablename__ = "sales_stock_counts"
+
+    counted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source: Mapped[str] = mapped_column(String(100), nullable=False, default="Radiant portal", server_default="Radiant portal")
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    file_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    document_id: Mapped[int | None] = mapped_column(ForeignKey("sales_documents.id"), nullable=True)
+    applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    applied_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class StockCountLine(Base):
+    """One item and lot of a count, as Radiant gave it (pallets of the same lot added up)."""
+    __tablename__ = "sales_stock_count_lines"
+    __table_args__ = (Index("ix_sales_stock_count_lines_count", "count_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    count_id: Mapped[int] = mapped_column(ForeignKey("sales_stock_counts.id", ondelete="CASCADE"), nullable=False)
+    item_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    lot: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    expiry: Mapped[date | None] = mapped_column(Date, nullable=True)
+    qty_ea: Mapped[int] = mapped_column(Integer, nullable=False)
+    hold_ea: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    description: Mapped[str | None] = mapped_column(String(255), nullable=True)

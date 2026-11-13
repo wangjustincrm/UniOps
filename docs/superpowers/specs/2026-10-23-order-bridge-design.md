@@ -888,11 +888,18 @@ Expiry: a 945 row carries it (G62*36); a 944 row does not — taken from the lot
 
 ### 15.4 Starting point
 
-**Decided 2026-11-12 (product owner): from the first data Sales holds, no opening balance for now.** Radiant's own figures (its portal) are the reference: the user compares, and records a difference as an adjustment (reason required). Known gap: retailer shipments before Sales read 945s (before July 2026) are not in Sales, so on hand reads high until adjusted. Shopify orders shipped with no 945 in Sales move out at their order date with no lot (from Radiant's first receipt, 2024-08-26, onward). An opening balance per item and lot, from Radiant's report at a cut-off date, can still be added later (it is one more source).
+**Decided 2026-11-12 (product owner): from the first data Sales holds, no opening balance for now** (2026-11-13: a Radiant report can now be applied as the start, §15.5). Radiant's own figures (its portal) are the reference: the user compares, and records a difference as an adjustment (reason required). Known gap: retailer shipments before Sales read 945s (before July 2026) are not in Sales, so on hand reads high until adjusted. Shopify orders shipped with no 945 in Sales move out at their order date with no lot (from Radiant's first receipt, 2024-08-26, onward). An opening balance per item and lot, from Radiant's report at a cut-off date, can still be added later (it is one more source).
 
 ### 15.5 Reconciliation with Radiant
 
 Radiant's count is the reference. If Radiant can send an **846** (inventory inquiry/advice) or a periodic stock file (CSV/Excel), Sales reads it like any other file and compares per item and lot: equal → nothing; different → a task listing the differences, and a person decides (an adjustment with a reason, or a question to Radiant). Without such a file, the same comparison runs on a report uploaded by hand.
+
+**Built 2026-11-13 (user: "a report per lot: transfers in, packing lists out, against Radiant, to see the difference; keep the records, take the latest Radiant inventory as the start and keep the current numbers right").** Inventory → Radiant reports (sales30, `services/stock_counts.py`):
+
+- **Upload:** the portal's report as it comes (CSV or Excel; per pallet or per lot; quantities of one item and lot added up; ON-HOLD kept apart), with the moment it was taken. The file is kept and can be viewed.
+- **Comparison:** per item, with its lots underneath, up to that moment: received (944 rows), returned (RA 944), shipped (945 rows, orders shipped with no 945), adjusted; Sales' balance; Radiant's figure; the difference (Sales − Radiant); a result (matches, differs, only in Sales, only at Radiant, shipped with no lot); what moved after it; and the figure once applied. Reading it changes nothing.
+- **Apply as the start** (reversible): "count" moves at the report's moment set every lot to Radiant's figure (a lot Radiant does not list, and the "(no lot)" balance, go to 0). Every move before stays. The stock sync keeps the count right: a 945 that arrives later but shipped before the moment changes the count's move, not the figure. Undo (with why) takes the count's moves away.
+- **Next:** settling each difference (accept it with a reason, or keep Sales' figure for a lot until Radiant's data), as the user asked, after this report.
 
 ### 15.6 Screens
 
