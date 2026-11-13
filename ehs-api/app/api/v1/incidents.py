@@ -17,7 +17,7 @@ from app.core.permissions import (
     CanClassifyIncident,
     CanCloseIncident,
     CanInvestigate,
-    CanManageStatutory,
+    CanRecordFiling,
     CanReadIncident,
     CanReportIncident,
 )
@@ -713,7 +713,7 @@ async def update_person_injury(
 
 @router.post("/{incident_id}/mol-report/filed", response_model=IncidentOut)
 async def mol_report_filed(
-    incident_id: uuid.UUID, payload: MolReportFiledIn, db: SessionDep, user: CanManageStatutory,
+    incident_id: uuid.UUID, payload: MolReportFiledIn, db: SessionDep, user: CanRecordFiling,
 ):
     """Record that the s.51(1) written report went to the Ministry, stopping that clock.
 
@@ -787,7 +787,7 @@ async def wsib_form7(incident_id: uuid.UUID, db: SessionDep, user: CanReadIncide
 
 @router.post("/{incident_id}/wsib-form7/filed", response_model=Form7Package)
 async def wsib_form7_filed(
-    incident_id: uuid.UUID, payload: Form7FiledIn, db: SessionDep, user: CanManageStatutory,
+    incident_id: uuid.UUID, payload: Form7FiledIn, db: SessionDep, user: CanRecordFiling,
 ):
     """Record that Form 7 was filed, which is what stops the clock.
 

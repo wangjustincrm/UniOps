@@ -198,6 +198,10 @@ export default function IncidentDetailPage() {
   const queryClient = useQueryClient()
   const { can } = usePermissions()
   const sectionB = useSectionB()
+  // ★ UAT 13: "allow the coord role to add WSIB and MOL reporting information
+  // on incidents" — ehs.statutory.record (identity 0029). Saying a clock does
+  // not apply stays ehs.statutory.manage, HSE's.
+  const mayRecordFiling = can('ehs.statutory.record')
   const [confirmation, setConfirmation] = useState('')
   const [molReference, setMolReference] = useState('')
   // Round 9: reopening needs a reason, kept on the timeline.
@@ -652,7 +656,7 @@ export default function IncidentDetailPage() {
                       discharged it. The Ministry's had none, so it ran on after
                       the report had gone — an overdue legal obligation on the
                       screen that had actually been met. */}
-                  {d.kind === 'mol_48h' && !d.satisfied_at && can('ehs.statutory.manage') && (
+                  {d.kind === 'mol_48h' && !d.satisfied_at && mayRecordFiling && (
                     <div className="mt-2.5">
                       <p className="text-xs text-neutral-500">
                         UniOps does not notify the Ministry — send the written report,
@@ -727,7 +731,7 @@ export default function IncidentDetailPage() {
                       ))}
                     </ul>
                   )}
-                  {can('ehs.statutory.manage') && (
+                  {mayRecordFiling && (
                     <div className="mt-2.5 flex gap-2">
                       <input
                         className="min-h-[40px] flex-1 rounded-lg border border-neutral-300 px-2.5 text-sm"

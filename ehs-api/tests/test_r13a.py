@@ -96,3 +96,36 @@ async def test_supervisors_see_section_b_only_when_hse_turn_it_on(
         assert (await s.get(url)).status_code == 200
     assert (await emp.get("/api/v1/section-b/access")).json() == {"may_read": False}
     assert (await emp.get(url)).status_code == 403
+
+
+async def test_a_coordinator_records_the_mol_and_wsib_filings_but_not_that_a_clock_lapses(
+        hse_manager, worker, test_engine, db_session):
+    """UAT 13: "Allow the coord role to add WSIB and MOL reporting information
+    on incidents." Saying a clock does not apply stays HSE's."""
+    from datetime import datetime, timedelta, timezone
+    _, hse = hse_manager
+    injured, wclient = worker
+    coord = await make_user(test_engine, role="ehs_coordinator")
+    incident = (await hse.post("/api/v1/incidents", json={
+        "form_kind": "medical", "title": "Caught in the case sealer",
+        "incident_type": "unconscious", "injury_class": "lost_time",
+        "occurred_at": (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat(),
+        "description": "Found unconscious beside the sealer.",
+        "injured_user_id": str(injured.id)})).json()
+    kinds = {d["kind"]: d for d in incident["deadlines"]}
+    assert "mol_48h" in kinds and "wsib_form7" in kinds, kinds
+
+    # An ordinary employee may do neither.
+    assert (await wclient.post(f"/api/v1/incidents/{incident['id']}/mol-report/filed",
+                               json={"reference": "x"})).status_code == 403
+
+    async with authed_client(make_token(coord.id, coord.role), db_session) as c:
+        mol = await c.post(f"/api/v1/incidents/{incident['id']}/mol-report/filed",
+                           json={"reference": "Emailed to the Kingston office"})
+        assert mol.status_code == 200, mol.text
+        f7 = await c.post(f"/api/v1/incidents/{incident['id']}/wsib-form7/filed",
+                          json={"confirmation_number": "WSIB-2026-1"})
+        assert f7.status_code == 200, f7.text
+        lapse = await c.post(f"/api/v1/deadlines/{kinds['wsib_form7']['id']}/not-required",
+                             json={"reason": "Reclassified as first aid"})
+        assert lapse.status_code == 403

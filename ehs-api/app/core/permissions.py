@@ -38,6 +38,9 @@ CanWriteWorker = Annotated[dict, Depends(require_permission("ehs.worker.write"))
 
 # Marking a statutory obligation as filed — the act that stops a legal clock.
 CanManageStatutory = Annotated[dict, Depends(require_permission("ehs.statutory.manage"))]
+# UAT 13: recording that the Ministry was told and that Form 7 was filed — the
+# coordinator does it too (identity 0029); a clock not applying stays HSE's.
+CanRecordFiling = Annotated[dict, Depends(require_permission("ehs.statutory.record"))]
 
 # The Joint Health and Safety Committee: roster, meetings, recommendations.
 CanReadJhsc = Annotated[dict, Depends(require_permission("ehs.jhsc.read"))]

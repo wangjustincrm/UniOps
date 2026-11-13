@@ -72,6 +72,8 @@ EHS_KEYS = (
     "ehs.asset.read", "ehs.asset.inspect", "ehs.asset.manage",
     # 0028 — putting an item back in service (round 12, FRM-04).
     "ehs.asset.return",
+    # 0029 — recording MOL and WSIB filings (UAT 13).
+    "ehs.statutory.record",
     "ehs.permit.request", "ehs.permit.read", "ehs.permit.issue",
 )
 EHS_GRANTS = {
@@ -101,6 +103,7 @@ EHS_GRANTS = {
     "ehs.asset.inspect": ["ehs_manager", "ehs_coordinator", "area_supervisor", "first_aider"],
     "ehs.asset.manage": ["ehs_manager", "ehs_coordinator"],
     "ehs.asset.return": ["ehs_manager", "ehs_coordinator", "area_supervisor", "supervisor"],
+    "ehs.statutory.record": ["ehs_manager", "ehs_coordinator"],
     # 0016 — work permits.
     "ehs.permit.read": ["ehs_manager", "ehs_coordinator", "area_supervisor",
                         "jhsc_member", "first_aider", "auditor"],
