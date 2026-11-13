@@ -600,10 +600,26 @@ Each criterion is tested before cutover, preferably by **replaying real archived
 
 Any live file sent to Shopify, retailers or Radiant during testing or shadow running requires explicit approval.
 
+**Status 2026-11-13.** Step 1 was done differently: Zoho's own files (two WorkDrive exports) were replayed through Sales' own steps on dev2 (history), the Shopify store was read in full, the old system's 940s / 944s were kept with their orders and transfers, and the Radiant inventory ledger was built from all of it (design §15). Step 2 ended on 2026-11-06 (shadow run off); the safety brake is now each connection's Write tick (nothing is put while it is off) plus the write-host list. Step 5: the product owner decided on 2026-11-13 to keep the current passwords.
+
+### 11.1 Production deployment (Sales)
+
+The general release mechanics (build, push to GHCR, `docker compose --profile edge up -d` on the app server) are DEPLOYMENT.md's. The Sales-specific steps, in order:
+
+1. **Code**: `dev/amir` pushed and merged to `main` (it contains main up to 2026-11-13). Images: `uniops-sales-api`, `uniops-sales-web`, plus every service main changed (identity, epms, expense, finance, mdm — mdm needs a rebuild for `openpyxl`).
+2. **Backup** the production database before any migration.
+3. **Migrations**, each inside its own container (never from the host): identity first (`0023_sales_perms` … `0026_merge_sales_hr`), then epms, expense, finance, mdm as main's release needs, then `sales-api: alembic upgrade head` (`sales01` … `sales27`).
+4. **Environment** (`.env.prod`, see `docker-compose.prod.yml` → `sales-api`): `SALES_SECRET_RADIANT`, `SALES_SECRET_TRUECOMMERCE`, `SALES_SECRET_SHOPIFY*`, `SALES_SECRET_SMTP` and the `SALES_SMTP_*` account; `SALES_SFTP_ALLOWED_HOSTS` and `SALES_SFTP_WRITE_HOSTS` (the partners' hosts; empty = nothing); `SALES_INTERNAL_EMAIL_ENABLED` / `_DOMAINS`; `SALES_PUBLIC_URL`; `SALES_BRANDING_URL` (default: epms-api's public branding). Leave `SALES_SCHEDULER_ENABLED`, `SALES_EXTERNAL_EMAIL_ENABLED` and `SALES_PARTNER_WRITES_ENABLED` false until step 9.
+5. **Data**: either dev2's Sales data (every `sales_*` table, with its history, configuration and inventory ledger — dump from dev2, restore into production with the services stopped) or configuration by CSV import (partners, items, partner codes, DC routing, warehouses, carriers) and the history scripts run again. Card data: `redact_card_documents` finds none (pages are stripped at the gateway).
+6. **Numbers above Zoho's**: `python -m app.scripts.raise_numbers --order <n> --control <n> --transfer <n>` (dry run, then `--apply`; it only raises). dev2 today: next order 1,018,762, X12 control 1,010,033, transfer 00107.
+7. **Configuration on the screens**: Connections — production folders, Read on, **Write off**, automatic runs off; Connection settings — warehouse connection, 810 connection, 997 wait, internal invoice recipients and the operator ("Tasks go to"); notification rules for every gated event, each tested (the go-live gate shows 7/7); permissions granted in Portal → Access Control.
+8. **Checks before any write**: the Health page is green; one manual run reads every connection with nothing sent; a few orders, a transfer and the inventory compared with dev2.
+9. **Switch, channel by channel** (step 3 above): stop Zoho's sending for the channel, turn the connection's Write on (and the env switches of step 4), turn automatic runs on, watch the first cycle; Shopify, then retailers, then transfers.
+
 ## 12. Related documents
 
 - FINANCE.md — NC remains the financial source of truth; invoices only.
-- INVENTORY.md — UniOps inventory views. Order Bridge's inventory ledger is next version (section 10.5); this version records shipment lots and transfer receipts that will feed it.
+- INVENTORY.md — UniOps inventory views (the plant: WMS and NC). The stock at Radiant is Sales' own ledger (design §15, 2026-11-12): moves from 943 / 944 / 945, deliveries and returns, compared with Radiant's portal.
 - PORTAL.md — module entry, permissions and Task Inbox.
 - EPMS.md, MRP.md — item and unit-of-measure master data.
 
@@ -614,7 +630,7 @@ Items OB-OI-01 to OB-OI-20 are the open questions from the original PRD; OB-OI-2
 | ID | Item | Status |
 | --- | --- | --- |
 | OB-OI-01 | Who opens the Zoho Scheduler page, and how often? | Resolved — called externally every 5 minutes; FR-OB-07 |
-| OB-OI-02 | Since when has incremental inventory recalculation been disabled, when did the full recalculation last run, and is anyone using the inventory figures? | Open (inventory deferred to next version) |
+| OB-OI-02 | Since when has incremental inventory recalculation been disabled, when did the full recalculation last run, and is anyone using the inventory figures? | Resolved 2026-11-12 — Sales keeps its own Radiant stock ledger from the files (design §15), from the first data it holds; compared with Radiant's portal, differences adjusted |
 | OB-OI-03 | Actual effect of the ambiguous operator precedence in Zoho (A && B \|\| C). | Resolved — business rules restated in FR-OB-12, FR-OB-03d, FR-OB-22a, FR-OB-25a and FR-OB-52; verified in the shadow run (FR-OB-03e) |
 | OB-OI-04 | Completed count of exactly 8,000: real total or a count cap? | Open |
 | OB-OI-05 | Production Radiant SFTP paths. | Resolved — `/prod/in`, `/prod/out` in settings; FR-OB-09 |

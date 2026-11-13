@@ -90,7 +90,7 @@ CONFIG_FILES=(
   portal/src/components/layout/navConfig.tsx portal/src/pages/PortalHome.tsx
   portal/src/lib/api.ts portal/src/pages/admin/AdminPanel.tsx
   identity-api/alembic/versions/0023_sales_perms.py
-  identity-api/alembic/versions/0024_merge_sales_freight.py
+  identity-api/alembic/versions/0024_merge_sales_freight.py identity-api/alembic/versions/0026_merge_sales_hr.py
   epms/src/lib/taskTypes.ts epms/src/services/tasks.ts epms-api/app/crud/task.py
   epms/src/lib/api.ts epms/Dockerfile
   epms-api/app/knowledge/modules.yaml epms-api/tests/test_module_guide.py
@@ -125,11 +125,11 @@ docker-compose.dev.yml	603	]'	,"http://${LAN_HOST:-localhost}:${SALES_PORT:-5182
 epms-api/.env.example	10	]	,"http://localhost:5182"
 epms-api/tests/test_module_guide.py	70	))	, "sales"
 portal/src/components/layout/navConfig.tsx	26	 }	, SALES_URL
-portal/src/lib/api.ts	391	]	, SALES_URL
+portal/src/lib/api.ts	415	]	, SALES_URL
 portal/src/pages/PortalHome.tsx	9	, encodeSession }	, SALES_URL
 portal/src/pages/PortalHome.tsx	15	, MRP_URL }	, SALES_ACCESS_PERMS
 portal/src/pages/PortalHome.tsx	51	'VMS'	'SALES' | 
-portal/src/pages/PortalHome.tsx	234	]	, 'SALES'
+portal/src/pages/PortalHome.tsx	276	]	, 'SALES'
 EOF
 )
 # Compares a base file with a new one: unchanged and added lines pass; a base

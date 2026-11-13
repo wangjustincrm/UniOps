@@ -388,6 +388,10 @@ services:
       SALES_SMTP_FROM: ${SALES_SMTP_FROM:-}
       SALES_SMTP_STARTTLS: ${SALES_SMTP_STARTTLS:-true}
       SALES_SECRET_SMTP: ${SALES_SECRET_SMTP:-}
+      # A notification's link to the record (the Sales site as people reach it); empty: no link.
+      SALES_PUBLIC_URL: ${SALES_PUBLIC_URL:-}
+      # The logo on printed documents: epms-api's public branding; empty: documents print without it.
+      SALES_BRANDING_URL: ${SALES_BRANDING_URL:-http://epms-api:8000/api/v1/config/public/branding?module=sales}
       # Partner credentials: each connection names its env var (secret_name on Configuration →
       # Connections); the values live only in .env. Without these the connection cannot log in.
       SALES_SECRET_RADIANT: ${SALES_SECRET_RADIANT:-}
