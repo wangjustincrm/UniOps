@@ -353,14 +353,19 @@ export default function InvestigationPage() {
         </p>
       )}
 
+      {/* ★ UAT 13: "move the product batch code to beside the lead
+          investigator field" (injury) and "put the product batch code on the
+          same line as the lead investigator" (near miss). */}
       <Section title="Who investigated">
-        <Field label="Lead investigator">
-          <PersonPicker value={lead} onChange={setLead} />
-        </Field>
-        <Field label="Product batch code" help="The same field as on the report.">
-          <input className={inputClass} value={batchShown}
-                 onChange={(e) => setBatchCode(e.target.value)} />
-        </Field>
+        <div className="grid gap-x-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <Field label="Lead investigator">
+            <PersonPicker value={lead} onChange={setLead} />
+          </Field>
+          <Field label="Product batch code" help="The same field as on the report.">
+            <input className={inputClass} value={batchShown}
+                   onChange={(e) => setBatchCode(e.target.value)} />
+          </Field>
+        </div>
       </Section>
 
       <Section title="What was found">
