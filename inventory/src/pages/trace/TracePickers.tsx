@@ -7,6 +7,7 @@ import { Badge } from '@uniops/shell'
 import { Combobox } from '@/components/Combobox'
 import { ApiError } from '@/lib/api'
 import { formatQty } from '@/lib/number'
+import { formatDate } from '@/lib/utils'
 import { useDebounced } from '@/pages/nc/useDebounced'
 import { MatchBadge } from '@/pages/recon/ReconRows'
 import { traceApi, type TraceBatchOption, type TraceMaterialOption } from './traceApi'
@@ -206,7 +207,7 @@ export function BatchPicker({ id, material, value, display, onChange, lockedNote
             <div className="text-[11px] text-neutral-500">
               supplier: {o.supplier_batches.length ? o.supplier_batches.join(', ') : '—'}
               {' · '}{o.wms_lots} WMS lot{o.wms_lots === 1 ? '' : 's'}
-              {' · '}<span className="whitespace-nowrap">last moved {o.last_movement ?? '—'}</span>
+              {' · '}<span className="whitespace-nowrap">last moved {formatDate(o.last_movement)}</span>
             </div>
           </div>
           <Qtys nc={o.nc_qty} wms={o.wms_qty} />

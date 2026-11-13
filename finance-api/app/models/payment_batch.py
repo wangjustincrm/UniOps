@@ -9,7 +9,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import Date, DateTime, ForeignKey, Numeric, String
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
@@ -17,6 +17,8 @@ from app.db.base import Base, TimestampMixin, UUIDPrimaryKey
 DRAFT = "draft"
 EXECUTED = "executed"
 CANCELLED = "cancelled"
+# Executed, then undone because the money never went out (payment_reverse.py).
+REVERSED = "reversed"
 
 
 class PaymentBatch(UUIDPrimaryKey, TimestampMixin, Base):
@@ -45,6 +47,9 @@ class PaymentBatchLine(UUIDPrimaryKey, TimestampMixin, Base):
     doc_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     doc_number: Mapped[str | None] = mapped_column(String(40), nullable=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), nullable=False)
-    status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending")  # pending|paid|failed
+    # The invoices of a PA this line pays; NULL = the whole document.
+    # none_as_null: without it None is stored as JSON null, not SQL NULL.
+    invoice_ids: Mapped[list | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending")  # pending|paid|failed|reversed
     payment_record_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     error: Mapped[str | None] = mapped_column(String(500), nullable=True)

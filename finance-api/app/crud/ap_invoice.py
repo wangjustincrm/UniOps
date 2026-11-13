@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import delete as sa_delete, func, literal_column, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_today
 from app.crud._numbering import next_number
 from app.models.ap_invoice import ApInvoice, ApInvoiceTaxLine, VOID
 
@@ -20,7 +21,8 @@ async def _next_number(db: AsyncSession) -> str:
     # max-suffix, not count: voided-and-deleted invoices leave gaps, and a
     # count would reissue a number that is still taken (unique constraint).
     # Shared allocator also takes a per-prefix advisory lock for concurrency.
-    today = date.today().strftime("%Y%m%d")
+    # Date = the plant's day (Company Settings → Time Zone).
+    today = plant_today().strftime("%Y%m%d")
     return await next_number(db, ApInvoice.ap_invoice_number, f"AP-{today}-", width=4)
 
 
@@ -288,7 +290,7 @@ async def aging(db: AsyncSession) -> list[dict]:
     rows = (await db.execute(
         select(ApInvoice).where(ApInvoice.status.in_(OPEN_STATUSES))
     )).scalars().all()
-    today = date.today()
+    today = plant_today()
     buckets: dict[tuple, dict[str, Decimal]] = {}
     for r in rows:
         key = (r.vendor_id, r.vendor_name or "", r.currency)

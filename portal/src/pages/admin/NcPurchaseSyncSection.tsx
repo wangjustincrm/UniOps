@@ -9,7 +9,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, DatabaseZap, Loader2 } from 'lucide-react'
 import { epmsApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate, formatDateTime } from '@/lib/utils'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
@@ -107,10 +107,7 @@ function localTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleString('en-CA', {
-    year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  })
+  return formatDateTime(d)
 }
 
 function RunSummary({ run, label }: { run: NcPurchaseSyncRun; label: string }) {
@@ -194,7 +191,7 @@ export function NcPurchaseSyncSection() {
             <div className="rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-medium text-neutral-700">Cutover date:</span>
-                <span>{(status.cutover ?? '—').slice(0, 10)}</span>
+                <span>{status.cutover ? formatDate(status.cutover.slice(0, 10)) : '—'}</span>
                 {status.can_set_cutover && (
                   <>
                     <span className="mx-1 text-neutral-300">|</span>

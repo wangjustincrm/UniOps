@@ -1,6 +1,5 @@
 """CRUD + approval workflow for expense claims (EXP / MIL)."""
 import uuid
-from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import func, or_, select
@@ -9,6 +8,7 @@ from sqlalchemy.orm import selectinload
 
 # NOTE: BudgetAccount mirror removed — expense-api no longer writes directly to
 # budget_accounts. Actual spend is now reported to budget-api via /book-expense.
+from app.core.plant_time import plant_today
 from app.crud._numbering import next_number
 from app.models.expense import (
     ExpenseApprovalEvent, ExpenseAttachment, ExpenseClaim,
@@ -23,11 +23,26 @@ from app.services import budget_client
 # ── Number generation ──────────────────────────────────────────────────────────
 
 async def _next_number(db: AsyncSession, claim_type: str) -> str:
-    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    # The plant's date, not UTC (an evening claim in Toronto is still today).
+    # next_number takes max tail + 1 per prefix, so the switch cannot collide.
+    today = plant_today().strftime("%Y%m%d")
     return await next_number(db, ExpenseClaim.claim_number, f"{claim_type}-{today}-", width=4)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
+
+# OA EXP-002: a general expense claim has up to 20 lines. The form stops at 20,
+# but the server took any number (ISS-0199). Only EXP: the PRD sets no line cap
+# for TRV, MIL uses trip_items, and custom-form claims carry no lines.
+MAX_EXP_LINES = 20
+
+
+def _check_exp_line_count(claim_type: str, line_items) -> None:
+    if claim_type == "EXP" and line_items is not None and len(line_items) > MAX_EXP_LINES:
+        raise ValueError(
+            f"A general expense claim can have at most {MAX_EXP_LINES} lines "
+            f"(this one has {len(line_items)}).")
+
 
 def _compute_totals_exp(line_items: list) -> tuple[Decimal, Decimal, Decimal]:
     total = sum(li.total_amount for li in line_items)
@@ -160,6 +175,7 @@ async def create_claim(
 ) -> ExpenseClaim:
     """`user_id` is the claimant. `prepared_by` is who filed it, when that is
     someone else (a TRV filed on a traveler's behalf)."""
+    _check_exp_line_count(data.claim_type, data.line_items)
     if data.claim_type == "TRV":
         await _check_trv_lines(db, data.travel_from_date, data.travel_to_date,
                                data.travel_country, data.currency, data.line_items)
@@ -194,7 +210,7 @@ async def create_claim(
 
     if data.claim_type == "EXP":
         for li_data in data.line_items:
-            db.add(ExpenseLineItem(claim_id=claim.id, **li_data.model_dump()))
+            db.add(ExpenseLineItem(claim_id=claim.id, **li_data.model_dump(exclude={"id"})))
         await db.flush()
         await db.refresh(claim, ["line_items"])
         t, tx, net = _compute_totals_exp(claim.line_items)
@@ -214,7 +230,7 @@ async def create_claim(
     elif data.claim_type == "TRV":
         # TRV uses line_items (same as EXP) + meal limit check
         for li_data in data.line_items:
-            db.add(ExpenseLineItem(claim_id=claim.id, **li_data.model_dump()))
+            db.add(ExpenseLineItem(claim_id=claim.id, **li_data.model_dump(exclude={"id"})))
         await db.flush()
         await db.refresh(claim, ["line_items"])
         t, tx, net = _compute_totals_exp(claim.line_items)
@@ -224,7 +240,7 @@ async def create_claim(
     elif data.claim_type.startswith("CFM"):
         # CFM stores line_items as generic entries; no special totals logic
         for li_data in data.line_items:
-            db.add(ExpenseLineItem(claim_id=claim.id, **li_data.model_dump()))
+            db.add(ExpenseLineItem(claim_id=claim.id, **li_data.model_dump(exclude={"id"})))
         await db.flush()
         await db.refresh(claim, ["line_items"])
         if claim.line_items:
@@ -247,6 +263,41 @@ async def create_claim(
     return claim
 
 
+def may_delete_attachments(claim: ExpenseClaim, caller: uuid.UUID, role: str) -> bool:
+    """Who may delete a claim's attachments: the claimant, whoever filed it for
+    them, or System Admin (ATT-OA-002). The draft/returned status rule is
+    checked separately."""
+    return claim.employee_id == caller or is_preparer(claim, caller) or role == "system_admin"
+
+
+def lines_removed_by(data: ExpenseClaimUpdate, old_ids: set[uuid.UUID],
+                     claim: ExpenseClaim) -> set[uuid.UUID]:
+    """Ids of the claim's lines that an edit took away.
+
+    Only answered for a client that sends line ids back (an `id` key on its
+    lines, even null — today's OA forms). One that does not would make every
+    line look removed and new, so for it, and for an edit that did not touch
+    the lines, nothing counts as removed.
+    """
+    if data.line_items is None or not any("id" in li.model_fields_set for li in data.line_items):
+        return set()
+    return old_ids - {li.id for li in claim.line_items}
+
+
+async def scans_of_lines(db: AsyncSession, claim_id: uuid.UUID,
+                         line_ids: set[uuid.UUID]) -> list[ExpenseAttachment]:
+    """Receipts scanned on the given lines (source = scan). Manually attached
+    files and pre-existing rows (source NULL) are never in this list."""
+    if not line_ids:
+        return []
+    res = await db.execute(select(ExpenseAttachment).where(
+        ExpenseAttachment.claim_id == claim_id,
+        ExpenseAttachment.source == "scan",
+        ExpenseAttachment.line_item_id.in_(line_ids),
+    ))
+    return list(res.scalars())
+
+
 async def update_claim(
     db: AsyncSession,
     claim: ExpenseClaim,
@@ -254,6 +305,7 @@ async def update_claim(
 ) -> ExpenseClaim:
     if claim.status not in ("draft", "returned"):
         raise ValueError("Only draft or returned claims can be edited")
+    _check_exp_line_count(claim.claim_type, data.line_items)
 
     if claim.claim_type == "TRV":
         def eff(field):
@@ -303,11 +355,21 @@ async def update_claim(
         claim.total_km = None
 
     if data.line_items is not None and not is_mil:
+        # Lines are replaced wholesale, but a line the client sends back with its
+        # saved id keeps that id, so what hangs off it — the receipt scanned on
+        # it (ATT-OA-005, ISS-0197) — still finds it. An id that is not one of
+        # this claim's lines, or is sent twice, gets a fresh one.
+        old_ids = {li.id for li in claim.line_items}
         for existing in list(claim.line_items):
             await db.delete(existing)
         await db.flush()
+        reused: set[uuid.UUID] = set()
         for li_data in data.line_items:
-            db.add(ExpenseLineItem(claim_id=claim.id, **li_data.model_dump()))
+            row = ExpenseLineItem(claim_id=claim.id, **li_data.model_dump(exclude={"id"}))
+            if li_data.id in old_ids and li_data.id not in reused:
+                row.id = li_data.id
+                reused.add(li_data.id)
+            db.add(row)
         await db.flush()
         await db.refresh(claim, ["line_items"])
         t, tx, net = _compute_totals_exp(claim.line_items)

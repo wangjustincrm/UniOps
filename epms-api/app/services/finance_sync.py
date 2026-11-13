@@ -62,8 +62,10 @@ def _header(invoice: Invoice, void: bool) -> dict:
 
 
 async def sync_ap_invoice(db: AsyncSession, invoice: Invoice, bearer_token: str,
-                          *, void: bool = False) -> None:
-    """Upsert this EPMS invoice's normalized header+tax into finance. Fail-open."""
+                          *, void: bool = False, strict: bool = False) -> dict | None:
+    """Upsert this EPMS invoice's normalized header+tax into finance. Fail-open,
+    unless ``strict`` — then a finance error raises FinanceSyncError so the caller
+    can report it. Returns finance's AP row (None when finance failed open)."""
     tax_rows = (await db.execute(
         select(InvoiceTaxLine).where(InvoiceTaxLine.invoice_id == invoice.id)
         .order_by(InvoiceTaxLine.line_no)
@@ -76,7 +78,9 @@ async def sync_ap_invoice(db: AsyncSession, invoice: Invoice, bearer_token: str,
          "tax_amount": str(t.tax_amount), "recoverable": t.recoverable}
         for t in tax_rows
     ]
-    await finance_client.upsert_ap_invoice(payload=payload, bearer_token=bearer_token)
+    if strict:
+        return await finance_client.upsert_ap_invoice_strict(payload=payload, bearer_token=bearer_token)
+    return await finance_client.upsert_ap_invoice(payload=payload, bearer_token=bearer_token)
 
 
 # ── Deletes: Finance must void, or the delete does not happen ────────────────

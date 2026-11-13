@@ -177,7 +177,7 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     # overdue — see crud.invoice.get_all for why both halves matter.
     @hybrid_property
     def overdue(self) -> bool:
-        from app.core.delegation import local_today
+        from app.core.plant_time import plant_today as local_today
         return bool(self.due_date and self.due_date < local_today()
                     and self.status != "paid")
 
@@ -185,7 +185,7 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     @classmethod
     def _overdue_expression(cls):
         from sqlalchemy import and_
-        from app.core.delegation import local_today
+        from app.core.plant_time import plant_today as local_today
         return and_(cls.due_date < local_today(), cls.status != "paid")
 
     # ── For the Assistant's ontology (ISS-0013) ───────────────────────────────
@@ -258,6 +258,20 @@ class Invoice(UUIDPrimaryKey, TimestampMixin, Base):
     def _pa_status_expression(cls):
         from app.models.pa import PaymentApplication
         return cls._live_pa(PaymentApplication.status)
+
+    # The kind of that payment application (regular / prepayment / settlement),
+    # so "how many of the mismatches are on prepayment PAs" is counted, not
+    # guessed — one answer said none were and then blamed Partially Paid
+    # (ISS-0059).
+    @hybrid_property
+    def pa_type(self) -> str | None:
+        return None
+
+    @pa_type.inplace.expression
+    @classmethod
+    def _pa_type_expression(cls):
+        from app.models.pa import PaymentApplication
+        return cls._live_pa(PaymentApplication.pa_type)
 
     # Paying a PA writes its invoices' status: paid, or partially_paid when the
     # PA is a prepayment (finance-api crud/payment_execute.py, PRD PAY-005).

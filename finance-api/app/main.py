@@ -22,13 +22,19 @@ async def lifespan(app: FastAPI):
     from app.tasks.nc_cost_sync_scheduler import nc_cost_sync_loop
     from app.tasks.nc_sync_scheduler import nc_sync_loop
     from app.tasks.fx_rate_scheduler import fx_rate_loop
-    # Both loops are held in locals for the lifetime of the app: a Task that
+    from app.core.plant_time import plant_tz_refresh_loop, refresh_plant_tz
+    from app.db.base import engine
+    # Plant time zone (Company Settings) before anything computes "today".
+    await refresh_plant_tz(engine)
+    # All loops are held in locals for the lifetime of the app: a Task that
     # nobody references can be garbage-collected mid-await.
     scheduler_task = asyncio.create_task(nc_sync_loop())
     ap_scheduler_task = asyncio.create_task(nc_ap_sync_loop())
     cost_scheduler_task = asyncio.create_task(nc_cost_sync_loop())
     fx_scheduler_task = asyncio.create_task(fx_rate_loop())
+    plant_tz_task = asyncio.create_task(plant_tz_refresh_loop(engine))
     yield
+    plant_tz_task.cancel()
     scheduler_task.cancel()
     ap_scheduler_task.cancel()
     cost_scheduler_task.cancel()

@@ -3,6 +3,24 @@ label: Tasks in the Task Inbox
 covers: >
   Overdue and urgent tasks, closing a task, why a task reached you.
 rules:
+  # ISS-0030, ISS-0247, ISS-0248, ISS-0250: the next step, from the task table.
+  - id: what_happens_next_in_a_purchase
+    asked_as:
+      - 发票已经匹配好了，下一步是什么？谁来做？
+      - 我的请购单批准了，接下来会发生什么？我还要做什么？
+      - 付款申请已经批完了，什么时候付款？谁来付？付完以后还有什么步骤？
+      - PR-20261023-0002 现在到哪一步了？下一步该谁做什么？
+    answer: >
+      A purchase goes, in order: {steps}. Each step reaches whoever does it as
+      a task in the Task Inbox, except the remittance advice, which is sent
+      from Finance. For one document, the Assistant says where it stands from
+      its document chain and the open tasks on those documents.
+    provenance: derived
+    derive: purchase_flow
+    enforced_in: "epms-api app/services/next_step.py FLOW (route, general_answer, for_chain), used by app/api/v1/assistant_chat.py _chat / _answer_trace / _answer_flow; PRD EPMS §3.3.4, §3.7.1, GR-P-006, GR-P-008, REM-001"
+    test:
+      - "tests/test_assistant_asst2_c.py::test_every_step_is_a_task_the_system_raises"
+      - "tests/test_assistant_asst2_c.py::test_after_matching_the_requester_creates_the_pa"
   # ISS-0131: open tabs re-read their data without F5.
   - id: open_tabs_refresh_themselves
     asked_as:
@@ -17,8 +35,11 @@ rules:
       current tab at once (the Task Inbox has its own Refresh button). Other
       tabs stay open. A reload
       of the browser (F5) starts again from the pinned tabs only. New and edit
-      forms are not refreshed, so what you have typed is kept.
-    enforced_in: "epms/src/components/layout/TabQueryScope.tsx (TabQueryScope, TabRefreshButton); epms/src/components/layout/AppLayout.tsx REFRESHABLE_ROUTES; PRD EPMS UI-TAB-003, DSH-010"
+      forms are not refreshed, so what you have typed is kept. OA works the
+      same way for its Expense Claims and Travel Applications lists and claim
+      pages, and OA's Task Inbox has its own Refresh button beside its title,
+      as in EPMS; OA's new, edit and admin settings forms are not refreshed.
+    enforced_in: "epms/src/components/layout/TabQueryScope.tsx (TabQueryScope, TabRefreshButton); epms/src/components/layout/AppLayout.tsx REFRESHABLE_ROUTES; oa/src/components/layout/TabQueryScope.tsx; oa/src/components/layout/AppLayout.tsx REFRESHABLE_ROUTES; PRD EPMS UI-TAB-003, UI-TAB-004, DSH-010"
     provenance: pinned
     test:
       - "epms/src/components/layout/TabQueryScope.test.ts"

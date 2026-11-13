@@ -3,6 +3,8 @@ import {
   type CarrierBody,
   freightService,
   freightAttachmentService,
+  shipmentAttachmentService,
+  type ShipmentAttachmentKind,
   type ShipmentFilters,
   type ShipmentCreateBody,
   type ShipmentUpdateBody,
@@ -19,6 +21,9 @@ const K = {
   me: ['freight', 'me'] as const,
   carriers: ['freight', 'carriers'] as const,
   shipments: ['freight', 'shipments'] as const,
+  // Under K.shipments so every list/detail invalidation also refreshes these.
+  shipment: (id: string) => ['freight', 'shipments', 'detail', id] as const,
+  shipmentAttachments: (id: string) => ['freight', 'shipments', 'detail', id, 'attachments'] as const,
   invoices: ['freight', 'invoices'] as const,
   invoice: (id: string) => ['freight', 'invoice', id] as const,
   attachments: (id: string) => ['freight', 'invoice', id, 'attachments'] as const,
@@ -53,6 +58,41 @@ export function useFreightShipments(filters: ShipmentFilters, enabled = true) {
     queryKey: [...K.shipments, filters],
     queryFn: () => freightService.shipments(filters),
     enabled,
+  })
+}
+
+export function useFreightShipment(id: string | undefined) {
+  return useQuery({
+    queryKey: K.shipment(id ?? ''),
+    queryFn: () => freightService.shipment(id!),
+    enabled: !!id,
+    retry: false,
+  })
+}
+
+export function useShipmentAttachments(shipmentId: string | undefined) {
+  return useQuery({
+    queryKey: K.shipmentAttachments(shipmentId ?? ''),
+    queryFn: () => shipmentAttachmentService.list(shipmentId!),
+    enabled: !!shipmentId,
+  })
+}
+
+/** Refreshes the shipment's files and every shipments query (attachment_count). */
+export function useUploadShipmentAttachment(shipmentId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ file, kind }: { file: File; kind?: ShipmentAttachmentKind }) =>
+      shipmentAttachmentService.upload(shipmentId, file, kind),
+    onSuccess: () => qc.invalidateQueries({ queryKey: K.shipments }),
+  })
+}
+
+export function useDeleteShipmentAttachment(shipmentId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (attId: string) => shipmentAttachmentService.delete(shipmentId, attId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: K.shipments }),
   })
 }
 

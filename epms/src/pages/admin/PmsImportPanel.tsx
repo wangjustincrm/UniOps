@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Database, Download, RefreshCw, Paperclip, AlertTriangle, CheckCircle2, Loader2, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTime } from '@/lib/utils'
 import {
   pmsImportService as svc,
   type PmsConfig, type PmsRun, type PmsReport,
 } from '@/services/pmsImport'
 
 const fmt = (iso: string | null | undefined) =>
-  iso ? new Date(iso).toLocaleString() : '—'
+  iso ? formatDateTime(iso) : '—'
 
 const phaseLabel = (p: PmsRun['phase']) =>
   p === 'full' ? 'Full import' : p === 'attachments' ? 'Import Attachments' : 'Incremental sync'

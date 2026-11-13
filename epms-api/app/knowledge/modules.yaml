@@ -66,8 +66,11 @@ modules:
         Courier freight (UPS, FedEx, Purolator…) does not go through PR → PO.
         A buyer registers the tracking number of each pickup with the department
         / cost center that bears it on EPMS → Freight → Shipments (Register
-        Courier Shipments permission); carriers are set up on Freight →
-        Carriers. The carrier's invoice is uploaded like any other invoice, on
+        Courier Shipments permission); Scan waybill on New Shipment reads the
+        tracking number from a photo or PDF of the shipping label and keeps
+        that label on the shipment, other supporting files can be attached
+        too, and View opens a shipment with all its attachments. Carriers
+        are set up on Freight → Carriers. The carrier's invoice is uploaded like any other invoice, on
         EPMS → Invoices → Upload Invoice, by anyone who uploads invoices: when
         the vendor is a carrier's, the form turns into the courier review by
         itself (no carrier to choose). The supply-chain person (Match Courier
@@ -133,9 +136,23 @@ modules:
         by a vendor, that is Procurement. If you paid and want it back, that
         is OA.
       - >-
+        A general expense claim has up to 20 lines; the server refuses more,
+        on create and on edit. Travel expense claims have no line limit.
+        Every general expense line needs a description, a budget account and
+        a net amount, and every travel expense line a budget account; if one
+        is missing the claim is not saved and the form names the line and the
+        field (e.g. "Line 2: select a Budget Account"). A line left completely
+        empty is simply not saved.
+      - >-
         A receipt scanned on a claim line (Scan) is kept as that line's receipt
         and attached to the claim automatically when it is saved — it does not
-        need uploading again. General and travel expense claims need at least
+        need uploading again. Scanning again on the same line, also on a later
+        edit, replaces the file scanned there before, so the receipt is not
+        attached twice; a file attached by hand is never replaced. Removing a
+        line on edit also removes the receipt scanned on it. A receipt saved
+        before claims recorded which line it belongs to is left as it is — an
+        extra copy of it can be deleted by hand in Attachments.
+        General and travel expense claims need at least
         one attachment before they can be submitted — except a travel expense
         claim whose lines are all date-range lines, which may go without one.
         The comment typed when submitting appears in the claim's Approval
@@ -158,7 +175,11 @@ modules:
         A claim an approver returns can be changed and sent back by the person
         who raised it: open the claim, Edit, Save Changes, then Submit. It goes
         straight back to the approver who returned it — the approvals given
-        before that stand and are not asked for again.
+        before that stand and are not asked for again. Until then the claim's
+        Approval Status marks the step that returned it as Returned, with who
+        returned it, when and their comment, and the Approval Timeline names
+        that step. On someone else's draft or returned claim a System Admin
+        has Edit and Submit too; a Finance Manager has Edit only.
       - >-
         A Travel Expense claim is always for a traveller listed on an approved
         Travel Application, and is paid to that traveller. Travellers file
@@ -180,7 +201,9 @@ modules:
         claim itself: Approval Status → Send reminder under the pending step
         emails whoever holds that step (their delegate if they are away) and
         says who it reached. It is refused, with the reason shown, when nobody
-        can be reached or a reminder for that step went out recently.
+        can be reached or a reminder for that step went out recently. The
+        pending step names the person it waits on, as "Name (delegated:
+        Stand-in)" while an approval delegation covers them.
       - >-
         When the last approver approves a claim (general expense, mileage,
         travel expense or a custom form), a PDF of the claim is added to its
@@ -191,6 +214,22 @@ modules:
         first attempt failed) and replaces the old file rather than adding a
         second. A Travel Application has its own form, regenerated from the
         Travel Application card.
+      - >-
+        A custom-form claim shows its answers under Form Details on the claim
+        page (each field by its label, as on its PDF) and the employee's own
+        notes under Notes. It carries no amount, so the page shows no total.
+        A form's Description (set in OA → Admin → Custom Forms) is shown above
+        it when an employee fills it in, and a new claim takes the form's
+        Default Currency. A form made inactive is no longer offered for new
+        claims, but draft and returned claims already raised on it can still
+        be edited and submitted.
+      - >-
+        Nobody pays their own claim either, while the self-payment
+        segregation-of-duties rule is on (it is by default): a Payment Officer
+        or Finance Manager does not get Mark as Processed on a claim of their
+        own, and their own approved claim is not a Record Payment card in their
+        Task Inbox — someone else with payment authority pays it. If a payment is
+        refused, the reason is shown in the Mark as Processed dialog.
 
   - key: vms
     label: VMS — Visitor Management
@@ -271,6 +310,28 @@ modules:
         that already has a completed payment is never paid again. A draft
         batch can be cancelled (Cancel Draft, same roles that can pay): nothing
         is paid and its documents are simply no longer marked.
+      - >-
+        An executed batch whose money was never actually sent is undone with
+        Reverse Batch on the batch (same roles that can pay, reason required),
+        not by deleting it in Data Maintenance — Data Maintenance refuses to
+        delete an executed batch whose payments still stand. Reversing cancels
+        each payment, puts its PA back to approved and on the due list, puts
+        its invoices back to unpaid and removes its draft journal voucher, so
+        the PA can simply be paid again in a new batch. It is refused when a
+        payment's journal voucher is already reviewed or posted, when the
+        payment is matched in bank reconciliation, in a closed period, and for
+        expense-claim payments (their Budget booking cannot be undone yet).
+      - >-
+        Payment Batches has two tabs: Due for Payment and Batches. The search
+        box beside Create Batch finds a PA, claim or invoice by its number, and
+        rows already ticked stay ticked while searching. A PA with
+        several invoices that add up to the PA amount lists them under its row,
+        and any of them can be ticked on its own to pay just those; a PA whose
+        invoices do not add up says "Paid as a whole". The PA stays approved and
+        on the due list at what is still owed until its last invoice is paid,
+        then it becomes processed. An invoice is never paid twice, and a draft
+        line that no longer matches what is owed fails and asks for a new batch.
+        Mark as Processed on a part-paid PA in EPMS pays only the remainder.
       - >-
         Bank reconciliation counts unposted vouchers (ones NC has not tallied
         yet) on the ledger side by default — "Include unposted vouchers" at the
@@ -607,6 +668,42 @@ modules:
       - Find a free room and book it
       - Cancel a booking you made
 
+  - key: mdm
+    label: MDM (Master Data)
+    covers: >
+      The company's shared master data, in Portal → MDM. Staff is the employee
+      master, kept up to date from the ADP roster that HR uploads every two
+      weeks before payroll. Users are sign-in accounts. Departments drive
+      budgets and approval routing. Org Chart shows departments and who really
+      reports to whom. It is separate from approvals: changing it changes no
+      approver, and a supervisor on the chart need not be an approver.
+    who: >
+      HR and system administrators. Staff is personal data, so it needs its own
+      permissions. People in HR get them from the HR additional role, given in
+      Access Control. Creating a user stays with system administrators. An
+      employee who is not in NC is only flagged, not a to-do: HR adds people to
+      NC as needed.
+    typical:
+      - Upload the ADP roster, check the preview and apply it (MDM → Staff → Import)
+      - Map an ADP department to a UniOps department (MDM → Staff → Department Mapping)
+      - Create a sign-in account for an employee (Create user on the employee)
+      - Work the list of changes HR must make in NC (MDM → Staff → NC To-do)
+      - See or adjust departments and reporting lines (MDM → Org Chart)
+    notes:
+      - >-
+        An employee and a user are separate records. The employee number, the
+        last six digits of the ADP Position ID, is the key across ADP, UniOps
+        and NC. An ADP import changes employees only, never user accounts, so
+        names and departments on a user are changed on purpose, with Apply to
+        user on the employee.
+      - >-
+        An import never marks anyone as left. People who left are simply not in
+        the ADP file, so they are listed on the import result and someone
+        decides for each one.
+      - >-
+        UniOps cannot write people into NC. HR makes the change in NC's HR
+        module from the NC To-do list, and each item closes by itself when
+        UniOps reads NC and sees the change.
   - key: admin
     label: Admin
     covers: >

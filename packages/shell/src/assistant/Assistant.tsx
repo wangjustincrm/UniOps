@@ -28,6 +28,7 @@ import {
   AlertTriangle, Check, ChevronDown, Download, Loader2, MessageSquare, Send, Star, X,
 } from 'lucide-react'
 import { cn } from '../lib/cn'
+import { formatDate } from '../lib/date'
 import { buildHistory } from './history'
 import { Markdown } from './markdown'
 import type {
@@ -373,7 +374,7 @@ function MessageRow({
       >
         {/* Replies are Markdown (ISS-0012: "**Issued**" and raw "| … |" tables
             were shown as typed). Errors are our own text and stay plain. */}
-        {message.error ? message.text : <Markdown text={message.text} />}
+        {message.error ? message.text : <Markdown text={message.text} resultRows={resultRows(reply)} />}
       </div>
       {reply?.preflight && <GateList preflight={reply.preflight} />}
       {reply?.workflow && <Chain workflow={reply.workflow} />}
@@ -401,6 +402,17 @@ function MessageRow({
         ))}
     </div>
   )
+}
+
+/**
+ * How many rows the whole result of a reply has, when it says — what a table's
+ * sort can be measured against (ISS-0111). Only a single query's answer says;
+ * for anything else the table cannot know it holds every row.
+ */
+export function resultRows(reply: AssistantReply | undefined): number | null {
+  const s = reply?.sources
+  if (!reply?.query || !s || s.row_count == null) return null
+  return s.truncated ? (s.total_rows ?? null) : s.row_count
 }
 
 function ExportButton({
@@ -548,6 +560,12 @@ function Chain({ workflow }: { workflow: NonNullable<AssistantReply['workflow']>
             {/* A broadcast step has no named holder; it sits with the role. */}
             {current.approver_name ?? `whoever holds ${current.label}`}
             <span className="ml-1 text-neutral-500">({current.label})</span>
+            {current.since && (
+              <span className="ml-1 text-neutral-500">
+                · since {formatDate(String(current.since))}
+                {current.days_waiting != null && ` (${current.days_waiting} d)`}
+              </span>
+            )}
           </p>
         </div>
       )}
@@ -562,7 +580,7 @@ function Chain({ workflow }: { workflow: NonNullable<AssistantReply['workflow']>
                 <span className="font-medium">{e.action ?? '—'}</span>
                 {e.actor_name && <span> by {e.actor_name}</span>}
                 {e.actor_role && <span className="text-neutral-500"> ({e.actor_role})</span>}
-                {e.at && <span className="text-neutral-500"> · {String(e.at).slice(0, 10)}</span>}
+                {e.at && <span className="text-neutral-500"> · {formatDate(String(e.at))}</span>}
                 {e.imported && <span className="text-neutral-400"> · imported from PMS</span>}
                 {e.comment && (
                   <span className="block pl-3 text-neutral-500">“{e.comment}”</span>

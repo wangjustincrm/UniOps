@@ -17,9 +17,9 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     ENVIRONMENT: str = "development"
 
-    # Local timezone for iCal TZID and human-facing displays. Times are
-    # stored in UTC; exports render them in this zone. IANA name.
-    DISPLAY_TIMEZONE: str = "America/Toronto"
+    # The plant's time zone (iCal TZID, room hours, day views, exports, email
+    # times) is not configured here: it is the company setting (Portal → Admin
+    # → Company Settings → Time Zone), see app/core/plant_time.py.
 
     # ── API ──────────────────────────────────────────────────────────────────
     API_V1_PREFIX: str = "/api/v1"

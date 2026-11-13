@@ -1089,3 +1089,24 @@ class TestSchedulerRetriesCancelledOcc:
             f"series RRULE present on scheduler retry — Outlook would wipe "
             f"the whole series: {ics[:400]}"
         )
+
+
+class TestEmailTimeFormat:
+    """Email time ranges are plant time in UI-DATE-002 form (2026-NOV-11 14:30)."""
+
+    def test_same_day_range(self):
+        from app.services.notifications import _time_range
+        # 2026-11-11 19:30–20:30 UTC = 14:30–15:30 EST
+        s = datetime(2026, 11, 11, 19, 30, tzinfo=timezone.utc)
+        assert _time_range(s, s + timedelta(hours=1)) == "2026-NOV-11 14:30 — 15:30 EST"
+
+    def test_evening_booking_keeps_plant_date(self):
+        from app.services.notifications import _time_range
+        # 2026-11-12 01:00 UTC is still 2026-NOV-11 20:00 EST at the plant.
+        s = datetime(2026, 11, 12, 1, 0, tzinfo=timezone.utc)
+        assert _time_range(s, s + timedelta(minutes=30)) == "2026-NOV-11 20:00 — 20:30 EST"
+
+    def test_range_across_midnight_shows_end_date(self):
+        from app.services.notifications import _time_range
+        s = datetime(2026, 7, 9, 3, 0, tzinfo=timezone.utc)   # 23:00 EDT 8 Jul
+        assert _time_range(s, s + timedelta(hours=2)) == "2026-JUL-08 23:00 — 2026-JUL-09 01:00 EDT"

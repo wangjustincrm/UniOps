@@ -62,10 +62,10 @@ ROLE_LABELS = {  # built-in 18
 # Roles granted ONLY through identity's user_roles side table — never written to
 # users.role. Mirrored into role_defs.assignable_as_primary (migration 0009),
 # which is what put_user_roles and both admin frontends actually read.
-# payment_officer (0008) and finance_director (0015) are seeded by migrations,
+# payment_officer (0008), finance_director (0015) and hr (0025) are seeded by migrations,
 # not by this script, but are listed here so a fresh seed_authz on a migrated DB
 # never flips them back.
-ADDITIONAL_ONLY_ROLES = {"erp_pa_officer", "payment_officer", "finance_director"}
+ADDITIONAL_ONLY_ROLES = {"erp_pa_officer", "payment_officer", "finance_director", "hr"}
 
 LOCKED = {
     "requester": {"view_pr"},

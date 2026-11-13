@@ -28,6 +28,8 @@ from datetime import date
 from decimal import Decimal
 from xml.sax.saxutils import escape
 
+from app.core.plant_time import fmt_date
+
 ZERO = Decimal("0")
 
 # NC's bank names, voucher summaries and payee names are Chinese. Helvetica has
@@ -150,6 +152,17 @@ def _basis_note(snapshot: dict) -> str | None:
 
 # ── PDF ────────────────────────────────────────────────────────────────────────
 
+def _pdf_date(v) -> str:
+    """A date as people read it in the PDF (UI-DATE-002: 2026-NOV-11). The
+    snapshot keeps ISO strings — that is stored data, and the Excel keeps ISO."""
+    if isinstance(v, date):
+        return fmt_date(v)
+    try:
+        return fmt_date(date.fromisoformat(str(v)[:10]))
+    except ValueError:
+        return str(v or "")
+
+
 def render_pdf(snapshot: dict, reconciled_on: date, reconciled_by: str) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter, landscape
@@ -177,14 +190,14 @@ def render_pdf(snapshot: dict, reconciled_on: date, reconciled_by: str) -> bytes
                             leftMargin=14 * mm, rightMargin=14 * mm,
                             topMargin=12 * mm, bottomMargin=12 * mm,
                             title=f"Bank Reconciliation {snapshot['account']} "
-                                  f"{snapshot['period_end']}")
+                                  f"{_pdf_date(snapshot['period_end'])}")
     flow = []
     s = snapshot["summary"]
     flow.append(Paragraph(_rich(f"{snapshot['account']}, Period Ending "
-                                f"{snapshot['period_end']}"), h1))
+                                f"{_pdf_date(snapshot['period_end'])}"), h1))
     flow.append(Paragraph("RECONCILIATION REPORT", h2))
     flow.append(Paragraph(
-        f"Reconciled on: {reconciled_on.isoformat()} &nbsp;&nbsp; "
+        f"Reconciled on: {_pdf_date(reconciled_on)} &nbsp;&nbsp; "
         f"Reconciled by: {_rich(reconciled_by)}", small))
     flow.append(Paragraph(
         "Any changes made to transactions after this date are not included in this "
@@ -200,7 +213,7 @@ def render_pdf(snapshot: dict, reconciled_on: date, reconciled_by: str) -> bytes
         [f"Deposits and other credits cleared ({n_dep})",
          _money(s.get("cleared_credit_total"))],
         ["Statement ending balance", _money(s.get("statement_closing"))],
-        [f"Register balance as of {snapshot['period_end']}", _money(s.get("book_closing"))],
+        [f"Register balance as of {_pdf_date(snapshot['period_end'])}", _money(s.get("book_closing"))],
         ["Difference", _money(s.get("difference"))],
     ]
     t = Table(summary_rows, colWidths=[150 * mm, 40 * mm])
@@ -230,7 +243,7 @@ def render_pdf(snapshot: dict, reconciled_on: date, reconciled_by: str) -> bytes
                  f"AMOUNT ({snapshot['currency']})"]]
         for r in rows:
             amt = _money(r.get("amount"))
-            data.append([r.get("date", ""),
+            data.append([_pdf_date(r.get("date", "")),
                          _cell(r.get("type", ""), cell),
                          _cell(r.get("ref", ""), cell),
                          _cell((r.get("payee") or "")[:70], cell),

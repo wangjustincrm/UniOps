@@ -36,7 +36,6 @@ from app.schemas.auth import (
     MfaChallengeRequest,
     MfaRequiredResponse,
     RefreshRequest,
-    RegisterRequest,
     ResendOtpRequest,
     TokenPair,
     UpdateMeRequest,
@@ -82,17 +81,6 @@ def _smtp_kwargs(cfg: CompanyConfig | None) -> dict:
         "smtp_use_tls": cfg.smtp_use_tls,
         "smtp_from": cfg.smtp_from,
     }
-
-
-# ── Register ───────────────────────────────────────────────────────────────────
-
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(body: RegisterRequest, db: SessionDep):
-    if await user_crud.get_by_email(db, body.email):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
-    user = await user_crud.create(db, body)
-    _audit(db, "user_registered", actor_id=user.id, actor_email=user.email)
-    return user
 
 
 # ── Login ──────────────────────────────────────────────────────────────────────

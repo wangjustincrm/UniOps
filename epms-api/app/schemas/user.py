@@ -143,3 +143,24 @@ class ErpImportError(BaseModel):
 class ErpImportResponse(BaseModel):
     created: list[ErpImportCreated]
     errors: list[ErpImportError]
+
+
+class BulkCreateItem(BaseModel):
+    erp_person_code: str = Field(min_length=1, max_length=50)
+    email: str | None = Field(default=None, max_length=255)
+    full_name: str = Field(min_length=1, max_length=255)
+    department_id: uuid.UUID | None = None
+
+
+class BulkCreateRequest(BaseModel):
+    items: list[BulkCreateItem] = Field(min_length=1, max_length=200)
+
+
+class BulkCreateError(BaseModel):
+    erp_person_code: str
+    reason: str
+
+
+class BulkCreateResponse(BaseModel):
+    created: list[ErpImportCreated]
+    errors: list[BulkCreateError]

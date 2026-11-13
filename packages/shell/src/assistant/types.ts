@@ -68,6 +68,8 @@ export type AssistantKind =
   | 'recall'
   | 'me'
   | 'parts'
+  /** "Which questions have I marked?" — the Marked list, read by the server. */
+  | 'marked'
   | 'cannot_answer'
   | 'denied'
 
@@ -104,6 +106,8 @@ export interface AssistantWorkflow {
     /** null for a broadcast step: it is with whoever holds the role. */
     approver_name: string | null
     since: string | null
+    /** Whole plant-local days since the step was reached, counted by the server. */
+    days_waiting?: number | null
   } | null
   history: AssistantWorkflowEvent[]
 }

@@ -12,7 +12,7 @@ import { useQuery } from '@tanstack/react-query'
 import { BookOpen, Loader2, X } from 'lucide-react'
 import { SortTh, useSortableRows } from '@uniops/shell'
 import { financeApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 
 /** The amount a Debit / Credit cell shows; 0 renders blank, so it sorts as empty. */
 function shown(v: string | null | undefined) { return Number(v ?? 0) || null }
@@ -82,7 +82,7 @@ export function AccountVouchersModal({ accountCode, period, dimsValues, title,
                 )}
                 {rows.map((r, i) => (
                   <tr key={`${r.jv_id}-${i}`} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
-                    <td className="px-3 py-2 font-mono text-xs text-neutral-600">{r.voucher_date}</td>
+                    <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-neutral-600">{formatDate(r.voucher_date)}</td>
                     <td className="px-3 py-2">
                       <button onClick={() => onOpenJv(r.jv_id)}
                               className="font-mono text-xs text-[#085E5E] hover:underline">

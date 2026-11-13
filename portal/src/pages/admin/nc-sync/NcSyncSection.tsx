@@ -13,7 +13,7 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, DatabaseZap, Loader2 } from 'lucide-react'
 import { financeApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTime } from '@/lib/utils'
 import { NcPurchaseSyncSection } from '../NcPurchaseSyncSection'
 import { ScheduleCard, type ScheduleEndpoint } from './ScheduleCard'
 
@@ -68,7 +68,7 @@ function JvRunSummary({ run, label }: { run: NcSyncRun; label: string }) {
     <div className="rounded-lg bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
       <span className="font-medium text-neutral-700">{label}:</span>{' '}
       {run.mode} · {run.status}
-      {run.started_at && ` · ${run.started_at.slice(0, 16).replace('T', ' ')}`}
+      {run.started_at && ` · ${formatDateTime(run.started_at)}`}
       {run.status !== 'running' && (
         <> · inserted {Number(run.vouchers_inserted).toLocaleString()} vouchers
           {run.vouchers_deleted > 0 && `, deleted ${Number(run.vouchers_deleted).toLocaleString()}`}

@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { cn } from '@/lib/utils'
+import { cn, todayISO } from '@/lib/utils'
 import { PmsImportPanel } from './PmsImportPanel'
 import {
   useConfig, useUpdateConfig, useRoles,
@@ -1194,7 +1194,7 @@ function exportUsersCsv(users: ApiUser[]) {
   const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a'); a.href = url
-  a.download = `epms-users-${new Date().toISOString().slice(0,10)}.csv`
+  a.download = `epms-users-${todayISO()}.csv`
   a.click(); URL.revokeObjectURL(url)
 }
 
@@ -2082,8 +2082,8 @@ function NotificationSettingsSection() {
 
       {/* Follow-up time */}
       <section className="flex flex-col gap-3">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Daily Follow-up Time (UTC)</h3>
-        <p className="text-sm text-neutral-500">Time at which the daily pending-task reminder is dispatched.</p>
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Daily Follow-up Time</h3>
+        <p className="text-sm text-neutral-500">Time at which the daily pending-task reminder is dispatched, on plant time (Company Settings → Time Zone).</p>
         <input type="time" className={cn(inCls, 'w-36')}
           value={settings.followup_time ?? '08:00'}
           onChange={(e) => setSettings((p) => ({ ...p, followup_time: e.target.value }))} />
@@ -2205,7 +2205,14 @@ export default function AdminPanel() {
       case 'currency':            return <MovedToPortal section="Currency Settings" />
       case 'email_templates':     return <EmailTemplates />
       case 'pdf_templates':       return <PdfTemplates />
-      case 'users':               return <MovedToPortal section="User Management" />
+      case 'users':               return (
+        <MovedToPortal
+          section="User Management"
+          path="/mdm/users"
+          linkLabel="Open Users in Portal"
+          description="Users are now managed in the UniOps Portal under MDM → Users, shared across all modules."
+        />
+      )
       case 'workflows':           return <MovedToPortal section="Approval Workflows" />
       case 'service_gr_sla':        return <ServiceGrSla />
       case 'gr_notification_sla': return <GrNotificationSla />

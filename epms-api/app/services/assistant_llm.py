@@ -26,20 +26,18 @@ exhaust the shared quota and take invoice OCR down with it.
 import json
 import re
 import logging
-from datetime import date, datetime, timezone
+from datetime import date, timezone
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from app.core.config import settings
-from app.core.delegation import PLANT_TIMEZONE
+from app.core.plant_time import plant_now
 from app.services.controlled_query import _OPS_BY_KIND as cq_ops
 
 log = logging.getLogger(__name__)
 
-from app.services import guide_view, reply_language
+from app.services import guide_view, period_words, reply_language
 
 MODEL = "claude-haiku-4-5-20251001"
-_PLANT_TZ = ZoneInfo(PLANT_TIMEZONE)
 
 # The plan call returns a small JSON object; 1024 is generous for it. Narration
 # is prose about at most a few hundred rows of summary.
@@ -396,7 +394,13 @@ results are the only facts you have.
   never say the vendor received it. Say it is Issued and how and when it was
   placed, if those were returned.
 - `added_below_your_reply` holds sentences the system adds under your reply
-  (in the reply's language). Do not repeat or paraphrase them.
+  (in the reply's language). Do not repeat or paraphrase them, and never
+  contradict them: they are worked out by code from the records (a receipt's
+  lines, a PO compared with its invoices, a prepayment cap) and they are the
+  answer on those points. `from_code` holds the figures behind them. When they give
+  the totals (a list cut to its first rows), state no total of your own —
+  neither of the rows listed nor of everything — and do not call the total
+  unavailable: the system writes both, each saying which it is (ISS-0032).
 - An `assumption` means the query was narrowed on the reader's behalf because
   they did not say which one they meant. Say so in the reply, in one clause —
   they are looking at a subset and have no way to tell from the numbers alone.
@@ -443,9 +447,12 @@ results are the only facts you have.
   current figure, the same period last year, the change and the change in
   percent, all computed for you — report them, never recompute. The two
   periods are `resolved_period` and `previous_year.resolved_period`.
-- `resolved_period` is the dates the query covered. State them once, in the
-  reply's date format (DD/MM/YYYY), so the reader can see which period was
-  used — e.g. "this quarter (01/10/2026 – 20/10/2026)".
+- `resolved_period` is the dates the query covered. The system adds a line
+  naming them under your reply (it is in `added_below_your_reply`), so do not
+  list the dates again; if you mention the period at all, use exactly these
+  dates and their year, written the way UniOps shows dates (YYYY-MMM-DD,
+  upper-case English month: 2026-OCT-01) — "去年同期（2024年7月至9月）" over a
+  query of 2025 was a reported bug.
 - If the results are empty, say so plainly — do not speculate about why.
 - Empty is "nothing matched this query", NOT "this never happened". When the
   query filtered on a name the person typed, say that no records matched that
@@ -486,6 +493,11 @@ results are the only facts you have.
   and can be asked on its own. Never say it does not exist, is not available,
   or that you have no data or no access for it: it simply was not queried
   (ISS-0037, ISS-0069).
+- `documents_found_elsewhere` are documents the question names that this
+  query did not return, though they exist — a payment application with no
+  payment yet, a document of another kind. Never say they cannot be found or
+  do not exist; a sentence stating each one's status is added below your
+  reply, so do not repeat it (ISS-0056, ISS-0069).
 """
 
 _QUERY_TOOL = {
@@ -1014,7 +1026,17 @@ def _client():
     return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
 
-def _today_note() -> str:
+def _days_note(message: str, today) -> str:
+    """The days written in the message, already read (period_words): the
+    same date on every page (ISS-0048: 10/11 was 2026 on one, 2025 on Portal)."""
+    days = period_words.explicit_days(message or "", today)
+    if not days:
+        return ""
+    return (" In this message " + ", ".join(
+        f"\"{text}\" is {day.isoformat()}" for text, day in days) + ".")
+
+
+def _today_note(message: str = "") -> str:
     """Tell the model what day it is.
 
     Without this it dates things from its own training data: asked for "the
@@ -1028,16 +1050,18 @@ def _today_note() -> str:
     The plant's date, not UTC's: after 20:00 in Toronto UTC is already
     tomorrow, and "today" pointed at a day that had not started (ISS-0048).
     """
-    now = datetime.now(_PLANT_TZ)
+    now = plant_now()
     return (
         f"\n\nToday is {now:%Y-%m-%d} ({now:%A}). Resolve every date against "
-        f"this, never against anything you remember. A month or day given "
-        f"without a year means the most recent one that has already started — "
-        f"normally {now.year}, or {now.year - 1} if {now.year} would put it in "
-        f"the future. A date written with slashes is day first, the way EPMS "
-        f"shows dates (DD/MM/YYYY): 10/11 is 10 November, never 11 October. "
-        f"When a slashed date could be read either way, say in the answer which "
-        f"date was used."
+        f"this, never against anything you remember. A month given without a "
+        f"year means the most recent one that has already started — normally "
+        f"{now.year}, or {now.year - 1} if {now.year} would put it in the "
+        f"future. A single DAY given without a year (10/11, 11月10日) is in "
+        f"{now.year}. A date written with slashes is day first (DD/MM/YYYY): "
+        f"10/11 is 10 November, never 11 October. Write every date in the "
+        f"answer the way UniOps shows dates, YYYY-MMM-DD with an upper-case "
+        f"English month (2026-NOV-10), never with slashes."
+        + _days_note(message, now.date())
     )
 
 
@@ -1087,10 +1111,10 @@ _SESSION_KEYS = ("conversation", "caller", "question_part")
 # Appended to _PLAN_SYSTEM: rules about the conversation itself.
 _PLAN_SESSION_RULES = """\
 - A question about the CONVERSATION itself — what my first / previous / third
-  question was, what you answered then — is recall_conversation. Never answer
-  it from the turns you were shown: a long conversation is cut to its last few
-  exchanges, and the earliest turn you can see is not its first question. One
-  such answer named the 18th question of 20 as the first.
+  question was — is answered before you are asked, from the whole
+  conversation. Everything that reaches you is about the data: a follow-up
+  such as "上面这些是按什么日期算的？" or "这里的'上周'是哪几天？" asks about the
+  previous answer's data or wording — plan it as that, from the turns shown.
 - A reference to something said EARLIER — "刚才那张单呢？", "that one", "the
   previous document", "上一张" — needs an earlier turn that names it. When the
   conversation note says nothing came before this message, and the page being
@@ -1234,6 +1258,9 @@ agreement with its invoices and payment applications.
   received / invoiced"; never re-derive them from the lists.
 - `waiting_on` is the approval step, and the approver, a document still in
   approval is with.
+- Who requested the purchase is `purchase_request.requester` — the PR's
+  Requester field. Never take a name from a title, and never send the reader
+  to NC for a PR that is in what you were given.
 - A layer with `not_visible` is one this person may not see: say it cannot be
   shown to them, never that there are none. A count of 0 means none yet.
 - `listed` means only the first `listed` of `count` documents are given: give
@@ -1241,6 +1268,9 @@ agreement with its invoices and payment applications.
 - `no_order_yet`: the requisition has no purchase order yet. `more_orders`:
   that many further orders are not shown.
 - Every amount with its currency. Do not add amounts up.
+- `next_step_added_below` is where it stands and who acts next, worked out by
+  the system and added under your reply. Do not restate it, and never say
+  that nothing more is needed or name a next step of your own.
 - Never invent a document, a status, a date or a step that is not in what you
   were given.
 """
@@ -1294,7 +1324,10 @@ _SESSION_TOOL_KINDS = {
 def _session_tools(context: dict | None) -> list[dict]:
     """The planner tools this section adds. A part of a split message is
     planned on its own and is never split again."""
-    tools = [_TRACE_TOOL, _RECALL_TOOL, _WHO_AM_I_TOOL]
+    # recall_conversation is not offered: whether a question is about the
+    # conversation is decided in code (question_routes.recall_position) — the
+    # planner took a follow-up about an answer's data for one (ISS-0067).
+    tools = [_TRACE_TOOL, _WHO_AM_I_TOOL]
     if not (context or {}).get("question_part"):
         tools.append(_SPLIT_TOOL)
     return tools
@@ -1394,7 +1427,7 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
     """
     import anthropic
 
-    user_text = message + _today_note() + _context_note(context) + _language_note(message)
+    user_text = message + _today_note(message) + _context_note(context) + _language_note(message)
     if retry_error:
         user_text += (
             f"\n\nYour previous query was rejected: {retry_error}\n"
@@ -1488,6 +1521,11 @@ async def plan(schema: list[dict], message: str, context: dict | None = None,
             "usage": _usage(resp)}
 
 
+# Result keys _NARRATE_SYSTEM explains, passed through as they are.
+_NARRATED_KEYS = ("numbers_read_as", "near_misses", "comparison", "previous_year",
+                  "resolved_period", "totals_shown", "currency_split", "from_code")
+
+
 async def narrate(message: str, query: dict, result: dict) -> dict:
     """Write the reply from the rows. Returns {"text": ..., "usage": {...}}."""
     import anthropic
@@ -1507,6 +1545,11 @@ async def narrate(message: str, query: dict, result: dict) -> dict:
         payload["totals"] = result["totals"]
     if "assumption" in result:
         payload["assumption"] = result["assumption"]
+    # Told to the narrator by the prompt and never sent: no answer stated its
+    # dates, and the year-on-year figures were invisible to it (ISS-0020).
+    for key in ("resolved_period", "comparison", "previous_year"):
+        if result.get(key):
+            payload[key] = result[key]
     if result.get("said_with_this_list"):
         # Added under the reply in code (ISS-0008); the narrator only needs to
         # know not to say them twice.
@@ -1518,6 +1561,16 @@ async def narrate(message: str, query: dict, result: dict) -> dict:
         payload["value_labels"] = result["value_labels"]
     if "value_notes" in result:
         payload["value_notes"] = result["value_notes"]
+    if result.get("documents_found_elsewhere"):
+        # A sentence naming them is added under the reply in code.
+        payload["documents_found_elsewhere"] = result["documents_found_elsewhere"]
+    # Every key the rules above name. They were computed and then dropped here,
+    # so the narrator never saw the year-on-year change it was told to report
+    # ("cannot calculate the growth", ISS-0021 #5) or the near misses it was
+    # told to offer ("not found", ISS-0024).
+    for key in _NARRATED_KEYS:
+        if key in result:
+            payload[key] = result[key]
     payload.update(reply_language.instructions(message))
     try:
         resp = await _client().messages.create(
@@ -1797,6 +1850,11 @@ You are helping a colleague who may never have been trained on this system.
   setting that is not in the rules. Rule ids are for you, not for the reader:
   refer to another rule by what it says. `unavailable` names rules or areas
   that could not be read just now — say that part could not be checked.
+- `placed_before_your_reply`, when present, is the system's own answer to
+  this question and is put in front of what you write. Do not repeat it and
+  do not open with yes or no: continue with what the rules add — the why,
+  the exceptions, what to do — and never contradict it. `added_below_your_reply`
+  is put under your reply; do not say it yourself.
 - For a purchase request, `over_budget` is what happens when the PR is over
   budget, as configured right now. Asked about over-budget, lead with it: name
   `mode_label`, then the `added_steps` in order — they come BEFORE the normal
@@ -1875,12 +1933,14 @@ You are helping a colleague who may never have been trained on this system.
 - For a vendor summary (`kind` vendor_summary): one short section per kind of
   document in `sections` — counts and totals exactly as given, each amount
   with its currency, never added across currencies or across sections.
-  Totals leave out cancelled, rejected and draft documents (say so once);
+  Totals leave out cancelled, rejected and draft documents — the system says
+  which ones under your reply (`added_below_your_reply`; do not repeat it);
   `by_status` gives the counts of every status, cancelled included. A section
   with `not_visible` is one this person may not see: say it is not shown
   rather than "none". `candidates` means the name matched several vendors:
-  list them and ask which one. Do not add opinions such as "a stable
-  relationship" — report the figures.
+  list them and ask which one. Do not add opinions or judgements such as "a
+  stable relationship", "an active vendor" or "pays well" — report the
+  figures only.
 - For the Receiving Report (`kind` receiving_report): give lines, receipts,
   orders and the average lead time for `period` exactly as given, and say the
   report counts physical receipts only and leaves out NC-mirrored orders.

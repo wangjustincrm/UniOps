@@ -22,6 +22,9 @@ from app.services import fx_rates
 
 logger = logging.getLogger(__name__)
 
+# Bank of Canada's clock, not the plant's: BoC publishes at ~16:30 Eastern
+# whatever Company Settings → Time Zone says, so this does NOT follow
+# plant_tz() (an external publisher's schedule, like NC_TZ in nc_push).
 TORONTO = ZoneInfo("America/Toronto")
 PUBLISH_AFTER = time(17, 0)
 FETCH_WINDOW_DAYS = 14

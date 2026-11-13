@@ -1,8 +1,8 @@
-import { useState, useRef } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { useEffect, useState, useRef } from 'react'
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Building2, ShieldCheck, Users, CreditCard, Bell, Landmark,
+  Building2, ShieldCheck, CreditCard, Bell,
   Plus, Pencil, Trash2, X, Check, Eye, EyeOff, Search,
   CheckCircle2, AlertCircle, Loader2, ArrowLeft,
   Download, Upload, ChevronLeft, ChevronRight, FileText,
@@ -13,7 +13,7 @@ import { useAuthStore } from '@/store/auth'
 import { useRolePermissions } from '@/hooks/useRolePermissions'
 import { adminPageLinks } from '@/components/layout/navConfig'
 import { epmsApi, epmsDownload, epmsUpload, mdmApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTime, setDisplayTimeZone } from '@/lib/utils'
 import { UnitsOfMeasure } from './UnitsOfMeasure'
 import { NcSyncSection } from './nc-sync/NcSyncSection'
 import { WmsSyncSection } from './WmsSyncSection'
@@ -36,6 +36,8 @@ interface CompanyConfig {
   tagline: string
   module_taglines: Record<string, string>
   delivery_address: string
+  timezone: string
+  timezone_choices?: string[]
   logo_data_url: string | null
   logo_file_name: string | null
   default_currency: string
@@ -113,6 +115,7 @@ const ROLE_LABELS: Record<string,string> = {
   erp_pa_officer:'ERP PA Officer',
   payment_officer:'Payment Officer',
   finance_director:'Finance Director',
+  hr:'HR',
   system_admin:'System Admin',
 }
 
@@ -205,10 +208,21 @@ const MODULE_TAGLINE_KEYS: { key: string; label: string }[] = [
   { key: 'sales', label: 'Sales' },
 ]
 
+function zoneLabel(tz: string): string {
+  try {
+    const off = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' })
+      .formatToParts(new Date()).find((p) => p.type === 'timeZoneName')?.value
+    return off ? `${tz} (${off} now)` : tz
+  } catch {
+    return tz
+  }
+}
+
 function CompanySettings() {
   const { data: cfg, isLoading } = useConfig()
   const save = useSaveConfig()
   const [form, setForm] = useState({ name: '', tagline: '', delivery_address: '' })
+  const [timeZone, setTimeZone] = useState<string | undefined>(undefined) // undefined = not touched
   const [logoDataUrl, setLogoDataUrl] = useState<string | null | undefined>(undefined) // undefined = not touched
   const [logoFileName, setLogoFileName] = useState<string | null | undefined>(undefined)
   // Per-module tagline overrides for epms/oa/vms (portal uses `tagline`).
@@ -229,6 +243,11 @@ function CompanySettings() {
   const currentFileName = logoFileName !== undefined ? logoFileName : cfg?.logo_file_name ?? null
 
   const currentModuleTaglines = moduleTaglines ?? cfg?.module_taglines ?? {}
+  const currentTimeZone = timeZone ?? cfg?.timezone ?? 'America/Toronto'
+  // The server's list (exactly what it accepts), not the browser's tz data.
+  const serverZones = cfg?.timezone_choices?.length ? cfg.timezone_choices : [currentTimeZone]
+  const zoneOptions = serverZones.includes(currentTimeZone) ? serverZones : [currentTimeZone, ...serverZones]
+  const zoneChanged = timeZone !== undefined && timeZone !== cfg?.timezone
 
   const taglineFor = (key: string): string =>
     key === 'portal' ? values.tagline : (currentModuleTaglines[key] ?? '')
@@ -256,13 +275,23 @@ function CompanySettings() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (zoneChanged && !window.confirm(
+      `Change the company time zone from ${cfg?.timezone} to ${timeZone}?\n\n`
+      + 'From now on every module uses it for "today", accounting periods, the dates in '
+      + 'new document numbers, times on screen, in PDFs and emails, and the hour daily '
+      + 'reminders run. Existing records are not changed.',
+    )) return
     try {
       const body: any = { name: values.name, tagline: values.tagline, delivery_address: values.delivery_address }
       if (moduleTaglines !== undefined) body.module_taglines = moduleTaglines
+      if (zoneChanged) body.timezone = timeZone
       if (logoDataUrl !== undefined) body.logo_data_url = logoDataUrl
       if (logoFileName !== undefined) body.logo_file_name = logoFileName
       await save.mutateAsync(body)
-      setToast({ ok: true, msg: 'Company settings saved.' })
+      if (zoneChanged) setDisplayTimeZone(timeZone)
+      setToast({ ok: true, msg: zoneChanged
+        ? `Company settings saved. Time zone is now ${timeZone}; other open pages use it after a reload.`
+        : 'Company settings saved.' })
     } catch (err: any) {
       setToast({ ok: false, msg: err.message })
     }
@@ -272,7 +301,7 @@ function CompanySettings() {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-5 max-w-lg">
-      <SectionHeader title="Company Settings" description="Organization name, tagline, delivery address and logo used across all modules." />
+      <SectionHeader title="Company Settings" description="Organization name, tagline, delivery address, time zone and logo used across all modules." />
 
       {/* Logo */}
       <Field label="Company Logo" hint="PNG or JPG, recommended 200×60 px. Shown on login page and PDF documents.">
@@ -321,6 +350,13 @@ function CompanySettings() {
       </div>
       <Field label="Delivery Address" hint="Default delivery address on purchase orders.">
         <Textarea rows={3} value={values.delivery_address} onChange={f('delivery_address')} />
+      </Field>
+      <Field label="Time Zone"
+        hint="The plant's time zone. Every module uses it for times on screen, in PDFs and emails, for today's date, accounting periods, document-number dates and the hour daily reminders run. Daylight saving is applied automatically.">
+        <select value={currentTimeZone} onChange={(e) => setTimeZone(e.target.value)}
+          className="w-full rounded-lg border border-neutral-200 px-3 py-2 text-sm focus:outline-none focus:border-primary-400">
+          {zoneOptions.map((z) => <option key={z} value={z}>{zoneLabel(z)}</option>)}
+        </select>
       </Field>
       <div className="flex items-center gap-3">
         <SaveButton loading={save.isPending} />
@@ -387,7 +423,7 @@ function SecuritySettings() {
 
 // ── 3. Department Management ──────────────────────────────────────────────────
 
-function DepartmentManagement() {
+export function DepartmentManagement() {
   // Source of truth lives in mdm-api (master-data service). The shared Postgres
   // DB means epms-api / budget-api still read the same physical rows.
   const qc = useQueryClient()
@@ -509,7 +545,7 @@ const PAGE_SIZE = 20
 
 interface ImportResult { created: number; updated: number; errors: string[] }
 
-function UserManagement() {
+export function UserManagement() {
   const qc = useQueryClient()
 
   // ── Filters + pagination ──
@@ -568,6 +604,26 @@ function UserManagement() {
     setShowPwd(false); setError(''); setModal({ mode: 'edit', user: u })
   }
 
+  // Staff → Create user: the employee's data fills the form as defaults (EMPLOYEES.md
+  // UGEN-002). Every field stays editable except the ERP code, which is the link.
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const fromEmployee = searchParams.get('from_employee')
+  const { data: employee } = useQuery<{ employee_number: string; display_name: string; work_email: string | null; department_id: string | null }>({
+    queryKey: ['staff', 'detail', fromEmployee],
+    queryFn: () => mdmApi.get(`/staff/${fromEmployee}`),
+    enabled: !!fromEmployee,
+  })
+  useEffect(() => {
+    if (!employee) return
+    setForm({ email: employee.work_email ?? '', full_name: employee.display_name, role: 'requester', department_id: employee.department_id ?? '', supervisor_id: '', password: '', is_active: true, teams_account: '', erp_person_code: employee.employee_number })
+    setShowPwd(false); setError(''); setModal({ mode: 'create' })
+  }, [employee])
+  const closeModal = () => {
+    setModal(null)
+    if (fromEmployee) navigate(`/mdm/staff/${fromEmployee}`)
+  }
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault(); setError(''); setSaving(true)
     try {
@@ -575,7 +631,8 @@ function UserManagement() {
       if (modal?.mode === 'create') { body.password = form.password; body.erp_person_code = form.erp_person_code.trim(); await epmsApi.post('/users', body) }
       else { if (form.password) body.password = form.password; body.erp_person_code = form.erp_person_code.trim(); await epmsApi.patch(`/users/${modal?.user?.id}`, body) }
       qc.invalidateQueries({ queryKey: ['portal-users'] })
-      setModal(null)
+      qc.invalidateQueries({ queryKey: ['staff'] })
+      closeModal()
     } catch (err: any) { setError(err.message) } finally { setSaving(false) }
   }
 
@@ -799,7 +856,7 @@ function UserManagement() {
           <div className="w-full max-w-md rounded-xl border border-neutral-200 bg-white shadow-xl overflow-y-auto max-h-[90vh]">
             <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-4">
               <h3 className="font-semibold text-neutral-900">{modal.mode === 'create' ? 'Add User' : 'Edit User'}</h3>
-              <button onClick={() => setModal(null)} className="rounded p-1 text-neutral-400 hover:bg-neutral-100"><X className="h-4 w-4" /></button>
+              <button onClick={closeModal} className="rounded p-1 text-neutral-400 hover:bg-neutral-100"><X className="h-4 w-4" /></button>
             </div>
             <form onSubmit={handleSave} className="flex flex-col gap-4 p-5">
               <div className="grid grid-cols-2 gap-3">
@@ -845,6 +902,7 @@ function UserManagement() {
                 <Field label={modal.mode === 'create' ? 'ERP Code *' : 'ERP Code'}>
                   <Input value={form.erp_person_code}
                     onChange={(e) => setForm((p) => ({ ...p, erp_person_code: e.target.value }))}
+                    readOnly={!!fromEmployee && modal.mode === 'create'}
                     required={modal.mode === 'create'}
                     placeholder="e.g. EMP00123" />
                 </Field>
@@ -855,7 +913,7 @@ function UserManagement() {
               </div>
               {error && <Toast ok={false} msg={error} />}
               <div className="flex justify-end gap-2 border-t border-neutral-100 pt-3">
-                <button type="button" onClick={() => setModal(null)} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">Cancel</button>
+                <button type="button" onClick={closeModal} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:bg-neutral-50">Cancel</button>
                 <SaveButton loading={saving} />
               </div>
             </form>
@@ -1137,7 +1195,7 @@ function NotificationSettings() {
         {mailboxError && <p className="mt-2 text-xs text-red-600">{mailboxError}</p>}
       </div>
 
-      <Field label="Daily Digest Time (UTC)" hint="When the once-a-day task digest goes out — see Task Notifications below for which tasks it covers. Changes take effect within 15 minutes — no restart needed.">
+      <Field label="Daily Digest Time" hint="Plant time (Company Settings → Time Zone). When the once-a-day task digest goes out — see Task Notifications below for which tasks it covers. Changes take effect within 15 minutes — no restart needed.">
         <Input type="time" value={followupVal} onChange={(e) => setFollowup(e.target.value)} />
       </Field>
 
@@ -1882,7 +1940,7 @@ function ErpSyncToolbar({ kind, onSearchChange, search, filters }: {
     <div className="mb-4 space-y-3">
       <div className="flex items-center gap-2 text-xs text-neutral-500">
         {s ? <>
-          Last synced: {s.last_synced_at ? new Date(s.last_synced_at).toLocaleString() : '—'}
+          Last synced: {s.last_synced_at ? formatDateTime(s.last_synced_at) : '—'}
           {' · '}<span className={cn(s.last_status === 'success' ? 'text-green-700' : s.last_status === 'failed' ? 'text-red-700' : '')}>{s.last_status || 'never'}</span>
           {' · '}{s.last_row_count} rows
         </> : 'Never synced'}
@@ -1982,7 +2040,7 @@ function ErpMaterialsTab() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-[11px] text-neutral-400">
-                    {m.erp_rowversion ? new Date(m.erp_rowversion).toLocaleString() : '—'}
+                    {m.erp_rowversion ? formatDateTime(m.erp_rowversion) : '—'}
                   </td>
                 </tr>
               ))}
@@ -2376,9 +2434,7 @@ function ErpUserImportDrawer({ onClose }: { onClose: () => void }) {
 const SECTIONS = [
   { key: 'company',      label: 'Company Settings',     icon: Building2 },
   { key: 'security',     label: 'Security',             icon: ShieldCheck },
-  { key: 'departments',  label: 'Departments',          icon: Landmark },
   { key: 'uom',          label: 'Units of Measure',     icon: Ruler },
-  { key: 'users',        label: 'User Management',      icon: Users },
   { key: 'currency',     label: 'Currency Settings',    icon: CreditCard },
   { key: 'notifications',label: 'Notification Settings',icon: Bell },
   { key: 'remittance',   label: 'Remittance Advice',    icon: Mail },
@@ -2388,8 +2444,16 @@ const SECTIONS = [
   { key: 'wms_sync',     label: 'WMS Sync',             icon: Warehouse },
 ]
 
+// Sections that moved to Portal → MDM. Old deep links (/admin?section=users)
+// land on the new page instead of silently falling back to Company Settings.
+const MOVED_SECTIONS: Record<string, string> = {
+  users: '/mdm/users',
+  departments: '/mdm/departments',
+}
+
 export default function AdminPanel() {
   const { user } = useAuthStore()
+  const movedTo = MOVED_SECTIONS[new URLSearchParams(window.location.search).get('section') ?? '']
   // ?section=<key> makes each panel deep-linkable — the NC sync error tasks in
   // the Task Inbox link straight to /admin?section=nc_sync. An unknown or absent
   // key falls back to the default panel.
@@ -2401,6 +2465,7 @@ export default function AdminPanel() {
   const perms = useRolePermissions().data?.permissions
 
   if (user?.role !== 'system_admin') return <Navigate to="/" replace />
+  if (movedTo) return <Navigate to={movedTo} replace />
 
   // Pages that live outside this panel but belong to administration — listed
   // here too, or an admin who comes in through "Portal → Admin" never finds
@@ -2491,9 +2556,7 @@ export default function AdminPanel() {
         <main className="flex-1 overflow-y-auto p-6">
           {section === 'company'       && <CompanySettings />}
           {section === 'security'      && <SecuritySettings />}
-          {section === 'departments'   && <DepartmentManagement />}
           {section === 'uom'           && <UnitsOfMeasure />}
-          {section === 'users'         && <UserManagement />}
           {section === 'currency'      && <CurrencySettings />}
           {section === 'notifications' && <><NotificationSettings /><TaskNotificationPolicies /></>}
           {section === 'remittance'    && <RemittanceSettings />}

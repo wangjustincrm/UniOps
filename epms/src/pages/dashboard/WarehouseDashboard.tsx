@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
-import { formatDate } from '@/lib/utils'
+import { displayTimeZone, formatDate } from '@/lib/utils'
 import { SortTh, useSortableRows } from '@uniops/shell'
 
 const GR_STATUS_STYLES: Record<string, string> = {
@@ -80,7 +80,7 @@ export default function WarehouseDashboard() {
         <StatCard
           title="Completed This Month"
           value={kpi('Completed This Month')?.value ?? '—'}
-          subtitle={now.toLocaleString('en-CA', { month: 'long', year: 'numeric' })}
+          subtitle={now.toLocaleString('en-CA', { month: 'long', year: 'numeric', timeZone: displayTimeZone() })}
         />
       </div>
 

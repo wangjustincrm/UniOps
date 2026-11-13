@@ -6,6 +6,7 @@ from decimal import Decimal
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_now
 from app.crud._list_order import blank_as_null, lower_text, sort_clauses
 from app.crud._numbering import next_number
 from app.crud.current_step import status_step_sort_keys
@@ -32,7 +33,7 @@ from app.services.pdf_pa import generate_pa_pdf
 # ── Number generation ──────────────────────────────────────────────────────────
 
 async def _next_number(db: AsyncSession) -> str:
-    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    today = plant_now().strftime("%Y%m%d")
     prefix = f"PA-{today}-"
     return await next_number(db, PaymentApplication.pa_number, prefix, width=4)
 

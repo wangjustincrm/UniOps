@@ -27,3 +27,10 @@ export type {
 
 // Shared UI primitives (generic; domain wrappers like StatusBadge stay in apps).
 export * from './ui'
+
+// Dates and times (UI-DATE-002): one format, the plant's time zone.
+export {
+  DEFAULT_TIME_ZONE, setDisplayTimeZone, displayTimeZone, loadDisplayTimeZone,
+  zonedParts, toLocalDate, formatDate, formatDateTime, formatTime, timeZoneAbbrev,
+  isoDateInZone, todayISO, currentMonthISO, wallClockToISO,
+} from './lib/date'

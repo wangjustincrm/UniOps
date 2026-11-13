@@ -22,6 +22,7 @@ import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Loader2, RefreshCw, Warehouse } from 'lucide-react'
 import { mrpApi } from '@/lib/api'
+import { formatDateTime } from '@/lib/utils'
 
 const inputCls = 'h-9 w-24 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
@@ -60,10 +61,7 @@ function SectionHeader({ title, description }: { title: string; description: str
  *  Purchase Sync card. */
 function when(iso: string | null): string {
   if (!iso) return 'never'
-  return new Date(iso).toLocaleString('en-CA', {
-    year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  })
+  return formatDateTime(iso)
 }
 
 export function WmsSyncSection() {

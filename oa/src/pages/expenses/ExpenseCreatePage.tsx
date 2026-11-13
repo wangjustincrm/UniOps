@@ -9,10 +9,16 @@ import { ErrorBanner } from '@/components/ui/ErrorBanner'
 import { api, mdmApi } from '@/lib/api'
 import { ReceiptScanButton, type ReceiptFields } from '@/components/ReceiptScanButton'
 import { AccountPicker, useBudgetAccounts, type BudgetAccount } from '@/components/BudgetAccountPicker'
+import { CardField } from '@/components/LineCardField'
+import { LINE_TABLE_QUERY, useMediaQuery } from '@/lib/useMediaQuery'
+import { INVALID_FIELD, isBlankLine, lineMessage, missingFields, useJumpToFirstInvalid, type LineField } from '@/lib/lineValidation'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface LineItem {
+  // Saved line's id when editing; sent back so the line keeps it and the
+  // receipt scanned on it can be found by a rescan (ATT-OA-005).
+  id?: string
   line_number: number
   expense_date: string
   description: string
@@ -80,6 +86,9 @@ function emptyLine(n: number): LineItem {
   }
 }
 
+// EXP-003 / OA §2.2: every line needs a description, an L2 budget account and a net amount.
+const REQUIRED: LineField[] = ['description', 'budget_account_id', 'net_amount']
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {}) {
@@ -114,6 +123,10 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
   const [currency, setCurrency] = useState('CAD')
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<LineItem[]>([emptyLine(1)])
+  // Set by a save refused for missing line fields; from then on the red
+  // outlines and messages follow the form as the user fills it in.
+  const [showLineErrors, setShowLineErrors] = useState(false)
+  const [formError, setFormError] = useState('')
 
   // Fill the form from the claim being edited. Keyed on the claim id, not on
   // the object: react-query hands back a new object on every refetch, and
@@ -126,6 +139,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
     setLines(
       editing.line_items.length
         ? editing.line_items.map((li, i) => ({
+            id: li.id,
             line_number: i + 1,
             expense_date: li.expense_date,
             description: li.description,
@@ -208,17 +222,46 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
     return acc && acc.available - (accountDeltas[acc.id] ?? 0) < 0
   })
 
+  // Blank lines are left out of the save; every other line is saved or the
+  // save is refused — never dropped (ISS-0193).
+  const keptLines = lines.filter((l) => !isBlankLine(l))
+  const lineMissing = (l: LineItem): LineField[] =>
+    showLineErrors && !isBlankLine(l) ? missingFields(l, REQUIRED) : []
+  const lineIssues = showLineErrors
+    ? lines.flatMap((l, idx) => {
+        const missing = missingFields(l, REQUIRED)
+        return !isBlankLine(l) && missing.length ? [lineMessage(`Line ${idx + 1}`, missing)] : []
+      })
+    : []
+
+  // Receipts only of the lines actually saved, each tied to its saved line
+  // (line_number = position among them, as in the payload). Every receipt on
+  // this form is a Scan, so a rescan replaces the line's earlier scan.
   const createMutation = useSaveClaim(editClaimId, (id) => replaceTab(`/expenses/${id}`), {
-    receipts: () => lines.flatMap((l) => (l._file ? [{ file: l._file }] : [])),
+    receipts: () => keptLines.flatMap((l, i) =>
+      l._file ? [{ file: l._file, lineNumber: i + 1, source: 'scan' as const }] : []),
   })
+
+  const jumpToFirstInvalid = useJumpToFirstInvalid()
+  const wide = useMediaQuery(LINE_TABLE_QUERY)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    const validLines = lines.filter((l) => l.description && l.budget_account_id && l.net_amount)
-    if (validLines.length === 0) return alert('Add at least one line item')
+    setFormError('')
+    if (keptLines.length === 0) {
+      setShowLineErrors(false)
+      setFormError('Add at least one line item')
+      return
+    }
+    if (keptLines.some((l) => missingFields(l, REQUIRED).length)) {
+      setShowLineErrors(true)
+      jumpToFirstInvalid()
+      return
+    }
 
-    const payload = validLines.map((l) => ({
-      line_number: l.line_number,
+    const payload = keptLines.map((l, i) => ({
+      id: l.id ?? null,
+      line_number: i + 1,
       expense_date: l.expense_date,
       description: l.description,
       budget_account_id: l.budget_account_id,
@@ -242,6 +285,120 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
     })
   }
 
+  // One line's controls, used by both the desktop table row and the phone
+  // card (ISS-0255) — one set of handlers, one red-outline rule (ISS-0193).
+  const renderLine = (line: LineItem, idx: number) => {
+    const missing = lineMissing(line)
+    const acc = accounts.find((a) => a.id === line.budget_account_id)
+    const isOverBudget = acc ? acc.available < (parseFloat(line.net_amount) || 0) : false
+    return {
+      isOverBudget,
+      date: (
+        <input
+          type="date"
+          value={line.expense_date}
+          onChange={(e) => updateLine(idx, { expense_date: e.target.value })}
+          className={cn('w-full rounded border px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-300' : 'border-neutral-200')}
+        />
+      ),
+      description: (
+        <div className="flex flex-col gap-1">
+          <input
+            type="text"
+            value={line.description}
+            onChange={(e) => updateLine(idx, { description: e.target.value })}
+            placeholder="What was purchased"
+            aria-invalid={missing.includes('description') || undefined}
+            className={cn('w-full rounded border px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-300' : 'border-neutral-200', missing.includes('description') && INVALID_FIELD)}
+          />
+          <ReceiptScanButton
+            className="self-start"
+            onScanned={(f) => handleReceiptScan(idx, f)}
+            onFile={(file) => updateLine(idx, { _file: file })}
+          />
+          {line._file && (
+            <div
+              className="flex items-center gap-1 text-[10px] text-neutral-500"
+              title="Will be attached to the claim when you save"
+            >
+              <Paperclip className="h-3 w-3 shrink-0" />
+              <span className="truncate max-w-[160px]">{line._file.name}</span>
+              <button
+                type="button"
+                aria-label="Don't attach this receipt"
+                onClick={() => updateLine(idx, { _file: null })}
+                className="text-neutral-300 hover:text-danger-500"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+        </div>
+      ),
+      account: (
+        <AccountPicker
+          value={line.budget_account_id}
+          onChange={(acc) => handleAccountSelect(idx, acc)}
+          accounts={accounts}
+          invalid={missing.includes('budget_account_id')}
+        />
+      ),
+      net: (
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          value={line.net_amount}
+          onChange={(e) => handleNetChange(idx, e.target.value)}
+          placeholder="0.00"
+          aria-invalid={missing.includes('net_amount') || undefined}
+          className={cn('w-full rounded border px-2 py-1.5 text-xs text-right font-mono focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-300' : 'border-neutral-200', missing.includes('net_amount') && INVALID_FIELD)}
+        />
+      ),
+      tax: (
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          value={line.tax_amount}
+          onChange={(e) => handleTaxChange(idx, e.target.value)}
+          placeholder="0.00"
+          className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs text-right font-mono focus:outline-none focus:border-primary-400"
+        />
+      ),
+      taxCode: (
+        <select
+          value={line.tax_code ?? ''}
+          onChange={(e) => handleTaxCodeChange(idx, e.target.value || null)}
+          title="Tax code — drives the line's tax rate (Finance Tax Settings)"
+          className="w-full rounded border border-neutral-200 px-1.5 py-1.5 text-xs focus:outline-none focus:border-primary-400"
+        >
+          <option value="">— none —</option>
+          {taxCodes.map((tc) => (
+            <option key={`${tc.code}-${tc.rate}`} value={tc.code}>
+              {tc.code}{tc.recoverable ? '' : ' (NR)'}
+            </option>
+          ))}
+        </select>
+      ),
+      total: (
+        <div className="rounded bg-neutral-50 px-2 py-1.5 text-xs text-right font-mono text-neutral-700">
+          {line.total_amount ? parseFloat(line.total_amount).toFixed(2) : '—'}
+        </div>
+      ),
+      remove: lines.length > 1 ? (
+        <button
+          type="button"
+          aria-label={`Remove line ${idx + 1}`}
+          onClick={() => setLines((prev) => prev.filter((_, i) => i !== idx).map((l, i) => ({ ...l, line_number: i + 1 })))}
+          className="rounded p-1 text-neutral-300 hover:text-danger-400 transition-colors"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      ) : null,
+    }
+  }
+
   if (loadingClaim) {
     return <div className="p-8 text-sm text-neutral-500">Loading claim…</div>
   }
@@ -251,20 +408,20 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-6 max-w-6xl">
-      {/* Page header */}
-      <div className="flex items-center justify-between">
+      {/* Page header — wraps on a phone instead of squeezing the buttons (ISS-0224) */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">
             {editing ? `Edit ${editing.claim_number}` : 'New General Expense Claim'}
           </h1>
           <p className="mt-0.5 text-sm text-neutral-500">Receipt-based employee reimbursement</p>
         </div>
-        <div className="flex gap-2">
-          <Button type="button" variant="secondary" size="sm"
+        <div className="flex shrink-0 gap-2">
+          <Button type="button" variant="secondary" size="sm" className="whitespace-nowrap"
                   onClick={() => replaceTab(editing ? `/expenses/${editing.id}` : '/expenses')}>
             Cancel
           </Button>
-          <Button type="submit" size="sm" disabled={createMutation.isPending}>
+          <Button type="submit" size="sm" disabled={createMutation.isPending} className="whitespace-nowrap">
             {createMutation.isPending ? 'Saving…' : editing ? 'Save Changes' : 'Save as Draft'}
           </Button>
         </div>
@@ -273,7 +430,7 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
       {/* Form header */}
       <div className="rounded-xl border border-neutral-200 bg-white p-5">
         <h2 className="mb-4 text-sm font-semibold text-neutral-700">Claim Details</h2>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-neutral-600">Submission Date</label>
             <input
@@ -319,13 +476,16 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
         </div>
       )}
 
-      {/* Line items */}
+      {/* Line items — a table from lg up; below that each line is a card with
+          its fields stacked full width (ISS-0255). Both are built from the
+          same renderLine() controls, so state and handlers are shared. */}
       <div className="rounded-xl border border-neutral-200 bg-white overflow-hidden">
-        <div className="flex items-center justify-between border-b border-neutral-100 px-5 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-neutral-100 px-5 py-3">
           <h2 className="text-sm font-semibold text-neutral-700">Line Items</h2>
           <span className="text-xs text-neutral-400">Default rate: {(hstRate * 100).toFixed(0)}% · per-line tax code overrides</span>
         </div>
 
+        {wide && (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-neutral-50 border-b border-neutral-100">
@@ -343,118 +503,24 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
             </thead>
             <tbody>
               {lines.map((line, idx) => {
-                const acc = accounts.find((a) => a.id === line.budget_account_id)
-                const isOverBudget = acc ? acc.available < (parseFloat(line.net_amount) || 0) : false
+                const f = renderLine(line, idx)
                 return (
                   <tr
                     key={idx}
                     className={cn(
                       'border-b border-neutral-100',
-                      isOverBudget && 'bg-warning-50/50',
+                      f.isOverBudget && 'bg-warning-50/50',
                     )}
                   >
                     <td className="px-3 py-2 text-xs text-neutral-400 font-mono">{idx + 1}</td>
-                    <td className="px-3 py-2">
-                      <input
-                        type="date"
-                        value={line.expense_date}
-                        onChange={(e) => updateLine(idx, { expense_date: e.target.value })}
-                        className={cn('w-full rounded border px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-300' : 'border-neutral-200')}
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex flex-col gap-1">
-                        <input
-                          type="text"
-                          value={line.description}
-                          onChange={(e) => updateLine(idx, { description: e.target.value })}
-                          placeholder="What was purchased"
-                          className={cn('w-full rounded border px-2 py-1.5 text-xs focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-300' : 'border-neutral-200')}
-                        />
-                        <ReceiptScanButton
-                          className="self-start"
-                          onScanned={(f) => handleReceiptScan(idx, f)}
-                          onFile={(file) => updateLine(idx, { _file: file })}
-                        />
-                        {line._file && (
-                          <div
-                            className="flex items-center gap-1 text-[10px] text-neutral-500"
-                            title="Will be attached to the claim when you save"
-                          >
-                            <Paperclip className="h-3 w-3 shrink-0" />
-                            <span className="truncate max-w-[160px]">{line._file.name}</span>
-                            <button
-                              type="button"
-                              aria-label="Don't attach this receipt"
-                              onClick={() => updateLine(idx, { _file: null })}
-                              className="text-neutral-300 hover:text-danger-500"
-                            >
-                              <X className="h-3 w-3" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      <AccountPicker
-                        value={line.budget_account_id}
-                        onChange={(acc) => handleAccountSelect(idx, acc)}
-                        accounts={accounts}
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={line.net_amount}
-                        onChange={(e) => handleNetChange(idx, e.target.value)}
-                        placeholder="0.00"
-                        className={cn('w-full rounded border px-2 py-1.5 text-xs text-right font-mono focus:outline-none focus:border-primary-400', isOverBudget ? 'border-warning-300' : 'border-neutral-200')}
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={line.tax_amount}
-                        onChange={(e) => handleTaxChange(idx, e.target.value)}
-                        placeholder="0.00"
-                        className="w-full rounded border border-neutral-200 px-2 py-1.5 text-xs text-right font-mono focus:outline-none focus:border-primary-400"
-                      />
-                    </td>
-                    <td className="px-3 py-2">
-                      <select
-                        value={line.tax_code ?? ''}
-                        onChange={(e) => handleTaxCodeChange(idx, e.target.value || null)}
-                        title="Tax code — drives the line's tax rate (Finance Tax Settings)"
-                        className="w-full rounded border border-neutral-200 px-1.5 py-1.5 text-xs focus:outline-none focus:border-primary-400"
-                      >
-                        <option value="">— none —</option>
-                        {taxCodes.map((tc) => (
-                          <option key={`${tc.code}-${tc.rate}`} value={tc.code}>
-                            {tc.code}{tc.recoverable ? '' : ' (NR)'}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="rounded bg-neutral-50 px-2 py-1.5 text-xs text-right font-mono text-neutral-700">
-                        {line.total_amount ? parseFloat(line.total_amount).toFixed(2) : '—'}
-                      </div>
-                    </td>
-                    <td className="px-3 py-2">
-                      {lines.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => setLines((prev) => prev.filter((_, i) => i !== idx).map((l, i) => ({ ...l, line_number: i + 1 })))}
-                          className="rounded p-1 text-neutral-300 hover:text-danger-400 transition-colors"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </td>
+                    <td className="px-3 py-2">{f.date}</td>
+                    <td className="px-3 py-2">{f.description}</td>
+                    <td className="px-3 py-2">{f.account}</td>
+                    <td className="px-3 py-2">{f.net}</td>
+                    <td className="px-3 py-2">{f.tax}</td>
+                    <td className="px-3 py-2">{f.taxCode}</td>
+                    <td className="px-3 py-2">{f.total}</td>
+                    <td className="px-3 py-2">{f.remove}</td>
                   </tr>
                 )
               })}
@@ -473,6 +539,53 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
             </tfoot>
           </table>
         </div>
+        )}
+
+        {/* Phone / tablet: one card per line */}
+        {!wide && (
+        <div className="flex flex-col gap-3 p-3">
+          {lines.map((line, idx) => {
+            const f = renderLine(line, idx)
+            return (
+              <div
+                key={idx}
+                className={cn(
+                  'rounded-lg border p-3',
+                  f.isOverBudget ? 'border-warning-300 bg-warning-50/40' : 'border-neutral-200',
+                )}
+              >
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-neutral-700">Line {idx + 1}</span>
+                  {f.remove}
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <CardField label="Description" className="sm:col-span-2">{f.description}</CardField>
+                  <CardField label="Date">{f.date}</CardField>
+                  <CardField label="Budget Account">{f.account}</CardField>
+                  <CardField label="Net (C)">{f.net}</CardField>
+                  <CardField label="Tax (B)">{f.tax}</CardField>
+                  <CardField label="Tax Code">{f.taxCode}</CardField>
+                  <CardField label="Total (A)">{f.total}</CardField>
+                </div>
+              </div>
+            )
+          })}
+          <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs">
+            <div className="flex justify-between text-neutral-500">
+              <span>Sub-total net (C)</span>
+              <span className="font-mono font-semibold text-primary-700">{grandNet.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-neutral-500">
+              <span>Tax (B)</span>
+              <span className="font-mono">{grandTax.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between font-semibold text-neutral-700">
+              <span>Total (A)</span>
+              <span className="font-mono">{grandTotal.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
+        )}
 
         {/* Add row button */}
         {lines.length < 20 && (
@@ -488,6 +601,20 @@ export default function ExpenseCreatePage({ editClaimId }: EditableFormProps = {
           </div>
         )}
       </div>
+
+      {/* Missing line fields — one message per line, live until fixed */}
+      {lineIssues.length > 0 && (
+        <div role="alert" data-line-issues className="flex items-start gap-2 rounded-lg border border-danger-200 bg-danger-50 px-4 py-3 text-sm text-danger-700">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="font-medium">Complete these lines before saving:</p>
+            <ul className="mt-1 list-disc pl-5">
+              {lineIssues.map((m) => <li key={m}>{m}</li>)}
+            </ul>
+          </div>
+        </div>
+      )}
+      {formError && <ErrorBanner message={formError} />}
 
       {/* Error */}
       {createMutation.isError && (

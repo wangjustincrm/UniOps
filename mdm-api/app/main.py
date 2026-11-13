@@ -6,7 +6,7 @@ from app.db.base import engine, Base
 from app.core.config import settings
 from app.core.task_logging import configure_task_logging
 # Import models so Alembic/metadata can see them
-from app.models import vendor, department, cost_center, part, user, company, erp_material, erp_supplier, erp_person, erp_sync_state, uom, material, uom_conversion, nc_bom, bom, material_supplier, sync_state, company_config  # noqa: F401
+from app.models import vendor, department, cost_center, part, user, company, erp_material, erp_supplier, erp_person, erp_sync_state, uom, material, uom_conversion, nc_bom, bom, material_supplier, sync_state, company_config, employee, task  # noqa: F401
 
 # Scheduler INFO logs (app.tasks.*) are otherwise silently dropped — see
 # app/core/task_logging.py for why this doesn't just flip root to INFO.
@@ -17,10 +17,15 @@ configure_task_logging()
 async def lifespan(app: FastAPI):
     import asyncio
 
+    from app.core.plant_time import plant_tz_refresh_loop, refresh_plant_tz
     from app.tasks.erp_sync_scheduler import erp_sync_loop
+    # Plant time zone (Company Settings): read now, then keep it fresh.
+    await refresh_plant_tz(engine)
+    plant_tz_task = asyncio.create_task(plant_tz_refresh_loop(engine))
     scheduler_task = asyncio.create_task(erp_sync_loop())
     yield
     scheduler_task.cancel()
+    plant_tz_task.cancel()
 
 
 app = FastAPI(

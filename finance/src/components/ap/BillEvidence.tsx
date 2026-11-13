@@ -10,6 +10,8 @@
  * Both are evidence for finance to judge, never netted off the balance.
  */
 
+import { formatDate } from '@/lib/utils'
+
 export interface JvMatch {
   jv_number: string; voucher_date: string | null; subsystem: string | null
   currency: string | null
@@ -44,7 +46,7 @@ export function BillEvidence({ jv, other }: { jv?: JvMatch[]; other?: OtherCurre
              title={[m.summary, m.subsystem && `source: ${m.subsystem}`].filter(Boolean).join(' · ')}
              className={m.amount_matches ? 'text-emerald-700' : 'text-sky-700'}>
           <span className="rounded bg-sky-50 px-1 py-px font-semibold">In JV</span>{' '}
-          <span className="font-mono">{m.jv_number}</span> · {m.voucher_date ?? '—'} ·{' '}
+          <span className="font-mono">{m.jv_number}</span> · {formatDate(m.voucher_date)} ·{' '}
           {money(m.amount)} {m.currency} · inv {m.invoice_no}
           {m.amount_matches && <span className="font-semibold"> · amount matches</span>}
         </div>
@@ -53,7 +55,7 @@ export function BillEvidence({ jv, other }: { jv?: JvMatch[]; other?: OtherCurre
         <div key={o.bill_no} className="text-amber-700"
              title={`Invoice ${o.invoice_nos.join(', ')} is also on ${o.bill_no} (${o.currency}), billed ${money(o.money_cr)}`}>
           <span className="rounded bg-amber-50 px-1 py-px font-semibold">Also in {o.currency}</span>{' '}
-          <span className="font-mono">{o.bill_no}</span> · {o.bill_date ?? '—'} · inv {o.invoice_nos.join(', ')} ·{' '}
+          <span className="font-mono">{o.bill_no}</span> · {formatDate(o.bill_date)} · inv {o.invoice_nos.join(', ')} ·{' '}
           {Number(o.money_bal) === 0 ? 'settled' : `open ${money(o.money_bal)}`}
         </div>
       ))}

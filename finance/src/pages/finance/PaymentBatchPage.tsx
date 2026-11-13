@@ -6,21 +6,25 @@
  *      currency per run), filterable by type via ?type= (all | pa | freight |
  *      pa_dir | claim) so claims are not lost among hundreds of PAs; the Payments page
  *      banner deep-links here with ?type=claim&currency=…
- *   2. Select rows → create a draft batch (snapshot)
+ *   2. Select rows → create a draft batch (snapshot). A PA whose invoices add
+ *      up to it lists them underneath, and any of them can be picked on its own
  *   3. Execute — each line runs through the unified payment executor with
  *      per-line failure isolation; see paid / failed per line
+ *
+ * Due list and batches are two tabs (?tab=batches), so the batches are not
+ * buried under a list of hundreds of rows.
  *
  * Styling follows the Portal convention (CoaConfigPage): neutral palette,
  * zebra rows, status pills, #085E5E primary.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, Loader2, Play, Wallet, X } from 'lucide-react'
+import { CheckCircle2, Loader2, Play, Undo2, Wallet, X } from 'lucide-react'
 import { SortTh, sortParams, useOptionalTabStoreApi, useSort, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi, EPMS_URL, OA_URL, encodeSession } from '@/lib/api'
-import { cn, toLocalDate } from '@/lib/utils'
+import { cn, formatDate, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { ListPager } from '@/components/ListPager'
 import { RemittancePanel } from '@/components/remittance/RemittancePanel'
@@ -35,19 +39,68 @@ const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm
 
 interface Due {
   doc_kind: string; doc_id: string; doc_number: string | null
-  payee: string; vendor_inv_no?: string; amount: string; currency: string
+  payee: string; vendor_inv_no?: string; currency: string
+  // What is still owed, and the document's own total — they differ once some
+  // of a PA's invoices have been paid.
+  amount: string; payment_amount: string
   claim_type: string | null; submitted_at: string | null
   // po | agreement | freight | direct — a Freight PA (EPMS → Freight) is a `pa`
   pa_source?: string | null
   // EPMS invoices the PA settles (empty for claims and OA Direct PAs) and the
-  // earliest of their due dates — a date-only string.
-  invoices?: { id: string; number: string }[]; due_date?: string | null
+  // earliest due date among the unpaid ones — a date-only string.
+  invoices?: DueInvoice[]; due_date?: string | null
+  // The invoices add up to the PA, so they can be picked one by one.
+  splittable: boolean
   // Draft batches that already hold it (ISS-0163). A draft reserves nothing,
   // so it stays selectable — but only one execution can pay it.
   in_draft_batches?: string[]
+  // What NC's books say about its invoices (finance-api
+  // services/nc_invoice_paid): null when there are no EPMS invoices to look up.
+  nc_paid?: NcStatus | null; nc_paid_count?: number
 }
 
+interface DueInvoice {
+  id: string; number: string; amount: string; due_date: string | null
+  paid: boolean; in_draft_batches: string[]
+  nc?: NcInvoice
+}
+
+// paid = NC balance 0 with an NC payment; closed = balance 0 without one
+// (offset / write-off); partial = some of it paid; open = on NC's books, unpaid.
+type NcStatus = 'paid' | 'closed' | 'partial' | 'open' | 'not_in_nc'
+interface NcInvoice {
+  status: NcStatus; bill_no: string | null; payment_no: string | null
+  paid_on: string | null; open_balance: string | null
+}
+const NC_RANK: Record<NcStatus, number> = { paid: 0, closed: 1, partial: 2, open: 3, not_in_nc: 4 }
+
 export const DUE_CURRENCIES = ['CAD', 'USD', 'CNY', 'EUR']
+
+// The invoices of a splittable PA that can still be paid.
+const openInvoices = (d: Due): DueInvoice[] =>
+  d.splittable ? (d.invoices ?? []).filter((i) => !i.paid) : []
+
+// Selection: doc_id → the invoices picked. A document with nothing to pick by
+// invoice holds an empty set; it is paid whole.
+type Selection = Map<string, Set<string>>
+const pickedSubset = (d: Due, picked: Set<string>) =>
+  d.splittable && picked.size < openInvoices(d).length
+const pickedAmount = (d: Due, picked: Set<string>) =>
+  pickedSubset(d, picked)
+    ? openInvoices(d).filter((i) => picked.has(i.id)).reduce((s, i) => s + Number(i.amount), 0)
+    : Number(d.amount)
+const pickAll = (d: Due) => new Set(openInvoices(d).map((i) => i.id))
+
+// The search box matches a document number or any of its invoice numbers.
+const matchesSearch = (d: Due, term: string) =>
+  [d.doc_number, d.vendor_inv_no, ...(d.invoices ?? []).map((i) => i.number)]
+    .some((v) => v?.toLowerCase().includes(term))
+
+// Keeps a long list's header in view: the list scrolls in its own box.
+const listBox = 'max-h-[calc(100vh-15rem)] overflow-auto rounded-lg border border-neutral-200'
+const listHead = 'sticky top-0 z-10 bg-neutral-50 text-left text-xs text-neutral-500 shadow-[0_1px_0_#e5e5e5]'
+
+type PageTab = 'due' | 'batches'
 
 const BATCH_PAGE_SIZE = 20
 type BatchSortKey = 'batch_number' | 'batch_date' | 'status' | 'payment_method' | 'total'
@@ -75,6 +128,7 @@ interface BankAccount { id: string; name: string; bank_name: string; currency: s
 interface BatchLine {
   id: string; doc_kind: string; doc_id: string; doc_number: string | null
   vendor_inv_no?: string; amount: string; status: string; error: string | null
+  invoice_ids?: string[] | null   // set when the line pays part of a PA
 }
 
 function fmtMoney(v: string, ccy?: string): string {
@@ -92,7 +146,7 @@ function dueTypeLabel(d: Due): string {
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, string> = {
     draft: 'bg-neutral-100 text-neutral-600', executed: 'bg-green-50 text-green-700',
-    cancelled: 'bg-neutral-100 text-neutral-400',
+    cancelled: 'bg-neutral-100 text-neutral-400', reversed: 'bg-orange-50 text-orange-700',
     paid: 'bg-green-50 text-green-700', failed: 'bg-red-50 text-red-700',
     pending: 'bg-amber-50 text-amber-700',
   }
@@ -113,9 +167,15 @@ export default function PaymentBatchPage() {
     const next = new URLSearchParams(params)
     next.set(key, value)
     setParams(next, { replace: true })
-    setSelected(new Set())
+    setSelected(new Map())
   }
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const pageTab: PageTab = params.get('tab') === 'batches' ? 'batches' : 'due'
+  const setPageTab = (value: PageTab) => {
+    const next = new URLSearchParams(params)
+    next.set('tab', value)
+    setParams(next, { replace: true })
+  }
+  const [selected, setSelected] = useState<Selection>(new Map())
   const [openBatch, setOpenBatch] = useState<string | null>(null)
   const [banner, setBanner] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
@@ -141,9 +201,12 @@ export default function PaymentBatchPage() {
   }, [dueAll])
   // Column sort (client-side; the list is loaded whole for one currency).
   // null = API order. Empties (no due date / no invoice) sit last either way.
+  const [search, setSearch] = useState('')
+  const term = search.trim().toLowerCase()
   const dueOfType = useMemo(
-    () => (dueType === 'all' ? dueAll : dueAll.filter((d) => dueTypeOf(d) === dueType)),
-    [dueAll, dueType])
+    () => dueAll.filter((d) => (dueType === 'all' || dueTypeOf(d) === dueType)
+                               && (!term || matchesSearch(d, term))),
+    [dueAll, dueType, term])
   const { rows: due, sort, onSort } = useSortableRows(dueOfType, {
     document: (d) => d.doc_number,
     submitted: (d) => d.submitted_at,
@@ -152,6 +215,7 @@ export default function PaymentBatchPage() {
     invoice: (d) => d.invoices?.[0]?.number || d.vendor_inv_no,
     due: (d) => d.due_date,                      // YYYY-MM-DD sorts as text
     type: (d) => dueTypeLabel(d),
+    nc: (d) => (d.nc_paid ? NC_RANK[d.nc_paid] : null),
     amount: (d) => Number(d.amount),
   })
 
@@ -168,7 +232,7 @@ export default function PaymentBatchPage() {
   }
   // Open an EPMS invoice the same way the AP list does — iframe tab, keyed
   // per invoice so it focuses an already-open one.
-  const openInvoice = (inv: { id: string; number: string }) => {
+  const openInvoice = (inv: DueInvoice) => {
     const session = token && user ? encodeSession(token, refreshToken ?? '', user) : ''
     const src = `${EPMS_URL}/invoices/${inv.id}${session ? `#__session=${session}` : ''}`
     if (!tabs) { window.open(src, '_blank', 'noopener'); return }
@@ -177,7 +241,7 @@ export default function PaymentBatchPage() {
       kind: 'iframe', src, icon: 'FileText', closable: true,
     })
   }
-  const today = new Date().toLocaleDateString('en-CA')  // local YYYY-MM-DD
+  const today = todayISO()  // the plant's YYYY-MM-DD (company time zone)
   // Batches are paged and sorted by the API (payments._BATCH_SORT); the due
   // list above stays whole per currency because batch selection needs it all.
   const [batchPage, setBatchPage] = useState(1)
@@ -199,18 +263,22 @@ export default function PaymentBatchPage() {
   }
 
   const selectedTotal = useMemo(
-    () => dueAll.filter((d) => selected.has(d.doc_id)).reduce((s, d) => s + Number(d.amount), 0),
+    () => dueAll.reduce((s, d) => {
+      const picked = selected.get(d.doc_id)
+      return picked ? s + pickedAmount(d, picked) : s
+    }, 0),
     [dueAll, selected])
 
   const createBatch = useMutation({
     mutationFn: () => financeApi.post<Batch>('/payments/batches',
-      { docs: [...selected].map((id) => {
+      { docs: [...selected].map(([id, picked]) => {
         const d = dueAll.find((x) => x.doc_id === id)!
-        return { doc_kind: d.doc_kind, doc_id: id }
+        return { doc_kind: d.doc_kind, doc_id: id,
+                 ...(pickedSubset(d, picked) ? { invoice_ids: [...picked] } : {}) }
       }), payment_method: 'bank_transfer' }),
     onSuccess: (b) => {
       flash('ok', `Batch ${b.batch_number} created (${selected.size} items)`)
-      setSelected(new Set())
+      setSelected(new Map())
       qc.invalidateQueries({ queryKey: ['payment-batches'] })
       qc.invalidateQueries({ queryKey: ['payments-due'] })
       setOpenBatch(b.id)
@@ -220,12 +288,35 @@ export default function PaymentBatchPage() {
 
   if (!user) return <Navigate to="/login" replace />
 
-  const toggle = (id: string) => setSelected((prev) => {
-    const next = new Set(prev)
-    next.has(id) ? next.delete(id) : next.add(id)
+  const toggle = (d: Due) => setSelected((prev) => {
+    const next = new Map(prev)
+    const whole = !pickedSubset(d, prev.get(d.doc_id) ?? new Set()) && prev.has(d.doc_id)
+    if (whole) next.delete(d.doc_id)
+    else next.set(d.doc_id, pickAll(d))
     return next
   })
-  const allChecked = due.length > 0 && due.every((d) => selected.has(d.doc_id))
+  const toggleInvoice = (d: Due, invoiceId: string) => setSelected((prev) => {
+    const next = new Map(prev)
+    const picked = new Set(prev.get(d.doc_id) ?? [])
+    if (!picked.delete(invoiceId)) picked.add(invoiceId)
+    if (picked.size) next.set(d.doc_id, picked)
+    else next.delete(d.doc_id)
+    return next
+  })
+  const allChecked = due.length > 0 && due.every((d) => {
+    const picked = selected.get(d.doc_id)
+    return picked && !pickedSubset(d, picked)
+  })
+  // Draft batches already holding what is selected: for a partial pick, only
+  // those holding one of its invoices.
+  const heldInDrafts = () => dueAll.flatMap((d) => {
+    const picked = selected.get(d.doc_id)
+    if (!picked) return []
+    const numbers = pickedSubset(d, picked)
+      ? [...new Set((d.invoices ?? []).filter((i) => picked.has(i.id)).flatMap((i) => i.in_draft_batches))]
+      : d.in_draft_batches ?? []
+    return numbers.length ? [`${d.doc_number} is already in draft ${numbers.join(', ')}`] : []
+  })
 
   return (
     <PortalChromeLayout
@@ -241,10 +332,20 @@ export default function PaymentBatchPage() {
           </div>
         )}
 
-        {/* due list */}
+        <div role="tablist" className="mb-4 flex gap-6 border-b border-neutral-200">
+          {([['due', 'Due for Payment', dueAll.length], ['batches', 'Batches', batchResp?.total]] as const).map(([key, label, count]) => (
+            <button key={key} role="tab" aria-selected={pageTab === key} onClick={() => setPageTab(key)}
+                    className={cn('-mb-px border-b-2 px-1 pb-2 text-sm font-medium',
+                      pageTab === key
+                        ? 'border-[#085E5E] text-[#085E5E]'
+                        : 'border-transparent text-neutral-500 hover:text-neutral-700')}>
+              {label} {count !== undefined && <span className="ml-1 text-xs text-neutral-400">{count}</span>}
+            </button>
+          ))}
+        </div>
+
+        {pageTab === 'due' && (<>
         <div className="mb-3 flex flex-wrap items-center gap-3">
-          <Wallet className="h-5 w-5 text-neutral-400" />
-          <span className="text-sm font-semibold text-neutral-700">Due for payment</span>
           <select value={currency} onChange={(e) => setFilter('currency', e.target.value)}
                   className={cn(inputCls, 'w-28')}>
             {DUE_CURRENCIES.map((c) => <option key={c}>{c}</option>)}
@@ -266,11 +367,14 @@ export default function PaymentBatchPage() {
                 {selected.size} selected · <span className="font-mono">{fmtMoney(String(selectedTotal), currency)}</span>
               </span>
             )}
+            <input type="search" value={search} onChange={(e) => setSearch(e.target.value)}
+                   placeholder="Search PA or invoice no" aria-label="Search PA or invoice number"
+                   className={cn(inputCls, 'w-56')} />
             {canPay && (
               <button onClick={() => {
-                const held = dueAll.filter((d) => selected.has(d.doc_id) && d.in_draft_batches?.length)
+                const held = heldInDrafts()
                 if (held.length > 0 && !window.confirm(
-                  `${held.map((d) => `${d.doc_number} is already in draft ${d.in_draft_batches!.join(', ')}`).join('\n')}\n\n`
+                  `${held.join('\n')}\n\n`
                   + 'Add to a new batch anyway? It can be paid only once — whichever batch is executed first pays it.')) return
                 createBatch.mutate()
               }} disabled={selected.size === 0 || createBatch.isPending}
@@ -282,34 +386,52 @@ export default function PaymentBatchPage() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-lg border border-neutral-200">
+        <div className={listBox}>
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+            <thead className={listHead}>
               <tr>
                 <th className="px-3 py-2 w-10">
                   <input type="checkbox" checked={allChecked}
-                         onChange={(e) => setSelected(e.target.checked ? new Set(due.map((d) => d.doc_id)) : new Set())} />
+                         onChange={(e) => setSelected((prev) => {
+                           // Only the rows on screen: picks made under another
+                           // search stay picked.
+                           const next = new Map(prev)
+                           for (const d of due) {
+                             if (e.target.checked) next.set(d.doc_id, pickAll(d))
+                             else next.delete(d.doc_id)
+                           }
+                           return next
+                         })} />
                 </th>
                 <SortTh label="Document" sortKey="document" sort={sort} onSort={onSort} className="px-3 py-2 w-40" />
                 <SortTh label="Submitted" sortKey="submitted" sort={sort} onSort={onSort} className="px-3 py-2 w-28" />
                 <SortTh label="Payee" sortKey="payee" sort={sort} onSort={onSort} className="px-3 py-2" />
-                <SortTh label="Vendor Inv No" sortKey="invoice" sort={sort} onSort={onSort} className="px-3 py-2 w-44" />
+                <SortTh label="Invoice No" sortKey="invoice" sort={sort} onSort={onSort} className="px-3 py-2 w-44" />
                 <SortTh label="Due Date" sortKey="due" sort={sort} onSort={onSort} className="px-3 py-2 w-28" />
+                <SortTh label="NC Paid" sortKey="nc" sort={sort} onSort={onSort} className="px-3 py-2 w-40" />
                 <SortTh label="Type" sortKey="type" sort={sort} onSort={onSort} className="px-3 py-2 w-24" />
                 <SortTh label="Amount" sortKey="amount" sort={sort} onSort={onSort} align="right" className="px-3 py-2 w-40" />
               </tr>
             </thead>
             <tbody>
               {due.length === 0 && (
-                <tr><td colSpan={8} className="px-3 py-6 text-center text-neutral-400">
-                  {dueType === 'claim'
+                <tr><td colSpan={9} className="px-3 py-6 text-center text-neutral-400">
+                  {term ? `Nothing matches "${search.trim()}".`
+                    : dueType === 'claim'
                     ? `No approved ${currency} expense claims awaiting payment.`
                     : `No approved ${currency} payments awaiting a run.`}</td></tr>
               )}
-              {due.map((d, i) => (
-                <tr key={d.doc_id} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
+              {due.map((d, i) => {
+                const picked = selected.get(d.doc_id)
+                const partial = !!picked && pickedSubset(d, picked)
+                const owed = Number(d.amount) !== Number(d.payment_amount)
+                return (
+                <Fragment key={d.doc_id}>
+                <tr className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
                   <td className="px-3 py-2">
-                    <input type="checkbox" checked={selected.has(d.doc_id)} onChange={() => toggle(d.doc_id)} />
+                    <input type="checkbox" aria-label={`Select ${d.doc_number ?? 'document'}`}
+                           checked={!!picked && !partial} onChange={() => toggle(d)}
+                           ref={(el) => { if (el) el.indeterminate = partial }} />
                   </td>
                   <td className="px-3 py-2 font-mono text-xs">
                     {d.doc_kind === 'expense_claim' ? (
@@ -325,11 +447,13 @@ export default function PaymentBatchPage() {
                     )}
                   </td>
                   <td className="px-3 py-2 text-xs text-neutral-600">
-                    {d.submitted_at ? new Date(d.submitted_at).toLocaleDateString() : <span className="text-neutral-300">—</span>}
+                    {d.submitted_at ? formatDate(d.submitted_at) : <span className="text-neutral-300">—</span>}
                   </td>
                   <td className="px-3 py-2">{d.payee}</td>
                   <td className="px-3 py-2 font-mono text-xs text-neutral-600">
-                    {d.invoices?.length ? d.invoices.map((inv, k) => (
+                    {d.splittable ? (
+                      <span className="font-sans text-neutral-500">{d.invoices!.length} invoices</span>
+                    ) : d.invoices?.length ? d.invoices.map((inv, k) => (
                       <span key={inv.id}>
                         {k > 0 && ', '}
                         <button onClick={() => openInvoice(inv)} className="text-[#085E5E] underline hover:text-[#064A4A]">
@@ -337,23 +461,62 @@ export default function PaymentBatchPage() {
                         </button>
                       </span>
                     )) : (d.vendor_inv_no || <span className="text-neutral-300">—</span>)}
+                    {!d.splittable && (d.invoices?.length ?? 0) > 1 && (
+                      <div className="mt-0.5 font-sans text-[10px] text-neutral-400"
+                           title="These invoices do not add up to the PA amount, so their share of it is not known">
+                        Paid as a whole
+                      </div>
+                    )}
                   </td>
                   <td className={cn('px-3 py-2 text-xs', d.due_date && d.due_date < today ? 'font-medium text-red-600' : 'text-neutral-600')}>
-                    {d.due_date ? toLocalDate(d.due_date).toLocaleDateString() : <span className="text-neutral-300">—</span>}
+                    {d.due_date ? formatDate(d.due_date) : <span className="text-neutral-300">—</span>}
                   </td>
+                  <td className="px-3 py-2 text-xs"><NcPaidCell d={d} /></td>
                   <td className="px-3 py-2 text-xs text-neutral-500">{dueTypeLabel(d)}</td>
-                  <td className="px-3 py-2 text-right font-mono">{fmtMoney(d.amount, d.currency)}</td>
+                  <td className="px-3 py-2 text-right font-mono">
+                    {fmtMoney(d.amount, d.currency)}
+                    {owed && (
+                      <div className="font-sans text-[10px] text-neutral-400">
+                        left of {fmtMoney(d.payment_amount)}
+                      </div>
+                    )}
+                  </td>
                 </tr>
-              ))}
+                {d.splittable && d.invoices!.map((inv) => (
+                  <tr key={inv.id} className={cn('text-xs', i % 2 && 'bg-neutral-50/40', inv.paid && 'text-neutral-400')}>
+                    <td className="py-1.5 pl-6 pr-3">
+                      <input type="checkbox" aria-label={`Select invoice ${inv.number}`} disabled={inv.paid}
+                             checked={!!picked?.has(inv.id)} onChange={() => toggleInvoice(d, inv.id)} />
+                    </td>
+                    <td colSpan={3} className="py-1.5 pr-3 text-right text-[10px] text-amber-700">
+                      {inv.in_draft_batches.length > 0 && `In draft ${inv.in_draft_batches.join(', ')}`}
+                    </td>
+                    <td className="px-3 py-1.5 font-mono">
+                      <button onClick={() => openInvoice(inv)} className="text-[#085E5E] underline hover:text-[#064A4A]">
+                        {inv.number || 'Invoice'}
+                      </button>
+                    </td>
+                    <td className={cn('px-3 py-1.5', !inv.paid && inv.due_date && inv.due_date < today ? 'font-medium text-red-600' : 'text-neutral-500')}>
+                      {inv.due_date ? formatDate(inv.due_date) : <span className="text-neutral-300">—</span>}
+                    </td>
+                    <td className="px-3 py-1.5"><NcInvoiceBadge nc={inv.nc} /></td>
+                    <td className="px-3 py-1.5 text-neutral-500">{inv.paid ? <StatusPill status="paid" /> : 'Invoice'}</td>
+                    <td className="px-3 py-1.5 text-right font-mono text-neutral-600">{fmtMoney(inv.amount, d.currency)}</td>
+                  </tr>
+                ))}
+                </Fragment>
+                )
+              })}
             </tbody>
           </table>
         </div>
 
-        {/* batches */}
-        <h3 className="mb-2 mt-8 text-sm font-semibold text-neutral-700">Batches</h3>
-        <div className="overflow-hidden rounded-lg border border-neutral-200">
+        </>)}
+
+        {pageTab === 'batches' && (<>
+        <div className={listBox}>
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
+            <thead className={listHead}>
               <tr>
                 <SortTh label="Batch" sortKey="batch_number" sort={batchSort} onSort={onBatchSort} className="px-3 py-2 w-44" />
                 <SortTh label="Date" sortKey="batch_date" sort={batchSort} onSort={onBatchSort} className="px-3 py-2 w-28" />
@@ -370,7 +533,7 @@ export default function PaymentBatchPage() {
               {batches.map((b, i) => (
                 <tr key={b.id} className={cn('border-t border-neutral-100', i % 2 && 'bg-neutral-50/40')}>
                   <td className="px-3 py-2 font-mono text-xs">{b.batch_number}</td>
-                  <td className="px-3 py-2 text-xs text-neutral-600">{b.batch_date}</td>
+                  <td className="px-3 py-2 text-xs text-neutral-600">{formatDate(b.batch_date)}</td>
                   <td className="px-3 py-2"><StatusPill status={b.status} /></td>
                   <td className="px-3 py-2 text-xs text-neutral-500">{b.payment_method}</td>
                   <td className="px-3 py-2 text-right font-mono">{fmtMoney(b.total, b.currency)}</td>
@@ -384,6 +547,7 @@ export default function PaymentBatchPage() {
         </div>
         <ListPager page={batchPage} pageSize={BATCH_PAGE_SIZE} total={batchResp?.total ?? 0}
                    noun="batches" onPage={setBatchPage} />
+        </>)}
       </div>
 
       {openBatch && (
@@ -400,15 +564,23 @@ export default function PaymentBatchPage() {
             qc.invalidateQueries({ queryKey: ['payments-due'] })
             setOpenBatch(null)
           }}
+          onReversed={(number) => {
+            flash('ok', `Batch ${number} reversed — its payments are cancelled and can be paid again`)
+            qc.invalidateQueries({ queryKey: ['payment-batches'] })
+            qc.invalidateQueries({ queryKey: ['payments-due'] })
+            qc.invalidateQueries({ queryKey: ['payments'] })
+            setOpenBatch(null)
+          }}
           onError={(m) => flash('err', m)} />
       )}
     </PortalChromeLayout>
   )
 }
 
-function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, onError }: {
+function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, onReversed, onError }: {
   batchId: string; canPay: boolean; onClose: () => void
   onCancelled: (batchNumber: string) => void
+  onReversed: (batchNumber: string) => void
   onExecuted: (paid: number, failed: number) => void; onError: (m: string) => void
 }) {
   const qc = useQueryClient()
@@ -455,7 +627,7 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
     // still needs to be told the preview is incomplete, or they might read
     // "no panel" as "no credits" — hence the flash on any failure.
     void Promise.allSettled(
-      creditable.map(async (ln) => [ln.doc_id, await suggestCredits(ln.doc_kind, ln.doc_id)] as const),
+      creditable.map(async (ln) => [ln.doc_id, await suggestCredits(ln.doc_kind, ln.doc_id, ln.amount)] as const),
     ).then((results) => {
       if (cancelled) return
       const entries: Array<readonly [string, CreditSuggestResponse]> = []
@@ -500,6 +672,18 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
     onSuccess: (b) => {
       qc.invalidateQueries({ queryKey: ['batch', batchId] })
       onCancelled(b.batch_number)
+    },
+    onError: (e: Error) => onError(e.message),
+  })
+
+  // Reverse an executed batch whose money never went out: its payments are
+  // cancelled and the PAs go back to the due list (finance-api payment_reverse.py).
+  const reverse = useMutation({
+    mutationFn: (reason: string) =>
+      financeApi.post<Batch>(`/payments/batches/${batchId}/reverse`, { reason }),
+    onSuccess: async (b) => {
+      await qc.invalidateQueries({ queryKey: ['batch', batchId] })
+      onReversed(b.batch_number)
     },
     onError: (e: Error) => onError(e.message),
   })
@@ -592,7 +776,7 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
           <>
             {batch && (
               <div className="mb-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-neutral-600">
-                <span>Date: {batch.batch_date}</span>
+                <span>Date: {formatDate(batch.batch_date)}</span>
                 <span>Currency: {batch.currency}</span>
                 <span>Total: <span className="font-mono">{fmtMoney(batch.total, batch.currency)}</span></span>
                 <span>{lines.length} lines</span>
@@ -604,7 +788,7 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
                 <thead className="bg-neutral-50 text-left text-xs text-neutral-500">
                   <tr>
                     <th className="px-3 py-2">Document</th>
-                    <th className="px-3 py-2 w-40">Vendor Inv No</th>
+                    <th className="px-3 py-2 w-40">Invoice No</th>
                     <th className="px-3 py-2 w-24">Type</th>
                     <th className="px-3 py-2 w-24">Status</th>
                     <th className="px-3 py-2 w-32 text-right">Amount</th>
@@ -615,6 +799,7 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
                     <tr key={ln.id} className="border-t border-neutral-100">
                       <td className="px-3 py-2">
                         <span className="font-mono text-xs">{ln.doc_number || ln.doc_id.slice(0, 8)}</span>
+                        {ln.invoice_ids && <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">Part of PA</span>}
                         {ln.error && <div className="text-xs text-red-600">{ln.error}</div>}
                       </td>
                       <td className="px-3 py-2 font-mono text-xs text-neutral-600">{ln.vendor_inv_no || <span className="text-neutral-300">—</span>}</td>
@@ -669,7 +854,7 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
                                       record here, vendor_credit_number to
                                       talk to the vendor about it. */}
                                   <span className="font-mono text-neutral-400">{c.vendor_credit_number}</span>
-                                  <span className="text-neutral-400">{c.credit_date}</span>
+                                  <span className="text-neutral-400">{formatDate(c.credit_date)}</span>
                                   {/* The recomputed take, never c.apply — a
                                       deselection reshuffles what every later
                                       credit contributes, so showing the
@@ -700,8 +885,31 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
 
             <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
               {batch?.status === 'executed' ? (
-                <span className="flex items-center gap-1.5 text-sm text-green-700">
-                  <CheckCircle2 className="h-4 w-4" /> Executed
+                <>
+                  {canPay && lines.some((ln) => ln.status === 'paid') && (
+                    <button onClick={() => {
+                      if (reverse.isPending) return
+                      const reason = window.prompt(
+                        `Reverse ${batch.batch_number}?\n\nUse this only when the money was NOT actually sent. `
+                        + 'Every paid line is cancelled, its invoices go back to unpaid, the draft journal '
+                        + 'voucher is removed, and the PAs return to the due list to be paid again. '
+                        + 'If a remittance email already went out, tell the vendor.\n\nReason (required):')
+                      if (reason === null) return
+                      if (!reason.trim()) { onError('A reason is required to reverse a batch'); return }
+                      reverse.mutate(reason.trim())
+                    }} disabled={reverse.isPending}
+                            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-red-300 px-3 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50">
+                      {reverse.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />}
+                      Reverse Batch
+                    </button>
+                  )}
+                  <span className="flex items-center gap-1.5 text-sm text-green-700">
+                    <CheckCircle2 className="h-4 w-4" /> Executed
+                  </span>
+                </>
+              ) : batch?.status === 'reversed' ? (
+                <span className="flex items-center gap-1.5 text-sm text-orange-700">
+                  <Undo2 className="h-4 w-4" /> Reversed — payments cancelled
                 </span>
               ) : canPay && batch?.status === 'draft' ? (
                 <>
@@ -743,5 +951,70 @@ function BatchDetailModal({ batchId, canPay, onClose, onExecuted, onCancelled, o
       scope={{ kind: 'batch', id: batchId }}
     />
     </>
+  )
+}
+
+// ── NC Paid ──────────────────────────────────────────────────────────────
+// Finance pays in NC and closes the UniOps PA by hand, so an approved PA here
+// can already be paid in NC (PA-20260817-0009 sat six weeks like that). The
+// column says what NC's books show, so it is not paid a second time.
+const NC_LABEL: Record<NcStatus, string> = {
+  paid: 'Paid', closed: 'Closed', partial: 'Part paid', open: 'Unpaid', not_in_nc: 'Not in NC',
+}
+const NC_CLS: Record<NcStatus, string> = {
+  paid: 'bg-green-100 text-green-800', closed: 'bg-teal-50 text-teal-800',
+  partial: 'bg-amber-100 text-amber-800', open: 'text-neutral-500', not_in_nc: 'text-neutral-400',
+}
+const ncTitle = (nc: NcInvoice): string => {
+  if (nc.status === 'not_in_nc') return 'No approved NC AP bill carries this invoice number for this vendor'
+  const parts = [`NC bill ${nc.bill_no}`]
+  if (nc.payment_no) parts.push(`NC payment ${nc.payment_no}${nc.paid_on ? ` on ${formatDate(nc.paid_on)}` : ''}`)
+  if (nc.status === 'closed') parts.push('balance cleared without an NC payment (offset or write-off)')
+  if (nc.status === 'partial' || nc.status === 'open') parts.push(`open balance ${fmtMoney(nc.open_balance ?? "0")}`)
+  if (nc.status === 'paid' || nc.status === 'closed') parts.push('do not pay again — close the PA')
+  return parts.join(' · ')
+}
+
+function NcPill({ status, label, title }: { status: NcStatus; label?: string; title?: string }) {
+  const pill = status === 'paid' || status === 'closed' || status === 'partial'
+  return (
+    <span title={title} className={cn(pill && 'rounded-full px-2 py-0.5 font-medium', NC_CLS[status])}>
+      {label ?? NC_LABEL[status]}
+    </span>
+  )
+}
+
+function NcInvoiceBadge({ nc }: { nc?: NcInvoice }) {
+  if (!nc) return <span className="text-neutral-300">—</span>
+  return (
+    <div>
+      <NcPill status={nc.status} title={ncTitle(nc)} />
+      {nc.payment_no && (nc.status === 'paid' || nc.status === 'partial') && (
+        <div className="mt-0.5 font-mono text-[10px] text-neutral-500">
+          {nc.payment_no}{nc.paid_on && ` · ${formatDate(nc.paid_on)}`}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function NcPaidCell({ d }: { d: Due }) {
+  const invs = (d.invoices ?? []).filter((i) => i.nc)
+  if (!d.nc_paid || invs.length === 0) return <span className="text-neutral-300">—</span>
+  // A splittable PA shows each invoice's NC state on its own row below.
+  if (invs.length === 1 && !d.splittable) return <NcInvoiceBadge nc={invs[0].nc} />
+  const title = invs.map((i) => `${i.number || 'Invoice'}: ${NC_LABEL[i.nc!.status]} — ${ncTitle(i.nc!)}`).join('\n')
+  const label = d.nc_paid === 'partial' ? `${d.nc_paid_count} of ${invs.length} paid`
+    : `${NC_LABEL[d.nc_paid]}${d.nc_paid === 'paid' || d.nc_paid === 'closed' ? ` (${invs.length})` : ''}`
+  const pays = [...new Set(invs.map((i) => i.nc!.payment_no).filter(Boolean))]
+  return (
+    <div>
+      <NcPill status={d.nc_paid} label={label} title={title} />
+      {pays.length > 0 && d.nc_paid !== 'open' && (
+        <div className="mt-0.5 font-mono text-[10px] text-neutral-500" title={pays.join(', ')}>
+          {pays.length === 1 ? pays[0] : `${pays.length} NC payments`}
+        </div>
+      )}
+    </div>
   )
 }

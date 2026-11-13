@@ -13,7 +13,7 @@ import { Loader2 } from 'lucide-react'
 import { SortTh, useSortableRows } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, currentMonthISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { AccountVouchersModal } from './AccountVouchersModal'
 import { BudgetActualRollup, type Scope } from './BudgetActualRollup'
@@ -53,7 +53,7 @@ function money(v: string | number) {
   const n = Number(v)
   return n ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'
 }
-function thisMonth() { return new Date().toISOString().slice(0, 7) }
+function thisMonth() { return currentMonthISO() }   // the plant's month, not UTC
 
 interface Drill { accountCode: string; dimsValues?: string | null; title: string }
 

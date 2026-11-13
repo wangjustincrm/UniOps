@@ -1,30 +1,30 @@
-"""English-only Travel Application PDF (ReportLab). Labels Helvetica; data fields
-use the built-in CID font STSong-Light so any Chinese in user data still renders."""
+"""English-only Travel Application PDF (ReportLab). Labels and data in Helvetica;
+Chinese runs in user data switch to the embedded TrueType font, exactly as the
+claim PDF does (pdf_claim._rich).
+
+It used to set every data value in the built-in CID font STSong-Light, which is
+only REFERENCED, never embedded: Adobe Acrobat without the Asian font pack drew
+the whole form as a blank page, while Chrome showed it (ISS-0214)."""
 from io import BytesIO
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle)
 
-_CJK = "STSong-Light"
-try:
-    pdfmetrics.registerFont(UnicodeCIDFont(_CJK))
-except Exception:  # font already registered / unavailable → fall back to Helvetica
-    _CJK = "Helvetica"
+from app.core.plant_time import fmt_date
+from app.services.pdf_claim import _rich
 
 _LABEL = ParagraphStyle("label", fontName="Helvetica-Bold", fontSize=8, textColor=colors.HexColor("#334155"))
-_DATA = ParagraphStyle("data", fontName=_CJK, fontSize=9, textColor=colors.black, leading=12)
+_DATA = ParagraphStyle("data", fontName="Helvetica", fontSize=9, textColor=colors.black, leading=12)
 _H1 = ParagraphStyle("h1", fontName="Helvetica-Bold", fontSize=15, spaceAfter=2)
 _MODES = [("airplane", "Airplane"), ("train", "Train"), ("ship", "Ship"),
           ("car", "Car"), ("accommodation", "Accommodation"), ("meal", "Meal"), ("other", "Other")]
 
 
 def _row(label, value):
-    return [Paragraph(label, _LABEL), Paragraph(value or "—", _DATA)]
+    return [Paragraph(label, _LABEL), Paragraph(_rich(value) if value else "—", _DATA)]
 
 
 def build_travel_application_pdf(claim, approvals: list[dict] | None = None) -> bytes:
@@ -40,21 +40,21 @@ def build_travel_application_pdf(claim, approvals: list[dict] | None = None) -> 
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm,
                             topMargin=16 * mm, bottomMargin=16 * mm)
     els = [Paragraph("Application of Travel", _H1),
-           Paragraph(f"No. {claim.claim_number}", _DATA), Spacer(1, 8)]
+           Paragraph(f"No. {_rich(claim.claim_number)}", _DATA), Spacer(1, 8)]
 
     travelers = ", ".join(t.user_name for t in (claim.travelers or []))
     dates = ""
     if claim.travel_from_date and claim.travel_to_date:
-        dates = f"{claim.travel_from_date.isoformat()} → {claim.travel_to_date.isoformat()}"
+        dates = f"{fmt_date(claim.travel_from_date)} to {fmt_date(claim.travel_to_date)}"
     leave = ""
     if claim.leave_from_date and claim.leave_to_date:
-        leave = f"{claim.leave_from_date.isoformat()} → {claim.leave_to_date.isoformat()}"
+        leave = f"{fmt_date(claim.leave_from_date)} to {fmt_date(claim.leave_to_date)}"
     chosen = set(claim.transport_modes or [])
     transport = "  ".join(f"[{'X' if k in chosen else ' '}] {lbl}" for k, lbl in _MODES)
 
     info = Table([
         _row("Department", claim.department_name),
-        _row("Time of Application", claim.submission_date.isoformat() if claim.submission_date else ""),
+        _row("Time of Application", fmt_date(claim.submission_date) if claim.submission_date else ""),
         _row("Staff", travelers),
         _row("Number of Persons", str(len(claim.travelers or []))),
         _row("Location", claim.travel_destination),
@@ -82,8 +82,8 @@ def build_travel_application_pdf(claim, approvals: list[dict] | None = None) -> 
         ev = by_step.get(idx)
         who = ev.get("actor_name") if ev else None
         when = ev.get("acted_date") if ev else None
-        sig_rows.append([Paragraph(title, _DATA), Paragraph(who or "________", _DATA),
-                         Paragraph(when or "________", _DATA)])
+        sig_rows.append([Paragraph(title, _DATA), Paragraph(_rich(who) if who else "________", _DATA),
+                         Paragraph(_rich(when) if when else "________", _DATA)])
     sig = Table(sig_rows, colWidths=[58 * mm, 58 * mm, 58 * mm])
     sig.setStyle(TableStyle([
         ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cbd5e1")),

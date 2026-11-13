@@ -107,15 +107,17 @@ def test_budget_unreachable_is_treated_as_within_budget():
     assert "treated as within budget" in _rules("pr")["budget_not_reserved"]
 
 
-# ── ISS-0065: the retired Direct PA is not a process to describe ─────────────
+# ── ISS-0065: the Direct PA lives in EPMS; only OA's PA-DIR is retired ──────
 
-def test_direct_pa_is_not_offered_as_a_process():
+def test_direct_pa_is_offered_as_a_process():
     from app.services import assistant_llm, guide_view
 
-    assert "pa_dir" not in guide_view.SUPPORTED_PROCESSES
+    assert "pa_dir" in guide_view.SUPPORTED_PROCESSES
     enum = assistant_llm._PROCESS_TOOL["input_schema"]["properties"]["doc_type"]["enum"]
-    assert "pa_dir" not in enum
-    assert "discontinued" in _rules("pa")["direct_pa_retired"]
+    assert "pa_dir" in enum
+    rule = _rules("pa")["direct_pa"]
+    assert "Create Direct PA" in rule and "PA-DIR" in rule and "retired" in rule
+    assert "discontinued" not in rule
 
 
 # ── ISS-0074 / ISS-0053 / ISS-0048: a named day is the plant's whole day ─────
@@ -215,6 +217,8 @@ def test_planner_is_told_dates_are_day_first_and_local():
 
     note = assistant_llm._today_note()
     assert "DD/MM/YYYY" in note and "10/11 is 10 November" in note
+    # Answers use the on-screen format (UI-DATE-002), not slashes.
+    assert "YYYY-MMM-DD" in note and "2026-NOV-10" in note
 
 
 def test_new_invoices_are_asked_about_by_upload_date():

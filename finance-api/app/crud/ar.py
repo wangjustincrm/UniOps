@@ -10,6 +10,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_today
 from app.crud._numbering import next_number
 from app.crud.payment_execute import _stamp_account_codes, _stamp_fx
 from app.models.ar import (
@@ -28,8 +29,10 @@ async def _next_number(db: AsyncSession, col, prefix: str) -> str:
     """PREFIX-YYYYMMDD-NNNN, sequential within the day.
 
     Delegates to the shared allocator (max-tail+1, immune to voided/deleted gaps,
-    plus a per-prefix advisory lock for concurrency)."""
-    today = date.today().strftime("%Y%m%d")
+    plus a per-prefix advisory lock for concurrency). The date is the plant's
+    (Company Settings → Time Zone); max-tail+1 means a prefix already used
+    under the old UTC date just continues — no collision."""
+    today = plant_today().strftime("%Y%m%d")
     return await next_number(db, col, f"{prefix}-{today}-", width=4)
 
 
@@ -177,7 +180,7 @@ async def aging(db: AsyncSession) -> list[dict]:
     rows = (await db.execute(
         select(ArInvoice).where(ArInvoice.status.in_(OPEN_STATUSES))
     )).scalars().all()
-    today = date.today()
+    today = plant_today()
     buckets: dict[tuple, dict[str, Decimal]] = {}
     for r in rows:
         key = (r.customer_id, r.customer_name, r.currency)

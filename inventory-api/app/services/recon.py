@@ -27,6 +27,7 @@ from decimal import Decimal
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import fmt_date
 from app.services import asof
 
 # WMS went live in January 2025 (user, 2026-10-14) — a handful of setup ASNs
@@ -48,7 +49,7 @@ def wms_history_info(start: date) -> dict:
     return {
         "go_live_month": WMS_GO_LIVE_MONTH,
         "history_start": start.isoformat(),
-        "note": (f"WMS went live in January 2025; its stock history starts on {start.isoformat()} "
+        "note": (f"WMS went live in January 2025; its stock history starts on {fmt_date(start)} "
                  "(opening stock imported). There are no WMS figures before that date."),
     }
 ZERO = Decimal(0)

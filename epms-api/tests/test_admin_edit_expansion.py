@@ -1095,3 +1095,97 @@ async def test_get_record_names_the_user_behind_a_user_reference(test_engine):
     # A field with a name column (vendor) keeps using it; an empty one is left out.
     assert "vendor_id" not in rec["_ref_labels"]
     assert "source_requester_id" not in rec["_ref_labels"]
+
+
+# ── DM invoice edit re-sends Finance's AP copy (AP-20261112-0002) ───────────
+
+async def _dm_invoice(test_engine, tag):
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator, vid, po_id, inv_id = (uuid.uuid4() for _ in range(4))
+    async with factory() as db:
+        await _rl_setup(db, creator=creator, vid=vid, po_id=po_id, tag=tag)
+        db.add(_rl_invoice(inv_id, po_id, vid, creator, f"I-{tag}"))
+        await db.commit()
+    return inv_id
+
+
+@pytest.mark.asyncio
+async def test_dm_invoice_edit_resends_ap_with_new_currency(admin_client, test_engine, monkeypatch):
+    from app.services import finance_client
+    sent = []
+
+    async def _strict(*, payload, bearer_token):
+        sent.append(payload)
+        return {"ap_invoice_number": "AP-X-1", "currency": payload["currency"], "nc_bill_no": None}
+
+    async def _lenient(**kw):
+        raise AssertionError("DM must use the strict upsert so a failure can be reported")
+
+    monkeypatch.setattr(finance_client, "upsert_ap_invoice_strict", _strict)
+    monkeypatch.setattr(finance_client, "upsert_ap_invoice", _lenient)
+    inv_id = await _dm_invoice(test_engine, "apcur1")
+
+    r = await admin_client.patch(f"/api/v1/admin/invoice/{inv_id}", json={"currency": "USD"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(sent) == 1
+    assert sent[0]["source_invoice_id"] == str(inv_id)
+    assert sent[0]["currency"] == "USD"          # the edited value, not the stale CAD
+    assert body["ap_sync"] == "ok"
+    assert "ap_nc_warning" not in body
+
+
+@pytest.mark.asyncio
+async def test_dm_invoice_edit_warns_when_ap_already_in_nc(admin_client, test_engine, monkeypatch):
+    from app.services import finance_client
+
+    async def _strict(*, payload, bearer_token):
+        return {"ap_invoice_number": "AP-X-2", "nc_bill_no": "D1TEST0001"}
+
+    monkeypatch.setattr(finance_client, "upsert_ap_invoice_strict", _strict)
+    inv_id = await _dm_invoice(test_engine, "apcur2")
+
+    r = await admin_client.patch(f"/api/v1/admin/invoice/{inv_id}", json={"currency": "USD"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ap_sync"] == "ok"
+    assert "D1TEST0001" in body["ap_nc_warning"] and "AP-X-2" in body["ap_nc_warning"]
+
+
+@pytest.mark.asyncio
+async def test_dm_invoice_edit_survives_finance_down(admin_client, test_engine, monkeypatch):
+    from app.models.invoice import Invoice
+    from app.services import finance_client
+
+    async def _strict(*, payload, bearer_token):
+        raise finance_client.FinanceSyncError("finance-api unreachable: ConnectError")
+
+    monkeypatch.setattr(finance_client, "upsert_ap_invoice_strict", _strict)
+    inv_id = await _dm_invoice(test_engine, "apcur3")
+
+    r = await admin_client.patch(f"/api/v1/admin/invoice/{inv_id}", json={"currency": "USD"})
+    assert r.status_code == 200, r.text
+    assert r.json()["ap_sync"].startswith("failed: finance-api unreachable")
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as db:
+        assert (await db.get(Invoice, inv_id)).currency == "USD"   # the edit itself landed
+
+
+@pytest.mark.asyncio
+async def test_dm_edit_of_other_entities_does_not_touch_ap(admin_client, test_engine, monkeypatch):
+    from app.services import finance_client
+    calls = []
+
+    async def _strict(**kw):
+        calls.append(kw)
+        return None
+
+    monkeypatch.setattr(finance_client, "upsert_ap_invoice_strict", _strict)
+    factory = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    creator, vid, po_id = (uuid.uuid4() for _ in range(3))
+    async with factory() as db:
+        await _rl_setup(db, creator=creator, vid=vid, po_id=po_id, tag="apcur4")
+        await db.commit()
+    r = await admin_client.patch(f"/api/v1/admin/po/{po_id}", json={"currency": "USD"})
+    assert r.status_code == 200, r.text
+    assert calls == [] and "ap_sync" not in r.json()

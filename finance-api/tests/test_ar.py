@@ -9,6 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from jose import jwt
 from sqlalchemy import select
 
+from app.core.plant_time import plant_now, plant_today
 from app.core.config import settings
 from app.db.base import get_db
 from app.main import app
@@ -168,7 +169,7 @@ async def test_output_tax_flows_into_gst_return(client):
     The tax return groups by the posting event's fiscal_period, which
     emit_event stamps with TODAY's month — query dynamically (a hardcoded
     month rots at rollover, same class as the old test_gl failures)."""
-    period = datetime.now(timezone.utc).strftime("%Y-%m")
+    period = plant_now().strftime("%Y-%m")
     r = await client.post("/finance/v1/ar/invoices", headers=_h(),
                           json=_invoice_body("1000.00",
                               [{"tax_code": "HST_ON", "tax_amount": "130.00"}],

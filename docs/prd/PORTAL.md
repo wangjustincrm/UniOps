@@ -1,9 +1,22 @@
 # UniOps Portal — Product Requirements Document
 
-**Version:** 2.5
-**Date:** 2026-11-05
+**Version:** 2.9
+**Date:** 2026-11-12
 **Status:** In Production
 **Scope:** Portal web app (sign-in, launcher, Task Inbox, platform administration) and the platform services it administers: identity service (sign-in, MFA, password policy, users, roles, access control), approval engine (workflows, routing, delegation, re-sync), task-notification outbox, master-data service (MDM), file service, Data Maintenance and the AI Assistant panel.
+
+**What changed in version 2.9** (2026-11-12)
+
+- Editing an EPMS invoice in Data Maintenance updates its Finance AP record too, and warns when that AP record is already in NC and has to be pushed again (DM-P-009, EPMS.md DM-008).
+
+**What changed in version 2.8** (2026-11-10)
+
+- Data Maintenance no longer deletes an executed Finance payment batch whose payments still stand; it says to reverse the batch in Finance first (§5.14, FINANCE.md FIN-PAY-06).
+
+**What changed in version 2.6** (2026-11-05)
+
+- New expandable **MDM** group in the Portal sidebar, between MODULES and ADMIN, gathering master-data pages. **Users** and **Departments** moved there from the Admin Panel, as their own pages (`/mdm/users`, `/mdm/departments`) with the standard Portal layout. Access is unchanged (System Admin). Old links `/admin?section=users` and `/admin?section=departments` open the new pages, and the Admin Panel lists both under "More admin pages" (§3.1, §5.1, §10). Staff, the employee master (EMPLOYEES.md), will join this group when built.
+- New additional-only role HR, for the people who run Staff (§4.2, EMPLOYEES.md §8).
 
 **What changed in version 2.5** (2026-11-05)
 
@@ -189,6 +202,9 @@ MODULES
   Meeting Rooms→ Booking                any of view_booking, manage_meeting_rooms
   MRP          → MRP                    mrp.report.view
   Inventory    → Inventory              inventory.view
+MDM  (expandable group)
+  Users        → /mdm/users             System Admin
+  Departments  → /mdm/departments       System Admin
 ADMIN
   Admin                                 System Admin
   Data Maintenance                      data_maintenance
@@ -205,6 +221,7 @@ ADMIN
 | **PL-004** | On mobile (<768 px) the sidebar is hidden and opens from a hamburger button in the header, over a dimmed backdrop. Tapping the backdrop or a link closes it. |
 | **PL-005** | Sidebar branding (name, tagline, logo) comes from the company settings, using the Portal tagline. |
 | **PL-006** | *The OA entry and the OA card open OA's retired Payment Application route* (**Defect**, §14). |
+| **PL-007** | **MDM** is one expandable entry. Clicking it shows or hides its pages. It starts closed, except on one of its own pages, where it starts open. In the collapsed (icon-only) sidebar its pages are shown as icons directly. The group is hidden when the user can see none of its pages. |
 
 Agreements is not a Portal entry; it is reached inside EPMS.
 
@@ -276,7 +293,7 @@ Portal itself has no tabs and embeds no module. The conventions that apply acros
 
 ### 4.1 Users
 
-User records live in a shared users table, administered in Admin → User Management (§5.5). Additional roles are kept in the identity service.
+User records live in a shared users table, administered in Portal → MDM → Users (§5.5). Additional roles are kept in the identity service.
 
 | Field | Notes |
 |---|---|
@@ -317,13 +334,14 @@ Roles are a fixed built-in set; they cannot be created or renamed in the UI.
 | auditor | Auditor | |
 | erp_pa_officer | ERP PA Officer | Additional role only |
 | payment_officer | Payment Officer | Additional role only |
+| hr | HR | Additional role only; any number of holders. Holds the four Staff permissions (EMPLOYEES.md §8). |
 | system_admin | System Admin | |
 
 | FR ID | Requirement |
 |---|---|
 | **ROLE-001** | Every user has one primary role and any number of additional roles. Their effective roles and permissions are the union of both, re-read on every request (no re-login needed). |
 | **ROLE-002** | **Posts** (GM, OPM, Procurement Manager, Finance Manager, Finance Director, Vendor Manager) can each be held by only one active user, counting primary and additional roles together. Assigning a post that someone else holds is refused with a message naming the holder. |
-| **ROLE-003** | ERP PA Officer, Payment Officer and Finance Director cannot be primary roles; an attempt is refused with a message pointing to Additional Roles. |
+| **ROLE-003** | ERP PA Officer, Payment Officer, Finance Director and HR cannot be primary roles; an attempt is refused with a message pointing to Additional Roles. |
 | **ROLE-004** | Changing a user's primary role, department, Supervisor or active status re-routes their in-flight approvals automatically (§6.4). The save reports how many documents were re-synced; a re-sync failure does not undo the user change. *Changing only additional roles does not trigger a re-sync* (**Open**, §14). |
 
 Role-by-role business permissions and document visibility scopes are specified in EPMS.md §1.1–§1.3.
@@ -372,11 +390,15 @@ The identity service holds switchable separation-of-duties rules. Anyone can rea
 
 ### 5.1 Navigation and access
 
-`/admin` is for System Admin only; anyone else is sent to Home. It has its own section menu, and `?section=<key>` opens a section directly. Four further admin pages are separate routes, reached from the Portal sidebar:
+`/admin` is for System Admin only; anyone else is sent to Home. It has its own section menu, and `?section=<key>` opens a section directly. Further admin pages are separate routes, reached from the Portal sidebar and listed in the panel under "More admin pages":
 
 | Section / page | Route | Access |
 |---|---|---|
-| Company Settings, Security, Departments, Units of Measure, User Management, Currency Settings, Notification Settings (incl. Task Notifications), Remittance Advice, Approval Workflows, ERP MDM, NC Sync, WMS Sync | `/admin` | System Admin |
+| Company Settings, Security, Units of Measure, Currency Settings, Notification Settings (incl. Task Notifications), Remittance Advice, Approval Workflows, ERP MDM, NC Sync, WMS Sync | `/admin` | System Admin |
+| Org Chart (EMPLOYEES.md §13) — MDM group | `/mdm/org-chart` | `employee.view` (changes: `employee.edit`) |
+| Staff (EMPLOYEES.md) — MDM group | `/mdm/staff`, `/mdm/staff/import`, `/mdm/staff/department-mapping`, `/mdm/staff/nc-todo` | `employee.view` (Import: `employee.import`) |
+| Users (§5.5) — MDM group | `/mdm/users` | System Admin |
+| Departments (§5.4) — MDM group | `/mdm/departments` | System Admin |
 | Data Maintenance (§5.14) | `/admin/data-maintenance` | System Admin or `data_maintenance` |
 | Access Control (§4.3) | `/admin/access-control` | System Admin |
 | Approval Routing (§5.9) | `/admin/approval-routing` | System Admin |
@@ -399,7 +421,7 @@ SMTP settings are not part of Security (§5.7).
 
 ### 5.4 Departments, Units of Measure and Cost Centres
 
-**Departments** have a code (upper-cased), a name and an active flag, and are shared by every module. They are owned by MDM (§8).
+**Departments** have a code (upper-cased), a name and an active flag, and are shared by every module. They are owned by MDM (§8) and managed in Portal → MDM → Departments (`/mdm/departments`; `/admin?section=departments` still opens it).
 
 | FR ID | Requirement |
 |---|---|
@@ -411,6 +433,8 @@ SMTP settings are not part of Security (§5.7).
 **Cost Centres** are now managed in the Finance app → Budget Config (BUDGET.md). They are owned by MDM, need `mdm.finance.write` to write, and cannot be deleted while a PR references them. The **Factor Library** also moved to the Finance app. Portal no longer has Finance or Budget pages.
 
 ### 5.5 User Management
+
+Portal → MDM → Users (`/mdm/users`). Until 2026-11-03 this was a section of the Admin Panel; `/admin?section=users` still opens it.
 
 | FR ID | Requirement |
 |---|---|
@@ -561,7 +585,7 @@ Each record list sorts on the server by any of its columns (EPMS.md UI-SORT-004)
 | EPMS | PR, PO, GR, Invoice, PA, Purchase Agreement, Agreement Receipt, Task (delete only) |
 | OA | Expense Claim, Expense Invoice, Payment Application |
 | VMS | Visit, Visitor, Health Declaration (edit only) |
-| Finance | Payment Batch (delete only) |
+| Finance | Payment Batch (delete only; an executed batch whose payments still stand is refused until it is reversed in Finance, FINANCE.md FIN-PAY-06) |
 
 | FR ID | Requirement |
 |---|---|
@@ -572,6 +596,7 @@ Each record list sorts on the server by any of its columns (EPMS.md UI-SORT-004)
 | **DM-P-005** | Changing a PO's vendor offers **Regenerate PO number** (on by default, asks for confirmation). The new number is carried to the linked PR, PA, GR, invoices, tasks and approval records. |
 | **DM-P-006** | **Approval State** panel (PR, PO, PA, Agreement): shows the document's real workflow chain and its open approval tasks. Setting a step closes outdated approval tasks and issues the task for the chosen step, to the resolved approver or to a chosen role. It reports any step the engine settled on instead, any re-sync actions, and whether anyone will see an Approve button. |
 | **DM-P-007** | Changing an agreement's owner reports how many open period-confirmation tasks moved to the new owner. |
+| **DM-P-009** | Saving an EPMS **invoice** updates its Finance AP record. The dialog warns when that update failed (save again later) and when the AP record is already in NC (push it to NC again) (EPMS.md DM-008). |
 | **DM-P-008** | Every change is written to the owning service's admin audit log. Rules specific to EPMS records: EPMS.md §3.6.8 (DM-001 … DM-006). |
 
 ---
@@ -684,7 +709,9 @@ The file service stores the attachments of every module (PR/PO/PA/GR/agreement d
 |---|---|---|
 | `/login` | Public (a signed-in user is redirected to Home) | Login |
 | `/` | Signed in | Home (handles `returnUrl`) |
-| `/admin` | System Admin | Admin Panel (`?section=` deep link) |
+| `/admin` | System Admin | Admin Panel (`?section=` deep link; `users` and `departments` redirect to the MDM pages) |
+| `/mdm/users` | System Admin | MDM → Users |
+| `/mdm/departments` | System Admin | MDM → Departments |
 | `/admin/data-maintenance` | System Admin or `data_maintenance` | Data Maintenance |
 | `/admin/access-control` | System Admin | Access Control |
 | `/admin/approval-routing` | System Admin | Approval Routing |
@@ -729,7 +756,7 @@ EPMS Admin keeps Email Settings (PO-to-vendor SMTP and template), PDF Templates,
 
 | FR ID | Requirement | Status |
 |---|---|---|
-| **SEC-001** | Account creation must be possible only through administrator user management or ERP import. Self-registration must not exist, and a caller must never be able to choose their own role. | *A public registration endpoint, reachable through the EPMS API gateway, accepts a caller-chosen role including System Admin* — **Defect** |
+| **SEC-001** | Account creation must be possible only through administrator user management or ERP import. Self-registration must not exist, and a caller must never be able to choose their own role. | **Built** (2026-11-06: the public registration endpoint was removed). |
 | **SEC-002** | Repeated failed password and MFA-code attempts must be throttled or locked out. | **Not implemented** |
 | **SEC-003** | Secrets (SMTP passwords) must never be returned to non-administrators. | **Defect** (EMAIL-SPLIT-006) |
 | **SEC-004** | Deactivation and role changes must take effect promptly on every API. | **Defect** (SES-003) |
@@ -745,7 +772,7 @@ EPMS Admin keeps Email Settings (PO-to-vendor SMTP and template), PDF Templates,
 
 | ID | Item | Status |
 |---|---|---|
-| PO-01 | Public self-registration with a caller-chosen role (incl. System Admin) through the gateway (SEC-001) | Defect |
+| PO-01 | Public self-registration with a caller-chosen role (incl. System Admin) through the gateway (SEC-001) | Fixed 2026-11-06: the endpoint is removed |
 | PO-02 | No throttling or lock-out on password or MFA-code attempts (SEC-002) | Not implemented |
 | PO-03 | SMTP passwords returned to every signed-in user when the company configuration is read (EMAIL-SPLIT-006) | Defect |
 | PO-04 | Company-configuration changes accepted from any `admin_panel` holder (Finance Manager and Vendor Manager by default), not only System Admin (§5.1) | Defect |

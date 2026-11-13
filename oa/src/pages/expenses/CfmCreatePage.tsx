@@ -17,7 +17,10 @@ interface CfmField {
   field_type: 'text' | 'number' | 'date' | 'select' | 'textarea'
   required: boolean; options: string[]; placeholder: string | null
 }
-interface CustomForm { code: string; name: string; fields: CfmField[]; is_active: boolean }
+interface CustomForm {
+  code: string; name: string; description?: string | null; default_currency?: string
+  fields: CfmField[]; is_active: boolean
+}
 
 // ── Dynamic field renderer ────────────────────────────────────────────────────
 
@@ -68,12 +71,23 @@ export default function CfmCreatePage({ editClaimId }: EditableFormProps = {}) {
   // whatever the claim was raised against (claim_type is "CFM_<CODE>").
   const formCode = editing ? editing.claim_type.replace(/^CFM_/i, '') : routeFormCode
 
-  const { data: forms, isLoading } = useQuery<CustomForm[]>({
+  // A new claim may only use an active form (OA.md §6.1, CFM-005).
+  const { data: forms, isLoading: loadingForms } = useQuery<CustomForm[]>({
     queryKey: ['custom-forms-active'],
     queryFn: () => api.get<CustomForm[]>('/api/v1/expenses/custom-forms?active_only=true'),
+    enabled: !editClaimId,
   })
+  // A claim being edited uses the form it was raised on, even one deactivated
+  // since: a draft or returned claim stays editable and submittable (Q-05).
+  const { data: claimForm, isLoading: loadingClaimForm } = useQuery<CustomForm>({
+    queryKey: ['custom-form-for-claim', editClaimId],
+    queryFn: () => api.get<CustomForm>(`/api/v1/expenses/custom-forms/for-claim/${editClaimId}`),
+    enabled: !!editClaimId,
+    retry: false,
+  })
+  const isLoading = editClaimId ? loadingClaimForm : loadingForms
 
-  const form = forms?.find(
+  const form = editClaimId ? claimForm : forms?.find(
     f => f.code.toLowerCase() === formCode?.toLowerCase() && f.is_active
   )
 
@@ -118,6 +132,9 @@ export default function CfmCreatePage({ editClaimId }: EditableFormProps = {}) {
       claim_type: `CFM_${form.code}`,
       // Keep the date the claim was raised on when editing one.
       submission_date: editing?.submission_date ?? todayLocal(),
+      // A new claim takes the form's Default Currency (OA.md §6.1); an
+      // edited one keeps its own.
+      currency: editing?.currency ?? form.default_currency ?? 'CAD',
       notes: JSON.stringify({ ...fieldData, _user_notes: notes }),
       line_items: [],
     }, {
@@ -150,6 +167,9 @@ export default function CfmCreatePage({ editClaimId }: EditableFormProps = {}) {
           {editing ? `Edit ${editing.claim_number}` : form.name}
         </h1>
         <p className="mt-0.5 text-sm text-neutral-500 font-mono">CFM_{form.code}</p>
+        {form.description && (
+          <p className="mt-2 whitespace-pre-line text-sm text-neutral-600">{form.description}</p>
+        )}
       </div>
 
       <div className="rounded-xl border border-neutral-200 bg-white p-5 flex flex-col gap-4">

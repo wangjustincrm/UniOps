@@ -17,9 +17,8 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     ENVIRONMENT: str = "development"
 
-    # Local timezone for human-facing exports (CFIA visit log). Times are
-    # stored in UTC; reports render them in this zone. IANA name.
-    REPORT_TIMEZONE: str = "America/Toronto"
+    # The plant's time zone is not configured here: it is the company setting
+    # (Portal → Admin → Company Settings → Time Zone), see app/core/plant_time.py.
 
     # ── API ──────────────────────────────────────────────────────────────────
     API_V1_PREFIX: str = "/api/v1"

@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 
+from app.core.plant_time import fmt_date, plant_today
 from app.crud.config import get_or_create as get_config
 from app.db import session as session_module
 from app.models.agreement import PurchaseAgreement
@@ -48,7 +49,7 @@ async def sweep_overdue_periods(db) -> list[AgreementPaymentSchedule]:
     KEPT admissible here — its final bill legitimately still arrives after
     valid_to, so that agreement's trailing periods must still be tracked.
     """
-    today = date.today()
+    today = plant_today()
     rows = (await db.execute(
         select(AgreementPaymentSchedule)
         .join(PurchaseAgreement, PurchaseAgreement.id == AgreementPaymentSchedule.agreement_id)
@@ -166,7 +167,7 @@ async def _notify_owners(db, cfg, flipped: list[AgreementPaymentSchedule]) -> No
             unowned.extend(rows)
             continue
         lines = "".join(
-            f"<li>{agr.number} — {r.period_label} (expected {r.expected_date})</li>"
+            f"<li>{agr.number} — {r.period_label} (expected {fmt_date(r.expected_date)})</li>"
             for r in rows
         )
         subject = f"Invoice overdue — {agr.number} ({len(rows)} period(s))"
@@ -182,7 +183,7 @@ async def _notify_owners(db, cfg, flipped: list[AgreementPaymentSchedule]) -> No
     if unowned:
         lines = "".join(
             f"<li>{by_id[r.agreement_id].number} — {r.period_label} "
-            f"(expected {r.expected_date})</li>" for r in unowned)
+            f"(expected {fmt_date(r.expected_date)})</li>" for r in unowned)
         await send_admin_alert(
             f"{len(unowned)} agreement invoice(s) overdue (no owner on file)",
             f"<p>No invoice has arrived for:</p><ul>{lines}</ul>", db)
@@ -228,6 +229,6 @@ async def agreement_overdue_loop() -> None:
         if wait > _RECHECK_SECONDS:
             await asyncio.sleep(_RECHECK_SECONDS)
             continue
-        logger.info("Agreement overdue: next run in %.0f seconds (at %02d:%02dZ)", wait, hour, minute)
+        logger.info("Agreement overdue: next run in %.0f seconds (at %02d:%02d plant time)", wait, hour, minute)
         await asyncio.sleep(wait)
         await run_agreement_overdue()

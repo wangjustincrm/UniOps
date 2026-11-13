@@ -1,4 +1,5 @@
 import type { CurrentStep } from '@/types'
+import { formatDateTime } from '@/lib/utils'
 
 function daysSince(iso: string): number {
   const ms = Date.now() - new Date(iso).getTime()
@@ -16,7 +17,7 @@ export function CurrentStepHint({ current_step }: { current_step?: CurrentStep |
   return (
     <div
       className="mt-1 text-[11px] leading-tight text-neutral-500 whitespace-nowrap"
-      title={`Awaiting ${label}${approver_name ? ` (${approver_name})` : ''} since ${new Date(since).toLocaleString()}`}
+      title={`Awaiting ${label}${approver_name ? ` (${approver_name})` : ''} since ${formatDateTime(since)}`}
     >
       {parts.join(' · ')}
     </div>

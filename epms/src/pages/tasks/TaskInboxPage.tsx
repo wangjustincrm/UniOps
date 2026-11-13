@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, Clock, ArrowRight, Check, Inbox, RefreshCw, Search, ChevronDown, ChevronRight } from 'lucide-react'
-import { cn, formatCAD, formatDateTime } from '@/lib/utils'
+import { cn, formatCAD, formatDate, formatDateTime, isoDateInZone, todayISO } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useTasks } from '@/hooks/useTasks'
@@ -187,7 +187,7 @@ function FullTaskCard({ task }: FullTaskCardProps) {
           {!isDone && task.due_date && (
             <div className="mt-1.5 flex items-center gap-1 text-xs text-neutral-400">
               <Clock className="h-3.5 w-3.5" />
-              Due {task.due_date}
+              Due {formatDate(task.due_date)}
             </div>
           )}
 
@@ -271,8 +271,8 @@ export default function TaskInboxPage() {
     }
   }
 
-  // Today's date prefix (YYYY-MM-DD)
-  const todayPrefix = new Date().toISOString().slice(0, 10)
+  // Today at the plant (YYYY-MM-DD)
+  const today = todayISO()
 
   // Fetch all tasks (open + completed today)
   const { data: openData } = useTasks({ is_completed: false })
@@ -280,7 +280,7 @@ export default function TaskInboxPage() {
   // EPMS work only — other modules' tasks are in Portal's inbox (isEpmsInboxTask).
   const openTasks = (openData?.items ?? []).filter(isEpmsInboxTask)
   const completedTasks = (completedData?.items ?? []).filter(
-    (t) => isEpmsInboxTask(t) && t.completed_at && t.completed_at.startsWith(todayPrefix)
+    (t) => isEpmsInboxTask(t) && t.completed_at && isoDateInZone(new Date(t.completed_at)) === today
   )
   const allTasks = [...openTasks, ...completedTasks]
 

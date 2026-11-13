@@ -31,6 +31,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import fmt_datetime
 from app.models.notification_log import NotificationLog
 from app.models.task import Task
 from app.services.notification import (
@@ -77,9 +78,9 @@ class ReminderCooldown(Exception):
         super().__init__(
             f"A reminder was already sent for this step in the last {COOLDOWN_HOURS} "
             f"hours. You can send another one after "
-            # DD/MM/YYYY like the rest of the app (UI-DATE-001, ISS-0183). Format
-            # only — the time is still the UTC instant (zone left as is).
-            f"{retry_at.strftime('%d/%m/%Y %H:%M')} UTC."
+            # The plant's wall clock, YYYY-MMM-DD HH:MM like the rest of the
+            # app (UI-DATE-002), which shows plant time without a zone suffix.
+            f"{fmt_datetime(retry_at)}."
         )
 
 
@@ -131,6 +132,16 @@ def _days_waiting(task: Task) -> int:
     if created.tzinfo is None:
         created = created.replace(tzinfo=timezone.utc)
     return max(0, (datetime.now(timezone.utc) - created).days)
+
+
+def _waiting_for(days: int) -> str:
+    """How long the step has waited, for the reminder text (ISS-0202: not
+    "0 day(s)"). Whole 24-hour periods, like _days_waiting — under one is
+    "less than a day" rather than "today", which would need a calendar day
+    and so a time zone this module does not pick."""
+    if days < 1:
+        return "for less than a day"
+    return f"for {days} day" if days == 1 else f"for {days} days"
 
 
 async def send_manual_reminder(
@@ -226,7 +237,9 @@ def dispatch_manual_reminder(db: AsyncSession, tasks: list[Task], sender_name: s
             template_key=MANUAL_REMINDER_TEMPLATE,
             extra_vars={
                 "sender_name": sender_name,
+                # days_waiting stays for templates an admin customised.
                 "days_waiting": _days_waiting(task),
+                "waiting_for": _waiting_for(_days_waiting(task)),
             },
         )
 

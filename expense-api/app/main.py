@@ -1,4 +1,5 @@
 """Expense API — entry point."""
+import asyncio
 import logging
 
 from fastapi import FastAPI
@@ -67,6 +68,11 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def _startup():
         log.info("expense-api starting on port %d", settings.port)
+        # Plant time zone (Company Settings): read now, then keep it fresh.
+        from app.core.plant_time import plant_tz_refresh_loop, refresh_plant_tz
+        from app.db.base import engine as _engine
+        await refresh_plant_tz(_engine)
+        app.state.plant_tz_task = asyncio.create_task(plant_tz_refresh_loop(_engine))
         # Check for pending Alembic migrations
         try:
             from alembic.config import Config
@@ -87,6 +93,12 @@ def create_app() -> FastAPI:
                     )
         except Exception:
             pass  # Migration check is best-effort
+
+    @app.on_event("shutdown")
+    async def _shutdown():
+        task = getattr(app.state, "plant_tz_task", None)
+        if task is not None:
+            task.cancel()
 
     return app
 

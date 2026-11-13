@@ -10,6 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.plant_time import plant_today
 from app.core.deps import BearerToken, CurrentUser
 from app.core.list_sort import SortDir, order_by
 from app.core.read_authz import authorize_finance_read
@@ -17,6 +18,7 @@ from app.db.base import get_db
 from app.crud import payment as payment_crud
 from app.crud import payment_batch as batch_crud
 from app.crud import payment_execute
+from app.crud import payment_reverse
 from app.crud.payment_execute import PaymentPermissionError
 from app.crud.remittance import applied_credit_notes_by_payment
 from app.models.bank import BankAccount
@@ -267,6 +269,7 @@ class BatchLineOut(BaseModel):
     doc_number: str | None
     vendor_inv_no: str = ""
     amount: str
+    invoice_ids: list[str] | None = None  # set when the line pays part of a PA
     status: str
     error: str | None
 
@@ -306,6 +309,8 @@ class BatchOut(BaseModel):
 class DocRef(BaseModel):
     doc_kind: str
     doc_id: uuid.UUID
+    # Some of a PA's invoices; omitted = everything still unpaid on the document.
+    invoice_ids: list[uuid.UUID] | None = None
 
 
 class CreateBatchRequest(BaseModel):
@@ -319,6 +324,10 @@ class ExecuteBatchRequest(BaseModel):
     # doc_id -> credit ids to apply. A document absent from the map uses the
     # automatic FIFO default; an explicit empty list pays that line in full.
     credit_ids_by_doc: dict[uuid.UUID, list[uuid.UUID]] | None = None
+
+
+class ReverseBatchRequest(BaseModel):
+    reason: str
 
 
 @router.get("/can-pay")
@@ -417,9 +426,9 @@ async def create_batch(body: CreateBatchRequest, user: CurrentUser,
         raise HTTPException(status_code=403, detail=str(e))
     try:
         batch = await batch_crud.create_batch(
-            db, docs=[(d.doc_kind, d.doc_id) for d in body.docs],
+            db, docs=[(d.doc_kind, d.doc_id, d.invoice_ids) for d in body.docs],
             payment_method=body.payment_method,
-            batch_date=body.batch_date or date.today(),
+            batch_date=body.batch_date or plant_today(),
             created_by=uuid.UUID(user["sub"]),
         )
         await db.commit()
@@ -481,6 +490,29 @@ async def execute_batch(batch_id: uuid.UUID, token: BearerToken, user: CurrentUs
         "failed": sum(1 for l in lines if l.status == "failed"),
         "lines": await _lines_out(db, lines),
     }
+
+
+@router.post("/batches/{batch_id}/reverse", response_model=BatchOut)
+async def reverse_batch(batch_id: uuid.UUID, body: ReverseBatchRequest, user: CurrentUser,
+                        db: AsyncSession = Depends(get_db)):
+    """Undo an executed batch whose money never went out (payment_reverse.py):
+    every paid line's payment is cancelled and its PA is payable again. All or
+    nothing — one line that cannot be reversed refuses the whole batch."""
+    batch = (await db.execute(
+        select(PaymentBatch).where(PaymentBatch.id == batch_id).with_for_update()
+    )).scalar_one_or_none()
+    if batch is None:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    try:
+        await payment_reverse.reverse_batch(db, batch, user, body.reason)
+        await db.commit()
+    except PaymentPermissionError as e:
+        await db.rollback()
+        raise HTTPException(status_code=403, detail=str(e))
+    except ValueError as e:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail=str(e))
+    return batch
 
 
 # defined last so /due, /batches, /batches/{id} are matched before the catch-all

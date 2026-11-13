@@ -31,6 +31,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_today
 from app.crud.config import get_or_create as get_config
 from app.db import session as session_module
 from app.models.gr import GoodsReceipt
@@ -89,7 +90,7 @@ async def scan_uncollected(db: AsyncSession, *, reminder_days: int,
                            today: date | None = None) -> list[DueCollection]:
     """Physical GRs waiting for collection with an open collect_goods task held
     by a person, saved more than ``reminder_days`` days ago."""
-    today = today or datetime.now(timezone.utc).date()
+    today = today or plant_today()
     rows = (await db.execute(
         select(GoodsReceipt, Task)
         .join(Task, (Task.document_id == GoodsReceipt.id) & (Task.document_type == "gr"))
@@ -211,6 +212,6 @@ async def gr_collect_due_loop() -> None:
         if wait > _RECHECK_SECONDS:
             await asyncio.sleep(_RECHECK_SECONDS)
             continue
-        logger.info("GR collection due: next run in %.0f seconds (at %02d:%02dZ)", wait, hour, minute)
+        logger.info("GR collection due: next run in %.0f seconds (at %02d:%02d plant time)", wait, hour, minute)
         await asyncio.sleep(wait)
         await run_gr_collect_due()

@@ -9,6 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from jose import jwt
 from sqlalchemy import select, text
 
+from app.core.plant_time import plant_now, plant_today
 from app.core.config import settings
 from app.db.base import get_db
 from app.main import app
@@ -97,7 +98,7 @@ async def test_execute_pa_dir_flips_status_records_payment_emits_event(client, d
         select(PostingEvent).where(PostingEvent.source_doc_id == pa.id)
     )).scalar_one()
     assert ev.event_type == "payment"
-    assert ev.fiscal_period == datetime.now(timezone.utc).strftime("%Y-%m")  # B1.7 stamp
+    assert ev.fiscal_period == plant_now().strftime("%Y-%m")  # B1.7 stamp
     lines = (await db_session.execute(
         select(PostingLine).where(PostingLine.event_id == ev.id).order_by(PostingLine.line_no)
     )).scalars().all()
@@ -108,7 +109,7 @@ async def test_execute_pa_dir_flips_status_records_payment_emits_event(client, d
 async def test_execute_blocked_when_period_closed(client, db_session):
     """FIN-GL-002 close gate: payments in a soft/hard-closed period are rejected."""
     from app.models.fiscal_period import FiscalPeriod
-    today_period = datetime.now(timezone.utc).strftime("%Y-%m")
+    today_period = plant_now().strftime("%Y-%m")
     db_session.add(FiscalPeriod(period=today_period, status="hard_closed"))
     pa = _pa()
     db_session.add(pa)

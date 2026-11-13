@@ -14,7 +14,7 @@ import { Loader2 } from 'lucide-react'
 import { SortTh, useSortableRows, type SortValue } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import {
   AccessMessage, type Finding, FindingCard, num, qty, SyncBar, thisMonth, traceLink,
@@ -177,7 +177,7 @@ export default function GrossMarginPage() {
             {data.pending_invoices.length > 0 && (
               <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-700">
                 <p className="font-medium">Invoices not approved in NC — not counted as revenue</p>
-                <ul className="mt-1 list-disc pl-5">{data.pending_invoices.map((x, i) => <li key={i}><span className="font-mono">{x.invoice} {x.material_code}</span> {x.date} · {num(x.amount)} (status {x.status_flag ?? '—'})</li>)}</ul>
+                <ul className="mt-1 list-disc pl-5">{data.pending_invoices.map((x, i) => <li key={i}><span className="font-mono">{x.invoice} {x.material_code}</span> {formatDate(x.date)} · {num(x.amount)} (status {x.status_flag ?? '—'})</li>)}</ul>
               </div>
             )}
             {data.a7.length > 0 && (

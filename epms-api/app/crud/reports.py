@@ -3,13 +3,12 @@ from __future__ import annotations
 
 import csv
 import io
-from datetime import date, datetime, time, timedelta
-from zoneinfo import ZoneInfo
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.delegation import PLANT_TIMEZONE
+from app.core.plant_time import plant_day_start, to_plant
 
 # NOTE: Budget data moved to budget-api (:8007). Budget reports now return an
 # empty CSV; the front-end should download budget reports from budget-api
@@ -31,7 +30,7 @@ def _csv(rows: list[list], headers: list[str]) -> str:
 
 
 def _day_start(day: date) -> datetime:
-    return datetime.combine(day, time.min, tzinfo=ZoneInfo(PLANT_TIMEZONE))
+    return plant_day_start(day)
 
 
 def _in_range(column, date_from: date | None, date_to: date | None) -> list:
@@ -49,7 +48,9 @@ def _in_range(column, date_from: date | None, date_to: date | None) -> list:
 
 
 def _dt(v) -> str:
-    return v.strftime("%Y-%m-%d %H:%M") if v else ""
+    # The cell stays ISO-shaped (a spreadsheet parses it); the wall clock is
+    # the plant's, not UTC's — a PR submitted at 21:00 is that evening.
+    return to_plant(v).strftime("%Y-%m-%d %H:%M") if v else ""
 
 
 def _d(v) -> str:

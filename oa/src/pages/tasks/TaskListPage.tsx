@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Button } from '@uniops/shell'
 import {
   CheckCircle2, Clock, AlertTriangle, ArrowRight,
-  Inbox, Receipt, RotateCcw, Banknote,
+  Inbox, Receipt, RotateCcw, Banknote, RefreshCw,
 } from 'lucide-react'
 import { cn, formatAmount, formatDate } from '@/lib/utils'
 import { api } from '@/lib/api'
@@ -230,6 +231,22 @@ export default function TaskListPage() {
     refetchInterval: 60_000,
   })
 
+  // As in EPMS (DSH-021): the inbox has its own Refresh button beside its
+  // title, instead of the tab-bar one (AppLayout leaves /tasks out of
+  // REFRESHABLE_ROUTES). The 60 s poll cannot see at once a change made in
+  // another app (e.g. Portal Data Maintenance). Shares ['oa-tasks'] with the
+  // sidebar badge, so both update.
+  const queryClient = useQueryClient()
+  const [refreshing, setRefreshing] = useState(false)
+  const refresh = async () => {
+    setRefreshing(true)
+    try {
+      await queryClient.invalidateQueries({ queryKey: ['oa-tasks'] })
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
   const allItems = data?.items ?? []
 
   // Stat counts
@@ -261,9 +278,22 @@ export default function TaskListPage() {
   return (
     <div className="mx-auto max-w-3xl">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-neutral-900">Task Inbox</h1>
-        <p className="mt-1 text-sm text-neutral-500">All pending OA actions</p>
+      <div className="mb-6 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-neutral-900">Task Inbox</h1>
+          <p className="mt-1 text-sm text-neutral-500">All pending OA actions</p>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={refresh}
+          disabled={refreshing}
+          aria-label="Refresh task list"
+          className="shrink-0 gap-1.5 text-neutral-500"
+        >
+          <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
+          Refresh
+        </Button>
       </div>
 
       {/* Stats */}

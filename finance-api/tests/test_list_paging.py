@@ -237,6 +237,8 @@ async def test_ap_cash_flow_items_paged_and_sorted(client, db_session):
         "invoice_no": lambda r: _low(_min_of(r, "invoice_no")),
         "purchase_order": lambda r: _low(_min_of(r, "purchase_orders")),
         "bill_date": lambda r: r["bill_date"],
+        "invoice_date": lambda r: r["invoice_date"],
+        "payment_terms": lambda r: r["term_days"],
         "due_date": lambda r: r["due_date"],
         "open_bal": lambda r: Decimal(r["open_bal"]),
         "pa": lambda r: ", ".join(r["pa_numbers"]),

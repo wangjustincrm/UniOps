@@ -9,6 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from jose import jwt
 from sqlalchemy import select
 
+from app.core.plant_time import plant_now, plant_today
 from app.core.config import settings
 from app.db.base import get_db
 from app.main import app
@@ -166,8 +167,8 @@ async def test_due_carries_invoice_links_and_earliest_due_date(client, db_sessio
     rows = (await client.get("/finance/v1/payments/due", headers=_h())).json()
     by_num = {r["doc_number"]: r for r in rows}
     row = by_num[pa.pa_number]
-    assert row["invoices"] == [{"id": str(late.id), "number": "VINV-L"},
-                               {"id": str(early.id), "number": "VINV-E"}]
+    assert [(i["id"], i["number"]) for i in row["invoices"]] == [
+        (str(late.id), "VINV-L"), (str(early.id), "VINV-E")]
     assert row["due_date"] == "2026-07-03"
     assert by_num[bare.pa_number]["invoices"] == []
     assert by_num[bare.pa_number]["due_date"] is None
@@ -262,7 +263,7 @@ async def test_batch_isolates_line_failure(client, db_session):
     batch_id = r.json()["id"]
 
     # close the batch's period so execution fails for that line
-    db_session.add(FiscalPeriod(period=date.today().strftime("%Y-%m"), status="hard_closed"))
+    db_session.add(FiscalPeriod(period=plant_today().strftime("%Y-%m"), status="hard_closed"))
     await db_session.flush()
 
     r2 = await client.post(f"/finance/v1/payments/batches/{batch_id}/execute", headers=_h())

@@ -102,6 +102,28 @@ function useOaTasks() {
   })
 }
 
+// OA rows that reach the inbox only through the EPMS feed carry no claim
+// status; INB-002 groups OA rows by status, so ask OA for it (ISS-0220).
+function useOaClaimStatuses(epmsItems: EpmsTask[] | undefined) {
+  const ids = useMemo(
+    () => [...new Set((epmsItems ?? [])
+      .filter((t) => oaPathFor(t.document_type))
+      .map((t) => t.document_id))].sort(),
+    [epmsItems],
+  )
+  return useQuery<Record<string, string>>({
+    queryKey: ['portal-oa-claim-statuses', ids],
+    queryFn: async () => {
+      const rows = await oaApi.post<{ id: string; status: string }[]>(
+        '/api/v1/expenses/statuses', { ids })
+      return Object.fromEntries(rows.map((r) => [r.id, r.status]))
+    },
+    enabled: ids.length > 0,
+    staleTime: 60_000,
+    retry: 1,
+  })
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function buildSession(auth: ReturnType<typeof useAuthStore.getState>): string {
@@ -158,6 +180,26 @@ const CLAIM_TYPE_LABEL: Record<string, string> = {
   // workflow-step query only looked at exp/mil/trv/cfm). Without a label the
   // row title read "TRA — Pending Dept. Approval".
   TRA: 'Travel Application',
+}
+
+// OA tasks that reach the inbox only through the EPMS feed (approval-api writes
+// approve_<code> / revise_<code> / process_expense into the shared tasks
+// table). OA's own feed (my-actions) lists only what the caller can act on, so
+// e.g. a System Administrator — who sees every task in the EPMS feed — gets
+// these rows without a claim status to group by. Name them in full rather
+// than humanize()'s "Approve Tra" (ISS-0220).
+const OA_DOC_LABEL: Record<string, string> = {
+  exp: 'General Expense', mil: 'Mileage', trv: 'Travel Expense',
+  tra: 'Travel Application', cfm: 'Custom Form',
+}
+
+function oaTaskLabel(type: string, docType: string): string {
+  const dt = docType.toLowerCase()
+  const doc = OA_DOC_LABEL[dt] ?? (dt.startsWith('cfm') ? OA_DOC_LABEL.cfm : null)
+  if (type === 'process_expense') return 'Record Expense Payment'
+  if (doc && type.startsWith('approve_')) return `Approve ${doc}`
+  if (doc && type.startsWith('revise_')) return `Revise ${doc}`
+  return humanize(type)
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -305,6 +347,8 @@ const EPMS_TYPE_LABELS: Record<string, string> = {
   // services/nc_purchase_sync/error_tasks.py); system_admin only.
   import_erp_vendor: 'Import ERP Vendor',
   resolve_nc_sync_error: 'Resolve NC Sync Error',
+  // mdm-api services/nc_readback.py: one standing task for the whole NC To-do list.
+  resolve_nc_person_todos: 'NC Person Updates',
   // Standing finance-api tasks whose subject is a set of NC rows, not a
   // document: services/jv_validation_tasks.py and ap_duplicate_invoice_tasks.py.
   resolve_jv_validation: 'Resolve JV Validation Findings',
@@ -341,6 +385,9 @@ const GROUP_ORDER = [
   'revise_pr', 'revise_po', 'revise_pa', 'revise_budget_plan',
   // Expense (OA my-actions statuses)
   'submitted', 'in_review', 'approved',
+  // Expense rows only the EPMS feed carried (see oaTaskLabel)
+  'approve_tra', 'approve_trv', 'approve_exp', 'approve_mil',
+  'revise_tra', 'revise_trv', 'revise_exp', 'revise_mil', 'process_expense',
   // VMS
   'vms_visit', 'vms_train', 'vms_ppe',
 ]
@@ -552,6 +599,7 @@ export default function PortalHome() {
   const oaHealth   = useHealthCheck(OA_API,   '/health',        'oa')
   const epmsTasks  = useEpmsTasks()
   const oaTasks    = useOaTasks()
+  const oaStatuses = useOaClaimStatuses(epmsTasks.data?.items)
 
   const epmsHref = session ? `${EPMS_URL}/dashboard#__session=${session}` : EPMS_URL
   const oaHref   = session ? `${OA_URL}/pa#__session=${session}`           : OA_URL
@@ -612,6 +660,9 @@ export default function PortalHome() {
         // shows the order, transfer, file or connection the task is about.
         module = 'SALES'; base = SALES_URL
         path = `/inbox/${encodeURIComponent(t.document_number)}`
+      } else if (t.document_type === 'nc_person') {
+        path = ''
+        selfHref = '/mdm/staff/nc-todo'
       } else if (isVms) {
         module = 'VMS'; base = VMS_URL
         path = vmsDeeplinkPath(t.document_type, t.document_id)
@@ -657,8 +708,21 @@ export default function PortalHome() {
       if (module === 'VMS') {
         groupKey = t.document_type
         groupLabel = VMS_DOC_LABELS[t.document_type] ?? humanize(t.document_type)
+      } else if (module === 'EXPENSE') {
+        // OA-owned, surfaced via approval-api: INB-002 groups OA rows by claim
+        // status, read from OA (useOaClaimStatuses). A status outside the three
+        // INB-002 groups (e.g. returned → a Revise task), or one not loaded yet,
+        // falls back to the engine task type under its full name.
+        const st = oaStatuses.data?.[t.document_id]
+        if (st && ['submitted', 'in_review', 'approved'].includes(st)) {
+          groupKey = st
+          groupLabel = STATUS_LABEL[st]
+        } else {
+          groupKey = t.type
+          groupLabel = oaTaskLabel(t.type, t.document_type)
+        }
       } else {
-        // EPMS-owned, or OA-owned surfaced via approval-api: bucket by engine task type.
+        // EPMS-owned: bucket by engine task type.
         groupKey = t.type
         groupLabel = EPMS_TYPE_LABELS[t.type] ?? humanize(t.type)
       }
@@ -689,7 +753,7 @@ export default function PortalHome() {
         return true
       })
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-  }, [epmsTasks.data, oaTasks.data, session])
+  }, [epmsTasks.data, oaTasks.data, oaStatuses.data, session])
 
   const taskCount = allTasks.length
   const firstName = auth.user?.full_name?.split(' ')[0] ?? 'there'
@@ -710,7 +774,8 @@ export default function PortalHome() {
       icon: <CreditCard className="h-5 w-5 text-amber-500" />,
       iconBg: 'bg-amber-50',
       label: 'OA',
-      description: 'Reimbursements, vendor payments, mileage claims',
+      // Vendor payments left OA (PRD OA §15) — expenses, mileage and travel only.
+      description: 'Expense reimbursements, mileage and travel',
       href: oaHref,
       healthy: oaHealth.data?.ok,
       loading: oaHealth.isLoading,

@@ -8,7 +8,7 @@ rules:
       - how are GR numbers generated
     answer: >
       GR-YYYYMMDD-NNNN: the date it was recorded, then a 4-digit sequence that
-      restarts each day. The date is the UTC date at creation, not the plant's: a document created after 20:00 Toronto time (19:00 in winter) carries the next day's date.
+      restarts each day. The date is the plant's date at creation (Portal → Admin → Company Settings → Time Zone), so a document created late in the evening carries that evening's date.
     enforced_in: "epms-api app/crud/gr.py _next_number"
     provenance: pinned
     test:
@@ -30,6 +30,58 @@ rules:
     provenance: pinned
     test:
       - "tests/test_assistant_iss_batch1.py::test_gr_without_pr_rule_matches_the_code"
+  # ISS-0029 point 1 and the 10/11 retest: "PO 已经下单了，货到了以后谁要做什么？
+  # 我是申请人。" once said "你不需要做什么". GR-P-006, §3.13.2.
+  - id: physical_receipt_steps
+    also_in: [po, pr]
+    asked_as:
+      - 实物收货的流程是怎样的？
+      - PO 已经下单了，货到了以后谁要做什么？我是申请人。
+      - what happens when the goods arrive
+    answer: >
+      Goods (physical) orders — types 1, 2, 3 and 5 — are received in three
+      steps. 1) Someone with the warehouse receive permission records the
+      goods receipt in EPMS; it is Pending Acknowledgement and the PR's
+      requester gets a "{ack_task}" task. 2) The requester acknowledges it;
+      it becomes Collection Pending and the requester gets a "{collect_task}"
+      task. 3) The requester collects the goods; the receipt is Collected and
+      the received quantities count on the PO. A PO with no PR (imported from
+      NC or PMS) skips the requester's two steps. Raw-material and packaging
+      orders (type 1) are received in NC, and their receipts are mirrored
+      into EPMS.
+    provenance: derived
+    derive: gr_steps
+    enforced_in: "epms-api app/crud/gr.py create (pending_ack, _create_ack_task for the PR's owner = requester on a physical PR), action acknowledge (collection_pending, _create_collect_task), action collect (collected, _update_po_received_qty); _auto_complete_requester_steps (no PR); task labels epms/src/lib/taskTypes.ts via guide_view.TASK_TYPE_LABELS"
+    test:
+      - "tests/test_gr.py::test_physical_gr_full_flow"
+      - "tests/test_gr.py::test_gr_with_pr_still_requires_ack"
+      - "tests/test_gr.py::test_create_gr_no_pr_physical_auto_completes"
+      - "tests/test_assistant_asst2_d.py::test_the_receipt_steps_are_the_codes"
+  # ISS-0029 point 2, ISS-0055: "服务类 PO 谁来确认？" was answered with the
+  # PO approval chain; "我是申请人但不是服务负责人，我可以确认收货吗？" with
+  # "不可以" and "the owner set on the PO". PRD §3.13.3, GR-S-004, GR-S-008.
+  - id: who_confirms_a_service_receipt
+    also_in: [po, pr]
+    asked_as:
+      - 服务类 PO 谁来确认？怎么确认？
+      - 服务做完了，我是申请人但不是服务负责人，我可以确认收货吗？
+      - who confirms a service receipt
+    answer: >
+      A Service (type 4) or Project-Related (type 6) purchase is confirmed by
+      the Service/Project Owner named on the PR (not on the PO) — the
+      requester when the PR names nobody else — and the PR's requester can
+      always confirm as well, owner or not. Either of them uses Confirm Service
+      / Confirm Completion on the PO page (or New GR on the GR list) once the
+      work is done, from the time the PO is approved. This is not the PO's
+      approval chain: approvers do not confirm the service. A PO with no PR
+      has neither, so only someone with the warehouse receive permission can
+      record its confirmation.
+    enforced_in: "epms-api app/api/v1/gr.py create_gr (is_service_po: PR owner OR requester, or epms.gr.receive; SERVICE_GR_PO_STATUSES); app/crud/pr_owner.py; epms/src/pages/po/PoDetailPage.tsx canConfirmService (pr_owner_id OR pr_requester_id)"
+    provenance: pinned
+    test:
+      - "tests/test_gr_create_authz.py::test_pr_owner_can_create_service_gr_without_warehouse_permission"
+      - "tests/test_gr_create_authz.py::test_naming_an_owner_does_not_strip_the_requester"
+      - "tests/test_assistant_asst2_d.py::test_the_service_confirmer_is_the_owner_or_the_requester"
   - id: cancel_a_receipt
     asked_as:
       - can I cancel a goods receipt
@@ -60,14 +112,15 @@ rules:
     answer: >
       A goods receipt can be created on a goods (physical) PO only while the
       PO is {physical}; on a service or project PO only while it is
-      {service}. Any other status is refused — fully received, closed,
+      {service} (any one of these). Any other status is refused — fully received, closed,
       cancelled, draft or still in approval, waiting in NC (nc_pending), and
       milk orders (nc_milk), whose receipts are booked in NC.
     provenance: derived
     derive: gr_po_statuses
-    enforced_in: "epms-api app/api/v1/gr.py create_gr (PHYSICAL_GR_PO_STATUSES / SERVICE_GR_PO_STATUSES)"
+    enforced_in: "epms-api app/api/v1/gr.py create_gr (PHYSICAL_GR_PO_STATUSES / SERVICE_GR_PO_STATUSES); the same statuses bound \"past expected delivery, not received\" questions (app/services/answer_facts.py with_receivable_orders_only, ISS-0013)"
     test:
       - "tests/test_rule_registry.py::test_gr_statuses_are_the_routes"
+      - "tests/test_assistant_asst2_b.py::test_a_draft_po_is_not_late_for_delivery"
   - id: a_receipt_needs_a_received_line
     asked_as:
       - 收货单可以不填收货数量吗？
@@ -160,6 +213,25 @@ rules:
       - "tests/test_gr_collect_due.py::test_inactive_while_collection_not_required"
       - "tests/test_rule_registry.py::test_new_pa_warns_of_uncollected_goods_with_the_servers_rule"
   - id: gr_acknowledgement_reminders
+    # Round 2 (ISS-0019): asked together with Teams and email approval, the GR
+    # part was "no information"; asked alone it was right. Code answers it.
+    said_when:
+      - '(?:GR|收货|goods\s*receipt|receipt).{0,20}(?:超时|逾期|过期|太久|没(?:有)?确认|未确认|\blate\b|overdue|not\s+(?:been\s+)?acknowledged).{0,20}(?:升级|提醒|通知|催|escalat|remind)'
+      - '(?:升级|escalat\w*).{0,20}(?:GR|收货|goods\s*receipt)'
+    says:
+      en: >
+        Physical goods receipts: a receipt still waiting for acknowledgement
+        more than {reminder_days} day(s) after it was recorded is reminded once
+        a day to the person who has to acknowledge it (the PR's owner); once
+        they have been reminded and it has waited {escalation_days} day(s), the
+        Department Manager of the requester's department gets one escalation
+        email, copied to the requester. The days come from EPMS → Admin → GR
+        Notification SLA. This reminder is currently {state}.
+      zh: >
+        实物收货单（GR）：登记后超过 {reminder_days} 天仍未确认的，每天提醒一次需要确认的人
+        （请购单的负责人）；已经提醒过、并且等满 {escalation_days} 天后，给申请人所在部门的
+        部门经理发一封升级邮件，抄送申请人。天数在 EPMS → Admin → GR Notification SLA 设置。
+        这个提醒目前{state_zh}。
     also_in: [notifications]
     asked_as:
       - GR 确认超时会升级给谁？
@@ -173,7 +245,7 @@ rules:
       requester's department gets one escalation email, copied to the
       requester. The days come from EPMS → Admin → GR Notification SLA;
       the reminder is {state} (Portal → Admin → Notification Settings → GR
-      Acknowledgement Reminder), running daily at {time} UTC. Collecting the
+      Acknowledgement Reminder), running daily at {time} plant time. Collecting the
       goods is not chased — the collection timers on Collection Config are not
       active. Service and project POs have their own reminder — see
       service_completion_reminders.
@@ -185,13 +257,34 @@ rules:
       - "tests/test_gr_ack_due.py::test_off_and_dry_run_remind_nobody"
       - "tests/test_rule_registry.py::test_gr_ack_reminder_facts_are_read_from_config"
   - id: service_completion_reminders
+    said_when:
+      - '(?:GR|收货|goods\s*receipt|receipt).{0,20}(?:超时|逾期|过期|太久|没(?:有)?确认|未确认|\blate\b|overdue|not\s+(?:been\s+)?acknowledged).{0,20}(?:升级|提醒|通知|催|escalat|remind)'
+      - '(?:升级|escalat\w*).{0,20}(?:GR|收货|goods\s*receipt)'
+      - '(?:服务|service).{0,20}(?:完成|completion).{0,20}(?:提醒|升级|超时|逾期|remind|escalat|overdue)'
+    says:
+      en: >
+        Service and project POs: once a day (at {time} UTC) the system looks
+        for orders whose PR's expected completion date is more than
+        {reminder_days} day(s) past with no receipt recorded; the PR's
+        Service/Project Owner (the requester when none is named) gets a Confirm
+        Goods Receipt task and a reminder email. When the completion date is
+        {escalation_days} or more days past and a reminder has already been
+        sent, one escalation email goes to the owner's Department Manager. The
+        day counts are set in Admin → Service GR SLA. This reminder is
+        currently {state}.
+      zh: >
+        服务类和项目类 PO：系统每天（UTC {time}）检查请购单上预计完成日期已过去超过
+        {reminder_days} 天、但还没有登记收货的订单；请购单的 Service/Project Owner（没指定时就是
+        申请人）会收到 Confirm Goods Receipt 任务和一封提醒邮件。完成日期过去 {escalation_days}
+        天或更久、并且已经提醒过的，给负责人的部门经理发一封升级邮件。天数在 Admin → Service GR
+        SLA 设置。这个提醒目前{state_zh}。
     also_in: [notifications]
     asked_as:
       - 服务完成日到了会提醒吗？
       - 服务类 PO 确认超时会升级给谁？
       - is there a reminder when the service completion date passes
     answer: >
-      Yes, for service and project POs. Once a day (at {time} UTC) the system
+      Yes, for service and project POs. Once a day (at {time} plant time) the system
       looks for orders whose PR's expected completion date is more than
       {reminder_days} day(s) past with no receipt recorded. For each, the
       PR's Service/Project Owner (the requester when none is named) gets a
@@ -240,3 +333,100 @@ rules:
     provenance: pinned
     test:
       - "tests/test_gr.py::test_service_gr_reject_only_after_acknowledge"
+
+# The conclusion a question must get, placed by code (app/services/rule_verdicts.py).
+verdicts:
+  # ISS-0017 (23/10, twice): "已经全部收货的采购订单还能再建收货单吗？" →
+  # "只能在已发出且部分收货的状态下创建" — the statuses are alternatives.
+  - id: fully_received_po_takes_no_receipt
+    rule: when_a_receipt_can_be_created
+    derive: gr_po_statuses
+    asks:
+      - [全部收货, 已全部收货, 全部收到, 收完了, 已收齐, 收齐了, 全收了, 完全收货, fully received, fully_received,
+         all received, received in full]
+      - [再建, 还能建, 还能再, 还可以, 新建, 再收, 再做, 补建, 再开, 能建, 可以建, create, another, again,
+         new gr, still]
+      # It asks about a receipt ("全部收货" is in the first group): "全部收货的 PO 还可以
+      # 匹配发票吗？" / "… can I still create a PA?" do not (round 2 fix, 2026-11-11).
+      - [收货单, 收货记录, 再收, 补收, gr, grs, goods receipt, receipt, receive it, receive again]
+    says:
+      en: >
+        No. A goods receipt can be created on a goods (physical) PO only while
+        it is {physical_names}, and on a service or project PO only while it
+        is {service_names}. Every other status is refused — Fully Received,
+        Closed, Cancelled, NC Pending Approval and Milk / NC included.
+      zh: >
+        不能。实物（货物）PO 只有在 {physical_names_zh} 状态时才能建收货单，服务/项目 PO 是
+        {service_names_zh}；其他状态都会被拒绝，包括 Fully Received、Closed、Cancelled、
+        NC Pending Approval 和 Milk / NC。
+    test:
+      - "tests/test_rule_registry.py::test_gr_statuses_are_the_routes"
+      - "tests/test_gr.py::test_create_gr_requires_issued_po"
+  # ISS-0029 point 1, 10/11 retest.
+  - id: the_requester_acknowledges_and_collects
+    rule: physical_receipt_steps
+    derive: gr_steps
+    asks:
+      - [实物收货, 货物收货, 实物的收货, 收货流程, 收货的流程, 收货是怎么, 收货怎么走, 货到了, 到货后, 到货以后,
+         到货了, 货到以后, 货到后, 货物到了, 货来了, physical receipt, physical gr, goods receipt process,
+         when the goods arrive, goods arrive, goods have arrived, how does a gr work, how does receiving work]
+    unless: [服务, 项目, service, project, 取消, 撤销, cancel, 没有 pr, 没有请购单, 没有关联, 不关联, no pr,
+             without a pr, 编号, number, 损坏, damage, 提醒, remind, 催,
+             # "货到了以后多久能付款？", "到货后发现数量不对怎么办？" (round 2 fix, 2026-11-11)
+             付款, 付钱, 发票, 付款申请, pa, 多久, 不对, 怎么办, pay, paid, payment, invoice,
+             how long, wrong]
+    says:
+      en: >
+        Three steps, two of them the requester's: 1) the warehouse records the
+        goods receipt and the requester gets a "{ack_task}" task; 2) the
+        requester acknowledges it and then gets a "{collect_task}" task;
+        3) the requester collects the goods, and the received quantities
+        count on the PO.
+      zh: >
+        共三步，其中两步是申请人的：① 仓库（有收货权限的人）在 EPMS 建收货单，申请人收到
+        "{ack_task}" 任务；② 申请人确认到货（Acknowledge），然后收到 "{collect_task}" 任务；
+        ③ 申请人领取货物（Collect），收货数量才计入 PO。
+    test:
+      - "tests/test_gr.py::test_physical_gr_full_flow"
+      - "tests/test_gr.py::test_gr_with_pr_still_requires_ack"
+  # ISS-0029 point 2 (new conversations, twice): the PO approval chain.
+  - id: service_receipt_is_the_owners_or_the_requesters
+    rule: who_confirms_a_service_receipt
+    asks:
+      - [服务类, 服务型, 服务的, 服务, 项目类, 项目相关, 项目的, service, project]
+      - [谁, 哪个人, 什么人, 由谁, who, whom]
+      - [确认, 收货, 验收, confirm, confirms, confirmation, receipt, receive]
+    unless: [审批, 批准, approv, 没有 pr, 没有请购单, 没有关联, 不关联, no pr, without a pr, 提醒, remind,
+             # "服务类 PO 收货后谁来付款？" (round 2 fix, 2026-11-11)
+             付款, 付钱, pay, paid, payment]
+    says:
+      en: >
+        The Service/Project Owner named on the PR — the requester unless the PR
+        names someone else — confirms it, and the PR's requester can always
+        confirm too: Confirm Service / Confirm Completion on the PO page. It is
+        not the PO's approval chain.
+      zh: >
+        由请购单（PR）上的 Service/Project Owner 确认——PR 没另外指定时就是申请人本人；申请人也随时可以确认。
+        在 PO 页面点 Confirm Service / Confirm Completion 确认。这不是 PO 的审批链，审批人不负责确认服务。
+    test:
+      - "tests/test_assistant_asst2_d.py::test_the_service_confirmer_is_the_owner_or_the_requester"
+  # ISS-0055, 10/11 retest (twice): "不可以…只有那位负责人才能确认".
+  - id: the_requester_can_confirm_a_service
+    rule: who_confirms_a_service_receipt
+    asks:
+      - [申请人, 请购人, 提单人, requester, i raised, raised the pr]
+      - [服务, 项目, service, project]
+      - [确认, 验收, confirm]
+      - [可以, 能, 可不可以, 能不能, 能否, can, may, allowed]
+    unless: [没有 pr, 没有请购单, 没有关联, no pr, without a pr]
+    says:
+      en: >
+        Yes. The PR's requester can always confirm a service or project
+        receipt, as well as the Service/Project Owner named on the PR (not on
+        the PO): Confirm Service / Confirm Completion on the PO page.
+      zh: >
+        可以。服务/项目类的收货，请购单（PR）的申请人随时都可以确认，PR 上指定的 Service/Project Owner
+        也可以（Owner 是 PR 上的，不是 PO 上的）：在 PO 页面点 Confirm Service / Confirm Completion。
+    test:
+      - "tests/test_gr_create_authz.py::test_naming_an_owner_does_not_strip_the_requester"
+      - "tests/test_assistant_asst2_d.py::test_the_service_confirmer_is_the_owner_or_the_requester"

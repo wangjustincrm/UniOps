@@ -21,7 +21,7 @@ import {
   type VendorOption,
 } from '@/services/qboCreditImport'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTime } from '@/lib/utils'
 
 const STORAGE_KEY = 'qbo-credit-import-decisions'
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
@@ -171,7 +171,7 @@ export default function QboCreditImportPage() {
           {data?.cutover.finished_at && (
             <p className="text-xs text-neutral-500">
               Reading the QuickBooks full reload finished{' '}
-              {new Date(data.cutover.finished_at).toLocaleString()}. Run a fresh full
+              {formatDateTime(data.cutover.finished_at)}. Run a fresh full
               reload first if these balances look stale.
             </p>
           )}

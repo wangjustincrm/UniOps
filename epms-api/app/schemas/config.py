@@ -133,6 +133,15 @@ class ConfigUpdate(BaseModel):
     logo_data_url: str | None = None
     logo_file_name: str | None = None
     delivery_address: str | None = None
+    timezone: str | None = None
+
+    @field_validator("timezone")
+    @classmethod
+    def _valid_timezone(cls, v: str | None) -> str | None:
+        from app.core.plant_time import is_valid_timezone
+        if v is not None and not is_valid_timezone(v):
+            raise ValueError(f"Unknown time zone: {v!r} (use an IANA name such as America/Toronto)")
+        return v
 
     default_currency: str | None = None
     enabled_currencies: list[str] | None = None
@@ -227,6 +236,8 @@ class ConfigResponse(BaseModel):
     logo_data_url: str | None
     logo_file_name: str | None
     delivery_address: str
+    timezone: str = "America/Toronto"
+    timezone_choices: list[str] = []
 
     default_currency: str
     enabled_currencies: list[str]

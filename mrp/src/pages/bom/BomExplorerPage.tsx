@@ -9,7 +9,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ChevronsDown, ChevronsUp, FileDown, Network, Search, Loader2 } from 'lucide-react'
 import { Button, Input, FormField } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, todayISO } from '@/lib/utils'
 import { ToastStack } from '@/components/Toast'
 import { useToasts } from '@/hooks/useToasts'
 import { usePermissions } from '@/hooks/usePermissions'
@@ -28,9 +28,9 @@ function errMsg(err: unknown, fallback: string): string {
   return err instanceof ApiError ? err.message : fallback
 }
 
+/** Today at the plant (company time zone), 'YYYY-MM-DD'. */
 function todayIso(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return todayISO()
 }
 
 function allPaths(node: ExplodeNode, path = '0'): string[] {

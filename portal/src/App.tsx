@@ -13,6 +13,14 @@ import ForcePasswordChangePage from '@/pages/ForcePasswordChangePage'
 import AccessControl from '@/pages/admin/AccessControl'
 import ApprovalRouting from '@/pages/admin/ApprovalRouting'
 import ApprovalDelegation from '@/pages/admin/ApprovalDelegation'
+import MdmUsers from '@/pages/mdm/MdmUsers'
+import MdmDepartments from '@/pages/mdm/MdmDepartments'
+import StaffList from '@/pages/mdm/staff/StaffList'
+import StaffDetail from '@/pages/mdm/staff/StaffDetail'
+import StaffImport from '@/pages/mdm/staff/StaffImport'
+import StaffDepartmentMap from '@/pages/mdm/staff/StaffDepartmentMap'
+import StaffNcTodo from '@/pages/mdm/staff/StaffNcTodo'
+import OrgChart from '@/pages/mdm/org/OrgChart'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } },
@@ -97,6 +105,14 @@ export default function App() {
             element={<ProtectedRoute><ApprovalDelegation /></ProtectedRoute>}
           />
           {/* Public logout route — clears Portal session, no auth guard */}
+          <Route path="/mdm/users" element={<ProtectedRoute><MdmUsers /></ProtectedRoute>} />
+          <Route path="/mdm/departments" element={<ProtectedRoute><MdmDepartments /></ProtectedRoute>} />
+          <Route path="/mdm/org-chart" element={<ProtectedRoute><OrgChart /></ProtectedRoute>} />
+          <Route path="/mdm/staff" element={<ProtectedRoute><StaffList /></ProtectedRoute>} />
+          <Route path="/mdm/staff/import" element={<ProtectedRoute><StaffImport /></ProtectedRoute>} />
+          <Route path="/mdm/staff/department-mapping" element={<ProtectedRoute><StaffDepartmentMap /></ProtectedRoute>} />
+          <Route path="/mdm/staff/nc-todo" element={<ProtectedRoute><StaffNcTodo /></ProtectedRoute>} />
+          <Route path="/mdm/staff/:id" element={<ProtectedRoute><StaffDetail /></ProtectedRoute>} />
           <Route path="/logout" element={<LogoutPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

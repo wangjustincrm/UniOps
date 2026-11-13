@@ -42,6 +42,19 @@ def test_keys_ignore_short_and_whitespace():
     assert keys_of("55A2 2026 0001", "SC11", None, "1") == {"55A220260001"}
 
 
+def test_nc_time_follows_the_plant_zone_setting():
+    """NC times are shown on the plant's clock (Company Settings), not a
+    hard-coded Toronto: 2026-09-01 02:43 China = 2026-08-31 11:43 Vancouver."""
+    from app.core.plant_time import plant_tz_name, set_plant_tz
+    before = plant_tz_name()
+    try:
+        set_plant_tz("America/Vancouver")
+        t, date_only = trace.nc_local_time(datetime(2026, 9, 1, 2, 43), "Asia/Shanghai")
+        assert t == datetime(2026, 8, 31, 11, 43) and not date_only
+    finally:
+        set_plant_tz(before)
+
+
 def test_nc_time_to_toronto_and_date_only_kept():
     t, date_only = trace.nc_local_time(datetime(2026, 9, 1, 2, 43), "Asia/Shanghai")
     assert t == datetime(2026, 8, 31, 14, 43) and not date_only

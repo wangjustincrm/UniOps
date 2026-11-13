@@ -19,6 +19,17 @@ app/knowledge/rules/, each rule a card saying:
                            and a test holds THAT (no route, no reader).
   enforced_in  where in the code it is decided
   test         the test(s) that would fail if the code stopped doing it
+  said_when    (optional) patterns; a question matching one is answered with
+               `says` — written here, in English and Chinese, by code — and
+               the model is not asked at all (pinned_for / say below). For
+               the questions on which a model-written answer kept coming out
+               differently or opposite to the rule (round 2 of the review,
+               2026-11-10: ISS-0018, ISS-0019, ISS-0050, ISS-0069, ISS-0022).
+               A question asking for data (a list, a count, a period, who
+               did it) is never answered this way (_ASKS_FOR_DATA).
+  says         {en, zh}: that answer; a derived card fills its {placeholders}
+               like `answer` (a `_zh` value for the Chinese text when the fact
+               is words)
 
 tests/test_rule_registry.py fails for a card without a test or with a test
 that does not exist, so a rule cannot be added here on someone's say-so.
@@ -32,6 +43,7 @@ from __future__ import annotations
 import functools
 import inspect
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -188,6 +200,67 @@ async def build(area_list: list[str], db, token: str | None) -> dict:
                          for r in remote if r.get("area") == key] + rules
         result.append({"area": key, "label": area.label, "rules": rules})
     return {"areas": result, "unavailable": unavailable}
+
+
+# ── Answers the code writes (said_when / says) ───────────────────────────────
+
+_CJK_GAP = re.compile(r"(?<=[^\x00-\x7f])\s+(?=[^\x00-\x7f])")
+
+
+@functools.lru_cache(maxsize=None)
+def _said_when() -> tuple[tuple[re.Pattern, str], ...]:
+    out = []
+    for _area, c in all_cards():
+        for pattern in c.get("said_when") or ():
+            out.append((re.compile(pattern, re.I | re.S), c["id"]))
+    return tuple(out)
+
+
+# A question that asks for data — a list, a count, a period, who did it — is
+# not answered with a rule card, whatever rule words it has: "上周有哪些发票被
+# 取消匹配了？", "上个月录了多少笔手工贷项？", "谁改了我的请购单？" (round 2 fix,
+# 2026-11-11). "收货超时几天会升级？" and "能连续催两次吗？" still ask the rule.
+_ASKS_FOR_DATA = re.compile(
+    r"哪些|哪几(?:张|笔|个|份|条|家)|多少(?:张|笔|个|份|条|家|单)|几(?:张|笔|份|条|家|单)|"
+    r"列出|列一下|上周|本周|这周|上个?月|本月|这个月|今天|昨天|"
+    r"谁(?:改|修改|编辑|动)了|"
+    r"\bhow many\b|\bwhich\b|\blist\b|\bshow me\b|\blast (?:week|month)\b|"
+    r"\bwho (?:changed|edited)\b", re.I)
+
+
+def pinned_for(message: str) -> list[str]:
+    """The ids of the cards whose `said_when` the question matches, in the
+    registry's order, each once — none for a question asking for data."""
+    text = " ".join((message or "").split())
+    if _ASKS_FOR_DATA.search(text):
+        return []
+    return list(dict.fromkeys(rid for pattern, rid in _said_when() if pattern.search(text)))
+
+
+async def say(rule_ids: list[str], lang: str, db) -> tuple[str, list[str]]:
+    """The cards' `says` in `lang` ("zh" or "en"), joined, derived facts
+    filled — and the ids of any whose facts could not be read (left out, as
+    resolve() does)."""
+    parts, unavailable = [], []
+    cache: dict[str, dict] = {}
+    for rid in rule_ids:
+        src = _by_id()[rid]
+        text = _normalise((src.get("says") or {}).get(lang))
+        if lang == "zh":
+            # A folded line break between two Chinese characters is not a space.
+            text = _CJK_GAP.sub("", text)
+        if src.get("provenance") == "derived":
+            name = src["derive"]
+            try:
+                if name not in cache:
+                    cache[name] = await _derived_values(name, db)
+                text = text.format(**cache[name])
+            except Exception:  # noqa: BLE001 — same as resolve()
+                log.exception("assistant: could not derive rule %s", rid)
+                unavailable.append(rid)
+                continue
+        parts.append(text)
+    return "\n\n".join(parts), unavailable
 
 
 def catalogue() -> list[dict]:

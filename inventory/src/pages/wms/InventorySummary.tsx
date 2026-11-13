@@ -14,7 +14,7 @@
 // produces a number that describes nothing. Raw ingredients are all KGM, so
 // the default view is a single row and reads like a plain dashboard.
 import { AlertTriangle, Info } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { isPositiveQty, qty, type InventorySummaryLine } from './inventoryApi'
 
 /** Add whole days to a 'YYYY-MM-DD' on a UTC clock — never through the local
@@ -155,7 +155,7 @@ export function InventorySummary({
           blocked too, and stock expiring soon is still available today.
           {' '}<strong>Blocked</strong> is the warehouse's own hold (QLT_STS 01);
           material still under inspection is not counted as blocked.
-          {asOf && <> Shelf life is measured from {asOf}.</>}
+          {asOf && <> Shelf life is measured from {formatDate(asOf)}.</>}
         </span>
       </p>
 

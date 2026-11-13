@@ -10,6 +10,8 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import HRFlowable, Image, Paragraph, Spacer, Table, TableStyle
 
+from app.core.plant_time import fmt_date
+
 _GRAY = colors.HexColor("#737373")
 _PRIMARY = colors.HexColor("#0A7C7C")
 _DARK = colors.HexColor("#1A1A1A")
@@ -157,8 +159,8 @@ def approvals_element(approvals: list[dict] | None, W: float) -> list:
         rows.append([
             Paragraph(esc(entry.get("role")) or "—", td_style),
             Paragraph(esc(entry.get("name")) or "—", td_style),
-            # DD/MM/YYYY (UI-DATE-001, ISS-0183) — format only.
-            Paragraph(at.strftime("%d/%m/%Y") if at else "—", td_style),
+            # YYYY-MMM-DD (UI-DATE-002), the plant's day.
+            Paragraph(fmt_date(at), td_style),
         ])
 
     tbl = Table(rows, colWidths=[W * 0.30, W * 0.45, W * 0.25], repeatRows=1)

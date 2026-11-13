@@ -85,6 +85,9 @@ export interface ApiInvoice {
   matched_by_name?: string
   po_total?: number
   gr_value?: number
+  // Detail endpoint only: gr_value on the pre-tax basis of po_total / variance
+  // (an NC PO's line amounts include tax, so gr_value can read tax-inclusive).
+  gr_value_pre_tax?: number | null
   variance?: number
   variance_pct?: number
   // ISS-0129: detail endpoint only — the variance across every invoice on the

@@ -1,8 +1,9 @@
 """Stock "as of" a date D, for each NC ledger (design §6).
 
-D is a calendar date in Toronto. NC writes business times in its application
-server's clock (China, design D14, switchable in Settings), so "everything up
-to the end of D in Toronto" becomes a cutoff in NC's wall clock:
+D is a calendar date at the plant (Company Settings → Time Zone; Toronto in
+the examples). NC writes business times in its application server's clock
+(China, design D14, switchable in Settings), so "everything up to the end of
+D at the plant" becomes a cutoff in NC's wall clock:
 
     D 23:59:59 America/Toronto  →  (D+1) 11:59:59 / 12:59:59 Asia/Shanghai
 
@@ -25,11 +26,9 @@ from __future__ import annotations
 import calendar
 from dataclasses import dataclass
 from datetime import date, datetime, time
-from zoneinfo import ZoneInfo
 
+from app.core.plant_time import plant_today, plant_tz
 from app.services import params
-
-LOCAL = ZoneInfo(params.LOCAL_TIME_ZONE)
 
 
 @dataclass(frozen=True)
@@ -49,7 +48,7 @@ class AsOf:
 
 
 def make_asof(d: date, nc_time_zone: str) -> AsOf:
-    local_end = datetime.combine(d, time(23, 59, 59), tzinfo=LOCAL)
+    local_end = datetime.combine(d, time(23, 59, 59), tzinfo=plant_tz())
     cutoff = local_end.astimezone(params.zone(nc_time_zone)).replace(tzinfo=None)
     last_day = calendar.monthrange(d.year, d.month)[1]
     return AsOf(d=d, nc_cutoff=cutoff, period=f"{d.year:04d}-{d.month:02d}",
@@ -57,8 +56,11 @@ def make_asof(d: date, nc_time_zone: str) -> AsOf:
                 nc_time_zone=nc_time_zone)
 
 
-def today_local() -> date:
-    return datetime.now(LOCAL).date()
+def today_local(now: datetime | None = None) -> date:
+    """Today at the plant (not UTC: in Toronto UTC is already tomorrow from
+    19:00/20:00, which would let a user pick a day that has not started).
+    `now` is for tests."""
+    return plant_today(now)
 
 
 def nc_time_le(col: str) -> str:

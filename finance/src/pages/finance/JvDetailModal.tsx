@@ -9,7 +9,7 @@ import { createPortal } from 'react-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { BookOpen, Check, Loader2, RotateCcw, Send, Undo2, X } from 'lucide-react'
 import { financeApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate, formatDateTime } from '@/lib/utils'
 
 const primaryBtn = 'flex items-center gap-1.5 rounded-lg bg-[#085E5E] px-3 py-2 text-sm font-medium text-white hover:bg-[#064A4A] disabled:opacity-50'
 const secondaryBtn = 'flex items-center gap-1.5 rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50'
@@ -77,7 +77,7 @@ function Stamp({ label, name, at }: { label: string; name?: string | null; at?: 
   return (
     <div className="text-xs text-neutral-500">
       <span className="font-medium text-neutral-600">{label}:</span>{' '}
-      {name || '—'}{at ? ` · ${at.slice(0, 16).replace('T', ' ')}` : ''}
+      {name || '—'}{at ? ` · ${formatDateTime(at)}` : ''}
     </div>
   )
 }
@@ -136,7 +136,7 @@ export function JvDetailModal({ jvId, canAct, onClose, onActed }: {
         {v && (
           <>
             <div className="mb-3 grid grid-cols-2 gap-x-6 gap-y-1 rounded-lg bg-neutral-50 px-4 py-3 md:grid-cols-3">
-              <div className="text-xs text-neutral-500"><span className="font-medium text-neutral-600">Date:</span> {v.voucher_date} · {v.fiscal_period}</div>
+              <div className="text-xs text-neutral-500"><span className="font-medium text-neutral-600">Date:</span> {formatDate(v.voucher_date)} · {v.fiscal_period}</div>
               <div className="text-xs text-neutral-500 md:col-span-2"><span className="font-medium text-neutral-600">Summary:</span> {v.summary || '—'}</div>
               <div className="text-xs text-neutral-500 md:col-span-3">
                 <span className="font-medium text-neutral-600">Source:</span>{' '}

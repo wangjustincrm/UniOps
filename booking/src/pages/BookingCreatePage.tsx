@@ -9,7 +9,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom'
 import { BackLink, useDocTabTitle } from '@/components/BackLink'
 import { ArrowLeft, CheckCircle2, AlertCircle, Loader2, Info } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, todayISO } from '@/lib/utils'
 import { ApiError } from '@/lib/api'
 import { useRoomDetail, usePrecheckBooking, useCreateBooking } from '@/services/api'
 import type { DirectoryUserOut, SeriesSpec } from '@/lib/types'
@@ -19,7 +19,7 @@ import { RecurrencePicker } from '@/components/RecurrencePicker'
 import { SuggestionPanel } from '@/components/SuggestionPanel'
 import type { RoomWithStatusOut } from '@/lib/types'
 import { useBookingAuth } from '@/store/auth'
-import { isoToHMInZone, isoToDateInZone, zonedToISO, DISPLAY_TZ } from '@/lib/tz'
+import { isoToHMInZone, isoToDateInZone, zonedToISO } from '@/lib/tz'
 
 // ── Time options (15-min steps, 06:00–23:00) ──────────────────────────────────
 
@@ -36,14 +36,14 @@ function buildTimeOptions(startHour: number, endHour: number): string[] {
 
 const TIME_OPTIONS = buildTimeOptions(6, 23)
 
-/** Date+time (wall-clock in DISPLAY_TZ) → UTC ISO string */
-const toISO = (date: string, time: string) => zonedToISO(date, time, DISPLAY_TZ)
+/** Date+time (plant wall clock) → UTC ISO string */
+const toISO = (date: string, time: string) => zonedToISO(date, time)
 
-/** UTC ISO → "HH:MM" in DISPLAY_TZ */
-const isoToHM = (iso: string) => isoToHMInZone(iso, DISPLAY_TZ)
+/** UTC ISO → "HH:MM" in the plant time zone */
+const isoToHM = (iso: string) => isoToHMInZone(iso)
 
-/** UTC ISO → "YYYY-MM-DD" in DISPLAY_TZ */
-const isoToDate = (iso: string) => isoToDateInZone(iso, DISPLAY_TZ)
+/** UTC ISO → "YYYY-MM-DD" in the plant time zone */
+const isoToDate = (iso: string) => isoToDateInZone(iso)
 
 // ── Toast (simple inline) ─────────────────────────────────────────────────────
 
@@ -112,7 +112,7 @@ export default function BookingCreatePage() {
   useDocTabTitle(room?.name && `Book ${room.name}`)
 
   // ── Form state ──────────────────────────────────────────────────────────────
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayISO()
 
   // Prefill from query params (from RoomsPage/RoomDetailPage) or location state
   const startParam = searchParams.get('start')

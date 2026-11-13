@@ -31,7 +31,7 @@ import type { ApiVendor } from '@/services/vendors'
 import type { ProcurementType, PrLineItem, Currency } from '@/types'
 import { enabledCurrencyOptions } from '@/lib/currencies'
 import { ATTACHMENT_RULE, partitionUploads } from '@/lib/uploadLimits'
-import { formatBytes } from '@/lib/utils'
+import { formatBytes, todayISO } from '@/lib/utils'
 
 const prSchema = z.object({
   title: z.string().min(3, 'Title is required'),
@@ -97,7 +97,8 @@ function defaultLine(): PrLineItem {
 
 // Budget figures (annual_budget/committed/actual_spent) are per cost-center +
 // fiscal year — they live behind /balance, not on the shared catalog account.
-const currentFiscalYear = new Date().getUTCFullYear()
+/** The plant's calendar year (company time zone), read when used. */
+const currentFiscalYear = () => Number(todayISO().slice(0, 4))
 
 export default function PrCreatePage() {
   const replaceTab = useReplaceTab(epmsRoutes)
@@ -306,7 +307,7 @@ export default function PrCreatePage() {
   // NOT the catalog account — the catalog carries no annual_budget/committed/actual_spent.
   const { data: budgetBalance } = useBalance(
     selectedCostCenterId && selectedL2
-      ? { cost_center_id: selectedCostCenterId, fiscal_year: currentFiscalYear, account_code: selectedL2 }
+      ? { cost_center_id: selectedCostCenterId, fiscal_year: currentFiscalYear(), account_code: selectedL2 }
       : null,
   )
   const annualBudget = Number(budgetBalance?.annual_budget ?? 0)

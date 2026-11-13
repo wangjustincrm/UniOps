@@ -113,6 +113,16 @@ def _migrate():
     # the way budget_accounts already is). crud/budget_rollup.py reads them
     # directly to aggregate plan by cost centre; going through budget-api's HTTP
     # API would mean twelve round trips for one page.
+    # epms-api owns `vendors` (no mirror model here). The payment-batch due
+    # list reads erp_id from it for the NC Paid column (services/
+    # nc_invoice_paid), so every test that lists due PAs needs the table.
+    # Same columns as tests/test_ap_cash_flow._vendors_table.
+    with eng.connect() as conn:
+        conn.execute(sa.text(
+            "CREATE TABLE IF NOT EXISTS vendors (id uuid primary key, erp_id varchar(50), "
+            "payment_terms varchar(50), is_active boolean, updated_at timestamptz)"))
+        conn.commit()
+
     with eng.connect() as conn:
         conn.execute(sa.text("DROP TABLE IF EXISTS budget_plan_lines CASCADE"))
         conn.execute(sa.text("DROP TABLE IF EXISTS budget_plans CASCADE"))

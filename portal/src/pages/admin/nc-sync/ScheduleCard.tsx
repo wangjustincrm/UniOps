@@ -12,7 +12,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Clock, Loader2 } from 'lucide-react'
 import { epmsApi, financeApi, mdmApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTime } from '@/lib/utils'
 
 export interface ScheduleState {
   interval_minutes: number
@@ -42,10 +42,7 @@ function formatWhen(iso: string | null): string {
   if (!iso) return '—'
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleString('en-CA', {
-    year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit', hour12: false,
-  })
+  return formatDateTime(d)
 }
 
 /** 分钟数 → 便于阅读的 {amount, unit}。整小时用 Hours,否则用 Minutes。 */

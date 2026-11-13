@@ -20,14 +20,14 @@ BUILT_IN_ROLES: frozenset[str] = frozenset({
     "procurement_officer", "procurement_manager", "warehouse_staff",
     "ap_clerk", "finance_bp", "finance_manager", "vendor_manager",
     "cfo", "auditor", "erp_pa_officer", "payment_officer", "finance_director",
-    "system_admin",
+    "hr", "system_admin",
 })
 
 # Roles granted ONLY through identity's user_roles side table — never written to
 # users.role. identity's role_defs.assignable_as_primary (migration 0009) is the
 # source of truth; this mirror only backs the identity-down fallback below, so
 # the primary-role guard does not come undone when identity is unreachable.
-ADDITIONAL_ONLY_ROLES: frozenset[str] = frozenset({"erp_pa_officer", "payment_officer", "finance_director"})
+ADDITIONAL_ONLY_ROLES: frozenset[str] = frozenset({"erp_pa_officer", "payment_officer", "finance_director", "hr"})
 
 # Permissions that cannot be disabled for the given role (enforced server-side).
 # The view_* locks below correspond to roles that would be functionally broken
@@ -348,11 +348,12 @@ _DEFAULT_EMAIL_TEMPLATES: dict = {
     # 手动催办:PR/PO 详情页 Approval Timeline 上「Send reminder」按钮发出的信。
     # 与 daily_pending_reminder 的区别是这封信有个具体的催办人({sender_name}),
     # 收件人应当知道是谁在等 —— 所以模板里点名,而不是写成系统自动提醒。
+    # {document_ref}: the number alone when it already starts with its type
+    # (EXP-…, PR-…); {waiting_for}: "for 3 days" / "for less than a day".
     "manual_reminder": _DEFAULT_EMAIL_TEMPLATE(
-        "Reminder: {document_type} {document_number} is waiting for your approval",
+        "Reminder: {document_ref} is waiting for your approval",
         "Hi {recipient_name},\n\n<b>{sender_name}</b> has sent you a reminder: "
-        "{document_type} <b>{document_number}</b> has been waiting {days_waiting} day(s) "
-        "for your approval.\n\n"
+        "<b>{document_ref}</b> has been waiting {waiting_for} for your approval.\n\n"
         "<a href=\"{link}\">Review &amp; Approve</a>\n\n{company_name}",
     ),
     "daily_pending_reminder": _DEFAULT_EMAIL_TEMPLATE(
@@ -435,6 +436,15 @@ _SUPERSEDED_EMAIL_TEMPLATE_DEFAULTS: dict = {
         "Hi {recipient_name},\n\nThe goods for GR <b>{gr_number}</b> are ready for collection.\n\n"
         "<a href=\"{link}\">Confirm Collection</a>\n\n{company_name}",
     ),
+    # 2026-11-10 (ISS-0202): subject repeated the type ("EXP EXP-…") and the
+    # body said "waiting 0 day(s)".
+    "manual_reminder": _DEFAULT_EMAIL_TEMPLATE(
+        "Reminder: {document_type} {document_number} is waiting for your approval",
+        "Hi {recipient_name},\n\n<b>{sender_name}</b> has sent you a reminder: "
+        "{document_type} <b>{document_number}</b> has been waiting {days_waiting} day(s) "
+        "for your approval.\n\n"
+        "<a href=\"{link}\">Review &amp; Approve</a>\n\n{company_name}",
+    ),
 }
 
 _P = lambda **kw: {k: kw.get(k, False) for k in PERMISSION_KEYS}  # noqa: E731
@@ -489,6 +499,9 @@ _DEFAULT_ROLE_PERMISSIONS: dict[str, dict[str, bool]] = {
     # needs to open the PA and everything behind it; approving comes from
     # holding the post in approval-api, not from a matrix permission.
     "finance_director":     _P(**_VIEW_ALL, view_finance=True, **_BOOKING),
+    # Must match identity's 0025 migration: its grants are the phase-2 employee.*
+    # keys, which live only there, so nothing in this matrix.
+    "hr":                   _P(),
     "system_admin":         {k: True for k in PERMISSION_KEYS},
 }
 
@@ -797,6 +810,7 @@ _BUILTIN_ROLE_NAMES: dict[str, str] = {
     "erp_pa_officer": "ERP PA Officer",
     "payment_officer": "Payment Officer",
     "finance_director": "Finance Director",
+    "hr": "HR",
     "system_admin": "System Admin",
 }
 

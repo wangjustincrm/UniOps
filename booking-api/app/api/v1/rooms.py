@@ -8,13 +8,12 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
+from app.core.plant_time import plant_tz
 from app.core.deps import SessionDep
 from app.core.permissions import CurrentUser
 from app.models.booking import Booking
@@ -163,7 +162,7 @@ async def get_available_rooms(
             detail="ends_at must be after starts_at",
         )
 
-    tz = ZoneInfo(settings.DISPLAY_TIMEZONE)
+    tz = plant_tz()
     now = datetime.now(tz)
 
     # Query rooms matching filters (only available-status rooms)
@@ -235,7 +234,7 @@ async def list_rooms_employee(
     room_type: str | None = None,
 ) -> Any:
     """List rooms with real-time status. All authenticated users have access."""
-    tz = ZoneInfo(settings.DISPLAY_TIMEZONE)
+    tz = plant_tz()
     now = datetime.now(tz)
 
     # Fetch rooms matching filters
@@ -281,7 +280,7 @@ async def get_room_detail(
     _user: CurrentUser,
 ) -> Any:
     """Return room detail with real-time status plus today's and next-7-day bookings."""
-    tz = ZoneInfo(settings.DISPLAY_TIMEZONE)
+    tz = plant_tz()
     now = datetime.now(tz)
 
     # Fetch the room

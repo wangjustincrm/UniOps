@@ -12,6 +12,7 @@ from decimal import Decimal
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_today
 from app.models.tax import TaxCode, TaxRule
 from app.schemas.tax import TaxCodeCreate, TaxCodeUpdate
 
@@ -29,7 +30,7 @@ async def determine(
     item_tax_class: str | None = None,
     as_of: date | None = None,
 ) -> dict:
-    as_of = as_of or date.today()
+    as_of = as_of or plant_today()  # the plant's date, not UTC
 
     q = (
         select(TaxRule)
@@ -84,7 +85,7 @@ async def determine(
 
 
 async def list_codes(db: AsyncSession, as_of: date | None = None) -> list[TaxCode]:
-    as_of = as_of or date.today()
+    as_of = as_of or plant_today()  # the plant's date, not UTC
     q = (
         select(TaxCode)
         .where(

@@ -8,6 +8,12 @@ Each entity exposes:
 payment_batch is delete-only (allow_edit=False). payment_batch_lines is
 ondelete=CASCADE, so db.delete(batch) removes the lines automatically; we count
 them first for the summary, then purge any shared tasks by document_id.
+
+A batch whose payments still stand cannot be deleted at all (DeleteBlocked):
+deleting it removed only the batch, leaving the completed payment_records,
+paid invoices, posting event and JV behind, and the PA then refused to be paid
+again (2026-11-10, BP-20261110-0003). Such a batch is reversed in Finance →
+Payment Batches first (app/crud/payment_reverse.py); once reversed, it deletes.
 """
 from __future__ import annotations
 
@@ -19,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.admin.cascade import count_shared_refs, purge_shared_refs
 from app.admin.fields import EntitySchema, FieldSpec
+from app.crud.payment_reverse import unreversed_paid_lines
 from app.models.payment_batch import PaymentBatch, PaymentBatchLine
 
 CascadeFn = Callable[[AsyncSession, object], Awaitable[dict[str, int]]]
@@ -42,13 +49,28 @@ async def _line_count(db: AsyncSession, batch_id) -> int:
 
 # ── PaymentBatch ────────────────────────────────────────────────────────────────
 
+class DeleteBlocked(ValueError):
+    """The record cannot be deleted as it stands (409, not 404)."""
+
+
+async def _refuse_if_paid(db: AsyncSession, batch) -> None:
+    n = await unreversed_paid_lines(db, batch.id)
+    if n:
+        raise DeleteBlocked(
+            f"{batch.batch_number} has {n} payment(s) that still stand. Deleting it would leave "
+            "them recorded as paid and its PAs could not be paid again. Reverse the batch in "
+            "Finance → Payment Batches first; a reversed batch can then be deleted.")
+
+
 async def _batch_preview(db: AsyncSession, batch) -> dict[str, int]:
+    await _refuse_if_paid(db, batch)
     lines = await _line_count(db, batch.id)
     refs = await count_shared_refs(db, batch.id)
     return {"payment_batches": 1, "payment_batch_lines": lines, **refs}
 
 
 async def _batch_delete(db: AsyncSession, batch) -> dict[str, int]:
+    await _refuse_if_paid(db, batch)
     lines = await _line_count(db, batch.id)
     await db.delete(batch)  # payment_batch_lines cascade via FK ondelete=CASCADE
     refs = await purge_shared_refs(db, batch.id)

@@ -187,3 +187,49 @@ async def test_epms_document_keeps_self_approval_at_submit(engine_db_session):
 
     assert pa.approval_step_idx == 0
     assert [t.assigned_user_id for t in await _open_tasks(db, pa.id)] == [u["dm"].id]
+
+
+# ── ISS-0202① ────────────────────────────────────────────────────────────────
+# The "no Department Manager" refusal used to name "the agreement or the PR"
+# for every document. An OA claim has neither — it routes by the claimant's
+# own department — so it gets its own wording; EPMS keeps the original text.
+
+@pytest.mark.asyncio
+async def test_oa_claim_without_dept_manager_names_the_claimant_department(engine_db_session):
+    from app.crud.engine import MSG_NO_DEPT_MANAGER_OA
+    db = engine_db_session
+    u = await _seed(db, uuid.uuid4())
+    loner = User(full_name="No Dept", id=uuid.uuid4(), role="requester",
+                 department_id=None, is_active=True)
+    db.add(loner)
+    await db.flush()
+    tra = await _claim(db, loner)
+
+    with pytest.raises(ValueError) as exc:
+        await execute_action(db, "tra", tra.id, "submit", loner.id, "requester")
+    msg = str(exc.value)
+    assert msg == MSG_NO_DEPT_MANAGER_OA
+    assert "agreement" not in msg and " PR" not in msg
+    assert "your department" in msg
+
+
+@pytest.mark.asyncio
+async def test_epms_doc_without_dept_manager_keeps_procurement_wording(engine_db_session):
+    from app.crud.engine import MSG_NO_DEPT_MANAGER
+    db = engine_db_session
+    u = await _seed(db, uuid.uuid4())
+    loner = User(full_name="No Dept PA", id=uuid.uuid4(), role="requester",
+                 department_id=None, is_active=True)
+    db.add(loner)
+    await db.flush()
+    pa = PaymentApplication(
+        id=uuid.uuid4(), pa_number=f"PA-T-{uuid.uuid4().hex[:4]}", title="No dept PA",
+        status="draft", approval_step_idx=0, payment_amount=Decimal("10"),
+        vendor_name="V", currency="CAD", invoice_ids=[], po_id=None, created_by=loner.id)
+    db.add(pa)
+    await db.flush()
+
+    with pytest.raises(ValueError) as exc:
+        await execute_action(db, "pa", pa.id, "submit", loner.id, "requester")
+    assert str(exc.value) == MSG_NO_DEPT_MANAGER
+    assert "agreement or the PR" in str(exc.value)

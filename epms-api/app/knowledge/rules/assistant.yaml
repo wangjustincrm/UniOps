@@ -1,0 +1,40 @@
+area: assistant
+label: The Assistant panel
+covers: >
+  Marked questions, and the tables in the Assistant's answers.
+rules:
+  # ISS-0102: "which questions have I marked?" was answered with the task inbox.
+  - id: marked_questions_are_listed
+    asked_as:
+      - 你可以查询到我mark问题有哪些吗？
+      - which questions have I marked
+      - 我收藏了哪些问题？
+    answer: >
+      Asked which questions you have marked, the Assistant lists them from
+      your Marked list, newest first, exactly as you saved them. You can keep
+      up to 10. Click the star next to a question you asked to mark or unmark
+      it, and "Marked" at the top right of the panel to ask one again with one
+      click. Only your own marked questions are ever listed.
+    enforced_in: "epms-api app/services/marked_view.py asks_for_marked / my_marked; app/api/v1/assistant_chat.py _chat (overrides the planner unless it splits the message) → _answer_marked; app/models/assistant_saved_question.py MAX_SAVED_QUESTIONS; PRD EPMS AST-007"
+    provenance: pinned
+    test:
+      - "tests/test_assistant_asst2_e.py::test_marked_questions_are_listed_whatever_the_planner_picks"
+      - "tests/test_assistant_asst2_e.py::test_only_the_askers_own_marked_questions"
+  # ISS-0111: long answer tables can be folded, sorted and filtered.
+  - id: answer_tables_sort_and_fold
+    asked_as:
+      - can I sort the table in the answer
+      - 回答里的表格能折叠吗？
+      - does sorting the table sort all the results
+    answer: >
+      A table in an answer opens expanded; "hide table" folds it to one line
+      ("N rows — show table"). Click a column header to sort ascending, again
+      for descending — the arrow shows the order — and use "Filter rows" to
+      narrow it. Sorting and filtering work on the rows shown in the answer.
+      An answer lists only part of a longer result, and when the table may
+      not hold every row it says so once you sort or filter; Export to Excel
+      still has every row.
+    enforced_in: "packages/shell/src/assistant/table.tsx AnswerTable (sort via ui/sortable.tsx); markdown.tsx Markdown; Assistant.tsx resultRows"
+    provenance: pinned
+    test:
+      - "packages/shell/src/assistant/table.test.tsx"

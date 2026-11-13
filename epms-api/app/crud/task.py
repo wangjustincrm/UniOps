@@ -330,6 +330,7 @@ _TASK_NO_STATUS_INVARIANT: dict[str, str] = {
                  "sales_943_rejected", "sales_943_timeout", "sales_transfer_discrepancy", "sales_partial_receipt",
                  "sales_second_944", "sales_944_no_transfer", "sales_test",
                  "sales_partner_no_abbrev")},
+    "resolve_nc_person_todos": "mdm-api 的 services/nc_readback.py sync_task 收口。",
 }
 
 # ★覆盖边界:上表只能覆盖 EPMS 自己有 model 的表(pr/po/pa/agr/invoice/gr)。

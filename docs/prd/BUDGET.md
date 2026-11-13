@@ -1,9 +1,12 @@
 # Budget — Product Requirements Document
 
-**Version:** 2.1
-**Date:** 2026-11-05
+**Version:** 2.2
+**Date:** 2026-11-11
 **Status:** In Production
 **Scope:** The UniOps Budget module: budget account catalog and factors, annual budget plans with versioned revisions and approval, Budget Config (including over-budget modes), budget visibility scope, the Budget Dashboard and Budget Actual reports measured against NC actuals, and the budget balance service used by PRs and expense claims.
+
+> **What changed in version 2.2 (2026-11-11)**
+> - Budget alerts (BCFG-008) take "the current year" and the daily digest time in the plant time zone (Company Settings → Time Zone), not UTC.
 
 > **What changed in version 2.1 (2026-11-05)**
 > - **Budget alerts** are built (BCFG-008): a daily warning digest and within-the-hour over-budget emails, plus a Teams card, switched on in Portal Notification Settings. BUD-OI-02 resolved.
@@ -282,7 +285,7 @@ Saving fiscal years, thresholds and mode requires the *Admin Panel* permission.
 |---|---|
 | **BCFG-006** | The mode is frozen on the PR when it is submitted (`ob_mode_applied`); a change applies to new submissions, and a resubmission after a return keeps the frozen mode unless the PR crossed the budget line meanwhile. PRs already in approval only ever get lighter: if the mode is relaxed, over-budget steps the new mode no longer requires are skipped (switching to *Hard block* skips none); a stricter mode never adds steps to them. An unrecognised value behaves as *Finance Manager only*. |
 | **BCFG-007** | The over-budget justification requirement is enforced by the PR form only, not by the server (EPMS.md OBG-007). |
-| **BCFG-008** | **Budget alerts** (Portal → Admin → Notification Settings → *Budget Threshold Alerts*, default off; *Dry Run*, default on). Every cost center × budget account of the current calendar year: usage = NC year-to-date actual including vouchers not yet tallied ÷ the approved annual budget (the BDASH-003 alert; Committed is always 0 — BACT-003; spend with no budget counts as over). **Warning**: a line that crosses up to the warning threshold is listed in a daily email digest (at the daily digest time) to the Department Manager. **Over budget**: checked every hour, the default NC voucher sync interval; a line that crosses up to the over-budget threshold is emailed to the Department Manager, every Finance Manager and the GM or OPM mapped to the department (no mapping: neither), and a Teams card goes to the company Teams webhook when one of them has chosen Teams (My Profile notification channel, with a Teams account). A department with no Department Manager: its lines go to the Finance Managers instead. One email per person per run. Each crossing is reported once; when usage falls back the mark is lowered, so a later crossing alerts again. In dry run, System Admins get the daily list, nobody else is emailed, nothing is marked and the hourly check stays quiet. The channel settings apply: company channel *None* stops the emails and cards, and a person on *None* or *Teams only* gets no email. |
+| **BCFG-008** | **Budget alerts** (Portal → Admin → Notification Settings → *Budget Threshold Alerts*, default off; *Dry Run*, default on). Every cost center × budget account of the current calendar year (the plant's year, Company Settings → Time Zone): usage = NC year-to-date actual including vouchers not yet tallied ÷ the approved annual budget (the BDASH-003 alert; Committed is always 0 — BACT-003; spend with no budget counts as over). **Warning**: a line that crosses up to the warning threshold is listed in a daily email digest (at the daily digest time, plant time zone) to the Department Manager. **Over budget**: checked every hour, the default NC voucher sync interval; a line that crosses up to the over-budget threshold is emailed to the Department Manager, every Finance Manager and the GM or OPM mapped to the department (no mapping: neither), and a Teams card goes to the company Teams webhook when one of them has chosen Teams (My Profile notification channel, with a Teams account). A department with no Department Manager: its lines go to the Finance Managers instead. One email per person per run. Each crossing is reported once; when usage falls back the mark is lowered, so a later crossing alerts again. In dry run, System Admins get the daily list, nobody else is emailed, nothing is marked and the hourly check stays quiet. The channel settings apply: company channel *None* stops the emails and cards, and a person on *None* or *Teams only* gets no email. |
 
 ### 4.7 Access and visibility
 

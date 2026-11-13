@@ -172,7 +172,7 @@ async def create_direct_pa(
                    "Raise the payment against a purchase order instead.",
         )
 
-    from datetime import datetime, timezone
+    from app.core.plant_time import plant_today
     from decimal import Decimal
     from sqlalchemy import select
     from app.crud._numbering import next_number
@@ -209,7 +209,9 @@ async def create_direct_pa(
     # side deletes a row or two allocations overlap, and pa_number is UNIQUE —
     # so the old code handed out an already-taken number and 500'd, which is
     # exactly the defect _numbering.py's docstring was written about.
-    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    # The date in the number is the plant's (Company Settings time zone), the
+    # same as epms-api uses for the shared PA- prefix.
+    today = plant_today().strftime("%Y%m%d")
     pa_number = await next_number(db, PaymentApplication.pa_number, f"PA-{today}-", width=4)
 
     title = body.title or f"Direct Payment — {inv.vendor_name or 'Vendor'} {inv.invoice_number or ''}"

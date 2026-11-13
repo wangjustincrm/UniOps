@@ -35,6 +35,7 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_today
 from app.crud import vendor_credit as vc_crud
 from app.models.mirrors import BusinessPartner
 from app.models.qbo import SUCCESS, QboSyncRun, QboVendorCredit
@@ -84,7 +85,7 @@ def _credit_date(row: QboVendorCredit) -> date:
     try:
         return date.fromisoformat((row.txn_date or "")[:10])
     except ValueError:
-        return date.today()
+        return plant_today()
 
 
 def _importable():

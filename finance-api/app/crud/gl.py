@@ -21,6 +21,7 @@ from decimal import Decimal
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_day_start
 from app.crud.fiscal import opening_period, opening_window
 from app.models.coa import ChartOfAccount
 from app.models.journal_voucher import POSTED, JournalVoucher, JournalVoucherLine
@@ -286,7 +287,9 @@ async def post_opening_balance(db: AsyncSession, *, as_of: date, lines: list[dic
         event_type="opening",
         lines=[{"line_role": "opening_balance", "account_code": l["account_code"],
                 "debit": l.get("debit", 0), "credit": l.get("credit", 0)} for l in lines],
-        occurred_at=datetime(as_of.year, as_of.month, as_of.day, tzinfo=timezone.utc),
+        # Plant midnight: the event's period/date are taken in the plant's zone,
+        # and UTC midnight there is the previous evening (previous month on the 1st).
+        occurred_at=plant_day_start(as_of),
     )
     if event_id is not None:
         from app.crud.journal_voucher import post_system_jv
@@ -331,7 +334,7 @@ async def close_year(db: AsyncSession, *, fiscal_year: int,
         db, source_service="finance", source_doc_type="gl_close",
         source_doc_id=doc_id, source_doc_number=f"CLOSE-{fiscal_year}",
         event_type="closing", lines=lines,
-        occurred_at=datetime(fiscal_year, 12, 31, tzinfo=timezone.utc),
+        occurred_at=plant_day_start(date(fiscal_year, 12, 31)),
     )
     if event_id is not None:
         from app.crud.journal_voucher import post_system_jv

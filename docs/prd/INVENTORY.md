@@ -1,9 +1,14 @@
 # Inventory — Product Requirements Document
 
-**Version:** 1.1
-**Date:** 2026-10-19
+**Version:** 1.2
+**Date:** 2026-11-11
 **Status:** Live in production (first released 2026-10-15). Phase 1 complete; the items in §6 remain.
 **Scope:** A standalone UniOps module that shows warehouse (WMS) stock and the three NC inventory ledgers side by side, on any date, and explains the differences between them.
+
+**What changed in version 1.2** (2026-11-11)
+
+- The as-of date D, "today" and the time NC movements are shown in follow the plant time zone (Company Settings → Time Zone) instead of a fixed Toronto zone. "Today" is no longer UTC's date, which had rolled over at 19:00/20:00 Toronto time (§2.7, INV-004, INV-030, INV-075).
+- Dates written into page notes read YYYY-MMM-DD (e.g. the WMS history note says 2025-FEB-03).
 
 **What changed in version 1.1** (2026-10-19)
 
@@ -163,11 +168,11 @@ The three keys correspond one to one. WMS is filtered to the Canada warehouse an
 
 ### 2.7 Time zones and "as of D"
 
-- D is a calendar date in **Toronto**.
-- NC writes business times on its application server's clock, which is set to **China time**. This was inferred from the data and confirmed by business decision. As a result, "end of D in Toronto" becomes a cutoff about 12–13 hours later on NC's clock. The cutoff and the zone used are shown on the NC page.
+- D is a calendar date in the **plant time zone** (Company Settings → Time Zone; America/Toronto today). "Today", the default date and the latest date that can be picked are the plant's today.
+- NC writes business times on its application server's clock, which is set to **China time**. This was inferred from the data and confirmed by business decision. The NC zone is NC's own and does not follow the plant setting. As a result, "end of D at the plant" becomes a cutoff about 12–13 hours later on NC's clock. The cutoff and the zone used are shown on the NC page.
 - The NC time zone can be switched to Toronto in Settings, for the day NC is fixed or to test a suspicion.
-- **Date-only NC rows.** Some rows have a time of exactly 00:00:00: about 12,000 IC rows and 12,000 IA rows, created with a date and no time. These are compared **as dates**, never converted. Converting them would move them to the previous Toronto day.
-- **WMS times** are already in Toronto time and are used as is.
+- **Date-only NC rows.** Some rows have a time of exactly 00:00:00: about 12,000 IC rows and 12,000 IA rows, created with a date and no time. These are compared **as dates**, never converted. Converting them would move them to the previous plant day.
+- **WMS times** are recorded on the WMS server's clock, which is Toronto time, and are used as is. This matches the plant day while the plant time zone is America/Toronto.
 
 ### 2.8 Batch matching between WMS and NC
 
@@ -204,7 +209,7 @@ The three keys correspond one to one. WMS is filtered to the Canada warehouse an
 | INV-001 | The module shall present five pages in its sidebar, in this order: WMS Inventory, NC Inventory, Reconciliation, Trace, Settings. |
 | INV-002 | Without `inventory.view` the module shall show a no-access screen with a link back to the Portal. If the permission check itself fails, it shall show a retryable error, not a "no access" message. |
 | INV-003 | NC Inventory shall be the pinned landing tab. Trace shall open one tab per material, so links from other pages open the right material and do not reuse a stale tab. |
-| INV-004 | Every page's date, filters and active tab shall live in the URL, so a view can be linked to and the tab restores correctly. Dates shall be plain Toronto calendar dates and never parsed through a time-zone conversion. |
+| INV-004 | Every page's date, filters and active tab shall live in the URL, so a view can be linked to and the tab restores correctly. Dates shall be plain plant calendar dates and never parsed through a time-zone conversion. |
 | INV-005 | Decimal quantities and amounts shall travel as text and be formatted for display without floating-point rounding. Totals across different units of measure shall be labelled "summed across units of measure". |
 | INV-006 | Every WMS-facing page shall show the WMS history note (§2.3). Where the chosen date is before 2025-02-03, the note shall appear as a warning. |
 | INV-007 | Long tables shall scroll inside their own container with the header row fixed. |
@@ -236,7 +241,7 @@ The three NC ledgers as of any date up to today. Three tabs: **Stock (IC)**, **C
 
 | ID | Requirement |
 |---|---|
-| INV-030 | A **status strip** shall show: the as-of date in Toronto, the NC clock cutoff and time zone, the IA period status badge (§2.5), and how long ago the NC data was synced. If the last NC sync did not tie out, a red banner shall show the number of findings and link to Settings. |
+| INV-030 | A **status strip** shall show: the as-of date (plant time zone), the NC clock cutoff and time zone, the IA period status badge (§2.5), and how long ago the NC data was synced. If the last NC sync did not tie out, a red banner shall show the number of findings and link to Settings. |
 | INV-031 | **Stock: summary.** Per warehouse class: materials, lines, total quantity. |
 | INV-032 | **Stock: by batch** (default). One row per warehouse × material × batch. Columns: warehouse code with class badge, material, batch, supplier batch, production and expiry date, quantity. For today only, also locked, available and stock state. On a past date those columns are greyed out and the page explains why. |
 | INV-033 | **Stock: by material.** One row per material. Columns: total, quantity in WMS-managed warehouses, external, production line-side, other (transient, other and unclassified), number of batches, and locked (today only). |
@@ -302,7 +307,7 @@ For one material, and optionally one batch group, Trace shows NC and WMS movemen
 | INV-072 | **Batch scope.** Choosing any NC batch, supplier batch, QC batch or WMS lot number shall trace the whole batch group containing it (§2.8). The page shall show which NC batches and WMS lots make up the group. |
 | INV-073 | **Movement categories.** Both sides shall be classified into common categories: opening, manual opening import (WMS), purchase receipt, purchase return, issued to production, returned from production, finished goods received, sales shipment, shipped to external/consignment, department use/sample/scrap/damage, stock count/adjustment, batch or material change, other. NC transfers between two WMS-managed warehouses (e.g. SC11↔SC16) count as **internal moves**, as do WMS location-only moves. NC stock-state changes are **state changes**. Internal moves and state changes are hidden by default and can be shown with a switch. |
 | INV-074 | **Pairing**, in tiers. **Tier 1, by document number:** a document reference both sides carry, such as a production order, return number, PO number, delivery-note number, or WMS adjustment/shipment number recorded in NC. References shorter than 6 characters are ignored. One key may join many lines on each side, and the group is compared by its totals. **Tier 2, by quantity and time:** same category, same quantity, nearest in time within a window (7 days by default; 30 days for finished-goods receipts; 120 days for counts/adjustments and manual opening). This is compared per document, because one NC receipt is often many WMS pallets on one inbound document. Lines left over appear on one side only, as **NC only** or **WMS only**, highlighted. |
-| INV-075 | **Ordering.** Movements at the same timestamp shall be ordered by **document number** (which reflects creation order), then by line. NC times shall be shown in Toronto time. Date-only NC rows shall show their date only. |
+| INV-075 | **Ordering.** Movements at the same timestamp shall be ordered by **document number** (which reflects creation order), then by line. NC times shall be shown in the plant time zone. Date-only NC rows shall show their date only. |
 | INV-076 | **Header tiles:** opening (NC), closing on D (NC, WMS, difference, highlighted when non-zero), and movement counts (NC lines, WMS lines, paired by document, paired by quantity, NC only, WMS only). |
 | INV-077 | **First divergence.** If the closing balances differ, the page shall identify the first movement after the **last moment the two running balances agreed**, with a rule-built sentence (no AI). It shall also identify the **largest unmatched document since that point**, which is usually the one to investigate. Both are clickable and jump to the row. If the balances agree, the page shall say so. |
 | INV-078 | **By category** table: NC total, WMS total and difference per category, in a fixed order. |

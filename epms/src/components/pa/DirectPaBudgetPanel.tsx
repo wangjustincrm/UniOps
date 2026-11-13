@@ -1,7 +1,9 @@
 import { useBalance, useBudgetOverview } from '@/hooks/useBudget'
 import { BudgetBalanceWidget } from '@/components/pr/BudgetBalanceWidget'
+import { todayISO } from '@/lib/utils'
 
-const currentFiscalYear = new Date().getUTCFullYear()
+/** The plant's calendar year (company time zone), read when used. */
+const currentFiscalYear = () => Number(todayISO().slice(0, 4))
 
 /** Budget of the cost center × budget account a Direct PA is charged to, for
  *  reference only (ISS-0147): it never blocks the PA or adds an approval step.
@@ -20,7 +22,7 @@ export function DirectPaBudgetPanel({
 }) {
   const { data: balance, isLoading } = useBalance(
     costCenterId && budgetCode
-      ? { cost_center_id: costCenterId, fiscal_year: currentFiscalYear, account_code: budgetCode }
+      ? { cost_center_id: costCenterId, fiscal_year: currentFiscalYear(), account_code: budgetCode }
       : null,
   )
   const { data: overview } = useBudgetOverview()
@@ -30,7 +32,7 @@ export function DirectPaBudgetPanel({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Budget (FY{currentFiscalYear})</h3>
+      <h3 className="text-xs font-semibold text-neutral-500 uppercase tracking-wide">Budget (FY{currentFiscalYear()})</h3>
       {isLoading ? (
         <p className="text-xs text-neutral-400">Loading budget…</p>
       ) : balance ? (

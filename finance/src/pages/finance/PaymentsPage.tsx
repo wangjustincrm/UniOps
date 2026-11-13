@@ -23,7 +23,7 @@ import { SortTh, deriveTabMeta, sortParams, useOptionalTabStoreApi, useSort } fr
 import { Download, Receipt, Send, X } from 'lucide-react'
 import { financeRoutes } from '@/app/routes'
 import { financeApi, financeDownload, mdmApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { RemittanceStatusBadge, type RemittanceStatus } from '@/components/remittance/RemittancePanel'
 import { RemittanceDialog } from '@/components/remittance/RemittanceDialog'
@@ -594,7 +594,7 @@ export default function PaymentsPage() {
                            onChange={(e) => toggleRow(r.id, e.target.checked)}
                            aria-label={`Select payment ${r.doc_number ?? r.id}`} />
                   </td>
-                  <td className="px-3 py-2 text-xs text-neutral-600">{r.payment_date}</td>
+                  <td className="px-3 py-2 text-xs text-neutral-600">{formatDate(r.payment_date)}</td>
                   <td className="px-3 py-2 font-mono text-xs">{r.doc_number ?? '—'}</td>
                   <td className="px-3 py-2">{r.payee_name ?? '—'}</td>
                   <td className="px-3 py-2 text-right font-mono">{fmtMoney(r.amount, r.currency)}</td>
@@ -680,7 +680,7 @@ function PaymentDetailModal({ row, onClose }: { row: PaymentRow; onClose: () => 
                 {' '}(gross <span className="font-mono">{fmtMoney(String(Number(row.amount) + Number(row.credit_applied)), row.currency)}</span>
                 {' '}less <span className="font-mono">{fmtMoney(row.credit_applied, row.currency)}</span> vendor credit)
               </span>
-            )} · {row.payment_date}
+            )} · {formatDate(row.payment_date)}
             {/* The list column now shows the bank account instead of the
                 method, so this drawer is the only place left that states the
                 method per payment — keep both here. */}

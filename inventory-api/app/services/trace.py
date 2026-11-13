@@ -24,16 +24,15 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_tz
 from app.services import asof, params
 from app.services.recon import group_batches, norm_batch, wms_history_start
 
 ZERO = Decimal(0)
-LOCAL = ZoneInfo(params.LOCAL_TIME_ZONE)
 
 CATEGORY_LABELS = {
     "opening": "Opening",
@@ -87,7 +86,7 @@ _WINDOW = defaultdict(lambda: 7, {"fg_receipt": 30, "count_adjust": 120, "manual
 class Line:
     side: str                       # 'nc' | 'wms'
     id: str
-    time: datetime | None           # Toronto, naive
+    time: datetime | None           # plant wall clock, naive
     date_only: bool
     category: str
     qty: Decimal
@@ -144,12 +143,13 @@ def keys_of(*values: str | None) -> set[str]:
 
 
 def nc_local_time(t: datetime | None, nc_zone: str) -> tuple[datetime | None, bool]:
-    """NC wall clock → Toronto. Date-only (00:00:00) stays a date (see asof)."""
+    """NC wall clock → plant wall clock (Company Settings → Time Zone).
+    Date-only (00:00:00) stays a date (see asof)."""
     if t is None:
         return None, False
     if t.time() == time(0, 0):
         return t, True
-    return t.replace(tzinfo=params.zone(nc_zone)).astimezone(LOCAL).replace(tzinfo=None), False
+    return t.replace(tzinfo=params.zone(nc_zone)).astimezone(plant_tz()).replace(tzinfo=None), False
 
 
 # ── Pairing (pure) ──────────────────────────────────────────────────────────

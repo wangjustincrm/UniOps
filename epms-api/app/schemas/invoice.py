@@ -280,6 +280,9 @@ class InvoiceResponse(BaseModel):
     matched_by_name: str | None
     po_total: Decimal | None
     gr_value: Decimal | None
+    # Detail endpoint only (crud.invoice.attach_gr_value_pre_tax): gr_value on
+    # the pre-tax basis of po_total / variance — an NC PO's lines carry tax.
+    gr_value_pre_tax: Decimal | None = None
     variance: Decimal | None
     variance_pct: Decimal | None
     matched_po_line_ids: list | None = None

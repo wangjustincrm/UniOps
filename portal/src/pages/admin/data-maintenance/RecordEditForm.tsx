@@ -109,6 +109,15 @@ export function RecordEditForm({ schema, record, onClose }: Props) {
       if (moved > 0) {
         alert(`Owner updated. ${moved} open service-confirmation task(s) moved to the new owner.`)
       }
+      // An invoice edit is re-sent to Finance's AP record (epms-api admin.py
+      // _resync_invoice_ap). Surface a failed re-send, and a bill already in NC
+      // that now carries stale values, or the admin never learns either.
+      const apNotes: string[] = []
+      const apSync = res?.ap_sync
+      if (typeof apSync === 'string' && apSync !== 'ok') apNotes.push(apSync)
+      const apNc = res?.ap_nc_warning
+      if (typeof apNc === 'string') apNotes.push(apNc)
+      if (apNotes.length) alert(`Saved.\n\n${apNotes.join('\n\n')}`)
       // editWithOptions bypasses useAdminEdit's mutation, so mirror its invalidation
       // key here (see useAdminEdit in hooks/useAdmin.ts) plus the full-record query.
       await qc.invalidateQueries({ queryKey: ['admin', schema.system, schema.key] })

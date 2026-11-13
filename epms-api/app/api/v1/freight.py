@@ -8,7 +8,7 @@ Three permission keys (design §8.2):
 import uuid
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile
 from uniops_authz import has_permission
 
 from app.core.access_scope import build_scope
@@ -21,9 +21,13 @@ from app.schemas.freight import (
     CarrierCreate, CarrierResponse, CarrierUpdate, DefaultCostCenterResponse,
     DuplicateCheckResponse, FreightInvoiceCreate, FreightInvoiceListResponse,
     FreightInvoiceResponse, FreightLineUpdate, FreightPaCreate, FreightPaCreated,
-    ShipmentCreate, ShipmentListResponse, ShipmentResponse, ShipmentUpdate,
+    ShipmentAttachmentResponse, ShipmentCreate, ShipmentListResponse, ShipmentResponse,
+    ShipmentUpdate,
 )
 from app.services import budget_client, finance_sync
+from app.services.attachment_helper import (
+    delete_from_file_server, proxy_download, upload_to_file_server,
+)
 
 router = APIRouter(prefix="/freight", tags=["freight"])
 
@@ -179,6 +183,14 @@ async def _own_shipment(db, user: dict, shipment_id: uuid.UUID) -> FreightShipme
     return s
 
 
+@router.get("/shipments/{shipment_id}", response_model=ShipmentResponse)
+async def get_shipment(shipment_id: uuid.UUID, db: SessionDep, user: CurrentUserPayload):
+    """Shipment detail — same visibility as the list: a registrar sees their
+    own, a freight manager any."""
+    s = await _own_shipment(db, user, shipment_id)
+    return (await crud.shipment_dicts(db, [s]))[0]
+
+
 @router.patch("/shipments/{shipment_id}", response_model=ShipmentResponse)
 async def update_shipment(shipment_id: uuid.UUID, body: ShipmentUpdate, db: SessionDep,
                           user: CurrentUserPayload):
@@ -198,6 +210,78 @@ async def void_shipment(shipment_id: uuid.UUID, db: SessionDep, user: CurrentUse
     except FreightError as e:
         raise _err(e)
     return (await crud.shipment_dicts(db, [s]))[0]
+
+
+# ── Shipment attachments ──────────────────────────────────────────────────────
+# Whoever may see the shipment may read, add and remove its files; a voided
+# shipment's files are read-only (crud._check_attachable).
+
+ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024   # same 25 MB as PR/PO/GR attachments
+
+
+@router.get("/shipments/{shipment_id}/attachments",
+            response_model=list[ShipmentAttachmentResponse])
+async def list_shipment_attachments(shipment_id: uuid.UUID, db: SessionDep,
+                                    user: CurrentUserPayload):
+    s = await _own_shipment(db, user, shipment_id)
+    return await crud.list_shipment_attachments(db, s.id)
+
+
+@router.post("/shipments/{shipment_id}/attachments",
+             response_model=ShipmentAttachmentResponse, status_code=201)
+async def upload_shipment_attachment(
+    shipment_id: uuid.UUID, file: UploadFile, db: SessionDep, user: CurrentUserPayload,
+    token: BearerToken,
+    kind: Annotated[Literal["waybill", "other"], Form()] = "other",
+):
+    s = await _own_shipment(db, user, shipment_id)
+    if s.status == "void":   # before the bytes go to the File Server
+        raise _err(FreightError(409, "A voided shipment's attachments cannot be changed"))
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=422, detail="The file is empty")
+    if len(data) > ATTACHMENT_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="File exceeds 25 MB limit")
+    filename = file.filename or "attachment"
+    ctype = file.content_type or "application/octet-stream"
+    try:
+        key = await upload_to_file_server(data, filename, ctype, "freight_shipment", s.id, token)
+    except RuntimeError as e:
+        # The File Server's own refusal (e.g. 415 with the allowed types) is the useful part.
+        raise HTTPException(status_code=502, detail=f"Could not store the file: {e}")
+    try:
+        return await crud.add_shipment_attachment(
+            db, s, kind=kind, filename=filename, content_type=ctype, file_size=len(data),
+            storage_key=key, user_id=uuid.UUID(user["sub"]))
+    except FreightError as e:
+        raise _err(e)
+
+
+@router.get("/shipments/{shipment_id}/attachments/{att_id}/download")
+async def download_shipment_attachment(shipment_id: uuid.UUID, att_id: uuid.UUID,
+                                       db: SessionDep, user: CurrentUserPayload,
+                                       token: BearerToken):
+    s = await _own_shipment(db, user, shipment_id)
+    try:
+        att = await crud.get_shipment_attachment(db, s.id, att_id)
+    except FreightError as e:
+        raise _err(e)
+    return await proxy_download(att.storage_key, token)
+
+
+@router.delete("/shipments/{shipment_id}/attachments/{att_id}", status_code=204)
+async def delete_shipment_attachment(shipment_id: uuid.UUID, att_id: uuid.UUID,
+                                     db: SessionDep, user: CurrentUserPayload,
+                                     token: BearerToken):
+    s = await _own_shipment(db, user, shipment_id)
+    try:
+        crud._check_attachable(s)
+        att = await crud.get_shipment_attachment(db, s.id, att_id)
+    except FreightError as e:
+        raise _err(e)
+    await delete_from_file_server(att.storage_key, token)
+    await db.delete(att)
+    await db.flush()
 
 
 # ── Invoices ──────────────────────────────────────────────────────────────────

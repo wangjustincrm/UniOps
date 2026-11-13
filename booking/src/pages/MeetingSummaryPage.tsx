@@ -1,16 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ChevronLeft, ChevronRight, CalendarDays } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, displayTimeZone, formatDate, todayISO } from '@/lib/utils'
 import { useDaySummary } from '@/services/api'
 import type { DaySummaryRoom, DaySummaryBooking } from '@/lib/types'
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
-
-function todayIso(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 
 function addDays(iso: string, n: number): string {
   const d = new Date(`${iso}T00:00:00`)
@@ -20,7 +15,7 @@ function addDays(iso: string, n: number): string {
 
 function formatWeekday(iso: string): string {
   const d = new Date(`${iso}T00:00:00`)
-  return d.toLocaleDateString('en-CA', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+  return `${d.toLocaleDateString('en-CA', { weekday: 'long' })}, ${formatDate(iso)}`
 }
 
 // ── Time helpers ──────────────────────────────────────────────────────────────
@@ -184,14 +179,15 @@ function CurrentTimeLine({ openStartMin, openSpanMin, displayTz }: CurrentTimeLi
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function MeetingSummaryPage() {
-  const [selectedDate, setSelectedDate] = useState(todayIso)
+  const [selectedDate, setSelectedDate] = useState(todayISO)
   const navigate = useNavigate()
-  const isToday = selectedDate === todayIso()
+  const isToday = selectedDate === todayISO()
 
   const { data, isLoading, isError } = useDaySummary(selectedDate)
 
-  // IANA timezone from backend — falls back to a safe default while loading
-  const displayTz = data?.timezone ?? 'America/Toronto'
+  // The plant's time zone (Company Settings) — all times follow it. The
+  // backend's own `data.timezone` is no longer used for display.
+  const displayTz = displayTimeZone()
 
   // Computed from API response (or defaults while loading)
   const openStartMin = data ? hhmm2min(data.open_start) : hhmm2min('08:00')
@@ -234,7 +230,7 @@ export default function MeetingSummaryPage() {
 
         {/* Today button */}
         <button
-          onClick={() => setSelectedDate(todayIso())}
+          onClick={() => setSelectedDate(todayISO())}
           className={cn(
             'rounded-md border px-3 py-1 text-sm font-medium transition-colors',
             isToday

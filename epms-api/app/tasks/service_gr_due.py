@@ -33,6 +33,7 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import fmt_date, plant_today
 from app.crud.config import get_or_create as get_config
 from app.crud.pr_owner import owner_id_of
 from app.db import session as session_module
@@ -96,7 +97,7 @@ async def scan_due_service_pos(
     同样刻意跳过 `service_completion_date IS NULL`:该列是本次新增的,上线前的
     存量单据全为空,靠回填脚本补而不是在这里猜一个日期。
     """
-    today = today or date.today()
+    today = today or plant_today()
     # 严格小于:完成日 + reminder_days == 今天 仍在阈值内,明天才催。与
     # agreement_overdue 的 `expected_date + grace < today` 同口径,免得两个扫描
     # 对"第 N 天"的理解差一天。
@@ -170,7 +171,7 @@ async def _ensure_task(db: AsyncSession, due: DueService) -> tuple[Task, bool]:
         title=f"Confirm service completion for {due.po.number}",
         description=(
             f"The expected completion date for {due.po.number} "
-            f"({due.pr.service_completion_date}) has passed. "
+            f"({fmt_date(due.pr.service_completion_date)}) has passed. "
             f"Please confirm the service was delivered and create a GR."
         ),
         vendor=due.po.vendor_name,
@@ -236,7 +237,7 @@ async def _escalate_to_manager(
         "owner_name": owner_label,
         "po_number": due.po.number,
         "days_overdue": due.days_over,
-        "completion_date": str(due.pr.service_completion_date),
+        "completion_date": fmt_date(due.pr.service_completion_date),
         "vendor": due.po.vendor_name or "—",
         "company_name": cfg.name,
         "link": _task_link(task.document_type, task.document_id, task_type=task.type),
@@ -306,7 +307,7 @@ async def run_service_gr_due() -> None:
                     template_key=REMINDER_TEMPLATE,
                     extra_vars={
                         "po_number": item.po.number,
-                        "completion_date": str(item.pr.service_completion_date),
+                        "completion_date": fmt_date(item.pr.service_completion_date),
                         "days_overdue": item.days_over,
                     },
                 )
@@ -327,7 +328,7 @@ async def run_service_gr_due() -> None:
 async def _report_dry_run(db: AsyncSession, due: list[DueService]) -> None:
     """dry-run:不建任务、不碰 requester,只把命中清单发给 admin 过目。"""
     lines = "".join(
-        f"<li>{d.po.number} — expected {d.pr.service_completion_date} "
+        f"<li>{d.po.number} — expected {fmt_date(d.pr.service_completion_date)} "
         f"({d.days_over} day(s) ago), PR {d.pr.number}</li>"
         for d in due
     )
@@ -354,6 +355,6 @@ async def service_gr_due_loop() -> None:
         if wait > _RECHECK_SECONDS:
             await asyncio.sleep(_RECHECK_SECONDS)
             continue
-        logger.info("Service GR due: next run in %.0f seconds (at %02d:%02dZ)", wait, hour, minute)
+        logger.info("Service GR due: next run in %.0f seconds (at %02d:%02d plant time)", wait, hour, minute)
         await asyncio.sleep(wait)
         await run_service_gr_due()

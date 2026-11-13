@@ -6,7 +6,7 @@ import { Badge, Button, FormField, Input, SortTh, useSortableRows } from '@uniop
 import { useAuthStore } from '@/store/auth'
 import { epmsApi } from '@/lib/api'
 import { adminApi, type DelegationCreate, type DelegationOut, type DelegationUpdate } from '@/services/adminApi'
-import { cn, formatDate } from '@/lib/utils'
+import { cn, formatDate, todayISO } from '@/lib/utils'
 import { PortalPageLayout } from '@/components/layout/PortalPageLayout'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -75,16 +75,11 @@ function useAllUsers() {
 
 // ── Date helpers ─────────────────────────────────────────────────────────────
 
-/** Today's calendar date in the BROWSER's own local time zone, as YYYY-MM-DD.
- * This reads the current instant (safe with `new Date()`) rather than parsing
- * a date-only string (unsafe — see lib/utils.ts's DATE_ONLY comment). Used only
- * to derive status client-side; the server is the real authority on "active". */
+/** Today's calendar date at the plant (company time zone), as YYYY-MM-DD.
+ * Used only to derive status client-side; the server is the real authority on
+ * "active". */
 function todayIso(): string {
-  const d = new Date()
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
+  return todayISO()
 }
 
 /** Mirrors the server's status derivation: revoked wins, then the inclusive window. */

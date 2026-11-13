@@ -8,6 +8,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, getToken } from '@/lib/api'
+import { todayISO } from '@/lib/utils'
 import type {
   AdminBookingFilters,
   AdminBookingListOut,
@@ -508,7 +509,7 @@ export const adminBookingService = {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `bookings-export-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `bookings-export-${todayISO()}.csv`
     document.body.appendChild(a)
     a.click()
     a.remove()

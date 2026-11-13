@@ -13,11 +13,11 @@ Three defects that all lived in the same corner of the Direct-PA flow:
 """
 import re
 import uuid
-from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import text
 
+from app.core.plant_time import plant_today
 from app.models.pa import PaymentApplication
 
 
@@ -104,7 +104,7 @@ async def test_pa_number_survives_a_gap_in_todays_window(admin_client, db_sessio
 
 async def test_pa_number_continues_past_a_number_minted_elsewhere(admin_client, db_session):
     """epms-api mints EPMS PAs from the same prefix. OA must continue past them."""
-    today = datetime.now(timezone.utc).strftime("%Y%m%d")
+    today = plant_today().strftime("%Y%m%d")
     db_session.add(PaymentApplication(
         id=uuid.uuid4(),
         pa_number=f"PA-{today}-0042",

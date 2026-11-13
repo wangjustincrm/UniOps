@@ -89,19 +89,28 @@ async def test_wms_sync_maps_status_from_db_table(db_session, monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_wms_sync_expiry_cutoff_is_utc(db_session, monkeypatch):
-    """The expiry cutoff (`today` in run_wms_sync) must come from
-    datetime.now(timezone.utc).date(), not container-local time — otherwise
-    which lots flip to 'expired' would depend on the host/container TZ.
-    Asserted by spying on every `datetime.now()` call the sync makes
-    (cutoff, sync_batch_id, sync_state timestamps) and requiring all of them
-    pass `tz=timezone.utc` explicitly, never a bare/local call."""
-    from datetime import datetime as real_datetime, timezone
+async def test_wms_sync_expiry_cutoff_is_the_plant_date(db_session, monkeypatch):
+    """The expiry cutoff (`today` in run_wms_sync) is the plant's date
+    (plant_today, Company Settings time zone) - not the UTC date, which is
+    already tomorrow from 19:00/20:00 in Toronto, and not container-local
+    time. Every other datetime.now() the sync makes (batch id, sync_state
+    timestamps) still passes tz=timezone.utc explicitly."""
+    from datetime import date, datetime as real_datetime, timezone
 
     from app.services.wms_sync import service
 
     monkeypatch.setattr(service, "fetch_inventory", lambda: FAKE_ROWS)
     monkeypatch.setattr(service, "fetch_lot_locations", lambda: [])
+    monkeypatch.setattr(service, "plant_today", lambda: date(2026, 11, 11))
+
+    cutoffs: list = []
+    real_transform = service.transform_lot
+
+    def _spy_transform(raw, mapping, today):
+        cutoffs.append(today)
+        return real_transform(raw, mapping, today)
+
+    monkeypatch.setattr(service, "transform_lot", _spy_transform)
 
     seen_tzs: list = []
     real_now = real_datetime.now
@@ -116,7 +125,7 @@ async def test_wms_sync_expiry_cutoff_is_utc(db_session, monkeypatch):
 
     await service.run_wms_sync(db_session)
 
-    assert seen_tzs, "datetime.now() was never called during sync"
+    assert cutoffs and set(cutoffs) == {date(2026, 11, 11)}
     assert all(tz is timezone.utc for tz in seen_tzs), (
         f"every datetime.now() call in run_wms_sync must pass timezone.utc explicitly, got {seen_tzs}"
     )

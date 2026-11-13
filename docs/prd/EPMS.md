@@ -1,8 +1,22 @@
 # EPMS — Product Requirements Document
-**Version:** 2.47
-**Date:** 2026-11-05
+**Version:** 2.54
+**Date:** 2026-11-12
 **Status:** In Production
 
+> **v2.54 (2026-11-12)** — The 3-Way Match tab shows the PO, receipt and invoice on one basis, pre-tax, the basis the variance is measured on (INV-3WM-001); each document's tax-inclusive amount is shown under it. INV-2026-0243 read PO CA$492.80 (pre-tax) against GR and Invoice CA$556.86 (tax-inclusive) with a variance of 0. A PO mirrored from NC keeps NC's tax-inclusive line amounts, so a receipt priced from those lines is brought back to pre-tax with that PO's own pre-tax share (subtotal ÷ (subtotal + tax)).
+
+> **v2.53 (2026-11-12)** — Editing an invoice in Data Maintenance re-sends it to Finance Accounts Payable (DM-008). Finance kept the values from before the edit, and Push to NC reads Finance's copy: INV-2026-0966, corrected from CAD to USD, reached NC as CAD at rate 1 (AP-20261112-0002). When the AP record is already in NC, the edit says the NC bill must be pushed again.
+
+> **v2.52 (2026-11-11)** — **Plant time is the company setting** (UI-DATE-003): "today", "this month", the date in document numbers, the hour the daily jobs run and the dates printed in PDFs and emails all follow Portal → Admin → Company Settings → **Time Zone** (default America/Toronto) instead of UTC, which in Toronto turned to tomorrow at 19:00 EST / 20:00 EDT. **Numbers:** PR/PA/GR-YYYYMMDD, PO-…-YYMM, AGR-YYYYMM and INV-YYYY take the plant's date (PR-006, GR-P-005, AGR-001, INV-005); the sequence carries on from the highest number under that prefix, so no number repeats at the switch. **Daily jobs** (task digest, GR acknowledgement / collection / service-completion reminders, agreement overdue sweep, budget alerts) run at the Daily Digest Time on the plant's clock, also across daylight-saving changes (§3.9.4) — it was read as UTC, so 08:00 ran at 03:00/04:00. **Dashboard** *Approved Today* and the *… This Month* tiles count the plant's day and month (§3.7). **PDFs and emails** (PR, PA, PO, GR PDFs; task, digest and reminder emails) print dates as **YYYY-MMM-DD** on the plant's calendar; the PDF footer reads `Generated 2026-NOV-11 14:30` without "UTC". Exported Excel/CSV cells keep their ISO shape, with times in plant time; export file names carry the plant date.
+
+> **v2.51 (2026-11-11)** — One date format across UniOps (§3.20, UI-DATE-001/002): every date on screen reads **YYYY-MMM-DD** with an upper-case English month (`2026-NOV-11`), and a date-time adds a 24-hour clock (`2026-NOV-11 14:30`). Replaces DD/MM/YYYY in EPMS and the mixed formats in the other modules, which were being misread. Date inputs, exported Excel/CSV files and document numbers are unchanged; PDFs and emails produced by the server are not yet covered.
+
+> **v2.50 (2026-11-11)** — Freight shipment attachments and View (§3.21, FRT-002, FRT-018): the shipping label scanned on *New Shipment* is kept on the shipment as its **Shipping label** attachment, and an **Attachments** row takes any other supporting files; the Shipments list has **View** on every row, opening the shipment's page with its details and attachments.
+
+> **v2.49 (2026-11-06)** — A Finance payment batch can pay some of a PA's invoices (FINANCE.md FIN-PAY-10). Such a PA stays approved with those invoices shown paid; **Mark as Processed** on it pays only what is still owed and says how much was already paid (PAY-001).
+
+> **v2.48 (2026-11-05)** — Users and Departments moved in Portal from Admin to the new **MDM** group (PORTAL.md v2.6). The EPMS Admin "User Management has moved" card now opens Portal → MDM → Users (§3.6.3, §3.6.3a).
+>
 > **v2.47 (2026-11-05)** — Rules settled in the procurement test round. **Goods receipt:** the New GR form shows open quantities; over-receipt needs a reason (GR-P-002, GR-P-003a); a GR with no received line is refused; the damage-report task closes on a recorded return or credit (GR-P-004); who may cancel a GR (GR-C-004). **Reminders:** GR acknowledgement reminder and escalation (GR-N-002, GR-N-003), Collection Confirmation Required and collection reminders (PA-013, GR-N-006, §3.6.4), budget threshold alerts (BUDGET.md BCFG-008); new switches in Notification Settings (§3.9.4); the PA-approved email (PA-007). **PA:** the approval chain is the configured one, shown by its configured step names (§3.15.3); a prepayment's pre-tax amount is its % of the PO (§3.15.2) — staged prepayments and the cumulative cap (PP-002/003) unchanged; agreement PAs take their lines from the invoices (PA-018); Settle is offered only to users who may pay the PO (PP-015); the *create_pa* task reopens when the last live PA is rejected or cancelled (INV-013). **Invoice:** an invoice on a live PA is locked (INV-EDIT-012); "Request credit note" keeps the task open (INV-3WM-005); the cumulative variance is shown (INV-3WM-001). **Others:** POs have payment terms (PO-016); Agreement Consumed and Not-to-Exceed are pre-tax (AGR-002, AGR-005); Direct PA shows the budget for reference (DPA-004, DPA-005); Copy PR carries the department (§3.2.3); Approver dashboard figures (§3.7); submission checks every remaining step (§3.3); double actions are refused (§3.3.3); PR and GR scope of an unrestricted role (§1.3); Task Inbox search and filters (§3.7.1); tabs refresh on return (UI-TAB-004). **Prepayments:** a settlement or balance PA may take the invoice its prepayment holds (PA-012). **Invoices:** the rounding of a re-sent line total does not lock out an edit (INV-EDIT-012). Migrations: `gr01_over_receipt`, `gr02_damage_resolution`, `po01_po_payment_terms`, `ba01_budget_alert_states`, `agr01_consumed_pretax` (rewrites each agreement's Consumed to pre-tax; old values kept in a backup table).
 
 > **v2.46 (2026-10-30)** — Direct PA (§3.22, DPA-004): an invoice linked to a PO with **Link to PO** defaults the Direct PA's department and cost center to the PO's PR and its budget account to the PO's budget code (the PR's when the PO has none); still editable. NC orders carry none of this, so their invoices keep the creator's department.
@@ -475,9 +489,9 @@ Purchase Requisitions are assigned a system-generated number using the format:
 PR-YYYYMMDD-XXXX
 ```
 
-Where `YYYYMMDD` is the creation date (UTC) and `XXXX` is a zero-padded daily sequence number (resets to `0001` each calendar day). Example: `PR-20260410-0042`.
+Where `YYYYMMDD` is the creation date in plant time (UI-DATE-003) and `XXXX` is a zero-padded daily sequence number (resets to `0001` each calendar day). Example: `PR-20260410-0042`.
 
-- **PR-006** — The number is assigned by the backend when the PR is first saved (including as a draft), using the UTC date of creation, and never changes. Users cannot edit it.
+- **PR-006** — The number is assigned by the backend when the PR is first saved (including as a draft), using the plant's date of creation (UI-DATE-003), and never changes. Users cannot edit it.
 
 #### 3.2.6 PR Approval Flow
 
@@ -901,16 +915,16 @@ SMTP configuration is no longer part of Security: the task-notification SMTP pro
 
 #### 3.6.3 User Management
 
-Moved to **Portal → Admin → User Management** (EPMS shows a "moved" card).
+Moved to **Portal → MDM → Users** (EPMS shows a "moved" card that opens it).
 - Full user table: name, email, role, department, Teams account, active status, created date
 - Add user / edit user / deactivate / delete with confirmation
 - **Reset Password**: portal modal (rendered via `createPortal` into `document.body`) to prevent browser password-manager autofill from targeting the user search box; `autoComplete="new-password"` on input; supports Enter key. Any admin-set, reset or imported password forces the user to choose a new password at next sign-in (§3.1)
 - **CSV Export / Import**: export to `users.csv`; import matches by email, creates or updates; new accounts receive the company-standard initial password if the column is blank
 - **Automatic approval re-sync:** changing a user's role, department, supervisor or active flag, or deactivating the user, automatically re-routes that user's in-flight approvals (department-level approval tasks pinned to the old holder move to the new holder). The save reports how many documents were re-synced; a re-sync failure does not undo the user edit. The same re-sync runs when roles are granted in Access Control and when Approval Routing is saved (§3.3.8).
 
-#### 3.6.3a Departments — MOVED to Portal → Admin → Departments
+#### 3.6.3a Departments — MOVED to Portal → MDM → Departments
 
-As of 2026-05-27 ownership of Departments has moved to **mdm-api** (the master-data service) and the management UI lives in **Portal → Admin → Departments**. The EPMS Admin Panel no longer exposes Departments.
+As of 2026-05-27 ownership of Departments has moved to **mdm-api** (the master-data service) and the management UI lives in **Portal → MDM → Departments** (Portal → Admin until 2026-11-03). The EPMS Admin Panel no longer exposes Departments.
 
 - Source of truth: `mdm-api` — endpoints `GET|POST|PATCH|DELETE /mdm/v1/departments`
 - Write access: `system_admin | finance_manager | ap_clerk` (configured on the mdm-api endpoint dependencies)
@@ -1112,6 +1126,7 @@ System-level corrections to procurement records are made in **Portal → Data Ma
 | **DM-004** | Agreements and Agreement Receipts can be maintained here (§3.17). |
 | **DM-005** | A PA's invoice and receipt links can be repaired; on an already-paid PA the repair also replays the invoice and AP payment write-back. PA totals can be recomputed when a charge or tax rate is changed without editing lines. |
 | **DM-006** | Deleting the last PA of a PO reopens that PO's Create PA task. |
+| **DM-008** | Saving an **invoice** edit re-sends the invoice to Finance Accounts Payable, as the Invoices page does, so Finance's copy (currency, amounts, tax lines, dates, vendor, status) matches the edit; Push to NC (FINANCE.md FIN-AP-05) sends that copy. The edit is kept when Finance cannot be reached, and the dialog says the AP record still shows the old values and to save the invoice again later. When the AP record has already been pushed to NC, the dialog names the NC bill and says to click Push to NC again (NC replaces a bill that is still saved; an approved one has to be changed in NC). |
 | **DM-007** | A PA's pre-tax amount cannot be edited in Data Maintenance; its lines are the only input. (a) Changing only a charge or the tax rate recomputes from the lines only when they add up to the stored pre-tax amount; when they do not, the pre-tax amount is kept and the tax is re-derived from it only if the rate changed. (b) A line edit that would change the pre-tax amount is refused unless the operator confirms it; the edit dialog shows the current and the new amount and enables Save only once the change is confirmed. A line edit that leaves the pre-tax amount unchanged needs no confirmation. |
 
 ### 3.7 Dashboard
@@ -1301,7 +1316,7 @@ In **Portal → Admin → Notification Settings**:
 - **Default Notification Channel**: Email only / Teams only / Email + Teams / **None**. *None* is a master switch that turns off all task notifications company-wide (immediate, digest, reminders and admin alerts)
 - **Teams Webhook URL**: one company-level webhook
 - **Role Shared Mailboxes**: per role, an address that receives role-pool task notifications instead of every role holder (email only; suppressed when the company channel is Teams only)
-- **Daily Digest Time (UTC)**: default 08:00; a change applies within about 15 minutes
+- **Daily Digest Time**: plant time (UI-DATE-003), default 08:00; a change applies within about 15 minutes. The same time drives the GR acknowledgement, collection and service-completion reminders, the agreement overdue sweep and the budget threshold alerts. On a daylight-saving day the job still runs at that wall-clock time
 - **Task Notifications** table: for every task type (grouped by module), *Email* on/off and *Immediate* vs *Daily digest*. The list is derived from the system's task types (including OA claim types and custom forms), so new task types appear automatically. `chase_agreement_invoice` is shown as self-notifying (no checkbox); it is switched on / off by **Agreement Overdue Reminder**
 - **GR Acknowledgement Reminder** (default off) with **Dry Run** (default on): GR-N-002, GR-N-003
 - **Budget Threshold Alerts** (default off) with **Dry Run** (default on): BUDGET.md BCFG-008
@@ -1566,7 +1581,7 @@ PO-[POID]-YYMM-SEQ
 
 Where:
 - `[POID]` is the vendor's POID (from Vendor Master, §3.10)
-- `YYMM` is the two-digit year and two-digit month (UTC) of creation (e.g. `2604` for April 2026)
+- `YYMM` is the two-digit year and two-digit month of creation, in plant time (UI-DATE-003) (e.g. `2604` for April 2026)
 - `SEQ` is the highest existing sequence for that POID and month plus one, zero-padded to two digits (the first PO of the month is `01`). Numbers freed by deletion are not re-used. Allocation is serialised per prefix so concurrent saves cannot collide.
 
 Example: `PO-ABC-2604-03` (third PO issued to vendor ABC in April 2026).
@@ -1714,7 +1729,7 @@ Physical GRs are created by Warehouse Staff (or another `epms.gr.receive` holder
 | **GR-P-003** | Received quantity can be less than the PO line quantity (partial delivery). Received quantities are added to the PO lines when the GR is **collected or confirmed**; the PO then moves to `fully_received` if all lines are fully received, otherwise `partially_received`. |
 | **GR-P-003a** | **Over-receipt.** A line may receive more than its open quantity (ordered − already received − pending in GRs not yet collected or confirmed), but only with an over-receipt reason, which is stored on the GR and shown on its detail page. Without a reason the GR is refused (422). GRs for one PO are saved one at a time, so a second GR sees the first as pending. When a GR is collected or confirmed and its quantities would take a PO line past the ordered quantity, a reason is asked for at that step if the GR has none yet. Over-receipt does not change what is paid: an invoice above the PO still goes to a match exception. |
 | **GR-P-004** | If any line is not Good at creation, an **urgent `gr_damage_report` task** goes to the Procurement Officer pool, asking them to raise a return or credit note with the vendor. The task is **not** closed by Acknowledge, Collect or Confirm. It closes when someone holding `epms.po.write` records the outcome on the GR with **Record Vendor Resolution** — Return or Credit (the vendor's RMA / credit note number required, a note optional) — or when the GR is cancelled. EPMS has no return document, and a vendor credit is not tied to a single GR, so this record is the reference. |
-| **GR-P-005** | GR number is system-generated on save (format: `GR-YYYYMMDD-NNNN`; UTC date; highest existing number for the day + 1). |
+| **GR-P-005** | GR number is system-generated on save (format: `GR-YYYYMMDD-NNNN`; plant date, UI-DATE-003; highest existing number for the day + 1). |
 | **GR-P-006** | On creation the GR is `pending_ack`, and an **`acknowledge_gr`** task is assigned personally to the linked PR's owner (§3.13.2). **If the PO has no PR** (NC or PMS import), the requester steps are skipped: the GR goes straight to `collected` (physical) or `confirmed` (service), received quantities are posted, the PDF is generated, and System Admins get an alert email to restore the PR link. No role-wide broadcast is ever sent. |
 | **GR-P-007** | The GR PDF is generated on Acknowledge and regenerated on Collect and on Confirm, so it carries Collected By; for no-PR GRs it is generated at creation. Its footer prints the GR's status at that moment. It prints the creator and the receive, acknowledge and collect names (never raw IDs). **Regenerate PDF** is available on the GR Attachments tab. |
 | **GR-P-008** | **3-way hand-off.** When a GR is created, the system attaches it to any already-matched invoice that bills the same PO lines (or the whole PO for header-level matches) and refreshes that invoice's GR value. It closes any open `confirm_receipt` task on the PO. If the PO is now 3-way matched and has no PA or open `create_pa` task, it raises `create_pa`: to the PR requester, or to the ERP PA Officer pool for POs with no PR. |
@@ -1827,7 +1842,7 @@ Goods Receipt → **Receiving Report** (button on the GR List) lists one row per
 
 - **Columns:** GR, PO, Material ID, Description, Supplier, Unit, Quantity, Department, Requested By, Date Ordered, Arrival Date, Left-Warehouse Date (collected), Warehouse Receiver, Person Accepting, Lead Time (days).
 - **Scope:** physical GRs only; cancelled or rejected GRs excluded; **NC-mirrored POs excluded** (NC-010).
-- **Filters:** received-date range (plant local dates, America/Toronto), department, vendor, search.
+- **Filters:** received-date range (plant dates, UI-DATE-003), department, vendor, search.
 - **Summary for the whole window:** line count, receipt count, order count, average lead time.
 - **Sorting:** every column sorts on the server (UI-SORT-004); the Excel export uses the same order as the screen.
 - **Lead time** = received date − ordered date. Ordered date is the Place-Order time, else the last PO approval, else PO creation.
@@ -1888,7 +1903,7 @@ Variance check (§3.14.3) → `matched` / `exception`
 | **INV-004d** | **Every path.** Upload (PO, agreement and Direct), invoice edit when the number's key changes, and the courier upload all apply INV-004…004c and answer 409 naming the existing invoice (its reference and status). Re-saving an invoice with its own number unchanged is never a duplicate. |
 | **INV-004e** | **The form warns as you type.** Upload Invoice asks the server (`GET /invoices/duplicate-check`) once a vendor and number are entered, shows the reason under the number, and will not submit while the check is running or has found a duplicate. The check covers invoices the user cannot open; it reveals only the existing invoice's reference and status. |
 | **INV-004f** | **Database guard.** A unique index on (vendor, invoice key) makes the rule hold for simultaneous uploads and any writer that bypasses the API. Invoices that were already duplicates when it was introduced (5 in production, 2026-10-21) are marked exempt from the index only — they still block a new upload of their number. |
-| **INV-005** | Invoice reference is system-generated: `INV-YYYY-NNNN`, the next number never issued in that year. A number is never issued twice — not even after its invoice is deleted — because Finance keeps it as the AP record's reference. Numbers deleted before 2026-10-21 stay retired too (taken from the invoices, the Data Maintenance delete log and Finance's AP references). |
+| **INV-005** | Invoice reference is system-generated: `INV-YYYY-NNNN` (the plant's year, UI-DATE-003), the next number never issued in that year. A number is never issued twice — not even after its invoice is deleted — because Finance keeps it as the AP record's reference. Numbers deleted before 2026-10-21 stay retired too (taken from the invoices, the Data Maintenance delete log and Finance's AP references). |
 | **INV-DEL-001** | Deleting an invoice voids its Finance AP record in the same step: one never posted is removed; one posted (accrued at match) is voided and its accrual reversed (FINANCE.md FIN-AP-03). This holds on every delete path: the Invoices page, Freight, and Data Maintenance — single, bulk, and an invoice removed inside a PO, PR or agreement cascade. |
 | **INV-DEL-002** | If Finance cannot void it, nothing is deleted: the delete is refused (502) naming the invoice, and the record and its audit entry are rolled back. A delete EPMS itself refuses (e.g. an invoice in payment) never reaches Finance. |
 | **INV-DEL-003** | A delete path that does not void in Finance cannot commit: the service refuses the commit, so a future delete path cannot silently leave an AP record behind. |
@@ -1943,7 +1958,7 @@ Variance is checked per PO line against everything invoiced on that line. "Three
 
 | FR ID | Requirement |
 |-------|-------------|
-| **INV-3WM-001** | Variance is measured per allocated PO line: (sum of pre-tax amounts allocated to that line by **all** invoices) − (PO line pre-tax total). Header-level allocations compare against the PO pre-tax subtotal. Non-PO fee lines are excluded. Invoice Detail (banner, 3-Way Match header, Variance footer) shows this cumulative figure and names the other invoices on those lines; on a multi-PO invoice the 3-Way Match tab lists each PO with its own amount. |
+| **INV-3WM-001** | Variance is measured per allocated PO line: (sum of pre-tax amounts allocated to that line by **all** invoices) − (PO line pre-tax total). Header-level allocations compare against the PO pre-tax subtotal. Non-PO fee lines are excluded. Invoice Detail (banner, 3-Way Match header, Variance footer) shows this cumulative figure and names the other invoices on those lines; on a multi-PO invoice the 3-Way Match tab lists each PO with its own amount. Every amount on the 3-Way Match tab is pre-tax — PO, Goods / Service Receipt and Invoice alike — with the tax-inclusive amount shown beneath where it differs. A receipt against a PO mirrored from NC, whose line amounts include tax, is shown at that PO's pre-tax share: line amount × subtotal ÷ (subtotal + tax); a line added on this side is already pre-tax. *Partial delivery* compares the receipt's pre-tax value with the PO's. |
 | **INV-3WM-002** | Under-invoicing (negative variance) always passes — a PO line may be billed across several invoices. Over-invoicing passes when \|variance %\| ≤ the match tolerance; an exact match always passes. |
 | **INV-3WM-003** | Match tolerance is a company setting (`invoice_match_tolerance_pct`, default **5%**). It is not editable in the UI. |
 | **INV-3WM-004** | A passing match sets the invoice to `matched`; the Invoice Detail shows the variance per line ("partially invoiced" or "matched within tolerance"). When the invoice bills less than the PO, the 3-Way Match summary reads *Partially invoiced — <amount> (<pct>) below PO* (not *Passed — within tolerance*) and states that no review is required; the Invoice row reads *-<pct>% vs PO (partial)* and the History match entry reads *partially invoiced*. A failing match sets `exception` and opens a *resolve_exception* task for the AP pool. |
@@ -2207,7 +2222,7 @@ Payment Applications are assigned a system-generated number when the PA is **cre
 PA-YYYYMMDD-XXXX
 ```
 
-Where `YYYYMMDD` is the creation date (UTC) and `XXXX` is a zero-padded daily sequence (highest existing number for that day + 1; starts at `0001` each calendar day). Example: `PA-20260410-0007`.
+Where `YYYYMMDD` is the creation date in plant time (UI-DATE-003) and `XXXX` is a zero-padded daily sequence (highest existing number for that day + 1; starts at `0001` each calendar day). Example: `PA-20260410-0007`.
 
 Applies to all PA types (Standard, Prepayment, Balance, Settlement). The number is assigned by the backend and is never editable.
 
@@ -2374,7 +2389,7 @@ A Purchase Agreement is a standing authorisation with one vendor for spend that 
 
 | FR ID | Requirement |
 |---|---|
-| **AGR-001** | Number `AGR-YYYYMM-NNNN`, system-generated on create. |
+| **AGR-001** | Number `AGR-YYYYMM-NNNN`, system-generated on create; the month is the plant's (UI-DATE-003). |
 | **AGR-002** | Header: title, type, vendor, contract #, vendor reference, contact email, valid from/to (to ≥ from), grace days (default 30, 0–365), Not-to-Exceed (optional, **pre-tax**), currency, tax code/rate, department, cost center, budget code (must be a known budget code), **Owner**, notes. |
 | **AGR-003** | Recurring only: cycle (`weekly`, `monthly`, `quarterly`, `yearly`, `special_monthly`), expected invoice day (weekly: 1–7, Monday = 1; otherwise 1–31), anchor month (required for quarterly/yearly), active months (required for, and only for, special monthly — the months that bill), optional schedule start date (inside the validity window, for an agreement entered in the system after it started), expected pre-tax amount per period, tolerance %, overdue-after days (default 7). Settings that produce no billing period are rejected. These fields are rejected on non-recurring agreements. |
 | **AGR-004** | Milestone only: one or more stages (name, expected timing, amount **or** % of Not-to-Exceed — the other is derived; % requires a Not-to-Exceed). At least one stage is required to submit. |
@@ -2442,7 +2457,7 @@ Payment of an approved PA is executed in Finance; EPMS PA Detail offers the same
 
 | FR ID | Requirement |
 |---|---|
-| **PAY-001** | An `approved` PA is paid with **Mark as Processed** on PA Detail (or in Finance → Payments / payment batches). Allowed for **Payment Officer**, **Finance Manager** and **Finance BP** (primary or additional role) and System Admin (primary role only). AP Clerk cannot execute payments. |
+| **PAY-001** | An `approved` PA is paid with **Mark as Processed** on PA Detail (or in Finance → Payments / payment batches). A PA partly paid in a batch (FINANCE.md FIN-PAY-10) pays only what is still owed. Allowed for **Payment Officer**, **Finance Manager** and **Finance BP** (primary or additional role) and System Admin (primary role only). AP Clerk cannot execute payments. |
 | **PAY-002** | The confirmation dialog requires the funding account (bank account or credit card, same currency as the PA) and shows Gross / Vendor credits applied / Net before anything is sent. |
 | **PAY-003** | Segregation of duties: the PA's creator cannot execute its payment while the *self_payment* SoD rule is enabled. Payment is refused in a closed (soft or hard) fiscal period. |
 | **PAY-004** | A PO-route, non-prepayment PA that links no invoice is refused at payment while its PO still carries a payable invoice that no live PA claims. |
@@ -2486,7 +2501,7 @@ Every EPMS page carries an **Assistant** panel (floating button, available to an
 | **AST-009** | **Reply language.** Every reply is in the language of the user's *current* question, whatever earlier turns used. The server decides it from the question (Chinese script → Chinese; an explicit "answer in English/中文/español" → that language) and tells every answering step; for other Latin-script questions the model is told to use the question's language. A message that only asks for another language ("用中文回答") repeats the previous answer in that language. System-written replies (refusals, "which document do you mean?") are rendered in the user's language too. |
 | **AST-010** | **Fixed Chinese terms.** In Chinese replies, role, approval-level and document names use one fixed translation each, followed by the English name the first time (e.g. 总监 (Director), 主管 (Supervisor), 应付审核 (AP Review), 里程报销单 (MIL)). Names without a fixed translation stay in English. |
 | **AST-011** | **Agreements.** Purchase Agreements are queryable (needs `epms.agreement.read`; same row scope as the Agreements page): number, kind, vendor, status, valid from/to, days until expiry, grace days, Not to Exceed, consumed and remaining. An empty Not to Exceed means *no ceiling*. Status `active` means approved, not "still in force" — the system never moves an agreement to `expired`. |
-| **AST-012** | **Rules.** Questions about how the system behaves are answered from fixed rules, each tied to the code that enforces it, never from a data query or a guess. They cover: a rejected PA gets status Cancelled (PRs and POs get Rejected); Type 1 cannot be chosen when creating a PR; the number formats (PR/PA/GR-YYYYMMDD-NNNN, PO-<vendor code>-YYMM-NN, AGR-YYYYMM-NNNN, invoice reference INV-YYYY-NNNN; the date is the UTC date); invoice matching compares amounts per PO line (over-invoicing beyond tolerance → Exception) and never received quantities, so an invoice can be Matched with nothing received (INV-3WM-006) — receipt evidence is checked only when a PA is created (PA-013), and only for existence; an Active agreement is not necessarily in force; approvals are given only in UniOps (Teams cards and emails only notify). |
+| **AST-012** | **Rules.** Questions about how the system behaves are answered from fixed rules, each tied to the code that enforces it, never from a data query or a guess. They cover: a rejected PA gets status Cancelled (PRs and POs get Rejected); Type 1 cannot be chosen when creating a PR; the number formats (PR/PA/GR-YYYYMMDD-NNNN, PO-<vendor code>-YYMM-NN, AGR-YYYYMM-NNNN, invoice reference INV-YYYY-NNNN; the date is the plant's date, UI-DATE-003); invoice matching compares amounts per PO line (over-invoicing beyond tolerance → Exception) and never received quantities, so an invoice can be Matched with nothing received (INV-3WM-006) — receipt evidence is checked only when a PA is created (PA-013), and only for existence; an Active agreement is not necessarily in force; approvals are given only in UniOps (Teams cards and emails only notify). |
 | **AST-013** | **Task counts.** "What do I have to do?" reports the total, the urgent count, the count per task type under the same labels as the Task Inbox group headers, and how many tasks reached the user personally vs through a role. All of these are counted by the server; the model does not count. Only the first 12 tasks (urgent first, then oldest) are named as examples. |
 | **AST-014** | PR answers can include the Service/Project expected completion date, the Service/Project Owner (the owner set on a service or project PR, otherwise the requester, as for receipt tasks) and the requester's name. Replies never show internal tool markup. |
 | **AST-015** | **Long lists.** When a list answer hits the row cap, the server also counts how many rows the query really matched. The answer states that total, lists at most 10 rows, and points to **Export to Excel** (named exactly so in every language) for the full list; the evidence line reads "N of TOTAL rows". |
@@ -2501,7 +2516,7 @@ Every EPMS page carries an **Assistant** panel (floating button, available to an
 
 **Embedded mode.** When EPMS runs inside another UniOps module (for example the Budget pages under Portal → Finance), it renders the page content only. Cross-app links hand the session over so the user is not asked to sign in again.
 
-**Other conventions.** Calendar dates (no time) are treated as local dates and never shift by a day; dates display as DD/MM/YYYY and date-times as DD/MM/YYYY HH:mm. Notes keep their line breaks on detail pages. Dropdowns render in a portal so they are not clipped by scrolling containers. UI text is English only.
+**Other conventions.** Calendar dates (no time) are treated as local dates and never shift by a day; every module displays dates as YYYY-MMM-DD (e.g. 2026-NOV-11) and date-times as YYYY-MMM-DD HH:mm (24-hour). Notes keep their line breaks on detail pages. Dropdowns render in a portal so they are not clipped by scrolling containers. UI text is English only.
 
 | FR ID | Requirement |
 |---|---|
@@ -2511,7 +2526,9 @@ Every EPMS page carries an **Assistant** panel (floating button, available to an
 | **UI-TAB-004** | List and detail tabs re-read their data when the user returns to them, and the tab bar has a **Refresh** button for the open tab. Create, edit and confirm forms are not refreshed, so typed input is kept. |
 | **UI-TAB-005** | A link into a create page that is already open re-opens its tab from the link's query (e.g. Create PO on another PR); it is still one tab per create page. |
 | **UI-EMB-001** | When EPMS is embedded in another UniOps module, it shows only the page content (no sidebar, header or tabs). |
-| **UI-DATE-001** | Calendar dates (no time) display as the same calendar day in every time zone; display format DD/MM/YYYY. |
+| **UI-DATE-001** | Calendar dates (no time) display as the same calendar day in every time zone. |
+| **UI-DATE-002** | Display format, in every UniOps module and on every screen (lists, detail pages, cards, dialogs, the AI Assistant): dates **YYYY-MMM-DD** with the month as an upper-case English abbreviation (JAN … DEC), e.g. `2026-NOV-11`; date-times **YYYY-MMM-DD HH:mm**, 24-hour, in plant time (UI-DATE-003). EPMS PDFs and emails use the same format. Not affected: date input fields (the browser's date picker), month-only labels (periods, chart axes), exported Excel/CSV files (ISO cells), and document numbers. |
+| **UI-DATE-003** | **Plant time** is the time zone set in Portal → Admin → Company Settings → **Time Zone** (an IANA zone, default America/Toronto; daylight saving follows the zone). It decides every "today" and "this month" (overdue and due checks, reminder day counts, *Approved Today* and the *… This Month* dashboard tiles, the received-date range of reports), the date in document numbers, the hour the daily jobs run, and the dates and times printed in PDFs, emails, Teams cards and exported files. Times are stored as instants, so changing the setting changes how they are shown, not what was recorded; a change takes effect within about a minute without a restart. The payment date Finance enters is a calendar date and is shown as entered. Dates exchanged with NC follow NC's own convention, not this setting. |
 | **UI-BTN-001** | Action buttons that change document state (Approve, Return, Reject, Withdraw and similar) are disabled while their request is pending. |
 
 **Sortable list columns (all UniOps modules).** Every list of records in every UniOps app (EPMS, OA, Finance, Inventory, MRP, Portal, VMS, Booking) can be sorted by clicking a column header. This rule is specified once here; the other PRDs refer to it.
@@ -2547,7 +2564,7 @@ Courier charges (UPS, FedEx, Purolator…) are paid without PR or PO. Buyers reg
 | FR ID | Requirement |
 |---|---|
 | **FRT-001** | **Carriers.** A carrier links one vendor (unique) and has a code, a name, an optional tracking-number pattern (regular expression) and an optional default cost center for charges that have no tracking number. Only vendors set up as carriers can be paid by a Freight PA. |
-| **FRT-002** | **Register a shipment.** Carrier, tracking number, cost center (required), direction (outbound / inbound), note, optional waybill photo. The tracking number is stored without spaces, hyphens or dots, upper case; it must match the carrier's pattern when one is set; a carrier + tracking number can be registered once (the refusal names who registered it). A waybill photo can be read by AI to fill the tracking number. |
+| **FRT-002** | **Register a shipment.** Carrier, tracking number, cost center (required), direction (outbound / inbound), note, optional attachments (FRT-018). The tracking number is stored without spaces, hyphens or dots, upper case; it must match the carrier's pattern when one is set; a carrier + tracking number can be registered once (the refusal names who registered it). A waybill photo can be read by AI to fill the tracking number; the scanned file is kept as the shipment's shipping label (FRT-018). |
 | **FRT-003** | **Default cost center.** After a department is chosen: its only active cost center; otherwise the cost center whose current-year approved budget plan carries CRM00204 (largest annual amount); otherwise none and the user picks. Choosing a cost center with no freight budget asks for confirmation; it is not blocked. |
 | **FRT-004** | A shipment is `pending` until an invoice bills it, then `billed`. Only a pending shipment can be edited or voided (`void`). |
 | **FRT-005** | **Upload a carrier invoice** (through *Invoices → Upload Invoice*, FRT-016). The PDF is read by AI (Haiku) for its per-shipment detail: header (invoice number, dates, currency, amount before tax for this invoice only, tax) and one line per shipment / pickup / fee / adjustment with every package tracking number, reference, date, amount before tax and the tax attributed to it. Tax printed per category is spread over that category's lines; any tax still unattributed is spread over the positive lines by amount. The reviewer corrects the result before saving; the form shows whether the lines add up to the header. Saving is refused when the same vendor invoice number already exists in EPMS or OA. The invoice is stored as an EPMS invoice (`match_route = freight`) and synced to Finance AP like any other. |
@@ -2562,6 +2579,7 @@ Courier charges (UPS, FedEx, Purolator…) are paid without PR or PO. Buyers reg
 | **FRT-015** | **Courier invoice visibility.** Unrestricted roles see every invoice. A PO-restricted caller sees courier invoices (list, detail, document chain) when holding `epms.freight.manage`; no role code is hard-wired — anyone else (e.g. the `pa_frt` approvers) is granted through the Access Control Matrix. Every invoice reader sees the matching panel; only `epms.freight.manage` changes it. |
 | **FRT-016** | **A carrier's invoice is a courier invoice.** The upload form reads the PDF as any invoice; when its vendor is an active carrier's — picked by the user, or the vendor name read by AI agreeing with the carrier's vendor name or the carrier's own name (equal once legal suffixes and punctuation are dropped, or one starting with the other over at least 4 characters — an invoice printing just "UPS" is recognised, "Upstate Supplies" is not) — the form on the right of the same Upload Invoice window becomes the courier review (the PDF preview stays on the left; the lines are listed one card per shipment, pickup or fee, with the window's own Save and match): the same PDF is read again for its shipment lines, the carrier is shown (no carrier picker), and *Different vendor* goes back. Credit notes keep the vendor-credit path. Uploading takes the ordinary invoice-upload permission (or `epms.freight.manage`); the PO invoice upload (`POST /invoices`) refuses an active carrier's vendor. |
 | **FRT-017** | **Assigning the matching.** As with any invoice, AP assigns a courier invoice from the Unmatched Queue (*Assign* / *Reassign*, "Assign Shipment Matching"); the assignee gets a *Match Invoice* task ("Match courier invoice … to shipments") that opens the invoice page, and may — without `epms.freight.manage` — edit the lines, re-run auto-match and finalise. The open task also lets them open the invoice page when their role has no invoice view. Finalising (or deleting) closes the task. Reopen, delete and the Freight PA stay with `epms.freight.manage`. |
+| **FRT-018** | **Shipment attachments and View.** *Scan waybill* keeps the scanned photo / PDF as the shipment's **Shipping label** attachment, whether or not the AI found a tracking number (on *New Shipment* it is held with the form and uploaded once the shipment is saved; on *Edit* it is attached at once). The **Attachments** row of New / Edit Shipment takes any other supporting files (PDF, images, Excel, Word, CSV, text, emails; 25 MB each). A file that fails to attach after the shipment is saved does not undo the shipment — the user is told which files to add again from View. Every Shipments row has **View** (`/freight/shipments/<id>`): the shipment's details, the invoice that billed it, and its attachments (label first), each viewable and downloadable. Whoever may see the shipment (its registrar, or `epms.freight.manage`) may add and remove its files; a void shipment's files are read-only. Files are stored on the File Server (`freight_shipment_attachments`). |
 | **FRT-013** | **Payment and NC.** A Freight PA is paid through the standard payment executor as an EPMS PA (its invoices are marked paid); the due list labels it Freight PA. In the NC AP export a courier invoice is **one body row per cost center** with revexp CRM00204 (all other invoices stay one summary row); a row with no tax is sent with tax rate 0. |
 
 ### 3.22 Direct Payment Application (Direct PA)
@@ -2638,7 +2656,7 @@ Line items table: horizontal scroll on narrow viewports (min-width: 860px).
 | **Audit** | Every document keeps its approval history (actions, approvers, comments). Corrections made through Data Maintenance (§3.6.8) are written to an admin audit log. A general audit log for admin configuration changes and vendor record edits is **not implemented** — see §11. |
 | **Configurability** | Workflow definitions, approval routing, role permissions (Access Control Matrix), budget config and notification policy are changeable in Portal / EPMS admin screens without code deployment or server restart (the daily digest time takes effect within 15 minutes). |
 | **Record Retention** | All procurement records (PR, PO, GR, Invoice, PA, approval history) retained for a minimum of 7 years. Note: Data Maintenance can delete records; deletion within the retention window is a matter of admin policy, not a system block. |
-| **Localisation** | English UI. Currency display: CAD default; multi-currency supported. Dates displayed DD/MM/YYYY (§3.20); stored in ISO 8601. |
+| **Localisation** | English UI. Currency display: CAD default; multi-currency supported. Dates displayed YYYY-MMM-DD (§3.20); stored in ISO 8601. |
 | **Compliance** | PIPEDA (Canadian privacy law). Canadian GAAP / IFRS record-keeping obligations. 7-year CRA record retention. |
 
 ---
@@ -2667,7 +2685,7 @@ Line items table: horizontal scroll on narrow viewports (min-width: 860px).
 ### 5.3 Typography
 - Font: Inter (system fallback)
 - CAD amounts: monospace, right-aligned, 2 decimal places — `.amount` utility class
-- Dates: displayed DD/MM/YYYY (date-times DD/MM/YYYY HH:mm); backend stores ISO format (§3.20)
+- Dates: displayed YYYY-MMM-DD, e.g. 2026-NOV-11 (date-times YYYY-MMM-DD HH:mm); backend stores ISO format (§3.20)
 
 ---
 

@@ -6,11 +6,11 @@ number under the new vendor's code and renames every denormalized copy joined by
 po_id (reliable). finance ap_invoices has no po_id FK → best-effort string match."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
 
 from sqlalchemy import text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_now
 from app.crud._numbering import next_number
 from app.models.gr import GoodsReceipt
 from app.models.invoice import Invoice
@@ -23,7 +23,7 @@ from app.models.approval import ApprovalEvent
 
 
 async def _next_number(db: AsyncSession, vendor_code: str) -> str:
-    ym = datetime.now(timezone.utc).strftime("%y%m")
+    ym = plant_now().strftime("%y%m")
     prefix = f"PO-{vendor_code}-{ym}-"
     return await next_number(db, PurchaseOrder.number, prefix, width=2)
 

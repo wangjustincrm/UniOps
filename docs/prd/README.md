@@ -9,10 +9,10 @@ This folder holds the **authoritative, maintained PRD for every UniOps module**.
 
 | Module | Document | Version | Status | Apps / services |
 |---|---|---|---|---|
-| Portal & platform | [PORTAL.md](PORTAL.md) | 2.5 | In production | portal, identity-api, approval-api, mdm-api, file-api |
-| EPMS — procurement | [EPMS.md](EPMS.md) | 2.47 | In production | epms, epms-api |
+| Portal & platform | [PORTAL.md](PORTAL.md) | 2.7 | In production | portal, identity-api, approval-api, mdm-api, file-api |
+| EPMS — procurement | [EPMS.md](EPMS.md) | 2.49 | In production | epms, epms-api |
 | OA — reimbursement & travel | [OA.md](OA.md) | 3.4 | In production | oa, expense-api |
-| Finance | [FINANCE.md](FINANCE.md) | 2.19 | In production | finance, finance-api |
+| Finance | [FINANCE.md](FINANCE.md) | 2.22 | In production | finance, finance-api |
 | AI Financial Analysis | [AI-FINANCIAL-ANALYSIS.md](AI-FINANCIAL-ANALYSIS.md) | 1.0 | In production (Phases 1–5); Phase 6 not started | finance, finance-api |
 | Budget | [BUDGET.md](BUDGET.md) | 2.1 | In production | budget-api (UI in finance / epms) |
 | MRP | [MRP.md](MRP.md) | 2.1 | In production | mrp, mrp-api |
@@ -28,6 +28,7 @@ This folder holds the **authoritative, maintained PRD for every UniOps module**.
 | VMS visitor self-registration & QR check-in | [VMS-SELF-REGISTRATION.md](VMS-SELF-REGISTRATION.md) | 0.2 | Proposed: stakeholder decisions pending |
 | Order Bridge (migration from Zoho) | [ORDER-BRIDGE.md](ORDER-BRIDGE.md) | 1.2 | Proposed — decisions applied, awaiting approval |
 | CMMS — maintenance management | [CMMS.md](CMMS.md) | 2.1 | Proposed: not started |
+| Staff — employee master & ADP roster import | [EMPLOYEES.md](EMPLOYEES.md) | 0.5 | In production |
 
 ## Where shared behaviour is specified
 
@@ -41,6 +42,7 @@ Some behaviour is shared by every module. Each topic is specified once, and the 
 | Task Inbox and notification outbox (immediate / digest per task type) | EPMS.md §3.7, §3.9; PORTAL.md §5.7 |
 | Data Maintenance | PORTAL.md §5.14; EPMS.md §3.6.8 |
 | AI Assistant and UI conventions (tabs, embedding, dates) | EPMS.md §3.19, §3.20 |
+| Date display format: YYYY-MMM-DD (`2026-NOV-11`), date-times YYYY-MMM-DD HH:mm, in every module | EPMS.md §3.20 (UI-DATE-002) |
 | Sortable list columns (click a header: ascending, then descending; server-sorted when paged) | EPMS.md §3.20 (UI-SORT-001…007) |
 
 ## Maintenance rules

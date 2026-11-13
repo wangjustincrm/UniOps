@@ -6,7 +6,7 @@ import { useReplaceTab } from '@uniops/shell'
 import { epmsRoutes } from '@/app/routes'
 import { ArrowLeft, Truck, CheckCircle2, AlertTriangle, Package } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { cn, formatAmount, formatDate, formatQty } from '@/lib/utils'
+import { cn, formatAmount, formatDate, formatQty, todayISO } from '@/lib/utils'
 import { useGr, useGrAction } from '@/hooks/useGrs'
 import { useAuthStore } from '@/stores/auth.store'
 import { type GrLineCondition, isOverReceiptError } from '@/services/gr'
@@ -38,7 +38,7 @@ export default function CollectionConfirmPage() {
   const { user } = useAuthStore()
 
   const [collectionDate, setCollectionDate] = useState(
-    new Date().toISOString().slice(0, 10)
+    todayISO()
   )
   const [generalNotes, setGeneralNotes] = useState('')
   const [lines, setLines] = useState<CollectionLine[]>([])

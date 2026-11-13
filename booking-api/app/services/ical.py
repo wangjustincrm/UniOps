@@ -19,18 +19,17 @@ shown as 10:00).
 
 For America/Toronto (and its common aliases America/New_York, America/Montreal)
 we therefore hand-build a RRULE-based VTIMEZONE that Outlook understands.
-For any other DISPLAY_TIMEZONE we fall back to from_tzid() since we cannot
+For any other plant time zone we fall back to from_tzid() since we cannot
 guarantee the hand-built rules are correct for arbitrary zones.
 """
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Literal
-from zoneinfo import ZoneInfo
 
 from icalendar import Calendar, Event, Timezone, TimezoneStandard, TimezoneDaylight, vCalAddress, vRecur, vText, vUTCOffset
 
-from app.core.config import settings
+from app.core.plant_time import plant_tz, plant_tz_name
 from app.models.booking import Booking
 from app.models.room import MeetingRoom
 
@@ -152,7 +151,11 @@ def build_event_ics(
     Returns:
         UTF-8 encoded iCalendar bytes.
     """
-    tz = ZoneInfo(settings.DISPLAY_TIMEZONE)
+    # One snapshot of the plant zone (Company Settings → Time Zone): the
+    # VTIMEZONE TZID and the TZID icalendar puts on DTSTART/DTEND/EXDATE/
+    # RECURRENCE-ID (taken from tz.key) must be the same name.
+    tz = plant_tz()
+    tzid = getattr(tz, "key", None) or plant_tz_name()
 
     # ── Convert stored UTC datetimes → display timezone ───────────────────────
     starts_local = booking.starts_at.astimezone(tz)
@@ -167,7 +170,7 @@ def build_event_ics(
     # ── VTIMEZONE (required by Outlook Classic for TZID resolution) ───────────
     # Use RRULE-based observances for Eastern zones; RDATE fallback otherwise.
     # See module docstring for the Outlook RDATE limitation.
-    vtimezone = _build_vtimezone(settings.DISPLAY_TIMEZONE)
+    vtimezone = _build_vtimezone(tzid)
     cal.add_component(vtimezone)
 
     # ── VEVENT ────────────────────────────────────────────────────────────────
@@ -201,7 +204,7 @@ def build_event_ics(
         event.add("status", "CANCELLED")
 
     # RECURRENCE-ID marks this VEVENT as ONE instance of the series identified
-    # by UID. Emitted in DISPLAY_TIMEZONE local time; icalendar adds the TZID.
+    # by UID. Emitted in the plant's local time; icalendar adds the TZID.
     if recurrence_id is not None:
         event.add("recurrence-id", recurrence_id.astimezone(tz))
 

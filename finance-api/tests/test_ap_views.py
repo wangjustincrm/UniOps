@@ -8,6 +8,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from jose import jwt
 
+from app.core.plant_time import plant_now, plant_today
 from app.core.config import settings
 from app.db.base import get_db
 from app.main import app
@@ -35,7 +36,7 @@ async def client(db_session):
 
 
 def _inv(vendor, due_days_ago: int, total="100.00", status="posted", vid=None) -> ApInvoice:
-    today = date.today()
+    today = plant_today()
     return ApInvoice(
         ap_invoice_number=f"AP-{uuid.uuid4().hex[:12]}",
         source="epms", source_invoice_id=uuid.uuid4(),

@@ -10,10 +10,11 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Loader2, Sparkles, X as XIcon } from 'lucide-react'
 import { Button, Input, FormField } from '@uniops/shell'
+import { currentMonthISO } from '@/lib/utils'
 
+/** The plant's current month (company time zone), 'YYYY-MM'. */
 function currentMonthDefault(): string {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+  return currentMonthISO()
 }
 
 export function GenerateOutlookModal({

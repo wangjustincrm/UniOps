@@ -13,6 +13,7 @@ import uuid
 
 from sqlalchemy import select
 
+from app.core.plant_time import fmt_date
 from app.models.expense import ExpenseAttachment, ExpenseClaim
 from app.services import attachment_helper
 from app.services.pdf_claim import build_claim_pdf, cfm_answers
@@ -92,7 +93,7 @@ async def _tra_approvals(db, claim: ExpenseClaim) -> list[dict]:
         "step_idx": e.step_idx,
         "actor_name": "Skipped" if is_machine_approval(e.comment) else (e.actor_name or ""),
         "acted_date": (None if is_machine_approval(e.comment)
-                       else e.created_at.date().isoformat() if e.created_at else None),
+                       else fmt_date(e.created_at) if e.created_at else None),
     } for e in await _shared_approval_events(db, claim.id) if e.action == "approve"]
 
 
@@ -102,9 +103,10 @@ async def _company_name(db) -> str | None:
     return getattr(cfg, "name", None) if cfg else None
 
 
-async def _cfm_form(db, claim: ExpenseClaim) -> tuple[str | None, list[tuple[str, str]]]:
+async def cfm_form(db, claim: ExpenseClaim) -> tuple[str | None, list[tuple[str, str]]]:
     """(form name, [(label, answer)]) for a custom-form claim, in field_schema
-    order. Answers whose field is gone from the schema are kept, under their key."""
+    order. Answers whose field is gone from the schema are kept, under their key.
+    Also what the claim detail shows as Form Details (expenses.get_expense)."""
     from app.crud.custom_form import get_by_code
 
     code = claim.claim_type.split("_", 1)[1] if "_" in claim.claim_type else claim.claim_type[3:]
@@ -136,7 +138,7 @@ async def render(db, claim: ExpenseClaim) -> bytes:
     company_name = await _company_name(db)
     form_name, cfm_fields = None, None
     if claim.claim_type.upper().startswith("CFM"):
-        form_name, cfm_fields = await _cfm_form(db, claim)
+        form_name, cfm_fields = await cfm_form(db, claim)
     tra_number = None
     if claim.claim_type == "TRV" and claim.travel_application_id:
         tra_number = (await db.execute(

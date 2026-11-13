@@ -4,7 +4,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { cn } from '@/lib/utils'
+import { cn, todayISO } from '@/lib/utils'
 import { formatAmount, formatDate } from '@/lib/utils'
 import { useProjects, useCreateProject, useUpdateProject } from '@/hooks/useProjects'
 import type { ApiProject, CreateProjectBody, UpdateProjectBody, ProjectStatus } from '@/services/projects'
@@ -97,7 +97,7 @@ function projectToForm(p: ApiProject): ProjectFormData {
 }
 
 function nextProjectCode(projects: ApiProject[]): string {
-  const year = new Date().getFullYear()
+  const year = Number(todayISO().slice(0, 4))   // the plant's year
   const yearProjects = projects.filter((p) => p.code.includes(String(year)))
   const nums = yearProjects
     .map((p) => {

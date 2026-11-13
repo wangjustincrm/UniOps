@@ -4,6 +4,23 @@ covers: >
   Inactive vendors, vendor change history, whether a vendor can be prepaid.
 rules:
   - id: inactive_vendors
+    # Round 2 (ISS-0050): "有哪些供应商已经停用？停用后还能下单吗？" — the list
+    # was right, the rule part "not covered". Code answers the rule part.
+    said_when:
+      # A modal ("还能…吗", "can … still") is required: "上个月停用了哪些供应商？采购金额多少？"
+      # and "已停用的供应商还有哪些 PO 没收货？" ask for data (round 2 fix, 2026-11-11).
+      - '(?:停用|失效|禁用|不活跃|\binactive\b|deactivated).{0,20}(?:能|可以|可否|\bcan\b|\bstill\b|\ballowed\b).{0,10}(?:下单|订购|订货|采购|选|用|\border|\bPRs?\b|\bPOs?\b|purchase|pick|select)'
+      - '(?:下单|订购|\border\w*).{0,15}(?:停用|\binactive\b|deactivated)'
+    says:
+      en: >
+        An inactive vendor cannot be picked on a new PR, PO or agreement — the
+        vendor pickers list active vendors only. Documents that already name
+        the vendor keep it and still show it. The pickers enforce this; the
+        server does not check it separately.
+      zh: >
+        停用的供应商不能再用于新单据：新建请购单、采购订单或协议时，供应商选择框只列出启用中的
+        供应商，选不到停用的。已经用了这个供应商的单据不受影响，照常显示。这是由选择框控制的，
+        服务器端没有另外校验。
     asked_as:
       - 停用后还能下单吗？
       - can an inactive vendor still be ordered from

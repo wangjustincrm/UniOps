@@ -7,6 +7,7 @@ from sqlalchemy import case, exists, func, select
 from sqlalchemy.dialects.postgresql import array as sa_array
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_now
 from app.core.ontology import scope_po
 from app.crud._list_order import lower_text, sort_clauses
 from app.crud._numbering import next_number
@@ -31,7 +32,7 @@ from app.schemas.pr import ApprovalEventResponse
 # ── Number generation ──────────────────────────────────────────────────────────
 
 async def _next_number(db: AsyncSession, vendor_code: str) -> str:
-    ym = datetime.now(timezone.utc).strftime("%y%m")
+    ym = plant_now().strftime("%y%m")
     prefix = f"PO-{vendor_code}-{ym}-"
     return await next_number(db, PurchaseOrder.number, prefix, width=2)
 

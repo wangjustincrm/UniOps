@@ -25,6 +25,10 @@ configure_task_logging()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Starting up %s v%s [%s]", settings.APP_NAME, settings.APP_VERSION, settings.ENVIRONMENT)
+    # The plant's time zone (company setting) before anything reads the clock.
+    from app.core.plant_time import plant_tz_refresh_loop, refresh_plant_tz
+    await refresh_plant_tz(engine)
+    plant_tz_task = asyncio.create_task(plant_tz_refresh_loop(engine))
     from app.tasks.daily_followup import daily_followup_loop
     followup_task = asyncio.create_task(daily_followup_loop())
     # Turns every new task (whichever service wrote it) into its notification
@@ -56,6 +60,7 @@ async def lifespan(app: FastAPI):
     gr_collect_task = asyncio.create_task(gr_collect_due_loop())
     yield
     logger.info("Shutting down — closing connections")
+    plant_tz_task.cancel()
     followup_task.cancel()
     notifier_task.cancel()
     overdue_task.cancel()

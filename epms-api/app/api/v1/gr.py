@@ -8,6 +8,7 @@ from fastapi.responses import Response
 
 from uniops_authz import has_permission
 
+from app.core.plant_time import plant_today
 from app.core.authz import require_permission
 from app.core.deps import BearerToken, CurrentUserPayload, SessionDep
 from app.core.access_scope import build_scope
@@ -216,7 +217,7 @@ async def export_receiving_report(
         sort=sort, dir=dir,
     )
     content = build_receiving_workbook(rows, date_from=date_from, date_to=date_to)
-    filename = f"receiving-report-{date.today()}.xlsx"
+    filename = f"receiving-report-{plant_today()}.xlsx"
     return Response(
         content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

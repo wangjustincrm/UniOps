@@ -30,7 +30,7 @@ import { SortTh, sortParams, useSort, type Sort } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
 import { invalidateApJudgement } from '@/lib/apJudgement'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { ListPager } from '@/components/ListPager'
 import { BillInvoices, billPurchaseOrders, invoicesCsv, type BillInvoice } from '@/components/ap/BillInvoices'
@@ -195,7 +195,7 @@ function csvEscape(v: unknown) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 /** Already YYYY-MM-DD from the API — never re-parse a date-only string. */
-function day(v: string | null) { return v ? v.slice(0, 10) : '—' }
+function day(v: string | null) { return v ? formatDate(v.slice(0, 10)) : '—' }
 
 /**
  * Recording why a payable is being set aside.
@@ -518,7 +518,7 @@ function SupplierDetail({ code, name, currency, gap, onClose }: {
                             {/* Who judged it and why, on the row itself: a
                                 dismissal nobody can trace is worse than none. */}
                             {b.dismissed && (
-                              <span title={[b.dismissed.note, b.dismissed.by, b.dismissed.at?.slice(0, 10)]
+                              <span title={[b.dismissed.note, b.dismissed.by, b.dismissed.at && formatDate(b.dismissed.at)]
                                       .filter(Boolean).join(' · ')}
                                     className="ml-1.5 rounded bg-neutral-200 px-1 py-0.5 text-[10px] font-medium text-neutral-500">
                                 ignored
@@ -888,7 +888,7 @@ function BillsByDate({ currency }: { currency: string }) {
                                   from === c.bill_date && to === c.bill_date
                                     ? 'border-[#085E5E] bg-primary-50/60'
                                     : 'border-neutral-200 hover:bg-neutral-50')}>
-              <span className="font-mono">{c.bill_date}</span>
+              <span className="font-mono">{day(c.bill_date)}</span>
               <span className="ml-2 font-mono tabular-nums font-semibold">{money(c.amount)}</span>
               <span className="ml-2 text-neutral-400">
                 {c.bills} bills · {c.suppliers} suppliers
@@ -1043,7 +1043,7 @@ function BillsByDate({ currency }: { currency: string }) {
                   <td className="px-3 py-2 font-mono text-xs">
                     {b.bill_no}
                     {b.dismissed && (
-                      <span title={[b.dismissed.note, b.dismissed.by, b.dismissed.at?.slice(0, 10)]
+                      <span title={[b.dismissed.note, b.dismissed.by, b.dismissed.at && formatDate(b.dismissed.at)]
                               .filter(Boolean).join(' · ')}
                             className="ml-1.5 rounded bg-neutral-200 px-1 py-0.5 text-[10px] font-medium text-neutral-500">
                         ignored

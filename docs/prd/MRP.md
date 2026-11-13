@@ -1,9 +1,14 @@
 # MRP — Product Requirements Document
 
-**Version:** 2.1
-**Date:** 2026-10-19
+**Version:** 2.2
+**Date:** 2026-11-11
 **Status:** Current. Describes the MRP module as built on main. Requirements from the original plan that were never built are marked **Not implemented** and listed under Open Items.
 **Scope:** Single-plant milk-powder MRP: sales forecast, master production schedule (MPS), multi-level BOM explosion and purchase suggestions, using read-only WMS and NC65 data.
+
+**What changed in version 2.2** (2026-11-11)
+
+- "Today", "the current week" and "the current month" are the plant's, taken in the plant time zone (Company Settings → Time Zone), not UTC. Before this, the next day started at 19:00/20:00 Toronto time: past-month locking, the MPS current week and frozen zone, the purchase-suggestion order-date check, the available-stock expiry check and the WMS stock aging buckets could all run a day (or a month) early in the evening.
+- The creation timestamp in outlook and MPS run numbers (`MMDDHH`) is on the plant clock (FR-OUT-05, FR-PLN-12).
 
 **What changed in version 2.1** (2026-10-19)
 
@@ -210,8 +215,8 @@ V1.0 parameters that were **not built**: safety stock, reorder point, fixed/max 
 | ID | Requirement | Status |
 | --- | --- | --- |
 | FR-FC-01 | One living forecast table holds finished good × calendar month. It is not versioned; only non-zero cells are stored. | Built |
-| FR-FC-02 | The grid shows the current month −3 to +24 by default and highlights the 18-month window an outlook would freeze. | Built |
-| FR-FC-03 | Past months are read-only, enforced both on screen and on the server. Month values must be shaped YYYY-MM. | Built |
+| FR-FC-02 | The grid shows the current month (in the plant time zone, Company Settings → Time Zone) −3 to +24 by default and highlights the 18-month window an outlook would freeze. | Built |
+| FR-FC-03 | Past months are read-only, enforced both on screen and on the server; "past" is judged by the plant's current month, not UTC. Month values must be shaped YYYY-MM. | Built |
 | FR-FC-04 | Cells are edited in place and autosaved; only changed cells are sent. One invalid cell rejects the whole batch, so nothing is half-saved. | Built |
 | FR-FC-05 | A block can be pasted from Excel, and pasting can create rows for product codes that are new to the grid. Undo/redo covers whole paste blocks. A very large paste asks for confirmation first. | Built |
 | FR-FC-06 | Values are stored in KG. A display toggle switches between kg and tonnes (default tonnes, remembered per browser). Pasted and typed values are scaled back to kg. | Built |
@@ -239,7 +244,7 @@ V1.0 parameters that were **not built**: safety stock, reorder point, fixed/max 
 | FR-OUT-02 | Several outlooks can exist side by side. Generating one does not supersede the others. | Built |
 | FR-OUT-03 | The Outlooks list is paged and searchable. Each outlook can be viewed and exported to Excel. | Built |
 | FR-OUT-04 | An outlook can be deleted, **except** when any MPS run was generated from it. In that case deletion is refused and the runs are named. | Built |
-| FR-OUT-05 | Numbering is `FCV-<anchor YYYYMM>-<creation MMDDHH>`, with a `-2`, `-3` … suffix within the same hour. | Built |
+| FR-OUT-05 | Numbering is `FCV-<anchor YYYYMM>-<creation MMDDHH>`, with a `-2`, `-3` … suffix within the same hour. The creation time is read in the plant time zone. | Built |
 
 ### 5.6 Consignment stock
 
@@ -256,7 +261,7 @@ V1.0 parameters that were **not built**: safety stock, reorder point, fixed/max 
 | ID | Requirement | Status |
 | --- | --- | --- |
 | FR-STK-01 | WMS lot data is mirrored read-only into UniOps on a schedule: default every 5 minutes, adjustable in Portal Admin, 0 = manual only. Only one sync runs at a time; manual refresh and the scheduler share the same lock, and a clash returns "already running". Without a WMS connection, refresh answers "not configured". | Built |
-| FR-STK-02 | **Available stock definition**, used by both the MPS and purchase suggestions: WMS (quantity − on-hold quantity) over lots whose mapped status is *available* and whose expiry is empty or today or later, **plus** consignment stock from the latest count. Allocated quantity is **not** subtracted, because allocated goods are still on the shelf. | Built |
+| FR-STK-02 | **Available stock definition**, used by both the MPS and purchase suggestions: WMS (quantity − on-hold quantity) over lots whose mapped status is *available* and whose expiry is empty or today (the plant's date) or later, **plus** consignment stock from the latest count. Allocated quantity is **not** subtracted, because allocated goods are still on the shelf. | Built |
 | FR-STK-03 | WMS quality codes map to available or hold through an editable table: Release → available; Block and Under Inspection → hold. Unknown codes default to hold. Expired is always derived from the expiry date. | Built |
 | FR-STK-04 | Sync status records the last attempt and the last *success* separately. Freshness is always shown from the last success. | Built |
 | FR-STK-05 | The mirror also holds lot locations, unit, production date and NC QC batch (WMS attribute 04). These serve the Inventory module's WMS screens (lot search, aging, supply per material, open PO lines), which moved out of MRP on 2026-10-14 (see INVENTORY.md). | Built |
@@ -300,7 +305,7 @@ V1.0 parameters that were **not built**: safety stock, reorder point, fixed/max 
 | FR-MPS-05 | Minimum lot size: a product's output in any week is either 0 or at least its lot size. A smaller requirement is rounded up to a full lot (the extra is recorded as surplus and offsets later months), and the full lot is placed whole in one week. If no week fits, the engine looks in the same month, then earlier, then later (marked *late production*). If weekly capacity physically cannot reach the lot, capacity wins: the lot is split and marked *below minimum lot*. Surplus that would outlive its shelf life is produced anyway and flagged. | Built |
 | FR-MPS-06 | Months fully covered by surplus carried in from earlier show a zero-quantity "covered" line, so the cell reads "already made" rather than "no demand". | Built |
 | FR-MPS-07 | A maintenance week (maximum output 0, or maximum SKUs < 1) is skipped, and its volume is placed in the month's other weeks. | Built |
-| FR-MPS-08 | Demand that the lead time would place before the current week is clamped to the current week and flagged *lead shortfall*. | Built |
+| FR-MPS-08 | Demand that the lead time would place before the current week (the week containing the plant's today) is clamped to the current week and flagged *lead shortfall*. | Built |
 | FR-MPS-09 | Frozen zone: the first N months (default 3) are copied unchanged from the plan in force as locked lines. The engine cannot place anything in them, and their lines cannot be edited. Uncovered demand for a frozen month goes to the first free week, flagged lead shortfall. The first plan ever generated (nothing in force yet) has no frozen zone. The run records the number of frozen months actually applied. | Built (no settings screen; see Open Items) |
 | FR-MPS-10 | Products with no shelf life on record are never pre-built, and the run summary names them. | Built |
 | FR-MPS-11 | Each run snapshots the week mode, week start, lead time and frozen months. Viewing, recalculating and adjusting always use the run's own values, not current settings. Capacity rules and minimum lots are **not** snapshotted: a recalculation uses today's rules. | Built |
@@ -322,7 +327,7 @@ V1.0 parameters that were **not built**: safety stock, reorder point, fixed/max 
 | FR-PLN-09 | Compare: a run is compared with the plan in force, or with the version it replaced when it *is* the plan in force. Changes are shown cell by cell (increases ▲ green, decreases ▼ red, removed cells struck through), with a summary and changed months marked on the month header. A first version has nothing to compare against and shows no differences. | Built |
 | FR-PLN-10 | When the outlook being released is not the newest one, the page warns but does not block. | Built |
 | FR-PLN-11 | Export the matrix to Excel, in kg or tonnes, grouped by month. | Built |
-| FR-PLN-12 | Numbering is `MPS-<horizon YYYYMM>-<creation MMDDHH>`, with a suffix within the same hour. | Built |
+| FR-PLN-12 | Numbering is `MPS-<horizon YYYYMM>-<creation MMDDHH>`, with a suffix within the same hour. The creation time is read in the plant time zone. | Built |
 
 ### 5.12 Supply parameters
 

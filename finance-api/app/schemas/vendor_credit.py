@@ -104,6 +104,7 @@ class CreditSuggestion(BaseModel):
 
 class CreditSuggestResponse(BaseModel):
     gross: Decimal
+    already_paid: Decimal = Decimal("0.00")  # invoices of this PA paid in earlier runs
     suggested: list[CreditSuggestion]
     credit_applied: Decimal
     net: Decimal

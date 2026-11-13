@@ -215,7 +215,7 @@ async def test_gr_created_email_has_po_vendor_date_and_items(mails):
     assert subject == f"Goods Receipt Created — {gr.number}"
     assert f"<b>PO:</b> {gr.po_number}" in body
     assert "<b>Vendor:</b> Acme &lt;Supply&gt;" in body
-    assert "<b>Delivery date:</b> 2026-10-26" in body
+    assert "<b>Delivery date:</b> 2026-OCT-26" in body   # plant day, UI-DATE-002
     assert "• Gasket — 10 EA (Good)" in body and "• Valve — 2.5 KG (Damaged)" in body
     assert "{" not in body
 

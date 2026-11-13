@@ -69,6 +69,10 @@ IDENTITY_SHADOW_DDL = (
     " gm_or_opm varchar(3) NOT NULL DEFAULT 'gm', director_user_id uuid NULL,"
     " supervisor_enabled boolean NOT NULL DEFAULT false, updated_by uuid NULL,"
     " updated_at timestamptz NOT NULL DEFAULT now())",
+    # identity's SoD rules; /permissions reads `self_payment` (PAY-003) the
+    # way finance-api's executor does. Empty = rule off, as there.
+    "CREATE TABLE sod_rules (rule_code varchar(50) PRIMARY KEY,"
+    " enabled boolean NOT NULL DEFAULT true)",
 )
 
 

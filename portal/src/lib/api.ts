@@ -124,7 +124,31 @@ export const mdmApi = {
   get:    <T>(path: string)                  => mdmRequest<T>('GET',    path),
   post:   <T>(path: string, body?: unknown)  => mdmRequest<T>('POST',   path, body),
   patch:  <T>(path: string, body?: unknown)  => mdmRequest<T>('PATCH',  path, body),
+  put:    <T>(path: string, body?: unknown)  => mdmRequest<T>('PUT',    path, body),
   delete: <T>(path: string)                  => mdmRequest<T>('DELETE', path),
+}
+
+/** POST multipart form data to mdm-api. */
+export async function mdmUpload<T>(path: string, form: FormData): Promise<T> {
+  const res = await fetch(`${MDM_API}/mdm/v1${path}`, { method: 'POST', headers: authHeaders(), body: form })
+  if (res.status === 401) { globalSignOut() }
+  if (!res.ok) {
+    const b = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(extractDetail(b.detail, res.status))
+  }
+  return res.json()
+}
+
+/** Download a file from mdm-api. The server's filename wins when it sends one. */
+export async function mdmDownload(path: string, fallbackName: string): Promise<void> {
+  const res = await fetch(`${MDM_API}/mdm/v1${path}`, { headers: authHeaders() })
+  if (res.status === 401) { globalSignOut(); return }
+  if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`)
+  const named = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '')
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = url; a.download = named?.[1] ?? fallbackName; a.click()
+  URL.revokeObjectURL(url)
 }
 
 export const epmsApi = {

@@ -13,7 +13,7 @@ is resolved by the caller (services/claim_pdf.py) and passed in.
 """
 import json
 import re
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO
 from xml.sax.saxutils import escape
@@ -23,6 +23,8 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+from app.core.plant_time import fmt_date, fmt_datetime, plant_now
 
 _PRIMARY = colors.HexColor("#0A7C7C")
 _LIGHT = colors.HexColor("#F5F5F5")
@@ -106,22 +108,19 @@ def _rate(v) -> str:
 
 
 def _d(v) -> str:
-    if isinstance(v, datetime):
-        return v.strftime("%Y-%m-%d")
-    if isinstance(v, date):
-        return v.isoformat()
+    """2026-NOV-11. A timestamp is taken at the plant (Company Settings time
+    zone) — an evening submission in Toronto is not tomorrow's; a calendar date
+    is printed as is."""
+    if isinstance(v, (date, datetime)):
+        return fmt_date(v)
     return ""
 
 
-def _dt_utc(v) -> str:
-    """Approval timestamps with the time, in UTC and labelled as such — a bare
-    date is ambiguous here (Toronto is UTC-4/5, so an evening approval lands on
-    the next UTC day)."""
+def _dt(v) -> str:
+    """Approval timestamps with the time, at the plant: 2026-NOV-11 14:30."""
     if not isinstance(v, datetime):
         return ""
-    if v.tzinfo is not None:
-        v = v.astimezone(timezone.utc)
-    return v.strftime("%Y-%m-%d %H:%M UTC")
+    return fmt_datetime(v)
 
 
 def cfm_answers(notes: str | None) -> tuple[dict, str | None]:
@@ -323,7 +322,7 @@ def build_claim_pdf(
         data.append([
             Paragraph(_rich(a.get("step") or "—"), td_style),
             Paragraph(_rich(a.get("name") or "—"), td_style),
-            Paragraph(_dt_utc(a.get("at")) or "—", td_style),
+            Paragraph(_dt(a.get("at")) or "—", td_style),
             Paragraph(_rich(a.get("comment") or ""), td_style),
         ])
     if len(data) == 1:
@@ -338,7 +337,7 @@ def build_claim_pdf(
     els += [
         Spacer(1, 8 * mm), HRFlowable(width="100%", thickness=0.5, color=_GRAY),
         Paragraph(
-            f"Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
+            f"Generated {fmt_datetime(plant_now())}"
             f" · Status: {status_label} · {escape(claim.claim_number)}",
             footer_style,
         ),

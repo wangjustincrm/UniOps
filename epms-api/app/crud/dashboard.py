@@ -8,6 +8,7 @@ from decimal import Decimal
 from sqlalchemy import and_, case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import plant_day_bounds, plant_day_start, plant_today
 from app.core.delegation import active_delegator_ids, delegated_broadcast_roles
 from app.models.config import CompanyConfig
 from app.models.department import Department
@@ -46,7 +47,39 @@ _ZERO = Decimal("0")
 
 
 def _today() -> date:
-    return datetime.now(tz=timezone.utc).date()
+    return plant_today()
+
+
+# "This month" / "today" are the plant's (Company Settings zone), not UTC's:
+# date_trunc(..., now()) truncated in the session zone (UTC), so after 19:00/
+# 20:00 in Toronto "Approved Today" was already counting tomorrow, and the
+# last evening of a month counted toward the next one.
+
+def _month_dates(day: date | None = None) -> tuple[date, date]:
+    """[first of this plant month, first of next)."""
+    first = (day or plant_today()).replace(day=1)
+    nxt = (first.replace(year=first.year + 1, month=1) if first.month == 12
+           else first.replace(month=first.month + 1))
+    return first, nxt
+
+
+def _in_plant_month(column):
+    """A timestamptz falls in the plant's current month."""
+    first, nxt = _month_dates()
+    return and_(column >= plant_day_start(first), column < plant_day_start(nxt))
+
+
+def _paid_this_month():
+    """paid_at is the payment DATE Finance entered, stored as midnight UTC
+    (PaymentApplication.paid_on reads it back) — compare that date with the
+    plant's month, not the instant with plant midnights."""
+    first, nxt = _month_dates()
+    return and_(PaymentApplication.paid_on >= first, PaymentApplication.paid_on < nxt)
+
+
+def _in_plant_today(column):
+    start, end = plant_day_bounds(plant_today())
+    return and_(column >= start, column < end)
 
 
 async def _get_budget_thresholds(db: AsyncSession) -> tuple[float, float]:
@@ -520,8 +553,7 @@ async def build_requester(db: AsyncSession, user_id: uuid.UUID) -> DashboardResp
         select(func.coalesce(func.sum(PaymentApplication.payment_amount), 0)).where(
             PaymentApplication.id.in_(pa_ids_for_pos(my_po_ids)),
             PaymentApplication.status == "processed",
-            func.date_trunc("month", PaymentApplication.paid_at) ==
-            func.date_trunc("month", func.now()),
+            _paid_this_month(),
         )
     )
     paid_month = Decimal(str(paid_result.scalar_one()))
@@ -667,7 +699,7 @@ async def build_warehouse(db: AsyncSession) -> DashboardResponse:
             GoodsReceipt.status.in_(["confirmed", "collected"]),
             # collected_at is stamped once at collect/confirm — unlike updated_at
             # (onupdate=now), it is never bumped by later unrelated writes.
-            func.date_trunc("month", GoodsReceipt.collected_at) == func.date_trunc("month", func.now()),
+            _in_plant_month(GoodsReceipt.collected_at),
         )
     )
 
@@ -729,7 +761,7 @@ async def build_ap_clerk(db: AsyncSession) -> DashboardResponse:
     pa_processed_r = await db.execute(
         select(func.count()).select_from(PaymentApplication).where(
             PaymentApplication.status == "processed",
-            func.date_trunc("month", PaymentApplication.paid_at) == func.date_trunc("month", func.now()),
+            _paid_this_month(),
         )
     )
 
@@ -774,13 +806,13 @@ async def build_payment_officer(db: AsyncSession) -> DashboardResponse:
     processed_month_r = await db.execute(
         select(func.count()).select_from(PaymentApplication).where(
             PaymentApplication.status == "processed",
-            func.date_trunc("month", PaymentApplication.paid_at) == func.date_trunc("month", func.now()),
+            _paid_this_month(),
         )
     )
     processed_month_value_r = await db.execute(
         select(func.coalesce(func.sum(PaymentApplication.payment_amount), 0)).where(
             PaymentApplication.status == "processed",
-            func.date_trunc("month", PaymentApplication.paid_at) == func.date_trunc("month", func.now()),
+            _paid_this_month(),
         )
     )
 
@@ -810,7 +842,7 @@ async def build_finance_bp(db: AsyncSession) -> DashboardResponse:
             PaymentApplication.status == "approved",
             # approved_at is stamped once at the approval transition (approval
             # engine); updated_at would drift on any later edit/re-sync.
-            func.date_trunc("day", PaymentApplication.approved_at) == func.date_trunc("day", func.now()),
+            _in_plant_today(PaymentApplication.approved_at),
         )
     )
     pending_value_r = await db.execute(
@@ -821,7 +853,7 @@ async def build_finance_bp(db: AsyncSession) -> DashboardResponse:
     processed_month_r = await db.execute(
         select(func.count()).select_from(PaymentApplication).where(
             PaymentApplication.status == "processed",
-            func.date_trunc("month", PaymentApplication.paid_at) == func.date_trunc("month", func.now()),
+            _paid_this_month(),
         )
     )
 

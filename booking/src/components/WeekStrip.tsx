@@ -3,7 +3,7 @@
  * Clicking a column selects that day (lifted to parent).
  */
 import type { BookingSlimOut } from '@/lib/types'
-import { cn } from '@/lib/utils'
+import { cn, isoDateInZone, todayISO } from '@/lib/utils'
 
 interface Props {
   weekBookings: BookingSlimOut[]
@@ -30,18 +30,21 @@ function addDays(base: Date, n: number): Date {
   return d
 }
 
+/** Calendar fields of a local-midnight Date (pure calendar arithmetic — not
+ *  toISOString(), which shifts to UTC and slips a day east of Greenwich). */
 function toYMD(d: Date): string {
-  return d.toISOString().slice(0, 10)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-/** Count bookings whose starts_at falls on the given YYYY-MM-DD. */
+/** Count bookings whose starts_at falls on the given YYYY-MM-DD (plant date —
+ *  starts_at is a UTC instant, its first 10 characters are the UTC date). */
 function countOnDay(bookings: BookingSlimOut[], day: string): number {
-  return bookings.filter((b) => b.starts_at.slice(0, 10) === day).length
+  return bookings.filter((b) => isoDateInZone(new Date(b.starts_at)) === day).length
 }
 
 export function WeekStrip({ weekBookings, selectedDay, onSelectDay, weekStart }: Props) {
   const monday = weekStart ? new Date(`${weekStart}T00:00:00`) : getMondayOf(selectedDay)
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayISO()
 
   const days = Array.from({ length: 7 }, (_, i) => {
     const date   = addDays(monday, i)

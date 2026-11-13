@@ -23,6 +23,7 @@ from typing import Literal
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.plant_time import fmt_date
 from app.models.task_mirror import Task
 from app.models.user_mirror import User
 from app.services import area_rules
@@ -177,7 +178,7 @@ async def open_compliance_task(
         assigned_user_id=assigned_user_id,
         title=f"{_TASK_TITLE[kind]} — {visitor_label}",
         description=(
-            f"Triggered by visit on {triggering_visit.visit_date.isoformat()} "
+            f"Triggered by visit on {fmt_date(triggering_visit.visit_date)} "
             f"({await area_rules.zone_label(db, triggering_visit.access_area)}). "
             f"Open the visitor compliance page to confirm."
         ),

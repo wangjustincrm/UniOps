@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, currentMonthISO, formatDate, todayISO } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 
 const inputCls = 'h-9 rounded-lg border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary-600'
@@ -55,7 +55,7 @@ function money(v: string) {
 function drCol(signed: string) { return num(signed) > 0 ? money(signed) : '' }
 function crCol(signed: string) { return num(signed) < 0 ? money(String(-num(signed))) : '' }
 
-function thisMonth() { return new Date().toISOString().slice(0, 7) }
+function thisMonth() { return currentMonthISO() }   // the plant's month, not UTC
 
 export default function GeneralLedgerPage() {
   const { user } = useAuthStore()
@@ -309,7 +309,7 @@ function JournalTab({ q }: { q: any }) {
       {entries.map((e) => (
         <div key={e.jv_id} className="overflow-hidden rounded-lg border border-neutral-200">
           <div className="flex items-center justify-between bg-neutral-50 px-3 py-2 text-sm">
-            <span className="font-mono text-xs">{e.date} · {e.source}</span>
+            <span className="font-mono text-xs">{formatDate(e.date)} · {e.source}</span>
             <span className="rounded-full bg-white px-2 py-0.5 font-mono text-xs text-neutral-600">{e.jv_number}</span>
           </div>
           <table className="w-full text-sm">
@@ -361,7 +361,7 @@ function AccountLedgerModal({ code, period, onClose }: { code: string; period: s
                 )}
                 {data.entries.map((en: any, i: number) => (
                   <tr key={i} className="border-t border-neutral-100">
-                    <td className="px-3 py-1.5 font-mono text-xs text-neutral-600">{en.date}</td>
+                    <td className="whitespace-nowrap px-3 py-1.5 font-mono text-xs text-neutral-600">{formatDate(en.date)}</td>
                     <td className="px-3 py-1.5">
                       <span className="font-mono text-xs">{en.source}</span>
                       {en.partner_name && <span className="ml-1 text-neutral-500">· {en.partner_name}</span>}
@@ -386,7 +386,7 @@ interface OpenLine { account_code: string; side: 'debit' | 'credit'; amount: str
 function OpeningModal({ onClose, onSaved, onError }: {
   onClose: () => void; onSaved: () => void; onError: (m: string) => void
 }) {
-  const [asOf, setAsOf] = useState(new Date().toISOString().slice(0, 10))
+  const [asOf, setAsOf] = useState(todayISO())
   const [lines, setLines] = useState<OpenLine[]>([{ account_code: '', side: 'debit', amount: '' }])
   const [busy, setBusy] = useState(false)
 
@@ -477,7 +477,7 @@ function OpeningModal({ onClose, onSaved, onError }: {
 function CloseYearModal({ onClose, onDone, onError }: {
   onClose: () => void; onDone: (net: string) => void; onError: (m: string) => void
 }) {
-  const [year, setYear] = useState(new Date().getFullYear())
+  const [year, setYear] = useState(() => Number(todayISO().slice(0, 4)))
   const [busy, setBusy] = useState(false)
 
   const run = async () => {

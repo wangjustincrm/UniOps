@@ -26,7 +26,7 @@ import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, Download, Loade
 import { SortTh, sortParams, useSort } from '@uniops/shell'
 import { useAuthStore } from '@/store/auth'
 import { financeApi } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 import { PortalChromeLayout } from '@/components/layout/PortalChromeLayout'
 import { ListPager } from '@/components/ListPager'
 
@@ -93,7 +93,7 @@ function csvEscape(v: unknown) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 /** Already YYYY-MM-DD from the API — never re-parse a date-only string. */
-function day(v: string | null) { return v ? v.slice(0, 10) : '—' }
+function day(v: string | null) { return v ? formatDate(v.slice(0, 10)) : '—' }
 
 function ReviewDialog({ finding, pending, error, onCancel, onDone }: {
   finding: Finding; pending: boolean; error: string | null

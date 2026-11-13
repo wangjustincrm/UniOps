@@ -32,6 +32,9 @@ from app.schemas.user import (
     ErpImportResponse,
     ErpImportCreated,
     ErpImportError,
+    BulkCreateError,
+    BulkCreateRequest,
+    BulkCreateResponse,
 )
 from app.services import approval_client
 from app.services.mdm_client import MdmClient
@@ -550,6 +553,34 @@ def _extract_bearer(authorization: str | None) -> str:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="missing bearer token")
     return authorization.split(None, 1)[1]
+
+
+@router.post("/bulk-create", response_model=BulkCreateResponse)
+async def bulk_create_users(body: BulkCreateRequest, db: SessionDep, _: AdminDep):
+    """Staff → Create users (EMPLOYEES.md UGEN-004). All Requesters, on the same
+    initial password as an ERP import. A row that fails is reported; the others stay."""
+    created: list[ErpImportCreated] = []
+    errors: list[BulkCreateError] = []
+    for item in body.items:
+        code = item.erp_person_code.strip()
+        email = (item.email or "").strip().lower()
+        if not email:
+            errors.append(BulkCreateError(erp_person_code=code, reason="no email"))
+        elif await user_crud.get_by_email(db, email):
+            errors.append(BulkCreateError(erp_person_code=code, reason=f"email already in use: {email}"))
+        elif await user_crud.get_by_erp_person_code(db, code):
+            errors.append(BulkCreateError(erp_person_code=code, reason="already has a user"))
+        else:
+            db.add(User(
+                email=email, hashed_password=hash_password(INITIAL_PASSWORD), full_name=item.full_name,
+                role="requester", department_id=item.department_id, is_active=True,
+                must_change_password=True, erp_person_code=code,
+                password_changed_at=datetime.now(timezone.utc),
+            ))
+            await db.flush()
+            created.append(ErpImportCreated(email=email, full_name=item.full_name, temp_password=INITIAL_PASSWORD))
+    await db.commit()
+    return BulkCreateResponse(created=created, errors=errors)
 
 
 @router.post("/import-from-erp", response_model=ErpImportResponse)

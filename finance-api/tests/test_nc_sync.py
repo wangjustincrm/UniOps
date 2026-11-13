@@ -680,3 +680,164 @@ def test_transform_does_not_count_a_carry_forward_line_as_unmapped():
     _, _, _, carried, _ = transform(_ex(4), {}, {}, {}, {}, {}, set())
     assert ordinary == 1
     assert carried == 0
+
+
+# ── vouchers NC edits after import (2026-11-09) ──────────────────────────────
+# Measured on production: NC re-numbered an un-tallied voucher 388 -> 668 and
+# moved it to 10-13, and the mirror kept serving JV-202610-0388 at 10-24 — so a
+# lookup of 388 in NC found a different voucher. 12 more carried stale lines.
+
+def _edited(base, *, num=668, pdate="2026-07-03 09:00:00", amount=200):
+    """`base` as NC holds it after an edit: re-numbered, re-dated, re-amounted,
+    and reported in `modified` the way fetch_from_nc's MODIFIEDTIME read does."""
+    from dataclasses import replace
+    v = list(base.vouchers[0])
+    v[3], v[5] = num, pdate
+    return replace(
+        base,
+        vouchers=[tuple(v)],
+        details=[
+            _det("NCPK1", 1, "5101", amount, 0, amount, 0, "CADPK", 1, "expense", "ASS1"),
+            _det("NCPK1", 2, "2202", 0, amount, 0, amount, "CADPK", 1, "payable", "ASS2"),
+        ],
+        modified=frozenset({"NCPK1"}))
+
+
+def _mirror():
+    return _pg("select jv_number, voucher_date::text, total_local_debit::text, "
+               "(select count(*) from journal_voucher_lines l where l.jv_id = v.id) "
+               "from journal_vouchers v where nc_source_pk = 'NCPK1'")
+
+
+async def test_an_edited_voucher_is_reimported_not_skipped(db_session):
+    from app.services import nc_sync
+    base = _mini_extract(tallydate=None)
+    nc_sync.start_run("incremental", uuid.uuid4(), fetch=lambda wm: base, pg_dsn=_TEST_DSN)
+    assert _mirror() == [("JV-202607-0012", "2026-07-10", "100.00", 2)]
+
+    # Same rows again but NOT reported as edited: still skipped (pk-dedup holds).
+    from dataclasses import replace
+    nc_sync.start_run("incremental", uuid.uuid4(), pg_dsn=_TEST_DSN,
+                      fetch=lambda wm: replace(_edited(base), modified=frozenset()))
+    assert _mirror() == [("JV-202607-0012", "2026-07-10", "100.00", 2)]
+
+    run = nc_sync.start_run("incremental", uuid.uuid4(), pg_dsn=_TEST_DSN,
+                            fetch=lambda wm: _edited(base))
+    assert _mirror() == [("JV-202607-0668", "2026-07-03", "200.00", 2)], \
+        "one row, carrying NC's current number, date and amounts"
+    assert _pg("select status, vouchers_deleted, vouchers_inserted, watermark_to "
+               "from nc_sync_runs where id = %s", (run,))[0] == \
+        ("success", 1, 1, "2026-07-11 08:00:00")
+
+
+async def test_an_edit_does_not_move_the_creation_watermark(db_session):
+    """The edited voucher arrives because of MODIFIEDTIME; its CREATIONTIME is
+    older than anything new, and it must not be what watermark_to is taken
+    from either — otherwise an edit could advance the watermark past it."""
+    from dataclasses import replace
+    from app.services import nc_sync
+    base = _mini_extract(tallydate=None)
+    nc_sync.start_run("incremental", uuid.uuid4(), fetch=lambda wm: base, pg_dsn=_TEST_DSN)
+    v = list(base.vouchers[0]); v[6] = "2099-01-01 00:00:00"   # absurd creationtime
+    ed = replace(_edited(base), vouchers=[tuple(v)], max_creationtime=None)
+    run = nc_sync.start_run("incremental", uuid.uuid4(), fetch=lambda wm: ed,
+                            pg_dsn=_TEST_DSN)
+    assert _pg("select watermark_to from nc_sync_runs where id = %s",
+               (run,))[0][0] == "2026-07-11 08:00:00"
+
+
+def test_fetch_max_creationtime_excludes_edited_rows():
+    """fetch_from_nc computes max_ct over the voucher rows minus `modified`;
+    pin that expression so a refactor can't fold edited rows back in."""
+    import inspect
+    from app.services import nc_sync
+    src = inspect.getsource(nc_sync.fetch_from_nc)
+    assert "if v[0] not in modified" in src
+    assert "substr(v.modifiedtime, 1, 1) between '0' and '9'" in src, \
+        "'~' sorts after digits: without this every unedited voucher is 'edited'"
+
+
+async def test_reimport_repoints_open_reconciliation_matches_only(db_session):
+    """Re-importing regenerates line ids; SET NULL orphans the match, and the
+    run must re-attach it by (voucher pk, line no) — but never inside a
+    finalized period, whose snapshot is the record."""
+    from app.services import nc_sync
+    base = _mini_extract(tallydate=None)
+    nc_sync.start_run("incremental", uuid.uuid4(), fetch=lambda wm: base, pg_dsn=_TEST_DSN)
+    old_line = _pg("select l.id from journal_voucher_lines l join journal_vouchers v "
+                   "on v.id = l.jv_id where v.nc_source_pk = 'NCPK1' and l.line_no = 1")[0][0]
+
+    acct = uuid.uuid4()
+    _pg("insert into bank_accounts (id, name, bank_name, kind, currency, is_active, "
+        "created_at, updated_at) values (%s, 'RBC', 'RBC', 'bank', 'CAD', true, now(), now())",
+        (acct,))
+    books = {}
+    for status, start in (("open", "2026-07-01"), ("finalized", "2026-06-01")):
+        rec, match, book = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+        _pg("insert into bank_reconciliations (id, bank_account_id, period_start, period_end, "
+            "currency, cleared_debit_total, cleared_credit_total, cleared_debit_count, "
+            "cleared_credit_count, outstanding_debit_total, outstanding_credit_total, "
+            "difference, status, created_at, updated_at) values "
+            "(%s, %s, %s, %s::date + 29, 'CAD', 0, 0, 0, 0, 0, 0, 0, %s, now(), now())",
+            (rec, acct, start, start, status))
+        _pg("insert into bank_recon_matches (id, reconciliation_id, method, amount, "
+            "created_at, updated_at) values (%s, %s, 'manual', 100, now(), now())",
+            (match, rec))
+        _pg("insert into bank_recon_match_books (id, match_id, jv_line_id, nc_voucher_pk, "
+            "line_no, account_code, amount, created_at, updated_at) values "
+            "(%s, %s, %s, 'NCPK1', 1, '5101', 100, now(), now())", (book, match, old_line))
+        books[status] = book
+
+    nc_sync.start_run("incremental", uuid.uuid4(), pg_dsn=_TEST_DSN,
+                      fetch=lambda wm: _edited(base))
+    new_line = _pg("select l.id from journal_voucher_lines l join journal_vouchers v "
+                   "on v.id = l.jv_id where v.nc_source_pk = 'NCPK1' and l.line_no = 1")[0][0]
+    assert new_line != old_line
+    got = dict(_pg("select id, jv_line_id from bank_recon_match_books"))
+    assert got[books["open"]] == new_line
+    assert got[books["finalized"]] is None
+
+
+async def test_checker_names_follow_nc_after_import(db_session):
+    from dataclasses import replace
+    from app.services import nc_sync
+    base = _mini_extract(tallydate=None)
+    nc_sync.start_run("incremental", uuid.uuid4(), fetch=lambda wm: base, pg_dsn=_TEST_DSN)
+
+    def names():
+        return _pg("select nc_checked_name, nc_manager_name from journal_vouchers "
+                   "where nc_source_pk = 'NCPK1'")[0]
+    assert names() == ("LIUYUHONG", "LIUYUHONG")
+    for unread in (None, {}):
+        nc_sync.start_run("incremental", uuid.uuid4(), pg_dsn=_TEST_DSN,
+                          fetch=lambda wm, n=unread: replace(base, names=n))
+        assert names() == ("LIUYUHONG", "LIUYUHONG")
+    nc_sync.start_run("incremental", uuid.uuid4(), pg_dsn=_TEST_DSN,
+                      fetch=lambda wm: replace(base, names={"NCPK1": ("XIN", None)}))
+    assert names() == ("XIN", None)
+
+
+async def test_incremental_run_attaches_income_expense_item_added_after_import(db_session):
+    """A voucher imported while its NC income-expense code had no budget
+    account keeps a NULL item forever unless a later run re-resolves it: the
+    voucher itself is skipped by every incremental run. Production: CRM09999
+    added 4.5h after JV-202610-0692 was imported, flagged on JV Validation
+    and missing from the Budget Dashboard until fixed by hand (2026-11-10)."""
+    from app.services import nc_sync
+
+    nc_sync.start_run("incremental", uuid.uuid4(),
+                      fetch=lambda wm: _mini_extract(), pg_dsn=_TEST_DSN)
+    assert _pg("select count(*) from journal_voucher_lines "
+               "where income_expense_item_id is not null")[0][0] == 0
+
+    ba_uuid = uuid.uuid4()
+    _pg("insert into budget_accounts (id, code, name, is_active, created_at, updated_at) "
+        "values (%s, 'CRM004', 'CRM004 Test', true, now(), now())", (ba_uuid,))
+    run2 = nc_sync.start_run("incremental", uuid.uuid4(),
+                             fetch=lambda wm: _mini_extract(), pg_dsn=_TEST_DSN)
+    assert _pg("select status, vouchers_inserted from nc_sync_runs where id = %s",
+               (run2,))[0] == ("success", 0)          # voucher was skipped, not re-imported
+    assert _pg("select income_expense_item_id from journal_voucher_lines "
+               "where income_expense_item_id is not null") == [(ba_uuid,)]
+    assert _pg("select value_id from jv_line_dimensions "
+               "where dim_code = 'income_expense_item'") == [(ba_uuid,)]

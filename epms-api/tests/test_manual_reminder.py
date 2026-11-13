@@ -214,8 +214,10 @@ async def test_second_reminder_inside_the_cooldown_is_refused(
     second = await requester_client.post(f"/api/v1/pr/{pr.id}/remind")
     assert second.status_code == 429, second.text
     assert "already sent" in second.json()["detail"]
-    # DD/MM/YYYY HH:MM, still UTC (ISS-0183 — format only, zone unchanged).
-    assert re.search(r"after \d{2}/\d{2}/\d{4} \d{2}:\d{2} UTC\.", second.json()["detail"]), second.json()
+    # YYYY-MMM-DD HH:MM on the plant's clock (UI-DATE-002), no "UTC".
+    detail = second.json()["detail"]
+    assert re.search(r"after \d{4}-[A-Z]{3}-\d{2} \d{2}:\d{2}\.", detail), detail
+    assert "UTC" not in detail
 
     await drain(5)
     assert _to(captured_emails).count(approver.email) == 1, \
@@ -411,3 +413,91 @@ async def test_manual_reminder_template_is_seeded():
     assert tpl is not None
     assert "{sender_name}" in tpl["body"]
     assert "{link}" in tpl["body"]
+
+
+# ── ISS-0202②: OA reminder e-mails ───────────────────────────────────────────
+# They said "EPMS" in the header and footer, repeated the type in the subject
+# ("Reminder: EXP EXP-20261103-0008 …") and told the approver the claim had
+# been "waiting 0 day(s)".
+
+async def test_oa_reminder_is_branded_oa_and_does_not_repeat_the_type(
+    requester_client, captured_emails,
+):
+    async with session_module.AsyncSessionLocal() as db:
+        await _set_notif_settings(db, default_channel="email_only")
+        approver = await _user(db, name="Mileage Approver")
+        claim_id, _ = await _expense_task(db, approver)
+        await db.commit()
+
+    resp = await requester_client.post(
+        f"/api/v1/expense-claims/{claim_id}/remind", json={"claim_type": "EXP"})
+    assert resp.status_code == 200, resp.text
+    number = resp.json()["document_number"]
+
+    await drain(5)
+    subject = next(s for to, s, _ in captured_emails if to == approver.email)
+    html = next(h for to, _, h in captured_emails if to == approver.email)
+    assert subject == f"Reminder: {number} is waiting for your approval"
+    assert f"EXP {number}" not in html
+    # (the company name in the sign-off is whatever Admin set — test DB: "EPMS")
+    assert ">EPMS</span>" not in html and "notification from EPMS" not in html
+    assert ">OA</span>" in html and "automated notification from OA." in html
+    assert "0 day(s)" not in html
+    assert "has been waiting for less than a day for your approval" in html
+
+
+async def test_pr_reminder_keeps_the_epms_brand(requester_client, captured_emails):
+    async with session_module.AsyncSessionLocal() as db:
+        await _set_notif_settings(db, default_channel="email_only")
+        approver = await _user(db, name="PR Approver")
+        pr = await _pr(db, approver)
+        await _task(db, pr, "pr", approver)
+        await db.commit()
+
+    assert (await requester_client.post(f"/api/v1/pr/{pr.id}/remind")).status_code == 200
+    await drain(5)
+    subject = next(s for to, s, _ in captured_emails if to == approver.email)
+    html = next(h for to, _, h in captured_emails if to == approver.email)
+    assert subject == f"Reminder: {pr.number} is waiting for your approval"
+    assert ">EPMS</span>" in html and "automated notification from EPMS." in html
+
+
+def test_waiting_for_wording():
+    from app.services.manual_reminder import _waiting_for
+    assert _waiting_for(0) == "for less than a day"
+    assert _waiting_for(1) == "for 1 day"
+    assert _waiting_for(3) == "for 3 days"
+
+
+def test_document_ref_and_brand():
+    from app.services.notification import _document_ref, _email_brand
+    assert _document_ref("exp", "EXP-20261103-0008") == "EXP-20261103-0008"
+    assert _document_ref("mil", "MIL-20261103-0004") == "MIL-20261103-0004"
+    assert _document_ref("cfm_testcf", "CFM_TESTCF-20261103-0002") == "CFM_TESTCF-20261103-0002"
+    assert _document_ref("po", "CRM0120261103") == "PO CRM0120261103"
+    for dt in ("exp", "mil", "trv", "tra", "cfm", "cfm_testcf", "pa_dir"):
+        assert _email_brand(dt) == "OA", dt
+    for dt in ("pr", "po", "pa", "gr", "agr", "invoice", None):
+        assert _email_brand(dt) == "EPMS", dt
+
+
+async def test_unedited_old_reminder_template_upgrades_in_place():
+    """dev4 and production hold the old manual_reminder copy verbatim (no screen
+    edits it), so it must upgrade without a data migration."""
+    from app.crud.config import _DEFAULT_EMAIL_TEMPLATES, _SUPERSEDED_EMAIL_TEMPLATE_DEFAULTS
+    async with session_module.AsyncSessionLocal() as db:
+        cfg = await get_config(db)
+        before = dict(cfg.email_templates or {})
+        old = {**before, "manual_reminder": _SUPERSEDED_EMAIL_TEMPLATE_DEFAULTS["manual_reminder"]}
+        await db.execute(sa_update(CompanyConfig).values(email_templates=old))
+        await db.commit()
+    try:
+        async with session_module.AsyncSessionLocal() as db:
+            cfg = await get_config(db)
+            assert cfg.email_templates["manual_reminder"] == _DEFAULT_EMAIL_TEMPLATES["manual_reminder"]
+            assert "{document_ref}" in cfg.email_templates["manual_reminder"]["subject"]
+            await db.commit()
+    finally:
+        async with session_module.AsyncSessionLocal() as db:
+            await db.execute(sa_update(CompanyConfig).values(email_templates=before))
+            await db.commit()

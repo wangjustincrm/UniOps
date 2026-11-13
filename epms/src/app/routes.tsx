@@ -42,6 +42,7 @@ import AdminPanel from '@/pages/admin/AdminPanel'
 import { VendorCreditsPage } from '@/pages/vendorcredits/VendorCreditsPage'
 import FreightPage from '@/pages/freight/FreightPage'
 import FreightInvoiceRedirect from '@/pages/freight/FreightInvoiceRedirect'
+import ShipmentDetailPage from '@/pages/freight/ShipmentDetailPage'
 
 // Short, distinguishable title for an id-keyed detail/edit tab (UUIDs too long).
 const short = (id: string) => (id.length > 8 ? id.slice(0, 8) : id)
@@ -95,6 +96,7 @@ export const epmsRoutes: RouteDef[] = [
   // links from other tabs re-point it first (pages/freight/useFreightNav.ts).
   { path: '/freight', element: <FreightPage />, tab: { title: 'Freight', icon: 'Truck', keyStrategy: 'static' } },
   { path: '/freight/invoices/:id', element: <FreightInvoiceRedirect />, tab: { title: (p) => `Freight Invoice ${short(p.id)}`, icon: 'Truck', keyStrategy: 'param', paramName: 'id' } },
+  { path: '/freight/shipments/:id', element: <ShipmentDetailPage />, tab: { title: (p) => `Shipment ${short(p.id)}`, icon: 'Truck', keyStrategy: 'param', paramName: 'id' } },
 
   { path: '/budget', element: <BudgetDashboard />, tab: { title: 'Budget Dashboard', icon: 'PiggyBank', keyStrategy: 'static' } },
   { path: '/budget/catalog', element: <BudgetCatalogPage />, tab: { title: 'Account Catalog', icon: 'FolderTree', keyStrategy: 'static' } },

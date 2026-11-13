@@ -13,12 +13,11 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, time, timedelta
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
+from app.core.plant_time import plant_day_bounds, plant_tz
 from app.models.booking import Booking
 from app.models.room import MeetingRoom
 from app.schemas.room import RoomOut, RoomWithStatusOut
@@ -156,7 +155,7 @@ async def suggest(
             "alternative_rooms": [RoomWithStatusOut, ...],               # ≤5
         }
     """
-    tz = ZoneInfo(settings.DISPLAY_TIMEZONE)
+    tz = plant_tz()
     duration = ends_at - starts_at
     slot_minutes: int = cfg_rules.get("slot_minutes", 15)
     default_open_start_str: str = cfg_rules.get("default_open_start", "08:00")
@@ -174,10 +173,8 @@ async def suggest(
     open_end = room.open_time_end or _parse_time(default_open_end_str)
 
     # Load all confirmed bookings for the target room on that day
-    day_start_utc = datetime(day.year, day.month, day.day, 0, 0, tzinfo=tz).astimezone(
-        ZoneInfo("UTC")
-    )
-    day_end_utc = day_start_utc + timedelta(days=1)
+    # Plant-day bounds: a DST day is 23 or 25 hours, not start + 24 h.
+    day_start_utc, day_end_utc = plant_day_bounds(day)
 
     busy_result = await db.execute(
         select(Booking.starts_at, Booking.ends_at)
@@ -282,10 +279,7 @@ async def suggest(
     # One grouped query covers all candidates.
     today_bookings_by_room: dict = {c.id: [] for c in top5}
     if top5:
-        today_start_utc = datetime(now.year, now.month, now.day, 0, 0, tzinfo=tz).astimezone(
-            ZoneInfo("UTC")
-        )
-        today_end_utc = today_start_utc + timedelta(days=1)
+        today_start_utc, today_end_utc = plant_day_bounds(now.date())
         top5_ids = [c.id for c in top5]
         today_result = await db.execute(
             select(Booking).where(

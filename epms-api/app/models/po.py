@@ -133,8 +133,10 @@ class PurchaseOrder(UUIDPrimaryKey, TimestampMixin, Base):
     @three_way_matched.inplace.expression
     @classmethod
     def _three_way_matched_expression(cls):
-        from app.core.po_facts import three_way_matched
-        return three_way_matched(cls.id)
+        # Matched and since paid still counts (ISS-0036); the PA gate keeps
+        # three_way_matched itself, through crud.po.
+        from app.core.po_facts import three_way_match_passed
+        return three_way_match_passed(cls.id)
 
     # Not "has_invoice": PoResponse already has that field, filled from the PO
     # object, and a hybrid of the same name reads None on an instance.

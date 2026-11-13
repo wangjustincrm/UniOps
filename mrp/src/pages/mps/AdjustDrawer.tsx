@@ -54,6 +54,7 @@ import { createPortal } from 'react-dom'
 import { AlertTriangle, CheckCircle2, Loader2, X as XIcon } from 'lucide-react'
 import { Button, Input, FormField } from '@uniops/shell'
 import { ApiError } from '@/lib/api'
+import { todayISO } from '@/lib/utils'
 import { mpsApi, type MpsLine, type WeekGridEntry } from './mpsApi'
 import { currentGridWeekStart } from './weekColumns'
 
@@ -124,11 +125,11 @@ export function AdjustDrawer({
     () => [...weekGrid].sort((a, b) => a.week_start.localeCompare(b.week_start)),
     [weekGrid],
   )
-  // UTC, to match mrp-api's `datetime.now(timezone.utc).date()` — the two
-  // must agree on which week is current or the picker and the 422 disagree
-  // by a day at the boundary.
+  // The plant's date, to match mrp-api's plant_today() — the two must agree
+  // on which week is current or the picker and the 422 disagree by a day at
+  // the boundary.
   const currentWeekStart = useMemo(
-    () => currentGridWeekStart(sortedWeeks, new Date().toISOString().slice(0, 10)),
+    () => currentGridWeekStart(sortedWeeks, todayISO()),
     [sortedWeeks],
   )
   const hasPassed = (w: WeekGridEntry) =>

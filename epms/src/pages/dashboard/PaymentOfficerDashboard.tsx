@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { StatCard } from '@/components/dashboard/StatCard'
 import { useDashboard } from '@/hooks/useDashboard'
-import { formatAmount, formatDate } from '@/lib/utils'
+import { displayTimeZone, formatAmount, formatDate } from '@/lib/utils'
 import { SortTh, useSortableRows } from '@uniops/shell'
 
 /**
@@ -39,7 +39,7 @@ export default function PaymentOfficerDashboard() {
     created_at: (p) => p.created_at,
   })
   const now = new Date()
-  const thisMonth = now.toLocaleString('en-CA', { month: 'long', year: 'numeric' })
+  const thisMonth = now.toLocaleString('en-CA', { month: 'long', year: 'numeric', timeZone: displayTimeZone() })
 
   return (
     <div className="flex flex-col gap-6">

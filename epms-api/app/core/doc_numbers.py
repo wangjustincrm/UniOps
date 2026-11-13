@@ -41,3 +41,45 @@ def normalize(prefix: str, value) -> str:
 def digit_groups(value) -> list[str]:
     """The runs of digits in a typed number, for a "did you mean" search."""
     return re.findall(r"\d{2,}", str(value))
+
+
+# The same formats, found inside a sentence. Only a complete number with its
+# prefix counts: inside a question "20261015-0006" could be a PR, a GR or a PA.
+_IN_TEXT = re.compile(
+    r"(?<![A-Za-z0-9])(?:"
+    r"(?P<PR>PR-\d{8}-\d{4})|(?P<GR>GR-\d{8}-\d{4})|(?P<PA>PA-\d{8}-\d{4})"
+    r"|(?P<AGR>AGR-\d{6}-\d{4})|(?P<INV>INV-\d{4}-\d{4,})"
+    r"|(?P<PO>PO-[A-Za-z0-9]+-\d{4}-\d{2,}(?:-\d+)?)"
+    r")(?![A-Za-z0-9])", re.I)
+
+
+def find_all(text) -> list[tuple[str, str, int, int]]:
+    """(prefix, number in its stored form, start, end) for every document
+    number written in `text`, in order."""
+    out = []
+    for m in _IN_TEXT.finditer(str(text or "")):
+        prefix = m.lastgroup
+        out.append((prefix, normalize(prefix, m.group(0)), m.start(), m.end()))
+    return out
+
+
+def distance(a: str, b: str) -> int:
+    """Edit distance (insert, delete, substitute one character)."""
+    a, b = a.upper(), b.upper()
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, start=1):
+        cur = [i]
+        for j, cb in enumerate(b, start=1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def closest(typed: str, candidates, max_distance: int = 1) -> list[str]:
+    """The candidates within one typing slip of `typed` (one digit wrong,
+    missing or extra), nearest first. "PR-20260928-0091" for PR-20260928-0001
+    was answered "not found" with no suggestion (ISS-0024): it shares the date
+    but not the sequence, so a search on all its digit groups found nothing."""
+    typed = str(typed or "").strip()
+    scored = sorted({(distance(typed, c), c) for c in candidates if c})
+    return [c for d, c in scored if 0 < d <= max_distance]

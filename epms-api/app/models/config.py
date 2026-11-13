@@ -34,6 +34,14 @@ class CompanyConfig(Base):
         JSONB, nullable=False, default=dict, server_default="{}"
     )
 
+    # ── Time zone ───────────────────────────────────────────────────────────
+    # The plant's IANA zone (e.g. America/Toronto). Every service reads it for
+    # "today", accounting periods, document-number dates and printed times —
+    # see app/core/plant_time.py. A name, not an offset, so DST is handled.
+    timezone: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="America/Toronto", server_default="America/Toronto"
+    )
+
     # ── Currency ────────────────────────────────────────────────────────────
     default_currency: Mapped[str] = mapped_column(String(10), nullable=False, default="CAD")
     enabled_currencies: Mapped[list] = mapped_column(
