@@ -56,7 +56,9 @@ async def find(uow_factory) -> list[int]:
     body = sa.cast(Document.body_json, sa.Text)
     marked = sa.or_(*(content.contains(m, autoescape=True) for m in MARKS), *(body.contains(m, autoescape=True) for m in MARKS))
     async with uow_factory(SYSTEM_ACTOR) as u:
-        return list((await u.session.execute(sa.select(Document.id).where(marked).order_by(Document.id))).scalars())
+        # Card data only ever came in Shopify's pages; other kinds hold bytes that are not text (PDFs, attachments).
+        return list((await u.session.execute(sa.select(Document.id).where(Document.kind == "SHOPIFY_ORDER_JSON", marked)
+                                             .order_by(Document.id))).scalars())
 
 
 async def redact_one(uow_factory, doc_id: int, *, apply: bool) -> dict[str, Any]:
