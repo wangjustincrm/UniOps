@@ -1,12 +1,15 @@
 # Safety (EHS) — Product Requirements Document
 
-**Version**: 0.21
+**Version**: 0.22
 **Date**: 2026-11-11
 **Status**: In Development (branch, not deployed)
 **Scope**: A workplace health and safety module for the Kingston plant (Ontario OHSA / WSIB), replacing SiteDocs. It covers incidents and statutory clocks, corrective actions, inspections and forms, training, JHSC, chemicals/WHMIS, permits, equipment, documents, and dashboards.
 **Source**: Consolidated from the Safety Module PRD series in `/srv/uniops/`. The baseline is the full requirement list in v0.2 (`Safety-Module-PRD-EN-v0.2.docx`, 28 Aug 2026). Changes come from v0.3 and the HSE reply to it (`Safety-Module-PRD-EN-v0.3_Reply.docx`, 31 Aug), and from v0.4 and the HSE reply to it (`Safety-Module-PRD-EN-v0.4_Reply.docx`, 1 Sep). v0.3 and v0.4 were delta documents, so they do not restate the full list.
 
-**What changed in this version (0.20 → 0.21)**
+**What changed in this version (0.21 → 0.22)**
+- §1.6 "UAT 13, first fixes": the five failed cases (5 Whys as question and answer, Reassign in an orange box with reassignments marked in the history, a JHSC reply's what will be done and detail on separate lines, the toolbox tracker at the top; the chart by supervisor's counting goes back to HSE); a reply task that could never be completed; a rule to let supervisors see Section B, off; the report forms laid out as asked; a near miss starting as Near miss; coordinators recording MOL and WSIB filings; every incident with a category in Reports.
+
+**What changed in version 0.21 (0.20 → 0.21)**
 - §1.6 "Round 12, sixth batch": chemical labels viewed and printed by everybody who reads chemicals, previewed stamped DRAFT before approval, with the manufacturer and an emergency health contact at the top and a new version drafted beside the approved one; documents' Attachments beside the QR code; draft forms deleted; a one-person form question filled with whoever opens it, and times with the current time; out-of-service equipment opened from My Actions and put back by supervisors (a new key); HSE's monthly toolbox talk tracker with reminders; My training's Records tab; certificates printed from a register search; courses and sessions searched; a course edited.
 
 **What changed in version 0.20 (0.19 → 0.20)**
@@ -376,6 +379,22 @@ On HSE's answers Q14 ("certificates should stay once issued. a new valid for per
 - A course can be edited (TRN-08): its name, refused if another course has it, and how long it is valid for. Certificates already issued do not change: a record keeps the course name and expiry it was made with. A new period applies only to sessions scheduled after it (Q14) — a session keeps the period it was scheduled under (migration 0104 gave every session on file its course's period then) — and a hand-entered record takes the course's period when it is entered. A corrected name reaches the sessions not yet held, and their title where it was the course name, so the certificates they issue carry it; sessions already held keep theirs.
 - Review of the sixth batch (uniops-95): a worker opens the certificate attached to their own external record (it was the register's only). A toolbox talk is chased at most once a day, however many presses; one with nobody to send to is said so and not marked as reminded. A refused delete of a draft keeps what was waiting to be saved. A label that stops printing says why — replaced by a newer version, the product renamed, or a newer data sheet; renaming a product while a new version is drafted stops the label in force and renames the draft (still one draft), and a printed label is withdrawn by a rename as an approved one always was. My training's records, the courses and the sessions are tables paged, searched and sorted on the server under the list standard.
 
+UAT 13, first fixes (built)
+
+UAT 13 closed at 21 passed and 5 failed. HSE answered the seven questions: keep a copy of the old emails before the first clean-up (and test emails may all go before going live); "the person who reported it" off an incident is whoever raised the action; adding only the batch code does not withdraw HSE's review; sorting the hazard register by its columns is acceptable; Section B stays off the supervisor's view, as a rule that can be turned on; the 208 "Archive" machines stay as they are; Chrome signs in after clearing its cache.
+
+- Each of the 5 Whys is a question with its answer under it (TC-06, migration 0106); what was stored before is kept as the answer. Food safety signs off on five answers. The section is folded unless food safety requires it or it has answers, and stays as the investigator leaves it.
+- An action's Reassign sits under its number in an orange box showing the owner (TC-07); reassignments, already in its history, are headed Reassigned in orange, and the section is called History.
+- On a JHSC meeting, a reply given as a corrective action reads What will be done, then Detail, on separate lines (TC-08); the line breaks had been lost.
+- The toolbox talk tracker is the first thing on Toolbox talks for HSE (TC-24).
+- The chart by supervisor (TC-14) counts a supervisor's own records and their team's, by month. Kirk counted Ken's own; which HSE want is asked on the next round, and opening a bar to its records comes with the dashboard batch.
+- A recommendation sent again after it was answered no longer gives its recipients a reply task they cannot complete (Ken Boucher's JHSC-2026-0001 #2); migration 0105 closes those left open.
+- Settings → Rules → Section B (medical): "Supervisors see Section B", off (question E, migration 0107). On, area supervisors and supervisors read and fill in Section B on the report, the incident and the investigation, as HSE and first aiders always do. Return-to-work plans and the medical profile are unchanged.
+- The report forms: who was hurt (injury form) and the equipment under the date, time and batch code line; what kind of incident and where on one line. On the injury form the description is "What happened", before the treatment, and the short title reads "In a few words". On the investigation the batch code is beside the lead investigator.
+- A near miss starts as Near miss for everybody: a type chosen on another form before switching no longer blanks it, and a form offering one type picks it.
+- HSE coordinators record that the Ministry was told and the Form 7 confirmation (identity migration 0029, ehs.statutory.record, held by the HSE Manager and Coordinator). Saying a statutory clock does not apply stays the HSE Manager's (ehs.statutory.manage).
+- Reports group incidents by category as Settings → Incident types has them: a type's category where it has one, and the type itself otherwise. 120 incidents read as uncategorised on the test server; one remains, which has no type.
+
 ## 2. Functional Requirements — 57 Items
 
 Priority: **P0** legally required or the loop breaks without it · **P1** needed day to day · **P2** strengthens the system · **P3** needed for COR. **Phase** is as stated in v0.2–v0.4; "—" means the source did not assign one.
@@ -562,6 +581,7 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | 0.19 | 2026-11-10 | Review of the third and fourth batches; the list standard on three lists (§1.6). |
 | 0.20 | 2026-11-11 | Round 12 fifth batch: new-item flags, due-date colours, Who is told for corrective actions, handovers on each record, actions on feedback, the Communications log (§1.6). |
 | 0.21 | 2026-11-11 | Round 12 sixth batch: chemical labels (everybody views and prints; DRAFT preview; emergency contact at the top), document attachments, deleting draft forms, filling in the opener, supervisors returning equipment, the toolbox talk tracker, My training records, certificates by search, course editing (§1.6). |
+| 0.22 | 2026-11-13 | UAT 13 first fixes: the five failed cases, a stuck JHSC reply task, the Section B rule, report form layout, near-miss default, coordinators recording filings, categories in Reports (§1.6). |
 
 ---
 
