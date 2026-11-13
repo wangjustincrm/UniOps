@@ -24,7 +24,7 @@ import { LocationSelect } from '@/components/LocationSelect'
 import { PersonPicker, EMPTY_PERSON, type PersonValue } from '@/components/PersonPicker'
 import { PhotoCapture } from '@/components/PhotoCapture'
 import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
-import { usePermissions } from '@/hooks/usePermissions'
+import { useSectionB } from '@/hooks/useSectionB'
 import {
   EMPTY_INJURY_DETAIL, hasInjuryDetail, InjuryDetailFields, type InjuryDetail,
 } from '@/components/InjuryDetail'
@@ -218,9 +218,9 @@ export default function IncidentReportPage() {
   // types where somebody was hurt. It carries allergies, medication and past
   // medical history — the same permission the investigation asks for, because
   // the record does not become less private for being typed earlier.
-  const { can } = usePermissions()
+  const sectionB = useSectionB()
   const showInjuryDetail = form.kind === 'medical' && Boolean(selectedType?.injury_detail)
-    && can('ehs.incident.medical.read')
+    && sectionB
   // Somebody is named as hurt — picked from the directory or written in.
   const namedInjured = Boolean(form.injured.userId || form.injured.name.trim())
 

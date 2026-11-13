@@ -122,6 +122,13 @@ class EhsConfig(TimestampMixin, Base):
     dashboard_chart_styles: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=dict, server_default="{}",
     )
+    # ★ UAT 13, question E: "leave it off the supervisor view for now but make
+    # it an option under the rules section so that it can be turned on at a
+    # later date." On: supervisors and area supervisors read and write an
+    # incident's Section B, as HSE and first aiders do.
+    supervisors_see_section_b: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false",
+    )
     # Round 12, Q16: how long an email's words are kept. 0 keeps them for good.
     communication_retention_days: Mapped[int] = mapped_column(
         Integer, nullable=False, default=21, server_default="21",

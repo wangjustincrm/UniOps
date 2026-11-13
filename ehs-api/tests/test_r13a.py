@@ -63,3 +63,36 @@ async def test_each_why_is_a_question_and_its_answer(hse_manager, db_session):
                   json={"investigator_id": None, "five_whys": whys})
     assert (await hse.post(f"/api/v1/incidents/{made['id']}/investigation/sign",
                            json=sig)).status_code == 200
+
+
+async def test_supervisors_see_section_b_only_when_hse_turn_it_on(
+        hse_manager, worker, test_engine, db_session):
+    """Question E: off by default, a rule to turn on. HSE always; an ordinary
+    employee never."""
+    from app.models.config import EhsConfig
+    from app.models.incident import Incident
+    _, hse = hse_manager
+    _, emp = worker
+    if await db_session.get(EhsConfig, 1) is None:
+        db_session.add(EhsConfig(id=1))
+        await db_session.commit()
+    from tests.test_incident_types_r12 import _near_miss
+    made = (await hse.post("/api/v1/incidents", json=_near_miss("near_miss"))).json()
+    await hse.post(f"/api/v1/incidents/{made['id']}/submit")
+    incident = await db_session.get(Incident, __import__("uuid").UUID(made["id"]))
+    url = f"/api/v1/incidents/{incident.id}/medical"
+    sup = await make_user(test_engine, role="area_supervisor")
+
+    async with authed_client(make_token(sup.id, sup.role), db_session) as s:
+        assert (await s.get("/api/v1/section-b/access")).json() == {"may_read": False}
+        assert (await s.get(url)).status_code == 403
+    assert (await hse.get("/api/v1/section-b/access")).json() == {"may_read": True}
+    assert (await hse.get(url)).status_code == 200
+
+    on = await hse.put("/api/v1/settings/config", json={"supervisors_see_section_b": True})
+    assert on.status_code == 200 and on.json()["supervisors_see_section_b"] is True
+    async with authed_client(make_token(sup.id, sup.role), db_session) as s:
+        assert (await s.get("/api/v1/section-b/access")).json() == {"may_read": True}
+        assert (await s.get(url)).status_code == 200
+    assert (await emp.get("/api/v1/section-b/access")).json() == {"may_read": False}
+    assert (await emp.get(url)).status_code == 403

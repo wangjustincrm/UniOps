@@ -23,6 +23,7 @@ import type { CompressedImage } from '@/lib/imageCompress'
 import { ChangeHistory } from '@/components/ChangeHistory'
 import { InjuryBadge, MolBadge, StatusBadge } from '@/components/StatusBadge'
 import { usePermissions } from '@/hooks/usePermissions'
+import { useSectionB } from '@/hooks/useSectionB'
 import { InjurySummary } from '@/components/InjurySummary'
 import { CommunicationLog } from '@/components/CommunicationLog'
 import { ReturnToWorkPanel } from '@/components/ReturnToWorkPanel'
@@ -196,6 +197,7 @@ export default function IncidentDetailPage() {
   const { id = '' } = useParams()
   const queryClient = useQueryClient()
   const { can } = usePermissions()
+  const sectionB = useSectionB()
   const [confirmation, setConfirmation] = useState('')
   const [molReference, setMolReference] = useState('')
   // Round 9: reopening needs a reason, kept on the timeline.
@@ -621,7 +623,7 @@ export default function IncidentDetailPage() {
 
           {/* Round 8: the injury and its treatment in one read-only place,
               under the person hurt — behind the medical permission. */}
-          {can('ehs.incident.medical.read')
+          {sectionB
             && (inc.form_kind === 'medical' || inc.persons.some((p) => p.role === 'injured')) && (
             <InjurySummary incidentId={inc.id} title={inc.title} kind={inc.incident_type_label}
                            where={inc.location_path} description={inc.description}

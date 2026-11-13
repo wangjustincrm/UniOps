@@ -22,6 +22,7 @@ interface Config {
   certificate_signatory: string | null
   lost_time_rules: { guidance?: string } | null
   communication_retention_days: number
+  supervisors_see_section_b: boolean
 }
 
 interface Template { id: string; code: string; name: string; category: string }
@@ -41,7 +42,10 @@ export default function RulesPage() {
 
   const save = useMutation({
     mutationFn: (body: Partial<Config>) => api.put('/api/v1/settings/config', body),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['settings', 'config'] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['settings', 'config'] })
+      void queryClient.invalidateQueries({ queryKey: ['section-b-access'] })
+    },
   })
 
   if (!form) return <p className="p-4 text-sm text-neutral-500">Loading…</p>
@@ -85,6 +89,22 @@ export default function RulesPage() {
           <input type="number" min={0} max={3650} className={num}
                  value={form.communication_retention_days}
                  onChange={(e) => setForm({ ...form, communication_retention_days: +e.target.value })} />
+        </Row>
+      </section>
+
+      {/* ★ UAT 13, question E: "leave it off the supervisor view for now but
+          make it an option under the rules section so that it can be turned on
+          at a later date." */}
+      <section className="mb-4 rounded-xl border border-neutral-200 bg-white p-4">
+        <h2 className="text-sm font-semibold text-neutral-900">Section B (medical)</h2>
+        <p className="mb-3 text-xs text-neutral-500">
+          Section B carries allergies, medication and medical history. HSE and first aiders always
+          see it. Turned on, supervisors and area supervisors see and fill it in too, on the report,
+          the incident and the investigation.
+        </p>
+        <Row label="Supervisors see Section B">
+          <input type="checkbox" className="h-4 w-4" checked={form.supervisors_see_section_b}
+                 onChange={(e) => setForm({ ...form, supervisors_see_section_b: e.target.checked })} />
         </Row>
       </section>
 

@@ -22,6 +22,7 @@ from app.api.v1.hazards import router as hazards_router
 from app.api.v1.health import router as health_router
 from app.api.v1.hours import router as hours_router
 from app.api.v1.incident_attachments import router as incident_attachments_router
+from app.api.v1.incident_medical import access_router as section_b_access_router
 from app.api.v1.incident_medical import router as incident_medical_router
 from app.api.v1.incidents import router as incidents_router
 from app.api.v1.jhsc import router as jhsc_router
@@ -58,6 +59,7 @@ api_router.include_router(incidents_router, prefix="/incidents", tags=["incident
 api_router.include_router(incident_attachments_router, tags=["incidents"])
 # Section B sits behind ehs.incident.medical.read, not incident read.
 api_router.include_router(incident_medical_router, tags=["incidents"])
+api_router.include_router(section_b_access_router, tags=["incidents"])
 # Return-to-work sits behind the medical key too: a plan says what a named
 # person can physically do, which is health information wherever it lives.
 api_router.include_router(rtw_router, tags=["incidents"])

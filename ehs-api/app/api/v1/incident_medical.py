@@ -16,13 +16,37 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 
 from app.core.deps import SessionDep
-from app.core.permissions import CanReadMedical
+from app.core.permissions import CanReportIncident
 from app.api.v1.incidents import _user_id
 from app.crud import incident as crud
 from app.crud.incident import _resolve_name
 from app.models.medical import IncidentMedical
 
 router = APIRouter(prefix="/incidents/{incident_id}/medical")
+
+SUPERVISOR_ROLES = ("area_supervisor", "supervisor")
+
+
+async def may_read_section_b(db, user: dict) -> bool:
+    """`ehs.incident.medical.read`, or — once HSE turn it on under Settings →
+    Rules (UAT 13, question E) — holding a supervisor's role."""
+    from uniops_authz import has_permission
+
+    from app.models.config import EhsConfig
+    from app.services.notify import roles_held_by
+    uid = _user_id(user)
+    if await has_permission(db, uid, user.get("role", ""), "ehs.incident.medical.read"):
+        return True
+    cfg = await db.get(EhsConfig, 1)
+    if not (cfg and cfg.supervisors_see_section_b):
+        return False
+    return bool(set(SUPERVISOR_ROLES) & await roles_held_by(db, uid, user.get("role", "")))
+
+
+async def _gate(db, user) -> None:
+    if not await may_read_section_b(db, user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "Section B is open to HSE and first aiders only")
 
 
 class TimelineEntry(BaseModel):
@@ -110,7 +134,8 @@ async def _out(db, incident, row: IncidentMedical | None, user: dict) -> Medical
 
 
 @router.get("", response_model=MedicalOut | None)
-async def get_medical(incident_id: uuid.UUID, db: SessionDep, user: CanReadMedical):
+async def get_medical(incident_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
+    await _gate(db, user)
     incident = await crud.get(db, incident_id)  # 404s on an unknown incident
     return await _out(db, incident, (await db.execute(
         select(IncidentMedical).where(IncidentMedical.incident_id == incident_id)
@@ -119,8 +144,9 @@ async def get_medical(incident_id: uuid.UUID, db: SessionDep, user: CanReadMedic
 
 @router.put("", response_model=MedicalOut)
 async def upsert_medical(
-    incident_id: uuid.UUID, payload: MedicalIn, db: SessionDep, user: CanReadMedical,
+    incident_id: uuid.UUID, payload: MedicalIn, db: SessionDep, user: CanReportIncident,
 ):
+    await _gate(db, user)
     incident = await crud.get(db, incident_id)
     crud.assert_open(incident, "the injury detail")
     if incident.status == "draft":
@@ -152,3 +178,17 @@ async def upsert_medical(
     await db.flush()
     await db.refresh(row)
     return await _out(db, incident, row, user)
+
+
+# Not under one incident: whether the person asking may open Section B at all,
+# so the report and the incident page offer it exactly when the server allows.
+access_router = APIRouter()
+
+
+class SectionBAccess(BaseModel):
+    may_read: bool
+
+
+@access_router.get("/section-b/access", response_model=SectionBAccess)
+async def section_b_access(db: SessionDep, user: CanReportIncident):
+    return SectionBAccess(may_read=await may_read_section_b(db, user))
