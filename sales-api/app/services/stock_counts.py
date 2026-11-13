@@ -18,7 +18,7 @@ import hashlib
 import re
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, select
 
 from app.domain.radiant_stock import StockFileError, parse_stock_file
 from app.models.config import Item
@@ -30,6 +30,7 @@ from app.platform.repository import Repository
 from app.platform.services import ReadOnlyService
 from app.schemas.stock import CountCompareRow, StockCountLineRead, StockCountRead
 from app.services import oplog
+from app.services.outbound import TORONTO
 from app.services.record_files import MAX_BYTES
 
 READ = "sales.read"
@@ -227,18 +228,25 @@ class StockCountService(ReadOnlyService[StockCount, StockCountRead]):
             r.hold_ea += ln.hold_ea
             r.in_report = True
             r.expiry = ln.expiry or r.expiry
-        for item, lot, net in (await s.execute(
-                select(StockMove.item_code, StockMove.lot, _net(RADIANT)).where(StockMove.at > c.counted_at)
+        to_r = func.coalesce(func.sum(case((StockMove.to_place == RADIANT, StockMove.qty_ea), else_=0)), 0)
+        from_r = func.coalesce(func.sum(case((StockMove.from_place == RADIANT, StockMove.qty_ea), else_=0)), 0)
+        for item, lot, got, gone in (await s.execute(
+                select(StockMove.item_code, StockMove.lot, to_r, from_r).where(StockMove.at > c.counted_at)
                 .group_by(StockMove.item_code, StockMove.lot))).all():
-            if int(net) or (item, lot) in rows:
-                row(item, lot).since_ea += int(net)
+            if int(got) or int(gone) or (item, lot) in rows:
+                r = row(item, lot)
+                r.in_after_ea, r.out_after_ea = int(got), int(gone)
+                r.since_ea = r.in_after_ea - r.out_after_ea
         names = dict((await s.execute(select(Item.item_code, Item.description).where(Item.item_code.in_({k[0] for k in rows})))).all())
+        today = datetime.now(TORONTO).date()
         out = []
         for (item, lot), r in rows.items():
-            if not (r.sales_ea or r.radiant_ea or r.since_ea or r.in_report or r.received_ea or r.shipped_ea):
+            if not (r.sales_ea or r.radiant_ea or r.in_after_ea or r.out_after_ea or r.in_report or r.received_ea or r.shipped_ea):
                 continue
             r.description = names.get(item)
             r.known_item = item in names
+            r.in_ea = r.received_ea + r.returned_ea
+            r.days_to_expiry = (r.expiry - today).days if r.expiry else None
             r.difference_ea = r.sales_ea - r.radiant_ea
             r.now_ea = r.radiant_ea + r.since_ea
             r.kind = ("match" if not r.difference_ea else "radiant_only" if not r.sales_ea and r.in_report

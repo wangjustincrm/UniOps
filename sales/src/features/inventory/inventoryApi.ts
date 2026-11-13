@@ -105,6 +105,9 @@ export interface CountCompareRow {
   description: string | null
   known_item: boolean
   expiry: string | null
+  days_to_expiry: number | null
+  /** Received (944) + returned (RA), up to the report. */
+  in_ea: number
   received_ea: number
   returned_ea: number
   shipped_ea: number
@@ -114,7 +117,10 @@ export interface CountCompareRow {
   hold_ea: number
   in_report: boolean
   difference_ea: number
+  in_after_ea: number
+  out_after_ea: number
   since_ea: number
+  /** Remaining now: Radiant + in after − out after. */
   now_ea: number
   kind: CompareKind
 }

@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ActionButton, Button, Callout, Checkbox, ConfirmAction, StatusCell, DateTimeInput, Dialog, FilePicker, FormField, ListPage, LocalTable, RecordSheet, Section,
-  Textarea, ViewFileButton, columnsOf, formatDateTime, formatNumber, queryKeys,
+  Textarea, ViewFileButton, columnsOf, formatDate, formatDateTime, formatNumber, queryKeys, startHidden,
   type ColumnDef, type RecordTab,
 } from '@/platform-ui'
 import { api } from '@/lib/api'
@@ -14,7 +14,6 @@ import {
 const ADJUST = 'sales.inventory.adjust'
 const MAX_MB = 20
 const colCount = columnsOf<StockCountRead>()
-const colCmp = columnsOf<CountCompareRow>()
 const colLine = columnsOf<StockCountLineRead>()
 const errorMessages: Record<string, string> = {
   'stock_count.file': "This file cannot be read as Radiant's inventory report.",
@@ -34,44 +33,92 @@ const countColumns: ColumnDef<StockCountRead, unknown>[] = [
 
 const KIND_TONE = { match: 'success', differs: 'warning', sales_only: 'danger', radiant_only: 'info', no_lot: 'neutral' } as const
 
-function compareColumns(applied: boolean): ColumnDef<CountCompareRow, unknown>[] {
+/** "Sep 8, 2028 · 665 days" (days counted by the server, Toronto day; past: "expired"). */
+function ExpiryCell({ value, days }: { value: string | null; days: number | null }) {
+  if (!value || days == null) return <span className="text-neutral-400">—</span>
+  return (
+    <span className="whitespace-nowrap">
+      {formatDate(value)}
+      <span className={days < 0 ? 'text-danger-600' : days <= 90 ? 'text-warning-700' : 'text-neutral-500'}>
+        {' · '}{days < 0 ? 'expired' : `${formatNumber(days)} days`}
+      </span>
+    </span>
+  )
+}
+
+/** Radiant's figure, with what of it is on hold under it. */
+function RadiantCell({ r }: { r: { radiant_ea: number; hold_ea: number } }) {
+  return (
+    <span className="flex flex-col items-end">
+      <span className="font-medium">{formatNumber(r.radiant_ea)}</span>
+      {r.hold_ea > 0 && <span className="text-xs text-warning-700">{formatNumber(r.hold_ea)} on hold</span>}
+    </span>
+  )
+}
+
+const strong = (v: number) => <span className="block text-right font-semibold tabular-nums">{formatNumber(v)}</span>
+const signed = (v: number) => (
+  <span className={`block text-right font-semibold tabular-nums ${v ? 'text-warning-700' : 'text-neutral-400'}`}>{v > 0 ? `+${formatNumber(v)}` : formatNumber(v)}</span>
+)
+
+/** The figures of a lot and of an item (the sum of its lots) — the same columns, in the same order (user 2026-11-13):
+ *  up to the report (in, out, adjusted, remaining, Radiant, difference), then after it (in, out, remaining now). */
+function figureColumns<R extends ItemFigures>(): ColumnDef<R, unknown>[] {
+  const c = columnsOf<R>()
   return [
-    { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => <span className="font-medium">{row.original.lot ?? '(no lot)'}</span> },
-    colCmp.date('expiry', 'Expiry'),
-    colCmp.number('received_ea', 'Received (944)'),
-    colCmp.number('returned_ea', 'Returned (RA)'),
-    colCmp.number('shipped_ea', 'Shipped (945)'),
-    colCmp.number('adjusted_ea', 'Adjusted'),
-    colCmp.number('sales_ea', 'Sales at count'),
-    colCmp.number('radiant_ea', 'Radiant'),
-    colCmp.number('hold_ea', 'On hold'),
-    colCmp.number('difference_ea', 'Difference (Sales − Radiant)'),
-    { accessorKey: 'kind', header: 'Result', cell: ({ row }) => <StatusCell value={COMPARE_KIND[row.original.kind]} tone={KIND_TONE[row.original.kind]} /> },
-    colCmp.number('since_ea', 'Moved after'),
-    colCmp.number('now_ea', applied ? 'Now' : 'Now, once applied'),
+    c.number('in_ea' as never, 'In (944 + RA)'),
+    startHidden(c.number('received_ea' as never, 'Received (944)')),
+    startHidden(c.number('returned_ea' as never, 'Returned (RA)')),
+    c.number('shipped_ea' as never, 'Out (945)'),
+    c.number('adjusted_ea' as never, 'Adjusted'),
+    { id: 'sales_ea', header: 'Remaining (Sales)', cell: ({ row }) => strong(row.original.sales_ea) },
+    { id: 'radiant_ea', header: 'Radiant', cell: ({ row }) => <RadiantCell r={row.original} /> },
+    { id: 'difference_ea', header: 'Difference', cell: ({ row }) => signed(row.original.difference_ea) },
   ]
 }
 
-interface ItemGroup {
-  item_code: string; description: string | null; lots: CountCompareRow[]
-  received_ea: number; returned_ea: number; shipped_ea: number; adjusted_ea: number; sales_ea: number; radiant_ea: number
-  hold_ea: number; difference_ea: number; since_ea: number; now_ea: number; differing: number
+function afterColumns<R extends ItemFigures>(applied: boolean): ColumnDef<R, unknown>[] {
+  const c = columnsOf<R>()
+  return [
+    c.number('in_after_ea' as never, 'In after'),
+    c.number('out_after_ea' as never, 'Out after'),
+    { id: 'now_ea', header: applied ? 'Remaining now' : 'Remaining now (once applied)', cell: ({ row }) => strong(row.original.now_ea) },
+  ]
 }
 
-const SUMS = ['received_ea', 'returned_ea', 'shipped_ea', 'adjusted_ea', 'sales_ea', 'radiant_ea', 'hold_ea', 'difference_ea', 'since_ea', 'now_ea'] as const
+function compareColumns(applied: boolean): ColumnDef<CountCompareRow, unknown>[] {
+  return [
+    { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => <span className="font-medium">{row.original.lot ?? '(no lot)'}</span> },
+    { accessorKey: 'expiry', header: 'Expiry', cell: ({ row }) => <ExpiryCell value={row.original.expiry} days={row.original.days_to_expiry} /> },
+    ...figureColumns<CountCompareRow>(),
+    { accessorKey: 'kind', header: 'Result', cell: ({ row }) => <StatusCell value={COMPARE_KIND[row.original.kind]} tone={KIND_TONE[row.original.kind]} /> },
+    ...afterColumns<CountCompareRow>(applied),
+  ]
+}
+
+const SUMS = ['in_ea', 'received_ea', 'returned_ea', 'shipped_ea', 'adjusted_ea', 'sales_ea', 'radiant_ea', 'hold_ea', 'difference_ea',
+  'in_after_ea', 'out_after_ea', 'since_ea', 'now_ea'] as const
+type ItemFigures = Record<(typeof SUMS)[number], number>
+
+interface ItemGroup extends ItemFigures {
+  item_code: string; description: string | null; lots: CountCompareRow[]; differing: number; first_expiry: string | null; first_days: number | null
+}
 
 function group(rows: CountCompareRow[]): ItemGroup[] {
   const by = new Map<string, ItemGroup>()
   for (const r of rows) {
-    const g = by.get(r.item_code) ?? {
-      item_code: r.item_code, description: r.description, lots: [], differing: 0,
-      received_ea: 0, returned_ea: 0, shipped_ea: 0, adjusted_ea: 0, sales_ea: 0, radiant_ea: 0, hold_ea: 0, difference_ea: 0, since_ea: 0, now_ea: 0,
+    let g = by.get(r.item_code)
+    if (!g) {
+      g = { item_code: r.item_code, description: r.description, lots: [], differing: 0, first_expiry: null, first_days: null,
+        ...(Object.fromEntries(SUMS.map((k) => [k, 0])) as ItemFigures) }
+      by.set(r.item_code, g)
     }
     g.lots.push(r)
     for (const k of SUMS) g[k] += r[k]
     if (r.kind !== 'match') g.differing += 1
-    by.set(r.item_code, g)
+    if (r.expiry && r.now_ea > 0 && (!g.first_expiry || r.expiry < g.first_expiry)) { g.first_expiry = r.expiry; g.first_days = r.days_to_expiry }
   }
+  for (const g of by.values()) g.lots.sort((a, b) => (a.expiry ?? '9999').localeCompare(b.expiry ?? '9999') || (a.lot ?? '').localeCompare(b.lot ?? ''))
   return [...by.values()]
 }
 
@@ -82,19 +129,18 @@ function Comparison({ count }: { count: StockCountRead }) {
   const q = useQuery({ queryKey: ['stock-count-compare', count.id, count.version], queryFn: () => fetchCountCompare(count.id) })
   const groups = useMemo(() => group((q.data ?? []).filter((r) => !onlyDiff || r.kind !== 'match')), [q.data, onlyDiff])
   const lotCols = useMemo(() => compareColumns(!!count.applied_at), [count.applied_at])
-  const itemCols: ColumnDef<ItemGroup, unknown>[] = [
+  const itemCols = useMemo<ColumnDef<ItemGroup, unknown>[]>(() => [
     { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => <span className="font-medium">{row.original.item_code}</span> },
     colGroup.text('description', 'Description'),
     { id: 'lots', header: 'Lots', cell: ({ row: { original: g } }) => `${g.lots.length}${g.differing ? ` · ${g.differing} differ` : ''}` },
-    ...SUMS.map((k) => colGroup.number(k, ({
-      received_ea: 'Received (944)', returned_ea: 'Returned (RA)', shipped_ea: 'Shipped (945)', adjusted_ea: 'Adjusted', sales_ea: 'Sales at count',
-      radiant_ea: 'Radiant', hold_ea: 'On hold', difference_ea: 'Difference', since_ea: 'Moved after', now_ea: count.applied_at ? 'Now' : 'Now, once applied',
-    } as const)[k])),
-  ]
+    { id: 'first_expiry', header: 'First expiry', cell: ({ row }) => <ExpiryCell value={row.original.first_expiry} days={row.original.first_days} /> },
+    ...figureColumns<ItemGroup>(),
+    ...afterColumns<ItemGroup>(!!count.applied_at),
+  ], [count.applied_at])
   const all = q.data ?? []
   const differ = all.filter((r) => r.kind !== 'match').length
   return (
-    <Section title="Lot by lot, up to the moment of the report" plain>
+    <Section title="Per item and lot: up to the report, and after it" plain>
       {count.note && <Callout label="Note">{count.note}</Callout>}
       <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-600">
         <span>{formatNumber(all.length)} lots · {formatNumber(all.length - differ)} match · {formatNumber(differ)} differ</span>

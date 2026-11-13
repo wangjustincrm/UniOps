@@ -115,6 +115,7 @@ async def test_the_report_compares_each_lot_and_apply_starts_from_radiant(p7):  
         rows = {(r.item_code, r.lot): r for r in await StockCountService(u).compare(c.id)}
     a = rows[("CF0092", "26C253125110231")]
     assert (a.received_ea, a.shipped_ea, a.sales_ea, a.radiant_ea, a.difference_ea, a.kind) == (8400, 0, 8400, 8000, 400, "differs")
+    assert (a.in_ea, a.in_after_ea, a.out_after_ea, a.now_ea) == (8400, 0, 0, 8000)
     assert rows[("CF0103", "26E248121010211")].kind == "match"
     assert rows[("CHEP", None)].kind == "radiant_only" and rows[("CF0110", "25C26112511032")].hold_ea == 5
     before = await _lots(p7)
@@ -140,6 +141,9 @@ async def test_the_report_compares_each_lot_and_apply_starts_from_radiant(p7):  
         await u.commit()
     assert (await _sync(p7)).get("count") == 1
     assert (await _lots(p7))[("CF0092", "26C253125110231")] == 8000 - 30
+    async with p7.factory(OP) as u:
+        a = {(r.item_code, r.lot): r for r in await StockCountService(u).compare(c.id)}[("CF0092", "26C253125110231")]
+    assert (a.out_after_ea, a.in_after_ea, a.now_ea) == (30, 0, 8000 - 30)  # remaining now = Radiant − out after
 
     async with p7.factory(OP) as u:
         with pytest.raises(BusinessError):
