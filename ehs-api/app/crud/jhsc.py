@@ -558,7 +558,12 @@ async def send_recommendation(
     await task_service.close_tasks_for(
         db, doc_type=DOC_JHSC, doc_id=rec.id,
         task_type=task_service.TASK_JHSC_REPLY)
-    for person in people:
+    # ★ UAT 13: a recommendation already answered is sent as a notice only.
+    # It used to open a reply task for each recipient regardless — Ken was sent
+    # JHSC-2026-0001 #2 on 26 October, six weeks after it was answered, and the
+    # page offers no reply on an answered recommendation, so the task could
+    # never be completed.
+    for person in (people if rec.responded_at is None else []):
         await task_service.open_task(
             db,
             task_type=task_service.TASK_JHSC_REPLY,
