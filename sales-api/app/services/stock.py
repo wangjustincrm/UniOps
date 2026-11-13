@@ -10,6 +10,7 @@ opening balance; the result is compared with Radiant's own figures).
   transfer sent (943 put, or a transfer known only from its 944) → PLANT → TO_RADIANT, per line
   944 row of an applied receipt                                 → TO_RADIANT → RADIANT, with its lot
   944 of a return (RA) kept as a file                           → RETURNING → RADIANT, with its lot
+     (its order known — RA CRM<Shopify no.>: first CUSTOMER → RETURNING)
   945 row of an applied shipment                                → RADIANT → TO_CUSTOMER, lot and expiry
   945 row of no order (the warehouse shipped it)                → RADIANT → CUSTOMER
   an order shipped with no 945 in Sales (older history)         → RADIANT → CUSTOMER, no lot
@@ -33,7 +34,7 @@ from app.domain.status import Fulfillment as F
 from app.domain.status import Invoice as Inv
 from app.domain.status import Transfer as T
 from app.models.config import Item
-from app.models.documents import Document
+from app.models.documents import Document, DocumentLink
 from app.models.invoices import DeliveryConfirmation
 from app.models.orders import Order, OrderLine
 from app.models.shipments import Shipment, ShipmentRow
@@ -48,6 +49,7 @@ from app.platform.services import ReadOnlyService
 from app.platform.views import Preset
 from app.services import oplog
 from app.services.outbound import TORONTO
+from app.services.returns_944 import RA_ERROR
 from app.schemas.stock import StockItemRead, StockLotRead, StockMoveRead
 
 logger = logging.getLogger(__name__)
@@ -55,7 +57,6 @@ logger = logging.getLogger(__name__)
 READ = "sales.read"
 ADJUST = "sales.inventory.adjust"
 EXPIRING_DAYS = 90
-RA_ERROR = "a return (RA)"
 NOT_SENT = {T.DRAFT.value, T.READY_TO_SEND.value, T.GENERATED_943.value, T.FAILED.value, T.CANCELLED.value}
 FINAL_INVOICE = {Inv.QUEUED.value, Inv.SENT.value, Inv.NOT_REQUIRED.value}
 
@@ -111,8 +112,13 @@ async def sync(uow) -> dict:
     # Returns received at Radiant (RA 944s, kept as files).
     docs = (await s.execute(select(Document.id, Document.created_at).where(
         Document.kind == "944_EDI", Document.error.like(f"{RA_ERROR}%")))).all()
+    ra_order = dict((await s.execute(select(DocumentLink.document_id, DocumentLink.entity_id).where(
+        DocumentLink.entity_type == "order", DocumentLink.document_id.in_([d for d, _ in docs])))).all()) if docs else {}
     for did, created in docs:
-        if any(k[0] == "return_944" and k[1].startswith(f"{did}:") for k in known):
+        oid = ra_order.get(did)
+        done_ra = any(k[0] == "return_944" and k[1].startswith(f"{did}:") for k in known)
+        done_order = oid is None or any(k[0] == "return_order" and k[1].startswith(f"{did}:") for k in known)
+        if done_ra and done_order:
             continue
         content = (await s.execute(select(Document.content).where(Document.id == did))).scalar_one()
         try:
@@ -121,8 +127,12 @@ async def sync(uow) -> dict:
             logger.warning("RA 944 %s not read: %s", did, type(e).__name__)
             continue
         for i, row in enumerate(r.rows, start=1):
-            w.add("return_944", f"{did}:{i}", at=_at(r.receipt_date, created), item_code=row.item_code, qty=row.qty, frm=RETURNING,
-                  to=RADIANT, lot=row.lot, expiry=expiry_of.get(row.lot), document_id=did)
+            at = _at(r.receipt_date, created)
+            if oid is not None:  # its order is known: it came back from that customer (RA CRM<Shopify no.>)
+                w.add("return_order", f"{did}:{i}", at=at, item_code=row.item_code, qty=row.qty, frm=CUSTOMER, to=RETURNING,
+                      lot=row.lot, expiry=expiry_of.get(row.lot), order_id=oid, document_id=did)
+            w.add("return_944", f"{did}:{i}", at=at, item_code=row.item_code, qty=row.qty, frm=RETURNING,
+                  to=RADIANT, lot=row.lot, expiry=expiry_of.get(row.lot), order_id=oid, document_id=did)
 
     # 945 rows: what left Radiant.
     rows = (await s.execute(select(ShipmentRow, Shipment).join(Shipment, Shipment.id == ShipmentRow.shipment_id)
@@ -165,6 +175,8 @@ async def sync(uow) -> dict:
                 back = int(returned.get(line_id) or 0) if line_id else 0
                 total = sum(r.qty_shipped_ea or 0 for r, _ in rs)
                 keep = max(total - back, 0)  # delivered, lot by lot in shipping order; the rest came back
+                if any(("delivery", str(r.id)) in known for r, _ in rs):
+                    continue  # its delivery is in the ledger: a return found later comes as its RA 944 (return_order)
                 for r, sh in sorted(rs, key=lambda x: (x[1].ship_date or date.min, x[0].id)):
                     q = r.qty_shipped_ea or 0
                     d = min(q, keep)

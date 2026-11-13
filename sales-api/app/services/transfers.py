@@ -70,6 +70,7 @@ from app.services.problems import (
     send_refused,
 )
 from app.services.doc_links import link
+from app.services.returns_944 import apply_return_944, is_return
 from app.services.settings import (
     ACK_TIMEOUT_MINUTES,
     EDI_CONNECTION_ID,
@@ -456,6 +457,12 @@ class Transfers:
                 f"944 file {doc.remote_name} (document {doc.id}) was stored but cannot be read: {e}."))
             return "failed"
         shadow = doc.shadow or bool(await SETTINGS.get(s, SHADOW_MODE))
+        if not shadow and is_return(r.transfer_key) and (await s.execute(select(Transfer.id).where(
+                Transfer.transfer_number == r.transfer_key))).first() is None:
+            # A customer's return received at Radiant (RA CRM<Shopify no.>): no transfer — linked to its order.
+            out = await apply_return_944(uow, doc, r, tasks=self.tasks)
+            report.detail.append(f"944 {doc.remote_name}: {out}")
+            return out
         t = (await s.execute(select(Transfer).where(Transfer.transfer_number.in_(
             [r.transfer_key, r.transfer_key.zfill(5)])).with_for_update())).scalars().first()
         earlier = []

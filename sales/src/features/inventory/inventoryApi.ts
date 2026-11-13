@@ -68,7 +68,7 @@ export const PLACE: Record<string, string> = {
   CUSTOMER: 'Customer', RETURNING: 'Returning', ADJUSTED: 'Adjustment',
 }
 export const SOURCE: Record<string, string> = {
-  transfer_line: 'Transfer sent (943)', receipt_row: 'Received (944)', return_944: 'Return received (RA 944)',
+  transfer_line: 'Transfer sent (943)', receipt_row: 'Received (944)', return_944: 'Return received (RA 944)', return_order: 'Returned by customer (RA)',
   shipment_row: 'Shipped (945)', order_line: 'Shipped (order, no 945)', delivery: 'Delivered', returned: 'Returned by customer',
   adjustment: 'Adjustment',
 }
