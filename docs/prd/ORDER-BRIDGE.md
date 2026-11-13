@@ -589,6 +589,15 @@ Each criterion is tested before cutover, preferably by **replaying real archived
 | Recoverable | every failure can be investigated and resolved in the application | AC-OB-49, AC-OB-50 |
 | Honest screens | every screen uses real data; deferred areas show none | AC-OB-54 |
 
+### 10.11 Corrections after sending (2026-11-13)
+
+Transfers 00104 and 00106 showed the need (our 943 named the wrong item: CF0093 for CF0103, CF0102 for CF0092).
+
+- **Amend and send again — transfer**: a transfer whose 943 went (Waiting for 997, Waiting for 944) or failed, and that no 944 has answered, is corrected (its lines; the warehouses stay) with a reason; the live 943 becomes Replaced and a new one (a new control number) goes on the next pass. The old and new lines are kept in the log.
+- **Amend and send again — order**: a retailer or manual order, from Pending until the warehouse ships it (no applied 945), gets a line's item or quantity changed, or a line taken off, with a reason; EA follow the item's units. A live 940 is Replaced by a new one (FR-OB-03c); a rejected, failed or timed-out one is sent again; a Pending order goes when it qualifies. A Shopify order's items come from the store (fix the mapping instead).
+- **Settle a receipt difference — transfer** (Discrepancy, Partially Received), with a reason: **corrected** — our 943 was wrong: the transfer's lines become the 944's items and quantities, nothing stays in transit; **accepted** — the difference is real: the lines stay as sent and the inventory writes the difference off in transit (or adds what came extra). Either way the transfer is Received and its difference tasks are closed; how, why, who and when show on the transfer.
+- The Radiant inventory follows each of these (design §15): what left the plant follows the transfer's lines as they are now.
+
 ## 11. Cutover plan
 
 1. **Data migration** (user, 2026-11-05: no Zoho export and no import tool; the open orders come from Radiant's export, loaded once by hand, and must raise no 940, invoice, email, task or Shopify write — DEPLOYMENT.md, Sales cutover step 6): export all orders, lines, lots, transfers and the file register from Zoho; move raw files from WorkDrive into the Order Bridge document store (D22). Partners, items, DC routing and settings are exported from Zoho as CSV and loaded through the UI's CSV import (FR-OB-09). Orders shipped, completed or cancelled in Zoho are flagged historical and become read-only; they never receive a 940 (FR-OB-17). In-flight orders (no 940 yet, or awaiting the 997 or 945) migrate with their status, mapped by section 9.1, and continue their flow.

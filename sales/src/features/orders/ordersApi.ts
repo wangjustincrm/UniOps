@@ -341,6 +341,9 @@ export const setInvoicePrices = (id: number, body: InvoicePricesBody) => api.put
 /** What the customer returned per line, with why (user 2026-11-12): until the invoice is sent. */
 export interface ReturnedBody { reason: string; lines: { id: number; returned_ea: number }[] }
 export const setReturned = (id: number, body: ReturnedBody) => api.put<OrderDetail>(`/orders/${id}/returned`, body)
+/** An order sent wrong, corrected and sent again (user 2026-11-13): until the warehouse ships it. */
+export interface AmendBody { reason: string; lines: { id: number; item_code?: string; ordered_qty?: string; removed?: boolean }[] }
+export const amendOrder = (id: number, body: AmendBody) => api.post<{ order: OrderRead; sent: boolean; document_id: number | null }>(`/orders/${id}/amend`, body)
 export const retryShopify = (shipmentId: number) =>
   api.post<{ shipment_id: number; shopify_status: string }>(`/orders/shipments/${shipmentId}/shopify-retry`)
 

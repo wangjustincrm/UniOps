@@ -7,7 +7,8 @@ adjustment) and that source moves once (unique source_type + source_key): runnin
 after a file is read again, adds nothing. From the first data Sales holds (user 2026-11-12: no
 opening balance; the result is compared with Radiant's own figures).
 
-  transfer sent (943 put, or a transfer known only from its 944) → PLANT → TO_RADIANT, per line
+  transfer sent (943 put, or a transfer known only from its 944) → PLANT → TO_RADIANT, per item as its lines are now
+     (amended, or corrected to what arrived: the difference goes back); a difference accepted → TO_RADIANT ↔ ADJUSTED
   944 row of an applied receipt                                 → TO_RADIANT → RADIANT, with its lot
   944 of a return (RA) kept as a file                           → RETURNING → RADIANT, with its lot
      (its order known — RA CRM<Shopify no.>: first CUSTOMER → RETURNING)
@@ -92,15 +93,32 @@ async def sync(uow) -> dict:
     expiry_of = dict((await s.execute(select(ShipmentRow.lot, func.max(ShipmentRow.expiry)).where(
         ShipmentRow.lot.is_not(None), ShipmentRow.expiry.is_not(None)).group_by(ShipmentRow.lot))).all())
 
-    # Transfers: sent (a 943 put), or known only from their 944 (the old system's).
+    # Transfers: sent (a 943 put), or known only from their 944 (the old system's). Per transfer and item, what
+    # left the plant follows its lines as they are now: amended before its 944, or corrected to what arrived
+    # (user 2026-11-13), the difference moves back (or out) — written once per state (key: what was moved before).
     first_receipt = dict((await s.execute(select(Receipt.transfer_id, func.min(Receipt.receipt_date))
                                           .where(Receipt.applied.is_(True)).group_by(Receipt.transfer_id))).all())
-    rows = (await s.execute(select(TransferLine, Transfer, Document.sent_at).join(Transfer, Transfer.id == TransferLine.transfer_id)
+    sent_now: dict[tuple[int, str], int] = {}
+    tinfo: dict[int, tuple] = {}
+    rows = (await s.execute(select(TransferLine.item_code, TransferLine.qty_ea, Transfer, Document.sent_at)
+                            .join(Transfer, Transfer.id == TransferLine.transfer_id)
                             .outerjoin(Document, Document.id == Transfer.document_id)
                             .where(Transfer.status.not_in(NOT_SENT)))).all()
-    for ln, t, sent_at in rows:
-        w.add("transfer_line", str(ln.id), at=_at(sent_at or first_receipt.get(t.id), t.created_at), item_code=ln.item_code,
-              qty=ln.qty_ea, frm=PLANT, to=TO_RADIANT, transfer_id=t.id, document_id=t.document_id)
+    for code, q, t, sent_at in rows:
+        sent_now[(t.id, code)] = sent_now.get((t.id, code), 0) + int(q)
+        tinfo[t.id] = (_at(sent_at or first_receipt.get(t.id), t.created_at), t.document_id, t.resolution)
+    moved: dict[tuple[int, str], int] = {}
+    for tid, code, frm, to, q in (await s.execute(select(StockMove.transfer_id, StockMove.item_code, StockMove.from_place,
+                                                        StockMove.to_place, StockMove.qty_ea).where(
+            StockMove.transfer_id.is_not(None), StockMove.source_type.in_(("transfer_line", "transfer_sent"))))).all():
+        k = (tid, code)
+        moved[k] = moved.get(k, 0) + (q if (frm, to) == (PLANT, TO_RADIANT) else -q if (frm, to) == (TO_RADIANT, PLANT) else 0)
+    for (tid, code) in set(sent_now) | {k for k in moved if k[0] in tinfo}:
+        at, doc_id, _ = tinfo[tid]
+        diff = sent_now.get((tid, code), 0) - moved.get((tid, code), 0)
+        if diff:
+            w.add("transfer_sent", f"{tid}:{code}:{moved.get((tid, code), 0)}", at=at, item_code=code, qty=abs(diff),
+                  frm=PLANT if diff > 0 else TO_RADIANT, to=TO_RADIANT if diff > 0 else PLANT, transfer_id=tid, document_id=doc_id)
 
     # 944 rows of applied receipts.
     rows = (await s.execute(select(ReceiptRow, Receipt).join(Receipt, Receipt.id == ReceiptRow.receipt_id)
@@ -108,6 +126,21 @@ async def sync(uow) -> dict:
     for r, rec in rows:
         w.add("receipt_row", str(r.id), at=_at(rec.receipt_date, rec.created_at), item_code=r.item_code, qty=r.qty_ea, frm=TO_RADIANT,
               to=RADIANT, lot=r.lot, expiry=expiry_of.get(r.lot), transfer_id=rec.transfer_id, document_id=rec.document_id)
+
+    # A receipt difference accepted as real (user 2026-11-13): what stays in transit for that transfer is written off.
+    got: dict[tuple[int, str], int] = {}
+    for tid, code, q in (await s.execute(select(Receipt.transfer_id, ReceiptRow.item_code, ReceiptRow.qty_ea).join(
+            Receipt, Receipt.id == ReceiptRow.receipt_id).where(Receipt.applied.is_(True), Receipt.transfer_id.is_not(None)))).all():
+        got[(tid, code)] = got.get((tid, code), 0) + int(q)
+    for tid, (at, doc_id, resolution) in tinfo.items():
+        if resolution != "accepted":
+            continue
+        for code in {c for (t2, c) in set(sent_now) | set(got) if t2 == tid}:
+            rest = sent_now.get((tid, code), 0) - got.get((tid, code), 0)
+            if rest:
+                w.add("transfer_accepted", f"{tid}:{code}", at=at, item_code=code, qty=abs(rest),
+                      frm=TO_RADIANT if rest > 0 else ADJUSTED, to=ADJUSTED if rest > 0 else TO_RADIANT, transfer_id=tid,
+                      document_id=doc_id, reason="receipt difference accepted (lost / extra in transit)")
 
     # Returns received at Radiant (RA 944s, kept as files).
     docs = (await s.execute(select(Document.id, Document.created_at).where(

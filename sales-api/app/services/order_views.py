@@ -432,6 +432,18 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         return {"order": self.to_read(order).model_dump(mode="json"), "document_id": doc.id,
                 "file_status": doc.file_status, "control": doc.st02, "errors": (doc.body_json or {}).get("errors", [])}
 
+    @requires(OPERATE)
+    async def amend(self, id: int, body, outbound) -> dict:
+        """User 2026-11-13: an order sent wrong, corrected and sent again (app/services/order_amend)."""
+        from app.services.order_amend import amend_order
+        lines = [x.model_dump() for x in body.lines]
+        for x in lines:
+            if not x["removed"] and (not x["item_code"] or x["ordered_qty"] is None):
+                raise BusinessError("order.amend_line", f"line {x['id']}: an item and a quantity, or take it off")
+        out = await amend_order(self.uow, outbound, id, lines, body.reason)
+        order = await self.repo.get(id)
+        return {"order": self.to_read(order).model_dump(mode="json"), **out}
+
     async def _dc_number(self, o: Order) -> str | None:
         gln = (o.ship_to or {}).get("gln")
         if not gln:

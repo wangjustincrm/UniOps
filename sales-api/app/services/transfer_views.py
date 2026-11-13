@@ -114,6 +114,17 @@ class TransferService(ReadOnlyService[Transfer, TransferRead]):
         return await self._after(id)
 
     @requires(MANAGE)
+    async def amend(self, transfers, id: int, body, version: int | None) -> TransferDetail:
+        await transfers.amend(self.uow, id, version=version, lines=[x.model_dump() for x in body.lines], notes=body.notes,
+                              reason=body.reason)
+        return await self._after(id)
+
+    @requires(MANAGE)
+    async def resolve(self, transfers, id: int, body, version: int | None) -> TransferDetail:
+        await transfers.resolve(self.uow, id, version=version, how=body.how, reason=body.reason)
+        return await self._after(id)
+
+    @requires(MANAGE)
     async def release(self, id: int, reason: str, version: VersionArg = ANY_VERSION) -> TransferDetail:
         """On Hold (a second, different 944: compared by a person) back to where it was, with why (as an order's hold).
         The first 944 stays applied; the second stays kept, not applied."""

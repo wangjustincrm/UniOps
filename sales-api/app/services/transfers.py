@@ -210,6 +210,92 @@ class Transfers:
         await s.flush()
         return t
 
+    async def amend(self, uow, id: int, *, version: int | None, lines: list[dict[str, Any]], notes: str | None,
+                    reason: str) -> Transfer:
+        """User 2026-11-13: a sent 943 that is wrong (an item, a quantity) is corrected and sent again, until a
+        944 has answered it. The lines become the new ones; the live 943 is Replaced and a new one (a new
+        control number) goes on the next pass, as a Failed transfer's resend does. Why is kept with it."""
+        s = uow.session
+        t = await self._get(s, id, version)
+        if t.status not in (T.WAITING_FOR_997.value, T.WAITING_FOR_944.value, T.FAILED.value):
+            raise BusinessError("transfer.not_amendable", f"a transfer in {t.status} cannot be amended: "
+                                "a Draft is edited; once a 944 has come, settle the difference instead")
+        if (await s.execute(select(Receipt.id).where(Receipt.transfer_id == t.id, Receipt.applied.is_(True)))).first():
+            raise BusinessError("transfer.not_amendable", "a 944 has answered this transfer: settle the difference instead")
+        await self._check(s, t.from_warehouse_id, t.to_warehouse_id, lines)
+        before = [(ln.item_code, ln.qty_ea) for ln in (await s.execute(select(TransferLine).where(
+            TransferLine.transfer_id == t.id).order_by(TransferLine.line_no))).scalars()]
+        uow.set_reason(f"transfer amended and sent again: {reason}")
+        for old in (await s.execute(select(TransferLine).where(TransferLine.transfer_id == t.id))).scalars():
+            await s.delete(old)
+        await s.flush()
+        self._lines(s, t, lines)
+        if notes is not None:
+            t.notes = notes
+        await s.flush()
+        live = await s.get(Document, t.document_id, with_for_update=True) if t.document_id else None
+        if live is not None and live.file_status == OutboundFile.SENT.value:
+            OUTBOUND_FILE.transition(live, OutboundFile.REPLACED, actor=uow.actor, events=uow.events, reason=f"amended: {reason}"[:200])
+        elif live is not None and live.file_status in (OutboundFile.READY_TO_SEND.value, OutboundFile.SUPPRESSED.value):
+            await OUTBOX.cancel_for(s, t, "transfer amended")
+            OUTBOUND_FILE.transition(live, OutboundFile.CANCELLED, actor=uow.actor, events=uow.events, reason=f"amended: {reason}"[:200])
+        doc = await self.generate(uow, t, reason=f"amended: {reason}"[:200])
+        if live is not None:
+            live.replaced_by_id = doc.id
+        for event in (EDI_943_TIMEOUT, EDI_943_REJECTED, TRANSFER_FAILED):
+            await self.tasks.resolve_problem(s, event, t.id, by=uow.actor.user_id)
+        await oplog.write(s, "INFO", STEP, f"transfer {t.transfer_number} amended, a new 943 goes: {reason}", document_id=doc.id,
+                          transfer_id=t.id, context={"before": before, "after": [(x["item_code"], int(x["qty_ea"])) for x in lines]})
+        await s.flush()
+        return t
+
+    async def resolve(self, uow, id: int, *, version: int | None, how: str, reason: str) -> Transfer:
+        """User 2026-11-13: a receipt that differs (Discrepancy, Partially Received) is settled by a person, with why:
+          corrected — our 943 was wrong: the transfer becomes what arrived (its lines are the 944's items and
+                      quantities), so nothing stays in transit and the inventory follows;
+          accepted  — the difference is real (lost, damaged, extra): the lines stay as sent, the inventory writes the
+                      difference off in transit.
+        Either way the transfer is Received, its difference tasks are closed, and the old lines are in the log."""
+        s = uow.session
+        t = await self._get(s, id, version)
+        if t.status not in (T.DISCREPANCY.value, T.PARTIALLY_RECEIVED.value):
+            raise BusinessError("transfer.not_discrepant", f"transfer {t.transfer_number} has no receipt difference to settle")
+        if how not in ("corrected", "accepted"):
+            raise BusinessError("transfer.resolution", "settle as corrected or accepted")
+        lines = list((await s.execute(select(TransferLine).where(TransferLine.transfer_id == t.id)
+                                      .order_by(TransferLine.line_no).with_for_update())).scalars())
+        before = [(ln.item_code, ln.qty_ea, ln.received_ea) for ln in lines]
+        uow.set_reason(f"receipt difference {how}: {reason}")
+        if how == "corrected":
+            got: dict[str, int] = {}
+            for code, q in (await s.execute(select(ReceiptRow.item_code, ReceiptRow.qty_ea).join(Receipt, Receipt.id == ReceiptRow.receipt_id)
+                                            .where(Receipt.transfer_id == t.id, Receipt.applied.is_(True)))).all():
+                if code:
+                    got[code] = got.get(code, 0) + int(q)
+            if not got:
+                raise BusinessError("transfer.resolution", "no received item to correct the transfer to")
+            for old in lines:
+                await s.delete(old)
+            await s.flush()
+            for i, (code, q) in enumerate(got.items(), start=1):
+                s.add(TransferLine(transfer_id=t.id, line_no=i, item_code=code, qty_ea=q, received_ea=q, line_status="Received"))
+            rows = (await s.execute(select(ReceiptRow).join(Receipt, Receipt.id == ReceiptRow.receipt_id)
+                                    .where(Receipt.transfer_id == t.id, Receipt.applied.is_(True)))).scalars()
+            order = {code: i for i, code in enumerate(got, start=1)}
+            for r in rows:  # every received row is on its line now
+                r.transfer_line_no = order.get(r.item_code)
+            for rec in (await s.execute(select(Receipt).where(Receipt.transfer_id == t.id, Receipt.applied.is_(True)))).scalars():
+                rec.outcome, rec.discrepancies = T.RECEIVED.value, None
+        TRANSFER.transition(t, T.RECEIVED, actor=uow.actor, events=uow.events, reason=f"{how}: {reason}"[:200])
+        t.resolution, t.resolution_reason = how, reason
+        t.resolved_at, t.resolved_by_name = datetime.now(timezone.utc), uow.actor.name
+        for event in (TRANSFER_DISCREPANCY, PARTIAL_RECEIPT):
+            await self.tasks.resolve_problem(s, event, t.id, by=uow.actor.user_id)
+        await oplog.write(s, "INFO", STEP, f"transfer {t.transfer_number}: receipt difference {how} by {uow.actor.name}: {reason}",
+                          transfer_id=t.id, context={"how": how, "lines_before": before})
+        await s.flush()
+        return t
+
     # ── the 943 ──────────────────────────────────────────────────────────────
     async def _connection(self, s) -> Connection | None:
         cid = await SETTINGS.get(s, EDI_CONNECTION_ID)

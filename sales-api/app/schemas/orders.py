@@ -436,6 +436,21 @@ class ReturnedLineIn(BaseModel):
     returned_ea: Annotated[int, Field(ge=0)]
 
 
+class AmendLineIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: int
+    item_code: Annotated[str, Field(min_length=1, max_length=50)] | None = None
+    ordered_qty: Annotated[Decimal, Field(gt=0, max_digits=14, decimal_places=4)] | None = None
+    removed: bool = False
+
+
+class AmendOrderIn(BaseModel):
+    """An order sent wrong, corrected and sent again (user 2026-11-13): its lines as they should be, and why."""
+    model_config = ConfigDict(extra="forbid")
+    reason: Annotated[str, Field(min_length=3, max_length=500)]
+    lines: Annotated[list[AmendLineIn], Field(min_length=1, max_length=500)]
+
+
 class ReturnedIn(BaseModel):
     """What the customer returned (or refused) per order line, before the invoice goes; why, in a few words."""
     model_config = ConfigDict(extra="forbid")

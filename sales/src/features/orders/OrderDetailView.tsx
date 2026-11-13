@@ -12,6 +12,7 @@ import { statusDetailText } from './orderStatus'
 import { PaymentsAndRefunds } from './PaymentsAndRefunds'
 import { InvoicePricesForm } from './InvoicePrices'
 import { ReturnedForm } from './Returned'
+import { AmendForm } from './Amend'
 import { Recheck } from './Recheck'
 import { DraftActions } from './DraftActions'
 import { Send940 } from './Send940'
@@ -45,6 +46,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
   const sheetRefresh = useRefresh(q, { queryKey: queryKeys.detail(ordersClient, o.id), compare: compareRecord, noChange: 'Up to date', auto: 'follow' })
   const [pricing, setPricing] = useState(false)
   const [returning, setReturning] = useState(false)
+  const [amending, setAmending] = useState(false)
   const [releasing, setReleasing] = useState(false)
   const d = q.data
   const live = d ?? o  // the list's row until the detail arrives
@@ -64,12 +66,21 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
   // Returned: what shipped, until the invoice is queued or sent (then Record a return).
   const returnable = !!d && d.fulfillment_status !== 'Cancelled' && !['Queued', 'Sent'].includes(d.invoice_status)
     && open.some((ln) => ln.shipped_ea != null)
+  // Amend and send again (user 2026-11-13): a retailer or manual order, until the warehouse ships it.
+  const amendable = !!d && !d.historical && ['EDI_850', 'MANUAL'].includes(d.source_type)
+    && ['Pending', '940 Sent', '940 Accepted', '940 Rejected', '940 Timeout', '940 Failed'].includes(d.fulfillment_status)
+    && !d.shipments.some((s) => s.applied)
 
   const tabs: RecordTab[] = !d ? [] : [
     ...extraTabs,
     { id: 'overview', label: 'Overview', tone: d.review_reason ? 'warning' : undefined, render: () => <OverviewTab o={d} /> },
     { id: 'lines', label: 'Lines', count: open.length, tone: unmatched || (returned ?? 0) > 0 || live.short_shipped || (live.backordered_ea ?? 0) > 0 ? 'warning' : undefined, render: () => (
-      returning ? (
+      amending ? (
+        <AmendForm o={d} onCancel={() => setAmending(false)} onSaved={async () => {
+          setAmending(false)
+          await qc.invalidateQueries({ queryKey: queryKeys.detail(ordersClient, o.id) })
+        }} />
+      ) : returning ? (
         <ReturnedForm o={d} onCancel={() => setReturning(false)} onSaved={(next) => {
           qc.setQueryData(queryKeys.detail(ordersClient, o.id), next)
           setReturning(false)
@@ -115,6 +126,10 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
       {isDraft && <DraftActions o={d} close={close} />}
       <Send940 o={d} />
       <OrderHoldActions o={d} />
+      {amendable && !amending && (
+        <ActionButton size="sm" variant="secondary" permission="sales.order.operate"
+          onAction={() => { setReturning(false); setPricing(false); setAmending(true); host?.onTabChange?.('lines') }}>Amend and send again…</ActionButton>
+      )}
       {returnable && !returning && (
         <ActionButton size="sm" variant="secondary" permission={MANAGE_INVOICE}
           onAction={() => { setPricing(false); setReturning(true); host?.onTabChange?.('lines') }}>Edit returned</ActionButton>

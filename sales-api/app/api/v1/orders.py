@@ -9,7 +9,7 @@ from app.platform.crud_router import page_body
 from app.platform.query import QuerySpec, query_spec
 from app.runtime import Runtime, get_runtime
 from app.schemas.orders import (
-    CancelOrderIn, InvoicePricesIn, ReturnedIn, LinePreview, ManualLineIn, ManualOrderIn, OrderDetail, OrderFrom945In, OrderFrom945Plan, OrderRead,
+    AmendOrderIn, CancelOrderIn, InvoicePricesIn, ReturnedIn, LinePreview, ManualLineIn, ManualOrderIn, OrderDetail, OrderFrom945In, OrderFrom945Plan, OrderRead,
     ReleaseHoldIn, ResolveRowIn, ReviewResult,
 )
 from app.services.order_from_945 import OrderFrom945
@@ -32,6 +32,13 @@ async def list_orders(u: UoW, spec: Spec) -> dict:
 @router.get("/eligibility-preview")
 async def eligibility_preview(u: UoW, rt: Rt) -> list[dict]:
     return await OrderService(u).eligibility_preview(rt.outbound)
+
+
+@router.post("/{id}/amend")
+async def amend_order(u: UoW, rt: Rt, id: int, body: AmendOrderIn) -> dict:
+    out = await OrderService(u).amend(id, body, rt.outbound)
+    await u.commit()
+    return out
 
 
 @router.post("/{id}/send-940")

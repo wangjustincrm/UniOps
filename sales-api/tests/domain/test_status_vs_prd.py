@@ -137,7 +137,12 @@ def test_the_listed_additions_are_exactly_the_agreed_ones():
         F.ACCEPTED_940: {F.GENERATED_940},
     }
     assert st.TRANSFER_ADDITIONS == {st.Transfer.FAILED: {st.Transfer.GENERATED_943, st.Transfer.CANCELLED},
-                                     st.Transfer.GENERATED_943: {st.Transfer.FAILED}}  # FR-OB-81 (P7, 2026-11-02)
+                                     st.Transfer.GENERATED_943: {st.Transfer.FAILED},  # FR-OB-81 (P7, 2026-11-02)
+                                     # amend and send again; settle a receipt difference (user 2026-11-13)
+                                     st.Transfer.WAITING_FOR_997: {st.Transfer.GENERATED_943},
+                                     st.Transfer.WAITING_FOR_944: {st.Transfer.GENERATED_943},
+                                     st.Transfer.DISCREPANCY: {st.Transfer.RECEIVED},
+                                     st.Transfer.PARTIALLY_RECEIVED: {st.Transfer.RECEIVED}}
     assert st.ACK_ADDITIONS == {st.Ack.TIMEOUT: {st.Ack.ACCEPTED, st.Ack.REJECTED, st.Ack.ACCEPTED_BY_945}}
     assert st.FULFILLMENT_HOLD_ENTRIES == {F.ON_HOLD: {F.SHIPPED, F.SENT_940, F.ACCEPTED_940, F.TIMEOUT_940}}
     assert F.REJECTED_940 not in st.FULFILLMENT_HOLD_ENTRIES[F.ON_HOLD]
@@ -270,7 +275,7 @@ def test_transfer_chain_from_prd_prose():
     chain = [T.DRAFT, T.READY_TO_SEND, T.GENERATED_943, T.WAITING_FOR_997, T.WAITING_FOR_944]
     for a, b in zip(chain, chain[1:]):
         assert st.TRANSFER.can(a, b)
-    assert {d for d in T if st.TRANSFER.can(T.WAITING_FOR_944, d)} == {T.RECEIVED, T.PARTIALLY_RECEIVED, T.DISCREPANCY}
+    assert {d for d in T if st.TRANSFER.can(T.WAITING_FOR_944, d)} == {T.RECEIVED, T.PARTIALLY_RECEIVED, T.DISCREPANCY, T.GENERATED_943}
     assert st.TRANSFER.can(T.WAITING_FOR_997, T.FAILED)
     assert {d for d in T if st.TRANSFER.can(T.FAILED, d)} == {T.GENERATED_943, T.CANCELLED}  # resend or cancel
     # An ACK timeout is not a transfer status: the transfer waits in Waiting for 997.

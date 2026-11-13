@@ -3,9 +3,9 @@ FR-OB-80 … 84). The transfer's status is the TRANSFER state machine (9.1, with
 the On Hold of a second, different 944)."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, ForeignKey, Integer, String, Text, UniqueConstraint, false
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, false
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,6 +22,7 @@ class Transfer(Audited, Versioned, Base):
     __table_args__ = (
         UniqueConstraint("transfer_number", name="uq_sales_transfers_number"),
         one_of("status", tuple(s.value for s in T), "ck_sales_transfers_status"),
+        one_of("resolution", ("corrected", "accepted"), "ck_sales_transfers_resolution"),
     )
 
     transfer_number: Mapped[str] = mapped_column(String(10), nullable=False)  # 5 digits: 00104
@@ -32,6 +33,12 @@ class Transfer(Audited, Versioned, Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     document_id: Mapped[int | None] = mapped_column(ForeignKey("sales_documents.id"), nullable=True)  # the live 943
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # sales28 (user 2026-11-13): how a person settled a receipt difference — "corrected" (the transfer
+    # becomes what arrived: our 943 was wrong) or "accepted" (the difference is real) — with why.
+    resolution: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    resolution_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_by_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 
 TRANSFER.bind(Transfer)

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { z } from 'zod'
 import {
   ActionButton, Autocomplete, ConfirmAction, DateCell, DetailList, ListPage, LocalTable, ViewFileButton,
-  MasterDetailForm, RecordSheet, Section, StatusCell, numberColumn, queryKeys, useFileViewer,
+  MasterDetailForm, RecordSheet, SchemaForm, Section, StatusCell, numberColumn, queryKeys, useFileViewer,
   type ColumnDef, type EditableColumn, type FieldSpec, type RecordTab,
   compareRecord, useRefresh, Muted, columnsOf
  } from '@/platform-ui'
@@ -13,7 +13,7 @@ import { Attachments } from '@/features/common/Attachments'
 import { RecordActivity } from '@/features/common/RecordActivity'
 import { RecordFilesTable } from '@/features/common/RecordFilesTable'
 import {
-  cancelTransfer, createTransfer, fetchTransfer, readyTransfer, releaseTransfer, resendTransfer, transfersClient, updateTransfer,
+  amendTransfer, cancelTransfer, createTransfer, fetchTransfer, readyTransfer, releaseTransfer, resolveTransfer, resendTransfer, transfersClient, updateTransfer,
   transferPdf, type ReceiptRowRead, type TransferDetail, type TransferLineRead, type TransferRead,
 } from './transfersApi'
 
@@ -23,12 +23,16 @@ const colTransferRead = columnsOf<TransferRead>()
 
 const MANAGE = 'sales.transfer.manage'
 const CANCELLABLE = ['Draft', 'Ready To Send', '943 Generated', 'Failed']
+const AMENDABLE = ['Waiting for 997', 'Waiting for 944', 'Failed']
 const errorMessages: Record<string, string> = {
   'transfer.not_cancellable': 'The 943 is sent: the transfer can no longer be cancelled.',
   'transfer.same_warehouse': 'The two warehouses must differ.',
   'entity.stale': 'Someone else changed this transfer. Close it and open it again.',
   'auth.forbidden': 'You do not have permission to manage transfers.',
   'transfer.not_on_hold': 'This transfer is not On Hold any more.',
+  'transfer.not_amendable': 'A 944 has answered this transfer: settle the difference instead.',
+  'transfer.not_discrepant': 'This transfer has no receipt difference to settle any more.',
+  'transfer.item': 'An item is not active in the Item Master.',
 }
 
 const columns: ColumnDef<TransferRead, unknown>[] = [
@@ -104,6 +108,62 @@ function TransferForm({ t, onSaved, onCancel }: { t?: TransferDetail; onSaved: (
   )
 }
 
+const amendSchema = z.object({
+  notes: z.string().trim().max(2000).nullable().optional(),
+  reason: z.string().trim().min(3, 'Say what was wrong (at least 3 characters)').max(2000),
+})
+const amendFields: FieldSpec[] = [
+  { name: 'reason', label: 'What was wrong', type: 'textarea', required: true,
+    hint: 'Kept with the transfer. The 943 that went is Replaced; a new one (a new control number) goes on the next pass.' },
+  { name: 'notes', label: 'Notes', type: 'textarea' },
+]
+
+/** A sent transfer corrected and sent again (user 2026-11-13), until a 944 answers it: same warehouses, new lines, why. */
+function AmendForm({ t, onSaved, onCancel }: { t: TransferDetail; onSaved: (d: TransferDetail) => void; onCancel: () => void }) {
+  return (
+    <MasterDetailForm<Line>
+      schema={amendSchema}
+      fields={amendFields}
+      defaultValues={{ notes: t.notes ?? '', reason: '' }}
+      lines={{ label: 'Transfer lines', columns: editColumns, problem: lineProblem, add: () => ({ item_code: '', qty_ea: '' }),
+        removable: true, initial: t.lines.map((l) => ({ item_code: l.item_code, qty_ea: String(l.qty_ea) })) }}
+      submitLabel="Amend and send again"
+      errorMessages={errorMessages}
+      onCancel={onCancel}
+      version={t.version}
+      onSubmit={async (v, lines, edit) => {
+        onSaved(await amendTransfer(t.id, edit.version ?? t.version, { notes: (v.notes as string) || null, reason: String(v.reason),
+          lines: lines.map((l) => ({ item_code: l.item_code, qty_ea: Number(l.qty_ea) })) }))
+      }}
+    />
+  )
+}
+
+const resolveSchema = z.object({
+  how: z.enum(['corrected', 'accepted'], { message: 'Choose how it is settled' }),
+  reason: z.string().trim().min(3, 'Say why (at least 3 characters)').max(2000),
+})
+const resolveFields: FieldSpec[] = [
+  { name: 'how', label: 'How', type: 'segmented', required: true, options: [
+    { value: 'corrected', label: 'Our 943 was wrong: correct it to what arrived' },
+    { value: 'accepted', label: 'The difference is real: accept it' }],
+    hint: 'Corrected: the transfer\'s lines become the 944\'s items and quantities, nothing stays in transit. Accepted: the lines stay as sent; what did not arrive is written off in transit (or what came extra is added).' },
+  { name: 'reason', label: 'Why', type: 'textarea', required: true },
+]
+
+/** A receipt difference settled by a person (user 2026-11-13): the transfer is Received, its tasks closed. */
+function ResolveForm({ t, onSaved, onCancel }: { t: TransferDetail; onSaved: (d: TransferDetail) => void; onCancel: () => void }) {
+  return (
+    <SchemaForm schema={resolveSchema} fields={resolveFields} submitLabel="Settle the difference" onCancel={onCancel} errorMessages={errorMessages}
+      defaultValues={{ how: '', reason: '' }}
+      onSubmit={async (v) => {
+        const out = await resolveTransfer(t.id, t.version, v.how as 'corrected' | 'accepted', String(v.reason))
+        onSaved(out)
+        return out
+      }} />
+  )
+}
+
 function Detail({ row }: { row: TransferRead }) {
   const id = row.id
   const qc = useQueryClient()
@@ -113,6 +173,8 @@ function Detail({ row }: { row: TransferRead }) {
   const [cancelling, setCancelling] = useState(false)
   const [releasing, setReleasing] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [amending, setAmending] = useState(false)
+  const [settling, setSettling] = useState(false)
   const done = async (d: TransferDetail) => {
     qc.setQueryData(queryKeys.detail(transfersClient, id), d)
     await qc.invalidateQueries({ queryKey: queryKeys.list(transfersClient) })
@@ -126,12 +188,23 @@ function Detail({ row }: { row: TransferRead }) {
   const tabs: RecordTab[] = !t ? [] : editing ? [{
     id: 'edit', label: 'Edit draft', render: () => (
       <TransferForm t={t} onCancel={() => setEditing(false)} onSaved={async (d) => { setEditing(false); await done(d) }} />),
+  }] : amending ? [{
+    id: 'amend', label: 'Amend and send again', render: () => (
+      <AmendForm t={t} onCancel={() => setAmending(false)} onSaved={async (d) => { setAmending(false); await done(d) }} />),
+  }] : settling ? [{
+    id: 'settle', label: 'Settle the difference', render: () => (
+      <Section title="Settle the receipt difference">
+        {t.receipts.flatMap((r) => r.discrepancies ?? []).length > 0 && (
+          <ul className="mb-3 text-xs text-danger-600">{t.receipts.flatMap((r) => r.discrepancies ?? []).map((x) => <li key={x}>{x}</li>)}</ul>)}
+        <ResolveForm t={t} onCancel={() => setSettling(false)} onSaved={async (d) => { setSettling(false); await done(d) }} />
+      </Section>),
   }] : [
     { id: 'overview', label: 'Overview', tone: t.error ? 'danger' : undefined, render: () => (
       <Section title="Transfer">
         <DetailList items={[
           ['From → to', `${t.from_warehouse} → ${t.to_warehouse}`],
           ['943', t.control ? `${t.control} · file ${t.file_status} · 997 ${t.ack_status}` : null], ['Notes', t.notes], ['Problem', t.error],
+          ['Difference settled', t.resolution ? `${t.resolution === 'corrected' ? 'Corrected to what arrived' : 'Accepted as it is'}: ${t.resolution_reason ?? ''} (${t.resolved_by_name ?? ''})` : null],
         ]} />
       </Section>
     ) },
@@ -189,6 +262,10 @@ function Detail({ row }: { row: TransferRead }) {
             {t.status === 'Draft' && <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setEditing(true)}>Edit draft</ActionButton>}
             {t.status === 'Failed' && <ActionButton size="sm" permission={MANAGE} errorMessages={errorMessages} done="943 queued again" onAction={() => resend.mutateAsync()}>Resend 943</ActionButton>}
             {t.status === 'On Hold' && <ActionButton size="sm" permission={MANAGE} onAction={() => setReleasing(true)}>Release hold…</ActionButton>}
+            {AMENDABLE.includes(t.status) && t.receipts.every((r) => !r.applied) && !amending && !settling && (
+              <ActionButton size="sm" variant="secondary" permission={MANAGE} onAction={() => setAmending(true)}>Amend and send again…</ActionButton>)}
+            {['Discrepancy', 'Partially Received'].includes(t.status) && !settling && (
+              <ActionButton size="sm" permission={MANAGE} onAction={() => setSettling(true)}>Settle the difference…</ActionButton>)}
           </>
         ) : undefined}
         more={t && !editing ? [

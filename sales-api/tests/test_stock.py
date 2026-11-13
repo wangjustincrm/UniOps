@@ -39,7 +39,7 @@ async def test_a_transfer_and_its_944_put_stock_at_radiant_once(p7):  # noqa: F8
     await store(p7, "944_EDI", real_944(), "944-16468.edi")  # the real answer: CF0092 8400 and CF0103 7200 (not CF0093)
     await p7.tr.process_944s()
     first = await _sync(p7)
-    assert first == {"transfer_line": 2, "receipt_row": 26}
+    assert first == {"transfer_sent": 2, "receipt_row": 26}
     assert await _sync(p7) == {}  # a second run adds nothing
     items = await _items(p7)
     assert items["CF0092"].on_hand_ea == 8400 and items["CF0092"].to_radiant_ea == 0

@@ -9,7 +9,7 @@ from app.core.deps import get_uow
 from app.platform.crud_router import page_body
 from app.platform.query import QuerySpec, query_spec
 from app.runtime import Runtime, get_runtime
-from app.schemas.transfers import CancelIn, ReleaseIn, TransferDetail, TransferIn
+from app.schemas.transfers import AmendIn, CancelIn, ReleaseIn, ResolveIn, TransferDetail, TransferIn
 from app.services.transfer_views import TransferService
 
 UoW = Annotated[Any, Depends(get_uow)]
@@ -79,5 +79,19 @@ async def resend(u: UoW, rt: Rt, id: int, version: Version = None):
 @router.post("/{id}/release", response_model=TransferDetail)
 async def release(u: UoW, id: int, body: ReleaseIn, version: Version = None):
     out = await TransferService(u).release(id, body.reason, version)
+    await u.commit()
+    return out
+
+
+@router.post("/{id}/amend", response_model=TransferDetail)
+async def amend(u: UoW, rt: Rt, id: int, body: AmendIn, version: Version = None):
+    out = await TransferService(u).amend(rt.transfers, id, body, version)
+    await u.commit()
+    return out
+
+
+@router.post("/{id}/resolve", response_model=TransferDetail)
+async def resolve(u: UoW, rt: Rt, id: int, body: ResolveIn, version: Version = None):
+    out = await TransferService(u).resolve(rt.transfers, id, body, version)
     await u.commit()
     return out

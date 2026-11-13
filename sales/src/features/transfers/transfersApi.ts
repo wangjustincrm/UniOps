@@ -24,6 +24,11 @@ export interface TransferRead {
   items: string | null
   receipt_date: string | null
   attachments: number
+  /** A receipt difference settled (corrected / accepted), with why, who and when. */
+  resolution?: 'corrected' | 'accepted' | null
+  resolution_reason?: string | null
+  resolved_at?: string | null
+  resolved_by_name?: string | null
 }
 export interface TransferLineRead { id: number; line_no: number; item_code: string; qty_ea: number; received_ea: number; line_status: string }
 export interface ReceiptRowRead { position: number; lx_number: string | null; item_code: string | null; upc: string | null; lot: string | null;
@@ -48,6 +53,12 @@ export const fetchTransfer = (id: number) => api.get<TransferDetail>(`/transfers
 export const createTransfer = (body: TransferIn) => api.post<TransferDetail>('/transfers', body)
 export const updateTransfer = (id: number, version: number, body: TransferIn) => api.put<TransferDetail>(`/transfers/${id}?version=${version}`, body)
 export const readyTransfer = (id: number, version: number) => api.post<TransferDetail>(`/transfers/${id}/ready?version=${version}`)
+/** A sent transfer corrected and sent again (a new 943 replaces the live one), until a 944 answers it. */
+export const amendTransfer = (id: number, version: number, body: { notes: string | null; lines: { item_code: string; qty_ea: number }[]; reason: string }) =>
+  api.post<TransferDetail>(`/transfers/${id}/amend?version=${version}`, body)
+/** A receipt difference settled: corrected to what arrived (our 943 was wrong) or accepted (the difference is real). */
+export const resolveTransfer = (id: number, version: number, how: 'corrected' | 'accepted', reason: string) =>
+  api.post<TransferDetail>(`/transfers/${id}/resolve?version=${version}`, { how, reason })
 export const releaseTransfer = (id: number, version: number, reason: string) => api.post<TransferDetail>(`/transfers/${id}/release?version=${version}`, { reason })
 export const cancelTransfer = (id: number, version: number, reason: string) => api.post<TransferDetail>(`/transfers/${id}/cancel?version=${version}`, { reason })
 export const resendTransfer = (id: number, version: number) => api.post<TransferDetail>(`/transfers/${id}/resend?version=${version}`)

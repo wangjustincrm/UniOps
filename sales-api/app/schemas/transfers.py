@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
@@ -55,6 +55,10 @@ class TransferRead(BaseModel):
     items: str | None = None
     receipt_date: date | None = None
     attachments: int = 0
+    resolution: str | None = None          # corrected / accepted (a receipt difference settled)
+    resolution_reason: str | None = None
+    resolved_at: datetime | None = None
+    resolved_by_name: str | None = None
 
 
 class TransferLineRead(BaseModel):
@@ -103,6 +107,21 @@ class TransferDetail(TransferRead):
     status_before_hold: str | None = None
     documents: list[RecordDocumentRead] = []   # received, sent and attached (record_files)
     timeline: list[TimelineEntry] = []
+
+
+class AmendIn(BaseModel):
+    """A sent transfer corrected and sent again (user 2026-11-13): its new lines, and why."""
+    model_config = ConfigDict(extra="forbid")
+    notes: Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)] | None = None
+    lines: Annotated[list[TransferLineIn], Field(min_length=1, max_length=200)]
+    reason: Reason
+
+
+class ResolveIn(BaseModel):
+    """A receipt difference settled (user 2026-11-13): corrected to what arrived, or accepted as it is."""
+    model_config = ConfigDict(extra="forbid")
+    how: Literal["corrected", "accepted"]
+    reason: Reason
 
 
 class ReleaseIn(BaseModel):

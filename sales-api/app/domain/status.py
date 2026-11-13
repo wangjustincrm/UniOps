@@ -155,6 +155,14 @@ TRANSFER_ADDITIONS = {
     # FR-OB-81 / FR-OB-24 (P7, 2026-11-02): a 943 that fails its checks, or whose
     # put fails or is refused, is Failed — then resent by the user or cancelled.
     T.GENERATED_943: {T.FAILED},
+    # User 2026-11-13 (transfers 00104 / 00106): a sent 943 that is wrong is amended and sent again
+    # (a new 943 replaces it) until a 944 has answered it …
+    T.WAITING_FOR_997: {T.GENERATED_943},
+    T.WAITING_FOR_944: {T.GENERATED_943},
+    # … and a receipt that differs is settled by a person, with why: corrected to what arrived, or
+    # the difference accepted.
+    T.DISCREPANCY: {T.RECEIVED},
+    T.PARTIALLY_RECEIVED: {T.RECEIVED},
 }
 TRANSFER_HOLD_ENTRIES = {
     # On Hold when a second, different 944 arrives (FR-OB-80 to FR-OB-84).

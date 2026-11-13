@@ -26,11 +26,12 @@ const detail: TransferDetail = { ...t104, ack_status: 'Accepted', file_status: '
 const draft: TransferRead = { ...t104, id: 2, transfer_number: '00105', status: 'Draft', version: 1 }
 const meta: ListMeta = { version: 1, searchable: true, default_sort: [], fields: [], views: [{ key: 'all', name: 'All', state: { version: 1 } }] }
 
-const api = vi.hoisted(() => ({ list: vi.fn(), fetch: vi.fn(), create: vi.fn(), cancel: vi.fn(), ready: vi.fn(), update: vi.fn() }))
+const api = vi.hoisted(() => ({ list: vi.fn(), fetch: vi.fn(), create: vi.fn(), cancel: vi.fn(), ready: vi.fn(), update: vi.fn(), amend: vi.fn(), resolve: vi.fn() }))
 vi.mock('./transfersApi', async (orig) => {
   const real = await orig<typeof import('./transfersApi')>()
   return { ...real, transfersClient: { ...real.transfersClient, list: api.list, meta: async () => meta },
-    fetchTransfer: api.fetch, createTransfer: api.create, cancelTransfer: api.cancel, readyTransfer: api.ready, updateTransfer: api.update }
+    fetchTransfer: api.fetch, createTransfer: api.create, cancelTransfer: api.cancel, readyTransfer: api.ready, updateTransfer: api.update,
+    amendTransfer: api.amend, resolveTransfer: api.resolve }
 })
 const files = vi.hoisted(() => ({ list: vi.fn(), attach: vi.fn(), remove: vi.fn() }))
 vi.mock('@/features/common/recordFiles', async (orig) => {
@@ -88,6 +89,33 @@ describe('Transfers', () => {
     expect(await within(dialog).findByRole('table', { name: 'Attachments' })).toHaveTextContent('BOL signed.pdf')
     expect(within(dialog).queryByRole('button', { name: /Attach file/ })).toBeNull()
     expect(within(dialog).queryByRole('button', { name: 'Remove BOL signed.pdf' })).toBeNull()
+  })
+
+  it('a discrepancy is settled: corrected to what arrived, with why', async () => {
+    api.fetch.mockResolvedValue(detail)
+    api.resolve.mockResolvedValue({ ...detail, status: 'Received', resolution: 'corrected', resolution_reason: 'our 943 was wrong', resolved_by_name: 'Op' })
+    renderAs(['sales.read', 'sales.transfer.manage'])
+    fireEvent.click(await screen.findByText('00104'))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByRole('button', { name: /Amend and send again/ })).toBeNull()  // a 944 has answered it
+    fireEvent.click(await within(dialog).findByRole('button', { name: /Settle the difference/ }))
+    expect(await within(dialog).findByText('line 2 CF0093: 0 of 7200 EA received')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('radio', { name: /correct it to what arrived/ }))
+    fireEvent.change(within(dialog).getByRole('textbox', { name: /Why/ }), { target: { value: 'our 943 named CF0093; CF0103 was sent' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Settle the difference' }))
+    await waitFor(() => expect(api.resolve).toHaveBeenCalledWith(1, 4, 'corrected', 'our 943 named CF0093; CF0103 was sent'))
+  })
+
+  it('a sent transfer with no 944 yet can be amended and sent again; a reader sees neither action', async () => {
+    const waiting = { ...detail, status: 'Waiting for 944', receipts: [] }
+    api.fetch.mockResolvedValue(waiting)
+    renderAs(['sales.read', 'sales.transfer.manage'])
+    fireEvent.click(await screen.findByText('00104'))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).queryByRole('button', { name: /Settle the difference/ })).toBeNull()
+    fireEvent.click(await within(dialog).findByRole('button', { name: /Amend and send again/ }))
+    expect(await within(dialog).findByRole('textbox', { name: /What was wrong/ })).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Amend and send again' })).toBeInTheDocument()
   })
 
   it('On Hold: Release asks why and goes back to where it was', async () => {

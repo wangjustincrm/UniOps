@@ -45,13 +45,13 @@ const meta: ListMeta = {
 }
 
 const api = vi.hoisted(() => ({ resolve: vi.fn(), fetchOrder: vi.fn(), list: vi.fn(), send: vi.fn(),
-  preview: vi.fn(), create: vi.fn(), submit: vi.fn(), update: vi.fn(), prices: vi.fn() }))
+  preview: vi.fn(), create: vi.fn(), submit: vi.fn(), update: vi.fn(), prices: vi.fn(), amend: vi.fn() }))
 vi.mock('./ordersApi', async (orig) => {
   const real = await orig<typeof import('./ordersApi')>()
   return { ...real, ordersClient: { ...real.ordersClient, list: api.list, meta: async () => meta },
     fetchOrder: api.fetchOrder, resolveReview: api.resolve, send940: api.send,
     previewManual: api.preview, createManual: api.create, submitManual: api.submit, updateManual: api.update,
-    setInvoicePrices: api.prices }
+    setInvoicePrices: api.prices, amendOrder: api.amend }
 })
 const look = vi.hoisted(() => ({ customers: vi.fn() }))
 vi.mock('../configuration/lookups', () => ({
@@ -712,4 +712,21 @@ describe('the order sheet: facts, actions and tabs', () => {
     expect(within(sheet).getByText('Not built yet (built at delivery confirmation)')).toBeInTheDocument()
     download.mockRestore()
   })
+
+  it('a retailer order sent wrong is amended and sent again, with why', async () => {
+    const sent = { ...detail, ...pending, source_type: 'EDI_850' as const, fulfillment_status: '940 Accepted', invoice_status: 'Pending',
+      has_invoice: false, lines: [{ ...detail.lines[0], item_code: 'CF0092', ordered_qty: '10', order_unit: 'CASE', problem: null }] }
+    api.list.mockResolvedValue({ items: [{ ...pending, source_type: 'EDI_850' as const, fulfillment_status: '940 Accepted' }], total: 1 })
+    api.fetchOrder.mockResolvedValue(sent)
+    api.amend.mockResolvedValue({ order: sent, sent: true, document_id: 77 })
+    renderAs(['sales.read', 'sales.order.operate'])
+    fireEvent.click(await screen.findByText('SHOP-9303'))
+    const sheet = await screen.findByRole('dialog', { name: 'SHOP-9303' })
+    fireEvent.click(await within(sheet).findByRole('button', { name: /Amend and send again/ }))
+    fireEvent.change(await within(sheet).findByRole('textbox', { name: /Quantity line/ }), { target: { value: '12' } })
+    fireEvent.change(within(sheet).getByRole('textbox', { name: /What was wrong/ }), { target: { value: '12 cases, not 10' } })
+    fireEvent.click(within(sheet).getByRole('button', { name: 'Amend and send again' }))
+    await waitFor(() => expect(api.amend).toHaveBeenCalledWith(5, { reason: '12 cases, not 10', lines: [{ id: 1, item_code: 'CF0092', ordered_qty: '12' }] }))
+  })
+
 })
