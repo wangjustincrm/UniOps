@@ -1,4 +1,5 @@
 import type { ComboOption, Filter } from '@/platform-ui'
+import { fetchUsers } from './notifications/notificationsApi'
 import { itemsClient } from './items/itemsApi'
 import { partnersClient } from './partners/partnersApi'
 import { warehousesClient } from './warehouses/warehousesApi'
@@ -40,6 +41,12 @@ export async function itemUnits(code: string): Promise<{ value: string; label: s
 }
 
 /** Active warehouses, by id (transfers). */
+/** Active users (the operator, a rule's recipients), by name, their email as the hint. */
+export async function userOptions(query: string): Promise<ComboOption[]> {
+  const users = await fetchUsers(query.trim())
+  return users.slice(0, 50).map((u) => ({ value: u.id, label: u.name, hint: u.email }))
+}
+
 export async function warehouseOptions(query: string): Promise<ComboOption[]> {
   const page = await warehousesClient.list({ page: 1, pageSize: 20, search: search(query), filters: [ACTIVE], sort: [{ field: 'code' }] })
   return page.items.map((w) => ({ value: String(w.id), label: w.code, hint: w.name }))

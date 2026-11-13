@@ -3,6 +3,7 @@ itself never appears: `secret_name` names an environment variable, and Read
 says only whether it is present."""
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, time
 from typing import Annotated, Literal
 
@@ -198,6 +199,8 @@ class EdiSettings(BaseModel):
     # FR-OB-32: company addresses that get every document of each invoice sent; empty: nobody
     internal_emails: Annotated[list[Annotated[str, StringConstraints(
         strip_whitespace=True, max_length=200, pattern=r"^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$")]], Field(max_length=20)] = []
+    # X2: who receives every Action Required task (2026-11-13: set here; none: tasks go to no one)
+    operator_user_id: uuid.UUID | None = None
 
 
 class ShadowSetting(BaseModel):

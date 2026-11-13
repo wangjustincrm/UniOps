@@ -165,16 +165,16 @@ describe('Connections page: warehouse EDI settings (P4)', () => {
   it('a reader sees them read-only; sales.config saves the connection and the 997 wait', async () => {
     const { unmount } = renderAs(['sales.read'])
     fireEvent.click(await card('997 wait', '120 min'))
-    const read = await screen.findByRole('dialog', { name: 'Warehouse EDI and 810 invoices' })
+    const read = await screen.findByRole('dialog', { name: 'Warehouse EDI, 810 invoices and tasks' })
     expect(within(read).queryByRole('button', { name: 'Save' })).toBeNull()  // read only
     unmount()
     api.saveEdi.mockImplementation(async (d) => d)
     renderAs(['sales.read', 'sales.config'])
     fireEvent.click(await card('997 wait', '120 min'))
-    const sheet = await screen.findByRole('dialog', { name: 'Warehouse EDI and 810 invoices' })
+    const sheet = await screen.findByRole('dialog', { name: 'Warehouse EDI, 810 invoices and tasks' })
     fireEvent.change(within(sheet).getByLabelText(/997 wait \(minutes\)/), { target: { value: '90' } })
     fireEvent.click(within(sheet).getByRole('button', { name: 'Save' }))
-    await waitFor(() => expect(api.saveEdi).toHaveBeenCalledWith({ connection_id: null, ack_timeout_minutes: 90, invoice_connection_id: null, internal_emails: [] }))
+    await waitFor(() => expect(api.saveEdi).toHaveBeenCalledWith({ connection_id: null, ack_timeout_minutes: 90, invoice_connection_id: null, internal_emails: [], operator_user_id: null }))
   })
 })
 

@@ -91,6 +91,8 @@ export interface EdiSettings {
   connection_id: number | null; ack_timeout_minutes: number; invoice_connection_id?: number | null
   /** FR-OB-32: company addresses that get every document of each invoice sent. */
   internal_emails?: string[]
+  /** X2: who receives every Action Required task (none: no one). */
+  operator_user_id?: string | null
 }
 export const fetchEdiSettings = () => api.get<EdiSettings>('/config/edi-settings')
 export const saveEdiSettings = (data: EdiSettings) => api.put<EdiSettings>('/config/edi-settings', data)

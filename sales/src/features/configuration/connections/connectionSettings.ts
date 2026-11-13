@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import { fetchUsers } from '../notifications/notificationsApi'
 import { connectionsClient, fetchEdiSettings, fetchSchedulerSettings, fetchShadowSetting } from './connectionsApi'
 
 export const EDI_KEY = ['sales', 'config', 'edi-settings']
@@ -25,7 +26,10 @@ export function useEdiSettings() {
     queryFn: () => connectionsClient.list({ page: 1, pageSize: 100, filters: [{ field: 'kind', op: 'eq', value: 'SFTP' }, { field: 'active', op: 'eq', value: 'true' }], sort: [{ field: 'name' }] }),
   })
   const items = conns.data?.items ?? []
+  const users = useQuery({ queryKey: [...EDI_KEY, 'users'], queryFn: () => fetchUsers('') })
   return {
+    /** The operator's name: "No one" for none. */
+    userName: (id: string | null | undefined) => (id == null ? 'No one' : users.data?.find((u) => u.id === id)?.name ?? '…'),
     settings: settings.data, error: settings.error ?? conns.error, loading: settings.isLoading || conns.isLoading,
     options: items.map((c) => ({ value: String(c.id), label: `${c.name} (write ${c.can_write ? 'on' : 'off'})` })),
     /** A connection's name by id: "None" for no id. */

@@ -516,3 +516,27 @@ async def test_a_997_read_again_keeps_its_link_and_is_processed(edi):  # 2026-11
     links = await edi.env.q("SELECT count(*) n FROM sales_document_links l JOIN sales_documents d ON d.id = l.document_id "
                             "WHERE d.kind = '997_EDI' AND l.entity_id = :o", o=o.id)
     assert links == [{"n": 1}]
+
+
+async def test_the_operator_who_gets_the_tasks_is_set_with_the_edi_settings_and_must_be_an_active_user(edi, monkeypatch):
+    import uuid as _uuid
+    from types import SimpleNamespace
+    import app.integrations.epms_users as users_mod
+    from app.platform.errors import InvalidInput
+    from app.schemas.connections import EdiSettings
+    from app.services.connections import EdiSettingsService
+    from app.services.problems import _operator
+    active = SimpleNamespace(id=_uuid.uuid4(), name="Op", email="op@example.invalid")
+
+    async def search(session, q="", limit=20):  # noqa: ARG001 — the users table is epms-api's, not in the test schema
+        return [active]
+    monkeypatch.setattr(users_mod, "search_users", search)
+    async with edi.env.factory(OP) as u:
+        with pytest.raises(InvalidInput) as e:
+            await EdiSettingsService(u).update(EdiSettings(connection_id=edi.conn_id, ack_timeout_minutes=120, operator_user_id=_uuid.uuid4()))
+        assert e.value.code == "edi.operator"
+        await EdiSettingsService(u).update(EdiSettings(connection_id=edi.conn_id, ack_timeout_minutes=120, operator_user_id=active.id))
+        await u.commit()
+    async with edi.env.factory(OP) as u:
+        assert (await EdiSettingsService(u).get()).operator_user_id == active.id
+        assert str(await _operator(u.session)) == str(active.id)

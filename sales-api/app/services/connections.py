@@ -32,7 +32,8 @@ from app.services.cycle import window_of
 from app.services.intake import ConnectionSnapshot
 from app.services.problems import SFTP_AUTH_FAILED
 from app.services.settings import (
-    ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, INVOICE_CONNECTION_ID, INVOICE_INTERNAL_EMAILS, SCHEDULER_PAUSED, SETTINGS, SHADOW_MODE, SYSTEM_MINUTES,
+    ACK_TIMEOUT_MINUTES, EDI_CONNECTION_ID, INVOICE_CONNECTION_ID, INVOICE_INTERNAL_EMAILS, OPERATOR_USER_ID, SCHEDULER_PAUSED, SETTINGS,
+    SHADOW_MODE, SYSTEM_MINUTES,
 )
 
 logger = logging.getLogger(__name__)
@@ -241,7 +242,8 @@ class EdiSettingsService(SettingsGroup):
     registry = SETTINGS
     read_schema = EdiSettings
     fields = {"connection_id": EDI_CONNECTION_ID, "ack_timeout_minutes": ACK_TIMEOUT_MINUTES,
-              "invoice_connection_id": INVOICE_CONNECTION_ID, "internal_emails": INVOICE_INTERNAL_EMAILS}
+              "invoice_connection_id": INVOICE_CONNECTION_ID, "internal_emails": INVOICE_INTERNAL_EMAILS,
+              "operator_user_id": OPERATOR_USER_ID}
     read_permission, write_permission = READ, CONFIG
     reason = "EDI settings"
 
@@ -252,6 +254,11 @@ class EdiSettingsService(SettingsGroup):
                 conn = await self.uow.session.get(Connection, cid)
                 if conn is None or conn.kind != "SFTP" or not conn.active:
                     raise InvalidInput("edi.connection", "choose an active SFTP connection", {field_: cid})
+        uid = changes.get("operator_user_id")
+        if uid is not None:
+            from app.integrations.epms_users import search_users
+            if not any(str(x.id) == str(uid) for x in await search_users(self.uow.session, "", limit=5000)):
+                raise InvalidInput("edi.operator", "choose an active user", {"operator_user_id": str(uid)})
 
 
 class ShadowSettingService(SettingsGroup):
