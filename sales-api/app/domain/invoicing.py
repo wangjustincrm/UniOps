@@ -125,6 +125,13 @@ def _party(prefix: str, country_key: str, zip_key: str, a: dict) -> dict:
             f"{prefix}Code": a.get("gln") or a.get("code") or ""}
 
 
+def agreement_id_of(value: object) -> str | None:
+    """An agreement is a number: text with no digit is a label that leaked from the partner's mapping, not an ID
+    (every Walmart 850 says "SPECIAL INSTRUCTIONS"; none of Zoho's 57 Walmart 810s carried one; user 2026-11-13)."""
+    text = str(value or "").strip()[:60]
+    return text if any(c.isdigit() for c in text) else None
+
+
 def build_810(h: Header810, items: list[Item810]) -> bytes:
     """A.9: one invoice; InvoiceDate = ShipDate = the delivery date."""
     d = h.invoice_date.strftime("%Y-%m-%d")
@@ -132,7 +139,7 @@ def build_810(h: Header810, items: list[Item810]) -> bytes:
         "TransactionType": "810", "AccountingID": h.partner_code,
         # Only when the 850 named one: a partner without (Walmart, Loblaws) gets the file as before.
         **({"EDIMailbox": h.edi_mailbox} if h.edi_mailbox else {}),
-        **({"Agreement ID": h.agreement_id} if h.agreement_id else {}),
+        **({"Agreement ID": agreement_id_of(h.agreement_id)} if agreement_id_of(h.agreement_id) else {}),
         "Invoice": str(h.order_number), "InvoiceDate": d,
         "PO": h.po, "PODate": h.po_date.strftime("%Y-%m-%d") if h.po_date else "", "DepartmentNumber": "",
         "BillofLading": f"{h.order_number:09d}", "CarrierPro": f"CRM|{h.order_number}", "SCAC": "WIFS", "ShipVia": "",

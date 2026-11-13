@@ -35,3 +35,16 @@ def test_the_850_parser_reads_the_agreement_id():
     except Exception:  # noqa: BLE001 — a PO with no line may be refused; the header is what this checks
         return
     assert srcs[0].header["agreement_id"] == "4887314555"
+
+
+def test_a_label_with_no_number_is_not_an_agreement_id():
+    """Walmart's 850 carries the words "SPECIAL INSTRUCTIONS" there; Zoho never sent them back."""
+    assert "Agreement ID" not in _810("SPECIAL INSTRUCTIONS")
+    assert _810("0008076261")["Agreement ID"] == "0008076261"
+    po = {"PurchaseOrder": [{"TradingPartner": "Walmart", "PurchaseOrderNumber": "1234567890", "Agreement ID": "SPECIAL INSTRUCTIONS",
+                             "Items": []}]}
+    try:
+        srcs = from_850(po)
+    except Exception:  # noqa: BLE001 — as above
+        return
+    assert srcs[0].header["agreement_id"] is None

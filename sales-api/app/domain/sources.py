@@ -10,6 +10,8 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from app.domain.invoicing import agreement_id_of
+
 
 @dataclass
 class SourceLine:
@@ -215,7 +217,7 @@ def _po(po: dict[str, Any]) -> SourceOrder:
         "do_not_deliver_after": _day(po.get(K["dnda"])), "cancel_date": _day(po.get(K["cancel"])),
         "order_type": po.get(K["order_type"]), "department": po.get(K["department"]),
         "edi_mailbox": str(po.get(K["edi_mailbox"]) or "").strip() or None,
-        "agreement_id": str(po.get(K["agreement_id"]) or "").strip()[:60] or None,
+        "agreement_id": agreement_id_of(po.get(K["agreement_id"])),
         "ship_to": {"gln": po.get(K["ship_to_code"]), "name": po.get(K["ship_to_name"]),
                     "address1": po.get(K["ship_to_address1"]), "address2": po.get(K["ship_to_address2"]),
                     "city": po.get(K["ship_to_city"]), "province": po.get(K["ship_to_state"]),
