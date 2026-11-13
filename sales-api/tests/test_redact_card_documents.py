@@ -103,7 +103,7 @@ async def test_a_clean_page_and_another_kind_of_file_are_not_touched(env):  # no
     edi = await add(env, b'ISA*"receipt"*not json~', kind="945_EDI")
     before = await stored(env, clean), await stored(env, edi)
     out = await run(env.factory, apply=True)
-    assert out["documents"] == [{"id": edi, "kind": "945_EDI", "status": "not_json"}]  # reported, for a person
+    assert out["documents"] == []  # only Shopify pages are looked at (card data came only there): the 945 is not read
     assert (await stored(env, clean), await stored(env, edi)) == before
 
 
