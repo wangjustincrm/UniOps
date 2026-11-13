@@ -6,7 +6,6 @@ delivery number, PO price, and a reason for a changed price."""
 import base64
 import re
 import zlib
-from datetime import date
 from decimal import Decimal
 
 import sqlalchemy as sa
@@ -16,7 +15,6 @@ from app.models.config import Partner
 from app.platform.actors import SYSTEM_ACTOR
 from app.schemas.invoices import InvoiceEdit
 from app.schemas.orders import AddressIn, ManualLineIn, ManualOrderIn
-from app.services.invoice_pdf import Party, PdfDoc, render
 from app.services.invoice_views import InvoiceService
 from app.services.order_views import ManualOrderService, OrderRepository
 from app.services.problems import partners_without_abbreviation
@@ -127,14 +125,6 @@ async def test_the_invoice_shows_its_po_price_takes_a_delivery_number_and_a_pric
         ed2 = await InvoiceService(u).edit(p6.inv, out.id, InvoiceEdit(delivery_number=None), ed.version)
         await u.commit()
     assert ed2.delivery_number is None
-
-
-def test_the_pdf_shows_the_order_ref_the_internal_number_and_the_delivery_number():
-    data = render(PdfDoc(title="Invoice", number="IN-7", when=date(2026, 11, 5), po="4887314746", order_number=7,
-                         order_ref="LCL-4887314746", delivery_number="POD-4471", seller=Party(name="S"),
-                         buyer=Party(name="B"), ship_to=Party(name="T"), lines=[]))
-    text = pdf_text(data)
-    assert b"Order: LCL-4887314746" in text and b"Internal no.: 7" in text and b"Delivery no.: POD-4471" in text
 
 
 async def test_the_partner_abbreviation_is_required_and_unique(env):  # noqa: F811

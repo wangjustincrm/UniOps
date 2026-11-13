@@ -83,9 +83,6 @@ from app.schemas.orders import (
 from app.services import oplog, print_docs
 from app.services.carriers import carriers_by_scac
 from app.services.intake import ConnectionSnapshot
-from app.services.invoice_pdf import PackingList, PackRow, render_packing
-from app.services.invoice_pdf import Party as PdfParty
-from app.services.invoicing import SELLER
 from app.services.order_status_sql import (
     BACKORDERED_SQL,
     ON_HOLD_REASON_SQL,
@@ -574,23 +571,7 @@ class OrderService(ReadOnlyService[Order, OrderRead]):
         sh = (await s.execute(select(Shipment).where(Shipment.id == shipment_id, Shipment.order_id == order_id))).scalar_one_or_none()
         if sh is None:
             raise NotFound("Shipment", shipment_id)
-        rows = list((await s.execute(select(ShipmentRow).where(ShipmentRow.shipment_id == sh.id)
-                                     .order_by(ShipmentRow.lx_index, ShipmentRow.w12_index))).scalars())
-        names = {i.item_code: i.description for i in (await s.execute(select(Item).where(
-            Item.item_code.in_({r.item_code for r in rows if r.item_code})))).scalars()} if rows else {}
-        st = sh.ship_to or o.ship_to or {}
-        ship_to = PdfParty(st.get("name"), [x for x in (st.get("address1"), " ".join(filter(None, (
-            st.get("city"), st.get("province"), st.get("zip"))))) if x])
-        carrier = (await carriers_by_scac(s, [sh.carrier])).get((sh.carrier or "").strip().upper())
-        template = carrier.tracking_url if carrier else None
-        note = (None if sh.applied or sh.shadow else "A second 945 for this order: kept, not applied.")
-        pdf = render_packing(PackingList(
-            number=o.ref, order_number=o.order_number, po=o.source_order_number, ship_date=sh.ship_date, carrier=sh.carrier,
-            bol=sh.bol, tracking=list(sh.tracking or []), our_reference=sh.our_reference, document_id=sh.document_id,
-            seller=SELLER, ship_to=ship_to, note=note, carrier_name=carrier.name if carrier else None, rows=[PackRow(
-                sscc=r.sscc, pallet=r.lx_index, item_code=r.item_code, description=names.get(r.item_code), lot=r.lot,
-                expiry=r.expiry, qty_ea=r.qty_shipped_ea, tracking=r.tracking,
-                tracking_url=tracking_url(template, r.tracking)) for r in rows]))
+        pdf = await print_docs.shipment_pdf(s, o, sh)
         return f"PackingList-{o.ref}-{sh.id}.pdf", pdf
 
     @requires(OPERATE)

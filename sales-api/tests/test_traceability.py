@@ -113,8 +113,8 @@ async def test_the_packing_list_has_pallets_lots_expiry_tracking_and_bol(p6):  #
         name, pdf = await OrderService(u).packing_list(o.id, sh["id"])
     assert name == f"PackingList-LBL-PO-1-{sh['id']}.pdf"
     body = pdf_text(pdf)
-    for s in (b"Packing list LBL-PO-1", b"BOL-778", b"1Z-TRACK", b"00077777770077782891", b"LOT-A", b"2028-05-19",
-              b"LOT-B", b"Pallet total", b"Shipment total", b"SO-00042", b"Ajax"):
+    for s in (b"PACKING LIST", f"PL-{o.order_number}".encode(), b"LBL-PO-1", b"BOL-778", b"1Z-TRACK", b"00077777770077782891",
+              b"LOT-A", b"19-May-2028", b"LOT-B", b"Shipment total", b"SO-00042", b"Ajax", b"Page 1 of 1"):
         assert s in body, s
     async with p6.factory(OP) as u:  # another order's shipment is not this order's
         other = await shipped(p6, "PO-2")

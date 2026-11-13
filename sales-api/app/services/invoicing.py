@@ -86,7 +86,6 @@ def delivery_due(order: Order, partner: Partner) -> date | None:
 SEND_INVOICE = "send_invoice"
 INTERNAL_COPY = "invoice_internal_copy"  # FR-OB-32: every document of the invoice to the company's own addresses
 OUTBOX = Outbox(OutboxRecord)
-SELLER = print_docs.SELLER
 EDITABLE = (Inv.READY, Inv.FAILED, Inv.SENT, Inv.BLOCKED)
 
 

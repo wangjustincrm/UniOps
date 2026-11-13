@@ -13,6 +13,7 @@ import uuid
 # Before any app import: the settings object is built at import time.
 os.environ.setdefault("JWT_SECRET_KEY", "test-secret")
 os.environ["ENVIRONMENT"] = "test"
+os.environ.setdefault("SALES_BRANDING_URL", "")  # no network from a test: documents print without the logo
 
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402

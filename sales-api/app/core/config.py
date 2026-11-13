@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     SALES_INTERNAL_EMAIL_DOMAINS: str = ""
     # Where the Sales front end is reached from a mail client (a notification's link); empty: no link.
     SALES_PUBLIC_URL: str = ""
+    # The company's logo on printed documents: epms-api's public branding (what the sidebar shows).
+    # Empty: documents print without a logo. Read at most every 10 minutes; unreachable → no logo.
+    SALES_BRANDING_URL: str = "http://epms-api:8000/api/v1/config/public/branding?module=sales"
 
     # ── SFTP hosts this stack may connect to (fail closed, every environment) ─
     # Comma-separated host names. Empty or unset: no SFTP connection at all —
