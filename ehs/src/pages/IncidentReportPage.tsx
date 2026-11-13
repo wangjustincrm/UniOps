@@ -189,10 +189,20 @@ export default function IncidentReportPage() {
   // ★ Round 12, INC-07: "when the type of incident is a near miss … under
   // 'what kind of incident was this', automatically enter 'near miss'". Only
   // while nothing is chosen, so a coordinator's Food Safety pick is kept.
+  // ★ UAT 13: "an employee with a worker or requester role opens the near miss
+  // incident, default the 'what kind of incident was this' to Near miss as its
+  // the only field they can pick." It was filled only when nothing was chosen
+  // — a type picked on another form, before switching, counted as chosen and
+  // left the box showing nothing. A type this form does not offer is now
+  // treated as none; and where the form offers one type, it is that one.
   useEffect(() => {
-    if (form.kind === 'near_miss' && !form.incidentType
-        && incidentTypes?.some((t) => t.code === 'near_miss')) {
-      setForm((f) => (f.incidentType ? f : { ...f, incidentType: 'near_miss', injuryClass: '' }))
+    if (!incidentTypes) return
+    const offered = (code: string) => incidentTypes.some((t) => t.code === code)
+    if (form.incidentType && offered(form.incidentType)) return
+    const pick = incidentTypes.length === 1 ? incidentTypes[0].code
+      : form.kind === 'near_miss' && offered('near_miss') ? 'near_miss' : ''
+    if (pick !== form.incidentType) {
+      setForm((f) => ({ ...f, incidentType: pick, injuryClass: '' }))
     }
   }, [form.kind, form.incidentType, incidentTypes])
 
@@ -445,7 +455,7 @@ export default function IncidentReportPage() {
         </p>
       )}
 
-      <Field label="What happened?" required>
+      <Field label={form.kind === 'medical' ? 'In a few words' : 'What happened?'} required>
         <input
           className={inputClass}
           value={form.title}
@@ -483,32 +493,73 @@ export default function IncidentReportPage() {
         </p>
       )}
 
-      <Field label="What kind of incident was this?" required>
-        {/* ★ Round 5: "when selecting unconscious, automatically default to
-            medical aid … first aid injury should default the HB picker to
-            first aid. lost time kind of incident is a HB lost time", and from
-            the answers, Report Only implies nobody was hurt.
+      {/* ★ UAT 13: "put 'who was hurt' and 'which equipment was involved' on
+          the same line and move this up to under the date, time, and batch
+          code line" — and the equipment there on the other two forms. */}
+      {/* ★ Round 10 (open box): "add this equipment as a picker on all forms so
+          that we can identify what piece of equipment contributed to the
+          incidents." Optional: plenty of incidents involve none. */}
+      <div className={form.kind === 'medical' ? 'grid gap-x-3 sm:grid-cols-2' : ''}>
+        {form.kind === 'medical' && (
+          <Field
+          label="Who was hurt?"
+          help={form.injured.departmentName
+            ? `Department: ${form.injured.departmentName} — filled in from their record.`
+            : 'Search for an employee, or type the name of a contractor or visitor.'}
+        >
+            <PersonPicker value={form.injured} onChange={(v) => set('injured', v)} />
+          </Field>
+        )}
+        <Field label="Which equipment was involved?"
+               help="From the equipment register. Leave it empty if none was, or it is not listed.">
+          <EquipmentSelect value={form.equipmentId ?? null}
+                           onChange={(id) => set('equipmentId', id)}
+                           locationId={form.locationId || null} />
+        </Field>
+      </div>
 
-            The default is applied when the type is chosen and then left alone
-            — a default is a starting point, not a rule. Somebody who changes
-            it has their answer kept, which is the behaviour the stored value
-            already had: the type is only the fallback. */}
-        <select className={inputClass} value={form.incidentType}
-                onChange={(e) => {
-                  const code = e.target.value
-                  const picked = (incidentTypes ?? []).find((t) => t.code === code)
-                  setForm((f) => ({
-                    ...f,
-                    incidentType: code,
-                    injuryClass: picked?.default_injury_class ?? '',
-                  }))
-                }}>
-          <option value="">Select the type</option>
-          {(incidentTypes ?? []).map((t) => (
-            <option key={t.code} value={t.code}>{t.label}</option>
-          ))}
-        </select>
-      </Field>
+      {/* ★ UAT 13: "put the 'what kind of incident was this' and 'where did
+          this happen' on the same line", on all three forms. */}
+      <div className="grid gap-x-3 sm:grid-cols-2">
+        <Field label="What kind of incident was this?" required>
+          {/* ★ Round 5: "when selecting unconscious, automatically default to
+              medical aid … first aid injury should default the HB picker to
+              first aid. lost time kind of incident is a HB lost time", and from
+              the answers, Report Only implies nobody was hurt.
+
+              The default is applied when the type is chosen and then left alone
+              — a default is a starting point, not a rule. Somebody who changes
+              it has their answer kept, which is the behaviour the stored value
+              already had: the type is only the fallback. */}
+          <select className={inputClass} value={form.incidentType}
+                  onChange={(e) => {
+                    const code = e.target.value
+                    const picked = (incidentTypes ?? []).find((t) => t.code === code)
+                    setForm((f) => ({
+                      ...f,
+                      incidentType: code,
+                      injuryClass: picked?.default_injury_class ?? '',
+                    }))
+                  }}>
+            <option value="">Select the type</option>
+            {(incidentTypes ?? []).map((t) => (
+              <option key={t.code} value={t.code}>{t.label}</option>
+            ))}
+          </select>
+        </Field>
+        {/* The shared picker rather than a flat list of leaves. HSE asked for
+            the general area first and the line last and optional, because
+            "employees may not know the building numbers" — and because a
+            leaf-only list would force a reporter who does not know which line it
+            happened on to guess one. */}
+        <Field label="Where did this happen?">
+          <LocationSelect
+            value={form.locationId || null}
+            onChange={(id) => set('locationId', id ?? '')}
+          />
+        </Field>
+      </div>
+
 
       {/* Fatality and Unconscious tell us the Ministry must be told; they say
           nothing about lost time, and a death is nearly always — but not
@@ -550,37 +601,7 @@ export default function IncidentReportPage() {
           {lostTimeGuidance}
         </p>
       )}
-      {/* The shared picker rather than a flat list of leaves. HSE asked for
-          the general area first and the line last and optional, because
-          "employees may not know the building numbers" — and because a
-          leaf-only list would force a reporter who does not know which line it
-          happened on to guess one. */}
-      <Field label="Where did this happen?">
-        <LocationSelect
-          value={form.locationId || null}
-          onChange={(id) => set('locationId', id ?? '')}
-        />
-      </Field>
-      {/* ★ Round 10 (open box): "add this equipment as a picker on all forms so
-          that we can identify what piece of equipment contributed to the
-          incidents." Optional: plenty of incidents involve none. */}
-      <Field label="Which equipment was involved?"
-             help="From the equipment register. Leave it empty if none was, or it is not listed.">
-        <EquipmentSelect value={form.equipmentId ?? null}
-                         onChange={(id) => set('equipmentId', id)}
-                         locationId={form.locationId || null} />
-      </Field>
 
-      {form.kind === 'medical' && (
-        <Field
-        label="Who was hurt?"
-        help={form.injured.departmentName
-          ? `Department: ${form.injured.departmentName} — filled in from their record.`
-          : 'Search for an employee, or type the name of a contractor or visitor.'}
-      >
-          <PersonPicker value={form.injured} onChange={(v) => set('injured', v)} />
-        </Field>
-      )}
 
       {/* ★ Round 7: "make the following fields viewable only when a name is
           entered into the who was hurt, what part of the body, what kind of
@@ -598,6 +619,16 @@ export default function IncidentReportPage() {
                               onChange={(v) => set('natureOfInjury', v)} />
           </Field>
         </div>
+      )}
+
+      {/* ★ UAT 13: on the someone-was-hurt form "move the 'what else should we
+          know' field up to above the 'what treatment was given'" and "rename it
+          to 'What happened'". */}
+      {form.kind === 'medical' && (
+        <Field label="What happened">
+          <textarea className={inputClass} rows={3} value={form.description}
+                    onChange={(e) => set('description', e.target.value)} />
+        </Field>
       )}
 
       {form.kind === 'medical' && namedInjured && (
@@ -694,10 +725,13 @@ export default function IncidentReportPage() {
         </>
       )}
 
-      <Field label="What else should we know?">
-        <textarea className={inputClass} rows={3} value={form.description}
-                  onChange={(e) => set('description', e.target.value)} />
-      </Field>
+
+      {form.kind !== 'medical' && (
+        <Field label="What else should we know?">
+          <textarea className={inputClass} rows={3} value={form.description}
+                    onChange={(e) => set('description', e.target.value)} />
+        </Field>
+      )}
 
       <Field label="Photographs">
         <PhotoCapture photos={photos} onChange={setPhotos} />
