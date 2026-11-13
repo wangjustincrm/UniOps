@@ -17,16 +17,16 @@ const colLot = columnsOf<StockLotRead>()
 const colMove = columnsOf<StockMoveRead>()
 const ADJUST = 'sales.inventory.adjust'
 
-// The figures (user 2026-11-13): received, shipping (940 sent, not shipped: an item's only, a 940 names no lot), shipped
-// (net: a customer's return comes off it), on hand, available; the rest from the column menu.
+// The figures (user 2026-11-13), read left to right: received − in process (940 sent, no 945 yet: an item's only, a 940
+// names no lot) − shipped (net: a customer's return comes off it) − on hold = available. On hand and the rest: column menu.
 const itemColumns: ColumnDef<StockItemRead, unknown>[] = [
   { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => <span className="font-medium">{row.original.item_code}</span> },
   colItem.text('description', 'Description'),
   colItem.number('received_ea', 'Received'),
-  colItem.number('allocated_ea', 'Shipping'),
+  colItem.number('allocated_ea', 'In process'),
   colItem.number('shipped_ea', 'Shipped'),
-  colItem.number('on_hand_ea', 'On hand'),
   colItem.number('available_ea', 'Available'),
+  startHidden(colItem.number('on_hand_ea', 'On hand')),
   startHidden(colItem.number('hold_ea', 'On hold')),
   startHidden(colItem.number('returned_ea', 'Returned (in Shipped)')),
   startHidden(colItem.number('adjusted_ea', 'Adjusted')),
@@ -45,8 +45,8 @@ const lotColumns: ColumnDef<StockLotRead, unknown>[] = [
   colLot.number('days_to_expiry', 'Days to expiry'),
   colLot.number('received_ea', 'Received'),
   colLot.number('shipped_ea', 'Shipped'),
-  colLot.number('on_hand_ea', 'On hand'),
   colLot.number('available_ea', 'Available'),
+  startHidden(colLot.number('on_hand_ea', 'On hand')),
   startHidden(colLot.number('hold_ea', 'On hold')),
   startHidden(colLot.number('returned_ea', 'Returned (in Shipped)')),
   startHidden(colLot.number('adjusted_ea', 'Adjusted')),
@@ -133,9 +133,9 @@ function ItemSheet({ row }: { row: StockItemRead }) {
           hint: `received ${formatNumber(row.received_ea)} − shipped ${formatNumber(row.shipped_ea)}`
             + (row.adjusted_ea ? ` ${row.adjusted_ea > 0 ? '+' : '−'} adjusted ${formatNumber(Math.abs(row.adjusted_ea))}` : '') },
         { label: 'On hold EA', value: formatNumber(row.hold_ea), hint: "Radiant's latest report" },
-        { label: 'Shipping EA', value: formatNumber(row.allocated_ea), hint: 'on 940s sent, not shipped yet' },
+        { label: 'In process EA', value: formatNumber(row.allocated_ea), hint: 'on 940s sent, no 945 yet' },
         { label: 'Available EA', value: formatNumber(row.available_ea), tone: row.available_ea < 0 ? 'warning' : 'neutral',
-          hint: 'on hand − on hold − shipping' },
+          hint: 'received − in process − shipped − on hold' },
         { label: 'In transit to Radiant EA', value: formatNumber(row.to_radiant_ea), tone: row.to_radiant_ea < 0 ? 'warning' : 'neutral',
           hint: row.to_radiant_ea < 0 ? 'received more than sent' : undefined },
         { label: 'First expiry', value: row.first_expiry ? formatDate(row.first_expiry) : '—', hint: row.days_to_first_expiry != null ? `${row.days_to_first_expiry} days` : undefined },
@@ -181,7 +181,7 @@ export default function InventoryPage() {
     return (
       <ListPage<StockLotRead>
         key="lots" resource={stockLotsClient} title="Inventory by lot"
-        description="Each lot at Radiant: received, shipped (less returns), on hand, available, expiry."
+        description="Each lot at Radiant: received − shipped (less returns) = available, and its expiry."
         columns={lotColumns} notice={NOTE} emptyTitle="No stock moves yet"
         toolbar={(ctx) => (<>
           {nav}
@@ -193,7 +193,7 @@ export default function InventoryPage() {
   return (
     <ListPage<StockItemRead>
       key="items" resource={stockItemsClient} title="Inventory"
-      description="Stock at Radiant by item (its open lots): received, shipping (940 sent), shipped (less returns), on hand, available."
+      description="Stock at Radiant by item (its open lots): received − in process (940 sent, no 945 yet) − shipped (less returns) = available."
       columns={itemColumns} notice={NOTE} emptyTitle="No stock moves yet"
       renderDetail={(r) => <ItemSheet row={r} />}
       toolbar={(ctx) => (<>

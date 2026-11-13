@@ -248,7 +248,7 @@ class StockItemRepository(Repository[StockItem]):
                    "allocated_ea", "available_ea", "to_radiant_ea", "to_customer_ea", "returning_ea", "lots", "first_expiry",
                    "days_to_first_expiry", "last_move_at")
     labels = {"item_code": "Item", "received_ea": "Received EA", "returned_ea": "Returned EA", "shipped_ea": "Shipped EA",
-              "adjusted_ea": "Adjusted EA", "on_hand_ea": "On hand EA", "hold_ea": "On hold EA", "allocated_ea": "Allocated EA",
+              "adjusted_ea": "Adjusted EA", "on_hand_ea": "On hand EA", "hold_ea": "On hold EA", "allocated_ea": "In process EA",
               "available_ea": "Available EA", "to_radiant_ea": "In transit to Radiant EA", "to_customer_ea": "In transit to customers EA",
               "returning_ea": "Returns on the way EA", "lots": "Lots on hand", "first_expiry": "First expiry",
               "days_to_first_expiry": "Days to first expiry", "last_move_at": "Last move"}
