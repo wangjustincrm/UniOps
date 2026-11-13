@@ -17,8 +17,9 @@ const colLot = columnsOf<StockLotRead>()
 const colMove = columnsOf<StockMoveRead>()
 const ADJUST = 'sales.inventory.adjust'
 
-// The figures (user 2026-11-13), read left to right: received − in process (940 sent, no 945 yet: an item's only, a 940
-// names no lot) − shipped (net: a customer's return comes off it) − on hold = available. On hand and the rest: column menu.
+// The figures (user 2026-11-13), read left to right: received − in process − shipped (net: a customer's return comes off
+// it) − on hold = available. In process: an item's 940s sent with no 945 yet; a lot's, what Radiant's latest report shows
+// picked for those orders (a 940 names no lot). On hand and the rest: column menu.
 const itemColumns: ColumnDef<StockItemRead, unknown>[] = [
   { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => <span className="font-medium">{row.original.item_code}</span> },
   colItem.text('description', 'Description'),
@@ -45,6 +46,7 @@ const lotColumns: ColumnDef<StockLotRead, unknown>[] = [
   colLot.date('expiry', 'Expiry'),
   colLot.number('days_to_expiry', 'Days to expiry'),
   colLot.number('received_ea', 'Received'),
+  colLot.number('in_process_ea', 'In process'),
   colLot.number('shipped_ea', 'Shipped'),
   colLot.number('available_ea', 'Available'),
   { id: 'report_diff_ea', header: 'Diff. vs Radiant', cell: ({ row }) => <DiffCell value={row.original.report_diff_ea} /> },
@@ -204,7 +206,7 @@ export default function InventoryPage() {
     return (
       <ListPage<StockLotRead>
         key="lots" resource={stockLotsClient} title="Inventory by lot"
-        description="Each lot at Radiant: received − shipped (less returns) = available, and its expiry."
+        description="Each lot at Radiant: received − in process (picked for an order, per Radiant's report) − shipped (less returns) = available."
         columns={lotColumns} notice={NOTE} emptyTitle="No stock moves yet"
         toolbar={(ctx) => (<>
           {nav}

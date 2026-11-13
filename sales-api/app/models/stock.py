@@ -10,7 +10,8 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid, case, cast, func, literal, select
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, Uuid, case, cast, func, literal, select, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -74,6 +75,8 @@ class StockCountLine(Base):
     qty_ea: Mapped[int] = mapped_column(Integer, nullable=False)
     hold_ea: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # sales31: picked for an order and waiting to ship (the report's Allocation): {"<order number>": EA}
+    picked: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"))
 
 
 def _net(place: str):
@@ -135,6 +138,23 @@ _REPORT = (select(StockCountLine.item_code.label("item_code"), StockCountLine.lo
                   func.sum(StockCountLine.qty_ea).label("start"), func.sum(StockCountLine.hold_ea).label("hold"),
                   func.max(StockCountLine.expiry).label("expiry"))
            .where(StockCountLine.count_id == _LATEST_COUNT).group_by(StockCountLine.item_code, StockCountLine.lot).subquery("report"))
+def _picked_open():
+    """Per lot, what the latest applied report shows picked for orders that have not shipped yet (no 945): in process.
+    Once the order's 945 is in, it is shipped and no longer counts here."""
+    from app.domain.status import Fulfillment as F
+    from app.models.orders import Order
+    kv = func.jsonb_each_text(StockCountLine.picked).table_valued("key", "value", joins_implicitly=True).alias("kv")
+    return (select(StockCountLine.item_code.label("item_code"), StockCountLine.lot.label("lot"),
+                   func.sum(cast(kv.c.value, Integer)).label("picked"))
+            .select_from(StockCountLine).join(kv, literal(True))
+            .join(Order, cast(Order.order_number, String) == kv.c.key)
+            .where(StockCountLine.count_id == _LATEST_COUNT,
+                   Order.fulfillment_status.in_([F.SENT_940.value, F.ACCEPTED_940.value, F.TIMEOUT_940.value]))
+            .group_by(StockCountLine.item_code, StockCountLine.lot).subquery("picked"))
+
+
+_PICKED = _picked_open()
+_in_process = func.least(func.coalesce(_PICKED.c.picked, 0), func.greatest(_BY_LOT.c.on_hand_ea, 0))
 _start = func.coalesce(_REPORT.c.start, 0)
 # A lot's expiry as its 945s gave it, else as Radiant's report gives it (a 944 carries none).
 _expiry = func.coalesce(_BY_LOT.c.expiry, _REPORT.c.expiry)
@@ -152,13 +172,16 @@ _LOTS = (
         # Sales − Radiant at the latest applied report (user 2026-11-13: kept in sight until every difference is settled)
         cast(-_BY_LOT.c.count_net, Integer).label("report_diff_ea"),
         cast(_hold, Integer).label("hold_ea"),
-        cast(_BY_LOT.c.on_hand_ea - _hold, Integer).label("available_ea"),
+        cast(_in_process, Integer).label("in_process_ea"),
+        cast(_BY_LOT.c.on_hand_ea - _hold - _in_process, Integer).label("available_ea"),
         _BY_LOT.c.to_customer_ea, _BY_LOT.c.returning_ea, _BY_LOT.c.to_radiant_ea,
         _BY_LOT.c.first_move_at, _BY_LOT.c.last_move_at,
     )
     .select_from(_BY_LOT)
     .outerjoin(_REPORT, (_REPORT.c.item_code == _BY_LOT.c.item_code)
                & (func.coalesce(_REPORT.c.lot, "") == func.coalesce(_BY_LOT.c.lot, "")))
+    .outerjoin(_PICKED, (_PICKED.c.item_code == _BY_LOT.c.item_code)
+               & (func.coalesce(_PICKED.c.lot, "") == func.coalesce(_BY_LOT.c.lot, "")))
     .subquery("sales_stock_lots")
 )
 

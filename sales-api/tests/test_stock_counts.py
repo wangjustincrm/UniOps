@@ -14,7 +14,11 @@ from app.platform.query import QuerySpec
 from app.services.stock import StockItemService, StockLotService, StockMoveService, sync
 from app.services.stock_counts import StockCountService
 from tests.domain.test_transfers_edi import real_944
-from tests.test_orders import OP, env  # noqa: F401 — a fixture
+from app.domain.status import Fulfillment as F
+from app.models.orders import Order
+from tests.test_invoicing import p6  # noqa: F401 — a fixture
+from tests.test_orders import OP, env, po, run_850  # noqa: F401 — a fixture
+from tests.test_shipments import store_945, x945
 from tests.test_outbound import edi as p4_edi  # noqa: F401 — a fixture
 from tests.test_transfers import p7, sent_transfer, store  # noqa: F401 — p7 is a fixture
 
@@ -199,3 +203,39 @@ async def test_a_return_comes_off_shipped(p7):  # noqa: F811
     async with p7.factory(OP) as u:
         [lot] = [x for x in (await StockLotService(u).list(QuerySpec(page_size=200))).items if x.lot == "RET1"]
     assert (lot.received_ea, lot.returned_ea, lot.shipped_ea, lot.adjusted_ea, lot.on_hand_ea, lot.available_ea) == (500, 10, 90, 0, 410, 410)
+
+
+def test_the_allocation_column_is_read_as_picked_for_an_order():
+    detail = ("Display Item Number,Lot Number,Actual Quantity,Status,Allocation\n"
+              "CF0092,L1,400,A,Storage\nCF0092,L1,600,A,CRM|001008724\nCF0092,L1,100,A,CRM|001008724\n")
+    [r] = parse_stock_file("lp.csv", detail.encode())
+    assert (r.qty_ea, r.picked) == (1100, {"1008724": 700})
+
+
+async def test_a_lot_s_picked_pallets_are_in_process_until_the_945(p6):  # noqa: F811
+    """User 2026-11-13: Radiant's report shows a pallet picked for an order (Allocation CRM|<order>); until its 945,
+    that lot has it in process (not available); with the 945 it is shipped."""
+    await run_850(p6.edi.env, {"PurchaseOrder": [po("LBL", "PO-PICK", [{"Line": 1, "BuyerPart": "L-555", "Quantity": 10, "UOM": "CA",
+                                                                         "UnitPrice": "50"}], ship_to_gln="0012345000011")]})
+    o, _ = await p6.edi.env.order("PO-PICK")
+    async with p6.factory(SYSTEM_ACTOR) as u:
+        (await u.session.get(Order, o.id)).fulfillment_status = F.ACCEPTED_940.value
+        await u.commit()
+    report = ("Display Item Number,Lot Number,Actual Quantity,Status,Allocation\n"
+              f"CF0092,LOT-1,940,A,Storage\nCF0092,LOT-1,60,A,CRM|{o.order_number:09d}\n")
+    async with p6.factory(OP) as u:
+        c = await StockCountService(u).create(name="r.csv", data=report.encode(), counted_at=datetime(2026, 11, 1, 12, tzinfo=timezone.utc), note=None)
+        await StockCountService(u).apply(c.id, version=c.version)
+        await u.commit()
+
+    async def lot():
+        async with p6.factory(OP) as u:
+            return next(x for x in (await StockLotService(u).list(QuerySpec(page_size=200))).items if x.lot == "LOT-1")
+    a = await lot()
+    assert (a.received_ea, a.shipped_ea, a.on_hand_ea, a.in_process_ea, a.available_ea) == (1000, 0, 1000, 60, 940)
+    await store_945(p6, x945(f"{o.order_number:09d}", ["LX*1", "W12*CP*60*60*0*EA**VN*CF0092", "N9*LT*LOT-1"],
+                            header=["DTM*011*20261102"], ctl=f"{900000000 + o.id}"), "945-pick.edi")
+    await p6.ships.process_945s()
+    await _sync(p6)
+    a = await lot()
+    assert (a.received_ea, a.shipped_ea, a.on_hand_ea, a.in_process_ea, a.available_ea) == (1000, 60, 940, 0, 940)

@@ -133,7 +133,8 @@ class StockCountService(ReadOnlyService[StockCount, StockCountRead]):
         s.add(DocumentLink(document_id=doc.id, entity_type=ENTITY, entity_id=c.id))
         for r in rows:
             s.add(StockCountLine(count_id=c.id, item_code=r.item_code[:50], lot=(r.lot or None) and r.lot[:50], expiry=r.expiry,
-                                 qty_ea=r.qty_ea, hold_ea=r.hold_ea, description=(r.description or None) and r.description[:255]))
+                                 qty_ea=r.qty_ea, hold_ea=r.hold_ea, description=(r.description or None) and r.description[:255],
+                                 picked=r.picked))
         self.uow.set_reason(f"Radiant inventory report uploaded: {name}")
         await s.flush()
         await oplog.write(s, "INFO", "stock", f"Radiant inventory of {counted_at:%Y-%m-%d %H:%M} UTC uploaded ({len(rows)} lots): {name}",

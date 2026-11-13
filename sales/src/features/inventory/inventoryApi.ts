@@ -48,7 +48,9 @@ export interface StockLotRead {
   report_diff_ea: number
   on_hand_ea: number
   hold_ea: number
-  /** On hand − on hold. */
+  /** Picked by Radiant (its latest applied report) for orders with no 945 yet. */
+  in_process_ea: number
+  /** On hand − on hold − in process. */
   available_ea: number
   to_customer_ea: number
   returning_ea: number

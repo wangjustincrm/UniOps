@@ -43,7 +43,8 @@ class StockLotRead(BaseModel):
     report_diff_ea: int = 0   # Sales − Radiant at the latest applied report
     on_hand_ea: int
     hold_ea: int = 0
-    available_ea: int = 0
+    in_process_ea: int = 0    # picked by Radiant (its latest report) for orders not shipped yet
+    available_ea: int = 0     # on hand − on hold − in process
     to_customer_ea: int
     returning_ea: int
     to_radiant_ea: int

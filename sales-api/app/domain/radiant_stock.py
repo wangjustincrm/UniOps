@@ -7,6 +7,7 @@ Columns by their header (any order, case and spacing ignored):
   expiry   "Expiration Date" (1900-01-01, Radiant's "none", is none)
   quantity "Total Quantity" (summary) or "Actual Quantity" (detail), in "Uom" EA
   hold     "Status" ON-HOLD / H, or a "Current Holds" entry: that quantity is on hold
+  picked   "Allocation" CRM|<order number> (not "Storage"): picked for that order, waiting to ship
 Rows of the same item and lot add up. Excel is read with the standard library (an .xlsx is zipped XML)."""
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ import csv
 import io
 import re
 import zipfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from xml.etree import ElementTree
@@ -35,6 +36,7 @@ class CountRow:
     qty_ea: int
     hold_ea: int
     description: str | None
+    picked: dict[str, int] = field(default_factory=dict)  # order number → EA picked for it (Allocation)
 
 
 def _key(h: object) -> str:
@@ -138,6 +140,7 @@ def parse_stock_file(name: str, data: bytes) -> list[CountRow]:
     c_lot, c_exp = col("lotnumber"), col("expirationdate", "expirydate")
     c_qty, c_uom = col("totalquantity", "actualquantity", "quantity"), col("uom")
     c_status, c_holds, c_desc = col("status"), col("currentholds"), col("description", "itemdescription")
+    c_alloc = col("allocation")
     if c_item is None or c_qty is None:
         raise StockFileError('the item ("Display Item Number") or quantity ("Total Quantity") column is missing')
     out: dict[tuple[str, str | None], CountRow] = {}
@@ -159,6 +162,9 @@ def parse_stock_file(name: str, data: bytes) -> list[CountRow]:
         row = out.get(k) or CountRow(code, lot, None, 0, 0, str(cell(c_desc) or "").strip() or None)
         row.qty_ea += qty
         row.hold_ea += qty if held else 0
+        alloc = str(cell(c_alloc) or "").strip()
+        if m := re.fullmatch(r"(?:[A-Z]+\|)?0*(\d+)", alloc):  # CRM|001008724 → 1008724 ("Storage": on the shelf)
+            row.picked[m.group(1)] = row.picked.get(m.group(1), 0) + qty
         exp = _date(cell(c_exp))
         row.expiry = max(filter(None, (row.expiry, exp)), default=None)
         out[k] = row
