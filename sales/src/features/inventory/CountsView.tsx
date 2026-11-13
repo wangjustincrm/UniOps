@@ -56,42 +56,39 @@ const signed = (v: number) => (
 function figureColumns<R extends ItemFigures>(): ColumnDef<R, unknown>[] {
   const c = columnsOf<R>()
   return [
-    c.number('in_ea' as never, 'In (944 + RA)'),
-    startHidden(c.number('received_ea' as never, 'Received (944)')),
-    startHidden(c.number('returned_ea' as never, 'Returned (RA)')),
-    c.number('shipped_ea' as never, 'Out (945)'),
+    c.number('received_ea' as never, 'Received'),
+    c.number('shipped_ea' as never, 'Shipped'),
+    startHidden(c.number('returned_ea' as never, 'Returned (in Shipped)')),
     startHidden(c.number('adjusted_ea' as never, 'Adjusted')),
-    { id: 'sales_ea', header: 'Remaining (Sales)', cell: ({ row }) => strong(row.original.sales_ea) },
-    c.number('radiant_ea' as never, 'Radiant'),
+    { id: 'sales_ea', header: 'On hand (Sales)', cell: ({ row }) => strong(row.original.sales_ea) },
+    { id: 'radiant_ea', header: 'Radiant', cell: ({ row }) => strong(row.original.radiant_ea) },
     { id: 'difference_ea', header: 'Difference', cell: ({ row }) => signed(row.original.difference_ea) },
   ]
 }
 
-function afterColumns<R extends ItemFigures>(applied: boolean): ColumnDef<R, unknown>[] {
+/** At the report: what Radiant holds back, and what of its figure can be sold. */
+function radiantColumns<R extends ItemFigures>(): ColumnDef<R, unknown>[] {
   const c = columnsOf<R>()
   return [
-    c.number('in_after_ea' as never, 'In after'),
-    c.number('out_after_ea' as never, 'Out after'),
-    { id: 'now_ea', header: applied ? 'Total' : 'Total (once applied)', cell: ({ row }) => strong(row.original.now_ea) },
-    c.number('hold_ea' as never, 'On hold'),
     { id: 'available_ea', header: 'Available', cell: ({ row }) => strong(row.original.available_ea) },
+    c.number('hold_ea' as never, 'On hold'),
   ]
 }
 
-function compareColumns(applied: boolean): ColumnDef<CountCompareRow, unknown>[] {
+function compareColumns(): ColumnDef<CountCompareRow, unknown>[] {
   return [
     { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => <span className="font-medium">{row.original.lot ?? '(no lot)'}</span> },
     { accessorKey: 'expiry', header: 'Expiry', cell: ({ row }) => <ExpiryCell value={row.original.expiry} days={row.original.days_to_expiry} /> },
     ...figureColumns<CountCompareRow>(),
+    ...radiantColumns<CountCompareRow>(),
     { accessorKey: 'kind', header: 'Result', cell: ({ row }) => (row.original.open
       ? <StatusCell value={COMPARE_KIND[row.original.kind]} tone={KIND_TONE[row.original.kind]} />
       : <StatusCell value="Closed" tone="neutral" />) },
-    ...afterColumns<CountCompareRow>(applied),
   ]
 }
 
-const SUMS = ['in_ea', 'received_ea', 'returned_ea', 'shipped_ea', 'adjusted_ea', 'sales_ea', 'radiant_ea', 'hold_ea', 'difference_ea',
-  'in_after_ea', 'out_after_ea', 'since_ea', 'now_ea', 'available_ea'] as const
+const SUMS = ['received_ea', 'returned_ea', 'shipped_ea', 'adjusted_ea', 'sales_ea', 'radiant_ea', 'hold_ea', 'difference_ea',
+  'available_ea'] as const
 type ItemFigures = Record<(typeof SUMS)[number], number>
 
 interface ItemGroup extends ItemFigures {
@@ -128,7 +125,7 @@ function Comparison({ count }: { count: StockCountRead }) {
   // An item lists its open lots and adds up only them; a closed lot (no stock, not in Radiant's report, no move
   // after it) shows only on request, greyed, in no total (user 2026-11-13).
   const groups = useMemo(() => group(all.filter((r) => (showClosed || r.open) && (!onlyDiff || r.kind !== 'match'))), [all, onlyDiff, showClosed])
-  const lotCols = useMemo(() => compareColumns(!!count.applied_at), [count.applied_at])
+  const lotCols = useMemo(() => compareColumns(), [])
   const itemCols = useMemo<ColumnDef<ItemGroup, unknown>[]>(() => [
     { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => <span className="font-medium">{row.original.item_code}</span> },
     startHidden(colGroup.text('description', 'Description')),
@@ -140,12 +137,12 @@ function Comparison({ count }: { count: StockCountRead }) {
     ) },
     { id: 'first_expiry', header: 'First expiry', cell: ({ row }) => <ExpiryCell value={row.original.first_expiry} days={row.original.first_days} /> },
     ...figureColumns<ItemGroup>(),
-    ...afterColumns<ItemGroup>(!!count.applied_at),
-  ], [count.applied_at])
+    ...radiantColumns<ItemGroup>(),
+  ], [])
   const open = all.filter((r) => r.open)
   const differ = open.filter((r) => r.kind !== 'match').length
   return (
-    <Section title="Per item and open lot: up to the report, and after it" plain>
+    <Section title="Per item and open lot, at the moment of the report" plain>
       {count.note && <Callout label="Note">{count.note}</Callout>}
       <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-600">
         <span>

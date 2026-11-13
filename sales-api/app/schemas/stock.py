@@ -11,7 +11,12 @@ class StockItemRead(BaseModel):
     id: int
     item_code: str
     description: str | None = None
+    received_ea: int = 0
+    returned_ea: int = 0
+    shipped_ea: int = 0
+    adjusted_ea: int = 0
     on_hand_ea: int
+    hold_ea: int = 0
     allocated_ea: int
     available_ea: int
     to_radiant_ea: int
@@ -30,9 +35,13 @@ class StockLotRead(BaseModel):
     lot: str | None = None
     expiry: date | None = None
     days_to_expiry: int | None = None
-    on_hand_ea: int
     received_ea: int
+    returned_ea: int = 0
     shipped_ea: int
+    adjusted_ea: int = 0
+    on_hand_ea: int
+    hold_ea: int = 0
+    available_ea: int = 0
     to_customer_ea: int
     returning_ea: int
     to_radiant_ea: int
@@ -108,8 +117,8 @@ class CountCompareRow(BaseModel):
     days_to_expiry: int | None = None
     in_ea: int = 0            # received + returned, up to the count
     received_ea: int = 0      # 944 rows (transfers)
-    returned_ea: int = 0      # RA 944s (customer returns)
-    shipped_ea: int = 0       # 945 rows (packing lists) and orders shipped with no 945
+    returned_ea: int = 0      # RA 944s (customer returns), already taken off shipped
+    shipped_ea: int = 0       # 945 rows (packing lists) and orders shipped with no 945, less returns
     adjusted_ea: int = 0      # people's adjustments, earlier counts
     sales_ea: int = 0         # remaining by Sales at the count: in − out ± adjusted
     radiant_ea: int = 0
@@ -120,7 +129,7 @@ class CountCompareRow(BaseModel):
     out_after_ea: int = 0     # went out after the count (945, adjustments)
     since_ea: int = 0         # in after − out after
     now_ea: int = 0           # total now: Radiant + in after − out after (the figure once the count is the start)
-    available_ea: int = 0     # total now − on hold
+    available_ea: int = 0     # at the report: Radiant − on hold
     open: bool = False        # in Radiant's report, holding stock, or moved after it; a closed lot counts in no total
     kind: str = "match"       # match | differs | sales_only | radiant_only | no_lot
 

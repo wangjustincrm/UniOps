@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Download } from 'lucide-react'
 import { z } from 'zod'
 import {
-  ActionButton, Button, Callout, IconButton, formatDate, formatNumber, ListPage, LocalTable, RecordSheet, SchemaForm, Section, columnsOf, queryKeys, useNotices,
+  ActionButton, Button, Callout, IconButton, startHidden, formatDate, formatNumber, ListPage, LocalTable, RecordSheet, SchemaForm, Section, columnsOf, queryKeys, useNotices,
   type ColumnDef, type FieldSpec, type QuerySpec, type RecordTab,
 } from '@/platform-ui'
 import {
@@ -17,18 +17,25 @@ const colLot = columnsOf<StockLotRead>()
 const colMove = columnsOf<StockMoveRead>()
 const ADJUST = 'sales.inventory.adjust'
 
+// The figures (user 2026-11-13): received, shipping (940 sent, not shipped: an item's only, a 940 names no lot), shipped
+// (net: a customer's return comes off it), on hand, available; the rest from the column menu.
 const itemColumns: ColumnDef<StockItemRead, unknown>[] = [
   { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => <span className="font-medium">{row.original.item_code}</span> },
   colItem.text('description', 'Description'),
-  colItem.number('on_hand_ea', 'On hand EA'),
-  colItem.number('allocated_ea', 'Allocated EA'),
-  colItem.number('available_ea', 'Available EA'),
-  colItem.number('to_radiant_ea', 'In transit to Radiant EA'),
-  colItem.number('to_customer_ea', 'In transit to customers EA'),
-  colItem.number('returning_ea', 'Returns on the way EA'),
-  colItem.number('lots', 'Lots on hand'),
+  colItem.number('received_ea', 'Received'),
+  colItem.number('allocated_ea', 'Shipping'),
+  colItem.number('shipped_ea', 'Shipped'),
+  colItem.number('on_hand_ea', 'On hand'),
+  colItem.number('available_ea', 'Available'),
+  startHidden(colItem.number('hold_ea', 'On hold')),
+  startHidden(colItem.number('returned_ea', 'Returned (in Shipped)')),
+  startHidden(colItem.number('adjusted_ea', 'Adjusted')),
   colItem.date('first_expiry', 'First expiry'),
-  colItem.datetime('last_move_at', 'Last move'),
+  startHidden(colItem.number('lots', 'Lots on hand')),
+  startHidden(colItem.number('to_radiant_ea', 'In transit to Radiant')),
+  startHidden(colItem.number('to_customer_ea', 'In transit to customers')),
+  startHidden(colItem.number('returning_ea', 'Returns on the way')),
+  startHidden(colItem.datetime('last_move_at', 'Last move')),
 ]
 
 const lotColumns: ColumnDef<StockLotRead, unknown>[] = [
@@ -36,12 +43,16 @@ const lotColumns: ColumnDef<StockLotRead, unknown>[] = [
   { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => <span className="font-medium">{row.original.lot ?? '(no lot)'}</span> },
   colLot.date('expiry', 'Expiry'),
   colLot.number('days_to_expiry', 'Days to expiry'),
-  colLot.number('on_hand_ea', 'On hand EA'),
-  colLot.number('received_ea', 'Received EA'),
-  colLot.number('shipped_ea', 'Shipped EA'),
-  colLot.number('to_customer_ea', 'In transit to customers EA'),
-  colLot.number('returning_ea', 'Returns on the way EA'),
-  colLot.datetime('last_move_at', 'Last move'),
+  colLot.number('received_ea', 'Received'),
+  colLot.number('shipped_ea', 'Shipped'),
+  colLot.number('on_hand_ea', 'On hand'),
+  colLot.number('available_ea', 'Available'),
+  startHidden(colLot.number('hold_ea', 'On hold')),
+  startHidden(colLot.number('returned_ea', 'Returned (in Shipped)')),
+  startHidden(colLot.number('adjusted_ea', 'Adjusted')),
+  startHidden(colLot.number('to_customer_ea', 'In transit to customers')),
+  startHidden(colLot.number('returning_ea', 'Returns on the way')),
+  startHidden(colLot.datetime('last_move_at', 'Last move')),
 ]
 
 const moveColumns: ColumnDef<StockMoveRead, unknown>[] = [
@@ -118,9 +129,13 @@ function ItemSheet({ row }: { row: StockItemRead }) {
       subtitle={row.description ?? undefined}
       size="xl" loading={lotsQ.isLoading} error={lotsQ.error ?? movesQ.error}
       facts={[
-        { label: 'On hand EA', value: formatNumber(row.on_hand_ea), tone: row.on_hand_ea < 0 ? 'danger' : 'neutral' },
-        { label: 'Allocated EA', value: formatNumber(row.allocated_ea), hint: 'on 940s sent, not shipped' },
-        { label: 'Available EA', value: formatNumber(row.available_ea), tone: row.available_ea < 0 ? 'warning' : 'neutral' },
+        { label: 'On hand EA', value: formatNumber(row.on_hand_ea), tone: row.on_hand_ea < 0 ? 'danger' : 'neutral',
+          hint: `received ${formatNumber(row.received_ea)} − shipped ${formatNumber(row.shipped_ea)}`
+            + (row.adjusted_ea ? ` ${row.adjusted_ea > 0 ? '+' : '−'} adjusted ${formatNumber(Math.abs(row.adjusted_ea))}` : '') },
+        { label: 'On hold EA', value: formatNumber(row.hold_ea), hint: "Radiant's latest report" },
+        { label: 'Shipping EA', value: formatNumber(row.allocated_ea), hint: 'on 940s sent, not shipped yet' },
+        { label: 'Available EA', value: formatNumber(row.available_ea), tone: row.available_ea < 0 ? 'warning' : 'neutral',
+          hint: 'on hand − on hold − shipping' },
         { label: 'In transit to Radiant EA', value: formatNumber(row.to_radiant_ea), tone: row.to_radiant_ea < 0 ? 'warning' : 'neutral',
           hint: row.to_radiant_ea < 0 ? 'received more than sent' : undefined },
         { label: 'First expiry', value: row.first_expiry ? formatDate(row.first_expiry) : '—', hint: row.days_to_first_expiry != null ? `${row.days_to_first_expiry} days` : undefined },
@@ -166,7 +181,7 @@ export default function InventoryPage() {
     return (
       <ListPage<StockLotRead>
         key="lots" resource={stockLotsClient} title="Inventory by lot"
-        description="Each lot at Radiant: on hand, received, shipped, expiry."
+        description="Each lot at Radiant: received, shipped (less returns), on hand, available, expiry."
         columns={lotColumns} notice={NOTE} emptyTitle="No stock moves yet"
         toolbar={(ctx) => (<>
           {nav}
@@ -178,7 +193,7 @@ export default function InventoryPage() {
   return (
     <ListPage<StockItemRead>
       key="items" resource={stockItemsClient} title="Inventory"
-      description="Stock at Radiant by item: on hand, allocated to 940s, available, and what is on its way."
+      description="Stock at Radiant by item (its open lots): received, shipping (940 sent), shipped (less returns), on hand, available."
       columns={itemColumns} notice={NOTE} emptyTitle="No stock moves yet"
       renderDetail={(r) => <ItemSheet row={r} />}
       toolbar={(ctx) => (<>

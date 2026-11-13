@@ -6,7 +6,14 @@ export interface StockItemRead {
   id: number
   item_code: string
   description: string | null
+  /** Its open lots only (a lot with nothing on hand is closed). */
+  received_ea: number
+  returned_ea: number
+  shipped_ea: number
+  adjusted_ea: number
   on_hand_ea: number
+  /** As Radiant's latest applied report gave it. */
+  hold_ea: number
   /** On 940s that went out, not answered by a 945 yet. */
   allocated_ea: number
   available_ea: number
@@ -27,9 +34,18 @@ export interface StockLotRead {
   lot: string | null
   expiry: string | null
   days_to_expiry: number | null
-  on_hand_ea: number
+  /** 944 rows (transfers). */
   received_ea: number
+  /** RA 944s: back from customers (already taken off Shipped). */
+  returned_ea: number
+  /** 945 rows and orders shipped with no 945, less what customers sent back. */
   shipped_ea: number
+  /** People's adjustments and Radiant counts. */
+  adjusted_ea: number
+  on_hand_ea: number
+  hold_ea: number
+  /** On hand − on hold. */
+  available_ea: number
   to_customer_ea: number
   returning_ea: number
   to_radiant_ea: number
@@ -122,7 +138,7 @@ export interface CountCompareRow {
   since_ea: number
   /** Total now: Radiant + in after − out after. */
   now_ea: number
-  /** Total now − on hold. */
+  /** At the report: Radiant − on hold. */
   available_ea: number
   /** In Radiant's report, holding stock, or moved after it; a closed lot counts in no total. */
   open: boolean

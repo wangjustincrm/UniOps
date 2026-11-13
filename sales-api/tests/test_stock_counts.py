@@ -11,7 +11,7 @@ from app.domain.radiant_stock import StockFileError, parse_stock_file
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.errors import BusinessError
 from app.platform.query import QuerySpec
-from app.services.stock import StockLotService, StockMoveService, sync
+from app.services.stock import StockItemService, StockLotService, StockMoveService, sync
 from app.services.stock_counts import StockCountService
 from tests.domain.test_transfers_edi import real_944
 from tests.test_orders import OP, env  # noqa: F401 — a fixture
@@ -138,6 +138,17 @@ async def test_the_report_compares_each_lot_and_apply_starts_from_radiant(p7):  
     assert lots[("CF0092", "26C253125110231")] == 8000 and lots[("CF0103", "26E248121010211")] == 7200
     assert lots[("CHEP", None)] == 145
     assert await _sync(p7) == {}  # applied once: a second sync adds nothing
+    async with p7.factory(OP) as u:
+        lot = {(x.item_code, x.lot): x for x in (await StockLotService(u).list(QuerySpec(page_size=200))).items}
+        items = {x.item_code: x for x in (await StockItemService(u).list(QuerySpec(page_size=200))).items}
+    a = lot[("CF0092", "26C253125110231")]
+    assert (a.received_ea, a.returned_ea, a.shipped_ea, a.adjusted_ea, a.on_hand_ea, a.hold_ea, a.available_ea) == (8400, 0, 0, -400, 8000, 0, 8000)
+    h = lot[("CF0110", "25C26112511032")]  # on hold at Radiant: on hand, not available
+    assert (h.on_hand_ea, h.hold_ea, h.available_ea) == (5, 5, 0)
+    assert lot[("CF0092", "OLD1")].on_hand_ea == 0  # closed by the count
+    # The item adds up its open lots only: OLD1's 30 received is not in CF0092's Received.
+    assert (items["CF0092"].received_ea, items["CF0092"].on_hand_ea) == (8400, 8000)
+    assert items["CF0092"].available_ea == items["CF0092"].on_hand_ea - items["CF0092"].hold_ea - items["CF0092"].allocated_ea
 
     # Kept right: a move dated before the count, arriving later, changes the count's move, not the figure;
     # a move after it adds up.
@@ -169,3 +180,18 @@ async def test_a_report_from_the_future_is_refused(p7):  # noqa: F811
     async with p7.factory(OP) as u:
         with pytest.raises(BusinessError, match="future"):
             await StockCountService(u).create(name="i.csv", data=SUMMARY.encode(), counted_at=datetime.now(timezone.utc) + timedelta(days=1), note=None)
+
+
+async def test_a_return_comes_off_shipped(p7):  # noqa: F811
+    """User 2026-11-13: shipped 100, the customer sent 10 back (RA 944) → shipped 90, on hand received − 90."""
+    async with p7.factory(SYSTEM_ACTOR) as u:
+        for day, frm, to, q, src, key in ((1, "TO_RADIANT", "RADIANT", 500, "receipt_row", "r1"),
+                                         (2, "RADIANT", "TO_CUSTOMER", 100, "shipment_row", "s1"),
+                                         (9, "RETURNING", "RADIANT", 10, "return_944", "ra1")):
+            await u.session.execute(sa.text("""INSERT INTO sales_stock_moves (at, item_code, lot, qty_ea, from_place, to_place, source_type, source_key)
+                                               VALUES (:at, 'CF0092', 'RET1', :q, :f, :t, :src, :key)"""),
+                                    {"at": datetime(2026, 10, day, 12, tzinfo=timezone.utc), "q": q, "f": frm, "t": to, "src": src, "key": key})
+        await u.commit()
+    async with p7.factory(OP) as u:
+        [lot] = [x for x in (await StockLotService(u).list(QuerySpec(page_size=200))).items if x.lot == "RET1"]
+    assert (lot.received_ea, lot.returned_ea, lot.shipped_ea, lot.adjusted_ea, lot.on_hand_ea, lot.available_ea) == (500, 10, 90, 0, 410, 410)
