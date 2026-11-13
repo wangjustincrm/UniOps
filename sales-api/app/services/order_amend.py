@@ -72,6 +72,9 @@ async def amend_order(uow, outbound, order_id: int, lines: list[dict[str, Any]],
     if carrier is not None:
         if o.source_type != "MANUAL":
             raise BusinessError("order.amend", "only a manual order's carrier is chosen here")
+        from app.services.settings import MANUAL_EXPRESS_OFFERED, SETTINGS
+        if carrier == "Purolator Express" and not await SETTINGS.get(s, MANUAL_EXPRESS_OFFERED):
+            raise BusinessError("order.carrier_express", "Purolator Express is not offered (Connections → settings)")
         before.append({"carrier": o.shipping_method})
         o.shipping_method = carrier
         after.append({"carrier": carrier})

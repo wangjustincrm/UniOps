@@ -280,8 +280,8 @@ export interface RefundRead {
 export const CARRIERS = [{ value: 'Purolator', label: 'Purolator' }, { value: 'Purolator Express', label: 'Purolator Express' }, { value: 'LTL', label: 'LTL' }]
 export type Carrier = 'Purolator' | 'Purolator Express' | 'LTL'
 export const isCarrier = (v: unknown): v is Carrier => v === 'Purolator' || v === 'Purolator Express' || v === 'LTL'
-/** Above this an order is a pallet shipment: the entry screen suggests LTL (a suggestion only). */
-export const LTL_FROM_LB = 150
+/** The carriers a manual order may take, as the settings say (Purolator Express may be off). */
+export const carriersFor = (expressOffered: boolean) => CARRIERS.filter((c) => expressOffered || c.value !== 'Purolator Express')
 export interface ManualLine { item_code: string; quantity: number; unit: string }
 export interface ManualOrderIn {
   partner_code: string

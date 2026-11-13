@@ -7,8 +7,10 @@ import {
   selectColumn, type EditableColumn, type FieldSpec,
 } from '@/platform-ui'
 import { itemOptions, itemUnits, manualPartnerOptions } from '../configuration/lookups'
+import { fetchEdiSettings } from '../configuration/connections/connectionsApi'
+import { EDI_KEY } from '../configuration/connections/connectionSettings'
 import {
-  CARRIERS, LTL_FROM_LB, isCarrier, createManual, previewManual, updateManual, type LinePreview, type ManualLine, type ManualOrderIn, type OrderDetail, type OrderRead,
+  carriersFor, isCarrier, createManual, previewManual, updateManual, type LinePreview, type ManualLine, type ManualOrderIn, type OrderDetail, type OrderRead,
 } from './ordersApi'
 
 const OPERATE = 'sales.order.operate'
@@ -25,11 +27,11 @@ const schema = z.object({
 // The form's ship-to: a draft's own, else blank in Canada (every part a string for the inputs).
 const shipToDefaults = (a: Record<string, string | null> | null | undefined) =>
   Object.fromEntries(ADDRESS_FIELDS.map((k) => [k, a?.[k] ?? (k === 'country' ? 'CA' : '')]))
-const fields: FieldSpec[] = [
+const fieldsFor = (carriers: { value: string; label: string }[]): FieldSpec[] => [
   { name: 'partner_code', label: 'Customer', type: 'reference', required: true, loadOptions: (q) => manualPartnerOptions(q),
     hint: 'Who the order is for. Manual orders use partners whose channel is Manual (Configuration → Partners).' },
   { name: 'customer_reference', label: 'Customer PO / reference', hint: "The customer's own number for this order, if they gave one." },
-  { name: 'carrier', label: 'Ships by', type: 'segmented', options: CARRIERS,
+  { name: 'carrier', label: 'Ships by', type: 'segmented', options: carriers,
     hint: 'Purolator (Ground or Express): a parcel, sent like a Shopify order (the ship-to phone goes with it). LTL: a pallet shipment, sent like a retailer order. Needed before it is submitted.' },
   { name: 'requested_delivery_date', label: 'Requested delivery', type: 'date' },
   { name: 'notes', label: 'Notes', type: 'textarea' },
@@ -38,15 +40,15 @@ const fields: FieldSpec[] = [
 const lineProblem = (l: ManualLine) =>
   !l.item_code ? 'choose an item' : !(Number(l.quantity) > 0) ? 'a quantity above 0' : !l.unit ? 'a unit' : null
 
-/** The order's gross weight and the carrier it suggests (user 2026-11-13): above LTL_FROM_LB, LTL; else Purolator. */
-function WeightHint({ preview }: { preview: LinePreview[] }) {
+/** The order's gross weight and the carrier it suggests (user 2026-11-13): above the setting's weight, LTL; else Purolator. */
+function WeightHint({ preview, ltlFromLb }: { preview: LinePreview[]; ltlFromLb: number }) {
   const known = preview.filter((p) => p.weight_lb != null)
   if (known.length === 0) return null
   const lb = known.reduce((n, p) => n + Number(p.weight_lb), 0)
   const partial = known.length < preview.length
   return (
     <p className="text-xs text-neutral-600">
-      About {formatNumber(Math.round(lb))} lb{partial ? ' (some items have no weight)' : ''}: suggested <strong>{lb > LTL_FROM_LB ? 'LTL' : 'Purolator'}</strong>.
+      About {formatNumber(Math.round(lb))} lb{partial ? ' (some items have no weight)' : ''}: suggested <strong>{lb > ltlFromLb ? 'LTL' : 'Purolator'}</strong> (LTL above {formatNumber(ltlFromLb)} lb).
     </p>
   )
 }
@@ -66,6 +68,8 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
   const unitQueries = useQueries({ queries: codes.map((c) => ({ queryKey: ['sales', 'lookup', 'units', c], queryFn: () => itemUnits(c), staleTime: 60_000 })) })
   const units: Record<string, { value: string; label: string }[]> = Object.fromEntries(codes.map((c, i) => [c, unitQueries[i]?.data ?? []]))
   const check = useMutation({ mutationFn: (ls: ManualLine[]) => previewManual(ls), onSuccess: setPreview })
+  const settings = useQuery({ queryKey: EDI_KEY, queryFn: fetchEdiSettings })
+  const fields = fieldsFor(carriersFor(settings.data?.express_offered ?? true))
 
   if (!draft && customers.isLoading) return <Skeleton className="h-40 w-full" />
   if (!draft && customers.data && customers.data.length === 0) {
@@ -104,7 +108,7 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
         <div className="flex flex-col gap-1">
           <ActionButton size="sm" variant="secondary" permission={OPERATE}
             onAction={() => check.mutateAsync(st.lines).catch(() => {})}>Preview EA</ActionButton>
-          {preview && <WeightHint preview={preview} />}
+          {preview && <WeightHint preview={preview} ltlFromLb={settings.data?.ltl_from_lb ?? 150} />}
           <ErrorMessage error={check.error} />
         </div>
       )}

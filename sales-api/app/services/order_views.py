@@ -638,6 +638,11 @@ class ManualOrderService:
                                "Configuration → Partners (it starts the Order ref)", {"field": "partner_code"})
         return p
 
+    async def _express_allowed(self, carrier: str | None) -> None:
+        from app.services.settings import MANUAL_EXPRESS_OFFERED
+        if carrier == "Purolator Express" and not await SETTINGS.get(self.s, MANUAL_EXPRESS_OFFERED):
+            raise InvalidInput("order.carrier_express", "Purolator Express is not offered (Connections → settings)", {"field": "carrier"})
+
     async def _preview(self, lines: list[ManualLineIn]) -> list[LinePreview]:
         codes = {ln.item_code for ln in lines}
         items = {i.item_code: i for i in (await self.s.execute(
@@ -722,6 +727,7 @@ class ManualOrderService:
                                {"field": "lines", "lines": [{"line_no": n, "problem": p} for n, p in bad]})
         if (o.shipping_method or "") not in ("Purolator", "Purolator Express", "LTL"):
             raise InvalidInput("order.carrier", "choose how it ships: Purolator, Purolator Express or LTL", {"field": "carrier"})
+        await self._express_allowed(o.shipping_method)
         p = await self._partner(o.partner_code)
         self.uow.set_reason("manual order: submit")
         now = datetime.now(timezone.utc)

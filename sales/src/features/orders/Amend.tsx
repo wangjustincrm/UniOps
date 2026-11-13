@@ -1,13 +1,17 @@
 import { z } from 'zod'
 import { Autocomplete, MasterDetailForm, readColumn, textColumn, type EditableColumn, type FieldSpec } from '@/platform-ui'
 import { itemOptions } from '@/features/configuration/lookups'
-import { CARRIERS, amendOrder, isCarrier, lineNumbers, type OrderDetail } from './ordersApi'
+import { useQuery } from '@tanstack/react-query'
+import { fetchEdiSettings } from '@/features/configuration/connections/connectionsApi'
+import { EDI_KEY } from '@/features/configuration/connections/connectionSettings'
+import { amendOrder, carriersFor, isCarrier, lineNumbers, type OrderDetail } from './ordersApi'
 
 const errorMessages: Record<string, string> = {
   'order.amend': 'This order can no longer be amended: the warehouse has shipped it, or it is not waiting for its 940.',
   'order.amend_source': "A Shopify order's items come from the store: fix the item mapping instead.",
   'order.amend_line': 'A line could not be changed: check its item and quantity.',
-  'order.carrier': 'Choose how it ships: Purolator or LTL.',
+  'order.carrier': 'Choose how it ships.',
+  'order.carrier_express': 'Purolator Express is not offered: choose Purolator or LTL.',
   'send940.not_eligible': 'Amended. The order is not ready to send yet: it goes when it qualifies.',
   'auth.forbidden': 'You do not have permission to change orders.',
 }
@@ -31,8 +35,8 @@ const problem = (l: AmendLine) => {
 }
 
 const schema = z.object({ reason: z.string().trim().min(3, 'Say what was wrong, in a few words').max(500), carrier: z.string().nullable().optional() })
-const carrierField: FieldSpec = { name: 'carrier', label: 'Ships by', type: 'segmented', options: CARRIERS,
-  hint: 'A manual order: Purolator / Purolator Express (a parcel, like a Shopify order) or LTL (a pallet shipment, like a retailer order).' }
+const carrierField = (options: { value: string; label: string }[]): FieldSpec => ({ name: 'carrier', label: 'Ships by', type: 'segmented', options,
+  hint: 'A manual order: Purolator / Purolator Express (a parcel, like a Shopify order) or LTL (a pallet shipment, like a retailer order).' })
 const fields: FieldSpec[] = [
   { name: 'reason', label: 'What was wrong', type: 'textarea', required: true,
     hint: 'Kept in the order history. A 940 already sent is Replaced by a new one; a rejected or timed-out one is sent again; '
@@ -43,9 +47,10 @@ const fields: FieldSpec[] = [
 export function AmendForm({ o, onSaved, onCancel }: { o: OrderDetail; onSaved: () => void; onCancel: () => void }) {
   const numbers = lineNumbers(o)
   const open = o.lines.filter((ln) => !ln.removed)
+  const settings = useQuery({ queryKey: EDI_KEY, queryFn: fetchEdiSettings })
   return (
     <MasterDetailForm<AmendLine>
-      schema={schema} fields={o.source_type === 'MANUAL' ? [carrierField, ...fields] : fields}
+      schema={schema} fields={o.source_type === 'MANUAL' ? [carrierField(carriersFor(settings.data?.express_offered ?? true)), ...fields] : fields}
       defaultValues={{ reason: '', carrier: o.shipping_method ?? '' }}
       lines={{ label: 'Order lines', columns, rowKey: (l) => l.id, problem, removable: true,
         initial: open.map((ln) => ({ id: ln.id, line_no: numbers.get(ln.line_no) ?? ln.line_no, item_code: ln.item_code ?? '',

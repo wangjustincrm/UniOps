@@ -93,6 +93,9 @@ export interface EdiSettings {
   internal_emails?: string[]
   /** X2: who receives every Action Required task (none: no one). */
   operator_user_id?: string | null
+  /** Manual orders (set by the product owner): Purolator Express offered; LTL suggested above this weight. */
+  express_offered?: boolean
+  ltl_from_lb?: number
 }
 export const fetchEdiSettings = () => api.get<EdiSettings>('/config/edi-settings')
 export const saveEdiSettings = (data: EdiSettings) => api.put<EdiSettings>('/config/edi-settings', data)

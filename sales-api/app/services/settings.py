@@ -91,3 +91,12 @@ OUTBOX_BACKLOG_MINUTES = SETTINGS.declare(Setting(
 SYSTEM_MINUTES = SETTINGS.declare(Setting(
     "scheduler.system_minutes", 1, int, validate=minimum(1), safe=1,
     description="Minutes between runs of the system job"))
+
+# Manual orders' carriers (user 2026-11-13: the product owner sets these, nothing hard-coded): whether
+# Purolator Express is offered beside Purolator and LTL, and the weight above which the entry screen
+# suggests LTL (a suggestion only).
+MANUAL_EXPRESS_OFFERED = SETTINGS.declare(Setting(
+    "manual.express_offered", True, as_bool, safe=False, description="Offer Purolator Express on manual orders"))
+MANUAL_LTL_FROM_LB = SETTINGS.declare(Setting(
+    "manual.ltl_from_lb", 150, int, validate=minimum(1), safe=150,
+    description="Suggest LTL for a manual order above this weight (lb)"))
