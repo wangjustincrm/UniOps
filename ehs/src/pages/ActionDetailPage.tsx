@@ -97,6 +97,12 @@ export default function ActionDetailPage() {
   return (
     <div className="p-4">
       <p className="font-mono text-xs text-neutral-500">{a.action_no}</p>
+      {/* Round 12, INC-02/03 and Q7: "only the supervisor or HSE role can
+          reassign CAPA's." ★ UAT 13, TC-07: "move the reassign field up to just
+          under the incident number, put it into an orange box to stand out." */}
+      {can('ehs.action.write') && a.status !== 'closed' && a.status !== 'cancelled' && (
+        <Reassign actionId={id} current={a.owner_name} onDone={invalidate} />
+      )}
       <PageHeader title={a.title} />
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         <StatusBadge status={a.status} />
@@ -155,13 +161,19 @@ export default function ActionDetailPage() {
       )}
 
       {/* ── History ─────────────────────────────────────────────────────── */}
-      <SectionTitle className="mb-2 mt-5">Progress</SectionTitle>
+      <SectionTitle className="mb-2 mt-5">History</SectionTitle>
       {a.updates.length === 0 && a.verifications.length === 0 && (
         <p className="text-sm text-neutral-500">Nothing recorded yet.</p>
       )}
       <ul className="flex flex-col gap-2">
         {a.updates.map((u) => (
-          <li key={u.id} className="rounded-lg border border-neutral-200 bg-white p-3">
+          <li key={u.id} className={`rounded-lg border p-3 ${
+            u.body.startsWith('Reassigned from ') ? 'border-orange-300 bg-orange-50' : 'border-neutral-200 bg-white'}`}>
+            {/* ★ UAT 13, TC-07: "include the reassignment in the history of the
+                capa" — it was there, read as one more progress note. */}
+            {u.body.startsWith('Reassigned from ') && (
+              <p className="mb-0.5 text-[11px] font-semibold uppercase tracking-wide text-orange-800">Reassigned</p>
+            )}
             <p className="text-sm text-neutral-800">{u.body}</p>
             <p className="mt-1 text-xs text-neutral-400">
               {u.author_name ?? 'Unknown'} · {formatDateTime(u.created_at)}
@@ -273,12 +285,6 @@ export default function ActionDetailPage() {
         </>
       )}
 
-      {/* Round 12, INC-02/03 and Q7: "only the supervisor or HSE role can
-          reassign CAPA's." */}
-      {can('ehs.action.write') && a.status !== 'closed' && a.status !== 'cancelled' && (
-        <Reassign actionId={id} current={a.owner_name} onDone={invalidate} />
-      )}
-
       <ChangeHistory table="ehs_actions" rowId={id} />
 </div>
   )
@@ -298,15 +304,20 @@ function Reassign({ actionId, current, onDone }: {
   })
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)}
-              className="mt-5 min-h-[40px] text-sm font-medium text-primary-700 hover:underline">
-        Reassign{current ? ` — now ${current}` : ''}
-      </button>
+      <div className="my-2 flex flex-wrap items-center gap-2 rounded-lg border border-orange-300 bg-orange-50 px-3 py-2">
+        <span className="min-w-0 flex-1 text-sm text-orange-900">
+          Owner: <b>{current ?? 'nobody'}</b>
+        </span>
+        <button type="button" onClick={() => setOpen(true)}
+                className="min-h-[36px] rounded-lg border border-orange-400 bg-white px-3 text-sm font-semibold text-orange-800 hover:bg-orange-100">
+          Reassign
+        </button>
+      </div>
     )
   }
   const ready = Boolean(person.userId) && reason.trim().length >= 3
   return (
-    <section className="mt-5 rounded-lg border border-neutral-200 bg-white p-3">
+    <section className="my-2 rounded-lg border border-orange-300 bg-orange-50 p-3">
       <SectionTitle className="mb-2">Reassign</SectionTitle>
       <p className="mb-2 text-xs text-neutral-500">
         The work and its task move to the person you choose. Who had it, who has it now and
