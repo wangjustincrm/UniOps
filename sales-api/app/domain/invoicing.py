@@ -103,7 +103,6 @@ class Header810:
     ship_to: dict
     bill_to: dict
     edi_mailbox: str | None = None  # the buyer's TrueCommerce mailbox, from its 850 (Sobeys)
-    agreement_id: str | None = None  # the 850's "Agreement ID" (user 2026-11-13), as it came
 
 
 @dataclass(frozen=True)
@@ -139,7 +138,8 @@ def build_810(h: Header810, items: list[Item810]) -> bytes:
         "TransactionType": "810", "AccountingID": h.partner_code,
         # Only when the 850 named one: a partner without (Walmart, Loblaws) gets the file as before.
         **({"EDIMailbox": h.edi_mailbox} if h.edi_mailbox else {}),
-        **({"Agreement ID": agreement_id_of(h.agreement_id)} if agreement_id_of(h.agreement_id) else {}),
+        # No "Agreement ID": none of Zoho's 810s (57 Walmart, 35 Loblaw) carried one, and Walmart's old 810 the user
+        # checked had none (user 2026-11-13: send as Zoho did). The 850's value stays on the order.
         "Invoice": str(h.order_number), "InvoiceDate": d,
         "PO": h.po, "PODate": h.po_date.strftime("%Y-%m-%d") if h.po_date else "", "DepartmentNumber": "",
         "BillofLading": f"{h.order_number:09d}", "CarrierPro": f"CRM|{h.order_number}", "SCAC": "WIFS", "ShipVia": "",

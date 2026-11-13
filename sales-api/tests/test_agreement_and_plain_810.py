@@ -1,4 +1,4 @@
-"""The 850's Agreement ID goes back in the 810, and the 810's text is UTF-8 without accents (user 2026-11-13)."""
+"""The 850's Agreement ID is kept on the order but not sent in the 810 (as Zoho), and the 810's text is UTF-8 without accents (user 2026-11-13)."""
 import json
 from datetime import date
 
@@ -7,22 +7,22 @@ from app.domain.sources import from_850
 from decimal import Decimal
 
 
-def _810(agreement):
+def _810():
     return json.loads(build_810(Header810("AC-9898", 1008652, "4887314555", date(2026, 11, 10), date(2026, 11, 3),
                                           {"name": "Pickering Harmony Main", "city": "Montréal"}, {"name": "LOBLAW INC."},
-                                          None, agreement),
+                                          None),
                                 [Item810(item_code="CF0092", buyer_part="21648061", gtin="10628347940147", description="NIURISS Été",
                                          shipped_cases=200, ordered_cases=200, unit_price=Decimal("179.94"), inner_packs=6)]))["Invoice"][0]
 
 
-def test_the_agreement_id_goes_back_only_when_the_850_named_one():
-    assert _810("4887314555")["Agreement ID"] == "4887314555"
-    assert "Agreement ID" not in _810(None)
+def test_the_810_never_carries_an_agreement_id():
+    assert "Agreement ID" not in _810()
 
 
 def test_the_810_text_has_no_accents():
-    body = _810(None)
-    assert body["ShipTo"]["ShiptoCity"] if "ShiptoCity" in body["ShipTo"] else True
+    body = _810()
+    assert body["ShipTo"]["ShipToCity"] == "Montreal"
+    assert body["Items"][0]["Description"] == "NIURISS Ete"
     raw = json.dumps(body, ensure_ascii=False)
     assert "Montreal" in raw and "Montréal" not in raw and "NIURISS Ete" in raw
 
@@ -39,8 +39,6 @@ def test_the_850_parser_reads_the_agreement_id():
 
 def test_a_label_with_no_number_is_not_an_agreement_id():
     """Walmart's 850 carries the words "SPECIAL INSTRUCTIONS" there; Zoho never sent them back."""
-    assert "Agreement ID" not in _810("SPECIAL INSTRUCTIONS")
-    assert _810("0008076261")["Agreement ID"] == "0008076261"
     po = {"PurchaseOrder": [{"TradingPartner": "Walmart", "PurchaseOrderNumber": "1234567890", "Agreement ID": "SPECIAL INSTRUCTIONS",
                              "Items": []}]}
     try:
