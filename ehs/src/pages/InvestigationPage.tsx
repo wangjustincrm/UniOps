@@ -109,6 +109,7 @@ export default function InvestigationPage() {
       incident_no: string; title: string; form_kind: string
       batch_code?: string | null
       needs_five_whys?: boolean
+      food_safety_near_miss?: boolean
       persons: {
         id: string; role: string; person_name: string
         body_part_id: string | null; body_part_label: string | null
@@ -223,6 +224,7 @@ export default function InvestigationPage() {
   const [batchCode, setBatchCode] = useState<string | null>(null)
   const batchShown = batchCode ?? incident.data?.batch_code ?? ''
   const needsWhys = Boolean(incident.data?.needs_five_whys)
+  const foodSafety = Boolean(incident.data?.food_safety_near_miss)
   const whysMissing = needsWhys ? whys.filter((w) => !w.answer.trim()).length : 0
 
   const save = useMutation({
@@ -325,11 +327,25 @@ export default function InvestigationPage() {
     return <p className="p-4 text-sm text-neutral-500">Loading…</p>
   }
 
-  const causeRows = (type: 'immediate' | 'root', vocabulary: string, help: string) => (
+  const causeRows = (type: 'immediate' | 'root', vocabulary: string, help: string,
+                     withCompletion = false) => (
     <CausesEditor type={type} vocabulary={vocabulary} help={help}
                   causes={causes} onChange={setCauses}
-                  savedWith="the investigation" />
+                  savedWith="the investigation" withCompletion={withCompletion} />
   )
+  // ★ UAT 13: on a food-safety near miss "move the immediate causes up above
+  // the 5 whys section", each with the department that completed the work and
+  // the date.
+  const immediateCauses = (
+    <Section title="Immediate causes">
+      {causeRows('immediate', 'immediate_cause',
+                 foodSafety
+                   ? 'The conditions present at the time — what you could see — and, for each, the department that completed the work and when.'
+                   : 'The conditions present at the time — what you could see.',
+                 foodSafety)}
+    </Section>
+  )
+
 
   const rootCount = causes.filter((c) => c.cause_type === 'root' && c.label.trim()).length
 
@@ -393,6 +409,8 @@ export default function InvestigationPage() {
 
       {/* ★ Round 12, INC-15/16 and Q8: "the 5 why technique … any items
           categorized as food safety would require it." */}
+      {foodSafety && immediateCauses}
+
       {/* ★ UAT 13: "minimize the 5 whys section but let it be expanded if
           required." Open where food safety requires it or answers are already
           in; folded otherwise. */}
@@ -433,10 +451,7 @@ export default function InvestigationPage() {
         </div>
       </details>
 
-      <Section title="Immediate causes">
-        {causeRows('immediate', 'immediate_cause',
-                   'The conditions present at the time — what you could see.')}
-      </Section>
+      {!foodSafety && immediateCauses}
 
       <Section title="Root causes">
         {causeRows('root', 'root_cause',

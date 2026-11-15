@@ -25,10 +25,10 @@ them into one column guarantees one of the two clocks is wrong, and does so
 silently.
 """
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import CheckConstraint, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -263,6 +263,13 @@ class Cause(UUIDPrimaryKey, TimestampMixin, Base):
     label: Mapped[str] = mapped_column(String(200), nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    # ★ UAT 13, on a food-safety investigation: "in each immediate cause
+    # entered, beside the cause, add a pick list field for the name of the
+    # department that completed the work and the date it was completed." The
+    # name is kept as it read when picked, as every reference on a signed record.
+    completed_by_department_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    completed_by_department_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    completed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class IncidentAttachment(UUIDPrimaryKey, Base):

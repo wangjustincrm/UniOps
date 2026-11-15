@@ -13,6 +13,8 @@
  * rules that are easy to get subtly wrong are written once.
  */
 import { Link } from 'react-router-dom'
+import { api } from '@/lib/api'
+import { useQuery } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
 import { VocabularySelect, type VocabItem } from '@/components/VocabularyPicker'
 import {
@@ -33,6 +35,10 @@ export interface CauseDraft {
   vocabulary_item_id: string | null
   label: string
   note: string | null
+  /** UAT 13, food safety: the department that completed the work, and when. */
+  completed_by_department_id?: string | null
+  completed_by_department_name?: string | null
+  completed_on?: string | null
   /** Raised with the cause when it is filled in. Root causes only: an immediate
    *  cause describes what happened, not work to do. */
   action?: ActionDraft
@@ -51,6 +57,8 @@ export function causesPayload(causes: CauseDraft[]) {
       vocabulary_item_id: c.vocabulary_item_id,
       label: c.label,
       note: c.note || null,
+      completed_by_department_id: c.completed_by_department_id || null,
+      completed_on: c.completed_on || null,
       action: c.action && actionIsComplete(c.action)
         ? {
             title: c.action.title.trim(),
@@ -89,7 +97,7 @@ export function unfinishedAction(causes: CauseDraft[]): boolean {
 }
 
 export function CausesEditor({
-  type, vocabulary, help, causes, onChange, savedWith,
+  type, vocabulary, help, causes, onChange, savedWith, withCompletion = false,
 }: {
   type: 'immediate' | 'root'
   vocabulary: string
@@ -98,7 +106,16 @@ export function CausesEditor({
   onChange: (next: CauseDraft[]) => void
   /** "the investigation", "the hazard" — finishes "Raised when you save …". */
   savedWith: string
+  /** UAT 13: "beside the cause, add a pick list field for the name of the
+   *  department that completed the work and the date it was completed." */
+  withCompletion?: boolean
 }) {
+  const departments = useQuery({
+    queryKey: ['settings', 'departments'],
+    queryFn: () => api.get<{ id: string; name: string }[]>('/api/v1/settings/departments'),
+    enabled: withCompletion,
+    staleTime: 10 * 60_000,
+  })
   const update = (i: number, patch: Partial<CauseDraft>) =>
     onChange(causes.map((x, j) => (j === i ? { ...x, ...patch } : x)))
   const remove = (i: number) => onChange(causes.filter((_, j) => j !== i))
@@ -135,6 +152,35 @@ export function CausesEditor({
             placeholder="Note (optional)"
             className="mt-2 min-h-[38px] w-full rounded-md border border-neutral-200 px-2.5 text-sm focus:border-primary-400 focus:outline-none"
           />
+          {withCompletion && (
+            <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_11rem]">
+              <label className="text-xs font-medium text-neutral-700">
+                Department that completed the work
+                <select
+                  className="mt-1 min-h-[38px] w-full rounded-md border border-neutral-200 bg-white px-2 text-sm"
+                  value={c.completed_by_department_id ?? ''}
+                  onChange={(e) => update(i, {
+                    completed_by_department_id: e.target.value || null,
+                    completed_by_department_name:
+                      departments.data?.find((d) => d.id === e.target.value)?.name ?? null,
+                  })}>
+                  <option value="">Not done yet</option>
+                  {/* Kept as it read when it was picked, if that department has since gone. */}
+                  {c.completed_by_department_id
+                    && !departments.data?.some((d) => d.id === c.completed_by_department_id) && (
+                    <option value={c.completed_by_department_id}>{c.completed_by_department_name ?? 'A department no longer listed'}</option>
+                  )}
+                  {(departments.data ?? []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                </select>
+              </label>
+              <label className="text-xs font-medium text-neutral-700">
+                Date completed
+                <input type="date" value={c.completed_on ?? ''}
+                       onChange={(e) => update(i, { completed_on: e.target.value || null })}
+                       className="mt-1 min-h-[38px] w-full rounded-md border border-neutral-200 px-2 text-sm" />
+              </label>
+            </div>
+          )}
           {/* ★ Round 11: saved actions were shown only on the incident, so on
               this form they read as lost. */}
           {(c.actions ?? []).map((a) => (

@@ -89,3 +89,40 @@ async def test_the_register_lists_each_near_miss_by_its_latest_assessment(hse_ma
     assert (await hse.get("/api/v1/food-safety/register", params={"sort": "nope"})).status_code == 422
     scales = (await hse.get("/api/v1/food-safety/scales")).json()
     assert len(scales["probability"]) == 5 and scales["ccp_rpn"] == 46
+
+
+async def test_an_immediate_cause_records_who_completed_the_work_and_when(hse_manager, db_session):
+    """UAT 13: "beside the cause, add a pick list field for the name of the
+    department that completed the work and the date it was completed." The
+    name is kept as it read when picked."""
+    import uuid as _uuid
+    from app.models.mirrors import Department
+    _, hse = hse_manager
+    dept = Department(id=_uuid.uuid4(), code=f"D{_uuid.uuid4().hex[:4]}", name="Sanitation", is_active=True)
+    db_session.add(dept)
+    await db_session.commit()
+    food = await _food_near_miss(hse, db_session)
+
+    put = await hse.put(f"/api/v1/incidents/{food['id']}/causes", json={"causes": [
+        {"cause_type": "immediate", "label": "Lid left off the blender",
+         "completed_by_department_id": str(dept.id), "completed_on": "2026-11-10"},
+        {"cause_type": "immediate", "label": "No changeover check"},
+    ]})
+    assert put.status_code == 200, put.text
+    tree = put.json()
+    first = next(c for c in tree["immediate"] if c["label"] == "Lid left off the blender")
+    assert first["completed_by_department_name"] == "Sanitation"
+    assert first["completed_on"] == "2026-11-10"
+    second = next(c for c in tree["immediate"] if c["label"] == "No changeover check")
+    assert second["completed_by_department_id"] is None
+
+    # Renamed later in MDM: the cause keeps what it said.
+    dept.name = "Sanitation & Hygiene"
+    await db_session.commit()
+    again = (await hse.get(f"/api/v1/incidents/{food['id']}/cause-tree")).json()
+    assert next(c for c in again["immediate"] if c["label"] == "Lid left off the blender")[
+        "completed_by_department_name"] == "Sanitation"
+
+    bad = await hse.put(f"/api/v1/incidents/{food['id']}/causes", json={"causes": [
+        {"cause_type": "immediate", "label": "x", "completed_by_department_id": str(_uuid.uuid4())}]})
+    assert bad.status_code == 422

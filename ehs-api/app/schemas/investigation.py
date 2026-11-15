@@ -93,6 +93,9 @@ class CauseIn(BaseModel):
     # signed investigation has to keep reading the way it was signed.
     label: str = Field(min_length=1, max_length=200)
     note: str | None = None
+    # UAT 13: on a food-safety investigation's immediate causes.
+    completed_by_department_id: uuid.UUID | None = None
+    completed_on: date | None = None
     # Raised with it. Ignored when this cause already has one of the same title,
     # so saving the investigation a second time does not raise a duplicate.
     action: CauseActionIn | None = None
@@ -157,6 +160,9 @@ class CauseOut(BaseModel):
     label: str
     note: str | None
     sort_order: int
+    completed_by_department_id: uuid.UUID | None = None
+    completed_by_department_name: str | None = None
+    completed_on: date | None = None
     actions: list[CauseActionOut] = Field(default_factory=list)
     # True when a root cause has nothing being done about it. The detail screen
     # renders these as visibly incomplete, which is what an auditor looks for.

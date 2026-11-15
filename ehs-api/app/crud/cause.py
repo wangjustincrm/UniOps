@@ -122,12 +122,15 @@ async def replace(
             kept = keep_by_label.pop(item.label, None)
             if kept is not None and kept.vocabulary_item_id:
                 keep_by_item.pop(kept.vocabulary_item_id, None)
+        done_by = await _department(db, getattr(item, "completed_by_department_id", None))
         if kept is not None:
             kept.cause_type = item.cause_type
             kept.vocabulary_item_id = item.vocabulary_item_id
             kept.label = item.label
             kept.note = item.note
             kept.sort_order = order
+            kept.completed_by_department_id, kept.completed_by_department_name = done_by
+            kept.completed_on = getattr(item, "completed_on", None)
             result.append(kept)
             continue
         cause = Cause(
@@ -139,6 +142,9 @@ async def replace(
             label=item.label,
             note=item.note,
             sort_order=order,
+            completed_by_department_id=done_by[0],
+            completed_by_department_name=done_by[1],
+            completed_on=getattr(item, "completed_on", None),
         )
         db.add(cause)
         result.append(cause)
@@ -203,3 +209,16 @@ async def actions_by_cause(
             continue
         grouped.setdefault(action.cause_id, []).append(action)
     return grouped
+
+
+async def _department(db, department_id) -> tuple:
+    """(id, name as it reads now) — kept on the cause, as every reference on a
+    signed record is. An id that names no department is refused, not stored."""
+    if department_id is None:
+        return None, None
+    from fastapi import HTTPException, status as http
+    from app.models.mirrors import Department
+    dept = await db.get(Department, department_id)
+    if dept is None:
+        raise HTTPException(http.HTTP_422_UNPROCESSABLE_ENTITY, "That department is not on the list")
+    return dept.id, dept.name
