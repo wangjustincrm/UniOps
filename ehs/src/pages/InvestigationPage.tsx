@@ -29,6 +29,7 @@ import { useEhsAuth } from '@/store/auth'
 import {
   CausesEditor, causesPayload, spendActionDrafts, unfinishedAction, type CauseDraft,
 } from '@/components/CausesEditor'
+import { ProductionChronology, EMPTY_CHRONOLOGY, type Chronology } from '@/components/ProductionChronology'
 
 interface Why { question: string; answer: string }
 const NO_WHY: Why = { question: '', answer: '' }
@@ -43,6 +44,7 @@ interface Investigation {
   sequence_of_events: string | null
   root_cause_narrative: string | null
   five_whys?: Why[]
+  production_chronology?: Chronology
   completed_at: string | null
   signed_by_name: string | null
 }
@@ -143,6 +145,8 @@ export default function InvestigationPage() {
   const [ppe, setPpe] = useState<string[]>([])
   const [sequence, setSequence] = useState('')
   const [narrative, setNarrative] = useState('')
+  // UAT 13: the Production Chronology, on a food-safety near miss.
+  const [chronology, setChronology] = useState<Chronology>(EMPTY_CHRONOLOGY)
   // Once somebody opens or folds the 5 Whys, it stays as they left it.
   const [whysOpen, setWhysOpen] = useState<boolean | null>(null)
   const [whys, setWhys] = useState<Why[]>(() => [0, 1, 2, 3, 4].map(() => ({ ...NO_WHY })))
@@ -200,6 +204,7 @@ export default function InvestigationPage() {
       setSequence(inv.sequence_of_events ?? '')
       setNarrative(inv.root_cause_narrative ?? '')
       setWhys([0, 1, 2, 3, 4].map((i) => ({ ...NO_WHY, ...(inv.five_whys?.[i] ?? {}) })))
+      setChronology({ ...EMPTY_CHRONOLOGY, ...(inv.production_chronology ?? {}) })
     } else if (me) {
       // ★ Round 7: "when clicking on the start the investigation button, the
       // lead investigator should default to who ever is logged in." Only when
@@ -240,6 +245,8 @@ export default function InvestigationPage() {
         sequence_of_events: sequence || null,
         root_cause_narrative: narrative || null,
         five_whys: whys,
+        // Only where it is shown, so saving another investigation leaves it alone.
+        ...(foodSafety ? { production_chronology: chronology } : {}),
       })
       await api.put(`/api/v1/incidents/${id}/causes`, {
         // ★ Through the shared serialiser, which now also carries the priority
@@ -405,6 +412,9 @@ export default function InvestigationPage() {
           <textarea rows={5} value={sequence} onChange={(e) => setSequence(e.target.value)}
                     className={`${inputClass} py-2`} />
         </Field>
+        {/* ★ UAT 13: "Title it Production Chronology and add it just under the
+            What happened field" — food safety near misses only. */}
+        {foodSafety && <ProductionChronology value={chronology} onChange={setChronology} />}
       </Section>
 
       {/* ★ Round 12, INC-15/16 and Q8: "the 5 why technique … any items

@@ -126,3 +126,29 @@ async def test_an_immediate_cause_records_who_completed_the_work_and_when(hse_ma
     bad = await hse.put(f"/api/v1/incidents/{food['id']}/causes", json={"causes": [
         {"cause_type": "immediate", "label": "x", "completed_by_department_id": str(_uuid.uuid4())}]})
     assert bad.status_code == 422
+
+
+async def test_the_production_chronology_is_kept_on_the_investigation(hse_manager, db_session):
+    """UAT 13: a production chronology under What happened, optional."""
+    _, hse = hse_manager
+    food = await _food_near_miss(hse, db_session)
+    url = f"/api/v1/incidents/{food['id']}/investigation"
+    chron = {"rows": [
+        {"at": "2026-11-10T06:00", "stage": "start", "detail": "Line 1 started on blend 4471"},
+        {"at": "2026-11-10T09:15", "stage": "deviation", "detail": "Lid found off the blender",
+         "quantity": "3 bags"},
+        {"at": None, "stage": "other", "detail": "  "},  # blank: dropped
+    ], "affected_quantity": "40 bags", "product_status": "On hold"}
+    put = await hse.put(url, json={"investigator_id": None, "production_chronology": chron})
+    assert put.status_code == 200, put.text
+    got = (await hse.get(url)).json()["production_chronology"]
+    assert [r["stage"] for r in got["rows"]] == ["start", "deviation"]
+    assert got["affected_quantity"] == "40 bags" and got["product_status"] == "On hold"
+
+    # Saved without it (another screen, an older client): left as it was.
+    await hse.put(url, json={"investigator_id": None})
+    assert (await hse.get(url)).json()["production_chronology"]["product_status"] == "On hold"
+
+    bad = await hse.put(url, json={"investigator_id": None, "production_chronology": {
+        "rows": [{"stage": "lunch", "detail": "x"}]}})
+    assert bad.status_code == 422

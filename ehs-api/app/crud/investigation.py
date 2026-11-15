@@ -76,6 +76,15 @@ async def upsert_investigation(
     while whys and not (whys[-1]["question"] or whys[-1]["answer"]):
         whys.pop()
     inv.five_whys = whys
+    if payload.production_chronology is not None:
+        chron = payload.production_chronology
+        rows = [r.model_dump() for r in chron.rows
+                if (r.detail or "").strip() or r.at or (r.quantity or "").strip()]
+        inv.production_chronology = {
+            "rows": rows,
+            "affected_quantity": (chron.affected_quantity or "").strip() or None,
+            "product_status": (chron.product_status or "").strip() or None,
+        }
     await db.flush()
     return inv
 

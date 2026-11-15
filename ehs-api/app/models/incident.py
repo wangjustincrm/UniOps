@@ -210,6 +210,14 @@ class IncidentInvestigation(UUIDPrimaryKey, TimestampMixin, Base):
     five_whys: Mapped[list] = mapped_column(
         JSONB, nullable=False, default=list, server_default="[]",
     )
+    # ★ UAT 13, on a food-safety near miss: "a spreadsheet like, detailed
+    # production chronology … production start time, the point at which the
+    # deviation was detected, containment actions taken, production end time,
+    # affected quantity, inspection activities, and current product status."
+    # {rows: [{at, stage, detail, quantity}], affected_quantity, product_status}.
+    production_chronology: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}",
+    )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     signed_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True,

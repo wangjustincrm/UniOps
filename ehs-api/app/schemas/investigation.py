@@ -8,6 +8,21 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 
+
+class ChronologyRow(BaseModel):
+    """One line of the Production Chronology (UAT 13)."""
+    at: str | None = Field(default=None, max_length=25)   # a local date and time, as typed
+    stage: str = Field(default="other",
+                       pattern="^(start|deviation|containment|inspection|end|other)$")
+    detail: str = Field(default="", max_length=2000)
+    quantity: str | None = Field(default=None, max_length=100)
+
+
+class Chronology(BaseModel):
+    rows: list[ChronologyRow] = Field(default_factory=list, max_length=100)
+    affected_quantity: str | None = Field(default=None, max_length=200)
+    product_status: str | None = Field(default=None, max_length=2000)
+
 class Why(BaseModel):
     """★ UAT 13, TC-06: one step of the 5 Whys — the question asked, and the
     answer under it. Until then each step was a single line."""
@@ -42,6 +57,8 @@ class InvestigationIn(BaseModel):
     sequence_of_events: str | None = None
     root_cause_narrative: str | None = None
     five_whys: list[Why] = Field(default_factory=list, max_length=5)
+    # UAT 13: optional, on a food-safety near miss. Absent leaves it as it is.
+    production_chronology: Chronology | None = None
 
     @field_validator("five_whys", mode="before")
     @classmethod
@@ -122,6 +139,7 @@ class InvestigationOut(BaseModel):
     sequence_of_events: str | None
     root_cause_narrative: str | None
     five_whys: list[Why] = []
+    production_chronology: Chronology = Field(default_factory=Chronology)
 
     @field_validator("five_whys", mode="before")
     @classmethod
