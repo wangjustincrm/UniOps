@@ -29,6 +29,7 @@ import { CommunicationLog } from '@/components/CommunicationLog'
 import { ReturnToWorkPanel } from '@/components/ReturnToWorkPanel'
 import { NewActionDialog } from '@/components/NewActionDialog'
 import { RiskAssessmentDialog } from '@/components/RiskAssessmentDialog'
+import { FoodSafetyRisk } from '@/components/FoodSafetyRisk'
 import { RatingBadge, RiskScoringHistory, useScorings } from '@/components/RiskScoring'
 import { LocationSelect } from '@/components/LocationSelect'
 import { useTabTitle } from '@uniops/shell'
@@ -47,6 +48,8 @@ interface Incident {
   injury_class: string | null; mol_reportable: boolean; mol_reportable_reason: string | null
   description: string | null; equipment_involved: string | null
   batch_code?: string | null
+  /** UAT 13: the Food Safety Risk Assessment belongs on it. */
+  food_safety_near_miss?: boolean
   equipment_id?: string | null
   witnesses_note: string | null; immediate_action_taken: string | null
   reported_by_name: string | null; reported_to_name: string | null; is_anonymous: boolean
@@ -433,6 +436,10 @@ export default function IncidentDetailPage() {
               ? 'Not scored against the matrix yet. Scoring an incident is how a one-off becomes a ranked hazard.'
               : 'Not scored against the matrix yet.'} />
         </section>
+
+        {/* ★ UAT 13: "add this new one just under it and title it 'Food Safety
+            Risk Assessment'" — on a food-safety near miss only. */}
+        {inc.food_safety_near_miss && <FoodSafetyRisk incidentId={id} mayAssess={canInvestigate} />}
 
         {/* ── Causes and what is being done ─────────────────────────────── */}
         <section className="p-4">

@@ -39,6 +39,7 @@ from app.models.permit import (  # noqa: F401
 )
 from app.models.quiz import Quiz, QuizAttempt, QuizQuestion  # noqa: F401
 from app.models.risk import RiskAssessment, RiskLikelihood, RiskSeverity  # noqa: F401
+from app.models.food_safety import FoodSafetyAssessment  # noqa: F401
 from app.models.rtw import RtwCheckin, RtwPlan  # noqa: F401
 from app.models.statutory import StatutoryDeadline  # noqa: F401
 from app.models.toolbox import TbtDelivery, TbtSignature, ToolboxTalk  # noqa: F401

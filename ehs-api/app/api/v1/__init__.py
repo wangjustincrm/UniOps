@@ -34,6 +34,7 @@ from app.api.v1.reports import router as reports_router
 from app.api.v1.feedback import router as feedback_router
 from app.api.v1.rtw import router as rtw_router
 from app.api.v1.risk import router as risk_router
+from app.api.v1.food_safety import router as food_safety_router
 from app.api.v1.settings import router as settings_router
 from app.api.v1.toolbox import router as toolbox_router
 from app.api.v1.workers import router as workers_router
@@ -68,6 +69,7 @@ api_router.include_router(rtw_router, tags=["incidents"])
 api_router.include_router(actions_router, prefix="/actions", tags=["actions"])
 api_router.include_router(settings_router, prefix="/settings", tags=["settings"])
 api_router.include_router(risk_router, tags=["risk"])
+api_router.include_router(food_safety_router, tags=["food safety"])
 api_router.include_router(equipment_router, tags=["equipment"])
 api_router.include_router(reports_router, tags=["reports"])
 api_router.include_router(dashboard_router, tags=["dashboard"])

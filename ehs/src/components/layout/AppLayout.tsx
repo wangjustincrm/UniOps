@@ -112,6 +112,8 @@ const NAV: NavGroup[] = [
     title: 'Risk and permits',
     items: [
       { label: 'Hazard Register',    href: '/hazards',       icon: ShieldAlert,     permission: 'ehs.action.read' },
+      // UAT 13: "a separate risk register on all food safety near misses".
+      { label: 'Food Safety Risk',   href: '/food-safety',   icon: ShieldAlert,     permission: 'ehs.incident.read' },
       // No permission: the crew signing a job analysis before starting is
       // every worker, and the list is what they open to find theirs.
       { label: 'Job Analyses',       href: '/jsa',           icon: ClipboardList },

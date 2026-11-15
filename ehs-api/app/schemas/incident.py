@@ -265,6 +265,8 @@ class IncidentOut(BaseModel):
     batch_code: str | None = None
     # Round 12, Q8: whether the investigation must use the 5 Whys.
     needs_five_whys: bool = False
+    # UAT 13: whether the Food Safety Risk Assessment belongs on it.
+    food_safety_near_miss: bool = False
     equipment_id: uuid.UUID | None = None
     witnesses_note: str | None
     immediate_action_taken: str | None

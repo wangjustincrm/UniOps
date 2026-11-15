@@ -154,6 +154,7 @@ async def _to_out(db, incident, user: dict) -> IncidentOut:
     ]
     out = IncidentOut.model_validate(out.model_dump())
     out.needs_five_whys = await inv_crud.needs_five_whys(db, incident)
+    out.food_safety_near_miss = out.needs_five_whys and incident.form_kind == "near_miss"
     if incident.is_anonymous:
         if await sees_anonymous_reporters(db, user):
             # HSE: who it was, by name, for the private conversation.

@@ -12,6 +12,7 @@ import DocumentDetailPage from '@/pages/DocumentDetailPage'
 import DocumentsPage from '@/pages/DocumentsPage'
 import EmergencyPage from '@/pages/EmergencyPage'
 import HazardsPage from '@/pages/HazardsPage'
+import FoodSafetyRegisterPage from '@/pages/FoodSafetyRegisterPage'
 import HazardDetailPage from '@/pages/HazardDetailPage'
 import HoursWorkedPage from '@/pages/settings/HoursWorkedPage'
 import IncidentDetailPage from '@/pages/IncidentDetailPage'
@@ -161,6 +162,12 @@ export const ehsRoutes: RouteDef[] = [
     path: '/jhsc/meetings/:id',
     element: <JhscMeetingPage />,
     tab: { title: 'Meeting', icon: 'Users', keyStrategy: 'param', paramName: 'id' },
+  },
+  {
+    // UAT 13: the risk register of food safety near misses.
+    path: '/food-safety',
+    element: <FoodSafetyRegisterPage />,
+    tab: { title: 'Food safety risk', icon: 'ShieldAlert', keyStrategy: 'static' },
   },
   {
     path: '/hazards',
