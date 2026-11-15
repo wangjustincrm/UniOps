@@ -1,12 +1,15 @@
 # Safety (EHS) — Product Requirements Document
 
-**Version**: 0.22
+**Version**: 0.23
 **Date**: 2026-11-11
 **Status**: In Development (branch, not deployed)
 **Scope**: A workplace health and safety module for the Kingston plant (Ontario OHSA / WSIB), replacing SiteDocs. It covers incidents and statutory clocks, corrective actions, inspections and forms, training, JHSC, chemicals/WHMIS, permits, equipment, documents, and dashboards.
 **Source**: Consolidated from the Safety Module PRD series in `/srv/uniops/`. The baseline is the full requirement list in v0.2 (`Safety-Module-PRD-EN-v0.2.docx`, 28 Aug 2026). Changes come from v0.3 and the HSE reply to it (`Safety-Module-PRD-EN-v0.3_Reply.docx`, 31 Aug), and from v0.4 and the HSE reply to it (`Safety-Module-PRD-EN-v0.4_Reply.docx`, 1 Sep). v0.3 and v0.4 were delta documents, so they do not restate the full list.
 
-**What changed in this version (0.21 → 0.22)**
+**What changed in this version (0.22 → 0.23)**
+- §1.6 "UAT 13, food safety": the Food Safety Risk Assessment on food-safety near misses (probability × severity × detectability, a Critical Control Point failure at 46, four bands) and the Food Safety Risk register; on their investigations, the immediate causes first, each with the department that completed the work and when, and the Production Chronology.
+
+**What changed in version 0.22 (0.21 → 0.22)**
 - §1.6 "UAT 13, first fixes": the five failed cases (5 Whys as question and answer, Reassign in an orange box with reassignments marked in the history, a JHSC reply's what will be done and detail on separate lines, the toolbox tracker at the top; the chart by supervisor's counting goes back to HSE); a reply task that could never be completed; a rule to let supervisors see Section B, off; the report forms laid out as asked; a near miss starting as Near miss; coordinators recording MOL and WSIB filings; every incident with a category in Reports.
 
 **What changed in version 0.21 (0.20 → 0.21)**
@@ -395,6 +398,15 @@ UAT 13 closed at 21 passed and 5 failed. HSE answered the seven questions: keep 
 - HSE coordinators record that the Ministry was told and the Form 7 confirmation (identity migration 0029, ehs.statutory.record, held by the HSE Manager and Coordinator). Saying a statutory clock does not apply stays the HSE Manager's (ehs.statutory.manage).
 - Reports group incidents by category as Settings → Incident types has them: a type's category where it has one, and the type itself otherwise. 120 incidents read as uncategorised on the test server; one remains, which has no type.
 
+UAT 13, food safety (built)
+
+From HSE's notes on round 13. A food-safety near miss is a near miss of the Near Miss — Food Safety type, or any near miss in the Food Safety category.
+
+- The Food Safety Risk Assessment, on a food-safety near miss only, under the incident's own risk assessment (which stays). A tick at the top asks whether this was a Critical Control Point failure. Probability, Severity and Detectability are rated 1 to 5 in HSE's words (probability: rare — once a year or less, to certain — daily; severity: insignificant, to severe — can result in fatality; detectability: easy to detect without equipment, to undetectable). The Risk Priority Number is Severity × Probability × Detectability, or 46 when the CCP failed. Bands: Critical (45 and over) — halt production, immediate action and correction; High (25 and over) — halt production, immediate CAPA; Medium (10 to 24) — mitigation within 30 days; Low (under 10) — monitor periodically or accept. Shown once done, as the incident's assessment is; it can be assessed again and earlier ones are kept. Made by those who investigate; read by whoever may read the incident (migration 0108).
+- Food Safety Risk (Risk and permits, for those who read the incident register): each assessed food-safety near miss by its latest assessment, highest RPN first; searched, narrowed by band, sorted and paged on the server.
+- On a food-safety near miss's investigation the immediate causes come before the 5 Whys, and each names the department that completed the work (from the department list, kept as it read when picked) and the date (migration 0109). Other investigations are unchanged.
+- The Production Chronology, optional, under What happened on a food-safety near miss's investigation: a line per event — when, what (production started, deviation detected, containment action, inspection, production ended, other), the detail and a quantity — then the affected quantity and the current product status (migration 0110).
+
 ## 2. Functional Requirements — 57 Items
 
 Priority: **P0** legally required or the loop breaks without it · **P1** needed day to day · **P2** strengthens the system · **P3** needed for COR. **Phase** is as stated in v0.2–v0.4; "—" means the source did not assign one.
@@ -582,6 +594,7 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | 0.20 | 2026-11-11 | Round 12 fifth batch: new-item flags, due-date colours, Who is told for corrective actions, handovers on each record, actions on feedback, the Communications log (§1.6). |
 | 0.21 | 2026-11-11 | Round 12 sixth batch: chemical labels (everybody views and prints; DRAFT preview; emergency contact at the top), document attachments, deleting draft forms, filling in the opener, supervisors returning equipment, the toolbox talk tracker, My training records, certificates by search, course editing (§1.6). |
 | 0.22 | 2026-11-13 | UAT 13 first fixes: the five failed cases, a stuck JHSC reply task, the Section B rule, report form layout, near-miss default, coordinators recording filings, categories in Reports (§1.6). |
+| 0.23 | 2026-11-15 | UAT 13 food safety: the Food Safety Risk Assessment and register, immediate causes with department and date, the Production Chronology (§1.6). |
 
 ---
 
