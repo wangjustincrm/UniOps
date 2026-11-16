@@ -43,10 +43,20 @@ async def may_read_section_b(db, user: dict) -> bool:
     return bool(set(SUPERVISOR_ROLES) & await roles_held_by(db, uid, user.get("role", "")))
 
 
-async def _gate(db, user) -> None:
+async def _gate(db, user, incident) -> None:
+    """★ Review R1: the Rules switch lets a supervisor into Section B only of an
+    incident they can open — not of any incident whose id they have. Those
+    holding ehs.incident.medical.read (HSE, first aiders) are unchanged."""
+    from uniops_authz import has_permission
+
+    from app.api.v1.incidents import _may_read
     if not await may_read_section_b(db, user):
         raise HTTPException(status.HTTP_403_FORBIDDEN,
                             "Section B is open to HSE and first aiders only")
+    if await has_permission(db, _user_id(user), user.get("role", ""), "ehs.incident.medical.read"):
+        return
+    if not await _may_read(db, user, incident):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "You cannot open this incident")
 
 
 class TimelineEntry(BaseModel):
@@ -135,8 +145,8 @@ async def _out(db, incident, row: IncidentMedical | None, user: dict) -> Medical
 
 @router.get("", response_model=MedicalOut | None)
 async def get_medical(incident_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
-    await _gate(db, user)
     incident = await crud.get(db, incident_id)  # 404s on an unknown incident
+    await _gate(db, user, incident)
     return await _out(db, incident, (await db.execute(
         select(IncidentMedical).where(IncidentMedical.incident_id == incident_id)
     )).scalar_one_or_none(), user)
@@ -146,8 +156,8 @@ async def get_medical(incident_id: uuid.UUID, db: SessionDep, user: CanReportInc
 async def upsert_medical(
     incident_id: uuid.UUID, payload: MedicalIn, db: SessionDep, user: CanReportIncident,
 ):
-    await _gate(db, user)
     incident = await crud.get(db, incident_id)
+    await _gate(db, user, incident)
     crud.assert_open(incident, "the injury detail")
     if incident.status == "draft":
         raise HTTPException(
