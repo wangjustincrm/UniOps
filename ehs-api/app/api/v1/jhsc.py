@@ -564,7 +564,14 @@ async def preview_recommendation(
 
     # A stand-in with the fields the message needs, so that no half-built row
     # reaches the database on the way to a preview.
-    draft = SimpleNamespace(seq=seq, recommendation=wording, location_path=where)
+    # ★ Review R2: one already answered is previewed as it will be sent — for
+    # information, with its answer, not as owing a reply.
+    answered = existing if payload.recommendation_id and existing.responded_at else None
+    draft = SimpleNamespace(
+        seq=seq, recommendation=wording, location_path=where,
+        responded_at=answered.responded_at if answered else None,
+        responded_by_name=answered.responded_by_name if answered else None,
+        response=answered.response if answered else None)
     subject, default_body = await notify.jhsc_recommendation_message(db, meeting, draft)
 
     people = list((await db.execute(

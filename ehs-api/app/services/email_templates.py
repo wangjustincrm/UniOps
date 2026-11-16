@@ -177,6 +177,25 @@ _MORE: tuple[Template, ...] = (
          "recommendation": "Fit an interlocked guard to the capping head on Line 1."},
         group="JHSC"),
     Template(
+        "jhsc_recommendation_resent", "An answered JHSC recommendation is sent again",
+        "The people the committee sends it to",
+        "When the committee sends a recommendation that has already been answered — for information; "
+        "nobody is asked to reply",
+        "JHSC recommendation {meeting_no} #{seq} — for your information, already answered",
+        "Where: {where}\n\n"
+        "{recommendation}\n\n"
+        "Answered by {answered_by} on {answered_on}:\n{response}\n\n"
+        "No reply is needed.",
+        {"meeting_no": "The meeting's number", "seq": "The recommendation's number in the meeting",
+         "where": "Where it is about, when given", "recommendation": "What the committee recommended",
+         "answered_by": "Who answered", "answered_on": "When it was answered",
+         "response": "The answer"},
+        {"meeting_no": "JHSC-2026-0011", "seq": "2", "where": "Production › 104 – Packaging",
+         "recommendation": "Fit an interlocked guard to the capping head on Line 1.",
+         "answered_by": "Marie Tremblay", "answered_on": "2026-11-12",
+         "response": "Accepted: the guard is on order and will be fitted by 30 November."},
+        group="JHSC"),
+    Template(
         "jhsc_recommendation_answered", "A JHSC recommendation is answered",
         "The people under Settings → Who is told → JHSC, and whoever sent it",
         "When somebody answers a recommendation",
@@ -368,8 +387,18 @@ class _Missing(dict):
 
 
 def placeholders_in(text: str) -> list[str]:
-    """The names used in {braces}. Raises ValueError on a brace out of place."""
-    return [name for _lit, name, _spec, _conv in string.Formatter().parse(text) if name is not None]
+    """The names used in {braces}. Raises ValueError on a brace out of place —
+    and (review R12) on a format spec or conversion, {name:>99999} or
+    {name!r}: a placeholder is a name and nothing else, or one could pad an
+    email to hundreds of megabytes."""
+    out = []
+    for _lit, name, spec, conv in string.Formatter().parse(text):
+        if name is None:
+            continue
+        if spec or conv:
+            raise ValueError("format spec")
+        out.append(name)
+    return out
 
 
 def problems(key: str, subject: str, body: str) -> list[str]:
@@ -383,9 +412,13 @@ def problems(key: str, subject: str, body: str) -> list[str]:
     for label, text in (("subject", subject), ("message", body)):
         try:
             names = placeholders_in(text)
-        except ValueError:
-            out.append(f"The {label} has a {{ or }} that does not pair up. "
-                       "Write a placeholder as {name}.")
+        except ValueError as e:
+            if str(e) == "format spec":
+                out.append(f"The {label} has a placeholder with something after its name. "
+                           "Write a placeholder as {name} and nothing else.")
+            else:
+                out.append(f"The {label} has a {{ or }} that does not pair up. "
+                           "Write a placeholder as {name}.")
             continue
         unknown = sorted({n for n in names if n not in t.placeholders})
         if unknown:
@@ -432,4 +465,11 @@ async def wording(db: AsyncSession, key: str) -> tuple[str, str]:
 
 async def compose(db: AsyncSession, key: str, values: dict) -> tuple[str, str]:
     subject, body = await wording(db, key)
-    return fill(subject, values, drop_empty_lines=False).strip(), fill(body, values).strip()
+    return one_line(fill(subject, values, drop_empty_lines=False)), fill(body, values).strip()
+
+
+def one_line(subject: str) -> str:
+    """★ Review R15: a subject is one line. A placeholder whose value has line
+    breaks ({description}, {minutes}…) put in the subject made the email
+    impossible to send; its lines are joined with spaces."""
+    return " ".join(subject.split())

@@ -714,7 +714,7 @@ async def preview_email_template(key: str, payload: EmailTemplateIn,
     found = et.problems(key, payload.subject, payload.body)
     if found:
         return EmailPreviewOut(subject="", html="", problems=found)
-    subject = et.fill(payload.subject, t.sample, drop_empty_lines=False).strip()
+    subject = et.one_line(et.fill(payload.subject, t.sample, drop_empty_lines=False))
     body = et.fill(payload.body, t.sample).strip()
     links = {t.sample[k]: "#" for k in t.linked if t.sample.get(k)}
     return EmailPreviewOut(subject=subject, problems=[],

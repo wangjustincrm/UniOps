@@ -699,8 +699,21 @@ async def jhsc_recommendation_message(db: AsyncSession, meeting, recommendation)
     drifts from it — silently, and in the direction of showing something nicer
     than what was sent. Both call this. ★ UAT 14: in HSE's wording.
     """
-    return await email_templates.compose(
-        db, "jhsc_recommendation_sent", _recommendation_values(meeting, recommendation))
+    values = _recommendation_values(meeting, recommendation)
+    # ★ Review R2: sending one already answered asks nobody for a reply (no
+    # task is opened), so the email must not say a response is owed.
+    answered = getattr(recommendation, "responded_at", None)
+    if answered is not None:
+        values.update(answered_by=getattr(recommendation, "responded_by_name", None) or "someone",
+                      answered_on=answered.astimezone(_ontario()).date().isoformat(),
+                      response=getattr(recommendation, "response", None) or "")
+        return await email_templates.compose(db, "jhsc_recommendation_resent", values)
+    return await email_templates.compose(db, "jhsc_recommendation_sent", values)
+
+
+def _ontario():
+    from app.services.statutory import ONTARIO
+    return ONTARIO
 
 
 async def jhsc_recommendation_sent(

@@ -30,7 +30,8 @@ async def _mails(db, key: str, doc_id=None) -> list[Communication]:
 EVERY_EMAIL = {
     "incident_reported", "incident_status", "statutory_escalation",
     "action_owner_told", "action_reassigned", "action_escalation",
-    "jhsc_recommendation", "jhsc_recommendation_sent", "jhsc_recommendation_answered",
+    "jhsc_recommendation", "jhsc_recommendation_sent", "jhsc_recommendation_resent",
+    "jhsc_recommendation_answered",
     "jhsc_minutes", "jhsc_reassigned", "toolbox_chase", "inspection_due",
     "course_reminder", "cert_expiry_notice", "document_published",
     "feedback_left", "feedback_answered", "work_reassigned",
