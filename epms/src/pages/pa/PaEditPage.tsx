@@ -156,6 +156,9 @@ function PoPaEditPage() {
     if (!pa || initialized) return
     setEditPoIds(pa.po_ids?.length ? [...pa.po_ids] : (pa.po_id ? [pa.po_id] : []))
     setSelectedInvoiceIds(new Set(pa.invoice_ids))
+    // The GRs already linked. Left empty they showed unticked and Save sent
+    // gr_ids: [], unlinking them (ISS-0238; PA-EDIT-004).
+    setSelectedGrIds(new Set(pa.gr_ids ?? []))
     setSelectedLineIds(new Set(pa.line_items.flatMap((l) => (l.po_line_id ? [l.po_line_id] : []))))
     setPrepaymentPct(pa.prepayment_pct?.toString() ?? '50')
     setExpectedSettlement(pa.expected_settlement_date ?? '')
