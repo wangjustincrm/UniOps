@@ -71,6 +71,20 @@ def _at(d: date | datetime | None, fallback: datetime | None = None) -> datetime
     return fallback or datetime.now(timezone.utc)
 
 
+def ship_moment(ship_date: date | None, arrived: datetime | None) -> datetime:
+    """When a 945's goods left (user 2026-11-16, order 1018769: shipped the afternoon a Radiant report was taken). A 945
+    gives the day only: the moment is when its 945 reached Sales, kept within that day (Toronto) — so a 945 that
+    arrives after a report of the same day counts after it, and one that comes days late, at the end of its day."""
+    if ship_date is None:
+        return _at(None, arrived)
+    start = datetime.combine(ship_date, time(0), tzinfo=TORONTO)
+    end = datetime.combine(ship_date, time(23, 59, 59), tzinfo=TORONTO)
+    if arrived is None:
+        return datetime.combine(ship_date, time(12), tzinfo=TORONTO)
+    arrived = arrived if arrived.tzinfo else arrived.replace(tzinfo=timezone.utc)
+    return min(max(arrived, start), end)
+
+
 class _Writer:
     def __init__(self, s, known: set[tuple[str, str]]):
         self.s, self.known, self.n = s, known, collections.Counter()
@@ -175,7 +189,7 @@ async def sync(uow) -> dict:
     orders: dict[int, list] = collections.defaultdict(list)
     for r, sh in rows:
         no_order = sh.order_id is None
-        w.add("shipment_row", str(r.id), at=_at(sh.ship_date, sh.created_at), item_code=r.item_code, qty=r.qty_shipped_ea,
+        w.add("shipment_row", str(r.id), at=ship_moment(sh.ship_date, sh.created_at), item_code=r.item_code, qty=r.qty_shipped_ea,
               frm=RADIANT, to=CUSTOMER if no_order else TO_CUSTOMER, lot=r.lot, expiry=r.expiry or expiry_of.get(r.lot),
               order_id=sh.order_id, document_id=sh.document_id)
         if not no_order:

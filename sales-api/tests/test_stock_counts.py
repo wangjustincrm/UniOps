@@ -214,7 +214,9 @@ def test_the_allocation_column_is_read_as_picked_for_an_order():
 
 async def test_a_lot_s_picked_pallets_are_in_process_until_the_945(p6):  # noqa: F811
     """User 2026-11-13: Radiant's report shows a pallet picked for an order (Allocation CRM|<order>); until its 945,
-    that lot has it in process (not available); with the 945 it is shipped."""
+    that lot has it in process (not available); with the 945 it is shipped. The report is taken at 15:00 on the ship
+    day and the 945 (a day only) arrives after it (user 2026-11-16, order 1018769): shipped after the report, not
+    put back by it."""
     await run_850(p6.edi.env, {"PurchaseOrder": [po("LBL", "PO-PICK", [{"Line": 1, "BuyerPart": "L-555", "Quantity": 10, "UOM": "CA",
                                                                          "UnitPrice": "50"}], ship_to_gln="0012345000011")]})
     o, _ = await p6.edi.env.order("PO-PICK")
@@ -224,7 +226,7 @@ async def test_a_lot_s_picked_pallets_are_in_process_until_the_945(p6):  # noqa:
     report = ("Display Item Number,Lot Number,Actual Quantity,Status,Allocation\n"
               f"CF0092,LOT-1,940,A,Storage\nCF0092,LOT-1,60,A,CRM|{o.order_number:09d}\n")
     async with p6.factory(OP) as u:
-        c = await StockCountService(u).create(name="r.csv", data=report.encode(), counted_at=datetime(2026, 11, 1, 12, tzinfo=timezone.utc), note=None)
+        c = await StockCountService(u).create(name="r.csv", data=report.encode(), counted_at=datetime(2026, 11, 2, 20, tzinfo=timezone.utc), note=None)
         await StockCountService(u).apply(c.id, version=c.version)
         await u.commit()
 
@@ -239,3 +241,12 @@ async def test_a_lot_s_picked_pallets_are_in_process_until_the_945(p6):  # noqa:
     await _sync(p6)
     a = await lot()
     assert (a.received_ea, a.shipped_ea, a.on_hand_ea, a.in_process_ea, a.available_ea) == (1000, 60, 940, 0, 940)
+
+
+def test_a_945_moment_is_its_arrival_within_its_ship_day():
+    from app.services.stock import TORONTO, ship_moment
+    day = date(2026, 11, 13)
+    same_day = datetime(2026, 11, 13, 23, 39, tzinfo=timezone.utc)          # 18:39 Toronto
+    assert ship_moment(day, same_day) == same_day
+    assert ship_moment(day, datetime(2026, 11, 20, tzinfo=timezone.utc)) == datetime(2026, 11, 13, 23, 59, 59, tzinfo=TORONTO)
+    assert ship_moment(day, datetime(2026, 11, 12, tzinfo=timezone.utc)) == datetime(2026, 11, 13, 0, 0, tzinfo=TORONTO)
