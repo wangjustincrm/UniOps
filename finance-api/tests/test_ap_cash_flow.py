@@ -400,3 +400,41 @@ async def test_prepayment_and_claim_are_dated_by_approval(db_session):
     for r in got["items"]:
         assert r["invoice_date"] == r["due_date"] == approved.isoformat()
         assert r["due_from"] == "approval"
+
+
+async def test_nc_direct_supplier_counts_without_a_pa_match(db_session):
+    """DFO's NC lines carry "Sep Final", not the invoice number EPMS holds, so
+    its open NC payable counts as it stands — no PA, dated NC bill date +
+    vendor term — while dismissed bills and reversal pairs stay out
+    (finance, 2026-11-16)."""
+    _vendors_table()
+    dfo_code = svc.NC_DIRECT_SUPPLIERS[0]
+    dfo = _vendor(dfo_code, "net30")
+    other = _vendor("0000021", "net30")
+    keyed = plant_today() - timedelta(days=10)
+    _bill("D9501", "97422.96", sc=dfo_code, day=keyed, inv="Sep Final",
+          more=(("Sep Final", "271.24"),))
+    _bill("D9502", "500.00", sc=dfo_code, day=keyed, inv="Aug Final")      # dismissed
+    _bill("D9503", "125.08", sc=dfo_code, day=keyed, inv="Oct")            # reversal
+    _bill("D9504", "-125.08", sc=dfo_code, day=keyed, inv="Oct")           # pair
+    _exec("insert into nc_ap_bill_dismissals (id, bill_no, supplier_code, currency, "
+          "money_bal_at_dismissal, reason, dismissed_by, dismissed_at) values "
+          "(%s, 'D9502', %s, 'CAD', 500, 'legacy', %s, now())",
+          (uuid.uuid4(), dfo_code, uuid.uuid4()))
+    # An approved DFO PA whose made-up number happens to equal NC's text must
+    # not change anything: the row is NC's, once, with no PA.
+    _pa("PA-T-0901", dfo, ["SEPFINAL"])
+    # The control: any other supplier still needs an approved PA to count.
+    _bill("D9505", "800.00", sc="0000021", day=keyed, inv="X-1")
+
+    got = await svc.items(db_session, "CAD", limit=1000)
+    assert [r["bill_no"] for r in got["items"]] == ["D9501"]
+    r = got["items"][0]
+    assert r["open_bal"] == "97694.20" and r["pa_numbers"] == []
+    assert r["due_from"] == "vendor_term" and r["invoice_date"] is None
+    assert r["due_date"] == (keyed + timedelta(days=30)).isoformat()
+    assert r["term_days"] == 30
+
+    _pa("PA-T-0902", other, ["X-1"])                  # now the control counts too
+    got = await svc.items(db_session, "CAD", limit=1000)
+    assert sorted(r["bill_no"] for r in got["items"]) == ["D9501", "D9505"]
