@@ -12,6 +12,7 @@ import { ADDRESS_FIELDS } from './address'
 import { SchemaFields, type FieldSpec } from './SchemaForm'
 import { applyServerError, emptyToNull, hiddenFields, prepare, toInputs, withDefaultsWhenHidden } from './formValues'
 import { zodResolver } from './zodResolver'
+import { ActionBar } from '../primitives/Layout'
 
 export interface MasterDetailState<L> {
   values: FieldValues
@@ -130,7 +131,7 @@ export function MasterDetailForm<L>({
       {preview?.(state)}
       {waiting && <p className="text-sm text-neutral-600">{waiting}</p>}
       <ErrorMessage error={error} messages={errorMessages} />
-      <div className="flex justify-end gap-2">
+      <ActionBar>
         {onCancel && <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>{readOnly ? 'Close' : 'Cancel'}</Button>}
         {!readOnly && alsoSubmit && (
           <Button type="button" variant="secondary" disabled={isSubmitting || lineProblems.some(Boolean) || tooFew || !!waiting}
@@ -141,7 +142,7 @@ export function MasterDetailForm<L>({
             {isSubmitting ? 'Saving…' : submitLabel}
           </Button>
         )}
-      </div>
+      </ActionBar>
     </form>
   )
 }

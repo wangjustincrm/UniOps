@@ -84,7 +84,7 @@ export function ManualOrderForm({ draft, onSaved, onCancel }: {
   const columns: EditableColumn<ManualLine>[] = [
     { id: 'item', header: 'Item', cell: ({ row, index, update, invalid }) => (
       <Autocomplete aria-label={`Item ${index + 1}`} aria-invalid={invalid || undefined} value={row.item_code || null}
-        onChange={(v) => update({ item_code: v ?? '', unit: 'EA' })} loadOptions={itemOptions} className="min-w-[16rem]" />
+        onChange={(v) => update({ item_code: v ?? '', unit: 'EA' })} loadOptions={itemOptions} className="w-full sm:min-w-[16rem]" />
     ) },
     numberColumn<ManualLine>('quantity', 'Quantity', { label: (_, i) => `Quantity ${i + 1}`, get: (r) => r.quantity,
       set: (v) => ({ quantity: Number(v) }), className: 'w-24' }),

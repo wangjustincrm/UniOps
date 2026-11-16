@@ -43,7 +43,7 @@ Most of what the module shows sits in a Sheet, a panel or a card narrower than t
 | `AutoGrid` | as many columns as fit, each ≥ `min` (default 12rem), one column on a phone — tiles, cards, form fields (primitive) |
 | `Cluster` | a row that wraps (badges, buttons, chips) — never pushes the page sideways (primitive) |
 | `Toolbar` | a row of actions (role=toolbar) that wraps; items marked `collapse` move into a "More" menu when the bar is under `collapseBelow` px (default 480), with `more` always there (primitive) |
-| `ActionBar` | a form's / record's main buttons: on a phone a bar stuck to the bottom of the sheet, full-width buttons; from `sm` a plain row at the end (primitive) |
+| `ActionBar` | a form's / record's main buttons: on a phone a bar stuck to the bottom of the sheet, full-width buttons; from `sm` a plain row at the end (primitive). SchemaForm and MasterDetailForm put Save / Cancel in it; a line editor (EditableTable) is cards on a phone, its × at the top right |
 | `useBreakpoint()`, `useMediaQuery(q)`, `useElementWidth(ref)` | behaviour only (what to render); a look is a Tailwind class |
 | `DataTable` `cardsBelow` / column meta `card` | under 640 px of its own width (`cardsBelow`; `false` = always a table) each row is a card: the title (meta `card: 'title'`, else the first column), badges at the top right (`'badge'`; `col.status` is one), the rest as "label: value" lines (at most `cardLines`, 6, when the row opens a record), `'hide'` leaves a column out; sorting is a Sort menu, the column chooser sits in the toolbar, groups, totals, the highlight and row details work as in the table |
 

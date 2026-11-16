@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ActionButton, Button, Callout, Checkbox, ConfirmAction, StatusCell, DateTimeInput, Dialog, FilePicker, FormField, ListPage, LocalTable, RecordSheet, Section,
+  ActionBar, ActionButton, Button, Callout, Checkbox, ConfirmAction, StatusCell, DateTimeInput, Dialog, FilePicker, FormField, ListPage, LocalTable, RecordSheet, Section,
   Textarea, ViewFileButton, columnsOf, formatDate, formatDateTime, formatNumber, queryKeys, startHidden,
   type ColumnDef, type RecordTab,
 } from '@/platform-ui'
@@ -269,11 +269,11 @@ function UploadForm({ done, cancel }: { done: (c?: StockCountRead) => void; canc
         <DateTimeInput value={when} onChange={setWhen} aria-label="Taken at" />
       </FormField>
       <FormField label="Note"><Textarea rows={2} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} aria-label="Note" /></FormField>
-      <div className="flex justify-end gap-2">
+      <ActionBar>
         <Button variant="secondary" onClick={cancel}>Cancel</Button>
         <ActionButton permission={ADJUST} disabled={!file || !when || tooLarge} errorMessages={errorMessages} done="Uploaded"
           onAction={async () => done(await uploadCount(file!, when!, note.trim() || null))}>Upload</ActionButton>
-      </div>
+      </ActionBar>
     </div>
   )
 }

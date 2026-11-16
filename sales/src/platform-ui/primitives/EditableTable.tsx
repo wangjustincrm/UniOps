@@ -62,7 +62,7 @@ export function EditableTable<T>({
     } })
   }
   if (removable) {
-    defs.push({ id: '__remove', header: () => <span className="sr-only">Remove</span>, cell: ({ row: { original: x } }) => (
+    defs.push({ id: '__remove', meta: { card: 'badge' }, header: () => <span className="sr-only">Remove</span>, cell: ({ row: { original: x } }) => (
       <button type="button" aria-label={`Remove line ${x.index + 1}`} disabled={disabled || rows.length <= minRows}
         onClick={() => remove(x.index)} className="rounded p-1 text-neutral-400 hover:text-danger-600 disabled:opacity-30">
         <X className="h-3.5 w-3.5" />

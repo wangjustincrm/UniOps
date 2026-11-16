@@ -269,7 +269,7 @@ export function DataTable<T>({
                         onRowClick && 'cursor-pointer hover:bg-neutral-50 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary-500',
                         rowClass, flash && 'bg-primary-50 animate-[platform-flash_2s_ease-out_forwards] motion-reduce:animate-none')}>
                       <div className="flex min-w-0 items-start justify-between gap-2">
-                        <div data-card-title className="min-w-0 break-words font-medium text-neutral-900">
+                        <div data-card-title className="min-w-0 flex-1 break-words font-medium text-neutral-900">
                           {title && <Render def={title.column.columnDef.cell} ctx={title.getContext()} />}
                         </div>
                         {badges.length > 0 && (

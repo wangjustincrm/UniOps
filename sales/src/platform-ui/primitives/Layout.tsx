@@ -109,9 +109,10 @@ export function Toolbar({ label, items, more = [], collapseBelow = 480, classNam
 export function ActionBar({ children, className, label = 'Form actions' }: { children: ReactNode; className?: string; label?: string }) {
   return (
     <div role="group" aria-label={label} data-action-bar
-      className={cn('sticky bottom-0 z-[2] -mx-4 flex flex-col-reverse gap-2 border-t border-neutral-200 bg-white/95 px-4 py-2',
-        'pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur [&>*]:w-full',
-        'sm:static sm:mx-0 sm:flex-row sm:justify-end sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none sm:[&>*]:w-auto',
+      className={cn('sticky bottom-0 z-[2] flex flex-col-reverse gap-2 border-t border-neutral-200 bg-white/95 py-2',
+        // the sheet's own bottom padding is below a sticky bar: a white band covers it, so nothing shows under the bar
+        'pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_1.5rem_0_0_var(--color-white)] backdrop-blur [&>*]:w-full',
+        'sm:static sm:flex-row sm:justify-end sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none sm:backdrop-blur-none sm:[&>*]:w-auto',
         className)}>
       {children}
     </div>

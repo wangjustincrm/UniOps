@@ -17,6 +17,7 @@ import { ErrorMessage } from './ErrorMessage'
 import { applyServerError, emptyToNull, hiddenFields, notShown, prepare, toInputs, withDefaultsWhenHidden } from './formValues'
 import { Section } from './Section'
 import { zodResolver } from './zodResolver'
+import { ActionBar } from '../primitives/Layout'
 
 // Each type has its control: select → Select, checkbox → Checkbox, number →
 // NumberInput, date → DateInput ("YYYY-MM-DD", a string), textarea →
@@ -136,12 +137,12 @@ export function SchemaForm({
         <p role="alert" className="text-sm text-danger-600">{errors.root.message}</p>
       )}
       <ErrorMessage error={error} messages={errorMessages} fieldLabels={fieldLabels} />
-      <div className="flex justify-end gap-2">
+      <ActionBar>
         {onCancel && (
           <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>{readOnly ? 'Close' : 'Cancel'}</Button>
         )}
         {!readOnly && <Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Saving…' : submitLabel}</Button>}
-      </div>
+      </ActionBar>
     </form>
   )
 }

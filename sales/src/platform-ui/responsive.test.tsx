@@ -159,3 +159,15 @@ describe('step 3: pages, details, facts', () => {
     expect(dl).toHaveClass('grid-cols-1', '@xs:grid-cols-[minmax(6rem,40%)_minmax(0,1fr)]', '@md:grid-cols-[10rem_minmax(0,1fr)]')
   })
 })
+
+describe('step 4: forms', () => {
+  it("a form's Save / Cancel sit in the ActionBar (sticky on a phone)", async () => {
+    const { SchemaForm } = await import('./index')
+    const { z } = await import('zod')
+    render(<SchemaForm schema={z.object({ name: z.string() })} fields={[{ name: 'name', label: 'Name', type: 'text' }]}
+      defaultValues={{ name: '' }} onSubmit={async () => {}} onCancel={() => {}} />)
+    const bar = screen.getByRole('group', { name: 'Form actions' })
+    expect(within(bar).getAllByRole('button').map((b) => b.textContent)).toEqual(['Cancel', 'Save'])
+    expect(bar).toHaveClass('sticky', 'sm:static')
+  })
+})

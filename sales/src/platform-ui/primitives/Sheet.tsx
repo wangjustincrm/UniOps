@@ -61,7 +61,7 @@ export function Sheet({
         >
           <UnsavedBoundary scope={unsaved}>
           {header ?? (
-            <div className="flex items-start justify-between gap-4 border-b border-neutral-100 px-6 py-4">
+            <div className="flex items-start justify-between gap-4 border-b border-neutral-100 px-4 py-4 sm:px-6">
               <div>
                 <SheetTitle>{title}</SheetTitle>
                 {description && <RD.Description className="mt-1 text-sm text-neutral-500">{description}</RD.Description>}
@@ -70,9 +70,9 @@ export function Sheet({
             </div>
           )}
           {(header || !description) && <RD.Description className="sr-only">{description ?? title}</RD.Description>}
-          <div className={bodyClassName ?? 'flex-1 overflow-y-auto px-6 py-4'}>{children}</div>
+          <div className={bodyClassName ?? 'flex-1 overflow-y-auto px-4 py-4 sm:px-6'}>{children}</div>
           {statusBar}
-          {footer && <div className="flex justify-end gap-2 border-t border-neutral-100 px-6 py-4">{footer}</div>}
+          {footer && <div className="flex flex-wrap justify-end gap-2 border-t border-neutral-100 px-4 py-4 sm:px-6">{footer}</div>}
           </UnsavedBoundary>
         </RD.Content>
       </RD.Portal>
