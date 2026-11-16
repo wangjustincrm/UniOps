@@ -124,6 +124,32 @@ async def test_orders_already_here_are_filled_a_few_per_pass_reading_only(env): 
     assert r.finance_refreshed == 0 and not [c for c in env.shop.calls if c[0] == "order"]  # nothing left to fill
 
 
+async def test_an_order_changed_behind_the_cursor_is_brought_up_to_date_and_financed(env):  # noqa: F811
+    """User 2026-11-16 (dev2: 7,520 history orders never financed): an order read from an older page, newer in Shopify,
+    behind the cursor. It was skipped on every pass ("the pages bring it") and blocked the queue; now the refresh
+    brings it up to date and stores its payments and refunds — reading only."""
+    env.shop.orders = [financed()]
+    env.shop.transactions_by_order["1"] = [SALE]
+    await env.pull()
+    async with env.factory(SYSTEM_ACTOR) as u:  # read from an old page: no finance, and the cursor far past it
+        await u.session.execute(sa.text("UPDATE sales_orders SET finance_updated_at = NULL, net_amount = NULL"))
+        await u.session.execute(sa.text("DELETE FROM sales_order_payments"))
+        await u.session.execute(sa.text("UPDATE sales_connections SET cursor_updated_at = :c"), {"c": T0 + timedelta(days=30)})
+        await u.commit()
+    later = T0 + timedelta(hours=2)
+    env.shop.orders = [financed(refunds=[REFUND], updated=later, financial="partially_refunded")]
+    env.shop.transactions_by_order["1"] = [SALE, REFUND_TX]
+    env.shop.calls.clear()
+    r = await env.pull()
+    assert r.finance_refreshed == 1 and r.finance_failed == 0
+    o, _ = await env.order(1)
+    assert (o.total_refunded, o.net_amount, o.shopify_financial_status) == (Decimal("37.00"), Decimal("76.00"), "partially_refunded")
+    assert o.finance_updated_at == o.source_updated_at == later
+    assert {c[0] for c in env.shop.calls} <= {"orders_page", "order", "transactions", "variant"}  # reads only
+    r = await env.pull()
+    assert r.finance_refreshed == 0  # nothing left to fill
+
+
 async def test_a_failed_transactions_read_fails_the_order_and_keeps_the_cursor(env):  # noqa: F811
     before = (await env.snap()).cursor_updated_at
     env.shop.orders = [financed()]

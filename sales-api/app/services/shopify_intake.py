@@ -135,7 +135,7 @@ class ShopifyIntake:
             page_info = page.next_page_info
             if not page_info:
                 break
-        await self._refresh_finance(conn, report, run_id)
+        await self._refresh_finance(conn, report, run_id, abbrev, barcodes)
         if report.failed:
             report.status = "not_advanced"  # AC-OB-10: a failure leaves the cursor where it was
             return report
@@ -187,10 +187,14 @@ class ShopifyIntake:
         order = (await uow.session.execute(select(Order).where(*key))).scalar_one()
         await store_finance(uow, order, o, transactions)
 
-    async def _refresh_finance(self, conn: ConnectionSnapshot, report: ShopifyReport, run_id) -> None:
-        """Up to REFRESH_PER_PASS orders already here whose finance is missing or stale."""
+    async def _refresh_finance(self, conn: ConnectionSnapshot, report: ShopifyReport, run_id, abbrev=None,
+                               barcodes: BarcodeLookup | None = None, limit: int = REFRESH_PER_PASS) -> None:
+        """Up to `limit` orders already here whose finance is missing or stale. One that changed in Shopify since it
+        was imported is brought up to date first, as a page would bring it (user 2026-11-16: the history was read
+        from older pages, behind the cursor — skipping them kept the same orders at the head of the queue forever)."""
+        barcodes = barcodes or BarcodeLookup(self.shopify, conn)
         async with self.uow_factory(SYSTEM_ACTOR) as uow:
-            todo = (await uow.session.execute(stale_finance(conn.id).limit(REFRESH_PER_PASS))).all()
+            todo = (await uow.session.execute(stale_finance(conn.id).limit(limit))).all()
 
         async def one(uow, order_id: int, source_id: str) -> bool:
             o = await self.shopify.order(conn, source_id)  # both reads before the unit touches the database
@@ -198,7 +202,8 @@ class ShopifyIntake:
             order = await uow.session.get(Order, order_id)
             changed = datetime.fromisoformat(o["updated_at"]) if o.get("updated_at") else None
             if changed is not None and order.source_updated_at is not None and changed != order.source_updated_at:
-                return False  # changed since it was imported: the next pass's pages bring it whole
+                await self._one(uow, conn, o, abbrev, None, barcodes, transactions)  # its latest state, then its finance
+                return True
             await store_finance(uow, order, o, transactions)
             return True
 
