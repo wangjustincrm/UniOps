@@ -1,12 +1,15 @@
 # Safety (EHS) — Product Requirements Document
 
-**Version**: 0.23
+**Version**: 0.24
 **Date**: 2026-11-11
 **Status**: In Development (branch, not deployed)
 **Scope**: A workplace health and safety module for the Kingston plant (Ontario OHSA / WSIB), replacing SiteDocs. It covers incidents and statutory clocks, corrective actions, inspections and forms, training, JHSC, chemicals/WHMIS, permits, equipment, documents, and dashboards.
 **Source**: Consolidated from the Safety Module PRD series in `/srv/uniops/`. The baseline is the full requirement list in v0.2 (`Safety-Module-PRD-EN-v0.2.docx`, 28 Aug 2026). Changes come from v0.3 and the HSE reply to it (`Safety-Module-PRD-EN-v0.3_Reply.docx`, 31 Aug), and from v0.4 and the HSE reply to it (`Safety-Module-PRD-EN-v0.4_Reply.docx`, 1 Sep). v0.3 and v0.4 were delta documents, so they do not restate the full list.
 
-**What changed in this version (0.22 → 0.23)**
+**What changed in this version (0.23 → 0.24)**
+- §1.6 "UAT 13, emails, equipment, toolbox talks": the wording of eight emails to people in the plant, editable by HSE, and the corrective action email giving priority, numbers (linked), what will be done, detail and due date; the equipment picker offering only the Systems of the area chosen; a past toolbox talk held again with a new attendance sheet.
+
+**What changed in version 0.23 (0.22 → 0.23)**
 - §1.6 "UAT 13, food safety": the Food Safety Risk Assessment on food-safety near misses (probability × severity × detectability, a Critical Control Point failure at 46, four bands) and the Food Safety Risk register; on their investigations, the immediate causes first, each with the department that completed the work and when, and the Production Chronology.
 
 **What changed in version 0.22 (0.21 → 0.22)**
@@ -407,6 +410,13 @@ From HSE's notes on round 13. A food-safety near miss is a near miss of the Near
 - On a food-safety near miss's investigation the immediate causes come before the 5 Whys, and each names the department that completed the work (from the department list, kept as it read when picked) and the date (migration 0109). Other investigations are unchanged.
 - The Production Chronology, optional, under What happened on a food-safety near miss's investigation: a line per event — when, what (production started, deviation detected, containment action, inspection, production ended, other), the detail and a quantity — then the affected quantity and the current product status (migration 0110).
 
+UAT 13, emails, equipment, toolbox talks (built)
+
+- Settings → Email wording (HSE): the subject and message of the eight emails Safety sends to people in the plant — a corrective action assigned, reassigned and overdue; a toolbox talk still to deliver; a course tomorrow; a document to read and sign; an inspection due; HSE's reply to feedback — each with who receives it, when, and the {placeholders} it can use. A preview shows it with example values; it can be put back to the default. Wording that uses a placeholder the email does not have, or a brace that does not pair up, is refused when saved, with the placeholders it can use. HSE's own notices and the JHSC recommendation (written as it is sent) are not listed.
+- The corrective action email says, by default, the CAPA number, the record it was raised on, the priority, the due date, what will be done, the detail and the cause it addresses. The CAPA number and the incident number are links. Everything typed by people is still only text in the email; only the record's own numbers become links.
+- The equipment picker, once the area is chosen, offers only the Systems of the machines in that area and below it (UAT 13: "I should not see an agitator system"), not those of machines with no area; Show all areas brings every System back.
+- A past toolbox talk can be held again (Toolbox talks → Hold a past talk again) by supervisors, HSE, and anybody a talk was handed to before: it opens a new attendance sheet, and the new delivery names the one it repeats (migration 0111). It counts in the monthly tracker like any delivery.
+
 ## 2. Functional Requirements — 57 Items
 
 Priority: **P0** legally required or the loop breaks without it · **P1** needed day to day · **P2** strengthens the system · **P3** needed for COR. **Phase** is as stated in v0.2–v0.4; "—" means the source did not assign one.
@@ -595,6 +605,7 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | 0.21 | 2026-11-11 | Round 12 sixth batch: chemical labels (everybody views and prints; DRAFT preview; emergency contact at the top), document attachments, deleting draft forms, filling in the opener, supervisors returning equipment, the toolbox talk tracker, My training records, certificates by search, course editing (§1.6). |
 | 0.22 | 2026-11-13 | UAT 13 first fixes: the five failed cases, a stuck JHSC reply task, the Section B rule, report form layout, near-miss default, coordinators recording filings, categories in Reports (§1.6). |
 | 0.23 | 2026-11-15 | UAT 13 food safety: the Food Safety Risk Assessment and register, immediate causes with department and date, the Production Chronology (§1.6). |
+| 0.24 | 2026-11-16 | UAT 13: email wording HSE can change, the corrective action email, Systems by area in the equipment picker, a toolbox talk held again (§1.6). |
 
 ---
 
