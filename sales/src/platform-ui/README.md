@@ -47,6 +47,8 @@ Most of what the module shows sits in a Sheet, a panel or a card narrower than t
 | `useBreakpoint()`, `useMediaQuery(q)`, `useElementWidth(ref)` | behaviour only (what to render); a look is a Tailwind class |
 | `DataTable` `cardsBelow` / column meta `card` | under 640 px of its own width (`cardsBelow`; `false` = always a table) each row is a card: the title (meta `card: 'title'`, else the first column), badges at the top right (`'badge'`; `col.status` is one), the rest as "label: value" lines (at most `cardLines`, 6, when the row opens a record), `'hide'` leaves a column out; sorting is a Sort menu, the column chooser sits in the toolbar, groups, totals, the highlight and row details work as in the table |
 
+Guards: ESLint refuses, in features and pages, a fixed wide width (`min-w-[16rem]`, `w-[480px]`) or a fixed grid track (`grid-cols-[10rem_1fr]`) at phone size; prefixed from a breakpoint (`sm:min-w-[16rem]`) it passes (planted proofs in `tools/check-scope.sh`). `sales/e2e/responsive.mjs` (`npm run e2e:responsive`, the docker command at its top) opens Orders, an order's Lines, Payments by week, Inventory with lots and the new-order form at 390 px and 1440 px against a running front end, every API answer mocked from `sales/e2e/fixtures`, and fails on a sideways overflow or a missing status row / pinned ActionBar (~30 s; not in the default gates).
+
 ## Public interface (`@/platform-ui`)
 
 `index.ts` exports only what features, pages and the app use (trimmed 2026-11-04); a name a feature needs for the first time is added there. The table below describes the library: some of what it names is reached by its direct path (the tests do), not through the barrel.

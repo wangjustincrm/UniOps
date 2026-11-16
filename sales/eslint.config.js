@@ -94,6 +94,16 @@ const AD_HOC_MESSAGES = [
 const RAW_HEADINGS = [
   { selector: "JSXOpeningElement[name.name=/^h[23]$/]", message: 'Use Section from @/platform-ui, not a raw heading.' },
 ]
+// Responsive (the user, 2026-11-13): a feature's box never has a fixed wide width or a fixed grid track
+// at phone size — it would push a 390 px screen sideways. Wide from a breakpoint is fine (sm:min-w-[16rem]);
+// the shapes are AutoGrid / Cluster / DetailList from @/platform-ui.
+const FIXED_WIDTH = String.raw`/(^|\s)(min-w|w)-\[((1[2-9]|[2-9]\d)rem|([2-9]\d\d|\d{4,})px)\]|(^|\s)grid-cols-\[\d/`
+const FIXED_WIDTH_MESSAGE = 'No fixed wide width or grid track at phone size: prefix it (sm:…) or use AutoGrid / Cluster / DetailList from @/platform-ui.'
+const FIXED_WIDTHS = [
+  { selector: `JSXAttribute[name.name='className'][value.value=${FIXED_WIDTH}]`, message: FIXED_WIDTH_MESSAGE },
+  { selector: `JSXAttribute[name.name='className'] Literal[value=${FIXED_WIDTH}]`, message: FIXED_WIDTH_MESSAGE },
+  { selector: `JSXAttribute[name.name='className'] TemplateElement[value.raw=${FIXED_WIDTH}]`, message: FIXED_WIDTH_MESSAGE },
+]
 // A list column names what it holds (columnsOf from @/platform-ui), so a date looks the same in every list.
 const LIST_CELLS = [
   { selector: "Property[key.name='cell'] > ArrowFunctionExpression > JSXElement > JSXOpeningElement[name.name=/^(DateCell|DateTimeCell)$/]",
@@ -186,17 +196,17 @@ export default defineConfig([
   },
   {
     files: ['src/pages/**/*.tsx'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...ROW_AND_PROMPT] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...FIXED_WIDTHS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...ROW_AND_PROMPT] },
   },
   {
     files: ['src/features/**/*.{ts,tsx}'],
     ignores: ['src/features/**/*.test.{ts,tsx}'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...LIST_CELLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...AD_HOC_MESSAGES, ...RAW_HEADINGS, ...ROW_AND_PROMPT] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...FIXED_WIDTHS, ...DATES, ...LIST_CELLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...AD_HOC_MESSAGES, ...RAW_HEADINGS, ...ROW_AND_PROMPT] },
   },
   {
     // Health is a dashboard (no list or sheet scope): its own result text may still be read aloud.
     files: ['src/features/health/**/*.{ts,tsx}'],
     ignores: ['src/features/**/*.test.{ts,tsx}'],
-    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...DATES, ...LIST_CELLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...RAW_HEADINGS, ...ROW_AND_PROMPT] },
+    rules: { 'no-restricted-syntax': ['error', ...RAW_CONTROLS, ...FIXED_WIDTHS, ...DATES, ...LIST_CELLS, ...RAW_TABLES, ...RAW_FORMS, ...RAW_SHEETS, ...DIRECT_REFETCH, ...RAW_HEADINGS, ...ROW_AND_PROMPT] },
   },
 ])

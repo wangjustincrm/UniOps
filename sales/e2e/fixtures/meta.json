@@ -1,0 +1,2815 @@
+{
+ "orders": {
+  "version": 1,
+  "fields": [
+   {
+    "name": "id",
+    "label": "ID",
+    "type": "number",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": false,
+    "groupable": false,
+    "operators": []
+   },
+   {
+    "name": "order_number",
+    "label": "Internal no.",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "partner_code",
+    "label": "Partner code",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "partner_name",
+    "label": "Partner",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "suggestable": true
+   },
+   {
+    "name": "source_type",
+    "label": "Source type",
+    "type": "enum",
+    "enum_values": [
+     "SHOPIFY",
+     "EDI_850",
+     "MANUAL",
+     "FROM_945"
+    ],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "shipping_method",
+    "label": "Shipping method",
+    "type": "text",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": false,
+    "groupable": false,
+    "operators": []
+   },
+   {
+    "name": "source_order_id",
+    "label": "Source ID",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "source_order_number",
+    "label": "Source no.",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "suggestable": true
+   },
+   {
+    "name": "source_reference",
+    "label": "Order ref",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "suggestable": true
+   },
+   {
+    "name": "order_date",
+    "label": "Order date",
+    "type": "date",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "requested_delivery_date",
+    "label": "Requested delivery date",
+    "type": "date",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "cancel_date",
+    "label": "Cancel date",
+    "type": "date",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "do_not_deliver_after",
+    "label": "Do not deliver after",
+    "type": "date",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "currency",
+    "label": "Currency",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "total",
+    "label": "Source total",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "total_amount",
+    "label": "Total",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "delivery_due_date",
+    "label": "Delivery due",
+    "type": "date",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": true,
+    "groupable": false,
+    "operators": []
+   },
+   {
+    "name": "order_status",
+    "label": "Status",
+    "type": "enum",
+    "enum_values": [
+     "Draft",
+     "To Fulfill",
+     "Sent",
+     "Fulfilling",
+     "Shipped",
+     "To Invoice",
+     "Completed",
+     "On Hold",
+     "Cancelled"
+    ],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "on_hold_reason",
+    "label": "On Hold reason",
+    "type": "enum",
+    "enum_values": [
+     "Needs Review",
+     "Payment Required",
+     "Archived in Shopify",
+     "940 Rejected",
+     "940 Failed",
+     "997 Timeout",
+     "Cancelled at Source",
+     "945 Conflict",
+     "Shopify Update Failed",
+     "Invoice Failed",
+     "Invoice Blocked"
+    ],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "status_detail_kind",
+    "label": "Status detail kind",
+    "type": "text",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": false,
+    "groupable": false,
+    "operators": []
+   },
+   {
+    "name": "review_reason",
+    "label": "Review reason",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "historical",
+    "label": "Historical",
+    "type": "bool",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "first_received_at",
+    "label": "Received",
+    "type": "datetime",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "paid_at",
+    "label": "Paid",
+    "type": "datetime",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "archived_in_shopify_at",
+    "label": "Archived",
+    "type": "datetime",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "archive_suppressed",
+    "label": "Archive suppressed",
+    "type": "bool",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "shopify_financial_status",
+    "label": "Shopify Payment",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "shopify_fulfillment_status",
+    "label": "Shopify Fulfillment",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "source_cancelled_at",
+    "label": "Cancelled",
+    "type": "datetime",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "source_name",
+    "label": "Sales channel",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "tags",
+    "label": "Tags",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "original_total",
+    "label": "Original total",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "total_refunded",
+    "label": "Refunded",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "net_amount",
+    "label": "Net",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "returned_ea",
+    "label": "Returned EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "source_updated_at",
+    "label": "Source updated at",
+    "type": "datetime",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "version",
+    "label": "Version",
+    "type": "number",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": false,
+    "groupable": false,
+    "operators": []
+   },
+   {
+    "name": "created_at",
+    "label": "Created at",
+    "type": "datetime",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "updated_at",
+    "label": "Updated at",
+    "type": "datetime",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "connection_id",
+    "label": "Connection ID",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "order_type",
+    "label": "Order type",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "department",
+    "label": "Department",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "subtotal",
+    "label": "Subtotal",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "tax",
+    "label": "Tax",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "shipping",
+    "label": "Shipping",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "discount",
+    "label": "Discount",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   }
+  ],
+  "searchable": true,
+  "default_sort": [
+   "-order_number"
+  ],
+  "client_columns": [
+   "status_detail",
+   "shopify",
+   "ship_to_place"
+  ],
+  "views": [
+   {
+    "key": "open",
+    "name": "Open",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "order_status",
+       "op": "not_in",
+       "value": [
+        "Draft",
+        "Completed",
+        "Cancelled"
+       ]
+      }
+     ],
+     "hidden": [
+      "review_reason"
+     ]
+    }
+   },
+   {
+    "key": "open_shopify",
+    "name": "Open Shopify",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "order_status",
+       "op": "not_in",
+       "value": [
+        "Draft",
+        "Completed",
+        "Cancelled"
+       ]
+      },
+      {
+       "field": "source_type",
+       "op": "eq",
+       "value": "SHOPIFY"
+      }
+     ],
+     "sort": [
+      {
+       "field": "first_received_at",
+       "desc": false
+      }
+     ],
+     "columns": [
+      "source_reference",
+      "first_received_at",
+      "order_status",
+      "status_detail",
+      "shopify",
+      "shopify_financial_status",
+      "ship_to_place",
+      "total_amount"
+     ],
+     "hidden": [
+      "order_number",
+      "partner_name",
+      "source_order_number",
+      "order_date",
+      "total_refunded",
+      "net_amount",
+      "returned_ea",
+      "review_reason"
+     ]
+    }
+   },
+   {
+    "key": "open_retailers",
+    "name": "Open retailers",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "order_status",
+       "op": "not_in",
+       "value": [
+        "Draft",
+        "Completed",
+        "Cancelled"
+       ]
+      },
+      {
+       "field": "source_type",
+       "op": "in",
+       "value": [
+        "EDI_850",
+        "FROM_945"
+       ]
+      }
+     ],
+     "sort": [
+      {
+       "field": "delivery_due_date",
+       "desc": false
+      }
+     ],
+     "columns": [
+      "source_reference",
+      "partner_name",
+      "source_order_number",
+      "order_date",
+      "delivery_due_date",
+      "cancel_date",
+      "ship_to_place",
+      "order_status",
+      "status_detail",
+      "total_amount",
+      "returned_ea"
+     ],
+     "hidden": [
+      "order_number",
+      "shopify",
+      "total_refunded",
+      "net_amount",
+      "review_reason"
+     ]
+    }
+   },
+   {
+    "key": "pending",
+    "name": "To fulfill",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "order_status",
+       "op": "eq",
+       "value": "To Fulfill"
+      }
+     ],
+     "hidden": [
+      "review_reason"
+     ],
+     "sort": [
+      {
+       "field": "first_received_at",
+       "desc": false
+      }
+     ]
+    }
+   },
+   {
+    "key": "on_hold",
+    "name": "On hold",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "order_status",
+       "op": "eq",
+       "value": "On Hold"
+      }
+     ],
+     "group": [
+      {
+       "field": "on_hold_reason",
+       "desc": false
+      }
+     ],
+     "sort": [
+      {
+       "field": "first_received_at",
+       "desc": false
+      }
+     ]
+    }
+   },
+   {
+    "key": "delivery",
+    "name": "To invoice",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "order_status",
+       "op": "in",
+       "value": [
+        "Shipped",
+        "To Invoice"
+       ]
+      }
+     ],
+     "sort": [
+      {
+       "field": "delivery_due_date",
+       "desc": false
+      }
+     ],
+     "hidden": [
+      "review_reason"
+     ]
+    }
+   },
+   {
+    "key": "manual_drafts",
+    "name": "Manual drafts",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "source_type",
+       "op": "eq",
+       "value": "MANUAL"
+      },
+      {
+       "field": "order_status",
+       "op": "eq",
+       "value": "Draft"
+      }
+     ]
+    }
+   },
+   {
+    "key": "all",
+    "name": "All",
+    "state": {
+     "version": 1,
+     "hidden": [
+      "review_reason"
+     ]
+    }
+   }
+  ]
+ },
+ "payments": {
+  "version": 1,
+  "fields": [
+   {
+    "name": "id",
+    "label": "ID",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "payment_row_id",
+    "label": "Payment row ID",
+    "type": "number",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": false,
+    "groupable": false,
+    "operators": []
+   },
+   {
+    "name": "order_id",
+    "label": "Order ID",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "order_ref",
+    "label": "Order ref",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "suggestable": true
+   },
+   {
+    "name": "customer",
+    "label": "Customer",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "processed_at",
+    "label": "Processed",
+    "type": "datetime",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "processed_week",
+    "label": "Week",
+    "type": "date",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "processed_month",
+    "label": "Month",
+    "type": "date",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "method",
+    "label": "Method",
+    "type": "enum",
+    "enum_values": [
+     "Authorize.Net",
+     "PayPal",
+     "AlphaPay",
+     "Manual"
+    ],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "gateway",
+    "label": "Shopify gateway",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "kind",
+    "label": "Kind",
+    "type": "enum",
+    "enum_values": [
+     "sale",
+     "capture",
+     "authorization",
+     "refund",
+     "void",
+     "none"
+    ],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "status",
+    "label": "Status",
+    "type": "enum",
+    "enum_values": [
+     "success",
+     "pending",
+     "failure",
+     "error"
+    ],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "amount",
+    "label": "Amount",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "currency",
+    "label": "Currency",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "sales_amount",
+    "label": "Sales",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "refund_amount",
+    "label": "Refunds",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "net_amount",
+    "label": "Net",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "gateway_ref",
+    "label": "Gateway transaction ID",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "shopify_payment_id",
+    "label": "Shopify payment ID",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "order_source",
+    "label": "Order source",
+    "type": "enum",
+    "enum_values": [
+     "Subscription",
+     "One-off"
+    ],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "financial_status",
+    "label": "Order financial status",
+    "type": "enum",
+    "enum_values": [
+     "paid",
+     "partially_paid",
+     "partially_refunded",
+     "refunded",
+     "pending",
+     "authorized",
+     "voided"
+    ],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "order_cancelled",
+    "label": "Order cancelled",
+    "type": "bool",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "issue",
+    "label": "Issue",
+    "type": "enum",
+    "enum_values": [
+     "Pending over 7 days",
+     "Cancelled, not fully refunded",
+     "Partially paid",
+     "Failed on an open order",
+     "Paid, no payment"
+    ],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "discount",
+    "label": "Discount",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "shipping",
+    "label": "Shipping",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "order_total",
+    "label": "Order total",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "test",
+    "label": "Test",
+    "type": "bool",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "is_null",
+     "not_null"
+    ]
+   }
+  ],
+  "searchable": true,
+  "default_sort": [
+   "-processed_at",
+   "-id"
+  ],
+  "client_columns": [],
+  "views": [
+   {
+    "key": "all",
+    "name": "All",
+    "state": {
+     "version": 1
+    }
+   },
+   {
+    "key": "authorize_net",
+    "name": "Authorize.Net \u2014 transactions",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "method",
+       "op": "eq",
+       "value": "Authorize.Net"
+      },
+      {
+       "field": "status",
+       "op": "eq",
+       "value": "success"
+      }
+     ],
+     "sort": [
+      {
+       "field": "processed_at",
+       "desc": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "paypal_weekly",
+    "name": "PayPal \u2014 weekly",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "method",
+       "op": "eq",
+       "value": "PayPal"
+      },
+      {
+       "field": "status",
+       "op": "eq",
+       "value": "success"
+      }
+     ],
+     "group": [
+      {
+       "field": "processed_week",
+       "desc": true
+      }
+     ],
+     "sort": [
+      {
+       "field": "processed_at",
+       "desc": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "alphapay_manual_monthly",
+    "name": "AlphaPay / Manual \u2014 monthly",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "method",
+       "op": "in",
+       "value": [
+        "AlphaPay",
+        "Manual"
+       ]
+      },
+      {
+       "field": "status",
+       "op": "eq",
+       "value": "success"
+      }
+     ],
+     "group": [
+      {
+       "field": "processed_month",
+       "desc": true
+      }
+     ],
+     "sort": [
+      {
+       "field": "processed_at",
+       "desc": true
+      }
+     ]
+    }
+   },
+   {
+    "key": "exceptions",
+    "name": "Exceptions",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "issue",
+       "op": "not_null",
+       "value": null
+      }
+     ],
+     "group": [
+      {
+       "field": "issue",
+       "desc": false
+      }
+     ],
+     "sort": [
+      {
+       "field": "processed_at",
+       "desc": true
+      }
+     ]
+    }
+   }
+  ]
+ },
+ "inventory/items": {
+  "version": 1,
+  "fields": [
+   {
+    "name": "id",
+    "label": "ID",
+    "type": "number",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": false,
+    "groupable": false,
+    "operators": []
+   },
+   {
+    "name": "item_code",
+    "label": "Item",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "suggestable": true
+   },
+   {
+    "name": "description",
+    "label": "Description",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "received_ea",
+    "label": "Received EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "returned_ea",
+    "label": "Returned EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "shipped_ea",
+    "label": "Shipped EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "adjusted_ea",
+    "label": "Adjusted EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "report_diff_ea",
+    "label": "Difference vs Radiant EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "on_hand_ea",
+    "label": "On hand EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "hold_ea",
+    "label": "On hold EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "allocated_ea",
+    "label": "In process EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "available_ea",
+    "label": "Available EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "to_radiant_ea",
+    "label": "In transit to Radiant EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "to_customer_ea",
+    "label": "In transit to customers EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "returning_ea",
+    "label": "Returns on the way EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "lots",
+    "label": "Lots on hand",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "first_expiry",
+    "label": "First expiry",
+    "type": "date",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "days_to_first_expiry",
+    "label": "Days to first expiry",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "last_move_at",
+    "label": "Last move",
+    "type": "datetime",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   }
+  ],
+  "searchable": true,
+  "default_sort": [
+   "item_code"
+  ],
+  "client_columns": [],
+  "views": []
+ },
+ "inventory/lots": {
+  "version": 1,
+  "fields": [
+   {
+    "name": "id",
+    "label": "ID",
+    "type": "number",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": false,
+    "groupable": false,
+    "operators": []
+   },
+   {
+    "name": "item_code",
+    "label": "Item",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "suggestable": true
+   },
+   {
+    "name": "lot",
+    "label": "Lot",
+    "type": "text",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "contains",
+     "not_contains",
+     "starts_with",
+     "ends_with",
+     "eq",
+     "ne",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "suggestable": true
+   },
+   {
+    "name": "expiry",
+    "label": "Expiry",
+    "type": "date",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": true,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "days_to_expiry",
+    "label": "Days to expiry",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "received_ea",
+    "label": "Received EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "returned_ea",
+    "label": "Returned EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "shipped_ea",
+    "label": "Shipped EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "adjusted_ea",
+    "label": "Adjusted EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "report_diff_ea",
+    "label": "Difference vs Radiant EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "on_hand_ea",
+    "label": "On hand EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "hold_ea",
+    "label": "On hold EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "in_process_ea",
+    "label": "In process EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "available_ea",
+    "label": "Available EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "to_customer_ea",
+    "label": "In transit to customers EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "returning_ea",
+    "label": "Returns on the way EA",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ],
+    "summable": true
+   },
+   {
+    "name": "to_radiant_ea",
+    "label": "To radiant ea",
+    "type": "number",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "first_move_at",
+    "label": "First move",
+    "type": "datetime",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   },
+   {
+    "name": "last_move_at",
+    "label": "Last move",
+    "type": "datetime",
+    "enum_values": [],
+    "filterable": true,
+    "sortable": true,
+    "groupable": false,
+    "operators": [
+     "eq",
+     "ne",
+     "gt",
+     "gte",
+     "lt",
+     "lte",
+     "between",
+     "in",
+     "not_in",
+     "is_null",
+     "not_null"
+    ]
+   }
+  ],
+  "searchable": true,
+  "default_sort": [
+   "item_code",
+   "expiry",
+   "lot"
+  ],
+  "client_columns": [],
+  "views": [
+   {
+    "key": "on_hand",
+    "name": "On hand",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "on_hand_ea",
+       "op": "gt",
+       "value": 0
+      }
+     ]
+    }
+   },
+   {
+    "key": "expiring",
+    "name": "Expiring soon (90 days)",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "on_hand_ea",
+       "op": "gt",
+       "value": 0
+      },
+      {
+       "field": "days_to_expiry",
+       "op": "between",
+       "value": [
+        0,
+        90
+       ]
+      }
+     ],
+     "sort": [
+      {
+       "field": "expiry",
+       "desc": false
+      }
+     ]
+    }
+   },
+   {
+    "key": "negative",
+    "name": "Below zero (check)",
+    "state": {
+     "version": 1,
+     "filters": [
+      {
+       "field": "on_hand_ea",
+       "op": "lt",
+       "value": 0
+      }
+     ]
+    }
+   },
+   {
+    "key": "all",
+    "name": "All lots",
+    "state": {
+     "version": 1
+    }
+   }
+  ]
+ }
+}
