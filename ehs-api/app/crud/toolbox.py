@@ -376,3 +376,25 @@ async def remind_all(db: AsyncSession, *, month: date) -> dict:
         if what in out:
             out[what] += 1
     return out
+
+
+async def hold_again(db: AsyncSession, talk: ToolboxTalk, *, person: User) -> TbtDelivery:
+    """★ UAT 13: a talk held again — "allow a supervisor the ability to pick a
+    previous toolbox talk and redo the training session with staff … open up a
+    new 'Who was at the talk' form. Ensure the data is recorded for tracking."
+
+    A delivery of its own, with its own attendance sheet, naming the delivery
+    it repeats (this person's first of the talk, if they had one). No task:
+    whoever asks for it is about to hold it."""
+    first = (await db.execute(select(TbtDelivery).where(
+        TbtDelivery.talk_id == talk.id, TbtDelivery.supervisor_id == person.id,
+        TbtDelivery.rerun_of.is_(None)))).scalars().first()
+    dept_name = (await db.execute(
+        select(Department.name).where(Department.id == person.department_id))).scalar()
+    delivery = TbtDelivery(
+        id=uuid.uuid4(), talk_id=talk.id, supervisor_id=person.id,
+        supervisor_name=person.full_name, department_id=person.department_id,
+        department_name=dept_name, rerun_of=first.id if first else None)
+    db.add(delivery)
+    await db.flush()
+    return delivery

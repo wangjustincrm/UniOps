@@ -48,6 +48,8 @@ class DeliveryOut(BaseModel):
     held_at: datetime | None
     expected_attendees: int
     signed_count: int
+    # UAT 13: set on a talk held again — the delivery it repeats.
+    rerun_of: uuid.UUID | None = None
 
 
 class SignatureIn(BaseModel):
@@ -117,6 +119,35 @@ async def publish(
     talk = await crud.get_talk(db, talk_id)
     await crud.publish_talk(db, talk, only_to=payload.supervisor_ids if payload else None)
     return await crud.list_deliveries(db, talk_id=talk_id)
+
+
+@router.post("/{talk_id}/hold-again", response_model=DeliveryOut, status_code=201)
+async def hold_again(talk_id: uuid.UUID, db: SessionDep, user: CanReportIncident):
+    """★ UAT 13: run a past talk again, with a new attendance sheet.
+
+    For those who hold talks: a supervisor (any of the supervisory roles), HSE,
+    or anybody a talk has been handed to before — a lead hand runs a crew
+    without a supervisor's role."""
+    from sqlalchemy import select as _select
+    from uniops_authz import has_permission
+
+    from app.models.mirrors import User
+    from app.models.toolbox import TbtDelivery
+    from app.services.notify import roles_held_by
+    me = _user_id(user)
+    talk = await crud.get_talk(db, talk_id)
+    if not talk.is_published:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This talk has not been handed out yet")
+    roles = await roles_held_by(db, me, user.get("role", ""))
+    may = (bool(set(crud.SUPERVISORY_ROLES) & roles)
+           or await has_permission(db, me, user.get("role", ""), "ehs.settings.manage")
+           or (await db.execute(_select(TbtDelivery.id).where(
+               TbtDelivery.supervisor_id == me).limit(1))).first() is not None)
+    if not may:
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "Holding a toolbox talk is for those who run a crew")
+    person = await db.get(User, me)
+    return await crud.hold_again(db, talk, person=person)
 
 
 @router.get("/supervisors", response_model=list[SupervisorOut])

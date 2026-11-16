@@ -2,7 +2,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,7 +33,10 @@ class TbtDelivery(UUIDPrimaryKey, TimestampMixin, Base):
     """One supervisor delivering the talk to their team."""
 
     __tablename__ = "ehs_tbt_deliveries"
-    __table_args__ = (UniqueConstraint("talk_id", "supervisor_id", name="uq_ehs_tbt_delivery"),)
+    # One first delivery per person per talk (publishing twice does not double
+    # it); a talk held again is a delivery of its own (UAT 13, rerun_of).
+    __table_args__ = (Index("uq_ehs_tbt_delivery_first", "talk_id", "supervisor_id", unique=True,
+                            postgresql_where=text("rerun_of IS NULL")),)
 
     talk_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("ehs_toolbox_talks.id", ondelete="CASCADE"), nullable=False)
@@ -51,6 +54,11 @@ class TbtDelivery(UUIDPrimaryKey, TimestampMixin, Base):
     signed_count: Mapped[int] = mapped_column(Integer, nullable=False,
                                                default=0, server_default="0")
     last_reminded_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # ★ UAT 13: "allow a supervisor the ability to pick a previous toolbox talk
+    # and redo the training session with staff … Ensure the data is recorded for
+    # tracking purposes." Set on a talk held again: the first delivery it repeats.
+    rerun_of: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("ehs_tbt_deliveries.id", ondelete="SET NULL"), nullable=True)
 
 
 class TbtSignature(UUIDPrimaryKey, Base):

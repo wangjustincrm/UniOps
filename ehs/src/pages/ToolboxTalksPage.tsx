@@ -35,15 +35,19 @@ interface Delivery {
   department_name: string | null; status: string
   created_at: string; held_at: string | null
   expected_attendees: number; signed_count: number
+  /** UAT 13: a talk held again names the delivery it repeats. */
+  rerun_of?: string | null
 }
 interface Signer { user_id: string | null; person_name: string; person_role: string | null; signature: string }
+
+const SUPERVISORY = ['area_supervisor', 'dept_manager', 'supervisor']
 
 const inputClass =
   'min-h-[44px] w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm ' +
   'focus:border-primary-400 focus:outline-none'
 
 export default function ToolboxTalksPage() {
-  const { can } = usePermissions()
+  const { can, roles } = usePermissions()
   const queryClient = useQueryClient()
   const isHse = can('ehs.settings.manage')
   const [signing, setSigning] = useState<Delivery | null>(null)
@@ -125,6 +129,17 @@ export default function ToolboxTalksPage() {
       {/* ★ Round 12, TBT-01/02: HSE's month-by-month view, and the chase.
           UAT 13, TC-24: "place this tracker at the top of the page." */}
       {isHse && <ToolboxTracker />}
+
+      {/* ★ UAT 13: "allow a supervisor the ability to pick a previous toolbox
+          talk and redo the training session with staff … open up a new 'Who
+          was at the talk' form." For whoever holds talks. */}
+      {(isHse || roles.some((r) => SUPERVISORY.includes(r)) || (deliveries.data ?? []).length > 0) && (
+        <HoldAgain talks={(talks.data ?? []).filter((t) => t.is_published)}
+                   onStarted={(d) => {
+                     void queryClient.invalidateQueries({ queryKey: ['tbt-deliveries'] })
+                     setSigning(d)
+                   }} />
+      )}
 
       {mine.length > 0 && (
         <>
@@ -719,5 +734,42 @@ function SendDialog({ talk, onClose }: { talk: Talk; onClose: () => void }) {
         </div>
       </div>
     </div>
+  )
+}
+
+
+function HoldAgain({ talks, onStarted }: { talks: Talk[]; onStarted: (d: Delivery) => void }) {
+  const [talkId, setTalkId] = useState('')
+  const start = useMutation({
+    mutationFn: () => api.post<Delivery>(`/api/v1/toolbox-talks/${talkId}/hold-again`, {}),
+    onSuccess: (d) => { setTalkId(''); onStarted(d) },
+  })
+  if (talks.length === 0) return null
+  const sorted = [...talks].sort((a, b) => b.period_month.localeCompare(a.period_month))
+  return (
+    <section className="mb-6 rounded-xl border border-neutral-200 bg-white p-3.5" aria-label="Hold a past talk again">
+      <SectionTitle className="mb-1">Hold a past talk again</SectionTitle>
+      <p className="mb-2 text-xs text-neutral-500">
+        Pick any talk already handed out and hold it with your crew again. It opens a new
+        attendance sheet, and is kept with the talk as held again.
+      </p>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <select className={`${inputClass} sm:flex-1`} value={talkId} aria-label="Which talk"
+                onChange={(e) => setTalkId(e.target.value)}>
+          <option value="">Choose a talk…</option>
+          {sorted.map((t) => (
+            <option key={t.id} value={t.id}>{t.talk_no} · {t.title} ({t.period_month.slice(0, 7)})</option>
+          ))}
+        </select>
+        <button type="button" disabled={!talkId || start.isPending}
+                onClick={() => { if (talkId && !start.isPending) start.mutate() }}
+                className="min-h-[44px] rounded-lg bg-primary-600 px-4 text-sm font-semibold text-white disabled:opacity-50">
+          {start.isPending ? 'Opening…' : 'Hold it again'}
+        </button>
+      </div>
+      {start.isError && (
+        <p className="mt-2 text-xs text-danger-700">{start.error instanceof ApiError ? start.error.message : 'It could not be started.'}</p>
+      )}
+    </section>
   )
 }
