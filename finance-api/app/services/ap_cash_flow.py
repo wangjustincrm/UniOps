@@ -41,6 +41,15 @@ Two rules finance set on 2026-11-02 decide what counts at all:
   bills that day; none was on an approved PA, so the rule above already drops
   them — this keeps a future one from splitting across two buckets).
 
+**Some suppliers are taken from NC as it stands** (finance, 2026-11-16).
+`NC_DIRECT_SUPPLIERS` — today only Dairy Farmers of Ontario — skip the PA
+match: DFO's settlement statement has no invoice number, so the one in EPMS was
+read by OCR or typed by hand and never equals NC's "Sep Final" / "Final Oct".
+Every approved, open, not-dismissed NC line of theirs counts, with no PA, and
+is dated NC bill date + vendor term (the fallback below). Measured that day:
+its only approved open bills (Sep 2026, 97,694.20) had been dismissed as legacy
+on 2026-10-20, so it added nothing until the next one is approved in NC.
+
 **Due dates are the EPMS invoice's** (finance, 2026-11-11). NC's bill date is
 when the payable was keyed in NC, not when the supplier issued the invoice, so
 NC bill date + vendor term put almost every bill "due in 8-30 days". Every
@@ -141,6 +150,14 @@ DUE_FROM_INVOICE = "invoice"
 DUE_FROM_TERM = "vendor_term"
 DUE_FROM_APPROVAL = "approval"
 _NON_PAYABLE_SQL = ", ".join(f"'{t}'" for t in NON_PAYABLE_CLAIM_TYPES)
+# NC suppliers whose open payables count straight from NC, without an approved
+# EPMS PA matched by invoice number (finance, 2026-11-16). Dairy Farmers of
+# Ontario: its settlement statement carries no invoice number, so what EPMS
+# holds was made up by OCR or typed by hand, and NC's line says "Sep Final" or
+# "Final Oct" — the two never meet. Its NC payable (approved, not dismissed,
+# not a reversal pair) is the cash flow, dated NC bill date + vendor term.
+NC_DIRECT_SUPPLIERS: tuple[str, ...] = ("0000053",)
+_NC_DIRECT_SQL = ", ".join(f"'{c}'" for c in NC_DIRECT_SUPPLIERS)
 # The AP <-> NC invoice-number match (nc_push.match_invoice_no and its SQL twin
 # LINE_MATCH_SQL): upper-case, no whitespace, no hyphens.
 INV_KEY_NC = "nullif(replace(l.invoice_no_norm, '-', ''), '')"
@@ -184,7 +201,7 @@ offset_pairs as (
     having count(*) > 1 and sum(money_bal) = 0
 ),
 -- Only what an approved EPMS PA is about to pay is cash flow (finance,
--- 2026-11-02). `processed` is already paid; earlier states are not yet a
+-- 2026-11-02) — except NC_DIRECT_SUPPLIERS, taken from NC as it stands. `processed` is already paid; earlier states are not yet a
 -- commitment. The NC line is found the way the AP list finds it: invoice
 -- number ignoring case, spaces and hyphens, for the same NC supplier.
 approved_pa as (
@@ -202,7 +219,8 @@ line_pa as (
     select o.id as line_id, o.bill_no, a.pa_number, a.invoice_date, a.due_date
       from open_lines o
       join approved_pa a on a.inv_key = o.inv_key and a.erp_id = o.supplier_code
-     where not exists (select 1 from offset_pairs k
+     where o.supplier_code not in ({_NC_DIRECT_SQL})
+       and not exists (select 1 from offset_pairs k
                         where k.supplier_code = o.supplier_code
                           and k.currency = o.currency and k.inv_key = o.inv_key)
 ),
@@ -215,6 +233,15 @@ line_due as (
     select line_id, min(invoice_date) as invoice_date, min(due_date) as due_date
       from line_pa
      group by line_id
+    union all
+    -- NC_DIRECT_SUPPLIERS: every open line counts, with no EPMS invoice and so
+    -- no invoice dates — `termed` falls back to NC bill date + vendor term.
+    select o.id, null::date, null::date
+      from open_lines o
+     where o.supplier_code in ({_NC_DIRECT_SQL})
+       and not exists (select 1 from offset_pairs k
+                        where k.supplier_code = o.supplier_code
+                          and k.currency = o.currency and k.inv_key = o.inv_key)
 ),
 open_bills as (
     -- One row per NC document and invoice due date, over its PA-linked lines
