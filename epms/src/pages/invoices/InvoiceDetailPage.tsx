@@ -32,6 +32,7 @@ import { AssignMatchDialog } from './AssignMatchDialog'
 import { MatchPanel } from './MatchPanel'
 import { CourierInvoiceView } from './CourierInvoiceView'
 import { useStaticTabNav } from '@/hooks/useStaticTabNav'
+import { ATTACHMENT_RULE, uploadProblem } from '@/lib/uploadLimits'
 
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
@@ -1782,6 +1783,10 @@ function InvoiceAttachments({
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
+    // Same rule as the other attachment areas (ISS-0093); expense-api only
+    // checks the size, so the type is refused here before anything is sent.
+    const problem = uploadProblem(file, ATTACHMENT_RULE)
+    if (problem) { setUploadError(problem); return }
     setUploading(true)
     setUploadError(null)
     try {
@@ -1806,7 +1811,7 @@ function InvoiceAttachments({
   const UploadButton = ({ label = 'Upload file' }: { label?: string }) => (
     canUpload ? (
       <>
-        <input ref={fileInputRef} type="file" className="sr-only" onChange={handleFileChange} />
+        <input ref={fileInputRef} type="file" accept={ATTACHMENT_RULE.accept} className="sr-only" onChange={handleFileChange} />
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
@@ -1827,6 +1832,7 @@ function InvoiceAttachments({
         </h3>
         {attachments.length > 0 && <UploadButton label="Add" />}
       </div>
+      {canUpload && <p className="-mt-2 mb-3 text-xs text-neutral-400">{ATTACHMENT_RULE.hint}</p>}
 
       {uploadError && (
         <p className="mb-2 text-xs text-danger-600 flex items-center gap-1">
