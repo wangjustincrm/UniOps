@@ -84,6 +84,32 @@ export const TASK_TYPE_LABELS: Record<string, string> = {
   resolve_ap_duplicate_invoice: 'Resolve Duplicate NC Invoices',
 }
 
+// ─── Retitled tasks ────────────────────────────────────────────────────────────
+//
+// A few tasks change meaning after they are raised, and epms-api says so in the
+// task's title, not its type (api/v1/invoices.py): a resolve_exception task
+// whose credit note was requested becomes "Awaiting credit note — INV-…"
+// (INV-3WM-005, ISS-0230), and the match_invoice task a matcher gets back when
+// AP rejects a delegated match is "Re-match invoice INV-…" (INV-MATCH-009,
+// ISS-0259). The inbox cards label by type, so both read like a fresh task;
+// for these the card shows the title, and the description (the credit-note
+// instructions / AP's rejection note) under it.
+const RETITLED_PREFIX: Record<string, string> = {
+  resolve_exception: 'Awaiting credit note',
+  match_invoice: 'Re-match',
+}
+
+export function isRetitledTask(task: { type: string; title?: string | null }): boolean {
+  const prefix = RETITLED_PREFIX[task.type]
+  return !!prefix && !!task.title && task.title.startsWith(prefix)
+}
+
+/** Card heading: the type label, or the title of a retitled task. */
+export function taskCardLabel(task: { type: string; title?: string | null }): string {
+  if (isRetitledTask(task)) return task.title as string
+  return TASK_TYPE_LABELS[task.type] ?? task.type
+}
+
 // ─── Which tasks EPMS shows ────────────────────────────────────────────────────
 //
 // `tasks` is ONE table shared by every module (EPMS, the approval engine on

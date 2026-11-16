@@ -2,8 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { AlertCircle, Clock, ArrowRight } from 'lucide-react'
 import { cn, formatCAD, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { TASK_TYPE_LABELS } from '@/lib/taskTypes'
-import type { TaskType } from '@/lib/taskTypes'
+import { isRetitledTask, taskCardLabel } from '@/lib/taskTypes'
 import type { TaskItem } from '@/types'
 
 interface TaskCardProps {
@@ -36,7 +35,7 @@ function TaskCard({ task }: TaskCardProps) {
           <div className="flex items-center gap-1.5 mb-0.5">
             {isUrgent && <AlertCircle className="h-3.5 w-3.5 shrink-0 text-danger-600" />}
             <p className={cn('text-sm font-medium truncate', isUrgent ? 'text-danger-700' : 'text-neutral-900')}>
-              {TASK_TYPE_LABELS[task.type as TaskType] ?? task.type}
+              {taskCardLabel(task)}
             </p>
           </div>
           <p className="text-xs text-neutral-500 truncate">
@@ -44,6 +43,10 @@ function TaskCard({ task }: TaskCardProps) {
             {task.vendor ? ` · ${task.vendor}` : ''}
             {task.amount ? ` · ${formatCAD(task.amount)}` : ''}
           </p>
+          {/* Credit-note instructions / AP's rejection note (ISS-0230, ISS-0259) */}
+          {isRetitledTask(task) && task.description && (
+            <p className="mt-1 text-xs text-neutral-500 line-clamp-2">{task.description}</p>
+          )}
           {task.dueDate && (
             <div className="mt-1 flex items-center gap-1 text-xs text-neutral-400">
               <Clock className="h-3 w-3" />
