@@ -235,6 +235,8 @@ async def copy_quiz(quiz_id: uuid.UUID, payload: QuizIn, db: SessionDep, user: C
     if data.get("max_attempts") is None:
         data["max_attempts"] = original.max_attempts
     data["title"] = data["title"].strip()
+    if not data["title"]:   # review R17: as renaming refuses it
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "A quiz needs a title")
     quiz = await crud.create_quiz(db, data, creator_id=_user_id(user))
     questions = await crud.questions_for(db, original.id)
     if questions:

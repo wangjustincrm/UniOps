@@ -216,10 +216,13 @@ function NewQuizForm({ onClose, copyOf }: { onClose: () => void; copyOf?: Quiz }
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [title, setTitle] = useState(copyOf ? `Copy of ${copyOf.title}`.slice(0, 200) : '')
-  const [courseId, setCourseId] = useState(copyOf?.course_id ?? '')
+  // ★ Review R13: a copy starts on no course or document. On the original's
+  // it would at once become the quiz that course or document asks for —
+  // before its questions were changed.
+  const [courseId, setCourseId] = useState('')
   const [documentId, setDocumentId] = useState('')
   // Round 6: a quiz tests a course or a document, not both.
-  const [tests, setTests] = useState<'course' | 'document'>(copyOf?.document_id ? 'document' : 'course')
+  const [tests, setTests] = useState<'course' | 'document'>('course')
   const [passMark, setPassMark] = useState(String(copyOf?.pass_mark_percent ?? 80))
 
   const courses = useQuery({
@@ -310,6 +313,12 @@ function NewQuizForm({ onClose, copyOf }: { onClose: () => void; copyOf?: Quiz }
           </div>
         )}
       </div>
+      {copyOf && (
+        <p className="mt-2 text-xs text-neutral-500">
+          The copy starts as practice only. Change its questions first; giving it a course or
+          document makes it the quiz that course or document asks for, in place of the one there now.
+        </p>
+      )}
       <ErrorNote error={create.error} />
       <div className="mt-3 flex justify-end gap-2">
         <button type="button" className={secondaryButton} onClick={onClose}>Cancel</button>
