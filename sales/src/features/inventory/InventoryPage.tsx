@@ -3,59 +3,19 @@ import { useQuery } from '@tanstack/react-query'
 import { Download } from 'lucide-react'
 import { z } from 'zod'
 import {
-  ActionButton, Button, Callout, IconButton, startHidden, formatDate, formatNumber, ListPage, LocalTable, RecordSheet, SchemaForm, Section, columnsOf, queryKeys, useNotices,
+  ActionButton, Button, Callout, IconButton, formatDate, formatNumber, ListPage, LocalTable, RecordSheet, SchemaForm, Section, columnsOf, queryKeys, useNotices,
   type ColumnDef, type FieldSpec, type QuerySpec, type RecordTab,
 } from '@/platform-ui'
 import {
   PLACE, SOURCE, adjustStock, exportStock, stockItemsClient, stockLotsClient, stockMovesClient,
   type StockItemRead, type StockLotRead, type StockMoveRead,
 } from './inventoryApi'
+import { itemColumns, lotColumns } from './inventoryColumns'
 import { CountsView } from './CountsView'
 
-const colItem = columnsOf<StockItemRead>()
-const colLot = columnsOf<StockLotRead>()
 const colMove = columnsOf<StockMoveRead>()
 const ADJUST = 'sales.inventory.adjust'
 
-// The figures (user 2026-11-13), read left to right: received − in process − shipped (net: a customer's return comes off
-// it) − on hold = available; each row balances. The difference with Radiant's history is on the Radiant reports page only. In process: an item's 940s sent with no 945 yet; a lot's, what Radiant's latest report shows
-// picked for those orders (a 940 names no lot). On hand and the rest: column menu.
-const itemColumns: ColumnDef<StockItemRead, unknown>[] = [
-  { accessorKey: 'item_code', header: 'Item', cell: ({ row }) => <span className="font-medium">{row.original.item_code}</span> },
-  colItem.text('description', 'Description'),
-  colItem.number('received_ea', 'Received'),
-  colItem.number('allocated_ea', 'In process'),
-  colItem.number('shipped_ea', 'Shipped'),
-  colItem.number('hold_ea', 'On hold'),
-  colItem.number('available_ea', 'Available'),
-  startHidden(colItem.number('on_hand_ea', 'On hand')),
-  startHidden(colItem.number('returned_ea', 'Returned (in Shipped)')),
-  startHidden(colItem.number('adjusted_ea', 'Adjusted')),
-  colItem.date('first_expiry', 'First expiry'),
-  startHidden(colItem.number('lots', 'Lots on hand')),
-  startHidden(colItem.number('to_radiant_ea', 'In transit to Radiant')),
-  startHidden(colItem.number('to_customer_ea', 'In transit to customers')),
-  startHidden(colItem.number('returning_ea', 'Returns on the way')),
-  startHidden(colItem.datetime('last_move_at', 'Last move')),
-]
-
-const lotColumns: ColumnDef<StockLotRead, unknown>[] = [
-  colLot.text('item_code', 'Item'),
-  { accessorKey: 'lot', header: 'Lot', cell: ({ row }) => <span className="font-medium">{row.original.lot ?? '(no lot)'}</span> },
-  colLot.date('expiry', 'Expiry'),
-  colLot.number('days_to_expiry', 'Days to expiry'),
-  colLot.number('received_ea', 'Received'),
-  colLot.number('in_process_ea', 'In process'),
-  colLot.number('shipped_ea', 'Shipped'),
-  colLot.number('hold_ea', 'On hold'),
-  colLot.number('available_ea', 'Available'),
-  startHidden(colLot.number('on_hand_ea', 'On hand')),
-  startHidden(colLot.number('returned_ea', 'Returned (in Shipped)')),
-  startHidden(colLot.number('adjusted_ea', 'Adjusted')),
-  startHidden(colLot.number('to_customer_ea', 'In transit to customers')),
-  startHidden(colLot.number('returning_ea', 'Returns on the way')),
-  startHidden(colLot.datetime('last_move_at', 'Last move')),
-]
 
 /** An item's active lots (something on hand), nearest expiry first — under its row in the list. */
 function ActiveLots({ item }: { item: string }) {
@@ -195,7 +155,7 @@ export default function InventoryPage() {
     return (
       <ListPage<StockLotRead>
         key="lots" resource={stockLotsClient} title="Inventory by lot"
-        description="Each lot at Radiant: received − in process (picked for an order, per Radiant's report) − shipped (less returns) = available."
+        description="Each lot at Radiant: received − shipped (less returns) = on hand; on hand − in process (picked for an order, per Radiant's report) − on hold = available."
         columns={lotColumns} notice={NOTE} emptyTitle="No stock moves yet"
         toolbar={(ctx) => (<>
           {nav}
@@ -207,7 +167,7 @@ export default function InventoryPage() {
   return (
     <ListPage<StockItemRead>
       key="items" resource={stockItemsClient} title="Inventory"
-      description="Stock at Radiant by item (its open lots): received − in process (940 sent, no 945 yet) − shipped (less returns) − on hold = available."
+      description="Stock at Radiant by item (its open lots): received − shipped (less returns) = on hand; on hand − in process (940 sent, no 945 yet) − on hold = available."
       columns={itemColumns} notice={NOTE} emptyTitle="No stock moves yet"
       renderDetail={(r) => <ItemSheet row={r} />}
       expand={(r) => (r.lots > 0 || r.on_hand_ea !== 0 ? <ActiveLots item={r.item_code} /> : null)}
