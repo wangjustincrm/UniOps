@@ -196,7 +196,7 @@ export function useInvoiceHistory(id: string, enabled = true) {
   })
 }
 
-export type UnmatchScope = 'po' | 'gr' | 'direct'
+export type UnmatchScope = 'po' | 'gr' | 'direct' | 'agreement'
 
 export function useUnmatchInvoice() {
   const qc = useQueryClient()
@@ -204,6 +204,7 @@ export function useUnmatchInvoice() {
     mutationFn: ({ id, scope, reason }: { id: string; scope: UnmatchScope; reason: string }) =>
       scope === 'po' ? invoiceService.unmatchPo(id, reason)
         : scope === 'direct' ? invoiceService.unmatchDirect(id, reason)
+        : scope === 'agreement' ? invoiceService.unmatchAgreement(id, reason)
         : invoiceService.unmatchGr(id, reason),
     onSuccess: () => {
       // ['invoices'] prefix-matches the detail query AND ['invoices', id,
@@ -213,6 +214,9 @@ export function useUnmatchInvoice() {
       qc.invalidateQueries({ queryKey: ['invoices'] })
       qc.invalidateQueries({ queryKey: ['tasks'] })
       qc.invalidateQueries({ queryKey: ['pos'] })
+      // Unmatch Agreement hands the billing period / receipts back and changes
+      // the agreement's consumed amount.
+      qc.invalidateQueries({ queryKey: ['agreements'] })
     },
   })
 }

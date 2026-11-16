@@ -373,6 +373,11 @@ export const invoiceService = {
   unmatchDirect: (id: string, reason: string) =>
     api.post<ApiInvoice>(`/invoices/${id}/unmatch-direct`, { reason }),
 
+  // Agreement route reversal (AP only, refused while a live PA lists it):
+  // releases the claimed billing period / milestone / receipts back to the agreement.
+  unmatchAgreement: (id: string, reason: string) =>
+    api.post<ApiInvoice>(`/invoices/${id}/unmatch-agreement`, { reason }),
+
   // Candidate POs for allocation (same vendor, open statuses) — authorized by
   // the invoice's match rights, NOT the caller's general PO scope, so task
   // assignees without related PRs still see them.

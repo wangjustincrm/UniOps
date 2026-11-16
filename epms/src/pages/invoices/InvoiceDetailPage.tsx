@@ -1265,7 +1265,7 @@ export default function InvoiceDetailPage() {
                     {evidencePending
                       ? <AlertTriangle className="h-8 w-8 text-warning-600 flex-shrink-0" />
                       : <CheckCircle2 className="h-8 w-8 text-success-600 flex-shrink-0" />}
-                    <div>
+                    <div className="flex-1">
                       <p className={cn('text-sm font-semibold', evidencePending ? 'text-warning-700' : 'text-success-700')}>
                         Matched to Agreement {inv.agreement_number ?? inv.agreement_id?.slice(0, 8)} — {agreementEvidenceSummary}
                       </p>
@@ -1275,6 +1275,18 @@ export default function InvoiceDetailPage() {
                         </p>
                       )}
                     </div>
+                    {/* POST /invoices/{id}/unmatch-agreement: same AP gate and
+                        PA rule as Unmatch PO; a match still in review is
+                        undone by rejecting it there instead. */}
+                    {canUnmatch && (
+                      <UnmatchButton
+                        label="Unmatch Agreement"
+                        blockedReason={inv.status === 'match_review'
+                          ? 'This match is waiting for AP review — reject it in the review instead.'
+                          : unmatchBlockedReason}
+                        onClick={() => setUnmatchScope('agreement')}
+                      />
+                    )}
                   </div>
                   <p className="text-xs text-neutral-500">{agreementEvidenceDetail}</p>
                   {inv.legacy_settlement ? (

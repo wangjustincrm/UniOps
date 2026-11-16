@@ -37,6 +37,13 @@ describe('invoice history wording (ISS-0170)', () => {
     expect(l.note).toBe('误匹配')
   })
 
+  it('shows the agreement an Unmatch Agreement left', () => {
+    const l = historyLine(entry('unmatch', { scope: 'agreement', reason: '挂错协议', status: 'unmatched' },
+                                { agreement_number: 'AGR-202610-0007' }))
+    expect(l.action).toBe('Unmatched from Agreement AGR-202610-0007 — back to Unmatched')
+    expect(l.note).toBe('挂错协议')
+  })
+
   it('labels agreement and direct routes', () => {
     expect(matchTargetLabel({ route: 'agreement', agreement_number: 'AGR-1' })).toBe('Agreement AGR-1')
     expect(matchTargetLabel({ route: 'direct' })).toContain('Direct PA')

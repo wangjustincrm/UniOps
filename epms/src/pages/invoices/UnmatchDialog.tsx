@@ -27,6 +27,14 @@ const COPY: Record<UnmatchScope, { title: string; body: string; confirm: string 
         + 'and keeps its allocations.',
     confirm: 'Unmatch GR',
   },
+  agreement: {
+    title: 'Unmatch Agreement',
+    body: 'This returns the invoice to Unmatched: the billing period, milestone stage or '
+        + 'receipts it claimed go back to the agreement, and the agreement no longer counts '
+        + 'it as spend. The invoice can then be matched again from the Unmatched Queue. '
+        + 'Not possible while a payment application still lists it.',
+    confirm: 'Unmatch Agreement',
+  },
   direct: {
     title: 'Take Off the Direct PA Route',
     body: 'This returns the invoice to Unmatched, so it can be matched to a PO or agreement '

@@ -78,6 +78,9 @@ export function historyLine(e: InvoiceHistoryEntry): HistoryLine {
       if (a.scope === 'gr') {
         return { action: `Goods receipt ${str(b.gr_number) ?? ''} unlinked`.replace(/\s+/g, ' '), note: reason, color: 'bg-neutral-500' }
       }
+      if (a.scope === 'agreement') {
+        return { action: `Unmatched from Agreement ${str(b.agreement_number) ?? ''} — back to Unmatched`.replace(/\s+/g, ' '), note: reason, color: 'bg-neutral-500' }
+      }
       if (a.scope === 'direct') {
         return { action: 'Taken off the Direct PA route — back to Unmatched', note: reason, color: 'bg-neutral-500' }
       }
