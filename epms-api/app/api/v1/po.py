@@ -107,11 +107,24 @@ async def list_pos(
     return {"items": po_responses, "total": total}
 
 
+def _refuse_inactive_vendor(vendor) -> None:
+    """VND-002 / PO-006: an Inactive vendor cannot be chosen on a new PO, and a
+    PO cannot be submitted while its vendor is Inactive (ISS-0267). The PR's
+    Create PO pre-fills whatever vendor the PR had, even one deactivated while
+    the PR was in approval, so the form alone cannot keep it out."""
+    if vendor is not None and not vendor.is_active:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Vendor {vendor.name} is inactive. Choose another vendor.",
+        )
+
+
 @router.post("", response_model=PoResponse, status_code=status.HTTP_201_CREATED)
 async def create_po(body: PoCreate, db: SessionDep, user: PoWriteDep, token: BearerToken):
     vendor = await vendor_crud.get_by_id(db, body.vendor_id)
     if vendor is None:
         raise HTTPException(status_code=404, detail="Vendor not found")
+    _refuse_inactive_vendor(vendor)
     await ensure_known_budget_code(token, body.budget_code)
     return await po_crud.create(
         db, body,
@@ -185,6 +198,11 @@ async def update_po(po_id: uuid.UUID, body: PoUpdate, db: SessionDep, user: PoWr
         vendor = await vendor_crud.get_by_id(db, body.vendor_id)
         if vendor is None:
             raise HTTPException(status_code=404, detail="Vendor not found")
+        # The edit form re-sends the current vendor on every save: only a
+        # CHANGE to an Inactive vendor is refused here (VND-002); keeping one
+        # is caught at submit (PO-006).
+        if vendor.id != po.vendor_id:
+            _refuse_inactive_vendor(vendor)
         vendor_code = vendor.code
         vendor_name = vendor.name
 
@@ -384,6 +402,8 @@ async def po_action(
     po = await po_crud.get_by_id(db, po_id)
     if po is None:
         raise HTTPException(status_code=404, detail="PO not found")
+    if body.action.lower() == "submit" and po.vendor_id is not None:
+        _refuse_inactive_vendor(await vendor_crud.get_by_id(db, po.vendor_id))
     try:
         await delegate_action("po", str(po_id), body.action, body.comment, token)
     except LookupError as exc:

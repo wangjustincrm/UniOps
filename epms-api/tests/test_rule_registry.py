@@ -462,11 +462,14 @@ def test_the_pr_page_offers_withdraw_where_the_engine_allows():
     """withdraw_a_pr: Withdraw is offered only where the engine cancels a PR
     (approval-api _DOC_META['pr']['valid_cancel'] = draft/returned/submitted)."""
     page = _src("epms/src/pages/pr/PrDetailPage.tsx")
-    assert "['draft', 'returned', 'submitted', 'in_review'].includes(pr.status) && !canApprove" in page
+    assert "['draft', 'returned', 'submitted', 'in_review'].includes(pr.status) && !isCurrentApprover" in page
     assert "{['draft', 'returned', 'submitted'].includes(pr.status) && (" in page
     assert "action: 'cancel'" in page
     # …and only to the requester or a System Admin, with a refusal shown (ISS-0156).
-    assert "&& !canApprove && isRequesterOrAdmin" in page
+    assert "&& !isCurrentApprover && isRequesterOrAdmin" in page
+    # "Not the current approver" means not the step holder: the System Admin
+    # bypass on the approval bar must not hide Recall from them (ISS-0156).
+    assert "const isCurrentApprover = hasApproveTask || (!tasksLoaded && !isAdmin && roleMatchesStep)" in page
     assert "pr.created_by === user?.id" in page and "onError: onActionError" in page
 
 
@@ -1087,6 +1090,10 @@ def test_report_types_are_the_routers():
 def test_vendor_pickers_list_active_vendors_only():
     for page in ("pr/PrCreatePage.tsx", "po/PoCreatePage.tsx", "agreements/AgreementCreatePage.tsx"):
         assert "active_only: true" in _src(f"epms/src/pages/{page}"), page
+    # PO-006 / VND-002 on the server for POs (ISS-0267).
+    from app.api.v1 import po
+    for fn in (po.create_po, po.update_po, po.po_action):
+        assert "_refuse_inactive_vendor(" in inspect.getsource(fn), fn.__name__
 
 
 def test_vendor_edits_leave_no_history():

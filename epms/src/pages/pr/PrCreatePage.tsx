@@ -681,11 +681,7 @@ export default function PrCreatePage() {
                             {filteredVendors.length === 0 && (
                               <p className="px-3 py-2 text-sm text-neutral-400">No vendors found</p>
                             )}
-                            <div className="border-t border-neutral-100 px-3 py-2">
-                              <button type="button" className="text-xs text-primary-600 hover:underline">
-                                + Add new vendor
-                              </button>
-                            </div>
+                            {/* "+ Add new vendor" removed: it had no action at all (ISS-0242). */}
                           </div>
                         </>
                       )}
