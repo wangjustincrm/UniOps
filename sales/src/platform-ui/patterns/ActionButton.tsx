@@ -1,3 +1,4 @@
+import { DisabledReason } from '../help'
 import { Button, type ButtonProps } from '../primitives/shell'
 import { useCan } from './permissions'
 import { useAction } from './useAction'
@@ -17,6 +18,9 @@ export interface ActionButtonProps extends Omit<ButtonProps, 'onClick'> {
   failPrefix?: string
   /** Read again what is on screen after it worked (default true; a download changes nothing). */
   refreshes?: boolean
+  /** Why it is disabled (with `disabled`): shown on tap, click or focus, and read as its description.
+   *  A missing permission (whenDenied="disable") gives its own reason. */
+  disabledReason?: string | null
 }
 
 /** A button that cannot fire twice: disabled while its action is pending, and
@@ -25,22 +29,24 @@ export interface ActionButtonProps extends Omit<ButtonProps, 'onClick'> {
  *  given, so it never submits a surrounding form. Inside a list or a sheet, a
  *  failure (and with `done`, a success) is said in its status row (useNotices). */
 export function ActionButton({
-  permission, whenDenied = 'hide', onAction, pendingLabel, disabled, children, done, errorMessages, failPrefix, refreshes, ...rest
+  permission, whenDenied = 'hide', onAction, pendingLabel, disabled, children, done, errorMessages, failPrefix, refreshes, disabledReason, ...rest
 }: ActionButtonProps) {
   const allowed = useCan(permission)
   const { run, pending } = useAction({ done, errorMessages, failPrefix, refreshes })
   if (!allowed && whenDenied === 'hide') return null
 
+  const reason = !allowed ? "You don't have permission for this action." : disabled && !pending ? disabledReason : null
   return (
-    <Button
-      type="button"
-      {...rest}
-      disabled={disabled || pending || !allowed}
-      aria-busy={pending || undefined}
-      title={!allowed ? "You don't have permission for this action" : rest.title}
-      onClick={() => { void run(onAction) }}
-    >
-      {pending && pendingLabel ? pendingLabel : children}
-    </Button>
+    <DisabledReason reason={reason}>
+      <Button
+        type="button"
+        {...rest}
+        disabled={disabled || pending || !allowed}
+        aria-busy={pending || undefined}
+        onClick={() => { void run(onAction) }}
+      >
+        {pending && pendingLabel ? pendingLabel : children}
+      </Button>
+    </DisabledReason>
   )
 }

@@ -41,6 +41,7 @@ function answer(url) {
   if (p === 'config/me/permissions') return { permissions: Object.fromEntries(PERMS.map((k) => [k, true])), roles: [] }
   if (p === 'config/public/branding') return { name: 'UniOps' }
   if (p === 'views' || p === 'config/notification-events' || p === 'config/notification-users') return []
+  if (p === 'help/order-statuses') return META['help/order-statuses']
   if (p.endsWith('/meta')) return META[p.slice(0, -5)] ?? { version: 1, fields: [], views: [] }
   if (p === 'orders') return { items: F.orders, total: F.orders.length }
   const order = p.match(/^orders\/(\d+)$/)
@@ -123,6 +124,14 @@ async function run(name, viewport) {
     await page.waitForTimeout(400)
     const m = await measure(page)
     check(m.sheet <= 0, `${name} order sheet: sideways overflow ${m.sheet}px`)
+    // Help: the status badge opens what the status means; the line under it says what to do.
+    await page.getByRole('dialog').getByRole('button', { name: /^What ".+" means$/ }).first().click()
+    const tip = page.locator('[data-help-content]')
+    await tip.waitFor({ timeout: 5000 })
+    const box = await tip.boundingBox()
+    check(!!box && box.x >= 0 && box.x + box.width <= viewport.width, `${name} status help: opens inside the screen`)
+    await shot('status-help')
+    await page.keyboard.press('Escape')
     await page.getByRole('tab', { name: /Lines/ }).click()
     await page.getByRole('dialog').getByRole('button', { name: /Show details/ }).first().click()
     await page.waitForTimeout(300)

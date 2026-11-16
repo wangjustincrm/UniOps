@@ -564,6 +564,16 @@
     ]
    },
    {
+    "name": "shopify_fulfillment_id",
+    "label": "Shopify fulfillment ID",
+    "type": "text",
+    "enum_values": [],
+    "filterable": false,
+    "sortable": false,
+    "groupable": false,
+    "operators": []
+   },
+   {
     "name": "source_cancelled_at",
     "label": "Cancelled",
     "type": "datetime",
@@ -2811,5 +2821,82 @@
     }
    }
   ]
+ },
+ "help/order-statuses": {
+  "statuses": {
+   "Draft": {
+    "body": "A manual order not submitted yet. Nothing is sent until you Submit."
+   },
+   "To Fulfill": {
+    "body": "Waiting to go to the warehouse. \"Sends at \u2026\" counts down the partner's delay (a Shopify order waits so the customer can still change it). \"This partner sends by hand\": use Send 940 now."
+   },
+   "Sent": {
+    "body": "The 940 is with the warehouse; waiting for its 997 to accept it."
+   },
+   "Fulfilling": {
+    "body": "The warehouse accepted it and is picking; waiting for the 945. A Shopify order is already fulfilled and archived in Shopify; the 945 adds the tracking and tells the customer. \"Writing the tracking to Shopify\": the 945 arrived and the tracking is being written."
+   },
+   "Shipped": {
+    "body": "Invoiced partners only: the 945 arrived. Confirm delivery when it is due; that makes the invoice."
+   },
+   "To Invoice": {
+    "body": "Delivery confirmed; the invoice is ready to send or queued."
+   },
+   "Completed": {
+    "body": "Nothing left to do. A partner without invoicing comes here straight after the 945."
+   },
+   "On Hold": {
+    "body": "Stopped until someone acts; the reason says why."
+   },
+   "Cancelled": {
+    "body": "Cancelled; nothing more is sent."
+   }
+  },
+  "holds": {
+   "Needs Review": {
+    "body": "Something doesn't match the Item Master (an item, a unit, a partner code, a DC route). Fix it there, then Re-check."
+   },
+   "Payment Required": {
+    "body": "Shopify hasn't reported it paid. It goes on by itself once paid; nothing to do unless the payment never comes."
+   },
+   "Archived in Shopify": {
+    "body": "Archived in Shopify before it was sent. Un-archive it in Shopify to send it; leave it if the archive was intended."
+   },
+   "940 Rejected": {
+    "body": "The warehouse's 997 rejected the 940. Fix the cause, then Send 940 now."
+   },
+   "940 Failed": {
+    "body": "The 940 couldn't be sent (connection or file). Send 940 now once fixed."
+   },
+   "997 Timeout": {
+    "body": "No 997 from the warehouse in time. Check with the warehouse; Send 940 now sends it again."
+   },
+   "Cancelled at Source": {
+    "body": "Cancelled by the customer or in Shopify after the 940 reached the warehouse. Check with the warehouse, then Release hold: Cancel the order, Mark as shipped, or go back."
+   },
+   "945 Conflict": {
+    "body": "Two 945s for this order. Compare the 945s: Keep the applied 945, or Cancel the order."
+   },
+   "Shopify Update Failed": {
+    "body": "Writing to Shopify failed. Retry it on the shipment: Shipments & lots \u2192 Retry in Shopify."
+   },
+   "Invoice Failed": {
+    "body": "Sending the invoice failed. Open the invoice; fix it with Edit invoice if needed, then Send."
+   },
+   "Invoice Blocked": {
+    "body": "The invoice is on hold; its task says why. Open the invoice, Edit invoice if needed, then Release."
+   }
+  },
+  "details": {
+   "Sends": {
+    "body": "When the 940 goes to the warehouse by itself, after the partner's delay."
+   },
+   "Delivery due": {
+    "body": "The requested delivery date (for DC-routed partners, the do-not-deliver-after date). Confirm delivery once it has been delivered; past this date it shows as late."
+   },
+   "Short shipped": {
+    "body": "The 945 shipped less than ordered. Backordered = ordered \u2212 shipped (EA); the rest is not sent later. Refund or adjust the short lines (in Shopify for a Shopify order)."
+   }
+  }
  }
 }

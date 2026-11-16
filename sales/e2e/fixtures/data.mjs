@@ -2,7 +2,7 @@
 // no dev2 data, no masked dumps. Shapes follow the API's read schemas.
 
 const addr = { name: 'Sample customer', address1: '1 Sample St', city: 'Toronto', province: 'ON', zip: 'M5V 1A1', country: 'CA' }
-const STATUSES = ['Waiting to Send', 'Waiting for Packing List', 'Waiting for Delivery', 'Completed']
+const STATUSES = ['To Fulfill', 'Fulfilling', 'Shipped', 'Completed']
 
 const orderRow = (n) => ({
   id: n, order_number: n, version: 1, source_type: 'shopify', source_name: 'Shopify', source_reference: `SMP-${1000 + n}`,

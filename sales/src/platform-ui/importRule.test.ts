@@ -45,19 +45,36 @@ export function businessImports(file: string, source: string): string[] {
   return bad
 }
 
-type Layer = 'primitives' | 'patterns' | 'resource' | 'lib' | 'root'
-const LAYERS = ['primitives', 'patterns', 'resource', 'lib'] as const
+type Layer = 'primitives' | 'patterns' | 'resource' | 'lib' | 'help' | 'root'
+const LAYERS = ['primitives', 'patterns', 'resource', 'lib', 'help'] as const
 const MAY_IMPORT: Record<Exclude<Layer, 'root'>, Layer[]> = {
-  primitives: ['primitives', 'lib'],
+  primitives: ['primitives', 'lib', 'help'],
   resource: ['resource', 'lib'],
-  patterns: ['patterns', 'primitives', 'resource', 'lib'],
+  patterns: ['patterns', 'primitives', 'resource', 'lib', 'help'],
   lib: ['lib'],
+  help: ['help'],
 }
 const BANNED_PACKAGES: Record<Exclude<Layer, 'root'>, RegExp | null> = {
   primitives: /^@tanstack\/react-query$/,
   resource: /^@uniops\/shell(\/|$)/,
   patterns: /^@uniops\/shell(\/|$)/,
   lib: /^@uniops\/shell(\/|$)/,
+  help: /^@uniops\/shell(\/|$)/,
+}
+
+// The help module is self-contained (help/README.md): it can be taken to another project as its
+// folder alone. Inside it, only its own files and these packages.
+const HELP_PACKAGES = /^(react|react-dom|@radix-ui\/react-popover|lucide-react|vitest|@testing-library\/[\w-]+)(\/|$)/
+
+export function helpViolations(file: string, source: string): string[] {
+  if (!file.startsWith('./help/')) return []
+  const bad: string[] = []
+  for (const m of source.matchAll(IMPORT)) {
+    const spec = m[1] ?? m[2] ?? m[3]
+    if (spec.startsWith('.')) { if (target(file, spec) !== 'help') bad.push(spec) }
+    else if (!HELP_PACKAGES.test(spec)) bad.push(spec)
+  }
+  return bad
 }
 
 function layerOfPath(parts: string[]): Layer {
@@ -130,6 +147,18 @@ describe('platform-ui import rule', () => {
     for (const layer of ['primitives', 'patterns', 'resource']) {
       expect(libraryFiles.filter((f) => f.startsWith(`./${layer}/`)).length).toBeGreaterThan(2)
     }
+  })
+
+  it('the help module imports only itself and its few packages', () => {
+    const helpFiles = libraryFiles.filter((f) => f.startsWith('./help/'))
+    expect(helpFiles.length).toBeGreaterThan(4)
+    expect(Object.fromEntries(helpFiles.map((f) => [f, helpViolations(f, sources[f])] as const).filter(([, b]) => b.length > 0))).toEqual({})
+    const f = './help/X.tsx'
+    expect(helpViolations(f, "import { cn } from '../lib/cn'")).toEqual(['../lib/cn'])
+    expect(helpViolations(f, "import { Button } from '@/platform-ui'")).toEqual(['@/platform-ui'])
+    expect(helpViolations(f, "import { Badge } from '@uniops/shell'")).toEqual(['@uniops/shell'])
+    expect(helpViolations(f, "import { cx } from './cx'")).toEqual([])
+    expect(helpViolations(f, "import * as RP from '@radix-ui/react-popover'")).toEqual([])
   })
 
   it('the layer checker flags what it must (positive half)', () => {

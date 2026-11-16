@@ -21,6 +21,7 @@ import { InboxRedirect } from '@/app/InboxRedirect'
 // Every list's saved views (design §13.19) go through this one client.
 const views = createViewsClient(api)
 import { useRecoverFailedQueries } from '@/app/recoverFailedQueries'
+import { SalesHelpProvider } from '@/features/help/statusHelp'
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 
@@ -366,6 +367,7 @@ export default function AppLayout() {
   if (IS_EMBEDDED) {
     return (
       <PermissionProvider can={perms.can}>
+      <SalesHelpProvider>
       <ViewsProvider client={views}>
       <RouterOpenRecord>
       <div className="h-screen overflow-y-auto bg-[#FAFBFC]">
@@ -379,12 +381,14 @@ export default function AppLayout() {
       </div>
       </RouterOpenRecord>
       </ViewsProvider>
+      </SalesHelpProvider>
       </PermissionProvider>
     )
   }
 
   return (
     <PermissionProvider can={perms.can}>
+    <SalesHelpProvider>
     <ViewsProvider client={views}>
       <RouterOpenRecord>
     <TabStoreProvider options={{ initialTabs: [{
@@ -420,6 +424,7 @@ export default function AppLayout() {
     </TabStoreProvider>
     </RouterOpenRecord>
       </ViewsProvider>
+    </SalesHelpProvider>
     </PermissionProvider>
   )
 }

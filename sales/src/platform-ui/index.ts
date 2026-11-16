@@ -46,6 +46,7 @@ export { StatCard } from './primitives/StatCard'
 export { IconButton } from './primitives/IconButton'
 export { Tooltip } from './primitives/Tooltip'
 export { EmptyState } from './primitives/States'
+export { DisabledReason, HelpProvider, HelpTip, useHelp, type HelpEntry, type HelpId, type HelpSource } from './help'
 export { ActionBar, AutoGrid, Cluster, Responsive, Toolbar, type ToolbarItem } from './primitives/Layout'
 export { useBreakpoint, useElementWidth, useMediaQuery, type Breakpoint } from './primitives/useResponsive'
 

@@ -49,6 +49,10 @@ Most of what the module shows sits in a Sheet, a panel or a card narrower than t
 
 Guards: ESLint refuses, in features and pages, a fixed wide width (`min-w-[16rem]`, `w-[480px]`) or a fixed grid track (`grid-cols-[10rem_1fr]`) at phone size; prefixed from a breakpoint (`sm:min-w-[16rem]`) it passes (planted proofs in `tools/check-scope.sh`). `sales/e2e/responsive.mjs` (`npm run e2e:responsive`, the docker command at its top) opens Orders, an order's Lines, Payments by week, Inventory with lots and the new-order form at 390 px and 1440 px against a running front end, every API answer mocked from `sales/e2e/fixtures`, and fails on a sideways overflow or a missing status row / pinned ActionBar (~30 s; not in the default gates).
 
+## Help (the user, 2026-11-16)
+
+`help/` is a self-contained module (its own README; `importRule.test.ts` keeps it importing only itself, React, the Radix popover and the icons), to take to another project as one folder: `HelpProvider` (the module's texts), `HelpTip` (a ? or a tappable badge), `DisabledReason` (why a disabled control can't be used), `useHelp`, typed ids (`HelpRegistry`). `ActionButton` takes `disabledReason` (a missing permission gives its own); a `DropdownMenu` item shows its `disabledReason` under its label. Sales' texts: order statuses, On Hold reasons and Details from `sales-api/app/domain/status_help.py` (`GET /help/order-statuses`), screen-only texts in `features/help`.
+
 ## Public interface (`@/platform-ui`)
 
 `index.ts` exports only what features, pages and the app use (trimmed 2026-11-04); a name a feature needs for the first time is added there. The table below describes the library: some of what it names is reached by its direct path (the tests do), not through the barrel.

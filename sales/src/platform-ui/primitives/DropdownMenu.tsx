@@ -8,6 +8,8 @@ export interface MenuItem {
   /** A promise is fine: whoever renders the menu may run it as an action (RecordSheet does). */
   onSelect: () => void | Promise<unknown>
   disabled?: boolean
+  /** Why it is disabled: a second line under its label. */
+  disabledReason?: string
   /** A line above this item. */
   separated?: boolean
   /** The item opens a dialog or sheet: the menu does not take the focus back
@@ -54,7 +56,12 @@ export function DropdownMenu({ trigger, items, label, align = 'start' }: Dropdow
                   'data-[highlighted]:bg-neutral-100 data-[disabled]:cursor-default data-[disabled]:opacity-40')}
               >
                 {it.icon}
-                {it.label}
+                {it.disabled && it.disabledReason ? (
+                  <span className="flex flex-col">
+                    {it.label}
+                    <span className="text-xs text-neutral-500">{it.disabledReason}</span>
+                  </span>
+                ) : it.label}
               </RM.Item>
             </div>
           ))}
