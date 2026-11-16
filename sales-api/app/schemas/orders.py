@@ -61,6 +61,7 @@ class OrderRead(BaseModel):
     archive_suppressed: bool
     shopify_financial_status: str | None
     shopify_fulfillment_status: str | None = None
+    shopify_fulfillment_id: str | None = None  # the Shopify fulfillment made at the 997 (or Zoho's): its 945 adds the tracking
     source_cancelled_at: datetime | None = None
     # Shopify finance (sales17): the sales channel and tags ("groups"), the original
     # total, the successful refunds and the net (original − refunded)

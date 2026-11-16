@@ -250,11 +250,15 @@ class HttpShopify:
             raise ShopifyRefused("the connection has no API version")
         token = await self._token(conn, host)
         async with self._client() as c:
-            try:
-                r = await c.post(f"https://{host}/admin/api/{version}/{path}", json=body,
-                                 headers={"X-Shopify-Access-Token": token, "Accept": "application/json"})
-            except httpx.HTTPError as e:
-                raise ShopifyError(readable(e)) from e
+            for attempt in range(RATE_LIMIT_RETRIES + 1):  # a 429 was refused, not done: sending it again is safe
+                try:
+                    r = await c.post(f"https://{host}/admin/api/{version}/{path}", json=body,
+                                     headers={"X-Shopify-Access-Token": token, "Accept": "application/json"})
+                except httpx.HTTPError as e:
+                    raise ShopifyError(readable(e)) from e
+                if r.status_code != 429 or attempt == RATE_LIMIT_RETRIES:
+                    break
+                await self.sleep(_retry_after(r))
         if r.status_code == 401:
             self._tokens = {k: v for k, v in self._tokens.items() if k[0] != host}
             raise ShopifyAuthFailed(f"the store refused the request (HTTP {r.status_code})")
@@ -506,4 +510,7 @@ class FakeShopify:
         if "close_order" in self.fail:
             raise self.fail["close_order"]
         self.closed.append(str(order_id))
+        for o in self.orders:  # as the store: the order reads closed from now on
+            if str(o.get("id")) == str(order_id):
+                o["closed_at"] = "2026-11-02T12:00:00Z"
         return {"id": int(order_id), "closed_at": "2026-11-02T12:00:00Z"}

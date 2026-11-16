@@ -166,6 +166,25 @@ async def test_a_full_rate_limit_bucket_is_waited_out_then_given_up():
     assert len(waits) == 4  # RATE_LIMIT_RETRIES, then the error
 
 
+async def test_a_write_refused_for_the_rate_limit_is_sent_again_after_the_wait():
+    """A 429 is refused, not done: the fulfillment at the 997 waits and is sent again (not a task)."""
+    posts, waits = [], []
+
+    def store(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/admin/oauth/access_token":
+            return httpx.Response(200, json={"access_token": "tok", "expires_in": 86399})
+        posts.append(request.url.path)
+        if len(posts) == 1:
+            return httpx.Response(429, headers={"Retry-After": "1.5"}, json={"errors": "Exceeded 2 calls per second"})
+        return httpx.Response(201, json={"fulfillment": {"id": 77, "status": "success"}})
+
+    async def sleep(s):
+        waits.append(s)
+    gw = HttpShopify(secret=SECRETS.get, transport=httpx.MockTransport(store), sleep=sleep)
+    f = await gw.create_fulfillment(CONN, [{"fulfillment_order_id": 1, "fulfillment_order_line_items": [{"id": 2, "quantity": 1}]}], None, False)
+    assert (f["id"], waits, len(posts)) == (77, [1.5], 2)
+
+
 # ── several tracking numbers: REST takes one, so these go through GraphQL ─────
 class GraphStore(Store):
     def __init__(self, answer):

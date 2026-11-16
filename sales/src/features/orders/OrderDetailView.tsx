@@ -16,6 +16,7 @@ import { AmendForm } from './Amend'
 import { Recheck } from './Recheck'
 import { DraftActions } from './DraftActions'
 import { Send940 } from './Send940'
+import { FulfilInShopify } from './FulfilInShopify'
 import { ActivityTab } from './tabs/ActivityTab'
 import { DocumentsTab } from './tabs/DocumentsTab'
 import { InvoiceTab } from './tabs/InvoiceTab'
@@ -125,6 +126,7 @@ export function OrderSheet({ o, close, extraActions, extraTabs = [] }: OrderShee
       {d.fulfillment_status === 'Review' && <Recheck o={d} bare onResolved={close} />}
       {isDraft && <DraftActions o={d} close={close} />}
       <Send940 o={d} />
+      <FulfilInShopify o={d} />
       <OrderHoldActions o={d} />
       {amendable && !amending && (
         <ActionButton size="sm" variant="secondary" permission="sales.order.operate"

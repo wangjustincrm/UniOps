@@ -17,9 +17,9 @@ from app.models.documents import Document
 from app.models.records import OutboxRecord
 from app.platform.actors import SYSTEM_ACTOR
 from app.platform.outbox import Outbox, OutboxWorker
-from app.services.outbound import SEND_940
+from app.services.outbound import FULFILL_AT_997, SEND_940
 from app.services.settings import SETTINGS, SHADOW_MODE
-from app.services.shipments import CLOSE, FULFILL, Shipments
+from app.services.shipments import CLOSE, CLOSE_AT_997, FULFILL, Shipments
 from tests.test_orders import T0, env, po, run_850  # noqa: F401 — env is a fixture (p4_edi needs it)
 from tests.test_outbound import a_paid_order, ack997, sent_order, status, store_997
 from tests.test_outbound import edi as p4_edi  # noqa: F401 — a fixture
@@ -33,7 +33,8 @@ async def p5(p4_edi):  # noqa: F811 — the P4 fixture, extended
     ships = Shipments(uow_factory=edi.env.factory, tasks=edi.env.tasks, shopify=edi.gateways.shopify, outbound=edi.out,
                       clock=lambda: edi.clock.now)
     worker = OutboxWorker(Outbox(OutboxRecord), {SEND_940: edi.out.outbox_kind(), FULFILL: ships.fulfill_kind(),
-                                                 CLOSE: ships.close_kind()}, edi.env.factory)
+                                                 CLOSE: ships.close_kind(), FULFILL_AT_997: ships.fulfill_997_kind(),
+                                                 CLOSE_AT_997: ships.close_997_kind()}, edi.env.factory)
     edi.env.shop.fulfillment_orders_by_order["1"] = [dict(fo) for fo in FO]
     return SimpleNamespace(edi=edi, ships=ships, worker=worker, shop=edi.env.shop, q=edi.env.q, factory=edi.env.factory)
 
@@ -242,22 +243,111 @@ async def test_the_same_945_sent_again_is_kept_with_the_order_and_changes_nothin
 
 # ── Shopify write-back (FR-OB-11 / 11a, AC-OB-39 / 72) ───────────────────────
 
-async def test_ac39_a_997_writes_nothing_the_945_fulfils_with_tracking_then_archives(p5):
+async def test_the_997_fulfils_in_full_without_tracking_and_archives_then_the_945_adds_the_tracking(p5):
+    """User 2026-11-16 (as Zoho did): at the 997 the whole order is fulfilled without tracking, the customer not
+    told, and archived; the 945 adds the tracking to that fulfillment (the customer told) — never a second one."""
     await live_store(p5)
     o, d = await sent_order(p5.edi)
     await store_997(p5.edi, ack997(d["st02"]))
     await p5.edi.out.process_997s()
-    assert writes(p5) == []  # nothing at 997 acceptance
-    await store_945(p5, x945("9301", ["LX*1", "W12*CP*12*12*0*EA**VN*CF0092"]))
-    await p5.ships.process_945s()
+    assert await status(p5.edi, o.id) == F.ACCEPTED_940
     assert (await p5.worker.run_once()).done == 2  # the fulfillment, then the archive it queues
     [(_, call)] = [c for c in p5.shop.calls if c[0] == "create_fulfillment"]
-    assert call["items"] == [{"fulfillment_order_id": 501, "fulfillment_order_line_items": [{"id": 601, "quantity": 2}]}]
-    assert call["tracking"] == {"number": "1Z-TRACK", "company": "Purolator"} and call["notify"] is True
-    assert p5.shop.closed == ["1"]
+    assert call == {"items": [{"fulfillment_order_id": 501, "fulfillment_order_line_items": [{"id": 601, "quantity": 2}]}],
+                    "tracking": None, "notify": False}
+    assert p5.shop.closed == ["1"] and writes(p5) == ["create_fulfillment", "close_order"]
+    [row] = await p5.q("SELECT shopify_fulfillment_id f FROM sales_orders WHERE id = :i", i=o.id)
+    assert row["f"]
+    await store_945(p5, x945("9301", ["LX*1", "W12*CP*12*12*0*EA**VN*CF0092"]))
+    await p5.ships.process_945s()
+    assert (await p5.worker.run_once()).done == 2  # the tracking, then the archive (already archived: nothing)
+    [(_, track)] = [c for c in p5.shop.calls if c[0] == "update_tracking"]
+    assert track == {"fulfillment_id": row["f"], "tracking": {"number": "1Z-TRACK", "company": "Purolator"}, "notify": True}
+    assert writes(p5) == ["create_fulfillment", "close_order", "update_tracking"]  # no second fulfillment, no second close
     [sh] = await p5.q("SELECT shopify_status, shopify_fulfillment_id FROM sales_shipments")
-    assert sh["shopify_status"] == "Done" and sh["shopify_fulfillment_id"]
+    assert sh == {"shopify_status": "Done", "shopify_fulfillment_id": row["f"]}
+
+
+async def test_a_945_before_the_997_write_fulfils_with_tracking_and_the_997_step_then_makes_nothing(p5):
+    await live_store(p5)
+    o, d = await sent_order(p5.edi)
+    await store_997(p5.edi, ack997(d["st02"]))
+    await p5.edi.out.process_997s()  # the 997 step is queued, not run yet
+    await store_945(p5, x945("9301", ["LX*1", "W12*CP*12*12*0*EA**VN*CF0092"]))
+    p5.edi.clock.now = T0 + timedelta(days=5)
+    await p5.ships.process_945s()   # the order is Shipped before the 997 step runs
+    await p5.worker.run_once()
+    await p5.worker.run_once()
+    [(_, call)] = [c for c in p5.shop.calls if c[0] == "create_fulfillment"]
+    assert call["tracking"] == {"number": "1Z-TRACK", "company": "Purolator"} and call["notify"] is True
+    assert writes(p5).count("create_fulfillment") == 1 and writes(p5).count("close_order") == 1
+    [r] = await p5.q("SELECT status FROM sales_outbox WHERE kind = 'shopify_fulfill_997'")
+    assert r["status"] == "CANCELLED"  # the order was no longer waiting for its 945
+
+
+async def test_a_short_945_after_the_997_fulfilment_adds_the_tracking_and_asks_to_adjust_in_shopify(p5):
+    await live_store(p5)
+    o, d = await sent_order(p5.edi)
+    await store_997(p5.edi, ack997(d["st02"]))
+    await p5.edi.out.process_997s()
+    await p5.worker.run_once()
+    await store_945(p5, x945("9301", ["LX*1", "W12*CP*12*6*0*EA**VN*CF0092"]))  # 6 of 12
+    p5.edi.clock.now = T0 + timedelta(days=5)
+    await p5.ships.process_945s()
+    await p5.worker.run_once()
+    assert writes(p5) == ["create_fulfillment", "close_order", "update_tracking"]  # never a second fulfillment
+    [t] = await tasks(p5, "short_shipment")
+    assert "CF0092" in t and "fulfilled in full when Radiant accepted the 940" in t and "refund or adjust" in t
+
+
+async def test_write_off_at_the_997_skips_and_fulfil_in_shopify_now_does_it_later(p5):
+    o, d = await sent_order(p5.edi)  # the store's Write is off (the fixture's default)
+    await store_997(p5.edi, ack997(d["st02"]))
+    await p5.edi.out.process_997s()
+    r = await p5.worker.run_once()
+    assert (r.cancelled, writes(p5)) == (1, [])
+    assert await p5.q("SELECT 1 FROM tasks WHERE type LIKE 'sales_shopify%'") == []  # skipped, not a failure
+    await live_store(p5)
+    async with p5.factory(SYSTEM_ACTOR) as u:
+        await p5.ships.fulfil_at_997(u, o.id)
+        await u.commit()
+    assert (await p5.worker.run_once()).done == 2
     assert writes(p5) == ["create_fulfillment", "close_order"]
+    async with p5.factory(SYSTEM_ACTOR) as u:  # again: reads first, so the fulfillment is never made twice
+        await p5.ships.fulfil_at_997(u, o.id)  # fulfilled already: only the archive is queued
+        await u.commit()
+    await p5.worker.run_once()
+    assert writes(p5).count("create_fulfillment") == 1
+
+
+async def test_a_rejected_or_timed_out_940_writes_nothing_and_a_failed_archive_is_a_task(p5):
+    from app.platform.errors import BusinessError
+    await live_store(p5)
+    o, d = await sent_order(p5.edi)
+    await store_997(p5.edi, ack997(d["st02"], ak5="R", ak9="R"))
+    await p5.edi.out.process_997s()
+    await p5.worker.run_once()
+    assert writes(p5) == [] and await p5.q("SELECT 1 FROM sales_outbox WHERE kind LIKE 'shopify%'") == []
+    with pytest.raises(BusinessError):
+        async with p5.factory(SYSTEM_ACTOR) as u:
+            await p5.ships.fulfil_at_997(u, o.id)
+
+
+async def test_archiving_at_the_997_without_the_scope_is_a_task_that_opens_the_order(p5):
+    await live_store(p5)
+    p5.shop.fail["close_order"] = ShopifyForbidden("the app has no permission for orders/1/close.json (HTTP 403): requires write_orders")
+    o, d = await sent_order(p5.edi)
+    await store_997(p5.edi, ack997(d["st02"]))
+    await p5.edi.out.process_997s()
+    r = await p5.worker.run_once()
+    assert (r.done, r.failed) == (1, 1)
+    [t] = await tasks(p5, "shopify_write")
+    assert "write_orders" in t and "Fulfil in Shopify now" in t
+    [k] = await p5.q("SELECT document_number k FROM tasks WHERE type = 'sales_shopify_write'")
+    from app.services.inbox import InboxService
+    async with p5.factory(SYSTEM_ACTOR) as u:
+        target = await InboxService.resolve.__wrapped__(InboxService(u), k["k"])
+    assert (target.page, target.id) == ("/orders", o.id)
 
 
 async def test_ac72_a_zoho_fulfillment_gets_the_tracking_and_no_second_fulfillment(p5):
@@ -395,3 +485,39 @@ async def test_a_945_ships_an_order_no_940_of_ours_went_for_and_says_so(p5, befo
     if event:
         done = [r["is_completed"] for r in await p5.q("SELECT is_completed FROM tasks WHERE type = :t", t=f"sales_{event}")]
         assert done == [True]  # the goods left: the question about sending them is closed
+
+
+async def test_the_997_fulfils_only_the_940s_lines_and_leaves_any_other_line_open(p5):
+    await live_store(p5)
+    p5.shop.fulfillment_orders_by_order["1"] = [{"id": 501, "status": "open", "line_items": [
+        {"id": 601, "line_item_id": 11, "fulfillable_quantity": 2}, {"id": 699, "line_item_id": 99, "fulfillable_quantity": 1}]}]
+    o, d = await sent_order(p5.edi)
+    await store_997(p5.edi, ack997(d["st02"]))
+    await p5.edi.out.process_997s()
+    await p5.worker.run_once()
+    [(_, call)] = [c for c in p5.shop.calls if c[0] == "create_fulfillment"]
+    assert call["items"] == [{"fulfillment_order_id": 501, "fulfillment_order_line_items": [{"id": 601, "quantity": 2}]}]
+
+
+async def test_a_partial_fulfillment_already_in_shopify_writes_nothing_and_raises_a_task(p5):
+    await live_store(p5)
+    p5.shop.fulfillments_by_order["1"] = [{"id": 7101, "status": "success", "tracking_number": None}]  # e.g. a manual one
+    o, d = await sent_order(p5.edi)                     # …while the 940's line is still open in Shopify
+    await store_997(p5.edi, ack997(d["st02"]))
+    await p5.edi.out.process_997s()
+    r = await p5.worker.run_once()
+    assert (r.failed, writes(p5)) == (1, [])            # no second fulfillment, no archive
+    [t] = await tasks(p5, "shopify_write")
+    assert "7101" in t and "still open" in t
+
+
+async def test_a_scheduled_subscription_fulfillment_order_is_a_task_that_says_why(p5):
+    await live_store(p5)
+    p5.shop.fulfillment_orders_by_order["1"] = [{"id": 501, "status": "scheduled", "line_items": [
+        {"id": 601, "line_item_id": 11, "fulfillable_quantity": 2}]}]
+    o, d = await sent_order(p5.edi)
+    await store_997(p5.edi, ack997(d["st02"]))
+    await p5.edi.out.process_997s()
+    assert (await p5.worker.run_once()).failed == 1 and writes(p5) == []
+    [t] = await tasks(p5, "shopify_write")
+    assert "scheduled" in t and "subscription" in t

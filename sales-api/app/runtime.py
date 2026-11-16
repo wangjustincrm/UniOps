@@ -17,7 +17,7 @@ from app.models.documents import Run
 from app.models.records import OutboxRecord
 from app.platform.jobs import Background
 from app.platform.outbox import Outbox, OutboxWorker
-from app.services.outbound import SEND_940, Outbound940
+from app.services.outbound import FULFILL_AT_997, SEND_940, Outbound940
 from app.services import oplog
 from app.services.cycle import SalesScheduler
 from app.services.edi_intake import EdiIntake
@@ -25,7 +25,7 @@ from app.services.intake import Intake
 from app.services.shadow import ShadowRun
 from app.services.invoicing import INTERNAL_COPY, SEND_INVOICE, Invoicing
 from app.services.transfers import SEND_943, Transfers
-from app.services.shipments import CLOSE, FULFILL, Shipments
+from app.services.shipments import CLOSE, CLOSE_AT_997, FULFILL, Shipments
 from app.services.shopify_intake import ShopifyIntake
 from app.services.notifications import NOTIFY_EMAIL, email_kind
 from app.services.problems import hook_failed, task_service
@@ -79,7 +79,8 @@ def build_runtime(settings: Any, uow_factory: Any, *, sftp: Any = None, shopify:
     transfers = Transfers(uow_factory=uow_factory, tasks=tasks, sftp=container.sftp, shadow=shadow)
     outbound.transfers = transfers
     worker = OutboxWorker(Outbox(OutboxRecord), {SEND_940: outbound.outbox_kind(), FULFILL: shipments.fulfill_kind(),
-                                                 CLOSE: shipments.close_kind(), SEND_INVOICE: invoicing.outbox_kind(), INTERNAL_COPY: invoicing.internal_kind(),
+                                                 CLOSE: shipments.close_kind(), FULFILL_AT_997: shipments.fulfill_997_kind(),
+                                                 CLOSE_AT_997: shipments.close_997_kind(), SEND_INVOICE: invoicing.outbox_kind(), INTERNAL_COPY: invoicing.internal_kind(),
                                                  SEND_943: transfers.outbox_kind(), NOTIFY_EMAIL: email_kind(container.email, lambda: getattr(settings, "internal_email_domains", frozenset()))},
                           uow_factory, on_hook_failed=hook_failed(tasks))
     scheduler = SalesScheduler(uow_factory=uow_factory, run_model=Run, intake=intake, outbox_worker=worker,

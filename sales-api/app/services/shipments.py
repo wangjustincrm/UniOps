@@ -23,6 +23,13 @@ or, during the shadow run, only recorded as what Sales would have done
   second row closes (archives) the order. Each is made once; a failure raises
   a task and is retried only by a person. Never during the shadow run, never
   for a shadow shipment (pre_check — the second barrier).
+- At the 997 (user 2026-11-16, as Zoho did): when Radiant accepts a Shopify
+  order's 940, the order is fulfilled in Shopify in full, without tracking and
+  without telling the customer, then archived, so the customer cannot change
+  it. Its 945 then only adds the tracking to that fulfillment (the customer
+  gets the tracking email) — never a second fulfillment; a short 945 raises the
+  short-shipment task saying the Shopify order was fulfilled in full. Write off
+  at the 997: skipped, and "Fulfil in Shopify now" (fulfil_at_997) does it later.
 """
 from __future__ import annotations
 
@@ -41,7 +48,7 @@ from app.domain.shadow import TEST_RUN_REFUSAL
 from app.domain.status import FULFILLMENT, INBOUND_FILE, SHIPPED_WITHOUT_OUR_940, Ack, InboundFile
 from app.domain.status import Fulfillment as F
 from app.domain.x12 import X12Error
-from app.integrations.shopify import ShopifyForbidden, readable as shopify_readable
+from app.integrations.shopify import ShopifyError, ShopifyForbidden, readable as shopify_readable
 from app.models.config import Connection, Item, Partner
 from app.models.documents import Document
 from app.models.orders import Order, OrderLine
@@ -55,7 +62,7 @@ from app.services import oplog
 from app.services.doc_links import link
 from app.services.intake import ConnectionSnapshot
 from app.services.order_from_945 import SYNTHETIC_PREFIX, attach, warehouse_number_is
-from app.services.outbound import TORONTO, latest_940
+from app.services.outbound import FULFILL_AT_997, TORONTO, latest_940
 from app.services.problems import (
     CANCELLED_AFTER_940, EDI_945_LINE_UNMATCHED, EDI_945_NO_ORDER, EDI_945_VALIDATION, ORDER_FILE_UNREADABLE, SECOND_945,
     SETTLED_BY_SHIPMENT,
@@ -68,6 +75,8 @@ logger = logging.getLogger(__name__)
 SKIPPED_NO_WRITE = "Not needed"  # the store connection's Write tick is off: the write is not made, and that is not a failure
 STEP = "945"
 FULFILL, CLOSE = "shopify_fulfill", "shopify_close"
+CLOSE_AT_997 = "shopify_close_997"  # after FULFILL_AT_997 (outbound.py): archive the order
+OPEN_FULFILLMENT = ("success", "open", "pending")  # a fulfillment that stands (not cancelled / failed)
 OUTBOX = Outbox(OutboxRecord)
 SHIPPABLE = (F.SENT_940, F.ACCEPTED_940, F.TIMEOUT_940)
 STOPPED = (F.ON_HOLD, F.CANCELLED)  # nothing is written to Shopify for these
@@ -431,7 +440,9 @@ class Shipments:
             await self.tasks.raise_problem(s, SHORT_SHIPMENT, order.id, problem(
                 SHORT_SHIPMENT, f"Short shipment: order {order.label}",
                 f"Order {order.label}: " + "; ".join(p.short)
-                + f". 945 {doc.remote_name} closed the fulfilment; no second 940 is sent. Decide whether to send the rest."))
+                + f". 945 {doc.remote_name} closed the fulfilment; no second 940 is sent. Decide whether to send the rest."
+                + (" In Shopify the order was fulfilled in full when Radiant accepted the 940: refund or adjust the short "
+                   "lines there." if order.source_type == "SHOPIFY" and order.shopify_fulfillment_id else "")))
         if p.unmatched:
             await self.tasks.raise_problem(s, EDI_945_LINE_UNMATCHED, shipment.id, problem(
                 EDI_945_LINE_UNMATCHED, f"945 line matches no order line: order {order.label}",
@@ -689,6 +700,8 @@ class Shipments:
 
     async def _close(self, payload: dict[str, Any], ctx) -> None:
         sh, order, conn, _ = await self._context(payload["shipment_id"])
+        if (await self.shopify.order(conn, order.source_order_id)).get("closed_at"):
+            return  # archived already (at the 997): nothing to do
         await self.shopify.close_order(conn, order.source_order_id)
 
     async def _closed(self, row, exc, uow) -> None:
@@ -716,6 +729,150 @@ class Shipments:
         await oplog.write(uow.session, "INFO", STEP, f"Shopify write for shipment {sh.id} refused by the guard: {exc}",
                           order_id=sh.order_id)
         await send_refused(self.tasks, uow.session, row, f"the Shopify write for shipment {sh.id}", exc)
+
+    # ── At the 997: fulfil in full without tracking, then archive (user 2026-11-16) ──
+    def fulfill_997_kind(self) -> OutboxKind:
+        return OutboxKind(effect=self._fulfill_997, policy=ONCE, pre_check=self._pre_check_997, on_done=self._fulfilled_997,
+                          on_failed=self._failed_997, on_suppressed=self._suppressed_997)
+
+    def close_997_kind(self) -> OutboxKind:
+        return OutboxKind(effect=self._close_997, policy=ONCE, pre_check=self._pre_check_997, on_done=self._closed_997,
+                          on_failed=self._failed_997, on_suppressed=self._suppressed_997)
+
+    async def _pre_check_997(self, payload: dict[str, Any], uow) -> str | None:
+        """As the 945's: never during the shadow run or for a shadow order; skipped (no task) while the
+        store's Write is off; nothing for an order no longer waiting for its 945."""
+        s = uow.session
+        order = await s.get(Order, payload["order_id"], with_for_update=True)
+        if order is None:
+            return "the order is gone"
+        if await SETTINGS.get(s, SHADOW_MODE) or order.shadow:
+            return "the shadow run: nothing is written to Shopify"
+        conn = await s.get(Connection, order.connection_id) if order.connection_id else None
+        if conn is None or conn.kind != "SHOPIFY":
+            return "the order has no Shopify connection"
+        if not conn.can_write:
+            await oplog.write(s, "INFO", STEP, f"Shopify fulfillment at the 997 skipped for order {order.label}: writing is off "
+                              "for the store connection (Fulfil in Shopify now does it later; else the 945 fulfils it)", order_id=order.id)
+            return "writing is off for the store connection: nothing is written to Shopify"
+        if order.fulfillment_status != F.ACCEPTED_940.value:
+            return f"the order is {order.fulfillment_status}: not fulfilled at the 997"
+        return None
+
+    async def _order_context(self, order_id: int):
+        """The order, its store and what its 940 carried, in Shopify units per Shopify line (the line's
+        item held by the warehouse, AC-OB-28; EA ÷ the line's factor)."""
+        async with self.uow_factory(SYSTEM_ACTOR) as uow:
+            s = uow.session
+            order = await s.get(Order, order_id)
+            conn = await s.get(Connection, order.connection_id)
+            lines = list((await s.execute(select(OrderLine).where(OrderLine.order_id == order.id, OrderLine.removed.is_(False)))).scalars())
+            held = set((await s.execute(select(Item.item_code).where(
+                Item.item_code.in_({ln.item_code for ln in lines if ln.item_code}), Item.warehouse_held.is_(True)))).scalars())
+            on_940 = {str(ln.line_no): int(ln.qty_ea // int(ln.factor_ea)) for ln in lines
+                      if ln.item_code in held and ln.qty_ea and ln.factor_ea}
+            return order, ConnectionSnapshot.of(conn), {k: v for k, v in on_940.items() if v > 0}
+
+    async def fulfil_payload_997(self, conn, oid: str, on_940: dict[str, int]) -> tuple[dict[str, Any] | None, list[dict[str, Any]], str | None]:
+        """(a fulfillment that already covers the 940's lines, else None; the open fulfillment-order lines
+        of the 940's lines to fulfil, at the 940's quantities; why nothing can be fulfilled, else None)."""
+        existing = [f for f in await self.shopify.fulfillments(conn, oid) if f.get("status") in OPEN_FULFILLMENT]  # always first
+        fos = await self.shopify.fulfillment_orders(conn, oid)
+        want, items = dict(on_940), []
+        for fo in fos:
+            if fo.get("status") not in ("open", "in_progress"):
+                continue
+            fo_lines = []
+            for li in fo.get("line_items", []):
+                key = str(li.get("line_item_id"))
+                qty = min(want.get(key, 0), int(li.get("fulfillable_quantity") or 0))
+                if qty > 0:
+                    fo_lines.append({"id": li["id"], "quantity": qty})
+                    want[key] -= qty
+            if fo_lines:
+                items.append({"fulfillment_order_id": fo["id"], "fulfillment_order_line_items": fo_lines})
+        if existing:
+            if not items:  # what the 940 carried is fulfilled already: never a second fulfillment
+                return next((f for f in existing if not f.get("tracking_number")), existing[0]), [], None
+            return None, [], (f"Shopify already has a fulfillment ({', '.join(str(f['id']) for f in existing)}) while lines of the "
+                              "940 are still open there: nothing was written, so as not to make a second fulfillment")
+        if not items:
+            scheduled = [fo for fo in fos if fo.get("status") == "scheduled"]
+            return None, [], ("its fulfillment order is scheduled in Shopify (a subscription delivery Shopify releases on "
+                              "its date), so it cannot be fulfilled yet" if scheduled
+                              else "Shopify has no open fulfillment-order line for the 940's lines")
+        return None, items, None
+
+    async def _fulfill_997(self, payload: dict[str, Any], ctx) -> None:
+        order, conn, on_940 = await self._order_context(payload["order_id"])
+        standing, items, why = await self.fulfil_payload_997(conn, order.source_order_id, on_940)
+        if standing is not None:
+            await self._record_997(order.id, str(standing["id"]), "already fulfilled in Shopify")
+            return
+        if why:
+            raise ShopifyError(why)  # said in the task as it is
+        f = await self.shopify.create_fulfillment(conn, items, None, False)  # no tracking yet: no email to the customer
+        await self._record_997(order.id, str(f["id"]), "fulfilled at the 997 (the 940's lines), without tracking")
+
+    async def _record_997(self, order_id: int, fulfillment_id: str, how: str) -> None:
+        async with self.uow_factory(SYSTEM_ACTOR) as uow:
+            order = await uow.session.get(Order, order_id, with_for_update=True)
+            order.shopify_fulfillment_id = fulfillment_id
+            await oplog.write(uow.session, "INFO", STEP, f"Shopify: {how} ({fulfillment_id})", order_id=order.id)
+            await uow.commit()
+
+    async def _fulfilled_997(self, row, exc, uow) -> None:
+        OUTBOX.add(uow.session, CLOSE_AT_997, {"order_id": row.payload["order_id"]}, entity=("sales_orders", row.payload["order_id"]))
+        await self.tasks.resolve_problem(uow.session, SHOPIFY_WRITE_FAILED, f"order-{row.payload['order_id']}")
+
+    async def _close_997(self, payload: dict[str, Any], ctx) -> None:
+        order, conn, _ = await self._order_context(payload["order_id"])
+        if (await self.shopify.order(conn, order.source_order_id)).get("closed_at"):
+            return  # archived already
+        await self.shopify.close_order(conn, order.source_order_id)
+
+    async def _closed_997(self, row, exc, uow) -> None:
+        await oplog.write(uow.session, "INFO", STEP, "Shopify: order archived at the 997", order_id=row.payload["order_id"])
+        await self.tasks.resolve_problem(uow.session, SHOPIFY_WRITE_FAILED, f"order-{row.payload['order_id']}")
+
+    async def _failed_997(self, row, exc, uow) -> None:
+        s = uow.session
+        order = await s.get(Order, row.payload["order_id"])
+        what = "archiving the order" if row.kind == CLOSE_AT_997 else "the fulfillment at the 997"
+        why = shopify_readable(exc) if exc is not None else "unknown"
+        hint = (" The app lacks a Shopify permission (scope) — e.g. write_orders for archiving; grant it, then use "
+                "Fulfil in Shopify now on the order." if isinstance(exc, ShopifyForbidden)
+                else " Check the order in Shopify, then use Fulfil in Shopify now on the order.")
+        await oplog.write(s, "ERROR", STEP, f"Shopify {what} failed for order {order.label}: {why}", order_id=order.id)
+        await self.tasks.raise_problem(s, SHOPIFY_WRITE_FAILED, f"order-{order.id}", problem(
+            SHOPIFY_WRITE_FAILED, f"Shopify {what} failed: order {order.label}"[:255],
+            f"Order {order.label}: {what} failed: {why.rstrip('.')}.{hint} It is not retried automatically; "
+            "its 945 still adds the tracking (or fulfils it)."))
+
+    async def _suppressed_997(self, row, exc, uow) -> None:
+        await oplog.write(uow.session, "INFO", STEP, f"Shopify write at the 997 refused by the guard: {exc}",
+                          order_id=row.payload["order_id"])
+        await send_refused(self.tasks, uow.session, row, f"the Shopify write at the 997 for order {row.payload['order_id']}", exc)
+
+    async def fulfil_at_997(self, uow, order_id: int) -> Order:
+        """A person's "Fulfil in Shopify now" (sales.order.operate): the 997 step again, e.g. after Write was
+        off when the 997 came. One new row; the effect reads the order's fulfillments first."""
+        s = uow.session
+        order = await s.get(Order, order_id, with_for_update=True)
+        if order is None:
+            raise BusinessError("order.not_found", "no such order", status_code=404)
+        if order.source_type != "SHOPIFY" or not order.connection_id:
+            raise BusinessError("order.not_shopify", "only a Shopify order is fulfilled in Shopify")
+        if order.fulfillment_status != F.ACCEPTED_940.value:
+            raise BusinessError("order.not_accepted", f"the order is {order.fulfillment_status}: only an order whose 940 "
+                                "Radiant accepted is fulfilled before its 945")
+        if order.shadow or await SETTINGS.get(s, SHADOW_MODE):
+            raise BusinessError("order.shadow", TEST_RUN_REFUSAL)
+        kind = CLOSE_AT_997 if order.shopify_fulfillment_id else FULFILL_AT_997
+        OUTBOX.add(s, kind, {"order_id": order.id}, entity=order)
+        await oplog.write(s, "INFO", STEP, f"Fulfil in Shopify now: {kind} queued for order {order.label}", order_id=order.id)
+        await s.flush()
+        return order
 
     async def retry_shopify(self, uow, shipment_id: int) -> Shipment:
         """A person's retry (sales.order.operate): one new row; the effect reads

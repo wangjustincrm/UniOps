@@ -48,6 +48,8 @@ export interface OrderRead {
   status_detail_at: string | null
   status_detail_kind: string | null
   shopify_fulfillment_status: string | null
+  /** The Shopify fulfillment made at the 997 (or Zoho's): its 945 adds the tracking to it. */
+  shopify_fulfillment_id?: string | null
   source_cancelled_at: string | null
   hold_reason: string | null
   review_reason: string | null
@@ -311,6 +313,8 @@ export const cancelManual = (id: number, version: number) => api.post<OrderRead>
 
 export interface Send940Result { order: OrderRead; document_id: number; file_status: string; control: string; errors: string[] }
 export const send940 = (id: number, replace = false) => api.post<Send940Result>(`/orders/${id}/send-940${replace ? '?replace=true' : ''}`)
+/** Fulfil in Shopify now (user 2026-11-16): the 997 step again — the whole order, no tracking, then archived. */
+export const fulfilInShopify = (id: number) => api.post<{ order_id: number; queued: boolean }>(`/orders/${id}/shopify-fulfil`)
 /** The order's printable files (2026-11-12): each one looked at in FileViewer first, then downloaded or printed there. */
 export const poPdf = (o: Pick<OrderRead, 'id' | 'source_order_number' | 'order_number'>): FileSource => ({
   key: `po-${o.id}`, title: `Purchase order ${o.source_order_number ?? o.order_number}`,

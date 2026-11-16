@@ -60,6 +60,9 @@ from app.services.doc_links import link
 logger = logging.getLogger(__name__)
 TORONTO = ZoneInfo("America/Toronto")  # "today" on a 940 (product owner, 2026-10-30)
 SEND_940 = "send_940"
+# A Shopify order whose 940 Radiant accepted (997): fulfil it in Shopify in full, without tracking, then
+# archive it (user 2026-11-16, as Zoho did); the 945 adds the tracking (app/services/shipments.py).
+FULFILL_AT_997 = "shopify_fulfill_997"
 STEP = "edi"
 LIVE_940_FILE = (OutboundFile.READY_TO_SEND, OutboundFile.SENDING, OutboundFile.SENT)
 OUTBOX = Outbox(OutboxRecord)
@@ -498,6 +501,8 @@ class Outbound940:
             ACK.transition(doc, Ack.ACCEPTED, actor=uow.actor, events=uow.events, reason=f"997 accepted ({codes})")
             if order.fulfillment_status in (F.SENT_940, F.TIMEOUT_940):
                 FULFILLMENT.transition(order, F.ACCEPTED_940, actor=uow.actor, events=uow.events, reason="997 accepted")
+                if order.source_type == "SHOPIFY" and order.connection_id and not order.shadow:
+                    OUTBOX.add(s, FULFILL_AT_997, {"order_id": order.id}, entity=order)
         else:
             ACK.transition(doc, Ack.REJECTED, actor=uow.actor, events=uow.events, reason=f"997 rejected ({codes})")
             if order.fulfillment_status in (F.SENT_940, F.TIMEOUT_940):

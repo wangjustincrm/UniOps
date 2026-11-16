@@ -72,6 +72,13 @@ async def retry_shopify(u: UoW, rt: Rt, shipment_id: int) -> dict:
     return out
 
 
+@router.post("/{order_id}/shopify-fulfil")
+async def fulfil_at_997(u: UoW, rt: Rt, order_id: int) -> dict:
+    out = await OrderService(u).fulfil_at_997(order_id, rt.shipments)
+    await u.commit()
+    return out
+
+
 @router.post("/shipments/{shipment_id}/rows/{row_id}/resolve", response_model=OrderRead)
 async def resolve_945_row(u: UoW, rt: Rt, shipment_id: int, row_id: int, body: ResolveRowIn):
     o = await OrderActions(u, rt.tasks).resolve_row(shipment_id, row_id, body.order_line_id, body.reason)

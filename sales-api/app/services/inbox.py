@@ -56,6 +56,8 @@ class InboxService:
     async def resolve(self, key: str) -> InboxTarget:
         prefix, _, rest = key.partition(":")
         event, _, entity = rest.rpartition(":")
+        if prefix == PREFIX and event == "shopify_write" and entity.startswith("order-") and entity[6:].isdigit():  # the Shopify write at the 997
+            return _target(ORDERS, int(entity[6:]), "overview")
         if prefix != PREFIX or not event or not entity.isdigit():
             raise InvalidInput("inbox.bad_key", f"not a Sales task key: {key!r}")
         return await self._for(event, int(entity))
