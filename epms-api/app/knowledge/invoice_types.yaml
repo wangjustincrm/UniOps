@@ -65,6 +65,11 @@ values:
         match" is this check, and the fix is a missing line item or a charge —
         not a retry.
       - >
+        The AI also reads each line's unit of measure as printed on the
+        invoice (box, pcs, kg…) into the Unit field of Upload Invoice; a line
+        that prints no unit is left blank, and the uploader can type or change
+        it. A PA line built from that invoice line carries the same unit.
+      - >
         One PDF can hold several invoices. Vendors send a month at a time —
         each invoice complete, one or more pages, sometimes uneven. Uploaded
         whole that is ONE invoice in EPMS and the rest are never paid, so a

@@ -684,3 +684,27 @@ def test_prompt_states_the_two_rules_the_failures_broke():
     assert "other_charges" in ocr_service._INVOICE_PROMPT
     assert "Never sum only the taxed lines." in ocr_service._INVOICE_PROMPT
     assert "is not a line item, it is the tax" in ocr_service._INVOICE_PROMPT
+
+
+# ── ISS-0232: the line's unit of measure as printed ────────────────────────────
+
+def test_line_unit_is_carried_through_when_printed():
+    parsed = _invoice_json(2)
+    parsed["line_items"][0]["unit"] = " box "
+    result = ocr_service._assemble_invoice_result(parsed)
+    assert [li["unit"] for li in result["line_items"]] == ["box", None]
+
+
+def test_line_unit_is_null_when_absent_blank_or_not_a_string():
+    parsed = _invoice_json(3)
+    parsed["line_items"][0]["unit"] = None
+    parsed["line_items"][1]["unit"] = "   "
+    parsed["line_items"][2]["unit"] = 12
+    result = ocr_service._assemble_invoice_result(parsed)
+    assert [li["unit"] for li in result["line_items"]] == [None, None, None]
+
+
+def test_invoice_prompt_asks_for_the_unit_and_the_receipt_prompt_does_not():
+    assert '"unit": "string or null"' in ocr_service._INVOICE_PROMPT
+    assert "unit" not in ocr_service._RECEIPT_PROMPT
+    assert "unit" not in ocr_service._SLIP_PROMPT
