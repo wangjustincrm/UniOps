@@ -358,8 +358,8 @@ rules:
     answer: >
       Upload Invoice accepts PDF, JPG, JPEG and PNG files of at most 25 MB.
       Any other file is refused before an invoice is created, with the reason
-      shown. Supporting documents on purchase requests, orders, goods receipts
-      and payment applications take PDF, images, Excel, Word, CSV, text and
+      shown. Supporting documents on purchase requests, orders, goods receipts,
+      payment applications and agreements take PDF, images, Excel, Word, CSV, text and
       saved emails (.msg / .eml), at most 25 MB per file.
     enforced_in: "epms-api app/schemas/invoice.py InvoiceCreate._invoice_file_type; expense-api invoice_attachments MAX_FILE_BYTES; epms/src/lib/uploadLimits.ts; file-api ALLOWED_CONTENT_TYPES; epms-api *_attachments.py MAX_FILE_SIZE; PRD INV-001, §3.4.1"
     provenance: pinned

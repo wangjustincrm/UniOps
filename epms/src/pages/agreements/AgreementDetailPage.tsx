@@ -35,6 +35,7 @@ import type { InvoiceStatus } from '@/services/invoices'
 import { isAgreementAdmissible } from '@/lib/agreements'
 import { canRecallDocument, canWithdrawDocument } from '@/lib/documentActions'
 import { clearSubmitFailure, peekSubmitFailure } from '@/lib/submitFailure'
+import { ATTACHMENT_RULE, uploadProblem } from '@/lib/uploadLimits'
 
 const TYPE_LABELS: Record<AgreementType, string> = {
   house_account: 'House Account',
@@ -455,6 +456,8 @@ export default function AgreementDetailPage() {
   const { data: attachmentsData, isLoading: attachmentsLoading } = useAgreementAttachments(agreement?.id ?? '')
   const attachments = attachmentsData ?? []
   const uploadAttachment = useUploadAgreementAttachment(agreement?.id ?? '')
+  // A picked file the upload rule refuses (ISS-0093), shown under the button.
+  const [attachmentProblem, setAttachmentProblem] = useState<string | null>(null)
   const deleteAttachment = useDeleteAgreementAttachment(agreement?.id ?? '')
 
   const handleConfirm = (action: ApprovalAction, comment: string) => {
@@ -842,17 +845,24 @@ export default function AgreementDetailPage() {
                   <input
                     id="agreement-attachment-upload"
                     type="file"
+                    accept={ATTACHMENT_RULE.accept}
                     className="sr-only"
                     disabled={uploadAttachment.isPending}
                     onChange={(e) => {
                       const file = e.target.files?.[0]
-                      if (file) uploadAttachment.mutate(file)
                       e.target.value = ''
+                      if (!file) return
+                      // Same rule as the other upload areas (ISS-0093).
+                      const problem = uploadProblem(file, ATTACHMENT_RULE)
+                      setAttachmentProblem(problem)
+                      if (!problem) uploadAttachment.mutate(file)
                     }}
                   />
                 </label>
               )}
             </div>
+            {canWrite && <p className="-mt-2 mb-3 text-xs text-neutral-400">{ATTACHMENT_RULE.hint}</p>}
+            {attachmentProblem && <p role="alert" className="mb-3 text-xs text-danger-600">{attachmentProblem}</p>}
             {attachmentsLoading ? (
               <div className="py-8 text-center text-sm text-neutral-400">Loading…</div>
             ) : attachments.length === 0 ? (
