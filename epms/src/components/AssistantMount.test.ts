@@ -7,7 +7,7 @@
  * would point the assistant at whatever id happened to be in the URL.
  */
 import { describe, it, expect } from 'vitest'
-import { deriveContext } from './AssistantMount'
+import { bottomBarLift, deriveContext } from './AssistantMount'
 
 const ID = '7c1f2a3b-4d5e-4f60-8a91-b2c3d4e5f607'
 
@@ -62,5 +62,31 @@ describe('deriveContext', () => {
 
   it('accepts an uppercase uuid', () => {
     expect(deriveContext(`/po/${ID.toUpperCase()}`).doc_id).toBe(ID.toUpperCase())
+  })
+})
+
+describe('bottomBarLift (ISS-0227)', () => {
+  const desktop = { width: 1440, height: 900 }
+  const phone = { width: 360, height: 740 }
+
+  it('stays put when no bar is on screen', () => {
+    expect(bottomBarLift([], desktop)).toBe(0)
+  })
+
+  it('rises by the height of a review bar under the button', () => {
+    // The PR / PO / PA review bar: fixed bottom-0 left-60 right-0, ~61px tall.
+    expect(bottomBarLift([{ top: 839, right: 1440, height: 61 }], desktop)).toBe(61)
+  })
+
+  it('also on a phone, where the bar is taller because its buttons wrap', () => {
+    expect(bottomBarLift([{ top: 620.4, right: 360, height: 119.6 }], phone)).toBe(120)
+  })
+
+  it('ignores a bottom bar that does not reach the button', () => {
+    expect(bottomBarLift([{ top: 839, right: 900, height: 61 }], desktop)).toBe(0)
+  })
+
+  it('ignores a hidden bar', () => {
+    expect(bottomBarLift([{ top: 0, right: 0, height: 0 }], desktop)).toBe(0)
   })
 })

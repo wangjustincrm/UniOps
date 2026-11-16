@@ -10,6 +10,7 @@
  * the tab store on purpose: the tab store is absent in the iframe-embedded mode,
  * and a global overlay must never be the reason a page fails to render.
  */
+import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Assistant, type AssistantContext, type AssistantReply, type AssistantSavedApi, type AssistantSavedList } from '@uniops/shell'
 import { api } from '@/lib/api'
@@ -111,16 +112,69 @@ const saved: AssistantSavedApi = {
   remove: (id) => api.delete<AssistantSavedList>(`/assistant/saved/${id}`),
 }
 
+/**
+ * How far the round chat button must rise to clear a bar pinned to the bottom
+ * of the window — the review bar on PR / PO / PA / agreement detail pages
+ * (ISS-0227: the button sat on its Approve button, showing "Appro"). Only bars
+ * that reach the button's corner count. `bars` are the bars' rectangles.
+ */
+export function bottomBarLift(
+  bars: { top: number; right: number; height: number }[],
+  viewport: { width: number; height: number },
+): number {
+  // The button is 48px wide, 24px from the right edge (right-6 w-12).
+  const buttonLeft = viewport.width - 24 - 48
+  let lift = 0
+  for (const b of bars) {
+    if (b.height <= 0 || b.right <= buttonLeft) continue
+    lift = Math.max(lift, Math.ceil(viewport.height - b.top))
+  }
+  return lift
+}
+
+/**
+ * Keeps --assistant-lift on <html> equal to the height of whatever bottom bar
+ * is on screen. Read from the DOM rather than wired through every page so the
+ * pages that own the bars need no change; the bars are Tailwind's
+ * `fixed bottom-0`.
+ */
+function useBottomBarLift() {
+  useEffect(() => {
+    let frame = 0
+    const measure = () => {
+      frame = 0
+      const bars = Array.from(document.querySelectorAll<HTMLElement>('.fixed.bottom-0'))
+        .map((el) => el.getBoundingClientRect())
+      const lift = bottomBarLift(bars, { width: window.innerWidth, height: window.innerHeight })
+      document.documentElement.style.setProperty('--assistant-lift', `${lift}px`)
+    }
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(measure) }
+    measure()
+    const observer = new MutationObserver(schedule)
+    observer.observe(document.body, { childList: true, subtree: true })
+    window.addEventListener('resize', schedule)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', schedule)
+      if (frame) cancelAnimationFrame(frame)
+      document.documentElement.style.removeProperty('--assistant-lift')
+    }
+  }, [])
+}
+
 export function AssistantMount() {
   const { pathname } = useLocation()
   // Same field AppLayout gates on, rather than a second definition of
   // "signed in" that could drift from it.
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  useBottomBarLift()
 
   // No panel on the login screen: there is nothing to ask about, and every call
   // it could make would 401.
   if (!isAuthenticated) return null
 
+  // The button sits 24px above a bottom bar when one is shown, else 24px
+  // above the window edge as before.
   return (
     <Assistant
       ask={ask}
@@ -128,6 +182,7 @@ export function AssistantMount() {
       exportQuery={exportQuery}
       saved={saved}
       context={deriveContext(pathname)}
+      className="bottom-[calc(var(--assistant-lift,0px)+1.5rem)]"
     />
   )
 }
