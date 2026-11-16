@@ -101,6 +101,8 @@ function PoPaEditPage() {
   // Set once the user ticks or unticks an invoice. Until then the saved
   // amounts stand; from then on they follow the selection (ISS-0113).
   const [invoicesTouched, setInvoicesTouched] = useState(false)
+  // Same for the prepayment %: the saved tax stands until the % is changed.
+  const [pctTouched, setPctTouched] = useState(false)
   const [shippingAmount, setShipping]   = useState('')
   const [otherCharges, setOther]        = useState('')
   const [otherChargesNote, setOtherNote]= useState('')
@@ -279,7 +281,10 @@ function PoPaEditPage() {
 
   // After a change to the invoice selection, Pre-tax and Tax follow the ticked
   // invoices, as on New PA (PRD §3.15.2). Tax a user types afterwards sticks.
-  // The saved tax is kept until the % changes; then it follows, unless typed.
+  // The saved tax is kept until the % changes; then it follows, unless typed
+  // on this page. The saved tax counts as "edited" only until then — it was
+  // for the old %, and keeping it left Tax at 30% while Pre-tax moved to 40%
+  // (ISS-0133).
   const prepayPctRef = useRef<string | null>(null)
   useEffect(() => {
     if (!isPrepayment || !initialized) return
@@ -294,9 +299,15 @@ function PoPaEditPage() {
     if (!invoicesTouched || isPrepayment) return
     const linked = selectedInvoices.length > 0
     const auto = linked ? (derivedTotal ?? invoiceSubtotal) : (isAgreementMode ? 0 : autoSubtotal)
-    setSubtotal(auto > 0 ? String(Number(auto.toFixed(2))) : '')
-    if (!taxManuallyEdited && linked) setTaxAmount(invoiceTax.toFixed(2))
-    else if (!taxManuallyEdited && isAgreementMode) setTaxAmount('')
+    const pretax = auto > 0 ? Number(auto.toFixed(2)) : 0
+    setSubtotal(pretax > 0 ? String(pretax) : '')
+    // With no invoice left, Tax follows the pre-tax at the PO's rate (CAD
+    // only), as on New PA — the last invoice's tax used to stay behind with an
+    // empty Pre-tax, a total of tax only (ISS-0261).
+    if (taxManuallyEdited) return
+    if (linked) setTaxAmount(invoiceTax.toFixed(2))
+    else if (!isAgreementMode && po?.currency === 'CAD' && pretax > 0) setTaxAmount((pretax * paTaxRate).toFixed(2))
+    else setTaxAmount('')
   }, [invoicesTouched, invoiceSubtotal, invoiceTax, derivedTotal, selectedInvoices.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -820,7 +831,13 @@ function PoPaEditPage() {
                         <input
                           type="number" min={1} max={100} step={1}
                           value={prepaymentPct}
-                          onChange={(e) => setPrepaymentPct(e.target.value)}
+                          onChange={(e) => {
+                            setPrepaymentPct(e.target.value)
+                            if (!pctTouched) {
+                              setPctTouched(true)
+                              setTaxManuallyEdited(false)   // the saved tax was for the old %
+                            }
+                          }}
                           className={cn(
                             'h-9 w-full pl-3 pr-8 rounded-lg border text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary-600',
                             submitted && (!prepaymentPct || parseFloat(prepaymentPct) <= 0 || parseFloat(prepaymentPct) > 100) ? 'border-danger-400' : 'border-neutral-300'
