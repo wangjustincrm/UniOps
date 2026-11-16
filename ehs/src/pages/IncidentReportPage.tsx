@@ -493,33 +493,11 @@ export default function IncidentReportPage() {
         </p>
       )}
 
-      {/* ★ UAT 13: "put 'who was hurt' and 'which equipment was involved' on
-          the same line and move this up to under the date, time, and batch
-          code line" — and the equipment there on the other two forms. */}
-      {/* ★ Round 10 (open box): "add this equipment as a picker on all forms so
-          that we can identify what piece of equipment contributed to the
-          incidents." Optional: plenty of incidents involve none. */}
-      <div className={form.kind === 'medical' ? 'grid gap-x-3 sm:grid-cols-2' : ''}>
-        {form.kind === 'medical' && (
-          <Field
-          label="Who was hurt?"
-          help={form.injured.departmentName
-            ? `Department: ${form.injured.departmentName} — filled in from their record.`
-            : 'Search for an employee, or type the name of a contractor or visitor.'}
-        >
-            <PersonPicker value={form.injured} onChange={(v) => set('injured', v)} />
-          </Field>
-        )}
-        <Field label="Which equipment was involved?"
-               help="From the equipment register. Leave it empty if none was, or it is not listed.">
-          <EquipmentSelect value={form.equipmentId ?? null}
-                           onChange={(id) => set('equipmentId', id)}
-                           locationId={form.locationId || null} />
-        </Field>
-      </div>
-
       {/* ★ UAT 13: "put the 'what kind of incident was this' and 'where did
-          this happen' on the same line", on all three forms. */}
+          this happen' on the same line", on all three forms. ★ UAT 14, TC-06:
+          "move the 'where did this happen' to above the equipment picker on
+          all forms" — so this line comes before who and which equipment, and
+          the equipment list can narrow to the area already picked. */}
       <div className="grid gap-x-3 sm:grid-cols-2">
         <Field label="What kind of incident was this?" required>
           {/* ★ Round 5: "when selecting unconscious, automatically default to
@@ -557,6 +535,31 @@ export default function IncidentReportPage() {
             value={form.locationId || null}
             onChange={(id) => set('locationId', id ?? '')}
           />
+        </Field>
+      </div>
+
+      {/* ★ UAT 13: "put 'who was hurt' and 'which equipment was involved' on
+          the same line and move this up to under the date, time, and batch
+          code line" — and the equipment there on the other two forms. */}
+      {/* ★ Round 10 (open box): "add this equipment as a picker on all forms so
+          that we can identify what piece of equipment contributed to the
+          incidents." Optional: plenty of incidents involve none. */}
+      <div className={form.kind === 'medical' ? 'grid gap-x-3 sm:grid-cols-2' : ''}>
+        {form.kind === 'medical' && (
+          <Field
+          label="Who was hurt?"
+          help={form.injured.departmentName
+            ? `Department: ${form.injured.departmentName} — filled in from their record.`
+            : 'Search for an employee, or type the name of a contractor or visitor.'}
+        >
+            <PersonPicker value={form.injured} onChange={(v) => set('injured', v)} />
+          </Field>
+        )}
+        <Field label="Which equipment was involved?"
+               help="From the equipment register. Leave it empty if none was, or it is not listed.">
+          <EquipmentSelect value={form.equipmentId ?? null}
+                           onChange={(id) => set('equipmentId', id)}
+                           locationId={form.locationId || null} />
         </Field>
       </div>
 
