@@ -1,12 +1,15 @@
 # Safety (EHS) — Product Requirements Document
 
-**Version**: 0.25
+**Version**: 0.26
 **Date**: 2026-11-16
 **Status**: In Development (branch, not deployed)
 **Scope**: A workplace health and safety module for the Kingston plant (Ontario OHSA / WSIB), replacing SiteDocs. It covers incidents and statutory clocks, corrective actions, inspections and forms, training, JHSC, chemicals/WHMIS, permits, equipment, documents, and dashboards.
 **Source**: Consolidated from the Safety Module PRD series in `/srv/uniops/`. The baseline is the full requirement list in v0.2 (`Safety-Module-PRD-EN-v0.2.docx`, 28 Aug 2026). Changes come from v0.3 and the HSE reply to it (`Safety-Module-PRD-EN-v0.3_Reply.docx`, 31 Aug), and from v0.4 and the HSE reply to it (`Safety-Module-PRD-EN-v0.4_Reply.docx`, 1 Sep). v0.3 and v0.4 were delta documents, so they do not restate the full list.
 
-**What changed in this version (0.24 → 0.25)**
+**What changed in this version (0.25 → 0.26)**
+- §1.6 "Review of UAT 13 and 14": a toolbox talk held again is saved with its signatures; the Section B rule reaches only incidents the supervisor can open; an answered JHSC recommendation sent again asks for no reply; who recorded a filing is kept; an anonymous reporter's own food safety assessment is unsigned; causes keep their department's recorded name; a quiz copy starts as practice only; the risk register takes the dashboard's year; placeholders are names only and subjects one line.
+
+**What changed in version 0.25 (0.24 → 0.25)**
 - §1.6 "UAT 14": Reports read a typed incident with no injury class as No injury and tell the two near-miss types apart; Where did this happen comes before the equipment picker; hazards and PPE side by side on the investigation; both risk assessment buttons on one line and green on a food-safety near miss; every email Safety sends in Settings → Email wording; quizzes renamed and copied; this month against last on the dashboard's figures; the Food Safety dashboard.
 
 **What changed in version 0.24 (0.23 → 0.24)**
@@ -431,6 +434,19 @@ UAT 14 (built; no migration)
 - The HSE dashboard: on the four injury boxes and on Injuries by month, Near misses, Corrective actions raised and Hazard assessments, a small count for this month (December, when looking back at a past year) with an arrow — up dark green, down dark red, a dash for the same — against the month before, each counted as its own figure is. The words are on hover and for screen readers.
 - The Food Safety dashboard (beside the HSE dashboard's title): food-safety near misses this year; this month's with last month's and the change in per cent; the risk ratings by each near miss's latest Food Safety Risk Assessment, each opening the Food Safety Risk register at that band; the investigations open (reported or being investigated), pending (waiting to be closed) and closed; the corrective actions raised on food-safety near misses — created, completed, outstanding, each opening the near misses they were raised on; the near misses by month; and the average days to resolve, worked out as for all incidents (report sent to last close, over the closed ones). A food-safety near miss is the Near Miss — Food Safety type or any near miss in the Food Safety category; drafts are not counted. The incident register takes the same rule as a filter, so every figure opens exactly what it counted.
 
+Review of UAT 13 and 14 (built; no migration)
+
+- A past toolbox talk held again is saved, with its signatures, when its sheet is finished; nothing is saved on opening the sheet, so one closed unsigned leaves no talk to deliver and nothing is chased. It always names the delivery it repeats — the person's own first delivery of the talk, or the talk's first — and is marked "held again" in To deliver. A talk handed to nobody yet cannot be held again.
+- The Section B rule (Settings → Rules) lets a supervisor see and fill in Section B only on an incident they can open (one they reported or are named on, or any if they may read the register). HSE and first aiders are unchanged.
+- A JHSC recommendation already answered, sent again, says "for your information, already answered", with the answer, and asks for no reply; its preview says the same. Its wording is in Settings → Email wording (20 emails).
+- The MOL report and Form 7 filings keep who recorded them.
+- On an anonymous food-safety near miss, an assessment its reporter made shows no name to anybody but HSE, on the incident and in the register.
+- A cause's department keeps the name it had when picked, through later saves; a department no longer in use cannot be newly picked. A Production Chronology time must be a date and time.
+- A copied quiz starts as practice only, so it does not replace the quiz a course or document asks for until it is given one; a copy needs a title.
+- The Food Safety dashboard's risk ratings open the register for the same year; the register never lists drafts.
+- In Email wording, a placeholder is a {name} and nothing else; a subject is always one line (line breaks in a value become spaces).
+- This month's figure on the dashboards reads "so far" against the whole of last month.
+
 ## 2. Functional Requirements — 57 Items
 
 Priority: **P0** legally required or the loop breaks without it · **P1** needed day to day · **P2** strengthens the system · **P3** needed for COR. **Phase** is as stated in v0.2–v0.4; "—" means the source did not assign one.
@@ -621,6 +637,7 @@ PORTAL.md (shell, identity, task inbox) · VMS.md (contractors) · CMMS.md (prod
 | 0.23 | 2026-11-15 | UAT 13 food safety: the Food Safety Risk Assessment and register, immediate causes with department and date, the Production Chronology (§1.6). |
 | 0.24 | 2026-11-16 | UAT 13: email wording HSE can change, the corrective action email, Systems by area in the equipment picker, a toolbox talk held again (§1.6). |
 | 0.25 | 2026-11-16 | UAT 14: injury classification in Reports, form and investigation layout, the two assessment buttons, every email in Email wording, quiz copy and rename, this month's arrows on the dashboard, the Food Safety dashboard (§1.6). |
+| 0.26 | 2026-11-16 | Review of UAT 13 and 14: toolbox talks held again, the Section B rule, JHSC sent again, filings, anonymous assessments, causes' departments, quiz copies, the register's year, email placeholders (§1.6). |
 
 ---
 
