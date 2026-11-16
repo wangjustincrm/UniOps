@@ -571,6 +571,30 @@ export default function PaDetailPage() {
   // ever submitted — is only "Created" (ISS-0183).
   const notSubmitted = pa.status === 'draft' || (pa.status === 'cancelled' && !submitEvent)
 
+  // A zero-cash settlement is a reconciliation, not a payment: no approval
+  // chain — an overpaid one waits for Finance BP confirmation only (PP-013).
+  // The configured chain used to be drawn for it, showing "Department Manager
+  // — Awaiting action" on a PA no manager is ever asked about (ISS-0133).
+  const zeroCashSettlement = pa.pa_type === 'settlement' && Number(pa.payment_amount) === 0
+    && (['submitted', 'processed'] as PaStatus[]).includes(pa.status)
+  const zeroCashSteps = [
+    ...(pa.status === 'submitted' ? [{
+      label: 'Finance BP Confirmation',
+      actor: undefined as string | undefined,
+      date: undefined as string | undefined,
+      note: 'Prepaid more than the final value — no payment; confirm the credit note.' as string | undefined,
+      status: 'active' as const,
+    }] : []),
+    {
+      label: 'Prepayment Reconciled (no payment)',
+      actor: undefined as string | undefined,
+      date: pa.status === 'processed' ? pa.paid_on ?? undefined : undefined,
+      dateOnly: true,
+      note: undefined as string | undefined,
+      status: pa.status === 'processed' ? 'done' as const : 'pending' as const,
+    },
+  ]
+
   const steps = [
     {
       label: notSubmitted ? 'PA Created' : 'PA Created & Submitted',
@@ -581,7 +605,8 @@ export default function PaDetailPage() {
       status: 'done' as const,
       note: undefined as string | undefined,
     },
-    ...wfNodes.map((node, i) => {
+    ...(zeroCashSettlement ? zeroCashSteps : []),
+    ...(zeroCashSettlement ? [] : wfNodes).map((node, i) => {
       const { status: st, event: evt } = nodeStates[i]
       const isAutoSkipped = st === 'skipped'
       const isDecision = st === 'returned' || st === 'rejected'
@@ -609,7 +634,7 @@ export default function PaDetailPage() {
           : st,
       }
     }),
-    {
+    ...(zeroCashSettlement ? [] : [{
       label: 'Payment Processed',
       actor: undefined as string | undefined,
       // The payment date Finance recorded (PAY-005) — a date, so shown
@@ -619,7 +644,7 @@ export default function PaDetailPage() {
       dateOnly: true,
       note: undefined as string | undefined,
       status: pa.status === 'processed' ? 'done' as const : pa.status === 'approved' ? 'active' as const : 'pending' as const,
-    },
+    }]),
   ]
 
   if (pa.pa_type === 'prepayment') {
