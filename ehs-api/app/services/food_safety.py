@@ -44,3 +44,14 @@ def band(value: int) -> str:
         if value >= floor:
             return code
     return "low"
+
+
+def near_miss_sql(alias: str = "ehs_incidents") -> str:
+    """★ UAT 14: what a food-safety near miss is, as SQL — the same rule as
+    `is_food_safety_near_miss` (the Near Miss — Food Safety type, or any near
+    miss in the Food Safety category), so the dashboard's figures, the
+    register's filter and the incident page agree. `alias` is a constant from
+    the caller, never anything a request sent."""
+    a = alias
+    return (f"({a}.form_kind = 'near_miss' and ({a}.extra->>'incident_type' = 'near_miss_food_safety'"
+            f" or {a}.category_id in (select id from ehs_vocabulary_items where code = 'FOOD')))")

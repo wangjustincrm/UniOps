@@ -31,6 +31,8 @@ const DRILL_KEYS = [
   'status', 'has_root_causes', 'has_actions', 'actions_state',
   // Round 12, TC-05: investigations not signed off.
   'investigation_outstanding',
+  // UAT 14: the Food Safety dashboard.
+  'food_safety',
 ] as const
 
 export default function IncidentListPage() {

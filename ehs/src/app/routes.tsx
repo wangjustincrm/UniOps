@@ -18,6 +18,7 @@ import HoursWorkedPage from '@/pages/settings/HoursWorkedPage'
 import IncidentDetailPage from '@/pages/IncidentDetailPage'
 import IncidentListPage from '@/pages/IncidentListPage'
 import DashboardPage from '@/pages/DashboardPage'
+import FoodSafetyDashboardPage from '@/pages/FoodSafetyDashboardPage'
 import EquipmentPage from '@/pages/settings/EquipmentPage'
 import IncidentTypesPage from '@/pages/settings/IncidentTypesPage'
 import FormBuilderPage from '@/pages/settings/FormBuilderPage'
@@ -56,6 +57,12 @@ import NotifyGroupsPage from '@/pages/settings/NotifyGroupsPage'
 import VocabulariesPage from '@/pages/settings/VocabulariesPage'
 
 export const ehsRoutes: RouteDef[] = [
+  {
+    // ★ UAT 14: the Food Safety dashboard, beside the HSE one.
+    path: '/dashboard/food-safety',
+    element: <FoodSafetyDashboardPage />,
+    tab: { title: 'Food Safety dashboard', icon: 'BarChart3', keyStrategy: 'static' },
+  },
   {
     path: '/dashboard',
     element: <DashboardPage />,

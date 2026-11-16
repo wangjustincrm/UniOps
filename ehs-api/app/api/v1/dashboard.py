@@ -116,8 +116,17 @@ class Jhsc(BaseModel):
     members: int = 0
 
 
+class MonthChange(BaseModel):
+    """UAT 14: this month's figure and last month's, for the arrow."""
+    month: str
+    previous: str
+    this: dict[str, int]
+    last: dict[str, int]
+
+
 class DashboardOut(BaseModel):
     headline: Headline
+    month_change: MonthChange
     medical_events: list[MonthRow]
     near_misses: list[NearMissRow]
     body_parts: list[BodyRow]
@@ -159,6 +168,7 @@ async def get_dashboard(
     }
     return DashboardOut(
         headline=headline,
+        month_change=await svc.month_on_month(db, year=year),
         medical_events=await svc.medical_events_by_month(db, year=year),
         near_misses=await svc.near_misses_by_month(db, year=year),
         body_parts=body["rows"],
@@ -172,6 +182,45 @@ async def get_dashboard(
         tones={k: ds.tone(k, v, thresholds) for k, v in figures.items()},
         chart_styles=ds.chart_styles(config.dashboard_chart_styles if config else {}),
     )
+
+
+# ── Food safety (UAT 14) ────────────────────────────────────────────────────
+
+class FsMonth(BaseModel):
+    month: str
+    count: int
+    previous: str
+    previous_count: int
+    change_percent: float | None
+
+
+class FsMonthRow(BaseModel):
+    month: str
+    count: int
+
+
+class FoodSafetyOut(BaseModel):
+    year: int
+    total: int
+    month: FsMonth
+    bands: dict[str, int]
+    not_assessed: int
+    investigations: dict[str, int]
+    capa: dict[str, int]
+    by_month: list[FsMonthRow]
+    average_days: float | None
+    resolved: int
+
+
+@router.get("/food-safety", response_model=FoodSafetyOut)
+async def food_safety(
+    db: SessionDep, user: CanReadIncident,  # noqa: ARG001
+    year: int | None = Query(default=None, ge=2000, le=2100),
+):
+    """★ UAT 14: "beside the 'HSE Dashboard' … create a similar title of 'Food
+    Safety'", with the figures Kirk listed. Each one is counted so that the
+    list it opens holds exactly the records it counted."""
+    return FoodSafetyOut(**await svc.food_safety(db, year=year or plant_today().year))
 
 
 # ── The chart by supervisor ─────────────────────────────────────────────────

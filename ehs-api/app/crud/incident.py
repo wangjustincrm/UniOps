@@ -221,8 +221,16 @@ async def list_(
     has_actions: bool = False,
     actions_state: str | None = None,
     investigation_outstanding_only: bool = False,
+    food_safety_only: bool = False,
 ) -> list[Incident]:
     stmt = select(Incident)
+    if food_safety_only:
+        # ★ UAT 14: the Food Safety dashboard's figures open these.
+        from sqlalchemy import text as sql_text
+        from app.services.food_safety import near_miss_sql
+        # Drafts left out, as the dashboard counts them: the list it opens
+        # holds the near misses the figure counted, and no others.
+        stmt = stmt.where(sql_text(near_miss_sql("ehs_incidents")), Incident.status != "draft")
     if investigation_outstanding_only:
         stmt = stmt.where(investigation_outstanding())
     if reported_by:

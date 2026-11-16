@@ -490,3 +490,135 @@ async def jhsc_attendance(db: AsyncSession, *, year: int) -> dict:
         "months": months,
         "members": composition["total"],
     }
+
+
+# ── This month against last (UAT 14) ────────────────────────────────────────
+
+def _this_and_last(year: int) -> tuple[tuple[int, int], tuple[int, int]]:
+    """The month the figures are for — this one, or looking back at another
+    year, its December, as the scorecard's colour is — and the one before it,
+    which for January is the December before."""
+    today = plant_today()
+    m = today.month if year == today.year else 12
+    return (year, m), ((year, m - 1) if m > 1 else (year - 1, 12))
+
+
+async def _month_counts(db: AsyncSession, y: int, m: int) -> dict[str, int]:
+    start, end = month_bounds(y, m)
+    p = {"start": start, "end": end}
+    inc = (await db.execute(text("""
+        select count(*) filter (where injury_class is not null),
+               count(*) filter (where injury_class = 'first_aid'),
+               count(*) filter (where injury_class = 'medical_aid'),
+               count(*) filter (where injury_class = 'lost_time'),
+               count(*) filter (where form_kind = 'near_miss')
+          from ehs_incidents
+         where occurred_at >= :start and occurred_at < :end and status <> 'draft'
+    """), p)).one()
+    capa = (await db.execute(text(
+        "select count(*) from ehs_actions where created_at >= :start and created_at < :end"), p)).scalar()
+    hazards = (await db.execute(text(
+        "select count(*) from ehs_hazards where created_at >= :start and created_at < :end"), p)).scalar()
+    return {"injuries": inc[0], "first_aid": inc[1], "medical_aid": inc[2], "lost_time": inc[3],
+            "near_misses": inc[4], "capa_raised": capa or 0, "assessments": hazards or 0}
+
+
+async def month_on_month(db: AsyncSession, *, year: int) -> dict:
+    """★ UAT 14: "on each current graphic, add a small font counting the number
+    for each month and put an indicator arrow if that is an increase or a
+    decrease over the previous month." Each figure counted the way its own
+    box or chart counts it: injuries by when they happened, drafts left out;
+    corrective actions and hazard assessments by when they were raised."""
+    (y, m), (py, pm) = _this_and_last(year)
+    return {"month": f"{y}-{m:02d}", "previous": f"{py}-{pm:02d}",
+            "this": await _month_counts(db, y, m), "last": await _month_counts(db, py, pm)}
+
+
+# ── The Food Safety dashboard (UAT 14) ───────────────────────────────────────
+
+def _pct(now: int, before: int) -> float | None:
+    """The change as a percentage of last month; None when last month had none,
+    where a percentage means nothing."""
+    return round((now - before) * 100.0 / before, 1) if before else None
+
+
+async def food_safety(db: AsyncSession, *, year: int) -> dict:
+    """Kirk's list, in order: the near misses this year; this month against
+    last; the risk ratings; the investigations open, pending and closed; the
+    corrective actions raised on them; the month by month count; and the
+    average days to resolve, worked out as for every incident."""
+    from app.services.food_safety import near_miss_sql
+    fs = near_miss_sql("i")
+    start, end = _year_bounds(year)
+    p = {"start": start, "end": end}
+    in_year = f"{fs} and i.occurred_at >= :start and i.occurred_at < :end and i.status <> 'draft'"
+
+    total = (await db.execute(text(f"select count(*) from ehs_incidents i where {in_year}"), p)).scalar() or 0
+
+    (y, m), (py, pm) = _this_and_last(year)
+    async def month(yy: int, mm: int) -> int:
+        s, e = month_bounds(yy, mm)
+        return (await db.execute(text(
+            f"select count(*) from ehs_incidents i where {fs} and i.status <> 'draft'"
+            " and i.occurred_at >= :s and i.occurred_at < :e"), {"s": s, "e": e})).scalar() or 0
+    now, before = await month(y, m), await month(py, pm)
+
+    # The latest assessment of each, as the register reads it.
+    bands = {b: 0 for b in ("critical", "high", "medium", "low")}
+    not_assessed = 0
+    for band, n in (await db.execute(text(f"""
+        select a.band, count(*)
+          from ehs_incidents i
+          left join lateral (
+                select band from ehs_food_safety_assessments f
+                 where f.incident_id = i.id order by f.assessed_at desc limit 1) a on true
+         where {in_year}
+      group by 1
+    """), p)).all():
+        if band is None:
+            not_assessed = n
+        else:
+            bands[band] = n
+
+    st = (await db.execute(text(f"""
+        select count(*) filter (where i.status in ('submitted', 'under_investigation')),
+               count(*) filter (where i.status = 'pending_closure'),
+               count(*) filter (where i.status = 'closed')
+          from ehs_incidents i where {in_year}
+    """), p)).one()
+
+    capa = (await db.execute(text(f"""
+        select count(*) filter (where a.status <> 'cancelled'),
+               count(*) filter (where a.status = 'closed'),
+               count(*) filter (where a.status in ('open', 'in_progress', 'pending_verification'))
+          from ehs_actions a join ehs_incidents i on a.source_type = 'incident' and a.source_id = i.id
+         where {in_year}
+    """), p)).one()
+
+    by_month = {f"{k:02d}": 0 for k in range(1, 13)}
+    for mm, n in (await db.execute(text(f"""
+        select to_char(timezone('America/Toronto', i.occurred_at), 'MM'), count(*)
+          from ehs_incidents i where {in_year} group by 1
+    """), p)).all():
+        by_month[mm] = n
+
+    # The same sum as resolution_by_month: report sent to its last close, over
+    # the closed ones only.
+    closed, days = (await db.execute(text(f"""
+        select count(*) filter (where i.status = 'closed' and i.closed_at is not null),
+               sum(extract(epoch from i.closed_at - coalesce(i.submitted_at, i.created_at)) / 86400.0)
+                 filter (where i.status = 'closed' and i.closed_at is not null)
+          from ehs_incidents i where {in_year}
+    """), p)).one()
+
+    return {
+        "year": year, "total": total,
+        "month": {"month": f"{y}-{m:02d}", "count": now, "previous": f"{py}-{pm:02d}",
+                  "previous_count": before, "change_percent": _pct(now, before)},
+        "bands": bands, "not_assessed": not_assessed,
+        "investigations": {"open": st[0], "pending": st[1], "closed": st[2]},
+        "capa": {"created": capa[0], "completed": capa[1], "outstanding": capa[2]},
+        "by_month": [{"month": k, "count": v} for k, v in by_month.items()],
+        "average_days": round(max(float(days), 0) / closed, 1) if closed else None,
+        "resolved": closed or 0,
+    }

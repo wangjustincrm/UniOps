@@ -226,6 +226,8 @@ async def list_incidents(
         description="Round 10: only those with a corrective action completed, or one outstanding"),
     investigation_outstanding: bool = Query(
         default=False, description="Round 12: only those whose investigation is not signed off"),
+    food_safety: bool = Query(
+        default=False, description="UAT 14: only food-safety near misses"),
 ):
     # Without ehs.incident.read the register is not browsable, but a person's
     # own reports are: the list narrows rather than refusing outright.
@@ -242,6 +244,7 @@ async def list_incidents(
         has_root_causes=has_root_causes, has_actions=has_actions,
         actions_state=actions_state,
         investigation_outstanding_only=investigation_outstanding,
+        food_safety_only=food_safety,
     )
     return [IncidentListItem.model_validate(r) for r in rows]
 

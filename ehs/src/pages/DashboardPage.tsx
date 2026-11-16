@@ -28,12 +28,13 @@
  * library, and these print.
  */
 import TabLink from '@/components/TabLink'
+import { DashboardTitles, MonthChange } from '@/components/dashboard/MonthChange'
 import { Fragment, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { TrendingUp } from 'lucide-react'
 import { api } from '@/lib/api'
 import { formatAreaPath } from '@/lib/areaPath'
-import { PageHeader, SectionTitle } from '@/components/ui'
+import { SectionTitle } from '@/components/ui'
 import { formatDate } from '@/lib/formatDate'
 import { usePermissions } from '@/hooks/usePermissions'
 import {
@@ -58,8 +59,13 @@ interface ResolutionRow {
 interface CapaRow { month: string; created: number; resolved: number }
 interface AssessmentRow { month: string; count: number }
 type Tone = 'good' | 'warn' | 'bad' | null
+interface MonthChangeData {
+  month: string; previous: string
+  this: Record<string, number>; last: Record<string, number>
+}
 interface Dashboard {
   headline: Headline
+  month_change: MonthChangeData
   medical_events: MonthRow[]
   near_misses: NearMissRow[]
   body_parts: BodyRow[]
@@ -178,16 +184,19 @@ function thresholdWords(key: string, settings: Settings | undefined): string | n
     : `Green below ${pair.good}, red above ${pair.bad}, yellow between.`
 }
 
-function Box({ value, label, tone, to, explain, empty }: {
+function Box({ value, label, tone, to, explain, empty, change }: {
   value: number | null; label: string; tone: Tone; to?: string
   explain: string | null
   /** Said instead of a number when there is none. */
   empty?: string
+  /** UAT 14: this month's count and its arrow, top right. */
+  change?: React.ReactNode
 }) {
   const t = tone ? TONE_STYLE[tone] : NO_TONE
   return (
-    <div className={`flex min-h-[104px] flex-col justify-between rounded-xl border p-4 ${t.box}`}
+    <div className={`relative flex min-h-[104px] flex-col justify-between rounded-xl border p-4 ${t.box}`}
          title={[t.word, explain].filter(Boolean).join(' — ') || undefined}>
+      {change && <div className="absolute right-3 top-2.5">{change}</div>}
       <p className={`text-4xl font-bold tabular-nums leading-none ${t.value}`}>
         {value === null ? (
           <span className="text-base font-semibold text-neutral-600">{empty ?? '—'}</span>
@@ -319,7 +328,7 @@ export default function DashboardPage() {
   if (isError || !data) {
     return (
       <div className="p-4">
-        <PageHeader title="HSE dashboard" />
+        <div className="mb-4"><DashboardTitles current="hse" /></div>
         <div role="alert" className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2.5">
           <p className="min-w-0 flex-1 text-sm text-danger-800">Could not load the dashboard.</p>
           <button type="button" onClick={() => refetch()} disabled={isFetching}
@@ -333,6 +342,10 @@ export default function DashboardPage() {
 
   const h = data.headline
   const year = h.year
+  // ★ UAT 14: this month's count against last month's, on each figure.
+  const mc = data.month_change
+  const change = (key: string) => (
+    <MonthChange now={mc.this[key] ?? 0} before={mc.last[key] ?? 0} month={mc.month} previous={mc.previous} />)
   const nearThis = data.near_misses.reduce((n, r) => n + r.this_year, 0)
   const nearLast = data.near_misses.reduce((n, r) => n + r.last_year, 0)
   const thisMonth = new Date().getFullYear() === year ? new Date().getMonth() : 11
@@ -348,7 +361,7 @@ export default function DashboardPage() {
 
   const panels: Record<string, React.ReactNode> = {
     injuries_by_month: (
-      <Panel title="Injuries by month" className="lg:col-span-2">
+      <Panel title="Injuries by month" className="lg:col-span-2" aside={change('injuries')}>
         <MonthColumns
           rows={data.medical_events.map((r) => ({ ...r }))}
           series={[{ key: 'first_aid', label: 'First aid', cls: 'bg-primary-300' },
@@ -360,7 +373,10 @@ export default function DashboardPage() {
     ),
     near_misses: (
       <Panel title={`Near misses recorded — ${nearThis}`}
-             aside={nearLast > 0 ? <span className="text-xs text-neutral-500">{nearLast} last year</span> : undefined}
+             aside={<span className="flex items-baseline gap-3">
+               {nearLast > 0 && <span className="text-xs text-neutral-500">{nearLast} last year</span>}
+               {change('near_misses')}
+             </span>}
              note="A rising line here is good — it means people are reporting what nearly happened.">
         <MonthColumns
           rows={data.near_misses}
@@ -398,7 +414,7 @@ export default function DashboardPage() {
       </Panel>
     ),
     capa: (
-      <Panel title="Corrective actions raised and closed"
+      <Panel title="Corrective actions raised and closed" aside={change('capa_raised')}
              note="Raised in the month, and closed in the month — closed means closed, not just marked done.">
         <MonthColumns
           rows={data.capa}
@@ -407,7 +423,8 @@ export default function DashboardPage() {
       </Panel>
     ),
     assessments: (
-      <Panel title={`Hazard assessments completed — ${data.assessments.reduce((n, r) => n + r.count, 0)}`}>
+      <Panel title={`Hazard assessments completed — ${data.assessments.reduce((n, r) => n + r.count, 0)}`}
+             aside={change('assessments')}>
         <MonthColumns
           rows={data.assessments}
           series={[{ key: 'count', label: 'Assessments', cls: 'bg-primary-500' }]} />
@@ -489,7 +506,7 @@ export default function DashboardPage() {
   return (
     <div className="p-4">
       <header className="mb-4 flex flex-wrap items-baseline gap-x-3">
-        <PageHeader title="HSE dashboard" />
+        <DashboardTitles current="hse" />
         <span className="text-sm text-neutral-500">{year}</span>
       </header>
 
@@ -504,15 +521,19 @@ export default function DashboardPage() {
                to={drillTo(year, `injuries in ${year}, newest first`, { injured_only: 'true' })} />
         </div>
         <Box value={h.injuries} label={`Medical incidents in ${year}`} tone={tones.injuries}
+             change={change('injuries')}
              explain={thresholdWords('injuries', settings.data)}
              to={drillTo(year, `injuries in ${year}`, { injured_only: 'true' })} />
         <Box value={h.first_aid} label="First aid injuries" tone={tones.first_aid}
+             change={change('first_aid')}
              explain={thresholdWords('first_aid', settings.data)}
              to={drillTo(year, `first aid injuries in ${year}`, { injury_class: 'first_aid' })} />
         <Box value={h.medical} label="Medical aid injuries" tone={tones.medical_aid}
+             change={change('medical_aid')}
              explain={thresholdWords('medical_aid', settings.data)}
              to={drillTo(year, `medical aid injuries in ${year}`, { injury_class: 'medical_aid' })} />
         <Box value={h.lost_time} label="Lost time injuries" tone={tones.lost_time}
+             change={change('lost_time')}
              explain={thresholdWords('lost_time', settings.data)}
              to={drillTo(year, `lost time injuries in ${year}`, { injury_class: 'lost_time' })} />
       </div>

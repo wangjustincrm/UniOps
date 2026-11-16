@@ -6,7 +6,7 @@
  * every list here is.
  */
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Pagination, SortTh, sortParams, useSort } from '@uniops/shell'
 import { api } from '@/lib/api'
@@ -30,7 +30,12 @@ export default function FoodSafetyRegisterPage() {
   const scales = useFoodSafetyScales()
   const bands = scales.data?.bands ?? []
   const [search, setSearch] = useState('')
-  const [band, setBand] = useState('')
+  // UAT 14: the Food Safety dashboard's ratings open this at their band.
+  const [params] = useSearchParams()
+  const [band, setBand] = useState(() => {
+    const b = params.get('band') ?? ''
+    return ['critical', 'high', 'medium', 'low'].includes(b) ? b : ''
+  })
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
   const [sort, onSort] = useSort<SortKey>(null, () => setPage(1))
