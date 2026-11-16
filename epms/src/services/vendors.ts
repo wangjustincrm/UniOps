@@ -80,6 +80,20 @@ export interface VendorImportResult {
   errors: string[]
 }
 
+/** A vendor that looks like the one being added or edited (ISS-0268). */
+export interface SimilarVendor {
+  id: string
+  code: string
+  name: string
+  erp_id: string | null
+  is_active: boolean
+}
+
+export interface SimilarVendors {
+  name_matches: SimilarVendor[]
+  erp_id_matches: SimilarVendor[]
+}
+
 export const vendorService = {
   list: (filters?: VendorFilters) =>
     api.get<VendorListResponse>('/vendors', filters),
@@ -95,6 +109,15 @@ export const vendorService = {
 
   update: (id: string, body: UpdateVendorBody) =>
     api.patch<ApiVendor>(`/vendors/${id}`, body),
+
+  /** Same name (ignoring case / spaces) or same ERP ID — for a warning only. */
+  similar: (q: { name?: string; erp_id?: string; exclude_id?: string }) => {
+    const params: Record<string, string> = {}
+    if (q.name) params.name = q.name
+    if (q.erp_id) params.erp_id = q.erp_id
+    if (q.exclude_id) params.exclude_id = q.exclude_id
+    return api.get<SimilarVendors>('/vendors/similar', params)
+  },
 
   importCsv: async (file: File): Promise<VendorImportResult> => {
     const { useAuthStore } = await import('@/stores/auth.store')

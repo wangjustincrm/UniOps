@@ -52,3 +52,19 @@ rules:
     provenance: not_built
     test:
       - "tests/test_rule_registry.py::test_vendor_edits_leave_no_history"
+  - id: duplicate_vendor_warning
+    asked_as:
+      - 新建供应商时名字和已有的一样会怎样？
+      - what happens if I add a vendor that already exists
+    answer: >
+      The POID (vendor code) must be unique — a repeated one is refused. When
+      a vendor is added or its name or ERP ID is changed by hand on the
+      Vendors page and another vendor (active or inactive) already has the
+      same name (ignoring case and spaces) or the same ERP ID, the page warns
+      "A vendor with this name / ERP ID already exists: <POID>" and saves only
+      if you press Save anyway. It is a warning, not a block.
+    enforced_in: "epms-api app/api/v1/vendors.py similar_vendors + crud/vendor.py find_similar; epms/src/pages/vendors/VendorsPage.tsx findDuplicates (Save anyway)"
+    provenance: pinned
+    test:
+      - "tests/test_vendor_similar.py::test_same_name_ignoring_case_and_spaces_and_same_erp_id"
+      - "tests/test_vendor_similar.py::test_a_duplicate_name_is_still_saved"

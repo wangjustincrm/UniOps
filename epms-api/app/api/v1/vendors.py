@@ -177,6 +177,30 @@ async def import_vendors(file: UploadFile, db: SessionDep, _: WriteDep, token: B
                               errors=parse_errors + write_errors)
 
 
+# ── Likely duplicates ─────────────────────────────────────────────────────────
+
+@router.get("/similar")
+async def similar_vendors(
+    db: SessionDep,
+    _: WriteDep,
+    name: str | None = Query(default=None),
+    erp_id: str | None = Query(default=None),
+    exclude_id: uuid.UUID | None = Query(default=None),
+):
+    """Vendors with the same name (ignoring case / spaces) or the same ERP ID
+    as the one being added or edited by hand. The Vendors page shows a warning
+    the user can confirm through — not a block: VND-001 refuses only a repeated
+    POID and VND-007 checks the ERP ID only on From ERP (ISS-0268)."""
+    by_name, by_erp = await vendor_crud.find_similar(
+        db, name=name, erp_id=erp_id, exclude_id=exclude_id)
+
+    def brief(v):
+        return {"id": str(v.id), "code": v.code, "name": v.name,
+                "erp_id": v.erp_id, "is_active": v.is_active}
+    return {"name_matches": [brief(v) for v in by_name],
+            "erp_id_matches": [brief(v) for v in by_erp]}
+
+
 # ── Single vendor ──────────────────────────────────────────────────────────────
 
 @router.get("/{vendor_id}", response_model=VendorResponse)
