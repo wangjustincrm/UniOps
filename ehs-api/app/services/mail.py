@@ -71,7 +71,7 @@ def _smtp(cfg: CompanyConfig | None) -> dict:
 
 
 def render(body: str, *, title: str, link: str | None = None,
-           link_label: str = "Open it in Safety") -> str:
+           link_label: str = "Open it in Safety", links: dict[str, str] | None = None) -> str:
     """The one HTML shell every Safety email uses.
 
     Deliberately plain: these are read on a phone in a corridor, often by
@@ -106,7 +106,18 @@ def render(body: str, *, title: str, link: str | None = None,
             f'{html.escape(link_label)}</a></p>'
         )
     title = html.escape(title)
-    safe_body = html.escape(body).replace("\n", "<br>")
+    safe_body = html.escape(body)
+    # ★ UAT 13: "The incident and CAPA numbers are clickable." Record numbers
+    # this module generated, and URLs it built, matched after escaping — so a
+    # number somebody typed into a description is linked only if it is the
+    # record's own, and nothing typed becomes markup.
+    for text, url in (links or {}).items():
+        if text:
+            safe_body = safe_body.replace(
+                html.escape(text),
+                f'<a href="{html.escape(url, quote=True)}" style="color:#0f766e;font-weight:600">'
+                f'{html.escape(text)}</a>')
+    safe_body = safe_body.replace("\n", "<br>")
     return (
         '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;'
         'max-width:560px;color:#1f2937;line-height:1.5">'
@@ -154,6 +165,7 @@ async def queue(
     link: str | None = None,
     link_label: str = "Open it in Safety",
     cc: list[str] | None = None,
+    links: dict[str, str] | None = None,
 ) -> Communication | None:
     """File the message against its record and schedule the send.
 
@@ -164,7 +176,8 @@ async def queue(
     if not to:
         return None
     return await _file(db, to=to, cc=cc, subject=subject, body=body,
-                       body_html=render(body, title=subject, link=link, link_label=link_label),
+                       body_html=render(body, title=subject, link=link, link_label=link_label,
+                                        links=links),
                        doc_type=doc_type, doc_id=doc_id, template_key=template_key,
                        link=link, link_label=link_label)
 

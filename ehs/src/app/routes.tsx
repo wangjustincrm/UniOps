@@ -50,6 +50,7 @@ import PermitChecksPage from '@/pages/settings/PermitChecksPage'
 import ExpiryNoticesPage from '@/pages/settings/ExpiryNoticesPage'
 import StaffFilePage, { StaffFilePicker } from '@/pages/StaffFilePage'
 import UndeliveredEmailPage from '@/pages/settings/UndeliveredEmailPage'
+import EmailWordingPage from '@/pages/settings/EmailWordingPage'
 import ReassignPage from '@/pages/settings/ReassignPage'
 import NotifyGroupsPage from '@/pages/settings/NotifyGroupsPage'
 import VocabulariesPage from '@/pages/settings/VocabulariesPage'
@@ -353,6 +354,12 @@ export const ehsRoutes: RouteDef[] = [
     path: '/staff-file/:id',
     element: <StaffFilePage />,
     tab: { title: 'Staff file', icon: 'Users', keyStrategy: 'param', paramName: 'id' },
+  },
+  {
+    // UAT 13: the wording of the emails sent to people in the plant.
+    path: '/settings/email-wording',
+    element: <EmailWordingPage />,
+    tab: { title: 'Email wording', icon: 'Mail', keyStrategy: 'static' },
   },
   {
     path: '/settings/reassign',

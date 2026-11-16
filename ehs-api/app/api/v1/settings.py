@@ -618,3 +618,102 @@ async def edit_incident_type(code: str, payload: IncidentTypePatch, db: SessionD
     return IncidentTypeRow(code=row.code, label=row.label, form_kind=row.form_kind,
                            category_id=row.category_id, category_label=row.category_label,
                            restricted=row.pick_permission is not None, is_active=row.is_active)
+
+
+# ── Email wording (UAT 13) ──────────────────────────────────────────────────
+# "Create a way to change the default email templates that are sent to workers
+# to ensure proper grammar and sentence structure."
+
+class EmailTemplateOut(BaseModel):
+    key: str
+    name: str
+    audience: str
+    when: str
+    placeholders: dict[str, str]
+    default_subject: str
+    default_body: str
+    subject: str
+    body: str
+    customised: bool
+
+
+class EmailTemplateIn(BaseModel):
+    subject: str = Field(max_length=300)
+    body: str = Field(max_length=10000)
+
+
+class EmailPreviewOut(BaseModel):
+    subject: str
+    html: str
+    problems: list[str]
+
+
+def _template_out(cfg: EhsConfig, key: str) -> EmailTemplateOut:
+    from app.services import email_templates as et
+    t = et.TEMPLATES[key]
+    mine = (cfg.email_templates or {}).get(key) or {}
+    return EmailTemplateOut(
+        key=key, name=t.name, audience=t.audience, when=t.when, placeholders=t.placeholders,
+        default_subject=t.subject, default_body=t.body,
+        subject=mine.get("subject") or t.subject, body=mine.get("body") or t.body,
+        customised=bool(mine))
+
+
+def _known(key: str):
+    from app.services import email_templates as et
+    if key not in et.TEMPLATES:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "There is no such email")
+
+
+@router.get("/email-templates", response_model=list[EmailTemplateOut])
+async def list_email_templates(db: SessionDep, user: CanManageSettings):  # noqa: ARG001
+    from app.services import email_templates as et
+    cfg = await _config_row(db)
+    return [_template_out(cfg, k) for k in et.TEMPLATES]
+
+
+@router.put("/email-templates/{key}", response_model=EmailTemplateOut)
+async def save_email_template(key: str, payload: EmailTemplateIn, db: SessionDep,
+                              user: CanManageSettings):  # noqa: ARG001
+    """HSE's wording for one email. Refused, saying why, if it uses a
+    placeholder the email does not have or a brace that does not pair up."""
+    from app.services import email_templates as et
+    _known(key)
+    found = et.problems(key, payload.subject, payload.body)
+    if found:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, " ".join(found))
+    cfg = await _config_row(db)
+    # A new dict, so the JSONB column is seen as changed.
+    cfg.email_templates = {**(cfg.email_templates or {}),
+                           key: {"subject": payload.subject.strip(), "body": payload.body.strip()}}
+    await db.flush()
+    return _template_out(cfg, key)
+
+
+@router.delete("/email-templates/{key}", response_model=EmailTemplateOut)
+async def reset_email_template(key: str, db: SessionDep, user: CanManageSettings):  # noqa: ARG001
+    """Back to the default wording."""
+    _known(key)
+    cfg = await _config_row(db)
+    cfg.email_templates = {k: v for k, v in (cfg.email_templates or {}).items() if k != key}
+    await db.flush()
+    return _template_out(cfg, key)
+
+
+@router.post("/email-templates/{key}/preview", response_model=EmailPreviewOut)
+async def preview_email_template(key: str, payload: EmailTemplateIn,
+                                 user: CanManageSettings):  # noqa: ARG001
+    """The email as somebody would receive it, with example values, before it
+    is saved. Nothing is sent."""
+    from app.services import email_templates as et
+    from app.services import mail
+    _known(key)
+    t = et.TEMPLATES[key]
+    found = et.problems(key, payload.subject, payload.body)
+    if found:
+        return EmailPreviewOut(subject="", html="", problems=found)
+    subject = et.fill(payload.subject, t.sample).strip()
+    body = et.fill(payload.body, t.sample).strip()
+    links = {v: "#" for k, v in t.sample.items() if k in ("action_no", "source_no")}
+    return EmailPreviewOut(subject=subject, problems=[],
+                           html=mail.render(body, title=subject, link="#", links=links))

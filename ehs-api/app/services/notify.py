@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.config import EhsConfig
 from app.models.mirrors import User
-from app.services import mail
+from app.services import email_templates, mail
 from app.services import tasks as task_service
 
 logger = logging.getLogger(__name__)
@@ -395,38 +395,56 @@ async def action_assigned(
 
     moved = previous_owner_id is not None
     previous = await db.get(User, previous_owner_id) if moved else None
-    lines = [
-        (f"Corrective action {action.action_no} has been given to {owner.full_name}"
-         + (f" (it was {previous.full_name}'s)" if previous else "") + "."
-         if moved else f"Corrective action {action.action_no} is owned by {owner.full_name}."),
-        "",
-        action.title,
-        f"Due {action.due_date.strftime('%-d %B %Y')}.",
-    ]
-    where = incident.incident_no if incident is not None else action.source_ref
-    if where:
-        lines.append(f"It was raised on {where}"
-                     + (f" at {incident.location_path}" if incident is not None
-                        and incident.location_path else "") + ".")
-    if cause is not None:
-        lines.append(f"It addresses the cause: {cause.label}.")
-    if moved:
-        lines += ["", f"Reassigned by {by_name or 'Safety'}" + (f": {reason}" if reason else ".")]
-
     on_incident = incident is not None
+    values, links = _action_values(action, owner_name=owner.full_name, incident=incident,
+                                   cause=cause)
+    values.update(previous_owner=previous.full_name if previous else "somebody else",
+                  reassigned_by=by_name or "Safety", reason=reason or "No reason was given.")
+    # ★ UAT 13: the wording is HSE's (Settings → Email wording), with the
+    # priority, the incident's and the action's numbers (linked), what will be
+    # done, the detail and the due date.
+    key = "action_reassigned" if moved else "action_owner_told"
+    subject, body = await email_templates.compose(db, key, values)
     await mail.queue(
         db,
         to=[u.email for u in people],
-        subject=(f"Corrective action {action.action_no} reassigned to {owner.full_name}" if moved
-                 else f"Corrective action {action.action_no}"
-                 + (f" on {incident.incident_no}" if on_incident else f": {action.title}")),
-        body="\n".join(lines),
+        subject=subject,
+        body=body,
         doc_type=task_service.DOC_INCIDENT if on_incident else task_service.DOC_ACTION,
         doc_id=incident.id if on_incident else action.id,
-        template_key="action_reassigned" if moved else "action_owner_told",
+        template_key=key,
         link=mail.module_link(f"/actions/{action.id}"),
         link_label="Open the corrective action",
+        links=links,
     )
+
+
+_SOURCE_PATHS = {
+    "hazard": "/hazards/{id}", "permit": "/permits/{id}", "inspection": "/forms/submissions/{id}",
+    "asset": "/equipment?asset={id}", "feedback": "/feedback",
+}
+
+
+def _action_values(action, *, owner_name: str | None, incident=None, cause=None) -> tuple[dict, dict]:
+    """What an action email can say, and which of it links where."""
+    source_no = incident.incident_no if incident is not None else (action.source_ref or "")
+    values = {
+        "owner_name": owner_name or "the owner",
+        "action_no": action.action_no,
+        "source_no": source_no or "—",
+        "priority": (action.priority or "normal").capitalize(),
+        "title": action.title,
+        "detail": (action.description or "").strip() or "—",
+        "due_date": action.due_date.strftime("%-d %B %Y") if action.due_date else "—",
+        "location": (incident.location_path or "").replace("/", " › ") if incident is not None else "",
+        "cause": cause.label if cause is not None else "—",
+    }
+    links = {action.action_no: mail.module_link(f"/actions/{action.id}")}
+    if incident is not None:
+        links[incident.incident_no] = mail.module_link(f"/incidents/{incident.id}")
+    elif source_no and action.source_id and action.source_type in _SOURCE_PATHS:
+        links[source_no] = mail.module_link(_SOURCE_PATHS[action.source_type].format(id=action.source_id))
+    return values, links
 
 
 async def action_escalated(
@@ -452,18 +470,20 @@ async def action_escalated(
     if not people:
         return
 
+    values, links = _action_values(action, owner_name=action.owner_name or "unassigned")
+    values["days_late"] = str(days_late)
+    subject, body = await email_templates.compose(db, "action_escalation", values)
     await mail.queue(
         db,
         to=[u.email for u in people],
-        subject=f"Overdue {days_late} days: {action.title}",
-        body=(f"{action.action_no} was due {action.due_date.isoformat()} and is "
-              f"still open.\n\nOwner: {action.owner_name or 'unassigned'}.\n\n"
-              f"{(action.description or '')[:400]}"),
+        subject=subject,
+        body=body,
         doc_type=task_service.DOC_ACTION,
         doc_id=action.id,
         template_key="action_escalation",
         link=mail.module_link(f"/actions/{action.id}"),
         link_label="Open the action",
+        links=links,
     )
 
 
@@ -483,11 +503,13 @@ async def inspection_due(
     if not people:
         return
     where = f" — {run.department_name}" if run.department_name else ""
+    subject, body = await email_templates.compose(db, "inspection_due", {
+        "form": template_name, "where": where, "due_date": run.due_on.strftime("%-d %B %Y")})
     await mail.queue(
         db,
         to=[u.email for u in people],
-        subject=f"Due {run.due_on.isoformat()}: {template_name}{where}",
-        body=f"{template_name}{where} is due on {run.due_on.isoformat()}.",
+        subject=subject,
+        body=body,
         doc_type="ehs_run",
         doc_id=run.id,
         template_key="inspection_due",
@@ -502,13 +524,14 @@ async def toolbox_talk_chase(db: AsyncSession, delivery, *, talk_title: str) -> 
     people = await mail.recipients(db, [delivery.supervisor_id] if delivery.supervisor_id else [])
     if not people:
         return False
+    subject, body = await email_templates.compose(db, "toolbox_chase", {
+        "supervisor_name": delivery.supervisor_name or "there", "talk_title": talk_title,
+        "team": delivery.department_name or "your team"})
     await mail.queue(
         db,
         to=[u.email for u in people],
-        subject=f"Still outstanding: {talk_title}",
-        body=(f"The toolbox talk for {delivery.department_name or 'your team'} has "
-              "not been signed off yet.\n\nHold it with your team and collect "
-              "everyone's signature on one device afterwards."),
+        subject=subject,
+        body=body,
         doc_type="ehs_tbt",
         doc_id=delivery.id,
         template_key="toolbox_chase",
@@ -525,12 +548,14 @@ async def course_tomorrow(db: AsyncSession, delivery, attendee_ids: list[uuid.UU
         return
     when = delivery.start_time.strftime("%H:%M") if delivery.start_time else "the usual time"
     where = f" at {delivery.location_text}" if delivery.location_text else ""
+    subject, body = await email_templates.compose(db, "course_reminder", {
+        "course": delivery.title, "date": delivery.session_date.strftime("%-d %B %Y"),
+        "time": when, "place": where})
     await mail.queue(
         db,
         to=[u.email for u in people],
-        subject=f"Tomorrow: {delivery.title}",
-        body=(f"{delivery.title} runs tomorrow, {delivery.session_date.isoformat()}, "
-              f"starting at {when}{where}."),
+        subject=subject,
+        body=body,
         doc_type="ehs_crs",
         doc_id=delivery.id,
         template_key="course_reminder",
@@ -575,11 +600,13 @@ async def feedback_answered(db: AsyncSession, row) -> None:
     people = await mail.recipients(db, [row.submitted_by])
     if not people:
         return
+    subject, body = await email_templates.compose(db, "feedback_answered", {
+        "comment": row.body, "reply": row.reply})
     await mail.queue(
         db,
         to=[u.email for u in people],
-        subject="HSE has replied to your feedback",
-        body=(f"You wrote:\n\n{row.body}\n\nHSE replied:\n\n{row.reply}"),
+        subject=subject,
+        body=body,
         doc_type=None,
         doc_id=None,
         template_key="feedback_answered",
@@ -600,13 +627,13 @@ async def document_published(db: AsyncSession, document, audience_ids: list[uuid
     people = await mail.recipients(db, list(audience_ids))
     if not people:
         return
+    subject, body = await email_templates.compose(db, "document_published", {
+        "document": document.title, "version": document.version})
     await mail.queue(
         db,
         to=[u.email for u in people],
-        subject=f"Please read and sign: {document.title}",
-        body=(f"{document.title} version {document.version} has been published "
-              "and needs your acknowledgement.\n\nOpen it, read it, and sign at "
-              "the bottom of the page."),
+        subject=subject,
+        body=body,
         doc_type=task_service.DOC_DOCUMENT,
         doc_id=document.id,
         template_key="document_published",

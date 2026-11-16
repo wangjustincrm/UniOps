@@ -190,6 +190,7 @@ const SETTINGS_NAV: NavItem[] = [
   { label: 'Training notifications', href: '/settings/expiry-notices', icon: Mail, permission: 'ehs.settings.manage' },
   { label: 'Reallocate Items', href: '/settings/reassign', icon: Users, permission: 'ehs.settings.manage' },
   { label: 'Communications', href: '/settings/undelivered-email', icon: MailWarning, permission: 'ehs.settings.manage' },
+  { label: 'Email wording', href: '/settings/email-wording', icon: Mail, permission: 'ehs.settings.manage' },
 ]
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
