@@ -40,7 +40,7 @@ function answer(url) {
   const p = u.pathname.replace(/^\/api\/v1\//, '')
   if (p === 'config/me/permissions') return { permissions: Object.fromEntries(PERMS.map((k) => [k, true])), roles: [] }
   if (p === 'config/public/branding') return { name: 'UniOps' }
-  if (p === 'views') return []
+  if (p === 'views' || p === 'config/notification-events' || p === 'config/notification-users') return []
   if (p.endsWith('/meta')) return META[p.slice(0, -5)] ?? { version: 1, fields: [], views: [] }
   if (p === 'orders') return { items: F.orders, total: F.orders.length }
   const order = p.match(/^orders\/(\d+)$/)
@@ -55,10 +55,17 @@ function answer(url) {
     const code = (u.searchParams.getAll('filter').join().match(/item_code:eq:([^,]+)/) ?? [])[1] ?? 'ITEM-1'
     return { items: F.stockLots(code), total: 2 }
   }
+  if (p === 'operations/health') return F.health
+  if (p === 'operations/dashboard') return F.dashboard
   if (p === 'config/partners') return { items: F.partners, total: F.partners.length }
   if (p === 'config/items') return { items: F.items, total: F.items.length }
   return { items: [], total: 0 }
 }
+
+// Every route in src/app/routes.tsx.
+const ROUTES = ['/home', '/orders', '/transfers', '/deliveries', '/invoices', '/payments', '/documents', '/runs', '/inventory', '/lots',
+  '/health', '/notifications', '/config/partners', '/config/partner-codes', '/config/items', '/config/dc-routing', '/config/warehouses',
+  '/config/carriers', '/config/connections', '/config/notifications']
 
 const failures = []
 const notes = []
@@ -140,6 +147,17 @@ async function run(name, viewport) {
     check(await page.locator('[data-row-detail]').count() > 0, `${name} inventory: a row opens to its lots`)
     await listChecks('inventory-lots')
   })
+  // Every page of the module (data or not): nothing scrolls the page sideways.
+  for (const route of ROUTES) {
+    await step(`page ${route}`, async () => {
+      await open(route)
+      const m = await measure(page)
+      check(m.page <= 0, `${name} ${route}: page sideways overflow ${m.page}px`)
+      const broken = await page.getByText(/failed to render/i).locator('visible=true').count()
+      check(broken === 0, `${name} ${route}: renders (no error boundary)`)
+      await shot(`page${route.replaceAll('/', '-')}`)
+    })
+  }
   if (phone) {
     await step('new order form', async () => {
       await open('/orders')

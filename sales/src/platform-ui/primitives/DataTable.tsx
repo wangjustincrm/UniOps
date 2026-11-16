@@ -131,6 +131,8 @@ export function DataTable<T>({
   const [dropOn, setDropOn] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  // Cards whose lines past `cardLines` are shown (nothing is ever out of reach on a phone).
+  const [allLines, setAllLines] = useState<Set<string>>(new Set())
   const toggleRow = (k: string) => setExpanded((s) => {
     const next = new Set(s)
     if (next.has(k)) next.delete(k)
@@ -248,7 +250,8 @@ export function DataTable<T>({
               const title = cells.find((c) => role(c) === 'title') ?? cells.find((c) => !role(c))
               const badges = cells.filter((c) => role(c) === 'badge')
               const lines = cells.filter((c) => c !== title && !role(c))
-              const shownLines = onRowClick ? lines.slice(0, cardLines) : lines
+              const showAll = !onRowClick || lines.length <= cardLines + 1 || allLines.has(r.id)
+              const shownLines = showAll ? lines : lines.slice(0, cardLines)
               const { heads, rowHidden } = groupsAt(i, all)
               return (
                 <Fragment key={r.id}>
@@ -279,15 +282,22 @@ export function DataTable<T>({
                         )}
                       </div>
                       {shownLines.length > 0 && (
-                        <dl className="grid grid-cols-[minmax(4.5rem,max-content)_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
+                        <dl className="grid grid-cols-[fit-content(45%)_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs">
                           {shownLines.map((c) => (
                             <div key={c.id} className="contents">
-                              <dt className="text-neutral-500">{label(c.column.id)}</dt>
+                              <dt className="text-neutral-500 wrap-anywhere">{label(c.column.id)}</dt>
                               <dd className="min-w-0 break-words text-neutral-700"><Render def={c.column.columnDef.cell} ctx={c.getContext()} /></dd>
                             </div>
                           ))}
                         </dl>
                       )}
+                      {onRowClick && lines.length > cardLines + 1 ? (
+                        <button type="button" aria-expanded={allLines.has(r.id)}
+                          onClick={() => setAllLines((s) => { const n = new Set(s); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n })}
+                          className="self-start rounded py-0.5 text-xs text-primary-700 hover:underline">
+                          {allLines.has(r.id) ? 'Fewer fields' : `${lines.length - shownLines.length} more fields`}
+                        </button>
+                      ) : null}
                       {detail !== null && (
                         <div>
                           <button type="button" aria-expanded={isOpen} onClick={() => toggleRow(r.id)}
@@ -308,7 +318,7 @@ export function DataTable<T>({
           <div data-card-totals data-stale={dim || undefined}
             className={cn('sticky bottom-0 z-[1] border-t border-neutral-200 bg-neutral-50 px-3 py-2 text-xs font-medium text-neutral-800', dim && 'opacity-60')}>
             {footer[0] && <div className="mb-0.5">{footer[0]}</div>}
-            <dl className="grid grid-cols-[minmax(4.5rem,max-content)_minmax(0,1fr)] gap-x-3 gap-y-0.5">
+            <dl className="grid grid-cols-[fit-content(45%)_minmax(0,1fr)] gap-x-3 gap-y-0.5">
               {footer.map((f, i) => (i === 0 || f === null || f === undefined ? null : (
                 <div key={i} className="contents">
                   <dt className="text-neutral-500">{headerIds[i] ? label(headerIds[i]) : null}</dt>

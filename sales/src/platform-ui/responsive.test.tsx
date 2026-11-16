@@ -171,3 +171,28 @@ describe('step 4: forms', () => {
     expect(bar).toHaveClass('sticky', 'sm:static')
   })
 })
+
+describe('review fixes', () => {
+  type Row = { id: number; a: string; b: string; c: string; d: string; e: string }
+  const col = columnsOf<Row>()
+  const columns = [col.text('a', 'A'), col.text('b', 'B'), col.text('c', 'C'), col.text('d', 'D'), col.text('e', 'E')]
+  const rows: Row[] = [{ id: 1, a: 'title', b: 'b1', c: 'c1', d: 'd1', e: 'e1' }]
+  it('a clickable card shows its first lines and "N more fields" opens the rest without opening the row', () => {
+    stubWidth(360)
+    const open = vi.fn()
+    render(<DataTable columns={columns} rows={rows} rowKey={(r) => r.id} ariaLabel="T" onRowClick={open} cardLines={2} />)
+    const card = screen.getByRole('listitem')
+    expect([...card.querySelectorAll('dt')].map((d) => d.textContent)).toEqual(['B', 'C'])
+    fireEvent.click(within(card).getByRole('button', { name: '2 more fields' }))
+    expect([...card.querySelectorAll('dt')].map((d) => d.textContent)).toEqual(['B', 'C', 'D', 'E'])
+    expect(open).not.toHaveBeenCalled()
+    fireEvent.click(within(card).getByRole('button', { name: 'Fewer fields' }))
+    expect(card.querySelectorAll('dt')).toHaveLength(2)
+  })
+  it('a toolbar on a phone starts collapsed until it is measured', () => {
+    stubMatchMedia(390)
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 0 } as DOMRect)
+    render(<Toolbar label="Actions" items={[{ label: 'Export', onSelect: () => {}, collapse: true }]} />)
+    expect(screen.queryByRole('button', { name: 'Export' })).toBeNull()
+  })
+})

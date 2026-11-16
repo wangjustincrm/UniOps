@@ -61,4 +61,27 @@ export const stockLots = (code) => [0, 1].map((j) => ({ id: j + 1, item_code: co
   first_move_at: '2026-10-01T12:00:00Z', last_move_at: '2026-11-12T15:00:00Z' }))
 
 export const partners = [{ id: 1, code: 'SAMPLE', name: 'Sample partner', channel: 'MANUAL', active: true }]
-export const items = [{ id: 1, code: 'ITEM-1', item_code: 'ITEM-1', description: 'Sample item', active: true }]
+export const items = [{ id: 1, code: 'ITEM-1', item_code: 'ITEM-1', description: 'Sample item', active: true, version: 1,
+  units: [{ unit: 'EA', factor_ea: '1.0000' }, { unit: 'CS', factor_ea: '6.0000' }] }]
+
+const link = (page) => ({ page, resource: page.slice(1), filters: [] })
+export const health = {
+  result: 'WARNING', checked_at: '2026-11-16T12:00:00Z', shadow_mode: false, partner_writes_enabled: false, external_email_enabled: false,
+  scheduler_enabled: true, scheduler_paused: false, system_minutes: 5, gate_ok: true, cards: { open_orders: 12, needs_review: 2 },
+  checks: [
+    { key: 'sftp', label: 'Warehouse connection', result: 'PASSED', detail: 'Last run 5 minutes ago', count: null, link: null },
+    { key: 'ack', label: 'Acknowledgements on time', result: 'WARNING', detail: 'One acknowledgement is late: a long explanation that has to wrap on a phone screen', count: 1, link: link('/orders') },
+  ],
+  gate: [{ event_type: 'order_failed', label: 'Order failed', rule_id: 1, recipients: 2, tested_at: '2026-11-15T10:00:00Z', ok: true, problem: null }],
+  jobs: [{ scope: 'system', label: 'System job', connection_id: null, interval_minutes: 5, schedule: 'every 5 min', paused: false,
+    last_run_at: '2026-11-16T11:55:00Z', last_run_status: 'SUCCESS', last_run_summary: 'nothing to do', next_run_at: '2026-11-16T12:00:00Z', overdue: false }],
+}
+export const dashboard = {
+  cards: [
+    { key: 'open', label: 'Open orders', count: 12, link: link('/orders'), parts: [] },
+    { key: 'review', label: 'Needs review', count: 2, link: link('/orders'), parts: [] },
+    { key: 'invoice', label: 'To invoice', count: 3, link: link('/invoices'), parts: [] },
+  ],
+  open_tasks: [{ type: 'order_review', count: 2 }], needs_review: 2, waiting_delivery: 3,
+  runs: [{ id: 1, trigger: 'schedule', status: 'SUCCESS', started_at: '2026-11-16T11:55:00Z', finished_at: '2026-11-16T11:55:04Z', error: null }],
+}

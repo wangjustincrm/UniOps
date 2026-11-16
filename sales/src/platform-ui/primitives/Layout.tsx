@@ -3,7 +3,7 @@ import { useRef, type CSSProperties, type ElementType, type ReactNode } from 're
 import { cn } from '../lib/cn'
 import { Button } from './shell'
 import { DropdownMenu, type MenuItem } from './DropdownMenu'
-import { useElementWidth } from './useResponsive'
+import { useBreakpoint, useElementWidth } from './useResponsive'
 
 // Responsive layout (the user, 2026-11-13: "userfriendly and responsive app").
 // Most of what the module shows lives in a Sheet, a panel or a card narrower than the
@@ -75,7 +75,9 @@ export function Toolbar({ label, items, more = [], collapseBelow = 480, classNam
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const width = useElementWidth(ref)
-  const narrow = width !== null && width > 0 && width < collapseBelow
+  // Until it is measured, a phone starts collapsed (no jump from wide to narrow on the first paint).
+  const phone = useBreakpoint() === 'base'
+  const narrow = !width ? phone : width < collapseBelow
   const moves = (it: ToolbarItem) => narrow && !!it.collapse && !!it.onSelect
   const shown = items.filter((it) => !moves(it))
   const menu: MenuItem[] = [
